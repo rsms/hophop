@@ -83,7 +83,7 @@ build_dir       = $build_dir
 cli_sources     = ${cli_sources[@]:-}
 lib_sources     = ${lib_sources[@]:-}
 c_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${c_flags[@]:-}")
-c_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${l_flags[@]:-}")
+l_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${l_flags[@]:-}")
 _END
 fi
 

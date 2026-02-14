@@ -5,14 +5,14 @@
 
 #include "libsl.h"
 
-static int read_file(const char* filename, char** out_data, uint32_t* out_len) {
+static int ReadFile(const char* filename, char** outData, uint32_t* outLen) {
     FILE* f;
     long size;
     char* data;
     size_t nread;
 
-    *out_data = NULL;
-    *out_len = 0;
+    *outData = NULL;
+    *outLen = 0;
 
     f = fopen(filename, "rb");
     if (f == NULL) {
@@ -55,12 +55,12 @@ static int read_file(const char* filename, char** out_data, uint32_t* out_len) {
     }
 
     data[size] = '\0';
-    *out_data = data;
-    *out_len = (uint32_t)size;
+    *outData = data;
+    *outLen = (uint32_t)size;
     return 0;
 }
 
-static void print_escaped(FILE* out, const char* s, uint32_t start, uint32_t end) {
+static void PrintEscaped(FILE* out, const char* s, uint32_t start, uint32_t end) {
     uint32_t i;
 
     fputc('"', out);
@@ -94,7 +94,7 @@ static void print_escaped(FILE* out, const char* s, uint32_t start, uint32_t end
     fputc('"', out);
 }
 
-static void stdout_write(void* ctx, const char* data, uint32_t len) {
+static void StdoutWrite(void* ctx, const char* data, uint32_t len) {
     (void)ctx;
     if (len == 0) {
         return;
@@ -102,93 +102,93 @@ static void stdout_write(void* ctx, const char* data, uint32_t len) {
     fwrite(data, 1u, (size_t)len, stdout);
 }
 
-static int dump_tokens(const char* filename, const char* source, uint32_t source_len) {
-    void* arena_mem;
-    uint64_t arena_cap64;
-    size_t arena_cap;
-    sl_arena arena;
-    sl_token_stream stream;
-    sl_diag diag;
+static int DumpTokens(const char* filename, const char* source, uint32_t sourceLen) {
+    void* arenaMem;
+    uint64_t arenaCap64;
+    size_t arenaCap;
+    SLArena arena;
+    SLTokenStream stream;
+    SLDiag diag;
     uint32_t i;
 
-    arena_cap64 = (uint64_t)(source_len + 16u) * (uint64_t)sizeof(sl_token) + 4096u;
-    if (arena_cap64 > (uint64_t)SIZE_MAX) {
+    arenaCap64 = (uint64_t)(sourceLen + 16u) * (uint64_t)sizeof(SLToken) + 4096u;
+    if (arenaCap64 > (uint64_t)SIZE_MAX) {
         fprintf(stderr, "arena too large\n");
         return -1;
     }
 
-    arena_cap = (size_t)arena_cap64;
-    arena_mem = malloc(arena_cap);
-    if (arena_mem == NULL) {
+    arenaCap = (size_t)arenaCap64;
+    arenaMem = malloc(arenaCap);
+    if (arenaMem == NULL) {
         fprintf(stderr, "failed to allocate arena\n");
         return -1;
     }
 
-    sl_arena_init(&arena, arena_mem, (uint32_t)arena_cap);
-    if (sl_lex(&arena, (sl_strview){source, source_len}, &stream, &diag) != 0) {
+    SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    if (SLLex(&arena, (SLStrView){source, sourceLen}, &stream, &diag) != 0) {
         fprintf(stderr, "%s:%u:%u: error: %s\n", filename, diag.start, diag.end,
-                sl_diag_message(diag.code));
-        free(arena_mem);
+                SLDiagMessage(diag.code));
+        free(arenaMem);
         return -1;
     }
 
     for (i = 0; i < stream.len; i++) {
-        const sl_token* t = &stream.v[i];
-        printf("%s %u %u ", sl_token_kind_name(t->kind), t->start, t->end);
-        if (t->kind == SL_TOK_EOF) {
+        const SLToken* t = &stream.v[i];
+        printf("%s %u %u ", SLTokenKindName(t->kind), t->start, t->end);
+        if (t->kind == SLTok_EOF) {
             printf("<eof>");
-        } else if (t->kind == SL_TOK_SEMICOLON && t->start == t->end) {
+        } else if (t->kind == SLTok_SEMICOLON && t->start == t->end) {
             printf("<auto>");
         } else {
-            print_escaped(stdout, source, t->start, t->end);
+            PrintEscaped(stdout, source, t->start, t->end);
         }
         fputc('\n', stdout);
     }
 
-    free(arena_mem);
+    free(arenaMem);
     return 0;
 }
 
-static int dump_ast(const char* filename, const char* source, uint32_t source_len) {
-    void* arena_mem;
-    uint64_t arena_cap64;
-    size_t arena_cap;
-    sl_arena arena;
-    sl_ast ast;
-    sl_diag diag;
-    sl_writer writer;
+static int DumpAST(const char* filename, const char* source, uint32_t sourceLen) {
+    void* arenaMem;
+    uint64_t arenaCap64;
+    size_t arenaCap;
+    SLArena arena;
+    SLAST ast;
+    SLDiag diag;
+    SLWriter writer;
 
-    arena_cap64 = (uint64_t)(source_len + 64u) * (uint64_t)sizeof(sl_ast_node) + 32768u;
-    if (arena_cap64 > (uint64_t)SIZE_MAX) {
+    arenaCap64 = (uint64_t)(sourceLen + 64u) * (uint64_t)sizeof(SLASTNode) + 32768u;
+    if (arenaCap64 > (uint64_t)SIZE_MAX) {
         fprintf(stderr, "arena too large\n");
         return -1;
     }
 
-    arena_cap = (size_t)arena_cap64;
-    arena_mem = malloc(arena_cap);
-    if (arena_mem == NULL) {
+    arenaCap = (size_t)arenaCap64;
+    arenaMem = malloc(arenaCap);
+    if (arenaMem == NULL) {
         fprintf(stderr, "failed to allocate arena\n");
         return -1;
     }
 
-    sl_arena_init(&arena, arena_mem, (uint32_t)arena_cap);
-    if (sl_parse(&arena, (sl_strview){source, source_len}, &ast, &diag) != 0) {
+    SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    if (SLParse(&arena, (SLStrView){source, sourceLen}, &ast, &diag) != 0) {
         fprintf(stderr, "%s:%u:%u: error: %s\n", filename, diag.start, diag.end,
-                sl_diag_message(diag.code));
-        free(arena_mem);
+                SLDiagMessage(diag.code));
+        free(arenaMem);
         return -1;
     }
 
     writer.ctx = NULL;
-    writer.write = stdout_write;
-    if (sl_ast_dump(&ast, (sl_strview){source, source_len}, &writer, &diag) != 0) {
+    writer.write = StdoutWrite;
+    if (SLASTDump(&ast, (SLStrView){source, sourceLen}, &writer, &diag) != 0) {
         fprintf(stderr, "%s:%u:%u: error: %s\n", filename, diag.start, diag.end,
-                sl_diag_message(diag.code));
-        free(arena_mem);
+                SLDiagMessage(diag.code));
+        free(arenaMem);
         return -1;
     }
 
-    free(arena_mem);
+    free(arenaMem);
     return 0;
 }
 
@@ -196,7 +196,7 @@ int main(int argc, char* argv[]) {
     const char* mode = "lex";
     const char* filename;
     char* source;
-    uint32_t source_len;
+    uint32_t sourceLen;
 
     if (argc == 2) {
         filename = argv[1];
@@ -208,17 +208,17 @@ int main(int argc, char* argv[]) {
         return 2;
     }
 
-    if (read_file(filename, &source, &source_len) != 0) {
+    if (ReadFile(filename, &source, &sourceLen) != 0) {
         return 1;
     }
 
     if (mode[0] == 'l' && mode[1] == 'e' && mode[2] == 'x' && mode[3] == '\0') {
-        if (dump_tokens(filename, source, source_len) != 0) {
+        if (DumpTokens(filename, source, sourceLen) != 0) {
             free(source);
             return 1;
         }
     } else if (mode[0] == 'a' && mode[1] == 's' && mode[2] == 't' && mode[3] == '\0') {
-        if (dump_ast(filename, source, source_len) != 0) {
+        if (DumpAST(filename, source, sourceLen) != 0) {
             free(source);
             return 1;
         }
