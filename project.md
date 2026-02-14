@@ -173,8 +173,8 @@ Example:
 package foo
 
 pub {
-  struct T { x i32 }
-  fun A(t T) i32
+    struct T { x i32 }
+    fun A(t T) i32
 }
 
 fun A(t T) i32 { return t.x }
@@ -312,9 +312,9 @@ Expression switch:
 
 ```sl
 switch x {
-  case 1 { ... }
-  case 2, 3 { ... }
-  default { ... }
+    case 1 { ... }
+    case 2, 3 { ... }
+    default { ... }
 }
 ```
 
@@ -322,9 +322,9 @@ Condition switch:
 
 ```sl
 switch {
-  case x < 0 { ... }
-  case x < 10 { ... }
-  default { ... }
+    case x < 0 { ... }
+    case x < 10 { ... }
+    default { ... }
 }
 ```
 
@@ -482,21 +482,21 @@ typedef struct sl_arena sl_arena;
 typedef struct sl_diag  sl_diag;
 
 typedef struct {
-  const char* ptr;
-  unsigned    len;
+    const char* ptr;
+    unsigned    len;
 } sl_strview;
 
 typedef struct {
-  void* ctx;
-  void (*write)(void* ctx, const char* data, unsigned len);
+    void* ctx;
+    void (*write)(void* ctx, const char* data, unsigned len);
 } sl_writer;
 
 typedef struct {
-  // output controls
-  const char* impl_macro;      // e.g. "FOO_IMPL"
-  const char* header_guard;    // e.g. "FOO_H"
-  int emit_prelude;            // 1
-  int emit_internal;           // 1 under impl macro
+    // output controls
+    const char* impl_macro;      // e.g. "FOO_IMPL"
+    const char* header_guard;    // e.g. "FOO_H"
+    int emit_prelude;            // 1
+    int emit_internal;           // 1 under impl macro
 } sl_emit_opts;
 
 // Parses a single file (package loader is done in CLI for v0)
@@ -679,18 +679,18 @@ static inline u32 len(str s) { return ((const sl_strhdr*)(const void*)s)->len; }
 static inline const u8* cstr(str s) { return ((const sl_strhdr*)(const void*)s)->bytes; }
 
 #ifndef SL_TRAP
-  #if defined(__clang__) || defined(__GNUC__)
-    #define SL_TRAP() __builtin_trap()
-  #else
-    #define SL_TRAP() do { *(volatile int*)0 = 0; } while(0)
-  #endif
+    #if defined(__clang__) || defined(__GNUC__)
+        #define SL_TRAP() __builtin_trap()
+    #else
+        #define SL_TRAP() do { *(volatile int*)0 = 0; } while(0)
+    #endif
 #endif
 
 #ifndef SL_ASSERT_FAIL
-  #define SL_ASSERT_FAIL(file,line,msg) SL_TRAP()
+    #define SL_ASSERT_FAIL(file,line,msg) SL_TRAP()
 #endif
 #ifndef SL_ASSERTF_FAIL
-  #define SL_ASSERTF_FAIL(file,line,fmt,...) SL_ASSERT_FAIL(file,line,fmt)
+    #define SL_ASSERTF_FAIL(file,line,fmt,...) SL_ASSERT_FAIL(file,line,fmt)
 #endif
 ```
 
@@ -811,77 +811,77 @@ For each expected header:
 package heap
 
 pub {
-  struct PQueue {
-    data *i32
-    len  i32
-    cap  i32
-  }
+    struct PQueue {
+        data *i32
+        len  i32
+        cap  i32
+    }
 
-  fun Init(q *PQueue, backing *i32, cap i32) void
-  fun Push(q *PQueue, x i32) bool
-  fun Pop(q *PQueue, out *i32) bool
-  fun Peek(q *PQueue, out *i32) bool
+    fun Init(q *PQueue, backing *i32, cap i32) void
+    fun Push(q *PQueue, x i32) bool
+    fun Pop(q *PQueue, out *i32) bool
+    fun Peek(q *PQueue, out *i32) bool
 }
 
 fun Init(q *PQueue, backing *i32, cap i32) void {
-  q.data = backing
-  q.len  = 0
-  q.cap  = cap
+    q.data = backing
+    q.len  = 0
+    q.cap  = cap
 }
 
 fun Peek(q *PQueue, out *i32) bool {
-  if q.len == 0 { return false }
-  *out = q.data[0]
-  return true
+    if q.len == 0 { return false }
+    *out = q.data[0]
+    return true
 }
 
 fun Push(q *PQueue, x i32) bool {
-  if q.len >= q.cap { return false }
+    if q.len >= q.cap { return false }
 
-  var i i32 = q.len
-  q.len += 1
-  q.data[i] = x
+    var i i32 = q.len
+    q.len += 1
+    q.data[i] = x
 
-  for i > 0 {
-    var p i32 = (i - 1) / 2
-    if q.data[p] >= q.data[i] { break }
-    var t i32 = q.data[p]
-    q.data[p] = q.data[i]
-    q.data[i] = t
-    i = p
-  }
+    for i > 0 {
+        var p i32 = (i - 1) / 2
+        if q.data[p] >= q.data[i] { break }
+        var t i32 = q.data[p]
+        q.data[p] = q.data[i]
+        q.data[i] = t
+        i = p
+    }
 
-  return true
+    return true
 }
 
 fun Pop(q *PQueue, out *i32) bool {
-  if q.len == 0 { return false }
-  *out = q.data[0]
-  q.len -= 1
-  if q.len == 0 { return true }
+    if q.len == 0 { return false }
+    *out = q.data[0]
+    q.len -= 1
+    if q.len == 0 { return true }
 
-  q.data[0] = q.data[q.len]
+    q.data[0] = q.data[q.len]
 
-  var i i32 = 0
-  for {
-    var l i32 = i*2 + 1
-    var r i32 = l + 1
-    if l >= q.len { break }
+    var i i32 = 0
+    for {
+        var l i32 = i*2 + 1
+        var r i32 = l + 1
+        if l >= q.len { break }
 
-    var j i32 = l
-    if r < q.len && q.data[r] > q.data[l] {
-      j = r
+        var j i32 = l
+        if r < q.len && q.data[r] > q.data[l] {
+            j = r
+        }
+
+        if q.data[i] >= q.data[j] { break }
+
+        var t i32 = q.data[i]
+        q.data[i] = q.data[j]
+        q.data[j] = t
+        i = j
     }
 
-    if q.data[i] >= q.data[j] { break }
-
-    var t i32 = q.data[i]
-    q.data[i] = q.data[j]
-    q.data[j] = t
-    i = j
-  }
-
-  return true
+    return true
 }
 ```
 
@@ -893,22 +893,22 @@ package main
 import heap "ds/heap"
 
 pub {
-  fun main() i32
+    fun main() i32
 }
 
 fun main() i32 {
-  var backing [64]i32
-  var q heap.PQueue
-  heap.Init(&q, &backing[0], 64 as i32)
+    var backing [64]i32
+    var q heap.PQueue
+    heap.Init(&q, &backing[0], 64 as i32)
 
-  assert heap.Push(&q, 10)
-  assert heap.Push(&q, 30)
-  assert heap.Push(&q, 5)
+    assert heap.Push(&q, 10)
+    assert heap.Push(&q, 30)
+    assert heap.Push(&q, 5)
 
-  var x i32
-  assert heap.Pop(&q, &x)
-  assert x == 30
-  return 0
+    var x i32
+    assert heap.Pop(&q, &x)
+    assert x == 30
+    return 0
 }
 ```
 
