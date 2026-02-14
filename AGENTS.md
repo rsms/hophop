@@ -13,3 +13,4 @@ After you have made changes:
 - `./build.sh test` builds in debug mode and runs tests
 - `./build.sh` builds in debug mode into `_build/macos-aarch64-debug/`
 - `./build.sh release` builds in release mode into `_build/macos-aarch64-release/`
+- Run cli program with `_build/macos-aarch64-debug/slc`
