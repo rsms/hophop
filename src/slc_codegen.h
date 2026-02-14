@@ -19,15 +19,15 @@ struct SLCodegenBackend;
 typedef int (*SLCodegenEmitFn)(
     const struct SLCodegenBackend* backend,
     const SLCodegenUnit*           unit,
-    const SLCodegenOptions*        options,
-    char**                         outHeader,
-    SLDiag*                        diag);
+    const SLCodegenOptions* _Nullable options,
+    char** outHeader,
+    SLDiag* _Nullable diag);
 
 typedef struct SLCodegenBackend {
     const char*     name;
     SLCodegenEmitFn emit;
 } SLCodegenBackend;
 
-const SLCodegenBackend* _Nullable SLCodegenFindBackend(const char* name);
+const SLCodegenBackend* _Nullable SLCodegenFindBackend(const char* _Nullable name);
 
 SL_API_END

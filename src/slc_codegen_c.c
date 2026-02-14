@@ -1,9 +1,13 @@
-#include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "libsl-impl.h"
 #include "slc_codegen.h"
+
+#if SL_LIBC
+    #include <stdlib.h>
+#else
+void* _Nullable malloc(size_t size);
+void* _Nullable realloc(void* _Nullable ptr, size_t size);
+void free(void* _Nullable ptr);
+#endif
 
 SL_API_BEGIN
 
@@ -86,6 +90,40 @@ typedef struct {
     uint32_t  localScopeCap;
 } SLCBackendC;
 
+static size_t StrLen(const char* s) {
+    size_t n = 0;
+    while (s[n] != '\0') {
+        n++;
+    }
+    return n;
+}
+
+static int StrEq(const char* a, const char* b) {
+    while (*a != '\0' && *b != '\0') {
+        if (*a != *b) {
+            return 0;
+        }
+        a++;
+        b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+static int IsAlnumChar(char ch) {
+    unsigned char c = (unsigned char)ch;
+    return (c >= (unsigned char)'0' && c <= (unsigned char)'9')
+        || (c >= (unsigned char)'A' && c <= (unsigned char)'Z')
+        || (c >= (unsigned char)'a' && c <= (unsigned char)'z');
+}
+
+static char ToUpperChar(char ch) {
+    unsigned char c = (unsigned char)ch;
+    if (c >= (unsigned char)'a' && c <= (unsigned char)'z') {
+        c = (unsigned char)(c - (unsigned char)'a' + (unsigned char)'A');
+    }
+    return (char)c;
+}
+
 static void SetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
@@ -142,7 +180,7 @@ static int BufAppend(SLBuf* b, const char* s, uint32_t len) {
 }
 
 static int BufAppendCStr(SLBuf* b, const char* s) {
-    return BufAppend(b, s, (uint32_t)strlen(s));
+    return BufAppend(b, s, (uint32_t)StrLen(s));
 }
 
 static int BufAppendChar(SLBuf* b, char c) {
@@ -156,7 +194,7 @@ static int BufAppendSlice(SLBuf* b, const char* src, uint32_t start, uint32_t en
     return BufAppend(b, src + start, end - start);
 }
 
-static char* BufFinish(SLBuf* b) {
+static char* _Nullable BufFinish(SLBuf* b) {
     char* out;
     if (b->v == NULL) {
         out = (char*)malloc(1u);
@@ -181,11 +219,10 @@ static void EmitIndent(SLCBackendC* c, uint32_t depth) {
 }
 
 static int IsBuiltinType(const char* s) {
-    return strcmp(s, "void") == 0 || strcmp(s, "bool") == 0 || strcmp(s, "str") == 0
-        || strcmp(s, "u8") == 0 || strcmp(s, "u16") == 0 || strcmp(s, "u32") == 0
-        || strcmp(s, "u64") == 0 || strcmp(s, "i8") == 0 || strcmp(s, "i16") == 0
-        || strcmp(s, "i32") == 0 || strcmp(s, "i64") == 0 || strcmp(s, "usize") == 0
-        || strcmp(s, "isize") == 0 || strcmp(s, "f32") == 0 || strcmp(s, "f64") == 0;
+    return StrEq(s, "void") || StrEq(s, "bool") || StrEq(s, "str") || StrEq(s, "u8")
+        || StrEq(s, "u16") || StrEq(s, "u32") || StrEq(s, "u64") || StrEq(s, "i8")
+        || StrEq(s, "i16") || StrEq(s, "i32") || StrEq(s, "i64") || StrEq(s, "usize")
+        || StrEq(s, "isize") || StrEq(s, "f32") || StrEq(s, "f64");
 }
 
 static int SliceEq(const char* src, uint32_t start, uint32_t end, const char* s) {
@@ -208,7 +245,7 @@ static int SliceEqName(const char* src, uint32_t start, uint32_t end, const char
     return SliceEq(src, start, end, s);
 }
 
-static char* DupSlice(const char* src, uint32_t start, uint32_t end) {
+static char* _Nullable DupSlice(const char* src, uint32_t start, uint32_t end) {
     uint32_t len;
     char*    out;
     if (end < start) {
@@ -226,7 +263,7 @@ static char* DupSlice(const char* src, uint32_t start, uint32_t end) {
     return out;
 }
 
-static char* DupAndReplaceDots(const char* src, uint32_t start, uint32_t end) {
+static char* _Nullable DupAndReplaceDots(const char* src, uint32_t start, uint32_t end) {
     char*    out;
     uint32_t i;
     uint32_t len;
@@ -246,8 +283,8 @@ static char* DupAndReplaceDots(const char* src, uint32_t start, uint32_t end) {
     return out;
 }
 
-static char* DupCStr(const char* s) {
-    size_t n = strlen(s);
+static char* _Nullable DupCStr(const char* s) {
+    size_t n = StrLen(s);
     char*  out = (char*)malloc(n + 1u);
     if (out == NULL) {
         return NULL;
@@ -290,7 +327,7 @@ static int32_t AstNextSibling(const SLAST* ast, int32_t nodeId) {
     return ast->nodes[nodeId].nextSibling;
 }
 
-static const SLASTNode* NodeAt(const SLCBackendC* c, int32_t nodeId) {
+static const SLASTNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast.len) {
         return NULL;
     }
@@ -359,7 +396,8 @@ static int AddName(
     return 0;
 }
 
-static const SLNameMap* FindNameBySlice(const SLCBackendC* c, uint32_t start, uint32_t end) {
+static const SLNameMap* _Nullable FindNameBySlice(
+    const SLCBackendC* c, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = 0; i < c->nameLen; i++) {
         if (SliceEqName(c->unit->source, start, end, c->names[i].name)) {
@@ -369,17 +407,17 @@ static const SLNameMap* FindNameBySlice(const SLCBackendC* c, uint32_t start, ui
     return NULL;
 }
 
-static const SLNameMap* FindNameByCString(const SLCBackendC* c, const char* name) {
+static const SLNameMap* _Nullable FindNameByCString(const SLCBackendC* c, const char* name) {
     uint32_t i;
     for (i = 0; i < c->nameLen; i++) {
-        if (strcmp(c->names[i].name, name) == 0) {
+        if (StrEq(c->names[i].name, name)) {
             return &c->names[i];
         }
     }
     return NULL;
 }
 
-static const char* ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t end) {
+static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t end) {
     const SLNameMap*         mapped;
     char*                    normalized;
     uint32_t                 i;
@@ -395,7 +433,7 @@ static const char* ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t end)
 
     if (IsBuiltinType(normalized)) {
         for (i = 0; i < (uint32_t)(sizeof(builtinNames) / sizeof(builtinNames[0])); i++) {
-            if (strcmp(normalized, builtinNames[i]) == 0) {
+            if (StrEq(normalized, builtinNames[i])) {
                 free(normalized);
                 return builtinNames[i];
             }
@@ -506,7 +544,7 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
 static int AddFnSig(SLCBackendC* c, const char* name, SLTypeRef returnType) {
     uint32_t i;
     for (i = 0; i < c->fnSigLen; i++) {
-        if (strcmp(c->fnSigs[i].name, name) == 0) {
+        if (StrEq(c->fnSigs[i].name, name)) {
             c->fnSigs[i].returnType = returnType;
             return 0;
         }
@@ -535,7 +573,8 @@ static int AddFieldInfo(
     return 0;
 }
 
-static const SLFnSig* FindFnSigBySlice(const SLCBackendC* c, uint32_t start, uint32_t end) {
+static const SLFnSig* _Nullable FindFnSigBySlice(
+    const SLCBackendC* c, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = 0; i < c->fnSigLen; i++) {
         if (SliceEqName(c->unit->source, start, end, c->fnSigs[i].name)) {
@@ -545,11 +584,11 @@ static const SLFnSig* FindFnSigBySlice(const SLCBackendC* c, uint32_t start, uin
     return NULL;
 }
 
-static const SLFieldInfo* FindFieldInfo(
+static const SLFieldInfo* _Nullable FindFieldInfo(
     const SLCBackendC* c, const char* ownerType, uint32_t fieldStart, uint32_t fieldEnd) {
     uint32_t i;
     for (i = 0; i < c->fieldInfoLen; i++) {
-        if (strcmp(c->fieldInfos[i].ownerType, ownerType) == 0
+        if (StrEq(c->fieldInfos[i].ownerType, ownerType)
             && SliceEqName(c->unit->source, fieldStart, fieldEnd, c->fieldInfos[i].fieldName))
         {
             return &c->fieldInfos[i];
@@ -603,16 +642,16 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
             if (field != NULL && field->kind == SLAST_FIELD) {
                 int32_t   typeNode = AstFirstChild(&c->ast, child);
                 SLTypeRef fieldType;
+                char*     fieldName;
                 if (ParseTypeRef(c, typeNode, &fieldType) != 0) {
                     return -1;
                 }
-                if (AddFieldInfo(
-                        c,
-                        mapName->cName,
-                        DupSlice(c->unit->source, field->dataStart, field->dataEnd),
-                        fieldType)
-                    != 0)
-                {
+                fieldName = DupSlice(c->unit->source, field->dataStart, field->dataEnd);
+                if (fieldName == NULL) {
+                    return -1;
+                }
+                if (AddFieldInfo(c, mapName->cName, fieldName, fieldType) != 0) {
+                    free(fieldName);
                     return -1;
                 }
             }
@@ -668,7 +707,8 @@ static int AddLocal(SLCBackendC* c, const char* name, SLTypeRef type) {
     return 0;
 }
 
-static const SLLocal* FindLocalBySlice(const SLCBackendC* c, uint32_t start, uint32_t end) {
+static const SLLocal* _Nullable FindLocalBySlice(
+    const SLCBackendC* c, uint32_t start, uint32_t end) {
     uint32_t i = c->localLen;
     while (i > 0) {
         i--;
@@ -1744,13 +1784,13 @@ static int EmitPrelude(SLCBackendC* c) {
         "#endif\n\n");
 }
 
-static char* BuildDefaultMacro(const char* pkgName, const char* suffix) {
+static char* _Nullable BuildDefaultMacro(const char* pkgName, const char* suffix) {
     SLBuf  b = { 0 };
     size_t i;
     for (i = 0; pkgName[i] != '\0'; i++) {
         char ch = pkgName[i];
-        if (isalnum((unsigned char)ch)) {
-            ch = (char)toupper((unsigned char)ch);
+        if (IsAlnumChar(ch)) {
+            ch = ToUpperChar(ch);
         } else {
             ch = '_';
         }
@@ -1954,9 +1994,9 @@ static void FreeContext(SLCBackendC* c) {
 static int EmitCBackend(
     const SLCodegenBackend* backend,
     const SLCodegenUnit*    unit,
-    const SLCodegenOptions* options,
-    char**                  outHeader,
-    SLDiag*                 diag) {
+    const SLCodegenOptions* _Nullable options,
+    char** outHeader,
+    SLDiag* _Nullable diag) {
     SLCBackendC c;
     (void)backend;
 

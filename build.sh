@@ -31,7 +31,7 @@ done
 asan=${asan:-$debug} # enable by default in debug builds
 mode=debug; [ $debug = 0 ] && mode=release
 build_dir=_build/$sys-$arch-$mode
-cli_sources=( $(find src -maxdepth 2 -name 'slc.c' | sort) )
+cli_sources=( src/slc.c )
 lib_sources=( $(find src -maxdepth 2 -name '*.c' -and -not -name 'slc.c' | sort) )
 lib_headers=( $(find src -maxdepth 2 -name '*.h' | sort) )
 cli_output=slc
@@ -132,7 +132,7 @@ for srcfile in "${cli_sources[@]}" "${lib_sources[@]}"; do
 done
 
 cat << _END >> $NF
-build \$builddir/libsl.h: amalgamate src/libsl.h ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index
+build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index
 build \$builddir/slc: link ${objfiles[*]}
 
 build slc:     phony \$builddir/slc

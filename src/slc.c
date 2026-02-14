@@ -186,7 +186,7 @@ static int SliceEqSlice(
     return 1;
 }
 
-static char* DupCStr(const char* s) {
+static char* _Nullable DupCStr(const char* s) {
     size_t n = strlen(s);
     char*  out = (char*)malloc(n + 1u);
     if (out == NULL) {
@@ -196,7 +196,7 @@ static char* DupCStr(const char* s) {
     return out;
 }
 
-static char* DupSlice(const char* s, uint32_t start, uint32_t end) {
+static char* _Nullable DupSlice(const char* s, uint32_t start, uint32_t end) {
     uint32_t len;
     char*    out;
     if (end < start) {
@@ -282,7 +282,7 @@ static int SBAppendSlice(SLStringBuilder* b, const char* s, uint32_t start, uint
     return SBAppend(b, s + start, end - start);
 }
 
-static char* SBFinish(SLStringBuilder* b, uint32_t* outLen) {
+static char* _Nullable SBFinish(SLStringBuilder* b, uint32_t* _Nullable outLen) {
     char* out;
     if (b->v == NULL) {
         out = (char*)malloc(1u);
@@ -305,7 +305,7 @@ static char* SBFinish(SLStringBuilder* b, uint32_t* outLen) {
     return out;
 }
 
-static char* JoinPath(const char* a, const char* b) {
+static char* _Nullable JoinPath(const char* a, const char* b) {
     size_t aLen = strlen(a);
     size_t bLen = strlen(b);
     int    needSlash = 1;
@@ -329,7 +329,7 @@ static char* JoinPath(const char* a, const char* b) {
     return out;
 }
 
-static char* DirNameDup(const char* path) {
+static char* _Nullable DirNameDup(const char* path) {
     const char* slash = strrchr(path, '/');
     char*       out;
     size_t      len;
@@ -617,7 +617,7 @@ static int ParseSource(
     uint32_t    sourceLen,
     SLAST*      outAst,
     void**      outArenaMem,
-    SLArena*    outArena) {
+    SLArena* _Nullable outArena) {
     void*    arenaMem;
     uint64_t arenaCap64;
     size_t   arenaCap;
@@ -720,7 +720,7 @@ static int DecodeHexDigit(char c) {
     return -1;
 }
 
-static char* DecodeStringLiteral(const char* src, uint32_t start, uint32_t end) {
+static char* _Nullable DecodeStringLiteral(const char* src, uint32_t start, uint32_t end) {
     SLStringBuilder b = { 0 };
     uint32_t        i;
     if (end <= start + 1u || src[start] != '"' || src[end - 1u] != '"') {
@@ -778,7 +778,7 @@ static char* DecodeStringLiteral(const char* src, uint32_t start, uint32_t end) 
     return SBFinish(&b, NULL);
 }
 
-static char* DefaultImportAlias(const char* importPath) {
+static char* _Nullable DefaultImportAlias(const char* importPath) {
     const char* slash = strrchr(importPath, '/');
     if (slash == NULL || slash[1] == '\0') {
         return DupCStr(importPath);
@@ -1207,7 +1207,7 @@ static int ValidatePubFnDefinitions(const SLPackage* pkg) {
     return 0;
 }
 
-static const SLImportRef* FindImportByAliasSlice(
+static const SLImportRef* _Nullable FindImportByAliasSlice(
     const SLPackage* pkg, const char* src, uint32_t aliasStart, uint32_t aliasEnd) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
@@ -1278,7 +1278,7 @@ static int ValidatePackageSelectors(const SLPackage* pkg) {
     return 0;
 }
 
-static SLPackage* FindPackageByDir(const SLPackageLoader* loader, const char* dirPath) {
+static SLPackage* _Nullable FindPackageByDir(const SLPackageLoader* loader, const char* dirPath) {
     uint32_t i;
     for (i = 0; i < loader->packageLen; i++) {
         if (StrEq(loader->packages[i].dirPath, dirPath)) {
@@ -1309,7 +1309,7 @@ static int AddPackageSlot(SLPackageLoader* loader, const char* dirPath, SLPackag
     return 0;
 }
 
-static char* CanonicalizePath(const char* path) {
+static char* _Nullable CanonicalizePath(const char* path) {
     char* out = realpath(path, NULL);
     return out;
 }
@@ -1420,9 +1420,16 @@ static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SL
     return 0;
 }
 
-static const char* FindIdentReplacement(
-    const SLIdentMap* maps, uint32_t mapLen, const char* src, uint32_t start, uint32_t end) {
+static const char* _Nullable FindIdentReplacement(
+    const SLIdentMap* _Nullable maps,
+    uint32_t    mapLen,
+    const char* src,
+    uint32_t    start,
+    uint32_t    end) {
     uint32_t i;
+    if (maps == NULL || mapLen == 0) {
+        return NULL;
+    }
     for (i = 0; i < mapLen; i++) {
         size_t len = strlen(maps[i].name);
         if (len == (size_t)(end - start) && memcmp(maps[i].name, src + start, len) == 0) {
@@ -1433,13 +1440,13 @@ static const char* FindIdentReplacement(
 }
 
 static int RewriteText(
-    const char*        src,
-    uint32_t           srcLen,
-    const SLImportRef* imports,
-    uint32_t           importLen,
-    const SLIdentMap*  maps,
-    uint32_t           mapLen,
-    char**             outText) {
+    const char* src,
+    uint32_t    srcLen,
+    const SLImportRef* _Nullable imports,
+    uint32_t importLen,
+    const SLIdentMap* _Nullable maps,
+    uint32_t mapLen,
+    char**   outText) {
     void*           arenaMem = NULL;
     size_t          arenaCap;
     uint64_t        arenaCap64;
@@ -1451,6 +1458,9 @@ static int RewriteText(
     uint32_t        copyPos = 0;
 
     *outText = NULL;
+    if ((importLen > 0 && imports == NULL) || (mapLen > 0 && maps == NULL)) {
+        return ErrorSimple("internal error: missing rewrite mappings");
+    }
     arenaCap64 = (uint64_t)(srcLen + 16u) * (uint64_t)sizeof(SLToken) + 4096u;
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
         return ErrorSimple("arena too large");
@@ -1791,7 +1801,7 @@ static int CheckPackageDir(const char* entryPath) {
     return 0;
 }
 
-static int WriteOutput(const char* outFilename, const char* data, uint32_t len) {
+static int WriteOutput(const char* _Nullable outFilename, const char* data, uint32_t len) {
     FILE*  out;
     size_t nwritten;
     if (outFilename == NULL) {
@@ -1844,7 +1854,7 @@ static int ParseGenpkgMode(const char* mode, char* outBackend, uint32_t outBacke
 }
 
 static int GeneratePackage(
-    const char* entryPath, const char* backendName, const char* outFilename) {
+    const char* entryPath, const char* backendName, const char* _Nullable outFilename) {
     SLPackageLoader         loader;
     SLPackage*              entryPkg;
     char*                   source = NULL;
