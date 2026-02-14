@@ -7,6 +7,8 @@ To get a deeper understanding of the project, read `*.md` files in the repo root
 After you have made changes:
 - run `./build.sh test` to verify that everything works.
 - update tests (end of `build.sh`) to ensure new and changed code is covered by tests.
+- be aware that `build.sh` runs `clang-format` so assume that any source files you've
+  changed will have been altered by `clang-format`.
 
 ## Build and Test
 

@@ -17,6 +17,7 @@ compdb=1  # write compile_commands.json after configuring build
 config=0  # just config, don't build
 asan=     # enable address sanitizer (default: value of debug)
 ubsan=1   # enable undefined-behavior sanitizer
+format=   # run clang-format on the source (default: on if clang-format is found and debug=1)
 test=0    # run tests after successful build
 cc=clang  # compiler to use (also used for linking)
 [ "$*" = "--help" ] && { echo "Usage: $0 [var[=value] ...]"; exit 0; };
@@ -36,6 +37,7 @@ cli_output=slc
 lib_output=libsl.h
 toolchain=${toolchain:-/opt/homebrew/opt/llvm}
 [ -z "$toolchain" -a -x "$toolchain/bin/clang" ] || export PATH=$toolchain/bin:$PATH
+format=${format:-$([ $debug = 1 -a -n "$(command -v clang-format)" ] && echo 1 || echo 0 )}
 x_flags=(
     -g \
     $([ -t 2 ] && echo -fcolor-diagnostics || true) \
@@ -86,6 +88,10 @@ c_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${c_flags[@]:-}")
 l_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${l_flags[@]:-}")
 _END
 fi
+
+####################################################################################################
+# format
+[ $format = 0 ] || clang-format --Werror --style=file:clang-format.yaml -i src/*.*
 
 ####################################################################################################
 # configure

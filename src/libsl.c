@@ -26,38 +26,22 @@ void SLDiagClear(SLDiag* diag) {
 
 const char* SLDiagMessage(SLDiagCode code) {
     switch (code) {
-        case SLDiag_NONE:
-            return "no error";
-        case SLDiag_ARENA_OOM:
-            return "arena out of memory";
-        case SLDiag_UNEXPECTED_CHAR:
-            return "unexpected character";
-        case SLDiag_UNTERMINATED_STRING:
-            return "unterminated string literal";
-        case SLDiag_INVALID_NUMBER:
-            return "invalid number literal";
-        case SLDiag_UNEXPECTED_TOKEN:
-            return "unexpected token";
-        case SLDiag_EXPECTED_DECL:
-            return "expected declaration";
-        case SLDiag_EXPECTED_EXPR:
-            return "expected expression";
-        case SLDiag_EXPECTED_TYPE:
-            return "expected type";
-        case SLDiag_DUPLICATE_SYMBOL:
-            return "duplicate symbol";
-        case SLDiag_UNKNOWN_SYMBOL:
-            return "unknown symbol";
-        case SLDiag_UNKNOWN_TYPE:
-            return "unknown type";
-        case SLDiag_TYPE_MISMATCH:
-            return "type mismatch";
-        case SLDiag_ARITY_MISMATCH:
-            return "call arity mismatch";
-        case SLDiag_NOT_CALLABLE:
-            return "expression is not callable";
-        case SLDiag_EXPECTED_BOOL:
-            return "expected bool expression";
+        case SLDiag_NONE:                return "no error";
+        case SLDiag_ARENA_OOM:           return "arena out of memory";
+        case SLDiag_UNEXPECTED_CHAR:     return "unexpected character";
+        case SLDiag_UNTERMINATED_STRING: return "unterminated string literal";
+        case SLDiag_INVALID_NUMBER:      return "invalid number literal";
+        case SLDiag_UNEXPECTED_TOKEN:    return "unexpected token";
+        case SLDiag_EXPECTED_DECL:       return "expected declaration";
+        case SLDiag_EXPECTED_EXPR:       return "expected expression";
+        case SLDiag_EXPECTED_TYPE:       return "expected type";
+        case SLDiag_DUPLICATE_SYMBOL:    return "duplicate symbol";
+        case SLDiag_UNKNOWN_SYMBOL:      return "unknown symbol";
+        case SLDiag_UNKNOWN_TYPE:        return "unknown type";
+        case SLDiag_TYPE_MISMATCH:       return "type mismatch";
+        case SLDiag_ARITY_MISMATCH:      return "call arity mismatch";
+        case SLDiag_NOT_CALLABLE:        return "expression is not callable";
+        case SLDiag_EXPECTED_BOOL:       return "expected bool expression";
     }
     return "unknown diagnostic";
 }
@@ -94,8 +78,8 @@ void* _Nullable SLArenaAlloc(SLArena* arena, uint32_t size, uint32_t align) {
 }
 
 static int SLIsAlpha(unsigned char c) {
-    return (c >= (unsigned char)'A' && c <= (unsigned char)'Z') ||
-           (c >= (unsigned char)'a' && c <= (unsigned char)'z');
+    return (c >= (unsigned char)'A' && c <= (unsigned char)'Z')
+        || (c >= (unsigned char)'a' && c <= (unsigned char)'z');
 }
 
 static int SLIsDigit(unsigned char c) {
@@ -107,9 +91,8 @@ static int SLIsAlnum(unsigned char c) {
 }
 
 static int SLIsHexDigit(unsigned char c) {
-    return SLIsDigit(c) ||
-           (c >= (unsigned char)'a' && c <= (unsigned char)'f') ||
-           (c >= (unsigned char)'A' && c <= (unsigned char)'F');
+    return SLIsDigit(c) || (c >= (unsigned char)'a' && c <= (unsigned char)'f')
+        || (c >= (unsigned char)'A' && c <= (unsigned char)'F');
 }
 
 static int SLStrEq(const char* a, uint32_t aLen, const char* b) {
@@ -217,15 +200,13 @@ static int SLTokenCanEndStmt(SLTokenKind kind) {
         case SLTok_RETURN:
         case SLTok_RPAREN:
         case SLTok_RBRACK:
-        case SLTok_RBRACE:
-            return 1;
-        default:
-            return 0;
+        case SLTok_RBRACE:   return 1;
+        default:             return 0;
     }
 }
 
-static int SLPushToken(SLTokenBuf* out, SLDiag* diag, SLTokenKind kind, uint32_t start,
-                         uint32_t end) {
+static int SLPushToken(
+    SLTokenBuf* out, SLDiag* diag, SLTokenKind kind, uint32_t start, uint32_t end) {
     if (out->len >= out->cap) {
         SLSetDiag(diag, SLDiag_ARENA_OOM, start, end);
         return -1;
@@ -240,152 +221,83 @@ static int SLPushToken(SLTokenBuf* out, SLDiag* diag, SLTokenKind kind, uint32_t
 
 const char* SLTokenKindName(SLTokenKind kind) {
     switch (kind) {
-        case SLTok_INVALID:
-            return "INVALID";
-        case SLTok_EOF:
-            return "EOF";
-        case SLTok_IDENT:
-            return "IDENT";
-        case SLTok_INT:
-            return "INT";
-        case SLTok_FLOAT:
-            return "FLOAT";
-        case SLTok_STRING:
-            return "STRING";
-        case SLTok_PACKAGE:
-            return "PACKAGE";
-        case SLTok_IMPORT:
-            return "IMPORT";
-        case SLTok_PUB:
-            return "PUB";
-        case SLTok_STRUCT:
-            return "STRUCT";
-        case SLTok_UNION:
-            return "UNION";
-        case SLTok_ENUM:
-            return "ENUM";
-        case SLTok_FUN:
-            return "FUN";
-        case SLTok_VAR:
-            return "VAR";
-        case SLTok_CONST:
-            return "CONST";
-        case SLTok_IF:
-            return "IF";
-        case SLTok_ELSE:
-            return "ELSE";
-        case SLTok_FOR:
-            return "FOR";
-        case SLTok_SWITCH:
-            return "SWITCH";
-        case SLTok_CASE:
-            return "CASE";
-        case SLTok_DEFAULT:
-            return "DEFAULT";
-        case SLTok_BREAK:
-            return "BREAK";
-        case SLTok_CONTINUE:
-            return "CONTINUE";
-        case SLTok_RETURN:
-            return "RETURN";
-        case SLTok_DEFER:
-            return "DEFER";
-        case SLTok_ASSERT:
-            return "ASSERT";
-        case SLTok_TRUE:
-            return "TRUE";
-        case SLTok_FALSE:
-            return "FALSE";
-        case SLTok_AS:
-            return "AS";
-        case SLTok_LPAREN:
-            return "LPAREN";
-        case SLTok_RPAREN:
-            return "RPAREN";
-        case SLTok_LBRACE:
-            return "LBRACE";
-        case SLTok_RBRACE:
-            return "RBRACE";
-        case SLTok_LBRACK:
-            return "LBRACK";
-        case SLTok_RBRACK:
-            return "RBRACK";
-        case SLTok_COMMA:
-            return "COMMA";
-        case SLTok_DOT:
-            return "DOT";
-        case SLTok_SEMICOLON:
-            return "SEMICOLON";
-        case SLTok_COLON:
-            return "COLON";
-        case SLTok_ASSIGN:
-            return "ASSIGN";
-        case SLTok_ADD:
-            return "ADD";
-        case SLTok_SUB:
-            return "SUB";
-        case SLTok_MUL:
-            return "MUL";
-        case SLTok_DIV:
-            return "DIV";
-        case SLTok_MOD:
-            return "MOD";
-        case SLTok_AND:
-            return "AND";
-        case SLTok_OR:
-            return "OR";
-        case SLTok_XOR:
-            return "XOR";
-        case SLTok_NOT:
-            return "NOT";
-        case SLTok_LSHIFT:
-            return "LSHIFT";
-        case SLTok_RSHIFT:
-            return "RSHIFT";
-        case SLTok_EQ:
-            return "EQ";
-        case SLTok_NEQ:
-            return "NEQ";
-        case SLTok_LT:
-            return "LT";
-        case SLTok_GT:
-            return "GT";
-        case SLTok_LTE:
-            return "LTE";
-        case SLTok_GTE:
-            return "GTE";
-        case SLTok_LOGICAL_AND:
-            return "LOGICAL_AND";
-        case SLTok_LOGICAL_OR:
-            return "LOGICAL_OR";
-        case SLTok_ADD_ASSIGN:
-            return "ADD_ASSIGN";
-        case SLTok_SUB_ASSIGN:
-            return "SUB_ASSIGN";
-        case SLTok_MUL_ASSIGN:
-            return "MUL_ASSIGN";
-        case SLTok_DIV_ASSIGN:
-            return "DIV_ASSIGN";
-        case SLTok_MOD_ASSIGN:
-            return "MOD_ASSIGN";
-        case SLTok_AND_ASSIGN:
-            return "AND_ASSIGN";
-        case SLTok_OR_ASSIGN:
-            return "OR_ASSIGN";
-        case SLTok_XOR_ASSIGN:
-            return "XOR_ASSIGN";
-        case SLTok_LSHIFT_ASSIGN:
-            return "LSHIFT_ASSIGN";
-        case SLTok_RSHIFT_ASSIGN:
-            return "RSHIFT_ASSIGN";
+        case SLTok_INVALID:       return "INVALID";
+        case SLTok_EOF:           return "EOF";
+        case SLTok_IDENT:         return "IDENT";
+        case SLTok_INT:           return "INT";
+        case SLTok_FLOAT:         return "FLOAT";
+        case SLTok_STRING:        return "STRING";
+        case SLTok_PACKAGE:       return "PACKAGE";
+        case SLTok_IMPORT:        return "IMPORT";
+        case SLTok_PUB:           return "PUB";
+        case SLTok_STRUCT:        return "STRUCT";
+        case SLTok_UNION:         return "UNION";
+        case SLTok_ENUM:          return "ENUM";
+        case SLTok_FUN:           return "FUN";
+        case SLTok_VAR:           return "VAR";
+        case SLTok_CONST:         return "CONST";
+        case SLTok_IF:            return "IF";
+        case SLTok_ELSE:          return "ELSE";
+        case SLTok_FOR:           return "FOR";
+        case SLTok_SWITCH:        return "SWITCH";
+        case SLTok_CASE:          return "CASE";
+        case SLTok_DEFAULT:       return "DEFAULT";
+        case SLTok_BREAK:         return "BREAK";
+        case SLTok_CONTINUE:      return "CONTINUE";
+        case SLTok_RETURN:        return "RETURN";
+        case SLTok_DEFER:         return "DEFER";
+        case SLTok_ASSERT:        return "ASSERT";
+        case SLTok_TRUE:          return "TRUE";
+        case SLTok_FALSE:         return "FALSE";
+        case SLTok_AS:            return "AS";
+        case SLTok_LPAREN:        return "LPAREN";
+        case SLTok_RPAREN:        return "RPAREN";
+        case SLTok_LBRACE:        return "LBRACE";
+        case SLTok_RBRACE:        return "RBRACE";
+        case SLTok_LBRACK:        return "LBRACK";
+        case SLTok_RBRACK:        return "RBRACK";
+        case SLTok_COMMA:         return "COMMA";
+        case SLTok_DOT:           return "DOT";
+        case SLTok_SEMICOLON:     return "SEMICOLON";
+        case SLTok_COLON:         return "COLON";
+        case SLTok_ASSIGN:        return "ASSIGN";
+        case SLTok_ADD:           return "ADD";
+        case SLTok_SUB:           return "SUB";
+        case SLTok_MUL:           return "MUL";
+        case SLTok_DIV:           return "DIV";
+        case SLTok_MOD:           return "MOD";
+        case SLTok_AND:           return "AND";
+        case SLTok_OR:            return "OR";
+        case SLTok_XOR:           return "XOR";
+        case SLTok_NOT:           return "NOT";
+        case SLTok_LSHIFT:        return "LSHIFT";
+        case SLTok_RSHIFT:        return "RSHIFT";
+        case SLTok_EQ:            return "EQ";
+        case SLTok_NEQ:           return "NEQ";
+        case SLTok_LT:            return "LT";
+        case SLTok_GT:            return "GT";
+        case SLTok_LTE:           return "LTE";
+        case SLTok_GTE:           return "GTE";
+        case SLTok_LOGICAL_AND:   return "LOGICAL_AND";
+        case SLTok_LOGICAL_OR:    return "LOGICAL_OR";
+        case SLTok_ADD_ASSIGN:    return "ADD_ASSIGN";
+        case SLTok_SUB_ASSIGN:    return "SUB_ASSIGN";
+        case SLTok_MUL_ASSIGN:    return "MUL_ASSIGN";
+        case SLTok_DIV_ASSIGN:    return "DIV_ASSIGN";
+        case SLTok_MOD_ASSIGN:    return "MOD_ASSIGN";
+        case SLTok_AND_ASSIGN:    return "AND_ASSIGN";
+        case SLTok_OR_ASSIGN:     return "OR_ASSIGN";
+        case SLTok_XOR_ASSIGN:    return "XOR_ASSIGN";
+        case SLTok_LSHIFT_ASSIGN: return "LSHIFT_ASSIGN";
+        case SLTok_RSHIFT_ASSIGN: return "RSHIFT_ASSIGN";
     }
     return "UNKNOWN";
 }
 
 int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
-    SLTokenBuf tokbuf;
-    uint32_t pos = 0;
-    int insertedEOFSemicolon = 0;
+    SLTokenBuf  tokbuf;
+    uint32_t    pos = 0;
+    int         insertedEOFSemicolon = 0;
     SLTokenKind prevKind = SLTok_INVALID;
 
     SLDiagClear(diag);
@@ -397,15 +309,15 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
     if (tokbuf.cap < 8) {
         tokbuf.cap = 8;
     }
-    tokbuf.v = (SLToken*)SLArenaAlloc(arena, tokbuf.cap * (uint32_t)sizeof(SLToken),
-                                         (uint32_t)_Alignof(SLToken));
+    tokbuf.v = (SLToken*)SLArenaAlloc(
+        arena, tokbuf.cap * (uint32_t)sizeof(SLToken), (uint32_t)_Alignof(SLToken));
     if (tokbuf.v == NULL) {
         SLSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
     }
 
     for (;;) {
-        int sawNewline = 0;
+        int      sawNewline = 0;
         uint32_t newlinePos = 0;
 
         for (;;) {
@@ -415,8 +327,9 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
             }
 
             c = (unsigned char)src.ptr[pos];
-            if (c == (unsigned char)' ' || c == (unsigned char)'\t' || c == (unsigned char)'\r' ||
-                c == (unsigned char)'\f' || c == (unsigned char)'\v') {
+            if (c == (unsigned char)' ' || c == (unsigned char)'\t' || c == (unsigned char)'\r'
+                || c == (unsigned char)'\f' || c == (unsigned char)'\v')
+            {
                 pos++;
                 continue;
             }
@@ -430,8 +343,9 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                 continue;
             }
 
-            if (c == (unsigned char)'/' && pos + 1 < src.len &&
-                (unsigned char)src.ptr[pos + 1] == (unsigned char)'/') {
+            if (c == (unsigned char)'/' && pos + 1 < src.len
+                && (unsigned char)src.ptr[pos + 1] == (unsigned char)'/')
+            {
                 pos += 2;
                 while (pos < src.len && (unsigned char)src.ptr[pos] != (unsigned char)'\n') {
                     pos++;
@@ -465,8 +379,8 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
         }
 
         {
-            SLTokenKind kind = SLTok_INVALID;
-            uint32_t start = pos;
+            SLTokenKind   kind = SLTok_INVALID;
+            uint32_t      start = pos;
             unsigned char c = (unsigned char)src.ptr[pos];
 
             if (SLIsAlpha(c) || c == (unsigned char)'_') {
@@ -482,9 +396,10 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
             } else if (SLIsDigit(c)) {
                 kind = SLTok_INT;
 
-                if (c == (unsigned char)'0' && pos + 1 < src.len &&
-                    ((unsigned char)src.ptr[pos + 1] == (unsigned char)'x' ||
-                     (unsigned char)src.ptr[pos + 1] == (unsigned char)'X')) {
+                if (c == (unsigned char)'0' && pos + 1 < src.len
+                    && ((unsigned char)src.ptr[pos + 1] == (unsigned char)'x'
+                        || (unsigned char)src.ptr[pos + 1] == (unsigned char)'X'))
+                {
                     uint32_t digitsStart;
                     pos += 2;
                     digitsStart = pos;
@@ -508,13 +423,17 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                         }
                     }
 
-                    if (pos < src.len && ((unsigned char)src.ptr[pos] == (unsigned char)'e' ||
-                                          (unsigned char)src.ptr[pos] == (unsigned char)'E')) {
+                    if (pos < src.len
+                        && ((unsigned char)src.ptr[pos] == (unsigned char)'e'
+                            || (unsigned char)src.ptr[pos] == (unsigned char)'E'))
+                    {
                         uint32_t expStart;
                         kind = SLTok_FLOAT;
                         pos++;
-                        if (pos < src.len && ((unsigned char)src.ptr[pos] == (unsigned char)'+' ||
-                                              (unsigned char)src.ptr[pos] == (unsigned char)'-')) {
+                        if (pos < src.len
+                            && ((unsigned char)src.ptr[pos] == (unsigned char)'+'
+                                || (unsigned char)src.ptr[pos] == (unsigned char)'-'))
+                        {
                             pos++;
                         }
                         expStart = pos;
@@ -558,36 +477,16 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
             } else {
                 pos++;
                 switch (c) {
-                    case (unsigned char)'(':
-                        kind = SLTok_LPAREN;
-                        break;
-                    case (unsigned char)')':
-                        kind = SLTok_RPAREN;
-                        break;
-                    case (unsigned char)'{':
-                        kind = SLTok_LBRACE;
-                        break;
-                    case (unsigned char)'}':
-                        kind = SLTok_RBRACE;
-                        break;
-                    case (unsigned char)'[':
-                        kind = SLTok_LBRACK;
-                        break;
-                    case (unsigned char)']':
-                        kind = SLTok_RBRACK;
-                        break;
-                    case (unsigned char)',':
-                        kind = SLTok_COMMA;
-                        break;
-                    case (unsigned char)'.':
-                        kind = SLTok_DOT;
-                        break;
-                    case (unsigned char)';':
-                        kind = SLTok_SEMICOLON;
-                        break;
-                    case (unsigned char)':':
-                        kind = SLTok_COLON;
-                        break;
+                    case (unsigned char)'(': kind = SLTok_LPAREN; break;
+                    case (unsigned char)')': kind = SLTok_RPAREN; break;
+                    case (unsigned char)'{': kind = SLTok_LBRACE; break;
+                    case (unsigned char)'}': kind = SLTok_RBRACE; break;
+                    case (unsigned char)'[': kind = SLTok_LBRACK; break;
+                    case (unsigned char)']': kind = SLTok_RBRACK; break;
+                    case (unsigned char)',': kind = SLTok_COMMA; break;
+                    case (unsigned char)'.': kind = SLTok_DOT; break;
+                    case (unsigned char)';': kind = SLTok_SEMICOLON; break;
+                    case (unsigned char)':': kind = SLTok_COLON; break;
 
                     case (unsigned char)'+':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {
@@ -633,8 +532,9 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'&') {
                             pos++;
                             kind = SLTok_LOGICAL_AND;
-                        } else if (pos < src.len &&
-                                   (unsigned char)src.ptr[pos] == (unsigned char)'=') {
+                        } else if (
+                            pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
+                        {
                             pos++;
                             kind = SLTok_AND_ASSIGN;
                         } else {
@@ -645,8 +545,9 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'|') {
                             pos++;
                             kind = SLTok_LOGICAL_OR;
-                        } else if (pos < src.len &&
-                                   (unsigned char)src.ptr[pos] == (unsigned char)'=') {
+                        } else if (
+                            pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
+                        {
                             pos++;
                             kind = SLTok_OR_ASSIGN;
                         } else {
@@ -680,15 +581,16 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                     case (unsigned char)'<':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'<') {
                             pos++;
-                            if (pos < src.len &&
-                                (unsigned char)src.ptr[pos] == (unsigned char)'=') {
+                            if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
+                            {
                                 pos++;
                                 kind = SLTok_LSHIFT_ASSIGN;
                             } else {
                                 kind = SLTok_LSHIFT;
                             }
-                        } else if (pos < src.len &&
-                                   (unsigned char)src.ptr[pos] == (unsigned char)'=') {
+                        } else if (
+                            pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
+                        {
                             pos++;
                             kind = SLTok_LTE;
                         } else {
@@ -698,15 +600,16 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                     case (unsigned char)'>':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'>') {
                             pos++;
-                            if (pos < src.len &&
-                                (unsigned char)src.ptr[pos] == (unsigned char)'=') {
+                            if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
+                            {
                                 pos++;
                                 kind = SLTok_RSHIFT_ASSIGN;
                             } else {
                                 kind = SLTok_RSHIFT;
                             }
-                        } else if (pos < src.len &&
-                                   (unsigned char)src.ptr[pos] == (unsigned char)'=') {
+                        } else if (
+                            pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
+                        {
                             pos++;
                             kind = SLTok_GTE;
                         } else {
@@ -714,9 +617,7 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                         }
                         break;
 
-                    default:
-                        SLSetDiag(diag, SLDiag_UNEXPECTED_CHAR, start, pos);
-                        return -1;
+                    default: SLSetDiag(diag, SLDiag_UNEXPECTED_CHAR, start, pos); return -1;
                 }
             }
 
@@ -733,14 +634,14 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
 }
 
 typedef struct {
-    SLStrView src;
+    SLStrView      src;
     const SLToken* tok;
-    uint32_t tokLen;
-    uint32_t pos;
-    SLASTNode* nodes;
-    uint32_t nodeLen;
-    uint32_t nodeCap;
-    SLDiag* diag;
+    uint32_t       tokLen;
+    uint32_t       pos;
+    SLASTNode*     nodes;
+    uint32_t       nodeLen;
+    uint32_t       nodeCap;
+    SLDiag*        diag;
 } SLParser;
 
 static const SLToken* SLPPeek(SLParser* p) {
@@ -832,10 +733,8 @@ static int SLIsAssignmentOp(SLTokenKind kind) {
         case SLTok_OR_ASSIGN:
         case SLTok_XOR_ASSIGN:
         case SLTok_LSHIFT_ASSIGN:
-        case SLTok_RSHIFT_ASSIGN:
-            return 1;
-        default:
-            return 0;
+        case SLTok_RSHIFT_ASSIGN: return 1;
+        default:                  return 0;
     }
 }
 
@@ -844,36 +743,25 @@ static int SLBinPrec(SLTokenKind kind) {
         return 1;
     }
     switch (kind) {
-        case SLTok_LOGICAL_OR:
-            return 2;
-        case SLTok_LOGICAL_AND:
-            return 3;
-        case SLTok_OR:
-            return 4;
-        case SLTok_XOR:
-            return 5;
-        case SLTok_AND:
-            return 6;
+        case SLTok_LOGICAL_OR:  return 2;
+        case SLTok_LOGICAL_AND: return 3;
+        case SLTok_OR:          return 4;
+        case SLTok_XOR:         return 5;
+        case SLTok_AND:         return 6;
         case SLTok_EQ:
-        case SLTok_NEQ:
-            return 7;
+        case SLTok_NEQ:         return 7;
         case SLTok_LT:
         case SLTok_GT:
         case SLTok_LTE:
-        case SLTok_GTE:
-            return 8;
+        case SLTok_GTE:         return 8;
         case SLTok_LSHIFT:
-        case SLTok_RSHIFT:
-            return 9;
+        case SLTok_RSHIFT:      return 9;
         case SLTok_ADD:
-        case SLTok_SUB:
-            return 10;
+        case SLTok_SUB:         return 10;
         case SLTok_MUL:
         case SLTok_DIV:
-        case SLTok_MOD:
-            return 11;
-        default:
-            return 0;
+        case SLTok_MOD:         return 11;
+        default:                return 0;
     }
 }
 
@@ -885,7 +773,7 @@ static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out);
 static int SLPParseTypeName(SLParser* p, int32_t* out) {
     const SLToken* first;
     const SLToken* last;
-    int32_t n;
+    int32_t        n;
 
     if (SLPExpect(p, SLTok_IDENT, SLDiag_EXPECTED_TYPE, &first) != 0) {
         return -1;
@@ -909,8 +797,8 @@ static int SLPParseTypeName(SLParser* p, int32_t* out) {
 
 static int SLPParseType(SLParser* p, int32_t* out) {
     const SLToken* t;
-    int32_t typeNode;
-    int32_t child;
+    int32_t        typeNode;
+    int32_t        child;
 
     if (SLPMatch(p, SLTok_MUL)) {
         t = SLPPrev(p);
@@ -952,7 +840,7 @@ static int SLPParseType(SLParser* p, int32_t* out) {
 
 static int SLPParsePrimary(SLParser* p, int32_t* out) {
     const SLToken* t = SLPPeek(p);
-    int32_t n;
+    int32_t        n;
 
     if (SLPMatch(p, SLTok_IDENT)) {
         n = SLPNewNode(p, SLAST_IDENT, t->start, t->end);
@@ -1025,7 +913,7 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
 
 static int SLPParsePostfix(SLParser* p, int32_t* expr) {
     for (;;) {
-        int32_t n;
+        int32_t        n;
         const SLToken* t;
 
         if (SLPMatch(p, SLTok_LPAREN)) {
@@ -1127,9 +1015,9 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
 }
 
 static int SLPParsePrefix(SLParser* p, int32_t* out) {
-    SLTokenKind op = SLPPeek(p)->kind;
-    int32_t rhs;
-    int32_t n;
+    SLTokenKind    op = SLPPeek(p)->kind;
+    int32_t        rhs;
+    int32_t        n;
     const SLToken* t = SLPPeek(p);
 
     switch (op) {
@@ -1168,10 +1056,10 @@ static int SLPParseExpr(SLParser* p, int minPrec, int32_t* out) {
 
     for (;;) {
         SLTokenKind op = SLPPeek(p)->kind;
-        int prec = SLBinPrec(op);
-        int rightAssoc = SLIsAssignmentOp(op);
-        int32_t rhs;
-        int32_t n;
+        int         prec = SLBinPrec(op);
+        int         rightAssoc = SLIsAssignmentOp(op);
+        int32_t     rhs;
+        int32_t     n;
 
         if (prec < minPrec || prec == 0) {
             break;
@@ -1197,8 +1085,8 @@ static int SLPParseExpr(SLParser* p, int minPrec, int32_t* out) {
 
 static int SLPParseParam(SLParser* p, int32_t* out) {
     const SLToken* name;
-    int32_t param;
-    int32_t type;
+    int32_t        param;
+    int32_t        type;
     if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &name) != 0) {
         return -1;
     }
@@ -1221,7 +1109,7 @@ static int SLPParseParam(SLParser* p, int32_t* out) {
 static int SLPParseBlock(SLParser* p, int32_t* out) {
     const SLToken* lb;
     const SLToken* rb;
-    int32_t block;
+    int32_t        block;
 
     if (SLPExpect(p, SLTok_LBRACE, SLDiag_UNEXPECTED_TOKEN, &lb) != 0) {
         return -1;
@@ -1256,8 +1144,8 @@ static int SLPParseBlock(SLParser* p, int32_t* out) {
 static int SLPParseVarLikeStmt(SLParser* p, SLASTKind kind, int requireSemi, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
     const SLToken* name;
-    int32_t n;
-    int32_t type;
+    int32_t        n;
+    int32_t        type;
 
     p->pos++;
     if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &name) != 0) {
@@ -1301,9 +1189,9 @@ static int SLPParseVarLikeStmt(SLParser* p, SLASTKind kind, int requireSemi, int
 
 static int SLPParseIfStmt(SLParser* p, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
-    int32_t n;
-    int32_t cond;
-    int32_t thenBlock;
+    int32_t        n;
+    int32_t        cond;
+    int32_t        thenBlock;
 
     p->pos++;
     if (SLPParseExpr(p, 1, &cond) != 0) {
@@ -1350,11 +1238,11 @@ static int SLPParseIfStmt(SLParser* p, int32_t* out) {
 
 static int SLPParseForStmt(SLParser* p, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
-    int32_t n;
-    int32_t body;
-    int32_t init = -1;
-    int32_t cond = -1;
-    int32_t post = -1;
+    int32_t        n;
+    int32_t        body;
+    int32_t        init = -1;
+    int32_t        cond = -1;
+    int32_t        post = -1;
 
     p->pos++;
     n = SLPNewNode(p, SLAST_FOR, kw->start, kw->end);
@@ -1422,19 +1310,15 @@ static int SLPParseForStmt(SLParser* p, int32_t* out) {
 
 static int SLPParseStmt(SLParser* p, int32_t* out) {
     const SLToken* kw;
-    int32_t n;
-    int32_t expr;
-    int32_t block;
+    int32_t        n;
+    int32_t        expr;
+    int32_t        block;
 
     switch (SLPPeek(p)->kind) {
-        case SLTok_VAR:
-            return SLPParseVarLikeStmt(p, SLAST_VAR, 1, out);
-        case SLTok_CONST:
-            return SLPParseVarLikeStmt(p, SLAST_CONST, 1, out);
-        case SLTok_IF:
-            return SLPParseIfStmt(p, out);
-        case SLTok_FOR:
-            return SLPParseForStmt(p, out);
+        case SLTok_VAR:   return SLPParseVarLikeStmt(p, SLAST_VAR, 1, out);
+        case SLTok_CONST: return SLPParseVarLikeStmt(p, SLAST_CONST, 1, out);
+        case SLTok_IF:    return SLPParseIfStmt(p, out);
+        case SLTok_FOR:   return SLPParseForStmt(p, out);
         case SLTok_RETURN:
             kw = SLPPeek(p);
             p->pos++;
@@ -1505,8 +1389,7 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
             p->nodes[n].end = p->nodes[block].end;
             *out = n;
             return 0;
-        case SLTok_LBRACE:
-            return SLPParseBlock(p, out);
+        case SLTok_LBRACE: return SLPParseBlock(p, out);
         default:
             if (SLPParseExpr(p, 1, &expr) != 0) {
                 return -1;
@@ -1529,8 +1412,8 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
 static int SLPParseFieldList(SLParser* p, int32_t agg) {
     while (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
         const SLToken* name;
-        int32_t field;
-        int32_t type;
+        int32_t        field;
+        int32_t        type;
         if (SLPAt(p, SLTok_SEMICOLON) || SLPAt(p, SLTok_COMMA)) {
             p->pos++;
             continue;
@@ -1564,8 +1447,8 @@ static int SLPParseAggregateDecl(SLParser* p, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
     const SLToken* name;
     const SLToken* rb;
-    SLASTKind kind = SLAST_STRUCT;
-    int32_t n;
+    SLASTKind      kind = SLAST_STRUCT;
+    int32_t        n;
 
     if (kw->kind == SLTok_UNION) {
         kind = SLAST_UNION;
@@ -1600,7 +1483,7 @@ static int SLPParseAggregateDecl(SLParser* p, int32_t* out) {
     if (kw->kind == SLTok_ENUM) {
         while (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
             const SLToken* itemName;
-            int32_t item;
+            int32_t        item;
             if (SLPAt(p, SLTok_COMMA) || SLPAt(p, SLTok_SEMICOLON)) {
                 p->pos++;
                 continue;
@@ -1649,7 +1532,7 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
     const SLToken* name;
     const SLToken* t;
-    int32_t fn;
+    int32_t        fn;
 
     p->pos++;
     if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &name) != 0) {
@@ -1725,7 +1608,7 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
     const SLToken* alias = NULL;
     const SLToken* path;
-    int32_t n;
+    int32_t        n;
     p->pos++;
 
     if (SLPAt(p, SLTok_IDENT)) {
@@ -1768,7 +1651,7 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
 static int SLPParsePubBlock(SLParser* p, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
     const SLToken* rb;
-    int32_t n;
+    int32_t        n;
     p->pos++;
     if (SLPExpect(p, SLTok_LBRACE, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
         return -1;
@@ -1802,8 +1685,7 @@ static int SLPParsePubBlock(SLParser* p, int32_t* out) {
 
 static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out) {
     switch (SLPPeek(p)->kind) {
-        case SLTok_FUN:
-            return SLPParseFunDecl(p, allowBody, out);
+        case SLTok_FUN: return SLPParseFunDecl(p, allowBody, out);
         case SLTok_STRUCT:
         case SLTok_UNION:
         case SLTok_ENUM:
@@ -1814,93 +1696,56 @@ static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out) {
                 p->nodes[*out].end = SLPPrev(p)->end;
             }
             return 0;
-        case SLTok_CONST:
-            return SLPParseVarLikeStmt(p, SLAST_CONST, 1, out);
-        case SLTok_PUB:
-            return SLPParsePubBlock(p, out);
-        default:
-            return SLPFail(p, SLDiag_EXPECTED_DECL);
+        case SLTok_CONST: return SLPParseVarLikeStmt(p, SLAST_CONST, 1, out);
+        case SLTok_PUB:   return SLPParsePubBlock(p, out);
+        default:          return SLPFail(p, SLDiag_EXPECTED_DECL);
     }
 }
 
 const char* SLASTKindName(SLASTKind kind) {
     switch (kind) {
-        case SLAST_FILE:
-            return "FILE";
-        case SLAST_PACKAGE:
-            return "PACKAGE";
-        case SLAST_IMPORT:
-            return "IMPORT";
-        case SLAST_PUB:
-            return "PUB";
-        case SLAST_FUN:
-            return "FUN";
-        case SLAST_PARAM:
-            return "PARAM";
-        case SLAST_TYPE_NAME:
-            return "TYPE_NAME";
-        case SLAST_TYPE_PTR:
-            return "TYPE_PTR";
-        case SLAST_TYPE_ARRAY:
-            return "TYPE_ARRAY";
-        case SLAST_STRUCT:
-            return "STRUCT";
-        case SLAST_UNION:
-            return "UNION";
-        case SLAST_ENUM:
-            return "ENUM";
-        case SLAST_FIELD:
-            return "FIELD";
-        case SLAST_BLOCK:
-            return "BLOCK";
-        case SLAST_VAR:
-            return "VAR";
-        case SLAST_CONST:
-            return "CONST";
-        case SLAST_IF:
-            return "IF";
-        case SLAST_FOR:
-            return "FOR";
-        case SLAST_RETURN:
-            return "RETURN";
-        case SLAST_BREAK:
-            return "BREAK";
-        case SLAST_CONTINUE:
-            return "CONTINUE";
-        case SLAST_DEFER:
-            return "DEFER";
-        case SLAST_EXPR_STMT:
-            return "EXPR_STMT";
-        case SLAST_IDENT:
-            return "IDENT";
-        case SLAST_INT:
-            return "INT";
-        case SLAST_FLOAT:
-            return "FLOAT";
-        case SLAST_STRING:
-            return "STRING";
-        case SLAST_BOOL:
-            return "BOOL";
-        case SLAST_UNARY:
-            return "UNARY";
-        case SLAST_BINARY:
-            return "BINARY";
-        case SLAST_CALL:
-            return "CALL";
-        case SLAST_INDEX:
-            return "INDEX";
-        case SLAST_FIELD_EXPR:
-            return "FIELD_EXPR";
-        case SLAST_CAST:
-            return "CAST";
+        case SLAST_FILE:       return "FILE";
+        case SLAST_PACKAGE:    return "PACKAGE";
+        case SLAST_IMPORT:     return "IMPORT";
+        case SLAST_PUB:        return "PUB";
+        case SLAST_FUN:        return "FUN";
+        case SLAST_PARAM:      return "PARAM";
+        case SLAST_TYPE_NAME:  return "TYPE_NAME";
+        case SLAST_TYPE_PTR:   return "TYPE_PTR";
+        case SLAST_TYPE_ARRAY: return "TYPE_ARRAY";
+        case SLAST_STRUCT:     return "STRUCT";
+        case SLAST_UNION:      return "UNION";
+        case SLAST_ENUM:       return "ENUM";
+        case SLAST_FIELD:      return "FIELD";
+        case SLAST_BLOCK:      return "BLOCK";
+        case SLAST_VAR:        return "VAR";
+        case SLAST_CONST:      return "CONST";
+        case SLAST_IF:         return "IF";
+        case SLAST_FOR:        return "FOR";
+        case SLAST_RETURN:     return "RETURN";
+        case SLAST_BREAK:      return "BREAK";
+        case SLAST_CONTINUE:   return "CONTINUE";
+        case SLAST_DEFER:      return "DEFER";
+        case SLAST_EXPR_STMT:  return "EXPR_STMT";
+        case SLAST_IDENT:      return "IDENT";
+        case SLAST_INT:        return "INT";
+        case SLAST_FLOAT:      return "FLOAT";
+        case SLAST_STRING:     return "STRING";
+        case SLAST_BOOL:       return "BOOL";
+        case SLAST_UNARY:      return "UNARY";
+        case SLAST_BINARY:     return "BINARY";
+        case SLAST_CALL:       return "CALL";
+        case SLAST_INDEX:      return "INDEX";
+        case SLAST_FIELD_EXPR: return "FIELD_EXPR";
+        case SLAST_CAST:       return "CAST";
     }
     return "UNKNOWN";
 }
 
 int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag) {
-    SLTokenStream ts;
-    SLParser p;
-    int32_t root;
+    SLTokenStream  ts;
+    SLParser       p;
+    int32_t        root;
     const SLToken* kw;
     const SLToken* pkgName;
 
@@ -1920,8 +1765,8 @@ int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag) {
     p.nodeLen = 0;
     p.nodeCap = ts.len * 4u + 16u;
     p.diag = diag;
-    p.nodes = (SLASTNode*)SLArenaAlloc(arena, p.nodeCap * (uint32_t)sizeof(SLASTNode),
-                                           (uint32_t)_Alignof(SLASTNode));
+    p.nodes = (SLASTNode*)SLArenaAlloc(
+        arena, p.nodeCap * (uint32_t)sizeof(SLASTNode), (uint32_t)_Alignof(SLASTNode));
     if (p.nodes == NULL) {
         SLSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
@@ -1996,7 +1841,7 @@ static void SLWCStr(SLWriter* w, const char* s) {
 }
 
 static void SLWU32(SLWriter* w, uint32_t v) {
-    char buf[16];
+    char     buf[16];
     uint32_t n = 0;
     if (v == 0) {
         SLWWrite(w, "0", 1);
@@ -2025,26 +1870,16 @@ static void SLWEscaped(SLWriter* w, SLStrView src, uint32_t start, uint32_t end)
     for (i = start; i < end && i < src.len; i++) {
         unsigned char c = (unsigned char)src.ptr[i];
         switch (c) {
-            case '\"':
-                SLWWrite(w, "\\\"", 2);
-                break;
-            case '\\':
-                SLWWrite(w, "\\\\", 2);
-                break;
-            case '\n':
-                SLWWrite(w, "\\n", 2);
-                break;
-            case '\r':
-                SLWWrite(w, "\\r", 2);
-                break;
-            case '\t':
-                SLWWrite(w, "\\t", 2);
-                break;
+            case '\"': SLWWrite(w, "\\\"", 2); break;
+            case '\\': SLWWrite(w, "\\\\", 2); break;
+            case '\n': SLWWrite(w, "\\n", 2); break;
+            case '\r': SLWWrite(w, "\\r", 2); break;
+            case '\t': SLWWrite(w, "\\t", 2); break;
             default:
                 if (c >= 0x20 && c <= 0x7e) {
                     SLWWrite(w, (const char*)&src.ptr[i], 1);
                 } else {
-                    char hex[4];
+                    char               hex[4];
                     static const char* digits = "0123456789abcdef";
                     hex[0] = '\\';
                     hex[1] = 'x';
@@ -2058,10 +1893,10 @@ static void SLWEscaped(SLWriter* w, SLStrView src, uint32_t start, uint32_t end)
     SLWWrite(w, "\"", 1);
 }
 
-static int SLASTDumpNode(const SLAST* ast, int32_t idx, uint32_t depth, SLStrView src,
-                            SLWriter* w) {
+static int SLASTDumpNode(
+    const SLAST* ast, int32_t idx, uint32_t depth, SLStrView src, SLWriter* w) {
     const SLASTNode* n;
-    int32_t c;
+    int32_t          c;
     if (idx < 0 || (uint32_t)idx >= ast->len) {
         return -1;
     }

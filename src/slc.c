@@ -6,9 +6,9 @@
 #include "libsl.h"
 
 static int ReadFile(const char* filename, char** outData, uint32_t* outLen) {
-    FILE* f;
-    long size;
-    char* data;
+    FILE*  f;
+    long   size;
+    char*  data;
     size_t nread;
 
     *outData = NULL;
@@ -67,21 +67,11 @@ static void PrintEscaped(FILE* out, const char* s, uint32_t start, uint32_t end)
     for (i = start; i < end; i++) {
         unsigned char c = (unsigned char)s[i];
         switch (c) {
-            case '"':
-                fputs("\\\"", out);
-                break;
-            case '\\':
-                fputs("\\\\", out);
-                break;
-            case '\n':
-                fputs("\\n", out);
-                break;
-            case '\r':
-                fputs("\\r", out);
-                break;
-            case '\t':
-                fputs("\\t", out);
-                break;
+            case '"':  fputs("\\\"", out); break;
+            case '\\': fputs("\\\\", out); break;
+            case '\n': fputs("\\n", out); break;
+            case '\r': fputs("\\r", out); break;
+            case '\t': fputs("\\t", out); break;
             default:
                 if (c >= 0x20 && c <= 0x7e) {
                     fputc((int)c, out);
@@ -103,13 +93,13 @@ static void StdoutWrite(void* ctx, const char* data, uint32_t len) {
 }
 
 static int DumpTokens(const char* filename, const char* source, uint32_t sourceLen) {
-    void* arenaMem;
-    uint64_t arenaCap64;
-    size_t arenaCap;
-    SLArena arena;
+    void*         arenaMem;
+    uint64_t      arenaCap64;
+    size_t        arenaCap;
+    SLArena       arena;
     SLTokenStream stream;
-    SLDiag diag;
-    uint32_t i;
+    SLDiag        diag;
+    uint32_t      i;
 
     arenaCap64 = (uint64_t)(sourceLen + 16u) * (uint64_t)sizeof(SLToken) + 4096u;
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
@@ -125,9 +115,14 @@ static int DumpTokens(const char* filename, const char* source, uint32_t sourceL
     }
 
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
-    if (SLLex(&arena, (SLStrView){source, sourceLen}, &stream, &diag) != 0) {
-        fprintf(stderr, "%s:%u:%u: error: %s\n", filename, diag.start, diag.end,
-                SLDiagMessage(diag.code));
+    if (SLLex(&arena, (SLStrView){ source, sourceLen }, &stream, &diag) != 0) {
+        fprintf(
+            stderr,
+            "%s:%u:%u: error: %s\n",
+            filename,
+            diag.start,
+            diag.end,
+            SLDiagMessage(diag.code));
         free(arenaMem);
         return -1;
     }
@@ -150,12 +145,12 @@ static int DumpTokens(const char* filename, const char* source, uint32_t sourceL
 }
 
 static int DumpAST(const char* filename, const char* source, uint32_t sourceLen) {
-    void* arenaMem;
+    void*    arenaMem;
     uint64_t arenaCap64;
-    size_t arenaCap;
-    SLArena arena;
-    SLAST ast;
-    SLDiag diag;
+    size_t   arenaCap;
+    SLArena  arena;
+    SLAST    ast;
+    SLDiag   diag;
     SLWriter writer;
 
     arenaCap64 = (uint64_t)(sourceLen + 64u) * (uint64_t)sizeof(SLASTNode) + 32768u;
@@ -172,18 +167,28 @@ static int DumpAST(const char* filename, const char* source, uint32_t sourceLen)
     }
 
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
-    if (SLParse(&arena, (SLStrView){source, sourceLen}, &ast, &diag) != 0) {
-        fprintf(stderr, "%s:%u:%u: error: %s\n", filename, diag.start, diag.end,
-                SLDiagMessage(diag.code));
+    if (SLParse(&arena, (SLStrView){ source, sourceLen }, &ast, &diag) != 0) {
+        fprintf(
+            stderr,
+            "%s:%u:%u: error: %s\n",
+            filename,
+            diag.start,
+            diag.end,
+            SLDiagMessage(diag.code));
         free(arenaMem);
         return -1;
     }
 
     writer.ctx = NULL;
     writer.write = StdoutWrite;
-    if (SLASTDump(&ast, (SLStrView){source, sourceLen}, &writer, &diag) != 0) {
-        fprintf(stderr, "%s:%u:%u: error: %s\n", filename, diag.start, diag.end,
-                SLDiagMessage(diag.code));
+    if (SLASTDump(&ast, (SLStrView){ source, sourceLen }, &writer, &diag) != 0) {
+        fprintf(
+            stderr,
+            "%s:%u:%u: error: %s\n",
+            filename,
+            diag.start,
+            diag.end,
+            SLDiagMessage(diag.code));
         free(arenaMem);
         return -1;
     }
@@ -193,12 +198,12 @@ static int DumpAST(const char* filename, const char* source, uint32_t sourceLen)
 }
 
 static int CheckFile(const char* filename, const char* source, uint32_t sourceLen) {
-    void* arenaMem;
+    void*    arenaMem;
     uint64_t arenaCap64;
-    size_t arenaCap;
-    SLArena arena;
-    SLAST ast;
-    SLDiag diag;
+    size_t   arenaCap;
+    SLArena  arena;
+    SLAST    ast;
+    SLDiag   diag;
 
     arenaCap64 = (uint64_t)(sourceLen + 128u) * (uint64_t)sizeof(SLASTNode) + 65536u;
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
@@ -214,16 +219,26 @@ static int CheckFile(const char* filename, const char* source, uint32_t sourceLe
     }
 
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
-    if (SLParse(&arena, (SLStrView){source, sourceLen}, &ast, &diag) != 0) {
-        fprintf(stderr, "%s:%u:%u: error: %s\n", filename, diag.start, diag.end,
-                SLDiagMessage(diag.code));
+    if (SLParse(&arena, (SLStrView){ source, sourceLen }, &ast, &diag) != 0) {
+        fprintf(
+            stderr,
+            "%s:%u:%u: error: %s\n",
+            filename,
+            diag.start,
+            diag.end,
+            SLDiagMessage(diag.code));
         free(arenaMem);
         return -1;
     }
 
-    if (SLTypeCheck(&arena, &ast, (SLStrView){source, sourceLen}, &diag) != 0) {
-        fprintf(stderr, "%s:%u:%u: error: %s\n", filename, diag.start, diag.end,
-                SLDiagMessage(diag.code));
+    if (SLTypeCheck(&arena, &ast, (SLStrView){ source, sourceLen }, &diag) != 0) {
+        fprintf(
+            stderr,
+            "%s:%u:%u: error: %s\n",
+            filename,
+            diag.start,
+            diag.end,
+            SLDiagMessage(diag.code));
         free(arenaMem);
         return -1;
     }
@@ -235,8 +250,8 @@ static int CheckFile(const char* filename, const char* source, uint32_t sourceLe
 int main(int argc, char* argv[]) {
     const char* mode = "lex";
     const char* filename;
-    char* source;
-    uint32_t sourceLen;
+    char*       source;
+    uint32_t    sourceLen;
 
     if (argc == 2) {
         filename = argv[1];
@@ -262,8 +277,10 @@ int main(int argc, char* argv[]) {
             free(source);
             return 1;
         }
-    } else if (mode[0] == 'c' && mode[1] == 'h' && mode[2] == 'e' && mode[3] == 'c' &&
-               mode[4] == 'k' && mode[5] == '\0') {
+    } else if (
+        mode[0] == 'c' && mode[1] == 'h' && mode[2] == 'e' && mode[3] == 'c' && mode[4] == 'k'
+        && mode[5] == '\0')
+    {
         if (CheckFile(filename, source, sourceLen) != 0) {
             free(source);
             return 1;

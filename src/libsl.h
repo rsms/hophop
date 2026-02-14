@@ -18,7 +18,7 @@ SL_API_BEGIN
 
 typedef struct {
     const char* ptr;
-    uint32_t len;
+    uint32_t    len;
 } SLStrView;
 
 typedef struct {
@@ -57,11 +57,11 @@ typedef enum {
 
 typedef struct {
     SLDiagCode code;
-    uint32_t start;
-    uint32_t end;
+    uint32_t   start;
+    uint32_t   end;
 } SLDiag;
 
-void SLDiagClear(SLDiag* diag);
+void        SLDiagClear(SLDiag* diag);
 const char* SLDiagMessage(SLDiagCode code);
 
 typedef enum {
@@ -143,13 +143,13 @@ typedef enum {
 
 typedef struct {
     SLTokenKind kind;
-    uint32_t start;
-    uint32_t end;
+    uint32_t    start;
+    uint32_t    end;
 } SLToken;
 
 typedef struct {
     const SLToken* v;
-    uint32_t len;
+    uint32_t       len;
 } SLTokenStream;
 
 typedef enum {
@@ -191,20 +191,20 @@ typedef enum {
 
 typedef struct {
     SLASTKind kind;
-    uint32_t start;
-    uint32_t end;
-    int32_t firstChild;
-    int32_t nextSibling;
-    uint32_t dataStart;
-    uint32_t dataEnd;
-    uint16_t op;
-    uint16_t flags;
+    uint32_t  start;
+    uint32_t  end;
+    int32_t   firstChild;
+    int32_t   nextSibling;
+    uint32_t  dataStart;
+    uint32_t  dataEnd;
+    uint16_t  op;
+    uint16_t  flags;
 } SLASTNode;
 
 typedef struct {
     const SLASTNode* nodes;
-    uint32_t len;
-    int32_t root;
+    uint32_t         len;
+    int32_t          root;
 } SLAST;
 
 const char* SLTokenKindName(SLTokenKind kind);
