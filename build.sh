@@ -41,7 +41,7 @@ x_flags=(
     $([ -t 2 ] && echo -fcolor-diagnostics || true) \
 )
 c_flags=(
-    -std=c17 \
+    -std=c11 \
     -Wall \
     -Wextra \
     -Wno-unused \
@@ -171,6 +171,7 @@ actual_check_unknown_stdout="$test_tmpdir/check_unknown.stdout"
 actual_check_unknown_stderr="$test_tmpdir/check_unknown.stderr"
 actual_check_mismatch_stdout="$test_tmpdir/check_mismatch.stdout"
 actual_check_mismatch_stderr="$test_tmpdir/check_mismatch.stderr"
+actual_freestanding_obj="$test_tmpdir/libsl.freestanding.o"
 
 "$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
 diff -u tests/phase0/basic.tokens "$actual_tokens"
@@ -207,5 +208,17 @@ if "$build_dir/slc" check tests/phase2/bad_type_mismatch.sl > "$actual_check_mis
 fi
 [ ! -s "$actual_check_mismatch_stdout" ] || _err "unexpected stdout for tests/phase2/bad_type_mismatch.sl"
 diff -u tests/phase2/bad_type_mismatch.stderr "$actual_check_mismatch_stderr"
+
+"$cc" \
+    -std=c11 \
+    -ffreestanding \
+    -fno-builtin \
+    -Wall \
+    -Wextra \
+    -Werror \
+    -DSL_IMPLEMENTATION \
+    -xc \
+    -c "$build_dir/libsl.h" \
+    -o "$actual_freestanding_obj"
 
 echo "tests passed"

@@ -3,6 +3,9 @@
 ${license}
 ////////////////////////////////////////////////////////////////////////////////
 */
+#ifndef SL_LIBSL_H
+#define SL_LIBSL_H
+
 #pragma once
 
 #include <stddef.h>
@@ -215,3 +218,5 @@ int SLTypeCheck(SLArena* arena, const SLAST* ast, SLStrView src, SLDiag* diag);
 int SLASTDump(const SLAST* ast, SLStrView src, SLWriter* w, SLDiag* diag);
 
 SL_API_END
+
+#endif /* SL_LIBSL_H */
