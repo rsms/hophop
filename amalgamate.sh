@@ -47,7 +47,7 @@ echo "#endif /* SL_IMPLEMENTATION */" >> $index_file
 python3 amalgamate.py -r . -r src $args -o "$outfile.tmp" $index_file
 
 sed -E -i '' \
-    -e "s/#define SL_SOURCE_HASH \"\"/#define SL_SOURCE_HASH \"${source_hash}\"/" \
+    -e "s/#define SL_SOURCE_HASH \"src\"/#define SL_SOURCE_HASH \"${source_hash}\"/" \
     "$outfile.tmp"
 
 mv "$outfile.tmp" "$outfile"

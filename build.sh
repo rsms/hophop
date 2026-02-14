@@ -125,7 +125,7 @@ for srcfile in "${cli_sources[@]}" "${lib_sources[@]}"; do
 done
 
 cat << _END >> $NF
-build \$builddir/libsl.h: amalgamate src/libsl.h ${lib_sources[@]} | amalgamate.sh amalgamate.py
+build \$builddir/libsl.h: amalgamate src/libsl.h ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index
 build \$builddir/slc: link ${objfiles[*]}
 
 build slc:     phony \$builddir/slc
