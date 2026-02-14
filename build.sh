@@ -38,7 +38,7 @@ toolchain=${toolchain:-/opt/homebrew/opt/llvm}
 [ -z "$toolchain" -a -x "$toolchain/bin/clang" ] || export PATH=$toolchain/bin:$PATH
 x_flags=(
     -g \
-    $([ -t 2 ] && echo -fcolor-diagnostics) \
+    $([ -t 2 ] && echo -fcolor-diagnostics || true) \
 )
 c_flags=(
     -std=c17 \
