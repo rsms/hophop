@@ -241,6 +241,16 @@ fun Name(a i32, b i32) i32 { ... }
 
 No overloading. A function name is unique within its package.
 
+#### Declaration order independence
+
+Declaration order does not affect meaning inside a package:
+
+* Types may reference other types declared later in the same package.
+* Functions may call functions declared/defined later in the same package.
+* Mutually recursive functions are allowed.
+
+This implies the frontend/typechecker must collect declarations before validating bodies/usages.
+
 #### Variables
 
 Local variables (no inference):
@@ -560,6 +570,11 @@ For imports:
 
 * `import alias "path"` binds alias -> imported package id.
 * `alias.Name` resolves by looking up exported symbol `Name` in imported package export table.
+
+Within a package, resolution is declaration-order independent:
+
+* collect type and value declarations first,
+* then resolve references and typecheck bodies.
 
 ### 4.3.4 Export surface building (`pub {}`)
 

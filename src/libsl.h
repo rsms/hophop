@@ -43,6 +43,13 @@ typedef enum {
     SLDiag_EXPECTED_DECL,
     SLDiag_EXPECTED_EXPR,
     SLDiag_EXPECTED_TYPE,
+    SLDiag_DUPLICATE_SYMBOL,
+    SLDiag_UNKNOWN_SYMBOL,
+    SLDiag_UNKNOWN_TYPE,
+    SLDiag_TYPE_MISMATCH,
+    SLDiag_ARITY_MISMATCH,
+    SLDiag_NOT_CALLABLE,
+    SLDiag_EXPECTED_BOOL,
 } SLDiagCode;
 
 typedef struct {
@@ -204,6 +211,7 @@ const char* SLASTKindName(SLASTKind kind);
 // Returns 0 on success, -1 on failure. On failure, diag is set.
 int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag);
 int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag);
+int SLTypeCheck(SLArena* arena, const SLAST* ast, SLStrView src, SLDiag* diag);
 int SLASTDump(const SLAST* ast, SLStrView src, SLWriter* w, SLDiag* diag);
 
 SL_API_END

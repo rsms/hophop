@@ -165,6 +165,12 @@ actual_stderr="$test_tmpdir/bad_string.stderr"
 actual_ast="$test_tmpdir/ast_basic.ast"
 actual_ast_bad_stdout="$test_tmpdir/ast_bad.stdout"
 actual_ast_bad_stderr="$test_tmpdir/ast_bad.stderr"
+actual_check_ok_stdout="$test_tmpdir/check_ok.stdout"
+actual_check_ok_stderr="$test_tmpdir/check_ok.stderr"
+actual_check_unknown_stdout="$test_tmpdir/check_unknown.stdout"
+actual_check_unknown_stderr="$test_tmpdir/check_unknown.stderr"
+actual_check_mismatch_stdout="$test_tmpdir/check_mismatch.stdout"
+actual_check_mismatch_stderr="$test_tmpdir/check_mismatch.stderr"
 
 "$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
 diff -u tests/phase0/basic.tokens "$actual_tokens"
@@ -183,5 +189,23 @@ if "$build_dir/slc" ast tests/phase1/ast_bad.sl > "$actual_ast_bad_stdout" 2> "$
 fi
 [ ! -s "$actual_ast_bad_stdout" ] || _err "unexpected stdout for tests/phase1/ast_bad.sl"
 diff -u tests/phase1/ast_bad.stderr "$actual_ast_bad_stderr"
+
+if ! "$build_dir/slc" check tests/phase2/order_independent.sl > "$actual_check_ok_stdout" 2> "$actual_check_ok_stderr"; then
+    _err "unexpected failure for tests/phase2/order_independent.sl"
+fi
+[ ! -s "$actual_check_ok_stdout" ] || _err "unexpected stdout for tests/phase2/order_independent.sl"
+[ ! -s "$actual_check_ok_stderr" ] || _err "unexpected stderr for tests/phase2/order_independent.sl"
+
+if "$build_dir/slc" check tests/phase2/bad_unknown_symbol.sl > "$actual_check_unknown_stdout" 2> "$actual_check_unknown_stderr"; then
+    _err "expected failure for tests/phase2/bad_unknown_symbol.sl"
+fi
+[ ! -s "$actual_check_unknown_stdout" ] || _err "unexpected stdout for tests/phase2/bad_unknown_symbol.sl"
+diff -u tests/phase2/bad_unknown_symbol.stderr "$actual_check_unknown_stderr"
+
+if "$build_dir/slc" check tests/phase2/bad_type_mismatch.sl > "$actual_check_mismatch_stdout" 2> "$actual_check_mismatch_stderr"; then
+    _err "expected failure for tests/phase2/bad_type_mismatch.sl"
+fi
+[ ! -s "$actual_check_mismatch_stdout" ] || _err "unexpected stdout for tests/phase2/bad_type_mismatch.sl"
+diff -u tests/phase2/bad_type_mismatch.stderr "$actual_check_mismatch_stderr"
 
 echo "tests passed"

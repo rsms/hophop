@@ -44,6 +44,20 @@ const char* SLDiagMessage(SLDiagCode code) {
             return "expected expression";
         case SLDiag_EXPECTED_TYPE:
             return "expected type";
+        case SLDiag_DUPLICATE_SYMBOL:
+            return "duplicate symbol";
+        case SLDiag_UNKNOWN_SYMBOL:
+            return "unknown symbol";
+        case SLDiag_UNKNOWN_TYPE:
+            return "unknown type";
+        case SLDiag_TYPE_MISMATCH:
+            return "type mismatch";
+        case SLDiag_ARITY_MISMATCH:
+            return "call arity mismatch";
+        case SLDiag_NOT_CALLABLE:
+            return "expression is not callable";
+        case SLDiag_EXPECTED_BOOL:
+            return "expected bool expression";
     }
     return "unknown diagnostic";
 }

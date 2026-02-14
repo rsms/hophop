@@ -192,6 +192,46 @@ static int DumpAST(const char* filename, const char* source, uint32_t sourceLen)
     return 0;
 }
 
+static int CheckFile(const char* filename, const char* source, uint32_t sourceLen) {
+    void* arenaMem;
+    uint64_t arenaCap64;
+    size_t arenaCap;
+    SLArena arena;
+    SLAST ast;
+    SLDiag diag;
+
+    arenaCap64 = (uint64_t)(sourceLen + 128u) * (uint64_t)sizeof(SLASTNode) + 65536u;
+    if (arenaCap64 > (uint64_t)SIZE_MAX) {
+        fprintf(stderr, "arena too large\n");
+        return -1;
+    }
+
+    arenaCap = (size_t)arenaCap64;
+    arenaMem = malloc(arenaCap);
+    if (arenaMem == NULL) {
+        fprintf(stderr, "failed to allocate arena\n");
+        return -1;
+    }
+
+    SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    if (SLParse(&arena, (SLStrView){source, sourceLen}, &ast, &diag) != 0) {
+        fprintf(stderr, "%s:%u:%u: error: %s\n", filename, diag.start, diag.end,
+                SLDiagMessage(diag.code));
+        free(arenaMem);
+        return -1;
+    }
+
+    if (SLTypeCheck(&arena, &ast, (SLStrView){source, sourceLen}, &diag) != 0) {
+        fprintf(stderr, "%s:%u:%u: error: %s\n", filename, diag.start, diag.end,
+                SLDiagMessage(diag.code));
+        free(arenaMem);
+        return -1;
+    }
+
+    free(arenaMem);
+    return 0;
+}
+
 int main(int argc, char* argv[]) {
     const char* mode = "lex";
     const char* filename;
@@ -204,7 +244,7 @@ int main(int argc, char* argv[]) {
         mode = argv[1];
         filename = argv[2];
     } else {
-        fprintf(stderr, "usage: %s [lex|ast] <file.sl>\n", argv[0]);
+        fprintf(stderr, "usage: %s [lex|ast|check] <file.sl>\n", argv[0]);
         return 2;
     }
 
@@ -219,6 +259,12 @@ int main(int argc, char* argv[]) {
         }
     } else if (mode[0] == 'a' && mode[1] == 's' && mode[2] == 't' && mode[3] == '\0') {
         if (DumpAST(filename, source, sourceLen) != 0) {
+            free(source);
+            return 1;
+        }
+    } else if (mode[0] == 'c' && mode[1] == 'h' && mode[2] == 'e' && mode[3] == 'c' &&
+               mode[4] == 'k' && mode[5] == '\0') {
+        if (CheckFile(filename, source, sourceLen) != 0) {
             free(source);
             return 1;
         }
