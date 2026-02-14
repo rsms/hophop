@@ -1,0 +1,118 @@
+%YAML 1.2
+---
+name: SL
+scope: source.slang
+
+file_extensions:
+    - sl
+
+first_line_match: |-
+    (?xi:
+        ^\s*//.*?-\*-.*?\bsl\b.*?-\*-
+    )
+
+variables:
+    ident: '[A-Za-z_][A-Za-z0-9_]*'
+
+contexts:
+    prototype:
+        - include: comments
+
+    main:
+        - include: strings
+        - include: numbers
+        - include: declarations
+        - include: keywords
+        - include: builtins
+        - include: operators
+        - include: punctuation
+        - include: identifiers
+
+    comments:
+        - match: '///(?!/).*$'
+          scope: comment.line.documentation.slang
+        - match: '//.*$'
+          scope: comment.line.double-slash.slang
+
+    strings:
+        - match: '"'
+          scope: punctuation.definition.string.begin.slang
+          push:
+              - meta_scope: string.quoted.double.slang
+              - match: '\\(?:[\\"ntr0]|x[0-9A-Fa-f]{2})'
+                scope: constant.character.escape.slang
+              - match: '"'
+                scope: punctuation.definition.string.end.slang
+                pop: true
+
+    numbers:
+        - match: '\b0[xX][0-9A-Fa-f]+\b'
+          scope: constant.numeric.integer.hex.slang
+        - match: '\b0[bB][01]+\b'
+          scope: constant.numeric.integer.binary.slang
+        - match: '\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b'
+          scope: constant.numeric.slang
+
+    declarations:
+        - match: '\b(package)\s+({{ident}})'
+          captures:
+              1: keyword.declaration.namespace.slang
+              2: entity.name.namespace.slang
+        - match: '\b(import)\s+({{ident}})(?=\s+")'
+          captures:
+              1: keyword.control.import.slang
+              2: entity.name.namespace.alias.slang
+        - match: '\b(fun)\s+({{ident}})'
+          captures:
+              1: keyword.declaration.function.slang
+              2: entity.name.function.slang
+        - match: '\b(struct|union|enum)\s+({{ident}})'
+          captures:
+              1: storage.type.slang
+              2: entity.name.type.slang
+        - match: '\b(const)\s+({{ident}})'
+          captures:
+              1: storage.modifier.slang
+              2: entity.name.constant.slang
+
+    keywords:
+        - match: '\b(package|import|pub|struct|union|enum|fun|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|as)\b'
+          scope: keyword.control.slang
+        - match: '\b(true|false)\b'
+          scope: constant.language.boolean.slang
+
+    builtins:
+        - match: '\b(u8|u16|u32|u64|i8|i16|i32|i64|usize|isize|f32|f64|bool|void|str)\b'
+          scope: support.type.builtin.slang
+        - match: '\b(len|cstr)\b'
+          scope: support.function.builtin.slang
+
+    operators:
+        - match: '(==|!=|<=|>=|<<=|>>=|\+=|-=|\*=|/=|%=|&=|\|=|\^=|<<|>>|&&|\|\||=|\+|-|\*|/|%|&|\||\^|<|>|!)'
+          scope: keyword.operator.slang
+
+    punctuation:
+        - match: '\.'
+          scope: punctuation.separator.dot.slang
+        - match: ','
+          scope: punctuation.separator.comma.slang
+        - match: ';'
+          scope: punctuation.terminator.statement.slang
+        - match: ':'
+          scope: punctuation.separator.colon.slang
+        - match: '\{'
+          scope: punctuation.section.block.begin.slang
+        - match: '\}'
+          scope: punctuation.section.block.end.slang
+        - match: '\('
+          scope: punctuation.section.parens.begin.slang
+        - match: '\)'
+          scope: punctuation.section.parens.end.slang
+        - match: '\['
+          scope: punctuation.section.brackets.begin.slang
+        - match: '\]'
+          scope: punctuation.section.brackets.end.slang
+
+    identifiers:
+        - match: '{{ident}}'
+          scope: variable.other.slang
