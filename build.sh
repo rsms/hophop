@@ -31,8 +31,8 @@ done
 asan=${asan:-$debug} # enable by default in debug builds
 mode=debug; [ $debug = 0 ] && mode=release
 build_dir=_build/$sys-$arch-$mode
-cli_sources=( src/slc.c )
-lib_sources=( $(find src -name '*.c' -and -not -path src/slc.c ) )
+cli_sources=( $(find src -maxdepth 1 -name 'slc*.c' | sort) )
+lib_sources=( $(find src -maxdepth 1 -name '*.c' -and -not -name 'slc*.c' | sort) )
 cli_output=slc
 lib_output=libsl.h
 toolchain=${toolchain:-/opt/homebrew/opt/llvm}
@@ -194,6 +194,10 @@ actual_checkpkg_cycle_stdout="$test_tmpdir/checkpkg_cycle.stdout"
 actual_checkpkg_cycle_stderr="$test_tmpdir/checkpkg_cycle.stderr"
 actual_checkpkg_pub_missing_stdout="$test_tmpdir/checkpkg_pub_missing.stdout"
 actual_checkpkg_pub_missing_stderr="$test_tmpdir/checkpkg_pub_missing.stderr"
+actual_codegen_app_header="$test_tmpdir/app_codegen.h"
+actual_codegen_app_obj="$test_tmpdir/app_codegen.o"
+actual_codegen_ptr_header="$test_tmpdir/ptr_codegen.h"
+actual_codegen_ptr_obj="$test_tmpdir/ptr_codegen.o"
 actual_freestanding_obj="$test_tmpdir/libsl.freestanding.o"
 
 "$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
@@ -282,6 +286,21 @@ if "$build_dir/slc" checkpkg tests/phase4/pub_missing_def > "$actual_checkpkg_pu
 fi
 [ ! -s "$actual_checkpkg_pub_missing_stdout" ] || _err "unexpected stdout for tests/phase4/pub_missing_def"
 diff -u tests/phase4/pub_missing_def.stderr "$actual_checkpkg_pub_missing_stderr"
+
+"$build_dir/slc" genpkg tests/phase4/pkg_ok/app > "$actual_codegen_app_header"
+cat > "$test_tmpdir/app_codegen_test.c" << _END
+#define APP_IMPL
+#include "$actual_codegen_app_header"
+int test_codegen_app_main(void) { return (int)app__main(); }
+_END
+"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/app_codegen_test.c" -o "$actual_codegen_app_obj"
+
+"$build_dir/slc" genpkg:c tests/phase4_codegen/ptr > "$actual_codegen_ptr_header"
+cat > "$test_tmpdir/ptr_codegen_test.c" << _END
+#define DEMO_IMPL
+#include "$actual_codegen_ptr_header"
+_END
+"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/ptr_codegen_test.c" -o "$actual_codegen_ptr_obj"
 
 "$cc" \
     -std=c11 \

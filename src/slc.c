@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "libsl.h"
+#include "slc_codegen.h"
 
 typedef struct {
     char*    path;
@@ -1734,12 +1735,15 @@ static void FreeLoader(SLPackageLoader* loader) {
     memset(loader, 0, sizeof(*loader));
 }
 
-static int CheckPackageDir(const char* entryPath) {
+static int LoadAndCheckPackage(
+    const char* entryPath, SLPackageLoader* outLoader, SLPackage** outEntryPkg) {
     char*           canonical = CanonicalizePath(entryPath);
     char*           rootDir;
     SLPackageLoader loader;
     SLPackage*      entryPkg;
     uint32_t        i;
+    memset(outLoader, 0, sizeof(*outLoader));
+    *outEntryPkg = NULL;
     if (canonical == NULL) {
         return ErrorSimple("failed to resolve package path %s", entryPath);
     }
@@ -1769,6 +1773,133 @@ static int CheckPackageDir(const char* entryPath) {
     }
 
     free(canonical);
+    *outLoader = loader;
+    *outEntryPkg = entryPkg;
+    return 0;
+}
+
+static int CheckPackageDir(const char* entryPath) {
+    SLPackageLoader loader;
+    SLPackage*      entryPkg;
+    if (LoadAndCheckPackage(entryPath, &loader, &entryPkg) != 0) {
+        return -1;
+    }
+    (void)entryPkg;
+    FreeLoader(&loader);
+    return 0;
+}
+
+static int WriteOutput(const char* outFilename, const char* data, uint32_t len) {
+    FILE*  out;
+    size_t nwritten;
+    if (outFilename == NULL) {
+        if (len == 0) {
+            return 0;
+        }
+        nwritten = fwrite(data, 1u, (size_t)len, stdout);
+        return nwritten == (size_t)len ? 0 : -1;
+    }
+    out = fopen(outFilename, "wb");
+    if (out == NULL) {
+        return -1;
+    }
+    nwritten = fwrite(data, 1u, (size_t)len, out);
+    fclose(out);
+    return nwritten == (size_t)len ? 0 : -1;
+}
+
+static int ParseGenpkgMode(const char* mode, char* outBackend, uint32_t outBackendCap) {
+    uint32_t i;
+    if (mode[0] != 'g' || mode[1] != 'e' || mode[2] != 'n' || mode[3] != 'p' || mode[4] != 'k'
+        || mode[5] != 'g')
+    {
+        return 0;
+    }
+    if (mode[6] == '\0') {
+        if (outBackendCap < 2) {
+            return -1;
+        }
+        outBackend[0] = 'c';
+        outBackend[1] = '\0';
+        return 1;
+    }
+    if (mode[6] != ':') {
+        return -1;
+    }
+    i = 0;
+    while (mode[7u + i] != '\0') {
+        if (i + 1u >= outBackendCap) {
+            return -1;
+        }
+        outBackend[i] = mode[7u + i];
+        i++;
+    }
+    if (i == 0) {
+        return -1;
+    }
+    outBackend[i] = '\0';
+    return 1;
+}
+
+static int GeneratePackage(
+    const char* entryPath, const char* backendName, const char* outFilename) {
+    SLPackageLoader         loader;
+    SLPackage*              entryPkg;
+    char*                   source = NULL;
+    uint32_t                sourceLen = 0;
+    char*                   outHeader = NULL;
+    SLDiag                  diag;
+    SLCodegenUnit           unit;
+    const SLCodegenBackend* backend;
+
+    if (LoadAndCheckPackage(entryPath, &loader, &entryPkg) != 0) {
+        return -1;
+    }
+
+    if (BuildCombinedPackageSource(entryPkg, &source, &sourceLen) != 0) {
+        FreeLoader(&loader);
+        return -1;
+    }
+
+    backend = SLCodegenFindBackend(backendName);
+    if (backend == NULL) {
+        free(source);
+        FreeLoader(&loader);
+        return ErrorSimple("unknown backend: %s", backendName);
+    }
+
+    unit.packageName = entryPkg->name;
+    unit.source = source;
+    unit.sourceLen = sourceLen;
+
+    SLDiagClear(&diag);
+    if (backend->emit(backend, &unit, NULL, &outHeader, &diag) != 0) {
+        if (diag.code != SLDiag_NONE) {
+            fprintf(
+                stderr,
+                "%s:%u:%u: error: %s\n",
+                DisplayPath(entryPkg->dirPath),
+                diag.start,
+                diag.end,
+                SLDiagMessage(diag.code));
+        } else {
+            fprintf(stderr, "error: codegen failed\n");
+        }
+        free(source);
+        FreeLoader(&loader);
+        return -1;
+    }
+
+    if (WriteOutput(outFilename, outHeader, (uint32_t)strlen(outHeader)) != 0) {
+        fprintf(stderr, "error: failed to write output\n");
+        free(outHeader);
+        free(source);
+        FreeLoader(&loader);
+        return -1;
+    }
+
+    free(outHeader);
+    free(source);
     FreeLoader(&loader);
     return 0;
 }
@@ -1776,6 +1907,9 @@ static int CheckPackageDir(const char* entryPath) {
 int main(int argc, char* argv[]) {
     const char* mode = "lex";
     const char* filename = NULL;
+    const char* outFilename = NULL;
+    char        backendName[32];
+    int         genpkgMode;
     char*       source;
     uint32_t    sourceLen;
 
@@ -1784,20 +1918,44 @@ int main(int argc, char* argv[]) {
     } else if (argc == 3) {
         mode = argv[1];
         filename = argv[2];
+    } else if (argc == 4) {
+        mode = argv[1];
+        filename = argv[2];
+        outFilename = argv[3];
     } else {
         fprintf(
             stderr,
             "usage: %s [lex|ast|check] <file.sl>\n"
-            "       %s checkpkg <package-dir>\n",
+            "       %s checkpkg <package-dir>\n"
+            "       %s genpkg[:backend] <package-dir> [out.h]\n",
+            argv[0],
             argv[0],
             argv[0]);
         return 2;
     }
 
+    genpkgMode = ParseGenpkgMode(mode, backendName, sizeof(backendName));
+    if (genpkgMode < 0) {
+        fprintf(stderr, "unknown mode: %s\n", mode);
+        return 2;
+    }
+    if (genpkgMode == 1) {
+        return GeneratePackage(filename, backendName, outFilename) == 0 ? 0 : 1;
+    }
+
     if (mode[0] == 'c' && mode[1] == 'h' && mode[2] == 'e' && mode[3] == 'c' && mode[4] == 'k'
         && mode[5] == 'p' && mode[6] == 'k' && mode[7] == 'g' && mode[8] == '\0')
     {
+        if (outFilename != NULL) {
+            fprintf(stderr, "unexpected output argument for mode checkpkg\n");
+            return 2;
+        }
         return CheckPackageDir(filename) == 0 ? 0 : 1;
+    }
+
+    if (outFilename != NULL) {
+        fprintf(stderr, "unexpected output argument for mode %s\n", mode);
+        return 2;
     }
 
     if (ReadFile(filename, &source, &sourceLen) != 0) {
