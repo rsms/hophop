@@ -40,7 +40,7 @@ Whitespace     = " " | "\t" | "\r" | "\n" ;
 Keyword =
     "package" | "import" | "pub" |
     "struct" | "union" | "enum" |
-    "fun" | "var" | "const" |
+    "fn" | "var" | "const" |
     "if" | "else" |
     "for" |
     "switch" | "case" | "default" |
@@ -95,8 +95,8 @@ EnumDecl        = "enum" Identifier Type "{" { EnumItem [ EnumSep ] } "}" ;
 EnumItem        = Identifier [ "=" Expr ] ;
 EnumSep         = "," | ";" ;
 
-FunDecl         = "fun" Identifier Signature ";" ;
-FunDef          = "fun" Identifier Signature Block ;
+FunDecl         = "fn" Identifier Signature ";" ;
+FunDef          = "fn" Identifier Signature Block ;
 
 Signature       = "(" [ ParamList ] ")" [ Type ] ;
 ParamList       = Param { "," Param } ;

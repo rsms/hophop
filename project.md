@@ -162,7 +162,7 @@ Inside `pub {}`: **declarations only** (no function bodies).
 Allowed:
 
 * `struct/union/enum` declarations (with bodies)
-* `fun` prototypes (signatures only)
+* `fn` prototypes (signatures only)
 * `const` declarations **only if compile-time** (optional, but recommended)
 
 Everything **outside** `pub {}` is **package-private** by default.
@@ -174,11 +174,11 @@ package foo
 
 pub {
     struct T { x i32 }
-    fun A(t T) i32
+    fn A(t T) i32
 }
 
-fun A(t T) i32 { return t.x }
-fun b(x i32) i32 { return x + 1 } // private
+fn A(t T) i32 { return t.x }
+fn b(x i32) i32 { return x + 1 } // private
 ```
 
 **Visibility rules:**
@@ -230,13 +230,13 @@ fieldName Type
 Prototype:
 
 ```sl
-fun Name(a i32, b i32) i32
+fn Name(a i32, b i32) i32
 ```
 
 Definition:
 
 ```sl
-fun Name(a i32, b i32) i32 { ... }
+fn Name(a i32, b i32) i32 { ... }
 ```
 
 No overloading. A function name is unique within its package.
@@ -260,7 +260,7 @@ var x i32 = 0
 var buf [64]u8
 ```
 
-(Top-level vars can be supported later; v0 can restrict to const + fun + types.)
+(Top-level vars can be supported later; v0 can restrict to const + fn + types.)
 
 #### Constants
 
@@ -534,7 +534,7 @@ Responsibilities:
 Token kinds needed:
 
 * identifiers
-* keywords: `package import pub struct union enum fun var const if else for switch case default break continue return defer assert`
+* keywords: `package import pub struct union enum fn var const if else for switch case default break continue return defer assert`
 * operators, delimiters, literals.
 
 ### 4.3.2 Parser
@@ -563,7 +563,7 @@ Within a package:
 * two namespaces:
 
   * types (struct/union/enum)
-  * values (fun/const/var)
+  * values (fn/const/var)
     No overloading, so symbol table is simple.
 
 For imports:
@@ -582,7 +582,7 @@ Scan all files in the package:
 
 * collect all declarations inside `pub {}` as exported symbols.
 * validate uniqueness.
-* validate that each exported `fun` has a matching definition somewhere (exact signature).
+* validate that each exported `fn` has a matching definition somewhere (exact signature).
 * validate public API closure rule (no private types leak).
 
 ### 4.3.5 Type system & typecheck
@@ -817,25 +817,25 @@ pub {
         cap  i32
     }
 
-    fun Init(q *PQueue, backing *i32, cap i32) void
-    fun Push(q *PQueue, x i32) bool
-    fun Pop(q *PQueue, out *i32) bool
-    fun Peek(q *PQueue, out *i32) bool
+    fn Init(q *PQueue, backing *i32, cap i32) void
+    fn Push(q *PQueue, x i32) bool
+    fn Pop(q *PQueue, out *i32) bool
+    fn Peek(q *PQueue, out *i32) bool
 }
 
-fun Init(q *PQueue, backing *i32, cap i32) void {
+fn Init(q *PQueue, backing *i32, cap i32) void {
     q.data = backing
     q.len  = 0
     q.cap  = cap
 }
 
-fun Peek(q *PQueue, out *i32) bool {
+fn Peek(q *PQueue, out *i32) bool {
     if q.len == 0 { return false }
     *out = q.data[0]
     return true
 }
 
-fun Push(q *PQueue, x i32) bool {
+fn Push(q *PQueue, x i32) bool {
     if q.len >= q.cap { return false }
 
     var i i32 = q.len
@@ -854,7 +854,7 @@ fun Push(q *PQueue, x i32) bool {
     return true
 }
 
-fun Pop(q *PQueue, out *i32) bool {
+fn Pop(q *PQueue, out *i32) bool {
     if q.len == 0 { return false }
     *out = q.data[0]
     q.len -= 1
@@ -893,10 +893,10 @@ package main
 import heap "ds/heap"
 
 pub {
-    fun main() i32
+    fn main() i32
 }
 
-fun main() i32 {
+fn main() i32 {
     var backing [64]i32
     var q heap.PQueue
     heap.Init(&q, &backing[0], 64 as i32)

@@ -17,7 +17,7 @@
 (?x)
 ^ \s* .* \{ [^}"']* $
 |
-^ \s* (?:if|else|for|switch|case|default|pub|struct|union|enum|fun)\b (?!.*[;{]\s*$) .*
+^ \s* (?:if|else|for|switch|case|default|pub|struct|union|enum|fn)\b (?!.*[;{]\s*$) .*
 ]]></string>
             <key>bracketIndentNextLinePattern</key>
             <string><![CDATA[

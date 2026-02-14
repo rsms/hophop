@@ -62,7 +62,7 @@ contexts:
           captures:
               1: keyword.control.import.slang
               2: entity.name.namespace.alias.slang
-        - match: '\b(fun)\s+({{ident}})'
+        - match: '\b(fn)\s+({{ident}})'
           captures:
               1: keyword.declaration.function.slang
               2: entity.name.function.slang
@@ -76,7 +76,7 @@ contexts:
               2: entity.name.constant.slang
 
     keywords:
-        - match: '\b(package|import|pub|struct|union|enum|fun|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|as)\b'
+        - match: '\b(package|import|pub|struct|union|enum|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|as)\b'
           scope: keyword.control.slang
         - match: '\b(true|false)\b'
           scope: constant.language.boolean.slang

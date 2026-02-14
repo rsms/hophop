@@ -1,1 +1,1 @@
-tests/phase2/bad_type_mismatch.sl:44:48: error: type mismatch
+tests/phase2/bad_type_mismatch.sl:43:47: error: type mismatch

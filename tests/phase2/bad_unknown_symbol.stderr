@@ -1,1 +1,1 @@
-tests/phase2/bad_unknown_symbol.sl:44:51: error: unknown symbol
+tests/phase2/bad_unknown_symbol.sl:43:50: error: unknown symbol

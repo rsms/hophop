@@ -1,1 +1,1 @@
-tests/phase1/ast_bad.sl:52:52: error: expected expression
+tests/phase1/ast_bad.sl:51:51: error: expected expression

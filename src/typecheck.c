@@ -762,7 +762,7 @@ static int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
         return 0;
     }
 
-    if (n->kind != SLAST_FUN) {
+    if (n->kind != SLAST_FN) {
         return 0;
     }
 

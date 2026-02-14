@@ -111,15 +111,15 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
         if (SLStrEq(s, len, "as")) {
             return SLTok_AS;
         }
+        if (SLStrEq(s, len, "fn")) {
+            return SLTok_FN;
+        }
         if (SLStrEq(s, len, "if")) {
             return SLTok_IF;
         }
     } else if (len == 3) {
         if (SLStrEq(s, len, "for")) {
             return SLTok_FOR;
-        }
-        if (SLStrEq(s, len, "fun")) {
-            return SLTok_FUN;
         }
         if (SLStrEq(s, len, "var")) {
             return SLTok_VAR;
@@ -233,7 +233,7 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_STRUCT:        return "STRUCT";
         case SLTok_UNION:         return "UNION";
         case SLTok_ENUM:          return "ENUM";
-        case SLTok_FUN:           return "FUN";
+        case SLTok_FN:            return "FN";
         case SLTok_VAR:           return "VAR";
         case SLTok_CONST:         return "CONST";
         case SLTok_IF:            return "IF";
@@ -1542,7 +1542,7 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
         return -1;
     }
 
-    fn = SLPNewNode(p, SLAST_FUN, kw->start, name->end);
+    fn = SLPNewNode(p, SLAST_FN, kw->start, name->end);
     if (fn < 0) {
         return -1;
     }
@@ -1685,7 +1685,7 @@ static int SLPParsePubBlock(SLParser* p, int32_t* out) {
 
 static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out) {
     switch (SLPPeek(p)->kind) {
-        case SLTok_FUN: return SLPParseFunDecl(p, allowBody, out);
+        case SLTok_FN: return SLPParseFunDecl(p, allowBody, out);
         case SLTok_STRUCT:
         case SLTok_UNION:
         case SLTok_ENUM:
@@ -1708,7 +1708,7 @@ const char* SLASTKindName(SLASTKind kind) {
         case SLAST_PACKAGE:    return "PACKAGE";
         case SLAST_IMPORT:     return "IMPORT";
         case SLAST_PUB:        return "PUB";
-        case SLAST_FUN:        return "FUN";
+        case SLAST_FN:         return "FN";
         case SLAST_PARAM:      return "PARAM";
         case SLAST_TYPE_NAME:  return "TYPE_NAME";
         case SLAST_TYPE_PTR:   return "TYPE_PTR";
