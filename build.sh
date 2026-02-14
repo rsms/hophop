@@ -155,4 +155,21 @@ _v ninja "${ninja_args[@]}"
 # test
 
 [ $test = 1 ] || exit 0
-echo TODO tests
+echo "running tests"
+test_tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/slang-tests.XXXXXX")
+trap "rm -rf $test_tmpdir" EXIT
+
+actual_tokens="$test_tmpdir/basic.tokens"
+actual_stdout="$test_tmpdir/bad_string.stdout"
+actual_stderr="$test_tmpdir/bad_string.stderr"
+
+"$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
+diff -u tests/phase0/basic.tokens "$actual_tokens"
+
+if "$build_dir/slc" tests/phase0/bad_string.sl > "$actual_stdout" 2> "$actual_stderr"; then
+    _err "expected failure for tests/phase0/bad_string.sl"
+fi
+[ ! -s "$actual_stdout" ] || _err "unexpected stdout for tests/phase0/bad_string.sl"
+diff -u tests/phase0/bad_string.stderr "$actual_stderr"
+
+echo "tests passed"
