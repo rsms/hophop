@@ -162,6 +162,9 @@ trap "rm -rf $test_tmpdir" EXIT
 actual_tokens="$test_tmpdir/basic.tokens"
 actual_stdout="$test_tmpdir/bad_string.stdout"
 actual_stderr="$test_tmpdir/bad_string.stderr"
+actual_ast="$test_tmpdir/ast_basic.ast"
+actual_ast_bad_stdout="$test_tmpdir/ast_bad.stdout"
+actual_ast_bad_stderr="$test_tmpdir/ast_bad.stderr"
 
 "$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
 diff -u tests/phase0/basic.tokens "$actual_tokens"
@@ -171,5 +174,14 @@ if "$build_dir/slc" tests/phase0/bad_string.sl > "$actual_stdout" 2> "$actual_st
 fi
 [ ! -s "$actual_stdout" ] || _err "unexpected stdout for tests/phase0/bad_string.sl"
 diff -u tests/phase0/bad_string.stderr "$actual_stderr"
+
+"$build_dir/slc" ast tests/phase1/ast_basic.sl > "$actual_ast"
+diff -u tests/phase1/ast_basic.ast "$actual_ast"
+
+if "$build_dir/slc" ast tests/phase1/ast_bad.sl > "$actual_ast_bad_stdout" 2> "$actual_ast_bad_stderr"; then
+    _err "expected failure for tests/phase1/ast_bad.sl"
+fi
+[ ! -s "$actual_ast_bad_stdout" ] || _err "unexpected stdout for tests/phase1/ast_bad.sl"
+diff -u tests/phase1/ast_bad.stderr "$actual_ast_bad_stderr"
 
 echo "tests passed"

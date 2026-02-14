@@ -19,6 +19,11 @@ typedef struct {
 } sl_strview;
 
 typedef struct {
+    void* ctx;
+    void (*write)(void* ctx, const char* data, uint32_t len);
+} sl_writer;
+
+typedef struct {
     uint8_t* mem;
     uint32_t cap;
     uint32_t len;
@@ -34,6 +39,10 @@ typedef enum {
     SL_DIAG_UNEXPECTED_CHAR,
     SL_DIAG_UNTERMINATED_STRING,
     SL_DIAG_INVALID_NUMBER,
+    SL_DIAG_UNEXPECTED_TOKEN,
+    SL_DIAG_EXPECTED_DECL,
+    SL_DIAG_EXPECTED_EXPR,
+    SL_DIAG_EXPECTED_TYPE,
 } sl_diag_code;
 
 typedef struct {
@@ -75,6 +84,7 @@ typedef enum {
     SL_TOK_ASSERT,
     SL_TOK_TRUE,
     SL_TOK_FALSE,
+    SL_TOK_AS,
 
     SL_TOK_LPAREN,
     SL_TOK_RPAREN,
@@ -132,10 +142,68 @@ typedef struct {
     uint32_t len;
 } sl_token_stream;
 
+typedef enum {
+    SL_AST_FILE = 0,
+    SL_AST_PACKAGE,
+    SL_AST_IMPORT,
+    SL_AST_PUB,
+    SL_AST_FUN,
+    SL_AST_PARAM,
+    SL_AST_TYPE_NAME,
+    SL_AST_TYPE_PTR,
+    SL_AST_TYPE_ARRAY,
+    SL_AST_STRUCT,
+    SL_AST_UNION,
+    SL_AST_ENUM,
+    SL_AST_FIELD,
+    SL_AST_BLOCK,
+    SL_AST_VAR,
+    SL_AST_CONST,
+    SL_AST_IF,
+    SL_AST_FOR,
+    SL_AST_RETURN,
+    SL_AST_BREAK,
+    SL_AST_CONTINUE,
+    SL_AST_DEFER,
+    SL_AST_EXPR_STMT,
+    SL_AST_IDENT,
+    SL_AST_INT,
+    SL_AST_FLOAT,
+    SL_AST_STRING,
+    SL_AST_BOOL,
+    SL_AST_UNARY,
+    SL_AST_BINARY,
+    SL_AST_CALL,
+    SL_AST_INDEX,
+    SL_AST_FIELD_EXPR,
+    SL_AST_CAST,
+} sl_ast_kind;
+
+typedef struct {
+    sl_ast_kind kind;
+    uint32_t start;
+    uint32_t end;
+    int32_t first_child;
+    int32_t next_sibling;
+    uint32_t data_start;
+    uint32_t data_end;
+    uint16_t op;
+    uint16_t flags;
+} sl_ast_node;
+
+typedef struct {
+    const sl_ast_node* nodes;
+    uint32_t len;
+    int32_t root;
+} sl_ast;
+
 const char* sl_token_kind_name(sl_token_kind kind);
+const char* sl_ast_kind_name(sl_ast_kind kind);
 
 // Tokenize src into arena memory and return a view over tokens.
 // Returns 0 on success, -1 on failure. On failure, diag is set.
 int sl_lex(sl_arena* arena, sl_strview src, sl_token_stream* out, sl_diag* diag);
+int sl_parse(sl_arena* arena, sl_strview src, sl_ast* out, sl_diag* diag);
+int sl_ast_dump(const sl_ast* ast, sl_strview src, sl_writer* w, sl_diag* diag);
 
 SL_API_END
