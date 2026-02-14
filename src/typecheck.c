@@ -1,4 +1,6 @@
-#include "libsl.h"
+#include "libsl-impl.h"
+
+SL_API_BEGIN
 
 typedef enum {
     SLTCType_INVALID = 0,
@@ -1520,3 +1522,5 @@ int SLTypeCheck(SLArena* arena, const SLAST* ast, SLStrView src, SLDiag* diag) {
 
     return 0;
 }
+
+SL_API_END

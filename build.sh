@@ -31,8 +31,9 @@ done
 asan=${asan:-$debug} # enable by default in debug builds
 mode=debug; [ $debug = 0 ] && mode=release
 build_dir=_build/$sys-$arch-$mode
-cli_sources=( $(find src -maxdepth 1 -name 'slc*.c' | sort) )
-lib_sources=( $(find src -maxdepth 1 -name '*.c' -and -not -name 'slc*.c' | sort) )
+cli_sources=( $(find src -maxdepth 2 -name 'slc.c' | sort) )
+lib_sources=( $(find src -maxdepth 2 -name '*.c' -and -not -name 'slc.c' | sort) )
+lib_headers=( $(find src -maxdepth 2 -name '*.h' | sort) )
 cli_output=slc
 lib_output=libsl.h
 toolchain=${toolchain:-/opt/homebrew/opt/llvm}
@@ -131,7 +132,7 @@ for srcfile in "${cli_sources[@]}" "${lib_sources[@]}"; do
 done
 
 cat << _END >> $NF
-build \$builddir/libsl.h: amalgamate src/libsl.h ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index
+build \$builddir/libsl.h: amalgamate src/libsl.h ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index
 build \$builddir/slc: link ${objfiles[*]}
 
 build slc:     phony \$builddir/slc
@@ -198,7 +199,6 @@ actual_codegen_app_header="$test_tmpdir/app_codegen.h"
 actual_codegen_app_obj="$test_tmpdir/app_codegen.o"
 actual_codegen_ptr_header="$test_tmpdir/ptr_codegen.h"
 actual_codegen_ptr_obj="$test_tmpdir/ptr_codegen.o"
-actual_freestanding_obj="$test_tmpdir/libsl.freestanding.o"
 
 "$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
 diff -u tests/phase0/basic.tokens "$actual_tokens"
@@ -302,16 +302,34 @@ cat > "$test_tmpdir/ptr_codegen_test.c" << _END
 _END
 "$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/ptr_codegen_test.c" -o "$actual_codegen_ptr_obj"
 
+# freestanding build of libsl.h
+cp "$build_dir/libsl.h" "$test_tmpdir/libsl.h"
+cat <<_END > "$test_tmpdir/libsl.c"
+#define SL_IMPLEMENTATION
+#include "libsl.h"
+_END
+
 "$cc" \
     -std=c11 \
     -ffreestanding \
+    -nostdlib \
     -fno-builtin \
     -Wall \
     -Wextra \
     -Werror \
-    -DSL_IMPLEMENTATION \
-    -xc \
-    -c "$build_dir/libsl.h" \
-    -o "$actual_freestanding_obj"
+    -c "$test_tmpdir/libsl.c" \
+    -o "$test_tmpdir/libsl.freestanding.o"
+
+"$cc" \
+    -target wasm32-unknown-unknown \
+    -std=c11 \
+    -ffreestanding \
+    -nostdlib \
+    -fno-builtin \
+    -Wall \
+    -Wextra \
+    -Werror \
+    -c "$test_tmpdir/libsl.c" \
+    -o "$test_tmpdir/libsl.wasm"
 
 echo "tests passed"

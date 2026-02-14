@@ -1,9 +1,7 @@
-#ifndef SL_SLC_CODEGEN_H
-#define SL_SLC_CODEGEN_H
-
-#include <stdint.h>
-
+#pragma once
 #include "libsl.h"
+
+SL_API_BEGIN
 
 typedef struct {
     const char* packageName;
@@ -12,8 +10,8 @@ typedef struct {
 } SLCodegenUnit;
 
 typedef struct {
-    const char* headerGuard; /* optional */
-    const char* implMacro;   /* optional */
+    const char* _Nullable headerGuard; /* optional */
+    const char* _Nullable implMacro;   /* optional */
 } SLCodegenOptions;
 
 struct SLCodegenBackend;
@@ -30,6 +28,6 @@ typedef struct SLCodegenBackend {
     SLCodegenEmitFn emit;
 } SLCodegenBackend;
 
-const SLCodegenBackend* SLCodegenFindBackend(const char* name);
+const SLCodegenBackend* _Nullable SLCodegenFindBackend(const char* name);
 
-#endif
+SL_API_END

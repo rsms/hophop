@@ -1,6 +1,7 @@
-#include <string.h>
-
+#include "libsl-impl.h"
 #include "slc_codegen.h"
+
+SL_API_BEGIN
 
 extern const SLCodegenBackend gSLCodegenBackendC;
 
@@ -20,3 +21,5 @@ const SLCodegenBackend* SLCodegenFindBackend(const char* name) {
     }
     return NULL;
 }
+
+SL_API_END

@@ -1,4 +1,6 @@
-#include "libsl.h"
+#include "libsl-impl.h"
+
+SL_API_BEGIN
 
 static void SLPSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
@@ -1310,3 +1312,5 @@ int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag) {
     out->root = root;
     return 0;
 }
+
+SL_API_END

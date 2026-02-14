@@ -2,7 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "libsl-impl.h"
 #include "slc_codegen.h"
+
+SL_API_BEGIN
 
 typedef struct {
     char*    v;
@@ -2004,3 +2007,5 @@ const SLCodegenBackend gSLCodegenBackendC = {
     .name = "c",
     .emit = EmitCBackend,
 };
+
+SL_API_END

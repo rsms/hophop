@@ -1,4 +1,5 @@
-#include "libsl.h"
+#include "libsl-impl.h"
+SL_API_BEGIN
 
 typedef struct {
     SLToken* v;
@@ -745,3 +746,5 @@ int SLASTDump(const SLAST* ast, SLStrView src, SLWriter* w, SLDiag* diag) {
     }
     return SLASTDumpNode(ast, ast->root, 0, src, w);
 }
+
+SL_API_END

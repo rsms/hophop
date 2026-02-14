@@ -11,43 +11,42 @@ fi
 outfile=$1; shift
 hfile=$1; shift
 source_hash=$(git rev-parse --short=20 HEAD 2>/dev/null || echo src)
-version_api=$(grep   -F '#define SL_VERSION_API ' src/version.h | awk '{print $3}')
-version=$(grep -F '#define SL_VERSION '     src/version.h | awk '{print $3}')
+version_api=$(grep -F '#define SL_VERSION_API ' src/libsl.h | awk '{print $3}')
+version=$(grep     -F '#define SL_VERSION '     src/libsl.h | awk '{print $3}')
 
 index_file=$(mktemp)
 trap "rm -f $index_file $outfile.tmp" EXIT
-sed -E \
-    -e "s/\\\$\{version\}/$version_api.$version/" \
-    -e '/\$\{license\}/{
-    r LICENSE.txt
-    d
-    }' \
-    "$hfile" > $index_file
 
+cat <<__END__ > $index_file
+/* libsl version $version_api.$version <https://github.com/rsms/slang>
+////////////////////////////////////////////////////////////////////////////////////////////////////
+$(cat LICENSE.txt)
+//////////////////////////////////////////////////////////////////////////////////////////////////*/
+#define SL_SOURCE_HASH "${source_hash}"
+#include "src/libsl.h"
+__END__
 for f in "$@"; do
     case "$f" in
-        *.h) printf '#include "%s"\n' "$@" >> $index_file ;;
+        */libsl.h|libsl.h|*/libsl-impl.h|libsl-impl.h) ;;
+        *.h) echo "#include \"$f\"" >> $index_file ;;
     esac
 done
 
-echo "////////////////////////////////////////////////////////////////////////////////////////////////////" >> $index_file
-echo "// SL_IMPLEMENTATION" >> $index_file
-echo "////////////////////////////////////////////////////////////////////////////////////////////////////" >> $index_file
-echo "#ifdef SL_IMPLEMENTATION" >> $index_file
 
+cat <<__END__ >> $index_file
+//////////////////////////////////////////////////////////////////////////////////////////////////*/
+// SL_IMPLEMENTATION
+//////////////////////////////////////////////////////////////////////////////////////////////////*/
+#include "src/libsl-impl.h"
+__END__
 for f in "$@"; do
     case "$f" in
         *.h) ;;
-        *) printf '#include "%s"\n' "$@" >> $index_file ;;
+        *) echo "#include \"$f\"" >> $index_file ;;
     esac
 done
-
 echo "#endif /* SL_IMPLEMENTATION */" >> $index_file
 
-python3 amalgamate.py -r . -r src $args -o "$outfile.tmp" $index_file
+# cp $index_file "$(dirname "$outfile")/amalgamate.h"
 
-sed -E -i '' \
-    -e "s/#define SL_SOURCE_HASH \"src\"/#define SL_SOURCE_HASH \"${source_hash}\"/" \
-    "$outfile.tmp"
-
-mv "$outfile.tmp" "$outfile"
+python3 amalgamate.py -r . -r src $args -o "$outfile" $index_file

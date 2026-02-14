@@ -9,8 +9,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "libsl.h"
+#include "libsl-impl.h"
 #include "slc_codegen.h"
+
+SL_API_BEGIN
 
 typedef struct {
     char*    path;
@@ -1872,8 +1874,10 @@ static int GeneratePackage(
     unit.source = source;
     unit.sourceLen = sourceLen;
 
+    SLCodegenOptions codegenOptions = { 0 };
+
     SLDiagClear(&diag);
-    if (backend->emit(backend, &unit, NULL, &outHeader, &diag) != 0) {
+    if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
         if (diag.code != SLDiag_NONE) {
             fprintf(
                 stderr,
@@ -1989,3 +1993,5 @@ int main(int argc, char* argv[]) {
     free(source);
     return 0;
 }
+
+SL_API_END
