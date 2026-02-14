@@ -1,0 +1,6 @@
+/bin
+/_*
+/compile_commands.json
+/.cache
+
+.env

@@ -1,0 +1,4 @@
+Diagnostics:
+    UnusedIncludes: None
+Completion:
+    HeaderInsertion: Never
