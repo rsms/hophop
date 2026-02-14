@@ -186,6 +186,14 @@ actual_switch_bad_condition_stdout="$test_tmpdir/switch_bad_condition.stdout"
 actual_switch_bad_condition_stderr="$test_tmpdir/switch_bad_condition.stderr"
 actual_switch_bad_default_stdout="$test_tmpdir/switch_bad_default.stdout"
 actual_switch_bad_default_stderr="$test_tmpdir/switch_bad_default.stderr"
+actual_checkpkg_ok_stdout="$test_tmpdir/checkpkg_ok.stdout"
+actual_checkpkg_ok_stderr="$test_tmpdir/checkpkg_ok.stderr"
+actual_checkpkg_bad_symbol_stdout="$test_tmpdir/checkpkg_bad_symbol.stdout"
+actual_checkpkg_bad_symbol_stderr="$test_tmpdir/checkpkg_bad_symbol.stderr"
+actual_checkpkg_cycle_stdout="$test_tmpdir/checkpkg_cycle.stdout"
+actual_checkpkg_cycle_stderr="$test_tmpdir/checkpkg_cycle.stderr"
+actual_checkpkg_pub_missing_stdout="$test_tmpdir/checkpkg_pub_missing.stdout"
+actual_checkpkg_pub_missing_stderr="$test_tmpdir/checkpkg_pub_missing.stderr"
 actual_freestanding_obj="$test_tmpdir/libsl.freestanding.o"
 
 "$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
@@ -250,6 +258,30 @@ if "$build_dir/slc" check tests/phase3/switch_bad_default_dup.sl > "$actual_swit
 fi
 [ ! -s "$actual_switch_bad_default_stdout" ] || _err "unexpected stdout for tests/phase3/switch_bad_default_dup.sl"
 diff -u tests/phase3/switch_bad_default_dup.stderr "$actual_switch_bad_default_stderr"
+
+if ! "$build_dir/slc" checkpkg tests/phase4/pkg_ok/app > "$actual_checkpkg_ok_stdout" 2> "$actual_checkpkg_ok_stderr"; then
+    _err "unexpected failure for tests/phase4/pkg_ok/app"
+fi
+[ ! -s "$actual_checkpkg_ok_stdout" ] || _err "unexpected stdout for tests/phase4/pkg_ok/app"
+[ ! -s "$actual_checkpkg_ok_stderr" ] || _err "unexpected stderr for tests/phase4/pkg_ok/app"
+
+if "$build_dir/slc" checkpkg tests/phase4/pkg_bad_symbol/app > "$actual_checkpkg_bad_symbol_stdout" 2> "$actual_checkpkg_bad_symbol_stderr"; then
+    _err "expected failure for tests/phase4/pkg_bad_symbol/app"
+fi
+[ ! -s "$actual_checkpkg_bad_symbol_stdout" ] || _err "unexpected stdout for tests/phase4/pkg_bad_symbol/app"
+diff -u tests/phase4/pkg_bad_symbol.stderr "$actual_checkpkg_bad_symbol_stderr"
+
+if "$build_dir/slc" checkpkg tests/phase4/pkg_cycle/a > "$actual_checkpkg_cycle_stdout" 2> "$actual_checkpkg_cycle_stderr"; then
+    _err "expected failure for tests/phase4/pkg_cycle/a"
+fi
+[ ! -s "$actual_checkpkg_cycle_stdout" ] || _err "unexpected stdout for tests/phase4/pkg_cycle/a"
+diff -u tests/phase4/pkg_cycle.stderr "$actual_checkpkg_cycle_stderr"
+
+if "$build_dir/slc" checkpkg tests/phase4/pub_missing_def > "$actual_checkpkg_pub_missing_stdout" 2> "$actual_checkpkg_pub_missing_stderr"; then
+    _err "expected failure for tests/phase4/pub_missing_def"
+fi
+[ ! -s "$actual_checkpkg_pub_missing_stdout" ] || _err "unexpected stdout for tests/phase4/pub_missing_def"
+diff -u tests/phase4/pub_missing_def.stderr "$actual_checkpkg_pub_missing_stderr"
 
 "$cc" \
     -std=c11 \
