@@ -345,6 +345,8 @@ switch {
 * `return`
 * `return expr`
 
+`break` exits the innermost `for` or `switch`. `continue` applies only to `for`.
+
 No `goto`.
 
 ---

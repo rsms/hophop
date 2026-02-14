@@ -177,6 +177,15 @@ actual_check_unknown_stdout="$test_tmpdir/check_unknown.stdout"
 actual_check_unknown_stderr="$test_tmpdir/check_unknown.stderr"
 actual_check_mismatch_stdout="$test_tmpdir/check_mismatch.stdout"
 actual_check_mismatch_stderr="$test_tmpdir/check_mismatch.stderr"
+actual_switch_ast="$test_tmpdir/switch_ast.ast"
+actual_switch_ok_stdout="$test_tmpdir/switch_ok.stdout"
+actual_switch_ok_stderr="$test_tmpdir/switch_ok.stderr"
+actual_switch_bad_subject_stdout="$test_tmpdir/switch_bad_subject.stdout"
+actual_switch_bad_subject_stderr="$test_tmpdir/switch_bad_subject.stderr"
+actual_switch_bad_condition_stdout="$test_tmpdir/switch_bad_condition.stdout"
+actual_switch_bad_condition_stderr="$test_tmpdir/switch_bad_condition.stderr"
+actual_switch_bad_default_stdout="$test_tmpdir/switch_bad_default.stdout"
+actual_switch_bad_default_stderr="$test_tmpdir/switch_bad_default.stderr"
 actual_freestanding_obj="$test_tmpdir/libsl.freestanding.o"
 
 "$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
@@ -214,6 +223,33 @@ if "$build_dir/slc" check tests/phase2/bad_type_mismatch.sl > "$actual_check_mis
 fi
 [ ! -s "$actual_check_mismatch_stdout" ] || _err "unexpected stdout for tests/phase2/bad_type_mismatch.sl"
 diff -u tests/phase2/bad_type_mismatch.stderr "$actual_check_mismatch_stderr"
+
+"$build_dir/slc" ast tests/phase3/switch_ast.sl > "$actual_switch_ast"
+diff -u tests/phase3/switch_ast.ast "$actual_switch_ast"
+
+if ! "$build_dir/slc" check tests/phase3/switch_ok.sl > "$actual_switch_ok_stdout" 2> "$actual_switch_ok_stderr"; then
+    _err "unexpected failure for tests/phase3/switch_ok.sl"
+fi
+[ ! -s "$actual_switch_ok_stdout" ] || _err "unexpected stdout for tests/phase3/switch_ok.sl"
+[ ! -s "$actual_switch_ok_stderr" ] || _err "unexpected stderr for tests/phase3/switch_ok.sl"
+
+if "$build_dir/slc" check tests/phase3/switch_bad_subject_type.sl > "$actual_switch_bad_subject_stdout" 2> "$actual_switch_bad_subject_stderr"; then
+    _err "expected failure for tests/phase3/switch_bad_subject_type.sl"
+fi
+[ ! -s "$actual_switch_bad_subject_stdout" ] || _err "unexpected stdout for tests/phase3/switch_bad_subject_type.sl"
+diff -u tests/phase3/switch_bad_subject_type.stderr "$actual_switch_bad_subject_stderr"
+
+if "$build_dir/slc" check tests/phase3/switch_bad_condition_type.sl > "$actual_switch_bad_condition_stdout" 2> "$actual_switch_bad_condition_stderr"; then
+    _err "expected failure for tests/phase3/switch_bad_condition_type.sl"
+fi
+[ ! -s "$actual_switch_bad_condition_stdout" ] || _err "unexpected stdout for tests/phase3/switch_bad_condition_type.sl"
+diff -u tests/phase3/switch_bad_condition_type.stderr "$actual_switch_bad_condition_stderr"
+
+if "$build_dir/slc" check tests/phase3/switch_bad_default_dup.sl > "$actual_switch_bad_default_stdout" 2> "$actual_switch_bad_default_stderr"; then
+    _err "expected failure for tests/phase3/switch_bad_default_dup.sl"
+fi
+[ ! -s "$actual_switch_bad_default_stdout" ] || _err "unexpected stdout for tests/phase3/switch_bad_default_dup.sl"
+diff -u tests/phase3/switch_bad_default_dup.stderr "$actual_switch_bad_default_stderr"
 
 "$cc" \
     -std=c11 \

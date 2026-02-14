@@ -769,6 +769,7 @@ static int SLPParseType(SLParser* p, int32_t* out);
 static int SLPParseExpr(SLParser* p, int minPrec, int32_t* out);
 static int SLPParseStmt(SLParser* p, int32_t* out);
 static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out);
+static int SLPParseSwitchStmt(SLParser* p, int32_t* out);
 
 static int SLPParseTypeName(SLParser* p, int32_t* out) {
     const SLToken* first;
@@ -1308,6 +1309,108 @@ static int SLPParseForStmt(SLParser* p, int32_t* out) {
     return 0;
 }
 
+static int SLPParseSwitchStmt(SLParser* p, int32_t* out) {
+    const SLToken* kw = SLPPeek(p);
+    const SLToken* rb;
+    int32_t        sw;
+    int            sawDefault = 0;
+
+    p->pos++;
+    sw = SLPNewNode(p, SLAST_SWITCH, kw->start, kw->end);
+    if (sw < 0) {
+        return -1;
+    }
+
+    // Expression switch: switch <expr> { ... }
+    // Condition switch:  switch { ... }
+    if (!SLPAt(p, SLTok_LBRACE)) {
+        int32_t subject;
+        if (SLPParseExpr(p, 1, &subject) != 0) {
+            return -1;
+        }
+        if (SLPAddChild(p, sw, subject) != 0) {
+            return -1;
+        }
+        p->nodes[sw].flags = 1;
+    }
+
+    if (SLPExpect(p, SLTok_LBRACE, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+        return -1;
+    }
+
+    while (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
+        if (SLPMatch(p, SLTok_SEMICOLON)) {
+            continue;
+        }
+
+        if (SLPMatch(p, SLTok_CASE)) {
+            int32_t caseNode = SLPNewNode(p, SLAST_CASE, SLPPrev(p)->start, SLPPrev(p)->end);
+            int32_t body;
+            if (caseNode < 0) {
+                return -1;
+            }
+
+            for (;;) {
+                int32_t labelExpr;
+                if (SLPParseExpr(p, 1, &labelExpr) != 0) {
+                    return -1;
+                }
+                if (SLPAddChild(p, caseNode, labelExpr) != 0) {
+                    return -1;
+                }
+                if (!SLPMatch(p, SLTok_COMMA)) {
+                    break;
+                }
+            }
+
+            if (SLPParseBlock(p, &body) != 0) {
+                return -1;
+            }
+            if (SLPAddChild(p, caseNode, body) != 0) {
+                return -1;
+            }
+            p->nodes[caseNode].end = p->nodes[body].end;
+            if (SLPAddChild(p, sw, caseNode) != 0) {
+                return -1;
+            }
+            continue;
+        }
+
+        if (SLPMatch(p, SLTok_DEFAULT)) {
+            int32_t defNode;
+            int32_t body;
+            if (sawDefault) {
+                return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+            }
+            sawDefault = 1;
+            defNode = SLPNewNode(p, SLAST_DEFAULT, SLPPrev(p)->start, SLPPrev(p)->end);
+            if (defNode < 0) {
+                return -1;
+            }
+            if (SLPParseBlock(p, &body) != 0) {
+                return -1;
+            }
+            if (SLPAddChild(p, defNode, body) != 0) {
+                return -1;
+            }
+            p->nodes[defNode].end = p->nodes[body].end;
+            if (SLPAddChild(p, sw, defNode) != 0) {
+                return -1;
+            }
+            continue;
+        }
+
+        return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+    }
+
+    if (SLPExpect(p, SLTok_RBRACE, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+        return -1;
+    }
+    p->nodes[sw].end = rb->end;
+    *out = sw;
+    return 0;
+}
+
 static int SLPParseStmt(SLParser* p, int32_t* out) {
     const SLToken* kw;
     int32_t        n;
@@ -1315,10 +1418,11 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
     int32_t        block;
 
     switch (SLPPeek(p)->kind) {
-        case SLTok_VAR:   return SLPParseVarLikeStmt(p, SLAST_VAR, 1, out);
-        case SLTok_CONST: return SLPParseVarLikeStmt(p, SLAST_CONST, 1, out);
-        case SLTok_IF:    return SLPParseIfStmt(p, out);
-        case SLTok_FOR:   return SLPParseForStmt(p, out);
+        case SLTok_VAR:    return SLPParseVarLikeStmt(p, SLAST_VAR, 1, out);
+        case SLTok_CONST:  return SLPParseVarLikeStmt(p, SLAST_CONST, 1, out);
+        case SLTok_IF:     return SLPParseIfStmt(p, out);
+        case SLTok_FOR:    return SLPParseForStmt(p, out);
+        case SLTok_SWITCH: return SLPParseSwitchStmt(p, out);
         case SLTok_RETURN:
             kw = SLPPeek(p);
             p->pos++;
@@ -1722,6 +1826,9 @@ const char* SLASTKindName(SLASTKind kind) {
         case SLAST_CONST:      return "CONST";
         case SLAST_IF:         return "IF";
         case SLAST_FOR:        return "FOR";
+        case SLAST_SWITCH:     return "SWITCH";
+        case SLAST_CASE:       return "CASE";
+        case SLAST_DEFAULT:    return "DEFAULT";
         case SLAST_RETURN:     return "RETURN";
         case SLAST_BREAK:      return "BREAK";
         case SLAST_CONTINUE:   return "CONTINUE";

@@ -891,7 +891,8 @@ static int SLTCExprIsAssignable(const SLAST* ast, int32_t exprNode) {
 }
 
 static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
-static int SLTCTypeStmt(SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth);
+static int SLTCTypeStmt(
+    SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth);
 
 static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     const SLASTNode* n;
@@ -1160,11 +1161,12 @@ static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
     return SLTCLocalAdd(c, n->dataStart, n->dataEnd, declType);
 }
 
-static int SLTCTypeBlock(SLTypeCheckCtx* c, int32_t blockNode, int32_t returnType, int loopDepth) {
+static int SLTCTypeBlock(
+    SLTypeCheckCtx* c, int32_t blockNode, int32_t returnType, int loopDepth, int switchDepth) {
     uint32_t savedLocalLen = c->localLen;
     int32_t  child = SLASTFirstChild(c->ast, blockNode);
     while (child >= 0) {
-        if (SLTCTypeStmt(c, child, returnType, loopDepth) != 0) {
+        if (SLTCTypeStmt(c, child, returnType, loopDepth, switchDepth) != 0) {
             return -1;
         }
         child = SLASTNextSibling(c->ast, child);
@@ -1173,7 +1175,8 @@ static int SLTCTypeBlock(SLTypeCheckCtx* c, int32_t blockNode, int32_t returnTyp
     return 0;
 }
 
-static int SLTCTypeForStmt(SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth) {
+static int SLTCTypeForStmt(
+    SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
     uint32_t savedLocalLen = c->localLen;
     int32_t  child = SLASTFirstChild(c->ast, nodeId);
     int32_t  nodes[4];
@@ -1213,7 +1216,7 @@ static int SLTCTypeForStmt(SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType
         return SLTCFailNode(c, nodes[count - 1], SLDiag_UNEXPECTED_TOKEN);
     }
 
-    if (SLTCTypeBlock(c, nodes[count - 1], returnType, loopDepth + 1) != 0) {
+    if (SLTCTypeBlock(c, nodes[count - 1], returnType, loopDepth + 1, switchDepth) != 0) {
         return -1;
     }
 
@@ -1221,10 +1224,80 @@ static int SLTCTypeForStmt(SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType
     return 0;
 }
 
-static int SLTCTypeStmt(SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth) {
+static int SLTCTypeSwitchStmt(
+    SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
+    const SLASTNode* sw = &c->ast->nodes[nodeId];
+    int32_t          child = SLASTFirstChild(c->ast, nodeId);
+    int32_t          subjectType = -1;
+
+    if (sw->flags == 1) {
+        if (child < 0) {
+            return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        }
+        if (SLTCTypeExpr(c, child, &subjectType) != 0) {
+            return -1;
+        }
+        child = SLASTNextSibling(c->ast, child);
+    }
+
+    while (child >= 0) {
+        const SLASTNode* clause = &c->ast->nodes[child];
+        if (clause->kind == SLAST_CASE) {
+            int32_t caseChild = SLASTFirstChild(c->ast, child);
+            int32_t bodyNode = -1;
+            while (caseChild >= 0) {
+                int32_t next = SLASTNextSibling(c->ast, caseChild);
+                if (next < 0) {
+                    bodyNode = caseChild;
+                    break;
+                }
+                if (sw->flags == 1) {
+                    int32_t labelType;
+                    if (SLTCTypeExpr(c, caseChild, &labelType) != 0) {
+                        return -1;
+                    }
+                    if (!SLTCCanAssign(c, subjectType, labelType)) {
+                        return SLTCFailNode(c, caseChild, SLDiag_TYPE_MISMATCH);
+                    }
+                } else {
+                    int32_t condType;
+                    if (SLTCTypeExpr(c, caseChild, &condType) != 0) {
+                        return -1;
+                    }
+                    if (!SLTCIsBoolType(c, condType)) {
+                        return SLTCFailNode(c, caseChild, SLDiag_EXPECTED_BOOL);
+                    }
+                }
+                caseChild = next;
+            }
+            if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != SLAST_BLOCK) {
+                return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
+            }
+            if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth, switchDepth + 1) != 0) {
+                return -1;
+            }
+        } else if (clause->kind == SLAST_DEFAULT) {
+            int32_t bodyNode = SLASTFirstChild(c->ast, child);
+            if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != SLAST_BLOCK) {
+                return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
+            }
+            if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth, switchDepth + 1) != 0) {
+                return -1;
+            }
+        } else {
+            return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
+        }
+        child = SLASTNextSibling(c->ast, child);
+    }
+
+    return 0;
+}
+
+static int SLTCTypeStmt(
+    SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
     const SLASTNode* n = &c->ast->nodes[nodeId];
     switch (n->kind) {
-        case SLAST_BLOCK:     return SLTCTypeBlock(c, nodeId, returnType, loopDepth);
+        case SLAST_BLOCK:     return SLTCTypeBlock(c, nodeId, returnType, loopDepth, switchDepth);
         case SLAST_VAR:
         case SLAST_CONST:     return SLTCTypeVarLike(c, nodeId);
         case SLAST_EXPR_STMT: {
@@ -1272,17 +1345,23 @@ static int SLTCTypeStmt(SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, i
             if (!SLTCIsBoolType(c, condType)) {
                 return SLTCFailNode(c, cond, SLDiag_EXPECTED_BOOL);
             }
-            if (SLTCTypeStmt(c, thenNode, returnType, loopDepth) != 0) {
+            if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
                 return -1;
             }
             elseNode = SLASTNextSibling(c->ast, thenNode);
-            if (elseNode >= 0 && SLTCTypeStmt(c, elseNode, returnType, loopDepth) != 0) {
+            if (elseNode >= 0 && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
+            {
                 return -1;
             }
             return 0;
         }
-        case SLAST_FOR: return SLTCTypeForStmt(c, nodeId, returnType, loopDepth);
+        case SLAST_FOR:    return SLTCTypeForStmt(c, nodeId, returnType, loopDepth, switchDepth);
+        case SLAST_SWITCH: return SLTCTypeSwitchStmt(c, nodeId, returnType, loopDepth, switchDepth);
         case SLAST_BREAK:
+            if (loopDepth <= 0 && switchDepth <= 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
+            }
+            return 0;
         case SLAST_CONTINUE:
             if (loopDepth <= 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
@@ -1293,7 +1372,7 @@ static int SLTCTypeStmt(SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, i
             if (stmt < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
             }
-            return SLTCTypeStmt(c, stmt, returnType, loopDepth);
+            return SLTCTypeStmt(c, stmt, returnType, loopDepth, switchDepth);
         }
         default: return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
     }
@@ -1336,7 +1415,7 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
         return 0;
     }
 
-    return SLTCTypeBlock(c, bodyNode, fn->returnType, 0);
+    return SLTCTypeBlock(c, bodyNode, fn->returnType, 0, 0);
 }
 
 static int SLTCCollectFunctionDecls(SLTypeCheckCtx* c) {
