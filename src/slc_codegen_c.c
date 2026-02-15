@@ -1781,7 +1781,13 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     }
 }
 
-static int IsExportedNode(const SLCBackendC* c, int32_t nodeId) {
+static int IsMainFunctionNode(const SLCBackendC* c, int32_t nodeId) {
+    const SLASTNode* n = NodeAt(c, nodeId);
+    return n != NULL && n->kind == SLAST_FN
+        && SliceEq(c->unit->source, n->dataStart, n->dataEnd, "main");
+}
+
+static int IsExplicitlyExportedNode(const SLCBackendC* c, int32_t nodeId) {
     const SLASTNode* n = NodeAt(c, nodeId);
     const SLNameMap* map;
     if (n == NULL) {
@@ -1789,6 +1795,13 @@ static int IsExportedNode(const SLCBackendC* c, int32_t nodeId) {
     }
     map = FindNameBySlice(c, n->dataStart, n->dataEnd);
     return map != NULL && map->kind == n->kind && map->isExported;
+}
+
+static int IsExportedNode(const SLCBackendC* c, int32_t nodeId) {
+    if (IsMainFunctionNode(c, nodeId)) {
+        return 1;
+    }
+    return IsExplicitlyExportedNode(c, nodeId);
 }
 
 static int IsExportedTypeNode(const SLCBackendC* c, int32_t nodeId) {
@@ -2179,6 +2192,18 @@ static int EmitHeader(SLCBackendC* c) {
             free(defaultGuard);
             free(defaultImpl);
             return -1;
+        }
+    }
+
+    for (i = 0; i < c->topDeclLen; i++) {
+        int32_t nodeId = c->topDecls[i].nodeId;
+        if (IsMainFunctionNode(c, nodeId) && !IsExplicitlyExportedNode(c, nodeId)) {
+            if (EmitDeclNode(c, nodeId, 0, 1, 0, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
+                free(defaultGuard);
+                free(defaultImpl);
+                return -1;
+            }
+            break;
         }
     }
 

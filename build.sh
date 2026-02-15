@@ -294,6 +294,11 @@ fi
 diff -u tests/phase4/pub_missing_def.stderr "$actual_checkpkg_pub_missing_stderr"
 
 "$build_dir/slc" genpkg tests/phase4/pkg_ok/app > "$actual_codegen_app_header"
+rg -F "i32 app__main(void);" "$actual_codegen_app_header" > /dev/null \
+    || _err "missing implicit public declaration for app main"
+if rg -F "static i32 app__main(void)" "$actual_codegen_app_header" > /dev/null; then
+    _err "app main should not be emitted as static"
+fi
 cat > "$test_tmpdir/app_codegen_test.c" << _END
 #define APP_IMPL
 #include "$actual_codegen_app_header"

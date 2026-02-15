@@ -1,5 +1,7 @@
 # SL Examples
 
+`fn main` is special and does not need to be listed in a `pub { ... }` block.
+
 ## Basic single-file package
 
 - Source: `examples/basic/main.sl`

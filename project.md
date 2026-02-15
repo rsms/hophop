@@ -185,6 +185,8 @@ fn b(x i32) i32 { return x + 1 } // private
 
 * Outside package: only names declared in `pub {}` are accessible as `foo.T`, `foo.A`.
 * Inside package: both exported and private are accessible.
+* Exception for programs: `fn main` is treated as an entry point and does not need to be declared
+  in `pub {}`.
 
 **API closure rule (recommended for simplicity):**
 

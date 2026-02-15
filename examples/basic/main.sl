@@ -1,9 +1,5 @@
 package basic
 
-pub {
-    fn Main() i32
-}
-
-fn Main() i32 {
+fn main() i32 {
     return 42
 }

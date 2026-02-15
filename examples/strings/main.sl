@@ -1,10 +1,6 @@
 package strings
 
-pub {
-    fn Main() i32
-}
-
-fn Main() i32 {
+fn main() i32 {
     var s str = "hello\n"
     var l u32 = len(s)
 
