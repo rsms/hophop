@@ -211,6 +211,11 @@ actual_phase6_single_header="$test_tmpdir/phase6_single.h"
 actual_phase6_single_obj="$test_tmpdir/phase6_single.o"
 actual_phase6_single_import_header="$test_tmpdir/phase6_single_import.h"
 actual_phase6_single_import_obj="$test_tmpdir/phase6_single_import.o"
+actual_phase7_compile_exe="$test_tmpdir/phase7_run_exit7"
+actual_phase7_compile_stdout="$test_tmpdir/phase7_compile.stdout"
+actual_phase7_compile_stderr="$test_tmpdir/phase7_compile.stderr"
+actual_phase7_run_stdout="$test_tmpdir/phase7_run.stdout"
+actual_phase7_run_stderr="$test_tmpdir/phase7_run.stderr"
 
 "$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
 diff -u tests/phase0/basic.tokens "$actual_tokens"
@@ -382,6 +387,44 @@ cat > "$test_tmpdir/phase6_single_import_test.c" << _END
 int test_codegen_phase6_single_import(void) { return (int)app__main(); }
 _END
 "$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase6_single_import_test.c" -o "$actual_phase6_single_import_obj"
+
+if ! "$build_dir/slc" compile tests/phase7/run_exit7.sl -o "$actual_phase7_compile_exe" \
+    > "$actual_phase7_compile_stdout" 2> "$actual_phase7_compile_stderr"; then
+    _err "unexpected failure for slc compile tests/phase7/run_exit7.sl"
+fi
+[ ! -s "$actual_phase7_compile_stdout" ] || _err "unexpected stdout for slc compile"
+[ ! -s "$actual_phase7_compile_stderr" ] || _err "unexpected stderr for slc compile"
+[ -x "$actual_phase7_compile_exe" ] || _err "compile command did not produce executable output"
+
+set +e
+"$actual_phase7_compile_exe" > /dev/null 2>&1
+phase7_status=$?
+set -e
+[ "$phase7_status" = "7" ] || _err "compiled executable returned $phase7_status, expected 7"
+
+set +e
+"$build_dir/slc" run tests/phase7/run_exit7.sl > "$actual_phase7_run_stdout" 2> "$actual_phase7_run_stderr"
+phase7_status=$?
+set -e
+[ "$phase7_status" = "7" ] || _err "slc run returned $phase7_status, expected 7"
+[ ! -s "$actual_phase7_run_stdout" ] || _err "unexpected stdout for slc run"
+[ ! -s "$actual_phase7_run_stderr" ] || _err "unexpected stderr for slc run"
+
+for example_path in examples/*.sl; do
+    example_name=$(basename "$example_path" .sl)
+    example_output="$test_tmpdir/example-$example_name"
+    if [ "$example_name" = "defer" ] || [ "$example_name" = "order_independent" ] \
+        || [ "$example_name" = "pointers_arrays" ]; then
+        if "$build_dir/slc" compile "$example_path" -o "$example_output" > /dev/null 2>&1; then
+            _err "expected slc compile to fail for $example_path (known C-backend gap)"
+        fi
+        continue
+    fi
+    if ! "$build_dir/slc" compile "$example_path" -o "$example_output" > /dev/null 2>&1; then
+        _err "unexpected failure for slc compile $example_path"
+    fi
+    [ -x "$example_output" ] || _err "compile command did not produce executable for $example_path"
+done
 
 # freestanding build of libsl.h
 cp "$build_dir/libsl.h" "$test_tmpdir/libsl.h"

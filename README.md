@@ -21,6 +21,12 @@ _build/macos-aarch64-debug/slc checkpkg <package-dir|file.sl>
 
 # generate C header for package directory or single file
 _build/macos-aarch64-debug/slc genpkg:c <package-dir|file.sl> [out.h]
+
+# compile program to native executable via cc
+_build/macos-aarch64-debug/slc compile <package-dir|file.sl> -o <output>
+
+# compile + exec
+_build/macos-aarch64-debug/slc run <package-dir|file.sl>
 ```
 
 ## Example
@@ -44,6 +50,15 @@ Typecheck and generate C header:
 ```sh
 _build/macos-aarch64-debug/slc checkpkg hello.sl
 _build/macos-aarch64-debug/slc genpkg:c hello.sl hello.h
+```
+
+Compile and run:
+
+```sh
+_build/macos-aarch64-debug/slc compile hello.sl -o hello
+./hello
+
+_build/macos-aarch64-debug/slc run hello.sl
 ```
 
 For more programs, see `examples/`.

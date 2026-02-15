@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "libsl-impl.h"
@@ -2056,6 +2057,21 @@ static int ParseGenpkgMode(const char* mode, char* outBackend, uint32_t outBacke
     return 1;
 }
 
+static void PrintUsage(const char* argv0) {
+    fprintf(
+        stderr,
+        "usage: %s [lex|ast|check] <file.sl>\n"
+        "       %s checkpkg <package-dir|file.sl>\n"
+        "       %s genpkg[:backend] <package-dir|file.sl> [out.h]\n"
+        "       %s compile <package-dir|file.sl> -o <output>\n"
+        "       %s run <package-dir|file.sl>\n",
+        argv0,
+        argv0,
+        argv0,
+        argv0,
+        argv0);
+}
+
 static int GeneratePackage(
     const char* entryPath, const char* backendName, const char* _Nullable outFilename) {
     SLPackageLoader         loader;
@@ -2129,6 +2145,205 @@ static int GeneratePackage(
     return 0;
 }
 
+static int RunCommand(const char* const* argv) {
+    pid_t pid = fork();
+    int   status;
+    if (pid < 0) {
+        return -1;
+    }
+    if (pid == 0) {
+        execvp(argv[0], (char* const*)argv);
+        _exit(127);
+    }
+    if (waitpid(pid, &status, 0) < 0) {
+        return -1;
+    }
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        return 0;
+    }
+    return -1;
+}
+
+static int CreateTempDir(char* outPath, size_t outPathCap, const char* tag) {
+    const char* tmpBase = getenv("TMPDIR");
+    int         n;
+    char*       dir;
+    if (tmpBase == NULL || tmpBase[0] == '\0') {
+        tmpBase = "/tmp";
+    }
+    n = snprintf(outPath, outPathCap, "%s/slc-%s.XXXXXX", tmpBase, tag);
+    if (n <= 0 || (size_t)n >= outPathCap) {
+        return -1;
+    }
+    dir = mkdtemp(outPath);
+    return dir != NULL ? 0 : -1;
+}
+
+static int CompileProgram(const char* entryPath, const char* outExe) {
+    SLPackageLoader         loader = { 0 };
+    int                     loaderReady = 0;
+    SLPackage*              entryPkg;
+    char*                   source = NULL;
+    uint32_t                sourceLen = 0;
+    char*                   outHeader = NULL;
+    SLDiag                  diag;
+    SLCodegenUnit           unit;
+    const SLCodegenBackend* backend;
+    SLCodegenOptions        codegenOptions = { 0 };
+    char                    tmpDir[PATH_MAX];
+    char*                   headerPath = NULL;
+    char*                   sourcePath = NULL;
+    SLStringBuilder         cBuilder = { 0 };
+    char*                   cSource = NULL;
+    const char*             ccArgv[8];
+    int                     rc = -1;
+
+    tmpDir[0] = '\0';
+
+    if (LoadAndCheckPackage(entryPath, &loader, &entryPkg) != 0) {
+        goto end;
+    }
+    loaderReady = 1;
+    if (BuildCombinedPackageSource(entryPkg, &source, &sourceLen) != 0) {
+        goto end;
+    }
+    if (!IsValidIdentifier(entryPkg->name)) {
+        ErrorSimple(
+            "entry package name \"%s\" is not a valid identifier (inferred from path)",
+            entryPkg->name);
+        goto end;
+    }
+
+    backend = SLCodegenFindBackend("c");
+    if (backend == NULL) {
+        ErrorSimple("unknown backend: c");
+        goto end;
+    }
+
+    unit.packageName = entryPkg->name;
+    unit.source = source;
+    unit.sourceLen = sourceLen;
+    codegenOptions.implMacro = "SLC_IMPL";
+    codegenOptions.headerGuard = "SLC_PROGRAM_H";
+
+    SLDiagClear(&diag);
+    if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
+        if (diag.code != SLDiag_NONE) {
+            ErrorSimple(
+                "%s:%u:%u: %s",
+                DisplayPath(entryPkg->dirPath),
+                diag.start,
+                diag.end,
+                SLDiagMessage(diag.code));
+        } else {
+            ErrorSimple("codegen failed");
+        }
+        goto end;
+    }
+
+    if (CreateTempDir(tmpDir, sizeof(tmpDir), "compile") != 0) {
+        ErrorSimple("failed to create temporary directory");
+        goto end;
+    }
+
+    headerPath = JoinPath(tmpDir, "program.h");
+    sourcePath = JoinPath(tmpDir, "program.c");
+    if (headerPath == NULL || sourcePath == NULL) {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+    if (WriteOutput(headerPath, outHeader, (uint32_t)strlen(outHeader)) != 0) {
+        ErrorSimple("failed to write generated header");
+        goto end;
+    }
+
+    if (SBAppendCStr(&cBuilder, "#define SLC_IMPL\n#include \"") != 0
+        || SBAppendCStr(&cBuilder, headerPath) != 0 || SBAppendCStr(&cBuilder, "\"\n\n") != 0
+        || SBAppendCStr(&cBuilder, "int main(void) { return (int)") != 0
+        || SBAppendCStr(&cBuilder, entryPkg->name) != 0
+        || SBAppendCStr(&cBuilder, "__main(); }\n") != 0)
+    {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+    cSource = SBFinish(&cBuilder, NULL);
+    if (cSource == NULL) {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+    if (WriteOutput(sourcePath, cSource, (uint32_t)strlen(cSource)) != 0) {
+        ErrorSimple("failed to write generated C source");
+        goto end;
+    }
+
+    ccArgv[0] = "cc";
+    ccArgv[1] = "-std=c11";
+    ccArgv[2] = "-g";
+    ccArgv[3] = "-o";
+    ccArgv[4] = outExe;
+    ccArgv[5] = sourcePath;
+    ccArgv[6] = NULL;
+
+    if (RunCommand(ccArgv) != 0) {
+        ErrorSimple("C compilation failed");
+        goto end;
+    }
+
+    rc = 0;
+
+end:
+    if (headerPath != NULL) {
+        unlink(headerPath);
+    }
+    if (sourcePath != NULL) {
+        unlink(sourcePath);
+    }
+    if (tmpDir[0] != '\0') {
+        rmdir(tmpDir);
+    }
+    free(headerPath);
+    free(sourcePath);
+    free(outHeader);
+    free(cSource);
+    free(cBuilder.v);
+    free(source);
+    if (loaderReady) {
+        FreeLoader(&loader);
+    }
+    return rc;
+}
+
+static int RunProgram(const char* entryPath) {
+    const char* tmpBase = getenv("TMPDIR");
+    char        exeTemplate[PATH_MAX];
+    int         n;
+    int         fd;
+    char* const execArgv[2] = { exeTemplate, NULL };
+
+    if (tmpBase == NULL || tmpBase[0] == '\0') {
+        tmpBase = "/tmp";
+    }
+    n = snprintf(exeTemplate, sizeof(exeTemplate), "%s/slc-run.XXXXXX", tmpBase);
+    if (n <= 0 || (size_t)n >= sizeof(exeTemplate)) {
+        return ErrorSimple("temporary path too long");
+    }
+    fd = mkstemp(exeTemplate);
+    if (fd < 0) {
+        return ErrorSimple("failed to create temporary output file");
+    }
+    close(fd);
+    unlink(exeTemplate);
+
+    if (CompileProgram(entryPath, exeTemplate) != 0) {
+        unlink(exeTemplate);
+        return -1;
+    }
+
+    execv(exeTemplate, execArgv);
+    unlink(exeTemplate);
+    return ErrorSimple("failed to execute compiled program");
+}
+
 int main(int argc, char* argv[]) {
     const char* mode = "lex";
     const char* filename = NULL;
@@ -2137,6 +2352,21 @@ int main(int argc, char* argv[]) {
     int         genpkgMode;
     char*       source;
     uint32_t    sourceLen;
+
+    if (argc >= 2 && StrEq(argv[1], "compile")) {
+        if (argc != 5 || !StrEq(argv[3], "-o")) {
+            PrintUsage(argv[0]);
+            return 2;
+        }
+        return CompileProgram(argv[2], argv[4]) == 0 ? 0 : 1;
+    }
+    if (argc >= 2 && StrEq(argv[1], "run")) {
+        if (argc != 3) {
+            PrintUsage(argv[0]);
+            return 2;
+        }
+        return RunProgram(argv[2]) == 0 ? 0 : 1;
+    }
 
     if (argc == 2) {
         filename = argv[1];
@@ -2148,14 +2378,7 @@ int main(int argc, char* argv[]) {
         filename = argv[2];
         outFilename = argv[3];
     } else {
-        fprintf(
-            stderr,
-            "usage: %s [lex|ast|check] <file.sl>\n"
-            "       %s checkpkg <package-dir|file.sl>\n"
-            "       %s genpkg[:backend] <package-dir|file.sl> [out.h]\n",
-            argv[0],
-            argv[0],
-            argv[0]);
+        PrintUsage(argv[0]);
         return 2;
     }
 
