@@ -1,1 +1,1 @@
-tests/phase5/assert_bad_condition.sl:41:42: error: expected bool expression
+tests/phase5/assert_bad_condition.sl:27:28: error: expected bool expression

@@ -1,5 +1,3 @@
-package app
-
 import heap "ds/heap"
 
 fn main() i32 {

@@ -1,5 +1,3 @@
-package demo
-
 pub {
     fn Main(x i32) i32
 }

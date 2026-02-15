@@ -1,5 +1,3 @@
-package heap
-
 pub {
     struct Box {
         v i32

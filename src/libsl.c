@@ -339,9 +339,6 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
             return SLTok_ASSERT;
         }
     } else if (len == 7) {
-        if (SLStrEq(s, len, "package")) {
-            return SLTok_PACKAGE;
-        }
         if (SLStrEq(s, len, "default")) {
             return SLTok_DEFAULT;
         }
@@ -393,7 +390,6 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_INT:           return "INT";
         case SLTok_FLOAT:         return "FLOAT";
         case SLTok_STRING:        return "STRING";
-        case SLTok_PACKAGE:       return "PACKAGE";
         case SLTok_IMPORT:        return "IMPORT";
         case SLTok_PUB:           return "PUB";
         case SLTok_STRUCT:        return "STRUCT";

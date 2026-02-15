@@ -1,5 +1,3 @@
-package strings
-
 fn main() i32 {
     var s str = "hello\n"
     var l u32 = len(s)

@@ -205,7 +205,6 @@ typedef enum {
     SLTok_FLOAT,
     SLTok_STRING,
 
-    SLTok_PACKAGE,
     SLTok_IMPORT,
     SLTok_PUB,
     SLTok_STRUCT,
@@ -287,7 +286,6 @@ typedef struct {
 
 typedef enum {
     SLAST_FILE = 0,
-    SLAST_PACKAGE,
     SLAST_IMPORT,
     SLAST_PUB,
     SLAST_FN,

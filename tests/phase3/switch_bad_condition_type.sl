@@ -1,5 +1,3 @@
-package demo
-
 fn f(x i32) i32 {
     switch {
     case x + 1 {

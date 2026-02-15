@@ -1,0 +1,1 @@
+tests/phase6/import_invalid_alias/app/main.sl:0:20: error: import path requires explicit alias (e.g. import name "lib/math-v2")

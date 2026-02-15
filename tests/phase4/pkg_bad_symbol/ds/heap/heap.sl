@@ -1,5 +1,3 @@
-package heap
-
 pub {
     fn Make() i32
 }

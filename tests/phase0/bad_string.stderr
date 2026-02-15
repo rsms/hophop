@@ -1,1 +1,1 @@
-tests/phase0/bad_string.sl:27:32: error: unterminated string literal
+tests/phase0/bad_string.sl:14:19: error: unterminated string literal

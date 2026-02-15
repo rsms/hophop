@@ -205,6 +205,12 @@ actual_phase5_assert_bad_stdout="$test_tmpdir/phase5_assert_bad.stdout"
 actual_phase5_assert_bad_stderr="$test_tmpdir/phase5_assert_bad.stderr"
 actual_phase5_codegen_header="$test_tmpdir/phase5_codegen.h"
 actual_phase5_codegen_obj="$test_tmpdir/phase5_codegen.o"
+actual_phase6_bad_import_stdout="$test_tmpdir/phase6_bad_import.stdout"
+actual_phase6_bad_import_stderr="$test_tmpdir/phase6_bad_import.stderr"
+actual_phase6_single_header="$test_tmpdir/phase6_single.h"
+actual_phase6_single_obj="$test_tmpdir/phase6_single.o"
+actual_phase6_single_import_header="$test_tmpdir/phase6_single_import.h"
+actual_phase6_single_import_obj="$test_tmpdir/phase6_single_import.o"
 
 "$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
 diff -u tests/phase0/basic.tokens "$actual_tokens"
@@ -337,9 +343,45 @@ rg -F "SL_ASSERTF_FAIL(__FILE__, __LINE__, \"x=%d\", x);" "$actual_phase5_codege
 cat > "$test_tmpdir/phase5_codegen_test.c" << _END
 #define DEMO_IMPL
 #include "$actual_phase5_codegen_header"
-int test_codegen_phase5(void) { return (int)demo__Main(7); }
+int test_codegen_phase5(void) { return (int)strings_assert__Main(7); }
 _END
 "$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase5_codegen_test.c" -o "$actual_phase5_codegen_obj"
+
+if ! "$build_dir/slc" checkpkg tests/phase6/import_default_alias/app > /dev/null 2>&1; then
+    _err "unexpected failure for tests/phase6/import_default_alias/app"
+fi
+
+if "$build_dir/slc" checkpkg tests/phase6/import_invalid_alias/app > "$actual_phase6_bad_import_stdout" 2> "$actual_phase6_bad_import_stderr"; then
+    _err "expected failure for tests/phase6/import_invalid_alias/app"
+fi
+[ ! -s "$actual_phase6_bad_import_stdout" ] || _err "unexpected stdout for tests/phase6/import_invalid_alias/app"
+diff -u tests/phase6/import_invalid_alias.stderr "$actual_phase6_bad_import_stderr"
+
+if ! "$build_dir/slc" checkpkg tests/phase6/import_invalid_alias_explicit/app > /dev/null 2>&1; then
+    _err "unexpected failure for tests/phase6/import_invalid_alias_explicit/app"
+fi
+
+if ! "$build_dir/slc" checkpkg tests/phase6/single_file/main.sl > /dev/null 2>&1; then
+    _err "unexpected failure for tests/phase6/single_file/main.sl"
+fi
+"$build_dir/slc" genpkg:c tests/phase6/single_file/main.sl > "$actual_phase6_single_header"
+cat > "$test_tmpdir/phase6_single_test.c" << _END
+#define SINGLE_FILE_IMPL
+#include "$actual_phase6_single_header"
+int test_codegen_phase6_single(void) { return (int)single_file__main(); }
+_END
+"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase6_single_test.c" -o "$actual_phase6_single_obj"
+
+if ! "$build_dir/slc" checkpkg tests/phase6/single_file_import/app/main.sl > /dev/null 2>&1; then
+    _err "unexpected failure for tests/phase6/single_file_import/app/main.sl"
+fi
+"$build_dir/slc" genpkg:c tests/phase6/single_file_import/app/main.sl > "$actual_phase6_single_import_header"
+cat > "$test_tmpdir/phase6_single_import_test.c" << _END
+#define APP_IMPL
+#include "$actual_phase6_single_import_header"
+int test_codegen_phase6_single_import(void) { return (int)app__main(); }
+_END
+"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase6_single_import_test.c" -o "$actual_phase6_single_import_obj"
 
 # freestanding build of libsl.h
 cp "$build_dir/libsl.h" "$test_tmpdir/libsl.h"

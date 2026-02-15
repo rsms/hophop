@@ -1,1 +1,1 @@
-tests/phase4/pub_missing_def/foo.sl:26:33: error: missing definition for exported function Missing
+tests/phase4/pub_missing_def/foo.sl:13:20: error: missing definition for exported function Missing

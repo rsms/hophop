@@ -131,15 +131,14 @@ You may write explicit `;` anywhere a statement terminator is valid.
 
 ### 3.2 Packages and imports (Go-like namespaces)
 
-#### Package declaration
+There is no `package` keyword.
 
-Each file begins with:
+A package is inferred from filesystem layout:
 
-```sl
-package foo
-```
-
-A package may span multiple `.sl` files in a directory.
+* A package may span multiple `.sl` files in a directory.
+* The package name is inferred from the directory name.
+* For single-file package mode, the package name is inferred from the containing directory
+  (fallback: filename without `.sl`).
 
 #### Imports
 
@@ -149,6 +148,13 @@ v0 import model:
 import "ds/heap"
 import h "ds/heap"        // alias
 ```
+
+Default import alias is inferred from the last path component.
+
+Examples:
+
+* `import "foo/bar"` binds alias `bar`.
+* `import bar "foo/bar-v2"` is required if the last path component is not a valid identifier.
 
 * Imported names are referenced via `pkg.Name` (or alias): `heap.Push`, `h.PQueue`.
 * No dot-imports, no unnamed imports in v0.
@@ -170,8 +176,6 @@ Everything **outside** `pub {}` is **package-private** by default.
 Example:
 
 ```sl
-package foo
-
 pub {
     struct T { x i32 }
     fn A(t T) i32
@@ -538,14 +542,13 @@ Responsibilities:
 Token kinds needed:
 
 * identifiers
-* keywords: `package import pub struct union enum fn var const if else for switch case default break continue return defer assert`
+* keywords: `import pub struct union enum fn var const if else for switch case default break continue return defer assert`
 * operators, delimiters, literals.
 
 ### 4.3.2 Parser
 
 Implement a straightforward recursive descent parser:
 
-* package clause
 * import decls
 * pub blocks
 * top-level type decls and function decls/defs
@@ -812,8 +815,6 @@ For each expected header:
 ### `ds/heap/heap.sl`
 
 ```sl
-package heap
-
 pub {
     struct PQueue {
         data *i32
@@ -892,8 +893,6 @@ fn Pop(q *PQueue, out *i32) bool {
 ### `app/main.sl`
 
 ```sl
-package main
-
 import heap "ds/heap"
 
 pub {

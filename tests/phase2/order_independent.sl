@@ -1,5 +1,3 @@
-package demo
-
 struct Foo {
     parent *Bar
 }

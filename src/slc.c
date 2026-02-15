@@ -358,6 +358,84 @@ static int HasSuffix(const char* s, const char* suffix) {
     return memcmp(s + (sLen - suffixLen), suffix, suffixLen) == 0;
 }
 
+static int IsIdentStartChar(unsigned char c) {
+    return (c >= (unsigned char)'A' && c <= (unsigned char)'Z')
+        || (c >= (unsigned char)'a' && c <= (unsigned char)'z') || c == (unsigned char)'_';
+}
+
+static int IsIdentContinueChar(unsigned char c) {
+    return IsIdentStartChar(c) || (c >= (unsigned char)'0' && c <= (unsigned char)'9');
+}
+
+static int IsValidIdentifier(const char* s) {
+    size_t i = 0;
+    if (s == NULL || s[0] == '\0') {
+        return 0;
+    }
+    if (!IsIdentStartChar((unsigned char)s[0])) {
+        return 0;
+    }
+    i = 1;
+    while (s[i] != '\0') {
+        if (!IsIdentContinueChar((unsigned char)s[i])) {
+            return 0;
+        }
+        i++;
+    }
+    return 1;
+}
+
+static char* _Nullable BaseNameDup(const char* path) {
+    const char* slash = strrchr(path, '/');
+    if (slash == NULL || slash[1] == '\0') {
+        return DupCStr(path);
+    }
+    return DupCStr(slash + 1);
+}
+
+static char* _Nullable LastPathComponentDup(const char* path) {
+    size_t      len = strlen(path);
+    const char* end = path + len;
+    const char* start = path;
+    while (end > path && end[-1] == '/') {
+        end--;
+    }
+    if (end == path) {
+        return DupCStr("");
+    }
+    start = end;
+    while (start > path && start[-1] != '/') {
+        start--;
+    }
+    len = (size_t)(end - start);
+    if (len == 0) {
+        return DupCStr("");
+    }
+    {
+        char* out = (char*)malloc(len + 1u);
+        if (out == NULL) {
+            return NULL;
+        }
+        memcpy(out, start, len);
+        out[len] = '\0';
+        return out;
+    }
+}
+
+static char* _Nullable StripSLExtensionDup(const char* filename) {
+    size_t len = strlen(filename);
+    if (len > 3 && strcmp(filename + len - 3u, ".sl") == 0) {
+        char* out = (char*)malloc(len - 1u);
+        if (out == NULL) {
+            return NULL;
+        }
+        memcpy(out, filename, len - 3u);
+        out[len - 3u] = '\0';
+        return out;
+    }
+    return DupCStr(filename);
+}
+
 static int CompareStringPtrs(const void* a, const void* b) {
     const char* const* sa = (const char* const*)a;
     const char* const* sb = (const char* const*)b;
@@ -786,10 +864,14 @@ static char* _Nullable DecodeStringLiteral(const char* src, uint32_t start, uint
 
 static char* _Nullable DefaultImportAlias(const char* importPath) {
     const char* slash = strrchr(importPath, '/');
-    if (slash == NULL || slash[1] == '\0') {
-        return DupCStr(importPath);
+    const char* name = importPath;
+    if (slash != NULL && slash[1] != '\0') {
+        name = slash + 1;
     }
-    return DupCStr(slash + 1);
+    if (!IsValidIdentifier(name)) {
+        return NULL;
+    }
+    return DupCStr(name);
 }
 
 static int AddPackageFile(
@@ -964,25 +1046,7 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
 
     while (child >= 0) {
         const SLASTNode* n = &ast->nodes[child];
-        if (n->kind == SLAST_PACKAGE) {
-            char* name = DupSlice(file->source, n->dataStart, n->dataEnd);
-            if (name == NULL) {
-                return ErrorSimple("out of memory");
-            }
-            if (pkg->name == NULL) {
-                pkg->name = name;
-            } else {
-                if (!StrEq(pkg->name, name)) {
-                    free(name);
-                    return Errorf(
-                        n->start < file->sourceLen ? file->path : pkg->dirPath,
-                        n->start,
-                        n->end,
-                        "package name mismatch");
-                }
-                free(name);
-            }
-        } else if (n->kind == SLAST_IMPORT) {
+        if (n->kind == SLAST_IMPORT) {
             int32_t aliasNode = ASTFirstChild(ast, child);
             char*   importPath = DecodeStringLiteral(file->source, n->dataStart, n->dataEnd);
             char*   alias = NULL;
@@ -996,8 +1060,14 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
                 alias = DefaultImportAlias(importPath);
             }
             if (alias == NULL) {
+                int rc = Errorf(
+                    file->path,
+                    n->start,
+                    n->end,
+                    "import path requires explicit alias (e.g. import name \"%s\")",
+                    importPath);
                 free(importPath);
-                return ErrorSimple("out of memory");
+                return rc;
             }
             if (AddImportRef(pkg, alias, importPath, fileIndex, n->start, n->end) != 0) {
                 return Errorf(file->path, n->start, n->end, "duplicate import alias");
@@ -1294,6 +1364,44 @@ static SLPackage* _Nullable FindPackageByDir(const SLPackageLoader* loader, cons
     return NULL;
 }
 
+static char* _Nullable InferPackageNameFromDirPath(const char* dirPath) {
+    return LastPathComponentDup(dirPath);
+}
+
+static char* _Nullable InferPackageNameFromSingleFile(const char* filePath) {
+    char* dirPath = DirNameDup(filePath);
+    char* dirName = NULL;
+    char* fileName = NULL;
+    char* baseName = NULL;
+    char* outName = NULL;
+    if (dirPath == NULL) {
+        return NULL;
+    }
+    dirName = LastPathComponentDup(dirPath);
+    if (dirName != NULL && IsValidIdentifier(dirName)) {
+        outName = dirName;
+        free(dirPath);
+        return outName;
+    }
+    free(dirName);
+    fileName = BaseNameDup(filePath);
+    if (fileName == NULL) {
+        free(dirPath);
+        return NULL;
+    }
+    baseName = StripSLExtensionDup(fileName);
+    free(fileName);
+    free(dirPath);
+    if (baseName == NULL) {
+        return NULL;
+    }
+    if (IsValidIdentifier(baseName)) {
+        return baseName;
+    }
+    free(baseName);
+    return NULL;
+}
+
 static int AddPackageSlot(SLPackageLoader* loader, const char* dirPath, SLPackage** outPkg) {
     SLPackage* pkg;
     if (EnsureCap(
@@ -1311,6 +1419,12 @@ static int AddPackageSlot(SLPackageLoader* loader, const char* dirPath, SLPackag
     if (pkg->dirPath == NULL) {
         return -1;
     }
+    pkg->name = InferPackageNameFromDirPath(dirPath);
+    if (pkg->name == NULL) {
+        free(pkg->dirPath);
+        pkg->dirPath = NULL;
+        return -1;
+    }
     *outPkg = pkg;
     return 0;
 }
@@ -1318,6 +1432,40 @@ static int AddPackageSlot(SLPackageLoader* loader, const char* dirPath, SLPackag
 static char* _Nullable CanonicalizePath(const char* path) {
     char* out = realpath(path, NULL);
     return out;
+}
+
+static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SLPackage** outPkg);
+
+static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage* pkg) {
+    uint32_t i;
+    for (i = 0; i < pkg->importLen; i++) {
+        char* resolvedDir;
+        if (pkg->imports[i].path[0] == '/') {
+            resolvedDir = DupCStr(pkg->imports[i].path);
+        } else {
+            resolvedDir = JoinPath(loader->rootDir, pkg->imports[i].path);
+        }
+        if (resolvedDir == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        if (LoadPackageRecursive(loader, resolvedDir, &pkg->imports[i].target) != 0) {
+            const SLParsedFile* file = &pkg->files[pkg->imports[i].fileIndex];
+            free(resolvedDir);
+            return Errorf(
+                file->path,
+                pkg->imports[i].start,
+                pkg->imports[i].end,
+                "failed to resolve import %s",
+                pkg->imports[i].path);
+        }
+        free(resolvedDir);
+    }
+
+    if (ValidatePackageSelectors(pkg) != 0) {
+        return -1;
+    }
+    pkg->loadState = 2;
+    return 0;
 }
 
 static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SLPackage** outPkg) {
@@ -1383,8 +1531,62 @@ static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SL
         }
     }
 
+    if (ValidatePubFnDefinitions(pkg) != 0) {
+        return -1;
+    }
+    if (ValidatePubClosure(pkg) != 0) {
+        return -1;
+    }
+    if (ResolvePackageImportsAndSelectors(loader, pkg) != 0) {
+        return -1;
+    }
+    *outPkg = pkg;
+    return 0;
+}
+
+static int LoadSingleFilePackage(
+    SLPackageLoader* loader, const char* filePath, SLPackage** outPkg) {
+    char*      dirPath = DirNameDup(filePath);
+    SLPackage* pkg;
+    char*      source = NULL;
+    uint32_t   sourceLen = 0;
+    SLAST      ast;
+    void*      arenaMem = NULL;
+    uint32_t   i;
+
+    if (dirPath == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    if (AddPackageSlot(loader, dirPath, &pkg) != 0) {
+        free(dirPath);
+        return ErrorSimple("out of memory");
+    }
+    free(dirPath);
+
+    free(pkg->name);
+    pkg->name = InferPackageNameFromSingleFile(filePath);
     if (pkg->name == NULL) {
-        return ErrorSimple("failed to read package name from %s", pkg->dirPath);
+        return ErrorSimple("failed to infer package name from %s", filePath);
+    }
+
+    pkg->loadState = 1;
+    if (ReadFile(filePath, &source, &sourceLen) != 0) {
+        return -1;
+    }
+    if (ParseSource(filePath, source, sourceLen, &ast, &arenaMem, NULL) != 0) {
+        free(source);
+        return -1;
+    }
+    if (AddPackageFile(pkg, filePath, source, sourceLen, ast, arenaMem) != 0) {
+        free(source);
+        free(arenaMem);
+        return ErrorSimple("out of memory");
+    }
+
+    for (i = 0; i < pkg->fileLen; i++) {
+        if (ProcessParsedFile(pkg, i) != 0) {
+            return -1;
+        }
     }
 
     if (ValidatePubFnDefinitions(pkg) != 0) {
@@ -1393,35 +1595,9 @@ static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SL
     if (ValidatePubClosure(pkg) != 0) {
         return -1;
     }
-
-    for (i = 0; i < pkg->importLen; i++) {
-        char* resolvedDir;
-        if (pkg->imports[i].path[0] == '/') {
-            resolvedDir = DupCStr(pkg->imports[i].path);
-        } else {
-            resolvedDir = JoinPath(loader->rootDir, pkg->imports[i].path);
-        }
-        if (resolvedDir == NULL) {
-            return ErrorSimple("out of memory");
-        }
-        if (LoadPackageRecursive(loader, resolvedDir, &pkg->imports[i].target) != 0) {
-            const SLParsedFile* file = &pkg->files[pkg->imports[i].fileIndex];
-            free(resolvedDir);
-            return Errorf(
-                file->path,
-                pkg->imports[i].start,
-                pkg->imports[i].end,
-                "failed to resolve import %s",
-                pkg->imports[i].path);
-        }
-        free(resolvedDir);
-    }
-
-    if (ValidatePackageSelectors(pkg) != 0) {
+    if (ResolvePackageImportsAndSelectors(loader, pkg) != 0) {
         return -1;
     }
-
-    pkg->loadState = 2;
     *outPkg = pkg;
     return 0;
 }
@@ -1575,13 +1751,6 @@ static int BuildCombinedPackageSource(const SLPackage* pkg, char** outSource, ui
     uint32_t        i;
     *outSource = NULL;
     *outLen = 0;
-
-    if (SBAppendCStr(&b, "package ") != 0 || SBAppendCStr(&b, pkg->name) != 0
-        || SBAppendCStr(&b, "\n\n") != 0)
-    {
-        free(b.v);
-        return ErrorSimple("out of memory");
-    }
 
     for (i = 0; i < pkg->importLen; i++) {
         const SLPackage* dep = pkg->imports[i].target;
@@ -1756,6 +1925,8 @@ static void FreeLoader(SLPackageLoader* loader) {
 static int LoadAndCheckPackage(
     const char* entryPath, SLPackageLoader* outLoader, SLPackage** outEntryPkg) {
     char*           canonical = CanonicalizePath(entryPath);
+    struct stat     st;
+    char*           pkgDir = NULL;
     char*           rootDir;
     SLPackageLoader loader;
     SLPackage*      entryPkg;
@@ -1766,8 +1937,26 @@ static int LoadAndCheckPackage(
         return ErrorSimple("failed to resolve package path %s", entryPath);
     }
 
-    rootDir = DirNameDup(canonical);
+    if (stat(canonical, &st) != 0) {
+        free(canonical);
+        return ErrorSimple("failed to access %s", entryPath);
+    }
+
+    if (S_ISDIR(st.st_mode)) {
+        rootDir = DirNameDup(canonical);
+    } else if (S_ISREG(st.st_mode) && HasSuffix(canonical, ".sl")) {
+        pkgDir = DirNameDup(canonical);
+        if (pkgDir == NULL) {
+            free(canonical);
+            return ErrorSimple("out of memory");
+        }
+        rootDir = DirNameDup(pkgDir);
+    } else {
+        free(canonical);
+        return ErrorSimple("expected package directory or .sl file: %s", entryPath);
+    }
     if (rootDir == NULL) {
+        free(pkgDir);
         free(canonical);
         return ErrorSimple("out of memory");
     }
@@ -1775,11 +1964,19 @@ static int LoadAndCheckPackage(
     memset(&loader, 0, sizeof(loader));
     loader.rootDir = rootDir;
 
-    if (LoadPackageRecursive(&loader, canonical, &entryPkg) != 0) {
+    if (pkgDir != NULL) {
+        if (LoadSingleFilePackage(&loader, canonical, &entryPkg) != 0) {
+            free(pkgDir);
+            free(canonical);
+            FreeLoader(&loader);
+            return -1;
+        }
+    } else if (LoadPackageRecursive(&loader, canonical, &entryPkg) != 0) {
         free(canonical);
         FreeLoader(&loader);
         return -1;
     }
+    free(pkgDir);
     (void)entryPkg;
 
     for (i = 0; i < loader.packageLen; i++) {
@@ -1879,6 +2076,14 @@ static int GeneratePackage(
         return -1;
     }
 
+    if (!IsValidIdentifier(entryPkg->name)) {
+        free(source);
+        FreeLoader(&loader);
+        return ErrorSimple(
+            "entry package name \"%s\" is not a valid identifier (inferred from path)",
+            entryPkg->name);
+    }
+
     backend = SLCodegenFindBackend(backendName);
     if (backend == NULL) {
         free(source);
@@ -1946,8 +2151,8 @@ int main(int argc, char* argv[]) {
         fprintf(
             stderr,
             "usage: %s [lex|ast|check] <file.sl>\n"
-            "       %s checkpkg <package-dir>\n"
-            "       %s genpkg[:backend] <package-dir> [out.h]\n",
+            "       %s checkpkg <package-dir|file.sl>\n"
+            "       %s genpkg[:backend] <package-dir|file.sl> [out.h]\n",
             argv[0],
             argv[0],
             argv[0]);

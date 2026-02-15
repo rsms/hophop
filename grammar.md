@@ -38,7 +38,7 @@ Whitespace     = " " | "\t" | "\r" | "\n" ;
 
 ```ebnf
 Keyword =
-    "package" | "import" | "pub" |
+    "import" | "pub" |
     "struct" | "union" | "enum" |
     "fn" | "var" | "const" |
     "if" | "else" |
@@ -65,9 +65,7 @@ The grammar below is written using explicit semicolons.
 ## 2. Syntactic Grammar
 
 ```ebnf
-SourceFile      = PackageClause ";" { ImportDecl ";" } { TopLevelDecl [ ";" ] } EOF ;
-
-PackageClause   = "package" Identifier ;
+SourceFile      = { ImportDecl ";" } { TopLevelDecl [ ";" ] } EOF ;
 
 ImportDecl      = "import" [ Identifier ] StringLit ;
 

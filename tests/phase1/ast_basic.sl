@@ -1,4 +1,3 @@
-package demo
 import h "ds/heap"
 fn main() i32 {
     var x i32 = 1 + 2*3

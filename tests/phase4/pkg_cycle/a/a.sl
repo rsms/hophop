@@ -1,5 +1,3 @@
-package a
-
 import b "b"
 
 fn A() i32 {

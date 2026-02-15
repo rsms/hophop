@@ -1,5 +1,3 @@
-package demo
-
 fn classify(x i32) i32 {
     switch x {
     case 0 {

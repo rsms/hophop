@@ -1215,7 +1215,6 @@ static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out) {
 const char* SLASTKindName(SLASTKind kind) {
     switch (kind) {
         case SLAST_FILE:       return "FILE";
-        case SLAST_PACKAGE:    return "PACKAGE";
         case SLAST_IMPORT:     return "IMPORT";
         case SLAST_PUB:        return "PUB";
         case SLAST_FN:         return "FN";
@@ -1257,11 +1256,9 @@ const char* SLASTKindName(SLASTKind kind) {
 }
 
 int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag) {
-    SLTokenStream  ts;
-    SLParser       p;
-    int32_t        root;
-    const SLToken* kw;
-    const SLToken* pkgName;
+    SLTokenStream ts;
+    SLParser      p;
+    int32_t       root;
 
     SLDiagClear(diag);
     out->nodes = NULL;
@@ -1288,27 +1285,6 @@ int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag) {
 
     root = SLPNewNode(&p, SLAST_FILE, 0, src.len);
     if (root < 0) {
-        return -1;
-    }
-
-    if (SLPExpect(&p, SLTok_PACKAGE, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
-        return -1;
-    }
-    if (SLPExpect(&p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &pkgName) != 0) {
-        return -1;
-    }
-    {
-        int32_t pkg = SLPNewNode(&p, SLAST_PACKAGE, kw->start, pkgName->end);
-        if (pkg < 0) {
-            return -1;
-        }
-        p.nodes[pkg].dataStart = pkgName->start;
-        p.nodes[pkg].dataEnd = pkgName->end;
-        if (SLPAddChild(&p, root, pkg) != 0) {
-            return -1;
-        }
-    }
-    if (SLPExpect(&p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
         return -1;
     }
 

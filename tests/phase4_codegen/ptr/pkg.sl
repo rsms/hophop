@@ -1,5 +1,3 @@
-package demo
-
 pub {
     struct Foo {
         x i32

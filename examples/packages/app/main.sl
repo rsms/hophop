@@ -1,5 +1,3 @@
-package app
-
 import math "math"
 
 fn main() i32 {

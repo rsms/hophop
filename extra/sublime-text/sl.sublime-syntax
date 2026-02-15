@@ -54,10 +54,6 @@ contexts:
           scope: constant.numeric.slang
 
     declarations:
-        - match: '\b(package)\s+({{ident}})'
-          captures:
-              1: keyword.declaration.namespace.slang
-              2: entity.name.namespace.slang
         - match: '\b(import)\s+({{ident}})(?=\s+")'
           captures:
               1: keyword.control.import.slang
@@ -76,7 +72,7 @@ contexts:
               2: entity.name.constant.slang
 
     keywords:
-        - match: '\b(package|import|pub|struct|union|enum|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|as)\b'
+        - match: '\b(import|pub|struct|union|enum|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|as)\b'
           scope: keyword.control.slang
         - match: '\b(true|false)\b'
           scope: constant.language.boolean.slang
