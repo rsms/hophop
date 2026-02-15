@@ -94,12 +94,22 @@ typedef struct {
     uint32_t  localScopeLen;
     uint32_t  localScopeCap;
 
+    int32_t* deferredStmtNodes;
+    uint32_t deferredStmtLen;
+    uint32_t deferredStmtCap;
+
+    uint32_t* deferScopeMarks;
+    uint32_t  deferScopeLen;
+    uint32_t  deferScopeCap;
+
     SLStringLiteral* stringLits;
     uint32_t         stringLitLen;
     uint32_t         stringLitCap;
 
     int32_t* stringLitByNode;
     uint32_t stringLitByNodeLen;
+
+    int emitPrivateFnDeclStatic;
 } SLCBackendC;
 
 static size_t StrLen(const char* s) {
@@ -276,6 +286,19 @@ static int SliceEq(const char* src, uint32_t start, uint32_t end, const char* s)
 
 static int SliceEqName(const char* src, uint32_t start, uint32_t end, const char* s) {
     return SliceEq(src, start, end, s);
+}
+
+static int SliceSpanEq(
+    const char* src, uint32_t aStart, uint32_t aEnd, uint32_t bStart, uint32_t bEnd) {
+    uint32_t len;
+    if (aEnd < aStart || bEnd < bStart) {
+        return 0;
+    }
+    len = aEnd - aStart;
+    if (len != (bEnd - bStart)) {
+        return 0;
+    }
+    return memcmp(src + aStart, src + bStart, (size_t)len) == 0;
 }
 
 static char* _Nullable DupSlice(const char* src, uint32_t start, uint32_t end) {
@@ -885,6 +908,40 @@ static void PopScope(SLCBackendC* c) {
     c->localLen = c->localScopeMarks[c->localScopeLen];
 }
 
+static int PushDeferScope(SLCBackendC* c) {
+    if (EnsureCap(
+            (void**)&c->deferScopeMarks, &c->deferScopeCap, c->deferScopeLen + 1u, sizeof(uint32_t))
+        != 0)
+    {
+        return -1;
+    }
+    c->deferScopeMarks[c->deferScopeLen++] = c->deferredStmtLen;
+    return 0;
+}
+
+static void PopDeferScope(SLCBackendC* c) {
+    if (c->deferScopeLen == 0) {
+        c->deferredStmtLen = 0;
+        return;
+    }
+    c->deferScopeLen--;
+    c->deferredStmtLen = c->deferScopeMarks[c->deferScopeLen];
+}
+
+static int AddDeferredStmt(SLCBackendC* c, int32_t stmtNodeId) {
+    if (EnsureCap(
+            (void**)&c->deferredStmtNodes,
+            &c->deferredStmtCap,
+            c->deferredStmtLen + 1u,
+            sizeof(int32_t))
+        != 0)
+    {
+        return -1;
+    }
+    c->deferredStmtNodes[c->deferredStmtLen++] = stmtNodeId;
+    return 0;
+}
+
 static int AddLocal(SLCBackendC* c, const char* name, SLTypeRef type) {
     if (EnsureCap((void**)&c->locals, &c->localCap, c->localLen + 1u, sizeof(SLLocal)) != 0) {
         return -1;
@@ -1388,28 +1445,56 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
 
 static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth);
 
+static int EmitDeferredRange(SLCBackendC* c, uint32_t start, uint32_t depth) {
+    uint32_t i = c->deferredStmtLen;
+    while (i > start) {
+        int32_t stmtNodeId;
+        i--;
+        stmtNodeId = c->deferredStmtNodes[i];
+        if (EmitStmt(c, stmtNodeId, depth) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int EmitBlock(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
-    int32_t child = AstFirstChild(&c->ast, nodeId);
+    int32_t  child = AstFirstChild(&c->ast, nodeId);
+    uint32_t deferMark;
     if (PushScope(c) != 0) {
         return -1;
     }
+    if (PushDeferScope(c) != 0) {
+        PopScope(c);
+        return -1;
+    }
+    deferMark = c->deferScopeMarks[c->deferScopeLen - 1u];
     EmitIndent(c, depth);
     if (BufAppendCStr(&c->out, "{\n") != 0) {
+        PopDeferScope(c);
         PopScope(c);
         return -1;
     }
     while (child >= 0) {
         if (EmitStmt(c, child, depth + 1u) != 0) {
+            PopDeferScope(c);
             PopScope(c);
             return -1;
         }
         child = AstNextSibling(&c->ast, child);
     }
-    EmitIndent(c, depth);
-    if (BufAppendCStr(&c->out, "}\n") != 0) {
+    if (EmitDeferredRange(c, deferMark, depth + 1u) != 0) {
+        PopDeferScope(c);
         PopScope(c);
         return -1;
     }
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "}\n") != 0) {
+        PopDeferScope(c);
+        PopScope(c);
+        return -1;
+    }
+    PopDeferScope(c);
     PopScope(c);
     return 0;
 }
@@ -1687,6 +1772,9 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         }
         case SLAST_RETURN: {
             int32_t expr = AstFirstChild(&c->ast, nodeId);
+            if (EmitDeferredRange(c, 0, depth) != 0) {
+                return -1;
+            }
             EmitIndent(c, depth);
             if (BufAppendCStr(&c->out, "return") != 0) {
                 return -1;
@@ -1772,12 +1860,32 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             }
             return 0;
         }
-        case SLAST_FOR:      return EmitForStmt(c, nodeId, depth);
-        case SLAST_SWITCH:   return EmitSwitchStmt(c, nodeId, depth);
-        case SLAST_BREAK:    EmitIndent(c, depth); return BufAppendCStr(&c->out, "break;\n");
-        case SLAST_CONTINUE: EmitIndent(c, depth); return BufAppendCStr(&c->out, "continue;\n");
-        case SLAST_DEFER:    SetDiag(c->diag, SLDiag_UNEXPECTED_TOKEN, n->start, n->end); return -1;
-        default:             SetDiag(c->diag, SLDiag_UNEXPECTED_TOKEN, n->start, n->end); return -1;
+        case SLAST_FOR:    return EmitForStmt(c, nodeId, depth);
+        case SLAST_SWITCH: return EmitSwitchStmt(c, nodeId, depth);
+        case SLAST_BREAK:
+            if (c->deferScopeLen > 0
+                && EmitDeferredRange(c, c->deferScopeMarks[c->deferScopeLen - 1u], depth) != 0)
+            {
+                return -1;
+            }
+            EmitIndent(c, depth);
+            return BufAppendCStr(&c->out, "break;\n");
+        case SLAST_CONTINUE:
+            if (c->deferScopeLen > 0
+                && EmitDeferredRange(c, c->deferScopeMarks[c->deferScopeLen - 1u], depth) != 0)
+            {
+                return -1;
+            }
+            EmitIndent(c, depth);
+            return BufAppendCStr(&c->out, "continue;\n");
+        case SLAST_DEFER: {
+            int32_t child = AstFirstChild(&c->ast, nodeId);
+            if (child < 0) {
+                return -1;
+            }
+            return AddDeferredStmt(c, child);
+        }
+        default: SetDiag(c->diag, SLDiag_UNEXPECTED_TOKEN, n->start, n->end); return -1;
     }
 }
 
@@ -1912,6 +2020,92 @@ static int EmitStructOrUnionDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth,
     return 0;
 }
 
+static int EmitForwardTypeDecls(SLCBackendC* c) {
+    uint32_t i;
+    int      emittedAny = 0;
+    for (i = 0; i < c->pubDeclLen; i++) {
+        int32_t          nodeId = c->pubDecls[i].nodeId;
+        const SLASTNode* n = NodeAt(c, nodeId);
+        const SLNameMap* map;
+        if (n == NULL || (n->kind != SLAST_STRUCT && n->kind != SLAST_UNION)) {
+            continue;
+        }
+        map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        if (map == NULL) {
+            continue;
+        }
+        EmitIndent(c, 0);
+        if (BufAppendCStr(&c->out, "typedef ") != 0
+            || BufAppendCStr(&c->out, n->kind == SLAST_UNION ? "union " : "struct ") != 0
+            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
+        emittedAny = 1;
+    }
+    for (i = 0; i < c->topDeclLen; i++) {
+        int32_t          nodeId = c->topDecls[i].nodeId;
+        const SLASTNode* n = NodeAt(c, nodeId);
+        const SLNameMap* map;
+        if (n == NULL || (n->kind != SLAST_STRUCT && n->kind != SLAST_UNION)) {
+            continue;
+        }
+        map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        if (map == NULL) {
+            continue;
+        }
+        EmitIndent(c, 0);
+        if (BufAppendCStr(&c->out, "typedef ") != 0
+            || BufAppendCStr(&c->out, n->kind == SLAST_UNION ? "union " : "struct ") != 0
+            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
+        emittedAny = 1;
+    }
+    if (emittedAny && BufAppendChar(&c->out, '\n') != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int FnNodeHasBody(const SLCBackendC* c, int32_t nodeId) {
+    int32_t child = AstFirstChild(&c->ast, nodeId);
+    while (child >= 0) {
+        const SLASTNode* ch = NodeAt(c, child);
+        if (ch != NULL && ch->kind == SLAST_BLOCK) {
+            return 1;
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    return 0;
+}
+
+static int HasFunctionBodyForName(const SLCBackendC* c, int32_t nodeId) {
+    const SLASTNode* n = NodeAt(c, nodeId);
+    uint32_t         i;
+    if (n == NULL || n->kind != SLAST_FN) {
+        return 0;
+    }
+    for (i = 0; i < c->topDeclLen; i++) {
+        int32_t          otherId = c->topDecls[i].nodeId;
+        const SLASTNode* other = NodeAt(c, otherId);
+        if (other == NULL || other->kind != SLAST_FN || otherId == nodeId
+            || !FnNodeHasBody(c, otherId))
+        {
+            continue;
+        }
+        if (SliceSpanEq(
+                c->unit->source, n->dataStart, n->dataEnd, other->dataStart, other->dataEnd))
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int EmitFnDeclOrDef(
     SLCBackendC* c, int32_t nodeId, uint32_t depth, int emitBody, int isPrivate) {
     const SLASTNode* n = NodeAt(c, nodeId);
@@ -1923,7 +2117,9 @@ static int EmitFnDeclOrDef(
     uint32_t         savedLocalLen;
 
     EmitIndent(c, depth);
-    if (isPrivate && emitBody && BufAppendCStr(&c->out, "static ") != 0) {
+    if (isPrivate && (emitBody || c->emitPrivateFnDeclStatic)
+        && BufAppendCStr(&c->out, "static ") != 0)
+    {
         return -1;
     }
 
@@ -2181,6 +2377,11 @@ static int EmitHeader(SLCBackendC* c) {
         free(defaultImpl);
         return -1;
     }
+    if (EmitForwardTypeDecls(c) != 0) {
+        free(defaultGuard);
+        free(defaultImpl);
+        return -1;
+    }
 
     for (i = 0; i < c->pubDeclLen; i++) {
         int32_t          nodeId = c->pubDecls[i].nodeId;
@@ -2221,6 +2422,24 @@ static int EmitHeader(SLCBackendC* c) {
         return -1;
     }
 
+    c->emitPrivateFnDeclStatic = 1;
+    for (i = 0; i < c->topDeclLen; i++) {
+        int32_t          nodeId = c->topDecls[i].nodeId;
+        const SLASTNode* n = NodeAt(c, nodeId);
+        int              exported;
+        if (n == NULL || n->kind != SLAST_FN || !FnNodeHasBody(c, nodeId)) {
+            continue;
+        }
+        exported = IsExportedNode(c, nodeId);
+        if (EmitDeclNode(c, nodeId, 0, 1, !exported, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
+            c->emitPrivateFnDeclStatic = 0;
+            free(defaultGuard);
+            free(defaultImpl);
+            return -1;
+        }
+    }
+    c->emitPrivateFnDeclStatic = 0;
+
     for (i = 0; i < c->topDeclLen; i++) {
         int32_t          nodeId = c->topDecls[i].nodeId;
         const SLASTNode* n = NodeAt(c, nodeId);
@@ -2235,17 +2454,7 @@ static int EmitHeader(SLCBackendC* c) {
         }
 
         if (n->kind == SLAST_FN) {
-            int32_t child = AstFirstChild(&c->ast, nodeId);
-            int     hasBody = 0;
-            while (child >= 0) {
-                const SLASTNode* ch = NodeAt(c, child);
-                if (ch != NULL && ch->kind == SLAST_BLOCK) {
-                    hasBody = 1;
-                    break;
-                }
-                child = AstNextSibling(&c->ast, child);
-            }
-            if (hasBody) {
+            if (FnNodeHasBody(c, nodeId)) {
                 if (EmitDeclNode(c, nodeId, 0, 0, !exported, 1) != 0
                     || BufAppendChar(&c->out, '\n') != 0)
                 {
@@ -2253,7 +2462,7 @@ static int EmitHeader(SLCBackendC* c) {
                     free(defaultImpl);
                     return -1;
                 }
-            } else if (!exported) {
+            } else if (!exported && !HasFunctionBodyForName(c, nodeId)) {
                 if (EmitDeclNode(c, nodeId, 0, 1, 1, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
                     free(defaultGuard);
                     free(defaultImpl);
@@ -2346,6 +2555,8 @@ static void FreeContext(SLCBackendC* c) {
     }
     free(c->locals);
     free(c->localScopeMarks);
+    free(c->deferredStmtNodes);
+    free(c->deferScopeMarks);
     for (i = 0; i < c->stringLitLen; i++) {
         free(c->stringLits[i].bytes);
     }

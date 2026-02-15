@@ -413,13 +413,6 @@ set -e
 for example_path in examples/*.sl; do
     example_name=$(basename "$example_path" .sl)
     example_output="$test_tmpdir/example-$example_name"
-    if [ "$example_name" = "defer" ] || [ "$example_name" = "order_independent" ] \
-        || [ "$example_name" = "pointers_arrays" ]; then
-        if "$build_dir/slc" compile "$example_path" -o "$example_output" > /dev/null 2>&1; then
-            _err "expected slc compile to fail for $example_path (known C-backend gap)"
-        fi
-        continue
-    fi
     if ! "$build_dir/slc" compile "$example_path" -o "$example_output" > /dev/null 2>&1; then
         _err "unexpected failure for slc compile $example_path"
     fi
