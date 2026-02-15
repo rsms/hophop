@@ -199,6 +199,12 @@ actual_codegen_app_header="$test_tmpdir/app_codegen.h"
 actual_codegen_app_obj="$test_tmpdir/app_codegen.o"
 actual_codegen_ptr_header="$test_tmpdir/ptr_codegen.h"
 actual_codegen_ptr_obj="$test_tmpdir/ptr_codegen.o"
+actual_phase5_assert_ok_stdout="$test_tmpdir/phase5_assert_ok.stdout"
+actual_phase5_assert_ok_stderr="$test_tmpdir/phase5_assert_ok.stderr"
+actual_phase5_assert_bad_stdout="$test_tmpdir/phase5_assert_bad.stdout"
+actual_phase5_assert_bad_stderr="$test_tmpdir/phase5_assert_bad.stderr"
+actual_phase5_codegen_header="$test_tmpdir/phase5_codegen.h"
+actual_phase5_codegen_obj="$test_tmpdir/phase5_codegen.o"
 
 "$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
 diff -u tests/phase0/basic.tokens "$actual_tokens"
@@ -302,6 +308,34 @@ cat > "$test_tmpdir/ptr_codegen_test.c" << _END
 _END
 "$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/ptr_codegen_test.c" -o "$actual_codegen_ptr_obj"
 
+if ! "$build_dir/slc" check tests/phase5/assert_ok.sl > "$actual_phase5_assert_ok_stdout" 2> "$actual_phase5_assert_ok_stderr"; then
+    _err "unexpected failure for tests/phase5/assert_ok.sl"
+fi
+[ ! -s "$actual_phase5_assert_ok_stdout" ] || _err "unexpected stdout for tests/phase5/assert_ok.sl"
+[ ! -s "$actual_phase5_assert_ok_stderr" ] || _err "unexpected stderr for tests/phase5/assert_ok.sl"
+
+if "$build_dir/slc" check tests/phase5/assert_bad_condition.sl > "$actual_phase5_assert_bad_stdout" 2> "$actual_phase5_assert_bad_stderr"; then
+    _err "expected failure for tests/phase5/assert_bad_condition.sl"
+fi
+[ ! -s "$actual_phase5_assert_bad_stdout" ] || _err "unexpected stdout for tests/phase5/assert_bad_condition.sl"
+diff -u tests/phase5/assert_bad_condition.stderr "$actual_phase5_assert_bad_stderr"
+
+"$build_dir/slc" genpkg:c tests/phase5_codegen/strings_assert > "$actual_phase5_codegen_header"
+rg -F "typedef struct { u32 len; u8 bytes[1]; } sl_strhdr;" "$actual_phase5_codegen_header" > /dev/null \
+    || _err "missing sl_strhdr prelude type in phase5 codegen output"
+rg -F "SL_ASSERT_FAIL(__FILE__, __LINE__, \"assertion failed\");" "$actual_phase5_codegen_header" > /dev/null \
+    || _err "missing SL_ASSERT_FAIL lowering in phase5 codegen output"
+rg -F "SL_ASSERTF_FAIL(__FILE__, __LINE__, \"x=%d\", x);" "$actual_phase5_codegen_header" > /dev/null \
+    || _err "missing SL_ASSERTF_FAIL lowering in phase5 codegen output"
+[ "$(rg -c '^static const struct \{ u32 len; u8 bytes\[' "$actual_phase5_codegen_header")" = "1" ] \
+    || _err "expected exactly one pooled string literal in phase5 codegen output"
+cat > "$test_tmpdir/phase5_codegen_test.c" << _END
+#define DEMO_IMPL
+#include "$actual_phase5_codegen_header"
+int test_codegen_phase5(void) { return (int)demo__Main(7); }
+_END
+"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase5_codegen_test.c" -o "$actual_phase5_codegen_obj"
+
 # freestanding build of libsl.h
 cp "$build_dir/libsl.h" "$test_tmpdir/libsl.h"
 cat <<_END > "$test_tmpdir/libsl.c"
@@ -331,5 +365,69 @@ _END
     -Werror \
     -c "$test_tmpdir/libsl.c" \
     -o "$test_tmpdir/libsl.wasm"
+
+cat > "$test_tmpdir/arena_grow_test.c" << _END
+#include <stdint.h>
+#include <stdlib.h>
+
+#define SL_IMPLEMENTATION
+#include "libsl.h"
+
+typedef struct {
+    uint32_t allocCount;
+    uint32_t freeCount;
+} ArenaStats;
+
+static void* ArenaGrow(void* ctx, uint32_t minSize, uint32_t* outSize) {
+    ArenaStats* stats = (ArenaStats*)ctx;
+    uint32_t    size = minSize < 128u ? 128u : minSize;
+    void*       p = malloc((size_t)size);
+    if (p == NULL) {
+        *outSize = 0;
+        return NULL;
+    }
+    stats->allocCount++;
+    *outSize = size;
+    return p;
+}
+
+static void ArenaFree(void* ctx, void* block, uint32_t blockSize) {
+    ArenaStats* stats = (ArenaStats*)ctx;
+    (void)blockSize;
+    free(block);
+    stats->freeCount++;
+}
+
+int main(void) {
+    uint8_t    storage[32];
+    ArenaStats stats = { 0 };
+    SLArena    arena;
+    void*      p0;
+    void*      p1;
+    void*      p2;
+
+    SLArenaInitEx(&arena, storage, (uint32_t)sizeof(storage), &stats, ArenaGrow, ArenaFree);
+
+    p0 = SLArenaAlloc(&arena, 16u, 8u);
+    p1 = SLArenaAlloc(&arena, 128u, 8u);
+    if (p0 == NULL || p1 == NULL || stats.allocCount == 0) {
+        return 1;
+    }
+
+    SLArenaReset(&arena);
+    p2 = SLArenaAlloc(&arena, 64u, 8u);
+    if (p2 == NULL) {
+        return 2;
+    }
+
+    SLArenaDispose(&arena);
+    if (stats.freeCount != stats.allocCount) {
+        return 3;
+    }
+    return 0;
+}
+_END
+"$cc" -std=c11 -Wall -Wextra -Werror "$test_tmpdir/arena_grow_test.c" -o "$test_tmpdir/arena_grow_test"
+"$test_tmpdir/arena_grow_test"
 
 echo "tests passed"

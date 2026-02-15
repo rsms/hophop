@@ -51,6 +51,11 @@ typedef struct {
 } SLLocal;
 
 typedef struct {
+    uint8_t* _Nullable bytes;
+    uint32_t len;
+} SLStringLiteral;
+
+typedef struct {
     const SLCodegenUnit*    unit;
     const SLCodegenOptions* options;
     SLDiag*                 diag;
@@ -88,6 +93,13 @@ typedef struct {
     uint32_t* localScopeMarks;
     uint32_t  localScopeLen;
     uint32_t  localScopeCap;
+
+    SLStringLiteral* stringLits;
+    uint32_t         stringLitLen;
+    uint32_t         stringLitCap;
+
+    int32_t* stringLitByNode;
+    uint32_t stringLitByNodeLen;
 } SLCBackendC;
 
 static size_t StrLen(const char* s) {
@@ -185,6 +197,27 @@ static int BufAppendCStr(SLBuf* b, const char* s) {
 
 static int BufAppendChar(SLBuf* b, char c) {
     return BufAppend(b, &c, 1u);
+}
+
+static int BufAppendU32(SLBuf* b, uint32_t value) {
+    char     tmp[16];
+    uint32_t i = 0;
+    uint32_t n = value;
+
+    if (n == 0) {
+        return BufAppendChar(b, '0');
+    }
+
+    while (n > 0 && i < (uint32_t)sizeof(tmp)) {
+        tmp[i++] = (char)('0' + (n % 10u));
+        n /= 10u;
+    }
+    while (i > 0) {
+        if (BufAppendChar(b, tmp[--i]) != 0) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 static int BufAppendSlice(SLBuf* b, const char* src, uint32_t start, uint32_t end) {
@@ -291,6 +324,161 @@ static char* _Nullable DupCStr(const char* s) {
     }
     memcpy(out, s, n + 1u);
     return out;
+}
+
+static int HexDigitValue(unsigned char c) {
+    if (c >= (unsigned char)'0' && c <= (unsigned char)'9') {
+        return (int)(c - (unsigned char)'0');
+    }
+    if (c >= (unsigned char)'a' && c <= (unsigned char)'f') {
+        return 10 + (int)(c - (unsigned char)'a');
+    }
+    if (c >= (unsigned char)'A' && c <= (unsigned char)'F') {
+        return 10 + (int)(c - (unsigned char)'A');
+    }
+    return -1;
+}
+
+static int DecodeStringLiteral(
+    const char* src, uint32_t start, uint32_t end, uint8_t** outBytes, uint32_t* outLen) {
+    uint8_t* bytes = NULL;
+    uint32_t len = 0;
+    uint32_t cap = 0;
+    uint32_t i;
+
+    if (end <= start + 1u || src[start] != '"' || src[end - 1u] != '"') {
+        return -1;
+    }
+
+    i = start + 1u;
+    while (i < end - 1u) {
+        unsigned char ch = (unsigned char)src[i++];
+        if (ch == (unsigned char)'\\') {
+            unsigned char esc;
+            if (i >= end - 1u) {
+                free(bytes);
+                return -1;
+            }
+            esc = (unsigned char)src[i++];
+            switch (esc) {
+                case (unsigned char)'\\': ch = (unsigned char)'\\'; break;
+                case (unsigned char)'"':  ch = (unsigned char)'"'; break;
+                case (unsigned char)'n':  ch = (unsigned char)'\n'; break;
+                case (unsigned char)'t':  ch = (unsigned char)'\t'; break;
+                case (unsigned char)'r':  ch = (unsigned char)'\r'; break;
+                case (unsigned char)'0':  ch = (unsigned char)'\0'; break;
+                case (unsigned char)'x':  {
+                    int hi;
+                    int lo;
+                    if (i + 1u >= end - 1u) {
+                        free(bytes);
+                        return -1;
+                    }
+                    hi = HexDigitValue((unsigned char)src[i]);
+                    lo = HexDigitValue((unsigned char)src[i + 1u]);
+                    if (hi < 0 || lo < 0) {
+                        free(bytes);
+                        return -1;
+                    }
+                    ch = (unsigned char)((hi << 4) | lo);
+                    i += 2u;
+                    break;
+                }
+                default: ch = esc; break;
+            }
+        }
+        if (EnsureCap((void**)&bytes, &cap, len + 1u, sizeof(uint8_t)) != 0) {
+            free(bytes);
+            return -1;
+        }
+        bytes[len++] = (uint8_t)ch;
+    }
+
+    *outBytes = bytes;
+    *outLen = len;
+    return 0;
+}
+
+static int GetOrAddStringLiteral(
+    SLCBackendC* c, uint32_t start, uint32_t end, int32_t* outLiteralId) {
+    uint8_t* decoded = NULL;
+    uint32_t decodedLen = 0;
+    uint32_t i;
+
+    if (DecodeStringLiteral(c->unit->source, start, end, &decoded, &decodedLen) != 0) {
+        SetDiag(c->diag, SLDiag_UNEXPECTED_TOKEN, start, end);
+        return -1;
+    }
+
+    for (i = 0; i < c->stringLitLen; i++) {
+        if (c->stringLits[i].len == decodedLen
+            && ((decodedLen == 0)
+                || memcmp(c->stringLits[i].bytes, decoded, (size_t)decodedLen) == 0))
+        {
+            free(decoded);
+            *outLiteralId = (int32_t)i;
+            return 0;
+        }
+    }
+
+    if (EnsureCap(
+            (void**)&c->stringLits, &c->stringLitCap, c->stringLitLen + 1u, sizeof(SLStringLiteral))
+        != 0)
+    {
+        free(decoded);
+        SetDiag(c->diag, SLDiag_ARENA_OOM, start, end);
+        return -1;
+    }
+
+    c->stringLits[c->stringLitLen].bytes = decoded;
+    c->stringLits[c->stringLitLen].len = decodedLen;
+    *outLiteralId = (int32_t)c->stringLitLen;
+    c->stringLitLen++;
+    return 0;
+}
+
+static int32_t AstFirstChild(const SLAST* ast, int32_t nodeId);
+static int32_t AstNextSibling(const SLAST* ast, int32_t nodeId);
+
+static int CollectStringLiterals(SLCBackendC* c) {
+    uint32_t nodeId;
+
+    c->stringLitByNodeLen = c->ast.len;
+    c->stringLitByNode = (int32_t*)malloc((size_t)c->stringLitByNodeLen * sizeof(int32_t));
+    if (c->stringLitByNode == NULL) {
+        return -1;
+    }
+    for (nodeId = 0; nodeId < c->stringLitByNodeLen; nodeId++) {
+        c->stringLitByNode[nodeId] = -1;
+    }
+
+    for (nodeId = 0; nodeId < c->ast.len; nodeId++) {
+        const SLASTNode* n = &c->ast.nodes[nodeId];
+        if (n->kind == SLAST_STRING) {
+            uint32_t scanNodeId;
+            int      skip = 0;
+            for (scanNodeId = 0; scanNodeId < c->ast.len; scanNodeId++) {
+                const SLASTNode* parent = &c->ast.nodes[scanNodeId];
+                if (parent->kind == SLAST_ASSERT) {
+                    int32_t condNode = AstFirstChild(&c->ast, (int32_t)scanNodeId);
+                    int32_t fmtNode = AstNextSibling(&c->ast, condNode);
+                    if (fmtNode == (int32_t)nodeId) {
+                        skip = 1;
+                        break;
+                    }
+                }
+            }
+            if (skip) {
+                continue;
+            }
+            int32_t literalId;
+            if (GetOrAddStringLiteral(c, n->dataStart, n->dataEnd, &literalId) != 0) {
+                return -1;
+            }
+            c->stringLitByNode[nodeId] = literalId;
+        }
+    }
+    return 0;
 }
 
 static int HasDoubleUnderscore(const char* s) {
@@ -1035,6 +1223,67 @@ static const char* BinaryOpString(SLTokenKind op) {
     }
 }
 
+static int EmitHexByte(SLBuf* b, uint8_t value) {
+    static const char kHex[] = "0123456789ABCDEF";
+    if (BufAppendCStr(b, "0x") != 0) {
+        return -1;
+    }
+    if (BufAppendChar(b, kHex[(value >> 4u) & 0xFu]) != 0) {
+        return -1;
+    }
+    if (BufAppendChar(b, kHex[value & 0xFu]) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitStringLiteralRef(SLCBackendC* c, int32_t literalId) {
+    if (BufAppendCStr(&c->out, "(str)(const u8*)(const void*)&sl_lit_") != 0
+        || BufAppendU32(&c->out, (uint32_t)literalId) != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitStringLiteralPool(SLCBackendC* c) {
+    uint32_t i;
+    for (i = 0; i < c->stringLitLen; i++) {
+        uint32_t               j;
+        const SLStringLiteral* lit = &c->stringLits[i];
+        if (BufAppendCStr(&c->out, "static const struct { u32 len; u8 bytes[") != 0
+            || BufAppendU32(&c->out, lit->len + 1u) != 0
+            || BufAppendCStr(&c->out, "]; } sl_lit_") != 0 || BufAppendU32(&c->out, i) != 0
+            || BufAppendCStr(&c->out, " = { ") != 0 || BufAppendU32(&c->out, lit->len) != 0
+            || BufAppendCStr(&c->out, ", { ") != 0)
+        {
+            return -1;
+        }
+
+        for (j = 0; j < lit->len; j++) {
+            if (j > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+                return -1;
+            }
+            if (EmitHexByte(&c->out, lit->bytes[j]) != 0) {
+                return -1;
+            }
+        }
+        if (lit->len > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        if (EmitHexByte(&c->out, 0u) != 0) {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, " } };\n") != 0) {
+            return -1;
+        }
+    }
+    if (c->stringLitLen > 0 && BufAppendChar(&c->out, '\n') != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
     const SLASTNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -1045,9 +1294,18 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
         case SLAST_IDENT:  return AppendMappedIdentifier(c, n->dataStart, n->dataEnd);
         case SLAST_INT:
         case SLAST_FLOAT:
-        case SLAST_STRING:
         case SLAST_BOOL:   return BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd);
-        case SLAST_UNARY:  {
+        case SLAST_STRING: {
+            int32_t literalId = -1;
+            if (nodeId >= 0 && (uint32_t)nodeId < c->stringLitByNodeLen) {
+                literalId = c->stringLitByNode[nodeId];
+            }
+            if (literalId < 0) {
+                return -1;
+            }
+            return EmitStringLiteralRef(c, literalId);
+        }
+        case SLAST_UNARY: {
             int32_t child = AstFirstChild(&c->ast, nodeId);
             if (BufAppendChar(&c->out, '(') != 0
                 || BufAppendCStr(&c->out, UnaryOpString((SLTokenKind)n->op)) != 0
@@ -1393,6 +1651,22 @@ static int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     return BufAppendCStr(&c->out, "} while (0);\n");
 }
 
+static int EmitAssertFormatArg(SLCBackendC* c, int32_t nodeId) {
+    const SLASTNode* n = NodeAt(c, nodeId);
+    if (n == NULL) {
+        return -1;
+    }
+    if (n->kind == SLAST_STRING) {
+        return BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd);
+    }
+    if (BufAppendCStr(&c->out, "(const char*)(const void*)cstr(") != 0 || EmitExpr(c, nodeId) != 0
+        || BufAppendChar(&c->out, ')') != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
 static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     const SLASTNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -1423,6 +1697,56 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                 }
             }
             return BufAppendCStr(&c->out, ";\n");
+        }
+        case SLAST_ASSERT: {
+            int32_t cond = AstFirstChild(&c->ast, nodeId);
+            int32_t fmtNode;
+            if (cond < 0) {
+                return -1;
+            }
+            EmitIndent(c, depth);
+            if (BufAppendCStr(&c->out, "do {\n") != 0) {
+                return -1;
+            }
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "if (!(") != 0 || EmitExpr(c, cond) != 0
+                || BufAppendCStr(&c->out, ")) {\n") != 0)
+            {
+                return -1;
+            }
+            fmtNode = AstNextSibling(&c->ast, cond);
+            EmitIndent(c, depth + 2u);
+            if (fmtNode < 0) {
+                if (BufAppendCStr(
+                        &c->out, "SL_ASSERT_FAIL(__FILE__, __LINE__, \"assertion failed\");\n")
+                    != 0)
+                {
+                    return -1;
+                }
+            } else {
+                int32_t argNode;
+                if (BufAppendCStr(&c->out, "SL_ASSERTF_FAIL(__FILE__, __LINE__, ") != 0
+                    || EmitAssertFormatArg(c, fmtNode) != 0)
+                {
+                    return -1;
+                }
+                argNode = AstNextSibling(&c->ast, fmtNode);
+                while (argNode >= 0) {
+                    if (BufAppendCStr(&c->out, ", ") != 0 || EmitExpr(c, argNode) != 0) {
+                        return -1;
+                    }
+                    argNode = AstNextSibling(&c->ast, argNode);
+                }
+                if (BufAppendCStr(&c->out, ");\n") != 0) {
+                    return -1;
+                }
+            }
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "}\n") != 0) {
+                return -1;
+            }
+            EmitIndent(c, depth);
+            return BufAppendCStr(&c->out, "} while (0);\n");
         }
         case SLAST_IF: {
             int32_t cond = AstFirstChild(&c->ast, nodeId);
@@ -1766,9 +2090,12 @@ static int EmitPrelude(SLCBackendC* c) {
         "typedef float    f32;\n"
         "typedef double   f64;\n"
         "typedef _Bool    bool;\n"
-        "typedef const char* str;\n"
-        "static inline u32 len(str s) { u32 n = 0; while (s[n] != 0) { n++; } return n; }\n"
-        "static inline const u8* cstr(str s) { return (const u8*)(const void*)s; }\n"
+        "typedef const u8* str;\n"
+        "typedef struct { u32 len; u8 bytes[1]; } sl_strhdr;\n"
+        "static inline u32 len(str s) { return ((const sl_strhdr*)(const void*)s)->len; }\n"
+        "static inline const u8* cstr(str s) {\n"
+        "    return ((const sl_strhdr*)(const void*)s)->bytes;\n"
+        "}\n"
         "#ifndef SL_TRAP\n"
         "  #if defined(__clang__) || defined(__GNUC__)\n"
         "    #define SL_TRAP() __builtin_trap()\n"
@@ -1858,6 +2185,12 @@ static int EmitHeader(SLCBackendC* c) {
     if (BufAppendCStr(&c->out, "#ifdef ") != 0 || BufAppendCStr(&c->out, impl) != 0
         || BufAppendCStr(&c->out, "\n\n") != 0)
     {
+        free(defaultGuard);
+        free(defaultImpl);
+        return -1;
+    }
+
+    if (EmitStringLiteralPool(c) != 0) {
         free(defaultGuard);
         free(defaultImpl);
         return -1;
@@ -1988,6 +2321,11 @@ static void FreeContext(SLCBackendC* c) {
     }
     free(c->locals);
     free(c->localScopeMarks);
+    for (i = 0; i < c->stringLitLen; i++) {
+        free(c->stringLits[i].bytes);
+    }
+    free(c->stringLits);
+    free(c->stringLitByNode);
     free(c->out.v);
 }
 
@@ -2021,6 +2359,13 @@ static int EmitCBackend(
     }
     if (CollectFnAndFieldInfo(&c) != 0) {
         SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        FreeContext(&c);
+        return -1;
+    }
+    if (CollectStringLiterals(&c) != 0) {
+        if (diag != NULL && diag->code == SLDiag_NONE) {
+            SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        }
         FreeContext(&c);
         return -1;
     }

@@ -324,6 +324,16 @@ static int32_t SLTCFindBuiltinType(SLTypeCheckCtx* c, uint32_t start, uint32_t e
     return -1;
 }
 
+static int32_t SLTCFindBuiltinByKind(SLTypeCheckCtx* c, SLBuiltinKind builtinKind) {
+    uint32_t i;
+    for (i = 0; i < c->typeLen; i++) {
+        if (c->types[i].kind == SLTCType_BUILTIN && c->types[i].builtin == builtinKind) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
 static int32_t SLTCFindNamedTypeIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = 0; i < c->namedTypeLen; i++) {
@@ -932,6 +942,64 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
             if (calleeNode < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_NOT_CALLABLE);
             }
+            if (c->ast->nodes[calleeNode].kind == SLAST_IDENT) {
+                const SLASTNode* callee = &c->ast->nodes[calleeNode];
+                if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "len")) {
+                    int32_t strArgNode = SLASTNextSibling(c->ast, calleeNode);
+                    int32_t strArgType;
+                    int32_t nextArgNode;
+                    int32_t u32Type;
+                    if (strArgNode < 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    }
+                    if (SLTCTypeExpr(c, strArgNode, &strArgType) != 0) {
+                        return -1;
+                    }
+                    if (!SLTCCanAssign(c, c->typeStr, strArgType)) {
+                        return SLTCFailNode(c, strArgNode, SLDiag_TYPE_MISMATCH);
+                    }
+                    nextArgNode = SLASTNextSibling(c->ast, strArgNode);
+                    if (nextArgNode >= 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    }
+                    u32Type = SLTCFindBuiltinByKind(c, SLBuiltin_U32);
+                    if (u32Type < 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+                    }
+                    *outType = u32Type;
+                    return 0;
+                }
+                if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "cstr")) {
+                    int32_t strArgNode = SLASTNextSibling(c->ast, calleeNode);
+                    int32_t strArgType;
+                    int32_t nextArgNode;
+                    int32_t u8Type;
+                    int32_t u8PtrType;
+                    if (strArgNode < 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    }
+                    if (SLTCTypeExpr(c, strArgNode, &strArgType) != 0) {
+                        return -1;
+                    }
+                    if (!SLTCCanAssign(c, c->typeStr, strArgType)) {
+                        return SLTCFailNode(c, strArgNode, SLDiag_TYPE_MISMATCH);
+                    }
+                    nextArgNode = SLASTNextSibling(c->ast, strArgNode);
+                    if (nextArgNode >= 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    }
+                    u8Type = SLTCFindBuiltinByKind(c, SLBuiltin_U8);
+                    if (u8Type < 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+                    }
+                    u8PtrType = SLTCInternPtrType(c, u8Type, callee->start, callee->end);
+                    if (u8PtrType < 0) {
+                        return -1;
+                    }
+                    *outType = u8PtrType;
+                    return 0;
+                }
+            }
             if (SLTCTypeExpr(c, calleeNode, &calleeType) != 0) {
                 return -1;
             }
@@ -1375,6 +1443,40 @@ static int SLTCTypeStmt(
                 return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
             }
             return SLTCTypeStmt(c, stmt, returnType, loopDepth, switchDepth);
+        }
+        case SLAST_ASSERT: {
+            int32_t cond = SLASTFirstChild(c->ast, nodeId);
+            int32_t condType;
+            int32_t fmtNode;
+            if (cond < 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_BOOL);
+            }
+            if (SLTCTypeExpr(c, cond, &condType) != 0) {
+                return -1;
+            }
+            if (!SLTCIsBoolType(c, condType)) {
+                return SLTCFailNode(c, cond, SLDiag_EXPECTED_BOOL);
+            }
+            fmtNode = SLASTNextSibling(c->ast, cond);
+            if (fmtNode >= 0) {
+                int32_t fmtType;
+                int32_t argNode;
+                if (SLTCTypeExpr(c, fmtNode, &fmtType) != 0) {
+                    return -1;
+                }
+                if (!SLTCCanAssign(c, c->typeStr, fmtType)) {
+                    return SLTCFailNode(c, fmtNode, SLDiag_TYPE_MISMATCH);
+                }
+                argNode = SLASTNextSibling(c->ast, fmtNode);
+                while (argNode >= 0) {
+                    int32_t argType;
+                    if (SLTCTypeExpr(c, argNode, &argType) != 0) {
+                        return -1;
+                    }
+                    argNode = SLASTNextSibling(c->ast, argNode);
+                }
+            }
+            return 0;
         }
         default: return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
     }

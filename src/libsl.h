@@ -129,14 +129,44 @@ typedef struct {
     void (*write)(void* ctx, const char* data, uint32_t len);
 } SLWriter;
 
-typedef struct {
-    uint8_t* mem;
+typedef void* _Nullable (*SLArenaGrowFn)(
+    void* _Nullable ctx, uint32_t minSize, uint32_t* _Nonnull outSize);
+typedef void (*SLArenaFreeFn)(void* _Nullable ctx, void* _Nullable block, uint32_t blockSize);
+
+typedef struct SLArenaBlock SLArenaBlock;
+struct SLArenaBlock {
+    uint8_t* _Nullable mem;
     uint32_t cap;
     uint32_t len;
+    uint32_t allocSize;
+    SLArenaBlock* _Nullable next;
+    uint8_t owned;
+};
+
+typedef struct {
+    void* _Nullable allocatorCtx;
+    SLArenaGrowFn _Nullable grow;
+    SLArenaFreeFn _Nullable free;
+    SLArenaBlock inlineBlock;
+    SLArenaBlock* _Nullable first;
+    SLArenaBlock* _Nullable current;
 } SLArena;
 
 void SLArenaInit(SLArena* arena, void* storage, uint32_t storageSize);
+void SLArenaInitEx(
+    SLArena* arena,
+    void* _Nullable storage,
+    uint32_t storageSize,
+    void* _Nullable allocatorCtx,
+    SLArenaGrowFn _Nullable growFn,
+    SLArenaFreeFn _Nullable freeFn);
+void SLArenaSetAllocator(
+    SLArena* arena,
+    void* _Nullable allocatorCtx,
+    SLArenaGrowFn _Nullable growFn,
+    SLArenaFreeFn _Nullable freeFn);
 void SLArenaReset(SLArena* arena);
+void SLArenaDispose(SLArena* arena);
 void* _Nullable SLArenaAlloc(SLArena* arena, uint32_t size, uint32_t align);
 
 typedef enum {
@@ -281,6 +311,7 @@ typedef enum {
     SLAST_BREAK,
     SLAST_CONTINUE,
     SLAST_DEFER,
+    SLAST_ASSERT,
     SLAST_EXPR_STMT,
     SLAST_IDENT,
     SLAST_INT,

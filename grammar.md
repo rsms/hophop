@@ -151,7 +151,7 @@ ContinueStmt    = "continue" ";" ;
 
 DeferStmt       = "defer" ( Block | Stmt ) ;
 
-AssertStmt      = "assert" Expr [ "," StringLit { "," Expr } ] ";" ;
+AssertStmt      = "assert" Expr [ "," Expr { "," Expr } ] ";" ;
 
 ExprStmt        = Expr ";" ;
 ```

@@ -660,7 +660,13 @@ static int ParseSource(
 
     *outArenaMem = arenaMem;
     if (outArena != NULL) {
+        SLArenaBlock* oldInline = &arena.inlineBlock;
+        int           currentIsInline = arena.current == oldInline;
         *outArena = arena;
+        outArena->first = &outArena->inlineBlock;
+        if (currentIsInline || outArena->current == NULL) {
+            outArena->current = &outArena->inlineBlock;
+        }
     }
     return 0;
 }

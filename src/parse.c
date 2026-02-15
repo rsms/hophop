@@ -871,6 +871,34 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
             p->nodes[n].end = p->nodes[block].end;
             *out = n;
             return 0;
+        case SLTok_ASSERT:
+            kw = SLPPeek(p);
+            p->pos++;
+            n = SLPNewNode(p, SLAST_ASSERT, kw->start, kw->end);
+            if (n < 0) {
+                return -1;
+            }
+            if (SLPParseExpr(p, 1, &expr) != 0) {
+                return -1;
+            }
+            if (SLPAddChild(p, n, expr) != 0) {
+                return -1;
+            }
+            while (SLPMatch(p, SLTok_COMMA)) {
+                int32_t arg;
+                if (SLPParseExpr(p, 1, &arg) != 0) {
+                    return -1;
+                }
+                if (SLPAddChild(p, n, arg) != 0) {
+                    return -1;
+                }
+            }
+            if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
+                return -1;
+            }
+            p->nodes[n].end = kw->end;
+            *out = n;
+            return 0;
         case SLTok_LBRACE: return SLPParseBlock(p, out);
         default:
             if (SLPParseExpr(p, 1, &expr) != 0) {
@@ -1211,6 +1239,7 @@ const char* SLASTKindName(SLASTKind kind) {
         case SLAST_BREAK:      return "BREAK";
         case SLAST_CONTINUE:   return "CONTINUE";
         case SLAST_DEFER:      return "DEFER";
+        case SLAST_ASSERT:     return "ASSERT";
         case SLAST_EXPR_STMT:  return "EXPR_STMT";
         case SLAST_IDENT:      return "IDENT";
         case SLAST_INT:        return "INT";

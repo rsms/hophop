@@ -47,19 +47,118 @@ const char* SLDiagMessage(SLDiagCode code) {
     return "unknown diagnostic";
 }
 
+static uint32_t SLArenaAlignUpU32(uint32_t value, uint32_t align) {
+    uint64_t aligned;
+    if (align == 0) {
+        align = 1;
+    }
+    aligned = ((uint64_t)value + (uint64_t)(align - 1u)) & ~((uint64_t)align - 1u);
+    if (aligned > UINT32_MAX) {
+        return UINT32_MAX;
+    }
+    return (uint32_t)aligned;
+}
+
+static uint32_t SLArenaGrowHeaderSize(void) {
+    uint32_t align = (uint32_t)_Alignof(max_align_t);
+    return SLArenaAlignUpU32((uint32_t)sizeof(SLArenaBlock), align);
+}
+
+static void SLArenaInitBlock(
+    SLArenaBlock* block,
+    uint8_t* _Nullable mem,
+    uint32_t cap,
+    uint32_t allocSize,
+    uint8_t  owned,
+    SLArenaBlock* _Nullable next) {
+    block->mem = mem;
+    block->cap = cap;
+    block->len = 0;
+    block->allocSize = allocSize;
+    block->next = next;
+    block->owned = owned;
+}
+
+static void* _Nullable SLArenaTryAllocInBlock(SLArenaBlock* block, uint32_t size, uint32_t align) {
+    uint64_t aligned;
+    uint64_t end;
+
+    if (block == NULL || block->mem == NULL) {
+        return NULL;
+    }
+
+    aligned = ((uint64_t)block->len + (uint64_t)(align - 1u)) & ~((uint64_t)align - 1u);
+    end = aligned + (uint64_t)size;
+    if (end > (uint64_t)block->cap) {
+        return NULL;
+    }
+
+    block->len = (uint32_t)end;
+    return block->mem + aligned;
+}
+
 void SLArenaInit(SLArena* arena, void* storage, uint32_t storageSize) {
-    arena->mem = (uint8_t*)storage;
-    arena->cap = storageSize;
-    arena->len = 0;
+    SLArenaInitEx(arena, storage, storageSize, NULL, NULL, NULL);
+}
+
+void SLArenaInitEx(
+    SLArena* arena,
+    void* _Nullable storage,
+    uint32_t storageSize,
+    void* _Nullable allocatorCtx,
+    SLArenaGrowFn _Nullable growFn,
+    SLArenaFreeFn _Nullable freeFn) {
+    arena->allocatorCtx = allocatorCtx;
+    arena->grow = growFn;
+    arena->free = freeFn;
+    SLArenaInitBlock(&arena->inlineBlock, (uint8_t*)storage, storageSize, storageSize, 0, NULL);
+    arena->first = &arena->inlineBlock;
+    arena->current = &arena->inlineBlock;
+}
+
+void SLArenaSetAllocator(
+    SLArena* arena,
+    void* _Nullable allocatorCtx,
+    SLArenaGrowFn _Nullable growFn,
+    SLArenaFreeFn _Nullable freeFn) {
+    arena->allocatorCtx = allocatorCtx;
+    arena->grow = growFn;
+    arena->free = freeFn;
 }
 
 void SLArenaReset(SLArena* arena) {
-    arena->len = 0;
+    SLArenaBlock* block = arena->first;
+    while (block != NULL) {
+        block->len = 0;
+        block = block->next;
+    }
+    arena->current = arena->first;
+}
+
+void SLArenaDispose(SLArena* arena) {
+    SLArenaBlock* block;
+
+    if (arena->first == NULL) {
+        return;
+    }
+
+    block = arena->first->next;
+    while (block != NULL) {
+        SLArenaBlock* next = block->next;
+        if (block->owned && arena->free != NULL) {
+            arena->free(arena->allocatorCtx, block, block->allocSize);
+        }
+        block = next;
+    }
+
+    arena->inlineBlock.next = NULL;
+    arena->inlineBlock.len = 0;
+    arena->first = &arena->inlineBlock;
+    arena->current = &arena->inlineBlock;
 }
 
 void* _Nullable SLArenaAlloc(SLArena* arena, uint32_t size, uint32_t align) {
-    uint64_t aligned;
-    uint64_t end;
+    SLArenaBlock* block;
 
     if (align == 0) {
         align = 1;
@@ -68,14 +167,80 @@ void* _Nullable SLArenaAlloc(SLArena* arena, uint32_t size, uint32_t align) {
         return NULL;
     }
 
-    aligned = ((uint64_t)arena->len + (uint64_t)(align - 1u)) & ~((uint64_t)align - 1u);
-    end = aligned + (uint64_t)size;
-    if (end > (uint64_t)arena->cap) {
+    block = arena->current != NULL ? arena->current : arena->first;
+    if (block == NULL) {
         return NULL;
     }
 
-    arena->len = (uint32_t)end;
-    return arena->mem + aligned;
+    for (;;) {
+        void* p = SLArenaTryAllocInBlock(block, size, align);
+        if (p != NULL) {
+            arena->current = block;
+            return p;
+        }
+        if (block->next == NULL) {
+            break;
+        }
+        block = block->next;
+    }
+
+    if (arena->grow != NULL) {
+        uint32_t headerSize = SLArenaGrowHeaderSize();
+        uint32_t minPayload;
+        uint32_t targetPayload;
+        uint64_t requestedSize64;
+        uint32_t requestedSize;
+        uint32_t allocSize = 0;
+        void* _Nullable allocMem;
+        SLArenaBlock* newBlock;
+        void* _Nullable p;
+
+        if (size > UINT32_MAX - (align - 1u)) {
+            return NULL;
+        }
+        minPayload = size + align - 1u;
+        targetPayload = minPayload;
+
+        if (block->cap > 0 && block->cap > targetPayload) {
+            targetPayload = block->cap;
+            if (targetPayload <= UINT32_MAX / 2u) {
+                targetPayload *= 2u;
+            } else {
+                targetPayload = UINT32_MAX;
+            }
+            if (targetPayload < minPayload) {
+                targetPayload = minPayload;
+            }
+        }
+
+        requestedSize64 = (uint64_t)headerSize + (uint64_t)targetPayload;
+        if (requestedSize64 > UINT32_MAX) {
+            return NULL;
+        }
+        requestedSize = (uint32_t)requestedSize64;
+        allocMem = arena->grow(arena->allocatorCtx, requestedSize, &allocSize);
+        if (allocMem == NULL) {
+            return NULL;
+        }
+        if (allocSize < headerSize + minPayload) {
+            if (arena->free != NULL) {
+                arena->free(arena->allocatorCtx, allocMem, allocSize);
+            }
+            return NULL;
+        }
+
+        newBlock = (SLArenaBlock*)allocMem;
+        SLArenaInitBlock(
+            newBlock, (uint8_t*)allocMem + headerSize, allocSize - headerSize, allocSize, 1, NULL);
+        block->next = newBlock;
+        arena->current = newBlock;
+        p = SLArenaTryAllocInBlock(newBlock, size, align);
+        if (p != NULL) {
+            return p;
+        }
+    }
+
+    return NULL;
 }
 
 static int SLIsAlpha(unsigned char c) {
@@ -157,9 +322,6 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
         if (SLStrEq(s, len, "union")) {
             return SLTok_UNION;
         }
-        if (SLStrEq(s, len, "assert")) {
-            return SLTok_ASSERT;
-        }
     } else if (len == 6) {
         if (SLStrEq(s, len, "import")) {
             return SLTok_IMPORT;
@@ -172,6 +334,9 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
         }
         if (SLStrEq(s, len, "struct")) {
             return SLTok_STRUCT;
+        }
+        if (SLStrEq(s, len, "assert")) {
+            return SLTok_ASSERT;
         }
     } else if (len == 7) {
         if (SLStrEq(s, len, "package")) {

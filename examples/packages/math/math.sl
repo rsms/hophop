@@ -1,0 +1,9 @@
+package math
+
+pub {
+    fn Add(a i32, b i32) i32
+}
+
+fn Add(a i32, b i32) i32 {
+    return a + b
+}
