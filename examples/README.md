@@ -4,33 +4,33 @@
 
 Single-file mode is supported for package commands:
 
-- `./_build/macos-aarch64-debug/slc checkpkg examples/single-file/main.sl`
-- `./_build/macos-aarch64-debug/slc genpkg:c examples/single-file/main.sl`
+- `./_build/macos-aarch64-debug/slc checkpkg examples/single_file.sl`
+- `./_build/macos-aarch64-debug/slc genpkg:c examples/single_file.sl`
 
 ## Core
 
-- Basic function: `examples/basic/main.sl`
-  - Check: `./_build/macos-aarch64-debug/slc check examples/basic/main.sl`
-- Declaration-order independence: `examples/order_independent/main.sl`
-  - Check: `./_build/macos-aarch64-debug/slc check examples/order_independent/main.sl`
-- Strings, `assert`, `len`, `cstr`: `examples/strings/main.sl`
-  - Check: `./_build/macos-aarch64-debug/slc check examples/strings/main.sl`
-- Casts (`as`): `examples/casts/main.sl`
-  - Check: `./_build/macos-aarch64-debug/slc check examples/casts/main.sl`
-- `defer`: `examples/defer/main.sl`
-  - Check: `./_build/macos-aarch64-debug/slc check examples/defer/main.sl`
+- Basic function: `examples/basic.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/basic.sl`
+- Declaration-order independence: `examples/order_independent.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/order_independent.sl`
+- Strings, `assert`, `len`, `cstr`: `examples/strings.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/strings.sl`
+- Casts (`as`): `examples/casts.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/casts.sl`
+- `defer`: `examples/defer.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/defer.sl`
 
 ## Types
 
-- Struct/union/enum: `examples/aggregates/main.sl`
-  - Check: `./_build/macos-aarch64-debug/slc check examples/aggregates/main.sl`
-- Pointers and arrays: `examples/pointers_arrays/main.sl`
-  - Check: `./_build/macos-aarch64-debug/slc check examples/pointers_arrays/main.sl`
+- Struct/union/enum: `examples/aggregates.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/aggregates.sl`
+- Pointers and arrays: `examples/pointers_arrays.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/pointers_arrays.sl`
 
 ## Control Flow
 
-- `if`, `for`, `switch`, `break`, `continue`: `examples/control_flow/main.sl`
-  - Check: `./_build/macos-aarch64-debug/slc check examples/control_flow/main.sl`
+- `if`, `for`, `switch`, `break`, `continue`: `examples/control_flow.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/control_flow.sl`
 
 ## Imports
 
