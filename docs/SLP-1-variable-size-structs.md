@@ -2,30 +2,33 @@
 
 ## Summary
 
-**SLP-1** adds **variable-size structs** (VSS) to SL: structs whose total size depends on runtime values (typically length fields) while still honoring **natural alignment** (unlike “packed” layouts). VSS are aimed at **serialized / in-place parsed data** with one or more trailing variable-length arrays, common in file formats, network packets, and embedded binary blobs.
+**SLP-1** adds **variable-size aggregates** to SL, centered on variable-size structs (VSS). A
+variable-size aggregate has a runtime size that depends on field values (typically length fields),
+while still honoring natural alignment.
 
 Key features:
 
-* A new `varsize struct` modifier.
+* No new `varsize` keyword. Variable-size status is inferred from fields.
 * Dependent-length trailing array fields: `things [.thingsLen]Thing`.
-* Natural alignment for all fields and trailing arrays.
-* `sizeof(expr)` becomes a **runtime** operation for VSS instances, avoiding manual size math and alignment bugs.
-* VSS are represented in generated C99 using a fixed header struct + inline accessors and runtime size computation.
+* Variable-size status is transitive through aggregate fields:
+  a struct/union containing a variable-size field is also variable-size.
+* `sizeof(expr)` is runtime for variable-size aggregates.
+* Generated C output target is **C11**.
 
 ---
 
 ## Motivation
 
-For serialization and packed data, it’s common to store:
+For serialization and in-place parsed data, it is common to store:
 
 * a fixed header,
 * one or more length fields,
-* then variable-length arrays that immediately follow in memory.
+* then variable-length arrays immediately following in memory.
 
 Example:
 
 ```sl
-varsize struct Packet {
+struct Packet {
   type u8
   version u8
   flags u16
@@ -36,29 +39,28 @@ varsize struct Packet {
 }
 ```
 
-Hand-calculating runtime size is error-prone because you must account for **alignment between arrays**, e.g. `Thing` might have 16-byte alignment. SLP-1 solves this by making `sizeof(p)` compute the correct runtime size using the compiler’s layout rules.
+Hand-written runtime size math is error-prone, mainly because alignment between trailing regions
+must be preserved. SLP-1 makes these offsets and size calculations explicit and generated.
 
 ---
 
 ## Syntax
 
-### Variable-size struct declaration
+### Aggregate declarations
 
-```sl
-varsize struct Name { FieldDecl* }
-```
+Struct/union declaration syntax is unchanged; there is no `varsize` modifier.
 
 ### Field declarations
 
-Inside a `varsize struct` body, fields can be:
+Inside struct bodies, fields can be:
 
-1. **Fixed field**
+1. Fixed field
 
 ```sl
 fieldName Type
 ```
 
-2. **Dependent-length trailing array field**
+2. Dependent-length trailing array field
 
 ```sl
 fieldName [.lenFieldName]ElemType
@@ -66,106 +68,108 @@ fieldName [.lenFieldName]ElemType
 
 Where:
 
-* `lenFieldName` must name a **previous** fixed integer field in the same struct.
-* `ElemType` is any type with a known element size and alignment.
-* Dependent array fields must appear **after all fixed fields**.
-* Multiple dependent array fields are allowed and are laid out **sequentially** in declaration order.
+* `lenFieldName` must name a previous fixed integer field in the same struct.
+* `ElemType` must have known size/alignment.
+* Dependent array fields must appear after all fixed fields.
+* Multiple dependent array fields are allowed and are laid out sequentially in declaration order.
 
 ### `sizeof`
 
-SL supports two forms:
+SL supports:
 
-* `sizeof(Type)` — compile-time constant; **invalid for varsize structs**
-* `sizeof(expr)` — runtime size in bytes (returns `usize`); **required for varsize structs**
+* `sizeof(Type)` — compile-time constant; invalid for variable-size aggregates.
+* `sizeof(expr)` — runtime size in bytes (`usize`) for variable-size aggregates.
 
 Examples:
 
 ```sl
-sizeof(Packet)      // ERROR: Packet is varsize
-sizeof(p)           // OK if p : *Packet (or Packet by-value if allowed)
+sizeof(Packet)      // error: Packet is variable-size
+sizeof(p)           // ok if p : *Packet
 ```
 
 ---
 
 ## Semantics
 
+### Variable-size classification (normative)
+
+An aggregate type is variable-size if:
+
+* it declares at least one dependent-length trailing array field, or
+* it contains a field whose type is variable-size.
+
+This applies transitively to structs and unions.
+
 ### Core model
 
-A `varsize struct` describes a **contiguous memory region**:
+A variable-size struct instance describes one contiguous region:
 
-* A fixed “header” containing all fixed fields.
-* Followed by one or more variable arrays, each aligned to its element type.
+* fixed header fields at the base,
+* trailing variable-length regions computed from length fields.
 
-A value of type `*Packet` is a pointer to the beginning of that memory region.
+A value of type `*Packet` points to the base of that region.
 
 ### Layout algorithm (normative)
 
 Let:
 
 * `base` be the address of an instance,
-* `HdrSize` be the size of the fixed header per normal alignment rules,
-* `align_up(x, a)` align `x` up to multiple of `a`.
+* `HdrSize` be the size of the fixed header by normal alignment rules,
+* `align_up(x, a)` align `x` up to multiple of `a`, where `a` is a power of two.
 
 For dependent arrays in declaration order:
 
-1. Start offset:
-
-   * `off = HdrSize`
-
-2. For each dependent array field `f [.lenField]ElemType`:
-
+1. `off = HdrSize`
+2. For each field `f [.lenField]ElemType`:
    * `off = align_up(off, alignof(ElemType))`
    * `f_ptr = base + off`
-   * `off += (lenField_value as usize) * sizeof(ElemType)`
-
+   * `off += (lenField_value as usize) * sizeof(ElemType)` (wrap-around for now)
 3. Total runtime size:
+   * `size = align_up(off, alignof(StructHeaderType))` (mandatory final alignment)
 
-   * `size = align_up(off, alignof(StructHeaderType))` (optional final alignment; recommended)
+Overflow behavior is currently wrap-around arithmetic. Overflow checking can be added later via
+UBSan or compiler intrinsics.
 
 ### Field access
 
 For `p : *Packet`:
 
-* Fixed fields behave like normal struct fields: `p.flags`, `p.stuffLen`.
-* Dependent array fields evaluate to a pointer to element type:
-
-  * `p.stuff` has type `*Stuff`
-  * `p.things` has type `*Thing`
-* Indexing works normally:
-
-  * `p.stuff[i]` is valid.
+* Fixed fields behave normally: `p.flags`, `p.stuffLen`.
+* Dependent array fields are computed pointer-valued properties:
+  * `p.stuff : *Stuff`
+  * `p.things : *Thing`
+* Indexing works: `p.stuff[i]`.
+* Assignment is illegal: `p.stuff = x` is a compile error.
+* Taking address is allowed: `&p.stuff` (footgun, same class as C footguns, accepted for now).
 
 ### Type restrictions
 
-* `lenFieldName` must refer to an earlier fixed field whose type is an integer type (`u8..u64`, `i8..i64`, `usize`, `isize`).
-* The compiler coerces `lenField_value` to `usize` for size computation; representability checks follow existing SL rules.
-
-### Prohibited / constrained operations
-
-To prevent misleading “normal struct” assumptions:
-
-* `sizeof(Type)` is disallowed for varsize structs.
-* Taking addresses of dependent fields like `&p.stuff` is allowed (it’s a pointer value), but treating `p.stuff` as a stored header field is not meaningful; it is a computed pointer.
-* Optional policy (recommended): disallow by-value variables of varsize struct types (`var x Packet`) unless backed by a fixed-size buffer mechanism. v0 can simply require varsize structs be used behind pointers.
+* `lenFieldName` must reference an earlier fixed integer field (`u8..u64`, `i8..i64`, `usize`,
+  `isize`).
+* `lenField_value` is coerced to `usize` for size math.
+* By-value variable declarations of variable-size aggregate type are errors:
+  * `var x Packet` is illegal
+  * `var x *Packet` is legal
 
 ---
 
-## Code generation (C99)
+## Code generation (C11)
 
 ### Representation strategy
 
-C cannot directly express multiple flexible trailing arrays with alignment constraints. Therefore, generated C uses:
+C cannot directly model multiple aligned trailing dynamic regions as native fields, so generated C
+uses:
 
-1. A fixed header struct containing only the fixed fields.
-2. Inline accessor functions for each dependent array field.
-3. An inline function for runtime size (`sizeof(p)` lowering).
+1. Fixed header struct containing only fixed fields.
+2. Inline accessor functions for dependent fields.
+3. Inline runtime size function used for `sizeof(expr)` lowering.
 
 ### Generated C template (illustrative)
 
 For:
 
 ```sl
-varsize struct Packet {
+struct Packet {
   type u8
   version u8
   flags u16
@@ -176,7 +180,7 @@ varsize struct Packet {
 }
 ```
 
-Emit a header struct:
+Emit header struct:
 
 ```c
 typedef struct Packet__hdr {
@@ -187,13 +191,14 @@ typedef struct Packet__hdr {
   u32 thingsLen;
 } Packet__hdr;
 
-typedef Packet__hdr Packet; // SL name "Packet" refers to header at base
+typedef Packet__hdr Packet;
 ```
 
-Emit helpers (alignment helper may live in prelude):
+Emit helper:
 
 ```c
-static inline usize sl_align_up(usize x, usize a) { return (x + (a-1)) & ~(a-1); }
+// a must be power-of-two
+static inline usize sl_align_up(usize x, usize a) { return (x + (a - 1)) & ~(a - 1); }
 ```
 
 Emit accessors:
@@ -226,19 +231,24 @@ static inline usize Packet__sizeof(Packet* p) {
   off = sl_align_up(off, _Alignof(Thing));
   off += (usize)p->thingsLen * sizeof(Thing);
 
-  off = sl_align_up(off, _Alignof(Packet__hdr)); // recommended final align
+  off = sl_align_up(off, _Alignof(Packet__hdr)); // mandatory final alignment
   return off;
 }
 ```
 
 ### SL lowering rules (normative)
 
-* `p.stuff` → `Packet__stuff(p)`
-* `p.things` → `Packet__things(p)`
-* `sizeof(p)` where `p : *Packet` and `Packet` is varsize → `Packet__sizeof(p)`
-* `sizeof(Packet)` → compile error
+* `p.stuff` -> `Packet__stuff(p)`
+* `p.things` -> `Packet__things(p)`
+* `sizeof(p)` where `p : *Packet` and `Packet` is variable-size -> `Packet__sizeof(p)`
+* `sizeof(Packet)` -> compile error
 
-Field access `p.flags` still lowers using `. vs ->` rule (`p->flags` since `p` is pointer).
+Regular fixed fields keep standard lowering (`.` vs `->` as usual).
+
+### Backend API surface
+
+Accessor/helper names are codegen-backend details, not language-level API guarantees. A different
+backend (e.g. Lua/JS/WASM) may represent variable-size fields differently.
 
 ---
 
@@ -246,70 +256,49 @@ Field access `p.flags` still lowers using `. vs ->` rule (`p->flags` since `p` i
 
 ### Grammar extensions (EBNF-level)
 
-1. Type declaration modifier:
-
-* Allow optional `varsize` before `struct`:
-
-  * `TypeDecl ::= ("varsize")? "struct" Ident StructBody`
-
-2. Field declaration extension for dependent arrays:
-
-* In struct bodies:
-
-  * `FieldDecl ::= Ident ( VarArrayType | Type )`
-  * `VarArrayType ::= "[" "." Ident "]" Type`
-
-3. `sizeof` expression form (if not already present):
-
-* Support both:
-
-  * `sizeof(Type)` (compile-time)
-  * `sizeof(Expr)` (runtime)
-* Semantic restriction for varsize: type-form illegal.
+1. No type declaration modifier changes are required (`struct`/`union` syntax stays the same).
+2. Field extension in struct bodies:
+   * `FieldDecl ::= Ident ( VarArrayType | Type )`
+   * `VarArrayType ::= "[" "." Ident "]" Type`
+3. `sizeof` form support:
+   * `sizeof(Type)` (compile-time form)
+   * `sizeof(Expr)` (runtime form)
+   * semantic restriction: type-form illegal for variable-size aggregate types.
 
 ---
 
 ## Typechecking requirements
 
-* Validate ordering:
-
-  * All dependent array fields must appear after all fixed fields.
-  * Each dependent array must reference an earlier fixed integer field.
-* Compute and store, per varsize struct:
-
-  * fixed header layout info (field offsets/sizes/alignments),
-  * list of dependent arrays with their element type and length field.
-* Mark dependent array “fields” as computed properties returning `*ElemType`.
-* Implement `sizeof(expr)` typing:
-
-  * returns `usize`
-  * if expr is `*VarSizeStruct`, route to runtime size logic in codegen.
+* Validate dependent field ordering and references:
+  * dependent fields appear after fixed fields
+  * each dependent field references an earlier fixed integer field
+* Compute variable-size classification transitively for struct/union aggregates.
+* Record fixed-header + dependent-field metadata for codegen.
+* Type dependent fields as computed `*ElemType` properties.
+* Reject assignment to dependent fields (`p.stuff = ...`).
+* Reject by-value variable declarations for variable-size aggregate types.
+* Type `sizeof(expr)` as `usize`; route variable-size cases to runtime codegen helper.
 
 ---
 
 ## Implementation notes
 
-* Keep varsize layout computation in a single shared routine so:
-
-  * accessors and `sizeof` share logic,
-  * you can const-fold where possible.
-* Always use `_Alignof(T)` / `sizeof(T)` in C99 output.
-* Prefer generating a small `sl_align_up` helper in the prelude once, reused everywhere.
+* Keep layout math in one shared routine used by accessors + runtime size helpers.
+* Use C11 `_Alignof(T)` and `sizeof(T)` in generated C.
+* Overflow is wrap-around for now; overflow diagnostics may be added later via UBSan/intrinsics.
+* Emit one reusable `sl_align_up` helper in prelude/runtime support.
 
 ---
 
 ## Example usage (SL)
 
 ```sl
-fun handle(p *Packet) void {
-  // safe: runtime size accounts for alignment between stuff and things
+fn handle(p *Packet) void {
   var total usize = sizeof(p)
 
-  // access variable arrays
   var s *Stuff = p.stuff
   var t *Thing = p.things
 
-  assert p.stuffLen >= 0 as u32
   assert total > 0 as usize
 }
 ```
@@ -318,12 +307,13 @@ fun handle(p *Packet) void {
 
 ## Open questions (optional future work)
 
-* Support offset-based fields (e.g. `things [@.thingsOff : .thingsLen]Thing`) for more complex formats.
-* Allow `len(p.stuff)` sugar to map to the corresponding length field (requires recording association).
-* Allow varsize structs to be safely constructed with a backing buffer type (e.g. `buf[...].as(Packet)` patterns).
+* Support offset-based fields (e.g. `things [@.thingsOff : .thingsLen]Thing`).
+* Add `len(p.stuff)` sugar mapped to the associated length field.
+* Add safe construction patterns for backing buffers (e.g. `buf[...].as(Packet)`).
 
 ---
 
 ## Status
 
-**Proposed.** Ready to integrate into the core SL spec and code generator as a v1 feature increment (SLP-1).
+**Proposed.** Ready to integrate into the core SL spec and code generator as a v1 feature increment
+(SLP-1).
