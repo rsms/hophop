@@ -224,6 +224,7 @@ typedef enum {
     SLTok_RETURN,
     SLTok_DEFER,
     SLTok_ASSERT,
+    SLTok_SIZEOF,
     SLTok_TRUE,
     SLTok_FALSE,
     SLTok_AS,
@@ -293,6 +294,7 @@ typedef enum {
     SLAST_TYPE_NAME,
     SLAST_TYPE_PTR,
     SLAST_TYPE_ARRAY,
+    SLAST_TYPE_VARRAY,
     SLAST_STRUCT,
     SLAST_UNION,
     SLAST_ENUM,
@@ -322,6 +324,7 @@ typedef enum {
     SLAST_INDEX,
     SLAST_FIELD_EXPR,
     SLAST_CAST,
+    SLAST_SIZEOF,
 } SLASTKind;
 
 typedef struct {

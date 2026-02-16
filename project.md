@@ -22,6 +22,10 @@ The transpiler itself is split into:
 * Advanced generics/templates (duplicate-by-hand is fine for v0).
 * Sophisticated module systems beyond Go-like packages.
 
+### 1.3 Feature proposals
+
+* SLP-1 variable-size structs: `docs/SLP-1-variable-size-structs.md`
+
 ---
 
 ## 2. Output Contract (Generated C99)

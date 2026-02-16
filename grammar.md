@@ -46,6 +46,7 @@ Keyword =
     "switch" | "case" | "default" |
     "break" | "continue" | "return" |
     "defer" | "assert" |
+    "sizeof" |
     "as" |
     "true" | "false" ;
 ```
@@ -86,7 +87,7 @@ PubDecl         = StructDecl
 
 StructDecl      = "struct" Identifier "{" { FieldDecl [ FieldSep ] } "}" ;
 UnionDecl       = "union"  Identifier "{" { FieldDecl [ FieldSep ] } "}" ;
-FieldDecl       = Identifier Type ;
+FieldDecl       = Identifier ( VarArrayType | Type ) ;
 FieldSep        = "," | ";" ;
 
 EnumDecl        = "enum" Identifier Type "{" { EnumItem [ EnumSep ] } "}" ;
@@ -102,9 +103,10 @@ Param           = Identifier Type ;
 
 ConstDecl       = "const" Identifier Type "=" Expr ";" ;
 
-Type            = PointerType | ArrayType | TypeName ;
+Type            = PointerType | ArrayType | VarArrayType | TypeName ;
 PointerType     = "*" Type ;
 ArrayType       = "[" IntLit "]" Type ;
+VarArrayType    = "[" "." Identifier "]" Type ;
 TypeName        = Identifier { "." Identifier } ;
 ```
 
@@ -192,8 +194,11 @@ PrimaryExpr         = Identifier
                     | FloatLit
                     | BoolLit
                     | StringLit
+                    | SizeofExpr
                     | CompoundLit
                     | "(" Expr ")" ;
+
+SizeofExpr       = "sizeof" "(" ( Type | Expr ) ")" ;
 
 CompoundLit         = Type "{" [ FieldInitList [ "," ] ] "}" ;
 FieldInitList       = FieldInit { "," FieldInit } ;

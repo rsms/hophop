@@ -216,6 +216,18 @@ actual_phase7_compile_stdout="$test_tmpdir/phase7_compile.stdout"
 actual_phase7_compile_stderr="$test_tmpdir/phase7_compile.stderr"
 actual_phase7_run_stdout="$test_tmpdir/phase7_run.stdout"
 actual_phase7_run_stderr="$test_tmpdir/phase7_run.stderr"
+actual_phase8_vss_bad_assign_stdout="$test_tmpdir/phase8_vss_bad_assign.stdout"
+actual_phase8_vss_bad_assign_stderr="$test_tmpdir/phase8_vss_bad_assign.stderr"
+actual_phase8_vss_bad_var_value_stdout="$test_tmpdir/phase8_vss_bad_var_value.stdout"
+actual_phase8_vss_bad_var_value_stderr="$test_tmpdir/phase8_vss_bad_var_value.stderr"
+actual_phase8_vss_bad_sizeof_stdout="$test_tmpdir/phase8_vss_bad_sizeof.stdout"
+actual_phase8_vss_bad_sizeof_stderr="$test_tmpdir/phase8_vss_bad_sizeof.stderr"
+actual_phase8_vss_header="$test_tmpdir/phase8_vss.h"
+actual_phase8_vss_obj="$test_tmpdir/phase8_vss.o"
+actual_phase8_vss_exe="$test_tmpdir/phase8_vss"
+actual_phase8_vss_nested_header="$test_tmpdir/phase8_vss_nested.h"
+actual_phase8_vss_nested_obj="$test_tmpdir/phase8_vss_nested.o"
+actual_phase8_vss_nested_exe="$test_tmpdir/phase8_vss_nested"
 
 "$build_dir/slc" tests/phase0/basic.sl > "$actual_tokens"
 diff -u tests/phase0/basic.tokens "$actual_tokens"
@@ -409,6 +421,94 @@ set -e
 [ "$phase7_status" = "7" ] || _err "slc run returned $phase7_status, expected 7"
 [ ! -s "$actual_phase7_run_stdout" ] || _err "unexpected stdout for slc run"
 [ ! -s "$actual_phase7_run_stderr" ] || _err "unexpected stderr for slc run"
+
+if ! "$build_dir/slc" check tests/phase8/vss_ok.sl > /dev/null 2>&1; then
+    _err "unexpected failure for tests/phase8/vss_ok.sl"
+fi
+"$build_dir/slc" genpkg:c tests/phase8/vss_ok.sl > "$actual_phase8_vss_header"
+rg -F "phase8__Packet__payload" "$actual_phase8_vss_header" > /dev/null \
+    || _err "missing payload accessor in phase8 codegen output"
+rg -F "phase8__Packet__samples" "$actual_phase8_vss_header" > /dev/null \
+    || _err "missing samples accessor in phase8 codegen output"
+rg -F "phase8__Packet__sizeof" "$actual_phase8_vss_header" > /dev/null \
+    || _err "missing vss sizeof helper in phase8 codegen output"
+cat > "$test_tmpdir/phase8_vss_test.c" << _END
+#define PHASE8_IMPL
+#include "$actual_phase8_vss_header"
+int test_codegen_phase8_vss(phase8__Packet* p) {
+    u8* payload = phase8__Packet__payload(p);
+    i32* samples = phase8__Packet__samples(p);
+    usize n = phase8__Packet__sizeof(p);
+    return payload != (u8*)0 || samples != (i32*)0 || n > 0 ? 0 : 0;
+}
+_END
+"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase8_vss_test.c" -o "$actual_phase8_vss_obj"
+
+if ! "$build_dir/slc" compile tests/phase8/vss_ok.sl -o "$actual_phase8_vss_exe" > /dev/null 2>&1; then
+    _err "unexpected failure for slc compile tests/phase8/vss_ok.sl"
+fi
+[ -x "$actual_phase8_vss_exe" ] || _err "compile command did not produce executable for phase8/vss_ok.sl"
+
+if ! "$build_dir/slc" check tests/phase8/vss_nested_ok.sl > /dev/null 2>&1; then
+    _err "unexpected failure for tests/phase8/vss_nested_ok.sl"
+fi
+"$build_dir/slc" genpkg:c tests/phase8/vss_nested_ok.sl > "$actual_phase8_vss_nested_header"
+rg -F "phase8__Section__entries" "$actual_phase8_vss_nested_header" > /dev/null \
+    || _err "missing nested section accessor in phase8 codegen output"
+rg -F "phase8__Metadata__value" "$actual_phase8_vss_nested_header" > /dev/null \
+    || _err "missing nested metadata accessor in phase8 codegen output"
+rg -F "phase8__Packet__metadata" "$actual_phase8_vss_nested_header" > /dev/null \
+    || _err "missing packet metadata accessor in phase8 codegen output"
+rg -F "phase8__Packet__sections" "$actual_phase8_vss_nested_header" > /dev/null \
+    || _err "missing packet sections accessor in phase8 codegen output"
+rg -F "phase8__Section__sizeof" "$actual_phase8_vss_nested_header" > /dev/null \
+    || _err "missing section sizeof helper in phase8 codegen output"
+rg -F "phase8__Metadata__sizeof" "$actual_phase8_vss_nested_header" > /dev/null \
+    || _err "missing metadata sizeof helper in phase8 codegen output"
+rg -F "phase8__Packet__sizeof" "$actual_phase8_vss_nested_header" > /dev/null \
+    || _err "missing packet sizeof helper in phase8 codegen output"
+cat > "$test_tmpdir/phase8_vss_nested_test.c" << _END
+#define PHASE8_IMPL
+#include "$actual_phase8_vss_nested_header"
+int test_codegen_phase8_vss_nested(phase8__Packet* p, phase8__Section* s, phase8__Metadata* m) {
+    phase8__Metadata* metadata = phase8__Packet__metadata(p);
+    phase8__Section* sections = phase8__Packet__sections(p);
+    u8* mvalue = phase8__Metadata__value(m);
+    i64* sentries = phase8__Section__entries(s);
+    usize psize = phase8__Packet__sizeof(p);
+    usize ssize = phase8__Section__sizeof(s);
+    usize msize = phase8__Metadata__sizeof(m);
+    return metadata != (phase8__Metadata*)0 || sections != (phase8__Section*)0 ||
+                   mvalue != (u8*)0 || sentries != (i64*)0 || psize > 0 || ssize > 0 ||
+                   msize > 0
+               ? 0
+               : 0;
+}
+_END
+"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase8_vss_nested_test.c" -o "$actual_phase8_vss_nested_obj"
+
+if ! "$build_dir/slc" compile tests/phase8/vss_nested_ok.sl -o "$actual_phase8_vss_nested_exe" > /dev/null 2>&1; then
+    _err "unexpected failure for slc compile tests/phase8/vss_nested_ok.sl"
+fi
+[ -x "$actual_phase8_vss_nested_exe" ] || _err "compile command did not produce executable for phase8/vss_nested_ok.sl"
+
+if "$build_dir/slc" check tests/phase8/vss_bad_assign.sl \
+    > "$actual_phase8_vss_bad_assign_stdout" 2> "$actual_phase8_vss_bad_assign_stderr"; then
+    _err "expected failure for tests/phase8/vss_bad_assign.sl"
+fi
+[ ! -s "$actual_phase8_vss_bad_assign_stdout" ] || _err "unexpected stdout for tests/phase8/vss_bad_assign.sl"
+
+if "$build_dir/slc" check tests/phase8/vss_bad_var_value.sl \
+    > "$actual_phase8_vss_bad_var_value_stdout" 2> "$actual_phase8_vss_bad_var_value_stderr"; then
+    _err "expected failure for tests/phase8/vss_bad_var_value.sl"
+fi
+[ ! -s "$actual_phase8_vss_bad_var_value_stdout" ] || _err "unexpected stdout for tests/phase8/vss_bad_var_value.sl"
+
+if "$build_dir/slc" check tests/phase8/vss_bad_sizeof_type.sl \
+    > "$actual_phase8_vss_bad_sizeof_stdout" 2> "$actual_phase8_vss_bad_sizeof_stderr"; then
+    _err "expected failure for tests/phase8/vss_bad_sizeof_type.sl"
+fi
+[ ! -s "$actual_phase8_vss_bad_sizeof_stdout" ] || _err "unexpected stdout for tests/phase8/vss_bad_sizeof_type.sl"
 
 for example_path in examples/*.sl; do
     example_name=$(basename "$example_path" .sl)

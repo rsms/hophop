@@ -42,8 +42,16 @@ typedef struct {
 typedef struct {
     char*     ownerType;
     char*     fieldName;
+    char*     lenFieldName;
+    int       isDependent;
     SLTypeRef type;
 } SLFieldInfo;
+
+typedef struct {
+    char* cName;
+    int   isUnion;
+    int   isVarSize;
+} SLVarSizeType;
 
 typedef struct {
     char*     name;
@@ -85,6 +93,10 @@ typedef struct {
     SLFieldInfo* fieldInfos;
     uint32_t     fieldInfoLen;
     uint32_t     fieldInfoCap;
+
+    SLVarSizeType* varSizeTypes;
+    uint32_t       varSizeTypeLen;
+    uint32_t       varSizeTypeCap;
 
     SLLocal* locals;
     uint32_t localLen;
@@ -744,6 +756,14 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             int32_t child = AstFirstChild(&c->ast, nodeId);
             return ParseTypeRef(c, child, outType);
         }
+        case SLAST_TYPE_VARRAY: {
+            int32_t child = AstFirstChild(&c->ast, nodeId);
+            if (ParseTypeRef(c, child, outType) != 0) {
+                return -1;
+            }
+            outType->ptrDepth++;
+            return 0;
+        }
         default:
             outType->valid = 0;
             outType->ptrDepth = 0;
@@ -770,7 +790,12 @@ static int AddFnSig(SLCBackendC* c, const char* name, SLTypeRef returnType) {
 }
 
 static int AddFieldInfo(
-    SLCBackendC* c, const char* ownerType, const char* fieldName, SLTypeRef type) {
+    SLCBackendC* c,
+    const char*  ownerType,
+    const char*  fieldName,
+    const char* _Nullable lenFieldName,
+    int       isDependent,
+    SLTypeRef type) {
     if (EnsureCap(
             (void**)&c->fieldInfos, &c->fieldInfoCap, c->fieldInfoLen + 1u, sizeof(SLFieldInfo))
         != 0)
@@ -779,6 +804,8 @@ static int AddFieldInfo(
     }
     c->fieldInfos[c->fieldInfoLen].ownerType = (char*)ownerType;
     c->fieldInfos[c->fieldInfoLen].fieldName = (char*)fieldName;
+    c->fieldInfos[c->fieldInfoLen].lenFieldName = (char*)lenFieldName;
+    c->fieldInfos[c->fieldInfoLen].isDependent = isDependent;
     c->fieldInfos[c->fieldInfoLen].type = type;
     c->fieldInfoLen++;
     return 0;
@@ -833,7 +860,7 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
             const SLASTNode* ch = NodeAt(c, child);
             if (ch != NULL
                 && (ch->kind == SLAST_TYPE_NAME || ch->kind == SLAST_TYPE_PTR
-                    || ch->kind == SLAST_TYPE_ARRAY)
+                    || ch->kind == SLAST_TYPE_ARRAY || ch->kind == SLAST_TYPE_VARRAY)
                 && ch->flags == 1)
             {
                 if (ParseTypeRef(c, child, &returnType) != 0) {
@@ -851,18 +878,36 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
         while (child >= 0) {
             const SLASTNode* field = NodeAt(c, child);
             if (field != NULL && field->kind == SLAST_FIELD) {
-                int32_t   typeNode = AstFirstChild(&c->ast, child);
-                SLTypeRef fieldType;
-                char*     fieldName;
+                int32_t     typeNode = AstFirstChild(&c->ast, child);
+                const char* lenFieldName = NULL;
+                int         isDependent = 0;
+                SLTypeRef   fieldType;
+                char*       fieldName;
                 if (ParseTypeRef(c, typeNode, &fieldType) != 0) {
                     return -1;
                 }
+                if (typeNode >= 0 && NodeAt(c, typeNode) != NULL
+                    && NodeAt(c, typeNode)->kind == SLAST_TYPE_VARRAY)
+                {
+                    lenFieldName = DupSlice(
+                        c->unit->source,
+                        NodeAt(c, typeNode)->dataStart,
+                        NodeAt(c, typeNode)->dataEnd);
+                    if (lenFieldName == NULL) {
+                        return -1;
+                    }
+                    isDependent = 1;
+                }
                 fieldName = DupSlice(c->unit->source, field->dataStart, field->dataEnd);
                 if (fieldName == NULL) {
+                    free((void*)lenFieldName);
                     return -1;
                 }
-                if (AddFieldInfo(c, mapName->cName, fieldName, fieldType) != 0) {
+                if (AddFieldInfo(c, mapName->cName, fieldName, lenFieldName, isDependent, fieldType)
+                    != 0)
+                {
                     free(fieldName);
+                    free((void*)lenFieldName);
                     return -1;
                 }
             }
@@ -883,6 +928,120 @@ static int CollectFnAndFieldInfo(SLCBackendC* c) {
     for (i = 0; i < c->topDeclLen; i++) {
         if (CollectFnAndFieldInfoFromNode(c, c->topDecls[i].nodeId) != 0) {
             return -1;
+        }
+    }
+    return 0;
+}
+
+static int AddVarSizeType(SLCBackendC* c, const char* cName, int isUnion) {
+    uint32_t i;
+    char*    copy;
+    for (i = 0; i < c->varSizeTypeLen; i++) {
+        if (StrEq(c->varSizeTypes[i].cName, cName)) {
+            return 0;
+        }
+    }
+    if (EnsureCap(
+            (void**)&c->varSizeTypes,
+            &c->varSizeTypeCap,
+            c->varSizeTypeLen + 1u,
+            sizeof(SLVarSizeType))
+        != 0)
+    {
+        return -1;
+    }
+    copy = DupCStr(cName);
+    if (copy == NULL) {
+        return -1;
+    }
+    c->varSizeTypes[c->varSizeTypeLen].cName = copy;
+    c->varSizeTypes[c->varSizeTypeLen].isUnion = isUnion;
+    c->varSizeTypes[c->varSizeTypeLen].isVarSize = 0;
+    c->varSizeTypeLen++;
+    return 0;
+}
+
+static SLVarSizeType* _Nullable FindVarSizeType(SLCBackendC* c, const char* cName) {
+    uint32_t i;
+    for (i = 0; i < c->varSizeTypeLen; i++) {
+        if (StrEq(c->varSizeTypes[i].cName, cName)) {
+            return &c->varSizeTypes[i];
+        }
+    }
+    return NULL;
+}
+
+static int CollectVarSizeTypesFromDeclSets(SLCBackendC* c) {
+    uint32_t i;
+    for (i = 0; i < c->pubDeclLen; i++) {
+        int32_t          nodeId = c->pubDecls[i].nodeId;
+        const SLASTNode* n = NodeAt(c, nodeId);
+        const SLNameMap* map;
+        if (n == NULL || (n->kind != SLAST_STRUCT && n->kind != SLAST_UNION)) {
+            continue;
+        }
+        map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        if (map == NULL) {
+            continue;
+        }
+        if (AddVarSizeType(c, map->cName, n->kind == SLAST_UNION) != 0) {
+            return -1;
+        }
+    }
+    for (i = 0; i < c->topDeclLen; i++) {
+        int32_t          nodeId = c->topDecls[i].nodeId;
+        const SLASTNode* n = NodeAt(c, nodeId);
+        const SLNameMap* map;
+        if (n == NULL || (n->kind != SLAST_STRUCT && n->kind != SLAST_UNION)) {
+            continue;
+        }
+        map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        if (map == NULL) {
+            continue;
+        }
+        if (AddVarSizeType(c, map->cName, n->kind == SLAST_UNION) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int IsVarSizeTypeName(const SLCBackendC* c, const char* cName) {
+    uint32_t i;
+    for (i = 0; i < c->varSizeTypeLen; i++) {
+        if (StrEq(c->varSizeTypes[i].cName, cName)) {
+            return c->varSizeTypes[i].isVarSize;
+        }
+    }
+    return 0;
+}
+
+static int PropagateVarSizeTypes(SLCBackendC* c) {
+    int changed = 1;
+    while (changed) {
+        uint32_t i;
+        changed = 0;
+        for (i = 0; i < c->fieldInfoLen; i++) {
+            SLFieldInfo*   field = &c->fieldInfos[i];
+            SLVarSizeType* owner;
+            if (field->ownerType == NULL) {
+                continue;
+            }
+            owner = FindVarSizeType(c, field->ownerType);
+            if (owner == NULL || owner->isVarSize) {
+                continue;
+            }
+            if (field->isDependent) {
+                owner->isVarSize = 1;
+                changed = 1;
+                continue;
+            }
+            if (field->type.valid && field->type.ptrDepth == 0 && field->type.baseName != NULL
+                && IsVarSizeTypeName(c, field->type.baseName))
+            {
+                owner->isVarSize = 1;
+                changed = 1;
+            }
         }
     }
     return 0;
@@ -1210,6 +1369,11 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             int32_t typeNode = AstNextSibling(&c->ast, expr);
             return ParseTypeRef(c, typeNode, outType);
         }
+        case SLAST_SIZEOF:
+            outType->valid = 1;
+            outType->baseName = "usize";
+            outType->ptrDepth = 0;
+            return 0;
         case SLAST_STRING:
             outType->valid = 1;
             outType->baseName = "str";
@@ -1364,6 +1528,38 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
         }
         case SLAST_UNARY: {
             int32_t child = AstFirstChild(&c->ast, nodeId);
+            if ((SLTokenKind)n->op == SLTok_AND && child >= 0) {
+                const SLASTNode* cn = NodeAt(c, child);
+                if (cn != NULL && cn->kind == SLAST_FIELD_EXPR) {
+                    int32_t            recv = AstFirstChild(&c->ast, child);
+                    SLTypeRef          recvType;
+                    SLTypeRef          ownerType;
+                    const SLFieldInfo* field = NULL;
+                    SLTypeRef          childType;
+                    if (InferExprType(c, recv, &recvType) == 0 && recvType.valid) {
+                        ownerType = recvType;
+                        if (ownerType.ptrDepth > 0) {
+                            ownerType.ptrDepth--;
+                        }
+                        if (ownerType.baseName != NULL) {
+                            field = FindFieldInfo(
+                                c, ownerType.baseName, cn->dataStart, cn->dataEnd);
+                        }
+                    }
+                    if (field != NULL && field->isDependent
+                        && InferExprType(c, child, &childType) == 0 && childType.valid)
+                    {
+                        if (BufAppendCStr(&c->out, "(&(") != 0
+                            || EmitTypeNameWithDepth(c, &childType) != 0
+                            || BufAppendCStr(&c->out, "){") != 0 || EmitExpr(c, child) != 0
+                            || BufAppendCStr(&c->out, "})") != 0)
+                        {
+                            return -1;
+                        }
+                        return 0;
+                    }
+                }
+            }
             if (BufAppendChar(&c->out, '(') != 0
                 || BufAppendCStr(&c->out, UnaryOpString((SLTokenKind)n->op)) != 0
                 || EmitExpr(c, child) != 0 || BufAppendChar(&c->out, ')') != 0)
@@ -1415,12 +1611,45 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             return 0;
         }
         case SLAST_FIELD_EXPR: {
-            int32_t   recv = AstFirstChild(&c->ast, nodeId);
-            SLTypeRef recvType;
-            int       useArrow = 0;
-            if (InferExprType(c, recv, &recvType) == 0 && recvType.valid && recvType.ptrDepth > 0) {
-                useArrow = 1;
+            int32_t            recv = AstFirstChild(&c->ast, nodeId);
+            SLTypeRef          recvType;
+            SLTypeRef          ownerType;
+            const SLFieldInfo* field = NULL;
+            int                useArrow = 0;
+
+            if (InferExprType(c, recv, &recvType) == 0 && recvType.valid) {
+                ownerType = recvType;
+                if (ownerType.ptrDepth > 0) {
+                    ownerType.ptrDepth--;
+                    useArrow = 1;
+                }
+                if (ownerType.baseName != NULL) {
+                    field = FindFieldInfo(c, ownerType.baseName, n->dataStart, n->dataEnd);
+                }
             }
+
+            if (field != NULL && field->isDependent) {
+                if (BufAppendCStr(&c->out, ownerType.baseName) != 0
+                    || BufAppendCStr(&c->out, "__") != 0
+                    || BufAppendCStr(&c->out, field->fieldName) != 0
+                    || BufAppendChar(&c->out, '(') != 0)
+                {
+                    return -1;
+                }
+                if (useArrow) {
+                    if (EmitExpr(c, recv) != 0) {
+                        return -1;
+                    }
+                } else {
+                    if (BufAppendCStr(&c->out, "&(") != 0 || EmitExpr(c, recv) != 0
+                        || BufAppendChar(&c->out, ')') != 0)
+                    {
+                        return -1;
+                    }
+                }
+                return BufAppendChar(&c->out, ')');
+            }
+
             if (EmitExpr(c, recv) != 0 || BufAppendCStr(&c->out, useArrow ? "->" : ".") != 0
                 || BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd) != 0)
             {
@@ -1434,6 +1663,42 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeForCast(c, typeNode) != 0
                 || BufAppendCStr(&c->out, ")(") != 0 || EmitExpr(c, expr) != 0
                 || BufAppendCStr(&c->out, "))") != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+        case SLAST_SIZEOF: {
+            int32_t   inner = AstFirstChild(&c->ast, nodeId);
+            SLTypeRef innerType;
+            if (inner < 0) {
+                return -1;
+            }
+            if (n->flags == 1) {
+                if (BufAppendCStr(&c->out, "sizeof(") != 0 || EmitTypeForCast(c, inner) != 0
+                    || BufAppendChar(&c->out, ')') != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
+            if (InferExprType(c, inner, &innerType) == 0 && innerType.valid
+                && innerType.ptrDepth > 0)
+            {
+                SLTypeRef baseType = innerType;
+                baseType.ptrDepth--;
+                if (baseType.baseName != NULL && IsVarSizeTypeName(c, baseType.baseName)) {
+                    if (BufAppendCStr(&c->out, baseType.baseName) != 0
+                        || BufAppendCStr(&c->out, "__sizeof(") != 0 || EmitExpr(c, inner) != 0
+                        || BufAppendChar(&c->out, ')') != 0)
+                    {
+                        return -1;
+                    }
+                    return 0;
+                }
+            }
+            if (BufAppendCStr(&c->out, "sizeof(") != 0 || EmitExpr(c, inner) != 0
+                || BufAppendChar(&c->out, ')') != 0)
             {
                 return -1;
             }
@@ -1939,7 +2204,7 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         const SLASTNode* firstChild = NodeAt(c, child);
         if (firstChild != NULL
             && (firstChild->kind == SLAST_TYPE_NAME || firstChild->kind == SLAST_TYPE_PTR
-                || firstChild->kind == SLAST_TYPE_ARRAY))
+                || firstChild->kind == SLAST_TYPE_ARRAY || firstChild->kind == SLAST_TYPE_VARRAY))
         {
             child = AstNextSibling(&c->ast, child);
         }
@@ -1980,10 +2245,233 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     return 0;
 }
 
+static int NodeHasDirectDependentFields(SLCBackendC* c, int32_t nodeId) {
+    int32_t child = AstFirstChild(&c->ast, nodeId);
+    while (child >= 0) {
+        const SLASTNode* field = NodeAt(c, child);
+        if (field != NULL && field->kind == SLAST_FIELD) {
+            int32_t          typeNode = AstFirstChild(&c->ast, child);
+            const SLASTNode* tn = NodeAt(c, typeNode);
+            if (tn != NULL && tn->kind == SLAST_TYPE_VARRAY) {
+                return 1;
+            }
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    return 0;
+}
+
+static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
+    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+    int32_t          child = AstFirstChild(&c->ast, nodeId);
+    int              emittedHelper = 0;
+
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "typedef struct ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+        || BufAppendCStr(&c->out, "__hdr {\n") != 0)
+    {
+        return -1;
+    }
+
+    while (child >= 0) {
+        const SLASTNode* field = NodeAt(c, child);
+        if (field != NULL && field->kind == SLAST_FIELD) {
+            int32_t          typeNode = AstFirstChild(&c->ast, child);
+            const SLASTNode* tn = NodeAt(c, typeNode);
+            char*            name = DupSlice(c->unit->source, field->dataStart, field->dataEnd);
+            if (name == NULL) {
+                return -1;
+            }
+            if (tn != NULL && tn->kind == SLAST_TYPE_VARRAY) {
+                free(name);
+            } else {
+                EmitIndent(c, depth + 1u);
+                if (EmitTypeWithName(c, typeNode, name) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+                {
+                    free(name);
+                    return -1;
+                }
+                free(name);
+            }
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "} ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+        || BufAppendCStr(&c->out, "__hdr;\n") != 0)
+    {
+        return -1;
+    }
+
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "typedef ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+        || BufAppendCStr(&c->out, "__hdr ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+        || BufAppendCStr(&c->out, ";\n") != 0)
+    {
+        return -1;
+    }
+
+    child = AstFirstChild(&c->ast, nodeId);
+    while (child >= 0) {
+        const SLASTNode* field = NodeAt(c, child);
+        if (field != NULL && field->kind == SLAST_FIELD) {
+            int32_t          typeNode = AstFirstChild(&c->ast, child);
+            const SLASTNode* tn = NodeAt(c, typeNode);
+            if (tn != NULL && tn->kind == SLAST_TYPE_VARRAY) {
+                SLTypeRef depType;
+                int32_t   elemTypeNode = AstFirstChild(&c->ast, typeNode);
+                int32_t   walk;
+                if (ParseTypeRef(c, typeNode, &depType) != 0) {
+                    return -1;
+                }
+                EmitIndent(c, depth);
+                if (BufAppendCStr(&c->out, "static inline ") != 0
+                    || EmitTypeNameWithDepth(c, &depType) != 0 || BufAppendChar(&c->out, ' ') != 0
+                    || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__") != 0
+                    || BufAppendSlice(&c->out, c->unit->source, field->dataStart, field->dataEnd)
+                           != 0
+                    || BufAppendChar(&c->out, '(') != 0 || BufAppendCStr(&c->out, map->cName) != 0
+                    || BufAppendCStr(&c->out, "* p)\n") != 0)
+                {
+                    return -1;
+                }
+                EmitIndent(c, depth);
+                if (BufAppendCStr(&c->out, "{\n") != 0) {
+                    return -1;
+                }
+                EmitIndent(c, depth + 1u);
+                if (BufAppendCStr(&c->out, "usize off = sizeof(") != 0
+                    || BufAppendCStr(&c->out, map->cName) != 0
+                    || BufAppendCStr(&c->out, "__hdr);\n") != 0)
+                {
+                    return -1;
+                }
+
+                walk = AstFirstChild(&c->ast, nodeId);
+                while (walk >= 0) {
+                    const SLASTNode* wf = NodeAt(c, walk);
+                    if (wf != NULL && wf->kind == SLAST_FIELD) {
+                        int32_t          wt = AstFirstChild(&c->ast, walk);
+                        const SLASTNode* wtn = NodeAt(c, wt);
+                        if (wtn != NULL && wtn->kind == SLAST_TYPE_VARRAY) {
+                            int32_t welem = AstFirstChild(&c->ast, wt);
+                            EmitIndent(c, depth + 1u);
+                            if (BufAppendCStr(&c->out, "off = sl_align_up(off, _Alignof(") != 0
+                                || EmitTypeForCast(c, welem) != 0
+                                || BufAppendCStr(&c->out, "));\n") != 0)
+                            {
+                                return -1;
+                            }
+                            if (walk == child) {
+                                EmitIndent(c, depth + 1u);
+                                if (BufAppendCStr(&c->out, "return (") != 0
+                                    || EmitTypeNameWithDepth(c, &depType) != 0
+                                    || BufAppendCStr(&c->out, ")((u8*)p + off);\n") != 0)
+                                {
+                                    return -1;
+                                }
+                                break;
+                            }
+                            EmitIndent(c, depth + 1u);
+                            if (BufAppendCStr(&c->out, "off += (usize)p->") != 0
+                                || BufAppendSlice(
+                                       &c->out, c->unit->source, wtn->dataStart, wtn->dataEnd)
+                                       != 0
+                                || BufAppendCStr(&c->out, " * sizeof(") != 0
+                                || EmitTypeForCast(c, welem) != 0
+                                || BufAppendCStr(&c->out, ");\n") != 0)
+                            {
+                                return -1;
+                            }
+                        }
+                    }
+                    walk = AstNextSibling(&c->ast, walk);
+                }
+                EmitIndent(c, depth);
+                if (BufAppendCStr(&c->out, "}\n") != 0) {
+                    return -1;
+                }
+                emittedHelper = 1;
+                (void)elemTypeNode;
+            }
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+
+    if (emittedHelper) {
+        int32_t walk = AstFirstChild(&c->ast, nodeId);
+        EmitIndent(c, depth);
+        if (BufAppendCStr(&c->out, "static inline usize ") != 0
+            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__sizeof(") != 0
+            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "* p)\n") != 0)
+        {
+            return -1;
+        }
+        EmitIndent(c, depth);
+        if (BufAppendCStr(&c->out, "{\n") != 0) {
+            return -1;
+        }
+        EmitIndent(c, depth + 1u);
+        if (BufAppendCStr(&c->out, "usize off = sizeof(") != 0
+            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__hdr);\n") != 0)
+        {
+            return -1;
+        }
+        while (walk >= 0) {
+            const SLASTNode* wf = NodeAt(c, walk);
+            if (wf != NULL && wf->kind == SLAST_FIELD) {
+                int32_t          wt = AstFirstChild(&c->ast, walk);
+                const SLASTNode* wtn = NodeAt(c, wt);
+                if (wtn != NULL && wtn->kind == SLAST_TYPE_VARRAY) {
+                    int32_t welem = AstFirstChild(&c->ast, wt);
+                    EmitIndent(c, depth + 1u);
+                    if (BufAppendCStr(&c->out, "off = sl_align_up(off, _Alignof(") != 0
+                        || EmitTypeForCast(c, welem) != 0 || BufAppendCStr(&c->out, "));\n") != 0)
+                    {
+                        return -1;
+                    }
+                    EmitIndent(c, depth + 1u);
+                    if (BufAppendCStr(&c->out, "off += (usize)p->") != 0
+                        || BufAppendSlice(&c->out, c->unit->source, wtn->dataStart, wtn->dataEnd)
+                               != 0
+                        || BufAppendCStr(&c->out, " * sizeof(") != 0
+                        || EmitTypeForCast(c, welem) != 0 || BufAppendCStr(&c->out, ");\n") != 0)
+                    {
+                        return -1;
+                    }
+                }
+            }
+            walk = AstNextSibling(&c->ast, walk);
+        }
+        EmitIndent(c, depth + 1u);
+        if (BufAppendCStr(&c->out, "off = sl_align_up(off, _Alignof(") != 0
+            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__hdr));\n") != 0)
+        {
+            return -1;
+        }
+        EmitIndent(c, depth + 1u);
+        if (BufAppendCStr(&c->out, "return off;\n") != 0) {
+            return -1;
+        }
+        EmitIndent(c, depth);
+        if (BufAppendCStr(&c->out, "}\n") != 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 static int EmitStructOrUnionDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int isUnion) {
     const SLASTNode* n = NodeAt(c, nodeId);
     const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
+
+    if (!isUnion && NodeHasDirectDependentFields(c, nodeId)) {
+        return EmitVarSizeStructDecl(c, nodeId, depth);
+    }
 
     EmitIndent(c, depth);
     if (BufAppendCStr(&c->out, "typedef ") != 0
@@ -2035,12 +2523,29 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
             continue;
         }
         EmitIndent(c, 0);
-        if (BufAppendCStr(&c->out, "typedef ") != 0
-            || BufAppendCStr(&c->out, n->kind == SLAST_UNION ? "union " : "struct ") != 0
-            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
-            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
-        {
-            return -1;
+        if (n->kind == SLAST_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
+            if (BufAppendCStr(&c->out, "typedef struct ") != 0
+                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__hdr ") != 0
+                || BufAppendCStr(&c->out, map->cName) != 0
+                || BufAppendCStr(&c->out, "__hdr;\n") != 0)
+            {
+                return -1;
+            }
+            EmitIndent(c, 0);
+            if (BufAppendCStr(&c->out, "typedef ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+                || BufAppendCStr(&c->out, "__hdr ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+        } else {
+            if (BufAppendCStr(&c->out, "typedef ") != 0
+                || BufAppendCStr(&c->out, n->kind == SLAST_UNION ? "union " : "struct ") != 0
+                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
         }
         emittedAny = 1;
     }
@@ -2056,12 +2561,29 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
             continue;
         }
         EmitIndent(c, 0);
-        if (BufAppendCStr(&c->out, "typedef ") != 0
-            || BufAppendCStr(&c->out, n->kind == SLAST_UNION ? "union " : "struct ") != 0
-            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
-            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
-        {
-            return -1;
+        if (n->kind == SLAST_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
+            if (BufAppendCStr(&c->out, "typedef struct ") != 0
+                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__hdr ") != 0
+                || BufAppendCStr(&c->out, map->cName) != 0
+                || BufAppendCStr(&c->out, "__hdr;\n") != 0)
+            {
+                return -1;
+            }
+            EmitIndent(c, 0);
+            if (BufAppendCStr(&c->out, "typedef ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+                || BufAppendCStr(&c->out, "__hdr ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+        } else {
+            if (BufAppendCStr(&c->out, "typedef ") != 0
+                || BufAppendCStr(&c->out, n->kind == SLAST_UNION ? "union " : "struct ") != 0
+                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
         }
         emittedAny = 1;
     }
@@ -2127,7 +2649,7 @@ static int EmitFnDeclOrDef(
         const SLASTNode* ch = NodeAt(c, child);
         if (ch != NULL
             && (ch->kind == SLAST_TYPE_NAME || ch->kind == SLAST_TYPE_PTR
-                || ch->kind == SLAST_TYPE_ARRAY)
+                || ch->kind == SLAST_TYPE_ARRAY || ch->kind == SLAST_TYPE_VARRAY)
             && ch->flags == 1)
         {
             returnTypeNode = child;
@@ -2304,6 +2826,9 @@ static int EmitPrelude(SLCBackendC* c) {
         "static inline u32 len(str s) { return ((const sl_strhdr*)(const void*)s)->len; }\n"
         "static inline const u8* cstr(str s) {\n"
         "    return ((const sl_strhdr*)(const void*)s)->bytes;\n"
+        "}\n"
+        "static inline usize sl_align_up(usize x, usize a) {\n"
+        "    return (x + (a - 1u)) & ~(a - 1u);\n"
         "}\n"
         "#ifndef SL_TRAP\n"
         "  #if defined(__clang__) || defined(__GNUC__)\n"
@@ -2548,8 +3073,13 @@ static void FreeContext(SLCBackendC* c) {
     free(c->fnSigs);
     for (i = 0; i < c->fieldInfoLen; i++) {
         free(c->fieldInfos[i].fieldName);
+        free(c->fieldInfos[i].lenFieldName);
     }
     free(c->fieldInfos);
+    for (i = 0; i < c->varSizeTypeLen; i++) {
+        free(c->varSizeTypes[i].cName);
+    }
+    free(c->varSizeTypes);
     for (i = 0; i < c->localLen; i++) {
         free(c->locals[i].name);
     }
@@ -2594,6 +3124,11 @@ static int EmitCBackend(
         return -1;
     }
     if (CollectFnAndFieldInfo(&c) != 0) {
+        SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        FreeContext(&c);
+        return -1;
+    }
+    if (CollectVarSizeTypesFromDeclSets(&c) != 0 || PropagateVarSizeTypes(&c) != 0) {
         SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         FreeContext(&c);
         return -1;

@@ -26,6 +26,8 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/slc check examples/aggregates.sl`
 - Pointers and arrays: `examples/pointers_arrays.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/pointers_arrays.sl`
+- Variable-size struct (dependent trailing field): `examples/vss.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/vss.sl`
 
 ## Control Flow
 

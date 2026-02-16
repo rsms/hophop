@@ -193,17 +193,28 @@ static int SLPParseType(SLParser* p, int32_t* out) {
     }
 
     if (SLPMatch(p, SLTok_LBRACK)) {
+        const SLToken* lb = SLPPrev(p);
         const SLToken* nTok;
         const SLToken* rb;
-        typeNode = SLPNewNode(p, SLAST_TYPE_ARRAY, SLPPrev(p)->start, SLPPrev(p)->end);
-        if (typeNode < 0) {
-            return -1;
+        SLASTKind      kind = SLAST_TYPE_ARRAY;
+        uint16_t       flags = 0;
+        if (SLPMatch(p, SLTok_DOT)) {
+            kind = SLAST_TYPE_VARRAY;
+            if (SLPExpect(p, SLTok_IDENT, SLDiag_EXPECTED_TYPE, &nTok) != 0) {
+                return -1;
+            }
+        } else {
+            if (SLPExpect(p, SLTok_INT, SLDiag_EXPECTED_TYPE, &nTok) != 0) {
+                return -1;
+            }
         }
-        if (SLPExpect(p, SLTok_INT, SLDiag_EXPECTED_TYPE, &nTok) != 0) {
+        typeNode = SLPNewNode(p, kind, lb->start, lb->end);
+        if (typeNode < 0) {
             return -1;
         }
         p->nodes[typeNode].dataStart = nTok->start;
         p->nodes[typeNode].dataEnd = nTok->end;
+        p->nodes[typeNode].flags = flags;
         if (SLPExpect(p, SLTok_RBRACK, SLDiag_EXPECTED_TYPE, &rb) != 0) {
             return -1;
         }
@@ -284,6 +295,53 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
         if (SLPExpect(p, SLTok_RPAREN, SLDiag_EXPECTED_EXPR, &t) != 0) {
             return -1;
         }
+        return 0;
+    }
+
+    if (SLPMatch(p, SLTok_SIZEOF)) {
+        const SLToken* kw = SLPPrev(p);
+        const SLToken* rp;
+        int32_t        inner;
+        uint32_t       savePos;
+        uint32_t       saveNodeLen;
+        if (SLPExpect(p, SLTok_LPAREN, SLDiag_EXPECTED_EXPR, &t) != 0) {
+            return -1;
+        }
+        n = SLPNewNode(p, SLAST_SIZEOF, kw->start, t->end);
+        if (n < 0) {
+            return -1;
+        }
+
+        savePos = p->pos;
+        saveNodeLen = p->nodeLen;
+        if (SLPParseType(p, &inner) == 0 && SLPAt(p, SLTok_RPAREN)) {
+            p->nodes[n].flags = 1;
+            if (SLPAddChild(p, n, inner) != 0) {
+                return -1;
+            }
+            if (SLPExpect(p, SLTok_RPAREN, SLDiag_EXPECTED_EXPR, &rp) != 0) {
+                return -1;
+            }
+            p->nodes[n].end = rp->end;
+            *out = n;
+            return 0;
+        }
+        p->pos = savePos;
+        p->nodeLen = saveNodeLen;
+        SLDiagClear(p->diag);
+
+        if (SLPParseExpr(p, 1, &inner) != 0) {
+            return -1;
+        }
+        p->nodes[n].flags = 0;
+        if (SLPAddChild(p, n, inner) != 0) {
+            return -1;
+        }
+        if (SLPExpect(p, SLTok_RPAREN, SLDiag_EXPECTED_EXPR, &rp) != 0) {
+            return -1;
+        }
+        p->nodes[n].end = rp->end;
+        *out = n;
         return 0;
     }
 
@@ -1214,43 +1272,45 @@ static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out) {
 
 const char* SLASTKindName(SLASTKind kind) {
     switch (kind) {
-        case SLAST_FILE:       return "FILE";
-        case SLAST_IMPORT:     return "IMPORT";
-        case SLAST_PUB:        return "PUB";
-        case SLAST_FN:         return "FN";
-        case SLAST_PARAM:      return "PARAM";
-        case SLAST_TYPE_NAME:  return "TYPE_NAME";
-        case SLAST_TYPE_PTR:   return "TYPE_PTR";
-        case SLAST_TYPE_ARRAY: return "TYPE_ARRAY";
-        case SLAST_STRUCT:     return "STRUCT";
-        case SLAST_UNION:      return "UNION";
-        case SLAST_ENUM:       return "ENUM";
-        case SLAST_FIELD:      return "FIELD";
-        case SLAST_BLOCK:      return "BLOCK";
-        case SLAST_VAR:        return "VAR";
-        case SLAST_CONST:      return "CONST";
-        case SLAST_IF:         return "IF";
-        case SLAST_FOR:        return "FOR";
-        case SLAST_SWITCH:     return "SWITCH";
-        case SLAST_CASE:       return "CASE";
-        case SLAST_DEFAULT:    return "DEFAULT";
-        case SLAST_RETURN:     return "RETURN";
-        case SLAST_BREAK:      return "BREAK";
-        case SLAST_CONTINUE:   return "CONTINUE";
-        case SLAST_DEFER:      return "DEFER";
-        case SLAST_ASSERT:     return "ASSERT";
-        case SLAST_EXPR_STMT:  return "EXPR_STMT";
-        case SLAST_IDENT:      return "IDENT";
-        case SLAST_INT:        return "INT";
-        case SLAST_FLOAT:      return "FLOAT";
-        case SLAST_STRING:     return "STRING";
-        case SLAST_BOOL:       return "BOOL";
-        case SLAST_UNARY:      return "UNARY";
-        case SLAST_BINARY:     return "BINARY";
-        case SLAST_CALL:       return "CALL";
-        case SLAST_INDEX:      return "INDEX";
-        case SLAST_FIELD_EXPR: return "FIELD_EXPR";
-        case SLAST_CAST:       return "CAST";
+        case SLAST_FILE:        return "FILE";
+        case SLAST_IMPORT:      return "IMPORT";
+        case SLAST_PUB:         return "PUB";
+        case SLAST_FN:          return "FN";
+        case SLAST_PARAM:       return "PARAM";
+        case SLAST_TYPE_NAME:   return "TYPE_NAME";
+        case SLAST_TYPE_PTR:    return "TYPE_PTR";
+        case SLAST_TYPE_ARRAY:  return "TYPE_ARRAY";
+        case SLAST_TYPE_VARRAY: return "TYPE_VARRAY";
+        case SLAST_STRUCT:      return "STRUCT";
+        case SLAST_UNION:       return "UNION";
+        case SLAST_ENUM:        return "ENUM";
+        case SLAST_FIELD:       return "FIELD";
+        case SLAST_BLOCK:       return "BLOCK";
+        case SLAST_VAR:         return "VAR";
+        case SLAST_CONST:       return "CONST";
+        case SLAST_IF:          return "IF";
+        case SLAST_FOR:         return "FOR";
+        case SLAST_SWITCH:      return "SWITCH";
+        case SLAST_CASE:        return "CASE";
+        case SLAST_DEFAULT:     return "DEFAULT";
+        case SLAST_RETURN:      return "RETURN";
+        case SLAST_BREAK:       return "BREAK";
+        case SLAST_CONTINUE:    return "CONTINUE";
+        case SLAST_DEFER:       return "DEFER";
+        case SLAST_ASSERT:      return "ASSERT";
+        case SLAST_EXPR_STMT:   return "EXPR_STMT";
+        case SLAST_IDENT:       return "IDENT";
+        case SLAST_INT:         return "INT";
+        case SLAST_FLOAT:       return "FLOAT";
+        case SLAST_STRING:      return "STRING";
+        case SLAST_BOOL:        return "BOOL";
+        case SLAST_UNARY:       return "UNARY";
+        case SLAST_BINARY:      return "BINARY";
+        case SLAST_CALL:        return "CALL";
+        case SLAST_INDEX:       return "INDEX";
+        case SLAST_FIELD_EXPR:  return "FIELD_EXPR";
+        case SLAST_CAST:        return "CAST";
+        case SLAST_SIZEOF:      return "SIZEOF";
     }
     return "UNKNOWN";
 }
