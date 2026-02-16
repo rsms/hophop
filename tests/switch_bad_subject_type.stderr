@@ -1,0 +1,1 @@
+tests/switch_bad_subject_type.sl:42:46: error: type mismatch

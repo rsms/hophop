@@ -1,3 +1,0 @@
-error: import cycle detected
-tests/phase4/pkg_cycle/b/b.sl:0:12: error: failed to resolve import a
-tests/phase4/pkg_cycle/a/a.sl:0:12: error: failed to resolve import b

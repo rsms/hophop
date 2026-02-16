@@ -1,0 +1,1 @@
+tests/bad_type_mismatch.sl:29:33: error: type mismatch
