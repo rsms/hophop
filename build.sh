@@ -279,6 +279,7 @@ done
 
 for t in \
     "_|tests/bad_string.sl|tests/bad_string.stderr" \
+    "check|tests/bad_pub_block.sl|tests/bad_pub_block.stderr" \
     "ast|tests/ast_bad.sl|tests/ast_bad.stderr" \
     "check|tests/bad_unknown_symbol.sl|tests/bad_unknown_symbol.stderr" \
     "check|tests/bad_type_mismatch.sl|tests/bad_type_mismatch.stderr" \

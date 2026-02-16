@@ -164,26 +164,23 @@ Examples:
 * No dot-imports, no unnamed imports in v0.
 * Cyclic imports are an error.
 
-#### Export surface (`pub { ... }`)
+#### Export surface (`pub`)
 
-Each package declares exports using one or more `pub { ... }` blocks.
+Each package declares exports by marking top-level declarations with `pub`.
 
-Inside `pub {}`: **declarations only** (no function bodies).
 Allowed:
 
-* `struct/union/enum` declarations (with bodies)
-* `fn` prototypes (signatures only)
-* `const` declarations **only if compile-time** (optional, but recommended)
+* `pub struct/union/enum` declarations
+* `pub fn` declarations/definitions
+* `pub const` declarations **only if compile-time** (optional, but recommended)
 
-Everything **outside** `pub {}` is **package-private** by default.
+Everything not marked `pub` is **package-private** by default.
 
 Example:
 
 ```sl
-pub {
-    struct T { x i32 }
-    fn A(t T) i32
-}
+pub struct T { x i32 }
+pub fn A(t T) i32;
 
 fn A(t T) i32 { return t.x }
 fn b(x i32) i32 { return x + 1 } // private
@@ -191,10 +188,9 @@ fn b(x i32) i32 { return x + 1 } // private
 
 **Visibility rules:**
 
-* Outside package: only names declared in `pub {}` are accessible as `foo.T`, `foo.A`.
+* Outside package: only names marked `pub` are accessible as `foo.T`, `foo.A`.
 * Inside package: both exported and private are accessible.
-* Exception for programs: `fn main` is treated as an entry point and does not need to be declared
-  in `pub {}`.
+* Exception for programs: `fn main` is treated as an entry point and does not need `pub`.
 
 **API closure rule (recommended for simplicity):**
 
@@ -554,7 +550,7 @@ Token kinds needed:
 Implement a straightforward recursive descent parser:
 
 * import decls
-* pub blocks
+* pub-prefixed top-level declarations
 * top-level type decls and function decls/defs
 * statements and expressions
 
@@ -587,11 +583,11 @@ Within a package, resolution is declaration-order independent:
 * collect type and value declarations first,
 * then resolve references and typecheck bodies.
 
-### 4.3.4 Export surface building (`pub {}`)
+### 4.3.4 Export surface building (`pub`)
 
 Scan all files in the package:
 
-* collect all declarations inside `pub {}` as exported symbols.
+* collect all declarations marked `pub` as exported symbols.
 * validate uniqueness.
 * validate that each exported `fn` has a matching definition somewhere (exact signature).
 * validate public API closure rule (no private types leak).
@@ -655,7 +651,7 @@ A direct “pretty printer” is fine. Keep formatting deterministic.
 Codegen phases:
 
 1. Emit header guard / prelude.
-2. Emit exported declarations (from `pub {}`).
+2. Emit exported declarations (from `pub` declarations).
 3. Emit `#ifdef PKG_IMPL` section:
 
    * emit private type defs (if needed)
@@ -819,18 +815,16 @@ For each expected header:
 ### `ds/heap/heap.sl`
 
 ```sl
-pub {
-    struct PQueue {
-        data *i32
-        len  i32
-        cap  i32
-    }
-
-    fn Init(q *PQueue, backing *i32, cap i32) void
-    fn Push(q *PQueue, x i32) bool
-    fn Pop(q *PQueue, out *i32) bool
-    fn Peek(q *PQueue, out *i32) bool
+pub struct PQueue {
+    data *i32
+    len  i32
+    cap  i32
 }
+
+pub fn Init(q *PQueue, backing *i32, cap i32) void;
+pub fn Push(q *PQueue, x i32) bool;
+pub fn Pop(q *PQueue, out *i32) bool;
+pub fn Peek(q *PQueue, out *i32) bool;
 
 fn Init(q *PQueue, backing *i32, cap i32) void {
     q.data = backing
@@ -899,10 +893,6 @@ fn Pop(q *PQueue, out *i32) bool {
 ```sl
 import heap "ds/heap"
 
-pub {
-    fn main() i32
-}
-
 fn main() i32 {
     var backing [64]i32
     var q heap.PQueue
@@ -946,11 +936,11 @@ fn main() i32 {
 * switch parsing, case bodies as blocks
 * switch lowering decision
 
-### Phase 4: Packages + imports + pub blocks
+### Phase 4: Packages + imports + `pub`
 
 * package loader in CLI: load all `.sl` in dir
 * parse multiple units
-* merge pub exports
+* merge `pub` exports
 * resolve imports and `pkg.Name`
 * enforce API closure rule
 * codegen as single-header package
@@ -973,6 +963,6 @@ fn main() i32 {
 
 * Keep AST nodes compact and arena-allocated.
 * Use integer IDs for symbols and types (intern everything).
-* Treat `pub {}` as the single source of export truth.
+* Treat `pub` declarations as the single source of export truth.
 * In v0, keep import resolution simple: map import path → directory → parse package.
 * Codegen should be type-driven (no guessing `. vs ->`, no guessing switch lowering).

@@ -339,6 +339,10 @@ typedef struct {
     uint16_t  flags;
 } SLASTNode;
 
+enum {
+    SLASTFlag_PUB = 0x8000u,
+};
+
 typedef struct {
     const SLASTNode* nodes;
     uint32_t         len;

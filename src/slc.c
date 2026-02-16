@@ -781,6 +781,10 @@ static int IsDeclKind(SLASTKind kind) {
         || kind == SLAST_CONST;
 }
 
+static int IsPubDeclNode(const SLASTNode* n) {
+    return (n->flags & SLASTFlag_PUB) != 0;
+}
+
 static int FnNodeHasBody(const SLAST* ast, int32_t nodeId) {
     int32_t child = ASTFirstChild(ast, nodeId);
     while (child >= 0) {
@@ -973,6 +977,49 @@ static int AddImportRef(
     return 0;
 }
 
+static int IsAsciiSpaceChar(char c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+static char* _Nullable DupPubDeclText(const SLParsedFile* file, int32_t nodeId) {
+    const SLASTNode* n = &file->ast.nodes[nodeId];
+    uint32_t         start = n->start;
+    uint32_t         end = n->end;
+
+    if (start + 3u <= end && memcmp(file->source + start, "pub", 3u) == 0) {
+        start += 3u;
+        while (start < end && IsAsciiSpaceChar(file->source[start])) {
+            start++;
+        }
+    }
+
+    if (n->kind == SLAST_FN && FnNodeHasBody(&file->ast, nodeId)) {
+        int32_t body = ASTFirstChild(&file->ast, nodeId);
+        while (body >= 0) {
+            if (file->ast.nodes[body].kind == SLAST_BLOCK) {
+                end = file->ast.nodes[body].start;
+                break;
+            }
+            body = ASTNextSibling(&file->ast, body);
+        }
+        while (end > start && IsAsciiSpaceChar(file->source[end - 1u])) {
+            end--;
+        }
+        if (end >= start) {
+            char* out = (char*)malloc((size_t)(end - start) + 2u);
+            if (out == NULL) {
+                return NULL;
+            }
+            memcpy(out, file->source + start, (size_t)(end - start));
+            out[end - start] = ';';
+            out[end - start + 1u] = '\0';
+            return out;
+        }
+    }
+
+    return DupSlice(file->source, start, end);
+}
+
 static int AddDeclFromNode(
     SLPackage* pkg, const SLParsedFile* file, uint32_t fileIndex, int32_t nodeId, int isPub) {
     const SLASTNode* n = &file->ast.nodes[nodeId];
@@ -986,7 +1033,7 @@ static int AddDeclFromNode(
         return Errorf(file->path, n->start, n->end, "invalid declaration");
     }
     name = DupSlice(file->source, n->dataStart, n->dataEnd);
-    declText = DupSlice(file->source, n->start, n->end);
+    declText = isPub ? DupPubDeclText(file, nodeId) : DupSlice(file->source, n->start, n->end);
     if (name == NULL || declText == NULL) {
         free(name);
         free(declText);
@@ -1082,18 +1129,8 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
                 free(declText);
                 return ErrorSimple("out of memory");
             }
-            if (n->kind == SLAST_PUB) {
-                int32_t pubChild = ASTFirstChild(ast, child);
-                while (pubChild >= 0) {
-                    if (AddDeclFromNode(pkg, file, fileIndex, pubChild, 1) != 0) {
-                        return -1;
-                    }
-                    pubChild = ASTNextSibling(ast, pubChild);
-                }
-            } else {
-                if (AddDeclFromNode(pkg, file, fileIndex, child, 0) != 0) {
-                    return -1;
-                }
+            if (AddDeclFromNode(pkg, file, fileIndex, child, IsPubDeclNode(n)) != 0) {
+                return -1;
             }
         }
         child = ASTNextSibling(ast, child);
@@ -1260,7 +1297,7 @@ static int ValidatePubFnDefinitions(const SLPackage* pkg) {
     for (i = 0; i < pkg->pubDeclLen; i++) {
         const SLSymbolDecl* pubDecl = &pkg->pubDecls[i];
         uint32_t            j;
-        int                 found = 0;
+        int                 found = pubDecl->hasBody;
         if (pubDecl->kind != SLAST_FN) {
             continue;
         }

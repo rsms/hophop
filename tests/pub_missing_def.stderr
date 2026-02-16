@@ -1,1 +1,1 @@
-tests/pub_missing_def/foo.sl:13:20: error: missing definition for exported function Missing
+tests/pub_missing_def/foo.sl:7:14: error: missing definition for exported function Missing

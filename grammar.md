@@ -70,20 +70,14 @@ SourceFile      = { ImportDecl ";" } { TopLevelDecl [ ";" ] } EOF ;
 
 ImportDecl      = "import" [ Identifier ] StringLit ;
 
-TopLevelDecl    = PubBlock
-                | StructDecl
-                | UnionDecl
-                | EnumDecl
-                | FunDecl
-                | FunDef
-                | ConstDecl ;
-
-PubBlock        = "pub" "{" { PubDecl [ ";" ] } "}" ;
-PubDecl         = StructDecl
-                | UnionDecl
-                | EnumDecl
-                | FunDecl
-                | ConstDecl ;
+TopLevelDecl    = [ "pub" ] (
+                    StructDecl
+                  | UnionDecl
+                  | EnumDecl
+                  | FunDecl
+                  | FunDef
+                  | ConstDecl
+                  ) ;
 
 StructDecl      = "struct" Identifier "{" { FieldDecl [ FieldSep ] } "}" ;
 UnionDecl       = "union"  Identifier "{" { FieldDecl [ FieldSep ] } "}" ;
@@ -208,5 +202,5 @@ FieldInit           = Identifier "=" Expr ;
 ## 5. Notes
 
 - `if`, `for`, `switch`, `case`, and `default` bodies are blocks in syntax.
-- `pub { ... }` contains declarations only (no function bodies).
+- `pub` marks an exported top-level declaration.
 - Import paths are string literals.

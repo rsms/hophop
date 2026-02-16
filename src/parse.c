@@ -147,6 +147,7 @@ static int SLPParseType(SLParser* p, int32_t* out);
 static int SLPParseExpr(SLParser* p, int minPrec, int32_t* out);
 static int SLPParseStmt(SLParser* p, int32_t* out);
 static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out);
+static int SLPParseDeclInner(SLParser* p, int allowBody, int32_t* out);
 static int SLPParseSwitchStmt(SLParser* p, int32_t* out);
 
 static int SLPParseTypeName(SLParser* p, int32_t* out) {
@@ -1216,42 +1217,7 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
     return 0;
 }
 
-static int SLPParsePubBlock(SLParser* p, int32_t* out) {
-    const SLToken* kw = SLPPeek(p);
-    const SLToken* rb;
-    int32_t        n;
-    p->pos++;
-    if (SLPExpect(p, SLTok_LBRACE, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
-        return -1;
-    }
-    n = SLPNewNode(p, SLAST_PUB, kw->start, rb->end);
-    if (n < 0) {
-        return -1;
-    }
-
-    while (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
-        int32_t decl;
-        if (SLPAt(p, SLTok_SEMICOLON)) {
-            p->pos++;
-            continue;
-        }
-        if (SLPParseDecl(p, 0, &decl) != 0) {
-            return -1;
-        }
-        if (SLPAddChild(p, n, decl) != 0) {
-            return -1;
-        }
-    }
-
-    if (SLPExpect(p, SLTok_RBRACE, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
-        return -1;
-    }
-    p->nodes[n].end = rb->end;
-    *out = n;
-    return 0;
-}
-
-static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out) {
+static int SLPParseDeclInner(SLParser* p, int allowBody, int32_t* out) {
     switch (SLPPeek(p)->kind) {
         case SLTok_FN: return SLPParseFunDecl(p, allowBody, out);
         case SLTok_STRUCT:
@@ -1265,9 +1231,25 @@ static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out) {
             }
             return 0;
         case SLTok_CONST: return SLPParseVarLikeStmt(p, SLAST_CONST, 1, out);
-        case SLTok_PUB:   return SLPParsePubBlock(p, out);
         default:          return SLPFail(p, SLDiag_EXPECTED_DECL);
     }
+}
+
+static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out) {
+    int      isPub = 0;
+    uint32_t pubStart = 0;
+    if (SLPMatch(p, SLTok_PUB)) {
+        isPub = 1;
+        pubStart = SLPPrev(p)->start;
+    }
+    if (SLPParseDeclInner(p, allowBody, out) != 0) {
+        return -1;
+    }
+    if (isPub) {
+        p->nodes[*out].start = pubStart;
+        p->nodes[*out].flags |= SLASTFlag_PUB;
+    }
+    return 0;
 }
 
 const char* SLASTKindName(SLASTKind kind) {

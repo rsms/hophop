@@ -1,6 +1,6 @@
 # SL Examples
 
-`fn main` is special and does not need to be listed in a `pub { ... }` block.
+`fn main` is special and does not need to be marked `pub`.
 
 Single-file mode is supported for package commands:
 

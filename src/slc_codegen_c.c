@@ -536,6 +536,10 @@ static int IsDeclKind(SLASTKind kind) {
         || kind == SLAST_CONST;
 }
 
+static int IsPubDeclNode(const SLASTNode* n) {
+    return (n->flags & SLASTFlag_PUB) != 0;
+}
+
 static int32_t AstFirstChild(const SLAST* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
@@ -687,35 +691,24 @@ static int CollectDeclSets(SLCBackendC* c) {
     int32_t child = AstFirstChild(&c->ast, c->ast.root);
     while (child >= 0) {
         const SLASTNode* n = NodeAt(c, child);
+        uint32_t         start;
+        uint32_t         end;
+        int              isExported;
         if (n == NULL) {
             return -1;
         }
-        if (n->kind == SLAST_PUB) {
-            int32_t pubChild = AstFirstChild(&c->ast, child);
-            while (pubChild >= 0) {
-                uint32_t         start;
-                uint32_t         end;
-                const SLASTNode* pn = NodeAt(c, pubChild);
-                if (pn != NULL && IsDeclKind(pn->kind)) {
-                    if (AddNodeRef(&c->pubDecls, &c->pubDeclLen, &c->pubDeclCap, pubChild) != 0) {
-                        return -1;
-                    }
-                    if (GetDeclNameSpan(c, pubChild, &start, &end) == 0) {
-                        if (AddName(c, start, end, pn->kind, 1) != 0) {
-                            return -1;
-                        }
-                    }
-                }
-                pubChild = AstNextSibling(&c->ast, pubChild);
-            }
-        } else if (IsDeclKind(n->kind)) {
-            uint32_t start;
-            uint32_t end;
+        if (IsDeclKind(n->kind)) {
+            isExported = IsPubDeclNode(n);
             if (AddNodeRef(&c->topDecls, &c->topDeclLen, &c->topDeclCap, child) != 0) {
                 return -1;
             }
+            if (isExported) {
+                if (AddNodeRef(&c->pubDecls, &c->pubDeclLen, &c->pubDeclCap, child) != 0) {
+                    return -1;
+                }
+            }
             if (GetDeclNameSpan(c, child, &start, &end) == 0) {
-                if (AddName(c, start, end, n->kind, 0) != 0) {
+                if (AddName(c, start, end, n->kind, isExported) != 0) {
                     return -1;
                 }
             }
