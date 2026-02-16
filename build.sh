@@ -166,47 +166,12 @@ echo "running tests"
 test_tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/slang-tests.XXXXXX")
 trap "rm -rf $test_tmpdir" EXIT
 
-actual_tokens="$test_tmpdir/basic.tokens"
-actual_stdout="$test_tmpdir/bad_string.stdout"
-actual_stderr="$test_tmpdir/bad_string.stderr"
-actual_ast="$test_tmpdir/ast_basic.ast"
-actual_ast_bad_stdout="$test_tmpdir/ast_bad.stdout"
-actual_ast_bad_stderr="$test_tmpdir/ast_bad.stderr"
-actual_check_ok_stdout="$test_tmpdir/check_ok.stdout"
-actual_check_ok_stderr="$test_tmpdir/check_ok.stderr"
-actual_check_unknown_stdout="$test_tmpdir/check_unknown.stdout"
-actual_check_unknown_stderr="$test_tmpdir/check_unknown.stderr"
-actual_check_mismatch_stdout="$test_tmpdir/check_mismatch.stdout"
-actual_check_mismatch_stderr="$test_tmpdir/check_mismatch.stderr"
-actual_switch_ast="$test_tmpdir/switch_ast.ast"
-actual_switch_ok_stdout="$test_tmpdir/switch_ok.stdout"
-actual_switch_ok_stderr="$test_tmpdir/switch_ok.stderr"
-actual_switch_bad_subject_stdout="$test_tmpdir/switch_bad_subject.stdout"
-actual_switch_bad_subject_stderr="$test_tmpdir/switch_bad_subject.stderr"
-actual_switch_bad_condition_stdout="$test_tmpdir/switch_bad_condition.stdout"
-actual_switch_bad_condition_stderr="$test_tmpdir/switch_bad_condition.stderr"
-actual_switch_bad_default_stdout="$test_tmpdir/switch_bad_default.stdout"
-actual_switch_bad_default_stderr="$test_tmpdir/switch_bad_default.stderr"
-actual_checkpkg_ok_stdout="$test_tmpdir/checkpkg_ok.stdout"
-actual_checkpkg_ok_stderr="$test_tmpdir/checkpkg_ok.stderr"
-actual_checkpkg_bad_symbol_stdout="$test_tmpdir/checkpkg_bad_symbol.stdout"
-actual_checkpkg_bad_symbol_stderr="$test_tmpdir/checkpkg_bad_symbol.stderr"
-actual_checkpkg_cycle_stdout="$test_tmpdir/checkpkg_cycle.stdout"
-actual_checkpkg_cycle_stderr="$test_tmpdir/checkpkg_cycle.stderr"
-actual_checkpkg_pub_missing_stdout="$test_tmpdir/checkpkg_pub_missing.stdout"
-actual_checkpkg_pub_missing_stderr="$test_tmpdir/checkpkg_pub_missing.stderr"
 actual_codegen_app_header="$test_tmpdir/app_codegen.h"
 actual_codegen_app_obj="$test_tmpdir/app_codegen.o"
 actual_codegen_ptr_header="$test_tmpdir/ptr_codegen.h"
 actual_codegen_ptr_obj="$test_tmpdir/ptr_codegen.o"
-actual_phase5_assert_ok_stdout="$test_tmpdir/phase5_assert_ok.stdout"
-actual_phase5_assert_ok_stderr="$test_tmpdir/phase5_assert_ok.stderr"
-actual_phase5_assert_bad_stdout="$test_tmpdir/phase5_assert_bad.stdout"
-actual_phase5_assert_bad_stderr="$test_tmpdir/phase5_assert_bad.stderr"
 actual_phase5_codegen_header="$test_tmpdir/phase5_codegen.h"
 actual_phase5_codegen_obj="$test_tmpdir/phase5_codegen.o"
-actual_phase6_bad_import_stdout="$test_tmpdir/phase6_bad_import.stdout"
-actual_phase6_bad_import_stderr="$test_tmpdir/phase6_bad_import.stderr"
 actual_phase6_single_header="$test_tmpdir/phase6_single.h"
 actual_phase6_single_obj="$test_tmpdir/phase6_single.o"
 actual_phase6_single_import_header="$test_tmpdir/phase6_single_import.h"
@@ -216,12 +181,6 @@ actual_phase7_compile_stdout="$test_tmpdir/phase7_compile.stdout"
 actual_phase7_compile_stderr="$test_tmpdir/phase7_compile.stderr"
 actual_phase7_run_stdout="$test_tmpdir/phase7_run.stdout"
 actual_phase7_run_stderr="$test_tmpdir/phase7_run.stderr"
-actual_phase8_vss_bad_assign_stdout="$test_tmpdir/phase8_vss_bad_assign.stdout"
-actual_phase8_vss_bad_assign_stderr="$test_tmpdir/phase8_vss_bad_assign.stderr"
-actual_phase8_vss_bad_var_value_stdout="$test_tmpdir/phase8_vss_bad_var_value.stdout"
-actual_phase8_vss_bad_var_value_stderr="$test_tmpdir/phase8_vss_bad_var_value.stderr"
-actual_phase8_vss_bad_sizeof_stdout="$test_tmpdir/phase8_vss_bad_sizeof.stdout"
-actual_phase8_vss_bad_sizeof_stderr="$test_tmpdir/phase8_vss_bad_sizeof.stderr"
 actual_phase8_vss_header="$test_tmpdir/phase8_vss.h"
 actual_phase8_vss_obj="$test_tmpdir/phase8_vss.o"
 actual_phase8_vss_exe="$test_tmpdir/phase8_vss"
@@ -229,92 +188,110 @@ actual_phase8_vss_nested_header="$test_tmpdir/phase8_vss_nested.h"
 actual_phase8_vss_nested_obj="$test_tmpdir/phase8_vss_nested.o"
 actual_phase8_vss_nested_exe="$test_tmpdir/phase8_vss_nested"
 
-"$build_dir/slc" tests/basic.sl > "$actual_tokens"
-diff -u tests/basic.tokens "$actual_tokens"
+_run_slc() {
+    local mode="$1"
+    shift
+    if [ "$mode" = "_" ]; then
+        "$build_dir/slc" "$@"
+    else
+        "$build_dir/slc" "$mode" "$@"
+    fi
+}
 
-if "$build_dir/slc" tests/bad_string.sl > "$actual_stdout" 2> "$actual_stderr"; then
-    _err "expected failure for tests/bad_string.sl"
-fi
-[ ! -s "$actual_stdout" ] || _err "unexpected stdout for tests/bad_string.sl"
-diff -u tests/bad_string.stderr "$actual_stderr"
+_run_id() {
+    local s="$1"
+    s=${s//\//_}
+    s=${s//./_}
+    s=${s//-/_}
+    echo "$s"
+}
 
-"$build_dir/slc" ast tests/ast_basic.sl > "$actual_ast"
-diff -u tests/ast_basic.ast "$actual_ast"
+_expect_stdout_eq() {
+    local mode="$1"
+    local input="$2"
+    local expected="$3"
+    local id="$(_run_id "${mode}_${input}")"
+    local out="$test_tmpdir/$id.stdout"
+    local err="$test_tmpdir/$id.stderr"
+    if ! _run_slc "$mode" "$input" > "$out" 2> "$err"; then
+        _err "unexpected failure for slc $mode $input"
+    fi
+    [ ! -s "$err" ] || _err "unexpected stderr for slc $mode $input"
+    diff -u "$expected" "$out"
+}
 
-if "$build_dir/slc" ast tests/ast_bad.sl > "$actual_ast_bad_stdout" 2> "$actual_ast_bad_stderr"; then
-    _err "expected failure for tests/ast_bad.sl"
-fi
-[ ! -s "$actual_ast_bad_stdout" ] || _err "unexpected stdout for tests/ast_bad.sl"
-diff -u tests/ast_bad.stderr "$actual_ast_bad_stderr"
+_expect_ok_silent() {
+    local mode="$1"
+    local input="$2"
+    local id="$(_run_id "${mode}_${input}")"
+    local out="$test_tmpdir/$id.stdout"
+    local err="$test_tmpdir/$id.stderr"
+    if ! _run_slc "$mode" "$input" > "$out" 2> "$err"; then
+        _err "unexpected failure for slc $mode $input"
+    fi
+    [ ! -s "$out" ] || _err "unexpected stdout for slc $mode $input"
+    [ ! -s "$err" ] || _err "unexpected stderr for slc $mode $input"
+}
 
-if ! "$build_dir/slc" check tests/order_independent.sl > "$actual_check_ok_stdout" 2> "$actual_check_ok_stderr"; then
-    _err "unexpected failure for tests/order_independent.sl"
-fi
-[ ! -s "$actual_check_ok_stdout" ] || _err "unexpected stdout for tests/order_independent.sl"
-[ ! -s "$actual_check_ok_stderr" ] || _err "unexpected stderr for tests/order_independent.sl"
+_expect_fail_with_stderr() {
+    local mode="$1"
+    local input="$2"
+    local expected_stderr="$3"
+    local id="$(_run_id "${mode}_${input}")"
+    local out="$test_tmpdir/$id.stdout"
+    local err="$test_tmpdir/$id.stderr"
+    if _run_slc "$mode" "$input" > "$out" 2> "$err"; then
+        _err "expected failure for slc $mode $input"
+    fi
+    [ ! -s "$out" ] || _err "unexpected stdout for slc $mode $input"
+    diff -u "$expected_stderr" "$err"
+}
 
-if "$build_dir/slc" check tests/bad_unknown_symbol.sl > "$actual_check_unknown_stdout" 2> "$actual_check_unknown_stderr"; then
-    _err "expected failure for tests/bad_unknown_symbol.sl"
-fi
-[ ! -s "$actual_check_unknown_stdout" ] || _err "unexpected stdout for tests/bad_unknown_symbol.sl"
-diff -u tests/bad_unknown_symbol.stderr "$actual_check_unknown_stderr"
+_expect_fail_no_stdout() {
+    local mode="$1"
+    local input="$2"
+    local id="$(_run_id "${mode}_${input}")"
+    local out="$test_tmpdir/$id.stdout"
+    local err="$test_tmpdir/$id.stderr"
+    if _run_slc "$mode" "$input" > "$out" 2> "$err"; then
+        _err "expected failure for slc $mode $input"
+    fi
+    [ ! -s "$out" ] || _err "unexpected stdout for slc $mode $input"
+}
 
-if "$build_dir/slc" check tests/bad_type_mismatch.sl > "$actual_check_mismatch_stdout" 2> "$actual_check_mismatch_stderr"; then
-    _err "expected failure for tests/bad_type_mismatch.sl"
-fi
-[ ! -s "$actual_check_mismatch_stdout" ] || _err "unexpected stdout for tests/bad_type_mismatch.sl"
-diff -u tests/bad_type_mismatch.stderr "$actual_check_mismatch_stderr"
+for t in \
+    "_|tests/basic.sl|tests/basic.tokens" \
+    "ast|tests/ast_basic.sl|tests/ast_basic.ast" \
+    "ast|tests/switch_ast.sl|tests/switch_ast.ast"
+do
+    IFS='|' read -r mode input expected <<< "$t"
+    _expect_stdout_eq "$mode" "$input" "$expected"
+done
 
-"$build_dir/slc" ast tests/switch_ast.sl > "$actual_switch_ast"
-diff -u tests/switch_ast.ast "$actual_switch_ast"
+for t in \
+    "check|tests/order_independent.sl" \
+    "check|tests/switch_ok.sl" \
+    "checkpkg|tests/pkg_ok/app"
+do
+    IFS='|' read -r mode input <<< "$t"
+    _expect_ok_silent "$mode" "$input"
+done
 
-if ! "$build_dir/slc" check tests/switch_ok.sl > "$actual_switch_ok_stdout" 2> "$actual_switch_ok_stderr"; then
-    _err "unexpected failure for tests/switch_ok.sl"
-fi
-[ ! -s "$actual_switch_ok_stdout" ] || _err "unexpected stdout for tests/switch_ok.sl"
-[ ! -s "$actual_switch_ok_stderr" ] || _err "unexpected stderr for tests/switch_ok.sl"
-
-if "$build_dir/slc" check tests/switch_bad_subject_type.sl > "$actual_switch_bad_subject_stdout" 2> "$actual_switch_bad_subject_stderr"; then
-    _err "expected failure for tests/switch_bad_subject_type.sl"
-fi
-[ ! -s "$actual_switch_bad_subject_stdout" ] || _err "unexpected stdout for tests/switch_bad_subject_type.sl"
-diff -u tests/switch_bad_subject_type.stderr "$actual_switch_bad_subject_stderr"
-
-if "$build_dir/slc" check tests/switch_bad_condition_type.sl > "$actual_switch_bad_condition_stdout" 2> "$actual_switch_bad_condition_stderr"; then
-    _err "expected failure for tests/switch_bad_condition_type.sl"
-fi
-[ ! -s "$actual_switch_bad_condition_stdout" ] || _err "unexpected stdout for tests/switch_bad_condition_type.sl"
-diff -u tests/switch_bad_condition_type.stderr "$actual_switch_bad_condition_stderr"
-
-if "$build_dir/slc" check tests/switch_bad_default_dup.sl > "$actual_switch_bad_default_stdout" 2> "$actual_switch_bad_default_stderr"; then
-    _err "expected failure for tests/switch_bad_default_dup.sl"
-fi
-[ ! -s "$actual_switch_bad_default_stdout" ] || _err "unexpected stdout for tests/switch_bad_default_dup.sl"
-diff -u tests/switch_bad_default_dup.stderr "$actual_switch_bad_default_stderr"
-
-if ! "$build_dir/slc" checkpkg tests/pkg_ok/app > "$actual_checkpkg_ok_stdout" 2> "$actual_checkpkg_ok_stderr"; then
-    _err "unexpected failure for tests/pkg_ok/app"
-fi
-[ ! -s "$actual_checkpkg_ok_stdout" ] || _err "unexpected stdout for tests/pkg_ok/app"
-[ ! -s "$actual_checkpkg_ok_stderr" ] || _err "unexpected stderr for tests/pkg_ok/app"
-
-if "$build_dir/slc" checkpkg tests/pkg_bad_symbol/app > "$actual_checkpkg_bad_symbol_stdout" 2> "$actual_checkpkg_bad_symbol_stderr"; then
-    _err "expected failure for tests/pkg_bad_symbol/app"
-fi
-[ ! -s "$actual_checkpkg_bad_symbol_stdout" ] || _err "unexpected stdout for tests/pkg_bad_symbol/app"
-diff -u tests/pkg_bad_symbol.stderr "$actual_checkpkg_bad_symbol_stderr"
-
-if "$build_dir/slc" checkpkg tests/pkg_cycle/a > "$actual_checkpkg_cycle_stdout" 2> "$actual_checkpkg_cycle_stderr"; then
-    _err "expected failure for tests/pkg_cycle/a"
-fi
-[ ! -s "$actual_checkpkg_cycle_stdout" ] || _err "unexpected stdout for tests/pkg_cycle/a"
-diff -u tests/pkg_cycle.stderr "$actual_checkpkg_cycle_stderr"
-
-if "$build_dir/slc" checkpkg tests/pub_missing_def > "$actual_checkpkg_pub_missing_stdout" 2> "$actual_checkpkg_pub_missing_stderr"; then
-    _err "expected failure for tests/pub_missing_def"
-fi
-[ ! -s "$actual_checkpkg_pub_missing_stdout" ] || _err "unexpected stdout for tests/pub_missing_def"
-diff -u tests/pub_missing_def.stderr "$actual_checkpkg_pub_missing_stderr"
+for t in \
+    "_|tests/bad_string.sl|tests/bad_string.stderr" \
+    "ast|tests/ast_bad.sl|tests/ast_bad.stderr" \
+    "check|tests/bad_unknown_symbol.sl|tests/bad_unknown_symbol.stderr" \
+    "check|tests/bad_type_mismatch.sl|tests/bad_type_mismatch.stderr" \
+    "check|tests/switch_bad_subject_type.sl|tests/switch_bad_subject_type.stderr" \
+    "check|tests/switch_bad_condition_type.sl|tests/switch_bad_condition_type.stderr" \
+    "check|tests/switch_bad_default_dup.sl|tests/switch_bad_default_dup.stderr" \
+    "checkpkg|tests/pkg_bad_symbol/app|tests/pkg_bad_symbol.stderr" \
+    "checkpkg|tests/pkg_cycle/a|tests/pkg_cycle.stderr" \
+    "checkpkg|tests/pub_missing_def|tests/pub_missing_def.stderr"
+do
+    IFS='|' read -r mode input expected_stderr <<< "$t"
+    _expect_fail_with_stderr "$mode" "$input" "$expected_stderr"
+done
 
 "$build_dir/slc" genpkg tests/pkg_ok/app > "$actual_codegen_app_header"
 rg -F "i32 app__main(void);" "$actual_codegen_app_header" > /dev/null \
@@ -336,17 +313,8 @@ cat > "$test_tmpdir/ptr_codegen_test.c" << _END
 _END
 "$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/ptr_codegen_test.c" -o "$actual_codegen_ptr_obj"
 
-if ! "$build_dir/slc" check tests/assert_ok.sl > "$actual_phase5_assert_ok_stdout" 2> "$actual_phase5_assert_ok_stderr"; then
-    _err "unexpected failure for tests/assert_ok.sl"
-fi
-[ ! -s "$actual_phase5_assert_ok_stdout" ] || _err "unexpected stdout for tests/assert_ok.sl"
-[ ! -s "$actual_phase5_assert_ok_stderr" ] || _err "unexpected stderr for tests/assert_ok.sl"
-
-if "$build_dir/slc" check tests/assert_bad_condition.sl > "$actual_phase5_assert_bad_stdout" 2> "$actual_phase5_assert_bad_stderr"; then
-    _err "expected failure for tests/assert_bad_condition.sl"
-fi
-[ ! -s "$actual_phase5_assert_bad_stdout" ] || _err "unexpected stdout for tests/assert_bad_condition.sl"
-diff -u tests/assert_bad_condition.stderr "$actual_phase5_assert_bad_stderr"
+_expect_ok_silent check tests/assert_ok.sl
+_expect_fail_with_stderr check tests/assert_bad_condition.sl tests/assert_bad_condition.stderr
 
 "$build_dir/slc" genpkg:c tests/codegen_strings_assert > "$actual_phase5_codegen_header"
 rg -F "typedef struct { u32 len; u8 bytes[1]; } sl_strhdr;" "$actual_phase5_codegen_header" > /dev/null \
@@ -364,23 +332,15 @@ int test_codegen_phase5(void) { return (int)codegen_strings_assert__Main(7); }
 _END
 "$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase5_codegen_test.c" -o "$actual_phase5_codegen_obj"
 
-if ! "$build_dir/slc" checkpkg tests/import_default_alias/app > /dev/null 2>&1; then
-    _err "unexpected failure for tests/import_default_alias/app"
-fi
-
-if "$build_dir/slc" checkpkg tests/import_invalid_alias/app > "$actual_phase6_bad_import_stdout" 2> "$actual_phase6_bad_import_stderr"; then
-    _err "expected failure for tests/import_invalid_alias/app"
-fi
-[ ! -s "$actual_phase6_bad_import_stdout" ] || _err "unexpected stdout for tests/import_invalid_alias/app"
-diff -u tests/import_invalid_alias.stderr "$actual_phase6_bad_import_stderr"
-
-if ! "$build_dir/slc" checkpkg tests/import_invalid_alias_explicit/app > /dev/null 2>&1; then
-    _err "unexpected failure for tests/import_invalid_alias_explicit/app"
-fi
-
-if ! "$build_dir/slc" checkpkg tests/single_file/main.sl > /dev/null 2>&1; then
-    _err "unexpected failure for tests/single_file/main.sl"
-fi
+for t in \
+    "checkpkg|tests/import_default_alias/app" \
+    "checkpkg|tests/import_invalid_alias_explicit/app" \
+    "checkpkg|tests/single_file/main.sl"
+do
+    IFS='|' read -r mode input <<< "$t"
+    _expect_ok_silent "$mode" "$input"
+done
+_expect_fail_with_stderr checkpkg tests/import_invalid_alias/app tests/import_invalid_alias.stderr
 "$build_dir/slc" genpkg:c tests/single_file/main.sl > "$actual_phase6_single_header"
 cat > "$test_tmpdir/phase6_single_test.c" << _END
 #define SINGLE_FILE_IMPL
@@ -389,9 +349,7 @@ int test_codegen_phase6_single(void) { return (int)single_file__main(); }
 _END
 "$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase6_single_test.c" -o "$actual_phase6_single_obj"
 
-if ! "$build_dir/slc" checkpkg tests/single_file_import/app/main.sl > /dev/null 2>&1; then
-    _err "unexpected failure for tests/single_file_import/app/main.sl"
-fi
+_expect_ok_silent checkpkg tests/single_file_import/app/main.sl
 "$build_dir/slc" genpkg:c tests/single_file_import/app/main.sl > "$actual_phase6_single_import_header"
 cat > "$test_tmpdir/phase6_single_import_test.c" << _END
 #define APP_IMPL
@@ -422,9 +380,7 @@ set -e
 [ ! -s "$actual_phase7_run_stdout" ] || _err "unexpected stdout for slc run"
 [ ! -s "$actual_phase7_run_stderr" ] || _err "unexpected stderr for slc run"
 
-if ! "$build_dir/slc" check tests/vss_ok.sl > /dev/null 2>&1; then
-    _err "unexpected failure for tests/vss_ok.sl"
-fi
+_expect_ok_silent check tests/vss_ok.sl
 "$build_dir/slc" genpkg:c tests/vss_ok.sl > "$actual_phase8_vss_header"
 rg -F "tests__Packet__payload" "$actual_phase8_vss_header" > /dev/null \
     || _err "missing payload accessor in phase8 codegen output"
@@ -449,9 +405,7 @@ if ! "$build_dir/slc" compile tests/vss_ok.sl -o "$actual_phase8_vss_exe" > /dev
 fi
 [ -x "$actual_phase8_vss_exe" ] || _err "compile command did not produce executable for phase8/vss_ok.sl"
 
-if ! "$build_dir/slc" check tests/vss_nested_ok.sl > /dev/null 2>&1; then
-    _err "unexpected failure for tests/vss_nested_ok.sl"
-fi
+_expect_ok_silent check tests/vss_nested_ok.sl
 "$build_dir/slc" genpkg:c tests/vss_nested_ok.sl > "$actual_phase8_vss_nested_header"
 rg -F "tests__Section__entries" "$actual_phase8_vss_nested_header" > /dev/null \
     || _err "missing nested section accessor in phase8 codegen output"
@@ -492,23 +446,13 @@ if ! "$build_dir/slc" compile tests/vss_nested_ok.sl -o "$actual_phase8_vss_nest
 fi
 [ -x "$actual_phase8_vss_nested_exe" ] || _err "compile command did not produce executable for phase8/vss_nested_ok.sl"
 
-if "$build_dir/slc" check tests/vss_bad_assign.sl \
-    > "$actual_phase8_vss_bad_assign_stdout" 2> "$actual_phase8_vss_bad_assign_stderr"; then
-    _err "expected failure for tests/vss_bad_assign.sl"
-fi
-[ ! -s "$actual_phase8_vss_bad_assign_stdout" ] || _err "unexpected stdout for tests/vss_bad_assign.sl"
-
-if "$build_dir/slc" check tests/vss_bad_var_value.sl \
-    > "$actual_phase8_vss_bad_var_value_stdout" 2> "$actual_phase8_vss_bad_var_value_stderr"; then
-    _err "expected failure for tests/vss_bad_var_value.sl"
-fi
-[ ! -s "$actual_phase8_vss_bad_var_value_stdout" ] || _err "unexpected stdout for tests/vss_bad_var_value.sl"
-
-if "$build_dir/slc" check tests/vss_bad_sizeof_type.sl \
-    > "$actual_phase8_vss_bad_sizeof_stdout" 2> "$actual_phase8_vss_bad_sizeof_stderr"; then
-    _err "expected failure for tests/vss_bad_sizeof_type.sl"
-fi
-[ ! -s "$actual_phase8_vss_bad_sizeof_stdout" ] || _err "unexpected stdout for tests/vss_bad_sizeof_type.sl"
+for input in \
+    tests/vss_bad_assign.sl \
+    tests/vss_bad_var_value.sl \
+    tests/vss_bad_sizeof_type.sl
+do
+    _expect_fail_no_stdout check "$input"
+done
 
 for example_path in examples/*.sl; do
     example_name=$(basename "$example_path" .sl)
