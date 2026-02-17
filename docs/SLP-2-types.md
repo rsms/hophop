@@ -223,19 +223,19 @@ Static analysis for definite initialization can be added later.
 Logical signatures (current):
 
 ```sl
-fn new(ma &MemAllocator, type T) *T
-fn new(ma &MemAllocator, type T, N usize) *[T N] // logical dependent return shape
+fn new(ma mut&MemAllocator, type T) *T
+fn new(ma mut&MemAllocator, type T, N usize) *[T N] // logical dependent return shape
 ```
 
 Logical signatures (future with `?`):
 
 ```sl
-fn new(ma &MemAllocator, type T) ?*T
-fn new(ma &MemAllocator, type T, N usize) ?*[T N]
+fn new(ma mut&MemAllocator, type T) ?*T
+fn new(ma mut&MemAllocator, type T, N usize) ?*[T N]
 
 // non-null forms that panic on allocation failure
-fn new(ma &MemAllocator, type T) *T
-fn new(ma &MemAllocator, type T, N usize) *[T N]
+fn new(ma mut&MemAllocator, type T) *T
+fn new(ma mut&MemAllocator, type T, N usize) *[T N]
 ```
 
 Ownership:
