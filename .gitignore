@@ -2,5 +2,6 @@
 /_*
 /compile_commands.json
 /.cache
+/.clangd
 
 .env
