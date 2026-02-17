@@ -346,6 +346,10 @@ typedef struct {
 
 enum {
     SLASTFlag_PUB = 0x8000u,
+    SLASTFlag_INDEX_SLICE = 0x0001u,
+    SLASTFlag_INDEX_HAS_START = 0x0002u,
+    SLASTFlag_INDEX_HAS_END = 0x0004u,
+    SLASTFlag_INDEX_RUNTIME_BOUNDS = 0x0008u,
 };
 
 typedef struct {

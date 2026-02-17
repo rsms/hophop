@@ -452,7 +452,7 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
         }
 
         if (SLPMatch(p, SLTok_LBRACK)) {
-            int32_t idxExpr;
+            int32_t firstExpr = -1;
             n = SLPNewNode(p, SLAST_INDEX, p->nodes[*expr].start, SLPPrev(p)->end);
             if (n < 0) {
                 return -1;
@@ -460,10 +460,54 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
             if (SLPAddChild(p, n, *expr) != 0) {
                 return -1;
             }
-            if (SLPParseExpr(p, 1, &idxExpr) != 0) {
+
+            if (SLPMatch(p, SLTok_COLON)) {
+                p->nodes[n].flags |= SLASTFlag_INDEX_SLICE;
+                if (!SLPAt(p, SLTok_RBRACK)) {
+                    if (SLPParseExpr(p, 1, &firstExpr) != 0) {
+                        return -1;
+                    }
+                    p->nodes[n].flags |= SLASTFlag_INDEX_HAS_END;
+                    if (SLPAddChild(p, n, firstExpr) != 0) {
+                        return -1;
+                    }
+                }
+                if (SLPExpect(p, SLTok_RBRACK, SLDiag_EXPECTED_EXPR, &t) != 0) {
+                    return -1;
+                }
+                p->nodes[n].end = t->end;
+                *expr = n;
+                continue;
+            }
+
+            if (SLPParseExpr(p, 1, &firstExpr) != 0) {
                 return -1;
             }
-            if (SLPAddChild(p, n, idxExpr) != 0) {
+            if (SLPMatch(p, SLTok_COLON)) {
+                int32_t endExpr = -1;
+                p->nodes[n].flags |= SLASTFlag_INDEX_SLICE;
+                p->nodes[n].flags |= SLASTFlag_INDEX_HAS_START;
+                if (SLPAddChild(p, n, firstExpr) != 0) {
+                    return -1;
+                }
+                if (!SLPAt(p, SLTok_RBRACK)) {
+                    if (SLPParseExpr(p, 1, &endExpr) != 0) {
+                        return -1;
+                    }
+                    p->nodes[n].flags |= SLASTFlag_INDEX_HAS_END;
+                    if (SLPAddChild(p, n, endExpr) != 0) {
+                        return -1;
+                    }
+                }
+                if (SLPExpect(p, SLTok_RBRACK, SLDiag_EXPECTED_EXPR, &t) != 0) {
+                    return -1;
+                }
+                p->nodes[n].end = t->end;
+                *expr = n;
+                continue;
+            }
+
+            if (SLPAddChild(p, n, firstExpr) != 0) {
                 return -1;
             }
             if (SLPExpect(p, SLTok_RBRACK, SLDiag_EXPECTED_EXPR, &t) != 0) {

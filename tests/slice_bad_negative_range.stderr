@@ -1,0 +1,1 @@
+tests/slice_bad_negative_range.sl:52:59: error: type mismatch

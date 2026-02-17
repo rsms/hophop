@@ -262,7 +262,8 @@ for t in \
     "_|tests/basic.sl|tests/basic.tokens" \
     "ast|tests/ast_basic.sl|tests/ast_basic.ast" \
     "ast|tests/switch_ast.sl|tests/switch_ast.ast" \
-    "ast|tests/ast_types_new.sl|tests/ast_types_new.ast"
+    "ast|tests/ast_types_new.sl|tests/ast_types_new.ast" \
+    "ast|tests/ast_slice_expr.sl|tests/ast_slice_expr.ast"
 do
     IFS='|' read -r mode input expected <<< "$t"
     _expect_stdout_eq "$mode" "$input" "$expected"
@@ -271,6 +272,7 @@ done
 for t in \
     "check|tests/order_independent.sl" \
     "check|tests/switch_ok.sl" \
+    "check|tests/slice_ok.sl" \
     "check|tests/types_mut_ok.sl" \
     "checkpkg|tests/pkg_ok/app"
 do
@@ -291,6 +293,11 @@ for t in \
     "check|tests/switch_bad_subject_type.sl|tests/switch_bad_subject_type.stderr" \
     "check|tests/switch_bad_condition_type.sl|tests/switch_bad_condition_type.stderr" \
     "check|tests/switch_bad_default_dup.sl|tests/switch_bad_default_dup.stderr" \
+    "check|tests/slice_bad_index_oob.sl|tests/slice_bad_index_oob.stderr" \
+    "check|tests/slice_bad_range_oob.sl|tests/slice_bad_range_oob.stderr" \
+    "check|tests/slice_bad_range_order.sl|tests/slice_bad_range_order.stderr" \
+    "check|tests/slice_bad_negative_index.sl|tests/slice_bad_negative_index.stderr" \
+    "check|tests/slice_bad_negative_range.sl|tests/slice_bad_negative_range.stderr" \
     "check|tests/types_mut_bad_readonly_to_mutref_assign.sl|tests/types_mut_bad_readonly_to_mutref_assign.stderr" \
     "check|tests/types_mut_bad_ref_assign_value.sl|tests/types_mut_bad_ref_assign_value.stderr" \
     "check|tests/types_mut_bad_readonly_slice_write.sl|tests/types_mut_bad_readonly_slice_write.stderr" \
