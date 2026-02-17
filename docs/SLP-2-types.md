@@ -4,11 +4,11 @@
 
 SLP-2 introduces:
 
-- updated array type syntax (`[N T]` and `[.len T]`)
+- updated array syntax: `[T N]` and `[T .len]`
 - pointer, reference, and slice type forms
-- explicit mutability via `const&...`
+- mutability via `mut` (read-only by default for refs/slices)
 - slice expressions with compile-time/runtime bounds checks
-- `new` allocation forms for single values and arrays
+- `new` allocation forms with explicit allocator argument
 
 For now, this is intentionally C-like:
 
@@ -18,26 +18,48 @@ For now, this is intentionally C-like:
 
 ---
 
+## Non-goals
+
+SLP-2 explicitly does **not** attempt the following:
+
+- Full alias analysis / alias prevention.
+- Rust-style borrow checking.
+- Escape/lifetime enforcement for references/slices.
+- Proof of unique mutable access.
+
+Rationale:
+
+- avoiding harmful aliasing globally is a major, separate effort
+- SLP-2 focuses on type forms, mutability model, slicing semantics, and ABI mapping
+- safety remains C-like for now, with explicit programmer responsibility
+
+Read-only view types constrain writes through that specific view only; they do not freeze underlying
+storage globally.
+
+---
+
 ## Type forms
 
 ```sl
 // Value types
-T        // one value
-[N T]    // array of N values
-[.len T] // dependent-length array type form (used where applicable)
+T         // one value
+[T N]     // array of N values
+[T .len]  // dependent-length array type form (where applicable)
 
 // Pointer types (owned)
-*T       // pointer to one value
-*[T]     // pointer to runtime-length array (ptr + len)
-*[N T]   // pointer to fixed-length array
+*T        // pointer to one value
+*[T]      // pointer to runtime-length array (ptr + len)
+*[T N]    // pointer to fixed-length array
 
 // Reference types (borrowed)
-&T          // reference to one value
-&[N T]      // reference to fixed-length array
-&[T]        // mutable slice (ptr + len + cap)
-const&T     // read-only reference to one value
-const&[N T] // read-only reference to fixed-length array
-const&[T]   // read-only slice (ptr + len)
+&T         // read-only reference to one value
+mut&T      // mutable reference to one value
+&[T N]     // read-only reference to fixed-length array
+mut&[T N]  // mutable reference to fixed-length array
+
+// Slice/view types
+[T]        // read-only slice (ptr + len)
+mut[T]     // mutable slice (ptr + len + cap)
 ```
 
 ### Nullability (current vs future)
@@ -68,14 +90,51 @@ The compiler does not attempt Rust-like lifetime/escape checks in SLP-2.
 1. already reside in memory, or
 2. can be trivially moved to memory (e.g. literal values).
 
-This includes function arguments such as:
+This includes function arguments:
 
 ```sl
-fn f(x &int) void
+fn f(x &i32) void
 f(&3) // materialize temporary storage for 3 and pass its address
 ```
 
 This follows C-style responsibility and footgun profile.
+
+---
+
+## Assignment and dereference rules
+
+Reference/slice variables do not auto-dereference on assignment.
+
+Given:
+
+```sl
+var b i32
+var c &i32
+var r &i32 = &b
+```
+
+Then:
+
+- `r = c` is valid (same type assignment)
+- `r = &b` is valid
+- `r = 1` is invalid (type mismatch)
+
+To write through a one-value reference, use explicit dereference:
+
+```sl
+var mr mut&i32 = &b
+*mr = 2 // write through reference
+```
+
+For slices/arrays, writes happen through indexing and require mutable view type:
+
+```sl
+var xs [i32] = ...
+xs[0] = 1 // error (read-only)
+
+var ys mut[i32] = ...
+ys[0] = 1 // ok
+```
 
 ---
 
@@ -96,9 +155,9 @@ End       = Expr ; // positive-value integer expression
 - `start` is inclusive
 - `end` is exclusive
 - omitted indices:
-  - `a[:]`   = `a[0:len(a)]`
-  - `a[n:]`  = `a[n:len(a)]` (result length is `len(a) - n`)
-  - `a[:m]`  = `a[0:m]`
+  - `a[:]`  = `a[0:len(a)]`
+  - `a[n:]` = `a[n:len(a)]` (result length is `len(a) - n`)
+  - `a[:m]` = `a[0:m]`
 
 ### Bounds checks
 
@@ -110,29 +169,30 @@ End       = Expr ; // positive-value integer expression
 
 - `slc` has a safe mode, on by default:
   - inserts bounds checks for memory accesses that may go out of bounds
-  - compiles generated C with UBSan when available (for overflow/alignment traps)
+  - compiles generated C with UBSan when available (overflow/alignment traps)
 - `slc --unsafe` disables safe-mode inserts.
 
 ---
 
 ## Mutability model
 
-### `const` placement
+- References and slices are read-only by default.
+- `mut` is required for writable view/reference types.
+- Read-only view types (`&T`, `&[T N]`, `[T]`) constrain writes through that specific view.
+- They do not globally freeze underlying storage; another mutable alias may still write.
 
-- `const&T` means `T` is immutable (like `const T*` in C).
-- `const*T` is invalid.
-- `const T` is invalid in SLP-2.
+Valid mutability forms:
 
-Potential future extension: field-level `const` values (`timestamp const u64`) can be explored in a
-separate SLP.
+- `mut&T`
+- `mut&[T N]`
+- `mut[T]`
 
-### Arrays/slices and const
+Invalid forms in SLP-2:
 
-- `const&[N T]` and `const&[T]` mean:
-  - array/slice view metadata is immutable
-  - elements are immutable
+- `mut*T`
+- `mut T`
 
-Such values may be stored in read-only memory (`.rodata`) when applicable.
+`const` is not a type qualifier in SLP-2.
 
 ---
 
@@ -147,14 +207,12 @@ Ordering/comparison for arrays/slices/pointers is deferred to a separate SLP.
 ## Default / zero value behavior
 
 - Pointer/reference zero value is null.
-- `len` on null pointer/reference to array/slice returns 0.
+- `len` on null pointer/reference/slice-like values returns 0.
 
 Future with `?` nullability:
 
-- Non-null reference fields (e.g. `r &i32`) in by-value aggregates must be initialized before use.
-- `var s S` or `var s S = {}` may be rejected unless initialization is proven.
-- Pointer-allocated values (`new`) are an exception and may start with null fields that must be
-  assigned by the programmer.
+- non-null reference fields in by-value aggregates must be initialized before use
+- pointer-allocated values (`new`) may start with null fields and require programmer initialization
 
 Static analysis for definite initialization can be added later.
 
@@ -166,18 +224,18 @@ Logical signatures (current):
 
 ```sl
 fn new(ma &MemAllocator, type T) *T
-fn new(ma &MemAllocator, type T, n usize) *[n T] // logical dependent return shape
+fn new(ma &MemAllocator, type T, N usize) *[T N] // logical dependent return shape
 ```
 
 Logical signatures (future with `?`):
 
 ```sl
 fn new(ma &MemAllocator, type T) ?*T
-fn new(ma &MemAllocator, type T, n usize) ?*[n T]
+fn new(ma &MemAllocator, type T, N usize) ?*[T N]
 
 // non-null forms that panic on allocation failure
 fn new(ma &MemAllocator, type T) *T
-fn new(ma &MemAllocator, type T, n usize) *[n T]
+fn new(ma &MemAllocator, type T, N usize) *[T N]
 ```
 
 Ownership:
@@ -192,11 +250,11 @@ Type aliases are a separate SLP and out of scope here.
 
 For SLP-2, treat `str` as:
 
-- `str`  = `const&[u8]`
+- `str`  = `[u8]`
 - `*str` = `*[u8]`
-- `&str` = `&[u8]`
+- `mut str` = `mut[u8]` (if/when alias qualifiers are defined)
 
-Design intent is to keep strings as UTF-8 byte-array views rather than splitting by storage class.
+In practice, most APIs should prefer read-only views for input text.
 
 ---
 
@@ -205,21 +263,25 @@ Design intent is to keep strings as UTF-8 byte-array views rather than splitting
 ### EBNF
 
 ```ebnf
-Type            = QualRefType
+Type            = MutRefType
                 | RefType
+                | MutSliceType
+                | SliceType
                 | PtrType
                 | ArrayType
-                | DynArrayType
                 | DepArrayType
                 | TypeName ;
 
-QualRefType     = "const" "&" Type ;
+MutRefType      = "mut" "&" Type ;
 RefType         = "&" Type ;
+
+MutSliceType    = "mut" "[" Type "]" ;
+SliceType       = "[" Type "]" ;
+
 PtrType         = "*" Type ;
 
-ArrayType       = "[" ConstExpr Type "]" ;
-DynArrayType    = "[" Type "]" ;
-DepArrayType    = "[" "." Identifier Type "]" ;
+ArrayType       = "[" Type ConstExpr "]" ;
+DepArrayType    = "[" Type "." Identifier "]" ;
 
 TypeName        = Identifier { "." Identifier } ;
 ```
@@ -229,39 +291,37 @@ TypeName        = Identifier { "." Identifier } ;
 - Type constructors are right-associative:
   - `*&T` parses as `*( &T )`
   - `&*T` parses as `&( *T )`
-- `const` in SLP-2 is only valid in `const&...`.
-- `const T` and `const*T` are invalid.
+- `mut` binds to the immediately following type constructor.
 
 ---
 
 ## Representation and ABI mapping (C backend proposal)
 
-The following is the C backend mapping target for SLP-2:
+C backend target representation:
 
 ```c
 // *[T]
 struct { void* ptr; size_t len; };
 
-// &[T]
-struct { void* const ptr; size_t len; const size_t cap; };
+// [T]
+struct { const void* ptr; size_t len; };
 
-// const&[T]
-struct { const void* const ptr; const size_t len; };
+// mut[T]
+struct { void* ptr; size_t len; size_t cap; };
 ```
 
 Fixed-array refs:
 
-- `&[N T]` maps to `T*` plus compile-time length `N` in type semantics.
-- `const&[N T]` maps to `const T*` plus compile-time length `N`.
-- `*[N T]` maps to `T*` plus compile-time length `N` (owned).
+- `&[T N]` maps to `const T*` plus compile-time length `N`
+- `mut&[T N]` maps to `T*` plus compile-time length `N`
+- `*[T N]` maps to `T*` plus compile-time length `N` (owned)
 
 Notes:
 
 - SL mutability semantics are language-level rules.
-- C backend may encode the same semantics either via C `const` fields or by codegen discipline.
-- SL mutability rules are enforced by SL typechecking.
+- C backend may encode those semantics with C `const` and/or codegen discipline.
 - C field order is ABI-significant and must be stable per backend version.
-- Backends other than C may choose different internal representation.
+- non-C backends may use different internal representation.
 
 ---
 
@@ -278,8 +338,8 @@ Allowed ways to move/access memory:
 Rationale:
 
 - keeps safe-mode bounds checks tractable
-- reduces C-style accidental UB surface
-- matches SL goal of clear array/slice-first data access
+- reduces accidental UB surface
+- keeps SL array/slice-first
 
 ---
 
@@ -288,26 +348,52 @@ Rationale:
 Current conversion intent for SLP-2 (explicit vs implicit):
 
 ```sl
-*T      -> &T           // explicit
-*T      -> const&T      // explicit
-*T    <-> *[1 T]        // explicit
-*T      -> &[1 T]       // explicit
-*T      -> const&[1 T]  // explicit
+*T         -> &T           // explicit
+*T         -> mut&T        // explicit
+*T       <-> *[T 1]        // explicit
+*T         -> &[T 1]       // explicit
+*T         -> mut&[T 1]    // explicit
 
-&T      -> const&T      // implicit
-&T    <-> &[1 T]        // implicit
-&T      -> const&[1 T]  // implicit
+mut&T      -> &T           // implicit
+mut&[T N]  -> &[T N]       // implicit
+mut[T]     -> [T]          // implicit
 
-[N T]   -> &[N T]       // implicit
-[N T]   -> &[T]         // implicit
-[N T]   -> const&[N T]  // implicit
-[N T]   -> const&[T]    // implicit
+[T N]      -> &[T N]       // implicit
+[T N]      -> [T]          // implicit
+*[T N]     -> mut&[T N]    // implicit
+*[T N]     -> &[T N]       // implicit
+```
 
-&[N T]  -> &[T]         // implicit
-&[N T]  -> const&[T]    // implicit
-*[N T]  -> &[N T]       // implicit
-*[N T]  -> const&[N T]  // implicit
-&[T]    -> const&[T]    // implicit
+Readonly-to-mutable conversions are not implicit.
+
+---
+
+## Examples
+
+```sl
+var v1 i32
+var v2 [i32 3]
+var p1 *[i32] = new(ma, i32, 3)
+
+var r1 &i32 = &v1
+*r1 = 2 // error: r1 is read-only
+
+var r2 mut&i32 = &v1
+*r2 = 2 // ok
+
+var r3 [i32] = p1
+r3[0] = 2 // error: r3 is read-only
+
+var r4 mut[i32] = p1
+r4[0] = 2 // ok
+
+var r5 [i32] = v2[1:]
+r5[0] = 2 // error: r5 is read-only
+
+var r6 mut[i32] = v2[1:]
+r6[0] = 2 // ok
+
+var r7 mut[i32] = r5[:] // error: incompatible type mut[i32] <- [i32]
 ```
 
 ---
@@ -316,8 +402,8 @@ Current conversion intent for SLP-2 (explicit vs implicit):
 
 SLP-2 intentionally changes syntax from:
 
-- `[N]T` to `[N T]`
-- `[.len]T` to `[.len T]`
-- declaration-form-only const usage to type-form `const&...` for read-only references
+- `[N]T` to `[T N]`
+- `[.len]T` to `[T .len]`
+- `const&...` read-only forms to read-only-by-default + `mut...` writable forms
 
 Migration tooling should be considered once parser support is implemented.
