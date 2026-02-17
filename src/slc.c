@@ -1225,8 +1225,12 @@ static int ValidatePubTypeNode(
                 contextMsg);
         }
         case SLAST_TYPE_PTR:
+        case SLAST_TYPE_REF:
+        case SLAST_TYPE_MUTREF:
         case SLAST_TYPE_ARRAY:
-        case SLAST_TYPE_VARRAY: {
+        case SLAST_TYPE_SLICE:
+        case SLAST_TYPE_MUTSLICE:
+        case SLAST_TYPE_VARRAY:   {
             int32_t child = ASTFirstChild(&file->ast, typeNodeId);
             return ValidatePubTypeNode(pkg, file, child, contextMsg);
         }
@@ -1250,7 +1254,9 @@ static int ValidatePubClosure(const SLPackage* pkg) {
                     }
                 } else if (
                     (n->kind == SLAST_TYPE_NAME || n->kind == SLAST_TYPE_PTR
-                     || n->kind == SLAST_TYPE_ARRAY || n->kind == SLAST_TYPE_VARRAY)
+                     || n->kind == SLAST_TYPE_REF || n->kind == SLAST_TYPE_MUTREF
+                     || n->kind == SLAST_TYPE_ARRAY || n->kind == SLAST_TYPE_VARRAY
+                     || n->kind == SLAST_TYPE_SLICE || n->kind == SLAST_TYPE_MUTSLICE)
                     && n->flags == 1)
                 {
                     if (ValidatePubTypeNode(pkg, file, child, "function return type") != 0) {
@@ -1274,7 +1280,9 @@ static int ValidatePubClosure(const SLPackage* pkg) {
             if (child >= 0) {
                 const SLASTNode* n = &file->ast.nodes[child];
                 if (n->kind == SLAST_TYPE_NAME || n->kind == SLAST_TYPE_PTR
-                    || n->kind == SLAST_TYPE_ARRAY || n->kind == SLAST_TYPE_VARRAY)
+                    || n->kind == SLAST_TYPE_REF || n->kind == SLAST_TYPE_MUTREF
+                    || n->kind == SLAST_TYPE_ARRAY || n->kind == SLAST_TYPE_VARRAY
+                    || n->kind == SLAST_TYPE_SLICE || n->kind == SLAST_TYPE_MUTSLICE)
                 {
                     if (ValidatePubTypeNode(pkg, file, child, "enum base type") != 0) {
                         return -1;

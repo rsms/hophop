@@ -1,0 +1,1 @@
+tests/types_mut_bad_readonly_slice_write.sl:59:64: error: type mismatch
