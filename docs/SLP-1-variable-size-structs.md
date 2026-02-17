@@ -78,7 +78,7 @@ Where:
 SL supports:
 
 * `sizeof(Type)` — compile-time constant; invalid for variable-size aggregates.
-* `sizeof(expr)` — runtime size in bytes (`usize`) for variable-size aggregates.
+* `sizeof(expr)` — runtime size in bytes (`uint`) for variable-size aggregates.
 
 Examples:
 
@@ -123,7 +123,7 @@ For dependent arrays in declaration order:
 2. For each field `f [.lenField]ElemType`:
    * `off = align_up(off, alignof(ElemType))`
    * `f_ptr = base + off`
-   * `off += (lenField_value as usize) * sizeof(ElemType)` (wrap-around for now)
+   * `off += (lenField_value as uint) * sizeof(ElemType)` (wrap-around for now)
 3. Total runtime size:
    * `size = align_up(off, alignof(StructHeaderType))` (mandatory final alignment)
 
@@ -144,9 +144,9 @@ For `p : *Packet`:
 
 ### Type restrictions
 
-* `lenFieldName` must reference an earlier fixed integer field (`u8..u64`, `i8..i64`, `usize`,
-  `isize`).
-* `lenField_value` is coerced to `usize` for size math.
+* `lenFieldName` must reference an earlier fixed integer field (`u8..u64`, `i8..i64`, `uint`,
+  `int`).
+* `lenField_value` is coerced to `uint` for size math.
 * By-value variable declarations of variable-size aggregate type are errors:
   * `var x Packet` is illegal
   * `var x *Packet` is legal
@@ -198,38 +198,38 @@ Emit helper:
 
 ```c
 // a must be power-of-two
-static inline usize sl_align_up(usize x, usize a) { return (x + (a - 1)) & ~(a - 1); }
+static inline __sl_uint sl_align_up(__sl_uint x, __sl_uint a) { return (x + (a - 1)) & ~(a - 1); }
 ```
 
 Emit accessors:
 
 ```c
 static inline Stuff* Packet__stuff(Packet* p) {
-  usize off = sizeof(Packet__hdr);
+  __sl_uint off = sizeof(Packet__hdr);
   off = sl_align_up(off, _Alignof(Stuff));
-  return (Stuff*)((u8*)p + off);
+  return (Stuff*)((__sl_u8*)p + off);
 }
 
 static inline Thing* Packet__things(Packet* p) {
-  usize off = sizeof(Packet__hdr);
+  __sl_uint off = sizeof(Packet__hdr);
   off = sl_align_up(off, _Alignof(Stuff));
-  off += (usize)p->stuffLen * sizeof(Stuff);
+  off += (__sl_uint)p->stuffLen * sizeof(Stuff);
   off = sl_align_up(off, _Alignof(Thing));
-  return (Thing*)((u8*)p + off);
+  return (Thing*)((__sl_u8*)p + off);
 }
 ```
 
 Emit runtime size:
 
 ```c
-static inline usize Packet__sizeof(Packet* p) {
-  usize off = sizeof(Packet__hdr);
+static inline __sl_uint Packet__sizeof(Packet* p) {
+  __sl_uint off = sizeof(Packet__hdr);
 
   off = sl_align_up(off, _Alignof(Stuff));
-  off += (usize)p->stuffLen * sizeof(Stuff);
+  off += (__sl_uint)p->stuffLen * sizeof(Stuff);
 
   off = sl_align_up(off, _Alignof(Thing));
-  off += (usize)p->thingsLen * sizeof(Thing);
+  off += (__sl_uint)p->thingsLen * sizeof(Thing);
 
   off = sl_align_up(off, _Alignof(Packet__hdr)); // mandatory final alignment
   return off;
@@ -277,7 +277,7 @@ backend (e.g. Lua/JS/WASM) may represent variable-size fields differently.
 * Type dependent fields as computed `*ElemType` properties.
 * Reject assignment to dependent fields (`p.stuff = ...`).
 * Reject by-value variable declarations for variable-size aggregate types.
-* Type `sizeof(expr)` as `usize`; route variable-size cases to runtime codegen helper.
+* Type `sizeof(expr)` as `uint`; route variable-size cases to runtime codegen helper.
 
 ---
 
@@ -294,12 +294,12 @@ backend (e.g. Lua/JS/WASM) may represent variable-size fields differently.
 
 ```sl
 fn handle(p *Packet) void {
-  var total usize = sizeof(p)
+  var total uint = sizeof(p)
 
   var s *Stuff = p.stuff
   var t *Thing = p.things
 
-  assert total > 0 as usize
+  assert total > 0 as uint
 }
 ```
 

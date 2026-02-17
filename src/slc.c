@@ -1162,8 +1162,8 @@ static int IsBuiltinTypeName(const char* src, uint32_t start, uint32_t end) {
         || SliceEqCStr(src, start, end, "u16") || SliceEqCStr(src, start, end, "u32")
         || SliceEqCStr(src, start, end, "u64") || SliceEqCStr(src, start, end, "i8")
         || SliceEqCStr(src, start, end, "i16") || SliceEqCStr(src, start, end, "i32")
-        || SliceEqCStr(src, start, end, "i64") || SliceEqCStr(src, start, end, "usize")
-        || SliceEqCStr(src, start, end, "isize") || SliceEqCStr(src, start, end, "f32")
+        || SliceEqCStr(src, start, end, "i64") || SliceEqCStr(src, start, end, "uint")
+        || SliceEqCStr(src, start, end, "int") || SliceEqCStr(src, start, end, "f32")
         || SliceEqCStr(src, start, end, "f64");
 }
 

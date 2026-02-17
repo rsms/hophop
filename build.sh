@@ -318,9 +318,9 @@ do
 done
 
 "$build_dir/slc" genpkg tests/pkg_ok/app > "$actual_codegen_app_header"
-rg -F "i32 app__main(void);" "$actual_codegen_app_header" > /dev/null \
+rg -F "__sl_i32 app__main(void);" "$actual_codegen_app_header" > /dev/null \
     || _err "missing implicit public declaration for app main"
-if rg -F "static i32 app__main(void)" "$actual_codegen_app_header" > /dev/null; then
+if rg -F "static __sl_i32 app__main(void)" "$actual_codegen_app_header" > /dev/null; then
     _err "app main should not be emitted as static"
 fi
 cat > "$test_tmpdir/app_codegen_test.c" << _END
@@ -341,13 +341,13 @@ _expect_ok_silent check tests/assert_ok.sl
 _expect_fail_with_stderr check tests/assert_bad_condition.sl tests/assert_bad_condition.stderr
 
 "$build_dir/slc" genpkg:c tests/codegen_strings_assert > "$actual_phase5_codegen_header"
-rg -F "typedef struct { u32 len; u8 bytes[1]; } sl_strhdr;" "$actual_phase5_codegen_header" > /dev/null \
+rg -F "typedef struct { __sl_u32 len; __sl_u8 bytes[1]; } sl_strhdr;" "$actual_phase5_codegen_header" > /dev/null \
     || _err "missing sl_strhdr prelude type in phase5 codegen output"
 rg -F "SL_ASSERT_FAIL(__FILE__, __LINE__, \"assertion failed\");" "$actual_phase5_codegen_header" > /dev/null \
     || _err "missing SL_ASSERT_FAIL lowering in phase5 codegen output"
 rg -F "SL_ASSERTF_FAIL(__FILE__, __LINE__, \"x=%d\", x);" "$actual_phase5_codegen_header" > /dev/null \
     || _err "missing SL_ASSERTF_FAIL lowering in phase5 codegen output"
-[ "$(rg -c '^static const struct \{ u32 len; u8 bytes\[' "$actual_phase5_codegen_header")" = "1" ] \
+[ "$(rg -c '^static const struct \{ __sl_u32 len; __sl_u8 bytes\[' "$actual_phase5_codegen_header")" = "1" ] \
     || _err "expected exactly one pooled string literal in phase5 codegen output"
 cat > "$test_tmpdir/phase5_codegen_test.c" << _END
 #define DEMO_IMPL
@@ -459,10 +459,10 @@ cat > "$test_tmpdir/phase8_vss_test.c" << _END
 #define TESTS_IMPL
 #include "$actual_phase8_vss_header"
 int test_codegen_phase8_vss(tests__Packet* p) {
-    u8* payload = tests__Packet__payload(p);
-    i32* samples = tests__Packet__samples(p);
-    usize n = tests__Packet__sizeof(p);
-    return payload != (u8*)0 || samples != (i32*)0 || n > 0 ? 0 : 0;
+    __sl_u8* payload = tests__Packet__payload(p);
+    __sl_i32* samples = tests__Packet__samples(p);
+    __sl_uint n = tests__Packet__sizeof(p);
+    return payload != (__sl_u8*)0 || samples != (__sl_i32*)0 || n > 0 ? 0 : 0;
 }
 _END
 "$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase8_vss_test.c" -o "$actual_phase8_vss_obj"
@@ -494,13 +494,13 @@ cat > "$test_tmpdir/phase8_vss_nested_test.c" << _END
 int test_codegen_phase8_vss_nested(tests__Packet* p, tests__Section* s, tests__Metadata* m) {
     tests__Metadata* metadata = tests__Packet__metadata(p);
     tests__Section* sections = tests__Packet__sections(p);
-    u8* mvalue = tests__Metadata__value(m);
-    i64* sentries = tests__Section__entries(s);
-    usize psize = tests__Packet__sizeof(p);
-    usize ssize = tests__Section__sizeof(s);
-    usize msize = tests__Metadata__sizeof(m);
+    __sl_u8* mvalue = tests__Metadata__value(m);
+    __sl_i64* sentries = tests__Section__entries(s);
+    __sl_uint psize = tests__Packet__sizeof(p);
+    __sl_uint ssize = tests__Section__sizeof(s);
+    __sl_uint msize = tests__Metadata__sizeof(m);
     return metadata != (tests__Metadata*)0 || sections != (tests__Section*)0 ||
-                   mvalue != (u8*)0 || sentries != (i64*)0 || psize > 0 || ssize > 0 ||
+                   mvalue != (__sl_u8*)0 || sentries != (__sl_i64*)0 || psize > 0 || ssize > 0 ||
                    msize > 0
                ? 0
                : 0;

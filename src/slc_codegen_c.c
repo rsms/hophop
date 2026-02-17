@@ -296,8 +296,8 @@ static void EmitIndent(SLCBackendC* c, uint32_t depth) {
 static int IsBuiltinType(const char* s) {
     return StrEq(s, "void") || StrEq(s, "bool") || StrEq(s, "str") || StrEq(s, "MemAllocator")
         || StrEq(s, "u8") || StrEq(s, "u16") || StrEq(s, "u32") || StrEq(s, "u64") || StrEq(s, "i8")
-        || StrEq(s, "i16") || StrEq(s, "i32") || StrEq(s, "i64") || StrEq(s, "usize")
-        || StrEq(s, "isize") || StrEq(s, "f32") || StrEq(s, "f64");
+        || StrEq(s, "i16") || StrEq(s, "i32") || StrEq(s, "i64") || StrEq(s, "uint")
+        || StrEq(s, "int") || StrEq(s, "f32") || StrEq(s, "f64");
 }
 
 static int SliceEq(const char* src, uint32_t start, uint32_t end, const char* s) {
@@ -740,9 +740,14 @@ static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uin
     const SLNameMap*         mapped;
     char*                    normalized;
     uint32_t                 i;
-    static const char* const builtinNames[] = {
-        "void", "bool", "str", "MemAllocator", "u8",    "u16",   "u32", "u64",
-        "i8",   "i16",  "i32", "i64",          "usize", "isize", "f32", "f64",
+    static const char* const builtinSlNames[] = {
+        "void", "bool", "str", "MemAllocator", "u8",   "u16", "u32", "u64",
+        "i8",   "i16",  "i32", "i64",          "uint", "int", "f32", "f64",
+    };
+    static const char* const builtinCNames[] = {
+        "void",      "__sl_bool", "__sl_str", "MemAllocator", "__sl_u8",  "__sl_u16",
+        "__sl_u32",  "__sl_u64",  "__sl_i8",  "__sl_i16",     "__sl_i32", "__sl_i64",
+        "__sl_uint", "__sl_int",  "__sl_f32", "__sl_f64",
     };
 
     normalized = DupAndReplaceDots(c, c->unit->source, start, end);
@@ -751,9 +756,9 @@ static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uin
     }
 
     if (IsBuiltinType(normalized)) {
-        for (i = 0; i < (uint32_t)(sizeof(builtinNames) / sizeof(builtinNames[0])); i++) {
-            if (StrEq(normalized, builtinNames[i])) {
-                return builtinNames[i];
+        for (i = 0; i < (uint32_t)(sizeof(builtinSlNames) / sizeof(builtinSlNames[0])); i++) {
+            if (StrEq(normalized, builtinSlNames[i])) {
+                return builtinCNames[i];
             }
         }
         return "void";
@@ -1599,11 +1604,11 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             int32_t typeNode = AstNextSibling(&c->ast, expr);
             return ParseTypeRef(c, typeNode, outType);
         }
-        case SLAST_SIZEOF: TypeRefSetScalar(outType, "usize"); return 0;
-        case SLAST_STRING: TypeRefSetScalar(outType, "str"); return 0;
-        case SLAST_BOOL:   TypeRefSetScalar(outType, "bool"); return 0;
-        case SLAST_INT:    TypeRefSetScalar(outType, "i32"); return 0;
-        case SLAST_FLOAT:  TypeRefSetScalar(outType, "f64"); return 0;
+        case SLAST_SIZEOF: TypeRefSetScalar(outType, "__sl_uint"); return 0;
+        case SLAST_STRING: TypeRefSetScalar(outType, "__sl_str"); return 0;
+        case SLAST_BOOL:   TypeRefSetScalar(outType, "__sl_bool"); return 0;
+        case SLAST_INT:    TypeRefSetScalar(outType, "__sl_i32"); return 0;
+        case SLAST_FLOAT:  TypeRefSetScalar(outType, "__sl_f64"); return 0;
         default:           TypeRefSetInvalid(outType); return 0;
     }
 }
@@ -1669,7 +1674,7 @@ static int EmitHexByte(SLBuf* b, uint8_t value) {
 }
 
 static int EmitStringLiteralRef(SLCBackendC* c, int32_t literalId) {
-    if (BufAppendCStr(&c->out, "(str)(const u8*)(const void*)&sl_lit_") != 0
+    if (BufAppendCStr(&c->out, "(__sl_str)(const __sl_u8*)(const void*)&sl_lit_") != 0
         || BufAppendU32(&c->out, (uint32_t)literalId) != 0)
     {
         return -1;
@@ -1682,7 +1687,7 @@ static int EmitStringLiteralPool(SLCBackendC* c) {
     for (i = 0; i < c->stringLitLen; i++) {
         uint32_t               j;
         const SLStringLiteral* lit = &c->stringLits[i];
-        if (BufAppendCStr(&c->out, "static const struct { u32 len; u8 bytes[") != 0
+        if (BufAppendCStr(&c->out, "static const struct { __sl_u32 len; __sl_u8 bytes[") != 0
             || BufAppendU32(&c->out, lit->len + 1u) != 0
             || BufAppendCStr(&c->out, "]; } sl_lit_") != 0 || BufAppendU32(&c->out, i) != 0
             || BufAppendCStr(&c->out, " = { ") != 0 || BufAppendU32(&c->out, lit->len) != 0
@@ -1719,7 +1724,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId);
 
 static int TypeRefIsStr(const SLTypeRef* t) {
     return t->valid && t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth == 0
-        && t->baseName != NULL && StrEq(t->baseName, "str");
+        && t->baseName != NULL && StrEq(t->baseName, "__sl_str");
 }
 
 static int TypeRefContainerWritable(const SLTypeRef* t) {
@@ -1781,13 +1786,13 @@ static int EmitLenExprFromType(SLCBackendC* c, int32_t exprNode, const SLTypeRef
     {
         if (t->containerPtrDepth > 0) {
             if (BufAppendCStr(&c->out, "((") != 0 || EmitExpr(c, exprNode) != 0
-                || BufAppendCStr(&c->out, ") == 0 ? 0u : (u32)((") != 0
+                || BufAppendCStr(&c->out, ") == 0 ? 0u : (__sl_u32)((") != 0
                 || EmitExpr(c, exprNode) != 0 || BufAppendCStr(&c->out, ")->len))") != 0)
             {
                 return -1;
             }
         } else {
-            if (BufAppendCStr(&c->out, "(u32)((") != 0 || EmitExpr(c, exprNode) != 0
+            if (BufAppendCStr(&c->out, "(__sl_u32)((") != 0 || EmitExpr(c, exprNode) != 0
                 || BufAppendCStr(&c->out, ").len)") != 0)
             {
                 return -1;
@@ -1872,7 +1877,7 @@ static int EmitSliceExpr(SLCBackendC* c, int32_t nodeId) {
     }
     if (BufAppendCStr(&c->out, outMut ? "(void*)(" : "(const void*)(") != 0
         || EmitElemPtrExpr(c, baseNode, &baseType, outMut) != 0
-        || BufAppendCStr(&c->out, " + (usize)(") != 0)
+        || BufAppendCStr(&c->out, " + (__sl_uint)(") != 0)
     {
         return -1;
     }
@@ -1883,7 +1888,7 @@ static int EmitSliceExpr(SLCBackendC* c, int32_t nodeId) {
     } else if (BufAppendChar(&c->out, '0') != 0) {
         return -1;
     }
-    if (BufAppendCStr(&c->out, ")), (usize)((") != 0) {
+    if (BufAppendCStr(&c->out, ")), (__sl_uint)((") != 0) {
         return -1;
     }
     if (endNode >= 0) {
@@ -1907,7 +1912,7 @@ static int EmitSliceExpr(SLCBackendC* c, int32_t nodeId) {
         return -1;
     }
     if (outMut) {
-        if (BufAppendCStr(&c->out, "), (usize)((") != 0) {
+        if (BufAppendCStr(&c->out, "), (__sl_uint)((") != 0) {
             return -1;
         }
         if (baseType.containerKind == SLTypeContainer_SLICE_MUT) {
@@ -1965,7 +1970,7 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
         {
             if (BufAppendCStr(&c->out, "((sl_slice_ro){ (const void*)(") != 0
                 || EmitElemPtrExpr(c, exprNode, &srcType, 0) != 0
-                || BufAppendCStr(&c->out, "), (usize)(") != 0
+                || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0
                 || EmitLenExprFromType(c, exprNode, &srcType) != 0
                 || BufAppendCStr(&c->out, ") })") != 0)
             {
@@ -1981,9 +1986,9 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
         if (srcType.containerKind == SLTypeContainer_ARRAY) {
             if (BufAppendCStr(&c->out, "((sl_slice_mut){ (void*)(") != 0
                 || EmitElemPtrExpr(c, exprNode, &srcType, 1) != 0
-                || BufAppendCStr(&c->out, "), (usize)(") != 0
+                || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0
                 || EmitLenExprFromType(c, exprNode, &srcType) != 0
-                || BufAppendCStr(&c->out, "), (usize)(") != 0
+                || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0
                 || EmitLenExprFromType(c, exprNode, &srcType) != 0
                 || BufAppendCStr(&c->out, ") })") != 0)
             {
@@ -2141,8 +2146,8 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                         || BufAppendCStr(&c->out, typeName) != 0
                         || BufAppendCStr(&c->out, "), _Alignof(") != 0
                         || BufAppendCStr(&c->out, typeName) != 0
-                        || BufAppendCStr(&c->out, "), (usize)(") != 0 || EmitExpr(c, countArg) != 0
-                        || BufAppendCStr(&c->out, ")))") != 0)
+                        || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0
+                        || EmitExpr(c, countArg) != 0 || BufAppendCStr(&c->out, ")))") != 0)
                     {
                         return -1;
                     }
@@ -2951,7 +2956,7 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
                     return -1;
                 }
                 EmitIndent(c, depth + 1u);
-                if (BufAppendCStr(&c->out, "usize off = sizeof(") != 0
+                if (BufAppendCStr(&c->out, "__sl_uint off = sizeof(") != 0
                     || BufAppendCStr(&c->out, map->cName) != 0
                     || BufAppendCStr(&c->out, "__hdr);\n") != 0)
                 {
@@ -2977,14 +2982,14 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
                                 EmitIndent(c, depth + 1u);
                                 if (BufAppendCStr(&c->out, "return (") != 0
                                     || EmitTypeNameWithDepth(c, &depType) != 0
-                                    || BufAppendCStr(&c->out, ")((u8*)p + off);\n") != 0)
+                                    || BufAppendCStr(&c->out, ")((__sl_u8*)p + off);\n") != 0)
                                 {
                                     return -1;
                                 }
                                 break;
                             }
                             EmitIndent(c, depth + 1u);
-                            if (BufAppendCStr(&c->out, "off += (usize)p->") != 0
+                            if (BufAppendCStr(&c->out, "off += (__sl_uint)p->") != 0
                                 || BufAppendSlice(
                                        &c->out, c->unit->source, wtn->dataStart, wtn->dataEnd)
                                        != 0
@@ -3012,7 +3017,7 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
     if (emittedHelper) {
         int32_t walk = AstFirstChild(&c->ast, nodeId);
         EmitIndent(c, depth);
-        if (BufAppendCStr(&c->out, "static inline usize ") != 0
+        if (BufAppendCStr(&c->out, "static inline __sl_uint ") != 0
             || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__sizeof(") != 0
             || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "* p)\n") != 0)
         {
@@ -3023,7 +3028,7 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
             return -1;
         }
         EmitIndent(c, depth + 1u);
-        if (BufAppendCStr(&c->out, "usize off = sizeof(") != 0
+        if (BufAppendCStr(&c->out, "__sl_uint off = sizeof(") != 0
             || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__hdr);\n") != 0)
         {
             return -1;
@@ -3042,7 +3047,7 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
                         return -1;
                     }
                     EmitIndent(c, depth + 1u);
-                    if (BufAppendCStr(&c->out, "off += (usize)p->") != 0
+                    if (BufAppendCStr(&c->out, "off += (__sl_uint)p->") != 0
                         || BufAppendSlice(&c->out, c->unit->source, wtn->dataStart, wtn->dataEnd)
                                != 0
                         || BufAppendCStr(&c->out, " * sizeof(") != 0
@@ -3432,44 +3437,46 @@ static int EmitPrelude(SLCBackendC* c) {
         &c->out,
         "#include <stddef.h>\n"
         "#include <stdint.h>\n\n"
-        "typedef uint8_t  u8;\n"
-        "typedef uint16_t u16;\n"
-        "typedef uint32_t u32;\n"
-        "typedef uint64_t u64;\n"
-        "typedef int8_t   i8;\n"
-        "typedef int16_t  i16;\n"
-        "typedef int32_t  i32;\n"
-        "typedef int64_t  i64;\n"
-        "typedef size_t   usize;\n"
-        "typedef ptrdiff_t isize;\n"
-        "typedef float    f32;\n"
-        "typedef double   f64;\n"
-        "typedef _Bool    bool;\n"
-        "typedef struct { const void* ptr; usize len; } sl_slice_ro;\n"
-        "typedef struct { void* ptr; usize len; usize cap; } sl_slice_mut;\n"
+        "typedef uint8_t   __sl_u8;\n"
+        "typedef uint16_t  __sl_u16;\n"
+        "typedef uint32_t  __sl_u32;\n"
+        "typedef uint64_t  __sl_u64;\n"
+        "typedef int8_t    __sl_i8;\n"
+        "typedef int16_t   __sl_i16;\n"
+        "typedef int32_t   __sl_i32;\n"
+        "typedef int64_t   __sl_i64;\n"
+        "typedef size_t    __sl_uint;\n"
+        "typedef ptrdiff_t __sl_int;\n"
+        "typedef float     __sl_f32;\n"
+        "typedef double    __sl_f64;\n"
+        "typedef _Bool     __sl_bool;\n"
+        "typedef struct { const void* ptr; __sl_uint len; } sl_slice_ro;\n"
+        "typedef struct { void* ptr; __sl_uint len; __sl_uint cap; } sl_slice_mut;\n"
         "typedef struct MemAllocator MemAllocator;\n"
         "struct MemAllocator {\n"
         "    void* ctx;\n"
-        "    void* (*alloc)(void* ctx, usize size, usize align);\n"
+        "    void* (*alloc)(void* ctx, __sl_uint size, __sl_uint align);\n"
         "};\n"
-        "static inline void* sl_new(MemAllocator* ma, usize size, usize align) {\n"
-        "    return (ma != (MemAllocator*)0 && ma->alloc != (void*(*)(void*,usize,usize))0)\n"
+        "static inline void* sl_new(MemAllocator* ma, __sl_uint size, __sl_uint align) {\n"
+        "    return (ma != (MemAllocator*)0 && ma->alloc != "
+        "(void*(*)(void*,__sl_uint,__sl_uint))0)\n"
         "               ? ma->alloc(ma->ctx, size, align)\n"
         "               : (void*)0;\n"
         "}\n"
         "static inline void* sl_new_array(\n"
-        "    MemAllocator* ma, usize elemSize, usize elemAlign, usize count) {\n"
+        "    MemAllocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {\n"
         "    return sl_new(ma, elemSize * count, elemAlign);\n"
         "}\n"
-        "typedef const u8* str;\n"
-        "typedef struct { u32 len; u8 bytes[1]; } sl_strhdr;\n"
-        "static inline u32 len(str s) {\n"
-        "    return s == (str)0 ? 0u : ((const sl_strhdr*)(const void*)s)->len;\n"
+        "typedef const __sl_u8* __sl_str;\n"
+        "typedef struct { __sl_u32 len; __sl_u8 bytes[1]; } sl_strhdr;\n"
+        "static inline __sl_u32 len(__sl_str s) {\n"
+        "    return s == (__sl_str)0 ? 0u : ((const sl_strhdr*)(const void*)s)->len;\n"
         "}\n"
-        "static inline const u8* cstr(str s) {\n"
-        "    return s == (str)0 ? (const u8*)0 : ((const sl_strhdr*)(const void*)s)->bytes;\n"
+        "static inline const __sl_u8* cstr(__sl_str s) {\n"
+        "    return s == (__sl_str)0 ? (const __sl_u8*)0 : ((const sl_strhdr*)(const "
+        "void*)s)->bytes;\n"
         "}\n"
-        "static inline usize sl_align_up(usize x, usize a) {\n"
+        "static inline __sl_uint sl_align_up(__sl_uint x, __sl_uint a) {\n"
         "    return (x + (a - 1u)) & ~(a - 1u);\n"
         "}\n"
         "#ifndef SL_TRAP\n"

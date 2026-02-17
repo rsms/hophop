@@ -207,7 +207,7 @@ fn b(x i32) i32 { return x + 1 } // private
 
 #### Built-in types
 
-`u8 u16 u32 u64 i8 i16 i32 i64 usize isize f32 f64 bool void str`
+`u8 u16 u32 u64 i8 i16 i32 i64 uint int f32 f64 bool void str`
 
 #### Derived
 
@@ -676,7 +676,7 @@ Example prelude skeleton (conceptual):
 typedef unsigned char u8;
 typedef signed int    i32;
 typedef unsigned int  u32;
-typedef /*...*/       usize;
+typedef /*...*/       __sl_uint;
 typedef _Bool         bool;
 
 typedef const u8* str;

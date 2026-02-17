@@ -6,6 +6,6 @@ struct Packet {
 }
 
 fn main() i32 {
-    var s usize = sizeof(Packet)
+    var s uint = sizeof(Packet)
     return s as i32
 }

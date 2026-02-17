@@ -262,8 +262,8 @@ static int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
         || SLTCAddBuiltinType(c, "i16", SLBuiltin_I16) < 0
         || SLTCAddBuiltinType(c, "i32", SLBuiltin_I32) < 0
         || SLTCAddBuiltinType(c, "i64", SLBuiltin_I64) < 0
-        || SLTCAddBuiltinType(c, "usize", SLBuiltin_USIZE) < 0
-        || SLTCAddBuiltinType(c, "isize", SLBuiltin_ISIZE) < 0
+        || SLTCAddBuiltinType(c, "uint", SLBuiltin_USIZE) < 0
+        || SLTCAddBuiltinType(c, "int", SLBuiltin_ISIZE) < 0
         || SLTCAddBuiltinType(c, "f32", SLBuiltin_F32) < 0
         || SLTCAddBuiltinType(c, "f64", SLBuiltin_F64) < 0)
     {
@@ -336,10 +336,10 @@ static int32_t SLTCFindBuiltinType(SLTypeCheckCtx* c, uint32_t start, uint32_t e
         if (SLNameEqLiteral(c->src, start, end, "i64") && t->builtin == SLBuiltin_I64) {
             return (int32_t)i;
         }
-        if (SLNameEqLiteral(c->src, start, end, "usize") && t->builtin == SLBuiltin_USIZE) {
+        if (SLNameEqLiteral(c->src, start, end, "uint") && t->builtin == SLBuiltin_USIZE) {
             return (int32_t)i;
         }
-        if (SLNameEqLiteral(c->src, start, end, "isize") && t->builtin == SLBuiltin_ISIZE) {
+        if (SLNameEqLiteral(c->src, start, end, "int") && t->builtin == SLBuiltin_ISIZE) {
             return (int32_t)i;
         }
         if (SLNameEqLiteral(c->src, start, end, "f32") && t->builtin == SLBuiltin_F32) {

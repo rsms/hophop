@@ -224,18 +224,18 @@ Logical signatures (current):
 
 ```sl
 fn new(ma mut&MemAllocator, type T) *T
-fn new(ma mut&MemAllocator, type T, N usize) *[T N] // logical dependent return shape
+fn new(ma mut&MemAllocator, type T, N uint) *[T N] // logical dependent return shape
 ```
 
 Logical signatures (future with `?`):
 
 ```sl
 fn new(ma mut&MemAllocator, type T) ?*T
-fn new(ma mut&MemAllocator, type T, N usize) ?*[T N]
+fn new(ma mut&MemAllocator, type T, N uint) ?*[T N]
 
 // non-null forms that panic on allocation failure
 fn new(ma mut&MemAllocator, type T) *T
-fn new(ma mut&MemAllocator, type T, N usize) *[T N]
+fn new(ma mut&MemAllocator, type T, N uint) *[T N]
 ```
 
 Ownership:
@@ -300,8 +300,8 @@ TypeName        = Identifier { "." Identifier } ;
 C backend target representation:
 
 ```c
-typedef struct { const void* ptr; size_t len; } sl_slice_ro;      // [T]
-typedef struct { void* ptr; size_t len; size_t cap; } sl_slice_mut; // mut[T]
+typedef struct { const void* ptr; __sl_uint len; } sl_slice_ro;      // [T]
+typedef struct { void* ptr; __sl_uint len; __sl_uint cap; } sl_slice_mut; // mut[T]
 ```
 
 Fixed-array refs and pointers:
