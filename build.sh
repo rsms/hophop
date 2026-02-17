@@ -394,6 +394,13 @@ fi
 [ -x "$test_tmpdir/step4_new_ok" ] \
     || _err "compile command did not produce executable for tests/new_ok.sl"
 
+if ! "$build_dir/slc" compile tests/types_mut_ok.sl -o "$test_tmpdir/step5_types_mut_ok" \
+    > /dev/null 2>&1; then
+    _err "unexpected failure for slc compile tests/types_mut_ok.sl"
+fi
+[ -x "$test_tmpdir/step5_types_mut_ok" ] \
+    || _err "compile command did not produce executable for tests/types_mut_ok.sl"
+
 set +e
 "$actual_phase7_compile_exe" > /dev/null 2>&1
 phase7_status=$?

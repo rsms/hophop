@@ -313,6 +313,10 @@ static int SliceSpanEq(
     return memcmp(src + aStart, src + bStart, (size_t)len) == 0;
 }
 
+static int IsArrayOrSliceTypeKind(SLASTKind kind) {
+    return kind == SLAST_TYPE_ARRAY || kind == SLAST_TYPE_SLICE || kind == SLAST_TYPE_MUTSLICE;
+}
+
 static char* _Nullable DupSlice(const char* src, uint32_t start, uint32_t end) {
     uint32_t len;
     char*    out;
@@ -749,7 +753,11 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             return 0;
         }
         case SLAST_TYPE_PTR: {
-            int32_t child = AstFirstChild(&c->ast, nodeId);
+            int32_t          child = AstFirstChild(&c->ast, nodeId);
+            const SLASTNode* childNode = NodeAt(c, child);
+            if (childNode != NULL && IsArrayOrSliceTypeKind(childNode->kind)) {
+                child = AstFirstChild(&c->ast, child);
+            }
             if (ParseTypeRef(c, child, outType) != 0) {
                 return -1;
             }
@@ -758,7 +766,11 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
         }
         case SLAST_TYPE_REF:
         case SLAST_TYPE_MUTREF: {
-            int32_t child = AstFirstChild(&c->ast, nodeId);
+            int32_t          child = AstFirstChild(&c->ast, nodeId);
+            const SLASTNode* childNode = NodeAt(c, child);
+            if (childNode != NULL && IsArrayOrSliceTypeKind(childNode->kind)) {
+                child = AstFirstChild(&c->ast, child);
+            }
             if (ParseTypeRef(c, child, outType) != 0) {
                 return -1;
             }
@@ -776,7 +788,11 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
         }
         case SLAST_TYPE_ARRAY: {
             int32_t child = AstFirstChild(&c->ast, nodeId);
-            return ParseTypeRef(c, child, outType);
+            if (ParseTypeRef(c, child, outType) != 0) {
+                return -1;
+            }
+            outType->ptrDepth++;
+            return 0;
         }
         case SLAST_TYPE_VARRAY: {
             int32_t child = AstFirstChild(&c->ast, nodeId);
@@ -1195,6 +1211,7 @@ static int CollectTypeOps(
     }
     n = &ast->nodes[nodeId];
     if (n->kind == SLAST_TYPE_PTR) {
+        const SLASTNode* childNode;
         if (*opLen >= opCap) {
             return -1;
         }
@@ -1202,6 +1219,31 @@ static int CollectTypeOps(
         ops[*opLen].dataStart = 0;
         ops[*opLen].dataEnd = 0;
         (*opLen)++;
+        if (n->firstChild < 0 || (uint32_t)n->firstChild >= ast->len) {
+            return -1;
+        }
+        childNode = &ast->nodes[n->firstChild];
+        if (IsArrayOrSliceTypeKind(childNode->kind)) {
+            return CollectTypeOps(ast, childNode->firstChild, ops, opLen, opCap, outBaseNode);
+        }
+        return CollectTypeOps(ast, n->firstChild, ops, opLen, opCap, outBaseNode);
+    }
+    if (n->kind == SLAST_TYPE_REF || n->kind == SLAST_TYPE_MUTREF) {
+        const SLASTNode* childNode;
+        if (*opLen >= opCap) {
+            return -1;
+        }
+        ops[*opLen].kind = 1;
+        ops[*opLen].dataStart = 0;
+        ops[*opLen].dataEnd = 0;
+        (*opLen)++;
+        if (n->firstChild < 0 || (uint32_t)n->firstChild >= ast->len) {
+            return -1;
+        }
+        childNode = &ast->nodes[n->firstChild];
+        if (IsArrayOrSliceTypeKind(childNode->kind)) {
+            return CollectTypeOps(ast, childNode->firstChild, ops, opLen, opCap, outBaseNode);
+        }
         return CollectTypeOps(ast, n->firstChild, ops, opLen, opCap, outBaseNode);
     }
     if (n->kind == SLAST_TYPE_ARRAY) {
@@ -1211,6 +1253,18 @@ static int CollectTypeOps(
         ops[*opLen].kind = 2;
         ops[*opLen].dataStart = n->dataStart;
         ops[*opLen].dataEnd = n->dataEnd;
+        (*opLen)++;
+        return CollectTypeOps(ast, n->firstChild, ops, opLen, opCap, outBaseNode);
+    }
+    if (n->kind == SLAST_TYPE_SLICE || n->kind == SLAST_TYPE_MUTSLICE
+        || n->kind == SLAST_TYPE_VARRAY)
+    {
+        if (*opLen >= opCap) {
+            return -1;
+        }
+        ops[*opLen].kind = 1;
+        ops[*opLen].dataStart = 0;
+        ops[*opLen].dataEnd = 0;
         (*opLen)++;
         return CollectTypeOps(ast, n->firstChild, ops, opLen, opCap, outBaseNode);
     }
