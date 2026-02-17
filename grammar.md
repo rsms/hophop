@@ -40,7 +40,7 @@ Whitespace     = " " | "\t" | "\r" | "\n" ;
 Keyword =
     "import" | "pub" |
     "struct" | "union" | "enum" |
-    "fn" | "var" | "const" |
+    "fn" | "var" | "const" | "mut" |
     "if" | "else" |
     "for" |
     "switch" | "case" | "default" |
@@ -81,7 +81,7 @@ TopLevelDecl    = [ "pub" ] (
 
 StructDecl      = "struct" Identifier "{" { FieldDecl [ FieldSep ] } "}" ;
 UnionDecl       = "union"  Identifier "{" { FieldDecl [ FieldSep ] } "}" ;
-FieldDecl       = Identifier ( VarArrayType | Type ) ;
+FieldDecl       = Identifier Type ;
 FieldSep        = "," | ";" ;
 
 EnumDecl        = "enum" Identifier Type "{" { EnumItem [ EnumSep ] } "}" ;
@@ -97,10 +97,22 @@ Param           = Identifier Type ;
 
 ConstDecl       = "const" Identifier Type "=" Expr ";" ;
 
-Type            = PointerType | ArrayType | VarArrayType | TypeName ;
 PointerType     = "*" Type ;
-ArrayType       = "[" IntLit "]" Type ;
-VarArrayType    = "[" "." Identifier "]" Type ;
+RefType         = "&" NonSliceType ;
+MutRefType      = "mut" "&" NonSliceType ;
+SliceType       = "[" Type "]" ;
+MutSliceType    = "mut" "[" Type "]" ;
+ArrayType       = "[" Type IntLit "]" ;
+VarArrayType    = "[" Type "." Identifier "]" ;
+NonSliceType    = PointerType | RefType | MutRefType | ArrayType | VarArrayType | TypeName ;
+Type            = PointerType
+                | RefType
+                | MutRefType
+                | SliceType
+                | MutSliceType
+                | ArrayType
+                | VarArrayType
+                | TypeName ;
 TypeName        = Identifier { "." Identifier } ;
 ```
 
@@ -179,7 +191,8 @@ UnaryExpr           = ( "+" | "-" | "!" | "*" | "&" ) UnaryExpr
 PostfixExpr         = PrimaryExpr { CallSuffix | IndexSuffix | SelectorSuffix | CastSuffix } ;
 CallSuffix          = "(" [ ArgList ] ")" ;
 ArgList             = Expr { "," Expr } ;
-IndexSuffix         = "[" Expr "]" ;
+IndexSuffix         = "[" Expr "]"
+                    | "[" [ Expr ] ":" [ Expr ] "]" ;
 SelectorSuffix      = "." Identifier ;
 CastSuffix          = "as" Type ;
 
@@ -204,3 +217,4 @@ FieldInit           = Identifier "=" Expr ;
 - `if`, `for`, `switch`, `case`, and `default` bodies are blocks in syntax.
 - `pub` marks an exported top-level declaration.
 - Import paths are string literals.
+- `&[T]` and `mut&[T]` are not valid type forms; use `[T]` and `mut[T]`.
