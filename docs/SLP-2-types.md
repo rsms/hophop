@@ -1,108 +1,323 @@
-Pointer-, reference- and slice types
+# SLP-2 types, pointers, references and slices
+
+## Summary
+
+SLP-2 introduces:
+
+- updated array type syntax (`[N T]` and `[.len T]`)
+- pointer, reference, and slice type forms
+- explicit mutability via `const&...`
+- slice expressions with compile-time/runtime bounds checks
+- `new` allocation forms for single values and arrays
+
+For now, this is intentionally C-like:
+
+- `*` and `&` may both be null
+- no Rust-style lifetime/escape enforcement
+- ownership meaning is semantic/conventional (`*` = owned, `&` = borrowed)
+
+---
+
+## Type forms
 
 ```sl
 // Value types
-T     // one value
-[T N] // array of N values
+T        // one value
+[N T]    // array of N values
+[.len T] // dependent-length array type form (used where applicable)
 
-// Pointer types (owns the memory it points to)
-*T   // ptr to value
-*[T] // ptr to array with len
+// Pointer types (owned)
+*T       // pointer to one value
+*[T]     // pointer to runtime-length array (ptr + len)
+*[N T]   // pointer to fixed-length array
 
-// Reference types (does not own the memory it points to)
-&T          // ref to value
-&[T N]      // ref to array
-&[T]        // slice of array w cap,len
-const&T     // read-only ref to one value
-const&[T N] // read-only ref to array of N values
-const&[T]   // read-only slice of array w len
+// Reference types (borrowed)
+&T          // reference to one value
+&[N T]      // reference to fixed-length array
+&[T]        // mutable slice (ptr + len + cap)
+const&T     // read-only reference to one value
+const&[N T] // read-only reference to fixed-length array
+const&[T]   // read-only slice (ptr + len)
 ```
 
-Examples:
+### Nullability (current vs future)
+
+- Current: `*` and `&` values may be null.
+- Future SLP: add `?` optional-value syntax:
+  - `?*T` may be null
+  - `*T` non-null
+
+---
+
+## Semantics of `*` vs `&`
+
+`*` and `&` are concretely the same low-level concept (addressable memory reference), but with
+different semantic meaning:
+
+- `*` means memory managed by me (owned)
+- `&` means memory managed elsewhere (borrowed)
+
+The compiler does not attempt Rust-like lifetime/escape checks in SLP-2.
+
+---
+
+## Address-of and addressability
+
+`&expr` is valid for expressions that:
+
+1. already reside in memory, or
+2. can be trivially moved to memory (e.g. literal values).
+
+This includes function arguments such as:
 
 ```sl
-var v1 i32 = 1
-var v2 [i32 3]; assert len(v2) == 3
-
-var p1 *i32   = new(i32);    assert *p1 == 0
-var p2 *[i32] = new(i32, 3); assert len(p2) == 3
-
-var r1 &i32     = &v1; assert r1 == 1
-var r2 &[i32 3] = &v2; assert len(r2) == 3
-var r3 &[i32]   = &v2; assert len(r3) == 3
-var r4 &[i32]   = &v2[1:]; assert len(r4) == 2
+fn f(x &int) void
+f(&3) // materialize temporary storage for 3 and pass its address
 ```
 
-Type conversions
+This follows C-style responsibility and footgun profile.
+
+---
+
+## Slice syntax and semantics
+
+### Syntax
+
+Slice expression:
+
+```ebnf
+SliceExpr = PostfixExpr "[" Start? ":" End? "]" ;
+Start     = Expr ; // positive-value integer expression
+End       = Expr ; // positive-value integer expression
+```
+
+### Semantics
+
+- `start` is inclusive
+- `end` is exclusive
+- omitted indices:
+  - `a[:]`   = `a[0:len(a)]`
+  - `a[n:]`  = `a[n:len(a)]` (result length is `len(a) - n`)
+  - `a[:m]`  = `a[0:m]`
+
+### Bounds checks
+
+- If `start` and `end` are compile-time constants: check at compile time.
+- Otherwise: emit runtime checks.
+- Out-of-bounds access panics.
+
+### Safe mode
+
+- `slc` has a safe mode, on by default:
+  - inserts bounds checks for memory accesses that may go out of bounds
+  - compiles generated C with UBSan when available (for overflow/alignment traps)
+- `slc --unsafe` disables safe-mode inserts.
+
+---
+
+## Mutability model
+
+### `const` placement
+
+- `const&T` means `T` is immutable (like `const T*` in C).
+- `const*T` is invalid.
+- `const T` is invalid in SLP-2.
+
+Potential future extension: field-level `const` values (`timestamp const u64`) can be explored in a
+separate SLP.
+
+### Arrays/slices and const
+
+- `const&[N T]` and `const&[T]` mean:
+  - array/slice view metadata is immutable
+  - elements are immutable
+
+Such values may be stored in read-only memory (`.rodata`) when applicable.
+
+---
+
+## Equality and ordering
+
+No built-in comparison support is added in SLP-2.
+
+Ordering/comparison for arrays/slices/pointers is deferred to a separate SLP.
+
+---
+
+## Default / zero value behavior
+
+- Pointer/reference zero value is null.
+- `len` on null pointer/reference to array/slice returns 0.
+
+Future with `?` nullability:
+
+- Non-null reference fields (e.g. `r &i32`) in by-value aggregates must be initialized before use.
+- `var s S` or `var s S = {}` may be rejected unless initialization is proven.
+- Pointer-allocated values (`new`) are an exception and may start with null fields that must be
+  assigned by the programmer.
+
+Static analysis for definite initialization can be added later.
+
+---
+
+## Allocation API (`new`)
+
+Logical signatures (current):
 
 ```sl
-*T     → &T          // explicit; requires 'x as &T'
-*T     → const&T     // explicit; requires 'x as const&T' or 'x as &T'
-*T    ←→ *[T 1]      // explicit; requires 'x as *[T 1]'
-*T     → &[T 1]      // explicit; requires 'x as &[T 1]'
-*T     → const&[T 1] // explicit; requires 'x as const&[T 1]' or 'x as &[T 1]'
-&T     → const&T     // implicit
-&T    ←→ &[T 1]      // implicit
-&T     → const&[T 1] // implicit
-[T N]  → &[T N]      // implicit
-[T N]  → &[T]        // implicit
-[T N]  → const&[T N] // implicit
-[T N]  → const&[T]   // implicit
-&[T N] → &[T]        // implicit
-&[T N] → const&[T]   // implicit
-*[T N] → &[T N]      // implicit
-*[T N] → const&[T N] // implicit
-&[T]   → const&[T]   // implicit
+fn new(ma &MemAllocator, type T) *T
+fn new(ma &MemAllocator, type T, n usize) *[n T] // logical dependent return shape
 ```
 
-Representation; memory layout
+Logical signatures (future with `?`):
 
 ```sl
-[T N]:     { a, b … n T }
-*[T]:      { addr usize; len usize }
-&[T]:      { addr usize; len usize; cap usize; }
-const&[T]: { addr usize; len usize }
+fn new(ma &MemAllocator, type T) ?*T
+fn new(ma &MemAllocator, type T, n usize) ?*[n T]
+
+// non-null forms that panic on allocation failure
+fn new(ma &MemAllocator, type T) *T
+fn new(ma &MemAllocator, type T, n usize) *[n T]
 ```
 
-Array literals
+Ownership:
+
+- caller owns result and must free when done.
+
+---
+
+## `str` in SLP-2
+
+Type aliases are a separate SLP and out of scope here.
+
+For SLP-2, treat `str` as:
+
+- `str`  = `const&[u8]`
+- `*str` = `*[u8]`
+- `&str` = `&[u8]`
+
+Design intent is to keep strings as UTF-8 byte-array views rather than splitting by storage class.
+
+---
+
+## Canonical type grammar and precedence
+
+### EBNF
+
+```ebnf
+Type            = QualRefType
+                | RefType
+                | PtrType
+                | ArrayType
+                | DynArrayType
+                | DepArrayType
+                | TypeName ;
+
+QualRefType     = "const" "&" Type ;
+RefType         = "&" Type ;
+PtrType         = "*" Type ;
+
+ArrayType       = "[" ConstExpr Type "]" ;
+DynArrayType    = "[" Type "]" ;
+DepArrayType    = "[" "." Identifier Type "]" ;
+
+TypeName        = Identifier { "." Identifier } ;
+```
+
+### Precedence/association
+
+- Type constructors are right-associative:
+  - `*&T` parses as `*( &T )`
+  - `&*T` parses as `&( *T )`
+- `const` in SLP-2 is only valid in `const&...`.
+- `const T` and `const*T` are invalid.
+
+---
+
+## Representation and ABI mapping (C backend proposal)
+
+The following is the C backend mapping target for SLP-2:
+
+```c
+// *[T]
+struct { void* ptr; size_t len; };
+
+// &[T]
+struct { void* const ptr; size_t len; const size_t cap; };
+
+// const&[T]
+struct { const void* const ptr; const size_t len; };
+```
+
+Fixed-array refs:
+
+- `&[N T]` maps to `T*` plus compile-time length `N` in type semantics.
+- `const&[N T]` maps to `const T*` plus compile-time length `N`.
+- `*[N T]` maps to `T*` plus compile-time length `N` (owned).
+
+Notes:
+
+- SL mutability semantics are language-level rules.
+- C backend may encode the same semantics either via C `const` fields or by codegen discipline.
+- SL mutability rules are enforced by SL typechecking.
+- C field order is ABI-significant and must be stable per backend version.
+- Backends other than C may choose different internal representation.
+
+---
+
+## Pointer arithmetic policy (proposal)
+
+SLP-2 should not add general pointer arithmetic operators (`p + n`, `p - n`) initially.
+
+Allowed ways to move/access memory:
+
+- indexing (`a[i]`)
+- slicing (`a[i:j]`)
+- explicit helper intrinsics (future SLP if needed)
+
+Rationale:
+
+- keeps safe-mode bounds checks tractable
+- reduces C-style accidental UB surface
+- matches SL goal of clear array/slice-first data access
+
+---
+
+## Conversion policy
+
+Current conversion intent for SLP-2 (explicit vs implicit):
 
 ```sl
-var v1 [i32 3] = {1, 2, 3}
-var v2 [i32 _] = {1, 2, 3} // actual type is [i32 3]
-var v3         = {1, 2, 3} // actual type is [i32 3]
+*T      -> &T           // explicit
+*T      -> const&T      // explicit
+*T    <-> *[1 T]        // explicit
+*T      -> &[1 T]       // explicit
+*T      -> const&[1 T]  // explicit
+
+&T      -> const&T      // implicit
+&T    <-> &[1 T]        // implicit
+&T      -> const&[1 T]  // implicit
+
+[N T]   -> &[N T]       // implicit
+[N T]   -> &[T]         // implicit
+[N T]   -> const&[N T]  // implicit
+[N T]   -> const&[T]    // implicit
+
+&[N T]  -> &[T]         // implicit
+&[N T]  -> const&[T]    // implicit
+*[N T]  -> &[N T]       // implicit
+*[N T]  -> const&[N T]  // implicit
+&[T]    -> const&[T]    // implicit
 ```
 
-String literals
+---
 
-```sl
-// a string literal is a read-only reference to an array of bytes
-var s1 const&[u8] = "hello"
-var s2 *[u8] = str_concat(s1, " world")
-var s3 &[u8] = s2[6:] // slice of s2 ("world")
+## Compatibility impact
 
-// make 'str' a distinct alias of '[u8]' to mean "UT8-data"
-type str [u8]
-var s4 const&str = "hello"
-var s5 *str = str_concat(s1, " world")
-var s6 &str = s5[6:] // slice of s5 ("world")
-```
+SLP-2 intentionally changes syntax from:
 
-Alternatives for a `str` type, which means "UTF-8 data"
+- `[N]T` to `[N T]`
+- `[.len]T` to `[.len T]`
+- declaration-form-only const usage to type-form `const&...` for read-only references
 
-```sl
-// Alt 1: make 'str' a distinct alias of '[u8]'
-type str [u8]
-var s4 const&str = "hello"
-var s5 *str = str_concat(s1, " world")
-var s6 &str = s5[6:] // slice of s5 ("world")
-fn log(message const&str) void
-
-// Alt 2: make 'str' special type where
-//     'str'  = 'const&[u8]'
-//     '*str' = '*[u8]'
-//     '&str' = '&[u8]'
-var s4 str = "hello"
-var s5 *str = str_concat(s1, " world")
-var s6 &str = s5[6:] // slice of s5 ("world")
-fn log(message str) void
-```
+Migration tooling should be considered once parser support is implemented.
