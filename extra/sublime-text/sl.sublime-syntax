@@ -54,6 +54,11 @@ contexts:
           scope: constant.numeric.slang
 
     declarations:
+        - match: '\b(pub)\s+(fn)\s+({{ident}})'
+          captures:
+              1: storage.modifier.visibility.slang
+              2: keyword.declaration.function.slang
+              3: entity.name.function.slang
         - match: '\b(import)\s+({{ident}})(?=\s+")'
           captures:
               1: keyword.control.import.slang
@@ -62,25 +67,41 @@ contexts:
           captures:
               1: keyword.declaration.function.slang
               2: entity.name.function.slang
+        - match: '\b(pub)\s+(struct|union|enum)\s+({{ident}})'
+          captures:
+              1: storage.modifier.visibility.slang
+              2: storage.type.slang
+              3: entity.name.type.slang
         - match: '\b(struct|union|enum)\s+({{ident}})'
           captures:
               1: storage.type.slang
               2: entity.name.type.slang
+        - match: '\b(pub)\s+(const)\s+({{ident}})'
+          captures:
+              1: storage.modifier.visibility.slang
+              2: storage.modifier.slang
+              3: entity.name.constant.slang
         - match: '\b(const)\s+({{ident}})'
           captures:
               1: storage.modifier.slang
               2: entity.name.constant.slang
+        - match: '\b(var)\s+({{ident}})'
+          captures:
+              1: storage.modifier.slang
+              2: variable.other.definition.slang
 
     keywords:
         - match: '\b(import|pub|struct|union|enum|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|as)\b'
           scope: keyword.control.slang
+        - match: '\b(mut)\b'
+          scope: storage.modifier.slang
         - match: '\b(true|false)\b'
           scope: constant.language.boolean.slang
 
     builtins:
         - match: '\b(u8|u16|u32|u64|i8|i16|i32|i64|usize|isize|f32|f64|bool|void|str)\b'
           scope: support.type.builtin.slang
-        - match: '\b(len|cstr)\b'
+        - match: '\b(new|len|cstr)\b'
           scope: support.function.builtin.slang
 
     operators:
