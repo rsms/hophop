@@ -295,26 +295,24 @@ TypeName        = Identifier { "." Identifier } ;
 
 ---
 
-## Representation and ABI mapping (C backend proposal)
+## Representation and ABI mapping (current C backend)
 
 C backend target representation:
 
 ```c
-// *[T]
-struct { void* ptr; size_t len; };
-
-// [T]
-struct { const void* ptr; size_t len; };
-
-// mut[T]
-struct { void* ptr; size_t len; size_t cap; };
+typedef struct { const void* ptr; size_t len; } sl_slice_ro;      // [T]
+typedef struct { void* ptr; size_t len; size_t cap; } sl_slice_mut; // mut[T]
 ```
 
-Fixed-array refs:
+Fixed-array refs and pointers:
 
-- `&[T N]` maps to `const T*` plus compile-time length `N`
-- `mut&[T N]` maps to `T*` plus compile-time length `N`
-- `*[T N]` maps to `T*` plus compile-time length `N` (owned)
+- `&[T N]`, `mut&[T N]`, `*[T N]` lower to `T*` at C ABI level.
+- Length `N` remains known in SL typing/codegen (not an extra runtime field).
+
+Pointer-to-slice forms:
+
+- `*[T]` lowers to `sl_slice_ro*`
+- `*mut[T]` lowers to `sl_slice_mut*`
 
 Notes:
 
@@ -345,7 +343,7 @@ Rationale:
 
 ## Conversion policy
 
-Current conversion intent for SLP-2 (explicit vs implicit):
+Current conversion behavior in SLP-2 (explicit vs implicit):
 
 ```sl
 *T         -> &T           // explicit
@@ -358,11 +356,21 @@ mut&T      -> &T           // implicit
 mut&[T N]  -> &[T N]       // implicit
 mut[T]     -> [T]          // implicit
 
-[T N]      -> &[T N]       // implicit
+[T N]      -> mut[T]       // implicit
 [T N]      -> [T]          // implicit
 *[T N]     -> mut&[T N]    // implicit
 *[T N]     -> &[T N]       // implicit
 ```
+
+Reference assignment remains explicit:
+
+- use `&expr` when assigning to `&T` / `mut&T`
+- value-to-reference assignment is not implicit
+
+Additional implicit coercions used by typecheck/codegen:
+
+- `[T N] -> mut[T]` / `[T]` in initializers, assignment, call args, and returns
+- `mut[T] -> [T]` in initializers, assignment, call args, and returns
 
 Readonly-to-mutable conversions are not implicit.
 

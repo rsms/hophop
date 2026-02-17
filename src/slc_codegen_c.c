@@ -1690,6 +1690,15 @@ static int EmitLenExprFromType(SLCBackendC* c, int32_t exprNode, const SLTypeRef
         return 0;
     }
     if (t->containerKind == SLTypeContainer_ARRAY && t->hasArrayLen) {
+        if (t->containerPtrDepth > 0) {
+            if (BufAppendCStr(&c->out, "((") != 0 || EmitExpr(c, exprNode) != 0
+                || BufAppendCStr(&c->out, ") == 0 ? 0u : ") != 0
+                || BufAppendU32(&c->out, t->arrayLen) != 0 || BufAppendChar(&c->out, ')') != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
         if (BufAppendU32(&c->out, t->arrayLen) != 0) {
             return -1;
         }
@@ -3397,9 +3406,11 @@ static int EmitPrelude(SLCBackendC* c) {
         "}\n"
         "typedef const u8* str;\n"
         "typedef struct { u32 len; u8 bytes[1]; } sl_strhdr;\n"
-        "static inline u32 len(str s) { return ((const sl_strhdr*)(const void*)s)->len; }\n"
+        "static inline u32 len(str s) {\n"
+        "    return s == (str)0 ? 0u : ((const sl_strhdr*)(const void*)s)->len;\n"
+        "}\n"
         "static inline const u8* cstr(str s) {\n"
-        "    return ((const sl_strhdr*)(const void*)s)->bytes;\n"
+        "    return s == (str)0 ? (const u8*)0 : ((const sl_strhdr*)(const void*)s)->bytes;\n"
         "}\n"
         "static inline usize sl_align_up(usize x, usize a) {\n"
         "    return (x + (a - 1u)) & ~(a - 1u);\n"

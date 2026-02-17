@@ -91,7 +91,7 @@ contexts:
               2: variable.other.definition.slang
 
     keywords:
-        - match: '\b(import|pub|struct|union|enum|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|as)\b'
+        - match: '\b(import|pub|struct|union|enum|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|sizeof|as)\b'
           scope: keyword.control.slang
         - match: '\b(mut)\b'
           scope: storage.modifier.slang
@@ -99,7 +99,7 @@ contexts:
           scope: constant.language.boolean.slang
 
     builtins:
-        - match: '\b(u8|u16|u32|u64|i8|i16|i32|i64|usize|isize|f32|f64|bool|void|str)\b'
+        - match: '\b(u8|u16|u32|u64|i8|i16|i32|i64|usize|isize|f32|f64|bool|void|str|MemAllocator)\b'
           scope: support.type.builtin.slang
         - match: '\b(new|len|cstr)\b'
           scope: support.function.builtin.slang

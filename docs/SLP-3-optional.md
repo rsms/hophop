@@ -192,12 +192,12 @@ Logical signatures once SLP-3 lands:
 
 ```sl
 // nullable-return forms
-fn new(ma &MemAllocator, type T) ?*T
-fn new(ma &MemAllocator, type T, N usize) ?*[T N]
+fn new(ma mut&MemAllocator, type T) ?*T
+fn new(ma mut&MemAllocator, type T, N usize) ?*[T N]
 
 // non-null forms (panic on allocation failure)
-fn new(ma &MemAllocator, type T) *T
-fn new(ma &MemAllocator, type T, N usize) *[T N]
+fn new(ma mut&MemAllocator, type T) *T
+fn new(ma mut&MemAllocator, type T, N usize) *[T N]
 ```
 
 Dispatch/overload details are backend/typechecker-defined.

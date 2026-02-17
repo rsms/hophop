@@ -276,6 +276,7 @@ for t in \
     "check|tests/slice_fn_ok.sl" \
     "check|tests/types_mut_ok.sl" \
     "check|tests/len_ptr_ref_ok.sl" \
+    "check|tests/len_null_ptr_ref_ok.sl" \
     "check|tests/new_ok.sl" \
     "checkpkg|tests/pkg_ok/app"
 do
@@ -415,6 +416,15 @@ if ! "$build_dir/slc" compile tests/len_ptr_ref_ok.sl -o "$test_tmpdir/step5_len
 fi
 [ -x "$test_tmpdir/step5_len_ptr_ref_ok" ] \
     || _err "compile command did not produce executable for tests/len_ptr_ref_ok.sl"
+
+if ! "$build_dir/slc" compile tests/len_null_ptr_ref_ok.sl \
+    -o "$test_tmpdir/step5_len_null_ptr_ref_ok" > /dev/null 2>&1; then
+    _err "unexpected failure for slc compile tests/len_null_ptr_ref_ok.sl"
+fi
+[ -x "$test_tmpdir/step5_len_null_ptr_ref_ok" ] \
+    || _err "compile command did not produce executable for tests/len_null_ptr_ref_ok.sl"
+"$test_tmpdir/step5_len_null_ptr_ref_ok" > /dev/null 2>&1 \
+    || _err "len null pointer/ref runtime behavior regressed"
 
 if ! "$build_dir/slc" compile tests/slice_fn_ok.sl -o "$test_tmpdir/step5_slice_fn_ok" \
     > /dev/null 2>&1; then
