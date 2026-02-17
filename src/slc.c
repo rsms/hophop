@@ -215,6 +215,24 @@ static char* _Nullable DupSlice(const char* s, uint32_t start, uint32_t end) {
     return out;
 }
 
+static void* _Nullable CodegenArenaGrow(
+    void* _Nullable ctx, uint32_t minSize, uint32_t* _Nonnull outSize) {
+    void* p;
+    (void)ctx;
+    p = malloc((size_t)minSize);
+    if (p == NULL) {
+        return NULL;
+    }
+    *outSize = minSize;
+    return p;
+}
+
+static void CodegenArenaFree(void* _Nullable ctx, void* _Nullable block, uint32_t blockSize) {
+    (void)ctx;
+    (void)blockSize;
+    free(block);
+}
+
 static int EnsureCap(void** ptr, uint32_t* cap, uint32_t need, size_t elemSize) {
     uint32_t newCap;
     void*    newPtr;
@@ -2158,6 +2176,8 @@ static int GeneratePackage(
     unit.sourceLen = sourceLen;
 
     SLCodegenOptions codegenOptions = { 0 };
+    codegenOptions.arenaGrow = CodegenArenaGrow;
+    codegenOptions.arenaFree = CodegenArenaFree;
 
     SLDiagClear(&diag);
     if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
@@ -2271,6 +2291,8 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
     unit.sourceLen = sourceLen;
     codegenOptions.implMacro = "SLC_IMPL";
     codegenOptions.headerGuard = "SLC_PROGRAM_H";
+    codegenOptions.arenaGrow = CodegenArenaGrow;
+    codegenOptions.arenaFree = CodegenArenaFree;
 
     SLDiagClear(&diag);
     if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {

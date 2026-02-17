@@ -1,14 +1,6 @@
 #include "libsl-impl.h"
 #include "slc_codegen.h"
 
-#if SL_LIBC
-    #include <stdlib.h>
-#else
-void* _Nullable malloc(size_t size);
-void* _Nullable realloc(void* _Nullable ptr, size_t size);
-void free(void* _Nullable ptr);
-#endif
-
 SL_API_BEGIN
 
 typedef struct {
@@ -23,6 +15,7 @@ typedef struct {
 } SLTypeRef;
 
 typedef struct {
+    SLArena* _Nullable arena;
     char*    v;
     uint32_t len;
     uint32_t cap;
@@ -75,8 +68,8 @@ typedef struct {
     const SLCodegenOptions* options;
     SLDiag*                 diag;
 
-    void*   arenaMem;
     SLArena arena;
+    uint8_t arenaInlineStorage[16384];
     SLAST   ast;
 
     SLBuf out;
@@ -176,8 +169,11 @@ static void SetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end)
     diag->end = end;
 }
 
-static int EnsureCap(void** ptr, uint32_t* cap, uint32_t need, size_t elemSize) {
+static int EnsureCapArena(
+    SLArena* arena, void** ptr, uint32_t* cap, uint32_t need, size_t elemSize, uint32_t align) {
     uint32_t newCap;
+    uint64_t allocSize64;
+    uint32_t allocSize;
     void*    newPtr;
 
     if (need <= *cap) {
@@ -191,9 +187,17 @@ static int EnsureCap(void** ptr, uint32_t* cap, uint32_t need, size_t elemSize) 
         }
         newCap *= 2u;
     }
-    newPtr = realloc(*ptr, (size_t)newCap * elemSize);
+    allocSize64 = (uint64_t)newCap * (uint64_t)elemSize;
+    if (allocSize64 > UINT32_MAX) {
+        return -1;
+    }
+    allocSize = (uint32_t)allocSize64;
+    newPtr = SLArenaAlloc(arena, allocSize, align);
     if (newPtr == NULL) {
         return -1;
+    }
+    if (*ptr != NULL && *cap > 0) {
+        memcpy(newPtr, *ptr, (size_t)(*cap) * elemSize);
     }
     *ptr = newPtr;
     *cap = newCap;
@@ -206,7 +210,11 @@ static int BufReserve(SLBuf* b, uint32_t extra) {
         return -1;
     }
     need = b->len + extra + 1u;
-    return EnsureCap((void**)&b->v, &b->cap, need, sizeof(char));
+    if (b->arena == NULL) {
+        return -1;
+    }
+    return EnsureCapArena(
+        b->arena, (void**)&b->v, &b->cap, need, sizeof(char), (uint32_t)_Alignof(char));
 }
 
 static int BufAppend(SLBuf* b, const char* s, uint32_t len) {
@@ -261,7 +269,10 @@ static int BufAppendSlice(SLBuf* b, const char* src, uint32_t start, uint32_t en
 static char* _Nullable BufFinish(SLBuf* b) {
     char* out;
     if (b->v == NULL) {
-        out = (char*)malloc(1u);
+        if (b->arena == NULL) {
+            return NULL;
+        }
+        out = (char*)SLArenaAlloc(b->arena, 1u, (uint32_t)_Alignof(char));
         if (out == NULL) {
             return NULL;
         }
@@ -371,14 +382,14 @@ static int ParseArrayLenLiteral(const char* src, uint32_t start, uint32_t end, u
     return 0;
 }
 
-static char* _Nullable DupSlice(const char* src, uint32_t start, uint32_t end) {
+static char* _Nullable DupSlice(SLCBackendC* c, const char* src, uint32_t start, uint32_t end) {
     uint32_t len;
     char*    out;
     if (end < start) {
         return NULL;
     }
     len = end - start;
-    out = (char*)malloc((size_t)len + 1u);
+    out = (char*)SLArenaAlloc(&c->arena, len + 1u, (uint32_t)_Alignof(char));
     if (out == NULL) {
         return NULL;
     }
@@ -389,7 +400,8 @@ static char* _Nullable DupSlice(const char* src, uint32_t start, uint32_t end) {
     return out;
 }
 
-static char* _Nullable DupAndReplaceDots(const char* src, uint32_t start, uint32_t end) {
+static char* _Nullable DupAndReplaceDots(
+    SLCBackendC* c, const char* src, uint32_t start, uint32_t end) {
     char*    out;
     uint32_t i;
     uint32_t len;
@@ -397,7 +409,7 @@ static char* _Nullable DupAndReplaceDots(const char* src, uint32_t start, uint32
         return NULL;
     }
     len = end - start;
-    out = (char*)malloc((size_t)len + 1u);
+    out = (char*)SLArenaAlloc(&c->arena, len + 1u, (uint32_t)_Alignof(char));
     if (out == NULL) {
         return NULL;
     }
@@ -409,9 +421,13 @@ static char* _Nullable DupAndReplaceDots(const char* src, uint32_t start, uint32
     return out;
 }
 
-static char* _Nullable DupCStr(const char* s) {
+static char* _Nullable DupCStr(SLCBackendC* c, const char* s) {
     size_t n = StrLen(s);
-    char*  out = (char*)malloc(n + 1u);
+    char*  out;
+    if (n > UINT32_MAX - 1u) {
+        return NULL;
+    }
+    out = (char*)SLArenaAlloc(&c->arena, (uint32_t)n + 1u, (uint32_t)_Alignof(char));
     if (out == NULL) {
         return NULL;
     }
@@ -433,7 +449,12 @@ static int HexDigitValue(unsigned char c) {
 }
 
 static int DecodeStringLiteral(
-    const char* src, uint32_t start, uint32_t end, uint8_t** outBytes, uint32_t* outLen) {
+    SLCBackendC* c,
+    const char*  src,
+    uint32_t     start,
+    uint32_t     end,
+    uint8_t**    outBytes,
+    uint32_t*    outLen) {
     uint8_t* bytes = NULL;
     uint32_t len = 0;
     uint32_t cap = 0;
@@ -449,7 +470,6 @@ static int DecodeStringLiteral(
         if (ch == (unsigned char)'\\') {
             unsigned char esc;
             if (i >= end - 1u) {
-                free(bytes);
                 return -1;
             }
             esc = (unsigned char)src[i++];
@@ -464,13 +484,11 @@ static int DecodeStringLiteral(
                     int hi;
                     int lo;
                     if (i + 1u >= end - 1u) {
-                        free(bytes);
                         return -1;
                     }
                     hi = HexDigitValue((unsigned char)src[i]);
                     lo = HexDigitValue((unsigned char)src[i + 1u]);
                     if (hi < 0 || lo < 0) {
-                        free(bytes);
                         return -1;
                     }
                     ch = (unsigned char)((hi << 4) | lo);
@@ -480,8 +498,15 @@ static int DecodeStringLiteral(
                 default: ch = esc; break;
             }
         }
-        if (EnsureCap((void**)&bytes, &cap, len + 1u, sizeof(uint8_t)) != 0) {
-            free(bytes);
+        if (EnsureCapArena(
+                &c->arena,
+                (void**)&bytes,
+                &cap,
+                len + 1u,
+                sizeof(uint8_t),
+                (uint32_t)_Alignof(uint8_t))
+            != 0)
+        {
             return -1;
         }
         bytes[len++] = (uint8_t)ch;
@@ -498,7 +523,7 @@ static int GetOrAddStringLiteral(
     uint32_t decodedLen = 0;
     uint32_t i;
 
-    if (DecodeStringLiteral(c->unit->source, start, end, &decoded, &decodedLen) != 0) {
+    if (DecodeStringLiteral(c, c->unit->source, start, end, &decoded, &decodedLen) != 0) {
         SetDiag(c->diag, SLDiag_UNEXPECTED_TOKEN, start, end);
         return -1;
     }
@@ -508,17 +533,20 @@ static int GetOrAddStringLiteral(
             && ((decodedLen == 0)
                 || memcmp(c->stringLits[i].bytes, decoded, (size_t)decodedLen) == 0))
         {
-            free(decoded);
             *outLiteralId = (int32_t)i;
             return 0;
         }
     }
 
-    if (EnsureCap(
-            (void**)&c->stringLits, &c->stringLitCap, c->stringLitLen + 1u, sizeof(SLStringLiteral))
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->stringLits,
+            &c->stringLitCap,
+            c->stringLitLen + 1u,
+            sizeof(SLStringLiteral),
+            (uint32_t)_Alignof(SLStringLiteral))
         != 0)
     {
-        free(decoded);
         SetDiag(c->diag, SLDiag_ARENA_OOM, start, end);
         return -1;
     }
@@ -537,7 +565,8 @@ static int CollectStringLiterals(SLCBackendC* c) {
     uint32_t nodeId;
 
     c->stringLitByNodeLen = c->ast.len;
-    c->stringLitByNode = (int32_t*)malloc((size_t)c->stringLitByNodeLen * sizeof(int32_t));
+    c->stringLitByNode = (int32_t*)SLArenaAlloc(
+        &c->arena, c->stringLitByNodeLen * (uint32_t)sizeof(int32_t), (uint32_t)_Alignof(int32_t));
     if (c->stringLitByNode == NULL) {
         return -1;
     }
@@ -637,6 +666,8 @@ static int AddName(
     char*    cName;
     SLBuf    tmp = { 0 };
 
+    tmp.arena = &c->arena;
+
     for (i = 0; i < c->nameLen; i++) {
         if (SliceEqName(c->unit->source, nameStart, nameEnd, c->names[i].name)) {
             if (isExported) {
@@ -646,31 +677,34 @@ static int AddName(
         }
     }
 
-    name = DupSlice(c->unit->source, nameStart, nameEnd);
+    name = DupSlice(c, c->unit->source, nameStart, nameEnd);
     if (name == NULL) {
         return -1;
     }
 
     if (HasDoubleUnderscore(name)) {
-        cName = DupCStr(name);
+        cName = DupCStr(c, name);
     } else {
         if (BufAppendCStr(&tmp, c->unit->packageName) != 0 || BufAppendCStr(&tmp, "__") != 0
             || BufAppendCStr(&tmp, name) != 0)
         {
-            free(name);
-            free(tmp.v);
             return -1;
         }
         cName = BufFinish(&tmp);
     }
     if (cName == NULL) {
-        free(name);
         return -1;
     }
 
-    if (EnsureCap((void**)&c->names, &c->nameCap, c->nameLen + 1u, sizeof(SLNameMap)) != 0) {
-        free(name);
-        free(cName);
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->names,
+            &c->nameCap,
+            c->nameLen + 1u,
+            sizeof(SLNameMap),
+            (uint32_t)_Alignof(SLNameMap))
+        != 0)
+    {
         return -1;
     }
     c->names[c->nameLen].name = name;
@@ -711,7 +745,7 @@ static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uin
         "i8",   "i16",  "i32", "i64",          "usize", "isize", "f32", "f64",
     };
 
-    normalized = DupAndReplaceDots(c->unit->source, start, end);
+    normalized = DupAndReplaceDots(c, c->unit->source, start, end);
     if (normalized == NULL) {
         return NULL;
     }
@@ -719,17 +753,14 @@ static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uin
     if (IsBuiltinType(normalized)) {
         for (i = 0; i < (uint32_t)(sizeof(builtinNames) / sizeof(builtinNames[0])); i++) {
             if (StrEq(normalized, builtinNames[i])) {
-                free(normalized);
                 return builtinNames[i];
             }
         }
-        free(normalized);
         return "void";
     }
 
     mapped = FindNameByCString(c, normalized);
     if (mapped != NULL && IsTypeDeclKind(mapped->kind)) {
-        free(normalized);
         return mapped->cName;
     }
 
@@ -747,8 +778,17 @@ static const char* _Nullable ResolveTypeNameFromExprArg(SLCBackendC* c, int32_t 
     return NULL;
 }
 
-static int AddNodeRef(SLNodeRef** arr, uint32_t* len, uint32_t* cap, int32_t nodeId) {
-    if (EnsureCap((void**)arr, cap, *len + 1u, sizeof(SLNodeRef)) != 0) {
+static int AddNodeRef(
+    SLCBackendC* c, SLNodeRef** arr, uint32_t* len, uint32_t* cap, int32_t nodeId) {
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)arr,
+            cap,
+            *len + 1u,
+            sizeof(SLNodeRef),
+            (uint32_t)_Alignof(SLNodeRef))
+        != 0)
+    {
         return -1;
     }
     (*arr)[*len].nodeId = nodeId;
@@ -768,11 +808,11 @@ static int CollectDeclSets(SLCBackendC* c) {
         }
         if (IsDeclKind(n->kind)) {
             isExported = IsPubDeclNode(n);
-            if (AddNodeRef(&c->topDecls, &c->topDeclLen, &c->topDeclCap, child) != 0) {
+            if (AddNodeRef(c, &c->topDecls, &c->topDeclLen, &c->topDeclCap, child) != 0) {
                 return -1;
             }
             if (isExported) {
-                if (AddNodeRef(&c->pubDecls, &c->pubDeclLen, &c->pubDeclCap, child) != 0) {
+                if (AddNodeRef(c, &c->pubDecls, &c->pubDeclLen, &c->pubDeclCap, child) != 0) {
                     return -1;
                 }
             }
@@ -901,14 +941,20 @@ static int AddFnSig(
     for (i = 0; i < c->fnSigLen; i++) {
         if (StrEq(c->fnSigs[i].name, name)) {
             c->fnSigs[i].returnType = returnType;
-            free(c->fnSigs[i].paramTypes);
             c->fnSigs[i].paramTypes = paramTypes;
             c->fnSigs[i].paramLen = paramLen;
             return 0;
         }
     }
-    if (EnsureCap((void**)&c->fnSigs, &c->fnSigCap, c->fnSigLen + 1u, sizeof(SLFnSig)) != 0) {
-        free(paramTypes);
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->fnSigs,
+            &c->fnSigCap,
+            c->fnSigLen + 1u,
+            sizeof(SLFnSig),
+            (uint32_t)_Alignof(SLFnSig))
+        != 0)
+    {
         return -1;
     }
     c->fnSigs[c->fnSigLen].name = (char*)name;
@@ -926,8 +972,13 @@ static int AddFieldInfo(
     const char* _Nullable lenFieldName,
     int       isDependent,
     SLTypeRef type) {
-    if (EnsureCap(
-            (void**)&c->fieldInfos, &c->fieldInfoCap, c->fieldInfoLen + 1u, sizeof(SLFieldInfo))
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->fieldInfos,
+            &c->fieldInfoCap,
+            c->fieldInfoLen + 1u,
+            sizeof(SLFieldInfo),
+            (uint32_t)_Alignof(SLFieldInfo))
         != 0)
     {
         return -1;
@@ -1001,19 +1052,21 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                 int32_t   typeNode = AstFirstChild(&c->ast, child);
                 SLTypeRef paramType;
                 if (ParseTypeRef(c, typeNode, &paramType) != 0) {
-                    free(paramTypes);
                     return -1;
                 }
                 if (paramLen >= paramCap) {
-                    uint32_t   newCap = paramCap == 0 ? 4u : paramCap * 2u;
-                    SLTypeRef* newTypes = (SLTypeRef*)realloc(
-                        paramTypes, (size_t)newCap * sizeof(SLTypeRef));
-                    if (newTypes == NULL) {
-                        free(paramTypes);
+                    uint32_t need = paramLen + 1u;
+                    if (EnsureCapArena(
+                            &c->arena,
+                            (void**)&paramTypes,
+                            &paramCap,
+                            need,
+                            sizeof(SLTypeRef),
+                            (uint32_t)_Alignof(SLTypeRef))
+                        != 0)
+                    {
                         return -1;
                     }
-                    paramTypes = newTypes;
-                    paramCap = newCap;
                 }
                 paramTypes[paramLen++] = paramType;
             } else if (
@@ -1025,7 +1078,6 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                 && ch->flags == 1)
             {
                 if (ParseTypeRef(c, child, &returnType) != 0) {
-                    free(paramTypes);
                     return -1;
                 }
                 break;
@@ -1052,6 +1104,7 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                     && NodeAt(c, typeNode)->kind == SLAST_TYPE_VARRAY)
                 {
                     lenFieldName = DupSlice(
+                        c,
                         c->unit->source,
                         NodeAt(c, typeNode)->dataStart,
                         NodeAt(c, typeNode)->dataEnd);
@@ -1060,16 +1113,13 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                     }
                     isDependent = 1;
                 }
-                fieldName = DupSlice(c->unit->source, field->dataStart, field->dataEnd);
+                fieldName = DupSlice(c, c->unit->source, field->dataStart, field->dataEnd);
                 if (fieldName == NULL) {
-                    free((void*)lenFieldName);
                     return -1;
                 }
                 if (AddFieldInfo(c, mapName->cName, fieldName, lenFieldName, isDependent, fieldType)
                     != 0)
                 {
-                    free(fieldName);
-                    free((void*)lenFieldName);
                     return -1;
                 }
             }
@@ -1103,16 +1153,18 @@ static int AddVarSizeType(SLCBackendC* c, const char* cName, int isUnion) {
             return 0;
         }
     }
-    if (EnsureCap(
+    if (EnsureCapArena(
+            &c->arena,
             (void**)&c->varSizeTypes,
             &c->varSizeTypeCap,
             c->varSizeTypeLen + 1u,
-            sizeof(SLVarSizeType))
+            sizeof(SLVarSizeType),
+            (uint32_t)_Alignof(SLVarSizeType))
         != 0)
     {
         return -1;
     }
-    copy = DupCStr(cName);
+    copy = DupCStr(c, cName);
     if (copy == NULL) {
         return -1;
     }
@@ -1213,8 +1265,13 @@ static int PropagateVarSizeTypes(SLCBackendC* c) {
 }
 
 static int PushScope(SLCBackendC* c) {
-    if (EnsureCap(
-            (void**)&c->localScopeMarks, &c->localScopeCap, c->localScopeLen + 1u, sizeof(uint32_t))
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->localScopeMarks,
+            &c->localScopeCap,
+            c->localScopeLen + 1u,
+            sizeof(uint32_t),
+            (uint32_t)_Alignof(uint32_t))
         != 0)
     {
         return -1;
@@ -1233,8 +1290,13 @@ static void PopScope(SLCBackendC* c) {
 }
 
 static int PushDeferScope(SLCBackendC* c) {
-    if (EnsureCap(
-            (void**)&c->deferScopeMarks, &c->deferScopeCap, c->deferScopeLen + 1u, sizeof(uint32_t))
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->deferScopeMarks,
+            &c->deferScopeCap,
+            c->deferScopeLen + 1u,
+            sizeof(uint32_t),
+            (uint32_t)_Alignof(uint32_t))
         != 0)
     {
         return -1;
@@ -1253,11 +1315,13 @@ static void PopDeferScope(SLCBackendC* c) {
 }
 
 static int AddDeferredStmt(SLCBackendC* c, int32_t stmtNodeId) {
-    if (EnsureCap(
+    if (EnsureCapArena(
+            &c->arena,
             (void**)&c->deferredStmtNodes,
             &c->deferredStmtCap,
             c->deferredStmtLen + 1u,
-            sizeof(int32_t))
+            sizeof(int32_t),
+            (uint32_t)_Alignof(int32_t))
         != 0)
     {
         return -1;
@@ -1267,7 +1331,15 @@ static int AddDeferredStmt(SLCBackendC* c, int32_t stmtNodeId) {
 }
 
 static int AddLocal(SLCBackendC* c, const char* name, SLTypeRef type) {
-    if (EnsureCap((void**)&c->locals, &c->localCap, c->localLen + 1u, sizeof(SLLocal)) != 0) {
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->locals,
+            &c->localCap,
+            c->localLen + 1u,
+            sizeof(SLLocal),
+            (uint32_t)_Alignof(SLLocal))
+        != 0)
+    {
         return -1;
     }
     c->locals[c->localLen].name = (char*)name;
@@ -2314,37 +2386,31 @@ static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int i
     if (n == NULL) {
         return -1;
     }
-    name = DupSlice(c->unit->source, n->dataStart, n->dataEnd);
+    name = DupSlice(c, c->unit->source, n->dataStart, n->dataEnd);
     if (name == NULL) {
         return -1;
     }
     if (ParseTypeRef(c, typeNode, &type) != 0) {
-        free(name);
         return -1;
     }
 
     EmitIndent(c, depth);
     if (isConst && BufAppendCStr(&c->out, "const ") != 0) {
-        free(name);
         return -1;
     }
     if (EmitTypeWithName(c, typeNode, name) != 0) {
-        free(name);
         return -1;
     }
     if (initNode >= 0) {
         if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0) {
-            free(name);
             return -1;
         }
     }
     if (BufAppendCStr(&c->out, ";\n") != 0) {
-        free(name);
         return -1;
     }
 
     if (AddLocal(c, name, type) != 0) {
-        free(name);
         return -1;
     }
     return 0;
@@ -2825,20 +2891,17 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
         if (field != NULL && field->kind == SLAST_FIELD) {
             int32_t          typeNode = AstFirstChild(&c->ast, child);
             const SLASTNode* tn = NodeAt(c, typeNode);
-            char*            name = DupSlice(c->unit->source, field->dataStart, field->dataEnd);
+            char*            name = DupSlice(c, c->unit->source, field->dataStart, field->dataEnd);
             if (name == NULL) {
                 return -1;
             }
             if (tn != NULL && tn->kind == SLAST_TYPE_VARRAY) {
-                free(name);
             } else {
                 EmitIndent(c, depth + 1u);
                 if (EmitTypeWithName(c, typeNode, name) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
                 {
-                    free(name);
                     return -1;
                 }
-                free(name);
             }
         }
         child = AstNextSibling(&c->ast, child);
@@ -3031,16 +3094,14 @@ static int EmitStructOrUnionDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth,
         const SLASTNode* field = NodeAt(c, child);
         if (field != NULL && field->kind == SLAST_FIELD) {
             int32_t typeNode = AstFirstChild(&c->ast, child);
-            char*   name = DupSlice(c->unit->source, field->dataStart, field->dataEnd);
+            char*   name = DupSlice(c, c->unit->source, field->dataStart, field->dataEnd);
             if (name == NULL) {
                 return -1;
             }
             EmitIndent(c, depth + 1u);
             if (EmitTypeWithName(c, typeNode, name) != 0 || BufAppendCStr(&c->out, ";\n") != 0) {
-                free(name);
                 return -1;
             }
-            free(name);
         }
         child = AstNextSibling(&c->ast, child);
     }
@@ -3232,20 +3293,17 @@ static int EmitFnDeclOrDef(
         const SLASTNode* ch = NodeAt(c, child);
         if (ch != NULL && ch->kind == SLAST_PARAM) {
             int32_t typeNode = AstFirstChild(&c->ast, child);
-            char*   paramName = DupSlice(c->unit->source, ch->dataStart, ch->dataEnd);
+            char*   paramName = DupSlice(c, c->unit->source, ch->dataStart, ch->dataEnd);
             if (paramName == NULL) {
                 return -1;
             }
             if (!firstParam && BufAppendCStr(&c->out, ", ") != 0) {
-                free(paramName);
                 return -1;
             }
             if (EmitTypeWithName(c, typeNode, paramName) != 0) {
-                free(paramName);
                 return -1;
             }
             firstParam = 0;
-            free(paramName);
         }
         child = AstNextSibling(&c->ast, child);
     }
@@ -3275,12 +3333,11 @@ static int EmitFnDeclOrDef(
         if (ch != NULL && ch->kind == SLAST_PARAM) {
             int32_t   typeNode = AstFirstChild(&c->ast, child);
             SLTypeRef t;
-            char*     paramName = DupSlice(c->unit->source, ch->dataStart, ch->dataEnd);
+            char*     paramName = DupSlice(c, c->unit->source, ch->dataStart, ch->dataEnd);
             if (paramName == NULL) {
                 return -1;
             }
             if (ParseTypeRef(c, typeNode, &t) != 0 || AddLocal(c, paramName, t) != 0) {
-                free(paramName);
                 return -1;
             }
         }
@@ -3430,9 +3487,10 @@ static int EmitPrelude(SLCBackendC* c) {
         "#endif\n\n");
 }
 
-static char* _Nullable BuildDefaultMacro(const char* pkgName, const char* suffix) {
+static char* _Nullable BuildDefaultMacro(SLCBackendC* c, const char* pkgName, const char* suffix) {
     SLBuf  b = { 0 };
     size_t i;
+    b.arena = &c->arena;
     for (i = 0; pkgName[i] != '\0'; i++) {
         char ch = pkgName[i];
         if (IsAlnumChar(ch)) {
@@ -3441,12 +3499,10 @@ static char* _Nullable BuildDefaultMacro(const char* pkgName, const char* suffix
             ch = '_';
         }
         if (BufAppendChar(&b, ch) != 0) {
-            free(b.v);
             return NULL;
         }
     }
     if (BufAppendCStr(&b, suffix) != 0) {
-        free(b.v);
         return NULL;
     }
     return BufFinish(&b);
@@ -3459,11 +3515,9 @@ static int EmitHeader(SLCBackendC* c) {
     const char* impl;
     uint32_t    i;
 
-    defaultGuard = BuildDefaultMacro(c->unit->packageName, "_H");
-    defaultImpl = BuildDefaultMacro(c->unit->packageName, "_IMPL");
+    defaultGuard = BuildDefaultMacro(c, c->unit->packageName, "_H");
+    defaultImpl = BuildDefaultMacro(c, c->unit->packageName, "_IMPL");
     if (defaultGuard == NULL || defaultImpl == NULL) {
-        free(defaultGuard);
-        free(defaultImpl);
         return -1;
     }
 
@@ -3477,19 +3531,13 @@ static int EmitHeader(SLCBackendC* c) {
         || BufAppendCStr(&c->out, "\n#define ") != 0 || BufAppendCStr(&c->out, guard) != 0
         || BufAppendCStr(&c->out, "\n\n") != 0)
     {
-        free(defaultGuard);
-        free(defaultImpl);
         return -1;
     }
 
     if (EmitPrelude(c) != 0) {
-        free(defaultGuard);
-        free(defaultImpl);
         return -1;
     }
     if (EmitForwardTypeDecls(c) != 0) {
-        free(defaultGuard);
-        free(defaultImpl);
         return -1;
     }
 
@@ -3500,8 +3548,6 @@ static int EmitHeader(SLCBackendC* c) {
             continue;
         }
         if (EmitDeclNode(c, nodeId, 0, 1, 0, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
-            free(defaultGuard);
-            free(defaultImpl);
             return -1;
         }
     }
@@ -3510,8 +3556,6 @@ static int EmitHeader(SLCBackendC* c) {
         int32_t nodeId = c->topDecls[i].nodeId;
         if (IsMainFunctionNode(c, nodeId) && !IsExplicitlyExportedNode(c, nodeId)) {
             if (EmitDeclNode(c, nodeId, 0, 1, 0, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
-                free(defaultGuard);
-                free(defaultImpl);
                 return -1;
             }
             break;
@@ -3521,14 +3565,10 @@ static int EmitHeader(SLCBackendC* c) {
     if (BufAppendCStr(&c->out, "#ifdef ") != 0 || BufAppendCStr(&c->out, impl) != 0
         || BufAppendCStr(&c->out, "\n\n") != 0)
     {
-        free(defaultGuard);
-        free(defaultImpl);
         return -1;
     }
 
     if (EmitStringLiteralPool(c) != 0) {
-        free(defaultGuard);
-        free(defaultImpl);
         return -1;
     }
 
@@ -3543,8 +3583,6 @@ static int EmitHeader(SLCBackendC* c) {
         exported = IsExportedNode(c, nodeId);
         if (EmitDeclNode(c, nodeId, 0, 1, !exported, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
             c->emitPrivateFnDeclStatic = 0;
-            free(defaultGuard);
-            free(defaultImpl);
             return -1;
         }
     }
@@ -3568,14 +3606,10 @@ static int EmitHeader(SLCBackendC* c) {
                 if (EmitDeclNode(c, nodeId, 0, 0, !exported, 1) != 0
                     || BufAppendChar(&c->out, '\n') != 0)
                 {
-                    free(defaultGuard);
-                    free(defaultImpl);
                     return -1;
                 }
             } else if (!exported && !HasFunctionBodyForName(c, nodeId)) {
                 if (EmitDeclNode(c, nodeId, 0, 1, 1, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
-                    free(defaultGuard);
-                    free(defaultImpl);
                     return -1;
                 }
             }
@@ -3586,16 +3620,12 @@ static int EmitHeader(SLCBackendC* c) {
             if (EmitDeclNode(c, nodeId, 0, 0, !exported, 0) != 0
                 || BufAppendChar(&c->out, '\n') != 0)
             {
-                free(defaultGuard);
-                free(defaultImpl);
                 return -1;
             }
             continue;
         }
 
         if (EmitDeclNode(c, nodeId, 0, 0, !exported, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
-            free(defaultGuard);
-            free(defaultImpl);
             return -1;
         }
     }
@@ -3604,37 +3634,33 @@ static int EmitHeader(SLCBackendC* c) {
         || BufAppendCStr(&c->out, " */\n\n#endif /* ") != 0 || BufAppendCStr(&c->out, guard) != 0
         || BufAppendCStr(&c->out, " */\n") != 0)
     {
-        free(defaultGuard);
-        free(defaultImpl);
         return -1;
     }
-
-    free(defaultGuard);
-    free(defaultImpl);
     return 0;
 }
 
 static int InitAst(SLCBackendC* c) {
-    uint64_t arenaCap64;
-    size_t   arenaCap;
-    SLDiag   diag;
+    SLDiag diag;
+    void* _Nullable allocatorCtx = NULL;
+    SLArenaGrowFn _Nullable growFn = NULL;
+    SLArenaFreeFn _Nullable freeFn = NULL;
 
-    c->arenaMem = NULL;
     c->ast.nodes = NULL;
     c->ast.len = 0;
     c->ast.root = -1;
-
-    arenaCap64 = (uint64_t)(c->unit->sourceLen + 128u) * (uint64_t)sizeof(SLASTNode) + 65536u;
-    if (arenaCap64 > (uint64_t)SIZE_MAX) {
-        return -1;
+    if (c->options != NULL) {
+        allocatorCtx = c->options->allocatorCtx;
+        growFn = c->options->arenaGrow;
+        freeFn = c->options->arenaFree;
     }
-    arenaCap = (size_t)arenaCap64;
-    c->arenaMem = malloc(arenaCap);
-    if (c->arenaMem == NULL) {
-        return -1;
-    }
-
-    SLArenaInit(&c->arena, c->arenaMem, (uint32_t)arenaCap);
+    SLArenaInitEx(
+        &c->arena,
+        c->arenaInlineStorage,
+        (uint32_t)sizeof(c->arenaInlineStorage),
+        allocatorCtx,
+        growFn,
+        freeFn);
+    c->out.arena = &c->arena;
     if (SLParse(&c->arena, (SLStrView){ c->unit->source, c->unit->sourceLen }, &c->ast, &diag) != 0)
     {
         if (c->diag != NULL) {
@@ -3645,42 +3671,37 @@ static int InitAst(SLCBackendC* c) {
     return 0;
 }
 
+static char* _Nullable AllocOutputCopy(SLCBackendC* c) {
+    uint32_t needSize;
+    uint32_t allocSize = 0;
+    char*    out;
+    if (c->options == NULL || c->options->arenaGrow == NULL) {
+        return NULL;
+    }
+    if (c->out.len > UINT32_MAX - 1u) {
+        return NULL;
+    }
+    needSize = c->out.len + 1u;
+    out = (char*)c->options->arenaGrow(c->options->allocatorCtx, needSize, &allocSize);
+    if (out == NULL) {
+        return NULL;
+    }
+    if (allocSize < needSize) {
+        if (c->options->arenaFree != NULL) {
+            c->options->arenaFree(c->options->allocatorCtx, out, allocSize);
+        }
+        return NULL;
+    }
+    if (c->out.v != NULL) {
+        memcpy(out, c->out.v, needSize);
+    } else {
+        out[0] = '\0';
+    }
+    return out;
+}
+
 static void FreeContext(SLCBackendC* c) {
-    uint32_t i;
-    free(c->arenaMem);
-    for (i = 0; i < c->nameLen; i++) {
-        free(c->names[i].name);
-        free(c->names[i].cName);
-    }
-    free(c->names);
-    free(c->pubDecls);
-    free(c->topDecls);
-    for (i = 0; i < c->fnSigLen; i++) {
-        free(c->fnSigs[i].paramTypes);
-    }
-    free(c->fnSigs);
-    for (i = 0; i < c->fieldInfoLen; i++) {
-        free(c->fieldInfos[i].fieldName);
-        free(c->fieldInfos[i].lenFieldName);
-    }
-    free(c->fieldInfos);
-    for (i = 0; i < c->varSizeTypeLen; i++) {
-        free(c->varSizeTypes[i].cName);
-    }
-    free(c->varSizeTypes);
-    for (i = 0; i < c->localLen; i++) {
-        free(c->locals[i].name);
-    }
-    free(c->locals);
-    free(c->localScopeMarks);
-    free(c->deferredStmtNodes);
-    free(c->deferScopeMarks);
-    for (i = 0; i < c->stringLitLen; i++) {
-        free(c->stringLits[i].bytes);
-    }
-    free(c->stringLits);
-    free(c->stringLitByNode);
-    free(c->out.v);
+    SLArenaDispose(&c->arena);
 }
 
 static int EmitCBackend(
@@ -3736,7 +3757,7 @@ static int EmitCBackend(
         return -1;
     }
 
-    *outHeader = BufFinish(&c.out);
+    *outHeader = AllocOutputCopy(&c);
     if (*outHeader == NULL) {
         SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         FreeContext(&c);
