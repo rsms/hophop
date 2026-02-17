@@ -1,4 +1,4 @@
-fn setfirst(xs mut&[i32 4], v i32) void {
+fn setfirst(xs mut&[i32 4], v i32) {
     xs[0] = v
 }
 

@@ -218,3 +218,4 @@ FieldInit           = Identifier "=" Expr ;
 - `pub` marks an exported top-level declaration.
 - Import paths are string literals.
 - `&[T]` and `mut&[T]` are not valid type forms; use `[T]` and `mut[T]`.
+- In `Signature`, the optional `Type` is the return type. Omitting it means the function returns no value. Writing `void` explicitly is a type error; omit the return type instead.

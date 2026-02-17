@@ -186,6 +186,7 @@ typedef enum {
     SLDiag_ARITY_MISMATCH,
     SLDiag_NOT_CALLABLE,
     SLDiag_EXPECTED_BOOL,
+    SLDiag_VOID_RETURN_TYPE,
 } SLDiagCode;
 
 typedef struct {
@@ -196,6 +197,7 @@ typedef struct {
 
 void        SLDiagClear(SLDiag* diag);
 const char* SLDiagMessage(SLDiagCode code);
+const char* _Nullable SLDiagHint(SLDiagCode code);
 
 typedef enum {
     SLTok_INVALID = 0,

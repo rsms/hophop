@@ -309,6 +309,7 @@ for t in \
     "check|tests/types_mut_bad_ref_assign_value.sl|tests/types_mut_bad_ref_assign_value.stderr" \
     "check|tests/types_mut_bad_readonly_slice_write.sl|tests/types_mut_bad_readonly_slice_write.stderr" \
     "check|tests/types_mut_bad_readonly_ref_write.sl|tests/types_mut_bad_readonly_ref_write.stderr" \
+    "check|tests/bad_void_return_type.sl|tests/bad_void_return_type.stderr" \
     "checkpkg|tests/pkg_bad_symbol/app|tests/pkg_bad_symbol.stderr" \
     "checkpkg|tests/pkg_cycle/a|tests/pkg_cycle.stderr" \
     "checkpkg|tests/pub_missing_def|tests/pub_missing_def.stderr"

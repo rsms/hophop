@@ -43,8 +43,16 @@ const char* SLDiagMessage(SLDiagCode code) {
         case SLDiag_ARITY_MISMATCH:      return "call arity mismatch";
         case SLDiag_NOT_CALLABLE:        return "expression is not callable";
         case SLDiag_EXPECTED_BOOL:       return "expected bool expression";
+        case SLDiag_VOID_RETURN_TYPE:    return "'void' is not a valid return type";
     }
     return "unknown diagnostic";
+}
+
+const char* _Nullable SLDiagHint(SLDiagCode code) {
+    switch (code) {
+        case SLDiag_VOID_RETURN_TYPE: return "remove 'void'";
+        default:                      return NULL;
+    }
 }
 
 static uint32_t SLArenaAlignUpU32(uint32_t value, uint32_t align) {

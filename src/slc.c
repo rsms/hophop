@@ -779,6 +779,7 @@ static int CheckSource(const char* filename, const char* source, uint32_t source
     }
 
     if (SLTypeCheck(&arena, &ast, (SLStrView){ source, sourceLen }, &diag) != 0) {
+        const char* hint;
         fprintf(
             stderr,
             "%s:%u:%u: error: %s\n",
@@ -786,6 +787,10 @@ static int CheckSource(const char* filename, const char* source, uint32_t source
             diag.start,
             diag.end,
             SLDiagMessage(diag.code));
+        hint = SLDiagHint(diag.code);
+        if (hint != NULL) {
+            fprintf(stderr, "  tip: %s\n", hint);
+        }
         free(arenaMem);
         return -1;
     }

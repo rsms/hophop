@@ -1214,6 +1214,9 @@ static int SLTCReadFunctionSig(
             if (SLTCResolveTypeNode(c, child, &returnType) != 0) {
                 return -1;
             }
+            if (returnType == c->typeVoid) {
+                return SLTCFailNode(c, child, SLDiag_VOID_RETURN_TYPE);
+            }
             if (SLTCTypeContainsVarSizeByValue(c, returnType)) {
                 return SLTCFailNode(c, child, SLDiag_TYPE_MISMATCH);
             }

@@ -1,4 +1,4 @@
-fn cleanup() void {}
+fn cleanup() {}
 
 fn main() i32 {
     defer cleanup()

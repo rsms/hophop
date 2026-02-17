@@ -1,0 +1,2 @@
+tests/bad_void_return_type.sl:12:16: error: 'void' is not a valid return type
+  tip: remove 'void'
