@@ -135,8 +135,6 @@ cat << _END >> $NF
 build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index
 build \$builddir/slc: link ${objfiles[*]}
 
-build slc:     phony \$builddir/slc
-build libsl.h: phony \$builddir/libsl.h
 default \$builddir/libsl.h \$builddir/slc
 _END
 
@@ -147,6 +145,8 @@ cd ../../..
 
 ninja_args=( -f "$build_dir/obj/build.ninja" )
 [ $verbose = 1 ] && ninja_args+=( -v )
+
+sed "s@ Compiler: clang@ Compiler: $(command -v clang)@" clangd.yaml > .clangd
 
 if [ $compdb = 1 ]; then
     _v ninja "${ninja_args[@]}" -t compdb > compile_commands.json
@@ -272,6 +272,7 @@ done
 for t in \
     "check|tests/order_independent.sl" \
     "check|tests/switch_ok.sl" \
+    "check|tests/types_mut_ok.sl" \
     "checkpkg|tests/pkg_ok/app"
 do
     IFS='|' read -r mode input <<< "$t"
@@ -291,6 +292,10 @@ for t in \
     "check|tests/switch_bad_subject_type.sl|tests/switch_bad_subject_type.stderr" \
     "check|tests/switch_bad_condition_type.sl|tests/switch_bad_condition_type.stderr" \
     "check|tests/switch_bad_default_dup.sl|tests/switch_bad_default_dup.stderr" \
+    "check|tests/types_mut_bad_readonly_to_mutref_assign.sl|tests/types_mut_bad_readonly_to_mutref_assign.stderr" \
+    "check|tests/types_mut_bad_ref_assign_value.sl|tests/types_mut_bad_ref_assign_value.stderr" \
+    "check|tests/types_mut_bad_readonly_slice_write.sl|tests/types_mut_bad_readonly_slice_write.stderr" \
+    "check|tests/types_mut_bad_readonly_ref_write.sl|tests/types_mut_bad_readonly_ref_write.stderr" \
     "checkpkg|tests/pkg_bad_symbol/app|tests/pkg_bad_symbol.stderr" \
     "checkpkg|tests/pkg_cycle/a|tests/pkg_cycle.stderr" \
     "checkpkg|tests/pub_missing_def|tests/pub_missing_def.stderr"
