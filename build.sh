@@ -273,6 +273,7 @@ for t in \
     "check|tests/order_independent.sl" \
     "check|tests/switch_ok.sl" \
     "check|tests/slice_ok.sl" \
+    "check|tests/slice_fn_ok.sl" \
     "check|tests/types_mut_ok.sl" \
     "check|tests/len_ptr_ref_ok.sl" \
     "check|tests/new_ok.sl" \
@@ -400,6 +401,27 @@ if ! "$build_dir/slc" compile tests/types_mut_ok.sl -o "$test_tmpdir/step5_types
 fi
 [ -x "$test_tmpdir/step5_types_mut_ok" ] \
     || _err "compile command did not produce executable for tests/types_mut_ok.sl"
+
+if ! "$build_dir/slc" compile tests/slice_ok.sl -o "$test_tmpdir/step5_slice_ok" \
+    > /dev/null 2>&1; then
+    _err "unexpected failure for slc compile tests/slice_ok.sl"
+fi
+[ -x "$test_tmpdir/step5_slice_ok" ] \
+    || _err "compile command did not produce executable for tests/slice_ok.sl"
+
+if ! "$build_dir/slc" compile tests/len_ptr_ref_ok.sl -o "$test_tmpdir/step5_len_ptr_ref_ok" \
+    > /dev/null 2>&1; then
+    _err "unexpected failure for slc compile tests/len_ptr_ref_ok.sl"
+fi
+[ -x "$test_tmpdir/step5_len_ptr_ref_ok" ] \
+    || _err "compile command did not produce executable for tests/len_ptr_ref_ok.sl"
+
+if ! "$build_dir/slc" compile tests/slice_fn_ok.sl -o "$test_tmpdir/step5_slice_fn_ok" \
+    > /dev/null 2>&1; then
+    _err "unexpected failure for slc compile tests/slice_fn_ok.sl"
+fi
+[ -x "$test_tmpdir/step5_slice_fn_ok" ] \
+    || _err "compile command did not produce executable for tests/slice_fn_ok.sl"
 
 set +e
 "$actual_phase7_compile_exe" > /dev/null 2>&1
