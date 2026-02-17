@@ -1,0 +1,3 @@
+fn main(a &[i32]) i32 {
+    return 0
+}

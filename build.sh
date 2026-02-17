@@ -262,7 +262,8 @@ _expect_fail_no_stdout() {
 for t in \
     "_|tests/basic.sl|tests/basic.tokens" \
     "ast|tests/ast_basic.sl|tests/ast_basic.ast" \
-    "ast|tests/switch_ast.sl|tests/switch_ast.ast"
+    "ast|tests/switch_ast.sl|tests/switch_ast.ast" \
+    "ast|tests/ast_types_new.sl|tests/ast_types_new.ast"
 do
     IFS='|' read -r mode input expected <<< "$t"
     _expect_stdout_eq "$mode" "$input" "$expected"
@@ -281,6 +282,10 @@ for t in \
     "_|tests/bad_string.sl|tests/bad_string.stderr" \
     "check|tests/bad_pub_block.sl|tests/bad_pub_block.stderr" \
     "ast|tests/ast_bad.sl|tests/ast_bad.stderr" \
+    "ast|tests/ast_bad_old_array_type.sl|tests/ast_bad_old_array_type.stderr" \
+    "ast|tests/ast_bad_old_varray_type.sl|tests/ast_bad_old_varray_type.stderr" \
+    "ast|tests/ast_bad_ref_slice_type.sl|tests/ast_bad_ref_slice_type.stderr" \
+    "ast|tests/ast_bad_mutref_slice_type.sl|tests/ast_bad_mutref_slice_type.stderr" \
     "check|tests/bad_unknown_symbol.sl|tests/bad_unknown_symbol.stderr" \
     "check|tests/bad_type_mismatch.sl|tests/bad_type_mismatch.stderr" \
     "check|tests/switch_bad_subject_type.sl|tests/switch_bad_subject_type.stderr" \

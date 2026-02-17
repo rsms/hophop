@@ -4,7 +4,7 @@ struct Node {
 }
 
 fn main() i32 {
-    var values [4]i32
+    var values [i32 4]
     values[0] = 7
 
     var p *i32 = &values[0]

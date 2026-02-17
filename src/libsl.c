@@ -290,6 +290,9 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
         if (SLStrEq(s, len, "var")) {
             return SLTok_VAR;
         }
+        if (SLStrEq(s, len, "mut")) {
+            return SLTok_MUT;
+        }
         if (SLStrEq(s, len, "pub")) {
             return SLTok_PUB;
         }
@@ -401,6 +404,7 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_FN:            return "FN";
         case SLTok_VAR:           return "VAR";
         case SLTok_CONST:         return "CONST";
+        case SLTok_MUT:           return "MUT";
         case SLTok_IF:            return "IF";
         case SLTok_ELSE:          return "ELSE";
         case SLTok_FOR:           return "FOR";

@@ -2,3 +2,39 @@ Diagnostics:
     UnusedIncludes: None
 Completion:
     HeaderInsertion: Never
+CompileFlags:
+    Compiler: clang
+    Remove:
+        - -fsanitize*
+    Add:
+        - -Wall
+        - -Wextra
+        - -Wno-bitwise-op-parentheses
+        - -Wno-shift-op-parentheses
+        - -Wno-unused
+        - -Wno-unused-parameter
+        - -Werror=deprecated-non-prototype
+        - -Werror=enum-conversion
+        - -Werror=excess-initializers
+        - -Werror=format
+        - -Werror=incompatible-pointer-types
+        - -Werror=return-type
+        - -Werror=switch
+        - -DCLANGD=1
+        - -DSL_IMPLEMENTATION=1
+---
+# Assume .h is a C header
+If:
+    PathMatch: '.*\.h'
+CompileFlags:
+    Remove:
+        - -xobjective-c++-header
+    Add:
+        - -xc-header
+---
+# C standard for C-based sources
+If:
+    PathMatch: '.*\.(h|c|m)$'
+CompileFlags:
+    Add:
+        - -std=c11

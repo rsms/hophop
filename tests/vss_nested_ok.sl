@@ -1,20 +1,20 @@
 struct Section {
     entriesLen u8
-    entries    [.entriesLen]i64
+    entries    [i64 .entriesLen]
 }
 
 struct Metadata {
     id       u8
     type     u8
     valueLen u8
-    value    [.valueLen]u8
+    value    [u8 .valueLen]
 }
 
 struct Packet {
     metadataLen u32
     sectionsLen u32
-    metadata    [.metadataLen]Metadata
-    sections    [.sectionsLen]Section
+    metadata    [Metadata .metadataLen]
+    sections    [Section .sectionsLen]
 }
 
 fn main() i32 {

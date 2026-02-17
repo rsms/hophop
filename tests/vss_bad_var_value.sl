@@ -1,8 +1,8 @@
 struct Packet {
     payloadLen u32
     sampleLen  u32
-    payload    [.payloadLen]u8
-    samples    [.sampleLen]i32
+    payload    [u8 .payloadLen]
+    samples    [i32 .sampleLen]
 }
 
 fn main() i32 {

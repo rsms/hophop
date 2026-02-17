@@ -1,0 +1,1 @@
+tests/ast_bad_mutref_slice_type.sl:19:20: error: expected type

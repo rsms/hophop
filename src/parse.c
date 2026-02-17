@@ -159,10 +159,13 @@ static int SLPParseTypeName(SLParser* p, int32_t* out) {
         return -1;
     }
     last = first;
-    while (SLPMatch(p, SLTok_DOT)) {
-        if (SLPExpect(p, SLTok_IDENT, SLDiag_EXPECTED_TYPE, &last) != 0) {
-            return -1;
-        }
+    while ((p->pos + 1u) < p->tokLen && p->tok[p->pos].kind == SLTok_DOT
+           && p->tok[p->pos + 1u].kind == SLTok_IDENT && p->tok[p->pos].start == last->end
+           && p->tok[p->pos + 1u].start == p->tok[p->pos].end)
+    {
+        p->pos++;
+        last = &p->tok[p->pos];
+        p->pos++;
     }
 
     n = SLPNewNode(p, SLAST_TYPE_NAME, first->start, last->end);
@@ -193,36 +196,100 @@ static int SLPParseType(SLParser* p, int32_t* out) {
         return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
     }
 
+    if (SLPMatch(p, SLTok_AND)) {
+        t = SLPPrev(p);
+        typeNode = SLPNewNode(p, SLAST_TYPE_REF, t->start, t->end);
+        if (typeNode < 0) {
+            return -1;
+        }
+        if (SLPParseType(p, &child) != 0) {
+            return -1;
+        }
+        if (p->nodes[child].kind == SLAST_TYPE_SLICE || p->nodes[child].kind == SLAST_TYPE_MUTSLICE)
+        {
+            return SLPFail(p, SLDiag_EXPECTED_TYPE);
+        }
+        p->nodes[typeNode].end = p->nodes[child].end;
+        return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
+    }
+
+    if (SLPMatch(p, SLTok_MUT)) {
+        const SLToken* mutTok = SLPPrev(p);
+        if (SLPMatch(p, SLTok_AND)) {
+            typeNode = SLPNewNode(p, SLAST_TYPE_MUTREF, mutTok->start, mutTok->end);
+            if (typeNode < 0) {
+                return -1;
+            }
+            if (SLPParseType(p, &child) != 0) {
+                return -1;
+            }
+            if (p->nodes[child].kind == SLAST_TYPE_SLICE
+                || p->nodes[child].kind == SLAST_TYPE_MUTSLICE)
+            {
+                return SLPFail(p, SLDiag_EXPECTED_TYPE);
+            }
+            p->nodes[typeNode].end = p->nodes[child].end;
+            return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
+        }
+        if (SLPMatch(p, SLTok_LBRACK)) {
+            const SLToken* rb;
+            typeNode = SLPNewNode(p, SLAST_TYPE_MUTSLICE, mutTok->start, mutTok->end);
+            if (typeNode < 0) {
+                return -1;
+            }
+            if (SLPParseType(p, &child) != 0) {
+                return -1;
+            }
+            if (SLPExpect(p, SLTok_RBRACK, SLDiag_EXPECTED_TYPE, &rb) != 0) {
+                return -1;
+            }
+            p->nodes[typeNode].end = rb->end;
+            return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
+        }
+        return SLPFail(p, SLDiag_EXPECTED_TYPE);
+    }
+
     if (SLPMatch(p, SLTok_LBRACK)) {
         const SLToken* lb = SLPPrev(p);
-        const SLToken* nTok;
+        const SLToken* nTok = NULL;
         const SLToken* rb;
-        SLASTKind      kind = SLAST_TYPE_ARRAY;
-        uint16_t       flags = 0;
+        SLASTKind      kind;
+
+        if (SLPParseType(p, &child) != 0) {
+            return -1;
+        }
+
+        if (SLPMatch(p, SLTok_RBRACK)) {
+            rb = SLPPrev(p);
+            typeNode = SLPNewNode(p, SLAST_TYPE_SLICE, lb->start, rb->end);
+            if (typeNode < 0) {
+                return -1;
+            }
+            return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
+        }
+
         if (SLPMatch(p, SLTok_DOT)) {
             kind = SLAST_TYPE_VARRAY;
             if (SLPExpect(p, SLTok_IDENT, SLDiag_EXPECTED_TYPE, &nTok) != 0) {
                 return -1;
             }
         } else {
+            kind = SLAST_TYPE_ARRAY;
             if (SLPExpect(p, SLTok_INT, SLDiag_EXPECTED_TYPE, &nTok) != 0) {
                 return -1;
             }
         }
+
         typeNode = SLPNewNode(p, kind, lb->start, lb->end);
         if (typeNode < 0) {
             return -1;
         }
         p->nodes[typeNode].dataStart = nTok->start;
         p->nodes[typeNode].dataEnd = nTok->end;
-        p->nodes[typeNode].flags = flags;
         if (SLPExpect(p, SLTok_RBRACK, SLDiag_EXPECTED_TYPE, &rb) != 0) {
             return -1;
         }
-        if (SLPParseType(p, &child) != 0) {
-            return -1;
-        }
-        p->nodes[typeNode].end = p->nodes[child].end;
+        p->nodes[typeNode].end = rb->end;
         return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
     }
 
@@ -1254,45 +1321,49 @@ static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out) {
 
 const char* SLASTKindName(SLASTKind kind) {
     switch (kind) {
-        case SLAST_FILE:        return "FILE";
-        case SLAST_IMPORT:      return "IMPORT";
-        case SLAST_PUB:         return "PUB";
-        case SLAST_FN:          return "FN";
-        case SLAST_PARAM:       return "PARAM";
-        case SLAST_TYPE_NAME:   return "TYPE_NAME";
-        case SLAST_TYPE_PTR:    return "TYPE_PTR";
-        case SLAST_TYPE_ARRAY:  return "TYPE_ARRAY";
-        case SLAST_TYPE_VARRAY: return "TYPE_VARRAY";
-        case SLAST_STRUCT:      return "STRUCT";
-        case SLAST_UNION:       return "UNION";
-        case SLAST_ENUM:        return "ENUM";
-        case SLAST_FIELD:       return "FIELD";
-        case SLAST_BLOCK:       return "BLOCK";
-        case SLAST_VAR:         return "VAR";
-        case SLAST_CONST:       return "CONST";
-        case SLAST_IF:          return "IF";
-        case SLAST_FOR:         return "FOR";
-        case SLAST_SWITCH:      return "SWITCH";
-        case SLAST_CASE:        return "CASE";
-        case SLAST_DEFAULT:     return "DEFAULT";
-        case SLAST_RETURN:      return "RETURN";
-        case SLAST_BREAK:       return "BREAK";
-        case SLAST_CONTINUE:    return "CONTINUE";
-        case SLAST_DEFER:       return "DEFER";
-        case SLAST_ASSERT:      return "ASSERT";
-        case SLAST_EXPR_STMT:   return "EXPR_STMT";
-        case SLAST_IDENT:       return "IDENT";
-        case SLAST_INT:         return "INT";
-        case SLAST_FLOAT:       return "FLOAT";
-        case SLAST_STRING:      return "STRING";
-        case SLAST_BOOL:        return "BOOL";
-        case SLAST_UNARY:       return "UNARY";
-        case SLAST_BINARY:      return "BINARY";
-        case SLAST_CALL:        return "CALL";
-        case SLAST_INDEX:       return "INDEX";
-        case SLAST_FIELD_EXPR:  return "FIELD_EXPR";
-        case SLAST_CAST:        return "CAST";
-        case SLAST_SIZEOF:      return "SIZEOF";
+        case SLAST_FILE:          return "FILE";
+        case SLAST_IMPORT:        return "IMPORT";
+        case SLAST_PUB:           return "PUB";
+        case SLAST_FN:            return "FN";
+        case SLAST_PARAM:         return "PARAM";
+        case SLAST_TYPE_NAME:     return "TYPE_NAME";
+        case SLAST_TYPE_PTR:      return "TYPE_PTR";
+        case SLAST_TYPE_REF:      return "TYPE_REF";
+        case SLAST_TYPE_MUTREF:   return "TYPE_MUTREF";
+        case SLAST_TYPE_ARRAY:    return "TYPE_ARRAY";
+        case SLAST_TYPE_VARRAY:   return "TYPE_VARRAY";
+        case SLAST_TYPE_SLICE:    return "TYPE_SLICE";
+        case SLAST_TYPE_MUTSLICE: return "TYPE_MUTSLICE";
+        case SLAST_STRUCT:        return "STRUCT";
+        case SLAST_UNION:         return "UNION";
+        case SLAST_ENUM:          return "ENUM";
+        case SLAST_FIELD:         return "FIELD";
+        case SLAST_BLOCK:         return "BLOCK";
+        case SLAST_VAR:           return "VAR";
+        case SLAST_CONST:         return "CONST";
+        case SLAST_IF:            return "IF";
+        case SLAST_FOR:           return "FOR";
+        case SLAST_SWITCH:        return "SWITCH";
+        case SLAST_CASE:          return "CASE";
+        case SLAST_DEFAULT:       return "DEFAULT";
+        case SLAST_RETURN:        return "RETURN";
+        case SLAST_BREAK:         return "BREAK";
+        case SLAST_CONTINUE:      return "CONTINUE";
+        case SLAST_DEFER:         return "DEFER";
+        case SLAST_ASSERT:        return "ASSERT";
+        case SLAST_EXPR_STMT:     return "EXPR_STMT";
+        case SLAST_IDENT:         return "IDENT";
+        case SLAST_INT:           return "INT";
+        case SLAST_FLOAT:         return "FLOAT";
+        case SLAST_STRING:        return "STRING";
+        case SLAST_BOOL:          return "BOOL";
+        case SLAST_UNARY:         return "UNARY";
+        case SLAST_BINARY:        return "BINARY";
+        case SLAST_CALL:          return "CALL";
+        case SLAST_INDEX:         return "INDEX";
+        case SLAST_FIELD_EXPR:    return "FIELD_EXPR";
+        case SLAST_CAST:          return "CAST";
+        case SLAST_SIZEOF:        return "SIZEOF";
     }
     return "UNKNOWN";
 }
