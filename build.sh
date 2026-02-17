@@ -274,6 +274,8 @@ for t in \
     "check|tests/switch_ok.sl" \
     "check|tests/slice_ok.sl" \
     "check|tests/types_mut_ok.sl" \
+    "check|tests/len_ptr_ref_ok.sl" \
+    "check|tests/new_ok.sl" \
     "checkpkg|tests/pkg_ok/app"
 do
     IFS='|' read -r mode input <<< "$t"
@@ -298,6 +300,9 @@ for t in \
     "check|tests/slice_bad_range_order.sl|tests/slice_bad_range_order.stderr" \
     "check|tests/slice_bad_negative_index.sl|tests/slice_bad_negative_index.stderr" \
     "check|tests/slice_bad_negative_range.sl|tests/slice_bad_negative_range.stderr" \
+    "check|tests/new_bad_allocator_readonly.sl|tests/new_bad_allocator_readonly.stderr" \
+    "check|tests/new_bad_type_arg_value.sl|tests/new_bad_type_arg_value.stderr" \
+    "check|tests/new_bad_arity.sl|tests/new_bad_arity.stderr" \
     "check|tests/types_mut_bad_readonly_to_mutref_assign.sl|tests/types_mut_bad_readonly_to_mutref_assign.stderr" \
     "check|tests/types_mut_bad_ref_assign_value.sl|tests/types_mut_bad_ref_assign_value.stderr" \
     "check|tests/types_mut_bad_readonly_slice_write.sl|tests/types_mut_bad_readonly_slice_write.stderr" \
@@ -382,6 +387,12 @@ fi
 [ ! -s "$actual_phase7_compile_stdout" ] || _err "unexpected stdout for slc compile"
 [ ! -s "$actual_phase7_compile_stderr" ] || _err "unexpected stderr for slc compile"
 [ -x "$actual_phase7_compile_exe" ] || _err "compile command did not produce executable output"
+
+if ! "$build_dir/slc" compile tests/new_ok.sl -o "$test_tmpdir/step4_new_ok" > /dev/null 2>&1; then
+    _err "unexpected failure for slc compile tests/new_ok.sl"
+fi
+[ -x "$test_tmpdir/step4_new_ok" ] \
+    || _err "compile command did not produce executable for tests/new_ok.sl"
 
 set +e
 "$actual_phase7_compile_exe" > /dev/null 2>&1

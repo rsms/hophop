@@ -20,6 +20,7 @@ typedef enum {
     SLBuiltin_VOID,
     SLBuiltin_BOOL,
     SLBuiltin_STR,
+    SLBuiltin_MEMALLOCATOR,
     SLBuiltin_U8,
     SLBuiltin_U16,
     SLBuiltin_U32,
@@ -126,6 +127,7 @@ typedef struct {
     int32_t typeVoid;
     int32_t typeBool;
     int32_t typeStr;
+    int32_t typeMemAllocator;
     int32_t typeUsize;
     int32_t typeUntypedInt;
     int32_t typeUntypedFloat;
@@ -239,6 +241,7 @@ static int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     c->typeVoid = -1;
     c->typeBool = -1;
     c->typeStr = -1;
+    c->typeMemAllocator = -1;
     c->typeUsize = -1;
     c->typeUntypedInt = -1;
     c->typeUntypedFloat = -1;
@@ -246,7 +249,8 @@ static int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     c->typeVoid = SLTCAddBuiltinType(c, "void", SLBuiltin_VOID);
     c->typeBool = SLTCAddBuiltinType(c, "bool", SLBuiltin_BOOL);
     c->typeStr = SLTCAddBuiltinType(c, "str", SLBuiltin_STR);
-    if (c->typeVoid < 0 || c->typeBool < 0 || c->typeStr < 0) {
+    c->typeMemAllocator = SLTCAddBuiltinType(c, "MemAllocator", SLBuiltin_MEMALLOCATOR);
+    if (c->typeVoid < 0 || c->typeBool < 0 || c->typeStr < 0 || c->typeMemAllocator < 0) {
         return -1;
     }
 
@@ -301,6 +305,11 @@ static int32_t SLTCFindBuiltinType(SLTypeCheckCtx* c, uint32_t start, uint32_t e
             return (int32_t)i;
         }
         if (SLNameEqLiteral(c->src, start, end, "str") && t->builtin == SLBuiltin_STR) {
+            return (int32_t)i;
+        }
+        if (SLNameEqLiteral(c->src, start, end, "MemAllocator")
+            && t->builtin == SLBuiltin_MEMALLOCATOR)
+        {
             return (int32_t)i;
         }
         if (SLNameEqLiteral(c->src, start, end, "u8") && t->builtin == SLBuiltin_U8) {
@@ -1361,6 +1370,30 @@ static int SLTCFieldLookup(
 
 static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
 
+static int SLTCResolveTypeArgExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
+    const SLASTNode* n;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return SLTCFailSpan(c, SLDiag_EXPECTED_TYPE, 0, 0);
+    }
+    n = &c->ast->nodes[nodeId];
+    if (n->kind == SLAST_IDENT) {
+        int32_t typeId = SLTCFindBuiltinType(c, n->dataStart, n->dataEnd);
+        if (typeId >= 0) {
+            *outType = typeId;
+            return 0;
+        }
+        {
+            int32_t namedIndex = SLTCFindNamedTypeIndex(c, n->dataStart, n->dataEnd);
+            if (namedIndex >= 0) {
+                *outType = c->namedTypes[namedIndex].typeId;
+                return 0;
+            }
+        }
+        return SLTCFailSpan(c, SLDiag_UNKNOWN_TYPE, n->dataStart, n->dataEnd);
+    }
+    return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
+}
+
 static int SLTCExprIsAssignable(SLTypeCheckCtx* c, int32_t exprNode) {
     const SLASTNode* n;
     if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
@@ -1530,6 +1563,72 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         return -1;
                     }
                     *outType = u8PtrType;
+                    return 0;
+                }
+                if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "new")) {
+                    int32_t allocArgNode = SLASTNextSibling(c->ast, calleeNode);
+                    int32_t typeArgNode;
+                    int32_t countArgNode;
+                    int32_t nextArgNode;
+                    int32_t allocArgType;
+                    int32_t allocParamType;
+                    int32_t elemType;
+                    int32_t resultType;
+                    int32_t countType;
+                    int64_t countValue = 0;
+                    int     countIsConst = 0;
+                    if (allocArgNode < 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    }
+                    typeArgNode = SLASTNextSibling(c->ast, allocArgNode);
+                    if (typeArgNode < 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    }
+                    countArgNode = SLASTNextSibling(c->ast, typeArgNode);
+                    nextArgNode = countArgNode >= 0 ? SLASTNextSibling(c->ast, countArgNode) : -1;
+                    if (nextArgNode >= 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    }
+
+                    if (SLTCTypeExpr(c, allocArgNode, &allocArgType) != 0) {
+                        return -1;
+                    }
+                    allocParamType = SLTCInternRefType(
+                        c, c->typeMemAllocator, 1, callee->start, callee->end);
+                    if (allocParamType < 0) {
+                        return -1;
+                    }
+                    if (!SLTCCanAssign(c, allocParamType, allocArgType)) {
+                        return SLTCFailNode(c, allocArgNode, SLDiag_TYPE_MISMATCH);
+                    }
+
+                    if (SLTCResolveTypeArgExpr(c, typeArgNode, &elemType) != 0) {
+                        return -1;
+                    }
+                    if (SLTCTypeContainsVarSizeByValue(c, elemType)) {
+                        return SLTCFailNode(c, typeArgNode, SLDiag_TYPE_MISMATCH);
+                    }
+
+                    if (countArgNode >= 0) {
+                        if (SLTCTypeExpr(c, countArgNode, &countType) != 0) {
+                            return -1;
+                        }
+                        if (!SLTCIsIntegerType(c, countType)) {
+                            return SLTCFailNode(c, countArgNode, SLDiag_TYPE_MISMATCH);
+                        }
+                        if (SLTCConstIntExpr(c, countArgNode, &countValue, &countIsConst) != 0) {
+                            return SLTCFailNode(c, countArgNode, SLDiag_TYPE_MISMATCH);
+                        }
+                        if (countIsConst && countValue < 0) {
+                            return SLTCFailNode(c, countArgNode, SLDiag_TYPE_MISMATCH);
+                        }
+                    }
+
+                    resultType = SLTCInternPtrType(c, elemType, callee->start, callee->end);
+                    if (resultType < 0) {
+                        return -1;
+                    }
+                    *outType = resultType;
                     return 0;
                 }
             }

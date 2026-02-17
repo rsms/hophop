@@ -274,8 +274,8 @@ static void EmitIndent(SLCBackendC* c, uint32_t depth) {
 }
 
 static int IsBuiltinType(const char* s) {
-    return StrEq(s, "void") || StrEq(s, "bool") || StrEq(s, "str") || StrEq(s, "u8")
-        || StrEq(s, "u16") || StrEq(s, "u32") || StrEq(s, "u64") || StrEq(s, "i8")
+    return StrEq(s, "void") || StrEq(s, "bool") || StrEq(s, "str") || StrEq(s, "MemAllocator")
+        || StrEq(s, "u8") || StrEq(s, "u16") || StrEq(s, "u32") || StrEq(s, "u64") || StrEq(s, "i8")
         || StrEq(s, "i16") || StrEq(s, "i32") || StrEq(s, "i64") || StrEq(s, "usize")
         || StrEq(s, "isize") || StrEq(s, "f32") || StrEq(s, "f64");
 }
@@ -649,8 +649,8 @@ static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uin
     char*                    normalized;
     uint32_t                 i;
     static const char* const builtinNames[] = {
-        "void", "bool", "str", "u8",    "u16",   "u32", "u64", "i8",
-        "i16",  "i32",  "i64", "usize", "isize", "f32", "f64",
+        "void", "bool", "str", "MemAllocator", "u8",    "u16",   "u32", "u64",
+        "i8",   "i16",  "i32", "i64",          "usize", "isize", "f32", "f64",
     };
 
     normalized = DupAndReplaceDots(c->unit->source, start, end);
@@ -676,6 +676,17 @@ static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uin
     }
 
     return normalized;
+}
+
+static const char* _Nullable ResolveTypeNameFromExprArg(SLCBackendC* c, int32_t nodeId) {
+    const SLASTNode* n = NodeAt(c, nodeId);
+    if (n == NULL) {
+        return NULL;
+    }
+    if (n->kind == SLAST_IDENT) {
+        return ResolveTypeName(c, n->dataStart, n->dataEnd);
+    }
+    return NULL;
 }
 
 static int AddNodeRef(SLNodeRef** arr, uint32_t* len, uint32_t* cap, int32_t nodeId) {
@@ -738,6 +749,24 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             return 0;
         }
         case SLAST_TYPE_PTR: {
+            int32_t child = AstFirstChild(&c->ast, nodeId);
+            if (ParseTypeRef(c, child, outType) != 0) {
+                return -1;
+            }
+            outType->ptrDepth++;
+            return 0;
+        }
+        case SLAST_TYPE_REF:
+        case SLAST_TYPE_MUTREF: {
+            int32_t child = AstFirstChild(&c->ast, nodeId);
+            if (ParseTypeRef(c, child, outType) != 0) {
+                return -1;
+            }
+            outType->ptrDepth++;
+            return 0;
+        }
+        case SLAST_TYPE_SLICE:
+        case SLAST_TYPE_MUTSLICE: {
             int32_t child = AstFirstChild(&c->ast, nodeId);
             if (ParseTypeRef(c, child, outType) != 0) {
                 return -1;
@@ -853,7 +882,9 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
             const SLASTNode* ch = NodeAt(c, child);
             if (ch != NULL
                 && (ch->kind == SLAST_TYPE_NAME || ch->kind == SLAST_TYPE_PTR
-                    || ch->kind == SLAST_TYPE_ARRAY || ch->kind == SLAST_TYPE_VARRAY)
+                    || ch->kind == SLAST_TYPE_REF || ch->kind == SLAST_TYPE_MUTREF
+                    || ch->kind == SLAST_TYPE_ARRAY || ch->kind == SLAST_TYPE_VARRAY
+                    || ch->kind == SLAST_TYPE_SLICE || ch->kind == SLAST_TYPE_MUTSLICE)
                 && ch->flags == 1)
             {
                 if (ParseTypeRef(c, child, &returnType) != 0) {
@@ -1575,8 +1606,52 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             return 0;
         }
         case SLAST_CALL: {
-            int32_t child = AstFirstChild(&c->ast, nodeId);
-            int     first = 1;
+            int32_t          child = AstFirstChild(&c->ast, nodeId);
+            const SLASTNode* callee = NodeAt(c, child);
+            int              first = 1;
+            if (callee != NULL && callee->kind == SLAST_IDENT
+                && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "new"))
+            {
+                int32_t     allocArg = AstNextSibling(&c->ast, child);
+                int32_t     typeArg = allocArg >= 0 ? AstNextSibling(&c->ast, allocArg) : -1;
+                int32_t     countArg = typeArg >= 0 ? AstNextSibling(&c->ast, typeArg) : -1;
+                int32_t     extraArg = countArg >= 0 ? AstNextSibling(&c->ast, countArg) : -1;
+                const char* typeName;
+                if (allocArg < 0 || typeArg < 0 || extraArg >= 0) {
+                    return -1;
+                }
+                typeName = ResolveTypeNameFromExprArg(c, typeArg);
+                if (typeName == NULL) {
+                    return -1;
+                }
+                if (BufAppendCStr(&c->out, "((") != 0 || BufAppendCStr(&c->out, typeName) != 0
+                    || BufAppendCStr(&c->out, "*)") != 0)
+                {
+                    return -1;
+                }
+                if (countArg >= 0) {
+                    if (BufAppendCStr(&c->out, "sl_new_array(") != 0 || EmitExpr(c, allocArg) != 0
+                        || BufAppendCStr(&c->out, ", sizeof(") != 0
+                        || BufAppendCStr(&c->out, typeName) != 0
+                        || BufAppendCStr(&c->out, "), _Alignof(") != 0
+                        || BufAppendCStr(&c->out, typeName) != 0
+                        || BufAppendCStr(&c->out, "), (usize)(") != 0 || EmitExpr(c, countArg) != 0
+                        || BufAppendCStr(&c->out, ")))") != 0)
+                    {
+                        return -1;
+                    }
+                    return 0;
+                }
+                if (BufAppendCStr(&c->out, "sl_new(") != 0 || EmitExpr(c, allocArg) != 0
+                    || BufAppendCStr(&c->out, ", sizeof(") != 0
+                    || BufAppendCStr(&c->out, typeName) != 0
+                    || BufAppendCStr(&c->out, "), _Alignof(") != 0
+                    || BufAppendCStr(&c->out, typeName) != 0 || BufAppendCStr(&c->out, ")))") != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
             if (EmitExpr(c, child) != 0 || BufAppendChar(&c->out, '(') != 0) {
                 return -1;
             }
@@ -2197,7 +2272,9 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         const SLASTNode* firstChild = NodeAt(c, child);
         if (firstChild != NULL
             && (firstChild->kind == SLAST_TYPE_NAME || firstChild->kind == SLAST_TYPE_PTR
-                || firstChild->kind == SLAST_TYPE_ARRAY || firstChild->kind == SLAST_TYPE_VARRAY))
+                || firstChild->kind == SLAST_TYPE_REF || firstChild->kind == SLAST_TYPE_MUTREF
+                || firstChild->kind == SLAST_TYPE_ARRAY || firstChild->kind == SLAST_TYPE_VARRAY
+                || firstChild->kind == SLAST_TYPE_SLICE || firstChild->kind == SLAST_TYPE_MUTSLICE))
         {
             child = AstNextSibling(&c->ast, child);
         }
@@ -2642,7 +2719,9 @@ static int EmitFnDeclOrDef(
         const SLASTNode* ch = NodeAt(c, child);
         if (ch != NULL
             && (ch->kind == SLAST_TYPE_NAME || ch->kind == SLAST_TYPE_PTR
-                || ch->kind == SLAST_TYPE_ARRAY || ch->kind == SLAST_TYPE_VARRAY)
+                || ch->kind == SLAST_TYPE_REF || ch->kind == SLAST_TYPE_MUTREF
+                || ch->kind == SLAST_TYPE_ARRAY || ch->kind == SLAST_TYPE_VARRAY
+                || ch->kind == SLAST_TYPE_SLICE || ch->kind == SLAST_TYPE_MUTSLICE)
             && ch->flags == 1)
         {
             returnTypeNode = child;
@@ -2814,6 +2893,20 @@ static int EmitPrelude(SLCBackendC* c) {
         "typedef float    f32;\n"
         "typedef double   f64;\n"
         "typedef _Bool    bool;\n"
+        "typedef struct MemAllocator MemAllocator;\n"
+        "struct MemAllocator {\n"
+        "    void* ctx;\n"
+        "    void* (*alloc)(void* ctx, usize size, usize align);\n"
+        "};\n"
+        "static inline void* sl_new(MemAllocator* ma, usize size, usize align) {\n"
+        "    return (ma != (MemAllocator*)0 && ma->alloc != (void*(*)(void*,usize,usize))0)\n"
+        "               ? ma->alloc(ma->ctx, size, align)\n"
+        "               : (void*)0;\n"
+        "}\n"
+        "static inline void* sl_new_array(\n"
+        "    MemAllocator* ma, usize elemSize, usize elemAlign, usize count) {\n"
+        "    return sl_new(ma, elemSize * count, elemAlign);\n"
+        "}\n"
         "typedef const u8* str;\n"
         "typedef struct { u32 len; u8 bytes[1]; } sl_strhdr;\n"
         "static inline u32 len(str s) { return ((const sl_strhdr*)(const void*)s)->len; }\n"
