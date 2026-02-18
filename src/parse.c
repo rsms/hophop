@@ -446,7 +446,9 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
         }
         p->pos = savePos;
         p->nodeLen = saveNodeLen;
-        SLDiagClear(p->diag);
+        if (p->diag != NULL) {
+            *p->diag = (SLDiag){ 0 };
+        }
 
         if (SLPParseExpr(p, 1, &inner) != 0) {
             return -1;
@@ -1510,7 +1512,9 @@ int SLParse(SLArena* arena, SLStrView src, SLAst* out, SLDiag* diag) {
     SLParser      p;
     int32_t       root;
 
-    SLDiagClear(diag);
+    if (diag != NULL) {
+        *diag = (SLDiag){ 0 };
+    }
     out->nodes = NULL;
     out->len = 0;
     out->root = -1;

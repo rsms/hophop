@@ -461,7 +461,9 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
     int         insertedEOFSemicolon = 0;
     SLTokenKind prevKind = SLTok_INVALID;
 
-    SLDiagClear(diag);
+    if (diag != NULL) {
+        *diag = (SLDiag){ 0 };
+    }
     out->v = NULL;
     out->len = 0;
 
@@ -900,7 +902,9 @@ static int SLAstDumpNode(
 }
 
 int SLAstDump(const SLAst* ast, SLStrView src, SLWriter* w, SLDiag* diag) {
-    SLDiagClear(diag);
+    if (diag != NULL) {
+        *diag = (SLDiag){ 0 };
+    }
     if (ast == NULL || w == NULL || w->write == NULL || ast->nodes == NULL || ast->root < 0) {
         SLSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
         return -1;

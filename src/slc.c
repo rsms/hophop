@@ -682,7 +682,7 @@ static int DumpTokens(const char* filename, const char* source, uint32_t sourceL
     size_t        arenaCap;
     SLArena       arena;
     SLTokenStream stream;
-    SLDiag        diag;
+    SLDiag        diag = {};
     uint32_t      i;
 
     arenaCap64 = (uint64_t)(sourceLen + 16u) * (uint64_t)sizeof(SLToken) + 4096u;
@@ -728,7 +728,7 @@ static int DumpAST(const char* filename, const char* source, uint32_t sourceLen)
     size_t   arenaCap;
     SLArena  arena;
     SLAst    ast;
-    SLDiag   diag;
+    SLDiag   diag = {};
     SLWriter writer;
 
     arenaCap64 = (uint64_t)(sourceLen + 64u) * (uint64_t)sizeof(SLAstNode) + 32768u;
@@ -774,7 +774,7 @@ static int ParseSource(
     uint64_t arenaCap64;
     size_t   arenaCap;
     SLArena  arena;
-    SLDiag   diag;
+    SLDiag   diag = {};
 
     *outArenaMem = NULL;
     if (outArena != NULL) {
@@ -823,7 +823,7 @@ static int CheckSource(const char* filename, const char* source, uint32_t source
     void*   arenaMem;
     SLArena arena;
     SLAst   ast;
-    SLDiag  diag;
+    SLDiag  diag = {};
 
     if (ParseSource(filename, source, sourceLen, &ast, &arenaMem, &arena) != 0) {
         return -1;
@@ -965,14 +965,14 @@ static void WarnUnknownFeatureImports(const char* filename, const char* source, 
                 uint32_t featureStart = strStart + 14u;
                 uint32_t featureLen = strEnd - featureStart;
                 if (!(featureLen == 8u && memcmp(source + featureStart, "optional", 8u) == 0)) {
-                    SLDiag diag;
-                    SLDiagClear(&diag);
-                    diag.code = SLDiag_UNKNOWN_FEATURE;
-                    diag.type = SLDiagTypeOfCode(diag.code);
-                    diag.start = n->start;
-                    diag.end = n->end;
-                    diag.argStart = featureStart;
-                    diag.argEnd = strEnd;
+                    SLDiag diag = {
+                        .code = SLDiag_UNKNOWN_FEATURE,
+                        .type = SLDiagTypeOfCode(SLDiag_UNKNOWN_FEATURE),
+                        .start = n->start,
+                        .end = n->end,
+                        .argStart = featureStart,
+                        .argEnd = strEnd,
+                    };
                     (void)PrintSLDiag(filename, source, &diag, 0);
                 }
             }
@@ -1793,7 +1793,7 @@ static int RewriteText(
     uint64_t        arenaCap64;
     SLArena         arena;
     SLTokenStream   stream;
-    SLDiag          diag;
+    SLDiag          diag = {};
     SLStringBuilder b = { 0 };
     uint32_t        i;
     uint32_t        copyPos = 0;
@@ -2245,7 +2245,7 @@ static int GeneratePackage(
     char*                   source = NULL;
     uint32_t                sourceLen = 0;
     char*                   outHeader = NULL;
-    SLDiag                  diag;
+    SLDiag                  diag = {};
     SLCodegenUnit           unit;
     const SLCodegenBackend* backend;
 
@@ -2281,7 +2281,6 @@ static int GeneratePackage(
     codegenOptions.arenaGrow = CodegenArenaGrow;
     codegenOptions.arenaFree = CodegenArenaFree;
 
-    SLDiagClear(&diag);
     if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
         if (diag.code != SLDiag_NONE) {
             (void)PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
@@ -2350,7 +2349,7 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
     char*                   source = NULL;
     uint32_t                sourceLen = 0;
     char*                   outHeader = NULL;
-    SLDiag                  diag;
+    SLDiag                  diag = {};
     SLCodegenUnit           unit;
     const SLCodegenBackend* backend;
     SLCodegenOptions        codegenOptions = { 0 };
@@ -2394,7 +2393,6 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
     codegenOptions.arenaGrow = CodegenArenaGrow;
     codegenOptions.arenaFree = CodegenArenaFree;
 
-    SLDiagClear(&diag);
     if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
         if (diag.code != SLDiag_NONE) {
             (void)PrintSLDiag(entryPkg->dirPath, source, &diag, 1);

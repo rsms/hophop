@@ -3666,7 +3666,7 @@ static int EmitHeader(SLCBackendC* c) {
 }
 
 static int InitAst(SLCBackendC* c) {
-    SLDiag diag;
+    SLDiag diag = {};
     void* _Nullable allocatorCtx = NULL;
     SLArenaGrowFn _Nullable growFn = NULL;
     SLArenaFreeFn _Nullable freeFn = NULL;
@@ -3745,7 +3745,7 @@ static int EmitCBackend(
     c.diag = diag;
 
     if (diag != NULL) {
-        SLDiagClear(diag);
+        *diag = (SLDiag){ 0 };
     }
     *outHeader = NULL;
 

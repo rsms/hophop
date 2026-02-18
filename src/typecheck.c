@@ -1827,7 +1827,9 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     int32_t localIdx = SLTCLocalFind(
                         c, c->ast->nodes[innerNode].dataStart, c->ast->nodes[innerNode].dataEnd);
                     if (localIdx >= 0) {
-                        SLDiagClear(c->diag);
+                        if (c->diag != NULL) {
+                            *c->diag = (SLDiag){ 0 };
+                        }
                         *outType = c->typeUsize;
                         return 0;
                     }
@@ -1837,7 +1839,9 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                             c->ast->nodes[innerNode].dataStart,
                             c->ast->nodes[innerNode].dataEnd);
                         if (fnIdx >= 0) {
-                            SLDiagClear(c->diag);
+                            if (c->diag != NULL) {
+                                *c->diag = (SLDiag){ 0 };
+                            }
                             *outType = c->typeUsize;
                             return 0;
                         }
@@ -2646,7 +2650,9 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
     uint32_t       capBase;
     uint32_t       i;
 
-    SLDiagClear(diag);
+    if (diag != NULL) {
+        *diag = (SLDiag){ 0 };
+    }
 
     if (arena == NULL || ast == NULL || ast->nodes == NULL || ast->root < 0) {
         SLTCSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
