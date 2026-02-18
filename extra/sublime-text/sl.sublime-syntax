@@ -99,7 +99,7 @@ contexts:
           scope: constant.language.boolean.slang
 
     builtins:
-        - match: '\b(u8|u16|u32|u64|i8|i16|i32|i64|usize|isize|f32|f64|bool|void|str|MemAllocator)\b'
+        - match: '\b(u8|u16|u32|u64|i8|i16|i32|i64|uint|int|f32|f64|bool|void|str|MemAllocator)\b'
           scope: support.type.builtin.slang
         - match: '\b(new|len|cstr)\b'
           scope: support.function.builtin.slang
