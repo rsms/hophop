@@ -188,7 +188,7 @@ if [ $compdb = 1 ]; then
     sed -E \
         -e "s@\\$\{clang\}@$(command -v clang)@" \
         -e "s@\\$\{dir\}@$PWD@g" \
-        clangd.yaml > .clangd
+        tools/clangd.yaml > .clangd
 fi
 
 ####################################################################################################
