@@ -3,6 +3,7 @@ Diagnostics:
 Completion:
     HeaderInsertion: Never
 CompileFlags:
+    CompilationDatabase: _build
     Compiler: ${clang}
     Remove:
         - -fsanitize*

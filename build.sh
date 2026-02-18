@@ -176,7 +176,7 @@ ninja_args=( -f "$build_dir/obj/build.ninja" )
 [ $verbose = 2 ] && ninja_args+=( -d explain )
 
 if [ $compdb = 1 ]; then
-    _v ninja "${ninja_args[@]}" -t compdb > compile_commands.json
+    _v ninja "${ninja_args[@]}" -t compdb > _build/compile_commands.json
     sed -E \
         -e "s@\\$\{clang\}@$(command -v clang)@" \
         -e "s@\\$\{dir\}@$PWD@g" \
