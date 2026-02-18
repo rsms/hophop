@@ -299,6 +299,7 @@ for t in \
     "check|tests/new_ok.sl" \
     "check|tests/feature_optional_ok.sl" \
     "check|tests/slp3_null_unwrap.sl" \
+    "check|tests/slp3_flow_narrow_ok.sl" \
     "checkpkg|tests/pkg_ok/app"
 do
     IFS='|' read -r mode input <<< "$t"
@@ -337,7 +338,9 @@ for t in \
     "check|tests/feature_optional_no_import.sl|tests/feature_optional_no_import.stderr" \
     "check|tests/slp3_bad_value_optional.sl|tests/slp3_bad_value_optional.stderr" \
     "check|tests/slp3_bad_unwrap.sl|tests/slp3_bad_unwrap.stderr" \
-    "check|tests/slp3_bad_null_assign.sl|tests/slp3_bad_null_assign.stderr"
+    "check|tests/slp3_bad_null_assign.sl|tests/slp3_bad_null_assign.stderr" \
+    "check|tests/slp3_flow_narrow_bad_no_guard.sl|tests/slp3_flow_narrow_bad_no_guard.stderr" \
+    "check|tests/slp3_flow_narrow_bad_null_branch_deref.sl|tests/slp3_flow_narrow_bad_null_branch_deref.stderr"
 do
     IFS='|' read -r mode input expected_stderr <<< "$t"
     _expect_fail_with_stderr "$mode" "$input" "$expected_stderr"

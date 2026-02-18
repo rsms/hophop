@@ -2130,15 +2130,140 @@ static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
     return SLTCLocalAdd(c, n->dataStart, n->dataEnd, declType);
 }
 
+/* Describes a narrowable local found in a null-check condition. */
+typedef struct {
+    int32_t localIdx;  /* index in c->locals[] */
+    int32_t innerType; /* T from ?T */
+} SLTCNullNarrow;
+
+/*
+ * Detects if condNode is a direct null check on a local optional variable:
+ *   ident == null   ->  *outIsEq = 1
+ *   ident != null   ->  *outIsEq = 0
+ *   null == ident   ->  *outIsEq = 1  (symmetric)
+ *   null != ident   ->  *outIsEq = 0  (symmetric)
+ * Returns 1 if the pattern matched, 0 otherwise.
+ */
+static int SLTCGetNullNarrow(
+    SLTypeCheckCtx* c, int32_t condNode, int* outIsEq, SLTCNullNarrow* out) {
+    const SLAstNode* n;
+    int32_t          lhs, rhs, identNode;
+    SLTokenKind      op;
+    int32_t          localIdx;
+    int32_t          typeId;
+
+    if (condNode < 0 || (uint32_t)condNode >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[condNode];
+    if (n->kind != SLAst_BINARY) {
+        return 0;
+    }
+    op = (SLTokenKind)n->op;
+    if (op != SLTok_EQ && op != SLTok_NEQ) {
+        return 0;
+    }
+    lhs = SLAstFirstChild(c->ast, condNode);
+    rhs = lhs >= 0 ? SLAstNextSibling(c->ast, lhs) : -1;
+    if (lhs < 0 || rhs < 0) {
+        return 0;
+    }
+    /* Identify which side is the ident and which is null. */
+    if (c->ast->nodes[lhs].kind == SLAst_IDENT && c->ast->nodes[rhs].kind == SLAst_NULL) {
+        identNode = lhs;
+    } else if (c->ast->nodes[rhs].kind == SLAst_IDENT && c->ast->nodes[lhs].kind == SLAst_NULL) {
+        identNode = rhs;
+    } else {
+        return 0;
+    }
+    {
+        const SLAstNode* id = &c->ast->nodes[identNode];
+        localIdx = SLTCLocalFind(c, id->dataStart, id->dataEnd);
+    }
+    if (localIdx < 0) {
+        return 0;
+    }
+    typeId = c->locals[localIdx].typeId;
+    if (c->types[typeId].kind != SLTCType_OPTIONAL) {
+        return 0;
+    }
+    *outIsEq = (op == SLTok_EQ);
+    out->localIdx = localIdx;
+    out->innerType = c->types[typeId].baseType;
+    return 1;
+}
+
+/* Returns 1 if the last statement of blockNode is an unconditional terminator. */
+static int SLTCBlockTerminates(SLTypeCheckCtx* c, int32_t blockNode) {
+    int32_t child = SLAstFirstChild(c->ast, blockNode);
+    int32_t last = -1;
+    while (child >= 0) {
+        last = child;
+        child = SLAstNextSibling(c->ast, child);
+    }
+    if (last < 0) {
+        return 0;
+    }
+    switch (c->ast->nodes[last].kind) {
+        case SLAst_RETURN:
+        case SLAst_BREAK:
+        case SLAst_CONTINUE: return 1;
+        default:             return 0;
+    }
+}
+
+/*
+ * Saved narrowing: remembers the original type of a local so it can be restored
+ * after the narrowed region ends.
+ */
+typedef struct {
+    int32_t localIdx;
+    int32_t savedType;
+} SLTCNarrowSave;
+
 static int SLTCTypeBlock(
     SLTypeCheckCtx* c, int32_t blockNode, int32_t returnType, int loopDepth, int switchDepth) {
-    uint32_t savedLocalLen = c->localLen;
-    int32_t  child = SLAstFirstChild(c->ast, blockNode);
+    uint32_t       savedLocalLen = c->localLen;
+    int32_t        child = SLAstFirstChild(c->ast, blockNode);
+    SLTCNarrowSave narrows[8]; /* saved narrowings applied during this block */
+    int            narrowLen = 0;
+    int            i;
+
     while (child >= 0) {
+        int32_t next = SLAstNextSibling(c->ast, child);
         if (SLTCTypeStmt(c, child, returnType, loopDepth, switchDepth) != 0) {
+            for (i = 0; i < narrowLen; i++) {
+                c->locals[narrows[i].localIdx].typeId = narrows[i].savedType;
+            }
+            c->localLen = savedLocalLen;
             return -1;
         }
-        child = SLAstNextSibling(c->ast, child);
+        /*
+         * Guard-pattern continuation narrowing:
+         *   if x == null { <terminates> }   ->  x narrows to T for the rest of the block
+         *   if x != null { <terminates> }   ->  x narrows to null for the rest of the block
+         * Only fires when there is more code after the if (next >= 0) and no else clause.
+         */
+        if (next >= 0 && c->ast->nodes[child].kind == SLAst_IF && narrowLen < 8) {
+            int32_t        condNode = SLAstFirstChild(c->ast, child);
+            int32_t        thenNode = condNode >= 0 ? SLAstNextSibling(c->ast, condNode) : -1;
+            int32_t        elseNode = thenNode >= 0 ? SLAstNextSibling(c->ast, thenNode) : -1;
+            SLTCNullNarrow narrow;
+            int            isEq;
+            if (elseNode < 0 && thenNode >= 0 && condNode >= 0 && SLTCBlockTerminates(c, thenNode)
+                && SLTCGetNullNarrow(c, condNode, &isEq, &narrow))
+            {
+                int32_t contType = isEq ? narrow.innerType : c->typeNull;
+                narrows[narrowLen].localIdx = narrow.localIdx;
+                narrows[narrowLen].savedType = c->locals[narrow.localIdx].typeId;
+                narrowLen++;
+                c->locals[narrow.localIdx].typeId = contType;
+            }
+        }
+        child = next;
+    }
+    for (i = 0; i < narrowLen; i++) {
+        c->locals[narrows[i].localIdx].typeId = narrows[i].savedType;
     }
     c->localLen = savedLocalLen;
     return 0;
@@ -2297,10 +2422,13 @@ static int SLTCTypeStmt(
             }
         }
         case SLAst_IF: {
-            int32_t cond = SLAstFirstChild(c->ast, nodeId);
-            int32_t thenNode;
-            int32_t elseNode;
-            int32_t condType;
+            int32_t        cond = SLAstFirstChild(c->ast, nodeId);
+            int32_t        thenNode;
+            int32_t        elseNode;
+            int32_t        condType;
+            SLTCNullNarrow narrow;
+            int            isEq;
+            int            hasNarrow;
             if (cond < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_BOOL);
             }
@@ -2314,13 +2442,39 @@ static int SLTCTypeStmt(
             if (!SLTCIsBoolType(c, condType)) {
                 return SLTCFailNode(c, cond, SLDiag_EXPECTED_BOOL);
             }
-            if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
-                return -1;
-            }
             elseNode = SLAstNextSibling(c->ast, thenNode);
-            if (elseNode >= 0 && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
-            {
-                return -1;
+            hasNarrow = SLTCGetNullNarrow(c, cond, &isEq, &narrow);
+            if (hasNarrow) {
+                /*
+                 * Apply branch narrowing:
+                 *   x == null  -> then: x is null;  else: x is T
+                 *   x != null  -> then: x is T;     else: x is null
+                 */
+                int32_t origType = c->locals[narrow.localIdx].typeId;
+                int32_t trueType = isEq ? c->typeNull : narrow.innerType;
+                int32_t falseType = isEq ? narrow.innerType : c->typeNull;
+                c->locals[narrow.localIdx].typeId = trueType;
+                if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
+                    c->locals[narrow.localIdx].typeId = origType;
+                    return -1;
+                }
+                c->locals[narrow.localIdx].typeId = falseType;
+                if (elseNode >= 0
+                    && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
+                {
+                    c->locals[narrow.localIdx].typeId = origType;
+                    return -1;
+                }
+                c->locals[narrow.localIdx].typeId = origType;
+            } else {
+                if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
+                    return -1;
+                }
+                if (elseNode >= 0
+                    && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
+                {
+                    return -1;
+                }
             }
             return 0;
         }

@@ -4,10 +4,8 @@ pub fn find(p ?*i32) bool {
     return p != null
 }
 
-pub fn unwrap_or_zero(p ?*i32) i32 {
-    if p == null {
-        return 0
-    }
+// Unwrap unconditionally — panics if p is null.
+pub fn deref_unwrap(p ?*i32) i32 {
     return *p!
 }
 
