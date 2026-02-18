@@ -49,4 +49,5 @@ echo "#endif /* SL_IMPLEMENTATION */" >> $index_file
 
 # cp $index_file "$(dirname "$outfile")/amalgamate.h"
 
-python3 amalgamate.py -r . -r src $args -o "$outfile" $index_file
+build_dir=$(dirname "$outfile")
+python3 amalgamate.py -r . -r src -r "$build_dir" $args -o "$outfile" $index_file

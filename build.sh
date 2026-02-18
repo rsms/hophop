@@ -127,20 +127,30 @@ rule amalgamate
     command = bash amalgamate.sh $(_if_debug --debug) \$out \$in
     description = generate \$out
 
+rule gen_c_prelude
+    command = python3 gen_c_prelude.py \$in > \$out
+    description = generate \$out
+
 _END
 
 objfiles=()
 for srcfile in "${cli_sources[@]}" "${lib_sources[@]}"; do
     objfile="\$objdir/${srcfile//\//.}.o"
     objfiles+=( "$objfile" )
-    echo "build $objfile: cc $srcfile" >> $NF
+    if [ "$srcfile" = "src/slc_codegen_c.c" ]; then
+        echo "build $objfile: cc $srcfile | \$builddir/c_prelude.h" >> $NF
+        echo "    flags = -I\$builddir" >> $NF
+    else
+        echo "build $objfile: cc $srcfile" >> $NF
+    fi
 done
 
 cat << _END >> $NF
-build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index
+build \$builddir/c_prelude.h: gen_c_prelude lib/c_prelude.h | gen_c_prelude.py
+build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index \$builddir/c_prelude.h
 build \$builddir/slc: link ${objfiles[*]}
 
-default \$builddir/libsl.h \$builddir/slc
+default \$builddir/c_prelude.h \$builddir/libsl.h \$builddir/slc
 _END
 
 [[ ! -e build.ninja || "$(_checksum $NF)" != "$(_checksum build.ninja)" ]] &&
