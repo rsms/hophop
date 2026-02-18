@@ -2,41 +2,66 @@
 
 This document describes the built-in library surface of SL:
 - built-in non-primitive types
+- commonly used type forms (arrays, slices, pointers, references)
 - built-in functions
 - platform package API
 
-Primitive scalar types and language syntax are documented in `docs/language.md`.
+Primitive scalar types and full language grammar are documented in `docs/language.md`.
 
-## Built-In types
+## Built-In Types
 
 ### `str`
 
-`str` is a specialized string type. Conceptually, it is a specialized form of `[u8]` where
-the data is UTF-8 text.
+`str` is a specialized string type.
+Conceptually, it is a specialized form of `[u8]` where the content is UTF-8 data.
 
 Properties:
 - `len(s)` is byte length.
-- `cstr(s)` exposes a pointer to UTF-8 bytes for C interop.
-- Use `[u8]`/`mut[u8]` for arbitrary binary data.
-
+- `cstr(s)` exposes a read-only reference to UTF-8 bytes for C interop.
+- Use `[u8]` / `mut[u8]` for arbitrary binary data.
 
 ### `MemAllocator`
 
-`MemAllocator` is the allocator capability used by [`new`](#new)
+`MemAllocator` is the allocator capability used by `new(...)`.
 
+## Type Forms (Arrays and Slices)
 
-## Built-In functions
+```sl
+T          // value
 
+[T N]      // fixed-size array value
+[T]        // read-only slice view
+mut[T]     // mutable slice view
+
+*T         // pointer to value
+*[T N]     // pointer to fixed-size array
+*[T]       // pointer to runtime-length sequence
+
+&T         // read-only reference to value
+mut&T      // mutable reference to value
+&[T N]     // read-only reference to fixed-size array
+mut&[T N]  // mutable reference to fixed-size array
+```
+
+Notes:
+- `[T N]` is a value type; `[T]`/`mut[T]` are view types.
+- `mut` changes mutability of a view/reference.
+- Common implicit conversions include:
+  - `[T N] -> [T]`
+  - `[T N] -> mut[T]`
+  - `mut[T] -> [T]`
+  - `mut&[T N] -> &[T N]`
+
+## Built-In Functions
 
 ### `len`
 
 ```sl
-fn len(x Seq) uint
+fn len(x Seq) u32
 ```
 
 `len` returns the logical length of a sequence.
-`Seq` is an array or slice type (including `str`). It may be a value, reference, or pointer to such a type.
-
+`Seq` can be an array or slice type (including `str`) as a value, reference, or pointer.
 
 ### `cstr`
 
@@ -44,8 +69,7 @@ fn len(x Seq) uint
 fn cstr(s str) &u8
 ```
 
-`cstr` returns a reference to a null-terminated string of bytes, suitable for use with C APIs.
-
+`cstr` returns a read-only reference to null-terminated UTF-8 bytes suitable for C APIs.
 
 ### `new`
 
@@ -59,13 +83,16 @@ fn new(ma mut&MemAllocator, type T, N uint) *[T]    // 6
 ```
 
 `new` allocates memory from a memory allocator.
-- `T` is the type for which to allocate memory for. Size and alignment is derived from this.
-- If `N` is given, an array is allocated.
-    - If `N` is a compile-time constant, the result's type is a comptime-size array. (Forms 3 and 4.)
-    - If `N` is _not_ a compile-time constant, the result's type is a runtime-size array. (Forms 3 and 4)
-    - Note that a comptime-size array is convertible to a runtime-size array, so you can use either type as the receiver's type. I.e. `*[T N]` is convertible to `*[T]`.
-- If the receiver's type is an optional (`?*…`), the allocator returns null if allocation fails (form 1, 3 and 5.) Otherwise the allocator will panic if allocation fails (form 2, 4 and 6.)
 
+- `ma` must be convertible to `mut&MemAllocator`.
+- `T` is the allocated element type.
+- If `N` is provided, storage for a sequence of `T` is allocated.
+- If `N` is a positive compile-time constant, result type is a fixed-size array pointer (`*[T N]` / `?*[T N]`).
+- Otherwise, result type is a runtime-length sequence pointer (`*[T]` / `?*[T]`).
+- `T` cannot be a variable-size-by-value type.
+- Negative compile-time `N` is rejected.
+- `?*...` forms return null on allocation failure.
+- `*...` forms panic on allocation failure.
 
 ### `panic`
 
@@ -73,25 +100,23 @@ fn new(ma mut&MemAllocator, type T, N uint) *[T]    // 6
 fn panic(message str)
 ```
 
-`panic` log an error `message` and then stops execution of the program.
-The exact behavior is [platform](#platform) specific.
+`panic` logs an error message and stops program execution.
+Exact behavior is platform-specific.
 
-
-### `sizeof(Type)` / `sizeof(expr) -> uint`
+### `sizeof`
 
 ```sl
-fn sizeof(type T) uint // 1
-fn sizeof(expr E) uint // 2
+fn sizeof(type T) uint
+fn sizeof(expr E) uint
 ```
 
-`sizeof` returns the size in bytes which a type or expression needs to be completely represented.
+`sizeof` returns the size in bytes needed to represent a type or expression.
 
-- Form 1 is guaranteed to be a compile-time value.
-- Form 1 is not available for variable-sized types, like variable-size structs.
-- Form 2 is a compile-time value for fixed-size types, runtime value for variable-sized types.
+- `sizeof(type T)` is compile-time.
+- `sizeof(type T)` is invalid for variable-sized-by-value types.
+- `sizeof(expr E)` is compile-time for fixed-size types and runtime for variable-sized values.
 
-
-## Platform
+## Platform Package API
 
 The platform package is the host boundary for panic, logging, and memory operations.
 
@@ -106,7 +131,7 @@ Surface API:
 - `platform.free(ptr, size, flags)`
 
 Operation semantics:
-- `panic`: prints/handles panic and does not return.
+- `panic`: handles panic and does not return.
 - `console_log`: writes text (`flags=0` stdout, `flags=1` stderr).
 - `alloc`: allocate memory block.
 - `resize`: resize/reallocate memory block.
@@ -114,3 +139,17 @@ Operation semantics:
 
 Concrete default platform implementation used by `slc compile`/`slc run`:
 - `lib/platform_libc.c`
+
+## C Interop Mapping
+
+Common SL <-> C type correspondences:
+
+- `&T` <-> `const T*`
+- `mut&T` <-> `T*`
+- `*T` <-> `T*`
+- `*[T N]` <-> `T*`
+- `*[T]` <-> `struct { T* ptr; size_t len; }`
+- `&[T N]` <-> `const T*`
+- `mut&[T N]` <-> `T*`
+- `&[T]` <-> `struct { const T* ptr; size_t len; }`
+- `mut&[T]` <-> `struct { T* ptr; size_t len; }`
