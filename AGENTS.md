@@ -43,7 +43,7 @@ Source → [Lexer] → Tokens → [Parser] → AST → [Typechecker] → [Codege
 | `slc.c` | Hosted CLI: package loading, import graph, command dispatch |
 | `slc_codegen_c.c` | C backend: emits single-header library, mangles symbols, lowers defer, VSS accessors |
 | `slc_codegen.h/.c` | Backend interface (currently only C backend exists) |
-| `amalgamate.py` | Merges `libsl.*` sources into a single distributable header |
+| `tools/amalgamate.py` | Merges `libsl.*` sources into a single distributable header |
 
 ### Key Design Points
 

@@ -136,7 +136,7 @@ rule cc
     description = compile \$in
 
 rule amalgamate
-    command = bash amalgamate.sh $(_if_debug --debug) \$out \$in
+    command = bash tools/amalgamate.sh $(_if_debug --debug) \$out \$in
     description = generate \$out
 
 rule copy
@@ -158,7 +158,7 @@ done
 
 cat << _END >> $NF
 build ${diag_outputs[*]}: diaggen $diag_json $diag_tool
-build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index ${diag_outputs[*]}
+build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | tools/amalgamate.sh tools/amalgamate.py .git/index ${diag_outputs[*]}
 build \$builddir/lib/sl-prelude.h: copy lib/sl-prelude.h
 build \$builddir/lib/platform_libc.c: copy lib/platform_libc.c
 build \$builddir/slc: link ${objfiles[*]}
