@@ -141,8 +141,11 @@ static void SLTCSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t 
         return;
     }
     diag->code = code;
+    diag->type = SLDiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
+    diag->argStart = 0;
+    diag->argEnd = 0;
 }
 
 static int SLTCFailSpan(SLTypeCheckCtx* c, SLDiagCode code, uint32_t start, uint32_t end) {

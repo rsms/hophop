@@ -1,0 +1,81 @@
+{
+    "SL1001": {
+        "name": "ARENA_OOM",
+        "message": "arena out of memory"
+    },
+    "SL1002": {
+        "name": "UNEXPECTED_CHAR",
+        "message": "unexpected character"
+    },
+    "SL1003": {
+        "name": "UNTERMINATED_STRING",
+        "message": "unterminated string literal"
+    },
+    "SL1004": {
+        "name": "INVALID_NUMBER",
+        "message": "invalid number literal"
+    },
+    "SL1005": {
+        "name": "UNEXPECTED_TOKEN",
+        "message": "unexpected token"
+    },
+    "SL1006": {
+        "name": "EXPECTED_DECL",
+        "message": "expected declaration"
+    },
+    "SL1007": {
+        "name": "EXPECTED_EXPR",
+        "message": "expected expression"
+    },
+    "SL1008": {
+        "name": "EXPECTED_TYPE",
+        "message": "expected type"
+    },
+    "SL1009": {
+        "name": "DUPLICATE_SYMBOL",
+        "message": "duplicate symbol"
+    },
+    "SL1010": {
+        "name": "UNKNOWN_SYMBOL",
+        "message": "unknown symbol"
+    },
+    "SL1011": {
+        "name": "UNKNOWN_TYPE",
+        "message": "unknown type"
+    },
+    "SL1012": {
+        "name": "TYPE_MISMATCH",
+        "message": "type mismatch"
+    },
+    "SL1013": {
+        "name": "ARITY_MISMATCH",
+        "message": "call arity mismatch"
+    },
+    "SL1014": {
+        "name": "NOT_CALLABLE",
+        "message": "expression is not callable"
+    },
+    "SL1015": {
+        "name": "UNKNOWN_FEATURE",
+        "message": "unknown feature '{s}'",
+        "type": "warning"
+    },
+    "SL1016": {
+        "name": "RESERVED_NAME",
+        "message": "identifier '{s}' is reserved"
+    },
+    "SL1017": {
+        "name": "RESERVED_SL_PREFIX",
+        "message": "identifier prefix '__sl_' is reserved",
+        "hint": "rename symbol to avoid '__sl_' prefix"
+    },
+    "SL1018": {
+        "name": "EXPECTED_BOOL",
+        "message": "expected bool expression"
+    },
+    "SL1019": {
+        "name": "VOID_RETURN_TYPE",
+        "message": "'void' is not a valid return type",
+        "hint": "remove 'void'"
+    }
+}

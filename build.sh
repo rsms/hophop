@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 _err() { echo "$0: $@" >&2; exit 1; }
 _checksum() { sha256sum "$1" | cut -d' ' -f1; }
-_v() { [ $verbose != 1 ] || echo "$@" >&2; "$@"; }
+_v() { [ $verbose = 0 ] || echo "$@" >&2; "$@"; }
 _if_debug() { [ $debug != 1 ] || echo "$@"; }
 _if_release() { [ $debug != 0 ] || echo "$@"; }
 
@@ -32,14 +32,26 @@ done
 asan=${asan:-$debug} # enable by default in debug builds
 mode=debug; [ $debug = 0 ] && mode=release
 build_dir=_build/$sys-$arch-$mode
+diag_json=src/diagnosticMessages.json
+diag_tool=tools/gen_diagnostics.py
+diag_enum_out=src/gen/sl_diagnostics_enum.inc
+diag_c_out=src/gen/sl_diagnostics_data.c
+diag_outputs=( "$diag_enum_out" "$diag_c_out" )
+
 cli_sources=( src/slc.c )
 lib_sources=( $(find src -maxdepth 2 -name '*.c' -and -not -name 'slc.c' | sort) )
+case " ${lib_sources[*]} " in
+*" $diag_c_out "*) ;;
+*) lib_sources+=( "$diag_c_out" ) ;;
+esac
 lib_headers=( $(find src -maxdepth 2 -name '*.h' | sort) )
 cli_output=slc
 lib_output=libsl.h
 toolchain=${toolchain:-/opt/homebrew/opt/llvm}
 [ -z "$toolchain" -a -x "$toolchain/bin/clang" ] || export PATH=$toolchain/bin:$PATH
 format=${format:-$([ $debug = 1 -a -n "$(command -v clang-format)" ] && echo 1 || echo 0 )}
+format_files=( $(find src lib -maxdepth 2 \( -name '*.c' -o -name '*.h' \) \
+                              -and -not -path 'src/gen/*' | sort) )
 x_flags=(
     -g \
     $([ -t 2 ] && echo -fcolor-diagnostics || true) \
@@ -79,7 +91,7 @@ if [ $asan = 1 -o $ubsan = 1 ]; then
     fi
 fi
 
-if [ $verbose = 1 ]; then
+if [ $verbose != 0 ]; then
 cat <<- _END >&2
 mode, arch, sys = $mode, $arch, $sys
 toolchain, cc   = $toolchain, $cc
@@ -97,7 +109,7 @@ fi
 
 ####################################################################################################
 # format
-[ $format = 0 ] || clang-format --Werror --style=file:clang-format.yaml -i src/*.* lib/*.c lib/*.h
+[ $format = 0 ] || clang-format --Werror --style=file:clang-format.yaml -i "${format_files[@]}"
 
 ####################################################################################################
 # configure
@@ -131,17 +143,22 @@ rule copy
     command = cp \$in \$out
     description = copy \$out
 
+rule diaggen
+    command = python3 $diag_tool --json $diag_json --enum-out $diag_enum_out --c-out $diag_c_out && clang-format --Werror --style=file:clang-format.yaml -i $diag_enum_out $diag_c_out
+    description = generate diagnostics
+
 _END
 
 objfiles=()
 for srcfile in "${cli_sources[@]}" "${lib_sources[@]}"; do
     objfile="\$objdir/${srcfile//\//.}.o"
     objfiles+=( "$objfile" )
-    echo "build $objfile: cc $srcfile" >> $NF
+    echo "build $objfile: cc $srcfile | ${diag_outputs[*]}" >> $NF
 done
 
 cat << _END >> $NF
-build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index
+build ${diag_outputs[*]}: diaggen $diag_json $diag_tool
+build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index ${diag_outputs[*]}
 build \$builddir/lib/sl-prelude.h: copy lib/sl-prelude.h
 build \$builddir/lib/platform_libc.c: copy lib/platform_libc.c
 build \$builddir/slc: link ${objfiles[*]}
@@ -155,7 +172,8 @@ _END
 cd ../../..
 
 ninja_args=( -f "$build_dir/obj/build.ninja" )
-[ $verbose = 1 ] && ninja_args+=( -v )
+[ $verbose != 0 ] && ninja_args+=( -v )
+[ $verbose = 2 ] && ninja_args+=( -d explain )
 
 if [ $compdb = 1 ]; then
     _v ninja "${ninja_args[@]}" -t compdb > compile_commands.json

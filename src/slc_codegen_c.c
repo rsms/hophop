@@ -165,8 +165,11 @@ static void SetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end)
         return;
     }
     diag->code = code;
+    diag->type = SLDiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
+    diag->argStart = 0;
+    diag->argEnd = 0;
 }
 
 static int EnsureCapArena(

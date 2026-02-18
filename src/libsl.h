@@ -117,6 +117,18 @@ ${license}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+typedef enum {
+#include "gen/sl_diagnostics_enum.inc"
+    SLDiag__COUNT,
+} SLDiagCode;
+
+typedef enum {
+    SLDiagType_ERROR = 0,
+    SLDiagType_WARNING = 1,
+} SLDiagType;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 SL_API_BEGIN
 
 typedef struct {
@@ -169,36 +181,21 @@ void SLArenaReset(SLArena* arena);
 void SLArenaDispose(SLArena* arena);
 void* _Nullable SLArenaAlloc(SLArena* arena, uint32_t size, uint32_t align);
 
-typedef enum {
-    SLDiag_NONE = 0,
-    SLDiag_ARENA_OOM,
-    SLDiag_UNEXPECTED_CHAR,
-    SLDiag_UNTERMINATED_STRING,
-    SLDiag_INVALID_NUMBER,
-    SLDiag_UNEXPECTED_TOKEN,
-    SLDiag_EXPECTED_DECL,
-    SLDiag_EXPECTED_EXPR,
-    SLDiag_EXPECTED_TYPE,
-    SLDiag_DUPLICATE_SYMBOL,
-    SLDiag_UNKNOWN_SYMBOL,
-    SLDiag_UNKNOWN_TYPE,
-    SLDiag_TYPE_MISMATCH,
-    SLDiag_ARITY_MISMATCH,
-    SLDiag_NOT_CALLABLE,
-    SLDiag_EXPECTED_BOOL,
-    SLDiag_VOID_RETURN_TYPE,
-    SLDiag_RESERVED_SYMBOL,
-} SLDiagCode;
-
 typedef struct {
     SLDiagCode code;
+    SLDiagType type;
     uint32_t   start;
     uint32_t   end;
+    uint32_t   argStart;
+    uint32_t   argEnd;
 } SLDiag;
 
 void        SLDiagClear(SLDiag* diag);
+const char* SLDiagId(SLDiagCode code);
 const char* SLDiagMessage(SLDiagCode code);
 const char* _Nullable SLDiagHint(SLDiagCode code);
+SLDiagType SLDiagTypeOfCode(SLDiagCode code);
+uint8_t    SLDiagArgCount(SLDiagCode code);
 
 typedef enum {
     SLTok_INVALID = 0,

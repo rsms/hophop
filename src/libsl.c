@@ -12,8 +12,11 @@ static void SLSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t en
         return;
     }
     diag->code = code;
+    diag->type = SLDiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
+    diag->argStart = 0;
+    diag->argEnd = 0;
 }
 
 void SLDiagClear(SLDiag* diag) {
@@ -21,40 +24,11 @@ void SLDiagClear(SLDiag* diag) {
         return;
     }
     diag->code = SLDiag_NONE;
+    diag->type = SLDiagType_ERROR;
     diag->start = 0;
     diag->end = 0;
-}
-
-const char* SLDiagMessage(SLDiagCode code) {
-    switch (code) {
-        case SLDiag_NONE:                return "no error";
-        case SLDiag_ARENA_OOM:           return "arena out of memory";
-        case SLDiag_UNEXPECTED_CHAR:     return "unexpected character";
-        case SLDiag_UNTERMINATED_STRING: return "unterminated string literal";
-        case SLDiag_INVALID_NUMBER:      return "invalid number literal";
-        case SLDiag_UNEXPECTED_TOKEN:    return "unexpected token";
-        case SLDiag_EXPECTED_DECL:       return "expected declaration";
-        case SLDiag_EXPECTED_EXPR:       return "expected expression";
-        case SLDiag_EXPECTED_TYPE:       return "expected type";
-        case SLDiag_DUPLICATE_SYMBOL:    return "duplicate symbol";
-        case SLDiag_UNKNOWN_SYMBOL:      return "unknown symbol";
-        case SLDiag_UNKNOWN_TYPE:        return "unknown type";
-        case SLDiag_TYPE_MISMATCH:       return "type mismatch";
-        case SLDiag_ARITY_MISMATCH:      return "call arity mismatch";
-        case SLDiag_NOT_CALLABLE:        return "expression is not callable";
-        case SLDiag_EXPECTED_BOOL:       return "expected bool expression";
-        case SLDiag_VOID_RETURN_TYPE:    return "'void' is not a valid return type";
-        case SLDiag_RESERVED_SYMBOL:     return "identifier prefix '__sl_' is reserved";
-    }
-    return "unknown diagnostic";
-}
-
-const char* _Nullable SLDiagHint(SLDiagCode code) {
-    switch (code) {
-        case SLDiag_VOID_RETURN_TYPE: return "remove 'void'";
-        case SLDiag_RESERVED_SYMBOL:  return "rename symbol to avoid '__sl_' prefix";
-        default:                      return NULL;
-    }
+    diag->argStart = 0;
+    diag->argEnd = 0;
 }
 
 static uint32_t SLArenaAlignUpU32(uint32_t value, uint32_t align) {

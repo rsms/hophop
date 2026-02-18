@@ -219,6 +219,48 @@ static char* _Nullable DupSlice(const char* s, uint32_t start, uint32_t end) {
     return out;
 }
 
+static int PrintSLDiag(
+    const char* filename, const char* _Nullable source, const SLDiag* diag, int includeHint) {
+    const char* msg = SLDiagMessage(diag->code);
+    uint8_t     argCount = SLDiagArgCount(diag->code);
+
+    fprintf(
+        stderr,
+        "%s:%u:%u: %s: ",
+        DisplayPath(filename),
+        diag->start,
+        diag->end,
+        diag->type == SLDiagType_WARNING ? "warning" : "error");
+
+    if (argCount == 0) {
+        fputs(msg, stderr);
+    } else if (argCount == 1) {
+        char* arg = NULL;
+        if (source != NULL && diag->argEnd > diag->argStart) {
+            arg = DupSlice(source, diag->argStart, diag->argEnd);
+        } else {
+            arg = DupCStr("");
+        }
+        if (arg == NULL) {
+            fputs(msg, stderr);
+        } else {
+            fprintf(stderr, msg, arg);
+            free(arg);
+        }
+    } else {
+        fputs(msg, stderr);
+    }
+    fputc('\n', stderr);
+
+    if (includeHint) {
+        const char* hint = SLDiagHint(diag->code);
+        if (hint != NULL) {
+            fprintf(stderr, "  tip: %s\n", hint);
+        }
+    }
+    return diag->type == SLDiagType_WARNING ? 0 : -1;
+}
+
 static void* _Nullable CodegenArenaGrow(
     void* _Nullable ctx, uint32_t minSize, uint32_t* _Nonnull outSize) {
     void* p;
@@ -658,13 +700,7 @@ static int DumpTokens(const char* filename, const char* source, uint32_t sourceL
 
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
     if (SLLex(&arena, (SLStrView){ source, sourceLen }, &stream, &diag) != 0) {
-        fprintf(
-            stderr,
-            "%s:%u:%u: error: %s\n",
-            filename,
-            diag.start,
-            diag.end,
-            SLDiagMessage(diag.code));
+        (void)PrintSLDiag(filename, source, &diag, 0);
         free(arenaMem);
         return -1;
     }
@@ -710,13 +746,7 @@ static int DumpAST(const char* filename, const char* source, uint32_t sourceLen)
 
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
     if (SLParse(&arena, (SLStrView){ source, sourceLen }, &ast, &diag) != 0) {
-        fprintf(
-            stderr,
-            "%s:%u:%u: error: %s\n",
-            filename,
-            diag.start,
-            diag.end,
-            SLDiagMessage(diag.code));
+        (void)PrintSLDiag(filename, source, &diag, 0);
         free(arenaMem);
         return -1;
     }
@@ -724,13 +754,7 @@ static int DumpAST(const char* filename, const char* source, uint32_t sourceLen)
     writer.ctx = NULL;
     writer.write = StdoutWrite;
     if (SLAstDump(&ast, (SLStrView){ source, sourceLen }, &writer, &diag) != 0) {
-        fprintf(
-            stderr,
-            "%s:%u:%u: error: %s\n",
-            filename,
-            diag.start,
-            diag.end,
-            SLDiagMessage(diag.code));
+        (void)PrintSLDiag(filename, source, &diag, 0);
         free(arenaMem);
         return -1;
     }
@@ -775,13 +799,7 @@ static int ParseSource(
 
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
     if (SLParse(&arena, (SLStrView){ source, sourceLen }, outAst, &diag) != 0) {
-        fprintf(
-            stderr,
-            "%s:%u:%u: error: %s\n",
-            DisplayPath(filename),
-            diag.start,
-            diag.end,
-            SLDiagMessage(diag.code));
+        (void)PrintSLDiag(filename, source, &diag, 0);
         free(arenaMem);
         return -1;
     }
@@ -814,18 +832,7 @@ static int CheckSource(const char* filename, const char* source, uint32_t source
     WarnUnknownFeatureImports(filename, source, &ast);
 
     if (SLTypeCheck(&arena, &ast, (SLStrView){ source, sourceLen }, &diag) != 0) {
-        const char* hint;
-        fprintf(
-            stderr,
-            "%s:%u:%u: error: %s\n",
-            DisplayPath(filename),
-            diag.start,
-            diag.end,
-            SLDiagMessage(diag.code));
-        hint = SLDiagHint(diag.code);
-        if (hint != NULL) {
-            fprintf(stderr, "  tip: %s\n", hint);
-        }
+        (void)PrintSLDiag(filename, source, &diag, 1);
         free(arenaMem);
         return -1;
     }
@@ -942,21 +949,32 @@ static void WarnUnknownFeatureImports(const char* filename, const char* source, 
     while (child >= 0) {
         const SLAstNode* n = &ast->nodes[child];
         if (n->kind == SLAst_IMPORT) {
-            char* importPath = DecodeStringLiteral(source, n->dataStart, n->dataEnd);
-            if (importPath != NULL) {
-                if (strncmp(importPath, "slang/feature/", 14u) == 0) {
-                    const char* featureName = importPath + 14u;
-                    if (strcmp(featureName, "optional") != 0) {
-                        fprintf(
-                            stderr,
-                            "%s:%u:%u: warning: unknown feature '%s'\n",
-                            DisplayPath(filename),
-                            n->start,
-                            n->end,
-                            featureName);
-                    }
+            uint32_t strStart;
+            uint32_t strEnd;
+            uint32_t strLen;
+            if (n->dataEnd <= n->dataStart + 1u || source[n->dataStart] != '"'
+                || source[n->dataEnd - 1u] != '"')
+            {
+                child = ASTNextSibling(ast, child);
+                continue;
+            }
+            strStart = n->dataStart + 1u;
+            strEnd = n->dataEnd - 1u;
+            strLen = strEnd - strStart;
+            if (strLen > 14u && memcmp(source + strStart, "slang/feature/", 14u) == 0) {
+                uint32_t featureStart = strStart + 14u;
+                uint32_t featureLen = strEnd - featureStart;
+                if (!(featureLen == 8u && memcmp(source + featureStart, "optional", 8u) == 0)) {
+                    SLDiag diag;
+                    SLDiagClear(&diag);
+                    diag.code = SLDiag_UNKNOWN_FEATURE;
+                    diag.type = SLDiagTypeOfCode(diag.code);
+                    diag.start = n->start;
+                    diag.end = n->end;
+                    diag.argStart = featureStart;
+                    diag.argEnd = strEnd;
+                    (void)PrintSLDiag(filename, source, &diag, 0);
                 }
-                free(importPath);
             }
         }
         child = ASTNextSibling(ast, child);
@@ -2266,13 +2284,7 @@ static int GeneratePackage(
     SLDiagClear(&diag);
     if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
         if (diag.code != SLDiag_NONE) {
-            fprintf(
-                stderr,
-                "%s:%u:%u: error: %s\n",
-                DisplayPath(entryPkg->dirPath),
-                diag.start,
-                diag.end,
-                SLDiagMessage(diag.code));
+            (void)PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
         } else {
             fprintf(stderr, "error: codegen failed\n");
         }
@@ -2385,12 +2397,7 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
     SLDiagClear(&diag);
     if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
         if (diag.code != SLDiag_NONE) {
-            ErrorSimple(
-                "%s:%u:%u: %s",
-                DisplayPath(entryPkg->dirPath),
-                diag.start,
-                diag.end,
-                SLDiagMessage(diag.code));
+            (void)PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
         } else {
             ErrorSimple("codegen failed");
         }

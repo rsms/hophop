@@ -295,7 +295,7 @@ def add_file(file: Path, file_name: Optional[str] = None) -> None:
     if file.is_file():
         if not file_name:
             file_name = file.name
-        print(f'Processing: {file_name}')
+        # print(f'Processing: {file_name}')
         with file.open('r', errors='replace') as opened:
             for line in opened:
                 line = line.rstrip('\n')

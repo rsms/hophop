@@ -7,8 +7,11 @@ static void SLPSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t e
         return;
     }
     diag->code = code;
+    diag->type = SLDiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
+    diag->argStart = 0;
+    diag->argEnd = 0;
 }
 
 typedef struct {
@@ -76,7 +79,7 @@ static int SLPExpectDeclName(SLParser* p, const SLToken** out) {
         return -1;
     }
     if (SLPReservedName(p, tok)) {
-        SLPSetDiag(p->diag, SLDiag_RESERVED_SYMBOL, tok->start, tok->end);
+        SLPSetDiag(p->diag, SLDiag_RESERVED_SL_PREFIX, tok->start, tok->end);
         return -1;
     }
     *out = tok;
@@ -1355,7 +1358,7 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
         if ((p->pos + 1u) < p->tokLen && p->tok[p->pos + 1u].kind == SLTok_STRING) {
             alias = SLPPeek(p);
             if (SLPReservedName(p, alias)) {
-                SLPSetDiag(p->diag, SLDiag_RESERVED_SYMBOL, alias->start, alias->end);
+                SLPSetDiag(p->diag, SLDiag_RESERVED_SL_PREFIX, alias->start, alias->end);
                 return -1;
             }
             p->pos++;
