@@ -277,6 +277,7 @@ typedef enum {
     SLTok_RSHIFT_ASSIGN,
 
     SLTok_QUESTION,
+    SLTok_NULL,
 } SLTokenKind;
 
 typedef struct {
@@ -291,54 +292,56 @@ typedef struct {
 } SLTokenStream;
 
 typedef enum {
-    SLAST_FILE = 0,
-    SLAST_IMPORT,
-    SLAST_PUB,
-    SLAST_FN,
-    SLAST_PARAM,
-    SLAST_TYPE_NAME,
-    SLAST_TYPE_PTR,
-    SLAST_TYPE_REF,
-    SLAST_TYPE_MUTREF,
-    SLAST_TYPE_ARRAY,
-    SLAST_TYPE_VARRAY,
-    SLAST_TYPE_SLICE,
-    SLAST_TYPE_MUTSLICE,
-    SLAST_TYPE_OPTIONAL,
-    SLAST_STRUCT,
-    SLAST_UNION,
-    SLAST_ENUM,
-    SLAST_FIELD,
-    SLAST_BLOCK,
-    SLAST_VAR,
-    SLAST_CONST,
-    SLAST_IF,
-    SLAST_FOR,
-    SLAST_SWITCH,
-    SLAST_CASE,
-    SLAST_DEFAULT,
-    SLAST_RETURN,
-    SLAST_BREAK,
-    SLAST_CONTINUE,
-    SLAST_DEFER,
-    SLAST_ASSERT,
-    SLAST_EXPR_STMT,
-    SLAST_IDENT,
-    SLAST_INT,
-    SLAST_FLOAT,
-    SLAST_STRING,
-    SLAST_BOOL,
-    SLAST_UNARY,
-    SLAST_BINARY,
-    SLAST_CALL,
-    SLAST_INDEX,
-    SLAST_FIELD_EXPR,
-    SLAST_CAST,
-    SLAST_SIZEOF,
-} SLASTKind;
+    SLAst_FILE = 0,
+    SLAst_IMPORT,
+    SLAst_PUB,
+    SLAst_FN,
+    SLAst_PARAM,
+    SLAst_TYPE_NAME,
+    SLAst_TYPE_PTR,
+    SLAst_TYPE_REF,
+    SLAst_TYPE_MUTREF,
+    SLAst_TYPE_ARRAY,
+    SLAst_TYPE_VARRAY,
+    SLAst_TYPE_SLICE,
+    SLAst_TYPE_MUTSLICE,
+    SLAst_TYPE_OPTIONAL,
+    SLAst_STRUCT,
+    SLAst_UNION,
+    SLAst_ENUM,
+    SLAst_FIELD,
+    SLAst_BLOCK,
+    SLAst_VAR,
+    SLAst_CONST,
+    SLAst_IF,
+    SLAst_FOR,
+    SLAst_SWITCH,
+    SLAst_CASE,
+    SLAst_DEFAULT,
+    SLAst_RETURN,
+    SLAst_BREAK,
+    SLAst_CONTINUE,
+    SLAst_DEFER,
+    SLAst_ASSERT,
+    SLAst_EXPR_STMT,
+    SLAst_IDENT,
+    SLAst_INT,
+    SLAst_FLOAT,
+    SLAst_STRING,
+    SLAst_BOOL,
+    SLAst_UNARY,
+    SLAst_BINARY,
+    SLAst_CALL,
+    SLAst_INDEX,
+    SLAst_FIELD_EXPR,
+    SLAst_CAST,
+    SLAst_SIZEOF,
+    SLAst_NULL,
+    SLAst_UNWRAP,
+} SLAstKind;
 
 typedef struct {
-    SLASTKind kind;
+    SLAstKind kind;
     uint32_t  start;
     uint32_t  end;
     int32_t   firstChild;
@@ -347,14 +350,14 @@ typedef struct {
     uint32_t  dataEnd;
     uint16_t  op;
     uint16_t  flags;
-} SLASTNode;
+} SLAstNode;
 
 enum {
-    SLASTFlag_PUB = 0x8000u,
-    SLASTFlag_INDEX_SLICE = 0x0001u,
-    SLASTFlag_INDEX_HAS_START = 0x0002u,
-    SLASTFlag_INDEX_HAS_END = 0x0004u,
-    SLASTFlag_INDEX_RUNTIME_BOUNDS = 0x0008u,
+    SLAstFlag_PUB = 0x8000u,
+    SLAstFlag_INDEX_SLICE = 0x0001u,
+    SLAstFlag_INDEX_HAS_START = 0x0002u,
+    SLAstFlag_INDEX_HAS_END = 0x0004u,
+    SLAstFlag_INDEX_RUNTIME_BOUNDS = 0x0008u,
 };
 
 typedef uint32_t SLFeatures;
@@ -362,21 +365,21 @@ typedef uint32_t SLFeatures;
 #define SLFeature_OPTIONAL ((SLFeatures)(1u << 0))
 
 typedef struct {
-    const SLASTNode* nodes;
+    const SLAstNode* nodes;
     uint32_t         len;
     int32_t          root;
     SLFeatures       features;
-} SLAST;
+} SLAst;
 
 const char* SLTokenKindName(SLTokenKind kind);
-const char* SLASTKindName(SLASTKind kind);
+const char* SLAstKindName(SLAstKind kind);
 
 // Tokenize src into arena memory and return a view over tokens.
 // Returns 0 on success, -1 on failure. On failure, diag is set.
 int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag);
-int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag);
-int SLTypeCheck(SLArena* arena, const SLAST* ast, SLStrView src, SLDiag* diag);
-int SLASTDump(const SLAST* ast, SLStrView src, SLWriter* w, SLDiag* diag);
+int SLParse(SLArena* arena, SLStrView src, SLAst* out, SLDiag* diag);
+int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag);
+int SLAstDump(const SLAst* ast, SLStrView src, SLWriter* w, SLDiag* diag);
 
 SL_API_END
 

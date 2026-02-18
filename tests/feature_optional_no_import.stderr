@@ -1,1 +1,1 @@
-tests/feature_optional_no_import.sl:19:20: error: unexpected token
+tests/feature_optional_no_import.sl:17:18: error: expected type

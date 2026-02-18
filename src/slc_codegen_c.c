@@ -24,7 +24,7 @@ typedef struct {
 typedef struct {
     char*     name;
     char*     cName;
-    SLASTKind kind;
+    SLAstKind kind;
     int       isExported;
 } SLNameMap;
 
@@ -70,7 +70,7 @@ typedef struct {
 
     SLArena arena;
     uint8_t arenaInlineStorage[16384];
-    SLAST   ast;
+    SLAst   ast;
 
     SLBuf out;
 
@@ -558,8 +558,8 @@ static int GetOrAddStringLiteral(
     return 0;
 }
 
-static int32_t AstFirstChild(const SLAST* ast, int32_t nodeId);
-static int32_t AstNextSibling(const SLAST* ast, int32_t nodeId);
+static int32_t AstFirstChild(const SLAst* ast, int32_t nodeId);
+static int32_t AstNextSibling(const SLAst* ast, int32_t nodeId);
 
 static int CollectStringLiterals(SLCBackendC* c) {
     uint32_t nodeId;
@@ -575,13 +575,13 @@ static int CollectStringLiterals(SLCBackendC* c) {
     }
 
     for (nodeId = 0; nodeId < c->ast.len; nodeId++) {
-        const SLASTNode* n = &c->ast.nodes[nodeId];
-        if (n->kind == SLAST_STRING) {
+        const SLAstNode* n = &c->ast.nodes[nodeId];
+        if (n->kind == SLAst_STRING) {
             uint32_t scanNodeId;
             int      skip = 0;
             for (scanNodeId = 0; scanNodeId < c->ast.len; scanNodeId++) {
-                const SLASTNode* parent = &c->ast.nodes[scanNodeId];
-                if (parent->kind == SLAST_ASSERT) {
+                const SLAstNode* parent = &c->ast.nodes[scanNodeId];
+                if (parent->kind == SLAst_ASSERT) {
                     int32_t condNode = AstFirstChild(&c->ast, (int32_t)scanNodeId);
                     int32_t fmtNode = AstNextSibling(&c->ast, condNode);
                     if (fmtNode == (int32_t)nodeId) {
@@ -614,34 +614,34 @@ static int HasDoubleUnderscore(const char* s) {
     return 0;
 }
 
-static int IsTypeDeclKind(SLASTKind kind) {
-    return kind == SLAST_STRUCT || kind == SLAST_UNION || kind == SLAST_ENUM;
+static int IsTypeDeclKind(SLAstKind kind) {
+    return kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM;
 }
 
-static int IsDeclKind(SLASTKind kind) {
-    return kind == SLAST_FN || kind == SLAST_STRUCT || kind == SLAST_UNION || kind == SLAST_ENUM
-        || kind == SLAST_CONST;
+static int IsDeclKind(SLAstKind kind) {
+    return kind == SLAst_FN || kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
+        || kind == SLAst_CONST;
 }
 
-static int IsPubDeclNode(const SLASTNode* n) {
-    return (n->flags & SLASTFlag_PUB) != 0;
+static int IsPubDeclNode(const SLAstNode* n) {
+    return (n->flags & SLAstFlag_PUB) != 0;
 }
 
-static int32_t AstFirstChild(const SLAST* ast, int32_t nodeId) {
+static int32_t AstFirstChild(const SLAst* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     return ast->nodes[nodeId].firstChild;
 }
 
-static int32_t AstNextSibling(const SLAST* ast, int32_t nodeId) {
+static int32_t AstNextSibling(const SLAst* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     return ast->nodes[nodeId].nextSibling;
 }
 
-static const SLASTNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId) {
+static const SLAstNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast.len) {
         return NULL;
     }
@@ -650,7 +650,7 @@ static const SLASTNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId) {
 
 static int GetDeclNameSpan(
     const SLCBackendC* c, int32_t nodeId, uint32_t* outStart, uint32_t* outEnd) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL || !IsDeclKind(n->kind) || n->dataEnd <= n->dataStart) {
         return -1;
     }
@@ -660,7 +660,7 @@ static int GetDeclNameSpan(
 }
 
 static int AddName(
-    SLCBackendC* c, uint32_t nameStart, uint32_t nameEnd, SLASTKind kind, int isExported) {
+    SLCBackendC* c, uint32_t nameStart, uint32_t nameEnd, SLAstKind kind, int isExported) {
     uint32_t i;
     char*    name;
     char*    cName;
@@ -773,11 +773,11 @@ static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uin
 }
 
 static const char* _Nullable ResolveTypeNameFromExprArg(SLCBackendC* c, int32_t nodeId) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
         return NULL;
     }
-    if (n->kind == SLAST_IDENT) {
+    if (n->kind == SLAst_IDENT) {
         return ResolveTypeName(c, n->dataStart, n->dataEnd);
     }
     return NULL;
@@ -804,7 +804,7 @@ static int AddNodeRef(
 static int CollectDeclSets(SLCBackendC* c) {
     int32_t child = AstFirstChild(&c->ast, c->ast.root);
     while (child >= 0) {
-        const SLASTNode* n = NodeAt(c, child);
+        const SLAstNode* n = NodeAt(c, child);
         uint32_t         start;
         uint32_t         end;
         int              isExported;
@@ -833,13 +833,13 @@ static int CollectDeclSets(SLCBackendC* c) {
 }
 
 static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
         TypeRefSetInvalid(outType);
         return -1;
     }
     switch (n->kind) {
-        case SLAST_TYPE_NAME: {
+        case SLAst_TYPE_NAME: {
             const char* name = ResolveTypeName(c, n->dataStart, n->dataEnd);
             if (name == NULL) {
                 return -1;
@@ -847,13 +847,13 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             TypeRefSetScalar(outType, name);
             return 0;
         }
-        case SLAST_TYPE_PTR:
-        case SLAST_TYPE_REF:
-        case SLAST_TYPE_MUTREF: {
+        case SLAst_TYPE_PTR:
+        case SLAst_TYPE_REF:
+        case SLAst_TYPE_MUTREF: {
             int32_t   child = AstFirstChild(&c->ast, nodeId);
             SLTypeRef childType;
-            int       isReadOnlyRef = (n->kind == SLAST_TYPE_REF);
-            int       isRef = (n->kind == SLAST_TYPE_REF || n->kind == SLAST_TYPE_MUTREF);
+            int       isReadOnlyRef = (n->kind == SLAst_TYPE_REF);
+            int       isRef = (n->kind == SLAst_TYPE_REF || n->kind == SLAst_TYPE_MUTREF);
             if (ParseTypeRef(c, child, &childType) != 0) {
                 return -1;
             }
@@ -873,7 +873,7 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             *outType = childType;
             return 0;
         }
-        case SLAST_TYPE_ARRAY: {
+        case SLAst_TYPE_ARRAY: {
             int32_t   child = AstFirstChild(&c->ast, nodeId);
             SLTypeRef elemType;
             uint32_t  len = 0;
@@ -896,7 +896,7 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             *outType = elemType;
             return 0;
         }
-        case SLAST_TYPE_VARRAY: {
+        case SLAst_TYPE_VARRAY: {
             int32_t   child = AstFirstChild(&c->ast, nodeId);
             SLTypeRef elemType;
             if (ParseTypeRef(c, child, &elemType) != 0) {
@@ -910,8 +910,8 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             *outType = elemType;
             return 0;
         }
-        case SLAST_TYPE_SLICE:
-        case SLAST_TYPE_MUTSLICE: {
+        case SLAst_TYPE_SLICE:
+        case SLAst_TYPE_MUTSLICE: {
             int32_t   child = AstFirstChild(&c->ast, nodeId);
             SLTypeRef elemType;
             if (ParseTypeRef(c, child, &elemType) != 0) {
@@ -922,17 +922,17 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 return -1;
             }
             elemType.containerKind =
-                n->kind == SLAST_TYPE_MUTSLICE
+                n->kind == SLAst_TYPE_MUTSLICE
                     ? SLTypeContainer_SLICE_MUT
                     : SLTypeContainer_SLICE_RO;
             elemType.containerPtrDepth = 0;
             elemType.hasArrayLen = 0;
             elemType.arrayLen = 0;
-            elemType.readOnly = n->kind == SLAST_TYPE_MUTSLICE ? 0 : 1;
+            elemType.readOnly = n->kind == SLAst_TYPE_MUTSLICE ? 0 : 1;
             *outType = elemType;
             return 0;
         }
-        case SLAST_TYPE_OPTIONAL: {
+        case SLAst_TYPE_OPTIONAL: {
             /* Emit the inner type; C has no optional, so we just pass through. */
             int32_t child = AstFirstChild(&c->ast, nodeId);
             return ParseTypeRef(c, child, outType);
@@ -1035,7 +1035,7 @@ static const SLFieldInfo* _Nullable FindFieldInfo(
 }
 
 static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     uint32_t         nameStart;
     uint32_t         nameEnd;
     const SLNameMap* mapName;
@@ -1049,7 +1049,7 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
         return 0;
     }
 
-    if (n->kind == SLAST_FN) {
+    if (n->kind == SLAst_FN) {
         int32_t    child = AstFirstChild(&c->ast, nodeId);
         SLTypeRef  returnType;
         SLTypeRef* paramTypes = NULL;
@@ -1057,8 +1057,8 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
         uint32_t   paramCap = 0;
         TypeRefSetScalar(&returnType, "void");
         while (child >= 0) {
-            const SLASTNode* ch = NodeAt(c, child);
-            if (ch != NULL && ch->kind == SLAST_PARAM) {
+            const SLAstNode* ch = NodeAt(c, child);
+            if (ch != NULL && ch->kind == SLAst_PARAM) {
                 int32_t   typeNode = AstFirstChild(&c->ast, child);
                 SLTypeRef paramType;
                 if (ParseTypeRef(c, typeNode, &paramType) != 0) {
@@ -1081,11 +1081,11 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                 paramTypes[paramLen++] = paramType;
             } else if (
                 ch != NULL
-                && (ch->kind == SLAST_TYPE_NAME || ch->kind == SLAST_TYPE_PTR
-                    || ch->kind == SLAST_TYPE_REF || ch->kind == SLAST_TYPE_MUTREF
-                    || ch->kind == SLAST_TYPE_ARRAY || ch->kind == SLAST_TYPE_VARRAY
-                    || ch->kind == SLAST_TYPE_SLICE || ch->kind == SLAST_TYPE_MUTSLICE
-                    || ch->kind == SLAST_TYPE_OPTIONAL)
+                && (ch->kind == SLAst_TYPE_NAME || ch->kind == SLAst_TYPE_PTR
+                    || ch->kind == SLAst_TYPE_REF || ch->kind == SLAst_TYPE_MUTREF
+                    || ch->kind == SLAst_TYPE_ARRAY || ch->kind == SLAst_TYPE_VARRAY
+                    || ch->kind == SLAst_TYPE_SLICE || ch->kind == SLAst_TYPE_MUTSLICE
+                    || ch->kind == SLAst_TYPE_OPTIONAL)
                 && ch->flags == 1)
             {
                 if (ParseTypeRef(c, child, &returnType) != 0) {
@@ -1098,11 +1098,11 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
         return AddFnSig(c, mapName->cName, returnType, paramTypes, paramLen);
     }
 
-    if (n->kind == SLAST_STRUCT || n->kind == SLAST_UNION) {
+    if (n->kind == SLAst_STRUCT || n->kind == SLAst_UNION) {
         int32_t child = AstFirstChild(&c->ast, nodeId);
         while (child >= 0) {
-            const SLASTNode* field = NodeAt(c, child);
-            if (field != NULL && field->kind == SLAST_FIELD) {
+            const SLAstNode* field = NodeAt(c, child);
+            if (field != NULL && field->kind == SLAst_FIELD) {
                 int32_t     typeNode = AstFirstChild(&c->ast, child);
                 const char* lenFieldName = NULL;
                 int         isDependent = 0;
@@ -1112,7 +1112,7 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                     return -1;
                 }
                 if (typeNode >= 0 && NodeAt(c, typeNode) != NULL
-                    && NodeAt(c, typeNode)->kind == SLAST_TYPE_VARRAY)
+                    && NodeAt(c, typeNode)->kind == SLAst_TYPE_VARRAY)
                 {
                     lenFieldName = DupSlice(
                         c,
@@ -1200,31 +1200,31 @@ static int CollectVarSizeTypesFromDeclSets(SLCBackendC* c) {
     uint32_t i;
     for (i = 0; i < c->pubDeclLen; i++) {
         int32_t          nodeId = c->pubDecls[i].nodeId;
-        const SLASTNode* n = NodeAt(c, nodeId);
+        const SLAstNode* n = NodeAt(c, nodeId);
         const SLNameMap* map;
-        if (n == NULL || (n->kind != SLAST_STRUCT && n->kind != SLAST_UNION)) {
+        if (n == NULL || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION)) {
             continue;
         }
         map = FindNameBySlice(c, n->dataStart, n->dataEnd);
         if (map == NULL) {
             continue;
         }
-        if (AddVarSizeType(c, map->cName, n->kind == SLAST_UNION) != 0) {
+        if (AddVarSizeType(c, map->cName, n->kind == SLAst_UNION) != 0) {
             return -1;
         }
     }
     for (i = 0; i < c->topDeclLen; i++) {
         int32_t          nodeId = c->topDecls[i].nodeId;
-        const SLASTNode* n = NodeAt(c, nodeId);
+        const SLAstNode* n = NodeAt(c, nodeId);
         const SLNameMap* map;
-        if (n == NULL || (n->kind != SLAST_STRUCT && n->kind != SLAST_UNION)) {
+        if (n == NULL || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION)) {
             continue;
         }
         map = FindNameBySlice(c, n->dataStart, n->dataEnd);
         if (map == NULL) {
             continue;
         }
-        if (AddVarSizeType(c, map->cName, n->kind == SLAST_UNION) != 0) {
+        if (AddVarSizeType(c, map->cName, n->kind == SLAst_UNION) != 0) {
             return -1;
         }
     }
@@ -1458,8 +1458,8 @@ static int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) 
         }
     }
     {
-        const SLASTNode* tn = NodeAt(c, typeNode);
-        if (tn != NULL && tn->kind == SLAST_TYPE_OPTIONAL) {
+        const SLAstNode* tn = NodeAt(c, typeNode);
+        if (tn != NULL && tn->kind == SLAst_TYPE_OPTIONAL) {
             if (BufAppendCStr(&c->out, "/* optional */ ") != 0) {
                 return -1;
             }
@@ -1489,14 +1489,14 @@ static int EmitTypeForCast(SLCBackendC* c, int32_t typeNode) {
 static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
 
 static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
         TypeRefSetInvalid(outType);
         return -1;
     }
 
     switch (n->kind) {
-        case SLAST_IDENT: {
+        case SLAst_IDENT: {
             const SLLocal* local = FindLocalBySlice(c, n->dataStart, n->dataEnd);
             if (local != NULL) {
                 *outType = local->type;
@@ -1505,10 +1505,10 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             TypeRefSetInvalid(outType);
             return 0;
         }
-        case SLAST_CALL: {
+        case SLAst_CALL: {
             int32_t          callee = AstFirstChild(&c->ast, nodeId);
-            const SLASTNode* cn = NodeAt(c, callee);
-            if (cn != NULL && cn->kind == SLAST_IDENT) {
+            const SLAstNode* cn = NodeAt(c, callee);
+            if (cn != NULL && cn->kind == SLAst_IDENT) {
                 const SLFnSig* sig = FindFnSigBySlice(c, cn->dataStart, cn->dataEnd);
                 if (sig != NULL) {
                     *outType = sig->returnType;
@@ -1518,7 +1518,7 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             TypeRefSetInvalid(outType);
             return 0;
         }
-        case SLAST_UNARY: {
+        case SLAst_UNARY: {
             int32_t child = AstFirstChild(&c->ast, nodeId);
             if (InferExprType(c, child, outType) != 0) {
                 return -1;
@@ -1547,7 +1547,7 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             }
             return 0;
         }
-        case SLAST_FIELD_EXPR: {
+        case SLAst_FIELD_EXPR: {
             int32_t            recv = AstFirstChild(&c->ast, nodeId);
             SLTypeRef          recvType;
             const SLFieldInfo* field;
@@ -1569,12 +1569,12 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             TypeRefSetInvalid(outType);
             return 0;
         }
-        case SLAST_INDEX: {
+        case SLAst_INDEX: {
             int32_t base = AstFirstChild(&c->ast, nodeId);
             if (InferExprType(c, base, outType) != 0) {
                 return -1;
             }
-            if ((n->flags & SLASTFlag_INDEX_SLICE) != 0) {
+            if ((n->flags & SLAstFlag_INDEX_SLICE) != 0) {
                 if (!outType->valid) {
                     TypeRefSetInvalid(outType);
                     return 0;
@@ -1613,17 +1613,22 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             }
             return 0;
         }
-        case SLAST_CAST: {
+        case SLAst_CAST: {
             int32_t expr = AstFirstChild(&c->ast, nodeId);
             int32_t typeNode = AstNextSibling(&c->ast, expr);
             return ParseTypeRef(c, typeNode, outType);
         }
-        case SLAST_SIZEOF: TypeRefSetScalar(outType, "__sl_uint"); return 0;
-        case SLAST_STRING: TypeRefSetScalar(outType, "__sl_str"); return 0;
-        case SLAST_BOOL:   TypeRefSetScalar(outType, "__sl_bool"); return 0;
-        case SLAST_INT:    TypeRefSetScalar(outType, "__sl_i32"); return 0;
-        case SLAST_FLOAT:  TypeRefSetScalar(outType, "__sl_f64"); return 0;
-        default:           TypeRefSetInvalid(outType); return 0;
+        case SLAst_SIZEOF: TypeRefSetScalar(outType, "__sl_uint"); return 0;
+        case SLAst_STRING: TypeRefSetScalar(outType, "__sl_str"); return 0;
+        case SLAst_BOOL:   TypeRefSetScalar(outType, "__sl_bool"); return 0;
+        case SLAst_INT:    TypeRefSetScalar(outType, "__sl_i32"); return 0;
+        case SLAst_FLOAT:  TypeRefSetScalar(outType, "__sl_f64"); return 0;
+        case SLAst_NULL:   TypeRefSetInvalid(outType); return 0;
+        case SLAst_UNWRAP: {
+            int32_t inner = AstFirstChild(&c->ast, nodeId);
+            return InferExprType(c, inner, outType);
+        }
+        default: TypeRefSetInvalid(outType); return 0;
     }
 }
 
@@ -1858,11 +1863,11 @@ static int EmitElemPtrExpr(
 }
 
 static int EmitSliceExpr(SLCBackendC* c, int32_t nodeId) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     int32_t          baseNode = AstFirstChild(&c->ast, nodeId);
     int32_t          child = AstNextSibling(&c->ast, baseNode);
-    int              hasStart = (n->flags & SLASTFlag_INDEX_HAS_START) != 0;
-    int              hasEnd = (n->flags & SLASTFlag_INDEX_HAS_END) != 0;
+    int              hasStart = (n->flags & SLAstFlag_INDEX_HAS_START) != 0;
+    int              hasEnd = (n->flags & SLAstFlag_INDEX_HAS_END) != 0;
     int32_t          startNode = -1;
     int32_t          endNode = -1;
     SLTypeRef        baseType;
@@ -2015,17 +2020,17 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
 }
 
 static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
         return -1;
     }
 
     switch (n->kind) {
-        case SLAST_IDENT:  return AppendMappedIdentifier(c, n->dataStart, n->dataEnd);
-        case SLAST_INT:
-        case SLAST_FLOAT:
-        case SLAST_BOOL:   return BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd);
-        case SLAST_STRING: {
+        case SLAst_IDENT:  return AppendMappedIdentifier(c, n->dataStart, n->dataEnd);
+        case SLAst_INT:
+        case SLAst_FLOAT:
+        case SLAst_BOOL:   return BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd);
+        case SLAst_STRING: {
             int32_t literalId = -1;
             if (nodeId >= 0 && (uint32_t)nodeId < c->stringLitByNodeLen) {
                 literalId = c->stringLitByNode[nodeId];
@@ -2035,11 +2040,11 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             }
             return EmitStringLiteralRef(c, literalId);
         }
-        case SLAST_UNARY: {
+        case SLAst_UNARY: {
             int32_t child = AstFirstChild(&c->ast, nodeId);
             if ((SLTokenKind)n->op == SLTok_AND && child >= 0) {
-                const SLASTNode* cn = NodeAt(c, child);
-                if (cn != NULL && cn->kind == SLAST_FIELD_EXPR) {
+                const SLAstNode* cn = NodeAt(c, child);
+                if (cn != NULL && cn->kind == SLAst_FIELD_EXPR) {
                     int32_t            recv = AstFirstChild(&c->ast, child);
                     SLTypeRef          recvType;
                     SLTypeRef          ownerType;
@@ -2087,7 +2092,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             }
             return 0;
         }
-        case SLAST_BINARY: {
+        case SLAst_BINARY: {
             int32_t lhs = AstFirstChild(&c->ast, nodeId);
             int32_t rhs = AstNextSibling(&c->ast, lhs);
             if ((SLTokenKind)n->op == SLTok_ASSIGN) {
@@ -2116,11 +2121,11 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             }
             return 0;
         }
-        case SLAST_CALL: {
+        case SLAst_CALL: {
             int32_t          child = AstFirstChild(&c->ast, nodeId);
-            const SLASTNode* callee = NodeAt(c, child);
+            const SLAstNode* callee = NodeAt(c, child);
             int              first = 1;
-            if (callee != NULL && callee->kind == SLAST_IDENT
+            if (callee != NULL && callee->kind == SLAst_IDENT
                 && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "len"))
             {
                 int32_t   arg = AstNextSibling(&c->ast, child);
@@ -2134,7 +2139,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 }
                 return EmitLenExprFromType(c, arg, &argType);
             }
-            if (callee != NULL && callee->kind == SLAST_IDENT
+            if (callee != NULL && callee->kind == SLAst_IDENT
                 && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "new"))
             {
                 int32_t     allocArg = AstNextSibling(&c->ast, child);
@@ -2180,7 +2185,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             {
                 const SLFnSig* sig = NULL;
                 uint32_t       argIndex = 0;
-                if (callee != NULL && callee->kind == SLAST_IDENT) {
+                if (callee != NULL && callee->kind == SLAst_IDENT) {
                     sig = FindFnSigBySlice(c, callee->dataStart, callee->dataEnd);
                 }
                 if (EmitExpr(c, child) != 0 || BufAppendChar(&c->out, '(') != 0) {
@@ -2205,10 +2210,10 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 return BufAppendChar(&c->out, ')');
             }
         }
-        case SLAST_INDEX: {
+        case SLAst_INDEX: {
             int32_t base = AstFirstChild(&c->ast, nodeId);
             int32_t idx = AstNextSibling(&c->ast, base);
-            if ((n->flags & SLASTFlag_INDEX_SLICE) != 0) {
+            if ((n->flags & SLAstFlag_INDEX_SLICE) != 0) {
                 return EmitSliceExpr(c, nodeId);
             }
             if (base < 0 || idx < 0) {
@@ -2241,7 +2246,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             }
             return 0;
         }
-        case SLAST_FIELD_EXPR: {
+        case SLAst_FIELD_EXPR: {
             int32_t            recv = AstFirstChild(&c->ast, nodeId);
             SLTypeRef          recvType;
             SLTypeRef          ownerType;
@@ -2288,7 +2293,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             }
             return 0;
         }
-        case SLAST_CAST: {
+        case SLAst_CAST: {
             int32_t expr = AstFirstChild(&c->ast, nodeId);
             int32_t typeNode = AstNextSibling(&c->ast, expr);
             if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeForCast(c, typeNode) != 0
@@ -2299,7 +2304,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             }
             return 0;
         }
-        case SLAST_SIZEOF: {
+        case SLAst_SIZEOF: {
             int32_t   inner = AstFirstChild(&c->ast, nodeId);
             SLTypeRef innerType;
             if (inner < 0) {
@@ -2329,6 +2334,19 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 }
             }
             if (BufAppendCStr(&c->out, "sizeof(") != 0 || EmitExpr(c, inner) != 0
+                || BufAppendChar(&c->out, ')') != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+        case SLAst_NULL:   return BufAppendCStr(&c->out, "NULL");
+        case SLAst_UNWRAP: {
+            int32_t inner = AstFirstChild(&c->ast, nodeId);
+            if (inner < 0) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, "sl_unwrap(") != 0 || EmitExpr(c, inner) != 0
                 || BufAppendChar(&c->out, ')') != 0)
             {
                 return -1;
@@ -2396,7 +2414,7 @@ static int EmitBlock(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
 }
 
 static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int isConst) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     int32_t          typeNode = AstFirstChild(&c->ast, nodeId);
     int32_t          initNode = AstNextSibling(&c->ast, typeNode);
     char*            name;
@@ -2458,7 +2476,7 @@ static int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         if (BufAppendCStr(&c->out, "for (;;)") != 0) {
             return -1;
         }
-        if (NodeAt(c, body)->kind == SLAST_BLOCK) {
+        if (NodeAt(c, body)->kind == SLAst_BLOCK) {
             if (BufAppendChar(&c->out, '\n') != 0) {
                 return -1;
             }
@@ -2470,8 +2488,8 @@ static int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         return EmitStmt(c, body, depth);
     }
 
-    if (count == 2 && NodeAt(c, nodes[0])->kind != SLAST_VAR
-        && NodeAt(c, nodes[0])->kind != SLAST_CONST)
+    if (count == 2 && NodeAt(c, nodes[0])->kind != SLAst_VAR
+        && NodeAt(c, nodes[0])->kind != SLAst_CONST)
     {
         cond = nodes[0];
     } else {
@@ -2492,11 +2510,11 @@ static int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         if (PushScope(c) != 0) {
             return -1;
         }
-        if (NodeAt(c, init)->kind == SLAST_VAR) {
+        if (NodeAt(c, init)->kind == SLAst_VAR) {
             if (EmitVarLikeStmt(c, init, depth + 1u, 0) != 0) {
                 return -1;
             }
-        } else if (NodeAt(c, init)->kind == SLAST_CONST) {
+        } else if (NodeAt(c, init)->kind == SLAst_CONST) {
             if (EmitVarLikeStmt(c, init, depth + 1u, 1) != 0) {
                 return -1;
             }
@@ -2548,7 +2566,7 @@ static int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
 }
 
 static int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
-    const SLASTNode* sw = NodeAt(c, nodeId);
+    const SLAstNode* sw = NodeAt(c, nodeId);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
     int32_t          subject = -1;
     int              firstClause = 1;
@@ -2568,8 +2586,8 @@ static int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     }
 
     while (child >= 0) {
-        const SLASTNode* clause = NodeAt(c, child);
-        if (clause != NULL && clause->kind == SLAST_CASE) {
+        const SLAstNode* clause = NodeAt(c, child);
+        if (clause != NULL && clause->kind == SLAst_CASE) {
             int32_t caseChild = AstFirstChild(&c->ast, child);
             int32_t bodyNode = -1;
             EmitIndent(c, depth + 1u);
@@ -2608,7 +2626,7 @@ static int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             if (EmitStmt(c, bodyNode, depth + 1u) != 0) {
                 return -1;
             }
-        } else if (clause != NULL && clause->kind == SLAST_DEFAULT) {
+        } else if (clause != NULL && clause->kind == SLAst_DEFAULT) {
             int32_t bodyNode = AstFirstChild(&c->ast, child);
             EmitIndent(c, depth + 1u);
             if (BufAppendCStr(&c->out, firstClause ? "if (1)\n" : "else\n") != 0) {
@@ -2627,11 +2645,11 @@ static int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
 }
 
 static int EmitAssertFormatArg(SLCBackendC* c, int32_t nodeId) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
         return -1;
     }
-    if (n->kind == SLAST_STRING) {
+    if (n->kind == SLAst_STRING) {
         return BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd);
     }
     if (BufAppendCStr(&c->out, "(const char*)(const void*)cstr(") != 0 || EmitExpr(c, nodeId) != 0
@@ -2643,16 +2661,16 @@ static int EmitAssertFormatArg(SLCBackendC* c, int32_t nodeId) {
 }
 
 static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
         return -1;
     }
 
     switch (n->kind) {
-        case SLAST_BLOCK:     return EmitBlock(c, nodeId, depth);
-        case SLAST_VAR:       return EmitVarLikeStmt(c, nodeId, depth, 0);
-        case SLAST_CONST:     return EmitVarLikeStmt(c, nodeId, depth, 1);
-        case SLAST_EXPR_STMT: {
+        case SLAst_BLOCK:     return EmitBlock(c, nodeId, depth);
+        case SLAst_VAR:       return EmitVarLikeStmt(c, nodeId, depth, 0);
+        case SLAst_CONST:     return EmitVarLikeStmt(c, nodeId, depth, 1);
+        case SLAst_EXPR_STMT: {
             int32_t expr = AstFirstChild(&c->ast, nodeId);
             EmitIndent(c, depth);
             if (EmitExpr(c, expr) != 0 || BufAppendCStr(&c->out, ";\n") != 0) {
@@ -2660,7 +2678,7 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             }
             return 0;
         }
-        case SLAST_RETURN: {
+        case SLAst_RETURN: {
             int32_t expr = AstFirstChild(&c->ast, nodeId);
             if (EmitDeferredRange(c, 0, depth) != 0) {
                 return -1;
@@ -2680,7 +2698,7 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             }
             return BufAppendCStr(&c->out, ";\n");
         }
-        case SLAST_ASSERT: {
+        case SLAst_ASSERT: {
             int32_t cond = AstFirstChild(&c->ast, nodeId);
             int32_t fmtNode;
             if (cond < 0) {
@@ -2730,7 +2748,7 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             EmitIndent(c, depth);
             return BufAppendCStr(&c->out, "} while (0);\n");
         }
-        case SLAST_IF: {
+        case SLAst_IF: {
             int32_t cond = AstFirstChild(&c->ast, nodeId);
             int32_t thenNode = AstNextSibling(&c->ast, cond);
             int32_t elseNode = AstNextSibling(&c->ast, thenNode);
@@ -2754,9 +2772,9 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             }
             return 0;
         }
-        case SLAST_FOR:    return EmitForStmt(c, nodeId, depth);
-        case SLAST_SWITCH: return EmitSwitchStmt(c, nodeId, depth);
-        case SLAST_BREAK:
+        case SLAst_FOR:    return EmitForStmt(c, nodeId, depth);
+        case SLAst_SWITCH: return EmitSwitchStmt(c, nodeId, depth);
+        case SLAst_BREAK:
             if (c->deferScopeLen > 0
                 && EmitDeferredRange(c, c->deferScopeMarks[c->deferScopeLen - 1u], depth) != 0)
             {
@@ -2764,7 +2782,7 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             }
             EmitIndent(c, depth);
             return BufAppendCStr(&c->out, "break;\n");
-        case SLAST_CONTINUE:
+        case SLAst_CONTINUE:
             if (c->deferScopeLen > 0
                 && EmitDeferredRange(c, c->deferScopeMarks[c->deferScopeLen - 1u], depth) != 0)
             {
@@ -2772,7 +2790,7 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             }
             EmitIndent(c, depth);
             return BufAppendCStr(&c->out, "continue;\n");
-        case SLAST_DEFER: {
+        case SLAst_DEFER: {
             int32_t child = AstFirstChild(&c->ast, nodeId);
             if (child < 0) {
                 return -1;
@@ -2784,13 +2802,13 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
 }
 
 static int IsMainFunctionNode(const SLCBackendC* c, int32_t nodeId) {
-    const SLASTNode* n = NodeAt(c, nodeId);
-    return n != NULL && n->kind == SLAST_FN
+    const SLAstNode* n = NodeAt(c, nodeId);
+    return n != NULL && n->kind == SLAst_FN
         && SliceEq(c->unit->source, n->dataStart, n->dataEnd, "main");
 }
 
 static int IsExplicitlyExportedNode(const SLCBackendC* c, int32_t nodeId) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     const SLNameMap* map;
     if (n == NULL) {
         return 0;
@@ -2807,7 +2825,7 @@ static int IsExportedNode(const SLCBackendC* c, int32_t nodeId) {
 }
 
 static int IsExportedTypeNode(const SLCBackendC* c, int32_t nodeId) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     const SLNameMap* map;
     if (n == NULL || !IsTypeDeclKind(n->kind)) {
         return 0;
@@ -2817,7 +2835,7 @@ static int IsExportedTypeNode(const SLCBackendC* c, int32_t nodeId) {
 }
 
 static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
     int              first = 1;
@@ -2830,21 +2848,21 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     }
 
     if (child >= 0) {
-        const SLASTNode* firstChild = NodeAt(c, child);
+        const SLAstNode* firstChild = NodeAt(c, child);
         if (firstChild != NULL
-            && (firstChild->kind == SLAST_TYPE_NAME || firstChild->kind == SLAST_TYPE_PTR
-                || firstChild->kind == SLAST_TYPE_REF || firstChild->kind == SLAST_TYPE_MUTREF
-                || firstChild->kind == SLAST_TYPE_ARRAY || firstChild->kind == SLAST_TYPE_VARRAY
-                || firstChild->kind == SLAST_TYPE_SLICE || firstChild->kind == SLAST_TYPE_MUTSLICE
-                || firstChild->kind == SLAST_TYPE_OPTIONAL))
+            && (firstChild->kind == SLAst_TYPE_NAME || firstChild->kind == SLAst_TYPE_PTR
+                || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
+                || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
+                || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
+                || firstChild->kind == SLAst_TYPE_OPTIONAL))
         {
             child = AstNextSibling(&c->ast, child);
         }
     }
 
     while (child >= 0) {
-        const SLASTNode* item = NodeAt(c, child);
-        if (item != NULL && item->kind == SLAST_FIELD) {
+        const SLAstNode* item = NodeAt(c, child);
+        if (item != NULL && item->kind == SLAst_FIELD) {
             int32_t initExpr = AstFirstChild(&c->ast, child);
             EmitIndent(c, depth + 1u);
             if (!first && BufAppendCStr(&c->out, ",\n") != 0) {
@@ -2880,11 +2898,11 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
 static int NodeHasDirectDependentFields(SLCBackendC* c, int32_t nodeId) {
     int32_t child = AstFirstChild(&c->ast, nodeId);
     while (child >= 0) {
-        const SLASTNode* field = NodeAt(c, child);
-        if (field != NULL && field->kind == SLAST_FIELD) {
+        const SLAstNode* field = NodeAt(c, child);
+        if (field != NULL && field->kind == SLAst_FIELD) {
             int32_t          typeNode = AstFirstChild(&c->ast, child);
-            const SLASTNode* tn = NodeAt(c, typeNode);
-            if (tn != NULL && tn->kind == SLAST_TYPE_VARRAY) {
+            const SLAstNode* tn = NodeAt(c, typeNode);
+            if (tn != NULL && tn->kind == SLAst_TYPE_VARRAY) {
                 return 1;
             }
         }
@@ -2894,7 +2912,7 @@ static int NodeHasDirectDependentFields(SLCBackendC* c, int32_t nodeId) {
 }
 
 static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
     int              emittedHelper = 0;
@@ -2907,15 +2925,15 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
     }
 
     while (child >= 0) {
-        const SLASTNode* field = NodeAt(c, child);
-        if (field != NULL && field->kind == SLAST_FIELD) {
+        const SLAstNode* field = NodeAt(c, child);
+        if (field != NULL && field->kind == SLAst_FIELD) {
             int32_t          typeNode = AstFirstChild(&c->ast, child);
-            const SLASTNode* tn = NodeAt(c, typeNode);
+            const SLAstNode* tn = NodeAt(c, typeNode);
             char*            name = DupSlice(c, c->unit->source, field->dataStart, field->dataEnd);
             if (name == NULL) {
                 return -1;
             }
-            if (tn != NULL && tn->kind == SLAST_TYPE_VARRAY) {
+            if (tn != NULL && tn->kind == SLAst_TYPE_VARRAY) {
             } else {
                 EmitIndent(c, depth + 1u);
                 if (EmitTypeWithName(c, typeNode, name) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
@@ -2944,11 +2962,11 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
 
     child = AstFirstChild(&c->ast, nodeId);
     while (child >= 0) {
-        const SLASTNode* field = NodeAt(c, child);
-        if (field != NULL && field->kind == SLAST_FIELD) {
+        const SLAstNode* field = NodeAt(c, child);
+        if (field != NULL && field->kind == SLAst_FIELD) {
             int32_t          typeNode = AstFirstChild(&c->ast, child);
-            const SLASTNode* tn = NodeAt(c, typeNode);
-            if (tn != NULL && tn->kind == SLAST_TYPE_VARRAY) {
+            const SLAstNode* tn = NodeAt(c, typeNode);
+            if (tn != NULL && tn->kind == SLAst_TYPE_VARRAY) {
                 SLTypeRef depType;
                 int32_t   elemTypeNode = AstFirstChild(&c->ast, typeNode);
                 int32_t   walk;
@@ -2980,11 +2998,11 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
 
                 walk = AstFirstChild(&c->ast, nodeId);
                 while (walk >= 0) {
-                    const SLASTNode* wf = NodeAt(c, walk);
-                    if (wf != NULL && wf->kind == SLAST_FIELD) {
+                    const SLAstNode* wf = NodeAt(c, walk);
+                    if (wf != NULL && wf->kind == SLAst_FIELD) {
                         int32_t          wt = AstFirstChild(&c->ast, walk);
-                        const SLASTNode* wtn = NodeAt(c, wt);
-                        if (wtn != NULL && wtn->kind == SLAST_TYPE_VARRAY) {
+                        const SLAstNode* wtn = NodeAt(c, wt);
+                        if (wtn != NULL && wtn->kind == SLAst_TYPE_VARRAY) {
                             int32_t welem = AstFirstChild(&c->ast, wt);
                             EmitIndent(c, depth + 1u);
                             if (BufAppendCStr(&c->out, "off = sl_align_up(off, _Alignof(") != 0
@@ -3049,11 +3067,11 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
             return -1;
         }
         while (walk >= 0) {
-            const SLASTNode* wf = NodeAt(c, walk);
-            if (wf != NULL && wf->kind == SLAST_FIELD) {
+            const SLAstNode* wf = NodeAt(c, walk);
+            if (wf != NULL && wf->kind == SLAst_FIELD) {
                 int32_t          wt = AstFirstChild(&c->ast, walk);
-                const SLASTNode* wtn = NodeAt(c, wt);
-                if (wtn != NULL && wtn->kind == SLAST_TYPE_VARRAY) {
+                const SLAstNode* wtn = NodeAt(c, wt);
+                if (wtn != NULL && wtn->kind == SLAst_TYPE_VARRAY) {
                     int32_t welem = AstFirstChild(&c->ast, wt);
                     EmitIndent(c, depth + 1u);
                     if (BufAppendCStr(&c->out, "off = sl_align_up(off, _Alignof(") != 0
@@ -3094,7 +3112,7 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
 }
 
 static int EmitStructOrUnionDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int isUnion) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
 
@@ -3111,8 +3129,8 @@ static int EmitStructOrUnionDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth,
     }
 
     while (child >= 0) {
-        const SLASTNode* field = NodeAt(c, child);
-        if (field != NULL && field->kind == SLAST_FIELD) {
+        const SLAstNode* field = NodeAt(c, child);
+        if (field != NULL && field->kind == SLAst_FIELD) {
             int32_t typeNode = AstFirstChild(&c->ast, child);
             char*   name = DupSlice(c, c->unit->source, field->dataStart, field->dataEnd);
             if (name == NULL) {
@@ -3140,9 +3158,9 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
     int      emittedAny = 0;
     for (i = 0; i < c->pubDeclLen; i++) {
         int32_t          nodeId = c->pubDecls[i].nodeId;
-        const SLASTNode* n = NodeAt(c, nodeId);
+        const SLAstNode* n = NodeAt(c, nodeId);
         const SLNameMap* map;
-        if (n == NULL || (n->kind != SLAST_STRUCT && n->kind != SLAST_UNION)) {
+        if (n == NULL || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION)) {
             continue;
         }
         map = FindNameBySlice(c, n->dataStart, n->dataEnd);
@@ -3150,7 +3168,7 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
             continue;
         }
         EmitIndent(c, 0);
-        if (n->kind == SLAST_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
+        if (n->kind == SLAst_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
             if (BufAppendCStr(&c->out, "typedef struct ") != 0
                 || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__hdr ") != 0
                 || BufAppendCStr(&c->out, map->cName) != 0
@@ -3167,7 +3185,7 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
             }
         } else {
             if (BufAppendCStr(&c->out, "typedef ") != 0
-                || BufAppendCStr(&c->out, n->kind == SLAST_UNION ? "union " : "struct ") != 0
+                || BufAppendCStr(&c->out, n->kind == SLAst_UNION ? "union " : "struct ") != 0
                 || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
                 || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
             {
@@ -3178,9 +3196,9 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
     }
     for (i = 0; i < c->topDeclLen; i++) {
         int32_t          nodeId = c->topDecls[i].nodeId;
-        const SLASTNode* n = NodeAt(c, nodeId);
+        const SLAstNode* n = NodeAt(c, nodeId);
         const SLNameMap* map;
-        if (n == NULL || (n->kind != SLAST_STRUCT && n->kind != SLAST_UNION)) {
+        if (n == NULL || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION)) {
             continue;
         }
         map = FindNameBySlice(c, n->dataStart, n->dataEnd);
@@ -3188,7 +3206,7 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
             continue;
         }
         EmitIndent(c, 0);
-        if (n->kind == SLAST_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
+        if (n->kind == SLAst_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
             if (BufAppendCStr(&c->out, "typedef struct ") != 0
                 || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__hdr ") != 0
                 || BufAppendCStr(&c->out, map->cName) != 0
@@ -3205,7 +3223,7 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
             }
         } else {
             if (BufAppendCStr(&c->out, "typedef ") != 0
-                || BufAppendCStr(&c->out, n->kind == SLAST_UNION ? "union " : "struct ") != 0
+                || BufAppendCStr(&c->out, n->kind == SLAst_UNION ? "union " : "struct ") != 0
                 || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
                 || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
             {
@@ -3223,8 +3241,8 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
 static int FnNodeHasBody(const SLCBackendC* c, int32_t nodeId) {
     int32_t child = AstFirstChild(&c->ast, nodeId);
     while (child >= 0) {
-        const SLASTNode* ch = NodeAt(c, child);
-        if (ch != NULL && ch->kind == SLAST_BLOCK) {
+        const SLAstNode* ch = NodeAt(c, child);
+        if (ch != NULL && ch->kind == SLAst_BLOCK) {
             return 1;
         }
         child = AstNextSibling(&c->ast, child);
@@ -3233,15 +3251,15 @@ static int FnNodeHasBody(const SLCBackendC* c, int32_t nodeId) {
 }
 
 static int HasFunctionBodyForName(const SLCBackendC* c, int32_t nodeId) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     uint32_t         i;
-    if (n == NULL || n->kind != SLAST_FN) {
+    if (n == NULL || n->kind != SLAst_FN) {
         return 0;
     }
     for (i = 0; i < c->topDeclLen; i++) {
         int32_t          otherId = c->topDecls[i].nodeId;
-        const SLASTNode* other = NodeAt(c, otherId);
-        if (other == NULL || other->kind != SLAST_FN || otherId == nodeId
+        const SLAstNode* other = NodeAt(c, otherId);
+        if (other == NULL || other->kind != SLAst_FN || otherId == nodeId
             || !FnNodeHasBody(c, otherId))
         {
             continue;
@@ -3257,7 +3275,7 @@ static int HasFunctionBodyForName(const SLCBackendC* c, int32_t nodeId) {
 
 static int EmitFnDeclOrDef(
     SLCBackendC* c, int32_t nodeId, uint32_t depth, int emitBody, int isPrivate) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
     int32_t          bodyNode = -1;
@@ -3278,17 +3296,17 @@ static int EmitFnDeclOrDef(
     }
 
     while (child >= 0) {
-        const SLASTNode* ch = NodeAt(c, child);
+        const SLAstNode* ch = NodeAt(c, child);
         if (ch != NULL
-            && (ch->kind == SLAST_TYPE_NAME || ch->kind == SLAST_TYPE_PTR
-                || ch->kind == SLAST_TYPE_REF || ch->kind == SLAST_TYPE_MUTREF
-                || ch->kind == SLAST_TYPE_ARRAY || ch->kind == SLAST_TYPE_VARRAY
-                || ch->kind == SLAST_TYPE_SLICE || ch->kind == SLAST_TYPE_MUTSLICE
-                || ch->kind == SLAST_TYPE_OPTIONAL)
+            && (ch->kind == SLAst_TYPE_NAME || ch->kind == SLAst_TYPE_PTR
+                || ch->kind == SLAst_TYPE_REF || ch->kind == SLAst_TYPE_MUTREF
+                || ch->kind == SLAst_TYPE_ARRAY || ch->kind == SLAst_TYPE_VARRAY
+                || ch->kind == SLAst_TYPE_SLICE || ch->kind == SLAst_TYPE_MUTSLICE
+                || ch->kind == SLAst_TYPE_OPTIONAL)
             && ch->flags == 1)
         {
             returnTypeNode = child;
-        } else if (ch != NULL && ch->kind == SLAST_BLOCK) {
+        } else if (ch != NULL && ch->kind == SLAst_BLOCK) {
             bodyNode = child;
         }
         child = AstNextSibling(&c->ast, child);
@@ -3311,8 +3329,8 @@ static int EmitFnDeclOrDef(
 
     child = AstFirstChild(&c->ast, nodeId);
     while (child >= 0) {
-        const SLASTNode* ch = NodeAt(c, child);
-        if (ch != NULL && ch->kind == SLAST_PARAM) {
+        const SLAstNode* ch = NodeAt(c, child);
+        if (ch != NULL && ch->kind == SLAst_PARAM) {
             int32_t typeNode = AstFirstChild(&c->ast, child);
             char*   paramName = DupSlice(c, c->unit->source, ch->dataStart, ch->dataEnd);
             if (paramName == NULL) {
@@ -3350,8 +3368,8 @@ static int EmitFnDeclOrDef(
     }
     child = AstFirstChild(&c->ast, nodeId);
     while (child >= 0) {
-        const SLASTNode* ch = NodeAt(c, child);
-        if (ch != NULL && ch->kind == SLAST_PARAM) {
+        const SLAstNode* ch = NodeAt(c, child);
+        if (ch != NULL && ch->kind == SLAst_PARAM) {
             int32_t   typeNode = AstFirstChild(&c->ast, child);
             SLTypeRef t;
             char*     paramName = DupSlice(c, c->unit->source, ch->dataStart, ch->dataEnd);
@@ -3382,7 +3400,7 @@ static int EmitFnDeclOrDef(
 
 static int EmitConstDecl(
     SLCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
     int32_t          typeNode = AstFirstChild(&c->ast, nodeId);
     int32_t          initNode = AstNextSibling(&c->ast, typeNode);
@@ -3433,17 +3451,17 @@ static int EmitDeclNode(
     int          declarationOnly,
     int          isPrivate,
     int          emitBody) {
-    const SLASTNode* n = NodeAt(c, nodeId);
+    const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
         return -1;
     }
 
     switch (n->kind) {
-        case SLAST_STRUCT: return EmitStructOrUnionDecl(c, nodeId, depth, 0);
-        case SLAST_UNION:  return EmitStructOrUnionDecl(c, nodeId, depth, 1);
-        case SLAST_ENUM:   return EmitEnumDecl(c, nodeId, depth);
-        case SLAST_FN:     return EmitFnDeclOrDef(c, nodeId, depth, emitBody, isPrivate);
-        case SLAST_CONST:  return EmitConstDecl(c, nodeId, depth, declarationOnly, isPrivate);
+        case SLAst_STRUCT: return EmitStructOrUnionDecl(c, nodeId, depth, 0);
+        case SLAst_UNION:  return EmitStructOrUnionDecl(c, nodeId, depth, 1);
+        case SLAst_ENUM:   return EmitEnumDecl(c, nodeId, depth);
+        case SLAst_FN:     return EmitFnDeclOrDef(c, nodeId, depth, emitBody, isPrivate);
+        case SLAst_CONST:  return EmitConstDecl(c, nodeId, depth, declarationOnly, isPrivate);
         default:           return 0;
     }
 }
@@ -3507,6 +3525,9 @@ static int EmitPrelude(SLCBackendC* c) {
         "#endif\n"
         "#ifndef SL_ASSERTF_FAIL\n"
         "  #define SL_ASSERTF_FAIL(file,line,fmt,...) SL_ASSERT_FAIL(file,line,fmt)\n"
+        "#endif\n"
+        "#ifndef sl_unwrap\n"
+        "  #define sl_unwrap(p) ((p) != (void*)0 ? (p) : (SL_TRAP(), (p)))\n"
         "#endif\n\n");
 }
 
@@ -3566,7 +3587,7 @@ static int EmitHeader(SLCBackendC* c) {
 
     for (i = 0; i < c->pubDeclLen; i++) {
         int32_t          nodeId = c->pubDecls[i].nodeId;
-        const SLASTNode* n = NodeAt(c, nodeId);
+        const SLAstNode* n = NodeAt(c, nodeId);
         if (n == NULL) {
             continue;
         }
@@ -3598,9 +3619,9 @@ static int EmitHeader(SLCBackendC* c) {
     c->emitPrivateFnDeclStatic = 1;
     for (i = 0; i < c->topDeclLen; i++) {
         int32_t          nodeId = c->topDecls[i].nodeId;
-        const SLASTNode* n = NodeAt(c, nodeId);
+        const SLAstNode* n = NodeAt(c, nodeId);
         int              exported;
-        if (n == NULL || n->kind != SLAST_FN || !FnNodeHasBody(c, nodeId)) {
+        if (n == NULL || n->kind != SLAst_FN || !FnNodeHasBody(c, nodeId)) {
             continue;
         }
         exported = IsExportedNode(c, nodeId);
@@ -3613,7 +3634,7 @@ static int EmitHeader(SLCBackendC* c) {
 
     for (i = 0; i < c->topDeclLen; i++) {
         int32_t          nodeId = c->topDecls[i].nodeId;
-        const SLASTNode* n = NodeAt(c, nodeId);
+        const SLAstNode* n = NodeAt(c, nodeId);
         int              exported;
         if (n == NULL) {
             continue;
@@ -3624,7 +3645,7 @@ static int EmitHeader(SLCBackendC* c) {
             continue;
         }
 
-        if (n->kind == SLAST_FN) {
+        if (n->kind == SLAst_FN) {
             if (FnNodeHasBody(c, nodeId)) {
                 if (EmitDeclNode(c, nodeId, 0, 0, !exported, 1) != 0
                     || BufAppendChar(&c->out, '\n') != 0)
@@ -3639,7 +3660,7 @@ static int EmitHeader(SLCBackendC* c) {
             continue;
         }
 
-        if (n->kind == SLAST_CONST) {
+        if (n->kind == SLAst_CONST) {
             if (EmitDeclNode(c, nodeId, 0, 0, !exported, 0) != 0
                 || BufAppendChar(&c->out, '\n') != 0)
             {

@@ -20,7 +20,7 @@ typedef struct {
     char*    source;
     uint32_t sourceLen;
     void*    arenaMem;
-    SLAST    ast;
+    SLAst    ast;
 } SLParsedFile;
 
 struct SLPackage;
@@ -35,7 +35,7 @@ typedef struct {
 } SLImportRef;
 
 typedef struct {
-    SLASTKind kind;
+    SLAstKind kind;
     char*     name;
     char*     declText;
     int       hasBody;
@@ -94,14 +94,14 @@ typedef struct {
     uint32_t cap;
 } SLStringBuilder;
 
-static int ASTFirstChild(const SLAST* ast, int32_t nodeId) {
+static int ASTFirstChild(const SLAst* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     return ast->nodes[nodeId].firstChild;
 }
 
-static int ASTNextSibling(const SLAST* ast, int32_t nodeId) {
+static int ASTNextSibling(const SLAst* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
@@ -661,11 +661,11 @@ static int DumpAST(const char* filename, const char* source, uint32_t sourceLen)
     uint64_t arenaCap64;
     size_t   arenaCap;
     SLArena  arena;
-    SLAST    ast;
+    SLAst    ast;
     SLDiag   diag;
     SLWriter writer;
 
-    arenaCap64 = (uint64_t)(sourceLen + 64u) * (uint64_t)sizeof(SLASTNode) + 32768u;
+    arenaCap64 = (uint64_t)(sourceLen + 64u) * (uint64_t)sizeof(SLAstNode) + 32768u;
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
         fprintf(stderr, "arena too large\n");
         return -1;
@@ -693,7 +693,7 @@ static int DumpAST(const char* filename, const char* source, uint32_t sourceLen)
 
     writer.ctx = NULL;
     writer.write = StdoutWrite;
-    if (SLASTDump(&ast, (SLStrView){ source, sourceLen }, &writer, &diag) != 0) {
+    if (SLAstDump(&ast, (SLStrView){ source, sourceLen }, &writer, &diag) != 0) {
         fprintf(
             stderr,
             "%s:%u:%u: error: %s\n",
@@ -713,7 +713,7 @@ static int ParseSource(
     const char* filename,
     const char* source,
     uint32_t    sourceLen,
-    SLAST*      outAst,
+    SLAst*      outAst,
     void**      outArenaMem,
     SLArena* _Nullable outArena) {
     void*    arenaMem;
@@ -730,7 +730,7 @@ static int ParseSource(
     outAst->len = 0;
     outAst->root = -1;
 
-    arenaCap64 = (uint64_t)(sourceLen + 128u) * (uint64_t)sizeof(SLASTNode) + 65536u;
+    arenaCap64 = (uint64_t)(sourceLen + 128u) * (uint64_t)sizeof(SLAstNode) + 65536u;
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
         fprintf(stderr, "arena too large\n");
         return -1;
@@ -769,12 +769,12 @@ static int ParseSource(
     return 0;
 }
 
-static void WarnUnknownFeatureImports(const char* filename, const char* source, const SLAST* ast);
+static void WarnUnknownFeatureImports(const char* filename, const char* source, const SLAst* ast);
 
 static int CheckSource(const char* filename, const char* source, uint32_t sourceLen) {
     void*   arenaMem;
     SLArena arena;
-    SLAST   ast;
+    SLAst   ast;
     SLDiag  diag;
 
     if (ParseSource(filename, source, sourceLen, &ast, &arenaMem, &arena) != 0) {
@@ -804,19 +804,19 @@ static int CheckSource(const char* filename, const char* source, uint32_t source
     return 0;
 }
 
-static int IsDeclKind(SLASTKind kind) {
-    return kind == SLAST_FN || kind == SLAST_STRUCT || kind == SLAST_UNION || kind == SLAST_ENUM
-        || kind == SLAST_CONST;
+static int IsDeclKind(SLAstKind kind) {
+    return kind == SLAst_FN || kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
+        || kind == SLAst_CONST;
 }
 
-static int IsPubDeclNode(const SLASTNode* n) {
-    return (n->flags & SLASTFlag_PUB) != 0;
+static int IsPubDeclNode(const SLAstNode* n) {
+    return (n->flags & SLAstFlag_PUB) != 0;
 }
 
-static int FnNodeHasBody(const SLAST* ast, int32_t nodeId) {
+static int FnNodeHasBody(const SLAst* ast, int32_t nodeId) {
     int32_t child = ASTFirstChild(ast, nodeId);
     while (child >= 0) {
-        if (ast->nodes[child].kind == SLAST_BLOCK) {
+        if (ast->nodes[child].kind == SLAst_BLOCK) {
             return 1;
         }
         child = ASTNextSibling(ast, child);
@@ -907,11 +907,11 @@ static char* _Nullable DefaultImportAlias(const char* importPath) {
     return DupCStr(name);
 }
 
-static void WarnUnknownFeatureImports(const char* filename, const char* source, const SLAST* ast) {
+static void WarnUnknownFeatureImports(const char* filename, const char* source, const SLAst* ast) {
     int32_t child = ASTFirstChild(ast, ast->root);
     while (child >= 0) {
-        const SLASTNode* n = &ast->nodes[child];
-        if (n->kind == SLAST_IMPORT) {
+        const SLAstNode* n = &ast->nodes[child];
+        if (n->kind == SLAst_IMPORT) {
             char* importPath = DecodeStringLiteral(source, n->dataStart, n->dataEnd);
             if (importPath != NULL) {
                 if (strncmp(importPath, "slang/feature/", 14u) == 0) {
@@ -938,7 +938,7 @@ static int AddPackageFile(
     const char* filePath,
     char*       source,
     uint32_t    sourceLen,
-    SLAST       ast,
+    SLAst       ast,
     void*       arenaMem) {
     SLParsedFile* f;
     if (EnsureCap((void**)&pkg->files, &pkg->fileCap, pkg->fileLen + 1u, sizeof(SLParsedFile)) != 0)
@@ -975,7 +975,7 @@ static int AddSymbolDecl(
     SLSymbolDecl** arr,
     uint32_t*      len,
     uint32_t*      cap,
-    SLASTKind      kind,
+    SLAstKind      kind,
     char*          name,
     char*          declText,
     int            hasBody,
@@ -1036,7 +1036,7 @@ static int IsAsciiSpaceChar(char c) {
 }
 
 static char* _Nullable DupPubDeclText(const SLParsedFile* file, int32_t nodeId) {
-    const SLASTNode* n = &file->ast.nodes[nodeId];
+    const SLAstNode* n = &file->ast.nodes[nodeId];
     uint32_t         start = n->start;
     uint32_t         end = n->end;
 
@@ -1047,10 +1047,10 @@ static char* _Nullable DupPubDeclText(const SLParsedFile* file, int32_t nodeId) 
         }
     }
 
-    if (n->kind == SLAST_FN && FnNodeHasBody(&file->ast, nodeId)) {
+    if (n->kind == SLAst_FN && FnNodeHasBody(&file->ast, nodeId)) {
         int32_t body = ASTFirstChild(&file->ast, nodeId);
         while (body >= 0) {
-            if (file->ast.nodes[body].kind == SLAST_BLOCK) {
+            if (file->ast.nodes[body].kind == SLAst_BLOCK) {
                 end = file->ast.nodes[body].start;
                 break;
             }
@@ -1076,7 +1076,7 @@ static char* _Nullable DupPubDeclText(const SLParsedFile* file, int32_t nodeId) 
 
 static int AddDeclFromNode(
     SLPackage* pkg, const SLParsedFile* file, uint32_t fileIndex, int32_t nodeId, int isPub) {
-    const SLASTNode* n = &file->ast.nodes[nodeId];
+    const SLAstNode* n = &file->ast.nodes[nodeId];
     char*            name;
     char*            declText;
 
@@ -1143,15 +1143,15 @@ static int AddDeclFromNode(
 
 static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
     const SLParsedFile* file = &pkg->files[fileIndex];
-    const SLAST*        ast = &file->ast;
+    const SLAst*        ast = &file->ast;
     int32_t             child = ASTFirstChild(ast, ast->root);
 
     /* Accumulate feature flags from this file into the package. */
     pkg->features |= ast->features;
 
     while (child >= 0) {
-        const SLASTNode* n = &ast->nodes[child];
-        if (n->kind == SLAST_IMPORT) {
+        const SLAstNode* n = &ast->nodes[child];
+        if (n->kind == SLAst_IMPORT) {
             int32_t aliasNode = ASTFirstChild(ast, child);
             char*   importPath = DecodeStringLiteral(file->source, n->dataStart, n->dataEnd);
             char*   alias = NULL;
@@ -1165,7 +1165,7 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
                 continue;
             }
             if (aliasNode >= 0) {
-                const SLASTNode* a = &ast->nodes[aliasNode];
+                const SLAstNode* a = &ast->nodes[aliasNode];
                 alias = DupSlice(file->source, a->dataStart, a->dataEnd);
             } else {
                 alias = DefaultImportAlias(importPath);
@@ -1240,8 +1240,8 @@ static int PackageHasExportedTypeSlice(
     const SLPackage* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = 0; i < pkg->pubDeclLen; i++) {
-        if (!(pkg->pubDecls[i].kind == SLAST_STRUCT || pkg->pubDecls[i].kind == SLAST_UNION
-              || pkg->pubDecls[i].kind == SLAST_ENUM))
+        if (!(pkg->pubDecls[i].kind == SLAst_STRUCT || pkg->pubDecls[i].kind == SLAst_UNION
+              || pkg->pubDecls[i].kind == SLAst_ENUM))
         {
             continue;
         }
@@ -1256,13 +1256,13 @@ static int PackageHasExportedTypeSlice(
 
 static int ValidatePubTypeNode(
     const SLPackage* pkg, const SLParsedFile* file, int32_t typeNodeId, const char* contextMsg) {
-    const SLASTNode* n;
+    const SLAstNode* n;
     if (typeNodeId < 0 || (uint32_t)typeNodeId >= file->ast.len) {
         return ErrorSimple("invalid type node");
     }
     n = &file->ast.nodes[typeNodeId];
     switch (n->kind) {
-        case SLAST_TYPE_NAME: {
+        case SLAst_TYPE_NAME: {
             uint32_t i;
             for (i = n->dataStart; i < n->dataEnd; i++) {
                 if (file->source[i] == '.') {
@@ -1287,13 +1287,14 @@ static int ValidatePubTypeNode(
                 "public API %s references non-exported type",
                 contextMsg);
         }
-        case SLAST_TYPE_PTR:
-        case SLAST_TYPE_REF:
-        case SLAST_TYPE_MUTREF:
-        case SLAST_TYPE_ARRAY:
-        case SLAST_TYPE_SLICE:
-        case SLAST_TYPE_MUTSLICE:
-        case SLAST_TYPE_VARRAY:   {
+        case SLAst_TYPE_PTR:
+        case SLAst_TYPE_REF:
+        case SLAst_TYPE_MUTREF:
+        case SLAst_TYPE_ARRAY:
+        case SLAst_TYPE_SLICE:
+        case SLAst_TYPE_MUTSLICE:
+        case SLAst_TYPE_VARRAY:
+        case SLAst_TYPE_OPTIONAL: {
             int32_t child = ASTFirstChild(&file->ast, typeNodeId);
             return ValidatePubTypeNode(pkg, file, child, contextMsg);
         }
@@ -1307,19 +1308,19 @@ static int ValidatePubClosure(const SLPackage* pkg) {
         const SLSymbolDecl* pubDecl = &pkg->pubDecls[i];
         const SLParsedFile* file = &pkg->files[pubDecl->fileIndex];
         int32_t             child = ASTFirstChild(&file->ast, pubDecl->nodeId);
-        if (pubDecl->kind == SLAST_FN) {
+        if (pubDecl->kind == SLAst_FN) {
             while (child >= 0) {
-                const SLASTNode* n = &file->ast.nodes[child];
-                if (n->kind == SLAST_PARAM) {
+                const SLAstNode* n = &file->ast.nodes[child];
+                if (n->kind == SLAst_PARAM) {
                     int32_t typeNode = ASTFirstChild(&file->ast, child);
                     if (ValidatePubTypeNode(pkg, file, typeNode, "function parameter") != 0) {
                         return -1;
                     }
                 } else if (
-                    (n->kind == SLAST_TYPE_NAME || n->kind == SLAST_TYPE_PTR
-                     || n->kind == SLAST_TYPE_REF || n->kind == SLAST_TYPE_MUTREF
-                     || n->kind == SLAST_TYPE_ARRAY || n->kind == SLAST_TYPE_VARRAY
-                     || n->kind == SLAST_TYPE_SLICE || n->kind == SLAST_TYPE_MUTSLICE)
+                    (n->kind == SLAst_TYPE_NAME || n->kind == SLAst_TYPE_PTR
+                     || n->kind == SLAst_TYPE_REF || n->kind == SLAst_TYPE_MUTREF
+                     || n->kind == SLAst_TYPE_ARRAY || n->kind == SLAst_TYPE_VARRAY
+                     || n->kind == SLAst_TYPE_SLICE || n->kind == SLAst_TYPE_MUTSLICE)
                     && n->flags == 1)
                 {
                     if (ValidatePubTypeNode(pkg, file, child, "function return type") != 0) {
@@ -1328,10 +1329,10 @@ static int ValidatePubClosure(const SLPackage* pkg) {
                 }
                 child = ASTNextSibling(&file->ast, child);
             }
-        } else if (pubDecl->kind == SLAST_STRUCT || pubDecl->kind == SLAST_UNION) {
+        } else if (pubDecl->kind == SLAst_STRUCT || pubDecl->kind == SLAst_UNION) {
             while (child >= 0) {
-                const SLASTNode* n = &file->ast.nodes[child];
-                if (n->kind == SLAST_FIELD) {
+                const SLAstNode* n = &file->ast.nodes[child];
+                if (n->kind == SLAst_FIELD) {
                     int32_t typeNode = ASTFirstChild(&file->ast, child);
                     if (ValidatePubTypeNode(pkg, file, typeNode, "field type") != 0) {
                         return -1;
@@ -1339,20 +1340,20 @@ static int ValidatePubClosure(const SLPackage* pkg) {
                 }
                 child = ASTNextSibling(&file->ast, child);
             }
-        } else if (pubDecl->kind == SLAST_ENUM) {
+        } else if (pubDecl->kind == SLAst_ENUM) {
             if (child >= 0) {
-                const SLASTNode* n = &file->ast.nodes[child];
-                if (n->kind == SLAST_TYPE_NAME || n->kind == SLAST_TYPE_PTR
-                    || n->kind == SLAST_TYPE_REF || n->kind == SLAST_TYPE_MUTREF
-                    || n->kind == SLAST_TYPE_ARRAY || n->kind == SLAST_TYPE_VARRAY
-                    || n->kind == SLAST_TYPE_SLICE || n->kind == SLAST_TYPE_MUTSLICE)
+                const SLAstNode* n = &file->ast.nodes[child];
+                if (n->kind == SLAst_TYPE_NAME || n->kind == SLAst_TYPE_PTR
+                    || n->kind == SLAst_TYPE_REF || n->kind == SLAst_TYPE_MUTREF
+                    || n->kind == SLAst_TYPE_ARRAY || n->kind == SLAst_TYPE_VARRAY
+                    || n->kind == SLAst_TYPE_SLICE || n->kind == SLAst_TYPE_MUTSLICE)
                 {
                     if (ValidatePubTypeNode(pkg, file, child, "enum base type") != 0) {
                         return -1;
                     }
                 }
             }
-        } else if (pubDecl->kind == SLAST_CONST) {
+        } else if (pubDecl->kind == SLAst_CONST) {
             if (child >= 0) {
                 if (ValidatePubTypeNode(pkg, file, child, "constant type") != 0) {
                     return -1;
@@ -1369,19 +1370,19 @@ static int ValidatePubFnDefinitions(const SLPackage* pkg) {
         const SLSymbolDecl* pubDecl = &pkg->pubDecls[i];
         uint32_t            j;
         int                 found = pubDecl->hasBody;
-        if (pubDecl->kind != SLAST_FN) {
+        if (pubDecl->kind != SLAst_FN) {
             continue;
         }
         for (j = 0; j < pkg->declLen; j++) {
             const SLSymbolDecl* decl = &pkg->decls[j];
-            if (decl->kind == SLAST_FN && StrEq(decl->name, pubDecl->name) && decl->hasBody) {
+            if (decl->kind == SLAst_FN && StrEq(decl->name, pubDecl->name) && decl->hasBody) {
                 found = 1;
                 break;
             }
         }
         if (!found) {
             const SLParsedFile* file = &pkg->files[pubDecl->fileIndex];
-            const SLASTNode*    n = &file->ast.nodes[pubDecl->nodeId];
+            const SLAstNode*    n = &file->ast.nodes[pubDecl->nodeId];
             return Errorf(
                 file->path,
                 n->dataStart,
@@ -1408,14 +1409,14 @@ static const SLImportRef* _Nullable FindImportByAliasSlice(
 }
 
 static int ValidateSelectorsNode(const SLPackage* pkg, const SLParsedFile* file, int32_t nodeId) {
-    const SLASTNode* n;
+    const SLAstNode* n;
     int32_t          child;
     if (nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
         return 0;
     }
     n = &file->ast.nodes[nodeId];
 
-    if (n->kind == SLAST_TYPE_NAME) {
+    if (n->kind == SLAst_TYPE_NAME) {
         uint32_t i;
         for (i = n->dataStart; i < n->dataEnd; i++) {
             if (file->source[i] == '.') {
@@ -1429,10 +1430,10 @@ static int ValidateSelectorsNode(const SLPackage* pkg, const SLParsedFile* file,
                 break;
             }
         }
-    } else if (n->kind == SLAST_FIELD_EXPR) {
+    } else if (n->kind == SLAst_FIELD_EXPR) {
         int32_t recvNode = ASTFirstChild(&file->ast, nodeId);
-        if (recvNode >= 0 && file->ast.nodes[recvNode].kind == SLAST_IDENT) {
-            const SLASTNode*   recv = &file->ast.nodes[recvNode];
+        if (recvNode >= 0 && file->ast.nodes[recvNode].kind == SLAst_IDENT) {
+            const SLAstNode*   recv = &file->ast.nodes[recvNode];
             const SLImportRef* imp = FindImportByAliasSlice(
                 pkg, file->source, recv->dataStart, recv->dataEnd);
             if (imp != NULL) {
@@ -1614,7 +1615,7 @@ static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SL
     for (i = 0; i < fileCount; i++) {
         char*    source = NULL;
         uint32_t sourceLen = 0;
-        SLAST    ast;
+        SLAst    ast;
         void*    arenaMem = NULL;
         if (ReadFile(filePaths[i], &source, &sourceLen) != 0) {
             return -1;
@@ -1660,7 +1661,7 @@ static int LoadSingleFilePackage(
     SLPackage* pkg;
     char*      source = NULL;
     uint32_t   sourceLen = 0;
-    SLAST      ast;
+    SLAst      ast;
     void*      arenaMem = NULL;
     uint32_t   i;
 

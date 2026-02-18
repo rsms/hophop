@@ -50,7 +50,8 @@ Keyword =
     "defer" | "assert" |
     "sizeof" |
     "as" |
-    "true" | "false" ;
+    "true" | "false" |
+    "null" ;
 ```
 
 ### Semicolon Insertion
@@ -111,16 +112,18 @@ SliceType       = "[" Type "]" ;
 MutSliceType    = "mut" "[" Type "]" ;
 ArrayType       = "[" Type IntLit "]" ;
 VarArrayType    = "[" Type "." Identifier "]" ;
-OptionalType    = TypeName "?" ;   (* requires import "slang/feature/optional" *)
+OptionalType    = "?" BaseType ;   (* requires import "slang/feature/optional" *)
+BaseType        = PointerType | RefType | MutRefType | SliceType | MutSliceType
+                | ArrayType | VarArrayType | TypeName ;
 NonSliceType    = PointerType | RefType | MutRefType | ArrayType | VarArrayType | TypeName ;
-Type            = PointerType
+Type            = OptionalType
+                | PointerType
                 | RefType
                 | MutRefType
                 | SliceType
                 | MutSliceType
                 | ArrayType
                 | VarArrayType
-                | OptionalType
                 | TypeName ;
 TypeName        = Identifier { "." Identifier } ;
 ```
@@ -197,19 +200,21 @@ MulExpr             = UnaryExpr { ( "*" | "/" | "%" ) UnaryExpr } ;
 UnaryExpr           = ( "+" | "-" | "!" | "*" | "&" ) UnaryExpr
                     | PostfixExpr ;
 
-PostfixExpr         = PrimaryExpr { CallSuffix | IndexSuffix | SelectorSuffix | CastSuffix } ;
+PostfixExpr         = PrimaryExpr { CallSuffix | IndexSuffix | SelectorSuffix | CastSuffix | UnwrapSuffix } ;
 CallSuffix          = "(" [ ArgList ] ")" ;
 ArgList             = Expr { "," Expr } ;
 IndexSuffix         = "[" Expr "]"
                     | "[" [ Expr ] ":" [ Expr ] "]" ;
 SelectorSuffix      = "." Identifier ;
 CastSuffix          = "as" Type ;
+UnwrapSuffix        = "!" ;   (* requires operand of optional type ?T; result is T; panics if null *)
 
 PrimaryExpr         = Identifier
                     | IntLit
                     | FloatLit
                     | BoolLit
                     | StringLit
+                    | "null"
                     | SizeofExpr
                     | CompoundLit
                     | "(" Expr ")" ;
@@ -228,4 +233,7 @@ FieldInit           = Identifier "=" Expr ;
 - Import paths are string literals.
 - `&[T]` and `mut&[T]` are not valid type forms; use `[T]` and `mut[T]`.
 - In `Signature`, the optional `Type` is the return type. Omitting it means the function returns no value. Writing `void` explicitly is a type error; omit the return type instead.
-- `T?` (OptionalType) is an experimental feature; it requires `import "slang/feature/optional"` at the top of the file. Without that import the `?` token in a type position is a syntax error. Imports of the form `import "slang/feature/<name>"` are feature flags, not real packages: they are never resolved on disk and produce a warning for unknown feature names.
+- `?T` (OptionalType) is an experimental feature; it requires `import "slang/feature/optional"` at the top of the file. Without that import the `?` token in a type position is a syntax error. `?` is valid only on pointer/reference/slice base types (`?*T`, `?&T`, `?mut&T`, `?[T]`, `?mut[T]`); use on plain value types (e.g. `?i32`) is deferred.
+- `null` is a keyword/literal assignable only to optional types (`?T`). Assigning `null` to a non-optional type is a type error.
+- Postfix `!` (UnwrapSuffix) unwraps an optional value; the operand must have type `?T` and the result has type `T`. At runtime it panics (via `SL_TRAP()`) if the value is null.
+- Imports of the form `import "slang/feature/<name>"` are feature flags, not real packages: they are never resolved on disk and produce a warning for unknown feature names.

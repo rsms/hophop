@@ -317,6 +317,9 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
         if (SLStrEq(s, len, "true")) {
             return SLTok_TRUE;
         }
+        if (SLStrEq(s, len, "null")) {
+            return SLTok_NULL;
+        }
     } else if (len == 5) {
         if (SLStrEq(s, len, "break")) {
             return SLTok_BREAK;
@@ -377,7 +380,9 @@ static int SLTokenCanEndStmt(SLTokenKind kind) {
         case SLTok_RETURN:
         case SLTok_RPAREN:
         case SLTok_RBRACK:
-        case SLTok_RBRACE:   return 1;
+        case SLTok_RBRACE:
+        case SLTok_NOT:
+        case SLTok_NULL:     return 1;
         default:             return 0;
     }
 }
@@ -469,6 +474,7 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_LSHIFT_ASSIGN: return "LSHIFT_ASSIGN";
         case SLTok_RSHIFT_ASSIGN: return "RSHIFT_ASSIGN";
         case SLTok_QUESTION:      return "QUESTION";
+        case SLTok_NULL:          return "NULL";
     }
     return "UNKNOWN";
 }
@@ -878,16 +884,16 @@ static void SLWEscaped(SLWriter* w, SLStrView src, uint32_t start, uint32_t end)
     SLWWrite(w, "\"", 1);
 }
 
-static int SLASTDumpNode(
-    const SLAST* ast, int32_t idx, uint32_t depth, SLStrView src, SLWriter* w) {
-    const SLASTNode* n;
+static int SLAstDumpNode(
+    const SLAst* ast, int32_t idx, uint32_t depth, SLStrView src, SLWriter* w) {
+    const SLAstNode* n;
     int32_t          c;
     if (idx < 0 || (uint32_t)idx >= ast->len) {
         return -1;
     }
     n = &ast->nodes[idx];
     SLWIndent(w, depth);
-    SLWCStr(w, SLASTKindName(n->kind));
+    SLWCStr(w, SLAstKindName(n->kind));
 
     if (n->op != 0) {
         SLWCStr(w, " op=");
@@ -909,7 +915,7 @@ static int SLASTDumpNode(
 
     c = n->firstChild;
     while (c >= 0) {
-        if (SLASTDumpNode(ast, c, depth + 1, src, w) != 0) {
+        if (SLAstDumpNode(ast, c, depth + 1, src, w) != 0) {
             return -1;
         }
         c = ast->nodes[c].nextSibling;
@@ -917,13 +923,13 @@ static int SLASTDumpNode(
     return 0;
 }
 
-int SLASTDump(const SLAST* ast, SLStrView src, SLWriter* w, SLDiag* diag) {
+int SLAstDump(const SLAst* ast, SLStrView src, SLWriter* w, SLDiag* diag) {
     SLDiagClear(diag);
     if (ast == NULL || w == NULL || w->write == NULL || ast->nodes == NULL || ast->root < 0) {
         SLSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
         return -1;
     }
-    return SLASTDumpNode(ast, ast->root, 0, src, w);
+    return SLAstDumpNode(ast, ast->root, 0, src, w);
 }
 
 SL_API_END

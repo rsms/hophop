@@ -16,7 +16,7 @@ typedef struct {
     const SLToken* tok;
     uint32_t       tokLen;
     uint32_t       pos;
-    SLASTNode*     nodes;
+    SLAstNode*     nodes;
     uint32_t       nodeLen;
     uint32_t       nodeCap;
     SLDiag*        diag;
@@ -64,7 +64,7 @@ static int SLPExpect(SLParser* p, SLTokenKind kind, SLDiagCode code, const SLTok
     return 0;
 }
 
-static int32_t SLPNewNode(SLParser* p, SLASTKind kind, uint32_t start, uint32_t end) {
+static int32_t SLPNewNode(SLParser* p, SLAstKind kind, uint32_t start, uint32_t end) {
     int32_t idx;
     if (p->nodeLen >= p->nodeCap) {
         SLPSetDiag(p->diag, SLDiag_ARENA_OOM, start, end);
@@ -169,7 +169,7 @@ static int SLPParseTypeName(SLParser* p, int32_t* out) {
         p->pos++;
     }
 
-    n = SLPNewNode(p, SLAST_TYPE_NAME, first->start, last->end);
+    n = SLPNewNode(p, SLAst_TYPE_NAME, first->start, last->end);
     if (n < 0) {
         return -1;
     }
@@ -184,9 +184,23 @@ static int SLPParseType(SLParser* p, int32_t* out) {
     int32_t        typeNode;
     int32_t        child;
 
+    /* Prefix '?' optional type (requires feature import). */
+    if ((p->features & SLFeature_OPTIONAL) != 0 && SLPMatch(p, SLTok_QUESTION)) {
+        t = SLPPrev(p);
+        typeNode = SLPNewNode(p, SLAst_TYPE_OPTIONAL, t->start, t->end);
+        if (typeNode < 0) {
+            return -1;
+        }
+        if (SLPParseType(p, &child) != 0) {
+            return -1;
+        }
+        p->nodes[typeNode].end = p->nodes[child].end;
+        return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
+    }
+
     if (SLPMatch(p, SLTok_MUL)) {
         t = SLPPrev(p);
-        typeNode = SLPNewNode(p, SLAST_TYPE_PTR, t->start, t->end);
+        typeNode = SLPNewNode(p, SLAst_TYPE_PTR, t->start, t->end);
         if (typeNode < 0) {
             return -1;
         }
@@ -199,14 +213,14 @@ static int SLPParseType(SLParser* p, int32_t* out) {
 
     if (SLPMatch(p, SLTok_AND)) {
         t = SLPPrev(p);
-        typeNode = SLPNewNode(p, SLAST_TYPE_REF, t->start, t->end);
+        typeNode = SLPNewNode(p, SLAst_TYPE_REF, t->start, t->end);
         if (typeNode < 0) {
             return -1;
         }
         if (SLPParseType(p, &child) != 0) {
             return -1;
         }
-        if (p->nodes[child].kind == SLAST_TYPE_SLICE || p->nodes[child].kind == SLAST_TYPE_MUTSLICE)
+        if (p->nodes[child].kind == SLAst_TYPE_SLICE || p->nodes[child].kind == SLAst_TYPE_MUTSLICE)
         {
             return SLPFail(p, SLDiag_EXPECTED_TYPE);
         }
@@ -217,15 +231,15 @@ static int SLPParseType(SLParser* p, int32_t* out) {
     if (SLPMatch(p, SLTok_MUT)) {
         const SLToken* mutTok = SLPPrev(p);
         if (SLPMatch(p, SLTok_AND)) {
-            typeNode = SLPNewNode(p, SLAST_TYPE_MUTREF, mutTok->start, mutTok->end);
+            typeNode = SLPNewNode(p, SLAst_TYPE_MUTREF, mutTok->start, mutTok->end);
             if (typeNode < 0) {
                 return -1;
             }
             if (SLPParseType(p, &child) != 0) {
                 return -1;
             }
-            if (p->nodes[child].kind == SLAST_TYPE_SLICE
-                || p->nodes[child].kind == SLAST_TYPE_MUTSLICE)
+            if (p->nodes[child].kind == SLAst_TYPE_SLICE
+                || p->nodes[child].kind == SLAst_TYPE_MUTSLICE)
             {
                 return SLPFail(p, SLDiag_EXPECTED_TYPE);
             }
@@ -234,7 +248,7 @@ static int SLPParseType(SLParser* p, int32_t* out) {
         }
         if (SLPMatch(p, SLTok_LBRACK)) {
             const SLToken* rb;
-            typeNode = SLPNewNode(p, SLAST_TYPE_MUTSLICE, mutTok->start, mutTok->end);
+            typeNode = SLPNewNode(p, SLAst_TYPE_MUTSLICE, mutTok->start, mutTok->end);
             if (typeNode < 0) {
                 return -1;
             }
@@ -254,7 +268,7 @@ static int SLPParseType(SLParser* p, int32_t* out) {
         const SLToken* lb = SLPPrev(p);
         const SLToken* nTok = NULL;
         const SLToken* rb;
-        SLASTKind      kind;
+        SLAstKind      kind;
 
         if (SLPParseType(p, &child) != 0) {
             return -1;
@@ -262,7 +276,7 @@ static int SLPParseType(SLParser* p, int32_t* out) {
 
         if (SLPMatch(p, SLTok_RBRACK)) {
             rb = SLPPrev(p);
-            typeNode = SLPNewNode(p, SLAST_TYPE_SLICE, lb->start, rb->end);
+            typeNode = SLPNewNode(p, SLAst_TYPE_SLICE, lb->start, rb->end);
             if (typeNode < 0) {
                 return -1;
             }
@@ -270,12 +284,12 @@ static int SLPParseType(SLParser* p, int32_t* out) {
         }
 
         if (SLPMatch(p, SLTok_DOT)) {
-            kind = SLAST_TYPE_VARRAY;
+            kind = SLAst_TYPE_VARRAY;
             if (SLPExpect(p, SLTok_IDENT, SLDiag_EXPECTED_TYPE, &nTok) != 0) {
                 return -1;
             }
         } else {
-            kind = SLAST_TYPE_ARRAY;
+            kind = SLAst_TYPE_ARRAY;
             if (SLPExpect(p, SLTok_INT, SLDiag_EXPECTED_TYPE, &nTok) != 0) {
                 return -1;
             }
@@ -297,21 +311,6 @@ static int SLPParseType(SLParser* p, int32_t* out) {
     if (SLPParseTypeName(p, out) != 0) {
         return -1;
     }
-    /* Check for trailing '?' (optional type) when the feature is enabled. */
-    if ((p->features & SLFeature_OPTIONAL) != 0 && SLPAt(p, SLTok_QUESTION)) {
-        const SLToken* q = SLPPeek(p);
-        int32_t        inner = *out;
-        int32_t        optNode = SLPNewNode(p, SLAST_TYPE_OPTIONAL, p->nodes[inner].start, q->end);
-        if (optNode < 0) {
-            return -1;
-        }
-        p->pos++;
-        p->nodes[optNode].end = q->end;
-        if (SLPAddChild(p, optNode, inner) != 0) {
-            return -1;
-        }
-        *out = optNode;
-    }
     return 0;
 }
 
@@ -320,7 +319,7 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
     int32_t        n;
 
     if (SLPMatch(p, SLTok_IDENT)) {
-        n = SLPNewNode(p, SLAST_IDENT, t->start, t->end);
+        n = SLPNewNode(p, SLAst_IDENT, t->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -331,7 +330,7 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
     }
 
     if (SLPMatch(p, SLTok_INT)) {
-        n = SLPNewNode(p, SLAST_INT, t->start, t->end);
+        n = SLPNewNode(p, SLAst_INT, t->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -342,7 +341,7 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
     }
 
     if (SLPMatch(p, SLTok_FLOAT)) {
-        n = SLPNewNode(p, SLAST_FLOAT, t->start, t->end);
+        n = SLPNewNode(p, SLAst_FLOAT, t->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -353,7 +352,7 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
     }
 
     if (SLPMatch(p, SLTok_STRING)) {
-        n = SLPNewNode(p, SLAST_STRING, t->start, t->end);
+        n = SLPNewNode(p, SLAst_STRING, t->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -365,12 +364,22 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
 
     if (SLPMatch(p, SLTok_TRUE) || SLPMatch(p, SLTok_FALSE)) {
         t = SLPPrev(p);
-        n = SLPNewNode(p, SLAST_BOOL, t->start, t->end);
+        n = SLPNewNode(p, SLAst_BOOL, t->start, t->end);
         if (n < 0) {
             return -1;
         }
         p->nodes[n].dataStart = t->start;
         p->nodes[n].dataEnd = t->end;
+        *out = n;
+        return 0;
+    }
+
+    if (SLPMatch(p, SLTok_NULL)) {
+        t = SLPPrev(p);
+        n = SLPNewNode(p, SLAst_NULL, t->start, t->end);
+        if (n < 0) {
+            return -1;
+        }
         *out = n;
         return 0;
     }
@@ -394,7 +403,7 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
         if (SLPExpect(p, SLTok_LPAREN, SLDiag_EXPECTED_EXPR, &t) != 0) {
             return -1;
         }
-        n = SLPNewNode(p, SLAST_SIZEOF, kw->start, t->end);
+        n = SLPNewNode(p, SLAst_SIZEOF, kw->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -441,7 +450,7 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
         const SLToken* t;
 
         if (SLPMatch(p, SLTok_LPAREN)) {
-            n = SLPNewNode(p, SLAST_CALL, p->nodes[*expr].start, SLPPrev(p)->end);
+            n = SLPNewNode(p, SLAst_CALL, p->nodes[*expr].start, SLPPrev(p)->end);
             if (n < 0) {
                 return -1;
             }
@@ -472,7 +481,7 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
 
         if (SLPMatch(p, SLTok_LBRACK)) {
             int32_t firstExpr = -1;
-            n = SLPNewNode(p, SLAST_INDEX, p->nodes[*expr].start, SLPPrev(p)->end);
+            n = SLPNewNode(p, SLAst_INDEX, p->nodes[*expr].start, SLPPrev(p)->end);
             if (n < 0) {
                 return -1;
             }
@@ -481,12 +490,12 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
             }
 
             if (SLPMatch(p, SLTok_COLON)) {
-                p->nodes[n].flags |= SLASTFlag_INDEX_SLICE;
+                p->nodes[n].flags |= SLAstFlag_INDEX_SLICE;
                 if (!SLPAt(p, SLTok_RBRACK)) {
                     if (SLPParseExpr(p, 1, &firstExpr) != 0) {
                         return -1;
                     }
-                    p->nodes[n].flags |= SLASTFlag_INDEX_HAS_END;
+                    p->nodes[n].flags |= SLAstFlag_INDEX_HAS_END;
                     if (SLPAddChild(p, n, firstExpr) != 0) {
                         return -1;
                     }
@@ -504,8 +513,8 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
             }
             if (SLPMatch(p, SLTok_COLON)) {
                 int32_t endExpr = -1;
-                p->nodes[n].flags |= SLASTFlag_INDEX_SLICE;
-                p->nodes[n].flags |= SLASTFlag_INDEX_HAS_START;
+                p->nodes[n].flags |= SLAstFlag_INDEX_SLICE;
+                p->nodes[n].flags |= SLAstFlag_INDEX_HAS_START;
                 if (SLPAddChild(p, n, firstExpr) != 0) {
                     return -1;
                 }
@@ -513,7 +522,7 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
                     if (SLPParseExpr(p, 1, &endExpr) != 0) {
                         return -1;
                     }
-                    p->nodes[n].flags |= SLASTFlag_INDEX_HAS_END;
+                    p->nodes[n].flags |= SLAstFlag_INDEX_HAS_END;
                     if (SLPAddChild(p, n, endExpr) != 0) {
                         return -1;
                     }
@@ -539,7 +548,7 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
 
         if (SLPMatch(p, SLTok_DOT)) {
             const SLToken* fieldTok;
-            n = SLPNewNode(p, SLAST_FIELD_EXPR, p->nodes[*expr].start, SLPPrev(p)->end);
+            n = SLPNewNode(p, SLAst_FIELD_EXPR, p->nodes[*expr].start, SLPPrev(p)->end);
             if (n < 0) {
                 return -1;
             }
@@ -558,7 +567,7 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
 
         if (SLPMatch(p, SLTok_AS)) {
             int32_t typeNode;
-            n = SLPNewNode(p, SLAST_CAST, p->nodes[*expr].start, SLPPrev(p)->end);
+            n = SLPNewNode(p, SLAst_CAST, p->nodes[*expr].start, SLPPrev(p)->end);
             if (n < 0) {
                 return -1;
             }
@@ -573,6 +582,19 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
                 return -1;
             }
             p->nodes[n].end = p->nodes[typeNode].end;
+            *expr = n;
+            continue;
+        }
+
+        if (SLPMatch(p, SLTok_NOT)) {
+            t = SLPPrev(p);
+            n = SLPNewNode(p, SLAst_UNWRAP, p->nodes[*expr].start, t->end);
+            if (n < 0) {
+                return -1;
+            }
+            if (SLPAddChild(p, n, *expr) != 0) {
+                return -1;
+            }
             *expr = n;
             continue;
         }
@@ -598,7 +620,7 @@ static int SLPParsePrefix(SLParser* p, int32_t* out) {
             if (SLPParsePrefix(p, &rhs) != 0) {
                 return -1;
             }
-            n = SLPNewNode(p, SLAST_UNARY, t->start, p->nodes[rhs].end);
+            n = SLPNewNode(p, SLAst_UNARY, t->start, p->nodes[rhs].end);
             if (n < 0) {
                 return -1;
             }
@@ -636,7 +658,7 @@ static int SLPParseExpr(SLParser* p, int minPrec, int32_t* out) {
         if (SLPParseExpr(p, rightAssoc ? prec : prec + 1, &rhs) != 0) {
             return -1;
         }
-        n = SLPNewNode(p, SLAST_BINARY, p->nodes[lhs].start, p->nodes[rhs].end);
+        n = SLPNewNode(p, SLAst_BINARY, p->nodes[lhs].start, p->nodes[rhs].end);
         if (n < 0) {
             return -1;
         }
@@ -661,7 +683,7 @@ static int SLPParseParam(SLParser* p, int32_t* out) {
     if (SLPParseType(p, &type) != 0) {
         return -1;
     }
-    param = SLPNewNode(p, SLAST_PARAM, name->start, p->nodes[type].end);
+    param = SLPNewNode(p, SLAst_PARAM, name->start, p->nodes[type].end);
     if (param < 0) {
         return -1;
     }
@@ -682,7 +704,7 @@ static int SLPParseBlock(SLParser* p, int32_t* out) {
     if (SLPExpect(p, SLTok_LBRACE, SLDiag_UNEXPECTED_TOKEN, &lb) != 0) {
         return -1;
     }
-    block = SLPNewNode(p, SLAST_BLOCK, lb->start, lb->end);
+    block = SLPNewNode(p, SLAst_BLOCK, lb->start, lb->end);
     if (block < 0) {
         return -1;
     }
@@ -709,7 +731,7 @@ static int SLPParseBlock(SLParser* p, int32_t* out) {
     return 0;
 }
 
-static int SLPParseVarLikeStmt(SLParser* p, SLASTKind kind, int requireSemi, int32_t* out) {
+static int SLPParseVarLikeStmt(SLParser* p, SLAstKind kind, int requireSemi, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
     const SLToken* name;
     int32_t        n;
@@ -769,7 +791,7 @@ static int SLPParseIfStmt(SLParser* p, int32_t* out) {
         return -1;
     }
 
-    n = SLPNewNode(p, SLAST_IF, kw->start, p->nodes[thenBlock].end);
+    n = SLPNewNode(p, SLAst_IF, kw->start, p->nodes[thenBlock].end);
     if (n < 0) {
         return -1;
     }
@@ -813,7 +835,7 @@ static int SLPParseForStmt(SLParser* p, int32_t* out) {
     int32_t        post = -1;
 
     p->pos++;
-    n = SLPNewNode(p, SLAST_FOR, kw->start, kw->end);
+    n = SLPNewNode(p, SLAst_FOR, kw->start, kw->end);
     if (n < 0) {
         return -1;
     }
@@ -826,7 +848,7 @@ static int SLPParseForStmt(SLParser* p, int32_t* out) {
         if (SLPAt(p, SLTok_SEMICOLON)) {
             p->pos++;
         } else if (SLPAt(p, SLTok_VAR)) {
-            if (SLPParseVarLikeStmt(p, SLAST_VAR, 0, &init) != 0) {
+            if (SLPParseVarLikeStmt(p, SLAst_VAR, 0, &init) != 0) {
                 return -1;
             }
         } else {
@@ -883,7 +905,7 @@ static int SLPParseSwitchStmt(SLParser* p, int32_t* out) {
     int            sawDefault = 0;
 
     p->pos++;
-    sw = SLPNewNode(p, SLAST_SWITCH, kw->start, kw->end);
+    sw = SLPNewNode(p, SLAst_SWITCH, kw->start, kw->end);
     if (sw < 0) {
         return -1;
     }
@@ -911,7 +933,7 @@ static int SLPParseSwitchStmt(SLParser* p, int32_t* out) {
         }
 
         if (SLPMatch(p, SLTok_CASE)) {
-            int32_t caseNode = SLPNewNode(p, SLAST_CASE, SLPPrev(p)->start, SLPPrev(p)->end);
+            int32_t caseNode = SLPNewNode(p, SLAst_CASE, SLPPrev(p)->start, SLPPrev(p)->end);
             int32_t body;
             if (caseNode < 0) {
                 return -1;
@@ -950,7 +972,7 @@ static int SLPParseSwitchStmt(SLParser* p, int32_t* out) {
                 return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
             }
             sawDefault = 1;
-            defNode = SLPNewNode(p, SLAST_DEFAULT, SLPPrev(p)->start, SLPPrev(p)->end);
+            defNode = SLPNewNode(p, SLAst_DEFAULT, SLPPrev(p)->start, SLPPrev(p)->end);
             if (defNode < 0) {
                 return -1;
             }
@@ -985,15 +1007,15 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
     int32_t        block;
 
     switch (SLPPeek(p)->kind) {
-        case SLTok_VAR:    return SLPParseVarLikeStmt(p, SLAST_VAR, 1, out);
-        case SLTok_CONST:  return SLPParseVarLikeStmt(p, SLAST_CONST, 1, out);
+        case SLTok_VAR:    return SLPParseVarLikeStmt(p, SLAst_VAR, 1, out);
+        case SLTok_CONST:  return SLPParseVarLikeStmt(p, SLAst_CONST, 1, out);
         case SLTok_IF:     return SLPParseIfStmt(p, out);
         case SLTok_FOR:    return SLPParseForStmt(p, out);
         case SLTok_SWITCH: return SLPParseSwitchStmt(p, out);
         case SLTok_RETURN:
             kw = SLPPeek(p);
             p->pos++;
-            n = SLPNewNode(p, SLAST_RETURN, kw->start, kw->end);
+            n = SLPNewNode(p, SLAst_RETURN, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
@@ -1015,7 +1037,7 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
         case SLTok_BREAK:
             kw = SLPPeek(p);
             p->pos++;
-            n = SLPNewNode(p, SLAST_BREAK, kw->start, kw->end);
+            n = SLPNewNode(p, SLAst_BREAK, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
@@ -1028,7 +1050,7 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
         case SLTok_CONTINUE:
             kw = SLPPeek(p);
             p->pos++;
-            n = SLPNewNode(p, SLAST_CONTINUE, kw->start, kw->end);
+            n = SLPNewNode(p, SLAst_CONTINUE, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
@@ -1041,7 +1063,7 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
         case SLTok_DEFER:
             kw = SLPPeek(p);
             p->pos++;
-            n = SLPNewNode(p, SLAST_DEFER, kw->start, kw->end);
+            n = SLPNewNode(p, SLAst_DEFER, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
@@ -1063,7 +1085,7 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
         case SLTok_ASSERT:
             kw = SLPPeek(p);
             p->pos++;
-            n = SLPNewNode(p, SLAST_ASSERT, kw->start, kw->end);
+            n = SLPNewNode(p, SLAst_ASSERT, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
@@ -1096,7 +1118,7 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
             if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
                 return -1;
             }
-            n = SLPNewNode(p, SLAST_EXPR_STMT, p->nodes[expr].start, kw->end);
+            n = SLPNewNode(p, SLAst_EXPR_STMT, p->nodes[expr].start, kw->end);
             if (n < 0) {
                 return -1;
             }
@@ -1123,7 +1145,7 @@ static int SLPParseFieldList(SLParser* p, int32_t agg) {
         if (SLPParseType(p, &type) != 0) {
             return -1;
         }
-        field = SLPNewNode(p, SLAST_FIELD, name->start, p->nodes[type].end);
+        field = SLPNewNode(p, SLAst_FIELD, name->start, p->nodes[type].end);
         if (field < 0) {
             return -1;
         }
@@ -1146,13 +1168,13 @@ static int SLPParseAggregateDecl(SLParser* p, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
     const SLToken* name;
     const SLToken* rb;
-    SLASTKind      kind = SLAST_STRUCT;
+    SLAstKind      kind = SLAst_STRUCT;
     int32_t        n;
 
     if (kw->kind == SLTok_UNION) {
-        kind = SLAST_UNION;
+        kind = SLAst_UNION;
     } else if (kw->kind == SLTok_ENUM) {
-        kind = SLAST_ENUM;
+        kind = SLAst_ENUM;
     }
 
     p->pos++;
@@ -1190,7 +1212,7 @@ static int SLPParseAggregateDecl(SLParser* p, int32_t* out) {
             if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &itemName) != 0) {
                 return -1;
             }
-            item = SLPNewNode(p, SLAST_FIELD, itemName->start, itemName->end);
+            item = SLPNewNode(p, SLAst_FIELD, itemName->start, itemName->end);
             if (item < 0) {
                 return -1;
             }
@@ -1241,7 +1263,7 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
         return -1;
     }
 
-    fn = SLPNewNode(p, SLAST_FN, kw->start, name->end);
+    fn = SLPNewNode(p, SLAst_FN, kw->start, name->end);
     if (fn < 0) {
         return -1;
     }
@@ -1344,7 +1366,7 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
         }
     }
 
-    n = SLPNewNode(p, SLAST_IMPORT, kw->start, path->end);
+    n = SLPNewNode(p, SLAst_IMPORT, kw->start, path->end);
     if (n < 0) {
         return -1;
     }
@@ -1352,7 +1374,7 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
     p->nodes[n].dataEnd = path->end;
 
     if (alias != NULL) {
-        int32_t aliasNode = SLPNewNode(p, SLAST_IDENT, alias->start, alias->end);
+        int32_t aliasNode = SLPNewNode(p, SLAst_IDENT, alias->start, alias->end);
         if (aliasNode < 0) {
             return -1;
         }
@@ -1383,7 +1405,7 @@ static int SLPParseDeclInner(SLParser* p, int allowBody, int32_t* out) {
                 p->nodes[*out].end = SLPPrev(p)->end;
             }
             return 0;
-        case SLTok_CONST: return SLPParseVarLikeStmt(p, SLAST_CONST, 1, out);
+        case SLTok_CONST: return SLPParseVarLikeStmt(p, SLAst_CONST, 1, out);
         default:          return SLPFail(p, SLDiag_EXPECTED_DECL);
     }
 }
@@ -1400,62 +1422,64 @@ static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out) {
     }
     if (isPub) {
         p->nodes[*out].start = pubStart;
-        p->nodes[*out].flags |= SLASTFlag_PUB;
+        p->nodes[*out].flags |= SLAstFlag_PUB;
     }
     return 0;
 }
 
-const char* SLASTKindName(SLASTKind kind) {
+const char* SLAstKindName(SLAstKind kind) {
     switch (kind) {
-        case SLAST_FILE:          return "FILE";
-        case SLAST_IMPORT:        return "IMPORT";
-        case SLAST_PUB:           return "PUB";
-        case SLAST_FN:            return "FN";
-        case SLAST_PARAM:         return "PARAM";
-        case SLAST_TYPE_NAME:     return "TYPE_NAME";
-        case SLAST_TYPE_PTR:      return "TYPE_PTR";
-        case SLAST_TYPE_REF:      return "TYPE_REF";
-        case SLAST_TYPE_MUTREF:   return "TYPE_MUTREF";
-        case SLAST_TYPE_ARRAY:    return "TYPE_ARRAY";
-        case SLAST_TYPE_VARRAY:   return "TYPE_VARRAY";
-        case SLAST_TYPE_SLICE:    return "TYPE_SLICE";
-        case SLAST_TYPE_MUTSLICE: return "TYPE_MUTSLICE";
-        case SLAST_TYPE_OPTIONAL: return "TYPE_OPTIONAL";
-        case SLAST_STRUCT:        return "STRUCT";
-        case SLAST_UNION:         return "UNION";
-        case SLAST_ENUM:          return "ENUM";
-        case SLAST_FIELD:         return "FIELD";
-        case SLAST_BLOCK:         return "BLOCK";
-        case SLAST_VAR:           return "VAR";
-        case SLAST_CONST:         return "CONST";
-        case SLAST_IF:            return "IF";
-        case SLAST_FOR:           return "FOR";
-        case SLAST_SWITCH:        return "SWITCH";
-        case SLAST_CASE:          return "CASE";
-        case SLAST_DEFAULT:       return "DEFAULT";
-        case SLAST_RETURN:        return "RETURN";
-        case SLAST_BREAK:         return "BREAK";
-        case SLAST_CONTINUE:      return "CONTINUE";
-        case SLAST_DEFER:         return "DEFER";
-        case SLAST_ASSERT:        return "ASSERT";
-        case SLAST_EXPR_STMT:     return "EXPR_STMT";
-        case SLAST_IDENT:         return "IDENT";
-        case SLAST_INT:           return "INT";
-        case SLAST_FLOAT:         return "FLOAT";
-        case SLAST_STRING:        return "STRING";
-        case SLAST_BOOL:          return "BOOL";
-        case SLAST_UNARY:         return "UNARY";
-        case SLAST_BINARY:        return "BINARY";
-        case SLAST_CALL:          return "CALL";
-        case SLAST_INDEX:         return "INDEX";
-        case SLAST_FIELD_EXPR:    return "FIELD_EXPR";
-        case SLAST_CAST:          return "CAST";
-        case SLAST_SIZEOF:        return "SIZEOF";
+        case SLAst_FILE:          return "FILE";
+        case SLAst_IMPORT:        return "IMPORT";
+        case SLAst_PUB:           return "PUB";
+        case SLAst_FN:            return "FN";
+        case SLAst_PARAM:         return "PARAM";
+        case SLAst_TYPE_NAME:     return "TYPE_NAME";
+        case SLAst_TYPE_PTR:      return "TYPE_PTR";
+        case SLAst_TYPE_REF:      return "TYPE_REF";
+        case SLAst_TYPE_MUTREF:   return "TYPE_MUTREF";
+        case SLAst_TYPE_ARRAY:    return "TYPE_ARRAY";
+        case SLAst_TYPE_VARRAY:   return "TYPE_VARRAY";
+        case SLAst_TYPE_SLICE:    return "TYPE_SLICE";
+        case SLAst_TYPE_MUTSLICE: return "TYPE_MUTSLICE";
+        case SLAst_TYPE_OPTIONAL: return "TYPE_OPTIONAL";
+        case SLAst_STRUCT:        return "STRUCT";
+        case SLAst_UNION:         return "UNION";
+        case SLAst_ENUM:          return "ENUM";
+        case SLAst_FIELD:         return "FIELD";
+        case SLAst_BLOCK:         return "BLOCK";
+        case SLAst_VAR:           return "VAR";
+        case SLAst_CONST:         return "CONST";
+        case SLAst_IF:            return "IF";
+        case SLAst_FOR:           return "FOR";
+        case SLAst_SWITCH:        return "SWITCH";
+        case SLAst_CASE:          return "CASE";
+        case SLAst_DEFAULT:       return "DEFAULT";
+        case SLAst_RETURN:        return "RETURN";
+        case SLAst_BREAK:         return "BREAK";
+        case SLAst_CONTINUE:      return "CONTINUE";
+        case SLAst_DEFER:         return "DEFER";
+        case SLAst_ASSERT:        return "ASSERT";
+        case SLAst_EXPR_STMT:     return "EXPR_STMT";
+        case SLAst_IDENT:         return "IDENT";
+        case SLAst_INT:           return "INT";
+        case SLAst_FLOAT:         return "FLOAT";
+        case SLAst_STRING:        return "STRING";
+        case SLAst_BOOL:          return "BOOL";
+        case SLAst_UNARY:         return "UNARY";
+        case SLAst_BINARY:        return "BINARY";
+        case SLAst_CALL:          return "CALL";
+        case SLAst_INDEX:         return "INDEX";
+        case SLAst_FIELD_EXPR:    return "FIELD_EXPR";
+        case SLAst_CAST:          return "CAST";
+        case SLAst_SIZEOF:        return "SIZEOF";
+        case SLAst_NULL:          return "NULL";
+        case SLAst_UNWRAP:        return "UNWRAP";
     }
     return "UNKNOWN";
 }
 
-int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag) {
+int SLParse(SLArena* arena, SLStrView src, SLAst* out, SLDiag* diag) {
     SLTokenStream ts;
     SLParser      p;
     int32_t       root;
@@ -1478,14 +1502,14 @@ int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag) {
     p.nodeCap = ts.len * 4u + 16u;
     p.diag = diag;
     p.features = SLFeature_NONE;
-    p.nodes = (SLASTNode*)SLArenaAlloc(
-        arena, p.nodeCap * (uint32_t)sizeof(SLASTNode), (uint32_t)_Alignof(SLASTNode));
+    p.nodes = (SLAstNode*)SLArenaAlloc(
+        arena, p.nodeCap * (uint32_t)sizeof(SLAstNode), (uint32_t)_Alignof(SLAstNode));
     if (p.nodes == NULL) {
         SLPSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
     }
 
-    root = SLPNewNode(&p, SLAST_FILE, 0, src.len);
+    root = SLPNewNode(&p, SLAst_FILE, 0, src.len);
     if (root < 0) {
         return -1;
     }
