@@ -700,9 +700,9 @@ static int DumpTokens(const char* filename, const char* source, uint32_t sourceL
 
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
     if (SLLex(&arena, (SLStrView){ source, sourceLen }, &stream, &diag) != 0) {
-        (void)PrintSLDiag(filename, source, &diag, 0);
+        int diagStatus = PrintSLDiag(filename, source, &diag, 0);
         free(arenaMem);
-        return -1;
+        return diagStatus;
     }
 
     for (i = 0; i < stream.len; i++) {
@@ -746,17 +746,17 @@ static int DumpAST(const char* filename, const char* source, uint32_t sourceLen)
 
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
     if (SLParse(&arena, (SLStrView){ source, sourceLen }, &ast, &diag) != 0) {
-        (void)PrintSLDiag(filename, source, &diag, 0);
+        int diagStatus = PrintSLDiag(filename, source, &diag, 0);
         free(arenaMem);
-        return -1;
+        return diagStatus;
     }
 
     writer.ctx = NULL;
     writer.write = StdoutWrite;
     if (SLAstDump(&ast, (SLStrView){ source, sourceLen }, &writer, &diag) != 0) {
-        (void)PrintSLDiag(filename, source, &diag, 0);
+        int diagStatus = PrintSLDiag(filename, source, &diag, 0);
         free(arenaMem);
-        return -1;
+        return diagStatus;
     }
 
     free(arenaMem);
@@ -832,9 +832,9 @@ static int CheckSource(const char* filename, const char* source, uint32_t source
     WarnUnknownFeatureImports(filename, source, &ast);
 
     if (SLTypeCheck(&arena, &ast, (SLStrView){ source, sourceLen }, &diag) != 0) {
-        (void)PrintSLDiag(filename, source, &diag, 1);
+        int diagStatus = PrintSLDiag(filename, source, &diag, 1);
         free(arenaMem);
-        return -1;
+        return diagStatus;
     }
 
     free(arenaMem);
@@ -2283,13 +2283,18 @@ static int GeneratePackage(
 
     if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
         if (diag.code != SLDiag_NONE) {
-            (void)PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
+            int diagStatus = PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
+            if (!(diagStatus == 0 && outHeader != NULL)) {
+                free(source);
+                FreeLoader(&loader);
+                return -1;
+            }
         } else {
             fprintf(stderr, "error: codegen failed\n");
+            free(source);
+            FreeLoader(&loader);
+            return -1;
         }
-        free(source);
-        FreeLoader(&loader);
-        return -1;
     }
 
     if (WriteOutput(outFilename, outHeader, (uint32_t)strlen(outHeader)) != 0) {
@@ -2395,11 +2400,14 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
 
     if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
         if (diag.code != SLDiag_NONE) {
-            (void)PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
+            int diagStatus = PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
+            if (!(diagStatus == 0 && outHeader != NULL)) {
+                goto end;
+            }
         } else {
             ErrorSimple("codegen failed");
+            goto end;
         }
-        goto end;
     }
 
     {
