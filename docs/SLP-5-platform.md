@@ -219,7 +219,7 @@ temp file at compile time). It implements `sl_platform_call` using standard libc
 and provides `main`.
 
 ```c
-/* platforms/cli-libc/platform.c */
+/* lib/platform_libc.c */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -316,7 +316,7 @@ int sl_main(void) { return (int)pkgname__main(); }
 The platform's `main` calls `sl_main()`:
 
 ```c
-/* inside cli-libc/platform.c */
+/* inside lib/platform_libc.c */
 extern int sl_main(void);
 int main(void) { return sl_main(); }
 ```
