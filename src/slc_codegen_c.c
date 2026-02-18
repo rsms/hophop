@@ -1693,8 +1693,10 @@ static int EmitHexByte(SLBuf* b, uint8_t value) {
 }
 
 static int EmitStringLiteralRef(SLCBackendC* c, int32_t literalId) {
-    if (BufAppendCStr(&c->out, "(__sl_str)(const __sl_u8*)(const void*)&sl_lit_") != 0
-        || BufAppendU32(&c->out, (uint32_t)literalId) != 0)
+    if (BufAppendCStr(&c->out, "((__sl_str){ sl_lit_") != 0
+        || BufAppendU32(&c->out, (uint32_t)literalId) != 0 || BufAppendCStr(&c->out, ", ") != 0
+        || BufAppendU32(&c->out, c->stringLits[literalId].len) != 0
+        || BufAppendCStr(&c->out, "u })") != 0)
     {
         return -1;
     }
@@ -1706,30 +1708,17 @@ static int EmitStringLiteralPool(SLCBackendC* c) {
     for (i = 0; i < c->stringLitLen; i++) {
         uint32_t               j;
         const SLStringLiteral* lit = &c->stringLits[i];
-        if (BufAppendCStr(&c->out, "static const struct { __sl_u32 len; __sl_u8 bytes[") != 0
-            || BufAppendU32(&c->out, lit->len + 1u) != 0
-            || BufAppendCStr(&c->out, "]; } sl_lit_") != 0 || BufAppendU32(&c->out, i) != 0
-            || BufAppendCStr(&c->out, " = { ") != 0 || BufAppendU32(&c->out, lit->len) != 0
-            || BufAppendCStr(&c->out, ", { ") != 0)
+        if (BufAppendCStr(&c->out, "static const __sl_u8 sl_lit_") != 0
+            || BufAppendU32(&c->out, i) != 0 || BufAppendCStr(&c->out, "[] = { ") != 0)
         {
             return -1;
         }
-
         for (j = 0; j < lit->len; j++) {
-            if (j > 0 && BufAppendCStr(&c->out, ", ") != 0) {
-                return -1;
-            }
-            if (EmitHexByte(&c->out, lit->bytes[j]) != 0) {
+            if (EmitHexByte(&c->out, lit->bytes[j]) != 0 || BufAppendCStr(&c->out, ", ") != 0) {
                 return -1;
             }
         }
-        if (lit->len > 0 && BufAppendCStr(&c->out, ", ") != 0) {
-            return -1;
-        }
-        if (EmitHexByte(&c->out, 0u) != 0) {
-            return -1;
-        }
-        if (BufAppendCStr(&c->out, " } };\n") != 0) {
+        if (EmitHexByte(&c->out, 0u) != 0 || BufAppendCStr(&c->out, " };\n") != 0) {
             return -1;
         }
     }
@@ -1779,8 +1768,8 @@ static int EmitElementTypeName(SLCBackendC* c, const SLTypeRef* t, int asConst) 
 
 static int EmitLenExprFromType(SLCBackendC* c, int32_t exprNode, const SLTypeRef* t) {
     if (TypeRefIsStr(t)) {
-        if (BufAppendCStr(&c->out, "len(") != 0 || EmitExpr(c, exprNode) != 0
-            || BufAppendChar(&c->out, ')') != 0)
+        if (BufAppendCStr(&c->out, "(__sl_u32)((") != 0 || EmitExpr(c, exprNode) != 0
+            || BufAppendCStr(&c->out, ").len)") != 0)
         {
             return -1;
         }
@@ -2191,7 +2180,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                     return -1;
                 }
                 if (BufAppendCStr(&c->out, "__sl_panic(__FILE__, __LINE__, ") != 0
-                    || EmitAssertFormatArg(c, msgArg) != 0 || BufAppendChar(&c->out, ')') != 0)
+                    || EmitExpr(c, msgArg) != 0 || BufAppendChar(&c->out, ')') != 0)
                 {
                     return -1;
                 }

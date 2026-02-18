@@ -28,6 +28,8 @@ typedef struct {
     __sl_uint cap;
 } sl_slice_mut;
 
+typedef sl_slice_ro __sl_str;
+
 typedef struct MemAllocator {
     void* ctx;
     void* (*alloc)(void* ctx, __sl_uint size, __sl_uint align);
@@ -44,19 +46,12 @@ static inline void* sl_new_array(
     return sl_new(ma, elemSize * count, elemAlign);
 }
 
-typedef const __sl_u8* __sl_str;
-
-typedef struct {
-    __sl_u32 len;
-    __sl_u8  bytes[1];
-} sl_strhdr;
-
-static inline __sl_u32 len(__sl_str s) {
-    return s == (__sl_str)0 ? 0u : ((const sl_strhdr*)(const void*)s)->len;
+static inline __sl_uint len(__sl_str s) {
+    return s.len;
 }
 
 static inline const __sl_u8* cstr(__sl_str s) {
-    return s == (__sl_str)0 ? (const __sl_u8*)0 : ((const sl_strhdr*)(const void*)s)->bytes;
+    return (const __sl_u8*)s.ptr;
 }
 
 static inline __sl_uint sl_align_up(__sl_uint x, __sl_uint a) {
@@ -98,8 +93,16 @@ extern __sl_i64 sl_platform_call(
 #endif
 
 #ifndef __sl_panic
-    #define __sl_panic(file, line, msg)                                                      \
-        (sl_platform_call(SLPlatformOp_PANIC, (uint64_t)(uintptr_t)(msg), 0, 0, 0, 0, 0, 0), \
+    #define __sl_panic(file, line, msg)      \
+        (sl_platform_call(                   \
+             SLPlatformOp_PANIC,             \
+             (uint64_t)(uintptr_t)(msg).ptr, \
+             (uint64_t)(msg).len,            \
+             0,                              \
+             0,                              \
+             0,                              \
+             0,                              \
+             0),                             \
          __sl_trap())
 #endif
 

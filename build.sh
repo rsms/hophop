@@ -392,7 +392,7 @@ rg -F "SL_ASSERT_FAIL(__FILE__, __LINE__, \"assertion failed\");" "$actual_phase
     || _err "missing SL_ASSERT_FAIL lowering in phase5 codegen output"
 rg -F "SL_ASSERTF_FAIL(__FILE__, __LINE__, \"x=%d\", x);" "$actual_phase5_codegen_header" > /dev/null \
     || _err "missing SL_ASSERTF_FAIL lowering in phase5 codegen output"
-[ "$(rg -c '^static const struct \{ __sl_u32 len; __sl_u8 bytes\[' "$actual_phase5_codegen_header")" = "1" ] \
+[ "$(rg -c '^static const __sl_u8 sl_lit_' "$actual_phase5_codegen_header")" = "1" ] \
     || _err "expected exactly one pooled string literal in phase5 codegen output"
 cat > "$test_tmpdir/phase5_codegen_test.c" << _END
 #define DEMO_IMPL
