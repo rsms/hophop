@@ -29,6 +29,7 @@ _build/macos-aarch64-debug/slc run <dir|file.sl>
 
 Learn the language:
 - `docs/language.md` (syntax, semantics, grammar)
+- `docs/library.md` (built-in types/functions and platform API)
 
 Understand architecture and compiler behavior:
 - `docs/project-overview.md`
