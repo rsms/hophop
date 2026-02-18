@@ -15,6 +15,7 @@ verbose=0 # print details on stderr
 debug=1   # build debug products
 compdb=1  # write compile_commands.json after configuring build
 config=0  # just config, don't build
+clean=0   # clean up from any previous builds
 asan=     # enable address sanitizer (default: value of debug)
 ubsan=1   # enable undefined-behavior sanitizer
 format=   # run clang-format on the source (default: on if clang-format is found and debug=1)
@@ -89,6 +90,10 @@ c_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${c_flags[@]:-}")
 l_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${l_flags[@]:-}")
 _END
 fi
+
+####################################################################################################
+# clean
+[ $clean = 0 ] || rm -rf "$build_dir"
 
 ####################################################################################################
 # format
