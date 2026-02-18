@@ -1,6 +1,5 @@
 #include "libsl-impl.h"
 #include "slc_codegen.h"
-#include "c_prelude.h"
 
 SL_API_BEGIN
 
@@ -3483,7 +3482,7 @@ static int EmitDeclNode(
 }
 
 static int EmitPrelude(SLCBackendC* c) {
-    return BufAppendCStr(&c->out, kCPrelude);
+    return BufAppendCStr(&c->out, "#include <sl-prelude.h>\n");
 }
 
 static char* _Nullable BuildDefaultMacro(SLCBackendC* c, const char* pkgName, const char* suffix) {

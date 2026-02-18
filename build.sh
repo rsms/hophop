@@ -127,9 +127,9 @@ rule amalgamate
     command = bash amalgamate.sh $(_if_debug --debug) \$out \$in
     description = generate \$out
 
-rule gen_c_prelude
-    command = python3 gen_c_prelude.py \$in > \$out
-    description = generate \$out
+rule copy
+    command = cp \$in \$out
+    description = copy \$out
 
 _END
 
@@ -137,20 +137,15 @@ objfiles=()
 for srcfile in "${cli_sources[@]}" "${lib_sources[@]}"; do
     objfile="\$objdir/${srcfile//\//.}.o"
     objfiles+=( "$objfile" )
-    if [ "$srcfile" = "src/slc_codegen_c.c" ]; then
-        echo "build $objfile: cc $srcfile | \$builddir/c_prelude.h" >> $NF
-        echo "    flags = -I\$builddir" >> $NF
-    else
-        echo "build $objfile: cc $srcfile" >> $NF
-    fi
+    echo "build $objfile: cc $srcfile" >> $NF
 done
 
 cat << _END >> $NF
-build \$builddir/c_prelude.h: gen_c_prelude lib/c_prelude.h | gen_c_prelude.py
-build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index \$builddir/c_prelude.h
+build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index
+build \$builddir/lib/sl-prelude.h: copy lib/sl-prelude.h
 build \$builddir/slc: link ${objfiles[*]}
 
-default \$builddir/c_prelude.h \$builddir/libsl.h \$builddir/slc
+default \$builddir/libsl.h \$builddir/lib/sl-prelude.h \$builddir/slc
 _END
 
 [[ ! -e build.ninja || "$(_checksum $NF)" != "$(_checksum build.ninja)" ]] &&
@@ -179,6 +174,8 @@ _v ninja "${ninja_args[@]}"
 echo "running tests"
 test_tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/slang-tests.XXXXXX")
 trap "rm -rf $test_tmpdir" EXIT
+# cc flags that include sl-prelude.h from the lib/ directory next to the slc binary
+cc_sl_flags=( "-isystem" "$(cd "$build_dir" && pwd)/lib" )
 
 actual_codegen_app_header="$test_tmpdir/app_codegen.h"
 actual_codegen_app_obj="$test_tmpdir/app_codegen.o"
@@ -372,21 +369,21 @@ cat > "$test_tmpdir/app_codegen_test.c" << _END
 #include "$actual_codegen_app_header"
 int test_codegen_app_main(void) { return (int)app__main(); }
 _END
-"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/app_codegen_test.c" -o "$actual_codegen_app_obj"
+"$cc" -std=c11 "${cc_sl_flags[@]}" -Wall -Wextra -Werror -c "$test_tmpdir/app_codegen_test.c" -o "$actual_codegen_app_obj"
 
 "$build_dir/slc" genpkg:c tests/codegen_ptr > "$actual_codegen_ptr_header"
 cat > "$test_tmpdir/ptr_codegen_test.c" << _END
 #define DEMO_IMPL
 #include "$actual_codegen_ptr_header"
 _END
-"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/ptr_codegen_test.c" -o "$actual_codegen_ptr_obj"
+"$cc" -std=c11 "${cc_sl_flags[@]}" -Wall -Wextra -Werror -c "$test_tmpdir/ptr_codegen_test.c" -o "$actual_codegen_ptr_obj"
 
 _expect_ok_silent check tests/assert_ok.sl
 _expect_fail_with_stderr check tests/assert_bad_condition.sl tests/assert_bad_condition.stderr
 
 "$build_dir/slc" genpkg:c tests/codegen_strings_assert > "$actual_phase5_codegen_header"
-rg -F "typedef struct { __sl_u32 len; __sl_u8 bytes[1]; } sl_strhdr;" "$actual_phase5_codegen_header" > /dev/null \
-    || _err "missing sl_strhdr prelude type in phase5 codegen output"
+rg -F "#include <sl-prelude.h>" "$actual_phase5_codegen_header" > /dev/null \
+    || _err "missing sl-prelude.h include in phase5 codegen output"
 rg -F "SL_ASSERT_FAIL(__FILE__, __LINE__, \"assertion failed\");" "$actual_phase5_codegen_header" > /dev/null \
     || _err "missing SL_ASSERT_FAIL lowering in phase5 codegen output"
 rg -F "SL_ASSERTF_FAIL(__FILE__, __LINE__, \"x=%d\", x);" "$actual_phase5_codegen_header" > /dev/null \
@@ -398,7 +395,7 @@ cat > "$test_tmpdir/phase5_codegen_test.c" << _END
 #include "$actual_phase5_codegen_header"
 int test_codegen_phase5(void) { return (int)codegen_strings_assert__Main(7); }
 _END
-"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase5_codegen_test.c" -o "$actual_phase5_codegen_obj"
+"$cc" -std=c11 "${cc_sl_flags[@]}" -Wall -Wextra -Werror -c "$test_tmpdir/phase5_codegen_test.c" -o "$actual_phase5_codegen_obj"
 
 for t in \
     "checkpkg|tests/import_default_alias/app" \
@@ -415,7 +412,7 @@ cat > "$test_tmpdir/phase6_single_test.c" << _END
 #include "$actual_phase6_single_header"
 int test_codegen_phase6_single(void) { return (int)single_file__main(); }
 _END
-"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase6_single_test.c" -o "$actual_phase6_single_obj"
+"$cc" -std=c11 "${cc_sl_flags[@]}" -Wall -Wextra -Werror -c "$test_tmpdir/phase6_single_test.c" -o "$actual_phase6_single_obj"
 
 _expect_ok_silent checkpkg tests/single_file_import/app/main.sl
 "$build_dir/slc" genpkg:c tests/single_file_import/app/main.sl > "$actual_phase6_single_import_header"
@@ -424,7 +421,7 @@ cat > "$test_tmpdir/phase6_single_import_test.c" << _END
 #include "$actual_phase6_single_import_header"
 int test_codegen_phase6_single_import(void) { return (int)app__main(); }
 _END
-"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase6_single_import_test.c" -o "$actual_phase6_single_import_obj"
+"$cc" -std=c11 "${cc_sl_flags[@]}" -Wall -Wextra -Werror -c "$test_tmpdir/phase6_single_import_test.c" -o "$actual_phase6_single_import_obj"
 
 if ! "$build_dir/slc" compile tests/run_exit7.sl -o "$actual_phase7_compile_exe" \
     > "$actual_phase7_compile_stdout" 2> "$actual_phase7_compile_stderr"; then
@@ -509,7 +506,7 @@ int test_codegen_phase8_vss(tests__Packet* p) {
     return payload != (__sl_u8*)0 || samples != (__sl_i32*)0 || n > 0 ? 0 : 0;
 }
 _END
-"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase8_vss_test.c" -o "$actual_phase8_vss_obj"
+"$cc" -std=c11 "${cc_sl_flags[@]}" -Wall -Wextra -Werror -c "$test_tmpdir/phase8_vss_test.c" -o "$actual_phase8_vss_obj"
 
 if ! "$build_dir/slc" compile tests/vss_ok.sl -o "$actual_phase8_vss_exe" > /dev/null 2>&1; then
     _err "unexpected failure for slc compile tests/vss_ok.sl"
@@ -550,7 +547,7 @@ int test_codegen_phase8_vss_nested(tests__Packet* p, tests__Section* s, tests__M
                : 0;
 }
 _END
-"$cc" -std=c11 -Wall -Wextra -Werror -c "$test_tmpdir/phase8_vss_nested_test.c" -o "$actual_phase8_vss_nested_obj"
+"$cc" -std=c11 "${cc_sl_flags[@]}" -Wall -Wextra -Werror -c "$test_tmpdir/phase8_vss_nested_test.c" -o "$actual_phase8_vss_nested_obj"
 
 if ! "$build_dir/slc" compile tests/vss_nested_ok.sl -o "$actual_phase8_vss_nested_exe" > /dev/null 2>&1; then
     _err "unexpected failure for slc compile tests/vss_nested_ok.sl"

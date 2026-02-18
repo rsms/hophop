@@ -9,6 +9,9 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+    #include <mach-o/dyld.h>
+#endif
 
 #include "libsl-impl.h"
 #include "slc_codegen.h"
@@ -367,6 +370,33 @@ static char* _Nullable DirNameDup(const char* path) {
     memcpy(out, path, len);
     out[len] = '\0';
     return out;
+}
+
+/* Returns a malloc'd string with the directory containing the running executable,
+ * or NULL on failure. Caller must free. */
+static char* _Nullable GetExeDir(void) {
+#if defined(__APPLE__)
+    char     buf[PATH_MAX];
+    char     resolved[PATH_MAX];
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) != 0) {
+        return NULL;
+    }
+    if (realpath(buf, resolved) == NULL) {
+        return NULL;
+    }
+    return DirNameDup(resolved);
+#elif defined(__linux__)
+    char    buf[PATH_MAX];
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n <= 0) {
+        return NULL;
+    }
+    buf[n] = '\0';
+    return DirNameDup(buf);
+#else
+    return NULL;
+#endif
 }
 
 static int HasSuffix(const char* s, const char* suffix) {
@@ -2348,9 +2378,10 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
     char*                   headerPath = NULL;
     char*                   sourcePath = NULL;
     char*                   platformPath = NULL;
+    char*                   libDir = NULL;
     SLStringBuilder         cBuilder = { 0 };
     char*                   cSource = NULL;
-    const char*             ccArgv[10];
+    const char*             ccArgv[12];
     int                     rc = -1;
 
     tmpDir[0] = '\0';
@@ -2439,14 +2470,32 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
         goto end;
     }
 
+    {
+        char* exeDir = GetExeDir();
+        if (exeDir != NULL) {
+            libDir = JoinPath(exeDir, "lib");
+            free(exeDir);
+        }
+    }
+
     ccArgv[0] = "cc";
     ccArgv[1] = "-std=c11";
     ccArgv[2] = "-g";
-    ccArgv[3] = "-o";
-    ccArgv[4] = outExe;
-    ccArgv[5] = sourcePath;
-    ccArgv[6] = platformPath;
-    ccArgv[7] = NULL;
+    if (libDir != NULL) {
+        ccArgv[3] = "-isystem";
+        ccArgv[4] = libDir;
+        ccArgv[5] = "-o";
+        ccArgv[6] = outExe;
+        ccArgv[7] = sourcePath;
+        ccArgv[8] = platformPath;
+        ccArgv[9] = NULL;
+    } else {
+        ccArgv[3] = "-o";
+        ccArgv[4] = outExe;
+        ccArgv[5] = sourcePath;
+        ccArgv[6] = platformPath;
+        ccArgv[7] = NULL;
+    }
 
     if (RunCommand(ccArgv) != 0) {
         ErrorSimple("C compilation failed");
@@ -2471,6 +2520,7 @@ end:
     free(headerPath);
     free(sourcePath);
     free(platformPath);
+    free(libDir);
     free(outHeader);
     free(cSource);
     free(cBuilder.v);
