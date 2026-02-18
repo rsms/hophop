@@ -1012,9 +1012,8 @@ static int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
     }
 
     if (dst->kind == SLTCType_PTR) {
-        if (src->kind == SLTCType_REF && dst->baseType == src->baseType) {
-            return 1;
-        }
+        /* Owned pointers (*T) can only come from new(); references (&T) cannot be
+         * implicitly promoted to owned pointers. */
         return 0;
     }
 
@@ -1704,7 +1703,29 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         }
                     }
 
-                    resultType = SLTCInternPtrType(c, elemType, callee->start, callee->end);
+                    if (countArgNode >= 0) {
+                        if (countIsConst && countValue > 0) {
+                            /* Compile-time constant count: new returns *[T N] */
+                            int32_t arrayType = SLTCInternArrayType(
+                                c, elemType, (uint32_t)countValue, callee->start, callee->end);
+                            if (arrayType < 0) {
+                                return -1;
+                            }
+                            resultType = SLTCInternPtrType(
+                                c, arrayType, callee->start, callee->end);
+                        } else {
+                            /* Runtime count: new returns *[T] (element pointer) */
+                            int32_t sliceType = SLTCInternSliceType(
+                                c, elemType, 0, callee->start, callee->end);
+                            if (sliceType < 0) {
+                                return -1;
+                            }
+                            resultType = SLTCInternPtrType(
+                                c, sliceType, callee->start, callee->end);
+                        }
+                    } else {
+                        resultType = SLTCInternPtrType(c, elemType, callee->start, callee->end);
+                    }
                     if (resultType < 0) {
                         return -1;
                     }

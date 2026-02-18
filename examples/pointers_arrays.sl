@@ -7,7 +7,7 @@ fn main() i32 {
     var values [i32 4]
     values[0] = 7
 
-    var p *i32 = &values[0]
+    var p mut&i32 = &values[0]
     var n Node
     n.value = *p
     n.next = 0 as *Node

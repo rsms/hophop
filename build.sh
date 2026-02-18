@@ -339,6 +339,7 @@ for t in \
     "check|tests/new_bad_allocator_readonly.sl|tests/new_bad_allocator_readonly.stderr" \
     "check|tests/new_bad_type_arg_value.sl|tests/new_bad_type_arg_value.stderr" \
     "check|tests/new_bad_arity.sl|tests/new_bad_arity.stderr" \
+    "check|tests/new_array_type_mismatch.sl|tests/new_array_type_mismatch.stderr" \
     "check|tests/types_mut_bad_readonly_to_mutref_assign.sl|tests/types_mut_bad_readonly_to_mutref_assign.stderr" \
     "check|tests/types_mut_bad_ref_assign_value.sl|tests/types_mut_bad_ref_assign_value.stderr" \
     "check|tests/types_mut_bad_readonly_slice_write.sl|tests/types_mut_bad_readonly_slice_write.stderr" \

@@ -1391,12 +1391,18 @@ static int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
     if (!type->valid) {
         return BufAppendCStr(&c->out, "void");
     }
-    if (type->containerKind == SLTypeContainer_SLICE_RO) {
-        base = "sl_slice_ro";
-        stars = type->containerPtrDepth;
-    } else if (type->containerKind == SLTypeContainer_SLICE_MUT) {
-        base = "sl_slice_mut";
-        stars = type->containerPtrDepth;
+    if (type->containerKind == SLTypeContainer_SLICE_RO
+        || type->containerKind == SLTypeContainer_SLICE_MUT)
+    {
+        if (type->containerPtrDepth > 0) {
+            /* *[T] / *mut[T] — element pointer */
+            base = type->baseName;
+            stars = type->ptrDepth + type->containerPtrDepth;
+        } else {
+            base =
+                type->containerKind == SLTypeContainer_SLICE_MUT ? "sl_slice_mut" : "sl_slice_ro";
+            stars = 0;
+        }
     } else {
         if (type->baseName == NULL) {
             return BufAppendCStr(&c->out, "void");
@@ -1427,6 +1433,22 @@ static int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) 
     }
     if (t.containerKind == SLTypeContainer_SLICE_RO || t.containerKind == SLTypeContainer_SLICE_MUT)
     {
+        if (t.containerPtrDepth > 0) {
+            /* *[T] / *mut[T] — element pointer, emits as T* */
+            if (t.baseName == NULL) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, t.baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
+                return -1;
+            }
+            stars = t.ptrDepth + t.containerPtrDepth;
+            for (i = 0; i < stars; i++) {
+                if (BufAppendChar(&c->out, '*') != 0) {
+                    return -1;
+                }
+            }
+            return BufAppendCStr(&c->out, name);
+        }
         if (BufAppendCStr(
                 &c->out,
                 t.containerKind == SLTypeContainer_SLICE_MUT ? "sl_slice_mut" : "sl_slice_ro")
@@ -1434,11 +1456,6 @@ static int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) 
             || BufAppendChar(&c->out, ' ') != 0)
         {
             return -1;
-        }
-        for (i = 0; i < t.containerPtrDepth; i++) {
-            if (BufAppendChar(&c->out, '*') != 0) {
-                return -1;
-            }
         }
         return BufAppendCStr(&c->out, name);
     }
@@ -1744,6 +1761,10 @@ static int TypeRefContainerWritable(const SLTypeRef* t) {
     {
         return t->readOnly == 0;
     }
+    /* *[T]: element pointer (ptrDepth > 0) — the pointer itself is writable */
+    if (t->containerKind == SLTypeContainer_SLICE_RO && t->containerPtrDepth > 0) {
+        return 1;
+    }
     return 0;
 }
 
@@ -1834,9 +1855,8 @@ static int EmitElemPtrExpr(
         || baseType->containerKind == SLTypeContainer_SLICE_MUT)
     {
         if (baseType->containerPtrDepth > 0) {
-            if (BufAppendChar(&c->out, '(') != 0 || EmitExpr(c, baseNode) != 0
-                || BufAppendCStr(&c->out, ")->ptr") != 0)
-            {
+            /* *[T] is already an element pointer; just emit the expression */
+            if (EmitExpr(c, baseNode) != 0) {
                 return -1;
             }
         } else {

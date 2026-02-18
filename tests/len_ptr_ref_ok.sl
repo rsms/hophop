@@ -1,9 +1,9 @@
 fn main() i32 {
+    var ma MemAllocator
     var a [i32 4]
-    var p *[i32 4] = &a
+    var p *[i32 4] = new(&ma, i32, 4)
     var r &[i32 4] = p
     var m mut&[i32 4] = &a
     var s [i32] = a[:]
-    var ps *[i32] = &s
-    return (len(a) + len(p) + len(r) + len(m) + len(s) + len(ps)) as i32
+    return (len(a) + len(p) + len(r) + len(m) + len(s)) as i32
 }
