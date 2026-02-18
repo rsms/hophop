@@ -34,8 +34,8 @@ mode=debug; [ $debug = 0 ] && mode=release
 build_dir=_build/$sys-$arch-$mode
 diag_json=src/diagnostics.json
 diag_tool=tools/gen_diagnostics.py
-diag_enum_out=src/gen/sl_diagnostics_enum.inc
-diag_c_out=src/gen/sl_diagnostics_data.c
+diag_enum_out=src/diagnostics_enum.inc
+diag_c_out=src/diagnostics_data.c
 diag_outputs=( "$diag_enum_out" "$diag_c_out" )
 
 cli_sources=( src/slc.c )
@@ -50,8 +50,7 @@ lib_output=libsl.h
 toolchain=${toolchain:-/opt/homebrew/opt/llvm}
 [ -z "$toolchain" -a -x "$toolchain/bin/clang" ] || export PATH=$toolchain/bin:$PATH
 format=${format:-$([ $debug = 1 -a -n "$(command -v clang-format)" ] && echo 1 || echo 0 )}
-format_files=( $(find src lib -maxdepth 2 \( -name '*.c' -o -name '*.h' \) \
-                              -and -not -path 'src/gen/*' | sort) )
+
 x_flags=(
     -g \
     $([ -t 2 ] && echo -fcolor-diagnostics || true) \
@@ -91,7 +90,7 @@ if [ $asan = 1 -o $ubsan = 1 ]; then
     fi
 fi
 
-if [ $verbose != 0 ]; then
+if [ $verbose -gt 0 ]; then
 cat <<- _END >&2
 mode, arch, sys = $mode, $arch, $sys
 toolchain, cc   = $toolchain, $cc
@@ -109,7 +108,16 @@ fi
 
 ####################################################################################################
 # format
-[ $format = 0 ] || clang-format --Werror --style=file:clang-format.yaml -i "${format_files[@]}"
+if [ $format != 0 ]; then
+    # ignore files which have "linguist-generated" or "linguist-vendored" in .gitattributes
+    format_files=( $(find src lib -maxdepth 2 \( -name '*.c' -o -name '*.h' \) |
+        git check-attr --stdin linguist-generated linguist-vendored |
+        grep -F ': unspecified' | cut -d: -f1 | sort -u) )
+
+    [ $verbose -lt 2 ] || echo "clang-format" "${format_files[@]}"
+
+    clang-format --Werror --style=file:clang-format.yaml -i "${format_files[@]}"
+fi
 
 ####################################################################################################
 # configure
@@ -172,8 +180,8 @@ _END
 cd ../../..
 
 ninja_args=( -f "$build_dir/obj/build.ninja" )
-[ $verbose != 0 ] && ninja_args+=( -v )
-[ $verbose = 2 ] && ninja_args+=( -d explain )
+[ $verbose -gt 0 ] && ninja_args+=( -v )
+[ $verbose -ge 2 ] && ninja_args+=( -d explain )
 
 if [ $compdb = 1 ]; then
     _v ninja "${ninja_args[@]}" -t compdb > _build/compile_commands.json

@@ -42,7 +42,7 @@ Work on runtime/platform integration:
 Work on compiler/library APIs:
 - `src/libsl.h` (`SLLex`, `SLParse`, `SLTypeCheck`, diagnostics)
 - `src/slc.c` (CLI flow)
-- `src/slc_codegen_c.c` (C backend)
+- `src/codegen_c.c` (C backend)
 
 ## Current Language Surface
 

@@ -41,8 +41,8 @@ Source → [Lexer] → Tokens → [Parser] → AST → [Typechecker] → [Codege
 | `parse.c` | Recursive-descent parser; builds a flat array of AST nodes (indexed, not pointer-linked) |
 | `typecheck.c` | Symbol tables, name resolution, type inference, mutability/reference checking |
 | `slc.c` | Hosted CLI: package loading, import graph, command dispatch |
-| `slc_codegen_c.c` | C backend: emits single-header library, mangles symbols, lowers defer, VSS accessors |
-| `slc_codegen.h/.c` | Backend interface (currently only C backend exists) |
+| `codegen_c.c` | C backend: emits single-header library, mangles symbols, lowers defer, VSS accessors |
+| `codegen.h/.c` | Backend interface (currently only C backend exists) |
 | `tools/amalgamate.py` | Merges `libsl.*` sources into a single distributable header |
 
 ### Key Design Points

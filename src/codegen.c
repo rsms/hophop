@@ -1,5 +1,5 @@
 #include "libsl-impl.h"
-#include "slc_codegen.h"
+#include "codegen.h"
 
 SL_API_BEGIN
 

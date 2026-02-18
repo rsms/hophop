@@ -118,7 +118,7 @@ ${license}
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 typedef enum {
-#include "gen/sl_diagnostics_enum.inc"
+#include "diagnostics_enum.inc"
     SLDiag__COUNT,
 } SLDiagCode;
 
