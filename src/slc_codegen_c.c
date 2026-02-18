@@ -932,6 +932,11 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             *outType = elemType;
             return 0;
         }
+        case SLAST_TYPE_OPTIONAL: {
+            /* Emit the inner type; C has no optional, so we just pass through. */
+            int32_t child = AstFirstChild(&c->ast, nodeId);
+            return ParseTypeRef(c, child, outType);
+        }
         default: TypeRefSetInvalid(outType); return -1;
     }
 }
@@ -1079,7 +1084,8 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                 && (ch->kind == SLAST_TYPE_NAME || ch->kind == SLAST_TYPE_PTR
                     || ch->kind == SLAST_TYPE_REF || ch->kind == SLAST_TYPE_MUTREF
                     || ch->kind == SLAST_TYPE_ARRAY || ch->kind == SLAST_TYPE_VARRAY
-                    || ch->kind == SLAST_TYPE_SLICE || ch->kind == SLAST_TYPE_MUTSLICE)
+                    || ch->kind == SLAST_TYPE_SLICE || ch->kind == SLAST_TYPE_MUTSLICE
+                    || ch->kind == SLAST_TYPE_OPTIONAL)
                 && ch->flags == 1)
             {
                 if (ParseTypeRef(c, child, &returnType) != 0) {
@@ -1449,6 +1455,14 @@ static int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) 
     for (i = 0; i < stars; i++) {
         if (BufAppendChar(&c->out, '*') != 0) {
             return -1;
+        }
+    }
+    {
+        const SLASTNode* tn = NodeAt(c, typeNode);
+        if (tn != NULL && tn->kind == SLAST_TYPE_OPTIONAL) {
+            if (BufAppendCStr(&c->out, "/* optional */ ") != 0) {
+                return -1;
+            }
         }
     }
     if (BufAppendCStr(&c->out, name) != 0) {
@@ -2821,7 +2835,8 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             && (firstChild->kind == SLAST_TYPE_NAME || firstChild->kind == SLAST_TYPE_PTR
                 || firstChild->kind == SLAST_TYPE_REF || firstChild->kind == SLAST_TYPE_MUTREF
                 || firstChild->kind == SLAST_TYPE_ARRAY || firstChild->kind == SLAST_TYPE_VARRAY
-                || firstChild->kind == SLAST_TYPE_SLICE || firstChild->kind == SLAST_TYPE_MUTSLICE))
+                || firstChild->kind == SLAST_TYPE_SLICE || firstChild->kind == SLAST_TYPE_MUTSLICE
+                || firstChild->kind == SLAST_TYPE_OPTIONAL))
         {
             child = AstNextSibling(&c->ast, child);
         }
@@ -3268,7 +3283,8 @@ static int EmitFnDeclOrDef(
             && (ch->kind == SLAST_TYPE_NAME || ch->kind == SLAST_TYPE_PTR
                 || ch->kind == SLAST_TYPE_REF || ch->kind == SLAST_TYPE_MUTREF
                 || ch->kind == SLAST_TYPE_ARRAY || ch->kind == SLAST_TYPE_VARRAY
-                || ch->kind == SLAST_TYPE_SLICE || ch->kind == SLAST_TYPE_MUTSLICE)
+                || ch->kind == SLAST_TYPE_SLICE || ch->kind == SLAST_TYPE_MUTSLICE
+                || ch->kind == SLAST_TYPE_OPTIONAL)
             && ch->flags == 1)
         {
             returnTypeNode = child;

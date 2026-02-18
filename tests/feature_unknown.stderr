@@ -1,0 +1,1 @@
+tests/feature_unknown.sl:0:28: warning: unknown feature 'bogus'

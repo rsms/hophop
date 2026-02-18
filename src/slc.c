@@ -49,10 +49,11 @@ typedef struct {
 } SLDeclText;
 
 typedef struct SLPackage {
-    char* dirPath;
-    char* name;
-    int   loadState; /* 0=new, 1=loading, 2=loaded */
-    int   checked;
+    char*      dirPath;
+    char*      name;
+    int        loadState; /* 0=new, 1=loading, 2=loaded */
+    int        checked;
+    SLFeatures features; /* accumulated from all parsed files */
 
     SLParsedFile* files;
     uint32_t      fileLen;
@@ -768,6 +769,8 @@ static int ParseSource(
     return 0;
 }
 
+static void WarnUnknownFeatureImports(const char* filename, const char* source, const SLAST* ast);
+
 static int CheckSource(const char* filename, const char* source, uint32_t sourceLen) {
     void*   arenaMem;
     SLArena arena;
@@ -777,6 +780,8 @@ static int CheckSource(const char* filename, const char* source, uint32_t source
     if (ParseSource(filename, source, sourceLen, &ast, &arenaMem, &arena) != 0) {
         return -1;
     }
+
+    WarnUnknownFeatureImports(filename, source, &ast);
 
     if (SLTypeCheck(&arena, &ast, (SLStrView){ source, sourceLen }, &diag) != 0) {
         const char* hint;
@@ -900,6 +905,32 @@ static char* _Nullable DefaultImportAlias(const char* importPath) {
         return NULL;
     }
     return DupCStr(name);
+}
+
+static void WarnUnknownFeatureImports(const char* filename, const char* source, const SLAST* ast) {
+    int32_t child = ASTFirstChild(ast, ast->root);
+    while (child >= 0) {
+        const SLASTNode* n = &ast->nodes[child];
+        if (n->kind == SLAST_IMPORT) {
+            char* importPath = DecodeStringLiteral(source, n->dataStart, n->dataEnd);
+            if (importPath != NULL) {
+                if (strncmp(importPath, "slang/feature/", 14u) == 0) {
+                    const char* featureName = importPath + 14u;
+                    if (strcmp(featureName, "optional") != 0) {
+                        fprintf(
+                            stderr,
+                            "%s:%u:%u: warning: unknown feature '%s'\n",
+                            DisplayPath(filename),
+                            n->start,
+                            n->end,
+                            featureName);
+                    }
+                }
+                free(importPath);
+            }
+        }
+        child = ASTNextSibling(ast, child);
+    }
 }
 
 static int AddPackageFile(
@@ -1115,6 +1146,9 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
     const SLAST*        ast = &file->ast;
     int32_t             child = ASTFirstChild(ast, ast->root);
 
+    /* Accumulate feature flags from this file into the package. */
+    pkg->features |= ast->features;
+
     while (child >= 0) {
         const SLASTNode* n = &ast->nodes[child];
         if (n->kind == SLAST_IMPORT) {
@@ -1123,6 +1157,12 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
             char*   alias = NULL;
             if (importPath == NULL) {
                 return Errorf(file->path, n->dataStart, n->dataEnd, "invalid import path literal");
+            }
+            /* Skip slang/feature/... imports; they are compiler directives, not real packages. */
+            if (strncmp(importPath, "slang/feature/", 14u) == 0) {
+                free(importPath);
+                child = ASTNextSibling(ast, child);
+                continue;
             }
             if (aliasNode >= 0) {
                 const SLASTNode* a = &ast->nodes[aliasNode];
@@ -1821,6 +1861,14 @@ static int BuildCombinedPackageSource(const SLPackage* pkg, char** outSource, ui
     uint32_t        i;
     *outSource = NULL;
     *outLen = 0;
+
+    /* Prepend feature imports so that the combined source re-enables the same features. */
+    if ((pkg->features & SLFeature_OPTIONAL) != 0) {
+        if (SBAppendCStr(&b, "import \"slang/feature/optional\"\n") != 0) {
+            free(b.v);
+            return ErrorSimple("out of memory");
+        }
+    }
 
     for (i = 0; i < pkg->importLen; i++) {
         const SLPackage* dep = pkg->imports[i].target;

@@ -258,6 +258,20 @@ _expect_fail_no_stdout() {
     [ ! -s "$out" ] || _err "unexpected stdout for slc $mode $input"
 }
 
+_expect_ok_with_stderr() {
+    local mode="$1"
+    local input="$2"
+    local expected_stderr="$3"
+    local id="$(_run_id "${mode}_${input}")"
+    local out="$test_tmpdir/$id.stdout"
+    local err="$test_tmpdir/$id.stderr"
+    if ! _run_slc "$mode" "$input" > "$out" 2> "$err"; then
+        _err "unexpected failure for slc $mode $input"
+    fi
+    [ ! -s "$out" ] || _err "unexpected stdout for slc $mode $input"
+    diff -u "$expected_stderr" "$err"
+}
+
 for t in \
     "_|tests/basic.sl|tests/basic.tokens" \
     "ast|tests/ast_basic.sl|tests/ast_basic.ast" \
@@ -278,6 +292,7 @@ for t in \
     "check|tests/len_ptr_ref_ok.sl" \
     "check|tests/len_null_ptr_ref_ok.sl" \
     "check|tests/new_ok.sl" \
+    "check|tests/feature_optional_ok.sl" \
     "checkpkg|tests/pkg_ok/app"
 do
     IFS='|' read -r mode input <<< "$t"
@@ -312,11 +327,14 @@ for t in \
     "check|tests/bad_void_return_type.sl|tests/bad_void_return_type.stderr" \
     "checkpkg|tests/pkg_bad_symbol/app|tests/pkg_bad_symbol.stderr" \
     "checkpkg|tests/pkg_cycle/a|tests/pkg_cycle.stderr" \
-    "checkpkg|tests/pub_missing_def|tests/pub_missing_def.stderr"
+    "checkpkg|tests/pub_missing_def|tests/pub_missing_def.stderr" \
+    "check|tests/feature_optional_no_import.sl|tests/feature_optional_no_import.stderr"
 do
     IFS='|' read -r mode input expected_stderr <<< "$t"
     _expect_fail_with_stderr "$mode" "$input" "$expected_stderr"
 done
+
+_expect_ok_with_stderr check tests/feature_unknown.sl tests/feature_unknown.stderr
 
 "$build_dir/slc" genpkg tests/pkg_ok/app > "$actual_codegen_app_header"
 rg -F "__sl_i32 app__main(void);" "$actual_codegen_app_header" > /dev/null \

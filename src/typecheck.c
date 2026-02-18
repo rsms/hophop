@@ -13,6 +13,7 @@ typedef enum {
     SLTCType_UNTYPED_INT,
     SLTCType_UNTYPED_FLOAT,
     SLTCType_FUNCTION,
+    SLTCType_OPTIONAL,
 } SLTCTypeKind;
 
 typedef enum {
@@ -485,6 +486,29 @@ static int32_t SLTCInternSliceType(
     return SLTCAddType(c, &t, errStart, errEnd);
 }
 
+static int32_t SLTCInternOptionalType(
+    SLTypeCheckCtx* c, int32_t baseType, uint32_t errStart, uint32_t errEnd) {
+    uint32_t i;
+    SLTCType t;
+    for (i = 0; i < c->typeLen; i++) {
+        if (c->types[i].kind == SLTCType_OPTIONAL && c->types[i].baseType == baseType) {
+            return (int32_t)i;
+        }
+    }
+    t.kind = SLTCType_OPTIONAL;
+    t.builtin = SLBuiltin_INVALID;
+    t.baseType = baseType;
+    t.declNode = -1;
+    t.funcIndex = -1;
+    t.arrayLen = 0;
+    t.nameStart = 0;
+    t.nameEnd = 0;
+    t.fieldStart = 0;
+    t.fieldCount = 0;
+    t.flags = 0;
+    return SLTCAddType(c, &t, errStart, errEnd);
+}
+
 static int32_t SLTCInternFunctionType(
     SLTypeCheckCtx* c, int32_t funcIndex, uint32_t errStart, uint32_t errEnd) {
     uint32_t i;
@@ -768,6 +792,23 @@ static int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outTy
             *outType = sliceType;
             return 0;
         }
+        case SLAST_TYPE_OPTIONAL: {
+            int32_t child = SLASTFirstChild(c->ast, nodeId);
+            int32_t baseType;
+            int32_t optType;
+            if ((c->ast->features & SLFeature_OPTIONAL) == 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
+            }
+            if (SLTCResolveTypeNode(c, child, &baseType) != 0) {
+                return -1;
+            }
+            optType = SLTCInternOptionalType(c, baseType, n->start, n->end);
+            if (optType < 0) {
+                return -1;
+            }
+            *outType = optType;
+            return 0;
+        }
         case SLAST_TYPE_VARRAY: return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
         default:                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
     }
@@ -910,7 +951,7 @@ static int SLTCTypeContainsVarSizeByValue(SLTypeCheckCtx* c, int32_t typeId) {
         return 0;
     }
     if (c->types[typeId].kind == SLTCType_PTR || c->types[typeId].kind == SLTCType_REF
-        || c->types[typeId].kind == SLTCType_SLICE)
+        || c->types[typeId].kind == SLTCType_SLICE || c->types[typeId].kind == SLTCType_OPTIONAL)
     {
         return 0;
     }
@@ -977,6 +1018,18 @@ static int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
                     return 1;
                 }
             }
+        }
+        return 0;
+    }
+
+    if (dst->kind == SLTCType_OPTIONAL) {
+        /* T can be assigned to T? */
+        if (srcType == dst->baseType) {
+            return 1;
+        }
+        /* T? can be assigned to T? */
+        if (src->kind == SLTCType_OPTIONAL && dst->baseType == src->baseType) {
+            return 1;
         }
         return 0;
     }
@@ -1208,7 +1261,7 @@ static int SLTCReadFunctionSig(
             (n->kind == SLAST_TYPE_NAME || n->kind == SLAST_TYPE_PTR || n->kind == SLAST_TYPE_ARRAY
              || n->kind == SLAST_TYPE_REF || n->kind == SLAST_TYPE_MUTREF
              || n->kind == SLAST_TYPE_SLICE || n->kind == SLAST_TYPE_MUTSLICE
-             || n->kind == SLAST_TYPE_VARRAY)
+             || n->kind == SLAST_TYPE_VARRAY || n->kind == SLAST_TYPE_OPTIONAL)
             && n->flags == 1)
         {
             if (SLTCResolveTypeNode(c, child, &returnType) != 0) {

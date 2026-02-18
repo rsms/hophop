@@ -20,6 +20,7 @@ typedef struct {
     uint32_t       nodeLen;
     uint32_t       nodeCap;
     SLDiag*        diag;
+    SLFeatures     features;
 } SLParser;
 
 static const SLToken* SLPPeek(SLParser* p) {
@@ -293,7 +294,25 @@ static int SLPParseType(SLParser* p, int32_t* out) {
         return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
     }
 
-    return SLPParseTypeName(p, out);
+    if (SLPParseTypeName(p, out) != 0) {
+        return -1;
+    }
+    /* Check for trailing '?' (optional type) when the feature is enabled. */
+    if ((p->features & SLFeature_OPTIONAL) != 0 && SLPAt(p, SLTok_QUESTION)) {
+        const SLToken* q = SLPPeek(p);
+        int32_t        inner = *out;
+        int32_t        optNode = SLPNewNode(p, SLAST_TYPE_OPTIONAL, p->nodes[inner].start, q->end);
+        if (optNode < 0) {
+            return -1;
+        }
+        p->pos++;
+        p->nodes[optNode].end = q->end;
+        if (SLPAddChild(p, optNode, inner) != 0) {
+            return -1;
+        }
+        *out = optNode;
+    }
+    return 0;
 }
 
 static int SLPParsePrimary(SLParser* p, int32_t* out) {
@@ -1302,6 +1321,29 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
         return -1;
     }
 
+    /* Detect slang/feature/ imports and set feature flags. */
+    /* String literal includes quotes: src[path->start] == '"', src[path->end-1] == '"'. */
+    {
+        /* "slang/feature/" is 14 bytes. */
+        static const char featurePrefix[14] = {
+            's', 'l', 'a', 'n', 'g', '/', 'f', 'e', 'a', 't', 'u', 'r', 'e', '/'
+        };
+        uint32_t strStart = path->start + 1u;           /* skip opening quote */
+        uint32_t strLen = path->end - path->start - 2u; /* exclude both quotes */
+        if (strLen > 14u && memcmp(p->src.ptr + strStart, featurePrefix, 14u) == 0) {
+            const char* name = p->src.ptr + strStart + 14u;
+            uint32_t    nameLen = strLen - 14u;
+            /* "optional" = 8 chars */
+            if (nameLen == 8u && name[0] == 'o' && name[1] == 'p' && name[2] == 't'
+                && name[3] == 'i' && name[4] == 'o' && name[5] == 'n' && name[6] == 'a'
+                && name[7] == 'l')
+            {
+                p->features |= SLFeature_OPTIONAL;
+            }
+            /* Unknown feature names: silently ignored here; CLI layer warns later. */
+        }
+    }
+
     n = SLPNewNode(p, SLAST_IMPORT, kw->start, path->end);
     if (n < 0) {
         return -1;
@@ -1378,6 +1420,7 @@ const char* SLASTKindName(SLASTKind kind) {
         case SLAST_TYPE_VARRAY:   return "TYPE_VARRAY";
         case SLAST_TYPE_SLICE:    return "TYPE_SLICE";
         case SLAST_TYPE_MUTSLICE: return "TYPE_MUTSLICE";
+        case SLAST_TYPE_OPTIONAL: return "TYPE_OPTIONAL";
         case SLAST_STRUCT:        return "STRUCT";
         case SLAST_UNION:         return "UNION";
         case SLAST_ENUM:          return "ENUM";
@@ -1421,6 +1464,7 @@ int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag) {
     out->nodes = NULL;
     out->len = 0;
     out->root = -1;
+    out->features = SLFeature_NONE;
 
     if (SLLex(arena, src, &ts, diag) != 0) {
         return -1;
@@ -1433,6 +1477,7 @@ int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag) {
     p.nodeLen = 0;
     p.nodeCap = ts.len * 4u + 16u;
     p.diag = diag;
+    p.features = SLFeature_NONE;
     p.nodes = (SLASTNode*)SLArenaAlloc(
         arena, p.nodeCap * (uint32_t)sizeof(SLASTNode), (uint32_t)_Alignof(SLASTNode));
     if (p.nodes == NULL) {
@@ -1472,6 +1517,7 @@ int SLParse(SLArena* arena, SLStrView src, SLAST* out, SLDiag* diag) {
     out->nodes = p.nodes;
     out->len = p.nodeLen;
     out->root = root;
+    out->features = p.features;
     return 0;
 }
 

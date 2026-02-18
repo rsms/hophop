@@ -468,6 +468,7 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_XOR_ASSIGN:    return "XOR_ASSIGN";
         case SLTok_LSHIFT_ASSIGN: return "LSHIFT_ASSIGN";
         case SLTok_RSHIFT_ASSIGN: return "RSHIFT_ASSIGN";
+        case SLTok_QUESTION:      return "QUESTION";
     }
     return "UNKNOWN";
 }
@@ -740,6 +741,7 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                             kind = SLTok_XOR;
                         }
                         break;
+                    case (unsigned char)'?': kind = SLTok_QUESTION; break;
                     case (unsigned char)'!':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {
                             pos++;

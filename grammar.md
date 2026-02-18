@@ -29,6 +29,8 @@ Escape         = "\\" ( "\\" | "\"" | "n" | "t" | "r" | "0" | "x" HexDigit HexDi
 StringChar     = ? any char except backslash, quote, newline ? | Escape ;
 StringLit      = "\"" { StringChar } "\"" ;
 
+QUESTION       = "?" ;
+
 LineComment    = "//" { ? any char except newline ? } ;
 
 Whitespace     = " " | "\t" | "\r" | "\n" ;
@@ -70,6 +72,11 @@ SourceFile      = { ImportDecl ";" } { TopLevelDecl [ ";" ] } EOF ;
 
 ImportDecl      = "import" [ Identifier ] StringLit ;
 
+(* Feature imports: "slang/feature/<name>" opt into experimental language features.
+   Known features: "optional" — enables T? optional type syntax (SLAST_TYPE_OPTIONAL).
+   Unknown feature names produce a compiler warning but are otherwise ignored. *)
+FeatureImport   = "import" StringLit ;   (* path starts with "slang/feature/" *)
+
 TopLevelDecl    = [ "pub" ] (
                     StructDecl
                   | UnionDecl
@@ -104,6 +111,7 @@ SliceType       = "[" Type "]" ;
 MutSliceType    = "mut" "[" Type "]" ;
 ArrayType       = "[" Type IntLit "]" ;
 VarArrayType    = "[" Type "." Identifier "]" ;
+OptionalType    = TypeName "?" ;   (* requires import "slang/feature/optional" *)
 NonSliceType    = PointerType | RefType | MutRefType | ArrayType | VarArrayType | TypeName ;
 Type            = PointerType
                 | RefType
@@ -112,6 +120,7 @@ Type            = PointerType
                 | MutSliceType
                 | ArrayType
                 | VarArrayType
+                | OptionalType
                 | TypeName ;
 TypeName        = Identifier { "." Identifier } ;
 ```
@@ -219,3 +228,4 @@ FieldInit           = Identifier "=" Expr ;
 - Import paths are string literals.
 - `&[T]` and `mut&[T]` are not valid type forms; use `[T]` and `mut[T]`.
 - In `Signature`, the optional `Type` is the return type. Omitting it means the function returns no value. Writing `void` explicitly is a type error; omit the return type instead.
+- `T?` (OptionalType) is an experimental feature; it requires `import "slang/feature/optional"` at the top of the file. Without that import the `?` token in a type position is a syntax error. Imports of the form `import "slang/feature/<name>"` are feature flags, not real packages: they are never resolved on disk and produce a warning for unknown feature names.

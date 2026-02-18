@@ -275,6 +275,8 @@ typedef enum {
     SLTok_XOR_ASSIGN,
     SLTok_LSHIFT_ASSIGN,
     SLTok_RSHIFT_ASSIGN,
+
+    SLTok_QUESTION,
 } SLTokenKind;
 
 typedef struct {
@@ -302,6 +304,7 @@ typedef enum {
     SLAST_TYPE_VARRAY,
     SLAST_TYPE_SLICE,
     SLAST_TYPE_MUTSLICE,
+    SLAST_TYPE_OPTIONAL,
     SLAST_STRUCT,
     SLAST_UNION,
     SLAST_ENUM,
@@ -354,10 +357,15 @@ enum {
     SLASTFlag_INDEX_RUNTIME_BOUNDS = 0x0008u,
 };
 
+typedef uint32_t SLFeatures;
+#define SLFeature_NONE     ((SLFeatures)0)
+#define SLFeature_OPTIONAL ((SLFeatures)(1u << 0))
+
 typedef struct {
     const SLASTNode* nodes;
     uint32_t         len;
     int32_t          root;
+    SLFeatures       features;
 } SLAST;
 
 const char* SLTokenKindName(SLTokenKind kind);
