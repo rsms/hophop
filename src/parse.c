@@ -64,6 +64,25 @@ static int SLPExpect(SLParser* p, SLTokenKind kind, SLDiagCode code, const SLTok
     return 0;
 }
 
+static int SLPReservedName(const SLParser* p, const SLToken* tok) {
+    static const char reservedPrefix[5] = { '_', '_', 's', 'l', '_' };
+    uint32_t          n = tok->end - tok->start;
+    return n >= 5u && memcmp(p->src.ptr + tok->start, reservedPrefix, 5u) == 0;
+}
+
+static int SLPExpectDeclName(SLParser* p, const SLToken** out) {
+    const SLToken* tok;
+    if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &tok) != 0) {
+        return -1;
+    }
+    if (SLPReservedName(p, tok)) {
+        SLPSetDiag(p->diag, SLDiag_RESERVED_SYMBOL, tok->start, tok->end);
+        return -1;
+    }
+    *out = tok;
+    return 0;
+}
+
 static int32_t SLPNewNode(SLParser* p, SLAstKind kind, uint32_t start, uint32_t end) {
     int32_t idx;
     if (p->nodeLen >= p->nodeCap) {
@@ -677,7 +696,7 @@ static int SLPParseParam(SLParser* p, int32_t* out) {
     const SLToken* name;
     int32_t        param;
     int32_t        type;
-    if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &name) != 0) {
+    if (SLPExpectDeclName(p, &name) != 0) {
         return -1;
     }
     if (SLPParseType(p, &type) != 0) {
@@ -738,7 +757,7 @@ static int SLPParseVarLikeStmt(SLParser* p, SLAstKind kind, int requireSemi, int
     int32_t        type;
 
     p->pos++;
-    if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &name) != 0) {
+    if (SLPExpectDeclName(p, &name) != 0) {
         return -1;
     }
     if (SLPParseType(p, &type) != 0) {
@@ -1139,7 +1158,7 @@ static int SLPParseFieldList(SLParser* p, int32_t agg) {
             p->pos++;
             continue;
         }
-        if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &name) != 0) {
+        if (SLPExpectDeclName(p, &name) != 0) {
             return -1;
         }
         if (SLPParseType(p, &type) != 0) {
@@ -1178,7 +1197,7 @@ static int SLPParseAggregateDecl(SLParser* p, int32_t* out) {
     }
 
     p->pos++;
-    if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &name) != 0) {
+    if (SLPExpectDeclName(p, &name) != 0) {
         return -1;
     }
     n = SLPNewNode(p, kind, kw->start, name->end);
@@ -1209,7 +1228,7 @@ static int SLPParseAggregateDecl(SLParser* p, int32_t* out) {
                 p->pos++;
                 continue;
             }
-            if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &itemName) != 0) {
+            if (SLPExpectDeclName(p, &itemName) != 0) {
                 return -1;
             }
             item = SLPNewNode(p, SLAst_FIELD, itemName->start, itemName->end);
@@ -1256,7 +1275,7 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
     int32_t        fn;
 
     p->pos++;
-    if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &name) != 0) {
+    if (SLPExpectDeclName(p, &name) != 0) {
         return -1;
     }
     if (SLPExpect(p, SLTok_LPAREN, SLDiag_UNEXPECTED_TOKEN, &t) != 0) {
@@ -1335,6 +1354,10 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
     if (SLPAt(p, SLTok_IDENT)) {
         if ((p->pos + 1u) < p->tokLen && p->tok[p->pos + 1u].kind == SLTok_STRING) {
             alias = SLPPeek(p);
+            if (SLPReservedName(p, alias)) {
+                SLPSetDiag(p->diag, SLDiag_RESERVED_SYMBOL, alias->start, alias->end);
+                return -1;
+            }
             p->pos++;
         }
     }

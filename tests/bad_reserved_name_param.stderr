@@ -1,0 +1,1 @@
+tests/bad_reserved_name_param.sl:8:16: error: identifier prefix '__sl_' is reserved

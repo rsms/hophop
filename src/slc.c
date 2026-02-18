@@ -2330,7 +2330,7 @@ static int CreateTempDir(char* outPath, size_t outPathCap, const char* tag) {
 }
 
 /* Embedded cli-libc platform source — compiled alongside the generated SL package.
- * Provides sl_platform_call() via libc and defines main() which calls sl_main(). */
+ * Provides __sl_platform_call() via libc and defines main() which calls sl_main(). */
 static int CompileProgram(const char* entryPath, const char* outExe) {
     SLPackageLoader         loader = { 0 };
     int                     loaderReady = 0;

@@ -44,6 +44,7 @@ const char* SLDiagMessage(SLDiagCode code) {
         case SLDiag_NOT_CALLABLE:        return "expression is not callable";
         case SLDiag_EXPECTED_BOOL:       return "expected bool expression";
         case SLDiag_VOID_RETURN_TYPE:    return "'void' is not a valid return type";
+        case SLDiag_RESERVED_SYMBOL:     return "identifier prefix '__sl_' is reserved";
     }
     return "unknown diagnostic";
 }
@@ -51,6 +52,7 @@ const char* SLDiagMessage(SLDiagCode code) {
 const char* _Nullable SLDiagHint(SLDiagCode code) {
     switch (code) {
         case SLDiag_VOID_RETURN_TYPE: return "remove 'void'";
+        case SLDiag_RESERVED_SYMBOL:  return "rename symbol to avoid '__sl_' prefix";
         default:                      return NULL;
     }
 }

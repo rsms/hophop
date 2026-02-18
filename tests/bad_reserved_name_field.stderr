@@ -1,0 +1,1 @@
+tests/bad_reserved_name_field.sl:11:19: error: identifier prefix '__sl_' is reserved

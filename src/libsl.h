@@ -187,6 +187,7 @@ typedef enum {
     SLDiag_NOT_CALLABLE,
     SLDiag_EXPECTED_BOOL,
     SLDiag_VOID_RETURN_TYPE,
+    SLDiag_RESERVED_SYMBOL,
 } SLDiagCode;
 
 typedef struct {

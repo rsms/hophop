@@ -745,8 +745,8 @@ static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uin
         "i8",   "i16",  "i32", "i64",          "uint", "int", "f32", "f64",
     };
     static const char* const builtinCNames[] = {
-        "void",      "__sl_bool", "__sl_str", "MemAllocator", "__sl_u8",  "__sl_u16",
-        "__sl_u32",  "__sl_u64",  "__sl_i8",  "__sl_i16",     "__sl_i32", "__sl_i64",
+        "void",      "__sl_bool", "__sl_str", "__sl_MemAllocator", "__sl_u8",  "__sl_u16",
+        "__sl_u32",  "__sl_u64",  "__sl_i8",  "__sl_i16",          "__sl_i32", "__sl_i64",
         "__sl_uint", "__sl_int",  "__sl_f32", "__sl_f64",
     };
 
@@ -1399,8 +1399,9 @@ static int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
             base = type->baseName;
             stars = type->ptrDepth + type->containerPtrDepth;
         } else {
-            base =
-                type->containerKind == SLTypeContainer_SLICE_MUT ? "sl_slice_mut" : "sl_slice_ro";
+            base = type->containerKind == SLTypeContainer_SLICE_MUT
+                     ? "__sl_slice_mut"
+                     : "__sl_slice_ro";
             stars = 0;
         }
     } else {
@@ -1451,7 +1452,7 @@ static int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) 
         }
         if (BufAppendCStr(
                 &c->out,
-                t.containerKind == SLTypeContainer_SLICE_MUT ? "sl_slice_mut" : "sl_slice_ro")
+                t.containerKind == SLTypeContainer_SLICE_MUT ? "__sl_slice_mut" : "__sl_slice_ro")
                 != 0
             || BufAppendChar(&c->out, ' ') != 0)
         {
@@ -1830,7 +1831,7 @@ static int EmitLenExprFromType(SLCBackendC* c, int32_t exprNode, const SLTypeRef
         }
         return 0;
     }
-    if (BufAppendCStr(&c->out, "len(") != 0 || EmitExpr(c, exprNode) != 0
+    if (BufAppendCStr(&c->out, "__sl_len(") != 0 || EmitExpr(c, exprNode) != 0
         || BufAppendChar(&c->out, ')') != 0)
     {
         return -1;
@@ -1899,7 +1900,7 @@ static int EmitSliceExpr(SLCBackendC* c, int32_t nodeId) {
     }
     outMut = TypeRefContainerWritable(&baseType);
     if (BufAppendCStr(&c->out, "((") != 0
-        || BufAppendCStr(&c->out, outMut ? "sl_slice_mut" : "sl_slice_ro") != 0
+        || BufAppendCStr(&c->out, outMut ? "__sl_slice_mut" : "__sl_slice_ro") != 0
         || BufAppendCStr(&c->out, "){ ") != 0)
     {
         return -1;
@@ -1997,7 +1998,7 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
         if ((srcType.containerKind == SLTypeContainer_SLICE_MUT && srcType.containerPtrDepth == 0)
             || srcType.containerKind == SLTypeContainer_ARRAY)
         {
-            if (BufAppendCStr(&c->out, "((sl_slice_ro){ (const void*)(") != 0
+            if (BufAppendCStr(&c->out, "((__sl_slice_ro){ (const void*)(") != 0
                 || EmitElemPtrExpr(c, exprNode, &srcType, 0) != 0
                 || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0
                 || EmitLenExprFromType(c, exprNode, &srcType) != 0
@@ -2013,7 +2014,7 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
             return EmitExpr(c, exprNode);
         }
         if (srcType.containerKind == SLTypeContainer_ARRAY) {
-            if (BufAppendCStr(&c->out, "((sl_slice_mut){ (void*)(") != 0
+            if (BufAppendCStr(&c->out, "((__sl_slice_mut){ (void*)(") != 0
                 || EmitElemPtrExpr(c, exprNode, &srcType, 1) != 0
                 || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0
                 || EmitLenExprFromType(c, exprNode, &srcType) != 0
@@ -2170,7 +2171,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                     return -1;
                 }
                 if (countArg >= 0) {
-                    if (BufAppendCStr(&c->out, "sl_new_array(") != 0 || EmitExpr(c, allocArg) != 0
+                    if (BufAppendCStr(&c->out, "__sl_new_array(") != 0 || EmitExpr(c, allocArg) != 0
                         || BufAppendCStr(&c->out, ", sizeof(") != 0
                         || BufAppendCStr(&c->out, typeName) != 0
                         || BufAppendCStr(&c->out, "), _Alignof(") != 0
@@ -2182,11 +2183,26 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                     }
                     return 0;
                 }
-                if (BufAppendCStr(&c->out, "sl_new(") != 0 || EmitExpr(c, allocArg) != 0
+                if (BufAppendCStr(&c->out, "__sl_new(") != 0 || EmitExpr(c, allocArg) != 0
                     || BufAppendCStr(&c->out, ", sizeof(") != 0
                     || BufAppendCStr(&c->out, typeName) != 0
                     || BufAppendCStr(&c->out, "), _Alignof(") != 0
                     || BufAppendCStr(&c->out, typeName) != 0 || BufAppendCStr(&c->out, ")))") != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
+            if (callee != NULL && callee->kind == SLAst_IDENT
+                && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "cstr"))
+            {
+                int32_t arg = AstNextSibling(&c->ast, child);
+                int32_t extra = arg >= 0 ? AstNextSibling(&c->ast, arg) : -1;
+                if (arg < 0 || extra >= 0) {
+                    return -1;
+                }
+                if (BufAppendCStr(&c->out, "__sl_cstr(") != 0 || EmitExpr(c, arg) != 0
+                    || BufAppendChar(&c->out, ')') != 0)
                 {
                     return -1;
                 }
@@ -2370,7 +2386,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             if (inner < 0) {
                 return -1;
             }
-            if (BufAppendCStr(&c->out, "sl_unwrap(") != 0 || EmitExpr(c, inner) != 0
+            if (BufAppendCStr(&c->out, "__sl_unwrap(") != 0 || EmitExpr(c, inner) != 0
                 || BufAppendChar(&c->out, ')') != 0)
             {
                 return -1;
@@ -2676,8 +2692,8 @@ static int EmitAssertFormatArg(SLCBackendC* c, int32_t nodeId) {
     if (n->kind == SLAst_STRING) {
         return BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd);
     }
-    if (BufAppendCStr(&c->out, "(const char*)(const void*)cstr(") != 0 || EmitExpr(c, nodeId) != 0
-        || BufAppendChar(&c->out, ')') != 0)
+    if (BufAppendCStr(&c->out, "(const char*)(const void*)__sl_cstr(") != 0
+        || EmitExpr(c, nodeId) != 0 || BufAppendChar(&c->out, ')') != 0)
     {
         return -1;
     }
@@ -2742,14 +2758,14 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             EmitIndent(c, depth + 2u);
             if (fmtNode < 0) {
                 if (BufAppendCStr(
-                        &c->out, "SL_ASSERT_FAIL(__FILE__, __LINE__, \"assertion failed\");\n")
+                        &c->out, "__sl_assert_fail(__FILE__, __LINE__, \"assertion failed\");\n")
                     != 0)
                 {
                     return -1;
                 }
             } else {
                 int32_t argNode;
-                if (BufAppendCStr(&c->out, "SL_ASSERTF_FAIL(__FILE__, __LINE__, ") != 0
+                if (BufAppendCStr(&c->out, "__sl_assertf_fail(__FILE__, __LINE__, ") != 0
                     || EmitAssertFormatArg(c, fmtNode) != 0)
                 {
                     return -1;
@@ -3029,7 +3045,7 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
                         if (wtn != NULL && wtn->kind == SLAst_TYPE_VARRAY) {
                             int32_t welem = AstFirstChild(&c->ast, wt);
                             EmitIndent(c, depth + 1u);
-                            if (BufAppendCStr(&c->out, "off = sl_align_up(off, _Alignof(") != 0
+                            if (BufAppendCStr(&c->out, "off = __sl_align_up(off, _Alignof(") != 0
                                 || EmitTypeForCast(c, welem) != 0
                                 || BufAppendCStr(&c->out, "));\n") != 0)
                             {
@@ -3098,7 +3114,7 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
                 if (wtn != NULL && wtn->kind == SLAst_TYPE_VARRAY) {
                     int32_t welem = AstFirstChild(&c->ast, wt);
                     EmitIndent(c, depth + 1u);
-                    if (BufAppendCStr(&c->out, "off = sl_align_up(off, _Alignof(") != 0
+                    if (BufAppendCStr(&c->out, "off = __sl_align_up(off, _Alignof(") != 0
                         || EmitTypeForCast(c, welem) != 0 || BufAppendCStr(&c->out, "));\n") != 0)
                     {
                         return -1;
@@ -3117,7 +3133,7 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
             walk = AstNextSibling(&c->ast, walk);
         }
         EmitIndent(c, depth + 1u);
-        if (BufAppendCStr(&c->out, "off = sl_align_up(off, _Alignof(") != 0
+        if (BufAppendCStr(&c->out, "off = __sl_align_up(off, _Alignof(") != 0
             || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__hdr));\n") != 0)
         {
             return -1;

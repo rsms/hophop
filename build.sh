@@ -326,6 +326,14 @@ for t in \
     "ast|tests/ast_bad_old_varray_type.sl|tests/ast_bad_old_varray_type.stderr" \
     "ast|tests/ast_bad_ref_slice_type.sl|tests/ast_bad_ref_slice_type.stderr" \
     "ast|tests/ast_bad_mutref_slice_type.sl|tests/ast_bad_mutref_slice_type.stderr" \
+    "check|tests/bad_reserved_name_const.sl|tests/bad_reserved_name_const.stderr" \
+    "check|tests/bad_reserved_name_var.sl|tests/bad_reserved_name_var.stderr" \
+    "check|tests/bad_reserved_name_fn.sl|tests/bad_reserved_name_fn.stderr" \
+    "check|tests/bad_reserved_name_struct.sl|tests/bad_reserved_name_struct.stderr" \
+    "check|tests/bad_reserved_name_param.sl|tests/bad_reserved_name_param.stderr" \
+    "check|tests/bad_reserved_name_field.sl|tests/bad_reserved_name_field.stderr" \
+    "check|tests/bad_reserved_name_enum_item.sl|tests/bad_reserved_name_enum_item.stderr" \
+    "check|tests/bad_reserved_name_import_alias.sl|tests/bad_reserved_name_import_alias.stderr" \
     "check|tests/bad_unknown_symbol.sl|tests/bad_unknown_symbol.stderr" \
     "check|tests/bad_type_mismatch.sl|tests/bad_type_mismatch.stderr" \
     "check|tests/switch_bad_subject_type.sl|tests/switch_bad_subject_type.stderr" \
@@ -389,10 +397,10 @@ _expect_fail_with_stderr check tests/assert_bad_condition.sl tests/assert_bad_co
 "$build_dir/slc" genpkg:c tests/codegen_strings_assert > "$actual_phase5_codegen_header"
 rg -F "#include <sl-prelude.h>" "$actual_phase5_codegen_header" > /dev/null \
     || _err "missing sl-prelude.h include in phase5 codegen output"
-rg -F "SL_ASSERT_FAIL(__FILE__, __LINE__, \"assertion failed\");" "$actual_phase5_codegen_header" > /dev/null \
-    || _err "missing SL_ASSERT_FAIL lowering in phase5 codegen output"
-rg -F "SL_ASSERTF_FAIL(__FILE__, __LINE__, \"x=%d\", x);" "$actual_phase5_codegen_header" > /dev/null \
-    || _err "missing SL_ASSERTF_FAIL lowering in phase5 codegen output"
+rg -F "__sl_assert_fail(__FILE__, __LINE__, \"assertion failed\");" "$actual_phase5_codegen_header" > /dev/null \
+    || _err "missing __sl_assert_fail lowering in phase5 codegen output"
+rg -F "__sl_assertf_fail(__FILE__, __LINE__, \"x=%d\", x);" "$actual_phase5_codegen_header" > /dev/null \
+    || _err "missing __sl_assertf_fail lowering in phase5 codegen output"
 [ "$(rg -c '^static const __sl_u8 sl_lit_' "$actual_phase5_codegen_header")" = "1" ] \
     || _err "expected exactly one pooled string literal in phase5 codegen output"
 cat > "$test_tmpdir/phase5_codegen_test.c" << _END

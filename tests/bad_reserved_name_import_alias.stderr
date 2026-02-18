@@ -1,0 +1,1 @@
+tests/bad_reserved_name_import_alias.sl:7:15: error: identifier prefix '__sl_' is reserved
