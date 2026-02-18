@@ -8,30 +8,13 @@ This document describes the built-in library surface of SL:
 
 Primitive scalar types and full language grammar are documented in `docs/language.md`.
 
-## Built-In Types
-
-### `str`
-
-`str` is a specialized string type.
-Conceptually, it is a specialized form of `[u8]` where the content is UTF-8 data.
-
-Properties:
-- `len(s)` is byte length.
-- `cstr(s)` exposes a read-only reference to UTF-8 bytes for C interop.
-- Use `[u8]` / `mut[u8]` for arbitrary binary data.
-
-### `MemAllocator`
-
-`MemAllocator` is the allocator capability used by `new(...)`.
-
 ## Type Forms (Arrays and Slices)
 
 ```sl
 T          // value
-
 [T N]      // fixed-size array value
-[T]        // read-only slice view
-mut[T]     // mutable slice view
+[T]        // read-only slice view (a form of reference)
+mut[T]     // mutable slice view (a form of reference)
 
 *T         // pointer to value
 *[T N]     // pointer to fixed-size array
@@ -51,6 +34,22 @@ Notes:
   - `[T N] -> mut[T]`
   - `mut[T] -> [T]`
   - `mut&[T N] -> &[T N]`
+
+## Built-In Types
+
+### `str`
+
+`str` is a specialized string type.
+Conceptually, it is a specialized form of `[u8]` where the content is UTF-8 data.
+
+Properties:
+- `len(s)` is byte length.
+- `cstr(s)` exposes a read-only reference to UTF-8 bytes for C interop.
+- Use `[u8]` / `mut[u8]` for arbitrary binary data.
+
+### `MemAllocator`
+
+`MemAllocator` is the allocator capability used by `new(...)`.
 
 ## Built-In Functions
 
