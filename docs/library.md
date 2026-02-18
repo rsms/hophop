@@ -35,7 +35,7 @@ mut[T]     // mutable slice view
 
 *T         // pointer to value
 *[T N]     // pointer to fixed-size array
-*[T]       // pointer to runtime-length sequence
+*[T]       // pointer to runtime-length array
 
 &T         // read-only reference to value
 mut&T      // mutable reference to value
