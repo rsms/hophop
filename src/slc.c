@@ -2331,38 +2331,6 @@ static int CreateTempDir(char* outPath, size_t outPathCap, const char* tag) {
 
 /* Embedded cli-libc platform source — compiled alongside the generated SL package.
  * Provides sl_platform_call() via libc and defines main() which calls sl_main(). */
-static const char kCliLibcPlatformC[] =
-    "#include <stdio.h>\n"
-    "#include <stdlib.h>\n"
-    "#include <string.h>\n"
-    "#include <stdint.h>\n"
-    "extern int sl_main(void);\n"
-    "int main(void) { return sl_main(); }\n"
-    "int64_t sl_platform_call(uint64_t op,\n"
-    "    uint64_t a, uint64_t b, uint64_t c,\n"
-    "    uint64_t d, uint64_t e, uint64_t f, uint64_t g) {\n"
-    "    (void)f; (void)g;\n"
-    "    switch (op) {\n"
-    "    case 1: {\n" /* PANIC */
-    "        size_t n = b ? (size_t)b : strlen((const char*)(uintptr_t)a);\n"
-    "        fprintf(stderr, \"panic: %.*s\\n\", (int)n, (const char*)(uintptr_t)a);\n"
-    "        fflush(stderr); abort();\n"
-    "    }\n"
-    "    case 2: {\n" /* CONSOLE_LOG */
-    "        size_t n = b ? (size_t)b : strlen((const char*)(uintptr_t)a);\n"
-    "        FILE* out = (c & 1u) ? stderr : stdout;\n"
-    "        fprintf(out, \"%.*s\\n\", (int)n, (const char*)(uintptr_t)a);\n"
-    "        fflush(out); return 0;\n"
-    "    }\n"
-    "    case 3: (void)b; (void)c;\n" /* MEM_ALLOC */
-    "        return (int64_t)(uintptr_t)(a ? malloc((size_t)a) : (void*)0);\n"
-    "    case 4: (void)b; (void)d; (void)e;\n" /* MEM_RESIZE */
-    "        return (int64_t)(uintptr_t)(c ? realloc((void*)(uintptr_t)a,(size_t)c) : (void*)0);\n"
-    "    case 5: (void)b; (void)c; free((void*)(uintptr_t)a); return 0;\n" /* MEM_FREE */
-    "    default: return -1;\n"
-    "    }\n"
-    "}\n";
-
 static int CompileProgram(const char* entryPath, const char* outExe) {
     SLPackageLoader         loader = { 0 };
     int                     loaderReady = 0;
@@ -2377,8 +2345,8 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
     char                    tmpDir[PATH_MAX];
     char*                   headerPath = NULL;
     char*                   sourcePath = NULL;
-    char*                   platformPath = NULL;
     char*                   libDir = NULL;
+    char*                   platformPath = NULL;
     SLStringBuilder         cBuilder = { 0 };
     char*                   cSource = NULL;
     const char*             ccArgv[12];
@@ -2429,6 +2397,23 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
         goto end;
     }
 
+    {
+        char* exeDir = GetExeDir();
+        if (exeDir != NULL) {
+            libDir = JoinPath(exeDir, "lib");
+            free(exeDir);
+        }
+    }
+    if (libDir == NULL) {
+        ErrorSimple("cannot locate lib directory (dirname of executable)");
+        goto end;
+    }
+    platformPath = JoinPath(libDir, "platform_libc.c");
+    if (platformPath == NULL) {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+
     if (CreateTempDir(tmpDir, sizeof(tmpDir), "compile") != 0) {
         ErrorSimple("failed to create temporary directory");
         goto end;
@@ -2436,8 +2421,7 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
 
     headerPath = JoinPath(tmpDir, "program.h");
     sourcePath = JoinPath(tmpDir, "program.c");
-    platformPath = JoinPath(tmpDir, "platform.c");
-    if (headerPath == NULL || sourcePath == NULL || platformPath == NULL) {
+    if (headerPath == NULL || sourcePath == NULL) {
         ErrorSimple("out of memory");
         goto end;
     }
@@ -2465,37 +2449,17 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
         ErrorSimple("failed to write generated C source");
         goto end;
     }
-    if (WriteOutput(platformPath, kCliLibcPlatformC, (uint32_t)strlen(kCliLibcPlatformC)) != 0) {
-        ErrorSimple("failed to write platform C source");
-        goto end;
-    }
-
-    {
-        char* exeDir = GetExeDir();
-        if (exeDir != NULL) {
-            libDir = JoinPath(exeDir, "lib");
-            free(exeDir);
-        }
-    }
 
     ccArgv[0] = "cc";
     ccArgv[1] = "-std=c11";
     ccArgv[2] = "-g";
-    if (libDir != NULL) {
-        ccArgv[3] = "-isystem";
-        ccArgv[4] = libDir;
-        ccArgv[5] = "-o";
-        ccArgv[6] = outExe;
-        ccArgv[7] = sourcePath;
-        ccArgv[8] = platformPath;
-        ccArgv[9] = NULL;
-    } else {
-        ccArgv[3] = "-o";
-        ccArgv[4] = outExe;
-        ccArgv[5] = sourcePath;
-        ccArgv[6] = platformPath;
-        ccArgv[7] = NULL;
-    }
+    ccArgv[3] = "-isystem";
+    ccArgv[4] = libDir;
+    ccArgv[5] = "-o";
+    ccArgv[6] = outExe;
+    ccArgv[7] = sourcePath;
+    ccArgv[8] = platformPath;
+    ccArgv[9] = NULL;
 
     if (RunCommand(ccArgv) != 0) {
         ErrorSimple("C compilation failed");
@@ -2510,9 +2474,6 @@ end:
     }
     if (sourcePath != NULL) {
         unlink(sourcePath);
-    }
-    if (platformPath != NULL) {
-        unlink(platformPath);
     }
     if (tmpDir[0] != '\0') {
         rmdir(tmpDir);

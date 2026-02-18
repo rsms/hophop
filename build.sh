@@ -97,7 +97,7 @@ fi
 
 ####################################################################################################
 # format
-[ $format = 0 ] || clang-format --Werror --style=file:clang-format.yaml -i src/*.*
+[ $format = 0 ] || clang-format --Werror --style=file:clang-format.yaml -i src/*.* lib/*.c lib/*.h
 
 ####################################################################################################
 # configure
@@ -143,9 +143,10 @@ done
 cat << _END >> $NF
 build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | amalgamate.sh amalgamate.py .git/index
 build \$builddir/lib/sl-prelude.h: copy lib/sl-prelude.h
+build \$builddir/lib/platform_libc.c: copy lib/platform_libc.c
 build \$builddir/slc: link ${objfiles[*]}
 
-default \$builddir/libsl.h \$builddir/lib/sl-prelude.h \$builddir/slc
+default \$builddir/libsl.h \$builddir/lib/sl-prelude.h \$builddir/lib/platform_libc.c \$builddir/slc
 _END
 
 [[ ! -e build.ninja || "$(_checksum $NF)" != "$(_checksum build.ninja)" ]] &&
