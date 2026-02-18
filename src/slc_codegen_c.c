@@ -1740,6 +1740,7 @@ static int EmitStringLiteralPool(SLCBackendC* c) {
 }
 
 static int EmitExpr(SLCBackendC* c, int32_t nodeId);
+static int EmitAssertFormatArg(SLCBackendC* c, int32_t nodeId);
 
 static int TypeRefIsStr(const SLTypeRef* t) {
     return t->valid && t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth == 0
@@ -2177,6 +2178,20 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                     || BufAppendCStr(&c->out, typeName) != 0
                     || BufAppendCStr(&c->out, "), _Alignof(") != 0
                     || BufAppendCStr(&c->out, typeName) != 0 || BufAppendCStr(&c->out, ")))") != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
+            if (callee != NULL && callee->kind == SLAst_IDENT
+                && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "panic"))
+            {
+                int32_t msgArg = AstNextSibling(&c->ast, child);
+                if (msgArg < 0) {
+                    return -1;
+                }
+                if (BufAppendCStr(&c->out, "__sl_panic(__FILE__, __LINE__, ") != 0
+                    || EmitAssertFormatArg(c, msgArg) != 0 || BufAppendChar(&c->out, ')') != 0)
                 {
                     return -1;
                 }
@@ -3533,6 +3548,14 @@ static int EmitPrelude(SLCBackendC* c) {
         "  #else\n"
         "    #define SL_TRAP() do { *(volatile int*)0 = 0; } while (0)\n"
         "  #endif\n"
+        "#endif\n"
+        "#ifndef __sl_trap\n"
+        "  #define __sl_trap() SL_TRAP()\n"
+        "#endif\n"
+        "#ifndef __sl_panic\n"
+        "  #define __sl_panic(file,line,msg) \\\n"
+        "    (sl_platform_call(SLPlatformOp_PANIC,(uint64_t)(uintptr_t)(msg),0,0,0,0,0,0), "
+        "__sl_trap())\n"
         "#endif\n"
         "#ifndef SL_ASSERT_FAIL\n"
         "  #define SL_ASSERT_FAIL(file,line,msg) \\\n"

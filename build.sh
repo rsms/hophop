@@ -297,6 +297,7 @@ for t in \
     "check|tests/len_ptr_ref_ok.sl" \
     "check|tests/len_null_ptr_ref_ok.sl" \
     "check|tests/new_ok.sl" \
+    "check|tests/panic_ok.sl" \
     "check|tests/feature_optional_ok.sl" \
     "check|tests/slp3_null_unwrap.sl" \
     "check|tests/slp3_flow_narrow_ok.sl" \
@@ -340,7 +341,9 @@ for t in \
     "check|tests/slp3_bad_unwrap.sl|tests/slp3_bad_unwrap.stderr" \
     "check|tests/slp3_bad_null_assign.sl|tests/slp3_bad_null_assign.stderr" \
     "check|tests/slp3_flow_narrow_bad_no_guard.sl|tests/slp3_flow_narrow_bad_no_guard.stderr" \
-    "check|tests/slp3_flow_narrow_bad_null_branch_deref.sl|tests/slp3_flow_narrow_bad_null_branch_deref.stderr"
+    "check|tests/slp3_flow_narrow_bad_null_branch_deref.sl|tests/slp3_flow_narrow_bad_null_branch_deref.stderr" \
+    "check|tests/panic_bad_arg_type.sl|tests/panic_bad_arg_type.stderr" \
+    "check|tests/panic_bad_arity.sl|tests/panic_bad_arity.stderr"
 do
     IFS='|' read -r mode input expected_stderr <<< "$t"
     _expect_fail_with_stderr "$mode" "$input" "$expected_stderr"

@@ -1711,6 +1711,26 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     *outType = resultType;
                     return 0;
                 }
+                if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "panic")) {
+                    int32_t msgArgNode = SLAstNextSibling(c->ast, calleeNode);
+                    int32_t msgArgType;
+                    int32_t nextArgNode;
+                    if (msgArgNode < 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    }
+                    if (SLTCTypeExpr(c, msgArgNode, &msgArgType) != 0) {
+                        return -1;
+                    }
+                    if (!SLTCCanAssign(c, c->typeStr, msgArgType)) {
+                        return SLTCFailNode(c, msgArgNode, SLDiag_TYPE_MISMATCH);
+                    }
+                    nextArgNode = SLAstNextSibling(c->ast, msgArgNode);
+                    if (nextArgNode >= 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    }
+                    *outType = c->typeVoid;
+                    return 0;
+                }
             }
             if (SLTCTypeExpr(c, calleeNode, &calleeType) != 0) {
                 return -1;
