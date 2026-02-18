@@ -20,54 +20,54 @@ typedef _Bool     __sl_bool;
 typedef struct {
     const void* ptr;
     __sl_uint   len;
-} sl_slice_ro;
+} __sl_slice_ro;
 
 typedef struct {
     void*     ptr;
     __sl_uint len;
     __sl_uint cap;
-} sl_slice_mut;
+} __sl_slice_mut;
 
-typedef sl_slice_ro __sl_str;
+typedef __sl_slice_ro __sl_str;
 
-typedef struct MemAllocator {
-    void* ctx;
-    void* (*alloc)(void* ctx, __sl_uint size, __sl_uint align);
-} MemAllocator;
+typedef struct __sl_MemAllocator __sl_MemAllocator;
+struct __sl_MemAllocator {
+    void* (*alloc)(__sl_MemAllocator* ma, __sl_uint size, __sl_uint align);
+};
 
-static inline void* sl_new(MemAllocator* ma, __sl_uint size, __sl_uint align) {
-    return (ma != (MemAllocator*)0 && ma->alloc != (void* (*)(void*, __sl_uint, __sl_uint))0)
-             ? ma->alloc(ma->ctx, size, align)
+static inline void* __sl_new(__sl_MemAllocator* ma, __sl_uint size, __sl_uint align) {
+    return (ma != (__sl_MemAllocator*)0 && ma->alloc != (void* (*)(void*, __sl_uint, __sl_uint))0)
+             ? ma->alloc(ma, size, align)
              : (void*)0;
 }
 
-static inline void* sl_new_array(
-    MemAllocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
-    return sl_new(ma, elemSize * count, elemAlign);
+static inline void* __sl_new_array(
+    __sl_MemAllocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
+    return __sl_new(ma, elemSize * count, elemAlign);
 }
 
-static inline __sl_uint len(__sl_str s) {
+static inline __sl_uint __sl_len(__sl_str s) {
     return s.len;
 }
 
-static inline const __sl_u8* cstr(__sl_str s) {
+static inline const __sl_u8* __sl_cstr(__sl_str s) {
     return (const __sl_u8*)s.ptr;
 }
 
-static inline __sl_uint sl_align_up(__sl_uint x, __sl_uint a) {
+static inline __sl_uint __sl_align_up(__sl_uint x, __sl_uint a) {
     return (x + (a - 1u)) & ~(a - 1u);
 }
 
-enum SLPlatformOps {
-    SLPlatformOp_NONE = 0,
-    SLPlatformOp_PANIC = 1,
-    SLPlatformOp_CONSOLE_LOG = 2,
-    SLPlatformOp_MEM_ALLOC = 3,
-    SLPlatformOp_MEM_RESIZE = 4,
-    SLPlatformOp_MEM_FREE = 5
+enum __sl_PlatformOps {
+    __sl_PlatformOp_NONE = 0,
+    __sl_PlatformOp_PANIC = 1,
+    __sl_PlatformOp_CONSOLE_LOG = 2,
+    __sl_PlatformOp_MEM_ALLOC = 3,
+    __sl_PlatformOp_MEM_RESIZE = 4,
+    __sl_PlatformOp_MEM_FREE = 5
 };
 
-extern __sl_i64 sl_platform_call(
+extern __sl_i64 __sl_platform_call(
     __sl_u64 op,
     __sl_u64 a,
     __sl_u64 b,
@@ -77,60 +77,41 @@ extern __sl_i64 sl_platform_call(
     __sl_u64 f,
     __sl_u64 g);
 
-#ifndef SL_TRAP
+#ifndef __sl_trap
     #if defined(__clang__) || defined(__GNUC__)
-        #define SL_TRAP() __builtin_trap()
+        #define __sl_trap() __builtin_trap()
     #else
-        #define SL_TRAP()              \
-            do {                       \
-                *(volatile int*)0 = 0; \
-            } while (0)
+static inline void __sl_trap(void) {
+    *(volatile int*)0 = 0;
+}
     #endif
 #endif
 
-#ifndef __sl_trap
-    #define __sl_trap() SL_TRAP()
-#endif
+static inline void __sl_panic(const char* file, __sl_u32 line, __sl_str msg) {
+    (void)file;
+    (void)line;
+    (void)__sl_platform_call(
+        __sl_PlatformOp_PANIC, (__sl_u64)(uintptr_t)msg.ptr, (__sl_u64)msg.len, 0, 0, 0, 0, 0);
+    __sl_trap();
+}
 
-#ifndef __sl_panic
-    #define __sl_panic(file, line, msg)      \
-        (sl_platform_call(                   \
-             SLPlatformOp_PANIC,             \
-             (uint64_t)(uintptr_t)(msg).ptr, \
-             (uint64_t)(msg).len,            \
-             0,                              \
-             0,                              \
-             0,                              \
-             0,                              \
-             0),                             \
-         __sl_trap())
-#endif
+static inline void __sl_assert_fail(const char* file, __sl_u32 line, const char* msg) {
+    (void)file;
+    (void)line;
+    (void)__sl_platform_call(__sl_PlatformOp_PANIC, (__sl_u64)(uintptr_t)msg, 0, 0, 0, 0, 0, 0);
+    __sl_trap();
+}
 
-#ifndef SL_ASSERT_FAIL
-    #define SL_ASSERT_FAIL(file, line, msg)                                                     \
-        do {                                                                                    \
-            sl_platform_call(SLPlatformOp_PANIC, (uint64_t)(uintptr_t)(msg), 0, 0, 0, 0, 0, 0); \
-            SL_TRAP();                                                                          \
-        } while (0)
-#endif
+static inline void __sl_assertf_fail(const char* file, __sl_u32 line, const char* fmt, ...) {
+    __sl_assert_fail(file, line, fmt);
+}
 
-#ifndef SL_ASSERTF_FAIL
-    #define SL_ASSERTF_FAIL(file, line, fmt, ...) SL_ASSERT_FAIL(file, line, fmt)
-#endif
-
-#ifndef sl_unwrap
-    #define sl_unwrap(p)                                       \
-        ((p) != (void*)0                                       \
-             ? (p)                                             \
-             : ((void)sl_platform_call(                        \
-                    SLPlatformOp_PANIC,                        \
-                    (uint64_t)(uintptr_t)"unwrap: null value", \
-                    18,                                        \
-                    0,                                         \
-                    0,                                         \
-                    0,                                         \
-                    0,                                         \
-                    0),                                        \
-                SL_TRAP(),                                     \
-                (p)))
-#endif
+static inline void* __sl_unwrap(const void* p) {
+    if (p != (const void*)0) {
+        return (void*)p;
+    }
+    (void)__sl_platform_call(
+        __sl_PlatformOp_PANIC, (__sl_u64)(uintptr_t)"unwrap: null value", 18u, 0, 0, 0, 0, 0);
+    __sl_trap();
+    return (void*)p;
+}
