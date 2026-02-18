@@ -32,7 +32,7 @@ done
 asan=${asan:-$debug} # enable by default in debug builds
 mode=debug; [ $debug = 0 ] && mode=release
 build_dir=_build/$sys-$arch-$mode
-diag_json=src/diagnosticMessages.json
+diag_json=src/diagnostic.json
 diag_tool=tools/gen_diagnostics.py
 diag_enum_out=src/gen/sl_diagnostics_enum.inc
 diag_c_out=src/gen/sl_diagnostics_data.c
