@@ -67,4 +67,4 @@ Source → [Lexer] → Tokens → [Parser] → AST → [Typechecker] → [Codege
 
 - Take an incremental approach: keep the compiler working at each step.
 - After changes, run `./build.sh test` and update `build.sh` tests to cover new behavior.
-- The language spec and EBNF grammar is in `language.md`; feature proposals are in `docs/SLP-*.md`.
+- The language spec and EBNF grammar is in `docs/language.md`; project overview is in `docs/project-overview.md`; feature proposals are in `docs/SLP-*.md`.

@@ -4,6 +4,8 @@ A small language that transpiles to C via `slc`.
 
 Build with `./build.sh` (you'll need `clang` in `PATH`)
 
+Documentation home: `docs/index.md`
+
 ## CLI
 
 ```sh
