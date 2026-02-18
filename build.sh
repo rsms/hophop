@@ -159,7 +159,10 @@ ninja_args=( -f "$build_dir/obj/build.ninja" )
 
 if [ $compdb = 1 ]; then
     _v ninja "${ninja_args[@]}" -t compdb > compile_commands.json
-    sed "s@ Compiler: clang@ Compiler: $(command -v clang)@" clangd.yaml > .clangd
+    sed -E \
+        -e "s@\\$\{clang\}@$(command -v clang)@" \
+        -e "s@\\$\{dir\}@$PWD@g" \
+        clangd.yaml > .clangd
 fi
 
 ####################################################################################################

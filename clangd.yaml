@@ -3,7 +3,7 @@ Diagnostics:
 Completion:
     HeaderInsertion: Never
 CompileFlags:
-    Compiler: clang
+    Compiler: ${clang}
     Remove:
         - -fsanitize*
     Add:
@@ -22,6 +22,7 @@ CompileFlags:
         - -Werror=switch
         - -DCLANGD=1
         - -DSL_IMPLEMENTATION=1
+        - -I${dir}/lib
 ---
 # Assume .h is a C header
 If:
