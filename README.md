@@ -1,6 +1,6 @@
 # slang (SL)
 
-A small language that transpiles to C via `slc`.
+A small language with a C11 backend via `slc`.
 
 Build with `./build.sh` (you'll need `clang` in `PATH`)
 

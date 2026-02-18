@@ -20,13 +20,13 @@ slc ast file.sl             # parse + print AST
 slc check file.sl           # typecheck single file
 slc checkpkg <dir|file.sl>  # typecheck package
 slc genpkg:c <dir|file.sl> [out.h]  # generate C header
-slc compile <dir|file.sl> -o <exe>  # transpile → C → compile
+slc compile <dir|file.sl> -o <exe>  # compile via C11 backend + system compiler
 slc run <dir|file.sl>       # compile + execute
 ```
 
 ## Architecture
 
-SL is a language that transpiles to C99 via a multi-stage pipeline:
+SL is a language currently compiled via a C11 backend in a multi-stage pipeline:
 
 ```
 Source → [Lexer] → Tokens → [Parser] → AST → [Typechecker] → [Codegen] → C header
@@ -51,7 +51,7 @@ Source → [Lexer] → Tokens → [Parser] → AST → [Typechecker] → [Codege
 
 **Flat AST**: Nodes are stored in a contiguous array; cross-references use `int32_t` indices, not pointers. This simplifies serialization and avoids pointer chasing.
 
-**Single-header output**: `genpkg:c` emits a `.h` file (C99, compilable as freestanding) containing all type definitions, function declarations, and implementations for a package.
+**Single-header output**: `genpkg:c` emits a `.h` file (C11, compilable as freestanding) containing all type definitions, function declarations, and implementations for a package.
 
 **Symbol mangling**: Package symbols are emitted as `pkg__Name` (double underscore separates package from identifier).
 

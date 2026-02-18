@@ -1,6 +1,6 @@
 # SL
 
-SL is a small, statically-checked language that transpiles to C99.
+SL is a small, statically-checked language with a C11 backend.
 
 The project has two parts:
 - `libsl`: lexer, parser, typechecker, diagnostics, and codegen interfaces in C.

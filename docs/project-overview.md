@@ -1,19 +1,19 @@
-# SL Transpiler Project
+# SL Compiler Project
 
 ## 1. Overview
 
 ### 1.1 What we’re building
 
-A **C99 transpiler** for a custom minimal programming language (**SL**) designed for:
+A language compiler with a **C11 backend** for a custom minimal programming language (**SL**) designed for:
 
 * highly portable **single-header libraries** and small programs,
 * output that can compile **freestanding** (e.g. `-ffreestanding`, wasm),
 * a syntax that is **regular and LLM-friendly**.
 
-The transpiler itself is split into:
+The compiler is split into:
 
-1. **Core library**: a single-header C99 library, freestanding-friendly, **no libc** assumptions (no malloc, no stdio, no printf).
-2. **CLI tool**: a normal host C99 program (may use libc) that loads files, runs the library, and writes output.
+1. **Core library**: a single-header C11 library, freestanding-friendly, **no libc** assumptions (no malloc, no stdio, no printf).
+2. **CLI tool**: a normal host C11 program (may use libc) that loads files, runs the library, and writes output.
 
 ### 1.2 Non-goals
 
@@ -28,7 +28,7 @@ The transpiler itself is split into:
 
 ---
 
-## 2. Output Contract (Generated C99)
+## 2. Output Contract (Generated C11)
 
 ### 2.1 Single-header library layout
 
@@ -456,7 +456,7 @@ Suggested layout:
 ```
 sl/
   include/
-    sl_transpiler.h        // single-header core library (freestanding-friendly)
+    sl_compiler.h          // single-header core library (freestanding-friendly)
   src/
     slc.c                  // CLI tool
   tests/
@@ -513,8 +513,8 @@ int sl_parse_file(sl_arena*, sl_strview src, /*out*/ void** ast, sl_diag*);
 // Resolves package-level symbols, types, imports (if you push into lib later)
 int sl_typecheck(sl_arena*, void* ast, sl_diag*);
 
-// Emits C99 for a package or compilation unit
-int sl_emit_c99(sl_arena*, void* ast, sl_writer*, const sl_emit_opts*, sl_diag*);
+// Emits C11 for a package or compilation unit
+int sl_emit_c11(sl_arena*, void* ast, sl_writer*, const sl_emit_opts*, sl_diag*);
 ```
 
 For v0, you can keep “package loading / filesystem imports” in the CLI and pass the library a fully concatenated unit (or a list of ASTs). If you expect wasm embedding later, consider moving import resolution into the library, but it’s not required.
@@ -642,7 +642,7 @@ This is easiest if your AST preserves explicit blocks for:
 * for body
 * each case body
 
-## 4.4 Code generation (C99 emitter)
+## 4.4 Code generation (C11 emitter)
 
 ### 4.4.1 Emitter strategy
 
@@ -661,7 +661,7 @@ Codegen phases:
 
 ### 4.4.2 Prelude emission
 
-The transpiler injects a fixed prelude into every output header. Keep it configurable but stable.
+The compiler injects a fixed prelude into every output header. Keep it configurable but stable.
 
 Prelude should define:
 
@@ -763,7 +763,7 @@ Responsibilities:
 * Build an import graph (DAG), detect cycles.
 * For “package build” mode:
 
-  * transpile just that package and emit one header.
+  * compile just that package and emit one header.
 * Optional “bundle build” mode:
 
   * emit one header containing root package and all dependencies (later).
@@ -787,7 +787,7 @@ The CLI can allocate large buffers and pass them to the core library arena.
 For each `tests/cases/*.sl`, produce `tests/expected/*.h`.
 Test:
 
-* transpiler output matches expected (exact text).
+* compiler output matches expected (exact text).
 
 Include cases:
 
@@ -804,8 +804,8 @@ Include cases:
 
 For each expected header:
 
-* compile as hosted (`clang -std=c99 -Wall -Wextra`)
-* compile as freestanding (`clang -std=c99 -ffreestanding -fno-builtin`)
+* compile as hosted (`clang -std=c11 -Wall -Wextra`)
+* compile as freestanding (`clang -std=c11 -ffreestanding -fno-builtin`)
   No linking required; compile-only is fine.
 
 ---
