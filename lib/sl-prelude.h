@@ -53,7 +53,7 @@ static inline __sl_uint sl_align_up(__sl_uint x, __sl_uint a) {
 }
 #ifndef SL_PLATFORM_ABI
     #define SL_PLATFORM_ABI
-enum {
+enum SLPlatformOps {
     SLPlatformOp_NONE = 0,
     SLPlatformOp_PANIC = 1,
     SLPlatformOp_CONSOLE_LOG = 2,
