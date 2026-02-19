@@ -81,5 +81,5 @@ Use `tools/test.py run --update` to rewrite `.expected.c` files from current out
   - `python3 tools/test.py run --build-dir _build/macos-aarch64-debug --cc clang`
 - Run one suite:
   - `python3 tools/test.py run --suite spec.lex_parse_check --build-dir _build/macos-aarch64-debug`
-- Lint manifest paths/shape:
+- Lint manifest paths/shape and unmanifested top-level test artifacts:
   - `python3 tools/test.py lint`

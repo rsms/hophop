@@ -19,6 +19,8 @@ from typing import Any, Dict, List, Optional
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "tests" / "tests.jsonl"
 ARENA_GROW_TEST_C_PATH = ROOT / "tests" / "harness" / "arena_grow_test.c"
+TEST_ROOT_IGNORED_NAMES = {"tests.jsonl", "README.md", "harness", ".DS_Store"}
+TEST_ROOT_TRACKED_SUFFIXES = {".sl", ".stderr", ".ast", ".tokens"}
 
 
 @dataclass
@@ -581,11 +583,68 @@ def lint_case_fields(case: TestCase) -> List[str]:
     return errors
 
 
+def iter_manifest_test_paths(cases: List[TestCase]) -> List[str]:
+    paths: List[str] = []
+    for case in cases:
+        c = case.data
+        for field in ("input", "expect", "expect_stderr", "harness"):
+            v = c.get(field)
+            if not isinstance(v, str) or not v:
+                continue
+            path = Path(v).as_posix().rstrip("/")
+            if path.startswith("tests/"):
+                paths.append(path)
+    return paths
+
+
+def is_test_root_artifact_file(path: Path) -> bool:
+    if path.name.endswith(".expected.c"):
+        return True
+    return path.suffix in TEST_ROOT_TRACKED_SUFFIXES
+
+
+def is_test_root_artifact_dir(path: Path) -> bool:
+    # Treat top-level directories containing SL sources as test artifacts.
+    for p in path.rglob("*.sl"):
+        if p.is_file():
+            return True
+    return False
+
+
+def lint_manifest_coverage(cases: List[TestCase]) -> List[str]:
+    covered_roots: set[str] = set()
+    for path in iter_manifest_test_paths(cases):
+        parts = Path(path).parts
+        if len(parts) >= 2:
+            covered_roots.add(parts[1])
+
+    errors: List[str] = []
+    tests_dir = ROOT / "tests"
+    for child in sorted(tests_dir.iterdir(), key=lambda p: p.name):
+        if child.name in TEST_ROOT_IGNORED_NAMES:
+            continue
+
+        if child.is_file():
+            if not is_test_root_artifact_file(child):
+                continue
+        elif child.is_dir():
+            if not is_test_root_artifact_dir(child):
+                continue
+        else:
+            continue
+
+        if child.name not in covered_roots:
+            errors.append(f"unmanifested test artifact: tests/{child.name}")
+
+    return errors
+
+
 def cmd_lint(args: argparse.Namespace) -> int:
     cases = load_cases(abs_path(args.manifest))
     errors: List[str] = []
     for case in cases:
         errors.extend(lint_case_fields(case))
+    errors.extend(lint_manifest_coverage(cases))
 
     if errors:
         for e in errors:
