@@ -13,8 +13,8 @@
     #include <mach-o/dyld.h>
 #endif
 
-#include "libsl-impl.h"
 #include "codegen.h"
+#include "libsl-impl.h"
 
 SL_API_BEGIN
 
@@ -420,8 +420,8 @@ static char* _Nullable DirNameDup(const char* path) {
     return out;
 }
 
-/* Returns a malloc'd string with the directory containing the running executable,
- * or NULL on failure. Caller must free. */
+/* Returns a malloc'd string with the directory containing the running
+ * executable, or NULL on failure. Caller must free. */
 static char* _Nullable GetExeDir(void) {
 #if defined(__APPLE__)
     char     buf[PATH_MAX];
@@ -849,7 +849,7 @@ static int CheckSource(const char* filename, const char* source, uint32_t source
 
 static int IsDeclKind(SLAstKind kind) {
     return kind == SLAst_FN || kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
-        || kind == SLAst_CONST;
+        || kind == SLAst_CONST || kind == SLAst_FN_GROUP;
 }
 
 static int IsPubDeclNode(const SLAstNode* n) {
@@ -1221,7 +1221,8 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
             if (importPath == NULL) {
                 return Errorf(file->path, n->dataStart, n->dataEnd, "invalid import path literal");
             }
-            /* Skip feature imports; they are compiler directives, not real packages. */
+            /* Skip feature imports; they are compiler directives, not real packages.
+             */
             if (strncmp(importPath, "slang/feature/", 14u) == 0
                 || strncmp(importPath, "feature/", 8u) == 0)
             {
@@ -2458,7 +2459,8 @@ static int GeneratePackage(
         free(source);
         FreeLoader(&loader);
         return ErrorSimple(
-            "entry package name \"%s\" is not a valid identifier (inferred from path)",
+            "entry package name \"%s\" is not a valid identifier "
+            "(inferred from path)",
             entryPkg->name);
     }
 
@@ -2541,8 +2543,9 @@ static int CreateTempDir(char* outPath, size_t outPathCap, const char* tag) {
     return dir != NULL ? 0 : -1;
 }
 
-/* Embedded cli-libc platform source — compiled alongside the generated SL package.
- * Provides __sl_platform_call() via libc and defines main() which calls sl_main(). */
+/* Embedded cli-libc platform source — compiled alongside the generated SL
+ * package. Provides __sl_platform_call() via libc and defines main() which
+ * calls sl_main(). */
 static int CompileProgram(const char* entryPath, const char* outExe) {
     SLPackageLoader         loader = { 0 };
     int                     loaderReady = 0;
@@ -2578,7 +2581,8 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
     }
     if (!IsValidIdentifier(entryPkg->name)) {
         ErrorSimple(
-            "entry package name \"%s\" is not a valid identifier (inferred from path)",
+            "entry package name \"%s\" is not a valid identifier (inferred "
+            "from path)",
             entryPkg->name);
         goto end;
     }

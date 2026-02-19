@@ -93,5 +93,25 @@
     "SL1023": {
         "name": "EMBEDDED_CYCLE",
         "message": "embedded struct cycle detected"
+    },
+    "SL1024": {
+        "name": "NO_MATCHING_OVERLOAD",
+        "message": "no matching overload"
+    },
+    "SL1025": {
+        "name": "AMBIGUOUS_CALL",
+        "message": "ambiguous call"
+    },
+    "SL1026": {
+        "name": "INVALID_FN_GROUP_MEMBER",
+        "message": "invalid function-group member"
+    },
+    "SL1027": {
+        "name": "DUPLICATE_FN_GROUP_MEMBER",
+        "message": "duplicate function-group member"
+    },
+    "SL1028": {
+        "name": "INVALID_FN_GROUP_COLLISION",
+        "message": "function-group name collides with existing symbol"
     }
 }

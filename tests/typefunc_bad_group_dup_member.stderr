@@ -1,0 +1,1 @@
+tests/typefunc_bad_group_dup_member.sl:27:30: error: duplicate function-group member

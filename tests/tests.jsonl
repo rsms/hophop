@@ -120,3 +120,14 @@
 {"id":"integration.examples.vss.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/vss.sl"}
 {"id":"unit.libsl.freestanding_compile","suite":"unit.libsl","kind":"libsl_freestanding"}
 {"id":"unit.libsl.arena_grow_test","suite":"unit.libsl","kind":"arena_grow_test"}
+{"id":"ast:tests/ast_fn_group.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_fn_group.sl","expect":"tests/ast_fn_group.ast"}
+{"id":"check:tests/typefunc_group_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/typefunc_group_ok.sl"}
+{"id":"check:tests/typefunc_builtin_len_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/typefunc_builtin_len_ok.sl"}
+{"id":"check:tests/typefunc_bad_no_matching_overload.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/typefunc_bad_no_matching_overload.sl","expect_stderr":"tests/typefunc_bad_no_matching_overload.stderr"}
+{"id":"check:tests/typefunc_bad_ambiguous_call.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/typefunc_bad_ambiguous_call.sl","expect_stderr":"tests/typefunc_bad_ambiguous_call.stderr"}
+{"id":"check:tests/typefunc_bad_group_member.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/typefunc_bad_group_member.sl","expect_stderr":"tests/typefunc_bad_group_member.stderr"}
+{"id":"check:tests/typefunc_bad_group_dup_member.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/typefunc_bad_group_dup_member.sl","expect_stderr":"tests/typefunc_bad_group_dup_member.stderr"}
+{"id":"check:tests/typefunc_bad_group_collision.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/typefunc_bad_group_collision.sl","expect_stderr":"tests/typefunc_bad_group_collision.stderr"}
+{"id":"check:tests/typefunc_field_precedence_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/typefunc_field_precedence_bad.sl","expect_stderr":"tests/typefunc_field_precedence_bad.stderr"}
+{"id":"integration.runtime.typefunc_group_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/typefunc_group_ok.sl","expect_exit":0}
+{"id":"integration.runtime.typefunc_builtin_len_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/typefunc_builtin_len_ok.sl","expect_exit":0}

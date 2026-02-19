@@ -80,10 +80,11 @@ ${license}
     #define __SL_DEFINED_NULLABLE
 #endif
 
-// SL_ENUM_TYPE_SUPPORTED is defined if the compiler supports ": Type" in an enum declaration.
-// C++: standard since C++11. MSVC historically supported it, but __cplusplus may lie
-// unless /Zc:__cplusplus is enabled, so also gate on _MSC_VER.
-// C: standard since C23; also supported as an extension in clang, and in GCC 13+.
+// SL_ENUM_TYPE_SUPPORTED is defined if the compiler supports ": Type" in an
+// enum declaration. C++: standard since C++11. MSVC historically supported it,
+// but __cplusplus may lie unless /Zc:__cplusplus is enabled, so also gate on
+// _MSC_VER. C: standard since C23; also supported as an extension in clang, and
+// in GCC 13+.
 #ifndef SL_ENUM_TYPE_SUPPORTED
     #if defined(__cplusplus) \
         && ((__cplusplus >= 201103L) || (defined(_MSC_VER) && _MSC_VER >= 1700))
@@ -294,6 +295,7 @@ typedef enum {
     SLAst_IMPORT,
     SLAst_PUB,
     SLAst_FN,
+    SLAst_FN_GROUP,
     SLAst_PARAM,
     SLAst_TYPE_NAME,
     SLAst_TYPE_PTR,

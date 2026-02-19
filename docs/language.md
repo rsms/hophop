@@ -61,7 +61,7 @@ Rules:
 ```ebnf
 ImportDecl      = "import" [Ident] StringLit ";" ;
 
-TopDecl         = ["pub"] (StructDecl | UnionDecl | EnumDecl | FnDeclOrDef | ConstDecl) ;
+TopDecl         = ["pub"] (StructDecl | UnionDecl | EnumDecl | FnDeclOrDef | FnGroupDecl | ConstDecl) ;
 
 StructDecl      = "struct" Ident "{" { StructFieldDecl [ "," | ";" ] } "}" [";"] ;
 UnionDecl       = "union"  Ident "{" { FieldDecl [ "," | ";" ] } "}" [";"] ;
@@ -73,6 +73,7 @@ EnumDecl        = "enum" Ident Type "{" { EnumItem [ "," | ";" ] } "}" [";"] ;
 EnumItem        = Ident ["=" Expr] ;
 
 FnDeclOrDef     = "fn" Ident "(" [Param {"," Param}] ")" [Type] (";" | Block) ;
+FnGroupDecl     = "fn" Ident "{" Ident {"," Ident} "}" ";" ;
 Param           = Ident Type ;
 
 ConstDecl       = "const" Ident Type ["=" Expr] ";" ;
@@ -186,9 +187,18 @@ Notes:
 - Functions and types are collected before body checking (declaration-order independence).
 
 Function identity:
-- No overload sets.
 - Multiple declarations with identical signature are allowed.
 - At most one definition body per function name/signature in a checked unit.
+- Explicit overload groups are supported:
+  - `fn update{update_pet, update_ship};`
+  - Calls to `update(...)` resolve across the grouped members.
+
+Type-function selector-call sugar:
+- `x.f(a, b)` can resolve as `f(x, a, b)`.
+- Field lookup has precedence:
+  - if `x.f` resolves as a field, normal field-call rules apply.
+  - selector-call sugar is only considered when no field named `f` exists.
+- Selector sugar is call-form only in current implementation (`x.f` alone does not produce a callable value).
 
 ### 4.1 Struct composition
 - In `struct` declarations, the first field may be an embedded base using type-name-only syntax:
@@ -353,6 +363,7 @@ Flow narrowing (locals only, including params since params are locals):
   - pointers/references to arrays/slices
 - Return type: `u32`.
 - Current generated runtime behavior for null pointer/ref-to-array/slice: yields `0`.
+- Selector-call sugar is supported: `x.len()` is equivalent to `len(x)` when `x` has no field named `len`.
 
 ### 9.2 `cstr(s)`
 - `s` must be convertible to `str`.
@@ -430,7 +441,7 @@ Use:
 
 ### 11.3 Exports (`pub`)
 - `pub` marks exported top-level declaration.
-- Exported kinds: same top-level decl kinds (`fn`, `struct`, `union`, `enum`, `const`).
+- Exported kinds: same top-level decl kinds (`fn`, `fn{...}`, `struct`, `union`, `enum`, `const`).
 - Non-`pub` top-level declarations are package-private.
 
 Package validation performed by `checkpkg`/`genpkg`/`compile`/`run`:
@@ -456,7 +467,7 @@ Entry point:
 ## 13. Known Non-Goals / Not Implemented
 
 - No generics/templates/macros.
-- No function overloading.
+- No implicit function overloading (`fn name(...)` by signature). Use explicit `fn Group{...};`.
 - No block comments.
 - No binary integer literal syntax.
 - Compound literals are not currently supported.

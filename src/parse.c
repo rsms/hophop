@@ -1328,6 +1328,52 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
     if (SLPExpectDeclName(p, &name) != 0) {
         return -1;
     }
+
+    if (SLPMatch(p, SLTok_LBRACE)) {
+        const SLToken* rb;
+        const SLToken* semi;
+        int32_t        group = SLPNewNode(p, SLAst_FN_GROUP, kw->start, name->end);
+        if (group < 0) {
+            return -1;
+        }
+        p->nodes[group].dataStart = name->start;
+        p->nodes[group].dataEnd = name->end;
+
+        if (SLPAt(p, SLTok_RBRACE)) {
+            return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+        }
+
+        for (;;) {
+            const SLToken* memberName;
+            int32_t        memberNode;
+            if (SLPExpectDeclName(p, &memberName) != 0) {
+                return -1;
+            }
+            memberNode = SLPNewNode(p, SLAst_IDENT, memberName->start, memberName->end);
+            if (memberNode < 0) {
+                return -1;
+            }
+            p->nodes[memberNode].dataStart = memberName->start;
+            p->nodes[memberNode].dataEnd = memberName->end;
+            if (SLPAddChild(p, group, memberNode) != 0) {
+                return -1;
+            }
+            if (!SLPMatch(p, SLTok_COMMA)) {
+                break;
+            }
+        }
+
+        if (SLPExpect(p, SLTok_RBRACE, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+            return -1;
+        }
+        if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &semi) != 0) {
+            return -1;
+        }
+        p->nodes[group].end = semi->end;
+        *out = group;
+        return 0;
+    }
+
     if (SLPExpect(p, SLTok_LPAREN, SLDiag_UNEXPECTED_TOKEN, &t) != 0) {
         return -1;
     }
@@ -1417,7 +1463,8 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
     }
 
     /* Detect feature imports and set feature flags. */
-    /* String literal includes quotes: src[path->start] == '"', src[path->end-1] == '"'. */
+    /* String literal includes quotes: src[path->start] == '"', src[path->end-1]
+     * == '"'. */
     {
         uint32_t    strStart = path->start + 1u;           /* skip opening quote */
         uint32_t    strLen = path->end - path->start - 2u; /* exclude both quotes */
@@ -1509,6 +1556,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_IMPORT:        return "IMPORT";
         case SLAst_PUB:           return "PUB";
         case SLAst_FN:            return "FN";
+        case SLAst_FN_GROUP:      return "FN_GROUP";
         case SLAst_PARAM:         return "PARAM";
         case SLAst_TYPE_NAME:     return "TYPE_NAME";
         case SLAst_TYPE_PTR:      return "TYPE_PTR";

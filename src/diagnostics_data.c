@@ -65,6 +65,23 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
                                 NULL,
                                 SLDiagType_ERROR,
                                 0 },
+    [SLDiag_NO_MATCHING_OVERLOAD] = { "SL1024", "no matching overload", NULL, SLDiagType_ERROR, 0 },
+    [SLDiag_AMBIGUOUS_CALL] = { "SL1025", "ambiguous call", NULL, SLDiagType_ERROR, 0 },
+    [SLDiag_INVALID_FN_GROUP_MEMBER] = { "SL1026",
+                                         "invalid function-group member",
+                                         NULL,
+                                         SLDiagType_ERROR,
+                                         0 },
+    [SLDiag_DUPLICATE_FN_GROUP_MEMBER] = { "SL1027",
+                                           "duplicate function-group member",
+                                           NULL,
+                                           SLDiagType_ERROR,
+                                           0 },
+    [SLDiag_INVALID_FN_GROUP_COLLISION] = { "SL1028",
+                                            "function-group name collides with existing symbol",
+                                            NULL,
+                                            SLDiagType_ERROR,
+                                            0 },
 };
 
 const char* SLDiagId(SLDiagCode code) {
