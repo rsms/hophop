@@ -56,9 +56,9 @@ Implemented core includes:
 
 ## Feature Proposals (SLP)
 
-- [SLP-1-variable-size-structs.md](docs/SLP-1-variable-size-structs.md)
-- [SLP-2-types.md](docs/SLP-2-types.md)
-- [SLP-3-optional.md](docs/SLP-3-optional.md)
-- [SLP-4-type-functions.md](docs/SLP-4-type-functions.md)
-- [SLP-5-platform.md](docs/SLP-5-platform.md)
-- [SLP-6-struct-composition.md](docs/SLP-6-struct-composition.md)
+- [SLP-1-variable-size-structs.md](SLP-1-variable-size-structs.md)
+- [SLP-2-types.md](SLP-2-types.md)
+- [SLP-3-optional.md](SLP-3-optional.md)
+- [SLP-4-type-functions.md](SLP-4-type-functions.md)
+- [SLP-5-platform.md](SLP-5-platform.md)
+- [SLP-6-struct-composition.md](SLP-6-struct-composition.md)
