@@ -123,6 +123,7 @@ Import path:
 - `import "platform"`
 
 Surface API:
+- `platform.exit(status)`
 - `platform.panic(msg, flags)`
 - `platform.console_log(msg, flags)`
 - `platform.alloc(size, align, flags)`
@@ -130,6 +131,7 @@ Surface API:
 - `platform.free(ptr, size, flags)`
 
 Operation semantics:
+- `exit`: terminate process with status code.
 - `panic`: handles panic and does not return.
 - `console_log`: writes text (`flags=0` stdout, `flags=1` stderr).
 - `alloc`: allocate memory block.

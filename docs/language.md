@@ -421,6 +421,8 @@ Special import prefix:
 - Known feature: `optional`.
 - Unknown feature names emit a warning.
 - `import "platform"` resolves to a built-in package named `platform`.
+- `import "platform"` cannot be aliased.
+- Built-in `platform` API currently exports `fn exit(status i32)`.
 
 Use:
 - Imported symbols are referenced as `alias.Name` in type names and expressions.

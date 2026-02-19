@@ -2483,6 +2483,25 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 }
                 return 0;
             }
+            if (callee != NULL && callee->kind == SLAst_IDENT
+                && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "platform__exit"))
+            {
+                int32_t statusArg = AstNextSibling(&c->ast, child);
+                int32_t extra = statusArg >= 0 ? AstNextSibling(&c->ast, statusArg) : -1;
+                if (statusArg < 0 || extra >= 0) {
+                    return -1;
+                }
+                if (BufAppendCStr(
+                        &c->out,
+                        "((void)__sl_platform_call(__sl_PlatformOp_EXIT, (__sl_u64)(__sl_i64)(")
+                        != 0
+                    || EmitExpr(c, statusArg) != 0
+                    || BufAppendCStr(&c->out, "), 0, 0, 0, 0, 0, 0))") != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
             {
                 const SLFnSig* sig = NULL;
                 uint32_t       argIndex = 0;

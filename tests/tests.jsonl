@@ -15,6 +15,7 @@
 {"id":"checkpkg:tests/new_optional_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_optional_ok.sl"}
 {"id":"checkpkg:tests/new_nonoptional_panic.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_nonoptional_panic.sl"}
 {"id":"checkpkg:tests/platform_import_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/platform_import_ok.sl"}
+{"id":"checkpkg:tests/platform_exit_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/platform_exit_ok.sl"}
 {"id":"check:tests/panic_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/panic_ok.sl"}
 {"id":"check:tests/feature_optional_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/feature_optional_ok.sl"}
 {"id":"check:tests/feature_optional_no_import.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/feature_optional_no_import.sl"}
@@ -55,6 +56,7 @@
 {"id":"check:tests/types_mut_bad_readonly_slice_write.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/types_mut_bad_readonly_slice_write.sl","expect_stderr":"tests/types_mut_bad_readonly_slice_write.stderr"}
 {"id":"check:tests/types_mut_bad_readonly_ref_write.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/types_mut_bad_readonly_ref_write.sl","expect_stderr":"tests/types_mut_bad_readonly_ref_write.stderr"}
 {"id":"check:tests/bad_void_return_type.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/bad_void_return_type.sl","expect_stderr":"tests/bad_void_return_type.stderr"}
+{"id":"checkpkg:tests/platform_import_alias_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/platform_import_alias_bad.sl","expect_stderr":"tests/platform_import_alias_bad.stderr"}
 {"id":"checkpkg:tests/pkg_bad_symbol/app","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/pkg_bad_symbol/app","expect_stderr":"tests/pkg_bad_symbol.stderr"}
 {"id":"checkpkg:tests/pkg_cycle/a","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/pkg_cycle/a","expect_stderr":"tests/pkg_cycle.stderr"}
 {"id":"checkpkg:tests/pub_missing_def","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/pub_missing_def","expect_stderr":"tests/pub_missing_def.stderr"}
@@ -80,6 +82,7 @@
 {"id":"integration.codegen.single_file_import.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/single_file_import/app/main.sl","harness":"tests/harness/phase6_single_import_test.c.in"}
 {"id":"integration.codegen.new_ok.unwrap_lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/new_ok.sl","contains":["__sl_unwrap((const void*)(__sl_new(","__sl_unwrap((const void*)(__sl_new_array("]}
 {"id":"integration.codegen.new_optional.no_unwrap_lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/new_optional_ok.sl","not_contains":["__sl_unwrap((const void*)(__sl_new"]}
+{"id":"integration.codegen.platform_exit_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/platform_exit_ok.sl","contains":["__sl_platform_call(__sl_PlatformOp_EXIT"]}
 {"id":"integration.codegen.vss.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/vss_ok.sl","contains":["tests__Packet__payload","tests__Packet__samples","tests__Packet__sizeof"],"harness":"tests/harness/phase8_vss_test.c.in"}
 {"id":"integration.codegen.vss_nested.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/vss_nested_ok.sl","contains":["tests__Section__entries","tests__Metadata__value","tests__Packet__metadata","tests__Packet__sections","tests__Section__sizeof","tests__Metadata__sizeof","tests__Packet__sizeof"],"harness":"tests/harness/phase8_vss_nested_test.c.in"}
 {"id":"integration.runtime.run_exit7.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/run_exit7.sl","expect_exit":7,"run_stdout_empty":true,"run_stderr_empty":true,"compile_stdout_empty":true,"compile_stderr_empty":true}
@@ -87,6 +90,7 @@
 {"id":"integration.runtime.new_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/new_ok.sl"}
 {"id":"integration.runtime.new_optional_ok.compile_and_run","suite":"std.unit","kind":"compile_and_run","input":"tests/new_optional_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"integration.runtime.new_nonoptional_panic.compile_and_run","suite":"std.unit","kind":"compile_and_run","input":"tests/new_nonoptional_panic.sl","expect_nonzero":true,"run_stdout_empty":true,"run_stderr_empty":false,"stderr_contains":"panic: unwrap: null value"}
+{"id":"integration.runtime.platform_exit_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/platform_exit_ok.sl","expect_exit":123,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"integration.runtime.struct_composition_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/struct_composition_ok.sl","expect_exit":0}
 {"id":"integration.runtime.types_mut_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/types_mut_ok.sl"}
 {"id":"integration.runtime.slice_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slice_ok.sl"}

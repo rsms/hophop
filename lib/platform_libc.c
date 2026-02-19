@@ -49,6 +49,7 @@ __sl_i64 __sl_platform_call(
             (void)c;
             free((void*)(uintptr_t)a);
             return 0;
+        case __sl_PlatformOp_EXIT: exit((int)(__sl_i64)a); return 0;
     }
     // note: intentionally no 'default' case so that the compiler can warn us if we forgot an op
     return -1;

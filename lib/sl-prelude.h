@@ -64,7 +64,8 @@ enum __sl_PlatformOps {
     __sl_PlatformOp_CONSOLE_LOG = 2,
     __sl_PlatformOp_MEM_ALLOC = 3,
     __sl_PlatformOp_MEM_RESIZE = 4,
-    __sl_PlatformOp_MEM_FREE = 5
+    __sl_PlatformOp_MEM_FREE = 5,
+    __sl_PlatformOp_EXIT = 6
 };
 
 extern __sl_i64 __sl_platform_call(

@@ -1229,6 +1229,18 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
             } else {
                 alias = DefaultImportAlias(importPath);
             }
+            if (StrEq(importPath, "platform")) {
+                if (alias == NULL || !StrEq(alias, "platform")) {
+                    int rc = Errorf(
+                        file->path,
+                        n->start,
+                        n->end,
+                        "import \"platform\" cannot be aliased; use import \"platform\"");
+                    free(alias);
+                    free(importPath);
+                    return rc;
+                }
+            }
             if (alias == NULL) {
                 int rc = Errorf(
                     file->path,
@@ -1667,6 +1679,8 @@ static int IsBuiltinPlatformImportPath(const char* importPath) {
 
 static int LoadBuiltinPlatformPackage(SLPackageLoader* loader, SLPackage** outPkg) {
     SLPackage* pkg = FindPackageByDir(loader, SL_BUILTIN_PLATFORM_PATH);
+    char*      declName;
+    char*      declText;
     if (pkg != NULL) {
         *outPkg = pkg;
         return 0;
@@ -1677,6 +1691,29 @@ static int LoadBuiltinPlatformPackage(SLPackageLoader* loader, SLPackage** outPk
     free(pkg->name);
     pkg->name = DupCStr("platform");
     if (pkg->name == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    declName = DupCStr("exit");
+    declText = DupCStr("pub fn exit(status i32)");
+    if (declName == NULL || declText == NULL) {
+        free(declName);
+        free(declText);
+        return ErrorSimple("out of memory");
+    }
+    if (AddSymbolDecl(
+            &pkg->pubDecls,
+            &pkg->pubDeclLen,
+            &pkg->pubDeclCap,
+            SLAst_FN,
+            declName,
+            declText,
+            0,
+            0,
+            -1)
+        != 0)
+    {
+        free(declName);
+        free(declText);
         return ErrorSimple("out of memory");
     }
     pkg->loadState = 2;
