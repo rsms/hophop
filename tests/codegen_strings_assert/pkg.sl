@@ -1,4 +1,4 @@
-pub fn Main(x i32) i32;
+pub fn Main(x i32) i32
 
 fn Main(x i32) i32 {
     var a str = "hello"
