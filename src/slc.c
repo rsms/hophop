@@ -157,6 +157,17 @@ static int Errorf(const char* file, uint32_t start, uint32_t end, const char* fm
     return -1;
 }
 
+static int ErrorDiagf(const char* file, uint32_t start, uint32_t end, SLDiagCode code, ...) {
+    va_list     ap;
+    const char* fmt = SLDiagMessage(code);
+    fprintf(stderr, "%s:%u:%u: error: ", DisplayPath(file), start, end);
+    va_start(ap, code);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fputc('\n', stderr);
+    return -1;
+}
+
 static int ErrorSimple(const char* fmt, ...) {
     va_list ap;
     fprintf(stderr, "error: ");
@@ -1005,32 +1016,32 @@ static char* _Nullable NormalizeImportPath(const char* importPath, const char** 
     }
     if (importPath == NULL || importPath[0] == '\0') {
         if (outErr != NULL) {
-            *outErr = "invalid import path (empty path)";
+            *outErr = "empty path";
         }
         return NULL;
     }
     len = strlen(importPath);
     if (importPath[0] == '/') {
         if (outErr != NULL) {
-            *outErr = "invalid import path (absolute path)";
+            *outErr = "absolute path";
         }
         return NULL;
     }
     if (importPath[0] == '.' && importPath[1] == '\0') {
         if (outErr != NULL) {
-            *outErr = "invalid import path (cannot import itself)";
+            *outErr = "cannot import itself";
         }
         return NULL;
     }
     if (importPath[0] == '.' && importPath[1] == '.' && importPath[2] == '\0') {
         if (outErr != NULL) {
-            *outErr = "invalid import path (cannot import parent root)";
+            *outErr = "cannot import parent root";
         }
         return NULL;
     }
     if (IsAsciiSpaceChar(importPath[0]) || IsAsciiSpaceChar(importPath[len - 1u])) {
         if (outErr != NULL) {
-            *outErr = "invalid import path (leading/trailing whitespace)";
+            *outErr = "leading/trailing whitespace";
         }
         return NULL;
     }
@@ -1038,7 +1049,7 @@ static char* _Nullable NormalizeImportPath(const char* importPath, const char** 
     for (i = 0; i < (uint32_t)len; i++) {
         if (!IsValidImportPathChar(importPath[i])) {
             if (outErr != NULL) {
-                *outErr = "invalid import path (invalid character)";
+                *outErr = "invalid character";
             }
             return NULL;
         }
@@ -1066,7 +1077,7 @@ static char* _Nullable NormalizeImportPath(const char* importPath, const char** 
             segLen = segEnd - segStart;
             if (segLen == 0) {
                 if (outErr != NULL) {
-                    *outErr = "invalid import path (empty segment)";
+                    *outErr = "empty segment";
                 }
                 goto done;
             }
@@ -1077,7 +1088,7 @@ static char* _Nullable NormalizeImportPath(const char* importPath, const char** 
             {
                 if (segCount == 0) {
                     if (outErr != NULL) {
-                        *outErr = "invalid import path (escapes root)";
+                        *outErr = "escapes root";
                     }
                     goto done;
                 }
@@ -1096,7 +1107,7 @@ static char* _Nullable NormalizeImportPath(const char* importPath, const char** 
 
     if (segCount == 0) {
         if (outErr != NULL) {
-            *outErr = "invalid import path";
+            *outErr = "empty path";
         }
         goto done;
     }
@@ -1503,18 +1514,16 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
             free(decodedPath);
             if (importPath == NULL) {
                 if (pathErr != NULL && !StrEq(pathErr, "out of memory")) {
-                    return Errorf(file->path, n->start, n->end, "%s", pathErr);
+                    return ErrorDiagf(
+                        file->path, n->start, n->end, SLDiag_IMPORT_INVALID_PATH, pathErr);
                 }
                 return ErrorSimple("out of memory");
             }
 
             if (IsFeatureImportPath(importPath)) {
                 if (aliasNode != NULL || hasSymbols) {
-                    int rc = Errorf(
-                        file->path,
-                        n->start,
-                        n->end,
-                        "feature imports must be path-only (no alias or symbol list)");
+                    int rc = ErrorDiagf(
+                        file->path, n->start, n->end, SLDiag_IMPORT_FEATURE_IMPORT_EXTRAS);
                     free(importPath);
                     return rc;
                 }
@@ -1537,8 +1546,8 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
             }
 
             if (aliasIsUnderscore && hasSymbols) {
-                int rc = Errorf(
-                    file->path, n->start, n->end, "import with symbol list cannot use as _");
+                int rc = ErrorDiagf(
+                    file->path, n->start, n->end, SLDiag_IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS);
                 free(importPath);
                 return rc;
             }
@@ -1546,11 +1555,11 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
             if (bindName == NULL && !hasSymbols) {
                 bindName = DefaultImportAlias(importPath);
                 if (bindName == NULL) {
-                    int rc = Errorf(
+                    int rc = ErrorDiagf(
                         file->path,
                         n->start,
                         n->end,
-                        "cannot infer package identifier; use import \"%s\" as <name>",
+                        SLDiag_IMPORT_ALIAS_INFERENCE_FAILED,
                         importPath);
                     free(importPath);
                     return rc;
@@ -1610,11 +1619,8 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
                         return ErrorSimple("out of memory");
                     }
                     if (StrEq(localName, "_")) {
-                        int rc = Errorf(
-                            file->path,
-                            ch->start,
-                            ch->end,
-                            "import symbol alias '_' is not allowed");
+                        int rc = ErrorDiagf(
+                            file->path, ch->start, ch->end, SLDiag_IMPORT_SYMBOL_ALIAS_INVALID);
                         free(sourceName);
                         free(localName);
                         return rc;

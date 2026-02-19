@@ -1605,6 +1605,15 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
                 const SLToken* symAlias = NULL;
                 int32_t        symNode;
 
+                if (SLPAt(p, SLTok_MUL)) {
+                    const SLToken* starTok = SLPPeek(p);
+                    SLPSetDiag(
+                        p->diag,
+                        SLDiag_IMPORT_WILDCARD_NOT_SUPPORTED,
+                        starTok->start,
+                        starTok->end);
+                    return -1;
+                }
                 if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &symName) != 0) {
                     return -1;
                 }

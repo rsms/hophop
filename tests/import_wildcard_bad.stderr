@@ -1,1 +1,1 @@
-tests/import_wildcard_bad.sl:20:21: error: unexpected token
+tests/import_wildcard_bad.sl:20:21: error: wildcard import is not supported

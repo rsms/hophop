@@ -117,5 +117,29 @@
     "SL1029": {
         "name": "PARAM_MISSING_TYPE",
         "message": "parameter '{s}' is missing type"
+    },
+    "SL1030": {
+        "name": "IMPORT_INVALID_PATH",
+        "message": "invalid import path ({s})"
+    },
+    "SL1031": {
+        "name": "IMPORT_ALIAS_INFERENCE_FAILED",
+        "message": "cannot infer package identifier; use import \"{s}\" as <name>"
+    },
+    "SL1032": {
+        "name": "IMPORT_WILDCARD_NOT_SUPPORTED",
+        "message": "wildcard import is not supported"
+    },
+    "SL1033": {
+        "name": "IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS",
+        "message": "import with symbol list cannot use as _"
+    },
+    "SL1034": {
+        "name": "IMPORT_SYMBOL_ALIAS_INVALID",
+        "message": "import symbol alias '_' is not allowed"
+    },
+    "SL1035": {
+        "name": "IMPORT_FEATURE_IMPORT_EXTRAS",
+        "message": "feature imports must be path-only (no alias or symbol list)"
     }
 }

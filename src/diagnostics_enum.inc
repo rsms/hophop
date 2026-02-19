@@ -30,3 +30,12 @@ SLDiag_NONE = 0, SLDiag_ARENA_OOM,     /* SL1001: arena out of memory */
     SLDiag_INVALID_FN_GROUP_COLLISION, /* SL1028: function-group name collides with existing symbol
                                         */
     SLDiag_PARAM_MISSING_TYPE,         /* SL1029: parameter '{s}' is missing type */
+    SLDiag_IMPORT_INVALID_PATH,        /* SL1030: invalid import path ({s}) */
+    SLDiag_IMPORT_ALIAS_INFERENCE_FAILED, /* SL1031: cannot infer package identifier; use import
+                                             "{s}" as <name> */
+    SLDiag_IMPORT_WILDCARD_NOT_SUPPORTED, /* SL1032: wildcard import is not supported */
+    SLDiag_IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS, /* SL1033: import with symbol list cannot use as _
+                                                   */
+    SLDiag_IMPORT_SYMBOL_ALIAS_INVALID,  /* SL1034: import symbol alias '_' is not allowed */
+    SLDiag_IMPORT_FEATURE_IMPORT_EXTRAS, /* SL1035: feature imports must be path-only (no alias or
+                                            symbol list) */
