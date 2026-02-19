@@ -174,8 +174,12 @@ build \$builddir/slc: link ${objfiles[*]}
 default \$builddir/libsl.h \$builddir/lib/sl-prelude.h \$builddir/lib/platform_libc.c \$builddir/slc
 _END
 
-[[ ! -e build.ninja || "$(_checksum $NF)" != "$(_checksum build.ninja)" ]] &&
-    mv $NF build.ninja && echo "build.ninja updated" || rm $NF
+if git diff --no-index --minimal build.ninja $NF > build.ninja.diff; then
+    rm $NF
+else
+    echo "build.ninja updated (diff at $build_dir/obj/build.ninja.diff)"
+    mv $NF build.ninja
+fi
 
 cd ../../..
 
