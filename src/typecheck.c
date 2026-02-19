@@ -22,7 +22,6 @@ typedef enum {
     SLBuiltin_VOID,
     SLBuiltin_BOOL,
     SLBuiltin_STR,
-    SLBuiltin_MEMALLOCATOR,
     SLBuiltin_U8,
     SLBuiltin_U16,
     SLBuiltin_U32,
@@ -147,7 +146,6 @@ typedef struct {
     int32_t typeVoid;
     int32_t typeBool;
     int32_t typeStr;
-    int32_t typeMemAllocator;
     int32_t typeUsize;
     int32_t typeUntypedInt;
     int32_t typeUntypedFloat;
@@ -227,6 +225,30 @@ static int SLNameEqLiteral(SLStrView src, uint32_t start, uint32_t end, const ch
     return lit[i] == '\0';
 }
 
+static int32_t SLTCFindNamedTypeIndexByLiteral(SLTypeCheckCtx* c, const char* name) {
+    uint32_t i;
+    size_t   n = 0;
+    while (name[n] != '\0') {
+        n++;
+    }
+    for (i = 0; i < c->namedTypeLen; i++) {
+        uint32_t start = c->namedTypes[i].nameStart;
+        uint32_t end = c->namedTypes[i].nameEnd;
+        if ((size_t)(end - start) == n && memcmp(c->src.ptr + start, name, n) == 0) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static int32_t SLTCFindMemAllocatorType(SLTypeCheckCtx* c) {
+    int32_t namedIndex = SLTCFindNamedTypeIndexByLiteral(c, "mem__Allocator");
+    if (namedIndex < 0) {
+        return -1;
+    }
+    return c->namedTypes[(uint32_t)namedIndex].typeId;
+}
+
 static int32_t SLTCAddType(
     SLTypeCheckCtx* c, const SLTCType* t, uint32_t errStart, uint32_t errEnd) {
     int32_t idx;
@@ -265,7 +287,6 @@ static int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     c->typeVoid = -1;
     c->typeBool = -1;
     c->typeStr = -1;
-    c->typeMemAllocator = -1;
     c->typeUsize = -1;
     c->typeUntypedInt = -1;
     c->typeUntypedFloat = -1;
@@ -274,8 +295,7 @@ static int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     c->typeVoid = SLTCAddBuiltinType(c, "void", SLBuiltin_VOID);
     c->typeBool = SLTCAddBuiltinType(c, "bool", SLBuiltin_BOOL);
     c->typeStr = SLTCAddBuiltinType(c, "str", SLBuiltin_STR);
-    c->typeMemAllocator = SLTCAddBuiltinType(c, "MemAllocator", SLBuiltin_MEMALLOCATOR);
-    if (c->typeVoid < 0 || c->typeBool < 0 || c->typeStr < 0 || c->typeMemAllocator < 0) {
+    if (c->typeVoid < 0 || c->typeBool < 0 || c->typeStr < 0) {
         return -1;
     }
 
@@ -336,11 +356,6 @@ static int32_t SLTCFindBuiltinType(SLTypeCheckCtx* c, uint32_t start, uint32_t e
             return (int32_t)i;
         }
         if (SLNameEqLiteral(c->src, start, end, "str") && t->builtin == SLBuiltin_STR) {
-            return (int32_t)i;
-        }
-        if (SLNameEqLiteral(c->src, start, end, "MemAllocator")
-            && t->builtin == SLBuiltin_MEMALLOCATOR)
-        {
             return (int32_t)i;
         }
         if (SLNameEqLiteral(c->src, start, end, "u8") && t->builtin == SLBuiltin_U8) {
@@ -1903,16 +1918,49 @@ static int SLTCFinalizeFunctionTypes(SLTypeCheckCtx* c) {
     return 0;
 }
 
-static int32_t SLTCFindTopLevelConstNode(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
+static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
+
+static int32_t SLTCFindTopLevelVarLikeNode(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
     int32_t child = SLAstFirstChild(c->ast, c->ast->root);
     while (child >= 0) {
         const SLAstNode* n = &c->ast->nodes[child];
-        if (n->kind == SLAst_CONST && SLNameEqSlice(c->src, n->dataStart, n->dataEnd, start, end)) {
+        if ((n->kind == SLAst_VAR || n->kind == SLAst_CONST)
+            && SLNameEqSlice(c->src, n->dataStart, n->dataEnd, start, end))
+        {
             return child;
         }
         child = SLAstNextSibling(c->ast, child);
     }
     return -1;
+}
+
+static int SLTCTypeTopLevelVarLikeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
+    int32_t firstChild = SLAstFirstChild(c->ast, nodeId);
+    if (firstChild < 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
+    }
+    if (SLTCIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
+        return SLTCResolveTypeNode(c, firstChild, outType);
+    }
+    {
+        int32_t initType;
+        if (SLTCTypeExpr(c, firstChild, &initType) != 0) {
+            return -1;
+        }
+        if (initType == c->typeNull) {
+            return SLTCFailNode(c, firstChild, SLDiag_INFER_NULL_TYPE_UNKNOWN);
+        }
+        if (initType == c->typeVoid) {
+            return SLTCFailNode(c, firstChild, SLDiag_INFER_VOID_TYPE_UNKNOWN);
+        }
+        if (SLTCConcretizeInferredType(c, initType, outType) != 0) {
+            return -1;
+        }
+        if (SLTCTypeContainsVarSizeByValue(c, *outType)) {
+            return SLTCFailNode(c, firstChild, SLDiag_TYPE_MISMATCH);
+        }
+        return 0;
+    }
 }
 
 static int SLTCCollectFnGroupFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
@@ -1926,7 +1974,7 @@ static int SLTCCollectFnGroupFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
 
     if (SLTCFindFunctionIndex(c, n->dataStart, n->dataEnd) >= 0
         || SLTCFindNamedTypeIndex(c, n->dataStart, n->dataEnd) >= 0
-        || SLTCFindTopLevelConstNode(c, n->dataStart, n->dataEnd) >= 0
+        || SLTCFindTopLevelVarLikeNode(c, n->dataStart, n->dataEnd) >= 0
         || SLTCFindFnGroupIndex(c, n->dataStart, n->dataEnd) >= 0)
     {
         return SLTCFailSpan(c, SLDiag_INVALID_FN_GROUP_COLLISION, n->dataStart, n->dataEnd);
@@ -2178,6 +2226,12 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     return 0;
                 }
             }
+            {
+                int32_t varLikeNode = SLTCFindTopLevelVarLikeNode(c, n->dataStart, n->dataEnd);
+                if (varLikeNode >= 0) {
+                    return SLTCTypeTopLevelVarLikeNode(c, varLikeNode, outType);
+                }
+            }
             return SLTCFailSpan(c, SLDiag_UNKNOWN_SYMBOL, n->dataStart, n->dataEnd);
         }
         case SLAst_INT:    *outType = c->typeUntypedInt; return 0;
@@ -2256,6 +2310,7 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     int32_t countArgNode;
                     int32_t nextArgNode;
                     int32_t allocArgType;
+                    int32_t allocBaseType;
                     int32_t allocParamType;
                     int32_t elemType;
                     int32_t resultType;
@@ -2278,8 +2333,12 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     if (SLTCTypeExpr(c, allocArgNode, &allocArgType) != 0) {
                         return -1;
                     }
+                    allocBaseType = SLTCFindMemAllocatorType(c);
+                    if (allocBaseType < 0) {
+                        return SLTCFailNode(c, allocArgNode, SLDiag_TYPE_MISMATCH);
+                    }
                     allocParamType = SLTCInternRefType(
-                        c, c->typeMemAllocator, 1, callee->start, callee->end);
+                        c, allocBaseType, 1, callee->start, callee->end);
                     if (allocParamType < 0) {
                         return -1;
                     }
@@ -2465,6 +2524,7 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     int32_t typeArgNode = SLAstNextSibling(c->ast, calleeNode);
                     int32_t countArgNode;
                     int32_t nextArgNode;
+                    int32_t allocBaseType;
                     int32_t allocParamType;
                     int32_t elemType;
                     int32_t resultType;
@@ -2480,8 +2540,12 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
                     }
 
+                    allocBaseType = SLTCFindMemAllocatorType(c);
+                    if (allocBaseType < 0) {
+                        return SLTCFailNode(c, recvNode, SLDiag_TYPE_MISMATCH);
+                    }
                     allocParamType = SLTCInternRefType(
-                        c, c->typeMemAllocator, 1, callee->start, callee->end);
+                        c, allocBaseType, 1, callee->start, callee->end);
                     if (allocParamType < 0) {
                         return -1;
                     }

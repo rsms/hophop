@@ -1,6 +1,7 @@
 import "std/testing"
+import "std/mem" as mem
 
 fn main() {
-    var ma mut&MemAllocator = 0 as mut&MemAllocator
+    var ma mut&mem.Allocator = 0 as mut&mem.Allocator
     var _p *i32 = ma.new(i32)
 }

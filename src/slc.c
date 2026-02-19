@@ -884,7 +884,7 @@ static int CheckSource(const char* filename, const char* source, uint32_t source
 
 static int IsDeclKind(SLAstKind kind) {
     return kind == SLAst_FN || kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
-        || kind == SLAst_CONST || kind == SLAst_FN_GROUP;
+        || kind == SLAst_VAR || kind == SLAst_CONST || kind == SLAst_FN_GROUP;
 }
 
 static int IsPubDeclNode(const SLAstNode* n) {
@@ -1523,13 +1523,13 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
 
 static int IsBuiltinTypeName(const char* src, uint32_t start, uint32_t end) {
     return SliceEqCStr(src, start, end, "void") || SliceEqCStr(src, start, end, "bool")
-        || SliceEqCStr(src, start, end, "str") || SliceEqCStr(src, start, end, "MemAllocator")
-        || SliceEqCStr(src, start, end, "u8") || SliceEqCStr(src, start, end, "u16")
-        || SliceEqCStr(src, start, end, "u32") || SliceEqCStr(src, start, end, "u64")
-        || SliceEqCStr(src, start, end, "i8") || SliceEqCStr(src, start, end, "i16")
-        || SliceEqCStr(src, start, end, "i32") || SliceEqCStr(src, start, end, "i64")
-        || SliceEqCStr(src, start, end, "uint") || SliceEqCStr(src, start, end, "int")
-        || SliceEqCStr(src, start, end, "f32") || SliceEqCStr(src, start, end, "f64");
+        || SliceEqCStr(src, start, end, "str") || SliceEqCStr(src, start, end, "u8")
+        || SliceEqCStr(src, start, end, "u16") || SliceEqCStr(src, start, end, "u32")
+        || SliceEqCStr(src, start, end, "u64") || SliceEqCStr(src, start, end, "i8")
+        || SliceEqCStr(src, start, end, "i16") || SliceEqCStr(src, start, end, "i32")
+        || SliceEqCStr(src, start, end, "i64") || SliceEqCStr(src, start, end, "uint")
+        || SliceEqCStr(src, start, end, "int") || SliceEqCStr(src, start, end, "f32")
+        || SliceEqCStr(src, start, end, "f64");
 }
 
 static int PackageHasExport(const SLPackage* pkg, const char* name) {
@@ -1700,9 +1700,15 @@ static int ValidatePubClosure(const SLPackage* pkg) {
                     }
                 }
             }
-        } else if (pubDecl->kind == SLAst_CONST) {
+        } else if (pubDecl->kind == SLAst_VAR || pubDecl->kind == SLAst_CONST) {
             if (child >= 0 && IsFnReturnTypeNodeKind(file->ast.nodes[child].kind)) {
-                if (ValidatePubTypeNode(pkg, file, child, "constant type") != 0) {
+                if (ValidatePubTypeNode(
+                        pkg,
+                        file,
+                        child,
+                        pubDecl->kind == SLAst_VAR ? "variable type" : "constant type")
+                    != 0)
+                {
                     return -1;
                 }
             }

@@ -1,1 +1,1 @@
-tests/new_bad_allocator_readonly.sl:92:94: error: type mismatch
+tests:305:307: error: type mismatch

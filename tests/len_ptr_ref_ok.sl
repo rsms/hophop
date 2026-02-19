@@ -1,7 +1,9 @@
+import "std/mem" as mem
+
 fn main() {
-    var ma MemAllocator
+    var ma = mem.platformAllocator
     var a [i32 4]
-    var p *[i32 4] = new(&ma, i32, 4)
+    var p *[i32 4] = new(ma, i32, 4)
     var r &[i32 4] = p
     var m mut&[i32 4] = &a
     var s [i32] = a[:]

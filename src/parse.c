@@ -1722,6 +1722,7 @@ static int SLPParseDeclInner(SLParser* p, int allowBody, int32_t* out) {
                 p->nodes[*out].end = SLPPrev(p)->end;
             }
             return 0;
+        case SLTok_VAR:   return SLPParseVarLikeStmt(p, SLAst_VAR, 1, out);
         case SLTok_CONST: return SLPParseVarLikeStmt(p, SLAst_CONST, 1, out);
         default:          return SLPFail(p, SLDiag_EXPECTED_DECL);
     }

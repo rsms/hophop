@@ -1,1 +1,1 @@
-tests/new_bad_arity.sl:57:65: error: call arity mismatch
+tests:268:276: error: call arity mismatch

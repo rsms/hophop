@@ -1,1 +1,1 @@
-tests/new_array_type_mismatch.sl:54:57: error: type mismatch
+tests:261:276: error: type mismatch

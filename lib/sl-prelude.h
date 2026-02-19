@@ -30,19 +30,33 @@ typedef struct {
 
 typedef __sl_slice_ro __sl_str;
 
-typedef struct __sl_MemAllocator __sl_MemAllocator;
-struct __sl_MemAllocator {
-    void* (*alloc)(__sl_MemAllocator* ma, __sl_uint size, __sl_uint align);
+typedef struct __sl_mem_Allocator __sl_mem_Allocator;
+struct __sl_mem_Allocator {
+    void* (*impl)(
+        __sl_mem_Allocator* self,
+        __sl_uint           addr,
+        __sl_uint           align,
+        __sl_uint           curSize,
+        __sl_uint*          newSizeInOut,
+        __sl_u32            flags);
 };
 
-static inline void* __sl_new(__sl_MemAllocator* ma, __sl_uint size, __sl_uint align) {
-    return (ma != (__sl_MemAllocator*)0 && ma->alloc != (void* (*)(void*, __sl_uint, __sl_uint))0)
-             ? ma->alloc(ma, size, align)
+static inline void* __sl_new(__sl_mem_Allocator* ma, __sl_uint size, __sl_uint align) {
+    __sl_uint newSize = size;
+    if (align == 0 || (align & (align - 1u)) != 0) {
+#if defined(__clang__) || defined(__GNUC__)
+        __builtin_trap();
+#else
+        *(volatile int*)0 = 0;
+#endif
+    }
+    return (ma != (__sl_mem_Allocator*)0 && ma->impl != 0)
+             ? ma->impl(ma, 0, align, 0, &newSize, 0)
              : (void*)0;
 }
 
 static inline void* __sl_new_array(
-    __sl_MemAllocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
+    __sl_mem_Allocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
     return __sl_new(ma, elemSize * count, elemAlign);
 }
 
@@ -62,10 +76,7 @@ enum __sl_PlatformOps {
     __sl_PlatformOp_NONE = 0,
     __sl_PlatformOp_PANIC = 1,
     __sl_PlatformOp_CONSOLE_LOG = 2,
-    __sl_PlatformOp_MEM_ALLOC = 3,
-    __sl_PlatformOp_MEM_RESIZE = 4,
-    __sl_PlatformOp_MEM_FREE = 5,
-    __sl_PlatformOp_EXIT = 6
+    __sl_PlatformOp_EXIT = 3
 };
 
 extern __sl_i64 __sl_platform_call(

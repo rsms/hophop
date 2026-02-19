@@ -313,8 +313,8 @@ static void EmitIndent(SLCBackendC* c, uint32_t depth) {
 }
 
 static int IsBuiltinType(const char* s) {
-    return StrEq(s, "void") || StrEq(s, "bool") || StrEq(s, "str") || StrEq(s, "MemAllocator")
-        || StrEq(s, "u8") || StrEq(s, "u16") || StrEq(s, "u32") || StrEq(s, "u64") || StrEq(s, "i8")
+    return StrEq(s, "void") || StrEq(s, "bool") || StrEq(s, "str") || StrEq(s, "u8")
+        || StrEq(s, "u16") || StrEq(s, "u32") || StrEq(s, "u64") || StrEq(s, "i8")
         || StrEq(s, "i16") || StrEq(s, "i32") || StrEq(s, "i64") || StrEq(s, "uint")
         || StrEq(s, "int") || StrEq(s, "f32") || StrEq(s, "f64");
 }
@@ -641,7 +641,7 @@ static int IsTypeDeclKind(SLAstKind kind) {
 
 static int IsDeclKind(SLAstKind kind) {
     return kind == SLAst_FN || kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
-        || kind == SLAst_CONST || kind == SLAst_FN_GROUP;
+        || kind == SLAst_VAR || kind == SLAst_CONST || kind == SLAst_FN_GROUP;
 }
 
 static int IsPubDeclNode(const SLAstNode* n) {
@@ -762,13 +762,13 @@ static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uin
     char*                    normalized;
     uint32_t                 i;
     static const char* const builtinSlNames[] = {
-        "void", "bool", "str", "MemAllocator", "u8",   "u16", "u32", "u64",
-        "i8",   "i16",  "i32", "i64",          "uint", "int", "f32", "f64",
+        "void", "bool", "str", "u8",   "u16", "u32", "u64", "i8",
+        "i16",  "i32",  "i64", "uint", "int", "f32", "f64",
     };
     static const char* const builtinCNames[] = {
-        "void",      "__sl_bool", "__sl_str", "__sl_MemAllocator", "__sl_u8",  "__sl_u16",
-        "__sl_u32",  "__sl_u64",  "__sl_i8",  "__sl_i16",          "__sl_i32", "__sl_i64",
-        "__sl_uint", "__sl_int",  "__sl_f32", "__sl_f64",
+        "void",     "__sl_bool", "__sl_str", "__sl_u8",  "__sl_u16",
+        "__sl_u32", "__sl_u64",  "__sl_i8",  "__sl_i16", "__sl_i32",
+        "__sl_i64", "__sl_uint", "__sl_int", "__sl_f32", "__sl_f64",
     };
 
     normalized = DupAndReplaceDots(c, c->unit->source, start, end);
@@ -1934,6 +1934,35 @@ static int InferVarLikeDeclType(SLCBackendC* c, int32_t initNode, SLTypeRef* out
     return 0;
 }
 
+static int FindTopLevelVarLikeNodeBySlice(
+    const SLCBackendC* c, uint32_t start, uint32_t end, int32_t* outNodeId) {
+    uint32_t i;
+    if (outNodeId == NULL) {
+        return -1;
+    }
+    for (i = 0; i < c->topDeclLen; i++) {
+        int32_t          nodeId = c->topDecls[i].nodeId;
+        const SLAstNode* n = NodeAt(c, nodeId);
+        if (n != NULL && (n->kind == SLAst_VAR || n->kind == SLAst_CONST)
+            && SliceSpanEq(c->unit->source, n->dataStart, n->dataEnd, start, end))
+        {
+            *outNodeId = nodeId;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int InferTopLevelVarLikeType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
+    int32_t typeNode;
+    int32_t initNode;
+    ResolveVarLikeTypeAndInitNode(c, nodeId, &typeNode, &initNode);
+    if (typeNode >= 0) {
+        return ParseTypeRef(c, typeNode, outType);
+    }
+    return InferVarLikeDeclType(c, initNode, outType);
+}
+
 #define SLCCG_MAX_CALL_ARGS       128u
 #define SLCCG_MAX_CALL_CANDIDATES 256u
 
@@ -2222,6 +2251,14 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             if (local != NULL) {
                 *outType = local->type;
                 return 0;
+            }
+            {
+                int32_t topVarLikeNode = -1;
+                if (FindTopLevelVarLikeNodeBySlice(c, n->dataStart, n->dataEnd, &topVarLikeNode)
+                    == 0)
+                {
+                    return InferTopLevelVarLikeType(c, topVarLikeNode, outType);
+                }
             }
             TypeRefSetInvalid(outType);
             return 0;
@@ -2928,19 +2965,20 @@ static int EmitNewCallExpr(SLCBackendC* c, int32_t callNode, int requireNonNull)
         }
     }
     if (countArg >= 0) {
-        if (BufAppendCStr(&c->out, "__sl_new_array(") != 0 || EmitExpr(c, allocArg) != 0
-            || BufAppendCStr(&c->out, ", sizeof(") != 0 || BufAppendCStr(&c->out, typeName) != 0
-            || BufAppendCStr(&c->out, "), _Alignof(") != 0 || BufAppendCStr(&c->out, typeName) != 0
+        if (BufAppendCStr(&c->out, "__sl_new_array((__sl_mem_Allocator*)(") != 0
+            || EmitExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
+            || BufAppendCStr(&c->out, typeName) != 0 || BufAppendCStr(&c->out, "), _Alignof(") != 0
+            || BufAppendCStr(&c->out, typeName) != 0
             || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0 || EmitExpr(c, countArg) != 0
             || BufAppendCStr(&c->out, "))") != 0)
         {
             return -1;
         }
     } else {
-        if (BufAppendCStr(&c->out, "__sl_new(") != 0 || EmitExpr(c, allocArg) != 0
-            || BufAppendCStr(&c->out, ", sizeof(") != 0 || BufAppendCStr(&c->out, typeName) != 0
-            || BufAppendCStr(&c->out, "), _Alignof(") != 0 || BufAppendCStr(&c->out, typeName) != 0
-            || BufAppendCStr(&c->out, "))") != 0)
+        if (BufAppendCStr(&c->out, "__sl_new((__sl_mem_Allocator*)(") != 0
+            || EmitExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
+            || BufAppendCStr(&c->out, typeName) != 0 || BufAppendCStr(&c->out, "), _Alignof(") != 0
+            || BufAppendCStr(&c->out, typeName) != 0 || BufAppendCStr(&c->out, "))") != 0)
         {
             return -1;
         }
@@ -4163,6 +4201,12 @@ static int IsMainFunctionNode(const SLCBackendC* c, int32_t nodeId) {
         && SliceEq(c->unit->source, n->dataStart, n->dataEnd, "main");
 }
 
+static int IsRuntimeAllocatorGlobalNode(const SLCBackendC* c, int32_t nodeId) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    return n != NULL && n->kind == SLAst_VAR
+        && SliceEq(c->unit->source, n->dataStart, n->dataEnd, "mem__platformAllocator");
+}
+
 static int IsExplicitlyExportedNode(const SLCBackendC* c, int32_t nodeId) {
     const SLAstNode* n = NodeAt(c, nodeId);
     const SLNameMap* map;
@@ -4175,6 +4219,9 @@ static int IsExplicitlyExportedNode(const SLCBackendC* c, int32_t nodeId) {
 
 static int IsExportedNode(const SLCBackendC* c, int32_t nodeId) {
     if (IsMainFunctionNode(c, nodeId)) {
+        return 1;
+    }
+    if (IsRuntimeAllocatorGlobalNode(c, nodeId)) {
         return 1;
     }
     return IsExplicitlyExportedNode(c, nodeId);
@@ -4817,6 +4864,47 @@ static int EmitConstDecl(
     return BufAppendCStr(&c->out, ";\n");
 }
 
+static int EmitVarDecl(
+    SLCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+    int32_t          typeNode;
+    int32_t          initNode;
+    SLTypeRef        type;
+
+    ResolveVarLikeTypeAndInitNode(c, nodeId, &typeNode, &initNode);
+    if (typeNode >= 0) {
+        if (ParseTypeRef(c, typeNode, &type) != 0) {
+            return -1;
+        }
+    } else {
+        if (InferVarLikeDeclType(c, initNode, &type) != 0) {
+            return -1;
+        }
+    }
+
+    EmitIndent(c, depth);
+    if (declarationOnly) {
+        if (BufAppendCStr(&c->out, "extern ") != 0) {
+            return -1;
+        }
+    } else if (isPrivate && BufAppendCStr(&c->out, "static ") != 0) {
+        return -1;
+    }
+
+    if ((typeNode >= 0 && EmitTypeWithName(c, typeNode, map->cName) != 0)
+        || (typeNode < 0 && EmitTypeRefWithName(c, &type, map->cName) != 0))
+    {
+        return -1;
+    }
+    if (!declarationOnly && initNode >= 0) {
+        if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0) {
+            return -1;
+        }
+    }
+    return BufAppendCStr(&c->out, ";\n");
+}
+
 static int EmitDeclNode(
     SLCBackendC* c,
     int32_t      nodeId,
@@ -4834,6 +4922,7 @@ static int EmitDeclNode(
         case SLAst_UNION:  return EmitStructOrUnionDecl(c, nodeId, depth, 1);
         case SLAst_ENUM:   return EmitEnumDecl(c, nodeId, depth);
         case SLAst_FN:     return EmitFnDeclOrDef(c, nodeId, depth, emitBody, isPrivate);
+        case SLAst_VAR:    return EmitVarDecl(c, nodeId, depth, declarationOnly, isPrivate);
         case SLAst_CONST:  return EmitConstDecl(c, nodeId, depth, declarationOnly, isPrivate);
         default:           return 0;
     }
