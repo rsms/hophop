@@ -3471,7 +3471,7 @@ static int EmitDeferredRange(SLCBackendC* c, uint32_t start, uint32_t depth) {
     return 0;
 }
 
-static int EmitBlock(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
+static int EmitBlockImpl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int inlineOpen) {
     int32_t  child = AstFirstChild(&c->ast, nodeId);
     uint32_t deferMark;
     if (PushScope(c) != 0) {
@@ -3482,7 +3482,9 @@ static int EmitBlock(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         return -1;
     }
     deferMark = c->deferScopeMarks[c->deferScopeLen - 1u];
-    EmitIndent(c, depth);
+    if (!inlineOpen) {
+        EmitIndent(c, depth);
+    }
     if (BufAppendCStr(&c->out, "{\n") != 0) {
         PopDeferScope(c);
         PopScope(c);
@@ -3510,6 +3512,14 @@ static int EmitBlock(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     PopDeferScope(c);
     PopScope(c);
     return 0;
+}
+
+static int EmitBlock(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
+    return EmitBlockImpl(c, nodeId, depth, 0);
+}
+
+static int EmitBlockInline(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
+    return EmitBlockImpl(c, nodeId, depth, 1);
 }
 
 static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int isConst) {
@@ -3553,13 +3563,14 @@ static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int i
 }
 
 static int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
-    int32_t nodes[4];
-    int     count = 0;
-    int32_t child = AstFirstChild(&c->ast, nodeId);
-    int32_t body;
-    int32_t init = -1;
-    int32_t cond = -1;
-    int32_t post = -1;
+    int32_t          nodes[4];
+    int              count = 0;
+    int32_t          child = AstFirstChild(&c->ast, nodeId);
+    int32_t          body;
+    const SLAstNode* bodyNode;
+    int32_t          init = -1;
+    int32_t          cond = -1;
+    int32_t          post = -1;
 
     while (child >= 0 && count < 4) {
         nodes[count++] = child;
@@ -3570,16 +3581,17 @@ static int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     }
 
     body = nodes[count - 1];
+    bodyNode = NodeAt(c, body);
     if (count == 1) {
         EmitIndent(c, depth);
         if (BufAppendCStr(&c->out, "for (;;)") != 0) {
             return -1;
         }
-        if (NodeAt(c, body)->kind == SLAst_BLOCK) {
-            if (BufAppendChar(&c->out, '\n') != 0) {
+        if (bodyNode != NULL && bodyNode->kind == SLAst_BLOCK) {
+            if (BufAppendChar(&c->out, ' ') != 0) {
                 return -1;
             }
-            return EmitBlock(c, body, depth);
+            return EmitBlockInline(c, body, depth);
         }
         if (BufAppendChar(&c->out, '\n') != 0) {
             return -1;
@@ -3646,11 +3658,20 @@ static int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             return -1;
         }
     }
-    if (BufAppendCStr(&c->out, ")\n") != 0) {
-        return -1;
-    }
-    if (EmitStmt(c, body, init >= 0 ? depth + 1u : depth) != 0) {
-        return -1;
+    if (bodyNode != NULL && bodyNode->kind == SLAst_BLOCK) {
+        if (BufAppendChar(&c->out, ')') != 0 || BufAppendChar(&c->out, ' ') != 0) {
+            return -1;
+        }
+        if (EmitBlockInline(c, body, init >= 0 ? depth + 1u : depth) != 0) {
+            return -1;
+        }
+    } else {
+        if (BufAppendCStr(&c->out, ")\n") != 0) {
+            return -1;
+        }
+        if (EmitStmt(c, body, init >= 0 ? depth + 1u : depth) != 0) {
+            return -1;
+        }
     }
 
     if (init >= 0) {
@@ -3687,8 +3708,9 @@ static int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     while (child >= 0) {
         const SLAstNode* clause = NodeAt(c, child);
         if (clause != NULL && clause->kind == SLAst_CASE) {
-            int32_t caseChild = AstFirstChild(&c->ast, child);
-            int32_t bodyNode = -1;
+            int32_t          caseChild = AstFirstChild(&c->ast, child);
+            int32_t          bodyNode = -1;
+            const SLAstNode* bodyStmt;
             EmitIndent(c, depth + 1u);
             if (BufAppendCStr(&c->out, firstClause ? "if (" : "else if (") != 0) {
                 return -1;
@@ -3719,22 +3741,43 @@ static int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                 caseChild = next;
             }
 
-            if (BufAppendCStr(&c->out, ")\n") != 0) {
-                return -1;
-            }
-            if (EmitStmt(c, bodyNode, depth + 1u) != 0) {
-                return -1;
+            bodyStmt = NodeAt(c, bodyNode);
+            if (bodyStmt != NULL && bodyStmt->kind == SLAst_BLOCK) {
+                if (BufAppendChar(&c->out, ')') != 0 || BufAppendChar(&c->out, ' ') != 0) {
+                    return -1;
+                }
+                if (EmitBlockInline(c, bodyNode, depth + 1u) != 0) {
+                    return -1;
+                }
+            } else {
+                if (BufAppendCStr(&c->out, ")\n") != 0) {
+                    return -1;
+                }
+                if (EmitStmt(c, bodyNode, depth + 1u) != 0) {
+                    return -1;
+                }
             }
         } else if (clause != NULL && clause->kind == SLAst_DEFAULT) {
-            int32_t bodyNode = AstFirstChild(&c->ast, child);
+            int32_t          bodyNode = AstFirstChild(&c->ast, child);
+            const SLAstNode* bodyStmt = NodeAt(c, bodyNode);
+            int              isFirstClause = firstClause;
             EmitIndent(c, depth + 1u);
-            if (BufAppendCStr(&c->out, firstClause ? "if (1)\n" : "else\n") != 0) {
-                return -1;
+            if (bodyStmt != NULL && bodyStmt->kind == SLAst_BLOCK) {
+                if (BufAppendCStr(&c->out, isFirstClause ? "if (1) " : "else ") != 0) {
+                    return -1;
+                }
+                if (EmitBlockInline(c, bodyNode, depth + 1u) != 0) {
+                    return -1;
+                }
+            } else {
+                if (BufAppendCStr(&c->out, isFirstClause ? "if (1)\n" : "else\n") != 0) {
+                    return -1;
+                }
+                if (EmitStmt(c, bodyNode, depth + 1u) != 0) {
+                    return -1;
+                }
             }
             firstClause = 0;
-            if (EmitStmt(c, bodyNode, depth + 1u) != 0) {
-                return -1;
-            }
         }
         child = AstNextSibling(&c->ast, child);
     }
@@ -3832,25 +3875,37 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             return 0;
         }
         case SLAst_IF: {
-            int32_t cond = AstFirstChild(&c->ast, nodeId);
-            int32_t thenNode = AstNextSibling(&c->ast, cond);
-            int32_t elseNode = AstNextSibling(&c->ast, thenNode);
+            int32_t          cond = AstFirstChild(&c->ast, nodeId);
+            int32_t          thenNode = AstNextSibling(&c->ast, cond);
+            int32_t          elseNode = AstNextSibling(&c->ast, thenNode);
+            const SLAstNode* thenStmt = NodeAt(c, thenNode);
+            const SLAstNode* elseStmt = NodeAt(c, elseNode);
             EmitIndent(c, depth);
-            if (BufAppendCStr(&c->out, "if (") != 0 || EmitExpr(c, cond) != 0
-                || BufAppendCStr(&c->out, ")\n") != 0)
-            {
+            if (BufAppendCStr(&c->out, "if (") != 0 || EmitExpr(c, cond) != 0) {
                 return -1;
             }
-            if (EmitStmt(c, thenNode, depth) != 0) {
-                return -1;
+            if (thenStmt != NULL && thenStmt->kind == SLAst_BLOCK) {
+                if (BufAppendCStr(&c->out, ") ") != 0 || EmitBlockInline(c, thenNode, depth) != 0) {
+                    return -1;
+                }
+            } else {
+                if (BufAppendCStr(&c->out, ")\n") != 0 || EmitStmt(c, thenNode, depth) != 0) {
+                    return -1;
+                }
             }
             if (elseNode >= 0) {
                 EmitIndent(c, depth);
-                if (BufAppendCStr(&c->out, "else\n") != 0) {
-                    return -1;
-                }
-                if (EmitStmt(c, elseNode, depth) != 0) {
-                    return -1;
+                if (elseStmt != NULL && elseStmt->kind == SLAst_BLOCK) {
+                    if (BufAppendCStr(&c->out, "else ") != 0
+                        || EmitBlockInline(c, elseNode, depth) != 0)
+                    {
+                        return -1;
+                    }
+                } else {
+                    if (BufAppendCStr(&c->out, "else\n") != 0 || EmitStmt(c, elseNode, depth) != 0)
+                    {
+                        return -1;
+                    }
                 }
             }
             return 0;
@@ -4063,12 +4118,8 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
                     || BufAppendSlice(&c->out, c->unit->source, field->dataStart, field->dataEnd)
                            != 0
                     || BufAppendChar(&c->out, '(') != 0 || BufAppendCStr(&c->out, map->cName) != 0
-                    || BufAppendCStr(&c->out, "* p)\n") != 0)
+                    || BufAppendCStr(&c->out, "* p) {\n") != 0)
                 {
-                    return -1;
-                }
-                EmitIndent(c, depth);
-                if (BufAppendCStr(&c->out, "{\n") != 0) {
                     return -1;
                 }
                 EmitIndent(c, depth + 1u);
@@ -4135,12 +4186,8 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
         EmitIndent(c, depth);
         if (BufAppendCStr(&c->out, "static inline __sl_uint ") != 0
             || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__sizeof(") != 0
-            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "* p)\n") != 0)
+            || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "* p) {\n") != 0)
         {
-            return -1;
-        }
-        EmitIndent(c, depth);
-        if (BufAppendCStr(&c->out, "{\n") != 0) {
             return -1;
         }
         EmitIndent(c, depth + 1u);
@@ -4441,10 +4488,6 @@ static int EmitFnDeclOrDef(
         return BufAppendCStr(&c->out, ";\n");
     }
 
-    if (BufAppendChar(&c->out, '\n') != 0) {
-        return -1;
-    }
-
     savedLocalLen = c->localLen;
     if (PushScope(c) != 0) {
         return -1;
@@ -4468,7 +4511,7 @@ static int EmitFnDeclOrDef(
 
     c->currentReturnType = fnReturnType;
     c->hasCurrentReturnType = 1;
-    if (EmitBlock(c, bodyNode, depth) != 0) {
+    if (BufAppendChar(&c->out, ' ') != 0 || EmitBlockInline(c, bodyNode, depth) != 0) {
         c->currentReturnType = savedReturnType;
         c->hasCurrentReturnType = savedHasReturnType;
         return -1;
