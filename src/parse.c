@@ -206,8 +206,8 @@ static int SLPParseType(SLParser* p, int32_t* out) {
     int32_t        typeNode;
     int32_t        child;
 
-    /* Prefix '?' optional type (requires feature import). */
-    if ((p->features & SLFeature_OPTIONAL) != 0 && SLPMatch(p, SLTok_QUESTION)) {
+    /* Prefix '?' optional type. */
+    if (SLPMatch(p, SLTok_QUESTION)) {
         t = SLPPrev(p);
         typeNode = SLPNewNode(p, SLAst_TYPE_OPTIONAL, t->start, t->end);
         if (typeNode < 0) {
@@ -1371,18 +1371,21 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
         return -1;
     }
 
-    /* Detect slang/feature/ imports and set feature flags. */
+    /* Detect feature imports and set feature flags. */
     /* String literal includes quotes: src[path->start] == '"', src[path->end-1] == '"'. */
     {
-        /* "slang/feature/" is 14 bytes. */
-        static const char featurePrefix[14] = {
-            's', 'l', 'a', 'n', 'g', '/', 'f', 'e', 'a', 't', 'u', 'r', 'e', '/'
-        };
-        uint32_t strStart = path->start + 1u;           /* skip opening quote */
-        uint32_t strLen = path->end - path->start - 2u; /* exclude both quotes */
-        if (strLen > 14u && memcmp(p->src.ptr + strStart, featurePrefix, 14u) == 0) {
-            const char* name = p->src.ptr + strStart + 14u;
-            uint32_t    nameLen = strLen - 14u;
+        uint32_t    strStart = path->start + 1u;           /* skip opening quote */
+        uint32_t    strLen = path->end - path->start - 2u; /* exclude both quotes */
+        const char* name = NULL;
+        uint32_t    nameLen = 0;
+        if (strLen > 14u && memcmp(p->src.ptr + strStart, "slang/feature/", 14u) == 0) {
+            name = p->src.ptr + strStart + 14u;
+            nameLen = strLen - 14u;
+        } else if (strLen > 8u && memcmp(p->src.ptr + strStart, "feature/", 8u) == 0) {
+            name = p->src.ptr + strStart + 8u;
+            nameLen = strLen - 8u;
+        }
+        if (name != NULL) {
             /* "optional" = 8 chars */
             if (nameLen == 8u && name[0] == 'o' && name[1] == 'p' && name[2] == 't'
                 && name[3] == 'i' && name[4] == 'o' && name[5] == 'n' && name[6] == 'a'

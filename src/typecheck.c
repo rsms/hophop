@@ -808,9 +808,6 @@ static int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outTy
             int32_t child = SLAstFirstChild(c->ast, nodeId);
             int32_t baseType;
             int32_t optType;
-            if ((c->ast->features & SLFeature_OPTIONAL) == 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
-            }
             if (SLTCResolveTypeNode(c, child, &baseType) != 0) {
                 return -1;
             }

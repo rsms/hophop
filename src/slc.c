@@ -961,8 +961,17 @@ static void WarnUnknownFeatureImports(const char* filename, const char* source, 
             strStart = n->dataStart + 1u;
             strEnd = n->dataEnd - 1u;
             strLen = strEnd - strStart;
-            if (strLen > 14u && memcmp(source + strStart, "slang/feature/", 14u) == 0) {
-                uint32_t featureStart = strStart + 14u;
+            {
+                uint32_t featureStart = 0;
+                if (strLen > 14u && memcmp(source + strStart, "slang/feature/", 14u) == 0) {
+                    featureStart = strStart + 14u;
+                } else if (strLen > 8u && memcmp(source + strStart, "feature/", 8u) == 0) {
+                    featureStart = strStart + 8u;
+                }
+                if (featureStart == 0) {
+                    child = ASTNextSibling(ast, child);
+                    continue;
+                }
                 uint32_t featureLen = strEnd - featureStart;
                 if (!(featureLen == 8u && memcmp(source + featureStart, "optional", 8u) == 0)) {
                     SLDiag diag = {
@@ -1206,8 +1215,10 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
             if (importPath == NULL) {
                 return Errorf(file->path, n->dataStart, n->dataEnd, "invalid import path literal");
             }
-            /* Skip slang/feature/... imports; they are compiler directives, not real packages. */
-            if (strncmp(importPath, "slang/feature/", 14u) == 0) {
+            /* Skip feature imports; they are compiler directives, not real packages. */
+            if (strncmp(importPath, "slang/feature/", 14u) == 0
+                || strncmp(importPath, "feature/", 8u) == 0)
+            {
                 free(importPath);
                 child = ASTNextSibling(ast, child);
                 continue;
@@ -1910,14 +1921,6 @@ static int BuildCombinedPackageSource(const SLPackage* pkg, char** outSource, ui
     uint32_t        i;
     *outSource = NULL;
     *outLen = 0;
-
-    /* Prepend feature imports so that the combined source re-enables the same features. */
-    if ((pkg->features & SLFeature_OPTIONAL) != 0) {
-        if (SBAppendCStr(&b, "import \"slang/feature/optional\"\n") != 0) {
-            free(b.v);
-            return ErrorSimple("out of memory");
-        }
-    }
 
     for (i = 0; i < pkg->importLen; i++) {
         const SLPackage* dep = pkg->imports[i].target;

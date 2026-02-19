@@ -211,6 +211,8 @@ actual_codegen_app_header="$test_tmpdir/app_codegen.h"
 actual_codegen_app_obj="$test_tmpdir/app_codegen.o"
 actual_codegen_ptr_header="$test_tmpdir/ptr_codegen.h"
 actual_codegen_ptr_obj="$test_tmpdir/ptr_codegen.o"
+actual_new_codegen_header="$test_tmpdir/new_codegen.h"
+actual_new_optional_codegen_header="$test_tmpdir/new_optional_codegen.h"
 actual_phase5_codegen_header="$test_tmpdir/phase5_codegen.h"
 actual_phase5_codegen_obj="$test_tmpdir/phase5_codegen.o"
 actual_phase6_single_header="$test_tmpdir/phase6_single.h"
@@ -334,8 +336,10 @@ for t in \
     "check|tests/len_ptr_ref_ok.sl" \
     "check|tests/len_null_ptr_ref_ok.sl" \
     "check|tests/new_ok.sl" \
+    "check|tests/new_optional_ok.sl" \
     "check|tests/panic_ok.sl" \
     "check|tests/feature_optional_ok.sl" \
+    "check|tests/feature_optional_no_import.sl" \
     "check|tests/slp3_null_unwrap.sl" \
     "check|tests/slp3_flow_narrow_ok.sl" \
     "checkpkg|tests/pkg_ok/app"
@@ -382,7 +386,6 @@ for t in \
     "checkpkg|tests/pkg_bad_symbol/app|tests/pkg_bad_symbol.stderr" \
     "checkpkg|tests/pkg_cycle/a|tests/pkg_cycle.stderr" \
     "checkpkg|tests/pub_missing_def|tests/pub_missing_def.stderr" \
-    "check|tests/feature_optional_no_import.sl|tests/feature_optional_no_import.stderr" \
     "check|tests/slp3_bad_value_optional.sl|tests/slp3_bad_value_optional.stderr" \
     "check|tests/slp3_bad_unwrap.sl|tests/slp3_bad_unwrap.stderr" \
     "check|tests/slp3_bad_null_assign.sl|tests/slp3_bad_null_assign.stderr" \
@@ -475,6 +478,15 @@ if ! "$build_dir/slc" compile tests/new_ok.sl -o "$test_tmpdir/step4_new_ok" > /
 fi
 [ -x "$test_tmpdir/step4_new_ok" ] \
     || _err "compile command did not produce executable for tests/new_ok.sl"
+"$build_dir/slc" genpkg:c tests/new_ok.sl > "$actual_new_codegen_header"
+rg -F "__sl_unwrap((const void*)(__sl_new(" "$actual_new_codegen_header" > /dev/null \
+    || _err "new() assigned to non-optional pointer should lower through __sl_unwrap"
+rg -F "__sl_unwrap((const void*)(__sl_new_array(" "$actual_new_codegen_header" > /dev/null \
+    || _err "new(..., N) assigned to non-optional pointer should lower through __sl_unwrap"
+"$build_dir/slc" genpkg:c tests/new_optional_ok.sl > "$actual_new_optional_codegen_header"
+if rg -F "__sl_unwrap((const void*)(__sl_new" "$actual_new_optional_codegen_header" > /dev/null; then
+    _err "new() assigned to optional pointer should not lower through __sl_unwrap"
+fi
 
 if ! "$build_dir/slc" compile tests/types_mut_ok.sl -o "$test_tmpdir/step5_types_mut_ok" \
     > /dev/null 2>&1; then
