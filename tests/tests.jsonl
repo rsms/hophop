@@ -124,8 +124,10 @@
 {"id":"integration.examples.pointers_arrays.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/pointers_arrays.sl"}
 {"id":"integration.examples.single_file.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/single_file.sl"}
 {"id":"integration.examples.slp2_new_allocator.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/slp2_new_allocator.sl"}
-{"id":"integration.examples.slp4_type_functions.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/slp4_type_functions.sl"}
 {"id":"integration.examples.slp2_refs_slices.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/slp2_refs_slices.sl"}
+{"id":"integration.examples.struct_composition.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/struct_composition.sl"}
+{"id":"integration.examples.type_functions.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/type_functions.sl"}
+{"id":"integration.examples.function_groups.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/function_groups.sl"}
 {"id":"integration.examples.strings.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/strings.sl"}
 {"id":"integration.examples.vss.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/vss.sl"}
 {"id":"unit.libsl.freestanding_compile","suite":"unit.libsl","kind":"libsl_freestanding"}
