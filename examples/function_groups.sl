@@ -16,7 +16,7 @@ fn pick_dog(v Dog) int {
     return v.score
 }
 
-fn pick{pick_cat, pick_dog};
+fn pick{pick_cat, pick_dog}
 
 fn main() {
     var cat Cat
