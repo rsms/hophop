@@ -24,6 +24,7 @@
 {"id":"check:tests/slp3_null_unwrap.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/slp3_null_unwrap.sl"}
 {"id":"check:tests/slp3_flow_narrow_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/slp3_flow_narrow_ok.sl"}
 {"id":"checkpkg:tests/pkg_ok/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/pkg_ok/app"}
+{"id":"checkpkg:tests/typefunc_import_group/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/typefunc_import_group/app"}
 {"id":"_:tests/bad_string.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"_","input":"tests/bad_string.sl","expect_stderr":"tests/bad_string.stderr"}
 {"id":"check:tests/bad_pub_block.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/bad_pub_block.sl","expect_stderr":"tests/bad_pub_block.stderr"}
 {"id":"ast:tests/ast_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"ast","input":"tests/ast_bad.sl","expect_stderr":"tests/ast_bad.stderr"}
@@ -92,6 +93,7 @@
 {"id":"integration.codegen.new_selector_optional.no_unwrap_lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/new_selector_optional_ok.sl","not_contains":["__sl_unwrap((const void*)(__sl_new"]}
 {"id":"integration.codegen.platform_exit_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/platform_exit_ok.sl","contains":["__sl_platform_call(__sl_PlatformOp_EXIT"]}
 {"id":"integration.codegen.print_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/print_ok.sl","contains":["__sl_console_log("]}
+{"id":"integration.codegen.typefunc_import_group.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/typefunc_import_group/app","contains":["foo__pick_b"],"not_contains":["foo.pick_b"]}
 {"id":"integration.codegen.vss.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/vss_ok.sl","contains":["tests__Packet__payload","tests__Packet__samples","tests__Packet__sizeof"],"harness":"tests/harness/phase8_vss_test.c.in"}
 {"id":"integration.codegen.vss_nested.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/vss_nested_ok.sl","contains":["tests__Section__entries","tests__Metadata__value","tests__Packet__metadata","tests__Packet__sections","tests__Section__sizeof","tests__Metadata__sizeof","tests__Packet__sizeof"],"harness":"tests/harness/phase8_vss_nested_test.c.in"}
 {"id":"integration.runtime.run_exit7.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/run_exit7.sl","expect_exit":7,"run_stdout_empty":true,"run_stderr_empty":true,"compile_stdout_empty":true,"compile_stderr_empty":true}

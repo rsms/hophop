@@ -130,7 +130,9 @@ SLP-4 uses explicit overload groups.
 ### Group constraints
 
 For `fn G{m1, m2, ...}`:
-- each member must name a function declaration/definition in the same package
+- each member must be either:
+  - an unqualified local function name (`m`)
+  - an imported function name (`pkg.m`)
 - member names must be unique within the group
 - group name must not collide with an existing function, type, const, or group name
 - group declarations may appear before member definitions (resolved after collection)

@@ -1344,17 +1344,26 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
         }
 
         for (;;) {
-            const SLToken* memberName;
+            const SLToken* memberFirst;
+            const SLToken* memberLast;
             int32_t        memberNode;
-            if (SLPExpectDeclName(p, &memberName) != 0) {
+            if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &memberFirst) != 0) {
                 return -1;
             }
-            memberNode = SLPNewNode(p, SLAst_IDENT, memberName->start, memberName->end);
+            memberLast = memberFirst;
+            while (SLPMatch(p, SLTok_DOT)) {
+                const SLToken* segment;
+                if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &segment) != 0) {
+                    return -1;
+                }
+                memberLast = segment;
+            }
+            memberNode = SLPNewNode(p, SLAst_IDENT, memberFirst->start, memberLast->end);
             if (memberNode < 0) {
                 return -1;
             }
-            p->nodes[memberNode].dataStart = memberName->start;
-            p->nodes[memberNode].dataEnd = memberName->end;
+            p->nodes[memberNode].dataStart = memberFirst->start;
+            p->nodes[memberNode].dataEnd = memberLast->end;
             if (SLPAddChild(p, group, memberNode) != 0) {
                 return -1;
             }

@@ -73,7 +73,8 @@ EnumDecl        = "enum" Ident Type "{" { EnumItem [ "," | ";" ] } "}" [";"] ;
 EnumItem        = Ident ["=" Expr] ;
 
 FnDeclOrDef     = "fn" Ident "(" [Param {"," Param}] ")" [Type] (";" | Block) ;
-FnGroupDecl     = "fn" Ident "{" Ident {"," Ident} "}" ";" ;
+FnGroupDecl     = "fn" Ident "{" GroupMember {"," GroupMember} "}" ";" ;
+GroupMember     = Ident | Ident "." Ident { "." Ident } ;
 Param           = Ident Type ;
 
 ConstDecl       = "const" Ident Type ["=" Expr] ";" ;
@@ -191,6 +192,7 @@ Function identity:
 - At most one definition body per function name/signature in a checked unit.
 - Explicit overload groups are supported:
   - `fn update{update_pet, update_ship};`
+  - `fn pick{pick_a, foo.pick_b};`
   - Calls to `update(...)` resolve across the grouped members.
 
 Type-function selector-call sugar:
