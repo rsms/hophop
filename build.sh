@@ -204,7 +204,5 @@ _v ninja "${ninja_args[@]}"
 ####################################################################################################
 # test
 
-
 [ $test = 1 ] || exit 0
-echo "running tests"
 python3 tools/test.py run --build-dir "$build_dir" --cc "$cc"

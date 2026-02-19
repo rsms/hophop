@@ -622,7 +622,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     jobs = args.jobs if args.jobs and args.jobs > 0 else (os.cpu_count() or 1)
     temp_root = Path(tempfile.mkdtemp(prefix="slang-tests."))
 
-    print(f"running {len(cases)} test(s) with {jobs} job(s)")
+    print(f"Running {len(cases)} test(s) with {jobs} job(s)")
     start = time.time()
     results: List[RunResult] = []
 
@@ -656,7 +656,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="SL test runner")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -687,7 +687,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: List[str]) -> int:
-    parser = build_parser()
+    parser = build_arg_parser()
     args = parser.parse_args(argv)
     return int(args.func(args))
 
