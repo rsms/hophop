@@ -63,9 +63,11 @@ ImportDecl      = "import" [Ident] StringLit ";" ;
 
 TopDecl         = ["pub"] (StructDecl | UnionDecl | EnumDecl | FnDeclOrDef | ConstDecl) ;
 
-StructDecl      = "struct" Ident "{" { FieldDecl [ "," | ";" ] } "}" [";"] ;
+StructDecl      = "struct" Ident "{" { StructFieldDecl [ "," | ";" ] } "}" [";"] ;
 UnionDecl       = "union"  Ident "{" { FieldDecl [ "," | ";" ] } "}" [";"] ;
+StructFieldDecl = FieldDecl | EmbeddedFieldDecl ;
 FieldDecl       = Ident Type ;
+EmbeddedFieldDecl = TypeName ;
 
 EnumDecl        = "enum" Ident Type "{" { EnumItem [ "," | ";" ] } "}" [";"] ;
 EnumItem        = Ident ["=" Expr] ;
@@ -188,6 +190,19 @@ Function identity:
 - Multiple declarations with identical signature are allowed.
 - At most one definition body per function name/signature in a checked unit.
 
+### 4.1 Struct composition
+- In `struct` declarations, the first field may be an embedded base using type-name-only syntax:
+  - `struct B { A; y int }`
+- Embedded base constraints:
+  - allowed only in `struct` (not `union`)
+  - must be the first field
+  - at most one embedded field per struct
+  - embedded type must be a named `struct` type
+  - embedded cycles are rejected
+- Field promotion:
+  - selectors resolve direct fields first, then recursively through the embedded base chain
+  - for example, if `C` embeds `B` and `B` embeds `A`, then `c.x` may resolve as `c.B.A.x`
+
 ## 5. Type System
 
 ### 5.1 Built-in types
@@ -214,6 +229,9 @@ Exact type match is required except these implicit conversions:
 - `mut[S] -> [S]`
 - `[S N] -> [S]` and `[S N] -> mut[S]`
 - `*[S N] -> [S]` and `*[S N] -> mut[S]`
+- `Derived -> Base` for embedded-base ancestry
+- `&Derived -> &Base` and `mut&Derived -> mut&Base` for embedded-base ancestry
+- `*Derived -> &Base` and `*Derived -> mut&Base` for embedded-base ancestry
 - `T -> ?T`
 - `null -> ?T`
 - `?A -> ?B` if `A` is assignable to `B`
