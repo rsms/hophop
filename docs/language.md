@@ -420,6 +420,7 @@ Special import prefix:
 - `import "slang/feature/<name>"` does not resolve to filesystem package.
 - Known feature: `optional`.
 - Unknown feature names emit a warning.
+- `import "platform"` resolves to a built-in package named `platform`.
 
 Use:
 - Imported symbols are referenced as `alias.Name` in type names and expressions.
@@ -455,5 +456,4 @@ Entry point:
 - No block comments.
 - No binary integer literal syntax.
 - Compound literals are not currently supported.
-- `import "platform"` special package behavior from SLP drafts is not implemented as a dedicated resolver path.
 - Runtime bounds checks for non-constant index/slice operations are analyzed but not currently emitted by C codegen.

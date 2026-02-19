@@ -1659,12 +1659,49 @@ static char* _Nullable ResolveStdImportDir(const char* startDir, const char* imp
     return NULL;
 }
 
+#define SL_BUILTIN_PLATFORM_PATH "<builtin>/platform"
+
+static int IsBuiltinPlatformImportPath(const char* importPath) {
+    return StrEq(importPath, "platform");
+}
+
+static int LoadBuiltinPlatformPackage(SLPackageLoader* loader, SLPackage** outPkg) {
+    SLPackage* pkg = FindPackageByDir(loader, SL_BUILTIN_PLATFORM_PATH);
+    if (pkg != NULL) {
+        *outPkg = pkg;
+        return 0;
+    }
+    if (AddPackageSlot(loader, SL_BUILTIN_PLATFORM_PATH, &pkg) != 0) {
+        return ErrorSimple("out of memory");
+    }
+    free(pkg->name);
+    pkg->name = DupCStr("platform");
+    if (pkg->name == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    pkg->loadState = 2;
+    *outPkg = pkg;
+    return 0;
+}
+
 static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SLPackage** outPkg);
 
 static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage* pkg) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
         char* resolvedDir;
+        if (IsBuiltinPlatformImportPath(pkg->imports[i].path)) {
+            if (LoadBuiltinPlatformPackage(loader, &pkg->imports[i].target) != 0) {
+                const SLParsedFile* file = &pkg->files[pkg->imports[i].fileIndex];
+                return Errorf(
+                    file->path,
+                    pkg->imports[i].start,
+                    pkg->imports[i].end,
+                    "failed to resolve import %s",
+                    pkg->imports[i].path);
+            }
+            continue;
+        }
         if (pkg->imports[i].path[0] == '/') {
             resolvedDir = DupCStr(pkg->imports[i].path);
         } else {

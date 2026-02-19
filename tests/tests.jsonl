@@ -14,6 +14,7 @@
 {"id":"check:tests/struct_composition_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/struct_composition_ok.sl"}
 {"id":"checkpkg:tests/new_optional_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_optional_ok.sl"}
 {"id":"checkpkg:tests/new_nonoptional_panic.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_nonoptional_panic.sl"}
+{"id":"checkpkg:tests/platform_import_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/platform_import_ok.sl"}
 {"id":"check:tests/panic_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/panic_ok.sl"}
 {"id":"check:tests/feature_optional_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/feature_optional_ok.sl"}
 {"id":"check:tests/feature_optional_no_import.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/feature_optional_no_import.sl"}
