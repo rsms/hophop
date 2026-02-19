@@ -1605,6 +1605,94 @@ static const SLLocal* _Nullable FindLocalBySlice(
     return NULL;
 }
 
+static int FindEnumDeclNodeBySlice(
+    const SLCBackendC* c, uint32_t start, uint32_t end, int32_t* outNodeId) {
+    uint32_t i;
+    if (outNodeId == NULL) {
+        return -1;
+    }
+    for (i = 0; i < c->topDeclLen; i++) {
+        int32_t          nodeId = c->topDecls[i].nodeId;
+        const SLAstNode* n = NodeAt(c, nodeId);
+        if (n != NULL && n->kind == SLAst_ENUM
+            && SliceSpanEq(c->unit->source, n->dataStart, n->dataEnd, start, end))
+        {
+            *outNodeId = nodeId;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int EnumDeclHasMemberBySlice(
+    const SLCBackendC* c, int32_t enumNodeId, uint32_t memberStart, uint32_t memberEnd) {
+    int32_t child = AstFirstChild(&c->ast, enumNodeId);
+
+    if (child >= 0) {
+        const SLAstNode* firstChild = NodeAt(c, child);
+        if (firstChild != NULL
+            && (firstChild->kind == SLAst_TYPE_NAME || firstChild->kind == SLAst_TYPE_PTR
+                || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
+                || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
+                || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
+                || firstChild->kind == SLAst_TYPE_OPTIONAL))
+        {
+            child = AstNextSibling(&c->ast, child);
+        }
+    }
+
+    while (child >= 0) {
+        const SLAstNode* item = NodeAt(c, child);
+        if (item != NULL && item->kind == SLAst_FIELD
+            && SliceSpanEq(c->unit->source, item->dataStart, item->dataEnd, memberStart, memberEnd))
+        {
+            return 1;
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    return 0;
+}
+
+static int ResolveEnumSelectorByFieldExpr(
+    const SLCBackendC* c, int32_t fieldExprNode, const SLNameMap** outEnumMap) {
+    const SLAstNode* n = NodeAt(c, fieldExprNode);
+    int32_t          recvNode;
+    const SLAstNode* recv;
+    const SLLocal*   local;
+    const SLNameMap* map;
+    int32_t          enumDeclNode;
+
+    if (outEnumMap != NULL) {
+        *outEnumMap = NULL;
+    }
+    if (n == NULL || n->kind != SLAst_FIELD_EXPR) {
+        return 0;
+    }
+    recvNode = AstFirstChild(&c->ast, fieldExprNode);
+    recv = NodeAt(c, recvNode);
+    if (recv == NULL || recv->kind != SLAst_IDENT) {
+        return 0;
+    }
+    local = FindLocalBySlice(c, recv->dataStart, recv->dataEnd);
+    if (local != NULL) {
+        return 0;
+    }
+    map = FindNameBySlice(c, recv->dataStart, recv->dataEnd);
+    if (map == NULL || map->kind != SLAst_ENUM) {
+        return 0;
+    }
+    if (FindEnumDeclNodeBySlice(c, recv->dataStart, recv->dataEnd, &enumDeclNode) != 0) {
+        return 0;
+    }
+    if (!EnumDeclHasMemberBySlice(c, enumDeclNode, n->dataStart, n->dataEnd)) {
+        return 0;
+    }
+    if (outEnumMap != NULL) {
+        *outEnumMap = map;
+    }
+    return 1;
+}
+
 static int AppendMappedIdentifier(SLCBackendC* c, uint32_t start, uint32_t end) {
     const SLLocal*   local = FindLocalBySlice(c, start, end);
     const SLNameMap* map;
@@ -2148,11 +2236,16 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             return 0;
         }
         case SLAst_FIELD_EXPR: {
+            const SLNameMap*   enumMap = NULL;
             int32_t            recv = AstFirstChild(&c->ast, nodeId);
             SLTypeRef          recvType;
             const SLFieldInfo* fieldPath[64];
             uint32_t           fieldPathLen = 0;
             const SLFieldInfo* field = NULL;
+            if (ResolveEnumSelectorByFieldExpr(c, nodeId, &enumMap) != 0 && enumMap != NULL) {
+                TypeRefSetScalar(outType, enumMap->cName);
+                return 0;
+            }
             if (InferExprType(c, recv, &recvType) != 0 || !recvType.valid) {
                 TypeRefSetInvalid(outType);
                 return 0;
@@ -3300,6 +3393,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             return 0;
         }
         case SLAst_FIELD_EXPR: {
+            const SLNameMap*   enumMap = NULL;
             int32_t            recv = AstFirstChild(&c->ast, nodeId);
             SLTypeRef          recvType;
             SLTypeRef          ownerType;
@@ -3308,6 +3402,15 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             const SLFieldInfo* field = NULL;
             int                useArrow = 0;
             uint32_t           i;
+
+            if (ResolveEnumSelectorByFieldExpr(c, nodeId, &enumMap) != 0 && enumMap != NULL) {
+                if (BufAppendCStr(&c->out, enumMap->cName) != 0 || BufAppendCStr(&c->out, "__") != 0
+                    || BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd) != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
 
             if (InferExprType(c, recv, &recvType) == 0 && recvType.valid) {
                 ownerType = recvType;
@@ -4009,7 +4112,9 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             if (first) {
                 first = 0;
             }
-            if (BufAppendSlice(&c->out, c->unit->source, item->dataStart, item->dataEnd) != 0) {
+            if (BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__") != 0
+                || BufAppendSlice(&c->out, c->unit->source, item->dataStart, item->dataEnd) != 0)
+            {
                 return -1;
             }
             if (initExpr >= 0) {
@@ -4290,7 +4395,9 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
         int32_t          nodeId = c->pubDecls[i].nodeId;
         const SLAstNode* n = NodeAt(c, nodeId);
         const SLNameMap* map;
-        if (n == NULL || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION)) {
+        if (n == NULL
+            || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION && n->kind != SLAst_ENUM))
+        {
             continue;
         }
         map = FindNameBySlice(c, n->dataStart, n->dataEnd);
@@ -4298,7 +4405,14 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
             continue;
         }
         EmitIndent(c, 0);
-        if (n->kind == SLAst_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
+        if (n->kind == SLAst_ENUM) {
+            if (BufAppendCStr(&c->out, "typedef enum ") != 0
+                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+        } else if (n->kind == SLAst_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
             if (BufAppendCStr(&c->out, "typedef struct ") != 0
                 || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__hdr ") != 0
                 || BufAppendCStr(&c->out, map->cName) != 0
@@ -4328,7 +4442,9 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
         int32_t          nodeId = c->topDecls[i].nodeId;
         const SLAstNode* n = NodeAt(c, nodeId);
         const SLNameMap* map;
-        if (n == NULL || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION)) {
+        if (n == NULL
+            || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION && n->kind != SLAst_ENUM))
+        {
             continue;
         }
         map = FindNameBySlice(c, n->dataStart, n->dataEnd);
@@ -4336,7 +4452,14 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
             continue;
         }
         EmitIndent(c, 0);
-        if (n->kind == SLAst_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
+        if (n->kind == SLAst_ENUM) {
+            if (BufAppendCStr(&c->out, "typedef enum ") != 0
+                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+        } else if (n->kind == SLAst_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
             if (BufAppendCStr(&c->out, "typedef struct ") != 0
                 || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__hdr ") != 0
                 || BufAppendCStr(&c->out, map->cName) != 0

@@ -424,6 +424,54 @@ static int32_t SLTCFindFnGroupIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t 
     return -1;
 }
 
+static int SLTCFieldLookup(
+    SLTypeCheckCtx* c,
+    int32_t         typeId,
+    uint32_t        fieldStart,
+    uint32_t        fieldEnd,
+    int32_t*        outType,
+    uint32_t* _Nullable outFieldIndex);
+
+static int SLTCResolveEnumMemberType(
+    SLTypeCheckCtx* c,
+    int32_t         recvNode,
+    uint32_t        memberStart,
+    uint32_t        memberEnd,
+    int32_t*        outType) {
+    const SLAstNode* recv;
+    int32_t          namedIndex;
+    int32_t          enumTypeId;
+    int32_t          enumFieldType;
+    int32_t          declNode;
+
+    if (recvNode < 0 || (uint32_t)recvNode >= c->ast->len) {
+        return 0;
+    }
+    recv = &c->ast->nodes[recvNode];
+    if (recv->kind != SLAst_IDENT) {
+        return 0;
+    }
+
+    namedIndex = SLTCFindNamedTypeIndex(c, recv->dataStart, recv->dataEnd);
+    if (namedIndex < 0) {
+        return 0;
+    }
+
+    enumTypeId = c->namedTypes[(uint32_t)namedIndex].typeId;
+    declNode = c->namedTypes[(uint32_t)namedIndex].declNode;
+    if (declNode < 0 || (uint32_t)declNode >= c->ast->len
+        || c->ast->nodes[declNode].kind != SLAst_ENUM)
+    {
+        return 0;
+    }
+
+    if (SLTCFieldLookup(c, enumTypeId, memberStart, memberEnd, &enumFieldType, NULL) != 0) {
+        return 0;
+    }
+    *outType = enumFieldType;
+    return 1;
+}
+
 static int32_t SLTCInternPtrType(
     SLTypeCheckCtx* c, int32_t baseType, uint32_t errStart, uint32_t errEnd) {
     uint32_t i;
@@ -1451,7 +1499,9 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
 
     while (child >= 0) {
         const SLAstNode* n = &c->ast->nodes[child];
-        if (n->kind == SLAst_FIELD && (kind == SLAst_STRUCT || kind == SLAst_UNION)) {
+        if (n->kind == SLAst_FIELD
+            && (kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM))
+        {
             int32_t  typeNode = SLAstFirstChild(c->ast, child);
             int32_t  typeId;
             uint16_t fieldFlags = 0;
@@ -1459,100 +1509,104 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
             uint32_t lenNameEnd = 0;
             uint32_t i;
             int      isEmbedded = (n->flags & SLAstFlag_FIELD_EMBEDDED) != 0;
-            if (typeNode < 0) {
-                return SLTCFailNode(c, child, SLDiag_EXPECTED_TYPE);
-            }
-
-            if (isEmbedded) {
-                int32_t embeddedDeclNode;
-                if (kind != SLAst_STRUCT) {
-                    return SLTCFailSpan(
-                        c, SLDiag_EMBEDDED_TYPE_NOT_STRUCT, n->dataStart, n->dataEnd);
-                }
-                if (sawEmbedded) {
-                    return SLTCFailSpan(
-                        c, SLDiag_MULTIPLE_EMBEDDED_FIELDS, n->dataStart, n->dataEnd);
-                }
-                if (fieldCount != 0) {
-                    return SLTCFailSpan(
-                        c, SLDiag_EMBEDDED_FIELD_NOT_FIRST, n->dataStart, n->dataEnd);
-                }
-                if (sawDependent) {
-                    return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
-                }
-                if (SLTCResolveTypeNode(c, typeNode, &typeId) != 0) {
-                    return -1;
-                }
-                if (typeId < 0 || (uint32_t)typeId >= c->typeLen
-                    || c->types[typeId].kind != SLTCType_NAMED)
-                {
-                    return SLTCFailSpan(
-                        c, SLDiag_EMBEDDED_TYPE_NOT_STRUCT, n->dataStart, n->dataEnd);
-                }
-                embeddedDeclNode = c->types[typeId].declNode;
-                if (embeddedDeclNode < 0 || (uint32_t)embeddedDeclNode >= c->ast->len
-                    || c->ast->nodes[embeddedDeclNode].kind != SLAst_STRUCT)
-                {
-                    return SLTCFailSpan(
-                        c, SLDiag_EMBEDDED_TYPE_NOT_STRUCT, n->dataStart, n->dataEnd);
-                }
-                fieldFlags = SLTCFieldFlag_EMBEDDED;
-                sawEmbedded = 1;
-            } else if (c->ast->nodes[typeNode].kind == SLAst_TYPE_VARRAY) {
-                int32_t  elemTypeNode;
-                int32_t  elemType;
-                int32_t  ptrType;
-                int32_t  lenFieldType = -1;
-                uint32_t lenFieldIdx;
-                if (kind != SLAst_STRUCT) {
-                    return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
-                }
-                sawDependent = 1;
-                lenNameStart = c->ast->nodes[typeNode].dataStart;
-                lenNameEnd = c->ast->nodes[typeNode].dataEnd;
-
-                lenFieldIdx = fieldStart;
-                while (lenFieldIdx < c->fieldLen) {
-                    if ((c->fields[lenFieldIdx].flags & SLTCFieldFlag_DEPENDENT) == 0
-                        && SLNameEqSlice(
-                            c->src,
-                            c->fields[lenFieldIdx].nameStart,
-                            c->fields[lenFieldIdx].nameEnd,
-                            lenNameStart,
-                            lenNameEnd))
-                    {
-                        lenFieldType = c->fields[lenFieldIdx].typeId;
-                        break;
-                    }
-                    lenFieldIdx++;
-                }
-                if (lenFieldType < 0) {
-                    return SLTCFailSpan(c, SLDiag_UNKNOWN_SYMBOL, lenNameStart, lenNameEnd);
-                }
-                if (!SLTCIsIntegerType(c, lenFieldType)) {
-                    return SLTCFailSpan(c, SLDiag_TYPE_MISMATCH, lenNameStart, lenNameEnd);
-                }
-
-                elemTypeNode = SLAstFirstChild(c->ast, typeNode);
-                if (elemTypeNode < 0) {
-                    return SLTCFailNode(c, typeNode, SLDiag_EXPECTED_TYPE);
-                }
-                if (SLTCResolveTypeNode(c, elemTypeNode, &elemType) != 0) {
-                    return -1;
-                }
-                ptrType = SLTCInternPtrType(c, elemType, n->start, n->end);
-                if (ptrType < 0) {
-                    return -1;
-                }
-                typeId = ptrType;
-                fieldFlags = SLTCFieldFlag_DEPENDENT;
-                c->types[nt->typeId].flags |= SLTCTypeFlag_VARSIZE;
+            if (kind == SLAst_ENUM) {
+                typeId = nt->typeId;
             } else {
-                if (sawDependent) {
-                    return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
+                if (typeNode < 0) {
+                    return SLTCFailNode(c, child, SLDiag_EXPECTED_TYPE);
                 }
-                if (SLTCResolveTypeNode(c, typeNode, &typeId) != 0) {
-                    return -1;
+
+                if (isEmbedded) {
+                    int32_t embeddedDeclNode;
+                    if (kind != SLAst_STRUCT) {
+                        return SLTCFailSpan(
+                            c, SLDiag_EMBEDDED_TYPE_NOT_STRUCT, n->dataStart, n->dataEnd);
+                    }
+                    if (sawEmbedded) {
+                        return SLTCFailSpan(
+                            c, SLDiag_MULTIPLE_EMBEDDED_FIELDS, n->dataStart, n->dataEnd);
+                    }
+                    if (fieldCount != 0) {
+                        return SLTCFailSpan(
+                            c, SLDiag_EMBEDDED_FIELD_NOT_FIRST, n->dataStart, n->dataEnd);
+                    }
+                    if (sawDependent) {
+                        return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
+                    }
+                    if (SLTCResolveTypeNode(c, typeNode, &typeId) != 0) {
+                        return -1;
+                    }
+                    if (typeId < 0 || (uint32_t)typeId >= c->typeLen
+                        || c->types[typeId].kind != SLTCType_NAMED)
+                    {
+                        return SLTCFailSpan(
+                            c, SLDiag_EMBEDDED_TYPE_NOT_STRUCT, n->dataStart, n->dataEnd);
+                    }
+                    embeddedDeclNode = c->types[typeId].declNode;
+                    if (embeddedDeclNode < 0 || (uint32_t)embeddedDeclNode >= c->ast->len
+                        || c->ast->nodes[embeddedDeclNode].kind != SLAst_STRUCT)
+                    {
+                        return SLTCFailSpan(
+                            c, SLDiag_EMBEDDED_TYPE_NOT_STRUCT, n->dataStart, n->dataEnd);
+                    }
+                    fieldFlags = SLTCFieldFlag_EMBEDDED;
+                    sawEmbedded = 1;
+                } else if (c->ast->nodes[typeNode].kind == SLAst_TYPE_VARRAY) {
+                    int32_t  elemTypeNode;
+                    int32_t  elemType;
+                    int32_t  ptrType;
+                    int32_t  lenFieldType = -1;
+                    uint32_t lenFieldIdx;
+                    if (kind != SLAst_STRUCT) {
+                        return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
+                    }
+                    sawDependent = 1;
+                    lenNameStart = c->ast->nodes[typeNode].dataStart;
+                    lenNameEnd = c->ast->nodes[typeNode].dataEnd;
+
+                    lenFieldIdx = fieldStart;
+                    while (lenFieldIdx < c->fieldLen) {
+                        if ((c->fields[lenFieldIdx].flags & SLTCFieldFlag_DEPENDENT) == 0
+                            && SLNameEqSlice(
+                                c->src,
+                                c->fields[lenFieldIdx].nameStart,
+                                c->fields[lenFieldIdx].nameEnd,
+                                lenNameStart,
+                                lenNameEnd))
+                        {
+                            lenFieldType = c->fields[lenFieldIdx].typeId;
+                            break;
+                        }
+                        lenFieldIdx++;
+                    }
+                    if (lenFieldType < 0) {
+                        return SLTCFailSpan(c, SLDiag_UNKNOWN_SYMBOL, lenNameStart, lenNameEnd);
+                    }
+                    if (!SLTCIsIntegerType(c, lenFieldType)) {
+                        return SLTCFailSpan(c, SLDiag_TYPE_MISMATCH, lenNameStart, lenNameEnd);
+                    }
+
+                    elemTypeNode = SLAstFirstChild(c->ast, typeNode);
+                    if (elemTypeNode < 0) {
+                        return SLTCFailNode(c, typeNode, SLDiag_EXPECTED_TYPE);
+                    }
+                    if (SLTCResolveTypeNode(c, elemTypeNode, &elemType) != 0) {
+                        return -1;
+                    }
+                    ptrType = SLTCInternPtrType(c, elemType, n->start, n->end);
+                    if (ptrType < 0) {
+                        return -1;
+                    }
+                    typeId = ptrType;
+                    fieldFlags = SLTCFieldFlag_DEPENDENT;
+                    c->types[nt->typeId].flags |= SLTCTypeFlag_VARSIZE;
+                } else {
+                    if (sawDependent) {
+                        return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
+                    }
+                    if (SLTCResolveTypeNode(c, typeNode, &typeId) != 0) {
+                        return -1;
+                    }
                 }
             }
 
@@ -2611,11 +2665,20 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
             return 0;
         }
         case SLAst_FIELD_EXPR: {
-            int32_t recvNode = SLAstFirstChild(c->ast, nodeId);
-            int32_t recvType;
-            int32_t fieldType;
+            int32_t          recvNode = SLAstFirstChild(c->ast, nodeId);
+            int32_t          recvType;
+            int32_t          fieldType;
+            const SLAstNode* recv;
             if (recvNode < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_SYMBOL);
+            }
+            recv = &c->ast->nodes[recvNode];
+            if (recv->kind == SLAst_IDENT && SLTCLocalFind(c, recv->dataStart, recv->dataEnd) < 0
+                && SLTCFindFunctionIndex(c, recv->dataStart, recv->dataEnd) < 0
+                && SLTCResolveEnumMemberType(c, recvNode, n->dataStart, n->dataEnd, &fieldType))
+            {
+                *outType = fieldType;
+                return 0;
             }
             if (SLTCTypeExpr(c, recvNode, &recvType) != 0) {
                 return -1;

@@ -1,4 +1,4 @@
-// struct, union, and enum declarations with basic field/value usage
+// struct, union, and enum declarations with basic usage
 
 pub struct Pair {
     x i32
@@ -11,8 +11,12 @@ pub union Number {
 }
 
 pub enum Mode i32 {
-    Mode_A = 0
-    Mode_B = 1
+    A = 0
+    B = 1
+}
+
+fn is_mode_a(m Mode) bool {
+    return m == Mode.A
 }
 
 fn main() {
@@ -23,4 +27,7 @@ fn main() {
     var n Number
     n.i = p.x + p.y
     assert n.i == 9
+
+    var mode Mode = Mode.A
+    assert is_mode_a(mode)
 }

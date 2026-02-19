@@ -2430,7 +2430,6 @@ static int CollectExprImportRewritesNode(
         case SLAst_BINARY:
         case SLAst_CALL:
         case SLAst_INDEX:
-        case SLAst_FIELD_EXPR:
         case SLAst_CAST:
         case SLAst_SIZEOF:
         case SLAst_UNWRAP:
@@ -2445,6 +2444,40 @@ static int CollectExprImportRewritesNode(
                 child = ASTNextSibling(&file->ast, child);
             }
             return 0;
+        case SLAst_FIELD_EXPR: {
+            int32_t recv = ASTFirstChild(&file->ast, nodeId);
+            if (recv >= 0 && (uint32_t)recv < file->ast.len
+                && file->ast.nodes[recv].kind == SLAst_IDENT)
+            {
+                const SLAstNode* recvNode = &file->ast.nodes[recv];
+                int              idx = FindImportSymbolBindingIndexBySlice(
+                    pkg, file->source, recvNode->dataStart, recvNode->dataEnd, 1);
+                if (idx >= 0 && shadowCounts[(uint32_t)idx] == 0) {
+                    if (AddTextRewrite(
+                            rewrites,
+                            rewriteLen,
+                            rewriteCap,
+                            recvNode->dataStart,
+                            recvNode->dataEnd,
+                            pkg->importSymbols[(uint32_t)idx].qualifiedName)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                }
+            }
+            child = ASTFirstChild(&file->ast, nodeId);
+            while (child >= 0) {
+                if (CollectExprImportRewritesNode(
+                        pkg, file, child, shadowCounts, rewrites, rewriteLen, rewriteCap)
+                    != 0)
+                {
+                    return -1;
+                }
+                child = ASTNextSibling(&file->ast, child);
+            }
+            return 0;
+        }
         default: return 0;
     }
 }
@@ -2458,15 +2491,21 @@ static int PushShadowIfValueImportName(
     uint32_t**          shadowStack,
     uint32_t*           shadowLen,
     uint32_t*           shadowCap) {
-    int idx = FindImportSymbolBindingIndexBySlice(pkg, file->source, start, end, 0);
-    if (idx < 0) {
-        return 0;
+    uint32_t i;
+    for (i = 0; i < pkg->importSymbolLen; i++) {
+        const SLImportSymbolRef* sym = &pkg->importSymbols[i];
+        size_t                   nameLen = strlen(sym->localName);
+        if (nameLen != (size_t)(end - start)
+            || memcmp(sym->localName, file->source + start, nameLen) != 0)
+        {
+            continue;
+        }
+        if (EnsureCap((void**)shadowStack, shadowCap, *shadowLen + 1u, sizeof(uint32_t)) != 0) {
+            return -1;
+        }
+        shadowCounts[i]++;
+        (*shadowStack)[(*shadowLen)++] = i;
     }
-    if (EnsureCap((void**)shadowStack, shadowCap, *shadowLen + 1u, sizeof(uint32_t)) != 0) {
-        return -1;
-    }
-    shadowCounts[(uint32_t)idx]++;
-    (*shadowStack)[(*shadowLen)++] = (uint32_t)idx;
     return 0;
 }
 

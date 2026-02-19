@@ -220,6 +220,16 @@ Type-function selector-call sugar:
   - selectors resolve direct fields first, then recursively through the embedded base chain
   - for example, if `C` embeds `B` and `B` embeds `A`, then `c.x` may resolve as `c.B.A.x`
 
+### 4.2 Enum members
+- Enum item names are scoped to their enum declaration.
+- Enum items do not create package-global value bindings.
+- Enum values are referenced through enum selectors:
+  - `Mode.A`
+  - `pkg.Mode.A`
+- The type of `Mode.A` is `Mode`.
+- Unqualified enum item references are not resolved as enum members:
+  - `A` is invalid unless `A` is another symbol in scope.
+
 ## 5. Type System
 
 ### 5.1 Built-in types
@@ -464,6 +474,9 @@ Special import prefix:
 Use:
 - Package imports are referenced as `alias.Name` in type names and expressions.
 - Named imports bind exported symbols directly into package scope.
+- Enum members are not standalone exports:
+  - `import "pkg" { Mode }` allows `Mode.A`
+  - `import "pkg" { A }` is invalid when `A` is only an enum member
 - `import "pkg" { * }` is not supported.
 - Unknown alias/symbol is a package check error.
 
