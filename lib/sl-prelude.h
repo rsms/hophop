@@ -107,6 +107,20 @@ static inline void __sl_assertf_fail(const char* file, __sl_u32 line, const char
     __sl_assert_fail(file, line, fmt);
 }
 
+#define __sl_assert(expr)                                             \
+    do {                                                              \
+        if (!(expr)) {                                                \
+            __sl_assert_fail(__FILE__, __LINE__, "assertion failed"); \
+        }                                                             \
+    } while (0)
+
+#define __sl_assertf(expr, message, ...)                                   \
+    do {                                                                   \
+        if (!(expr)) {                                                     \
+            __sl_assertf_fail(__FILE__, __LINE__, message, ##__VA_ARGS__); \
+        }                                                                  \
+    } while (0)
+
 static inline void __sl_console_log(__sl_str msg, __sl_u64 flags) {
     (void)__sl_platform_call(
         __sl_PlatformOp_CONSOLE_LOG,

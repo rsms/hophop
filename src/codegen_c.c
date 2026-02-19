@@ -3804,30 +3804,17 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                 return -1;
             }
             EmitIndent(c, depth);
-            if (BufAppendCStr(&c->out, "do {\n") != 0) {
-                return -1;
-            }
-            EmitIndent(c, depth + 1u);
-            if (BufAppendCStr(&c->out, "if (!(") != 0 || EmitExpr(c, cond) != 0
-                || BufAppendCStr(&c->out, ")) {\n") != 0)
-            {
-                return -1;
-            }
             fmtNode = AstNextSibling(&c->ast, cond);
-            EmitIndent(c, depth + 2u);
             if (fmtNode < 0) {
-                if (BufAppendCStr(
-                        &c->out,
-                        "__sl_assert_fail(__FILE__, __LINE__, "
-                        "\"assertion failed\");\n")
-                    != 0)
+                if (BufAppendCStr(&c->out, "__sl_assert(") != 0 || EmitExpr(c, cond) != 0
+                    || BufAppendCStr(&c->out, ");\n") != 0)
                 {
                     return -1;
                 }
             } else {
                 int32_t argNode;
-                if (BufAppendCStr(&c->out, "__sl_assertf_fail(__FILE__, __LINE__, ") != 0
-                    || EmitAssertFormatArg(c, fmtNode) != 0)
+                if (BufAppendCStr(&c->out, "__sl_assertf(") != 0 || EmitExpr(c, cond) != 0
+                    || BufAppendCStr(&c->out, ", ") != 0 || EmitAssertFormatArg(c, fmtNode) != 0)
                 {
                     return -1;
                 }
@@ -3842,12 +3829,7 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                     return -1;
                 }
             }
-            EmitIndent(c, depth + 1u);
-            if (BufAppendCStr(&c->out, "}\n") != 0) {
-                return -1;
-            }
-            EmitIndent(c, depth);
-            return BufAppendCStr(&c->out, "} while (0);\n");
+            return 0;
         }
         case SLAst_IF: {
             int32_t cond = AstFirstChild(&c->ast, nodeId);
