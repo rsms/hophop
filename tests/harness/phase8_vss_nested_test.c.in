@@ -1,0 +1,16 @@
+#define TESTS_IMPL
+#include "@HEADER@"
+int test_codegen_phase8_vss_nested(tests__Packet* p, tests__Section* s, tests__Metadata* m) {
+    tests__Metadata* metadata = tests__Packet__metadata(p);
+    tests__Section* sections = tests__Packet__sections(p);
+    __sl_u8* mvalue = tests__Metadata__value(m);
+    __sl_i64* sentries = tests__Section__entries(s);
+    __sl_uint psize = tests__Packet__sizeof(p);
+    __sl_uint ssize = tests__Section__sizeof(s);
+    __sl_uint msize = tests__Metadata__sizeof(m);
+    return metadata != (tests__Metadata*)0 || sections != (tests__Section*)0 ||
+                   mvalue != (__sl_u8*)0 || sentries != (__sl_i64*)0 || psize > 0 || ssize > 0 ||
+                   msize > 0
+               ? 0
+               : 0;
+}

@@ -1,0 +1,2 @@
+#define DEMO_IMPL
+#include "@HEADER@"
