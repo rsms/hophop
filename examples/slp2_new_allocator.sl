@@ -1,3 +1,5 @@
+// Example: allocator-driven `new` forms for value, fixed-array, and slice allocations.
+
 struct Pair {
     x i32
     y i32

@@ -1,3 +1,5 @@
+// Example: variable-size structs with dependent trailing array fields.
+
 struct Packet {
     payloadLen u32
     sampleLen  u32

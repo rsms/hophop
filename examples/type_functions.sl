@@ -1,3 +1,5 @@
+// Example: type-function selector sugar with built-ins (`x.len()`, `ma.new(...)`).
+
 fn main() {
     var msg str = "hi"
     var ma mut&MemAllocator = 0 as mut&MemAllocator

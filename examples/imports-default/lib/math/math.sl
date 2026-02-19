@@ -1,5 +1,5 @@
-pub fn Double(x i32) i32;
+// Example dependency package for imports-default; exports math helpers.
 
-fn Double(x i32) i32 {
+pub fn Double(x i32) i32 {
     return x * 2
 }

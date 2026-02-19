@@ -1,3 +1,5 @@
+// Example: struct composition via embedded fields and promoted member access.
+
 struct A {
     x int
 }

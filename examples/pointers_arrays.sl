@@ -1,3 +1,5 @@
+// Example: pointers, fixed-size arrays, indexing, and dereference operations.
+
 struct Node {
     value i32
     next  *Node

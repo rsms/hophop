@@ -1,3 +1,5 @@
+// Example: struct, union, and enum declarations with basic field/value usage.
+
 pub struct Pair {
     x i32
     y i32
@@ -12,8 +14,6 @@ pub enum Mode i32 {
     Mode_A = 0
     Mode_B = 1
 }
-
-pub fn main();
 
 fn main() {
     var p Pair
