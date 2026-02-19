@@ -14,7 +14,7 @@ fn example(f &Foo) {
 }
 ```
 
-## 
+## Multiple dispatch
 
 Do we need multiple dispatch and/or generics/macros for this to make sense? I.e. if I want to do `x.update` and `y.update` where `x` and `y` are different types that want different `update` function implementations?
 
