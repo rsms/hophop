@@ -903,35 +903,44 @@ static int SLPParseVarLikeStmt(SLParser* p, SLAstKind kind, int requireSemi, int
     const SLToken* kw = SLPPeek(p);
     const SLToken* name;
     int32_t        n;
-    int32_t        type;
+    int32_t        type = -1;
+    int32_t        init = -1;
 
     p->pos++;
     if (SLPExpectDeclName(p, &name) != 0) {
         return -1;
     }
-    if (SLPParseType(p, &type) != 0) {
-        return -1;
+
+    if (SLPMatch(p, SLTok_ASSIGN)) {
+        if (SLPParseExpr(p, 1, &init) != 0) {
+            return -1;
+        }
+    } else {
+        if (SLPParseType(p, &type) != 0) {
+            return -1;
+        }
+        if (SLPMatch(p, SLTok_ASSIGN)) {
+            if (SLPParseExpr(p, 1, &init) != 0) {
+                return -1;
+            }
+        }
     }
 
-    n = SLPNewNode(p, kind, kw->start, p->nodes[type].end);
+    n = SLPNewNode(p, kind, kw->start, init >= 0 ? p->nodes[init].end : p->nodes[type].end);
     if (n < 0) {
         return -1;
     }
     p->nodes[n].dataStart = name->start;
     p->nodes[n].dataEnd = name->end;
-    if (SLPAddChild(p, n, type) != 0) {
-        return -1;
-    }
-
-    if (SLPMatch(p, SLTok_ASSIGN)) {
-        int32_t init;
-        if (SLPParseExpr(p, 1, &init) != 0) {
+    if (type >= 0) {
+        if (SLPAddChild(p, n, type) != 0) {
             return -1;
         }
+    }
+    if (init >= 0) {
         if (SLPAddChild(p, n, init) != 0) {
             return -1;
         }
-        p->nodes[n].end = p->nodes[init].end;
     }
 
     if (requireSemi) {

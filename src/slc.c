@@ -1574,6 +1574,9 @@ static int PackageHasExportedTypeSlice(
     return 0;
 }
 
+static const SLImportRef* _Nullable FindImportByAliasSlice(
+    const SLPackage* pkg, const char* src, uint32_t aliasStart, uint32_t aliasEnd);
+
 static int ValidatePubTypeNode(
     const SLPackage* pkg, const SLParsedFile* file, int32_t typeNodeId, const char* contextMsg) {
     const SLAstNode* n;
@@ -1584,15 +1587,39 @@ static int ValidatePubTypeNode(
     switch (n->kind) {
         case SLAst_TYPE_NAME: {
             uint32_t i;
+            uint32_t dotPos = 0;
+            int      hasDot = 0;
             for (i = n->dataStart; i < n->dataEnd; i++) {
                 if (file->source[i] == '.') {
+                    dotPos = i;
+                    hasDot = 1;
+                    break;
+                }
+            }
+            if (hasDot) {
+                const SLImportRef* imp = FindImportByAliasSlice(
+                    pkg, file->source, n->dataStart, dotPos);
+                if (imp == NULL) {
                     return Errorf(
                         file->path,
                         n->start,
                         n->end,
-                        "public API %s must not reference imported types",
+                        "public API %s references unknown import alias",
                         contextMsg);
                 }
+                if (imp->target == NULL) {
+                    return 0;
+                }
+                if (PackageHasExportedTypeSlice(imp->target, file->source, dotPos + 1u, n->dataEnd))
+                {
+                    return 0;
+                }
+                return Errorf(
+                    file->path,
+                    n->start,
+                    n->end,
+                    "public API %s references non-exported type",
+                    contextMsg);
             }
             if (IsBuiltinTypeName(file->source, n->dataStart, n->dataEnd)) {
                 return 0;
@@ -1674,7 +1701,7 @@ static int ValidatePubClosure(const SLPackage* pkg) {
                 }
             }
         } else if (pubDecl->kind == SLAst_CONST) {
-            if (child >= 0) {
+            if (child >= 0 && IsFnReturnTypeNodeKind(file->ast.nodes[child].kind)) {
                 if (ValidatePubTypeNode(pkg, file, child, "constant type") != 0) {
                     return -1;
                 }
@@ -2567,6 +2594,17 @@ static int CollectBlockImportRewritesNode(
     return 0;
 }
 
+static int32_t VarLikeInitNode(const SLParsedFile* file, int32_t varLikeNodeId) {
+    int32_t firstChild = ASTFirstChild(&file->ast, varLikeNodeId);
+    if (firstChild < 0) {
+        return -1;
+    }
+    if (IsFnReturnTypeNodeKind(file->ast.nodes[firstChild].kind)) {
+        return ASTNextSibling(&file->ast, firstChild);
+    }
+    return firstChild;
+}
+
 static int CollectStmtImportRewritesNode(
     const SLPackage*    pkg,
     const SLParsedFile* file,
@@ -2599,8 +2637,7 @@ static int CollectStmtImportRewritesNode(
                 rewriteCap);
         case SLAst_VAR:
         case SLAst_CONST: {
-            int32_t typeNode = ASTFirstChild(&file->ast, nodeId);
-            int32_t initNode = typeNode >= 0 ? ASTNextSibling(&file->ast, typeNode) : -1;
+            int32_t initNode = VarLikeInitNode(file, nodeId);
             if (initNode >= 0
                 && CollectExprImportRewritesNode(
                        pkg, file, initNode, shadowCounts, rewrites, rewriteLen, rewriteCap)
@@ -2676,8 +2713,7 @@ static int CollectStmtImportRewritesNode(
                 uint32_t last = partCount - 1u;
                 uint32_t idx = 0;
                 if (partCount >= 2u && file->ast.nodes[parts[0]].kind == SLAst_VAR) {
-                    int32_t typeNode = ASTFirstChild(&file->ast, parts[0]);
-                    int32_t initNode = typeNode >= 0 ? ASTNextSibling(&file->ast, typeNode) : -1;
+                    int32_t initNode = VarLikeInitNode(file, parts[0]);
                     if (initNode >= 0
                         && CollectExprImportRewritesNode(
                                pkg, file, initNode, shadowCounts, rewrites, rewriteLen, rewriteCap)
@@ -3004,8 +3040,7 @@ static int RewriteDeclTextForNamedImports(
             PopShadowToMark(shadowCounts, shadowStack, &shadowLen, mark);
             break;
         case SLAst_CONST: {
-            int32_t typeNode = ASTFirstChild(&file->ast, nodeId);
-            int32_t initNode = typeNode >= 0 ? ASTNextSibling(&file->ast, typeNode) : -1;
+            int32_t initNode = VarLikeInitNode(file, nodeId);
             if (initNode >= 0
                 && CollectExprImportRewritesNode(
                        pkg, file, initNode, shadowCounts, &rewrites, &rewriteLen, &rewriteCap)
@@ -3182,6 +3217,67 @@ static int BuildPrefixedName(const char* alias, const char* name, char** outName
     return *outName == NULL ? -1 : 0;
 }
 
+static int AppendAliasedPubDecls(
+    SLStringBuilder* b,
+    const SLPackage* sourcePkg,
+    const char*      alias,
+    const SLImportRef* _Nullable imports,
+    uint32_t importLen) {
+    SLIdentMap* maps = NULL;
+    uint32_t    j;
+    int         rc = -1;
+
+    if (sourcePkg->pubDeclLen == 0) {
+        return 0;
+    }
+    maps = (SLIdentMap*)malloc(sizeof(SLIdentMap) * sourcePkg->pubDeclLen);
+    if (maps == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    for (j = 0; j < sourcePkg->pubDeclLen; j++) {
+        maps[j].name = sourcePkg->pubDecls[j].name;
+        maps[j].replacement = NULL;
+        if (BuildPrefixedName(alias, sourcePkg->pubDecls[j].name, (char**)&maps[j].replacement)
+            != 0)
+        {
+            goto done;
+        }
+    }
+
+    for (j = 0; j < sourcePkg->pubDeclLen; j++) {
+        char* rewritten = NULL;
+        rc = RewriteText(
+            sourcePkg->pubDecls[j].declText,
+            (uint32_t)strlen(sourcePkg->pubDecls[j].declText),
+            imports,
+            importLen,
+            maps,
+            sourcePkg->pubDeclLen,
+            &rewritten);
+        if (rc != 0) {
+            goto done;
+        }
+        if (SBAppendCStr(b, rewritten) != 0 || SBAppendCStr(b, "\n") != 0) {
+            free(rewritten);
+            goto done;
+        }
+        free(rewritten);
+    }
+    if (SBAppendCStr(b, "\n") != 0) {
+        goto done;
+    }
+    rc = 0;
+
+done:
+    if (maps != NULL) {
+        for (j = 0; j < sourcePkg->pubDeclLen; j++) {
+            free((void*)maps[j].replacement);
+        }
+    }
+    free(maps);
+    return rc;
+}
+
 static int BuildCombinedPackageSource(const SLPackage* pkg, char** outSource, uint32_t* outLen) {
     SLStringBuilder b = { 0 };
     uint32_t        i;
@@ -3190,82 +3286,32 @@ static int BuildCombinedPackageSource(const SLPackage* pkg, char** outSource, ui
 
     for (i = 0; i < pkg->importLen; i++) {
         const SLPackage* dep = pkg->imports[i].target;
-        SLIdentMap*      maps;
         uint32_t         j;
         if (dep == NULL) {
             free(b.v);
             return ErrorSimple("internal error: unresolved import");
         }
-        maps =
-            dep->pubDeclLen == 0 ? NULL : (SLIdentMap*)malloc(sizeof(SLIdentMap) * dep->pubDeclLen);
-        if (dep->pubDeclLen > 0 && maps == NULL) {
-            free(b.v);
-            return ErrorSimple("out of memory");
-        }
-        for (j = 0; j < dep->pubDeclLen; j++) {
-            maps[j].name = dep->pubDecls[j].name;
-            maps[j].replacement = NULL;
-            if (BuildPrefixedName(
-                    pkg->imports[i].alias, dep->pubDecls[j].name, (char**)&maps[j].replacement)
-                != 0)
-            {
-                uint32_t k;
-                for (k = 0; k < j; k++) {
-                    free((void*)maps[k].replacement);
-                }
-                free(maps);
-                free(b.v);
-                return ErrorSimple("out of memory");
-            }
-        }
 
-        for (j = 0; j < dep->pubDeclLen; j++) {
-            char* rewritten = NULL;
-            if (RewriteText(
-                    dep->pubDecls[j].declText,
-                    (uint32_t)strlen(dep->pubDecls[j].declText),
-                    NULL,
-                    0,
-                    maps,
-                    dep->pubDeclLen,
-                    &rewritten)
-                != 0)
-            {
-                uint32_t k;
-                for (k = 0; k < dep->pubDeclLen; k++) {
-                    free((void*)maps[k].replacement);
-                }
-                free(maps);
+        /* Make direct imported exported types/symbols from dep available when dep's
+         * own exported API references them. */
+        for (j = 0; j < dep->importLen; j++) {
+            const SLPackage* subDep = dep->imports[j].target;
+            if (subDep == NULL) {
+                free(b.v);
+                return ErrorSimple("internal error: unresolved import");
+            }
+            if (AppendAliasedPubDecls(&b, subDep, dep->imports[j].alias, NULL, 0) != 0) {
                 free(b.v);
                 return -1;
             }
-            if (SBAppendCStr(&b, rewritten) != 0 || SBAppendCStr(&b, "\n") != 0) {
-                uint32_t k;
-                free(rewritten);
-                for (k = 0; k < dep->pubDeclLen; k++) {
-                    free((void*)maps[k].replacement);
-                }
-                free(maps);
-                free(b.v);
-                return ErrorSimple("out of memory");
-            }
-            free(rewritten);
         }
-        if (dep->pubDeclLen > 0) {
-            if (SBAppendCStr(&b, "\n") != 0) {
-                uint32_t k;
-                for (k = 0; k < dep->pubDeclLen; k++) {
-                    free((void*)maps[k].replacement);
-                }
-                free(maps);
-                free(b.v);
-                return ErrorSimple("out of memory");
-            }
+
+        if (AppendAliasedPubDecls(&b, dep, pkg->imports[i].alias, dep->imports, dep->importLen)
+            != 0)
+        {
+            free(b.v);
+            return -1;
         }
-        for (j = 0; j < dep->pubDeclLen; j++) {
-            free((void*)maps[j].replacement);
-        }
-        free(maps);
     }
 
     for (i = 0; i < pkg->declTextLen; i++) {

@@ -1818,6 +1818,71 @@ static int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) 
     return 0;
 }
 
+static int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
+    int stars;
+    int i;
+    if (!t->valid) {
+        return -1;
+    }
+    if (t->containerKind == SLTypeContainer_SLICE_RO
+        || t->containerKind == SLTypeContainer_SLICE_MUT)
+    {
+        if (t->containerPtrDepth > 0) {
+            if (t->baseName == NULL) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, t->baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
+                return -1;
+            }
+            stars = t->ptrDepth + t->containerPtrDepth;
+            for (i = 0; i < stars; i++) {
+                if (BufAppendChar(&c->out, '*') != 0) {
+                    return -1;
+                }
+            }
+            return BufAppendCStr(&c->out, name);
+        }
+        if (BufAppendCStr(
+                &c->out,
+                t->containerKind == SLTypeContainer_SLICE_MUT ? "__sl_slice_mut" : "__sl_slice_ro")
+                != 0
+            || BufAppendChar(&c->out, ' ') != 0)
+        {
+            return -1;
+        }
+        return BufAppendCStr(&c->out, name);
+    }
+    if (t->baseName == NULL) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, t->baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
+        return -1;
+    }
+    stars = t->ptrDepth;
+    if (t->containerKind == SLTypeContainer_ARRAY && t->containerPtrDepth > 0) {
+        stars += t->containerPtrDepth;
+    }
+    for (i = 0; i < stars; i++) {
+        if (BufAppendChar(&c->out, '*') != 0) {
+            return -1;
+        }
+    }
+    if (t->isOptional && BufAppendCStr(&c->out, "/* optional */ ") != 0) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, name) != 0) {
+        return -1;
+    }
+    if (t->containerKind == SLTypeContainer_ARRAY && t->containerPtrDepth == 0 && t->hasArrayLen) {
+        if (BufAppendChar(&c->out, '[') != 0 || BufAppendU32(&c->out, t->arrayLen) != 0
+            || BufAppendChar(&c->out, ']') != 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int EmitTypeForCast(SLCBackendC* c, int32_t typeNode) {
     SLTypeRef t;
     if (ParseTypeRef(c, typeNode, &t) != 0) {
@@ -1827,6 +1892,47 @@ static int EmitTypeForCast(SLCBackendC* c, int32_t typeNode) {
 }
 
 static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
+
+static int IsTypeNodeKind(SLAstKind kind) {
+    return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
+        || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
+        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL;
+}
+
+static void ResolveVarLikeTypeAndInitNode(
+    SLCBackendC* c, int32_t nodeId, int32_t* outTypeNode, int32_t* outInitNode) {
+    int32_t          firstChild = AstFirstChild(&c->ast, nodeId);
+    const SLAstNode* firstNode;
+    *outTypeNode = -1;
+    *outInitNode = -1;
+    if (firstChild < 0) {
+        return;
+    }
+    firstNode = NodeAt(c, firstChild);
+    if (firstNode != NULL && IsTypeNodeKind(firstNode->kind)) {
+        *outTypeNode = firstChild;
+        *outInitNode = AstNextSibling(&c->ast, firstChild);
+    } else {
+        *outInitNode = firstChild;
+    }
+}
+
+static int InferVarLikeDeclType(SLCBackendC* c, int32_t initNode, SLTypeRef* outType) {
+    if (initNode < 0) {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+    if (InferExprType(c, initNode, outType) != 0 || !outType->valid) {
+        return -1;
+    }
+    if (outType->containerKind == SLTypeContainer_SCALAR && outType->containerPtrDepth == 0
+        && outType->ptrDepth == 0 && outType->baseName != NULL
+        && StrEq(outType->baseName, "__sl_i32"))
+    {
+        outType->baseName = "__sl_int";
+    }
+    return 0;
+}
 
 #define SLCCG_MAX_CALL_ARGS       128u
 #define SLCCG_MAX_CALL_CANDIDATES 256u
@@ -3627,27 +3733,36 @@ static int EmitBlockInline(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
 
 static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int isConst) {
     const SLAstNode* n = NodeAt(c, nodeId);
-    int32_t          typeNode = AstFirstChild(&c->ast, nodeId);
-    int32_t          initNode = AstNextSibling(&c->ast, typeNode);
+    int32_t          typeNode;
+    int32_t          initNode;
     char*            name;
     SLTypeRef        type;
 
     if (n == NULL) {
         return -1;
     }
+    ResolveVarLikeTypeAndInitNode(c, nodeId, &typeNode, &initNode);
     name = DupSlice(c, c->unit->source, n->dataStart, n->dataEnd);
     if (name == NULL) {
         return -1;
     }
-    if (ParseTypeRef(c, typeNode, &type) != 0) {
-        return -1;
+    if (typeNode >= 0) {
+        if (ParseTypeRef(c, typeNode, &type) != 0) {
+            return -1;
+        }
+    } else {
+        if (InferVarLikeDeclType(c, initNode, &type) != 0) {
+            return -1;
+        }
     }
 
     EmitIndent(c, depth);
     if (isConst && BufAppendCStr(&c->out, "const ") != 0) {
         return -1;
     }
-    if (EmitTypeWithName(c, typeNode, name) != 0) {
+    if ((typeNode >= 0 && EmitTypeWithName(c, typeNode, name) != 0)
+        || (typeNode < 0 && EmitTypeRefWithName(c, &type, name) != 0))
+    {
         return -1;
     }
     if (initNode >= 0) {
@@ -4651,12 +4766,19 @@ static int EmitConstDecl(
     SLCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate) {
     const SLAstNode* n = NodeAt(c, nodeId);
     const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
-    int32_t          typeNode = AstFirstChild(&c->ast, nodeId);
-    int32_t          initNode = AstNextSibling(&c->ast, typeNode);
+    int32_t          typeNode;
+    int32_t          initNode;
     SLTypeRef        type;
 
-    if (ParseTypeRef(c, typeNode, &type) != 0) {
-        return -1;
+    ResolveVarLikeTypeAndInitNode(c, nodeId, &typeNode, &initNode);
+    if (typeNode >= 0) {
+        if (ParseTypeRef(c, typeNode, &type) != 0) {
+            return -1;
+        }
+    } else {
+        if (InferVarLikeDeclType(c, initNode, &type) != 0) {
+            return -1;
+        }
     }
 
     EmitIndent(c, depth);
@@ -4673,7 +4795,9 @@ static int EmitConstDecl(
         }
     }
 
-    if (EmitTypeWithName(c, typeNode, map->cName) != 0) {
+    if ((typeNode >= 0 && EmitTypeWithName(c, typeNode, map->cName) != 0)
+        || (typeNode < 0 && EmitTypeRefWithName(c, &type, map->cName) != 0))
+    {
         return -1;
     }
 

@@ -82,7 +82,7 @@ GroupMember     = Ident | Ident "." Ident { "." Ident } ;
 ParamList       = ParamGroup {"," ParamGroup} ;
 ParamGroup      = Ident {"," Ident} Type ;
 
-ConstDecl       = "const" Ident Type ["=" Expr] ";" ;
+ConstDecl       = "const" Ident (Type ["=" Expr] | "=" Expr) ";" ;
 
 Type            = OptionalType
                 | PtrType
@@ -120,7 +120,7 @@ Stmt            = Block
                 | AssertStmt
                 | ExprStmt ;
 
-VarDeclStmt     = "var" Ident Type ["=" Expr] ";" ;
+VarDeclStmt     = "var" Ident (Type ["=" Expr] | "=" Expr) ";" ;
 IfStmt          = "if" Expr Block ["else" (IfStmt | Block)] ;
 
 ForStmt         = "for" (
@@ -128,7 +128,7 @@ ForStmt         = "for" (
                   | Expr Block
                   | [ForInit] ";" [Expr] ";" [Expr] Block
                   ) ;
-ForInit         = ("var" Ident Type ["=" Expr]) | Expr ;
+ForInit         = ("var" Ident (Type ["=" Expr] | "=" Expr)) | Expr ;
 
 SwitchStmt      = "switch" [Expr] "{" { CaseClause } [DefaultClause] "}" ;
 CaseClause      = "case" Expr {"," Expr} Block ;
@@ -188,6 +188,9 @@ Notes:
 - Top-level declaration kinds: `struct`, `union`, `enum`, `fn`, `const`.
 - `pub` is an attribute on a single top-level declaration.
 - Top-level `var` is not supported.
+- Local and top-level `const` declarations support type inference when written as `= Expr`.
+  - `var x = expr`, `const y = expr`
+  - `var x T` and `var x T = expr` remain valid.
 - Local scope is lexical by block.
 - Name lookup for locals is nearest enclosing declaration.
 - Functions and types are collected before body checking (declaration-order independence).
@@ -272,6 +275,14 @@ Not implicit:
 - Integer literal expression type: `untyped_int`
 - Float literal expression type: `untyped_float`
 - `null` expression type: `null`
+
+Type-inferred declarations (`var x = expr`, `const y = expr`) concretize untyped literals as:
+- `untyped_int -> int`
+- `untyped_float -> f64`
+
+Inference rejects:
+- `var/const x = null`
+- `var/const x = <void-expression>`
 
 ## 6. Expressions and Operators
 

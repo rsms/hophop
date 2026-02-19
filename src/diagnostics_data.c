@@ -119,6 +119,16 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
                                               NULL,
                                               SLDiagType_ERROR,
                                               0 },
+    [SLDiag_INFER_NULL_TYPE_UNKNOWN] = { "SL1036",
+                                         "cannot infer type from null; add explicit type",
+                                         NULL,
+                                         SLDiagType_ERROR,
+                                         0 },
+    [SLDiag_INFER_VOID_TYPE_UNKNOWN] = { "SL1037",
+                                         "cannot infer type from void expression",
+                                         NULL,
+                                         SLDiagType_ERROR,
+                                         0 },
 };
 
 const char* SLDiagId(SLDiagCode code) {

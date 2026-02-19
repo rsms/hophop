@@ -141,5 +141,13 @@
     "SL1035": {
         "name": "IMPORT_FEATURE_IMPORT_EXTRAS",
         "message": "feature imports must be path-only (no alias or symbol list)"
+    },
+    "SL1036": {
+        "name": "INFER_NULL_TYPE_UNKNOWN",
+        "message": "cannot infer type from null; add explicit type"
+    },
+    "SL1037": {
+        "name": "INFER_VOID_TYPE_UNKNOWN",
+        "message": "cannot infer type from void expression"
     }
 }

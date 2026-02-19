@@ -4,6 +4,7 @@
 {"id":"ast:tests/ast_types_new.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_types_new.sl","expect":"tests/ast_types_new.ast"}
 {"id":"ast:tests/ast_slice_expr.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_slice_expr.sl","expect":"tests/ast_slice_expr.ast"}
 {"id":"ast:tests/ast_param_runs.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_param_runs.sl","expect":"tests/ast_param_runs.ast"}
+{"id":"ast:tests/ast_var_const_infer.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_var_const_infer.sl","expect":"tests/ast_var_const_infer.ast"}
 {"id":"check:tests/order_independent.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/order_independent.sl"}
 {"id":"check:tests/switch_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/switch_ok.sl"}
 {"id":"check:tests/slice_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/slice_ok.sl"}
@@ -16,6 +17,9 @@
 {"id":"check:tests/param_runs_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/param_runs_ok.sl"}
 {"id":"check:tests/param_runs_mixed_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/param_runs_mixed_ok.sl"}
 {"id":"check:tests/enum_member_namespace_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/enum_member_namespace_ok.sl"}
+{"id":"check:tests/var_infer_basic_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/var_infer_basic_ok.sl"}
+{"id":"check:tests/var_infer_literal_defaults_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/var_infer_literal_defaults_ok.sl"}
+{"id":"check:tests/var_infer_mixed_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/var_infer_mixed_ok.sl"}
 {"id":"checkpkg:tests/new_optional_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_optional_ok.sl"}
 {"id":"checkpkg:tests/new_nonoptional_panic.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_nonoptional_panic.sl"}
 {"id":"checkpkg:tests/platform_import_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/platform_import_ok.sl"}
@@ -33,6 +37,8 @@
 {"id":"checkpkg:tests/import_invalid_alias_explicit/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/import_invalid_alias_explicit/app"}
 {"id":"checkpkg:tests/enum_member_import_named/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/enum_member_import_named/app"}
 {"id":"checkpkg:tests/enum_member_import_alias/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/enum_member_import_alias/app"}
+{"id":"checkpkg:tests/var_infer_pkg_type_ok/c","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/var_infer_pkg_type_ok/c"}
+{"id":"checkpkg:tests/var_infer_transitive_type_ok/c","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/var_infer_transitive_type_ok/c"}
 {"id":"check:tests/assert_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/assert_ok.sl"}
 {"id":"check:tests/print_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/print_ok.sl"}
 {"id":"check:tests/panic_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/panic_ok.sl"}
@@ -58,6 +64,8 @@
 {"id":"check:tests/bad_reserved_name_enum_item.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/bad_reserved_name_enum_item.sl","expect_stderr":"tests/bad_reserved_name_enum_item.stderr"}
 {"id":"check:tests/bad_reserved_name_import_alias.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/bad_reserved_name_import_alias.sl","expect_stderr":"tests/bad_reserved_name_import_alias.stderr"}
 {"id":"check:tests/bad_unknown_symbol.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/bad_unknown_symbol.sl","expect_stderr":"tests/bad_unknown_symbol.stderr"}
+{"id":"check:tests/var_infer_null_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/var_infer_null_bad.sl","expect_stderr":"tests/var_infer_null_bad.stderr"}
+{"id":"check:tests/var_infer_void_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/var_infer_void_bad.sl","expect_stderr":"tests/var_infer_void_bad.stderr"}
 {"id":"check:tests/enum_member_unqualified_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/enum_member_unqualified_bad.sl","expect_stderr":"tests/enum_member_unqualified_bad.stderr"}
 {"id":"check:tests/enum_member_unknown_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/enum_member_unknown_bad.sl","expect_stderr":"tests/enum_member_unknown_bad.stderr"}
 {"id":"check:tests/bad_type_mismatch.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/bad_type_mismatch.sl","expect_stderr":"tests/bad_type_mismatch.stderr"}
@@ -126,6 +134,7 @@
 {"id":"integration.codegen.typefunc_import_group.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/typefunc_import_group/app","contains":["foo__pick_b"],"not_contains":["foo.pick_b"]}
 {"id":"integration.codegen.import_named_symbol.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/import_named_symbol/app","contains":["math__Double"],"not_contains":["return Double("]}
 {"id":"integration.codegen.enum_member_namespace.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/enum_member_namespace_ok.sl","contains":["tests__Mode__A","tests__Color__A"],"not_contains":["typedef enum tests__Mode {\n    A","typedef enum tests__Color {\n    A"]}
+{"id":"integration.codegen.var_infer_literal_defaults.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/var_infer_literal_defaults_ok.sl","contains":["const __sl_int tests__TOP = 1;","__sl_int x = 1;","const __sl_f64 pi = 3.14;"]}
 {"id":"integration.codegen.vss.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/vss_ok.sl","contains":["tests__Packet__payload","tests__Packet__samples","tests__Packet__sizeof"],"harness":"tests/harness/phase8_vss_test.c.in"}
 {"id":"integration.codegen.vss_nested.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/vss_nested_ok.sl","contains":["tests__Section__entries","tests__Metadata__value","tests__Packet__metadata","tests__Packet__sections","tests__Section__sizeof","tests__Metadata__sizeof","tests__Packet__sizeof"],"harness":"tests/harness/phase8_vss_nested_test.c.in"}
 {"id":"integration.runtime.run_exit7.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/run_exit7.sl","expect_exit":7,"run_stdout_empty":true,"run_stderr_empty":true,"compile_stdout_empty":true,"compile_stderr_empty":true}
@@ -143,6 +152,7 @@
 {"id":"integration.runtime.types_mut_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/types_mut_ok.sl"}
 {"id":"integration.runtime.slice_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slice_ok.sl"}
 {"id":"integration.runtime.enum_member_namespace_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/enum_member_namespace_ok.sl"}
+{"id":"integration.runtime.var_infer_literal_defaults_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/var_infer_literal_defaults_ok.sl"}
 {"id":"integration.runtime.len_ptr_ref_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/len_ptr_ref_ok.sl"}
 {"id":"integration.runtime.len_null_ptr_ref_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/len_null_ptr_ref_ok.sl","expect_exit":0}
 {"id":"integration.runtime.slice_fn_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slice_fn_ok.sl"}

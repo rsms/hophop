@@ -1031,6 +1031,33 @@ static int SLTCIsUntyped(SLTypeCheckCtx* c, int32_t typeId) {
     return typeId == c->typeUntypedInt || typeId == c->typeUntypedFloat;
 }
 
+static int SLTCIsTypeNodeKind(SLAstKind kind) {
+    return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
+        || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
+        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL;
+}
+
+static int SLTCConcretizeInferredType(SLTypeCheckCtx* c, int32_t typeId, int32_t* outType) {
+    if (typeId == c->typeUntypedInt) {
+        int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+        if (t < 0) {
+            return SLTCFailSpan(c, SLDiag_UNKNOWN_TYPE, 0, 0);
+        }
+        *outType = t;
+        return 0;
+    }
+    if (typeId == c->typeUntypedFloat) {
+        int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_F64);
+        if (t < 0) {
+            return SLTCFailSpan(c, SLDiag_UNKNOWN_TYPE, 0, 0);
+        }
+        *outType = t;
+        return 0;
+    }
+    *outType = typeId;
+    return 0;
+}
+
 static int SLTCTypeIsVarSize(SLTypeCheckCtx* c, int32_t typeId) {
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return 0;
@@ -2968,13 +2995,36 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
 
 static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
     const SLAstNode* n = &c->ast->nodes[nodeId];
-    int32_t          typeNode = SLAstFirstChild(c->ast, nodeId);
+    int32_t          firstChild = SLAstFirstChild(c->ast, nodeId);
+    int32_t          typeNode;
     int32_t          initNode;
     int32_t          declType;
 
-    if (typeNode < 0) {
+    if (firstChild < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
     }
+    if (!SLTCIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
+        int32_t initType;
+        initNode = firstChild;
+        if (SLTCTypeExpr(c, initNode, &initType) != 0) {
+            return -1;
+        }
+        if (initType == c->typeNull) {
+            return SLTCFailNode(c, initNode, SLDiag_INFER_NULL_TYPE_UNKNOWN);
+        }
+        if (initType == c->typeVoid) {
+            return SLTCFailNode(c, initNode, SLDiag_INFER_VOID_TYPE_UNKNOWN);
+        }
+        if (SLTCConcretizeInferredType(c, initType, &declType) != 0) {
+            return -1;
+        }
+        if (SLTCTypeContainsVarSizeByValue(c, declType)) {
+            return SLTCFailNode(c, initNode, SLDiag_TYPE_MISMATCH);
+        }
+        return SLTCLocalAdd(c, n->dataStart, n->dataEnd, declType);
+    }
+
+    typeNode = firstChild;
     if (SLTCResolveTypeNode(c, typeNode, &declType) != 0) {
         return -1;
     }
@@ -2994,6 +3044,37 @@ static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
     }
 
     return SLTCLocalAdd(c, n->dataStart, n->dataEnd, declType);
+}
+
+static int SLTCTypeTopLevelInferredConsts(SLTypeCheckCtx* c) {
+    int32_t child = SLAstFirstChild(c->ast, c->ast->root);
+    while (child >= 0) {
+        const SLAstNode* n = &c->ast->nodes[child];
+        if (n->kind == SLAst_CONST) {
+            int32_t firstChild = SLAstFirstChild(c->ast, child);
+            if (firstChild >= 0 && !SLTCIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
+                int32_t initType;
+                int32_t declType;
+                if (SLTCTypeExpr(c, firstChild, &initType) != 0) {
+                    return -1;
+                }
+                if (initType == c->typeNull) {
+                    return SLTCFailNode(c, firstChild, SLDiag_INFER_NULL_TYPE_UNKNOWN);
+                }
+                if (initType == c->typeVoid) {
+                    return SLTCFailNode(c, firstChild, SLDiag_INFER_VOID_TYPE_UNKNOWN);
+                }
+                if (SLTCConcretizeInferredType(c, initType, &declType) != 0) {
+                    return -1;
+                }
+                if (SLTCTypeContainsVarSizeByValue(c, declType)) {
+                    return SLTCFailNode(c, firstChild, SLDiag_TYPE_MISMATCH);
+                }
+            }
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    return 0;
 }
 
 /* Describes a narrowable local found in a null-check condition. */
@@ -3558,6 +3639,9 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
         return -1;
     }
     if (SLTCFinalizeFunctionTypes(&c) != 0) {
+        return -1;
+    }
+    if (SLTCTypeTopLevelInferredConsts(&c) != 0) {
         return -1;
     }
 
