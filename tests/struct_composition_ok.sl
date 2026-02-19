@@ -20,7 +20,7 @@ fn bump_A(v mut&A) {
     v.x = v.x + 1
 }
 
-fn main() int {
+fn main() {
     var b B
     var c C
 
@@ -36,5 +36,4 @@ fn main() int {
 
     bump_A(&c)
     assert c.x == 2
-    return 0
 }

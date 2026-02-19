@@ -1,5 +1,3 @@
 import "platform"
 
-fn main() i32 {
-    return 0
-}
+fn main() {}

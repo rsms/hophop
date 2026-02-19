@@ -10,7 +10,7 @@ fn head(xs mut[i32]) [i32] {
     return xs[:1]
 }
 
-fn main() i32 {
+fn main() {
     var a [i32 4]
 
     var mr mut&i32 = &a[2]
@@ -25,5 +25,5 @@ fn main() i32 {
     var tail [i32] = all[1:]
     var first [i32] = head(all)
 
-    return rosum(rof) + *rr + len(tail) as i32 + len(first) as i32
+    assert rosum(rof) + *rr + len(tail) as i32 + len(first) as i32 == 24
 }

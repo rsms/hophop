@@ -13,14 +13,14 @@ pub enum Mode i32 {
     Mode_B = 1
 }
 
-pub fn main() i32;
+pub fn main();
 
-fn main() i32 {
+fn main() {
     var p Pair
     p.x = 4
     p.y = 5
 
     var n Number
     n.i = p.x + p.y
-    return n.i
+    assert n.i == 9
 }

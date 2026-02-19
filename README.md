@@ -36,14 +36,17 @@ _build/macos-aarch64-debug/slc run <package-dir|file.sl>
 `hello.sl`:
 
 ```sl
+import "platform"
+
 fn twice(x i32) i32 {
     return x * 2
 }
 
-fn main() i32 {
+fn main() {
     var s str = "hello"
     assert len(s) > 0
-    return twice(21)
+    assert twice(21) == 42
+    platform.exit(0)
 }
 ```
 

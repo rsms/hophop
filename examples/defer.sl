@@ -1,6 +1,5 @@
 fn cleanup() {}
 
-fn main() i32 {
+fn main() {
     defer cleanup()
-    return 0
 }

@@ -1,4 +1,4 @@
-fn main() i32 {
+fn main() {
     var s str = "hello\n"
     var l u32 = len(s)
 
@@ -6,5 +6,5 @@ fn main() i32 {
     assert l > 1, "len=%d", l
 
     cstr(s)
-    return l as i32
+    assert l == 6
 }

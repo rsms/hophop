@@ -7,9 +7,9 @@ fn view(xs mut[i32]) [i32] {
     return xs
 }
 
-fn main() i32 {
+fn main() {
     var a [i32 3]
     a[0] = 5
     var s [i32] = view(a[:])
-    return sum(a) + sum(s)
+    assert sum(a) + sum(s) == 16
 }

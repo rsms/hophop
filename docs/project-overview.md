@@ -893,7 +893,7 @@ fn Pop(q *PQueue, out *i32) bool {
 ```sl
 import heap "ds/heap"
 
-fn main() i32 {
+fn main() {
     var backing [64]i32
     var q heap.PQueue
     heap.Init(&q, &backing[0], 64 as i32)
@@ -905,7 +905,6 @@ fn main() i32 {
     var x i32
     assert heap.Pop(&q, &x)
     assert x == 30
-    return 0
 }
 ```
 

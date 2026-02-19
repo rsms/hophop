@@ -1,5 +1,5 @@
-fn main() i32 {
+fn main() {
     var p *[i32 4] = 0 as *[i32 4]
     var r &[i32 4] = p
-    return (len(p) + len(r)) as i32
+    assert len(p) + len(r) == 0
 }

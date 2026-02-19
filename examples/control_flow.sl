@@ -1,4 +1,4 @@
-fn main() i32 {
+fn main() {
     var sum i32 = 0
     var i i32 = 0
 
@@ -17,10 +17,10 @@ fn main() i32 {
 
     switch sum {
     case 0 {
-        return 0
+        assert 0 == 1
     }
     default {
-        return sum
+        assert sum == 23
     }
     }
 }

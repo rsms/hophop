@@ -1,9 +1,10 @@
-fn main() i32 {
+fn main() {
     var x i32 = 7
     var y f64 = x as f64
 
     if y > 0.0 {
-        return x
+        assert x == 7
+    } else {
+        assert 0 == 1
     }
-    return 0
 }

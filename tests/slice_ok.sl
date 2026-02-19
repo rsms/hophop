@@ -1,4 +1,4 @@
-fn main() i32 {
+fn main() {
     var a [i32 4]
     var i i32 = 1
     a[0] = 1
@@ -14,5 +14,5 @@ fn main() i32 {
     var head [i32] = s[:1]
     var dyn [i32] = a[i:]
 
-    return (len(s) + len(ro) + len(tail) + len(head) + len(dyn)) as i32
+    assert (len(s) + len(ro) + len(tail) + len(head) + len(dyn)) as i32 == 11
 }

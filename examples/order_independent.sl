@@ -1,5 +1,5 @@
-fn main() i32 {
-    return twice(9)
+fn main() {
+    assert twice(9) == 18
 }
 
 fn twice(x i32) i32 {

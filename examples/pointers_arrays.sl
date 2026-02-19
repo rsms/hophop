@@ -3,7 +3,7 @@ struct Node {
     next  *Node
 }
 
-fn main() i32 {
+fn main() {
     var values [i32 4]
     values[0] = 7
 
@@ -13,7 +13,8 @@ fn main() i32 {
     n.next = 0 as *Node
 
     if n.next == 0 as *Node {
-        return n.value
+        assert n.value == 7
+    } else {
+        assert 0 == 1
     }
-    return 0
 }

@@ -172,6 +172,12 @@ static int SliceEqCStr(const char* s, uint32_t start, uint32_t end, const char* 
     return cstr[i] == '\0';
 }
 
+static int IsFnReturnTypeNodeKind(SLAstKind kind) {
+    return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
+        || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
+        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL;
+}
+
 static int SliceEqSlice(
     const char* a, uint32_t aStart, uint32_t aEnd, const char* b, uint32_t bStart, uint32_t bEnd) {
     uint32_t i;
@@ -2301,6 +2307,55 @@ static int LoadAndCheckPackage(
     return 0;
 }
 
+static int ValidateEntryMainSignature(const SLPackage* entryPkg) {
+    uint32_t fileIndex;
+    int      hasMainDefinition = 0;
+
+    for (fileIndex = 0; fileIndex < entryPkg->fileLen; fileIndex++) {
+        const SLParsedFile* file = &entryPkg->files[fileIndex];
+        const SLAst*        ast = &file->ast;
+        int32_t             nodeId = ASTFirstChild(ast, ast->root);
+
+        while (nodeId >= 0) {
+            const SLAstNode* n = &ast->nodes[nodeId];
+            if (n->kind == SLAst_FN && SliceEqCStr(file->source, n->dataStart, n->dataEnd, "main"))
+            {
+                int32_t child = ASTFirstChild(ast, nodeId);
+                int     paramCount = 0;
+                int     hasReturnType = 0;
+                int     hasBody = 0;
+
+                while (child >= 0) {
+                    const SLAstNode* ch = &ast->nodes[child];
+                    if (ch->kind == SLAst_PARAM) {
+                        paramCount++;
+                    } else if (IsFnReturnTypeNodeKind(ch->kind) && ch->flags == 1) {
+                        hasReturnType = 1;
+                    } else if (ch->kind == SLAst_BLOCK) {
+                        hasBody = 1;
+                    }
+                    child = ASTNextSibling(ast, child);
+                }
+
+                if (paramCount != 0 || hasReturnType) {
+                    return Errorf(
+                        file->path, n->start, n->end, "entrypoint must have signature: fn main()");
+                }
+                if (hasBody) {
+                    hasMainDefinition = 1;
+                }
+            }
+            nodeId = ASTNextSibling(ast, nodeId);
+        }
+    }
+
+    if (!hasMainDefinition) {
+        return ErrorSimple("entry package is missing fn main() definition");
+    }
+
+    return 0;
+}
+
 static int CheckPackageDir(const char* entryPath) {
     SLPackageLoader loader;
     SLPackage*      entryPkg;
@@ -2515,6 +2570,9 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
         goto end;
     }
     loaderReady = 1;
+    if (ValidateEntryMainSignature(entryPkg) != 0) {
+        goto end;
+    }
     if (BuildCombinedPackageSource(entryPkg, &source, &sourceLen) != 0) {
         goto end;
     }
@@ -2587,9 +2645,9 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
     /* Wrapper: defines sl_main() which calls the package entry point. */
     if (SBAppendCStr(&cBuilder, "#define SLC_IMPL\n#include \"") != 0
         || SBAppendCStr(&cBuilder, headerPath) != 0 || SBAppendCStr(&cBuilder, "\"\n\n") != 0
-        || SBAppendCStr(&cBuilder, "int sl_main(void) { return (int)") != 0
+        || SBAppendCStr(&cBuilder, "int sl_main(void) { ") != 0
         || SBAppendCStr(&cBuilder, entryPkg->name) != 0
-        || SBAppendCStr(&cBuilder, "__main(); }\n") != 0)
+        || SBAppendCStr(&cBuilder, "__main(); return 0; }\n") != 0)
     {
         ErrorSimple("out of memory");
         goto end;

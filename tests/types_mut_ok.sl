@@ -1,4 +1,4 @@
-fn main() i32 {
+fn main() {
     var x i32
     var y i32
     var p mut&i32 = &x
@@ -13,5 +13,5 @@ fn main() i32 {
     s[0] = 1
     var ro [i32] = s
 
-    return ro[0] + *q
+    assert ro[0] + *q == 10
 }

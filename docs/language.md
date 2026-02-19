@@ -442,7 +442,8 @@ Package validation performed by `checkpkg`/`genpkg`/`compile`/`run`:
 
 Entry point:
 - `main` does not need `pub`.
-- For program compilation, entry package function `main` is used.
+- Program entrypoint signature is `fn main()`.
+- Exit status is controlled via `platform.exit(status)` when needed.
 
 ## 12. Current Lowering-Defined Runtime Semantics
 

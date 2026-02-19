@@ -5,7 +5,7 @@ struct Packet {
     samples    [i32 .sampleLen]
 }
 
-fn main() i32 {
+fn main() {
     var p *Packet = 0 as *Packet
     var payload *u8 = p.payload
     var payloadPtr &*u8 = &p.payload
@@ -14,5 +14,4 @@ fn main() i32 {
     var samples *i32 = p.samples
     var samplesPtr &*i32 = &p.samples
     samples = *samplesPtr
-    return 0
 }

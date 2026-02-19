@@ -1,3 +1,5 @@
-fn main() i32 {
-    return 7
+import "platform"
+
+fn main() {
+    platform.exit(7)
 }
