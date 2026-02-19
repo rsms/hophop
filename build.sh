@@ -21,11 +21,22 @@ ubsan=1   # enable undefined-behavior sanitizer
 format=   # run clang-format on the source (default: on if clang-format is found and debug=1)
 test=0    # run tests after successful build
 cc=clang  # compiler to use (also used for linking)
+release=0 # compatibility alias for debug=0
+toolchain=
 [ "$*" = "--help" ] && { echo "Usage: $0 [var[=value] ...]"; exit 0; };
 for a in "$@"; do
     case "$a" in
-    *=*) declare ${a%%=*}=${a#*=} ;;
-    *)   declare $a=1 ;;
+    *=*)
+        k=${a%%=*}
+        v=${a#*=}
+        declare -p "$k" >/dev/null 2>&1 || _err "unknown option '$k'"
+        declare "$k=$v"
+        ;;
+    *)
+        k=$a
+        declare -p "$k" >/dev/null 2>&1 || _err "unknown option '$k'"
+        declare "$k=1"
+        ;;
     esac
 done
 [ "${release:-}" = 1 ] && debug=0
