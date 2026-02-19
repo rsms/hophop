@@ -1,4 +1,4 @@
-import "std/mem" as mem
+import "std/mem"
 
 fn foo(ma mut&mem.Allocator) {
     var many *i32 = new(ma, i32, 8)

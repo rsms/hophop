@@ -1,4 +1,4 @@
-import "std/mem" as mem
+import "std/mem"
 
 fn main() {
     var ma = mem.platformAllocator

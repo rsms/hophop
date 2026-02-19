@@ -1,5 +1,5 @@
 // allocator-driven `new` forms for value, fixed-array, and slice allocations
-import "std/mem" as mem
+import "std/mem"
 
 struct Pair {
     x i32

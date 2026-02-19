@@ -1,5 +1,5 @@
 // type-function selector sugar with built-ins (`x.len()`, `ma.new(...)`)
-import "std/mem" as mem
+import "std/mem"
 
 fn main() {
     var msg = "hi"

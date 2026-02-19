@@ -1,4 +1,4 @@
-import "std/mem" as mem
+import "std/mem"
 
 fn main() i32 {
     var ma mem.Allocator
