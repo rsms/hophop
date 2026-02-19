@@ -489,9 +489,34 @@ Package validation performed by `checkpkg`/`genpkg`/`compile`/`run`:
 - Duplicate exported symbol (same kind + name) is rejected.
 - Exported function declarations must have a definition body in package.
 - Public API closure:
-  - Exported signatures/fields/const types may reference builtins or exported local types.
-  - Public API may not reference imported types (qualified or named-imported) or private local
-    types.
+  - Exported signatures/fields/const types may reference builtins, exported local types, and
+    imported exported types.
+  - Public API may not reference private local types.
+  - Imported types used in exported API become part of the package's transitive API surface.
+    Downstream packages may use those types through the exported package's declarations without
+    directly importing the original defining package unless they need to name that package/type
+    directly.
+
+Valid transitive-type example:
+
+```sl
+// package "a"
+pub struct A {
+    x int
+}
+
+// package "b"
+import "a"
+pub struct B {
+    a a.A
+}
+
+// package "c"
+import "b"
+fn example(v b.B) int {
+    return v.a.x
+}
+```
 
 Entry point:
 - `main` does not need `pub`.
