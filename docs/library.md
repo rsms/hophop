@@ -53,6 +53,7 @@ Properties:
 
 ## Built-In Functions
 
+
 ### `len`
 
 ```sl
@@ -62,6 +63,7 @@ fn len(x Seq) u32
 `len` returns the logical length of a sequence.
 `Seq` can be an array or slice type (including `str`) as a value, reference, or pointer.
 
+
 ### `cstr`
 
 ```sl
@@ -69,6 +71,7 @@ fn cstr(s str) &u8
 ```
 
 `cstr` returns a read-only reference to null-terminated UTF-8 bytes suitable for C APIs.
+
 
 ### `new`
 
@@ -93,6 +96,7 @@ fn new(ma mut&MemAllocator, type T, N uint) *[T]    // 6
 - `?*...` forms return null on allocation failure.
 - `*...` forms panic on allocation failure.
 
+
 ### `panic`
 
 ```sl
@@ -100,7 +104,8 @@ fn panic(message str)
 ```
 
 `panic` logs an error message and stops program execution.
-Exact behavior is platform-specific.
+Exact behavior is platform-specific; it's implemented by `platform.panic`.
+
 
 ### `sizeof`
 
@@ -114,6 +119,7 @@ fn sizeof(expr E) uint
 - `sizeof(type T)` is compile-time.
 - `sizeof(type T)` is invalid for variable-sized-by-value types.
 - `sizeof(expr E)` is compile-time for fixed-size types and runtime for variable-sized values.
+
 
 ## Platform Package API
 
