@@ -7,10 +7,14 @@
 - `./build.sh release` — build release into `_build/macos-aarch64-release/`
 - `./build.sh verbose=1` — show compiler commands
 - Run the CLI: `_build/macos-aarch64-debug/slc`
+- List tests: `python3 tools/test.py list`
+- Run tests directly: `python3 tools/test.py run --build-dir _build/macos-aarch64-debug --cc clang`
+- Run one suite: `python3 tools/test.py run --suite <suite> --build-dir _build/macos-aarch64-debug --cc clang`
+- Lint manifest: `python3 tools/test.py lint`
 
 The build script invokes `clang-format` automatically, so source files you edit will be reformatted on build.
 
-Tests live at the end of `build.sh`. Each test is a `.sl` file in `tests/` paired with optional companion files (`.tokens`, `.stderr`, `.ast`) that define expected output. Add tests there when adding new functionality.
+Tests are defined in `tests/tests.jsonl` and run by `tools/test.py` (which `./build.sh test` delegates to). See `tests/README.md` for manifest format, test kinds, sidecar files (including `.expected.c`), and command usage.
 
 ## CLI Commands
 
@@ -66,5 +70,5 @@ Source → [Lexer] → Tokens → [Parser] → AST → [Typechecker] → [Codege
 ## Workflow Notes
 
 - Take an incremental approach: keep the compiler working at each step.
-- After changes, run `./build.sh test` and update `build.sh` tests to cover new behavior.
+- After changes, run `./build.sh test` (or `python3 tools/test.py run ...`) and add/update entries in `tests/tests.jsonl` for new behavior.
 - The language spec and EBNF grammar is in `docs/language.md`; project overview is in `docs/project-overview.md`; feature proposals are in `docs/SLP-*.md`.
