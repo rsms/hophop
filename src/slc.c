@@ -1612,6 +1612,24 @@ static int IsDirectoryPath(const char* path) {
     return S_ISDIR(st.st_mode);
 }
 
+static char* _Nullable ResolveStdImportDirInRoot(const char* rootDir, const char* importPath) {
+    char* libDir = JoinPath(rootDir, "lib");
+    char* candidate;
+    if (libDir == NULL) {
+        return NULL;
+    }
+    candidate = JoinPath(libDir, importPath);
+    free(libDir);
+    if (candidate == NULL) {
+        return NULL;
+    }
+    if (IsDirectoryPath(candidate)) {
+        return candidate;
+    }
+    free(candidate);
+    return NULL;
+}
+
 static char* _Nullable ResolveStdImportDir(const char* startDir, const char* importPath) {
     char* dir;
     if (strncmp(importPath, "std/", 4u) != 0) {
@@ -1622,16 +1640,11 @@ static char* _Nullable ResolveStdImportDir(const char* startDir, const char* imp
         return NULL;
     }
     for (;;) {
-        char* candidate = JoinPath(dir, importPath);
-        if (candidate == NULL) {
-            free(dir);
-            return NULL;
-        }
-        if (IsDirectoryPath(candidate)) {
+        char* candidate = ResolveStdImportDirInRoot(dir, importPath);
+        if (candidate != NULL) {
             free(dir);
             return candidate;
         }
-        free(candidate);
         {
             char* parent = DirNameDup(dir);
             if (parent == NULL || StrEq(parent, dir)) {
