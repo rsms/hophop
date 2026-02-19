@@ -62,3 +62,8 @@ Implemented core includes:
 - [SLP-4-type-functions.md](SLP-4-type-functions.md)
 - [SLP-5-platform.md](SLP-5-platform.md)
 - [SLP-6-struct-composition.md](SLP-6-struct-composition.md)
+- [SLP-7-imports.md](SLP-7-imports.md)
+- [SLP-8-parameter-runs.md](SLP-8-parameter-runs.md)
+- [SLP-9-enum-member-namespaces.md](SLP-9-enum-member-namespaces.md)
+- [SLP-10-variable-type-inference.md](SLP-10-variable-type-inference.md)
+- [SLP-11-function-types.md](SLP-11-function-types.md)
