@@ -1262,13 +1262,13 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
 
 static int IsBuiltinTypeName(const char* src, uint32_t start, uint32_t end) {
     return SliceEqCStr(src, start, end, "void") || SliceEqCStr(src, start, end, "bool")
-        || SliceEqCStr(src, start, end, "str") || SliceEqCStr(src, start, end, "u8")
-        || SliceEqCStr(src, start, end, "u16") || SliceEqCStr(src, start, end, "u32")
-        || SliceEqCStr(src, start, end, "u64") || SliceEqCStr(src, start, end, "i8")
-        || SliceEqCStr(src, start, end, "i16") || SliceEqCStr(src, start, end, "i32")
-        || SliceEqCStr(src, start, end, "i64") || SliceEqCStr(src, start, end, "uint")
-        || SliceEqCStr(src, start, end, "int") || SliceEqCStr(src, start, end, "f32")
-        || SliceEqCStr(src, start, end, "f64");
+        || SliceEqCStr(src, start, end, "str") || SliceEqCStr(src, start, end, "MemAllocator")
+        || SliceEqCStr(src, start, end, "u8") || SliceEqCStr(src, start, end, "u16")
+        || SliceEqCStr(src, start, end, "u32") || SliceEqCStr(src, start, end, "u64")
+        || SliceEqCStr(src, start, end, "i8") || SliceEqCStr(src, start, end, "i16")
+        || SliceEqCStr(src, start, end, "i32") || SliceEqCStr(src, start, end, "i64")
+        || SliceEqCStr(src, start, end, "uint") || SliceEqCStr(src, start, end, "int")
+        || SliceEqCStr(src, start, end, "f32") || SliceEqCStr(src, start, end, "f64");
 }
 
 static int PackageHasExport(const SLPackage* pkg, const char* name) {
@@ -1604,6 +1604,48 @@ static char* _Nullable CanonicalizePath(const char* path) {
     return out;
 }
 
+static int IsDirectoryPath(const char* path) {
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return 0;
+    }
+    return S_ISDIR(st.st_mode);
+}
+
+static char* _Nullable ResolveStdImportDir(const char* startDir, const char* importPath) {
+    char* dir;
+    if (strncmp(importPath, "std/", 4u) != 0) {
+        return NULL;
+    }
+    dir = DupCStr(startDir);
+    if (dir == NULL) {
+        return NULL;
+    }
+    for (;;) {
+        char* candidate = JoinPath(dir, importPath);
+        if (candidate == NULL) {
+            free(dir);
+            return NULL;
+        }
+        if (IsDirectoryPath(candidate)) {
+            free(dir);
+            return candidate;
+        }
+        free(candidate);
+        {
+            char* parent = DirNameDup(dir);
+            if (parent == NULL || StrEq(parent, dir)) {
+                free(parent);
+                break;
+            }
+            free(dir);
+            dir = parent;
+        }
+    }
+    free(dir);
+    return NULL;
+}
+
 static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SLPackage** outPkg);
 
 static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage* pkg) {
@@ -1614,6 +1656,15 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
             resolvedDir = DupCStr(pkg->imports[i].path);
         } else {
             resolvedDir = JoinPath(loader->rootDir, pkg->imports[i].path);
+            if (resolvedDir != NULL && strncmp(pkg->imports[i].path, "std/", 4u) == 0
+                && !IsDirectoryPath(resolvedDir))
+            {
+                char* stdResolved = ResolveStdImportDir(pkg->dirPath, pkg->imports[i].path);
+                if (stdResolved != NULL) {
+                    free(resolvedDir);
+                    resolvedDir = stdResolved;
+                }
+            }
         }
         if (resolvedDir == NULL) {
             return ErrorSimple("out of memory");

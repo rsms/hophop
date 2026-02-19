@@ -213,6 +213,7 @@ actual_codegen_ptr_header="$test_tmpdir/ptr_codegen.h"
 actual_codegen_ptr_obj="$test_tmpdir/ptr_codegen.o"
 actual_new_codegen_header="$test_tmpdir/new_codegen.h"
 actual_new_optional_codegen_header="$test_tmpdir/new_optional_codegen.h"
+actual_new_nonoptional_panic_stderr="$test_tmpdir/new_nonoptional_panic.stderr"
 actual_phase5_codegen_header="$test_tmpdir/phase5_codegen.h"
 actual_phase5_codegen_obj="$test_tmpdir/phase5_codegen.o"
 actual_phase6_single_header="$test_tmpdir/phase6_single.h"
@@ -336,7 +337,8 @@ for t in \
     "check|tests/len_ptr_ref_ok.sl" \
     "check|tests/len_null_ptr_ref_ok.sl" \
     "check|tests/new_ok.sl" \
-    "check|tests/new_optional_ok.sl" \
+    "checkpkg|tests/new_optional_ok.sl" \
+    "checkpkg|tests/new_nonoptional_panic.sl" \
     "check|tests/panic_ok.sl" \
     "check|tests/feature_optional_ok.sl" \
     "check|tests/feature_optional_no_import.sl" \
@@ -487,6 +489,30 @@ rg -F "__sl_unwrap((const void*)(__sl_new_array(" "$actual_new_codegen_header" >
 if rg -F "__sl_unwrap((const void*)(__sl_new" "$actual_new_optional_codegen_header" > /dev/null; then
     _err "new() assigned to optional pointer should not lower through __sl_unwrap"
 fi
+if ! "$build_dir/slc" compile tests/new_optional_ok.sl -o "$test_tmpdir/step4_new_optional_ok" \
+    > /dev/null 2>&1; then
+    _err "unexpected failure for slc compile tests/new_optional_ok.sl"
+fi
+[ -x "$test_tmpdir/step4_new_optional_ok" ] \
+    || _err "compile command did not produce executable for tests/new_optional_ok.sl"
+"$test_tmpdir/step4_new_optional_ok" > /dev/null 2>&1 \
+    || _err "new_optional_ok runtime behavior regressed"
+if ! "$build_dir/slc" compile tests/new_nonoptional_panic.sl \
+    -o "$test_tmpdir/step4_new_nonoptional_panic" > /dev/null 2>&1; then
+    _err "unexpected failure for slc compile tests/new_nonoptional_panic.sl"
+fi
+[ -x "$test_tmpdir/step4_new_nonoptional_panic" ] \
+    || _err "compile command did not produce executable for tests/new_nonoptional_panic.sl"
+set +e
+{
+    "$test_tmpdir/step4_new_nonoptional_panic" > /dev/null 2> "$actual_new_nonoptional_panic_stderr"
+} 2> /dev/null
+new_nonoptional_panic_status=$?
+set -e
+[ "$new_nonoptional_panic_status" -ne 0 ] \
+    || _err "new_nonoptional_panic should fail at runtime"
+rg -F "panic: unwrap: null value" "$actual_new_nonoptional_panic_stderr" > /dev/null \
+    || _err "new_nonoptional_panic did not emit expected panic message"
 
 if ! "$build_dir/slc" compile tests/types_mut_ok.sl -o "$test_tmpdir/step5_types_mut_ok" \
     > /dev/null 2>&1; then
