@@ -1,3 +1,3 @@
 fn main() {
-    var __sl_bad i32;
+    var __sl_bad i32
 }

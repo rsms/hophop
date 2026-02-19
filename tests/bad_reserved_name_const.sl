@@ -1,1 +1,1 @@
-const __sl_bad i32;
+const __sl_bad i32

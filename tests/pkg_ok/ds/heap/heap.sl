@@ -2,7 +2,7 @@ pub struct Box {
     v i32
 }
 
-pub fn Make(v i32) Box;
+pub fn Make(v i32) Box
 
 fn Make(v i32) Box {
     var b Box
