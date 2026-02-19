@@ -76,10 +76,11 @@ EmbeddedFieldDecl = TypeName ;
 EnumDecl        = "enum" Ident Type "{" { EnumItem [ "," | ";" ] } "}" [";"] ;
 EnumItem        = Ident ["=" Expr] ;
 
-FnDeclOrDef     = "fn" Ident "(" [Param {"," Param}] ")" [Type] (";" | Block) ;
+FnDeclOrDef     = "fn" Ident "(" [ParamList] ")" [Type] (";" | Block) ;
 FnGroupDecl     = "fn" Ident "{" GroupMember {"," GroupMember} "}" ";" ;
 GroupMember     = Ident | Ident "." Ident { "." Ident } ;
-Param           = Ident Type ;
+ParamList       = ParamGroup {"," ParamGroup} ;
+ParamGroup      = Ident {"," Ident} Type ;
 
 ConstDecl       = "const" Ident Type ["=" Expr] ";" ;
 

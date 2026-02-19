@@ -82,6 +82,11 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
                                             NULL,
                                             SLDiagType_ERROR,
                                             0 },
+    [SLDiag_PARAM_MISSING_TYPE] = { "SL1029",
+                                    "parameter '%s' is missing type",
+                                    NULL,
+                                    SLDiagType_ERROR,
+                                    1 },
 };
 
 const char* SLDiagId(SLDiagCode code) {

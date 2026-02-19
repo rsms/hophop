@@ -29,3 +29,4 @@ SLDiag_NONE = 0, SLDiag_ARENA_OOM,     /* SL1001: arena out of memory */
     SLDiag_DUPLICATE_FN_GROUP_MEMBER,  /* SL1027: duplicate function-group member */
     SLDiag_INVALID_FN_GROUP_COLLISION, /* SL1028: function-group name collides with existing symbol
                                         */
+    SLDiag_PARAM_MISSING_TYPE,         /* SL1029: parameter '{s}' is missing type */

@@ -113,5 +113,9 @@
     "SL1028": {
         "name": "INVALID_FN_GROUP_COLLISION",
         "message": "function-group name collides with existing symbol"
+    },
+    "SL1029": {
+        "name": "PARAM_MISSING_TYPE",
+        "message": "parameter '{s}' is missing type"
     }
 }

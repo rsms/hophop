@@ -14,6 +14,24 @@ static void SLPSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t e
     diag->argEnd = 0;
 }
 
+static void SLPSetDiagWithArg(
+    SLDiag*    diag,
+    SLDiagCode code,
+    uint32_t   start,
+    uint32_t   end,
+    uint32_t   argStart,
+    uint32_t   argEnd) {
+    if (diag == NULL) {
+        return;
+    }
+    diag->code = code;
+    diag->type = SLDiagTypeOfCode(code);
+    diag->start = start;
+    diag->end = end;
+    diag->argStart = argStart;
+    diag->argEnd = argEnd;
+}
+
 typedef struct {
     SLStrView      src;
     const SLToken* tok;
@@ -201,6 +219,49 @@ static int SLPParseStmt(SLParser* p, int32_t* out);
 static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out);
 static int SLPParseDeclInner(SLParser* p, int allowBody, int32_t* out);
 static int SLPParseSwitchStmt(SLParser* p, int32_t* out);
+
+static int SLPIsTypeStart(SLTokenKind kind) {
+    switch (kind) {
+        case SLTok_IDENT:
+        case SLTok_MUL:
+        case SLTok_AND:
+        case SLTok_MUT:
+        case SLTok_LBRACK:
+        case SLTok_QUESTION: return 1;
+        default:             return 0;
+    }
+}
+
+static int SLPCloneSubtree(SLParser* p, int32_t nodeId, int32_t* out) {
+    const SLAstNode* src;
+    int32_t          clone;
+    int32_t          child;
+    if (nodeId < 0 || (uint32_t)nodeId >= p->nodeLen) {
+        return -1;
+    }
+    src = &p->nodes[nodeId];
+    clone = SLPNewNode(p, src->kind, src->start, src->end);
+    if (clone < 0) {
+        return -1;
+    }
+    p->nodes[clone].dataStart = src->dataStart;
+    p->nodes[clone].dataEnd = src->dataEnd;
+    p->nodes[clone].op = src->op;
+    p->nodes[clone].flags = src->flags;
+    child = src->firstChild;
+    while (child >= 0) {
+        int32_t childClone;
+        if (SLPCloneSubtree(p, child, &childClone) != 0) {
+            return -1;
+        }
+        if (SLPAddChild(p, clone, childClone) != 0) {
+            return -1;
+        }
+        child = p->nodes[child].nextSibling;
+    }
+    *out = clone;
+    return 0;
+}
 
 static int SLPParseTypeName(SLParser* p, int32_t* out) {
     const SLToken* first;
@@ -726,26 +787,80 @@ static int SLPParseExpr(SLParser* p, int minPrec, int32_t* out) {
     return 0;
 }
 
-static int SLPParseParam(SLParser* p, int32_t* out) {
-    const SLToken* name;
-    int32_t        param;
-    int32_t        type;
-    if (SLPExpectDeclName(p, &name) != 0) {
+static int SLPParseParamGroup(SLParser* p, int32_t fnNode) {
+    const SLToken* lastName = NULL;
+    int32_t        firstParam = -1;
+    int32_t        lastParam = -1;
+    int32_t        type = -1;
+
+    for (;;) {
+        const SLToken* name;
+        int32_t        param;
+        if (SLPExpectDeclName(p, &name) != 0) {
+            return -1;
+        }
+        lastName = name;
+        param = SLPNewNode(p, SLAst_PARAM, name->start, name->end);
+        if (param < 0) {
+            return -1;
+        }
+        p->nodes[param].dataStart = name->start;
+        p->nodes[param].dataEnd = name->end;
+        if (firstParam < 0) {
+            firstParam = param;
+        } else {
+            p->nodes[lastParam].nextSibling = param;
+        }
+        lastParam = param;
+
+        if (!SLPMatch(p, SLTok_COMMA)) {
+            break;
+        }
+        if (!SLPAt(p, SLTok_IDENT)) {
+            return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+        }
+    }
+
+    if (!SLPIsTypeStart(SLPPeek(p)->kind)) {
+        if (lastName != NULL) {
+            SLPSetDiagWithArg(
+                p->diag,
+                SLDiag_PARAM_MISSING_TYPE,
+                lastName->start,
+                lastName->end,
+                lastName->start,
+                lastName->end);
+        } else {
+            SLPSetDiag(p->diag, SLDiag_PARAM_MISSING_TYPE, SLPPeek(p)->start, SLPPeek(p)->end);
+        }
         return -1;
     }
+
     if (SLPParseType(p, &type) != 0) {
         return -1;
     }
-    param = SLPNewNode(p, SLAst_PARAM, name->start, p->nodes[type].end);
-    if (param < 0) {
+
+    {
+        int32_t param = firstParam;
+        while (param >= 0) {
+            int32_t nextParam = p->nodes[param].nextSibling;
+            int32_t typeNode = -1;
+            if (param == firstParam) {
+                typeNode = type;
+            } else if (SLPCloneSubtree(p, type, &typeNode) != 0) {
+                return -1;
+            }
+            if (SLPAddChild(p, param, typeNode) != 0) {
+                return -1;
+            }
+            p->nodes[param].end = p->nodes[typeNode].end;
+            param = nextParam;
+        }
+    }
+
+    if (SLPAddChild(p, fnNode, firstParam) != 0) {
         return -1;
     }
-    p->nodes[param].dataStart = name->start;
-    p->nodes[param].dataEnd = name->end;
-    if (SLPAddChild(p, param, type) != 0) {
-        return -1;
-    }
-    *out = param;
     return 0;
 }
 
@@ -1396,11 +1511,7 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
 
     if (!SLPAt(p, SLTok_RPAREN)) {
         for (;;) {
-            int32_t param;
-            if (SLPParseParam(p, &param) != 0) {
-                return -1;
-            }
-            if (SLPAddChild(p, fn, param) != 0) {
+            if (SLPParseParamGroup(p, fn) != 0) {
                 return -1;
             }
             if (!SLPMatch(p, SLTok_COMMA)) {
