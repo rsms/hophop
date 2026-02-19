@@ -41,6 +41,13 @@ typedef struct {
 } SLFnSig;
 
 typedef struct {
+    char*      aliasName;
+    SLTypeRef  returnType;
+    SLTypeRef* paramTypes;
+    uint32_t   paramLen;
+} SLFnTypeAlias;
+
+typedef struct {
     char*    name;
     uint32_t memberStart;
     uint16_t memberCount;
@@ -97,6 +104,10 @@ typedef struct {
     SLFnSig* fnSigs;
     uint32_t fnSigLen;
     uint32_t fnSigCap;
+
+    SLFnTypeAlias* fnTypeAliases;
+    uint32_t       fnTypeAliasLen;
+    uint32_t       fnTypeAliasCap;
 
     SLFnGroup* fnGroups;
     uint32_t   fnGroupLen;
@@ -382,6 +393,8 @@ static void TypeRefSetScalar(SLTypeRef* t, const char* baseName) {
     t->readOnly = 0;
     t->isOptional = 0;
 }
+
+static int TypeRefEqual(const SLTypeRef* a, const SLTypeRef* b);
 
 static int ParseArrayLenLiteral(const char* src, uint32_t start, uint32_t end, uint32_t* outLen) {
     uint64_t v = 0;
@@ -853,6 +866,87 @@ static int CollectDeclSets(SLCBackendC* c) {
     return 0;
 }
 
+static const SLFnTypeAlias* _Nullable FindFnTypeAliasByName(
+    const SLCBackendC* c, const char* name) {
+    uint32_t i;
+    for (i = 0; i < c->fnTypeAliasLen; i++) {
+        if (StrEq(c->fnTypeAliases[i].aliasName, name)) {
+            return &c->fnTypeAliases[i];
+        }
+    }
+    return NULL;
+}
+
+static int EnsureFnTypeAlias(
+    SLCBackendC* c,
+    SLTypeRef    returnType,
+    SLTypeRef*   paramTypes,
+    uint32_t     paramLen,
+    const char** outAliasName) {
+    uint32_t i;
+    for (i = 0; i < c->fnTypeAliasLen; i++) {
+        const SLFnTypeAlias* alias = &c->fnTypeAliases[i];
+        uint32_t             p;
+        int                  same = 1;
+        if (!TypeRefEqual(&alias->returnType, &returnType) || alias->paramLen != paramLen) {
+            continue;
+        }
+        for (p = 0; p < paramLen; p++) {
+            if (!TypeRefEqual(&alias->paramTypes[p], &paramTypes[p])) {
+                same = 0;
+                break;
+            }
+        }
+        if (same) {
+            *outAliasName = alias->aliasName;
+            return 0;
+        }
+    }
+
+    {
+        SLTypeRef* paramCopy = NULL;
+        char*      aliasName;
+        SLBuf      b = { 0 };
+        if (paramLen > 0) {
+            uint32_t p;
+            paramCopy = (SLTypeRef*)SLArenaAlloc(
+                &c->arena, (uint32_t)(sizeof(SLTypeRef) * paramLen), (uint32_t)_Alignof(SLTypeRef));
+            if (paramCopy == NULL) {
+                return -1;
+            }
+            for (p = 0; p < paramLen; p++) {
+                paramCopy[p] = paramTypes[p];
+            }
+        }
+        b.arena = &c->arena;
+        if (BufAppendCStr(&b, "__sl_fn_t_") != 0 || BufAppendU32(&b, c->fnTypeAliasLen) != 0) {
+            return -1;
+        }
+        aliasName = BufFinish(&b);
+        if (aliasName == NULL) {
+            return -1;
+        }
+        if (EnsureCapArena(
+                &c->arena,
+                (void**)&c->fnTypeAliases,
+                &c->fnTypeAliasCap,
+                c->fnTypeAliasLen + 1u,
+                sizeof(SLFnTypeAlias),
+                (uint32_t)_Alignof(SLFnTypeAlias))
+            != 0)
+        {
+            return -1;
+        }
+        c->fnTypeAliases[c->fnTypeAliasLen].aliasName = aliasName;
+        c->fnTypeAliases[c->fnTypeAliasLen].returnType = returnType;
+        c->fnTypeAliases[c->fnTypeAliasLen].paramTypes = paramCopy;
+        c->fnTypeAliases[c->fnTypeAliasLen].paramLen = paramLen;
+        c->fnTypeAliasLen++;
+        *outAliasName = aliasName;
+        return 0;
+    }
+}
+
 static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -959,6 +1053,48 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 return -1;
             }
             outType->isOptional = 1;
+            return 0;
+        }
+        case SLAst_TYPE_FN: {
+            int32_t     child = AstFirstChild(&c->ast, nodeId);
+            SLTypeRef   returnType;
+            SLTypeRef*  paramTypes = NULL;
+            uint32_t    paramLen = 0;
+            uint32_t    paramCap = 0;
+            const char* aliasName;
+            TypeRefSetScalar(&returnType, "void");
+            while (child >= 0) {
+                const SLAstNode* ch = NodeAt(c, child);
+                if (ch != NULL && ch->flags == 1) {
+                    if (ParseTypeRef(c, child, &returnType) != 0) {
+                        return -1;
+                    }
+                } else {
+                    SLTypeRef paramType;
+                    if (ParseTypeRef(c, child, &paramType) != 0) {
+                        return -1;
+                    }
+                    if (paramLen >= paramCap) {
+                        if (EnsureCapArena(
+                                &c->arena,
+                                (void**)&paramTypes,
+                                &paramCap,
+                                paramLen + 1u,
+                                sizeof(SLTypeRef),
+                                (uint32_t)_Alignof(SLTypeRef))
+                            != 0)
+                        {
+                            return -1;
+                        }
+                    }
+                    paramTypes[paramLen++] = paramType;
+                }
+                child = AstNextSibling(&c->ast, child);
+            }
+            if (EnsureFnTypeAlias(c, returnType, paramTypes, paramLen, &aliasName) != 0) {
+                return -1;
+            }
+            TypeRefSetScalar(outType, aliasName);
             return 0;
         }
         default: TypeRefSetInvalid(outType); return -1;
@@ -1288,7 +1424,7 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                     || ch->kind == SLAst_TYPE_REF || ch->kind == SLAst_TYPE_MUTREF
                     || ch->kind == SLAst_TYPE_ARRAY || ch->kind == SLAst_TYPE_VARRAY
                     || ch->kind == SLAst_TYPE_SLICE || ch->kind == SLAst_TYPE_MUTSLICE
-                    || ch->kind == SLAst_TYPE_OPTIONAL)
+                    || ch->kind == SLAst_TYPE_OPTIONAL || ch->kind == SLAst_TYPE_FN)
                 && ch->flags == 1)
             {
                 if (ParseTypeRef(c, child, &returnType) != 0) {
@@ -1388,6 +1524,39 @@ static int CollectFnAndFieldInfo(SLCBackendC* c) {
         }
     }
     return 0;
+}
+
+static int IsParseTypeNodeKind(SLAstKind kind) {
+    return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
+        || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
+        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
+        || kind == SLAst_TYPE_FN;
+}
+
+static int CollectFnTypeAliasesFromNode(SLCBackendC* c, int32_t nodeId) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    int32_t          child;
+    if (n == NULL) {
+        return 0;
+    }
+    if (IsParseTypeNodeKind(n->kind)) {
+        SLTypeRef ignoredType;
+        if (ParseTypeRef(c, nodeId, &ignoredType) != 0) {
+            return -1;
+        }
+    }
+    child = AstFirstChild(&c->ast, nodeId);
+    while (child >= 0) {
+        if (CollectFnTypeAliasesFromNode(c, child) != 0) {
+            return -1;
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    return 0;
+}
+
+static int CollectFnTypeAliases(SLCBackendC* c) {
+    return CollectFnTypeAliasesFromNode(c, c->ast.root);
 }
 
 static int AddVarSizeType(SLCBackendC* c, const char* cName, int isUnion) {
@@ -1635,7 +1804,7 @@ static int EnumDeclHasMemberBySlice(
                 || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
                 || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
                 || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
-                || firstChild->kind == SLAst_TYPE_OPTIONAL))
+                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN))
         {
             child = AstNextSibling(&c->ast, child);
         }
@@ -1896,7 +2065,8 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
 static int IsTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
-        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL;
+        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
+        || kind == SLAst_TYPE_FN;
 }
 
 static void ResolveVarLikeTypeAndInitNode(
@@ -2253,6 +2423,20 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 return 0;
             }
             {
+                const SLFnSig* sig = FindFnSigBySlice(c, n->dataStart, n->dataEnd);
+                if (sig != NULL) {
+                    const char* aliasName;
+                    if (EnsureFnTypeAlias(
+                            c, sig->returnType, sig->paramTypes, sig->paramLen, &aliasName)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    TypeRefSetScalar(outType, aliasName);
+                    return 0;
+                }
+            }
+            {
                 int32_t topVarLikeNode = -1;
                 if (FindTopLevelVarLikeNodeBySlice(c, n->dataStart, n->dataEnd, &topVarLikeNode)
                     == 0)
@@ -2344,6 +2528,21 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                         *outType = resolved->returnType;
                         return 0;
                     }
+                }
+            }
+            {
+                SLTypeRef            calleeType;
+                const SLFnTypeAlias* alias = NULL;
+                if (InferExprType(c, callee, &calleeType) == 0 && calleeType.valid
+                    && calleeType.containerKind == SLTypeContainer_SCALAR
+                    && calleeType.ptrDepth == 0 && calleeType.containerPtrDepth == 0
+                    && calleeType.baseName != NULL && !calleeType.isOptional)
+                {
+                    alias = FindFnTypeAliasByName(c, calleeType.baseName);
+                }
+                if (alias != NULL) {
+                    *outType = alias->returnType;
+                    return 0;
                 }
             }
             TypeRefSetInvalid(outType);
@@ -3472,11 +3671,22 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 }
             }
             {
-                const SLFnSig* sig = NULL;
-                uint32_t       argIndex = 0;
-                int            first = 1;
+                const SLFnSig*       sig = NULL;
+                const SLFnTypeAlias* typeAlias = NULL;
+                uint32_t             argIndex = 0;
+                int                  first = 1;
                 if (callee != NULL && callee->kind == SLAst_IDENT) {
                     sig = FindFnSigBySlice(c, callee->dataStart, callee->dataEnd);
+                }
+                if (sig == NULL && callee != NULL) {
+                    SLTypeRef calleeType;
+                    if (InferExprType(c, AstFirstChild(&c->ast, nodeId), &calleeType) == 0
+                        && calleeType.valid && calleeType.containerKind == SLTypeContainer_SCALAR
+                        && calleeType.ptrDepth == 0 && calleeType.containerPtrDepth == 0
+                        && calleeType.baseName != NULL && !calleeType.isOptional)
+                    {
+                        typeAlias = FindFnTypeAliasByName(c, calleeType.baseName);
+                    }
                 }
                 if (EmitExpr(c, child) != 0 || BufAppendChar(&c->out, '(') != 0) {
                     return -1;
@@ -3488,6 +3698,10 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                     }
                     if (sig != NULL && argIndex < sig->paramLen) {
                         if (EmitExprCoerced(c, child, &sig->paramTypes[argIndex]) != 0) {
+                            return -1;
+                        }
+                    } else if (typeAlias != NULL && argIndex < typeAlias->paramLen) {
+                        if (EmitExprCoerced(c, child, &typeAlias->paramTypes[argIndex]) != 0) {
                             return -1;
                         }
                     } else if (EmitExpr(c, child) != 0) {
@@ -4257,7 +4471,7 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                 || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
                 || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
                 || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
-                || firstChild->kind == SLAst_TYPE_OPTIONAL))
+                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN))
         {
             child = AstNextSibling(&c->ast, child);
         }
@@ -4653,6 +4867,53 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
     return 0;
 }
 
+static int EmitFnTypeAliasDecls(SLCBackendC* c) {
+    uint32_t i;
+    if (c->fnTypeAliasLen == 0) {
+        return 0;
+    }
+    for (i = 0; i < c->fnTypeAliasLen; i++) {
+        const SLFnTypeAlias* alias = &c->fnTypeAliases[i];
+        uint32_t             p;
+        EmitIndent(c, 0);
+        if (BufAppendCStr(&c->out, "typedef ") != 0
+            || EmitTypeNameWithDepth(c, &alias->returnType) != 0
+            || BufAppendCStr(&c->out, " (*") != 0 || BufAppendCStr(&c->out, alias->aliasName) != 0
+            || BufAppendCStr(&c->out, ")(") != 0)
+        {
+            return -1;
+        }
+        if (alias->paramLen == 0) {
+            if (BufAppendCStr(&c->out, "void") != 0) {
+                return -1;
+            }
+        } else {
+            for (p = 0; p < alias->paramLen; p++) {
+                SLBuf paramNameBuf = { 0 };
+                char* paramName;
+                if (p > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+                    return -1;
+                }
+                paramNameBuf.arena = &c->arena;
+                if (BufAppendCStr(&paramNameBuf, "p") != 0 || BufAppendU32(&paramNameBuf, p) != 0) {
+                    return -1;
+                }
+                paramName = BufFinish(&paramNameBuf);
+                if (paramName == NULL) {
+                    return -1;
+                }
+                if (EmitTypeRefWithName(c, &alias->paramTypes[p], paramName) != 0) {
+                    return -1;
+                }
+            }
+        }
+        if (BufAppendCStr(&c->out, ");\n") != 0) {
+            return -1;
+        }
+    }
+    return BufAppendChar(&c->out, '\n');
+}
+
 static int FnNodeHasBody(const SLCBackendC* c, int32_t nodeId) {
     int32_t child = AstFirstChild(&c->ast, nodeId);
     while (child >= 0) {
@@ -4717,7 +4978,7 @@ static int EmitFnDeclOrDef(
                 || ch->kind == SLAst_TYPE_REF || ch->kind == SLAst_TYPE_MUTREF
                 || ch->kind == SLAst_TYPE_ARRAY || ch->kind == SLAst_TYPE_VARRAY
                 || ch->kind == SLAst_TYPE_SLICE || ch->kind == SLAst_TYPE_MUTSLICE
-                || ch->kind == SLAst_TYPE_OPTIONAL)
+                || ch->kind == SLAst_TYPE_OPTIONAL || ch->kind == SLAst_TYPE_FN)
             && ch->flags == 1)
         {
             returnTypeNode = child;
@@ -4985,6 +5246,9 @@ static int EmitHeader(SLCBackendC* c) {
     if (EmitForwardTypeDecls(c) != 0) {
         return -1;
     }
+    if (EmitFnTypeAliasDecls(c) != 0) {
+        return -1;
+    }
 
     for (i = 0; i < c->pubDeclLen; i++) {
         int32_t          nodeId = c->pubDecls[i].nodeId;
@@ -5179,6 +5443,13 @@ static int EmitCBackend(
     }
     if (CollectFnAndFieldInfo(&c) != 0) {
         SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        FreeContext(&c);
+        return -1;
+    }
+    if (CollectFnTypeAliases(&c) != 0) {
+        if (diag != NULL && diag->code == SLDiag_NONE) {
+            SetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        }
         FreeContext(&c);
         return -1;
     }

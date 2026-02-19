@@ -258,6 +258,7 @@ typedef enum {
     SLAst_TYPE_SLICE,
     SLAst_TYPE_MUTSLICE,
     SLAst_TYPE_OPTIONAL,
+    SLAst_TYPE_FN,
     SLAst_STRUCT,
     SLAst_UNION,
     SLAst_ENUM,

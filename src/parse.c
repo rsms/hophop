@@ -214,6 +214,7 @@ static int SLBinPrec(SLTokenKind kind) {
 }
 
 static int SLPParseType(SLParser* p, int32_t* out);
+static int SLPParseFnType(SLParser* p, int32_t* out);
 static int SLPParseExpr(SLParser* p, int minPrec, int32_t* out);
 static int SLPParseStmt(SLParser* p, int32_t* out);
 static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out);
@@ -228,6 +229,7 @@ static int SLPIsTypeStart(SLTokenKind kind) {
         case SLTok_MUT:
         case SLTok_LBRACK:
         case SLTok_QUESTION: return 1;
+        case SLTok_FN:       return 1;
         default:             return 0;
     }
 }
@@ -288,6 +290,129 @@ static int SLPParseTypeName(SLParser* p, int32_t* out) {
     p->nodes[n].dataStart = first->start;
     p->nodes[n].dataEnd = last->end;
     *out = n;
+    return 0;
+}
+
+static int SLPTryParseFnTypeNamedParamGroup(
+    SLParser* p, int32_t fnTypeNode, int* outConsumedGroup) {
+    uint32_t savedPos = p->pos;
+    uint32_t savedNodeLen = p->nodeLen;
+    SLDiag   savedDiag = { 0 };
+    uint32_t nameCount = 0;
+    int32_t  typeNode = -1;
+    uint32_t i;
+
+    if (p->diag != NULL) {
+        savedDiag = *p->diag;
+    }
+    if (!SLPAt(p, SLTok_IDENT)) {
+        *outConsumedGroup = 0;
+        return 0;
+    }
+
+    for (;;) {
+        const SLToken* name;
+        if (SLPExpectDeclName(p, &name) != 0) {
+            goto not_group;
+        }
+        nameCount++;
+        if (!SLPMatch(p, SLTok_COMMA)) {
+            break;
+        }
+        if (!SLPAt(p, SLTok_IDENT)) {
+            goto not_group;
+        }
+    }
+
+    if (nameCount == 0 || !SLPIsTypeStart(SLPPeek(p)->kind)) {
+        goto not_group;
+    }
+    if (SLPParseType(p, &typeNode) != 0) {
+        goto not_group;
+    }
+
+    for (i = 0; i < nameCount; i++) {
+        int32_t paramType = -1;
+        if (i == 0) {
+            paramType = typeNode;
+        } else if (SLPCloneSubtree(p, typeNode, &paramType) != 0) {
+            return -1;
+        }
+        if (SLPAddChild(p, fnTypeNode, paramType) != 0) {
+            return -1;
+        }
+    }
+    *outConsumedGroup = 1;
+    return 0;
+
+not_group:
+    p->pos = savedPos;
+    p->nodeLen = savedNodeLen;
+    if (p->diag != NULL) {
+        *p->diag = savedDiag;
+    }
+    *outConsumedGroup = 0;
+    return 0;
+}
+
+static int SLPParseFnType(SLParser* p, int32_t* out) {
+    const SLToken* fnTok;
+    const SLToken* rp;
+    int32_t        fnTypeNode;
+
+    if (SLPExpect(p, SLTok_FN, SLDiag_EXPECTED_TYPE, &fnTok) != 0) {
+        return -1;
+    }
+    if (SLPExpect(p, SLTok_LPAREN, SLDiag_EXPECTED_TYPE, &rp) != 0) {
+        return -1;
+    }
+
+    fnTypeNode = SLPNewNode(p, SLAst_TYPE_FN, fnTok->start, rp->end);
+    if (fnTypeNode < 0) {
+        return -1;
+    }
+
+    if (!SLPAt(p, SLTok_RPAREN)) {
+        for (;;) {
+            int consumedGroup = 0;
+            if (SLPAt(p, SLTok_IDENT)
+                && SLPTryParseFnTypeNamedParamGroup(p, fnTypeNode, &consumedGroup) != 0)
+            {
+                return -1;
+            }
+            if (!consumedGroup) {
+                int32_t paramType = -1;
+                if (SLPParseType(p, &paramType) != 0) {
+                    return -1;
+                }
+                if (SLPAddChild(p, fnTypeNode, paramType) != 0) {
+                    return -1;
+                }
+            }
+            if (!SLPMatch(p, SLTok_COMMA)) {
+                break;
+            }
+        }
+    }
+
+    if (SLPExpect(p, SLTok_RPAREN, SLDiag_EXPECTED_TYPE, &rp) != 0) {
+        return -1;
+    }
+    p->nodes[fnTypeNode].end = rp->end;
+
+    if (SLPIsTypeStart(SLPPeek(p)->kind)) {
+        int32_t resultType = -1;
+        if (SLPParseType(p, &resultType) != 0) {
+            return -1;
+        }
+        p->nodes[resultType].flags = 1;
+        if (SLPAddChild(p, fnTypeNode, resultType) != 0) {
+            return -1;
+        }
+        p->nodes[fnTypeNode].end = p->nodes[resultType].end;
+    }
+
+    *out = fnTypeNode;
     return 0;
 }
 
@@ -418,6 +543,10 @@ static int SLPParseType(SLParser* p, int32_t* out) {
         }
         p->nodes[typeNode].end = rb->end;
         return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
+    }
+
+    if (SLPAt(p, SLTok_FN)) {
+        return SLPParseFnType(p, out);
     }
 
     if (SLPParseTypeName(p, out) != 0) {
@@ -1763,6 +1892,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_TYPE_SLICE:    return "TYPE_SLICE";
         case SLAst_TYPE_MUTSLICE: return "TYPE_MUTSLICE";
         case SLAst_TYPE_OPTIONAL: return "TYPE_OPTIONAL";
+        case SLAst_TYPE_FN:       return "TYPE_FN";
         case SLAst_STRUCT:        return "STRUCT";
         case SLAst_UNION:         return "UNION";
         case SLAst_ENUM:          return "ENUM";
