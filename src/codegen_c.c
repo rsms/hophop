@@ -2484,6 +2484,21 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 return 0;
             }
             if (callee != NULL && callee->kind == SLAst_IDENT
+                && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "print"))
+            {
+                int32_t msgArg = AstNextSibling(&c->ast, child);
+                int32_t extra = msgArg >= 0 ? AstNextSibling(&c->ast, msgArg) : -1;
+                if (msgArg < 0 || extra >= 0) {
+                    return -1;
+                }
+                if (BufAppendCStr(&c->out, "__sl_console_log(") != 0 || EmitExpr(c, msgArg) != 0
+                    || BufAppendCStr(&c->out, ", 0)") != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
+            if (callee != NULL && callee->kind == SLAst_IDENT
                 && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "platform__exit"))
             {
                 int32_t statusArg = AstNextSibling(&c->ast, child);
@@ -2497,6 +2512,24 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                         != 0
                     || EmitExpr(c, statusArg) != 0
                     || BufAppendCStr(&c->out, "), 0, 0, 0, 0, 0, 0))") != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
+            if (callee != NULL && callee->kind == SLAst_IDENT
+                && SliceEq(
+                    c->unit->source, callee->dataStart, callee->dataEnd, "platform__console_log"))
+            {
+                int32_t msgArg = AstNextSibling(&c->ast, child);
+                int32_t flagsArg = msgArg >= 0 ? AstNextSibling(&c->ast, msgArg) : -1;
+                int32_t extra = flagsArg >= 0 ? AstNextSibling(&c->ast, flagsArg) : -1;
+                if (msgArg < 0 || flagsArg < 0 || extra >= 0) {
+                    return -1;
+                }
+                if (BufAppendCStr(&c->out, "__sl_console_log(") != 0 || EmitExpr(c, msgArg) != 0
+                    || BufAppendCStr(&c->out, ", (__sl_u64)(__sl_i64)(") != 0
+                    || EmitExpr(c, flagsArg) != 0 || BufAppendCStr(&c->out, "))") != 0)
                 {
                     return -1;
                 }

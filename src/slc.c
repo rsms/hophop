@@ -1683,10 +1683,27 @@ static int IsBuiltinPlatformImportPath(const char* importPath) {
     return StrEq(importPath, "platform");
 }
 
+static int AddBuiltinPubFnDecl(SLPackage* pkg, const char* name, const char* declText) {
+    char* declName = DupCStr(name);
+    char* decl = DupCStr(declText);
+    if (declName == NULL || decl == NULL) {
+        free(declName);
+        free(decl);
+        return ErrorSimple("out of memory");
+    }
+    if (AddSymbolDecl(
+            &pkg->pubDecls, &pkg->pubDeclLen, &pkg->pubDeclCap, SLAst_FN, declName, decl, 0, 0, -1)
+        != 0)
+    {
+        free(declName);
+        free(decl);
+        return ErrorSimple("out of memory");
+    }
+    return 0;
+}
+
 static int LoadBuiltinPlatformPackage(SLPackageLoader* loader, SLPackage** outPkg) {
     SLPackage* pkg = FindPackageByDir(loader, SL_BUILTIN_PLATFORM_PATH);
-    char*      declName;
-    char*      declText;
     if (pkg != NULL) {
         *outPkg = pkg;
         return 0;
@@ -1699,28 +1716,11 @@ static int LoadBuiltinPlatformPackage(SLPackageLoader* loader, SLPackage** outPk
     if (pkg->name == NULL) {
         return ErrorSimple("out of memory");
     }
-    declName = DupCStr("exit");
-    declText = DupCStr("pub fn exit(status i32)");
-    if (declName == NULL || declText == NULL) {
-        free(declName);
-        free(declText);
-        return ErrorSimple("out of memory");
+    if (AddBuiltinPubFnDecl(pkg, "exit", "pub fn exit(status i32)") != 0) {
+        return -1;
     }
-    if (AddSymbolDecl(
-            &pkg->pubDecls,
-            &pkg->pubDeclLen,
-            &pkg->pubDeclCap,
-            SLAst_FN,
-            declName,
-            declText,
-            0,
-            0,
-            -1)
-        != 0)
-    {
-        free(declName);
-        free(declText);
-        return ErrorSimple("out of memory");
+    if (AddBuiltinPubFnDecl(pkg, "console_log", "pub fn console_log(msg str, flags u64)") != 0) {
+        return -1;
     }
     pkg->loadState = 2;
     *outPkg = pkg;

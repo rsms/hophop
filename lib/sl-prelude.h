@@ -107,6 +107,18 @@ static inline void __sl_assertf_fail(const char* file, __sl_u32 line, const char
     __sl_assert_fail(file, line, fmt);
 }
 
+static inline void __sl_console_log(__sl_str msg, __sl_u64 flags) {
+    (void)__sl_platform_call(
+        __sl_PlatformOp_CONSOLE_LOG,
+        (__sl_u64)(uintptr_t)msg.ptr,
+        (__sl_u64)msg.len,
+        flags,
+        0,
+        0,
+        0,
+        0);
+}
+
 static inline void* __sl_unwrap(const void* p) {
     if (p != (const void*)0) {
         return (void*)p;

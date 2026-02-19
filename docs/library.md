@@ -107,6 +107,16 @@ fn panic(message str)
 Exact behavior is platform-specific; it's implemented by `platform.panic`.
 
 
+### `print`
+
+```sl
+fn print(message str)
+```
+
+`print` writes a UTF-8 message to standard output.
+It is implemented via `platform.console_log(message, 0)`.
+
+
 ### `sizeof`
 
 ```sl

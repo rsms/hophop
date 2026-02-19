@@ -450,6 +450,7 @@ Entry point:
 - `switch` currently lowers to `if/else` chains (not C `switch`).
 - Optional unwrap lowers to `sl_unwrap(...)` trap-on-null behavior.
 - `panic` lowers to platform panic hook (`sl_platform_call`).
+- `print` lowers to platform console log with `flags=0`.
 - `str` runtime representation is slice-like (`ptr + len`) in current prelude.
 
 ## 13. Known Non-Goals / Not Implemented
