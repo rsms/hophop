@@ -178,7 +178,7 @@ Add tests for:
    - mixed explicit and inferred declarations in same scope
 2. Negative:
    - `var x = null` (cannot infer)
-   - `var x = some_void_call()` (cannot infer)
+   - `var x = some_void_call()` (no result from function call)
 3. Regression:
    - existing explicit declarations still pass
 
