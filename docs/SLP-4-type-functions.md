@@ -1,51 +1,270 @@
 # SLP-4 type functions
 
-> Status: Daft
+## Summary
 
-Allows calling functions which takes a type `T` as its first argument via `expr.f`.
-
-Really just syntax sugar that make the two statements of this function equivalent:
+SLP-4 adds type-function call syntax as sugar:
 
 ```sl
+f(x, a, b)
+x.f(a, b)
+```
+
+Both forms are equivalent and resolve to the same target function.
+
+SLP-4 also adds explicit overload groups so a package can expose one call name with multiple concrete implementations:
+
+```sl
+fn update_pet(pet mut&Pet, ts u64)
+fn update_ship(ship mut&Spaceship)
+fn update{update_pet, update_ship}
+```
+
+Dispatch is compile-time only. There is no runtime dispatch table.
+
+---
+
+## Motivation
+
+SL already uses package-level functions as its core abstraction. This proposal improves ergonomics without introducing methods as a new declaration kind.
+
+Goals:
+- make call sites read naturally (`x.update(...)`)
+- preserve package-level function model
+- support controlled overloading with deterministic resolution
+- keep lowering simple and static
+
+Non-goal:
+- adding interfaces, traits, or runtime method dispatch
+
+---
+
+## Syntax
+
+### Selector call sugar
+
+No new expression syntax is needed. Existing selector+call syntax gains new meaning when selector resolution does not produce a field:
+
+```sl
+expr.name(args...)
+```
+
+It can resolve as a type-function call to `name(expr, args...)`.
+
+### Overload group declaration
+
+New top-level declaration form:
+
+```sl
+fn Name{member1, member2, ...}
+```
+
+Members are existing function names in the same package.
+
+Example:
+
+```sl
+fn update_pet(pet mut&Pet, ts u64)
+fn update_ship(ship mut&Spaceship)
+fn update{update_pet, update_ship}
+```
+
+### EBNF additions
+
+```ebnf
+TopDecl            = ["pub"] (StructDecl | UnionDecl | EnumDecl | FnDeclOrDef | FnGroupDecl | ConstDecl) ;
+FnGroupDecl        = "fn" Ident "{" Ident {"," Ident} "}" ";" ;
+```
+
+---
+
+## Core semantics
+
+### 1. Desugaring model
+
+A selector-call expression
+
+```sl
+E.f(A1, ..., An)
+```
+
+is resolved during typecheck as if it were a call
+
+```sl
+f(E, A1, ..., An)
+```
+
+with these guarantees:
+- `E` is evaluated exactly once
+- argument evaluation order is left-to-right
+- side effects are preserved
+
+This is semantic equivalence, not required AST rewriting.
+
+### 2. Field precedence
+
+Selector resolution order for `E.f(...)`:
+1. resolve `f` as a field (including promoted fields via struct composition)
+2. if field exists, use field expression result; normal call rules then apply
+3. only if no field is found, attempt type-function resolution
+
+This avoids ambiguity with existing field semantics.
+
+### 3. Call-form-only in v1
+
+`E.f` without `(...)` is not a type-function value.
+
+Only call form participates in type-function resolution.
+
+### 4. Package lookup
+
+- `E.f(...)` resolves `f` in the current package scope.
+- `pkg.f(...)` resolves directly in imported package `pkg` export scope.
+- `E.f(...)` does not perform implicit cross-package lookup.
+
+---
+
+## Multiple dispatch model
+
+SLP-4 uses explicit overload groups.
+
+### Group constraints
+
+For `fn G{m1, m2, ...}`:
+- each member must name a function declaration/definition in the same package
+- member names must be unique within the group
+- group name must not collide with an existing function, type, const, or group name
+- group declarations may appear before member definitions (resolved after collection)
+
+### Export/import behavior
+
+- `pub fn G{...}` exports group `G`
+- group members are not part of public API unless separately `pub`
+- import rewriting maps `pkg.G` to `pkg__G` like other exported symbols
+
+---
+
+## Dispatch and ranking
+
+Given candidate call name `N` and argument list `(a0, a1, ... ak)`:
+- unqualified call: from function `N` (if present) and all members of group `N` (if present)
+- selector-call: same candidate set, using receiver-injected arguments
+
+Candidate filtering:
+- same arity
+- each argument assignable to corresponding parameter type
+
+If no candidates remain: `NO_MATCHING_OVERLOAD`.
+
+If one candidate remains: select it.
+
+If multiple remain, rank using per-parameter conversion costs (lower is better):
+- `0`: exact type match
+- `1`: mutability relaxation (`mut&T -> &T`, `mut[S] -> [S]`)
+- `2`: embedded-base upcast (`Derived -> Base`, including refs)
+- `3`: untyped literal coercion (`untyped_int/float`)
+- `4`: optional lift (`T -> ?T`)
+
+Comparison:
+- lexicographic compare of per-parameter cost vector
+- then total-cost compare
+- if still tied: `AMBIGUOUS_CALL`
+
+---
+
+## Built-in participation
+
+Built-in functions participate in selector-call sugar when the call shape matches.
+
+At minimum, these are supported:
+- `x.len()` => `len(x)`
+- `s.cstr()` => `cstr(s)`
+- `msg.print()` => `print(msg)`
+- `msg.panic()` => `panic(msg)`
+
+Built-ins that are not receiver-first forms (for example `new(ma, T[, N])`, `sizeof(...)`) do not participate.
+
+---
+
+## Examples
+
+### Basic type-function call
+
+```sl
+struct Foo {}
 fn something(f &Foo, n i32)
+
 fn example(f &Foo) {
     something(f, 123)
     f.something(123)
 }
 ```
 
-## Multiple dispatch
-
-Do we need multiple dispatch and/or generics/macros for this to make sense? I.e. if I want to do `x.update` and `y.update` where `x` and `y` are different types that want different `update` function implementations?
-
-Challenging example:
+### Explicit overload group with receiver sugar
 
 ```sl
 struct Pet {}
 struct Spaceship {}
-fn update(pet mut&Pet, timestamp u64)
-fn update(ship mut&Spaceship)
+
+fn update_pet(pet mut&Pet, timestamp u64)
+fn update_ship(ship mut&Spaceship)
+fn update{update_pet, update_ship}
+
 fn example(pet mut&Pet, ship mut&Spaceship, timestamp u64) {
-    pet.update(timestamp)
-    ship.update()
+    pet.update(timestamp) // update_pet
+    ship.update()         // update_ship
 }
 ```
 
-Ideas for solutions:
+### Built-in sugar
 
-1. Simply not possible; one package can only have one function named `update`, regardless of types.
+```sl
+fn example(s str) {
+    var n u32 = s.len()
+    assert n == len(s)
+}
+```
 
-2. Allow multiple definitions of a function, where the identity of a function becomes name + parameter types. C++ and a few other languages works this way. The downside is that errors may become confusing, where `ship.updatez(123)` would say something like "no matching 'updatez' function for (mut&Spaceship, int)" rather than the much clearer "no function named 'updatez'" or "unexpected extra argument for function 'update', expected (mut&Spaceship), got (mut&Spaceship, int)"`
+---
 
-3. Explicit multiple dispatch, similar to Odin's explicit function overloading (see https://odin-lang.org/docs/overview/#explicit-procedure-overloading). E.g.
-    ```sl
-    fn update_pet(pet mut&Pet, timestamp u64)
-    fn update_ship(ship mut&Spaceship)
-    fn update{update_pet, update_ship}
-    ```
+## Diagnostics
 
-4. Allow functions to be tied to specific types via declaration. I.e. `fn Pet.update(pet mut&, timestamp u64)`, `fn Spaceship.update(ship mut&)` and `fn update()` are all distinct functions. Downside is more complex syntax. As a bonus, this approach would allow declaring functions as part of struct definitions, i.e. `struct Monster { x int; update(monster &mut) { ... } }`
+Add dedicated diagnostics:
+- `NO_MATCHING_OVERLOAD`: name exists but no viable candidate for argument types
+- `AMBIGUOUS_CALL`: multiple best candidates after ranking
+- `INVALID_FN_GROUP_MEMBER`: group member is missing or not a function
+- `DUPLICATE_FN_GROUP_MEMBER`: repeated function name in a group
+- `INVALID_FN_GROUP_COLLISION`: group name collides with existing symbol
 
-5. `_Generic`-like approach with macros. I.e. `macro update(self, args...) $switch(typeof(self)) { case mut&Pet: update_pet(self, args...); case mut&Spaceship: update_ship(self, args...); }`. This implies introducing a macro system, which is a rather big project.
+`slc` should print a short candidate list for overload errors (bounded length).
 
-I like option 4 and 3. What do you think?
+---
+
+## Interaction with SLP-6 struct composition
+
+Embedded-base upcasts are part of dispatch ranking.
+
+Rules:
+- exact receiver type match beats base-upcast match
+- derived-to-base transitive conversions are allowed as assignability candidates
+- if two candidates are equal after ranking, emit `AMBIGUOUS_CALL`
+
+---
+
+## Lowering and codegen
+
+No runtime mechanism is added.
+
+After typecheck selects a concrete function, codegen emits a direct call to that function.
+
+For selector sugar, this means codegen emits the resolved target with receiver inserted as first argument.
+
+---
+
+## Non-goals
+
+SLP-4 does not add:
+- methods declared inside `struct`
+- method sets or method namespaces
+- interface/trait dispatch
+- function-value partial application from selector form (`x.f`)
+
