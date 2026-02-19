@@ -376,6 +376,16 @@ typedef struct {
 const char* SLTokenKindName(SLTokenKind kind);
 const char* SLAstKindName(SLAstKind kind);
 
+// Normalize an import path.
+// Returns 0 on success and writes the normalized path to `out` (NUL-terminated).
+// Returns -1 on failure and sets `*outErrReason` when provided.
+// Example reasons: "empty path", "absolute path", "invalid character".
+int SLNormalizeImportPath(
+    const char* importPath,
+    char*       out,
+    uint32_t    outCap,
+    const char* _Nullable* _Nullable outErrReason);
+
 // Tokenize src into arena memory and return a view over tokens.
 // Returns 0 on success, -1 on failure. On failure, diag is set.
 int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag);

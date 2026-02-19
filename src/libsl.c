@@ -240,6 +240,10 @@ static int SLIsAlnum(unsigned char c) {
     return SLIsAlpha(c) || SLIsDigit(c);
 }
 
+static int SLIsAsciiSpace(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
 static int SLIsHexDigit(unsigned char c) {
     return SLIsDigit(c) || (c >= (unsigned char)'a' && c <= (unsigned char)'f')
         || (c >= (unsigned char)'A' && c <= (unsigned char)'F');
@@ -254,6 +258,141 @@ static int SLStrEq(const char* a, uint32_t aLen, const char* b) {
         i++;
     }
     return b[i] == '\0';
+}
+
+static int SLIsValidImportPathChar(char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
+        || c == '.' || c == '/' || c == '-';
+}
+
+int SLNormalizeImportPath(
+    const char* importPath,
+    char*       out,
+    uint32_t    outCap,
+    const char* _Nullable* _Nullable outErrReason) {
+    uint32_t len = 0;
+    uint32_t i;
+    uint32_t outLen = 0;
+    uint32_t segStart = 0;
+
+    if (outErrReason != NULL) {
+        *outErrReason = NULL;
+    }
+
+    if (importPath == NULL || importPath[0] == '\0') {
+        if (outErrReason != NULL) {
+            *outErrReason = "empty path";
+        }
+        return -1;
+    }
+    if (out == NULL || outCap == 0) {
+        if (outErrReason != NULL) {
+            *outErrReason = "output buffer too small";
+        }
+        return -1;
+    }
+
+    while (importPath[len] != '\0') {
+        len++;
+    }
+
+    if (importPath[0] == '/') {
+        if (outErrReason != NULL) {
+            *outErrReason = "absolute path";
+        }
+        return -1;
+    }
+    if (importPath[0] == '.' && importPath[1] == '\0') {
+        if (outErrReason != NULL) {
+            *outErrReason = "cannot import itself";
+        }
+        return -1;
+    }
+    if (importPath[0] == '.' && importPath[1] == '.' && importPath[2] == '\0') {
+        if (outErrReason != NULL) {
+            *outErrReason = "cannot import parent root";
+        }
+        return -1;
+    }
+    if (SLIsAsciiSpace(importPath[0]) || SLIsAsciiSpace(importPath[len - 1u])) {
+        if (outErrReason != NULL) {
+            *outErrReason = "leading/trailing whitespace";
+        }
+        return -1;
+    }
+
+    for (i = 0; i < len; i++) {
+        if (!SLIsValidImportPathChar(importPath[i])) {
+            if (outErrReason != NULL) {
+                *outErrReason = "invalid character";
+            }
+            return -1;
+        }
+    }
+
+    for (;;) {
+        uint32_t segEnd = segStart;
+        uint32_t segLen;
+        while (segEnd < len && importPath[segEnd] != '/') {
+            segEnd++;
+        }
+        segLen = segEnd - segStart;
+        if (segLen == 0) {
+            if (outErrReason != NULL) {
+                *outErrReason = "empty segment";
+            }
+            return -1;
+        }
+        if (segLen == 1 && importPath[segStart] == '.') {
+            /* skip "." */
+        } else if (segLen == 2 && importPath[segStart] == '.' && importPath[segStart + 1u] == '.') {
+            if (outLen == 0) {
+                if (outErrReason != NULL) {
+                    *outErrReason = "escapes root";
+                }
+                return -1;
+            }
+            while (outLen > 0 && out[outLen - 1u] != '/') {
+                outLen--;
+            }
+            if (outLen > 0) {
+                outLen--;
+            }
+        } else {
+            if (outLen > 0) {
+                if (outLen + 1u >= outCap) {
+                    if (outErrReason != NULL) {
+                        *outErrReason = "output buffer too small";
+                    }
+                    return -1;
+                }
+                out[outLen++] = '/';
+            }
+            if (segLen > outCap - outLen - 1u) {
+                if (outErrReason != NULL) {
+                    *outErrReason = "output buffer too small";
+                }
+                return -1;
+            }
+            memcpy(out + outLen, importPath + segStart, segLen);
+            outLen += segLen;
+        }
+
+        if (segEnd >= len) {
+            break;
+        }
+        segStart = segEnd + 1u;
+    }
+
+    if (outLen == 0) {
+        if (outErrReason != NULL) {
+            *outErrReason = "empty path";
+        }
+        return -1;
+    }
+
+    out[outLen] = '\0';
+    return 0;
 }
 
 static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {

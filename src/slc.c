@@ -998,152 +998,6 @@ static int IsFeatureImportPath(const char* importPath) {
         || strncmp(importPath, "feature/", 8u) == 0;
 }
 
-static int IsValidImportPathChar(char c) {
-    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
-        || c == '.' || c == '/' || c == '-';
-}
-
-static char* _Nullable NormalizeImportPath(const char* importPath, const char** outErr) {
-    size_t    len;
-    uint32_t* segStarts = NULL;
-    uint32_t* segLens = NULL;
-    uint32_t  segCount = 0;
-    uint32_t  i;
-    char*     out = NULL;
-
-    if (outErr != NULL) {
-        *outErr = NULL;
-    }
-    if (importPath == NULL || importPath[0] == '\0') {
-        if (outErr != NULL) {
-            *outErr = "empty path";
-        }
-        return NULL;
-    }
-    len = strlen(importPath);
-    if (importPath[0] == '/') {
-        if (outErr != NULL) {
-            *outErr = "absolute path";
-        }
-        return NULL;
-    }
-    if (importPath[0] == '.' && importPath[1] == '\0') {
-        if (outErr != NULL) {
-            *outErr = "cannot import itself";
-        }
-        return NULL;
-    }
-    if (importPath[0] == '.' && importPath[1] == '.' && importPath[2] == '\0') {
-        if (outErr != NULL) {
-            *outErr = "cannot import parent root";
-        }
-        return NULL;
-    }
-    if (IsAsciiSpaceChar(importPath[0]) || IsAsciiSpaceChar(importPath[len - 1u])) {
-        if (outErr != NULL) {
-            *outErr = "leading/trailing whitespace";
-        }
-        return NULL;
-    }
-
-    for (i = 0; i < (uint32_t)len; i++) {
-        if (!IsValidImportPathChar(importPath[i])) {
-            if (outErr != NULL) {
-                *outErr = "invalid character";
-            }
-            return NULL;
-        }
-    }
-
-    segStarts = (uint32_t*)malloc(sizeof(uint32_t) * (len + 1u));
-    segLens = (uint32_t*)malloc(sizeof(uint32_t) * (len + 1u));
-    if (segStarts == NULL || segLens == NULL) {
-        free(segStarts);
-        free(segLens);
-        if (outErr != NULL) {
-            *outErr = "out of memory";
-        }
-        return NULL;
-    }
-
-    {
-        uint32_t segStart = 0;
-        while (1) {
-            uint32_t segEnd = segStart;
-            uint32_t segLen;
-            while (segEnd < (uint32_t)len && importPath[segEnd] != '/') {
-                segEnd++;
-            }
-            segLen = segEnd - segStart;
-            if (segLen == 0) {
-                if (outErr != NULL) {
-                    *outErr = "empty segment";
-                }
-                goto done;
-            }
-            if (segLen == 1 && importPath[segStart] == '.') {
-                /* skip "." */
-            } else if (
-                segLen == 2 && importPath[segStart] == '.' && importPath[segStart + 1u] == '.')
-            {
-                if (segCount == 0) {
-                    if (outErr != NULL) {
-                        *outErr = "escapes root";
-                    }
-                    goto done;
-                }
-                segCount--;
-            } else {
-                segStarts[segCount] = segStart;
-                segLens[segCount] = segLen;
-                segCount++;
-            }
-            if (segEnd >= (uint32_t)len) {
-                break;
-            }
-            segStart = segEnd + 1u;
-        }
-    }
-
-    if (segCount == 0) {
-        if (outErr != NULL) {
-            *outErr = "empty path";
-        }
-        goto done;
-    }
-
-    {
-        uint32_t outLen = 0;
-        uint32_t p = 0;
-        for (i = 0; i < segCount; i++) {
-            outLen += segLens[i];
-            if (i + 1u < segCount) {
-                outLen++;
-            }
-        }
-        out = (char*)malloc((size_t)outLen + 1u);
-        if (out == NULL) {
-            if (outErr != NULL) {
-                *outErr = "out of memory";
-            }
-            goto done;
-        }
-        for (i = 0; i < segCount; i++) {
-            memcpy(out + p, importPath + segStarts[i], segLens[i]);
-            p += segLens[i];
-            if (i + 1u < segCount) {
-                out[p++] = '/';
-            }
-        }
-        out[p] = '\0';
-    }
-
-done:
-    free(segStarts);
-    free(segLens);
-    return out;
-}
-
 static int IsImportAliasUsed(const SLPackage* pkg, const char* alias) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
@@ -1485,6 +1339,7 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
             char*            decodedPath;
             const char*      pathErr = NULL;
             char*            importPath = NULL;
+            uint32_t         decodedPathLen = 0;
             char* _Nullable bindName = NULL;
             int aliasIsUnderscore = 0;
             char* _Nullable mangleAlias = NULL;
@@ -1510,10 +1365,22 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
                 return Errorf(file->path, n->dataStart, n->dataEnd, "invalid import path literal");
             }
 
-            importPath = NormalizeImportPath(decodedPath, &pathErr);
+            while (decodedPath[decodedPathLen] != '\0') {
+                decodedPathLen++;
+            }
+            importPath = (char*)malloc((size_t)decodedPathLen + 1u);
+            if (importPath == NULL) {
+                free(decodedPath);
+                return ErrorSimple("out of memory");
+            }
+            if (SLNormalizeImportPath(decodedPath, importPath, decodedPathLen + 1u, &pathErr) != 0)
+            {
+                free(importPath);
+                importPath = NULL;
+            }
             free(decodedPath);
             if (importPath == NULL) {
-                if (pathErr != NULL && !StrEq(pathErr, "out of memory")) {
+                if (pathErr != NULL) {
                     return ErrorDiagf(
                         file->path, n->start, n->end, SLDiag_IMPORT_INVALID_PATH, pathErr);
                 }
