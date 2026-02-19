@@ -177,11 +177,12 @@ Built-in functions participate in selector-call sugar when the call shape matche
 
 At minimum, these are supported:
 - `x.len()` => `len(x)`
+- `ma.new(T[, N])` => `new(ma, T[, N])`
 - `s.cstr()` => `cstr(s)`
 - `msg.print()` => `print(msg)`
 - `msg.panic()` => `panic(msg)`
 
-Built-ins that are not receiver-first forms (for example `new(ma, T[, N])`, `sizeof(...)`) do not participate.
+Built-ins that are not receiver-first forms (for example `sizeof(...)`) do not participate.
 
 ---
 
@@ -267,4 +268,3 @@ SLP-4 does not add:
 - method sets or method namespaces
 - interface/trait dispatch
 - function-value partial application from selector form (`x.f`)
-

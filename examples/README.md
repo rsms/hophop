@@ -33,6 +33,9 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/slc check examples/slp2_refs_slices.sl`
 - SLP-2 allocator `new(ma, ...)` forms: `examples/slp2_new_allocator.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/slp2_new_allocator.sl`
+- SLP-4 type functions (receiver sugar, overload groups, `x.len()`, `ma.new(...)`):
+  `examples/slp4_type_functions.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/slp4_type_functions.sl`
 
 ## Control Flow
 

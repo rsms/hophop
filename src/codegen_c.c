@@ -2614,17 +2614,102 @@ static int IsBuiltinNewCallExpr(SLCBackendC* c, int32_t exprNode) {
     }
     calleeNode = AstFirstChild(&c->ast, exprNode);
     callee = NodeAt(c, calleeNode);
-    return callee != NULL && callee->kind == SLAst_IDENT
-        && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "new");
+    if (callee != NULL && callee->kind == SLAst_IDENT
+        && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "new"))
+    {
+        return 1;
+    }
+    if (callee != NULL && callee->kind == SLAst_FIELD_EXPR
+        && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "new"))
+    {
+        int32_t            recvNode = AstFirstChild(&c->ast, calleeNode);
+        SLTypeRef          recvType;
+        const SLFieldInfo* fieldPath[64];
+        uint32_t           fieldPathLen = 0;
+        const SLFieldInfo* field = NULL;
+        if (recvNode < 0 || InferExprType(c, recvNode, &recvType) != 0 || !recvType.valid) {
+            return 0;
+        }
+        if (recvType.containerKind != SLTypeContainer_SCALAR && recvType.containerPtrDepth > 0) {
+            recvType.containerPtrDepth--;
+        } else if (recvType.ptrDepth > 0) {
+            recvType.ptrDepth--;
+        }
+        if (recvType.baseName != NULL
+            && ResolveFieldPathBySlice(
+                   c,
+                   recvType.baseName,
+                   callee->dataStart,
+                   callee->dataEnd,
+                   fieldPath,
+                   (uint32_t)(sizeof(fieldPath) / sizeof(fieldPath[0])),
+                   &fieldPathLen,
+                   &field)
+                   == 0
+            && fieldPathLen > 0)
+        {
+            return 0;
+        }
+        return 1;
+    }
+    return 0;
 }
 
 static int EmitNewCallExpr(SLCBackendC* c, int32_t callNode, int requireNonNull) {
-    int32_t     calleeNode = AstFirstChild(&c->ast, callNode);
-    int32_t     allocArg = AstNextSibling(&c->ast, calleeNode);
-    int32_t     typeArg = allocArg >= 0 ? AstNextSibling(&c->ast, allocArg) : -1;
-    int32_t     countArg = typeArg >= 0 ? AstNextSibling(&c->ast, typeArg) : -1;
-    int32_t     extraArg = countArg >= 0 ? AstNextSibling(&c->ast, countArg) : -1;
-    const char* typeName;
+    int32_t          calleeNode = AstFirstChild(&c->ast, callNode);
+    const SLAstNode* callee = NodeAt(c, calleeNode);
+    int32_t          allocArg = -1;
+    int32_t          typeArg = -1;
+    int32_t          countArg = -1;
+    int32_t          extraArg = -1;
+    const char*      typeName;
+    if (callee == NULL) {
+        return -1;
+    }
+    if (callee->kind == SLAst_IDENT
+        && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "new"))
+    {
+        allocArg = AstNextSibling(&c->ast, calleeNode);
+        typeArg = allocArg >= 0 ? AstNextSibling(&c->ast, allocArg) : -1;
+        countArg = typeArg >= 0 ? AstNextSibling(&c->ast, typeArg) : -1;
+        extraArg = countArg >= 0 ? AstNextSibling(&c->ast, countArg) : -1;
+    } else if (
+        callee->kind == SLAst_FIELD_EXPR
+        && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "new"))
+    {
+        int32_t            recvNode = AstFirstChild(&c->ast, calleeNode);
+        SLTypeRef          recvType;
+        const SLFieldInfo* fieldPath[64];
+        uint32_t           fieldPathLen = 0;
+        const SLFieldInfo* field = NULL;
+        if (recvNode < 0 || InferExprType(c, recvNode, &recvType) != 0 || !recvType.valid) {
+            return -1;
+        }
+        if (recvType.containerKind != SLTypeContainer_SCALAR && recvType.containerPtrDepth > 0) {
+            recvType.containerPtrDepth--;
+        } else if (recvType.ptrDepth > 0) {
+            recvType.ptrDepth--;
+        }
+        if (recvType.baseName != NULL
+            && ResolveFieldPathBySlice(
+                   c,
+                   recvType.baseName,
+                   callee->dataStart,
+                   callee->dataEnd,
+                   fieldPath,
+                   (uint32_t)(sizeof(fieldPath) / sizeof(fieldPath[0])),
+                   &fieldPathLen,
+                   &field)
+                   == 0
+            && fieldPathLen > 0)
+        {
+            return -1;
+        }
+        allocArg = recvNode;
+        typeArg = AstNextSibling(&c->ast, calleeNode);
+        countArg = typeArg >= 0 ? AstNextSibling(&c->ast, typeArg) : -1;
+        extraArg = countArg >= 0 ? AstNextSibling(&c->ast, countArg) : -1;
+    }
     if (allocArg < 0 || typeArg < 0 || extraArg >= 0) {
         return -1;
     }
@@ -3062,6 +3147,9 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                             return -1;
                         }
                         return EmitLenExprFromType(c, recvNode, &recvExprType);
+                    }
+                    if (SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "new")) {
+                        return EmitNewCallExpr(c, nodeId, 0);
                     }
                     if (SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "cstr")) {
                         int32_t extra = AstNextSibling(&c->ast, child);

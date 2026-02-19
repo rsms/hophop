@@ -374,6 +374,8 @@ Flow narrowing (locals only, including params since params are locals):
 - `T` must be a type argument expression (identifier naming builtin or named type).
 - `N` (if present) must be integer-typed; constant negative values are rejected.
 - Return type: `*T`.
+- Selector-call sugar is supported: `ma.new(T[, N])` is equivalent to `new(ma, T[, N])`
+  when `ma` has no field named `new`.
 
 ### 9.4 `panic(msg)`
 - `msg` must be convertible to `str`.

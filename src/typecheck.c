@@ -2380,6 +2380,83 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     *outType = u8PtrType;
                     return 0;
                 }
+                if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "new")) {
+                    int32_t typeArgNode = SLAstNextSibling(c->ast, calleeNode);
+                    int32_t countArgNode;
+                    int32_t nextArgNode;
+                    int32_t allocParamType;
+                    int32_t elemType;
+                    int32_t resultType;
+                    int32_t countType;
+                    int64_t countValue = 0;
+                    int     countIsConst = 0;
+                    if (typeArgNode < 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    }
+                    countArgNode = SLAstNextSibling(c->ast, typeArgNode);
+                    nextArgNode = countArgNode >= 0 ? SLAstNextSibling(c->ast, countArgNode) : -1;
+                    if (nextArgNode >= 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    }
+
+                    allocParamType = SLTCInternRefType(
+                        c, c->typeMemAllocator, 1, callee->start, callee->end);
+                    if (allocParamType < 0) {
+                        return -1;
+                    }
+                    if (!SLTCCanAssign(c, allocParamType, recvType)) {
+                        return SLTCFailNode(c, recvNode, SLDiag_TYPE_MISMATCH);
+                    }
+
+                    if (SLTCResolveTypeArgExpr(c, typeArgNode, &elemType) != 0) {
+                        return -1;
+                    }
+                    if (SLTCTypeContainsVarSizeByValue(c, elemType)) {
+                        return SLTCFailNode(c, typeArgNode, SLDiag_TYPE_MISMATCH);
+                    }
+
+                    if (countArgNode >= 0) {
+                        if (SLTCTypeExpr(c, countArgNode, &countType) != 0) {
+                            return -1;
+                        }
+                        if (!SLTCIsIntegerType(c, countType)) {
+                            return SLTCFailNode(c, countArgNode, SLDiag_TYPE_MISMATCH);
+                        }
+                        if (SLTCConstIntExpr(c, countArgNode, &countValue, &countIsConst) != 0) {
+                            return SLTCFailNode(c, countArgNode, SLDiag_TYPE_MISMATCH);
+                        }
+                        if (countIsConst && countValue < 0) {
+                            return SLTCFailNode(c, countArgNode, SLDiag_TYPE_MISMATCH);
+                        }
+                    }
+
+                    if (countArgNode >= 0) {
+                        if (countIsConst && countValue > 0) {
+                            int32_t arrayType = SLTCInternArrayType(
+                                c, elemType, (uint32_t)countValue, callee->start, callee->end);
+                            if (arrayType < 0) {
+                                return -1;
+                            }
+                            resultType = SLTCInternPtrType(
+                                c, arrayType, callee->start, callee->end);
+                        } else {
+                            int32_t sliceType = SLTCInternSliceType(
+                                c, elemType, 0, callee->start, callee->end);
+                            if (sliceType < 0) {
+                                return -1;
+                            }
+                            resultType = SLTCInternPtrType(
+                                c, sliceType, callee->start, callee->end);
+                        }
+                    } else {
+                        resultType = SLTCInternPtrType(c, elemType, callee->start, callee->end);
+                    }
+                    if (resultType < 0) {
+                        return -1;
+                    }
+                    *outType = resultType;
+                    return 0;
+                }
                 if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "panic")) {
                     int32_t nextArgNode = SLAstNextSibling(c->ast, calleeNode);
                     if (!SLTCCanAssign(c, c->typeStr, recvType)) {
@@ -3359,7 +3436,7 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
     c.fnGroups = (SLTCFnGroup*)SLArenaAlloc(
         arena, sizeof(SLTCFnGroup) * capBase, (uint32_t)_Alignof(SLTCFnGroup));
     c.fnGroupMembers = (int32_t*)SLArenaAlloc(
-        arena, sizeof(int32_t) * capBase * 2u, (uint32_t)_Alignof(int32_t));
+        arena, sizeof(int32_t) * capBase, (uint32_t)_Alignof(int32_t));
     c.scratchParamTypes = (int32_t*)SLArenaAlloc(
         arena, sizeof(int32_t) * capBase, (uint32_t)_Alignof(int32_t));
     c.locals = (SLTCLocal*)SLArenaAlloc(
@@ -3386,7 +3463,7 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
     c.fnGroupLen = 0;
     c.fnGroupCap = capBase;
     c.fnGroupMemberLen = 0;
-    c.fnGroupMemberCap = capBase * 2u;
+    c.fnGroupMemberCap = capBase;
     c.scratchParamCap = capBase;
     c.localLen = 0;
     c.localCap = capBase * 4u;
