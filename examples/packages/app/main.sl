@@ -1,4 +1,4 @@
-// Example app package importing another local package from the same examples tree.
+// app package importing another local package from the same examples tree
 
 import math "math"
 

@@ -1,4 +1,4 @@
-// Example: struct, union, and enum declarations with basic field/value usage.
+// struct, union, and enum declarations with basic field/value usage
 
 pub struct Pair {
     x i32

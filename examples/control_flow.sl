@@ -1,4 +1,4 @@
-// Example: core control flow forms: if, for, switch, break, and continue.
+// core control flow forms: if, for, switch, break, and continue
 
 fn main() {
     var sum i32 = 0

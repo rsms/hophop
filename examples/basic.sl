@@ -1,4 +1,4 @@
-// Example: minimal program shape with a simple function and main entrypoint.
+// minimal program shape with a simple function and main entrypoint
 
 fn main() {
     var x i32 = 42

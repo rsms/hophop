@@ -1,4 +1,4 @@
-// Example: defer semantics and execution order at scope exit.
+// defer semantics and execution order at scope exit
 
 fn cleanup() {}
 

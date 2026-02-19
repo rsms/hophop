@@ -1,4 +1,4 @@
-// Example: type-function selector sugar with built-ins (`x.len()`, `ma.new(...)`).
+// type-function selector sugar with built-ins (`x.len()`, `ma.new(...)`)
 
 fn main() {
     var msg str = "hi"

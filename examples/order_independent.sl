@@ -1,4 +1,4 @@
-// Example: declaration-order independence for functions and types.
+// declaration-order independence for functions and types
 
 fn main() {
     assert twice(9) == 18

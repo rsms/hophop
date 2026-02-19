@@ -1,4 +1,4 @@
-// Example: function groups (explicit overload sets) and selector-call dispatch.
+// function groups (explicit overload sets) and selector-call dispatch
 
 struct Cat {
     score int

@@ -1,4 +1,4 @@
-// Example: string literals with built-ins like len, cstr, assert, and formatted assert.
+// string literals with built-ins like len, cstr, assert, and formatted assert
 
 fn main() {
     var s str = "hello\n"

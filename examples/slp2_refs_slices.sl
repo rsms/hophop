@@ -1,4 +1,4 @@
-// Example: references and slices, including mutability and implicit view conversions.
+// references and slices, including mutability and implicit view conversions
 
 fn setfirst(xs mut&[i32 4], v i32) {
     xs[0] = v

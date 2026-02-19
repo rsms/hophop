@@ -1,4 +1,4 @@
-// Example: explicit type conversion using `as` between numeric types.
+// explicit type conversion using `as` between numeric types
 
 fn main() {
     var x i32 = 7

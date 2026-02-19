@@ -1,4 +1,4 @@
-// Example: importing a package using the default alias from the import path tail.
+// importing a package using the default alias from the import path tail
 
 import "lib/math"
 
