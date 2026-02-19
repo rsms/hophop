@@ -1,1 +1,1 @@
-tests/import_infer_name_bad.sl:0:14: error: cannot infer package identifier; use import "a/b-c" as <name>
+tests/import_infer_name_bad.sl:0:14: error: cannot infer package identifier; use 'import "a/b-c" as <name>'

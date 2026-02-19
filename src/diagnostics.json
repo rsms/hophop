@@ -124,7 +124,7 @@
     },
     "SL1031": {
         "name": "IMPORT_ALIAS_INFERENCE_FAILED",
-        "message": "cannot infer package identifier; use import \"{s}\" as <name>"
+        "message": "cannot infer package identifier; use 'import \"{s}\" as <name>'"
     },
     "SL1032": {
         "name": "IMPORT_WILDCARD_NOT_SUPPORTED",

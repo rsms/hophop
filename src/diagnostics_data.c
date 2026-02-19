@@ -93,8 +93,8 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
                                      SLDiagType_ERROR,
                                      1 },
     [SLDiag_IMPORT_ALIAS_INFERENCE_FAILED] = { "SL1031",
-                                               "cannot infer package identifier; use import \"%s\" "
-                                               "as <name>",
+                                               "cannot infer package identifier; use 'import "
+                                               "\"%s\" as <name>'",
                                                NULL,
                                                SLDiagType_ERROR,
                                                1 },

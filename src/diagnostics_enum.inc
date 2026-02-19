@@ -31,8 +31,8 @@ SLDiag_NONE = 0, SLDiag_ARENA_OOM,     /* SL1001: arena out of memory */
                                         */
     SLDiag_PARAM_MISSING_TYPE,         /* SL1029: parameter '{s}' is missing type */
     SLDiag_IMPORT_INVALID_PATH,        /* SL1030: invalid import path ({s}) */
-    SLDiag_IMPORT_ALIAS_INFERENCE_FAILED, /* SL1031: cannot infer package identifier; use import
-                                             "{s}" as <name> */
+    SLDiag_IMPORT_ALIAS_INFERENCE_FAILED, /* SL1031: cannot infer package identifier; use 'import
+                                             "{s}" as <name>' */
     SLDiag_IMPORT_WILDCARD_NOT_SUPPORTED, /* SL1032: wildcard import is not supported */
     SLDiag_IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS, /* SL1033: import with symbol list cannot use as _
                                                    */
