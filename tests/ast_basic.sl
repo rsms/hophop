@@ -1,4 +1,4 @@
-import h "ds/heap"
+import "ds/heap" as h
 fn main() i32 {
     var x i32 = 1 + 2*3
     if x > 0 {

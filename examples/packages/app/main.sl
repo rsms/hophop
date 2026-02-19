@@ -1,6 +1,6 @@
 // app package importing another local package from the same examples tree
 
-import math "math"
+import "math" as math
 
 fn main() {
     var x i32 = math.Add(20, 22)

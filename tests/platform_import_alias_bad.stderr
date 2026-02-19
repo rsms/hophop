@@ -1,1 +1,1 @@
-tests/platform_import_alias_bad.sl:0:19: error: import "platform" cannot be aliased; use import "platform"
+tests/platform_import_alias_bad.sl:7:8: error: unexpected token

@@ -150,7 +150,7 @@ v0 import model:
 
 ```sl
 import "ds/heap"
-import h "ds/heap"        // alias
+import "ds/heap" as h     // alias
 ```
 
 Default import alias is inferred from the last path component.
@@ -158,10 +158,11 @@ Default import alias is inferred from the last path component.
 Examples:
 
 * `import "foo/bar"` binds alias `bar`.
-* `import bar "foo/bar-v2"` is required if the last path component is not a valid identifier.
+* `import "foo/bar-v2" as bar` is required if the last path component is not a valid identifier.
 
 * Imported names are referenced via `pkg.Name` (or alias): `heap.Push`, `h.PQueue`.
-* No dot-imports, no unnamed imports in v0.
+* Named imports are supported: `import "pkg" { Name, Other as Local }`.
+* `import "pkg" as _` imports for side effects without binding a package name.
 * Cyclic imports are an error.
 
 #### Export surface (`pub`)
@@ -575,7 +576,8 @@ Within a package:
 
 For imports:
 
-* `import alias "path"` binds alias -> imported package id.
+* `import "path" as alias` binds alias -> imported package id.
+* `import "path" { Name }` binds exported symbol `Name` directly in package scope.
 * `alias.Name` resolves by looking up exported symbol `Name` in imported package export table.
 
 Within a package, resolution is declaration-order independent:
@@ -891,7 +893,7 @@ fn Pop(q *PQueue, out *i32) bool {
 ### `app/main.sl`
 
 ```sl
-import heap "ds/heap"
+import "ds/heap" as heap
 
 fn main() {
     var backing [64]i32

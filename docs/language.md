@@ -59,7 +59,11 @@ Rules:
 ## 3. Concrete Syntax (EBNF)
 
 ```ebnf
-ImportDecl      = "import" [Ident] StringLit ";" ;
+ImportDecl      = "import" StringLit [ImportAlias] [ImportSymbols] ";" ;
+ImportAlias     = "as" (Ident | "_") ;
+ImportSymbols   = "{" [ImportSymbol { ImportSep ImportSymbol } [ImportSep]] "}" ;
+ImportSymbol    = Ident [ "as" Ident ] ;
+ImportSep       = "," | ";" ;
 
 TopDecl         = ["pub"] (StructDecl | UnionDecl | EnumDecl | FnDeclOrDef | FnGroupDecl | ConstDecl) ;
 
@@ -422,25 +426,44 @@ Restrictions:
 ### 11.2 Imports
 Syntax:
 - `import "path"`
-- `import alias "path"`
+- `import "path" as alias`
+- `import "path" as _`
+- `import "path" { Name }`
+- `import "path" as alias { Name, Other as Local }`
 
 Resolution:
-- Default alias is last path component.
-- If default alias is not a valid identifier, explicit alias is required.
-- Relative import paths are resolved from loader root (entry package parent).
-- Absolute import paths (starting with `/`) are used as-is.
+- Import path is validated after string-literal decoding.
+- Path constraints:
+  - not empty
+  - not absolute (must not start with `/`)
+  - no leading/trailing whitespace
+  - characters limited to `[A-Za-z0-9_./-]`
+  - no empty path segments (`//` rejected)
+- Path normalization:
+  - `.` segments are removed
+  - `..` segments pop one previous segment
+  - escaping above loader root is rejected
+- If package binding is needed and no explicit `as` is provided, default alias is the last
+  normalized path segment.
+- Default alias inference is exact; no transformations are applied.
+- If inferred alias is not a valid identifier, explicit alias is required.
+- `import "path" { ... }` without `as` does not bind a package name.
+- `import "path" as _` imports for side effects only and does not bind a package name.
+- `import "path" as _ { ... }` is invalid.
 - Cyclic imports are rejected.
 
 Special import prefix:
 - `import "slang/feature/<name>"` does not resolve to filesystem package.
 - Known feature: `optional`.
 - Unknown feature names emit a warning.
+- Feature imports are path-only and cannot use `as` or `{...}`.
 - `import "platform"` resolves to a built-in package named `platform`.
-- `import "platform"` cannot be aliased.
 - Built-in `platform` API currently exports `fn exit(status i32)`.
 
 Use:
-- Imported symbols are referenced as `alias.Name` in type names and expressions.
+- Package imports are referenced as `alias.Name` in type names and expressions.
+- Named imports bind exported symbols directly into package scope.
+- `import "pkg" { * }` is not supported.
 - Unknown alias/symbol is a package check error.
 
 ### 11.3 Exports (`pub`)
@@ -453,7 +476,8 @@ Package validation performed by `checkpkg`/`genpkg`/`compile`/`run`:
 - Exported function declarations must have a definition body in package.
 - Public API closure:
   - Exported signatures/fields/const types may reference builtins or exported local types.
-  - Public API may not reference imported types (`alias.Type`) or private local types.
+  - Public API may not reference imported types (qualified or named-imported) or private local
+    types.
 
 Entry point:
 - `main` does not need `pub`.

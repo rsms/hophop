@@ -1451,24 +1451,98 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
 
 static int SLPParseImport(SLParser* p, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
-    const SLToken* alias = NULL;
     const SLToken* path;
+    const SLToken* alias = NULL;
     int32_t        n;
     p->pos++;
 
-    if (SLPAt(p, SLTok_IDENT)) {
-        if ((p->pos + 1u) < p->tokLen && p->tok[p->pos + 1u].kind == SLTok_STRING) {
-            alias = SLPPeek(p);
-            if (SLPReservedName(p, alias)) {
-                SLPSetDiag(p->diag, SLDiag_RESERVED_SL_PREFIX, alias->start, alias->end);
-                return -1;
-            }
-            p->pos++;
+    if (SLPExpect(p, SLTok_STRING, SLDiag_UNEXPECTED_TOKEN, &path) != 0) {
+        return -1;
+    }
+
+    n = SLPNewNode(p, SLAst_IMPORT, kw->start, path->end);
+    if (n < 0) {
+        return -1;
+    }
+    p->nodes[n].dataStart = path->start;
+    p->nodes[n].dataEnd = path->end;
+
+    if (SLPMatch(p, SLTok_AS)) {
+        int32_t aliasNode;
+        if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &alias) != 0) {
+            return -1;
+        }
+        if (SLPReservedName(p, alias)) {
+            SLPSetDiag(p->diag, SLDiag_RESERVED_SL_PREFIX, alias->start, alias->end);
+            return -1;
+        }
+        aliasNode = SLPNewNode(p, SLAst_IDENT, alias->start, alias->end);
+        if (aliasNode < 0) {
+            return -1;
+        }
+        p->nodes[aliasNode].dataStart = alias->start;
+        p->nodes[aliasNode].dataEnd = alias->end;
+        if (SLPAddChild(p, n, aliasNode) != 0) {
+            return -1;
         }
     }
 
-    if (SLPExpect(p, SLTok_STRING, SLDiag_UNEXPECTED_TOKEN, &path) != 0) {
-        return -1;
+    if (SLPMatch(p, SLTok_LBRACE)) {
+        if (!SLPAt(p, SLTok_RBRACE)) {
+            for (;;) {
+                const SLToken* symName = NULL;
+                const SLToken* symAlias = NULL;
+                int32_t        symNode;
+
+                if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &symName) != 0) {
+                    return -1;
+                }
+                symNode = SLPNewNode(p, SLAst_IMPORT_SYMBOL, symName->start, symName->end);
+                if (symNode < 0) {
+                    return -1;
+                }
+                p->nodes[symNode].dataStart = symName->start;
+                p->nodes[symNode].dataEnd = symName->end;
+
+                if (SLPMatch(p, SLTok_AS)) {
+                    int32_t symAliasNode;
+                    if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &symAlias) != 0) {
+                        return -1;
+                    }
+                    if (SLPReservedName(p, symAlias)) {
+                        SLPSetDiag(
+                            p->diag, SLDiag_RESERVED_SL_PREFIX, symAlias->start, symAlias->end);
+                        return -1;
+                    }
+                    symAliasNode = SLPNewNode(p, SLAst_IDENT, symAlias->start, symAlias->end);
+                    if (symAliasNode < 0) {
+                        return -1;
+                    }
+                    p->nodes[symAliasNode].dataStart = symAlias->start;
+                    p->nodes[symAliasNode].dataEnd = symAlias->end;
+                    if (SLPAddChild(p, symNode, symAliasNode) != 0) {
+                        return -1;
+                    }
+                    p->nodes[symNode].end = symAlias->end;
+                }
+
+                if (SLPAddChild(p, n, symNode) != 0) {
+                    return -1;
+                }
+
+                if (!SLPMatch(p, SLTok_COMMA) && !SLPMatch(p, SLTok_SEMICOLON)) {
+                    break;
+                }
+                while (SLPMatch(p, SLTok_COMMA) || SLPMatch(p, SLTok_SEMICOLON)) {}
+                if (SLPAt(p, SLTok_RBRACE)) {
+                    break;
+                }
+            }
+        }
+        if (SLPExpect(p, SLTok_RBRACE, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
+            return -1;
+        }
+        p->nodes[n].end = kw->end;
     }
 
     /* Detect feature imports and set feature flags. */
@@ -1498,24 +1572,6 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
         }
     }
 
-    n = SLPNewNode(p, SLAst_IMPORT, kw->start, path->end);
-    if (n < 0) {
-        return -1;
-    }
-    p->nodes[n].dataStart = path->start;
-    p->nodes[n].dataEnd = path->end;
-
-    if (alias != NULL) {
-        int32_t aliasNode = SLPNewNode(p, SLAst_IDENT, alias->start, alias->end);
-        if (aliasNode < 0) {
-            return -1;
-        }
-        p->nodes[aliasNode].dataStart = alias->start;
-        p->nodes[aliasNode].dataEnd = alias->end;
-        if (SLPAddChild(p, n, aliasNode) != 0) {
-            return -1;
-        }
-    }
     if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
         return -1;
     }
@@ -1563,6 +1619,7 @@ const char* SLAstKindName(SLAstKind kind) {
     switch (kind) {
         case SLAst_FILE:          return "FILE";
         case SLAst_IMPORT:        return "IMPORT";
+        case SLAst_IMPORT_SYMBOL: return "IMPORT_SYMBOL";
         case SLAst_PUB:           return "PUB";
         case SLAst_FN:            return "FN";
         case SLAst_FN_GROUP:      return "FN_GROUP";

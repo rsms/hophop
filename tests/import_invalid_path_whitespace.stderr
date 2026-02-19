@@ -1,0 +1,1 @@
+tests/import_invalid_path_whitespace.sl:0:10: error: invalid import path (leading/trailing whitespace)

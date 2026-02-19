@@ -1,1 +1,1 @@
-import __sl_bad "slang/feature/optional"
+import "slang/feature/optional" as __sl_bad

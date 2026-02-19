@@ -293,6 +293,7 @@ typedef struct {
 typedef enum {
     SLAst_FILE = 0,
     SLAst_IMPORT,
+    SLAst_IMPORT_SYMBOL,
     SLAst_PUB,
     SLAst_FN,
     SLAst_FN_GROUP,

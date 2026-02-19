@@ -29,13 +29,25 @@ typedef struct {
 struct SLPackage;
 
 typedef struct {
-    char*             alias;
+    char* alias; /* internal mangle prefix */
+    char* _Nullable bindName;
     char*             path;
     struct SLPackage* target;
     uint32_t          fileIndex;
     uint32_t          start;
     uint32_t          end;
 } SLImportRef;
+
+typedef struct {
+    uint32_t importIndex;
+    char*    sourceName;
+    char*    localName;
+    char* _Nullable qualifiedName;
+    uint8_t  isType;
+    uint32_t fileIndex;
+    uint32_t start;
+    uint32_t end;
+} SLImportSymbolRef;
 
 typedef struct {
     SLAstKind kind;
@@ -49,6 +61,7 @@ typedef struct {
 typedef struct {
     char*    text;
     uint32_t fileIndex;
+    int32_t  nodeId;
 } SLDeclText;
 
 typedef struct SLPackage {
@@ -65,6 +78,10 @@ typedef struct SLPackage {
     SLImportRef* imports;
     uint32_t     importLen;
     uint32_t     importCap;
+
+    SLImportSymbolRef* importSymbols;
+    uint32_t           importSymbolLen;
+    uint32_t           importSymbolCap;
 
     SLSymbolDecl* decls;
     uint32_t      declLen;
@@ -96,6 +113,9 @@ typedef struct {
     uint32_t len;
     uint32_t cap;
 } SLStringBuilder;
+
+static int BuildPrefixedName(const char* alias, const char* name, char** outName);
+static int IsAsciiSpaceChar(char c);
 
 static int ASTFirstChild(const SLAst* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
@@ -481,6 +501,10 @@ static int IsValidIdentifier(const char* s) {
         i++;
     }
     return 1;
+}
+
+static int IsReservedSLPrefixName(const char* s) {
+    return s != NULL && strncmp(s, "__sl_", 5u) == 0;
 }
 
 static char* _Nullable BaseNameDup(const char* path) {
@@ -950,6 +974,213 @@ static char* _Nullable DefaultImportAlias(const char* importPath) {
     return DupCStr(name);
 }
 
+static const char* LastPathSegment(const char* path) {
+    const char* slash = strrchr(path, '/');
+    if (slash == NULL || slash[1] == '\0') {
+        return path;
+    }
+    return slash + 1;
+}
+
+static int IsFeatureImportPath(const char* importPath) {
+    return strncmp(importPath, "slang/feature/", 14u) == 0
+        || strncmp(importPath, "feature/", 8u) == 0;
+}
+
+static int IsValidImportPathChar(char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
+        || c == '.' || c == '/' || c == '-';
+}
+
+static char* _Nullable NormalizeImportPath(const char* importPath, const char** outErr) {
+    size_t    len;
+    uint32_t* segStarts = NULL;
+    uint32_t* segLens = NULL;
+    uint32_t  segCount = 0;
+    uint32_t  i;
+    char*     out = NULL;
+
+    if (outErr != NULL) {
+        *outErr = NULL;
+    }
+    if (importPath == NULL || importPath[0] == '\0') {
+        if (outErr != NULL) {
+            *outErr = "invalid import path (empty path)";
+        }
+        return NULL;
+    }
+    len = strlen(importPath);
+    if (importPath[0] == '/') {
+        if (outErr != NULL) {
+            *outErr = "invalid import path (absolute path)";
+        }
+        return NULL;
+    }
+    if (importPath[0] == '.' && importPath[1] == '\0') {
+        if (outErr != NULL) {
+            *outErr = "invalid import path (cannot import itself)";
+        }
+        return NULL;
+    }
+    if (importPath[0] == '.' && importPath[1] == '.' && importPath[2] == '\0') {
+        if (outErr != NULL) {
+            *outErr = "invalid import path (cannot import parent root)";
+        }
+        return NULL;
+    }
+    if (IsAsciiSpaceChar(importPath[0]) || IsAsciiSpaceChar(importPath[len - 1u])) {
+        if (outErr != NULL) {
+            *outErr = "invalid import path (leading/trailing whitespace)";
+        }
+        return NULL;
+    }
+
+    for (i = 0; i < (uint32_t)len; i++) {
+        if (!IsValidImportPathChar(importPath[i])) {
+            if (outErr != NULL) {
+                *outErr = "invalid import path (invalid character)";
+            }
+            return NULL;
+        }
+    }
+
+    segStarts = (uint32_t*)malloc(sizeof(uint32_t) * (len + 1u));
+    segLens = (uint32_t*)malloc(sizeof(uint32_t) * (len + 1u));
+    if (segStarts == NULL || segLens == NULL) {
+        free(segStarts);
+        free(segLens);
+        if (outErr != NULL) {
+            *outErr = "out of memory";
+        }
+        return NULL;
+    }
+
+    {
+        uint32_t segStart = 0;
+        while (1) {
+            uint32_t segEnd = segStart;
+            uint32_t segLen;
+            while (segEnd < (uint32_t)len && importPath[segEnd] != '/') {
+                segEnd++;
+            }
+            segLen = segEnd - segStart;
+            if (segLen == 0) {
+                if (outErr != NULL) {
+                    *outErr = "invalid import path (empty segment)";
+                }
+                goto done;
+            }
+            if (segLen == 1 && importPath[segStart] == '.') {
+                /* skip "." */
+            } else if (
+                segLen == 2 && importPath[segStart] == '.' && importPath[segStart + 1u] == '.')
+            {
+                if (segCount == 0) {
+                    if (outErr != NULL) {
+                        *outErr = "invalid import path (escapes root)";
+                    }
+                    goto done;
+                }
+                segCount--;
+            } else {
+                segStarts[segCount] = segStart;
+                segLens[segCount] = segLen;
+                segCount++;
+            }
+            if (segEnd >= (uint32_t)len) {
+                break;
+            }
+            segStart = segEnd + 1u;
+        }
+    }
+
+    if (segCount == 0) {
+        if (outErr != NULL) {
+            *outErr = "invalid import path";
+        }
+        goto done;
+    }
+
+    {
+        uint32_t outLen = 0;
+        uint32_t p = 0;
+        for (i = 0; i < segCount; i++) {
+            outLen += segLens[i];
+            if (i + 1u < segCount) {
+                outLen++;
+            }
+        }
+        out = (char*)malloc((size_t)outLen + 1u);
+        if (out == NULL) {
+            if (outErr != NULL) {
+                *outErr = "out of memory";
+            }
+            goto done;
+        }
+        for (i = 0; i < segCount; i++) {
+            memcpy(out + p, importPath + segStarts[i], segLens[i]);
+            p += segLens[i];
+            if (i + 1u < segCount) {
+                out[p++] = '/';
+            }
+        }
+        out[p] = '\0';
+    }
+
+done:
+    free(segStarts);
+    free(segLens);
+    return out;
+}
+
+static int IsImportAliasUsed(const SLPackage* pkg, const char* alias) {
+    uint32_t i;
+    for (i = 0; i < pkg->importLen; i++) {
+        if (StrEq(pkg->imports[i].alias, alias)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static char* _Nullable MakeUniqueImportAlias(const SLPackage* pkg, const char* preferred) {
+    char*    alias;
+    uint32_t n;
+    if (preferred != NULL && preferred[0] != '\0' && IsValidIdentifier(preferred)
+        && !IsImportAliasUsed(pkg, preferred))
+    {
+        return DupCStr(preferred);
+    }
+    if (preferred == NULL || preferred[0] == '\0' || !IsValidIdentifier(preferred)) {
+        preferred = "imp";
+    }
+    alias = DupCStr(preferred);
+    if (alias == NULL) {
+        return NULL;
+    }
+    if (!IsImportAliasUsed(pkg, alias)) {
+        return alias;
+    }
+    free(alias);
+    for (n = 2; n < 1000000u; n++) {
+        int   m = snprintf(NULL, 0, "%s_%u", preferred, n);
+        char* cand;
+        if (m <= 0) {
+            return NULL;
+        }
+        cand = (char*)malloc((size_t)m + 1u);
+        if (cand == NULL) {
+            return NULL;
+        }
+        snprintf(cand, (size_t)m + 1u, "%s_%u", preferred, n);
+        if (!IsImportAliasUsed(pkg, cand)) {
+            return cand;
+        }
+        free(cand);
+    }
+    return NULL;
+}
+
 static void WarnUnknownFeatureImports(const char* filename, const char* source, const SLAst* ast) {
     int32_t child = ASTFirstChild(ast, ast->root);
     while (child >= 0) {
@@ -1020,7 +1251,7 @@ static int AddPackageFile(
     return 0;
 }
 
-static int AddDeclText(SLPackage* pkg, char* text, uint32_t fileIndex) {
+static int AddDeclText(SLPackage* pkg, char* text, uint32_t fileIndex, int32_t nodeId) {
     SLDeclText* t;
     if (EnsureCap(
             (void**)&pkg->declTexts, &pkg->declTextCap, pkg->declTextLen + 1u, sizeof(SLDeclText))
@@ -1031,6 +1262,7 @@ static int AddDeclText(SLPackage* pkg, char* text, uint32_t fileIndex) {
     t = &pkg->declTexts[pkg->declTextLen++];
     t->text = text;
     t->fileIndex = fileIndex;
+    t->nodeId = nodeId;
     return 0;
 }
 
@@ -1061,36 +1293,57 @@ static int AddSymbolDecl(
 static int AddImportRef(
     SLPackage* pkg,
     char*      alias,
-    char*      importPath,
-    uint32_t   fileIndex,
-    uint32_t   start,
-    uint32_t   end) {
+    char* _Nullable bindName,
+    char*     importPath,
+    uint32_t  fileIndex,
+    uint32_t  start,
+    uint32_t  end,
+    uint32_t* outIndex) {
     SLImportRef* imp;
-    uint32_t     i;
-    for (i = 0; i < pkg->importLen; i++) {
-        if (StrEq(pkg->imports[i].alias, alias)) {
-            if (StrEq(pkg->imports[i].path, importPath)) {
-                free(alias);
-                free(importPath);
-                return 0;
-            }
-            free(alias);
-            free(importPath);
-            return -1;
-        }
-    }
     if (EnsureCap((void**)&pkg->imports, &pkg->importCap, pkg->importLen + 1u, sizeof(SLImportRef))
         != 0)
     {
         return -1;
     }
+    *outIndex = pkg->importLen;
     imp = &pkg->imports[pkg->importLen++];
     imp->alias = alias;
+    imp->bindName = bindName;
     imp->path = importPath;
     imp->target = NULL;
     imp->fileIndex = fileIndex;
     imp->start = start;
     imp->end = end;
+    return 0;
+}
+
+static int AddImportSymbolRef(
+    SLPackage* pkg,
+    uint32_t   importIndex,
+    char*      sourceName,
+    char*      localName,
+    uint32_t   fileIndex,
+    uint32_t   start,
+    uint32_t   end) {
+    SLImportSymbolRef* sym;
+    if (EnsureCap(
+            (void**)&pkg->importSymbols,
+            &pkg->importSymbolCap,
+            pkg->importSymbolLen + 1u,
+            sizeof(SLImportSymbolRef))
+        != 0)
+    {
+        return -1;
+    }
+    sym = &pkg->importSymbols[pkg->importSymbolLen++];
+    sym->importIndex = importIndex;
+    sym->sourceName = sourceName;
+    sym->localName = localName;
+    sym->qualifiedName = NULL;
+    sym->isType = 0;
+    sym->fileIndex = fileIndex;
+    sym->start = start;
+    sym->end = end;
     return 0;
 }
 
@@ -1215,58 +1468,174 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
     while (child >= 0) {
         const SLAstNode* n = &ast->nodes[child];
         if (n->kind == SLAst_IMPORT) {
-            int32_t aliasNode = ASTFirstChild(ast, child);
-            char*   importPath = DecodeStringLiteral(file->source, n->dataStart, n->dataEnd);
-            char*   alias = NULL;
-            if (importPath == NULL) {
+            int32_t          importChild = ASTFirstChild(ast, child);
+            const SLAstNode* aliasNode = NULL;
+            int              hasSymbols = 0;
+            char*            decodedPath;
+            const char*      pathErr = NULL;
+            char*            importPath = NULL;
+            char* _Nullable bindName = NULL;
+            int aliasIsUnderscore = 0;
+            char* _Nullable mangleAlias = NULL;
+            uint32_t importIndex = 0;
+
+            while (importChild >= 0) {
+                const SLAstNode* ch = &ast->nodes[importChild];
+                if (ch->kind == SLAst_IDENT) {
+                    if (aliasNode != NULL) {
+                        return Errorf(file->path, n->start, n->end, "invalid import declaration");
+                    }
+                    aliasNode = ch;
+                } else if (ch->kind == SLAst_IMPORT_SYMBOL) {
+                    hasSymbols = 1;
+                } else {
+                    return Errorf(file->path, n->start, n->end, "invalid import declaration");
+                }
+                importChild = ASTNextSibling(ast, importChild);
+            }
+
+            decodedPath = DecodeStringLiteral(file->source, n->dataStart, n->dataEnd);
+            if (decodedPath == NULL) {
                 return Errorf(file->path, n->dataStart, n->dataEnd, "invalid import path literal");
             }
-            /* Skip feature imports; they are compiler directives, not real packages.
-             */
-            if (strncmp(importPath, "slang/feature/", 14u) == 0
-                || strncmp(importPath, "feature/", 8u) == 0)
-            {
-                free(importPath);
-                child = ASTNextSibling(ast, child);
-                continue;
+
+            importPath = NormalizeImportPath(decodedPath, &pathErr);
+            free(decodedPath);
+            if (importPath == NULL) {
+                if (pathErr != NULL && !StrEq(pathErr, "out of memory")) {
+                    return Errorf(file->path, n->start, n->end, "%s", pathErr);
+                }
+                return ErrorSimple("out of memory");
             }
-            if (aliasNode >= 0) {
-                const SLAstNode* a = &ast->nodes[aliasNode];
-                alias = DupSlice(file->source, a->dataStart, a->dataEnd);
-            } else {
-                alias = DefaultImportAlias(importPath);
-            }
-            if (StrEq(importPath, "platform")) {
-                if (alias == NULL || !StrEq(alias, "platform")) {
+
+            if (IsFeatureImportPath(importPath)) {
+                if (aliasNode != NULL || hasSymbols) {
                     int rc = Errorf(
                         file->path,
                         n->start,
                         n->end,
-                        "import \"platform\" cannot be aliased; use import \"platform\"");
-                    free(alias);
+                        "feature imports must be path-only (no alias or symbol list)");
+                    free(importPath);
+                    return rc;
+                }
+                free(importPath);
+                child = ASTNextSibling(ast, child);
+                continue;
+            }
+
+            if (aliasNode != NULL) {
+                bindName = DupSlice(file->source, aliasNode->dataStart, aliasNode->dataEnd);
+                if (bindName == NULL) {
+                    free(importPath);
+                    return ErrorSimple("out of memory");
+                }
+                aliasIsUnderscore = StrEq(bindName, "_");
+                if (aliasIsUnderscore) {
+                    free(bindName);
+                    bindName = NULL;
+                }
+            }
+
+            if (aliasIsUnderscore && hasSymbols) {
+                int rc = Errorf(
+                    file->path, n->start, n->end, "import with symbol list cannot use as _");
+                free(importPath);
+                return rc;
+            }
+
+            if (bindName == NULL && !hasSymbols) {
+                bindName = DefaultImportAlias(importPath);
+                if (bindName == NULL) {
+                    int rc = Errorf(
+                        file->path,
+                        n->start,
+                        n->end,
+                        "cannot infer package identifier; use import \"%s\" as <name>",
+                        importPath);
                     free(importPath);
                     return rc;
                 }
             }
-            if (alias == NULL) {
+
+            if (bindName != NULL && IsReservedSLPrefixName(bindName)) {
                 int rc = Errorf(
-                    file->path,
-                    n->start,
-                    n->end,
-                    "import path requires explicit alias (e.g. import name \"%s\")",
-                    importPath);
+                    file->path, n->start, n->end, "identifier prefix '__sl_' is reserved");
+                free(bindName);
                 free(importPath);
                 return rc;
             }
-            if (AddImportRef(pkg, alias, importPath, fileIndex, n->start, n->end) != 0) {
-                return Errorf(file->path, n->start, n->end, "duplicate import alias");
+
+            mangleAlias = MakeUniqueImportAlias(
+                pkg, bindName != NULL ? bindName : LastPathSegment(importPath));
+            if (mangleAlias == NULL) {
+                free(bindName);
+                free(importPath);
+                return ErrorSimple("out of memory");
+            }
+            if (AddImportRef(
+                    pkg,
+                    mangleAlias,
+                    bindName,
+                    importPath,
+                    fileIndex,
+                    n->start,
+                    n->end,
+                    &importIndex)
+                != 0)
+            {
+                free(mangleAlias);
+                free(bindName);
+                free(importPath);
+                return ErrorSimple("out of memory");
+            }
+
+            importChild = ASTFirstChild(ast, child);
+            while (importChild >= 0) {
+                const SLAstNode* ch = &ast->nodes[importChild];
+                if (ch->kind == SLAst_IMPORT_SYMBOL) {
+                    int32_t localAliasNode = ASTFirstChild(ast, importChild);
+                    char*   sourceName = DupSlice(file->source, ch->dataStart, ch->dataEnd);
+                    char*   localName;
+                    if (sourceName == NULL) {
+                        return ErrorSimple("out of memory");
+                    }
+                    if (localAliasNode >= 0 && ast->nodes[localAliasNode].kind == SLAst_IDENT) {
+                        const SLAstNode* ln = &ast->nodes[localAliasNode];
+                        localName = DupSlice(file->source, ln->dataStart, ln->dataEnd);
+                    } else {
+                        localName = DupCStr(sourceName);
+                    }
+                    if (localName == NULL) {
+                        free(sourceName);
+                        return ErrorSimple("out of memory");
+                    }
+                    if (StrEq(localName, "_")) {
+                        int rc = Errorf(
+                            file->path,
+                            ch->start,
+                            ch->end,
+                            "import symbol alias '_' is not allowed");
+                        free(sourceName);
+                        free(localName);
+                        return rc;
+                    }
+                    if (AddImportSymbolRef(
+                            pkg, importIndex, sourceName, localName, fileIndex, ch->start, ch->end)
+                        != 0)
+                    {
+                        free(sourceName);
+                        free(localName);
+                        return ErrorSimple("out of memory");
+                    }
+                }
+                importChild = ASTNextSibling(ast, importChild);
             }
         } else {
             char* declText = DupSlice(file->source, n->start, n->end);
             if (declText == NULL) {
                 return ErrorSimple("out of memory");
             }
-            if (AddDeclText(pkg, declText, fileIndex) != 0) {
+            if (AddDeclText(pkg, declText, fileIndex, child) != 0) {
                 free(declText);
                 return ErrorSimple("out of memory");
             }
@@ -1476,8 +1845,9 @@ static const SLImportRef* _Nullable FindImportByAliasSlice(
     const SLPackage* pkg, const char* src, uint32_t aliasStart, uint32_t aliasEnd) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
-        if (strlen(pkg->imports[i].alias) == (size_t)(aliasEnd - aliasStart)
-            && memcmp(pkg->imports[i].alias, src + aliasStart, (size_t)(aliasEnd - aliasStart))
+        if (pkg->imports[i].bindName != NULL
+            && strlen(pkg->imports[i].bindName) == (size_t)(aliasEnd - aliasStart)
+            && memcmp(pkg->imports[i].bindName, src + aliasStart, (size_t)(aliasEnd - aliasStart))
                    == 0)
         {
             return &pkg->imports[i];
@@ -1538,6 +1908,121 @@ static int ValidatePackageSelectors(const SLPackage* pkg) {
         const SLParsedFile* file = &pkg->files[i];
         if (ValidateSelectorsNode(pkg, file, file->ast.root) != 0) {
             return -1;
+        }
+    }
+    return 0;
+}
+
+static int PackageHasAnyDeclName(const SLPackage* pkg, const char* name) {
+    uint32_t i;
+    for (i = 0; i < pkg->declLen; i++) {
+        if (StrEq(pkg->decls[i].name, name)) {
+            return 1;
+        }
+    }
+    for (i = 0; i < pkg->pubDeclLen; i++) {
+        if (StrEq(pkg->pubDecls[i].name, name)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ValidateImportBindingConflicts(const SLPackage* pkg) {
+    uint32_t i;
+    for (i = 0; i < pkg->importLen; i++) {
+        const SLImportRef* imp = &pkg->imports[i];
+        uint32_t           j;
+        if (imp->bindName == NULL) {
+            continue;
+        }
+        if (PackageHasAnyDeclName(pkg, imp->bindName)) {
+            const SLParsedFile* file = &pkg->files[imp->fileIndex];
+            return Errorf(file->path, imp->start, imp->end, "import binding conflict");
+        }
+        for (j = i + 1u; j < pkg->importLen; j++) {
+            if (pkg->imports[j].bindName != NULL && StrEq(pkg->imports[j].bindName, imp->bindName))
+            {
+                const SLParsedFile* file = &pkg->files[pkg->imports[j].fileIndex];
+                return Errorf(
+                    file->path,
+                    pkg->imports[j].start,
+                    pkg->imports[j].end,
+                    "import binding conflict");
+            }
+        }
+        for (j = 0; j < pkg->importSymbolLen; j++) {
+            if (StrEq(pkg->importSymbols[j].localName, imp->bindName)) {
+                const SLParsedFile* file = &pkg->files[pkg->importSymbols[j].fileIndex];
+                return Errorf(
+                    file->path,
+                    pkg->importSymbols[j].start,
+                    pkg->importSymbols[j].end,
+                    "import binding conflict");
+            }
+        }
+    }
+
+    for (i = 0; i < pkg->importSymbolLen; i++) {
+        const SLImportSymbolRef* sym = &pkg->importSymbols[i];
+        uint32_t                 j;
+        if (PackageHasAnyDeclName(pkg, sym->localName)) {
+            const SLParsedFile* file = &pkg->files[sym->fileIndex];
+            return Errorf(file->path, sym->start, sym->end, "import binding conflict");
+        }
+        for (j = i + 1u; j < pkg->importSymbolLen; j++) {
+            if (StrEq(pkg->importSymbols[j].localName, sym->localName)) {
+                const SLParsedFile* file = &pkg->files[pkg->importSymbols[j].fileIndex];
+                return Errorf(
+                    file->path,
+                    pkg->importSymbols[j].start,
+                    pkg->importSymbols[j].end,
+                    "import binding conflict");
+            }
+        }
+    }
+    return 0;
+}
+
+static const SLSymbolDecl* _Nullable FindExportDeclByName(const SLPackage* pkg, const char* name) {
+    uint32_t i;
+    for (i = 0; i < pkg->pubDeclLen; i++) {
+        if (StrEq(pkg->pubDecls[i].name, name)) {
+            return &pkg->pubDecls[i];
+        }
+    }
+    return NULL;
+}
+
+static int ValidateAndFinalizeImportSymbols(SLPackage* pkg) {
+    uint32_t i;
+    for (i = 0; i < pkg->importSymbolLen; i++) {
+        SLImportSymbolRef*  sym = &pkg->importSymbols[i];
+        const SLImportRef*  imp;
+        const SLPackage*    dep;
+        const SLSymbolDecl* exportDecl;
+        if (sym->importIndex >= pkg->importLen) {
+            return ErrorSimple("internal error: invalid import symbol mapping");
+        }
+        imp = &pkg->imports[sym->importIndex];
+        dep = imp->target;
+        if (dep == NULL) {
+            return ErrorSimple("internal error: unresolved import");
+        }
+        exportDecl = FindExportDeclByName(dep, sym->sourceName);
+        if (exportDecl == NULL) {
+            const SLParsedFile* file = &pkg->files[sym->fileIndex];
+            return Errorf(file->path, sym->start, sym->end, "unknown imported symbol");
+        }
+        sym->isType =
+            (exportDecl->kind == SLAst_STRUCT || exportDecl->kind == SLAst_UNION
+             || exportDecl->kind == SLAst_ENUM)
+                ? 1u
+                : 0u;
+        if (sym->qualifiedName == NULL
+            && BuildPrefixedName(imp->alias, sym->sourceName, &sym->qualifiedName) != 0)
+        {
+            return ErrorSimple("out of memory");
         }
     }
     return 0;
@@ -1746,18 +2231,14 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
             }
             continue;
         }
-        if (pkg->imports[i].path[0] == '/') {
-            resolvedDir = DupCStr(pkg->imports[i].path);
-        } else {
-            resolvedDir = JoinPath(loader->rootDir, pkg->imports[i].path);
-            if (resolvedDir != NULL && strncmp(pkg->imports[i].path, "std/", 4u) == 0
-                && !IsDirectoryPath(resolvedDir))
-            {
-                char* stdResolved = ResolveStdImportDir(pkg->dirPath, pkg->imports[i].path);
-                if (stdResolved != NULL) {
-                    free(resolvedDir);
-                    resolvedDir = stdResolved;
-                }
+        resolvedDir = JoinPath(loader->rootDir, pkg->imports[i].path);
+        if (resolvedDir != NULL && strncmp(pkg->imports[i].path, "std/", 4u) == 0
+            && !IsDirectoryPath(resolvedDir))
+        {
+            char* stdResolved = ResolveStdImportDir(pkg->dirPath, pkg->imports[i].path);
+            if (stdResolved != NULL) {
+                free(resolvedDir);
+                resolvedDir = stdResolved;
             }
         }
         if (resolvedDir == NULL) {
@@ -1776,6 +2257,9 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
         free(resolvedDir);
     }
 
+    if (ValidateAndFinalizeImportSymbols(pkg) != 0) {
+        return -1;
+    }
     if (ValidatePackageSelectors(pkg) != 0) {
         return -1;
     }
@@ -1846,6 +2330,10 @@ static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SL
         }
     }
 
+    if (ValidateImportBindingConflicts(pkg) != 0) {
+        return -1;
+    }
+
     if (ValidatePubFnDefinitions(pkg) != 0) {
         return -1;
     }
@@ -1904,6 +2392,10 @@ static int LoadSingleFilePackage(
         }
     }
 
+    if (ValidateImportBindingConflicts(pkg) != 0) {
+        return -1;
+    }
+
     if (ValidatePubFnDefinitions(pkg) != 0) {
         return -1;
     }
@@ -1934,6 +2426,722 @@ static const char* _Nullable FindIdentReplacement(
         }
     }
     return NULL;
+}
+
+typedef struct {
+    uint32_t    start;
+    uint32_t    end;
+    const char* replacement;
+} SLTextRewrite;
+
+static int AddTextRewrite(
+    SLTextRewrite** rewrites,
+    uint32_t*       len,
+    uint32_t*       cap,
+    uint32_t        start,
+    uint32_t        end,
+    const char*     replacement) {
+    if (EnsureCap((void**)rewrites, cap, *len + 1u, sizeof(SLTextRewrite)) != 0) {
+        return -1;
+    }
+    (*rewrites)[*len].start = start;
+    (*rewrites)[*len].end = end;
+    (*rewrites)[*len].replacement = replacement;
+    (*len)++;
+    return 0;
+}
+
+static int FindImportSymbolBindingIndexBySlice(
+    const SLPackage* pkg, const char* src, uint32_t start, uint32_t end, int wantType) {
+    uint32_t i;
+    for (i = 0; i < pkg->importSymbolLen; i++) {
+        const SLImportSymbolRef* sym = &pkg->importSymbols[i];
+        size_t                   nameLen;
+        if ((sym->isType ? 1 : 0) != (wantType ? 1 : 0)) {
+            continue;
+        }
+        nameLen = strlen(sym->localName);
+        if (nameLen == (size_t)(end - start) && memcmp(sym->localName, src + start, nameLen) == 0) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static int CollectTypeNameImportRewritesNode(
+    const SLPackage*    pkg,
+    const SLParsedFile* file,
+    int32_t             nodeId,
+    SLTextRewrite**     rewrites,
+    uint32_t*           rewriteLen,
+    uint32_t*           rewriteCap) {
+    const SLAstNode* n;
+    int32_t          child;
+    if (nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
+        return 0;
+    }
+    n = &file->ast.nodes[nodeId];
+    if (n->kind == SLAst_TYPE_NAME) {
+        uint32_t i;
+        int      hasDot = 0;
+        for (i = n->dataStart; i < n->dataEnd; i++) {
+            if (file->source[i] == '.') {
+                hasDot = 1;
+                break;
+            }
+        }
+        if (!hasDot) {
+            int idx = FindImportSymbolBindingIndexBySlice(
+                pkg, file->source, n->dataStart, n->dataEnd, 1);
+            if (idx >= 0) {
+                if (AddTextRewrite(
+                        rewrites,
+                        rewriteLen,
+                        rewriteCap,
+                        n->dataStart,
+                        n->dataEnd,
+                        pkg->importSymbols[(uint32_t)idx].qualifiedName)
+                    != 0)
+                {
+                    return -1;
+                }
+            }
+        }
+    }
+    child = ASTFirstChild(&file->ast, nodeId);
+    while (child >= 0) {
+        if (CollectTypeNameImportRewritesNode(pkg, file, child, rewrites, rewriteLen, rewriteCap)
+            != 0)
+        {
+            return -1;
+        }
+        child = ASTNextSibling(&file->ast, child);
+    }
+    return 0;
+}
+
+static int CollectExprImportRewritesNode(
+    const SLPackage*    pkg,
+    const SLParsedFile* file,
+    int32_t             nodeId,
+    uint8_t*            shadowCounts,
+    SLTextRewrite**     rewrites,
+    uint32_t*           rewriteLen,
+    uint32_t*           rewriteCap) {
+    const SLAstNode* n;
+    int32_t          child;
+    if (nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
+        return 0;
+    }
+    n = &file->ast.nodes[nodeId];
+    switch (n->kind) {
+        case SLAst_IDENT: {
+            int idx = FindImportSymbolBindingIndexBySlice(
+                pkg, file->source, n->dataStart, n->dataEnd, 0);
+            if (idx >= 0 && shadowCounts[(uint32_t)idx] == 0) {
+                if (AddTextRewrite(
+                        rewrites,
+                        rewriteLen,
+                        rewriteCap,
+                        n->dataStart,
+                        n->dataEnd,
+                        pkg->importSymbols[(uint32_t)idx].qualifiedName)
+                    != 0)
+                {
+                    return -1;
+                }
+            }
+            return 0;
+        }
+        case SLAst_UNARY:
+        case SLAst_BINARY:
+        case SLAst_CALL:
+        case SLAst_INDEX:
+        case SLAst_FIELD_EXPR:
+        case SLAst_CAST:
+        case SLAst_SIZEOF:
+        case SLAst_UNWRAP:
+            child = ASTFirstChild(&file->ast, nodeId);
+            while (child >= 0) {
+                if (CollectExprImportRewritesNode(
+                        pkg, file, child, shadowCounts, rewrites, rewriteLen, rewriteCap)
+                    != 0)
+                {
+                    return -1;
+                }
+                child = ASTNextSibling(&file->ast, child);
+            }
+            return 0;
+        default: return 0;
+    }
+}
+
+static int PushShadowIfValueImportName(
+    const SLPackage*    pkg,
+    const SLParsedFile* file,
+    uint32_t            start,
+    uint32_t            end,
+    uint8_t*            shadowCounts,
+    uint32_t**          shadowStack,
+    uint32_t*           shadowLen,
+    uint32_t*           shadowCap) {
+    int idx = FindImportSymbolBindingIndexBySlice(pkg, file->source, start, end, 0);
+    if (idx < 0) {
+        return 0;
+    }
+    if (EnsureCap((void**)shadowStack, shadowCap, *shadowLen + 1u, sizeof(uint32_t)) != 0) {
+        return -1;
+    }
+    shadowCounts[(uint32_t)idx]++;
+    (*shadowStack)[(*shadowLen)++] = (uint32_t)idx;
+    return 0;
+}
+
+static void PopShadowToMark(
+    uint8_t* shadowCounts, uint32_t* shadowStack, uint32_t* shadowLen, uint32_t mark) {
+    while (*shadowLen > mark) {
+        uint32_t idx = shadowStack[--(*shadowLen)];
+        if (shadowCounts[idx] > 0) {
+            shadowCounts[idx]--;
+        }
+    }
+}
+
+static int CollectStmtImportRewritesNode(
+    const SLPackage*    pkg,
+    const SLParsedFile* file,
+    int32_t             nodeId,
+    uint8_t*            shadowCounts,
+    uint32_t**          shadowStack,
+    uint32_t*           shadowLen,
+    uint32_t*           shadowCap,
+    SLTextRewrite**     rewrites,
+    uint32_t*           rewriteLen,
+    uint32_t*           rewriteCap);
+
+static int CollectBlockImportRewritesNode(
+    const SLPackage*    pkg,
+    const SLParsedFile* file,
+    int32_t             blockNodeId,
+    uint8_t*            shadowCounts,
+    uint32_t**          shadowStack,
+    uint32_t*           shadowLen,
+    uint32_t*           shadowCap,
+    SLTextRewrite**     rewrites,
+    uint32_t*           rewriteLen,
+    uint32_t*           rewriteCap) {
+    uint32_t mark = *shadowLen;
+    int32_t  child = ASTFirstChild(&file->ast, blockNodeId);
+    while (child >= 0) {
+        if (CollectStmtImportRewritesNode(
+                pkg,
+                file,
+                child,
+                shadowCounts,
+                shadowStack,
+                shadowLen,
+                shadowCap,
+                rewrites,
+                rewriteLen,
+                rewriteCap)
+            != 0)
+        {
+            PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+            return -1;
+        }
+        child = ASTNextSibling(&file->ast, child);
+    }
+    PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+    return 0;
+}
+
+static int CollectStmtImportRewritesNode(
+    const SLPackage*    pkg,
+    const SLParsedFile* file,
+    int32_t             nodeId,
+    uint8_t*            shadowCounts,
+    uint32_t**          shadowStack,
+    uint32_t*           shadowLen,
+    uint32_t*           shadowCap,
+    SLTextRewrite**     rewrites,
+    uint32_t*           rewriteLen,
+    uint32_t*           rewriteCap) {
+    const SLAstNode* n;
+    int32_t          child;
+    if (nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
+        return 0;
+    }
+    n = &file->ast.nodes[nodeId];
+    switch (n->kind) {
+        case SLAst_BLOCK:
+            return CollectBlockImportRewritesNode(
+                pkg,
+                file,
+                nodeId,
+                shadowCounts,
+                shadowStack,
+                shadowLen,
+                shadowCap,
+                rewrites,
+                rewriteLen,
+                rewriteCap);
+        case SLAst_VAR:
+        case SLAst_CONST: {
+            int32_t typeNode = ASTFirstChild(&file->ast, nodeId);
+            int32_t initNode = typeNode >= 0 ? ASTNextSibling(&file->ast, typeNode) : -1;
+            if (initNode >= 0
+                && CollectExprImportRewritesNode(
+                       pkg, file, initNode, shadowCounts, rewrites, rewriteLen, rewriteCap)
+                       != 0)
+            {
+                return -1;
+            }
+            return PushShadowIfValueImportName(
+                pkg,
+                file,
+                n->dataStart,
+                n->dataEnd,
+                shadowCounts,
+                shadowStack,
+                shadowLen,
+                shadowCap);
+        }
+        case SLAst_IF: {
+            int32_t cond = ASTFirstChild(&file->ast, nodeId);
+            int32_t thenNode = cond >= 0 ? ASTNextSibling(&file->ast, cond) : -1;
+            int32_t elseNode = thenNode >= 0 ? ASTNextSibling(&file->ast, thenNode) : -1;
+            if (cond >= 0
+                && CollectExprImportRewritesNode(
+                       pkg, file, cond, shadowCounts, rewrites, rewriteLen, rewriteCap)
+                       != 0)
+            {
+                return -1;
+            }
+            if (thenNode >= 0
+                && CollectStmtImportRewritesNode(
+                       pkg,
+                       file,
+                       thenNode,
+                       shadowCounts,
+                       shadowStack,
+                       shadowLen,
+                       shadowCap,
+                       rewrites,
+                       rewriteLen,
+                       rewriteCap)
+                       != 0)
+            {
+                return -1;
+            }
+            if (elseNode >= 0
+                && CollectStmtImportRewritesNode(
+                       pkg,
+                       file,
+                       elseNode,
+                       shadowCounts,
+                       shadowStack,
+                       shadowLen,
+                       shadowCap,
+                       rewrites,
+                       rewriteLen,
+                       rewriteCap)
+                       != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+        case SLAst_FOR: {
+            int32_t  parts[4];
+            uint32_t partCount = 0;
+            uint32_t mark = *shadowLen;
+            child = ASTFirstChild(&file->ast, nodeId);
+            while (child >= 0 && partCount < 4u) {
+                parts[partCount++] = child;
+                child = ASTNextSibling(&file->ast, child);
+            }
+            if (partCount > 0) {
+                uint32_t last = partCount - 1u;
+                uint32_t idx = 0;
+                if (partCount >= 2u && file->ast.nodes[parts[0]].kind == SLAst_VAR) {
+                    int32_t typeNode = ASTFirstChild(&file->ast, parts[0]);
+                    int32_t initNode = typeNode >= 0 ? ASTNextSibling(&file->ast, typeNode) : -1;
+                    if (initNode >= 0
+                        && CollectExprImportRewritesNode(
+                               pkg, file, initNode, shadowCounts, rewrites, rewriteLen, rewriteCap)
+                               != 0)
+                    {
+                        PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                        return -1;
+                    }
+                    if (PushShadowIfValueImportName(
+                            pkg,
+                            file,
+                            file->ast.nodes[parts[0]].dataStart,
+                            file->ast.nodes[parts[0]].dataEnd,
+                            shadowCounts,
+                            shadowStack,
+                            shadowLen,
+                            shadowCap)
+                        != 0)
+                    {
+                        PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                        return -1;
+                    }
+                    idx = 1;
+                } else if (partCount >= 2u && file->ast.nodes[parts[0]].kind != SLAst_BLOCK) {
+                    if (CollectExprImportRewritesNode(
+                            pkg, file, parts[0], shadowCounts, rewrites, rewriteLen, rewriteCap)
+                        != 0)
+                    {
+                        PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                        return -1;
+                    }
+                    idx = 1;
+                }
+                while (idx < last) {
+                    if (file->ast.nodes[parts[idx]].kind != SLAst_BLOCK
+                        && CollectExprImportRewritesNode(
+                               pkg,
+                               file,
+                               parts[idx],
+                               shadowCounts,
+                               rewrites,
+                               rewriteLen,
+                               rewriteCap)
+                               != 0)
+                    {
+                        PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                        return -1;
+                    }
+                    idx++;
+                }
+                if (file->ast.nodes[parts[last]].kind == SLAst_BLOCK) {
+                    if (CollectBlockImportRewritesNode(
+                            pkg,
+                            file,
+                            parts[last],
+                            shadowCounts,
+                            shadowStack,
+                            shadowLen,
+                            shadowCap,
+                            rewrites,
+                            rewriteLen,
+                            rewriteCap)
+                        != 0)
+                    {
+                        PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                        return -1;
+                    }
+                }
+            }
+            PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+            return 0;
+        }
+        case SLAst_SWITCH: {
+            child = ASTFirstChild(&file->ast, nodeId);
+            while (child >= 0) {
+                const SLAstNode* c = &file->ast.nodes[child];
+                if (c->kind == SLAst_CASE) {
+                    int32_t k = ASTFirstChild(&file->ast, child);
+                    int32_t last = -1;
+                    while (k >= 0) {
+                        last = k;
+                        k = ASTNextSibling(&file->ast, k);
+                    }
+                    k = ASTFirstChild(&file->ast, child);
+                    while (k >= 0) {
+                        if (k != last
+                            && CollectExprImportRewritesNode(
+                                   pkg, file, k, shadowCounts, rewrites, rewriteLen, rewriteCap)
+                                   != 0)
+                        {
+                            return -1;
+                        }
+                        if (k == last) {
+                            break;
+                        }
+                        k = ASTNextSibling(&file->ast, k);
+                    }
+                    if (last >= 0
+                        && CollectStmtImportRewritesNode(
+                               pkg,
+                               file,
+                               last,
+                               shadowCounts,
+                               shadowStack,
+                               shadowLen,
+                               shadowCap,
+                               rewrites,
+                               rewriteLen,
+                               rewriteCap)
+                               != 0)
+                    {
+                        return -1;
+                    }
+                } else if (c->kind == SLAst_DEFAULT) {
+                    int32_t blk = ASTFirstChild(&file->ast, child);
+                    if (blk >= 0
+                        && CollectStmtImportRewritesNode(
+                               pkg,
+                               file,
+                               blk,
+                               shadowCounts,
+                               shadowStack,
+                               shadowLen,
+                               shadowCap,
+                               rewrites,
+                               rewriteLen,
+                               rewriteCap)
+                               != 0)
+                    {
+                        return -1;
+                    }
+                } else {
+                    if (CollectExprImportRewritesNode(
+                            pkg, file, child, shadowCounts, rewrites, rewriteLen, rewriteCap)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                }
+                child = ASTNextSibling(&file->ast, child);
+            }
+            return 0;
+        }
+        case SLAst_RETURN:
+        case SLAst_ASSERT:
+        case SLAst_EXPR_STMT: {
+            child = ASTFirstChild(&file->ast, nodeId);
+            while (child >= 0) {
+                if (CollectExprImportRewritesNode(
+                        pkg, file, child, shadowCounts, rewrites, rewriteLen, rewriteCap)
+                    != 0)
+                {
+                    return -1;
+                }
+                child = ASTNextSibling(&file->ast, child);
+            }
+            return 0;
+        }
+        case SLAst_DEFER: {
+            int32_t d = ASTFirstChild(&file->ast, nodeId);
+            if (d >= 0) {
+                return CollectStmtImportRewritesNode(
+                    pkg,
+                    file,
+                    d,
+                    shadowCounts,
+                    shadowStack,
+                    shadowLen,
+                    shadowCap,
+                    rewrites,
+                    rewriteLen,
+                    rewriteCap);
+            }
+            return 0;
+        }
+        default: return 0;
+    }
+}
+
+static int CompareTextRewrite(const void* a, const void* b) {
+    const SLTextRewrite* ra = (const SLTextRewrite*)a;
+    const SLTextRewrite* rb = (const SLTextRewrite*)b;
+    if (ra->start < rb->start) {
+        return -1;
+    }
+    if (ra->start > rb->start) {
+        return 1;
+    }
+    if (ra->end < rb->end) {
+        return -1;
+    }
+    if (ra->end > rb->end) {
+        return 1;
+    }
+    return 0;
+}
+
+static int ApplyTextRewrites(
+    const char*    text,
+    uint32_t       textLen,
+    uint32_t       baseStart,
+    SLTextRewrite* rewrites,
+    uint32_t       rewriteLen,
+    char**         outText) {
+    SLStringBuilder b = { 0 };
+    uint32_t        i;
+    uint32_t        copyPos = 0;
+    *outText = NULL;
+
+    if (rewriteLen == 0) {
+        *outText = DupSlice(text, 0, textLen);
+        return *outText == NULL ? -1 : 0;
+    }
+    qsort(rewrites, rewriteLen, sizeof(SLTextRewrite), CompareTextRewrite);
+
+    for (i = 0; i < rewriteLen; i++) {
+        uint32_t relStart;
+        uint32_t relEnd;
+        if (rewrites[i].start < baseStart || rewrites[i].end < rewrites[i].start
+            || rewrites[i].end > baseStart + textLen)
+        {
+            free(b.v);
+            return -1;
+        }
+        relStart = rewrites[i].start - baseStart;
+        relEnd = rewrites[i].end - baseStart;
+        if (relStart < copyPos) {
+            continue;
+        }
+        if (SBAppendSlice(&b, text, copyPos, relStart) != 0
+            || SBAppendCStr(&b, rewrites[i].replacement) != 0)
+        {
+            free(b.v);
+            return -1;
+        }
+        copyPos = relEnd;
+    }
+    if (SBAppendSlice(&b, text, copyPos, textLen) != 0) {
+        free(b.v);
+        return -1;
+    }
+    *outText = SBFinish(&b, NULL);
+    return *outText == NULL ? -1 : 0;
+}
+
+static int RewriteDeclTextForNamedImports(
+    const SLPackage*    pkg,
+    const SLParsedFile* file,
+    int32_t             nodeId,
+    const char*         text,
+    char**              outText) {
+    const SLAstNode* n;
+    SLTextRewrite*   rewrites = NULL;
+    uint32_t         rewriteLen = 0;
+    uint32_t         rewriteCap = 0;
+    uint8_t*         shadowCounts = NULL;
+    uint32_t*        shadowStack = NULL;
+    uint32_t         shadowLen = 0;
+    uint32_t         shadowCap = 0;
+    uint32_t         mark = 0;
+    int32_t          child;
+    int              rc = -1;
+
+    *outText = NULL;
+    if (pkg->importSymbolLen == 0) {
+        *outText = DupCStr(text);
+        return *outText == NULL ? -1 : 0;
+    }
+    if (nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
+        return -1;
+    }
+    n = &file->ast.nodes[nodeId];
+
+    shadowCounts = (uint8_t*)calloc(pkg->importSymbolLen, sizeof(uint8_t));
+    if (shadowCounts == NULL) {
+        goto done;
+    }
+
+    if (CollectTypeNameImportRewritesNode(pkg, file, nodeId, &rewrites, &rewriteLen, &rewriteCap)
+        != 0)
+    {
+        goto done;
+    }
+
+    switch (n->kind) {
+        case SLAst_FN:
+            mark = shadowLen;
+            child = ASTFirstChild(&file->ast, nodeId);
+            while (child >= 0) {
+                const SLAstNode* ch = &file->ast.nodes[child];
+                if (ch->kind == SLAst_PARAM) {
+                    if (PushShadowIfValueImportName(
+                            pkg,
+                            file,
+                            ch->dataStart,
+                            ch->dataEnd,
+                            shadowCounts,
+                            &shadowStack,
+                            &shadowLen,
+                            &shadowCap)
+                        != 0)
+                    {
+                        goto done;
+                    }
+                } else if (ch->kind == SLAst_BLOCK) {
+                    if (CollectBlockImportRewritesNode(
+                            pkg,
+                            file,
+                            child,
+                            shadowCounts,
+                            &shadowStack,
+                            &shadowLen,
+                            &shadowCap,
+                            &rewrites,
+                            &rewriteLen,
+                            &rewriteCap)
+                        != 0)
+                    {
+                        goto done;
+                    }
+                }
+                child = ASTNextSibling(&file->ast, child);
+            }
+            PopShadowToMark(shadowCounts, shadowStack, &shadowLen, mark);
+            break;
+        case SLAst_CONST: {
+            int32_t typeNode = ASTFirstChild(&file->ast, nodeId);
+            int32_t initNode = typeNode >= 0 ? ASTNextSibling(&file->ast, typeNode) : -1;
+            if (initNode >= 0
+                && CollectExprImportRewritesNode(
+                       pkg, file, initNode, shadowCounts, &rewrites, &rewriteLen, &rewriteCap)
+                       != 0)
+            {
+                goto done;
+            }
+            break;
+        }
+        case SLAst_ENUM: {
+            child = ASTFirstChild(&file->ast, nodeId);
+            while (child >= 0) {
+                const SLAstNode* c = &file->ast.nodes[child];
+                if (c->kind == SLAst_FIELD) {
+                    int32_t expr = ASTFirstChild(&file->ast, child);
+                    if (expr >= 0
+                        && CollectExprImportRewritesNode(
+                               pkg, file, expr, shadowCounts, &rewrites, &rewriteLen, &rewriteCap)
+                               != 0)
+                    {
+                        goto done;
+                    }
+                }
+                child = ASTNextSibling(&file->ast, child);
+            }
+            break;
+        }
+        default: break;
+    }
+
+    if (ApplyTextRewrites(
+            text,
+            (uint32_t)strlen(text),
+            file->ast.nodes[nodeId].start,
+            rewrites,
+            rewriteLen,
+            outText)
+        != 0)
+    {
+        goto done;
+    }
+    rc = 0;
+
+done:
+    free(rewrites);
+    free(shadowCounts);
+    free(shadowStack);
+    return rc;
 }
 
 static int RewriteText(
@@ -1985,8 +3193,9 @@ static int RewriteText(
         {
             uint32_t j;
             for (j = 0; j < importLen; j++) {
-                if (strlen(imports[j].alias) == (size_t)(t->end - t->start)
-                    && memcmp(imports[j].alias, src + t->start, (size_t)(t->end - t->start)) == 0
+                if (imports[j].bindName != NULL
+                    && strlen(imports[j].bindName) == (size_t)(t->end - t->start)
+                    && memcmp(imports[j].bindName, src + t->start, (size_t)(t->end - t->start)) == 0
                     && PackageHasExportSlice(
                         imports[j].target, src, stream.v[i + 2u].start, stream.v[i + 2u].end))
                 {
@@ -2148,10 +3357,19 @@ static int BuildCombinedPackageSource(const SLPackage* pkg, char** outSource, ui
     }
 
     for (i = 0; i < pkg->declTextLen; i++) {
-        char* rewritten = NULL;
+        const SLDeclText*   decl = &pkg->declTexts[i];
+        const SLParsedFile* file = &pkg->files[decl->fileIndex];
+        char*               namedRewritten = NULL;
+        char*               rewritten = NULL;
+        if (RewriteDeclTextForNamedImports(pkg, file, decl->nodeId, decl->text, &namedRewritten)
+            != 0)
+        {
+            free(b.v);
+            return ErrorSimple("out of memory");
+        }
         if (RewriteText(
-                pkg->declTexts[i].text,
-                (uint32_t)strlen(pkg->declTexts[i].text),
+                namedRewritten,
+                (uint32_t)strlen(namedRewritten),
                 pkg->imports,
                 pkg->importLen,
                 NULL,
@@ -2159,14 +3377,17 @@ static int BuildCombinedPackageSource(const SLPackage* pkg, char** outSource, ui
                 &rewritten)
             != 0)
         {
+            free(namedRewritten);
             free(b.v);
             return -1;
         }
         if (SBAppendCStr(&b, rewritten) != 0 || SBAppendCStr(&b, "\n") != 0) {
+            free(namedRewritten);
             free(rewritten);
             free(b.v);
             return ErrorSimple("out of memory");
         }
+        free(namedRewritten);
         free(rewritten);
     }
 
@@ -2207,9 +3428,16 @@ static void FreePackage(SLPackage* pkg) {
     free(pkg->files);
     for (i = 0; i < pkg->importLen; i++) {
         free(pkg->imports[i].alias);
+        free(pkg->imports[i].bindName);
         free(pkg->imports[i].path);
     }
     free(pkg->imports);
+    for (i = 0; i < pkg->importSymbolLen; i++) {
+        free(pkg->importSymbols[i].sourceName);
+        free(pkg->importSymbols[i].localName);
+        free(pkg->importSymbols[i].qualifiedName);
+    }
+    free(pkg->importSymbols);
     for (i = 0; i < pkg->declLen; i++) {
         free(pkg->decls[i].name);
         free(pkg->decls[i].declText);
