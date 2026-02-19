@@ -61,3 +61,4 @@ Implemented core includes:
 - `docs/SLP-3-optional.md`
 - `docs/SLP-4-type-functions.md`
 - `docs/SLP-5-platform.md`
+- `docs/SLP-6-struct-composition.md`
