@@ -45,6 +45,7 @@ typedef struct {
     char*     fieldName;
     char*     lenFieldName;
     int       isDependent;
+    int       isEmbedded;
     SLTypeRef type;
 } SLFieldInfo;
 
@@ -990,6 +991,7 @@ static int AddFieldInfo(
     const char*  fieldName,
     const char* _Nullable lenFieldName,
     int       isDependent,
+    int       isEmbedded,
     SLTypeRef type) {
     if (EnsureCapArena(
             &c->arena,
@@ -1006,6 +1008,7 @@ static int AddFieldInfo(
     c->fieldInfos[c->fieldInfoLen].fieldName = (char*)fieldName;
     c->fieldInfos[c->fieldInfoLen].lenFieldName = (char*)lenFieldName;
     c->fieldInfos[c->fieldInfoLen].isDependent = isDependent;
+    c->fieldInfos[c->fieldInfoLen].isEmbedded = isEmbedded;
     c->fieldInfos[c->fieldInfoLen].type = type;
     c->fieldInfoLen++;
     return 0;
@@ -1041,6 +1044,111 @@ static const SLFieldInfo* _Nullable FindFieldInfo(
         }
     }
     return NULL;
+}
+
+static const SLFieldInfo* _Nullable FindEmbeddedFieldInfo(
+    const SLCBackendC* c, const char* ownerType) {
+    uint32_t i;
+    for (i = 0; i < c->fieldInfoLen; i++) {
+        if (StrEq(c->fieldInfos[i].ownerType, ownerType) && c->fieldInfos[i].isEmbedded) {
+            return &c->fieldInfos[i];
+        }
+    }
+    return NULL;
+}
+
+static int ResolveFieldPathBySlice(
+    const SLCBackendC*  c,
+    const char*         ownerType,
+    uint32_t            fieldStart,
+    uint32_t            fieldEnd,
+    const SLFieldInfo** outPath,
+    uint32_t            cap,
+    uint32_t*           outLen,
+    const SLFieldInfo** _Nullable outField) {
+    const SLFieldInfo* direct;
+    const SLFieldInfo* embedded;
+    const char*        embeddedBaseName;
+    uint32_t           nestedLen = 0;
+
+    if (outLen == NULL || cap == 0u) {
+        return -1;
+    }
+
+    direct = FindFieldInfo(c, ownerType, fieldStart, fieldEnd);
+    if (direct != NULL) {
+        outPath[0] = direct;
+        *outLen = 1u;
+        if (outField != NULL) {
+            *outField = direct;
+        }
+        return 0;
+    }
+
+    embedded = FindEmbeddedFieldInfo(c, ownerType);
+    if (embedded == NULL || !embedded->type.valid
+        || embedded->type.containerKind != SLTypeContainer_SCALAR || embedded->type.ptrDepth != 0
+        || embedded->type.containerPtrDepth != 0 || embedded->type.baseName == NULL)
+    {
+        return -1;
+    }
+    if (cap < 2u) {
+        return -1;
+    }
+
+    embeddedBaseName = embedded->type.baseName;
+    if (ResolveFieldPathBySlice(
+            c, embeddedBaseName, fieldStart, fieldEnd, outPath + 1u, cap - 1u, &nestedLen, outField)
+        != 0)
+    {
+        return -1;
+    }
+    outPath[0] = embedded;
+    *outLen = nestedLen + 1u;
+    return 0;
+}
+
+static int ResolveEmbeddedPathByNames(
+    const SLCBackendC*  c,
+    const char*         srcTypeName,
+    const char*         dstTypeName,
+    const SLFieldInfo** outPath,
+    uint32_t            cap,
+    uint32_t*           outLen) {
+    const SLFieldInfo* embedded;
+    const char*        curType = srcTypeName;
+    uint32_t           n = 0;
+    uint32_t           guard = 0;
+
+    if (outLen == NULL || srcTypeName == NULL || dstTypeName == NULL) {
+        return -1;
+    }
+    if (StrEq(srcTypeName, dstTypeName)) {
+        *outLen = 0;
+        return 0;
+    }
+
+    while (guard++ <= c->fieldInfoLen) {
+        if (n >= cap) {
+            return -1;
+        }
+        embedded = FindEmbeddedFieldInfo(c, curType);
+        if (embedded == NULL || !embedded->type.valid
+            || embedded->type.containerKind != SLTypeContainer_SCALAR
+            || embedded->type.ptrDepth != 0 || embedded->type.containerPtrDepth != 0
+            || embedded->type.baseName == NULL)
+        {
+            return -1;
+        }
+        outPath[n++] = embedded;
+        if (StrEq(embedded->type.baseName, dstTypeName)) {
+            *outLen = n;
+            return 0;
+        }
+        curType = embedded->type.baseName;
+    }
+
+    return -1;
 }
 
 static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
@@ -1115,6 +1223,7 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                 int32_t     typeNode = AstFirstChild(&c->ast, child);
                 const char* lenFieldName = NULL;
                 int         isDependent = 0;
+                int         isEmbedded = (field->flags & SLAstFlag_FIELD_EMBEDDED) != 0;
                 SLTypeRef   fieldType;
                 char*       fieldName;
                 if (ParseTypeRef(c, typeNode, &fieldType) != 0) {
@@ -1137,7 +1246,14 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                 if (fieldName == NULL) {
                     return -1;
                 }
-                if (AddFieldInfo(c, mapName->cName, fieldName, lenFieldName, isDependent, fieldType)
+                if (AddFieldInfo(
+                        c,
+                        mapName->cName,
+                        fieldName,
+                        lenFieldName,
+                        isDependent,
+                        isEmbedded,
+                        fieldType)
                     != 0)
                 {
                     return -1;
@@ -1577,7 +1693,9 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
         case SLAst_FIELD_EXPR: {
             int32_t            recv = AstFirstChild(&c->ast, nodeId);
             SLTypeRef          recvType;
-            const SLFieldInfo* field;
+            const SLFieldInfo* fieldPath[64];
+            uint32_t           fieldPathLen = 0;
+            const SLFieldInfo* field = NULL;
             if (InferExprType(c, recv, &recvType) != 0 || !recvType.valid) {
                 TypeRefSetInvalid(outType);
                 return 0;
@@ -1588,7 +1706,23 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             } else if (recvType.ptrDepth > 0) {
                 recvType.ptrDepth--;
             }
-            field = FindFieldInfo(c, recvType.baseName, n->dataStart, n->dataEnd);
+            if (recvType.baseName != NULL
+                && ResolveFieldPathBySlice(
+                       c,
+                       recvType.baseName,
+                       n->dataStart,
+                       n->dataEnd,
+                       fieldPath,
+                       (uint32_t)(sizeof(fieldPath) / sizeof(fieldPath[0])),
+                       &fieldPathLen,
+                       &field)
+                       == 0
+                && fieldPathLen > 0)
+            {
+                field = fieldPath[fieldPathLen - 1u];
+            } else {
+                field = NULL;
+            }
             if (field != NULL) {
                 *outType = field->type;
                 return 0;
@@ -2077,7 +2211,9 @@ static int EmitNewCallExpr(SLCBackendC* c, int32_t callNode, int requireNonNull)
 }
 
 static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType) {
-    SLTypeRef srcType;
+    SLTypeRef          srcType;
+    const SLFieldInfo* embedPath[64];
+    uint32_t           embedPathLen = 0;
     if (dstType == NULL || !dstType->valid) {
         return EmitExpr(c, exprNode);
     }
@@ -2087,6 +2223,56 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
     }
     if (InferExprType(c, exprNode, &srcType) != 0 || !srcType.valid) {
         return EmitExpr(c, exprNode);
+    }
+    if (srcType.containerKind == SLTypeContainer_SCALAR
+        && dstType->containerKind == SLTypeContainer_SCALAR && srcType.baseName != NULL
+        && dstType->baseName != NULL)
+    {
+        if (srcType.ptrDepth == 0 && srcType.containerPtrDepth == 0 && dstType->ptrDepth == 0
+            && dstType->containerPtrDepth == 0
+            && ResolveEmbeddedPathByNames(
+                   c,
+                   srcType.baseName,
+                   dstType->baseName,
+                   embedPath,
+                   (uint32_t)(sizeof(embedPath) / sizeof(embedPath[0])),
+                   &embedPathLen)
+                   == 0
+            && embedPathLen > 0)
+        {
+            uint32_t i;
+            if (BufAppendChar(&c->out, '(') != 0 || EmitExpr(c, exprNode) != 0) {
+                return -1;
+            }
+            for (i = 0; i < embedPathLen; i++) {
+                if (BufAppendChar(&c->out, '.') != 0
+                    || BufAppendCStr(&c->out, embedPath[i]->fieldName) != 0)
+                {
+                    return -1;
+                }
+            }
+            return BufAppendChar(&c->out, ')');
+        }
+        if (srcType.ptrDepth > 0 && srcType.ptrDepth == dstType->ptrDepth
+            && srcType.containerPtrDepth == 0 && dstType->containerPtrDepth == 0
+            && ResolveEmbeddedPathByNames(
+                   c,
+                   srcType.baseName,
+                   dstType->baseName,
+                   embedPath,
+                   (uint32_t)(sizeof(embedPath) / sizeof(embedPath[0])),
+                   &embedPathLen)
+                   == 0
+            && embedPathLen > 0)
+        {
+            if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, dstType) != 0
+                || BufAppendCStr(&c->out, ")(") != 0 || EmitExpr(c, exprNode) != 0
+                || BufAppendCStr(&c->out, "))") != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
     }
     if (dstType->containerKind == SLTypeContainer_SLICE_RO && dstType->containerPtrDepth == 0) {
         if (srcType.containerKind == SLTypeContainer_SLICE_RO && srcType.containerPtrDepth == 0) {
@@ -2156,6 +2342,8 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                     int32_t            recv = AstFirstChild(&c->ast, child);
                     SLTypeRef          recvType;
                     SLTypeRef          ownerType;
+                    const SLFieldInfo* fieldPath[64];
+                    uint32_t           fieldPathLen = 0;
                     const SLFieldInfo* field = NULL;
                     SLTypeRef          childType;
                     if (InferExprType(c, recv, &recvType) == 0 && recvType.valid) {
@@ -2164,8 +2352,22 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                             ownerType.ptrDepth--;
                         }
                         if (ownerType.baseName != NULL) {
-                            field = FindFieldInfo(
-                                c, ownerType.baseName, cn->dataStart, cn->dataEnd);
+                            if (ResolveFieldPathBySlice(
+                                    c,
+                                    ownerType.baseName,
+                                    cn->dataStart,
+                                    cn->dataEnd,
+                                    fieldPath,
+                                    (uint32_t)(sizeof(fieldPath) / sizeof(fieldPath[0])),
+                                    &fieldPathLen,
+                                    &field)
+                                    == 0
+                                && fieldPathLen > 0)
+                            {
+                                field = fieldPath[fieldPathLen - 1u];
+                            } else {
+                                field = NULL;
+                            }
                         }
                     }
                     if (field != NULL && field->isDependent
@@ -2349,8 +2551,11 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
             int32_t            recv = AstFirstChild(&c->ast, nodeId);
             SLTypeRef          recvType;
             SLTypeRef          ownerType;
+            const SLFieldInfo* fieldPath[64];
+            uint32_t           fieldPathLen = 0;
             const SLFieldInfo* field = NULL;
             int                useArrow = 0;
+            uint32_t           i;
 
             if (InferExprType(c, recv, &recvType) == 0 && recvType.valid) {
                 ownerType = recvType;
@@ -2359,30 +2564,73 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                     useArrow = 1;
                 }
                 if (ownerType.baseName != NULL) {
-                    field = FindFieldInfo(c, ownerType.baseName, n->dataStart, n->dataEnd);
+                    if (ResolveFieldPathBySlice(
+                            c,
+                            ownerType.baseName,
+                            n->dataStart,
+                            n->dataEnd,
+                            fieldPath,
+                            (uint32_t)(sizeof(fieldPath) / sizeof(fieldPath[0])),
+                            &fieldPathLen,
+                            &field)
+                        != 0)
+                    {
+                        fieldPathLen = 0;
+                        field = NULL;
+                    } else if (fieldPathLen > 0) {
+                        field = fieldPath[fieldPathLen - 1u];
+                    }
                 }
             }
 
-            if (field != NULL && field->isDependent) {
-                if (BufAppendCStr(&c->out, ownerType.baseName) != 0
+            if (field != NULL && field->isDependent && fieldPathLen > 0) {
+                if (BufAppendCStr(&c->out, field->ownerType) != 0
                     || BufAppendCStr(&c->out, "__") != 0
                     || BufAppendCStr(&c->out, field->fieldName) != 0
                     || BufAppendChar(&c->out, '(') != 0)
                 {
                     return -1;
                 }
-                if (useArrow) {
-                    if (EmitExpr(c, recv) != 0) {
-                        return -1;
-                    }
-                } else {
+                if (!useArrow && fieldPathLen == 1u) {
                     if (BufAppendCStr(&c->out, "&(") != 0 || EmitExpr(c, recv) != 0
                         || BufAppendChar(&c->out, ')') != 0)
                     {
                         return -1;
                     }
+                } else if (useArrow && fieldPathLen == 1u) {
+                    if (EmitExpr(c, recv) != 0) {
+                        return -1;
+                    }
+                } else {
+                    if (BufAppendCStr(&c->out, "&(") != 0 || EmitExpr(c, recv) != 0) {
+                        return -1;
+                    }
+                    for (i = 0; i + 1u < fieldPathLen; i++) {
+                        if (BufAppendCStr(&c->out, (i == 0u && useArrow) ? "->" : ".") != 0
+                            || BufAppendCStr(&c->out, fieldPath[i]->fieldName) != 0)
+                        {
+                            return -1;
+                        }
+                    }
+                    if (BufAppendChar(&c->out, ')') != 0) {
+                        return -1;
+                    }
                 }
                 return BufAppendChar(&c->out, ')');
+            }
+
+            if (fieldPathLen > 0u) {
+                if (EmitExpr(c, recv) != 0) {
+                    return -1;
+                }
+                for (i = 0; i < fieldPathLen; i++) {
+                    if (BufAppendCStr(&c->out, (i == 0u && useArrow) ? "->" : ".") != 0
+                        || BufAppendCStr(&c->out, fieldPath[i]->fieldName) != 0)
+                    {
+                        return -1;
+                    }
+                }
+                return 0;
             }
 
             if (EmitExpr(c, recv) != 0 || BufAppendCStr(&c->out, useArrow ? "->" : ".") != 0

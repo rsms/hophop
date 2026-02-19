@@ -1,0 +1,1 @@
+tests/struct_composition_bad_multiple_embedded.sl:69:70: error: only one embedded field is allowed

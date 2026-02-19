@@ -77,5 +77,21 @@
         "name": "VOID_RETURN_TYPE",
         "message": "'void' is not a valid return type",
         "hint": "remove 'void'"
+    },
+    "SL1020": {
+        "name": "EMBEDDED_FIELD_NOT_FIRST",
+        "message": "embedded field must be first in struct"
+    },
+    "SL1021": {
+        "name": "MULTIPLE_EMBEDDED_FIELDS",
+        "message": "only one embedded field is allowed"
+    },
+    "SL1022": {
+        "name": "EMBEDDED_TYPE_NOT_STRUCT",
+        "message": "embedded field type must be a struct"
+    },
+    "SL1023": {
+        "name": "EMBEDDED_CYCLE",
+        "message": "embedded struct cycle detected"
     }
 }

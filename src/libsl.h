@@ -356,6 +356,7 @@ enum {
     SLAstFlag_INDEX_HAS_START = 0x0002u,
     SLAstFlag_INDEX_HAS_END = 0x0004u,
     SLAstFlag_INDEX_RUNTIME_BOUNDS = 0x0008u,
+    SLAstFlag_FIELD_EMBEDDED = 0x0010u,
 };
 
 typedef uint32_t SLFeatures;

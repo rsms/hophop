@@ -1,0 +1,1 @@
+tests/struct_composition_bad_not_first.sl:49:50: error: embedded field must be first in struct

@@ -54,6 +54,8 @@ typedef struct {
 enum {
     SLTCTypeFlag_VARSIZE = 1u << 0,
     SLTCTypeFlag_MUTABLE = 1u << 1,
+    SLTCTypeFlag_VISITING = 1u << 14,
+    SLTCTypeFlag_VISITED = 1u << 15,
 };
 
 typedef struct {
@@ -67,6 +69,7 @@ typedef struct {
 
 enum {
     SLTCFieldFlag_DEPENDENT = 1u << 0,
+    SLTCFieldFlag_EMBEDDED = 1u << 1,
 };
 
 typedef struct {
@@ -976,6 +979,45 @@ static int SLTCTypeContainsVarSizeByValue(SLTypeCheckCtx* c, int32_t typeId) {
     return SLTCTypeIsVarSize(c, typeId);
 }
 
+static int32_t SLTCFindEmbeddedFieldIndex(SLTypeCheckCtx* c, int32_t namedTypeId) {
+    uint32_t i;
+    if (namedTypeId < 0 || (uint32_t)namedTypeId >= c->typeLen
+        || c->types[namedTypeId].kind != SLTCType_NAMED)
+    {
+        return -1;
+    }
+    for (i = 0; i < c->types[namedTypeId].fieldCount; i++) {
+        uint32_t idx = c->types[namedTypeId].fieldStart + i;
+        if ((c->fields[idx].flags & SLTCFieldFlag_EMBEDDED) != 0) {
+            return (int32_t)idx;
+        }
+    }
+    return -1;
+}
+
+static int SLTCIsNamedDerivedFrom(SLTypeCheckCtx* c, int32_t srcType, int32_t dstType) {
+    uint32_t depth = 0;
+    int32_t  cur = srcType;
+    if (srcType == dstType) {
+        return 1;
+    }
+    while (depth++ <= c->typeLen) {
+        int32_t embedIdx;
+        if (cur < 0 || (uint32_t)cur >= c->typeLen || c->types[cur].kind != SLTCType_NAMED) {
+            return 0;
+        }
+        embedIdx = SLTCFindEmbeddedFieldIndex(c, cur);
+        if (embedIdx < 0) {
+            return 0;
+        }
+        cur = c->fields[embedIdx].typeId;
+        if (cur == dstType) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
     const SLTCType* dst;
     const SLTCType* src;
@@ -1001,11 +1043,23 @@ static int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
     dst = &c->types[dstType];
     src = &c->types[srcType];
 
+    if (dst->kind == SLTCType_NAMED && src->kind == SLTCType_NAMED
+        && SLTCIsNamedDerivedFrom(c, srcType, dstType))
+    {
+        return 1;
+    }
+
     if (dst->kind == SLTCType_REF) {
-        if (src->kind == SLTCType_REF && dst->baseType == src->baseType) {
+        if (src->kind == SLTCType_REF
+            && (dst->baseType == src->baseType
+                || SLTCIsNamedDerivedFrom(c, src->baseType, dst->baseType)))
+        {
             return !SLTCTypeIsMutable(dst) || SLTCTypeIsMutable(src);
         }
-        if (src->kind == SLTCType_PTR && dst->baseType == src->baseType) {
+        if (src->kind == SLTCType_PTR
+            && (dst->baseType == src->baseType
+                || SLTCIsNamedDerivedFrom(c, src->baseType, dst->baseType)))
+        {
             return 1;
         }
         return 0;
@@ -1042,7 +1096,10 @@ static int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
             return 1;
         }
         /* T can be assigned to T? (implicit lift) */
-        if (srcType == dst->baseType) {
+        if (srcType == dst->baseType
+            || (src->kind == SLTCType_NAMED && c->types[dst->baseType].kind == SLTCType_NAMED
+                && SLTCIsNamedDerivedFrom(c, srcType, dst->baseType)))
+        {
             return 1;
         }
         /* ?T can be assigned to ?T (also handles mutable sub-type coercions) */
@@ -1097,6 +1154,7 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
     uint32_t             fieldStart = c->fieldLen;
     uint32_t             fieldCount = 0;
     int                  sawDependent = 0;
+    int                  sawEmbedded = 0;
 
     child = SLAstFirstChild(c->ast, declNode);
     if (kind == SLAst_ENUM && child >= 0
@@ -1121,11 +1179,47 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
             uint32_t lenNameStart = 0;
             uint32_t lenNameEnd = 0;
             uint32_t i;
+            int      isEmbedded = (n->flags & SLAstFlag_FIELD_EMBEDDED) != 0;
             if (typeNode < 0) {
                 return SLTCFailNode(c, child, SLDiag_EXPECTED_TYPE);
             }
 
-            if (c->ast->nodes[typeNode].kind == SLAst_TYPE_VARRAY) {
+            if (isEmbedded) {
+                int32_t embeddedDeclNode;
+                if (kind != SLAst_STRUCT) {
+                    return SLTCFailSpan(
+                        c, SLDiag_EMBEDDED_TYPE_NOT_STRUCT, n->dataStart, n->dataEnd);
+                }
+                if (sawEmbedded) {
+                    return SLTCFailSpan(
+                        c, SLDiag_MULTIPLE_EMBEDDED_FIELDS, n->dataStart, n->dataEnd);
+                }
+                if (fieldCount != 0) {
+                    return SLTCFailSpan(
+                        c, SLDiag_EMBEDDED_FIELD_NOT_FIRST, n->dataStart, n->dataEnd);
+                }
+                if (sawDependent) {
+                    return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
+                }
+                if (SLTCResolveTypeNode(c, typeNode, &typeId) != 0) {
+                    return -1;
+                }
+                if (typeId < 0 || (uint32_t)typeId >= c->typeLen
+                    || c->types[typeId].kind != SLTCType_NAMED)
+                {
+                    return SLTCFailSpan(
+                        c, SLDiag_EMBEDDED_TYPE_NOT_STRUCT, n->dataStart, n->dataEnd);
+                }
+                embeddedDeclNode = c->types[typeId].declNode;
+                if (embeddedDeclNode < 0 || (uint32_t)embeddedDeclNode >= c->ast->len
+                    || c->ast->nodes[embeddedDeclNode].kind != SLAst_STRUCT)
+                {
+                    return SLTCFailSpan(
+                        c, SLDiag_EMBEDDED_TYPE_NOT_STRUCT, n->dataStart, n->dataEnd);
+                }
+                fieldFlags = SLTCFieldFlag_EMBEDDED;
+                sawEmbedded = 1;
+            } else if (c->ast->nodes[typeNode].kind == SLAst_TYPE_VARRAY) {
                 int32_t  elemTypeNode;
                 int32_t  elemType;
                 int32_t  ptrType;
@@ -1220,6 +1314,63 @@ static int SLTCResolveAllNamedTypeFields(SLTypeCheckCtx* c) {
         if (SLTCResolveNamedTypeFields(c, i) != 0) {
             return -1;
         }
+    }
+    return 0;
+}
+
+static int SLTCCheckEmbeddedCycleFrom(SLTypeCheckCtx* c, int32_t typeId) {
+    SLTCType* type;
+    int32_t   embedIdx;
+    int32_t   baseType;
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != SLTCType_NAMED) {
+        return 0;
+    }
+    type = &c->types[typeId];
+    if ((type->flags & SLTCTypeFlag_VISITING) != 0) {
+        return 0;
+    }
+    if ((type->flags & SLTCTypeFlag_VISITED) != 0) {
+        return 0;
+    }
+    type->flags |= SLTCTypeFlag_VISITING;
+
+    embedIdx = SLTCFindEmbeddedFieldIndex(c, typeId);
+    if (embedIdx >= 0) {
+        baseType = c->fields[embedIdx].typeId;
+        if (baseType >= 0 && (uint32_t)baseType < c->typeLen
+            && c->types[baseType].kind == SLTCType_NAMED)
+        {
+            if ((c->types[baseType].flags & SLTCTypeFlag_VISITING) != 0) {
+                return SLTCFailSpan(
+                    c,
+                    SLDiag_EMBEDDED_CYCLE,
+                    c->fields[embedIdx].nameStart,
+                    c->fields[embedIdx].nameEnd);
+            }
+            if (SLTCCheckEmbeddedCycleFrom(c, baseType) != 0) {
+                return -1;
+            }
+        }
+    }
+
+    type->flags &= (uint16_t)~SLTCTypeFlag_VISITING;
+    type->flags |= SLTCTypeFlag_VISITED;
+    return 0;
+}
+
+static int SLTCCheckEmbeddedCycles(SLTypeCheckCtx* c) {
+    uint32_t i;
+    for (i = 0; i < c->namedTypeLen; i++) {
+        int32_t typeId = c->namedTypes[i].typeId;
+        if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
+            continue;
+        }
+        if (SLTCCheckEmbeddedCycleFrom(c, typeId) != 0) {
+            return -1;
+        }
+    }
+    for (i = 0; i < c->typeLen; i++) {
+        c->types[i].flags &= (uint16_t)~(SLTCTypeFlag_VISITING | SLTCTypeFlag_VISITED);
     }
     return 0;
 }
@@ -1422,27 +1573,39 @@ static int SLTCFieldLookup(
     uint32_t        fieldEnd,
     int32_t*        outType,
     uint32_t* _Nullable outFieldIndex) {
-    uint32_t i;
+    uint32_t depth = 0;
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return -1;
     }
     if (c->types[typeId].kind == SLTCType_PTR || c->types[typeId].kind == SLTCType_REF) {
         typeId = c->types[typeId].baseType;
     }
-    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != SLTCType_NAMED) {
-        return -1;
-    }
-    for (i = 0; i < c->types[typeId].fieldCount; i++) {
-        uint32_t idx = c->types[typeId].fieldStart + i;
-        if (SLNameEqSlice(
-                c->src, c->fields[idx].nameStart, c->fields[idx].nameEnd, fieldStart, fieldEnd))
+    while (depth++ <= c->typeLen) {
+        uint32_t i;
+        int32_t  embedIdx = -1;
+        if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != SLTCType_NAMED)
         {
-            *outType = c->fields[idx].typeId;
-            if (outFieldIndex != NULL) {
-                *outFieldIndex = idx;
-            }
-            return 0;
+            return -1;
         }
+        for (i = 0; i < c->types[typeId].fieldCount; i++) {
+            uint32_t idx = c->types[typeId].fieldStart + i;
+            if (SLNameEqSlice(
+                    c->src, c->fields[idx].nameStart, c->fields[idx].nameEnd, fieldStart, fieldEnd))
+            {
+                *outType = c->fields[idx].typeId;
+                if (outFieldIndex != NULL) {
+                    *outFieldIndex = idx;
+                }
+                return 0;
+            }
+            if ((c->fields[idx].flags & SLTCFieldFlag_EMBEDDED) != 0) {
+                embedIdx = (int32_t)idx;
+            }
+        }
+        if (embedIdx < 0) {
+            return -1;
+        }
+        typeId = c->fields[embedIdx].typeId;
     }
     return -1;
 }
@@ -2711,6 +2874,9 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
         return -1;
     }
     if (SLTCResolveAllNamedTypeFields(&c) != 0) {
+        return -1;
+    }
+    if (SLTCCheckEmbeddedCycles(&c) != 0) {
         return -1;
     }
     if (SLTCPropagateVarSizeNamedTypes(&c) != 0) {

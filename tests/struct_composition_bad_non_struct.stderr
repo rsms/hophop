@@ -1,0 +1,1 @@
+tests/struct_composition_bad_non_struct.sl:17:20: error: embedded field type must be a struct
