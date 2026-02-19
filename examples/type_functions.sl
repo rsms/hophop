@@ -1,8 +1,8 @@
 // type-function selector sugar with built-ins (`x.len()`, `ma.new(...)`)
 
 fn main() {
-    var msg str = "hi"
-    var ma mut&MemAllocator = 0 as mut&MemAllocator
+    var msg = "hi"
+    var ma = 0 as mut&MemAllocator
 
     assert msg.len() == len(msg)
 

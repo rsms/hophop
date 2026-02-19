@@ -28,6 +28,6 @@ fn main() {
     n.i = p.x + p.y
     assert n.i == 9
 
-    var mode Mode = Mode.A
+    var mode = Mode.A
     assert is_mode_a(mode)
 }

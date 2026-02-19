@@ -8,12 +8,12 @@ struct Packet {
 }
 
 fn main() {
-    var p *Packet = 0 as *Packet
-    var payload *u8 = p.payload
-    var payloadPtr &*u8 = &p.payload
+    var p = 0 as *Packet
+    var payload = p.payload
+    var payloadPtr = &p.payload
     payload = *payloadPtr
 
-    var samples *i32 = p.samples
-    var samplesPtr &*i32 = &p.samples
+    var samples = p.samples
+    var samplesPtr = &p.samples
     samples = *samplesPtr
 }

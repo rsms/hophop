@@ -43,7 +43,7 @@ fn twice(x i32) i32 {
 }
 
 fn main() {
-    var s str = "hello"
+    var s = "hello"
     assert len(s) > 0
     assert twice(21) == 42
     platform.exit(0)

@@ -1,8 +1,8 @@
 // core control flow forms: if, for, switch, break, and continue
 
 fn main() {
-    var sum i32 = 0
-    var i i32 = 0
+    var sum = 0
+    var i = 0
 
     for i < 10 {
         if i == 5 {
