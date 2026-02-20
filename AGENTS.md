@@ -72,3 +72,4 @@ Source → [Lexer] → Tokens → [Parser] → AST → [Typechecker] → [Codege
 - Take an incremental approach: keep the compiler working at each step.
 - After changes, run `./build.sh test` (or `python3 tools/test.py run ...`) and add/update entries in `tests/tests.jsonl` for new behavior.
 - The language spec and EBNF grammar is in `docs/language.md`; project overview is in `docs/project-overview.md`; feature proposals are in `docs/SLP-*.md`.
+- Serialize git index writes: never run `git add`, `git commit`, `git rm`, `git mv`, or similar index-mutating commands in parallel.

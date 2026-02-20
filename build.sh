@@ -173,6 +173,10 @@ for srcfile in "${cli_sources[@]}" "${lib_sources[@]}"; do
     objfile="\$objdir/${srcfile//\//.}.o"
     objfiles+=( "$objfile" )
     echo "build $objfile: cc $srcfile | ${diag_outputs[*]}" >> $NF
+    if [ $srcfile = "src/slc.c" ]; then
+        SL_SOURCE_HASH=$(git rev-parse --short=20 HEAD 2>/dev/null || echo src)
+        echo "  flags = -DSL_SOURCE_HASH=\\\"$SL_SOURCE_HASH\\\"" >> $NF
+    fi
 done
 
 cat << _END >> $NF

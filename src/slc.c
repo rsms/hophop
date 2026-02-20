@@ -3800,7 +3800,8 @@ static int ParseGenpkgMode(const char* mode, char* outBackend, uint32_t outBacke
 static void PrintUsage(const char* argv0) {
     fprintf(
         stderr,
-        "usage: %s [lex|ast|check] <file.sl>\n"
+        "usage: %s --version\n"
+        "       %s [lex|ast|check] <file.sl>\n"
         "       %s checkpkg <package-dir|file.sl>\n"
         "       %s genpkg[:backend] <package-dir|file.sl> [out.h]\n"
         "       %s compile <package-dir|file.sl> -o <output>\n"
@@ -3809,7 +3810,12 @@ static void PrintUsage(const char* argv0) {
         argv0,
         argv0,
         argv0,
+        argv0,
         argv0);
+}
+
+static void PrintVersion(void) {
+    fprintf(stdout, "SL compiler version %d.%d (%s)\n", SL_VERSION_API, SL_VERSION, SL_SOURCE_HASH);
 }
 
 static int GeneratePackage(
@@ -4136,6 +4142,11 @@ int main(int argc, char* argv[]) {
     int         genpkgMode;
     char*       source;
     uint32_t    sourceLen;
+
+    if (argc == 2 && StrEq(argv[1], "--version")) {
+        PrintVersion();
+        return 0;
+    }
 
     if (argc >= 2 && StrEq(argv[1], "compile")) {
         if (argc != 5 || !StrEq(argv[3], "-o")) {
