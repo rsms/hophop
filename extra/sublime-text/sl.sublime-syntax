@@ -76,6 +76,15 @@ contexts:
           captures:
               1: storage.type.slang
               2: entity.name.type.slang
+        - match: '\b(pub)\s+(type)\s+({{ident}})'
+          captures:
+              1: storage.modifier.visibility.slang
+              2: storage.type.slang
+              3: entity.name.type.slang
+        - match: '\b(type)\s+({{ident}})'
+          captures:
+              1: storage.type.slang
+              2: entity.name.type.slang
         - match: '\b(pub)\s+(const)\s+({{ident}})'
           captures:
               1: storage.modifier.visibility.slang
@@ -91,7 +100,7 @@ contexts:
               2: variable.other.definition.slang
 
     keywords:
-        - match: '\b(import|pub|struct|union|enum|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|sizeof|as)\b'
+        - match: '\b(import|pub|struct|union|enum|type|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|sizeof|as)\b'
           scope: keyword.control.slang
         - match: '\b(mut)\b'
           scope: storage.modifier.slang

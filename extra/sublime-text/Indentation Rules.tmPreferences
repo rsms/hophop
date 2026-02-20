@@ -17,12 +17,12 @@
 (?x)
 ^ \s* .* \{ [^}"']* $
 |
-^ \s* (?:if|else|for|switch|case|default|pub|struct|union|enum|fn)\b (?!.*[;{]\s*$) .*
+^ \s* (?:if|else|for|switch|case|default|pub|struct|union|enum|type|fn)\b (?!.*[;{]\s*$) .*
 ]]></string>
             <key>bracketIndentNextLinePattern</key>
             <string><![CDATA[
 (?x)
-^ .* ( \(|\[ ) [^)\]]* $
+^ .* ( \(|\[|\{ ) [^)\]\}]* $
 ]]></string>
             <key>unIndentedLinePattern</key>
             <string><![CDATA[
