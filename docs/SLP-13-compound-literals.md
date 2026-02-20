@@ -50,6 +50,21 @@ For `{...}`, target type is inferred from expected type context. Supported conte
 
 If no expected type is available, or multiple target aggregate types remain, inference fails.
 
+### 1.1 Interaction with SLP-14 anonymous aggregate types
+
+SLP-14 keeps the explicit form unchanged: `TypeName{...}`.
+
+Anonymous aggregate targets are supported through inferred `{...}` when expected type context is
+available, for example:
+
+- `var x { a i32, b i32 } = { a = 1, b = 2 }`
+- `var y union { i int, f f64 } = { i = 1 }`
+- argument position where parameter type is anonymous aggregate
+- `with { field = { ... } }` when `field` has anonymous aggregate type
+
+If inference is ambiguous, disambiguate with explicit type context (typed variable/parameter or
+cast), for example `({ a = 1, b = 2 } as { a i32, b i32 })`.
+
 ### 2. Field rules
 
 - Every initialized field must exist in target type.
@@ -76,7 +91,8 @@ Field initializer expressions evaluate left-to-right.
 ### 6. Overload ambiguity
 
 If `{...}` can satisfy more than one candidate target aggregate type at a call site, inference is
-ambiguous and the call is rejected. Use `TypeName{...}` to disambiguate.
+ambiguous and the call is rejected. Use explicit type context to disambiguate (`TypeName{...}`,
+typed variable, or cast).
 
 
 ## Examples

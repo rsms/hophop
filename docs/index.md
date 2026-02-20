@@ -72,3 +72,4 @@ Implemented core includes:
 - [SLP-13-compound-literals.md](SLP-13-compound-literals.md)
 - [SLP-14-anonymous-struct-types.md](SLP-14-anonymous-struct-types.md)
 - [SLP-15-struct-field-defaults.md](SLP-15-struct-field-defaults.md)
+- [SLP-16-anonymous-enums.md](SLP-16-anonymous-enums.md)

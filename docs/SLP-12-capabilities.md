@@ -78,14 +78,15 @@ manual parameter threading.
 ```ebnf
 FnDeclOrDef       = "fn" Ident "(" [ParamList] ")" [Type] [ContextClause] (";" | Block) ;
 ContextClause     = "context" ContextType ;
-ContextType       = TypeName ;
+ContextType       = Type ;
 ```
 
 Notes:
 
 - `context` is optional.
-- Inline context types (`context { ... }`) are intentionally out of scope for SLP-12 core and are
-  proposed in SLP-14.
+- `context` must resolve to a struct-shaped type.
+- Named context types are supported directly in SLP-12.
+- SLP-14 extends this with inline anonymous context shapes (`context { ... }`).
 
 ### 2. Call-site context clause
 
@@ -331,13 +332,11 @@ SLP-12 is designed to work immediately with named context types.
 Optional adjacent proposals improve ergonomics but are not required to start:
 
 - SLP-13: compound literals
-- SLP-14: anonymous struct types
+- SLP-14: anonymous aggregate types
 - SLP-15: struct field defaults
 
 ---
 
 ## Open questions
 
-- Should fields in `with { ... }` be restricted to fields required by the direct callee, or to any
-  field in caller context (current implementation uses caller-context fields)?
 - Should future effect summaries be derived from context field usage for diagnostics/docs?
