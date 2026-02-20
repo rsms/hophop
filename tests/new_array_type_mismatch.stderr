@@ -1,1 +1,1 @@
-tests/new_array_type_mismatch.sl:11:21: SL1012: type mismatch
+tests/new_array_type_mismatch.sl:5:21: SL1012: type mismatch

@@ -1,1 +1,1 @@
-tests/new_bad_allocator_readonly.sl:13:22: SL1012: type mismatch
+tests/new_bad_allocator_readonly.sl:7:22: SL1012: type mismatch

@@ -1,0 +1,5 @@
+FILE [0,52]
+  TYPE_ALIAS "MyInt" [0,14]
+    TYPE_NAME "int" [11,14]
+  TYPE_ALIAS flags=32768 "Allocator" [15,51]
+    TYPE_NAME "__sl_MemAllocator" [34,51]

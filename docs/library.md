@@ -47,12 +47,14 @@ Properties:
 - `cstr(s)` exposes a read-only reference to UTF-8 bytes for C interop.
 - Use `[u8]` / `mut[u8]` for arbitrary binary data.
 
-### `MemAllocator`
+### `__sl_MemAllocator`
 
-`MemAllocator` is the allocator capability used by `new(...)`.
+`__sl_MemAllocator` is the low-level allocator capability used by `new(...)`.
 Allocator implementations must zero newly allocated bytes:
 - fresh allocations are fully zeroed
 - resized allocations must zero bytes in `[oldSize, newSize)`
+
+For normal code, use `std/mem.Allocator` (a nominal alias of `__sl_MemAllocator`).
 
 ## Built-In Functions
 
@@ -79,17 +81,17 @@ fn cstr(s str) &u8
 ### `new`
 
 ```sl
-fn new(ma mut&MemAllocator, type T) ?*T             // 1
-fn new(ma mut&MemAllocator, type T) *T              // 2
-fn new(ma mut&MemAllocator, type T, N uint) ?*[T N] // 3
-fn new(ma mut&MemAllocator, type T, N uint) *[T N]  // 4
-fn new(ma mut&MemAllocator, type T, N uint) ?*[T]   // 5
-fn new(ma mut&MemAllocator, type T, N uint) *[T]    // 6
+fn new(ma mut&__sl_MemAllocator, type T) ?*T             // 1
+fn new(ma mut&__sl_MemAllocator, type T) *T              // 2
+fn new(ma mut&__sl_MemAllocator, type T, N uint) ?*[T N] // 3
+fn new(ma mut&__sl_MemAllocator, type T, N uint) *[T N]  // 4
+fn new(ma mut&__sl_MemAllocator, type T, N uint) ?*[T]   // 5
+fn new(ma mut&__sl_MemAllocator, type T, N uint) *[T]    // 6
 ```
 
 `new` allocates memory from a memory allocator.
 
-- `ma` must be convertible to `mut&MemAllocator`.
+- `ma` must be convertible to `mut&__sl_MemAllocator`.
 - `T` is the allocated element type.
 - If `N` is provided, storage for a sequence of `T` is allocated.
 - If `N` is a positive compile-time constant, result type is a fixed-size array pointer (`*[T N]` / `?*[T N]`).

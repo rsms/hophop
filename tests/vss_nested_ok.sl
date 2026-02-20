@@ -5,7 +5,7 @@ struct Section {
 
 struct Metadata {
     id       u8
-    type     u8
+    kind     u8
     valueLen u8
     value    [u8 .valueLen]
 }

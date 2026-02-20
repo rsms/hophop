@@ -24,7 +24,7 @@ Out of scope:
 - Pattern: `[A-Za-z_][A-Za-z0-9_]*`.
 
 ### 1.3 Keywords
-`import pub struct union enum fn var const mut if else for switch case default break continue return defer assert sizeof true false as null`
+`import pub struct union enum fn var const type mut if else for switch case default break continue return defer assert sizeof true false as null`
 
 ### 1.4 Literals
 - Integer: decimal (`123`) or hex (`0x7F`, `0X7F`).
@@ -65,7 +65,7 @@ ImportSymbols   = "{" [ImportSymbol { ImportSep ImportSymbol } [ImportSep]] "}" 
 ImportSymbol    = Ident [ "as" Ident ] ;
 ImportSep       = "," | ";" ;
 
-TopDecl         = ["pub"] (StructDecl | UnionDecl | EnumDecl | FnDeclOrDef | FnGroupDecl | ConstDecl) ;
+TopDecl         = ["pub"] (StructDecl | UnionDecl | EnumDecl | TypeAliasDecl | FnDeclOrDef | FnGroupDecl | ConstDecl) ;
 
 StructDecl      = "struct" Ident "{" { StructFieldDecl [ "," | ";" ] } "}" [";"] ;
 UnionDecl       = "union"  Ident "{" { FieldDecl [ "," | ";" ] } "}" [";"] ;
@@ -83,6 +83,7 @@ ParamList       = ParamGroup {"," ParamGroup} ;
 ParamGroup      = Ident {"," Ident} Type ;
 
 ConstDecl       = "const" Ident ([Type] "=" Expr) ";" ;
+TypeAliasDecl   = "type" Ident Type ";" ;
 
 Type            = OptionalType
                 | PtrType
@@ -250,7 +251,7 @@ Type-function selector-call sugar:
 ## 5. Type System
 
 ### 5.1 Built-in types
-- `void`, `bool`, `str`, `MemAllocator`
+- `void`, `bool`, `str`, `__sl_MemAllocator`
 - `u8 u16 u32 u64 i8 i16 i32 i64 uint int f32 f64`
 
 ### 5.2 Constructed types
@@ -279,6 +280,7 @@ Exact type match is required except these implicit conversions:
 - `T -> ?T`
 - `null -> ?T`
 - `?A -> ?B` if `A` is assignable to `B`
+- `Alias -> Target` for nominal aliases declared as `type Alias Target`
 
 Not implicit:
 - `?T -> T` (requires unwrap or narrowing)
@@ -412,7 +414,7 @@ Flow narrowing (locals only, including params since params are locals):
 - Return type: `*u8`.
 
 ### 9.3 `new(ma, T[, N])`
-- `ma` must be convertible to `mut&MemAllocator`.
+- `ma` must be convertible to `mut&__sl_MemAllocator`.
 - `T` must be a type argument expression (identifier naming builtin or named type).
 - `N` (if present) must be integer-typed; constant negative values are rejected.
 - Return type: `*T`.
@@ -420,6 +422,8 @@ Flow narrowing (locals only, including params since params are locals):
   - New allocation: full allocation is zeroed.
   - Resize/grow allocation: bytes in `[oldSize, newSize)` are zeroed.
 - Selector-call sugar is supported: `ma.new(T[, N])` is equivalent to `new(ma, T[, N])`
+
+Typical user code uses `std/mem.Allocator`, which is a nominal alias of `__sl_MemAllocator`.
   when `ma` has no field named `new`.
 
 ### 9.4 `panic(msg)`

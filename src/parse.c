@@ -1698,6 +1698,39 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
     return 0;
 }
 
+static int SLPParseTypeAliasDecl(SLParser* p, int32_t* out) {
+    const SLToken* kw = SLPPeek(p);
+    const SLToken* name;
+    const SLToken* semi;
+    int32_t        n;
+    int32_t        targetType;
+
+    p->pos++;
+    if (SLPExpectDeclName(p, &name) != 0) {
+        return -1;
+    }
+    if (SLPParseType(p, &targetType) != 0) {
+        return -1;
+    }
+
+    n = SLPNewNode(p, SLAst_TYPE_ALIAS, kw->start, p->nodes[targetType].end);
+    if (n < 0) {
+        return -1;
+    }
+    p->nodes[n].dataStart = name->start;
+    p->nodes[n].dataEnd = name->end;
+    if (SLPAddChild(p, n, targetType) != 0) {
+        return -1;
+    }
+
+    if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &semi) != 0) {
+        return -1;
+    }
+    p->nodes[n].end = semi->end;
+    *out = n;
+    return 0;
+}
+
 static int SLPParseImport(SLParser* p, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
     const SLToken* path;
@@ -1840,7 +1873,8 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
 
 static int SLPParseDeclInner(SLParser* p, int allowBody, int32_t* out) {
     switch (SLPPeek(p)->kind) {
-        case SLTok_FN: return SLPParseFunDecl(p, allowBody, out);
+        case SLTok_FN:   return SLPParseFunDecl(p, allowBody, out);
+        case SLTok_TYPE: return SLPParseTypeAliasDecl(p, out);
         case SLTok_STRUCT:
         case SLTok_UNION:
         case SLTok_ENUM:
@@ -1893,6 +1927,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_TYPE_MUTSLICE: return "TYPE_MUTSLICE";
         case SLAst_TYPE_OPTIONAL: return "TYPE_OPTIONAL";
         case SLAst_TYPE_FN:       return "TYPE_FN";
+        case SLAst_TYPE_ALIAS:    return "TYPE_ALIAS";
         case SLAst_STRUCT:        return "STRUCT";
         case SLAst_UNION:         return "UNION";
         case SLAst_ENUM:          return "ENUM";

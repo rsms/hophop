@@ -989,7 +989,13 @@ static int CheckSource(const char* filename, const char* source, uint32_t source
 
 static int IsDeclKind(SLAstKind kind) {
     return kind == SLAst_FN || kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
-        || kind == SLAst_VAR || kind == SLAst_CONST || kind == SLAst_FN_GROUP;
+        || kind == SLAst_TYPE_ALIAS || kind == SLAst_VAR || kind == SLAst_CONST
+        || kind == SLAst_FN_GROUP;
+}
+
+static int IsTypeDeclKind(SLAstKind kind) {
+    return kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
+        || kind == SLAst_TYPE_ALIAS;
 }
 
 static int IsPubDeclNode(const SLAstNode* n) {
@@ -1668,7 +1674,7 @@ static int IsBuiltinTypeName(const char* src, uint32_t start, uint32_t end) {
         || SliceEqCStr(src, start, end, "i16") || SliceEqCStr(src, start, end, "i32")
         || SliceEqCStr(src, start, end, "i64") || SliceEqCStr(src, start, end, "uint")
         || SliceEqCStr(src, start, end, "int") || SliceEqCStr(src, start, end, "f32")
-        || SliceEqCStr(src, start, end, "f64");
+        || SliceEqCStr(src, start, end, "f64") || SliceEqCStr(src, start, end, "__sl_MemAllocator");
 }
 
 static int PackageHasExport(const SLPackage* pkg, const char* name) {
@@ -1699,9 +1705,7 @@ static int PackageHasExportedTypeSlice(
     const SLPackage* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = 0; i < pkg->pubDeclLen; i++) {
-        if (!(pkg->pubDecls[i].kind == SLAst_STRUCT || pkg->pubDecls[i].kind == SLAst_UNION
-              || pkg->pubDecls[i].kind == SLAst_ENUM))
-        {
+        if (!IsTypeDeclKind(pkg->pubDecls[i].kind)) {
             continue;
         }
         if (strlen(pkg->pubDecls[i].name) == (size_t)(end - start)
@@ -1866,6 +1870,19 @@ static int ValidatePubClosure(const SLPackage* pkg) {
                 {
                     return -1;
                 }
+            }
+        } else if (pubDecl->kind == SLAst_TYPE_ALIAS) {
+            const SLAstNode* aliasNode = &file->ast.nodes[pubDecl->nodeId];
+            if (child < 0) {
+                return Errorf(
+                    file->path,
+                    file->source,
+                    aliasNode->start,
+                    aliasNode->end,
+                    "missing alias target type");
+            }
+            if (ValidatePubTypeNode(pkg, file, child, "type alias target") != 0) {
+                return -1;
             }
         }
     }
@@ -2085,11 +2102,7 @@ static int ValidateAndFinalizeImportSymbols(SLPackage* pkg) {
             return Errorf(
                 file->path, file->source, sym->start, sym->end, "unknown imported symbol");
         }
-        sym->isType =
-            (exportDecl->kind == SLAst_STRUCT || exportDecl->kind == SLAst_UNION
-             || exportDecl->kind == SLAst_ENUM)
-                ? 1u
-                : 0u;
+        sym->isType = IsTypeDeclKind(exportDecl->kind) ? 1u : 0u;
         if (sym->qualifiedName == NULL
             && BuildPrefixedName(imp->alias, sym->sourceName, &sym->qualifiedName) != 0)
         {
