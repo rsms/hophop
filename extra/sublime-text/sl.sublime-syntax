@@ -100,7 +100,9 @@ contexts:
               2: variable.other.definition.slang
 
     keywords:
-        - match: '\b(import|pub|struct|union|enum|type|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|sizeof|as|context|with)\b'
+        - match: '\b(import|pub|struct|union|enum|type|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|sizeof|as|with)\b'
+          scope: keyword.control.slang
+        - match: '\b(context)\b(?=\s+{{ident}}\b)'
           scope: keyword.control.slang
         - match: '\b(mut)\b'
           scope: storage.modifier.slang
