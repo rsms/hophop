@@ -1,1 +1,1 @@
-tests/switch_bad_default_dup.sl:82:83: error: unexpected token
+tests/switch_bad_default_dup.sl:6:13: SL1005: unexpected token

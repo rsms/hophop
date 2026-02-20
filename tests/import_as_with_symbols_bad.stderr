@@ -1,1 +1,1 @@
-tests/import_as_with_symbols_bad.sl:0:33: error: import with symbol list cannot use as _
+tests/import_as_with_symbols_bad.sl:1:1: SL1033: import with symbol list cannot use as _

@@ -1,1 +1,1 @@
-tests/enum_member_unknown_bad.sl:73:77: error: unknown symbol
+tests/enum_member_unknown_bad.sl:6:17: SL1010: unknown identifier 'Mode'

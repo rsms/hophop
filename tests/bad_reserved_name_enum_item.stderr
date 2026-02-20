@@ -1,1 +1,1 @@
-tests/bad_reserved_name_enum_item.sl:13:21: error: identifier prefix '__sl_' is reserved
+tests/bad_reserved_name_enum_item.sl:1:14: SL1017: identifier prefix '__sl_' is reserved

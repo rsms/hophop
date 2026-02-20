@@ -1,1 +1,1 @@
-tests/slp3_flow_narrow_bad_null_branch_deref.sl:165:167: error: type mismatch
+tests/slp3_flow_narrow_bad_null_branch_deref.sl:6:16: SL1012: type mismatch

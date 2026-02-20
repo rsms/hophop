@@ -1,1 +1,1 @@
-tests/ast_bad.sl:38:38: error: expected expression
+tests/ast_bad.sl:2:23: SL1007: expected expression

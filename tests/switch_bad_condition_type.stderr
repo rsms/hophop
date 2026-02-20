@@ -1,1 +1,1 @@
-tests/switch_bad_condition_type.sl:40:45: error: expected bool expression
+tests/switch_bad_condition_type.sl:3:10: SL1018: expected bool expression

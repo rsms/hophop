@@ -1,1 +1,1 @@
-tests/import_invalid_path_dot.sl:0:10: error: invalid import path (cannot import itself)
+tests/import_invalid_path_dot.sl:1:1: SL1030: invalid import path (cannot import itself)

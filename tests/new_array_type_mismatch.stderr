@@ -1,1 +1,1 @@
-tests:289:304: error: type mismatch
+tests/new_array_type_mismatch.sl:8:21: SL1012: type mismatch

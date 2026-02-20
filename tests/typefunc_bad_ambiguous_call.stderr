@@ -1,1 +1,1 @@
-tests/typefunc_bad_ambiguous_call.sl:81:82: error: ambiguous call
+tests/typefunc_bad_ambiguous_call.sl:7:5: SL1025: ambiguous call

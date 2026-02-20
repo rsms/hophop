@@ -1,1 +1,1 @@
-tests/slice_bad_range_order.sl:52:58: error: type mismatch
+tests/slice_bad_range_order.sl:3:19: SL1012: type mismatch

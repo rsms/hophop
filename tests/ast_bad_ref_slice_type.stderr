@@ -1,1 +1,1 @@
-tests/ast_bad_ref_slice_type.sl:16:17: error: expected type
+tests/ast_bad_ref_slice_type.sl:1:17: SL1008: expected type

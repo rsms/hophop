@@ -1,1 +1,1 @@
-tests/slp3_bad_unwrap.sl:70:72: error: type mismatch
+tests/slp3_bad_unwrap.sl:4:13: SL1012: type mismatch

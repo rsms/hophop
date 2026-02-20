@@ -1,1 +1,1 @@
-tests/bad_reserved_name_const.sl:6:14: error: identifier prefix '__sl_' is reserved
+tests/bad_reserved_name_const.sl:1:7: SL1017: identifier prefix '__sl_' is reserved

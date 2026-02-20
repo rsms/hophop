@@ -1,1 +1,1 @@
-tests/assert_bad_condition.sl:27:28: error: expected bool expression
+tests/assert_bad_condition.sl:2:12: SL1018: expected bool expression

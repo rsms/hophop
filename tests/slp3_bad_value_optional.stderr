@@ -1,1 +1,1 @@
-tests/slp3_bad_value_optional.sl:52:55: error: expected type
+tests/slp3_bad_value_optional.sl:3:20: SL1008: expected type

@@ -1,1 +1,1 @@
-tests/struct_composition_bad_cycle.sl:35:36: error: embedded struct cycle detected
+tests/struct_composition_bad_cycle.sl:6:5: SL1023: embedded struct cycle detected

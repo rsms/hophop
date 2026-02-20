@@ -1,1 +1,1 @@
-tests/slp3_bad_null_assign.sl:64:68: error: type mismatch
+tests/slp3_bad_null_assign.sl:4:12: SL1012: type mismatch

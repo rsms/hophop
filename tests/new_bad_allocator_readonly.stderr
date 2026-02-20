@@ -1,1 +1,1 @@
-tests:333:335: error: type mismatch
+tests/new_bad_allocator_readonly.sl:10:22: SL1012: type mismatch

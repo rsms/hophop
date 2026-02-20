@@ -1,1 +1,1 @@
-tests/typefunc_field_precedence_bad.sl:88:93: error: expression is not callable
+tests/typefunc_field_precedence_bad.sl:11:5: SL1014: expression is not callable

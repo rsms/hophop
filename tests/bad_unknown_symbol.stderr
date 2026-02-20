@@ -1,1 +1,1 @@
-tests/bad_unknown_symbol.sl:29:36: error: unknown symbol
+tests/bad_unknown_symbol.sl:2:12: SL1010: unknown identifier 'missing'

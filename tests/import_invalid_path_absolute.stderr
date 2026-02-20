@@ -1,1 +1,1 @@
-tests/import_invalid_path_absolute.sl:0:10: error: invalid import path (absolute path)
+tests/import_invalid_path_absolute.sl:1:1: SL1030: invalid import path (absolute path)

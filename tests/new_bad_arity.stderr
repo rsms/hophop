@@ -1,1 +1,1 @@
-tests:296:304: error: call arity mismatch
+tests/new_bad_arity.sl:9:18: SL1013: call arity mismatch

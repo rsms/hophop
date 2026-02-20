@@ -1,1 +1,1 @@
-tests/panic_bad_arity.sl:19:26: error: call arity mismatch
+tests/panic_bad_arity.sl:2:5: SL1013: call arity mismatch

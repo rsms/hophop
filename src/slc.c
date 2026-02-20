@@ -147,9 +147,31 @@ static const char* DisplayPath(const char* path) {
     return path;
 }
 
-static int Errorf(const char* file, uint32_t start, uint32_t end, const char* fmt, ...) {
-    va_list ap;
-    fprintf(stderr, "%s:%u:%u: error: ", DisplayPath(file), start, end);
+static void DiagOffsetToLineCol(
+    const char* source, uint32_t offset, uint32_t* outLine, uint32_t* outCol);
+
+static const char* DiagIdOrFallback(SLDiagCode code) {
+    const char* id = SLDiagId(code);
+    if (id == NULL || id[0] == '\0') {
+        return "SL0000";
+    }
+    return id;
+}
+
+static int Errorf(
+    const char* file,
+    const char* _Nullable source,
+    uint32_t    start,
+    uint32_t    end,
+    const char* fmt,
+    ...) {
+    va_list  ap;
+    uint32_t line = start;
+    uint32_t col = end;
+    if (source != NULL) {
+        DiagOffsetToLineCol(source, start, &line, &col);
+    }
+    fprintf(stderr, "%s:%u:%u: %s: ", DisplayPath(file), line, col, "SL0000");
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -157,10 +179,21 @@ static int Errorf(const char* file, uint32_t start, uint32_t end, const char* fm
     return -1;
 }
 
-static int ErrorDiagf(const char* file, uint32_t start, uint32_t end, SLDiagCode code, ...) {
+static int ErrorDiagf(
+    const char* file,
+    const char* _Nullable source,
+    uint32_t   start,
+    uint32_t   end,
+    SLDiagCode code,
+    ...) {
     va_list     ap;
     const char* fmt = SLDiagMessage(code);
-    fprintf(stderr, "%s:%u:%u: error: ", DisplayPath(file), start, end);
+    uint32_t    line = start;
+    uint32_t    col = end;
+    if (source != NULL) {
+        DiagOffsetToLineCol(source, start, &line, &col);
+    }
+    fprintf(stderr, "%s:%u:%u: %s: ", DisplayPath(file), line, col, DiagIdOrFallback(code));
     va_start(ap, code);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -284,19 +317,14 @@ static int PrintSLDiagEx(
     int           useIdentifierWording) {
     const char* msg = SLDiagMessage(diag->code);
     uint8_t     argCount = SLDiagArgCount(diag->code);
+    const char* diagId = DiagIdOrFallback(diag->code);
     uint32_t    locA = diag->start;
     uint32_t    locB = diag->end;
     if (useLineCol && source != NULL) {
         DiagOffsetToLineCol(source, diag->start, &locA, &locB);
     }
 
-    fprintf(
-        stderr,
-        "%s:%u:%u: %s: ",
-        DisplayPath(filename),
-        locA,
-        locB,
-        diag->type == SLDiagType_WARNING ? "warning" : "error");
+    fprintf(stderr, "%s:%u:%u: %s: ", DisplayPath(filename), locA, locB, diagId);
 
     if (useIdentifierWording && diag->code == SLDiag_UNKNOWN_SYMBOL && source != NULL
         && diag->end > diag->start)
@@ -339,7 +367,7 @@ static int PrintSLDiagEx(
 
 static int PrintSLDiag(
     const char* filename, const char* _Nullable source, const SLDiag* diag, int includeHint) {
-    return PrintSLDiagEx(filename, source, diag, includeHint, 0, 0);
+    return PrintSLDiagEx(filename, source, diag, includeHint, 1, 1);
 }
 
 static int PrintSLDiagLineCol(
@@ -1342,7 +1370,7 @@ static int AddDeclFromNode(
         return 0;
     }
     if (n->dataEnd <= n->dataStart || n->end < n->start || n->end > file->sourceLen) {
-        return Errorf(file->path, n->start, n->end, "invalid declaration");
+        return Errorf(file->path, file->source, n->start, n->end, "invalid declaration");
     }
     name = DupSlice(file->source, n->dataStart, n->dataEnd);
     declText = isPub ? DupPubDeclText(file, nodeId) : DupSlice(file->source, n->start, n->end);
@@ -1358,7 +1386,8 @@ static int AddDeclFromNode(
             if (pkg->pubDecls[i].kind == n->kind && StrEq(pkg->pubDecls[i].name, name)) {
                 free(name);
                 free(declText);
-                return Errorf(file->path, n->dataStart, n->dataEnd, "duplicate public symbol");
+                return Errorf(
+                    file->path, file->source, n->dataStart, n->dataEnd, "duplicate public symbol");
             }
         }
         if (AddSymbolDecl(
@@ -1426,20 +1455,31 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
                 const SLAstNode* ch = &ast->nodes[importChild];
                 if (ch->kind == SLAst_IDENT) {
                     if (aliasNode != NULL) {
-                        return Errorf(file->path, n->start, n->end, "invalid import declaration");
+                        return Errorf(
+                            file->path,
+                            file->source,
+                            n->start,
+                            n->end,
+                            "invalid import declaration");
                     }
                     aliasNode = ch;
                 } else if (ch->kind == SLAst_IMPORT_SYMBOL) {
                     hasSymbols = 1;
                 } else {
-                    return Errorf(file->path, n->start, n->end, "invalid import declaration");
+                    return Errorf(
+                        file->path, file->source, n->start, n->end, "invalid import declaration");
                 }
                 importChild = ASTNextSibling(ast, importChild);
             }
 
             decodedPath = DecodeStringLiteral(file->source, n->dataStart, n->dataEnd);
             if (decodedPath == NULL) {
-                return Errorf(file->path, n->dataStart, n->dataEnd, "invalid import path literal");
+                return Errorf(
+                    file->path,
+                    file->source,
+                    n->dataStart,
+                    n->dataEnd,
+                    "invalid import path literal");
             }
 
             while (decodedPath[decodedPathLen] != '\0') {
@@ -1459,7 +1499,12 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
             if (importPath == NULL) {
                 if (pathErr != NULL) {
                     return ErrorDiagf(
-                        file->path, n->start, n->end, SLDiag_IMPORT_INVALID_PATH, pathErr);
+                        file->path,
+                        file->source,
+                        n->start,
+                        n->end,
+                        SLDiag_IMPORT_INVALID_PATH,
+                        pathErr);
                 }
                 return ErrorSimple("out of memory");
             }
@@ -1467,7 +1512,11 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
             if (IsFeatureImportPath(importPath)) {
                 if (aliasNode != NULL || hasSymbols) {
                     int rc = ErrorDiagf(
-                        file->path, n->start, n->end, SLDiag_IMPORT_FEATURE_IMPORT_EXTRAS);
+                        file->path,
+                        file->source,
+                        n->start,
+                        n->end,
+                        SLDiag_IMPORT_FEATURE_IMPORT_EXTRAS);
                     free(importPath);
                     return rc;
                 }
@@ -1491,7 +1540,11 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
 
             if (aliasIsUnderscore && hasSymbols) {
                 int rc = ErrorDiagf(
-                    file->path, n->start, n->end, SLDiag_IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS);
+                    file->path,
+                    file->source,
+                    n->start,
+                    n->end,
+                    SLDiag_IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS);
                 free(importPath);
                 return rc;
             }
@@ -1501,6 +1554,7 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
                 if (bindName == NULL) {
                     int rc = ErrorDiagf(
                         file->path,
+                        file->source,
                         n->start,
                         n->end,
                         SLDiag_IMPORT_ALIAS_INFERENCE_FAILED,
@@ -1512,7 +1566,11 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
 
             if (bindName != NULL && IsReservedSLPrefixName(bindName)) {
                 int rc = Errorf(
-                    file->path, n->start, n->end, "identifier prefix '__sl_' is reserved");
+                    file->path,
+                    file->source,
+                    n->start,
+                    n->end,
+                    "identifier prefix '__sl_' is reserved");
                 free(bindName);
                 free(importPath);
                 return rc;
@@ -1564,7 +1622,11 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
                     }
                     if (StrEq(localName, "_")) {
                         int rc = ErrorDiagf(
-                            file->path, ch->start, ch->end, SLDiag_IMPORT_SYMBOL_ALIAS_INVALID);
+                            file->path,
+                            file->source,
+                            ch->start,
+                            ch->end,
+                            SLDiag_IMPORT_SYMBOL_ALIAS_INVALID);
                         free(sourceName);
                         free(localName);
                         return rc;
@@ -1679,6 +1741,7 @@ static int ValidatePubTypeNode(
                 if (imp == NULL) {
                     return Errorf(
                         file->path,
+                        file->source,
                         n->start,
                         n->end,
                         "public API %s references unknown import alias",
@@ -1693,6 +1756,7 @@ static int ValidatePubTypeNode(
                 }
                 return Errorf(
                     file->path,
+                    file->source,
                     n->start,
                     n->end,
                     "public API %s references non-exported type",
@@ -1706,6 +1770,7 @@ static int ValidatePubTypeNode(
             }
             return Errorf(
                 file->path,
+                file->source,
                 n->start,
                 n->end,
                 "public API %s references non-exported type",
@@ -1732,7 +1797,8 @@ static int ValidatePubTypeNode(
             }
             return 0;
         }
-        default: return Errorf(file->path, n->start, n->end, "invalid type in public API");
+        default:
+            return Errorf(file->path, file->source, n->start, n->end, "invalid type in public API");
     }
 }
 
@@ -1827,6 +1893,7 @@ static int ValidatePubFnDefinitions(const SLPackage* pkg) {
             const SLAstNode*    n = &file->ast.nodes[pubDecl->nodeId];
             return Errorf(
                 file->path,
+                file->source,
                 n->dataStart,
                 n->dataEnd,
                 "missing definition for exported function %s",
@@ -1865,10 +1932,12 @@ static int ValidateSelectorsNode(const SLPackage* pkg, const SLParsedFile* file,
             if (file->source[i] == '.') {
                 const SLImportRef* imp = FindImportByAliasSlice(pkg, file->source, n->dataStart, i);
                 if (imp == NULL) {
-                    return Errorf(file->path, n->start, n->end, "unknown import alias");
+                    return Errorf(
+                        file->path, file->source, n->start, n->end, "unknown import alias");
                 }
                 if (!PackageHasExportSlice(imp->target, file->source, i + 1u, n->dataEnd)) {
-                    return Errorf(file->path, n->start, n->end, "unknown imported symbol");
+                    return Errorf(
+                        file->path, file->source, n->start, n->end, "unknown imported symbol");
                 }
                 break;
             }
@@ -1881,7 +1950,8 @@ static int ValidateSelectorsNode(const SLPackage* pkg, const SLParsedFile* file,
                 pkg, file->source, recv->dataStart, recv->dataEnd);
             if (imp != NULL) {
                 if (!PackageHasExportSlice(imp->target, file->source, n->dataStart, n->dataEnd)) {
-                    return Errorf(file->path, n->start, n->end, "unknown imported symbol");
+                    return Errorf(
+                        file->path, file->source, n->start, n->end, "unknown imported symbol");
                 }
             }
         }
@@ -1933,7 +2003,8 @@ static int ValidateImportBindingConflicts(const SLPackage* pkg) {
         }
         if (PackageHasAnyDeclName(pkg, imp->bindName)) {
             const SLParsedFile* file = &pkg->files[imp->fileIndex];
-            return Errorf(file->path, imp->start, imp->end, "import binding conflict");
+            return Errorf(
+                file->path, file->source, imp->start, imp->end, "import binding conflict");
         }
         for (j = i + 1u; j < pkg->importLen; j++) {
             if (pkg->imports[j].bindName != NULL && StrEq(pkg->imports[j].bindName, imp->bindName))
@@ -1941,6 +2012,7 @@ static int ValidateImportBindingConflicts(const SLPackage* pkg) {
                 const SLParsedFile* file = &pkg->files[pkg->imports[j].fileIndex];
                 return Errorf(
                     file->path,
+                    file->source,
                     pkg->imports[j].start,
                     pkg->imports[j].end,
                     "import binding conflict");
@@ -1951,6 +2023,7 @@ static int ValidateImportBindingConflicts(const SLPackage* pkg) {
                 const SLParsedFile* file = &pkg->files[pkg->importSymbols[j].fileIndex];
                 return Errorf(
                     file->path,
+                    file->source,
                     pkg->importSymbols[j].start,
                     pkg->importSymbols[j].end,
                     "import binding conflict");
@@ -1963,13 +2036,15 @@ static int ValidateImportBindingConflicts(const SLPackage* pkg) {
         uint32_t                 j;
         if (PackageHasAnyDeclName(pkg, sym->localName)) {
             const SLParsedFile* file = &pkg->files[sym->fileIndex];
-            return Errorf(file->path, sym->start, sym->end, "import binding conflict");
+            return Errorf(
+                file->path, file->source, sym->start, sym->end, "import binding conflict");
         }
         for (j = i + 1u; j < pkg->importSymbolLen; j++) {
             if (StrEq(pkg->importSymbols[j].localName, sym->localName)) {
                 const SLParsedFile* file = &pkg->files[pkg->importSymbols[j].fileIndex];
                 return Errorf(
                     file->path,
+                    file->source,
                     pkg->importSymbols[j].start,
                     pkg->importSymbols[j].end,
                     "import binding conflict");
@@ -2007,7 +2082,8 @@ static int ValidateAndFinalizeImportSymbols(SLPackage* pkg) {
         exportDecl = FindExportDeclByName(dep, sym->sourceName);
         if (exportDecl == NULL) {
             const SLParsedFile* file = &pkg->files[sym->fileIndex];
-            return Errorf(file->path, sym->start, sym->end, "unknown imported symbol");
+            return Errorf(
+                file->path, file->source, sym->start, sym->end, "unknown imported symbol");
         }
         sym->isType =
             (exportDecl->kind == SLAst_STRUCT || exportDecl->kind == SLAst_UNION
@@ -2219,6 +2295,7 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
                 const SLParsedFile* file = &pkg->files[pkg->imports[i].fileIndex];
                 return Errorf(
                     file->path,
+                    file->source,
                     pkg->imports[i].start,
                     pkg->imports[i].end,
                     "failed to resolve import %s",
@@ -2244,6 +2321,7 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
             free(resolvedDir);
             return Errorf(
                 file->path,
+                file->source,
                 pkg->imports[i].start,
                 pkg->imports[i].end,
                 "failed to resolve import %s",
@@ -3466,11 +3544,13 @@ static int CheckLoadedPackage(SLPackage* pkg) {
     }
     checkSource = source;
     checkSourceLen = sourceLen;
-    if (pkg->fileLen == 1 && pkg->importLen == 0) {
+    if (pkg->fileLen == 1) {
         checkPath = pkg->files[0].path;
-        checkSource = pkg->files[0].source;
-        checkSourceLen = pkg->files[0].sourceLen;
         lineColDiag = 1;
+        if (pkg->importLen == 0) {
+            checkSource = pkg->files[0].source;
+            checkSourceLen = pkg->files[0].sourceLen;
+        }
     }
     if (CheckSourceEx(checkPath, checkSource, checkSourceLen, lineColDiag) != 0) {
         free(source);
@@ -3633,7 +3713,11 @@ static int ValidateEntryMainSignature(const SLPackage* entryPkg) {
 
                 if (paramCount != 0 || hasReturnType) {
                     return Errorf(
-                        file->path, n->start, n->end, "entrypoint must have signature: fn main()");
+                        file->path,
+                        file->source,
+                        n->start,
+                        n->end,
+                        "entrypoint must have signature: fn main()");
                 }
                 if (hasBody) {
                     hasMainDefinition = 1;

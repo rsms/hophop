@@ -1,1 +1,1 @@
-tests/var_infer_null_bad.sl:27:31: error: cannot infer type from null; add explicit type
+tests/var_infer_null_bad.sl:2:13: SL1036: cannot infer type from null; add explicit type

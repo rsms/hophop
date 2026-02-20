@@ -1,1 +1,1 @@
-tests:319:320: error: unknown type
+tests/new_bad_type_arg_value.sl:10:27: SL1011: unknown type

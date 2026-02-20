@@ -1,1 +1,1 @@
-tests/ast_bad_old_array_type.sl:27:28: error: expected type
+tests/ast_bad_old_array_type.sl:2:12: SL1008: expected type

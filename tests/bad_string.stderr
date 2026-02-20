@@ -1,1 +1,1 @@
-tests/bad_string.sl:14:19: error: unterminated string literal
+tests/bad_string.sl:1:15: SL1003: unterminated string literal
