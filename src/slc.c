@@ -354,6 +354,14 @@ static int PrintSLDiagEx(
     } else {
         fputs(msg, stderr);
     }
+    if (diag->code == SLDiag_ARENA_OOM && diag->argEnd > 0) {
+        fprintf(
+            stderr,
+            " (used %u / %u bytes, %.1f%%)",
+            diag->argStart,
+            diag->argEnd,
+            diag->argEnd > 0 ? (100.0 * (double)diag->argStart / (double)diag->argEnd) : 0.0);
+    }
     fputc('\n', stderr);
 
     if (includeHint) {
@@ -373,6 +381,67 @@ static int PrintSLDiag(
 static int PrintSLDiagLineCol(
     const char* filename, const char* _Nullable source, const SLDiag* diag, int includeHint) {
     return PrintSLDiagEx(filename, source, diag, includeHint, 1, 1);
+}
+
+static uint32_t ArenaBytesUsed(const SLArena* arena) {
+    const SLArenaBlock* block;
+    uint64_t            sum = 0;
+    if (arena == NULL) {
+        return 0;
+    }
+    block = arena->first;
+    while (block != NULL) {
+        sum += block->len;
+        block = block->next;
+    }
+    return sum > UINT32_MAX ? UINT32_MAX : (uint32_t)sum;
+}
+
+static uint32_t ArenaBytesCapacity(const SLArena* arena) {
+    const SLArenaBlock* block;
+    uint64_t            sum = 0;
+    if (arena == NULL) {
+        return 0;
+    }
+    block = arena->first;
+    while (block != NULL) {
+        sum += block->cap;
+        block = block->next;
+    }
+    return sum > UINT32_MAX ? UINT32_MAX : (uint32_t)sum;
+}
+
+static int ArenaDebugEnabled(void) {
+    const char* s = getenv("SL_ARENA_DEBUG");
+    return s != NULL && s[0] != '\0' && s[0] != '0';
+}
+
+static int CompactAstInArena(SLArena* arena, SLAst* ast) {
+    uint32_t   bytes;
+    SLAstNode* compactNodes;
+    SLAstNode* temp;
+    if (arena == NULL || ast == NULL || ast->nodes == NULL || ast->len == 0) {
+        return 0;
+    }
+    if (ast->len > UINT32_MAX / (uint32_t)sizeof(SLAstNode)) {
+        return -1;
+    }
+    bytes = ast->len * (uint32_t)sizeof(SLAstNode);
+    temp = (SLAstNode*)malloc(bytes);
+    if (temp == NULL) {
+        return -1;
+    }
+    memcpy(temp, ast->nodes, bytes);
+    SLArenaReset(arena);
+    compactNodes = (SLAstNode*)SLArenaAlloc(arena, bytes, (uint32_t)_Alignof(SLAstNode));
+    if (compactNodes == NULL) {
+        free(temp);
+        return -1;
+    }
+    memcpy(compactNodes, temp, bytes);
+    free(temp);
+    ast->nodes = compactNodes;
+    return 0;
 }
 
 static void* _Nullable CodegenArenaGrow(
@@ -925,9 +994,27 @@ static int ParseSourceEx(
     }
 
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    if (outArena != NULL) {
+        SLArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
+    }
     if (SLParse(&arena, (SLStrView){ source, sourceLen }, outAst, &diag) != 0) {
         (void)(useLineColDiag ? PrintSLDiagLineCol(filename, source, &diag, 0)
                               : PrintSLDiag(filename, source, &diag, 0));
+        SLArenaDispose(&arena);
+        free(arenaMem);
+        return -1;
+    }
+    if (CompactAstInArena(&arena, outAst) != 0) {
+        SLDiag oomDiag = { 0 };
+        oomDiag.code = SLDiag_ARENA_OOM;
+        oomDiag.type = SLDiagTypeOfCode(SLDiag_ARENA_OOM);
+        oomDiag.start = 0;
+        oomDiag.end = 0;
+        oomDiag.argStart = ArenaBytesUsed(&arena);
+        oomDiag.argEnd = ArenaBytesCapacity(&arena);
+        (void)(useLineColDiag ? PrintSLDiagLineCol(filename, source, &oomDiag, 0)
+                              : PrintSLDiag(filename, source, &oomDiag, 0));
+        SLArenaDispose(&arena);
         free(arenaMem);
         return -1;
     }
@@ -959,26 +1046,64 @@ static void WarnUnknownFeatureImports(const char* filename, const char* source, 
 
 static int CheckSourceEx(
     const char* filename, const char* source, uint32_t sourceLen, int useLineColDiag) {
-    void*   arenaMem;
-    SLArena arena;
-    SLAst   ast;
-    SLDiag  diag = {};
+    void*    arenaMem;
+    SLArena  arena;
+    SLAst    ast;
+    SLDiag   diag = {};
+    uint32_t beforeTypecheckUsed;
+    uint32_t beforeTypecheckCap;
+    uint32_t afterTypecheckUsed;
+    uint32_t afterTypecheckCap;
 
     if (ParseSourceEx(filename, source, sourceLen, &ast, &arenaMem, &arena, useLineColDiag) != 0) {
         return -1;
     }
 
     WarnUnknownFeatureImports(filename, source, &ast);
+    beforeTypecheckUsed = ArenaBytesUsed(&arena);
+    beforeTypecheckCap = ArenaBytesCapacity(&arena);
 
     if (SLTypeCheck(&arena, &ast, (SLStrView){ source, sourceLen }, &diag) != 0) {
+        if (diag.code == SLDiag_ARENA_OOM) {
+            uint32_t afterUsed = ArenaBytesUsed(&arena);
+            uint32_t afterCap = ArenaBytesCapacity(&arena);
+            diag.argStart = afterUsed;
+            diag.argEnd = afterCap;
+            fprintf(
+                stderr,
+                "  note: typecheck arena delta %u bytes (before: %u/%u, after: %u/%u)\n",
+                afterUsed >= beforeTypecheckUsed ? afterUsed - beforeTypecheckUsed : 0u,
+                beforeTypecheckUsed,
+                beforeTypecheckCap,
+                afterUsed,
+                afterCap);
+        }
         int diagStatus =
             useLineColDiag
                 ? PrintSLDiagLineCol(filename, source, &diag, 1)
                 : PrintSLDiag(filename, source, &diag, 1);
+        SLArenaDispose(&arena);
         free(arenaMem);
         return diagStatus;
     }
 
+    afterTypecheckUsed = ArenaBytesUsed(&arena);
+    afterTypecheckCap = ArenaBytesCapacity(&arena);
+    if (ArenaDebugEnabled()) {
+        fprintf(
+            stderr,
+            "arena debug: ast=%u nodes (%u bytes), before check=%u/%u, after check=%u/%u\n",
+            ast.len,
+            ast.len <= UINT32_MAX / (uint32_t)sizeof(SLAstNode)
+                ? ast.len * (uint32_t)sizeof(SLAstNode)
+                : UINT32_MAX,
+            beforeTypecheckUsed,
+            beforeTypecheckCap,
+            afterTypecheckUsed,
+            afterTypecheckCap);
+    }
+
+    SLArenaDispose(&arena);
     free(arenaMem);
     return 0;
 }

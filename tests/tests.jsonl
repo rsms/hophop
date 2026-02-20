@@ -225,6 +225,7 @@
 {"id":"check:tests/compound_literal_typed_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_typed_ok.sl"}
 {"id":"check:tests/compound_literal_infer_init_assign_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_infer_init_assign_ok.sl"}
 {"id":"check:tests/compound_literal_nested_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_nested_ok.sl"}
+{"id":"check:tests/compound_literal_combined_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_combined_ok.sl"}
 {"id":"check:tests/compound_literal_call_ref_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_call_ref_ok.sl"}
 {"id":"check:tests/compound_literal_zero_fill_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_zero_fill_ok.sl"}
 {"id":"check:tests/compound_literal_union_single_field_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_union_single_field_ok.sl"}
