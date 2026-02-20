@@ -189,3 +189,5 @@
 {"id":"ast:tests/ast_fn_type.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_fn_type.sl","expect":"tests/ast_fn_type.ast"}
 {"id":"check:tests/fntype_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/fntype_ok.sl"}
 {"id":"integration.runtime.fntype_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/fntype_ok.sl","expect_exit":0}
+{"id":"checkpkg:tests/new_runtime_slice_ptr_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_runtime_slice_ptr_ok.sl"}
+{"id":"integration.runtime.new_runtime_slice_ptr_ok.compile_only","suite":"std.unit","kind":"compile_only","input":"tests/new_runtime_slice_ptr_ok.sl"}

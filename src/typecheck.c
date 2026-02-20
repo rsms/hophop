@@ -1277,6 +1277,20 @@ static int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
     if (dst->kind == SLTCType_PTR) {
         /* Owned pointers (*T) can only come from new(); references (&T) cannot be
          * implicitly promoted to owned pointers. */
+        if (src->kind == SLTCType_PTR && dst->baseType >= 0 && src->baseType >= 0
+            && (uint32_t)dst->baseType < c->typeLen && (uint32_t)src->baseType < c->typeLen)
+        {
+            const SLTCType* dstBase = &c->types[dst->baseType];
+            const SLTCType* srcBase = &c->types[src->baseType];
+            if (dstBase->kind == SLTCType_SLICE) {
+                if (srcBase->kind == SLTCType_SLICE && dstBase->baseType == srcBase->baseType) {
+                    return !SLTCTypeIsMutable(dstBase) || SLTCTypeIsMutable(srcBase);
+                }
+                if (srcBase->kind == SLTCType_ARRAY && dstBase->baseType == srcBase->baseType) {
+                    return 1;
+                }
+            }
+        }
         return 0;
     }
 

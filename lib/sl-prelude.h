@@ -182,3 +182,16 @@ static inline void* __sl_new_array(
     __sl_mem_Allocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
     return __sl_new(ma, elemSize * count, elemAlign);
 }
+
+static inline __sl_slice_ro __sl_new_array_slice_ro(
+    __sl_mem_Allocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
+    void* p = __sl_new_array(ma, elemSize, elemAlign, count);
+    return (__sl_slice_ro){ .ptr = p, .len = p != NULL ? count : 0u };
+}
+
+static inline __sl_slice_mut __sl_new_array_slice_mut(
+    __sl_mem_Allocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
+    void* p = __sl_new_array(ma, elemSize, elemAlign, count);
+    return (
+        __sl_slice_mut){ .ptr = p, .len = p != NULL ? count : 0u, .cap = p != NULL ? count : 0u };
+}
