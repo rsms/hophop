@@ -257,20 +257,58 @@ static char* _Nullable DupSlice(const char* s, uint32_t start, uint32_t end) {
     return out;
 }
 
-static int PrintSLDiag(
-    const char* filename, const char* _Nullable source, const SLDiag* diag, int includeHint) {
+static void DiagOffsetToLineCol(
+    const char* source, uint32_t offset, uint32_t* outLine, uint32_t* outCol) {
+    uint32_t i = 0;
+    uint32_t line = 1;
+    uint32_t col = 1;
+    while (source[i] != '\0' && i < offset) {
+        if (source[i] == '\n') {
+            line++;
+            col = 1;
+        } else {
+            col++;
+        }
+        i++;
+    }
+    *outLine = line;
+    *outCol = col;
+}
+
+static int PrintSLDiagEx(
+    const char* filename,
+    const char* _Nullable source,
+    const SLDiag* diag,
+    int           includeHint,
+    int           useLineCol,
+    int           useIdentifierWording) {
     const char* msg = SLDiagMessage(diag->code);
     uint8_t     argCount = SLDiagArgCount(diag->code);
+    uint32_t    locA = diag->start;
+    uint32_t    locB = diag->end;
+    if (useLineCol && source != NULL) {
+        DiagOffsetToLineCol(source, diag->start, &locA, &locB);
+    }
 
     fprintf(
         stderr,
         "%s:%u:%u: %s: ",
         DisplayPath(filename),
-        diag->start,
-        diag->end,
+        locA,
+        locB,
         diag->type == SLDiagType_WARNING ? "warning" : "error");
 
-    if (argCount == 0) {
+    if (useIdentifierWording && diag->code == SLDiag_UNKNOWN_SYMBOL && source != NULL
+        && diag->end > diag->start)
+    {
+        char* ident = DupSlice(source, diag->start, diag->end);
+        if (ident != NULL) {
+            fprintf(stderr, "unknown identifier '%s'", ident);
+            free(ident);
+        } else {
+            fputs("unknown identifier", stderr);
+        }
+    } else if (argCount == 0) {
         fputs(msg, stderr);
     } else if (argCount == 1) {
         char* arg = NULL;
@@ -297,6 +335,16 @@ static int PrintSLDiag(
         }
     }
     return diag->type == SLDiagType_WARNING ? 0 : -1;
+}
+
+static int PrintSLDiag(
+    const char* filename, const char* _Nullable source, const SLDiag* diag, int includeHint) {
+    return PrintSLDiagEx(filename, source, diag, includeHint, 0, 0);
+}
+
+static int PrintSLDiagLineCol(
+    const char* filename, const char* _Nullable source, const SLDiag* diag, int includeHint) {
+    return PrintSLDiagEx(filename, source, diag, includeHint, 1, 1);
 }
 
 static void* _Nullable CodegenArenaGrow(
@@ -811,7 +859,16 @@ static int ParseSource(
     uint32_t    sourceLen,
     SLAst*      outAst,
     void**      outArenaMem,
-    SLArena* _Nullable outArena) {
+    SLArena* _Nullable outArena);
+
+static int ParseSourceEx(
+    const char* filename,
+    const char* source,
+    uint32_t    sourceLen,
+    SLAst*      outAst,
+    void**      outArenaMem,
+    SLArena* _Nullable outArena,
+    int useLineColDiag) {
     void*    arenaMem;
     uint64_t arenaCap64;
     size_t   arenaCap;
@@ -841,7 +898,8 @@ static int ParseSource(
 
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
     if (SLParse(&arena, (SLStrView){ source, sourceLen }, outAst, &diag) != 0) {
-        (void)PrintSLDiag(filename, source, &diag, 0);
+        (void)(useLineColDiag ? PrintSLDiagLineCol(filename, source, &diag, 0)
+                              : PrintSLDiag(filename, source, &diag, 0));
         free(arenaMem);
         return -1;
     }
@@ -859,28 +917,46 @@ static int ParseSource(
     return 0;
 }
 
+static int ParseSource(
+    const char* filename,
+    const char* source,
+    uint32_t    sourceLen,
+    SLAst*      outAst,
+    void**      outArenaMem,
+    SLArena* _Nullable outArena) {
+    return ParseSourceEx(filename, source, sourceLen, outAst, outArenaMem, outArena, 0);
+}
+
 static void WarnUnknownFeatureImports(const char* filename, const char* source, const SLAst* ast);
 
-static int CheckSource(const char* filename, const char* source, uint32_t sourceLen) {
+static int CheckSourceEx(
+    const char* filename, const char* source, uint32_t sourceLen, int useLineColDiag) {
     void*   arenaMem;
     SLArena arena;
     SLAst   ast;
     SLDiag  diag = {};
 
-    if (ParseSource(filename, source, sourceLen, &ast, &arenaMem, &arena) != 0) {
+    if (ParseSourceEx(filename, source, sourceLen, &ast, &arenaMem, &arena, useLineColDiag) != 0) {
         return -1;
     }
 
     WarnUnknownFeatureImports(filename, source, &ast);
 
     if (SLTypeCheck(&arena, &ast, (SLStrView){ source, sourceLen }, &diag) != 0) {
-        int diagStatus = PrintSLDiag(filename, source, &diag, 1);
+        int diagStatus =
+            useLineColDiag
+                ? PrintSLDiagLineCol(filename, source, &diag, 1)
+                : PrintSLDiag(filename, source, &diag, 1);
         free(arenaMem);
         return diagStatus;
     }
 
     free(arenaMem);
     return 0;
+}
+
+static int CheckSource(const char* filename, const char* source, uint32_t sourceLen) {
+    return CheckSourceEx(filename, source, sourceLen, 0);
 }
 
 static int IsDeclKind(SLAstKind kind) {
@@ -2227,7 +2303,7 @@ static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SL
         if (ReadFile(filePaths[i], &source, &sourceLen) != 0) {
             return -1;
         }
-        if (ParseSource(filePaths[i], source, sourceLen, &ast, &arenaMem, NULL) != 0) {
+        if (ParseSourceEx(filePaths[i], source, sourceLen, &ast, &arenaMem, NULL, 1) != 0) {
             free(source);
             return -1;
         }
@@ -2295,7 +2371,7 @@ static int LoadSingleFilePackage(
     if (ReadFile(filePath, &source, &sourceLen) != 0) {
         return -1;
     }
-    if (ParseSource(filePath, source, sourceLen, &ast, &arenaMem, NULL) != 0) {
+    if (ParseSourceEx(filePath, source, sourceLen, &ast, &arenaMem, NULL, 1) != 0) {
         free(source);
         return -1;
     }
@@ -3376,15 +3452,27 @@ static int BuildCombinedPackageSource(const SLPackage* pkg, char** outSource, ui
 }
 
 static int CheckLoadedPackage(SLPackage* pkg) {
-    char*    source = NULL;
-    uint32_t sourceLen = 0;
+    char*       source = NULL;
+    uint32_t    sourceLen = 0;
+    int         lineColDiag = 0;
+    const char* checkPath = pkg->dirPath;
+    const char* checkSource = NULL;
+    uint32_t    checkSourceLen = 0;
     if (pkg->checked) {
         return 0;
     }
     if (BuildCombinedPackageSource(pkg, &source, &sourceLen) != 0) {
         return -1;
     }
-    if (CheckSource(pkg->dirPath, source, sourceLen) != 0) {
+    checkSource = source;
+    checkSourceLen = sourceLen;
+    if (pkg->fileLen == 1 && pkg->importLen == 0) {
+        checkPath = pkg->files[0].path;
+        checkSource = pkg->files[0].source;
+        checkSourceLen = pkg->files[0].sourceLen;
+        lineColDiag = 1;
+    }
+    if (CheckSourceEx(checkPath, checkSource, checkSourceLen, lineColDiag) != 0) {
         free(source);
         return -1;
     }
@@ -3686,7 +3774,13 @@ static int GeneratePackage(
 
     if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
         if (diag.code != SLDiag_NONE) {
-            int diagStatus = PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
+            int diagStatus;
+            if (entryPkg->fileLen == 1 && entryPkg->importLen == 0) {
+                diagStatus = PrintSLDiagLineCol(
+                    entryPkg->files[0].path, entryPkg->files[0].source, &diag, 1);
+            } else {
+                diagStatus = PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
+            }
             if (!(diagStatus == 0 && outHeader != NULL)) {
                 free(source);
                 FreeLoader(&loader);
@@ -3808,7 +3902,13 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
 
     if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
         if (diag.code != SLDiag_NONE) {
-            int diagStatus = PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
+            int diagStatus;
+            if (entryPkg->fileLen == 1 && entryPkg->importLen == 0) {
+                diagStatus = PrintSLDiagLineCol(
+                    entryPkg->files[0].path, entryPkg->files[0].source, &diag, 1);
+            } else {
+                diagStatus = PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
+            }
             if (!(diagStatus == 0 && outHeader != NULL)) {
                 goto end;
             }
