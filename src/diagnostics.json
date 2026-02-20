@@ -181,5 +181,41 @@
     "SL1045": {
         "name": "WITH_CONTEXT_ON_NON_CALL",
         "message": "'with' context clause can only be applied to a call"
+    },
+    "SL1046": {
+        "name": "COMPOUND_TYPE_REQUIRED",
+        "message": "compound literal requires an explicit aggregate type"
+    },
+    "SL1047": {
+        "name": "COMPOUND_INFER_NO_CONTEXT",
+        "message": "cannot infer compound literal type from context"
+    },
+    "SL1048": {
+        "name": "COMPOUND_INFER_AMBIGUOUS",
+        "message": "compound literal type inference is ambiguous"
+    },
+    "SL1049": {
+        "name": "COMPOUND_INFER_NON_AGGREGATE",
+        "message": "inferred compound literal type is not an aggregate"
+    },
+    "SL1050": {
+        "name": "COMPOUND_FIELD_UNKNOWN",
+        "message": "unknown compound literal field '{s}'"
+    },
+    "SL1051": {
+        "name": "COMPOUND_FIELD_DUPLICATE",
+        "message": "duplicate compound literal field '{s}'"
+    },
+    "SL1052": {
+        "name": "COMPOUND_FIELD_TYPE_MISMATCH",
+        "message": "compound literal field '{s}' type mismatch"
+    },
+    "SL1053": {
+        "name": "COMPOUND_MUT_REF_TEMPORARY",
+        "message": "cannot bind compound literal temporary to mutable reference"
+    },
+    "SL1054": {
+        "name": "COMPOUND_UNION_MULTI_FIELD",
+        "message": "union compound literal can initialize at most one field"
     }
 }

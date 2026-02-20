@@ -1,0 +1,1 @@
+tests/compound_literal_union_multi_field_bad.sl:7:15: SL1054: union compound literal can initialize at most one field

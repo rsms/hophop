@@ -1,0 +1,1 @@
+tests/compound_literal_infer_non_aggregate_bad.sl:2:17: SL1049: inferred compound literal type is not an aggregate

@@ -1,0 +1,1 @@
+tests/compound_literal_unknown_field_bad.sl:7:20: SL1050: unknown compound literal field 'z'

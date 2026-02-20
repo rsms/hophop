@@ -182,13 +182,18 @@ PrimaryExpr     = Ident
                 | StringLit
                 | BoolLit
                 | "null"
+                | CompoundLit
                 | "sizeof" "(" (Type | Expr) ")"
                 | "(" Expr ")" ;
+CompoundLit     = [TypeName] "{" [FieldInitList] "}" ;
+FieldInitList   = FieldInit {"," FieldInit} [","] ;
+FieldInit       = Ident "=" Expr ;
 ```
 
 Notes:
 - `&[T]` and `mut&[T]` are invalid type forms; use `[T]` and `mut[T]`.
-- Compound literals (`Type{ field = expr }`) are not implemented in the current parser.
+- Compound literals support named fields only (`Type{ field = expr }`, `{ field = expr }`).
+- Inferred `{ ... }` requires expected aggregate type context.
 - `void` is a type name but is rejected as an explicit function return type. Omit return type for no return value.
 
 ## 4. Declarations and Scope
@@ -605,5 +610,5 @@ Entry point:
 - No implicit function overloading (`fn name(...)` by signature). Use explicit `fn Group{...};`.
 - No block comments.
 - No binary integer literal syntax.
-- Compound literals are not currently supported.
+- Compound literals support named-field aggregate initialization only.
 - Runtime bounds checks for non-constant index/slice operations are analyzed but not currently emitted by C codegen.

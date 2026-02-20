@@ -44,6 +44,9 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/slc check examples/type_alias.sl`
 - Function groups (explicit overload groups): `examples/function_groups.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/function_groups.sl`
+- SLP-13 compound literals (typed/inferred forms, nested init, ref binding, zero fill):
+  `examples/compound-literals.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/compound-literals.sl`
 
 ## Control Flow
 

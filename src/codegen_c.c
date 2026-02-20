@@ -355,6 +355,17 @@ static int IsBuiltinType(const char* s) {
         || StrEq(s, "int") || StrEq(s, "f32") || StrEq(s, "f64") || StrEq(s, "__sl_MemAllocator");
 }
 
+static int IsIntegerCTypeName(const char* s) {
+    return StrEq(s, "__sl_u8") || StrEq(s, "__sl_u16") || StrEq(s, "__sl_u32")
+        || StrEq(s, "__sl_u64") || StrEq(s, "__sl_uint") || StrEq(s, "__sl_i8")
+        || StrEq(s, "__sl_i16") || StrEq(s, "__sl_i32") || StrEq(s, "__sl_i64")
+        || StrEq(s, "__sl_int");
+}
+
+static int IsFloatCTypeName(const char* s) {
+    return StrEq(s, "__sl_f32") || StrEq(s, "__sl_f64");
+}
+
 static int SliceEq(const char* src, uint32_t start, uint32_t end, const char* s) {
     uint32_t i = 0;
     uint32_t len;
@@ -799,6 +810,16 @@ static const SLNameMap* _Nullable FindNameByCString(const SLCBackendC* c, const 
     uint32_t i;
     for (i = 0; i < c->nameLen; i++) {
         if (StrEq(c->names[i].name, name)) {
+            return &c->names[i];
+        }
+    }
+    return NULL;
+}
+
+static const SLNameMap* _Nullable FindNameByCName(const SLCBackendC* c, const char* cName) {
+    uint32_t i;
+    for (i = 0; i < c->nameLen; i++) {
+        if (StrEq(c->names[i].cName, cName)) {
             return &c->names[i];
         }
     }
@@ -2361,7 +2382,11 @@ static int EmitTypeForCast(SLCBackendC* c, int32_t typeNode) {
 }
 
 static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
+static int InferExprTypeExpected(
+    SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType, SLTypeRef* outType);
 static int EmitExpr(SLCBackendC* c, int32_t nodeId);
+static int EmitCompoundLiteral(
+    SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType);
 static int EmitEffectiveContextFieldValue(
     SLCBackendC* c, const char* fieldName, const SLTypeRef* requiredType);
 
@@ -2606,6 +2631,26 @@ static int CostVecCmp(const uint8_t* a, const uint8_t* b, uint32_t len) {
     return 0;
 }
 
+static int ExprNeedsExpectedType(const SLCBackendC* c, int32_t exprNode) {
+    const SLAstNode* n = NodeAt(c, exprNode);
+    if (n == NULL) {
+        return 0;
+    }
+    if (n->kind == SLAst_COMPOUND_LIT) {
+        return 1;
+    }
+    if (n->kind == SLAst_UNARY && (SLTokenKind)n->op == SLTok_AND) {
+        int32_t          rhsNode = AstFirstChild(&c->ast, exprNode);
+        const SLAstNode* rhs = NodeAt(c, rhsNode);
+        if (rhs != NULL && rhs->kind == SLAst_COMPOUND_LIT) {
+            int32_t          rhsChild = AstFirstChild(&c->ast, rhsNode);
+            const SLAstNode* rhsTypeNode = NodeAt(c, rhsChild);
+            return !(rhsTypeNode != NULL && IsTypeNodeKind(rhsTypeNode->kind));
+        }
+    }
+    return 0;
+}
+
 static int CollectCallArgInfo(
     SLCBackendC* c,
     int32_t      callNode,
@@ -2623,8 +2668,12 @@ static int CollectCallArgInfo(
             return -1;
         }
         outArgNodes[argCount] = receiverNode;
-        if (InferExprType(c, receiverNode, &outArgTypes[argCount]) != 0) {
+        if (!ExprNeedsExpectedType(c, receiverNode)
+            && InferExprType(c, receiverNode, &outArgTypes[argCount]) != 0)
+        {
             return -1;
+        } else if (ExprNeedsExpectedType(c, receiverNode)) {
+            TypeRefSetInvalid(&outArgTypes[argCount]);
         }
         argCount++;
     }
@@ -2633,8 +2682,12 @@ static int CollectCallArgInfo(
             return -1;
         }
         outArgNodes[argCount] = argNode;
-        if (InferExprType(c, argNode, &outArgTypes[argCount]) != 0) {
+        if (!ExprNeedsExpectedType(c, argNode)
+            && InferExprType(c, argNode, &outArgTypes[argCount]) != 0)
+        {
             return -1;
+        } else if (ExprNeedsExpectedType(c, argNode)) {
+            TypeRefSetInvalid(&outArgTypes[argCount]);
         }
         argCount++;
         argNode = AstNextSibling(&c->ast, argNode);
@@ -2648,6 +2701,7 @@ static int ResolveCallTarget(
     SLCBackendC*     c,
     uint32_t         nameStart,
     uint32_t         nameEnd,
+    const int32_t*   argNodes,
     const SLTypeRef* argTypes,
     uint32_t         argCount,
     const SLFnSig**  outSig,
@@ -2719,8 +2773,19 @@ static int ResolveCallTarget(
             continue;
         }
         for (p = 0; p < argCount; p++) {
-            uint8_t cost = 0;
-            if (TypeRefAssignableCost(c, &sig->paramTypes[p], &argTypes[p], &cost) != 0) {
+            SLTypeRef argType;
+            uint8_t   cost = 0;
+            if (argTypes[p].valid) {
+                argType = argTypes[p];
+            } else {
+                if (InferExprTypeExpected(c, argNodes[p], &sig->paramTypes[p], &argType) != 0
+                    || !argType.valid)
+                {
+                    viable = 0;
+                    break;
+                }
+            }
+            if (TypeRefAssignableCost(c, &sig->paramTypes[p], &argType, &cost) != 0) {
                 viable = 0;
                 break;
             }
@@ -2769,6 +2834,240 @@ static int ResolveCallTarget(
     return 0;
 }
 
+static int InferCompoundLiteralType(
+    SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType, SLTypeRef* outType) {
+    const SLAstNode* litNode = NodeAt(c, nodeId);
+    int32_t          child;
+    int32_t          firstField;
+    int              hasExplicitType;
+    SLTypeRef        explicitType;
+    SLTypeRef        targetValueType;
+    SLTypeRef        resultType;
+    const char*      ownerType = NULL;
+    const SLNameMap* ownerMap;
+    int              isUnion = 0;
+    uint32_t         explicitFieldCount = 0;
+    uint8_t          cost = 0;
+
+    if (litNode == NULL || litNode->kind != SLAst_COMPOUND_LIT) {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+
+    child = AstFirstChild(&c->ast, nodeId);
+    hasExplicitType =
+        child >= 0 && NodeAt(c, child) != NULL && IsTypeNodeKind(NodeAt(c, child)->kind);
+    firstField = hasExplicitType ? AstNextSibling(&c->ast, child) : child;
+
+    TypeRefSetInvalid(&explicitType);
+    TypeRefSetInvalid(&targetValueType);
+    TypeRefSetInvalid(&resultType);
+
+    if (hasExplicitType) {
+        if (ParseTypeRef(c, child, &explicitType) != 0 || !explicitType.valid) {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+        targetValueType = explicitType;
+        resultType = explicitType;
+    } else {
+        if (expectedType == NULL || !expectedType->valid) {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+        targetValueType = *expectedType;
+        if (targetValueType.containerKind != SLTypeContainer_SCALAR) {
+            if (targetValueType.containerPtrDepth > 0) {
+                targetValueType.containerPtrDepth--;
+            }
+        } else if (targetValueType.ptrDepth > 0) {
+            targetValueType.ptrDepth--;
+        }
+        resultType = *expectedType;
+    }
+
+    if (!targetValueType.valid || targetValueType.containerKind != SLTypeContainer_SCALAR
+        || targetValueType.containerPtrDepth != 0 || targetValueType.ptrDepth != 0
+        || targetValueType.baseName == NULL || targetValueType.isOptional)
+    {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+
+    ownerType = ResolveScalarAliasBaseName(c, targetValueType.baseName);
+    if (ownerType == NULL) {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+    ownerMap = FindNameByCName(c, ownerType);
+    if (ownerMap == NULL || (ownerMap->kind != SLAst_STRUCT && ownerMap->kind != SLAst_UNION)) {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+    isUnion = ownerMap->kind == SLAst_UNION;
+
+    while (firstField >= 0) {
+        const SLAstNode*   fieldNode = NodeAt(c, firstField);
+        const SLFieldInfo* fieldPath[64];
+        const SLFieldInfo* field = NULL;
+        uint32_t           fieldPathLen = 0;
+        int32_t            exprNode;
+        int32_t            scan;
+        SLTypeRef          exprType;
+
+        if (fieldNode == NULL || fieldNode->kind != SLAst_COMPOUND_FIELD) {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+
+        scan = hasExplicitType ? AstNextSibling(&c->ast, child) : child;
+        while (scan >= 0 && scan != firstField) {
+            const SLAstNode* prevField = NodeAt(c, scan);
+            if (prevField != NULL && prevField->kind == SLAst_COMPOUND_FIELD
+                && SliceSpanEq(
+                    c->unit->source,
+                    prevField->dataStart,
+                    prevField->dataEnd,
+                    fieldNode->dataStart,
+                    fieldNode->dataEnd))
+            {
+                TypeRefSetInvalid(outType);
+                return -1;
+            }
+            scan = AstNextSibling(&c->ast, scan);
+        }
+
+        exprNode = AstFirstChild(&c->ast, firstField);
+        if (exprNode < 0) {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+
+        if (ResolveFieldPathBySlice(
+                c,
+                ownerType,
+                fieldNode->dataStart,
+                fieldNode->dataEnd,
+                fieldPath,
+                (uint32_t)(sizeof(fieldPath) / sizeof(fieldPath[0])),
+                &fieldPathLen,
+                &field)
+                != 0
+            || fieldPathLen == 0)
+        {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+        field = fieldPath[fieldPathLen - 1u];
+        if (InferExprTypeExpected(c, exprNode, &field->type, &exprType) != 0 || !exprType.valid) {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+        if (TypeRefAssignableCost(c, &field->type, &exprType, &cost) != 0) {
+            const SLAstNode* expr = NodeAt(c, exprNode);
+            const char*      dstBase =
+                field->type.baseName != NULL
+                         ? ResolveScalarAliasBaseName(c, field->type.baseName)
+                         : NULL;
+            if (dstBase == NULL) {
+                dstBase = field->type.baseName;
+            }
+            if (!(expr != NULL && expr->kind == SLAst_INT && dstBase != NULL
+                  && (IsIntegerCTypeName(dstBase) || IsFloatCTypeName(dstBase)))
+                && !(
+                    expr != NULL && expr->kind == SLAst_FLOAT && dstBase != NULL
+                    && IsFloatCTypeName(dstBase)))
+            {
+                TypeRefSetInvalid(outType);
+                return -1;
+            }
+        }
+        explicitFieldCount++;
+        firstField = AstNextSibling(&c->ast, firstField);
+    }
+
+    if (isUnion && explicitFieldCount > 1u) {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+
+    if (hasExplicitType && expectedType != NULL && expectedType->valid) {
+        SLTypeRef expectedValueType = *expectedType;
+        if (expectedValueType.containerKind != SLTypeContainer_SCALAR) {
+            if (expectedValueType.containerPtrDepth > 0) {
+                expectedValueType.containerPtrDepth--;
+            }
+        } else if (expectedValueType.ptrDepth > 0) {
+            expectedValueType.ptrDepth--;
+        }
+        if (expectedValueType.valid && expectedValueType.containerKind == SLTypeContainer_SCALAR
+            && expectedValueType.containerPtrDepth == 0
+            && TypeRefAssignableCost(c, &expectedValueType, &explicitType, &cost) == 0)
+        {
+            *outType = *expectedType;
+            return 0;
+        }
+    }
+
+    *outType = resultType;
+    return 0;
+}
+
+static int InferExprTypeExpected(
+    SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType, SLTypeRef* outType) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    if (n == NULL) {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+
+    if (n->kind == SLAst_COMPOUND_LIT) {
+        return InferCompoundLiteralType(c, nodeId, expectedType, outType);
+    }
+
+    if (n->kind == SLAst_UNARY && (SLTokenKind)n->op == SLTok_AND) {
+        int32_t          rhsNode = AstFirstChild(&c->ast, nodeId);
+        const SLAstNode* rhs = NodeAt(c, rhsNode);
+        if (rhs != NULL && rhs->kind == SLAst_COMPOUND_LIT) {
+            SLTypeRef rhsExpected;
+            SLTypeRef rhsType;
+            int       haveExpected = 0;
+            if (expectedType != NULL && expectedType->valid) {
+                rhsExpected = *expectedType;
+                if (rhsExpected.containerKind != SLTypeContainer_SCALAR) {
+                    if (rhsExpected.containerPtrDepth > 0) {
+                        rhsExpected.containerPtrDepth--;
+                        haveExpected = 1;
+                    }
+                } else if (rhsExpected.ptrDepth > 0) {
+                    rhsExpected.ptrDepth--;
+                    haveExpected = 1;
+                }
+            }
+            if (InferExprTypeExpected(c, rhsNode, haveExpected ? &rhsExpected : NULL, &rhsType)
+                != 0)
+            {
+                TypeRefSetInvalid(outType);
+                return -1;
+            }
+            if (!rhsType.valid) {
+                TypeRefSetScalar(outType, "void");
+                outType->ptrDepth = 1;
+                return 0;
+            }
+            if (rhsType.containerKind == SLTypeContainer_SCALAR) {
+                rhsType.ptrDepth++;
+            } else {
+                rhsType.containerPtrDepth++;
+            }
+            *outType = rhsType;
+            return 0;
+        }
+    }
+
+    return InferExprType(c, nodeId, outType);
+}
+
 static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -2808,6 +3107,7 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             TypeRefSetInvalid(outType);
             return 0;
         }
+        case SLAst_COMPOUND_LIT:      return InferCompoundLiteralType(c, nodeId, NULL, outType);
         case SLAst_CALL_WITH_CONTEXT: {
             int32_t savedActive = c->activeCallWithNode;
             int32_t callNode = AstFirstChild(&c->ast, nodeId);
@@ -2835,6 +3135,7 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                            c,
                            cn->dataStart,
                            cn->dataEnd,
+                           argNodes,
                            argTypes,
                            argCount,
                            &resolved,
@@ -2891,6 +3192,7 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                                c,
                                cn->dataStart,
                                cn->dataEnd,
+                               argNodes,
                                argTypes,
                                argCount,
                                &resolved,
@@ -3714,6 +4016,7 @@ static int EmitNewCallExpr(
 }
 
 static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType) {
+    const SLAstNode*   expr = NodeAt(c, exprNode);
     SLTypeRef          srcType;
     const SLFieldInfo* embedPath[64];
     uint32_t           embedPathLen = 0;
@@ -3733,6 +4036,58 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
         rc = EmitNewCallExpr(c, callNode, dstType, requireNonNull);
         c->activeCallWithNode = savedActive;
         return rc;
+    }
+    if (expr != NULL && expr->kind == SLAst_COMPOUND_LIT) {
+        if (TypeRefIsPointerLike(dstType)) {
+            SLTypeRef        targetType = *dstType;
+            const SLTypeRef* literalExpected = NULL;
+            if (targetType.containerKind != SLTypeContainer_SCALAR) {
+                if (targetType.containerPtrDepth > 0) {
+                    targetType.containerPtrDepth--;
+                    literalExpected = &targetType;
+                } else if (targetType.ptrDepth > 0) {
+                    targetType.ptrDepth--;
+                    literalExpected = &targetType;
+                }
+            } else if (targetType.ptrDepth > 0) {
+                targetType.ptrDepth--;
+                literalExpected = &targetType;
+            }
+            if (literalExpected != NULL) {
+                if (BufAppendCStr(&c->out, "(&") != 0
+                    || EmitCompoundLiteral(c, exprNode, literalExpected) != 0
+                    || BufAppendChar(&c->out, ')') != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
+        }
+        return EmitCompoundLiteral(c, exprNode, dstType);
+    }
+    if (expr != NULL && expr->kind == SLAst_UNARY && (SLTokenKind)expr->op == SLTok_AND) {
+        int32_t          rhsNode = AstFirstChild(&c->ast, exprNode);
+        const SLAstNode* rhs = NodeAt(c, rhsNode);
+        if (rhs != NULL && rhs->kind == SLAst_COMPOUND_LIT) {
+            SLTypeRef        targetType = *dstType;
+            const SLTypeRef* literalExpected = NULL;
+            if (targetType.containerKind != SLTypeContainer_SCALAR) {
+                if (targetType.containerPtrDepth > 0) {
+                    targetType.containerPtrDepth--;
+                    literalExpected = &targetType;
+                }
+            } else if (targetType.ptrDepth > 0) {
+                targetType.ptrDepth--;
+                literalExpected = &targetType;
+            }
+            if (BufAppendCStr(&c->out, "(&") != 0
+                || EmitCompoundLiteral(c, rhsNode, literalExpected) != 0
+                || BufAppendChar(&c->out, ')') != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
     }
     if (InferExprType(c, exprNode, &srcType) != 0 || !srcType.valid) {
         return EmitExpr(c, exprNode);
@@ -4101,6 +4456,100 @@ static int EmitResolvedCall(
     return BufAppendChar(&c->out, ')');
 }
 
+static int EmitCompoundLiteral(
+    SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType) {
+    const SLAstNode* litNode = NodeAt(c, nodeId);
+    SLTypeRef        litType;
+    SLTypeRef        valueType;
+    const char*      ownerType;
+    int32_t          fieldNode;
+    int              first = 1;
+
+    if (litNode == NULL || litNode->kind != SLAst_COMPOUND_LIT) {
+        return -1;
+    }
+    if (InferCompoundLiteralType(c, nodeId, expectedType, &litType) != 0 || !litType.valid) {
+        return -1;
+    }
+
+    valueType = litType;
+    if (valueType.containerKind != SLTypeContainer_SCALAR) {
+        if (valueType.containerPtrDepth <= 0) {
+            return -1;
+        }
+        valueType.containerPtrDepth--;
+    } else if (valueType.ptrDepth > 0) {
+        valueType.ptrDepth--;
+    }
+    if (!valueType.valid || valueType.containerKind != SLTypeContainer_SCALAR
+        || valueType.containerPtrDepth != 0 || valueType.ptrDepth != 0
+        || valueType.baseName == NULL)
+    {
+        return -1;
+    }
+    ownerType = ResolveScalarAliasBaseName(c, valueType.baseName);
+    if (ownerType == NULL) {
+        return -1;
+    }
+    valueType.baseName = ownerType;
+
+    if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, &valueType) != 0
+        || BufAppendCStr(&c->out, "){") != 0)
+    {
+        return -1;
+    }
+
+    fieldNode = AstFirstChild(&c->ast, nodeId);
+    if (fieldNode >= 0 && NodeAt(c, fieldNode) != NULL
+        && IsTypeNodeKind(NodeAt(c, fieldNode)->kind))
+    {
+        fieldNode = AstNextSibling(&c->ast, fieldNode);
+    }
+    while (fieldNode >= 0) {
+        const SLAstNode*   field = NodeAt(c, fieldNode);
+        const SLFieldInfo* fieldPath[64];
+        const SLFieldInfo* resolvedField = NULL;
+        uint32_t           fieldPathLen = 0;
+        int32_t            exprNode;
+        if (field == NULL || field->kind != SLAst_COMPOUND_FIELD) {
+            return -1;
+        }
+        exprNode = AstFirstChild(&c->ast, fieldNode);
+        if (exprNode < 0) {
+            return -1;
+        }
+        if (ResolveFieldPathBySlice(
+                c,
+                ownerType,
+                field->dataStart,
+                field->dataEnd,
+                fieldPath,
+                (uint32_t)(sizeof(fieldPath) / sizeof(fieldPath[0])),
+                &fieldPathLen,
+                &resolvedField)
+                != 0
+            || fieldPathLen == 0)
+        {
+            return -1;
+        }
+        resolvedField = fieldPath[fieldPathLen - 1u];
+        if (!first && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        first = 0;
+        if (BufAppendChar(&c->out, '.') != 0
+            || BufAppendCStr(&c->out, resolvedField->fieldName) != 0
+            || BufAppendCStr(&c->out, " = ") != 0
+            || EmitExprCoerced(c, exprNode, &resolvedField->type) != 0)
+        {
+            return -1;
+        }
+        fieldNode = AstNextSibling(&c->ast, fieldNode);
+    }
+
+    return BufAppendCStr(&c->out, "})");
+}
+
 static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -4108,11 +4557,12 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
     }
 
     switch (n->kind) {
-        case SLAst_IDENT:  return AppendMappedIdentifier(c, n->dataStart, n->dataEnd);
+        case SLAst_IDENT:        return AppendMappedIdentifier(c, n->dataStart, n->dataEnd);
         case SLAst_INT:
         case SLAst_FLOAT:
-        case SLAst_BOOL:   return BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd);
-        case SLAst_STRING: {
+        case SLAst_BOOL:         return BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd);
+        case SLAst_COMPOUND_LIT: return EmitCompoundLiteral(c, nodeId, NULL);
+        case SLAst_STRING:       {
             int32_t literalId = -1;
             if (nodeId >= 0 && (uint32_t)nodeId < c->stringLitByNodeLen) {
                 literalId = c->stringLitByNode[nodeId];
@@ -4500,6 +4950,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                                    c,
                                    callee->dataStart,
                                    callee->dataEnd,
+                                   argNodes,
                                    argTypes,
                                    argCount,
                                    &resolvedSig,
@@ -4524,6 +4975,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                            c,
                            callee->dataStart,
                            callee->dataEnd,
+                           argNodes,
                            argTypes,
                            argCount,
                            &resolvedSig,

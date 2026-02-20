@@ -555,9 +555,94 @@ static int SLPParseType(SLParser* p, int32_t* out) {
     return 0;
 }
 
+static int SLPParseCompoundLiteralTail(SLParser* p, int32_t typeNode, int32_t* out) {
+    const SLToken* lb;
+    const SLToken* rb;
+    int32_t        lit;
+
+    if (SLPExpect(p, SLTok_LBRACE, SLDiag_EXPECTED_EXPR, &lb) != 0) {
+        return -1;
+    }
+
+    lit = SLPNewNode(
+        p, SLAst_COMPOUND_LIT, typeNode >= 0 ? p->nodes[typeNode].start : lb->start, lb->end);
+    if (lit < 0) {
+        return -1;
+    }
+    if (typeNode >= 0 && SLPAddChild(p, lit, typeNode) != 0) {
+        return -1;
+    }
+
+    while (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
+        const SLToken* fieldName;
+        const SLToken* eqTok;
+        int32_t        field;
+        int32_t        expr;
+
+        if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &fieldName) != 0) {
+            return -1;
+        }
+        field = SLPNewNode(p, SLAst_COMPOUND_FIELD, fieldName->start, fieldName->end);
+        if (field < 0) {
+            return -1;
+        }
+        p->nodes[field].dataStart = fieldName->start;
+        p->nodes[field].dataEnd = fieldName->end;
+        if (SLPExpect(p, SLTok_ASSIGN, SLDiag_UNEXPECTED_TOKEN, &eqTok) != 0) {
+            return -1;
+        }
+        if (SLPParseExpr(p, 1, &expr) != 0) {
+            return -1;
+        }
+        if (SLPAddChild(p, field, expr) != 0 || SLPAddChild(p, lit, field) != 0) {
+            return -1;
+        }
+        p->nodes[field].end = p->nodes[expr].end;
+
+        if (SLPMatch(p, SLTok_COMMA)) {
+            if (SLPAt(p, SLTok_RBRACE)) {
+                break;
+            }
+            continue;
+        }
+        break;
+    }
+
+    if (SLPExpect(p, SLTok_RBRACE, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+        return -1;
+    }
+    p->nodes[lit].end = rb->end;
+    *out = lit;
+    return 0;
+}
+
 static int SLPParsePrimary(SLParser* p, int32_t* out) {
     const SLToken* t = SLPPeek(p);
     int32_t        n;
+
+    if (SLPAt(p, SLTok_IDENT)) {
+        uint32_t savedPos = p->pos;
+        uint32_t savedNodeLen = p->nodeLen;
+        SLDiag   savedDiag = { 0 };
+        int32_t  typeNode;
+        if (p->diag != NULL) {
+            savedDiag = *p->diag;
+        }
+        if (SLPParseTypeName(p, &typeNode) == 0 && SLPAt(p, SLTok_LBRACE)
+            && SLPPeek(p)->start == p->nodes[typeNode].end)
+        {
+            return SLPParseCompoundLiteralTail(p, typeNode, out);
+        }
+        p->pos = savedPos;
+        p->nodeLen = savedNodeLen;
+        if (p->diag != NULL) {
+            *p->diag = savedDiag;
+        }
+    }
+
+    if (SLPAt(p, SLTok_LBRACE)) {
+        return SLPParseCompoundLiteralTail(p, -1, out);
+    }
 
     if (SLPMatch(p, SLTok_IDENT) || SLPMatch(p, SLTok_CONTEXT)) {
         t = SLPPrev(p);
@@ -2058,6 +2143,8 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_CALL_WITH_CONTEXT: return "CALL_WITH_CONTEXT";
         case SLAst_CONTEXT_OVERLAY:   return "CONTEXT_OVERLAY";
         case SLAst_CONTEXT_BIND:      return "CONTEXT_BIND";
+        case SLAst_COMPOUND_LIT:      return "COMPOUND_LIT";
+        case SLAst_COMPOUND_FIELD:    return "COMPOUND_FIELD";
         case SLAst_INDEX:             return "INDEX";
         case SLAst_FIELD_EXPR:        return "FIELD_EXPR";
         case SLAst_CAST:              return "CAST";

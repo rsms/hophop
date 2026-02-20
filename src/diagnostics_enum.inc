@@ -50,3 +50,16 @@ SLDiag_NONE = 0, SLDiag_ARENA_OOM,     /* SL1001: arena out of memory */
     SLDiag_CONTEXT_CLAUSE_MISMATCH,   /* SL1044: function context clause mismatch */
     SLDiag_WITH_CONTEXT_ON_NON_CALL,  /* SL1045: 'with' context clause can only be applied to a call
                                        */
+    SLDiag_COMPOUND_TYPE_REQUIRED, /* SL1046: compound literal requires an explicit aggregate type
+                                    */
+    SLDiag_COMPOUND_INFER_NO_CONTEXT, /* SL1047: cannot infer compound literal type from context */
+    SLDiag_COMPOUND_INFER_AMBIGUOUS,  /* SL1048: compound literal type inference is ambiguous */
+    SLDiag_COMPOUND_INFER_NON_AGGREGATE, /* SL1049: inferred compound literal type is not an
+                                            aggregate */
+    SLDiag_COMPOUND_FIELD_UNKNOWN,       /* SL1050: unknown compound literal field '{s}' */
+    SLDiag_COMPOUND_FIELD_DUPLICATE,     /* SL1051: duplicate compound literal field '{s}' */
+    SLDiag_COMPOUND_FIELD_TYPE_MISMATCH, /* SL1052: compound literal field '{s}' type mismatch */
+    SLDiag_COMPOUND_MUT_REF_TEMPORARY, /* SL1053: cannot bind compound literal temporary to mutable
+                                          reference */
+    SLDiag_COMPOUND_UNION_MULTI_FIELD, /* SL1054: union compound literal can initialize at most one
+                                          field */

@@ -291,6 +291,8 @@ typedef enum {
     SLAst_CALL_WITH_CONTEXT,
     SLAst_CONTEXT_OVERLAY,
     SLAst_CONTEXT_BIND,
+    SLAst_COMPOUND_LIT,
+    SLAst_COMPOUND_FIELD,
     SLAst_INDEX,
     SLAst_FIELD_EXPR,
     SLAst_CAST,

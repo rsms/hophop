@@ -1,0 +1,1 @@
+tests/compound_literal_mutref_temp_bad.sl:9:11: SL1053: cannot bind compound literal temporary to mutable reference
