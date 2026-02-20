@@ -3,6 +3,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define UNLIKELY   __sl_unlikely
+#define panic(msg) __sl_panic1(__FILE__, __LINE__, (msg), strlen(msg))
+
+#ifndef NDEBUG
+    #define debugassert(cond) (UNLIKELY(!(cond)) ? panic("Assertion failure: " #cond) : ((void)0))
+#else
+    #define debugassert(cond) ((void)0)
+#endif
+
 extern int sl_main(void);
 #if defined(__clang__) || defined(__GNUC__)
 __attribute__((weak))
@@ -18,32 +27,27 @@ static void* platform_mem_allocator_impl(
     __sl_uint           curSize,
     __sl_uint*          newSizeInOut,
     __sl_u32            flags) {
-    void* newPtr = NULL;
-    (void)self;
-    (void)flags;
 
-    if (newSizeInOut == NULL) {
-        return NULL;
-    }
+    void* newPtr = NULL;
+    (void)self;  // unused
+    (void)flags; // unused
+
+    debugassert(newSizeInOut != NULL);
+
     if (*newSizeInOut == 0) {
         free((void*)(uintptr_t)addr);
         return NULL;
     }
-    if (align == 0 || (align & (align - 1u)) != 0u) {
-        abort();
+
+    if UNLIKELY (align == 0 || (align & (align - 1u)) != 0u) {
+        panic("invalid alignment");
     }
 
-    if (addr == 0) {
-        if (align > MALLOC_ALIGN) {
-            __sl_uint alignedSize = __sl_align_up(*newSizeInOut, align);
-            newPtr = aligned_alloc((size_t)align, (size_t)alignedSize);
-        } else {
-            newPtr = malloc((size_t)*newSizeInOut);
-        }
-    } else if (align > MALLOC_ALIGN) {
+    if (align > MALLOC_ALIGN) {
         __sl_uint alignedSize = __sl_align_up(*newSizeInOut, align);
         newPtr = aligned_alloc((size_t)align, (size_t)alignedSize);
-        if (newPtr != NULL) {
+        if (addr == 0 && newPtr != NULL) {
+            // resize case
             __sl_uint copySize = curSize < *newSizeInOut ? curSize : *newSizeInOut;
             if (copySize > 0) {
                 memcpy(newPtr, (void*)(uintptr_t)addr, (size_t)copySize);
@@ -51,12 +55,18 @@ static void* platform_mem_allocator_impl(
             free((void*)(uintptr_t)addr);
         }
     } else {
-        newPtr = realloc((void*)(uintptr_t)addr, (size_t)*newSizeInOut);
+        if (addr == 0) {
+            newPtr = malloc((size_t)*newSizeInOut);
+        } else {
+            newPtr = realloc((void*)(uintptr_t)addr, (size_t)*newSizeInOut);
+        }
     }
 
+    // zero new memory
     if (newPtr != NULL && *newSizeInOut > curSize) {
         memset((unsigned char*)newPtr + curSize, 0, (size_t)(*newSizeInOut - curSize));
     }
+
     return newPtr;
 }
 
