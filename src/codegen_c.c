@@ -2691,7 +2691,7 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
         case SLAst_SIZEOF: TypeRefSetScalar(outType, "__sl_uint"); return 0;
         case SLAst_STRING: TypeRefSetScalar(outType, "__sl_str"); return 0;
         case SLAst_BOOL:   TypeRefSetScalar(outType, "__sl_bool"); return 0;
-        case SLAst_INT:    TypeRefSetScalar(outType, "__sl_i32"); return 0;
+        case SLAst_INT:    TypeRefSetScalar(outType, "__sl_int"); return 0;
         case SLAst_FLOAT:  TypeRefSetScalar(outType, "__sl_f64"); return 0;
         case SLAst_NULL:   TypeRefSetInvalid(outType); return 0;
         case SLAst_UNWRAP: {

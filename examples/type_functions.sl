@@ -9,6 +9,10 @@ fn doubled(c Counter) int {
     return c.value * 2
 }
 
+fn add(c Counter, d int) int {
+    return c.value + d
+}
+
 fn main() {
     var c Counter
     c.value = 21
@@ -17,6 +21,7 @@ fn main() {
     var ma = 0 as mut&mem.Allocator
 
     assert c.doubled() == doubled(c)
+    assert c.add(7) == add(c, 7)
     assert msg.len() == len(msg)
 
     var p ?*i32 = ma.new(i32)
