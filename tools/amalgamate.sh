@@ -10,14 +10,13 @@ fi
 
 outfile=$1; shift
 source_hash=$(git rev-parse --short=20 HEAD 2>/dev/null || echo src)
-version_api=$(grep -F '#define SL_VERSION_API ' src/libsl.h | awk '{print $3}')
-version=$(grep     -F '#define SL_VERSION '     src/libsl.h | awk '{print $3}')
+version=$(grep -F '#define SL_VERSION ' src/libsl.h | awk '{print $3}')
 
 index_file=$(mktemp)
 trap "rm -f $index_file $outfile.tmp" EXIT
 
 cat <<__END__ > $index_file
-/* libsl version $version_api.$version <https://github.com/rsms/slang>
+/* libsl version $version <https://github.com/rsms/slang>
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 $(cat LICENSE.txt)
 //////////////////////////////////////////////////////////////////////////////////////////////////*/

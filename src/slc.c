@@ -3828,7 +3828,7 @@ static void PrintUsage(const char* argv0) {
 }
 
 static void PrintVersion(void) {
-    fprintf(stdout, "SL compiler version %d.%d (%s)\n", SL_VERSION_API, SL_VERSION, SL_SOURCE_HASH);
+    fprintf(stdout, "SL compiler version %d (%s)\n", SL_VERSION, SL_SOURCE_HASH);
 }
 
 static int GeneratePackage(
