@@ -82,7 +82,7 @@ GroupMember     = Ident | Ident "." Ident { "." Ident } ;
 ParamList       = ParamGroup {"," ParamGroup} ;
 ParamGroup      = Ident {"," Ident} Type ;
 
-ConstDecl       = "const" Ident (Type ["=" Expr] | "=" Expr) ";" ;
+ConstDecl       = "const" Ident ([Type] "=" Expr) ";" ;
 
 Type            = OptionalType
                 | PtrType
@@ -188,9 +188,13 @@ Notes:
 - Top-level declaration kinds: `struct`, `union`, `enum`, `fn`, `const`.
 - `pub` is an attribute on a single top-level declaration.
 - Top-level `var` is not supported.
-- Local and top-level `const` declarations support type inference when written as `= Expr`.
-  - `var x = expr`, `const y = expr`
-  - `var x T` and `var x T = expr` remain valid.
+- `const` declarations always require an initializer:
+  - `const x = expr`
+  - `const x T = expr`
+- Local `var` declarations support both inferred and explicit forms:
+  - `var x = expr`
+  - `var x T`
+  - `var x T = expr`
 - Local scope is lexical by block.
 - Name lookup for locals is nearest enclosing declaration.
 - Functions and types are collected before body checking (declaration-order independence).
@@ -199,8 +203,8 @@ Function identity:
 - Multiple declarations with identical signature are allowed.
 - At most one definition body per function name/signature in a checked unit.
 - Explicit overload groups are supported:
-  - `fn update{update_pet, update_ship};`
-  - `fn pick{pick_a, foo.pick_b};`
+  - `fn update{update_pet, update_ship}`
+  - `fn pick{pick_a, foo.pick_b}`
   - Calls to `update(...)` resolve across the grouped members.
 
 Type-function selector-call sugar:
@@ -232,6 +236,16 @@ Type-function selector-call sugar:
 - The type of `Mode.A` is `Mode`.
 - Unqualified enum item references are not resolved as enum members:
   - `A` is invalid unless `A` is another symbol in scope.
+
+### 4.3 Initialization and zero values
+- `var x T` (without initializer) initializes `x` to the zero value of `T`.
+- Zero-value semantics are recursive for aggregates:
+  - scalars (`bool`, integers, floats): `0` / `false`
+  - pointers/references/slice pointers/function pointers: null
+  - arrays: each element zero-initialized
+  - structs/unions: all storage bytes zeroed
+- This applies to locals and to generated-storage declarations in codegen.
+- `const` has no implicit default value and must be initialized explicitly.
 
 ## 5. Type System
 
@@ -402,6 +416,9 @@ Flow narrowing (locals only, including params since params are locals):
 - `T` must be a type argument expression (identifier naming builtin or named type).
 - `N` (if present) must be integer-typed; constant negative values are rejected.
 - Return type: `*T`.
+- On successful allocation, newly allocated bytes are zero-initialized.
+  - New allocation: full allocation is zeroed.
+  - Resize/grow allocation: bytes in `[oldSize, newSize)` are zeroed.
 - Selector-call sugar is supported: `ma.new(T[, N])` is equivalent to `new(ma, T[, N])`
   when `ma` has no field named `new`.
 

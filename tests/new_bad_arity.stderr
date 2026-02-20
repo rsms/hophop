@@ -1,1 +1,1 @@
-tests/new_bad_arity.sl:9:18: SL1013: call arity mismatch
+tests/new_bad_arity.sl:12:18: SL1013: call arity mismatch

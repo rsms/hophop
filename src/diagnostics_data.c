@@ -129,6 +129,11 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
                                          NULL,
                                          SLDiagType_ERROR,
                                          0 },
+    [SLDiag_CONST_MISSING_INITIALIZER] = { "SL1038",
+                                           "const declaration requires initializer",
+                                           NULL,
+                                           SLDiagType_ERROR,
+                                           0 },
 };
 
 const char* SLDiagId(SLDiagCode code) {

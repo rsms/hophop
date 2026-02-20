@@ -39,5 +39,6 @@ SLDiag_NONE = 0, SLDiag_ARENA_OOM,     /* SL1001: arena out of memory */
     SLDiag_IMPORT_SYMBOL_ALIAS_INVALID,  /* SL1034: import symbol alias '_' is not allowed */
     SLDiag_IMPORT_FEATURE_IMPORT_EXTRAS, /* SL1035: feature imports must be path-only (no alias or
                                             symbol list) */
-    SLDiag_INFER_NULL_TYPE_UNKNOWN, /* SL1036: cannot infer type from null; add explicit type */
-    SLDiag_INFER_VOID_TYPE_UNKNOWN, /* SL1037: cannot infer type from void expression */
+    SLDiag_INFER_NULL_TYPE_UNKNOWN,   /* SL1036: cannot infer type from null; add explicit type */
+    SLDiag_INFER_VOID_TYPE_UNKNOWN,   /* SL1037: cannot infer type from void expression */
+    SLDiag_CONST_MISSING_INITIALIZER, /* SL1038: const declaration requires initializer */

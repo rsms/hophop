@@ -149,5 +149,9 @@
     "SL1037": {
         "name": "INFER_VOID_TYPE_UNKNOWN",
         "message": "cannot infer type from void expression"
+    },
+    "SL1038": {
+        "name": "CONST_MISSING_INITIALIZER",
+        "message": "const declaration requires initializer"
     }
 }

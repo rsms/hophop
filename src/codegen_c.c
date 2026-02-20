@@ -4213,6 +4213,8 @@ static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int i
         if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0) {
             return -1;
         }
+    } else if (!isConst && BufAppendCStr(&c->out, " = {0}") != 0) {
+        return -1;
     }
     if (BufAppendCStr(&c->out, ";\n") != 0) {
         return -1;
@@ -5350,8 +5352,12 @@ static int EmitVarDecl(
     {
         return -1;
     }
-    if (!declarationOnly && initNode >= 0) {
-        if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0) {
+    if (!declarationOnly) {
+        if (initNode >= 0) {
+            if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0) {
+                return -1;
+            }
+        } else if (BufAppendCStr(&c->out, " = {0}") != 0) {
             return -1;
         }
     }

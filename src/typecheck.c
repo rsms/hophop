@@ -2067,6 +2067,10 @@ static int SLTCTypeTopLevelVarLikeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
     }
     if (SLTCIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
+        int32_t initNode = SLAstNextSibling(c->ast, firstChild);
+        if (c->ast->nodes[nodeId].kind == SLAst_CONST && initNode < 0) {
+            return SLTCFailNode(c, nodeId, SLDiag_CONST_MISSING_INITIALIZER);
+        }
         return SLTCResolveTypeNode(c, firstChild, outType);
     }
     {
@@ -3225,6 +3229,9 @@ static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
     }
 
     initNode = SLAstNextSibling(c->ast, typeNode);
+    if (n->kind == SLAst_CONST && initNode < 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_CONST_MISSING_INITIALIZER);
+    }
     if (initNode >= 0) {
         int32_t initType;
         if (SLTCTypeExpr(c, initNode, &initType) != 0) {
@@ -3262,6 +3269,26 @@ static int SLTCTypeTopLevelInferredConsts(SLTypeCheckCtx* c) {
                 if (SLTCTypeContainsVarSizeByValue(c, declType)) {
                     return SLTCFailNode(c, firstChild, SLDiag_TYPE_MISMATCH);
                 }
+            }
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    return 0;
+}
+
+static int SLTCCheckTopLevelConstInitializers(SLTypeCheckCtx* c) {
+    int32_t child = SLAstFirstChild(c->ast, c->ast->root);
+    while (child >= 0) {
+        const SLAstNode* n = &c->ast->nodes[child];
+        if (n->kind == SLAst_CONST) {
+            int32_t firstChild = SLAstFirstChild(c->ast, child);
+            if (firstChild < 0) {
+                return SLTCFailNode(c, child, SLDiag_EXPECTED_TYPE);
+            }
+            if (SLTCIsTypeNodeKind(c->ast->nodes[firstChild].kind)
+                && SLAstNextSibling(c->ast, firstChild) < 0)
+            {
+                return SLTCFailNode(c, child, SLDiag_CONST_MISSING_INITIALIZER);
             }
         }
         child = SLAstNextSibling(c->ast, child);
@@ -3831,6 +3858,9 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
         return -1;
     }
     if (SLTCFinalizeFunctionTypes(&c) != 0) {
+        return -1;
+    }
+    if (SLTCCheckTopLevelConstInitializers(&c) != 0) {
         return -1;
     }
     if (SLTCTypeTopLevelInferredConsts(&c) != 0) {

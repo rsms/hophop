@@ -50,6 +50,9 @@ Properties:
 ### `MemAllocator`
 
 `MemAllocator` is the allocator capability used by `new(...)`.
+Allocator implementations must zero newly allocated bytes:
+- fresh allocations are fully zeroed
+- resized allocations must zero bytes in `[oldSize, newSize)`
 
 ## Built-In Functions
 
@@ -95,6 +98,7 @@ fn new(ma mut&MemAllocator, type T, N uint) *[T]    // 6
 - Negative compile-time `N` is rejected.
 - `?*...` forms return null on allocation failure.
 - `*...` forms panic on allocation failure.
+- On success, newly allocated bytes are zero-initialized.
 
 
 ### `panic`
