@@ -174,6 +174,7 @@
 {"id":"integration.examples.pointers_arrays.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/pointers_arrays.sl"}
 {"id":"integration.examples.single_file.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/single_file.sl"}
 {"id":"integration.examples.slp2_new_allocator.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/slp2_new_allocator.sl"}
+{"id":"integration.examples.context.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/context.sl"}
 {"id":"integration.examples.slp2_refs_slices.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/slp2_refs_slices.sl"}
 {"id":"integration.examples.struct_composition.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/struct_composition.sl"}
 {"id":"integration.examples.type_functions.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/type_functions.sl"}
@@ -211,3 +212,12 @@
 {"id":"check:tests/new_builtin_allocator_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"check","input":"tests/new_builtin_allocator_ok.sl"}
 {"id":"integration.runtime.new_runtime_slice_ptr_ok.compile_only","suite":"std.unit","kind":"compile_only","input":"tests/new_runtime_slice_ptr_ok.sl"}
 {"id":"integration.runtime.new_builtin_allocator_ok.compile_only","suite":"std.unit","kind":"compile_only","input":"tests/new_builtin_allocator_ok.sl"}
+{"id":"check:tests/context_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/context_ok.sl"}
+{"id":"checkpkg:tests/context_convertible_allocator_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/context_convertible_allocator_ok.sl"}
+{"id":"check:tests/context_missing_field_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/context_missing_field_bad.sl","expect_stderr":"tests/context_missing_field_bad.stderr"}
+{"id":"check:tests/context_unknown_with_field_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/context_unknown_with_field_bad.sl","expect_stderr":"tests/context_unknown_with_field_bad.stderr"}
+{"id":"check:tests/context_duplicate_with_field_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/context_duplicate_with_field_bad.sl","expect_stderr":"tests/context_duplicate_with_field_bad.stderr"}
+{"id":"check:tests/context_clause_mismatch_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/context_clause_mismatch_bad.sl","expect_stderr":"tests/context_clause_mismatch_bad.stderr"}
+{"id":"integration.codegen.context_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/context_ok.sl","contains":["tests__alloc(tests__Ctx *context)","tests__log(tests__Ctx *context, __sl_str msg)","context->mem","context->console","(&((tests__Ctx){"]}
+{"id":"integration.codegen.context_convertible_allocator_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/context_convertible_allocator_ok.sl","contains":["tests__caller(tests__WrapCtx *context)",".mem = ((__sl_mem_Allocator*)((context->mem)))",".mem = mem__platformAllocator"]}
+{"id":"integration.runtime.context_convertible_allocator_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/context_convertible_allocator_ok.sl"}

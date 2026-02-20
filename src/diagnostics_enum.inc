@@ -42,3 +42,11 @@ SLDiag_NONE = 0, SLDiag_ARENA_OOM,     /* SL1001: arena out of memory */
     SLDiag_INFER_NULL_TYPE_UNKNOWN,   /* SL1036: cannot infer type from null; add explicit type */
     SLDiag_INFER_VOID_TYPE_UNKNOWN,   /* SL1037: cannot infer type from void expression */
     SLDiag_CONST_MISSING_INITIALIZER, /* SL1038: const declaration requires initializer */
+    SLDiag_CONTEXT_REQUIRED,          /* SL1039: context is required here */
+    SLDiag_CONTEXT_MISSING_FIELD,     /* SL1040: required context field is missing */
+    SLDiag_CONTEXT_TYPE_MISMATCH,     /* SL1041: context field type mismatch */
+    SLDiag_CONTEXT_UNKNOWN_FIELD,     /* SL1042: unknown context field in with clause */
+    SLDiag_CONTEXT_DUPLICATE_FIELD,   /* SL1043: duplicate context field in with clause */
+    SLDiag_CONTEXT_CLAUSE_MISMATCH,   /* SL1044: function context clause mismatch */
+    SLDiag_WITH_CONTEXT_ON_NON_CALL,  /* SL1045: 'with' context clause can only be applied to a call
+                                       */

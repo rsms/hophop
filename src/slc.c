@@ -2642,6 +2642,9 @@ static int CollectExprImportRewritesNode(
         case SLAst_UNARY:
         case SLAst_BINARY:
         case SLAst_CALL:
+        case SLAst_CALL_WITH_CONTEXT:
+        case SLAst_CONTEXT_OVERLAY:
+        case SLAst_CONTEXT_BIND:
         case SLAst_INDEX:
         case SLAst_CAST:
         case SLAst_SIZEOF:

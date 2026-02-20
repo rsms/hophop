@@ -1,0 +1,1 @@
+tests/context_missing_field_bad.sl:2:5: SL1040: required context field is missing

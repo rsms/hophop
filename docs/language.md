@@ -24,7 +24,7 @@ Out of scope:
 - Pattern: `[A-Za-z_][A-Za-z0-9_]*`.
 
 ### 1.3 Keywords
-`import pub struct union enum fn var const type mut if else for switch case default break continue return defer assert sizeof true false as null`
+`import pub struct union enum fn var const type mut if else for switch case default break continue return defer assert sizeof true false as null context with`
 
 ### 1.4 Literals
 - Integer: decimal (`123`) or hex (`0x7F`, `0X7F`).
@@ -44,6 +44,7 @@ A semicolon is inserted:
 
 Tokens that end a statement:
 - `IDENT`, `INT`, `FLOAT`, `STRING`, `TRUE`, `FALSE`, `NULL`
+- `context` (when used as an expression identifier)
 - `break`, `continue`, `return`
 - `)`, `]`, `}`
 - `!` (covers postfix unwrap at line end)
@@ -76,11 +77,12 @@ EmbeddedFieldDecl = TypeName ;
 EnumDecl        = "enum" Ident Type "{" { EnumItem [ "," | ";" ] } "}" [";"] ;
 EnumItem        = Ident ["=" Expr] ;
 
-FnDeclOrDef     = "fn" Ident "(" [ParamList] ")" [Type] (";" | Block) ;
+FnDeclOrDef     = "fn" Ident "(" [ParamList] ")" [Type] [ContextClause] (";" | Block) ;
 FnGroupDecl     = "fn" Ident "{" GroupMember {"," GroupMember} "}" ";" ;
 GroupMember     = Ident | Ident "." Ident { "." Ident } ;
 ParamList       = ParamGroup {"," ParamGroup} ;
 ParamGroup      = Ident {"," Ident} Type ;
+ContextClause   = "context" TypeName ;
 
 ConstDecl       = "const" Ident ([Type] "=" Expr) ";" ;
 TypeAliasDecl   = "type" Ident Type ";" ;
@@ -161,8 +163,13 @@ MulExpr         = UnaryExpr { ("*" | "/" | "%") UnaryExpr } ;
 UnaryExpr       = (("+" | "-" | "!" | "*" | "&") UnaryExpr) | PostfixExpr ;
 
 PostfixExpr     = PrimaryExpr { PostfixSuffix } ;
-PostfixSuffix   = CallSuffix | IndexSuffix | SelectorSuffix | CastSuffix | UnwrapSuffix ;
+PostfixSuffix   = CallWithContextSuffix | IndexSuffix | SelectorSuffix | CastSuffix | UnwrapSuffix ;
+CallWithContextSuffix = CallSuffix [WithContextClause] ;
 CallSuffix      = "(" [Expr {"," Expr}] ")" ;
+WithContextClause = "with" ("context" | ContextOverlay) ;
+ContextOverlay  = "{" [ContextBindList] "}" ;
+ContextBindList = ContextBind {"," ContextBind} [","] ;
+ContextBind     = Ident ["=" Expr] ;
 IndexSuffix     = "[" Expr "]"
                 | "[" [Expr] ":" [Expr] "]" ;
 SelectorSuffix  = "." Ident ;
@@ -203,6 +210,8 @@ Notes:
 Function identity:
 - Multiple declarations with identical signature are allowed.
 - At most one definition body per function name/signature in a checked unit.
+- For a given function name/signature, declarations/definition must use the same `context` clause.
+- `context` is not an overload dimension.
 - Explicit overload groups are supported:
   - `fn update{update_pet, update_ship}`
   - `fn pick{pick_a, foo.pick_b}`
@@ -214,6 +223,24 @@ Type-function selector-call sugar:
   - if `x.f` resolves as a field, normal field-call rules apply.
   - selector-call sugar is only considered when no field named `f` exists.
 - Selector sugar is call-form only in current implementation (`x.f` alone does not produce a callable value).
+
+### 4.4 Contexts and capabilities (SLP-12)
+- A function may declare `context T` where `T` is a named type.
+- Such a function gets an implicit local binding named `context` (lowered as a hidden pointer parameter).
+- Calls auto-forward the current context when no `with` clause is present.
+- `with context` is explicit pass-through and equivalent to omitting `with`.
+- `with { ... }` creates a call-local overlay:
+  - binds must name fields in the caller's current context
+  - duplicate bind names are rejected
+  - shorthand `name` means `name = context.name`
+- Context compatibility is structural-by-field and name-sensitive.
+- Built-in capability use:
+  - `print(msg)` requires `console` in effective context
+  - `new(T[, N])` requires `mem` in effective context
+- Entrypoint rule remains `fn main()` with no explicit `context` clause.
+- Inside `main`, the implementation provides an implicit root context with fields:
+  - `mem` (platform allocator)
+  - `console` (platform console handle/flags)
 
 ### 4.1 Struct composition
 - In `struct` declarations, the first field may be an embedded base using type-name-only syntax:
@@ -413,8 +440,13 @@ Flow narrowing (locals only, including params since params are locals):
 - `s` must be convertible to `str`.
 - Return type: `*u8`.
 
-### 9.3 `new(ma, T[, N])`
-- `ma` must be convertible to `mut&__sl_MemAllocator`.
+### 9.3 `new`
+- Supported forms:
+  - `new(ma, T[, N])`
+  - `new(T[, N])` (contextual allocator form)
+- In explicit form, `ma` must be convertible to `mut&__sl_MemAllocator`.
+- In contextual form, effective context must provide field `mem` assignable to
+  `mut&__sl_MemAllocator`.
 - `T` must be a type argument expression (identifier naming builtin or named type).
 - `N` (if present) must be integer-typed; constant negative values are rejected.
 - Return type: `*T`.
@@ -424,7 +456,6 @@ Flow narrowing (locals only, including params since params are locals):
 - Selector-call sugar is supported: `ma.new(T[, N])` is equivalent to `new(ma, T[, N])`
 
 Typical user code uses `std/mem.Allocator`, which is a nominal alias of `__sl_MemAllocator`.
-  when `ma` has no field named `new`.
 
 ### 9.4 `panic(msg)`
 - `msg` must be convertible to `str`.
@@ -434,6 +465,11 @@ Typical user code uses `std/mem.Allocator`, which is a nominal alias of `__sl_Me
 - `sizeof(Type)` and `sizeof(expr)` are both supported.
 - Result type: `uint`.
 - `sizeof(Type)` rejects variable-size-by-value types.
+
+### 9.6 `print(msg)`
+- `msg` must be convertible to `str`.
+- Effective context must provide field `console` assignable to `u64`.
+- Lowers to platform console logging with `flags=0` (current implementation).
 
 ## 10. Variable-Size Structs (VSS)
 

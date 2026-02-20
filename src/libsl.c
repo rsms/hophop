@@ -438,6 +438,9 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
         if (SLStrEq(s, len, "type")) {
             return SLTok_TYPE;
         }
+        if (SLStrEq(s, len, "with")) {
+            return SLTok_WITH;
+        }
     } else if (len == 5) {
         if (SLStrEq(s, len, "break")) {
             return SLTok_BREAK;
@@ -474,6 +477,9 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
             return SLTok_ASSERT;
         }
     } else if (len == 7) {
+        if (SLStrEq(s, len, "context")) {
+            return SLTok_CONTEXT;
+        }
         if (SLStrEq(s, len, "default")) {
             return SLTok_DEFAULT;
         }
@@ -500,7 +506,8 @@ static int SLTokenCanEndStmt(SLTokenKind kind) {
         case SLTok_RBRACK:
         case SLTok_RBRACE:
         case SLTok_NOT:
-        case SLTok_NULL:     return 1;
+        case SLTok_NULL:
+        case SLTok_CONTEXT:  return 1;
         default:             return 0;
     }
 }
@@ -552,6 +559,8 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_TRUE:          return "TRUE";
         case SLTok_FALSE:         return "FALSE";
         case SLTok_AS:            return "AS";
+        case SLTok_CONTEXT:       return "CONTEXT";
+        case SLTok_WITH:          return "WITH";
         case SLTok_LPAREN:        return "LPAREN";
         case SLTok_RPAREN:        return "RPAREN";
         case SLTok_LBRACE:        return "LBRACE";

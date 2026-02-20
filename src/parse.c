@@ -559,7 +559,8 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
     const SLToken* t = SLPPeek(p);
     int32_t        n;
 
-    if (SLPMatch(p, SLTok_IDENT)) {
+    if (SLPMatch(p, SLTok_IDENT) || SLPMatch(p, SLTok_CONTEXT)) {
+        t = SLPPrev(p);
         n = SLPNewNode(p, SLAst_IDENT, t->start, t->end);
         if (n < 0) {
             return -1;
@@ -720,6 +721,84 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
             p->nodes[n].end = t->end;
             *expr = n;
             continue;
+        }
+
+        if (SLPMatch(p, SLTok_WITH)) {
+            int32_t        withNode;
+            const SLToken* withTok = SLPPrev(p);
+            if (p->nodes[*expr].kind != SLAst_CALL) {
+                return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+            }
+            withNode = SLPNewNode(p, SLAst_CALL_WITH_CONTEXT, p->nodes[*expr].start, withTok->end);
+            if (withNode < 0) {
+                return -1;
+            }
+            if (SLPAddChild(p, withNode, *expr) != 0) {
+                return -1;
+            }
+            if (SLPMatch(p, SLTok_CONTEXT)) {
+                const SLToken* kw = SLPPrev(p);
+                p->nodes[withNode].flags |= SLAstFlag_CALL_WITH_CONTEXT_PASSTHROUGH;
+                p->nodes[withNode].end = kw->end;
+                *expr = withNode;
+                continue;
+            } else {
+                const SLToken* lb;
+                const SLToken* rb;
+                int32_t        overlayNode;
+                if (SLPExpect(p, SLTok_LBRACE, SLDiag_UNEXPECTED_TOKEN, &lb) != 0) {
+                    return -1;
+                }
+                overlayNode = SLPNewNode(p, SLAst_CONTEXT_OVERLAY, lb->start, lb->end);
+                if (overlayNode < 0) {
+                    return -1;
+                }
+                if (!SLPAt(p, SLTok_RBRACE)) {
+                    for (;;) {
+                        const SLToken* bindTok;
+                        int32_t        bindNode;
+                        int32_t        bindExpr = -1;
+                        if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &bindTok) != 0) {
+                            return -1;
+                        }
+                        bindNode = SLPNewNode(p, SLAst_CONTEXT_BIND, bindTok->start, bindTok->end);
+                        if (bindNode < 0) {
+                            return -1;
+                        }
+                        p->nodes[bindNode].dataStart = bindTok->start;
+                        p->nodes[bindNode].dataEnd = bindTok->end;
+                        if (SLPMatch(p, SLTok_ASSIGN)) {
+                            if (SLPParseExpr(p, 1, &bindExpr) != 0) {
+                                return -1;
+                            }
+                            if (SLPAddChild(p, bindNode, bindExpr) != 0) {
+                                return -1;
+                            }
+                            p->nodes[bindNode].end = p->nodes[bindExpr].end;
+                        }
+                        if (SLPAddChild(p, overlayNode, bindNode) != 0) {
+                            return -1;
+                        }
+                        if (SLPMatch(p, SLTok_COMMA)) {
+                            if (SLPAt(p, SLTok_RBRACE)) {
+                                break;
+                            }
+                            continue;
+                        }
+                        break;
+                    }
+                }
+                if (SLPExpect(p, SLTok_RBRACE, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+                    return -1;
+                }
+                p->nodes[overlayNode].end = rb->end;
+                if (SLPAddChild(p, withNode, overlayNode) != 0) {
+                    return -1;
+                }
+                p->nodes[withNode].end = rb->end;
+                *expr = withNode;
+                continue;
+            }
         }
 
         if (SLPMatch(p, SLTok_LBRACK)) {
@@ -1663,7 +1742,7 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
     }
     p->nodes[fn].end = t->end;
 
-    if (!SLPAt(p, SLTok_LBRACE) && !SLPAt(p, SLTok_SEMICOLON)) {
+    if (!SLPAt(p, SLTok_LBRACE) && !SLPAt(p, SLTok_SEMICOLON) && !SLPAt(p, SLTok_CONTEXT)) {
         int32_t retType;
         if (SLPParseType(p, &retType) != 0) {
             return -1;
@@ -1673,6 +1752,27 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
             return -1;
         }
         p->nodes[fn].end = p->nodes[retType].end;
+    }
+
+    if (SLPMatch(p, SLTok_CONTEXT)) {
+        const SLToken* contextTok = SLPPrev(p);
+        int32_t        contextClause;
+        int32_t        contextType;
+        contextClause = SLPNewNode(p, SLAst_CONTEXT_CLAUSE, contextTok->start, contextTok->end);
+        if (contextClause < 0) {
+            return -1;
+        }
+        if (SLPParseTypeName(p, &contextType) != 0) {
+            return -1;
+        }
+        if (SLPAddChild(p, contextClause, contextType) != 0) {
+            return -1;
+        }
+        p->nodes[contextClause].end = p->nodes[contextType].end;
+        if (SLPAddChild(p, fn, contextClause) != 0) {
+            return -1;
+        }
+        p->nodes[fn].end = p->nodes[contextClause].end;
     }
 
     if (SLPAt(p, SLTok_LBRACE)) {
@@ -1910,56 +2010,60 @@ static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out) {
 
 const char* SLAstKindName(SLAstKind kind) {
     switch (kind) {
-        case SLAst_FILE:          return "FILE";
-        case SLAst_IMPORT:        return "IMPORT";
-        case SLAst_IMPORT_SYMBOL: return "IMPORT_SYMBOL";
-        case SLAst_PUB:           return "PUB";
-        case SLAst_FN:            return "FN";
-        case SLAst_FN_GROUP:      return "FN_GROUP";
-        case SLAst_PARAM:         return "PARAM";
-        case SLAst_TYPE_NAME:     return "TYPE_NAME";
-        case SLAst_TYPE_PTR:      return "TYPE_PTR";
-        case SLAst_TYPE_REF:      return "TYPE_REF";
-        case SLAst_TYPE_MUTREF:   return "TYPE_MUTREF";
-        case SLAst_TYPE_ARRAY:    return "TYPE_ARRAY";
-        case SLAst_TYPE_VARRAY:   return "TYPE_VARRAY";
-        case SLAst_TYPE_SLICE:    return "TYPE_SLICE";
-        case SLAst_TYPE_MUTSLICE: return "TYPE_MUTSLICE";
-        case SLAst_TYPE_OPTIONAL: return "TYPE_OPTIONAL";
-        case SLAst_TYPE_FN:       return "TYPE_FN";
-        case SLAst_TYPE_ALIAS:    return "TYPE_ALIAS";
-        case SLAst_STRUCT:        return "STRUCT";
-        case SLAst_UNION:         return "UNION";
-        case SLAst_ENUM:          return "ENUM";
-        case SLAst_FIELD:         return "FIELD";
-        case SLAst_BLOCK:         return "BLOCK";
-        case SLAst_VAR:           return "VAR";
-        case SLAst_CONST:         return "CONST";
-        case SLAst_IF:            return "IF";
-        case SLAst_FOR:           return "FOR";
-        case SLAst_SWITCH:        return "SWITCH";
-        case SLAst_CASE:          return "CASE";
-        case SLAst_DEFAULT:       return "DEFAULT";
-        case SLAst_RETURN:        return "RETURN";
-        case SLAst_BREAK:         return "BREAK";
-        case SLAst_CONTINUE:      return "CONTINUE";
-        case SLAst_DEFER:         return "DEFER";
-        case SLAst_ASSERT:        return "ASSERT";
-        case SLAst_EXPR_STMT:     return "EXPR_STMT";
-        case SLAst_IDENT:         return "IDENT";
-        case SLAst_INT:           return "INT";
-        case SLAst_FLOAT:         return "FLOAT";
-        case SLAst_STRING:        return "STRING";
-        case SLAst_BOOL:          return "BOOL";
-        case SLAst_UNARY:         return "UNARY";
-        case SLAst_BINARY:        return "BINARY";
-        case SLAst_CALL:          return "CALL";
-        case SLAst_INDEX:         return "INDEX";
-        case SLAst_FIELD_EXPR:    return "FIELD_EXPR";
-        case SLAst_CAST:          return "CAST";
-        case SLAst_SIZEOF:        return "SIZEOF";
-        case SLAst_NULL:          return "NULL";
-        case SLAst_UNWRAP:        return "UNWRAP";
+        case SLAst_FILE:              return "FILE";
+        case SLAst_IMPORT:            return "IMPORT";
+        case SLAst_IMPORT_SYMBOL:     return "IMPORT_SYMBOL";
+        case SLAst_PUB:               return "PUB";
+        case SLAst_FN:                return "FN";
+        case SLAst_FN_GROUP:          return "FN_GROUP";
+        case SLAst_PARAM:             return "PARAM";
+        case SLAst_CONTEXT_CLAUSE:    return "CONTEXT_CLAUSE";
+        case SLAst_TYPE_NAME:         return "TYPE_NAME";
+        case SLAst_TYPE_PTR:          return "TYPE_PTR";
+        case SLAst_TYPE_REF:          return "TYPE_REF";
+        case SLAst_TYPE_MUTREF:       return "TYPE_MUTREF";
+        case SLAst_TYPE_ARRAY:        return "TYPE_ARRAY";
+        case SLAst_TYPE_VARRAY:       return "TYPE_VARRAY";
+        case SLAst_TYPE_SLICE:        return "TYPE_SLICE";
+        case SLAst_TYPE_MUTSLICE:     return "TYPE_MUTSLICE";
+        case SLAst_TYPE_OPTIONAL:     return "TYPE_OPTIONAL";
+        case SLAst_TYPE_FN:           return "TYPE_FN";
+        case SLAst_TYPE_ALIAS:        return "TYPE_ALIAS";
+        case SLAst_STRUCT:            return "STRUCT";
+        case SLAst_UNION:             return "UNION";
+        case SLAst_ENUM:              return "ENUM";
+        case SLAst_FIELD:             return "FIELD";
+        case SLAst_BLOCK:             return "BLOCK";
+        case SLAst_VAR:               return "VAR";
+        case SLAst_CONST:             return "CONST";
+        case SLAst_IF:                return "IF";
+        case SLAst_FOR:               return "FOR";
+        case SLAst_SWITCH:            return "SWITCH";
+        case SLAst_CASE:              return "CASE";
+        case SLAst_DEFAULT:           return "DEFAULT";
+        case SLAst_RETURN:            return "RETURN";
+        case SLAst_BREAK:             return "BREAK";
+        case SLAst_CONTINUE:          return "CONTINUE";
+        case SLAst_DEFER:             return "DEFER";
+        case SLAst_ASSERT:            return "ASSERT";
+        case SLAst_EXPR_STMT:         return "EXPR_STMT";
+        case SLAst_IDENT:             return "IDENT";
+        case SLAst_INT:               return "INT";
+        case SLAst_FLOAT:             return "FLOAT";
+        case SLAst_STRING:            return "STRING";
+        case SLAst_BOOL:              return "BOOL";
+        case SLAst_UNARY:             return "UNARY";
+        case SLAst_BINARY:            return "BINARY";
+        case SLAst_CALL:              return "CALL";
+        case SLAst_CALL_WITH_CONTEXT: return "CALL_WITH_CONTEXT";
+        case SLAst_CONTEXT_OVERLAY:   return "CONTEXT_OVERLAY";
+        case SLAst_CONTEXT_BIND:      return "CONTEXT_BIND";
+        case SLAst_INDEX:             return "INDEX";
+        case SLAst_FIELD_EXPR:        return "FIELD_EXPR";
+        case SLAst_CAST:              return "CAST";
+        case SLAst_SIZEOF:            return "SIZEOF";
+        case SLAst_NULL:              return "NULL";
+        case SLAst_UNWRAP:            return "UNWRAP";
     }
     return "UNKNOWN";
 }

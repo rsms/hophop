@@ -87,11 +87,20 @@ fn new(ma mut&__sl_MemAllocator, type T, N uint) ?*[T N] // 3
 fn new(ma mut&__sl_MemAllocator, type T, N uint) *[T N]  // 4
 fn new(ma mut&__sl_MemAllocator, type T, N uint) ?*[T]   // 5
 fn new(ma mut&__sl_MemAllocator, type T, N uint) *[T]    // 6
+
+fn new(type T) ?*T             // 7  (contextual form)
+fn new(type T) *T              // 8
+fn new(type T, N uint) ?*[T N] // 9
+fn new(type T, N uint) *[T N]  // 10
+fn new(type T, N uint) ?*[T]   // 11
+fn new(type T, N uint) *[T]    // 12
 ```
 
 `new` allocates memory from a memory allocator.
 
 - `ma` must be convertible to `mut&__sl_MemAllocator`.
+- Contextual forms (`new(T[, N])`) use allocator capability `mem` from effective context.
+- Effective context `mem` must be assignable to `mut&__sl_MemAllocator`.
 - `T` is the allocated element type.
 - If `N` is provided, storage for a sequence of `T` is allocated.
 - If `N` is a positive compile-time constant, result type is a fixed-size array pointer (`*[T N]` / `?*[T N]`).
@@ -120,7 +129,8 @@ fn print(message str)
 ```
 
 `print` writes a UTF-8 message to standard output.
-It is implemented via `platform.console_log(message, 0)`.
+It requires `console` in effective context and is implemented via
+`platform.console_log(message, 0)`.
 
 
 ### `sizeof`

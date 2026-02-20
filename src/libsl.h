@@ -180,6 +180,8 @@ typedef enum {
     SLTok_TRUE,
     SLTok_FALSE,
     SLTok_AS,
+    SLTok_CONTEXT,
+    SLTok_WITH,
 
     SLTok_LPAREN,
     SLTok_RPAREN,
@@ -248,6 +250,7 @@ typedef enum {
     SLAst_FN,
     SLAst_FN_GROUP,
     SLAst_PARAM,
+    SLAst_CONTEXT_CLAUSE,
     SLAst_TYPE_NAME,
     SLAst_TYPE_PTR,
     SLAst_TYPE_REF,
@@ -285,6 +288,9 @@ typedef enum {
     SLAst_UNARY,
     SLAst_BINARY,
     SLAst_CALL,
+    SLAst_CALL_WITH_CONTEXT,
+    SLAst_CONTEXT_OVERLAY,
+    SLAst_CONTEXT_BIND,
     SLAst_INDEX,
     SLAst_FIELD_EXPR,
     SLAst_CAST,
@@ -312,6 +318,7 @@ enum {
     SLAstFlag_INDEX_HAS_END = 0x0004u,
     SLAstFlag_INDEX_RUNTIME_BOUNDS = 0x0008u,
     SLAstFlag_FIELD_EMBEDDED = 0x0010u,
+    SLAstFlag_CALL_WITH_CONTEXT_PASSTHROUGH = 0x0020u,
 };
 
 typedef uint32_t SLFeatures;

@@ -10,28 +10,30 @@ SLP-12 introduces context-typed capability passing with two syntax additions:
 Example:
 
 ```sl
-struct LoadFileContext {
-    mem      MemAllocator
-    tmpmem   MemAllocator
-    fs       ReadFS
-    deadline Time
+import "std/mem"
+
+struct AppContext {
+    mem     mut&__sl_MemAllocator
+    console u64
 }
 
-fn load(config mut&Config, filename str) ?error context LoadFileContext {
-    var bytes = context.fs.readFile(filename)
-    _ = bytes
-    return null
+fn alloc() *i32 context AppContext {
+    return new(i32)
 }
 
-fn main() context platform.Context {
-    var c Config
-    var err = c.load("cfg/app.toml") with {
-        fs = sandboxFs("/app"),
-        mem = arena,
-        tmpmem = arena,
-        deadline = time.now() + 30.seconds(),
-    }
-    _ = err
+fn say(msg str) context AppContext {
+    print(msg)
+}
+
+fn run() context AppContext {
+    var p = alloc()                  // implicit pass-through
+    _ = p
+    say("ok") with context           // explicit pass-through
+    alloc() with { mem, console }    // call-local overlay
+}
+
+fn main() {
+    run() // `main` forwards implicit root context (`mem`, `console`)
 }
 ```
 
@@ -142,7 +144,7 @@ This is the primary noise-reduction rule. Calls such as `print("hello")` do not 
 
 Context satisfaction is structural-by-field:
 
-- Callee declares required fields via its context type/shape.
+- Callee declares required fields via its context type.
 - Effective call context must provide each required field by name with assignable type.
 - Field names are part of the contract; matching by type alone is not sufficient.
 
@@ -156,11 +158,21 @@ No syntax changes are required for future interface support.
 Example (name-sensitive check):
 
 ```sl
-fn log_event(msg str) context { tmpmem mem.Allocator } {
+import "std/mem"
+
+struct LogContext {
+    tmpmem mut&mem.Allocator
+}
+
+struct ExampleContext {
+    mem mut&mem.Allocator
+}
+
+fn log_event(msg str) context LogContext {
     _ = msg
 }
 
-fn example() context { mem mem.Allocator } {
+fn example() context ExampleContext {
     log_event("hello") // error: missing required context field `tmpmem`
 }
 ```
@@ -195,7 +207,14 @@ Example policy:
 - `new(T)` requires `mem` in context and desugars to allocation via `context.mem`.
 - explicit forms such as `new(mem, T)` remain valid.
 
-### 7. Declarations and overloads
+### 7. Entrypoint behavior
+
+- Program entrypoint remains `fn main()` (no explicit `context` clause).
+- `main` has an implicit root context with fields:
+  - `mem` (platform allocator)
+  - `console` (platform console handle/flags)
+
+### 8. Declarations and overloads
 
 - For a given function name/signature, all declarations and the definition must use the same
   `context` clause.
@@ -235,7 +254,7 @@ SLP-12 can stay strict while keeping code readable. Options:
 
 ```sl
 struct SaveContext {
-    mem MemAllocator
+    mem mut&__sl_MemAllocator
     fs  WriteFS
 }
 
@@ -249,7 +268,7 @@ fn save(config mut&Config, filename str) ?error context SaveContext {
 Requires SLP-14.
 
 ```sl
-fn show_error(msg str) context { mem MemAllocator, gui GUI } {
+fn show_error(msg str) context { mem mut&__sl_MemAllocator, gui GUI } {
     _ = msg
 }
 ```
@@ -257,13 +276,8 @@ fn show_error(msg str) context { mem MemAllocator, gui GUI } {
 ### Override and pass-through
 
 ```sl
-fn main() context platform.Context {
+fn main() {
     print("hello")
-
-    show_error("bad") with {
-        mem = arena,
-        gui = context.gui,
-    }
 
     // Equivalent to: show_ok_message()
     // Idiomatic SL prefers omitting `with context` unless explicitness is needed.
@@ -275,14 +289,15 @@ fn main() context platform.Context {
 
 ## Diagnostics
 
-Recommended diagnostics:
+Implemented diagnostics:
 
-- `context_missing`: call requires context field `'{s}'` not available
-- `context_type_mismatch`: field `'{s}'` type mismatch (expected `{s}`, got `{s}`)
-- `context_unknown_field`: `with` binds unknown field `'{s}'`
-- `context_duplicate_field`: duplicate field `'{s}'` in `with` clause
-- `context_required`: callee needs context but caller has none
-- `context_clause_mismatch`: declaration/definition context clauses disagree
+- `CONTEXT_REQUIRED`
+- `CONTEXT_MISSING_FIELD`
+- `CONTEXT_TYPE_MISMATCH`
+- `CONTEXT_UNKNOWN_FIELD`
+- `CONTEXT_DUPLICATE_FIELD`
+- `CONTEXT_CLAUSE_MISMATCH`
+- `WITH_CONTEXT_ON_NON_CALL`
 
 ---
 
@@ -323,7 +338,6 @@ Optional adjacent proposals improve ergonomics but are not required to start:
 
 ## Open questions
 
-- Should `main` always have `context platform.Context`, or stay configurable by target/runtime?
 - Should fields in `with { ... }` be restricted to fields required by the direct callee, or to any
-  field in caller context (current draft uses caller-context fields)?
+  field in caller context (current implementation uses caller-context fields)?
 - Should future effect summaries be derived from context field usage for diagnostics/docs?

@@ -153,5 +153,33 @@
     "SL1038": {
         "name": "CONST_MISSING_INITIALIZER",
         "message": "const declaration requires initializer"
+    },
+    "SL1039": {
+        "name": "CONTEXT_REQUIRED",
+        "message": "context is required here"
+    },
+    "SL1040": {
+        "name": "CONTEXT_MISSING_FIELD",
+        "message": "required context field is missing"
+    },
+    "SL1041": {
+        "name": "CONTEXT_TYPE_MISMATCH",
+        "message": "context field type mismatch"
+    },
+    "SL1042": {
+        "name": "CONTEXT_UNKNOWN_FIELD",
+        "message": "unknown context field in with clause"
+    },
+    "SL1043": {
+        "name": "CONTEXT_DUPLICATE_FIELD",
+        "message": "duplicate context field in with clause"
+    },
+    "SL1044": {
+        "name": "CONTEXT_CLAUSE_MISMATCH",
+        "message": "function context clause mismatch"
+    },
+    "SL1045": {
+        "name": "WITH_CONTEXT_ON_NON_CALL",
+        "message": "'with' context clause can only be applied to a call"
     }
 }
