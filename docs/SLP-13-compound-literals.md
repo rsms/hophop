@@ -11,22 +11,20 @@ TypeName{ field = expr, ... }
 This enables concise construction of structs/unions and supports context-overlay ergonomics in
 SLP-12.
 
----
 
 ## Motivation
 
 Current SL has no compound literal syntax. This makes value construction verbose and blocks
 important ergonomics for context and config-heavy APIs.
 
----
 
 ## Syntax
 
 ```ebnf
-PrimaryExpr       = ... | CompoundLit ;
-CompoundLit       = TypeName "{" [FieldInitList] "}" ;
-FieldInitList     = FieldInit { "," FieldInit } [","] ;
-FieldInit         = Ident "=" Expr ;
+PrimaryExpr   = ... | CompoundLit ;
+CompoundLit   = TypeName "{" [FieldInitList] "}" ;
+FieldInitList = FieldInit { "," FieldInit } [","] ;
+FieldInit     = Ident "=" Expr ;
 ```
 
 Notes:
@@ -34,7 +32,6 @@ Notes:
 - Type is required in SLP-13 (`T{...}` only).
 - Positional initializers are not included.
 
----
 
 ## Semantics
 
@@ -61,7 +58,6 @@ Field initializer expressions evaluate left-to-right.
 
 `&T{...}` is valid and yields pointer/reference according to surrounding type rules.
 
----
 
 ## Diagnostics
 
@@ -70,7 +66,6 @@ Field initializer expressions evaluate left-to-right.
 - `compound_field_duplicate`: duplicate field `'{s}'`
 - `compound_field_type_mismatch`: field `'{s}'` type mismatch
 
----
 
 ## Implementation notes
 
@@ -78,7 +73,6 @@ Field initializer expressions evaluate left-to-right.
 - Typechecker: validate target aggregate and field initializers.
 - Codegen: lower to temporary value initialization in generated C.
 
----
 
 ## Test plan
 
@@ -91,7 +85,6 @@ Field initializer expressions evaluate left-to-right.
    - duplicate field
    - type mismatch
 
----
 
 ## Non-goals
 

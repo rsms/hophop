@@ -12,7 +12,6 @@ SLP-14 adds inline anonymous struct type syntax:
 This allows function signatures and local declarations to express narrow structural shapes without
 introducing named top-level types.
 
----
 
 ## Motivation
 
@@ -21,7 +20,6 @@ adds boilerplate and hides intent at the call site.
 
 SLP-12 context clauses also benefit from inline shapes.
 
----
 
 ## Syntax
 
@@ -39,7 +37,6 @@ fn save(path str, opts &{ mem MemAllocator, fs WriteFS }) ?error
 var x { a i32, b str }
 ```
 
----
 
 ## Semantics
 
@@ -65,7 +62,6 @@ Field selection uses normal selector rules (`v.mem`, `v.fs`).
 
 Backends may materialize compiler-internal generated names for anonymous types.
 
----
 
 ## Diagnostics
 
@@ -73,7 +69,6 @@ Backends may materialize compiler-internal generated names for anonymous types.
 - `anon_struct_field_missing_type`: field `'{s}'` missing type
 - `anon_struct_type_mismatch`: anonymous struct type mismatch
 
----
 
 ## Implementation notes
 
@@ -81,7 +76,6 @@ Backends may materialize compiler-internal generated names for anonymous types.
 - Typechecker: intern canonical structural type IDs.
 - Codegen: emit stable synthetic names for generated C declarations.
 
----
 
 ## Test plan
 
@@ -93,7 +87,6 @@ Backends may materialize compiler-internal generated names for anonymous types.
    - duplicate field names
    - reordered fields rejected under exact-match rule
 
----
 
 ## Non-goals
 

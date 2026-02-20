@@ -14,14 +14,12 @@ struct LoadFileContext {
 
 Defaults reduce literal noise and support context-style APIs.
 
----
 
 ## Motivation
 
 Many struct values repeat predictable assignments. Defaults remove boilerplate while keeping data
 layout explicit.
 
----
 
 ## Syntax
 
@@ -35,7 +33,6 @@ Constraints:
 - Defaults apply to named fields only.
 - Embedded fields cannot have defaults.
 
----
 
 ## Semantics
 
@@ -63,7 +60,6 @@ earlier fields.
 
 Defaults are ordinary expressions and may call functions. SLP-15 does not add purity restrictions.
 
----
 
 ## Diagnostics
 
@@ -71,7 +67,6 @@ Defaults are ordinary expressions and may call functions. SLP-15 does not add pu
 - `field_default_type_mismatch`: default expression type mismatch for field `'{s}'`
 - `field_default_on_embedded`: embedded field cannot have default
 
----
 
 ## Implementation notes
 
@@ -79,7 +74,6 @@ Defaults are ordinary expressions and may call functions. SLP-15 does not add pu
 - Typechecker: resolve defaults in declaration order with dependency checks.
 - Codegen: emit initialization sequence that matches declared evaluation order.
 
----
 
 ## Test plan
 
@@ -91,7 +85,6 @@ Defaults are ordinary expressions and may call functions. SLP-15 does not add pu
    - default type mismatch
    - embedded field default
 
----
 
 ## Non-goals
 
