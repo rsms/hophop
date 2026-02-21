@@ -75,3 +75,4 @@ Implemented core includes:
 - [SLP-16-anonymous-enums.md](SLP-16-anonymous-enums.md)
 - [SLP-17-platform-context-composition.md](SLP-17-platform-context-composition.md)
 - [SLP-18-reflection.md](SLP-18-reflection.md)
+- [SLP-19-pointer-slice-unification.md](SLP-19-pointer-slice-unification.md)
