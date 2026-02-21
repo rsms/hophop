@@ -73,3 +73,5 @@ Implemented core includes:
 - [SLP-14-anonymous-struct-types.md](SLP-14-anonymous-struct-types.md)
 - [SLP-15-struct-field-defaults.md](SLP-15-struct-field-defaults.md)
 - [SLP-16-anonymous-enums.md](SLP-16-anonymous-enums.md)
+- [SLP-17-platform-context-composition.md](SLP-17-platform-context-composition.md)
+- [SLP-18-reflection.md](SLP-18-reflection.md)

@@ -612,3 +612,38 @@ Entry point:
 - No binary integer literal syntax.
 - Compound literals support named-field aggregate initialization only.
 - Runtime bounds checks for non-constant index/slice operations are analyzed but not currently emitted by C codegen.
+
+## 14. Draft Deltas (Not Implemented)
+
+This section records planned language-surface deltas from accepted draft SLPs.
+These are proposals, not current behavior.
+
+### 14.1 SLP-17 platform context composition
+
+Draft delta to section 4.4 and section 11:
+
+- `fn main()` keeps the same source signature, but its implicit `context` type is selected by
+  build target (`platform/<target>.Context`) rather than a fixed built-in field set.
+- `import "platform"` remains a built-in pseudo package with a stable base `platform.Context`.
+- `import "platform/<target>"` is a normal package import for target-specific context and helpers.
+- `platform/<target>.Context` composes `platform.Context` via embedded-base struct composition.
+- Context compatibility rules remain structural-by-field and unchanged from SLP-12.
+- Draft host capability field `fs` is typed as built-in `__sl_FileSystem` initially.
+- A future prelude mechanism may replace built-in host capability type names with
+  concrete definitions in `prelude.sl`.
+
+### 14.2 SLP-18 reflection and `typeof`
+
+Draft delta to section 9:
+
+- Add built-in `typeof(...)` form for compile-time type reflection.
+- Add `std/reflection` package with:
+  - `Kind` enum (`Primitive`, `Alias`, `Struct`, etc.)
+  - operations on type values (for example `.kind()`, `.base()`, `.fields()`).
+- Allow type-oriented reflection expressions such as:
+  - `typeof(x) == i32`
+  - `Foo.kind() == reflection.Kind.Struct`
+  - `Foo.fields().len() == 2`
+
+Exact typing rules for `typeof` with type operands (including aliases and metatype behavior)
+remain specified in SLP-18.

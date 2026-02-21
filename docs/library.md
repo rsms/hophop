@@ -170,6 +170,70 @@ Allocation is provided by `std/mem.Allocator` via `new(...)`, with the platform 
 Concrete default platform implementation used by `slc compile`/`slc run`:
 - `lib/platform_libc.c`
 
+### Draft delta (SLP-17, not implemented)
+
+Planned additions to platform library surface:
+
+- Base context in built-in `platform` package:
+
+```sl
+pub struct Context {
+    mem     &__sl_MemAllocator
+    console i32
+    stdin   ?i32
+    fs      ?__sl_FileSystem
+}
+```
+
+- Target context packages under `platform/<target>` that compose the base:
+
+```sl
+import "platform"
+
+pub struct Context {
+    platform.Context
+    // target-specific fields
+}
+```
+
+This keeps a stable portable base (`platform.Context`) while allowing target extension.
+`main` is planned to receive the selected target context type.
+`__sl_FileSystem` is planned as a built-in type initially; future work may define
+global host types in `prelude.sl` instead.
+
+## Reflection Package (Draft)
+
+`std/reflection` is proposed in SLP-18 as a compile-time reflection API.
+
+Planned surface (draft):
+
+- `reflection.Kind` enum for type categories (`Primitive`, `Alias`, `Struct`, etc.)
+- Type reflection operations via `typeof` and type-value methods:
+  - `.kind()`
+  - `.base()` (for aliases)
+  - `.fields()` (for aggregates)
+
+Sketch examples:
+
+```sl
+import "std/reflection"
+
+type MyInt int
+struct Foo { x, y int }
+
+fn main() {
+    var x i32
+    assert typeof(x) == i32
+    assert i32.kind() == reflection.Kind.Primitive
+    assert MyInt.kind() == reflection.Kind.Alias
+    assert MyInt.base() == int
+    assert Foo.kind() == reflection.Kind.Struct
+    assert Foo.fields().len() == 2
+}
+```
+
+Exact signatures and typing rules are draft and defined in `docs/SLP-18-reflection.md`.
+
 ## C Interop Mapping
 
 Common SL <-> C type correspondences:
