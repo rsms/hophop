@@ -137,7 +137,8 @@ def parse_jsonl_lines(agent: str, payload: bytes, strict: bool) -> Tuple[List[Di
             if strict:
                 return [], False
             entry = {"message": line, "invalid_json": True}
-        updates.append({"from": agent, "entry": entry})
+        entry["from"] = agent
+        updates.append(entry)
     return updates, True
 
 
@@ -173,7 +174,11 @@ def filter_by_since(updates: List[Dict[str, object]], since_dt: Optional[dt.date
         return updates
     out: List[Dict[str, object]] = []
     for row in updates:
-        ts = entry_timestamp(row.get("entry"))
+        entry: object = row
+        maybe_nested = row.get("entry")
+        if isinstance(maybe_nested, dict):
+            entry = maybe_nested
+        ts = entry_timestamp(entry)
         if ts is not None and ts >= since_dt:
             out.append(row)
     return out
