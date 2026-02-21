@@ -191,7 +191,7 @@ def read_new_entries_from_agent(
     since_dt: Optional[dt.datetime],
 ) -> List[Dict[str, object]]:
     agent = sibling_dir.name
-    log_file = sibling_dir / "agent-worklog.jsonl"
+    log_file = sibling_dir / ".agent-worklog.jsonl"
     if agent == current_agent or not log_file.is_file():
         return []
 
@@ -245,7 +245,7 @@ def main(argv: List[str]) -> int:
     agent = detect_agent_name(cwd)
 
     if args.announcements:
-        append_local_announcements(cwd / "agent-worklog.jsonl", args.announcements)
+        append_local_announcements(cwd / ".agent-worklog.jsonl", args.announcements)
 
     from_agents = normalize_from_agents(args.from_agents)
     updates = read_other_agents(agent, cwd, from_agents=from_agents, peek=args.peek, since_dt=args.since_dt)

@@ -3,6 +3,7 @@
 /compile_commands.json
 /.cache
 /.clangd
+/.agent-worklog.jsonl
 
 .env
 

@@ -11,7 +11,7 @@ When actively editing files or running commands that change code/data (not durin
 - Write announcements with `tools/agent-worklog <announcement> ...`
 - Every `tools/agent-worklog ...` announcement call also reads updates from other agents, so no separate immediate poll is needed after posting
 - If you have no new announcement, poll with `tools/agent-worklog` every 20-60 seconds while actively making changes
-- The script writes to `./agent-worklog.jsonl` and reads from sibling worktrees at `../wN/agent-worklog.jsonl`
+- The script writes to `./.agent-worklog.jsonl` and reads from sibling worktrees at `../wN/.agent-worklog.jsonl`
 - Keep announcements short, clear, concise, and to the point
 - Announce before starting a concrete change and after each major step
 
