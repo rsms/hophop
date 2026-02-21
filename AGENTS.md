@@ -21,6 +21,12 @@ Announcement format:
 - Optional: JSON object when structured fields help, e.g. `tools/agent-worklog '{"message":"running tests","SLP":14}'`
 - If plain text is used, the script wraps it into JSON and adds `timestamp`
 
+Reacting to important updates:
+
+- If another agent announces a change that may affect your current work, use git to inspect or integrate it now.
+- Integration options include: `git stash` + merge/rebase + `git stash pop`, committing your WIP and then merging/rebasing, or another safe git workflow.
+- If you see `merge-worktree: done {branch} <-> main sync`, consider updating your branch from `main` promptly (`git merge main` or `git rebase main`) to pick up those changes.
+
 ## Build and Test
 
 - `./build.sh test` — build (debug) and run full test suite
@@ -94,3 +100,5 @@ Source → [Lexer] → Tokens → [Parser] → AST → [Typechecker] → [Codege
 - After changes, run `./build.sh test` (or `python3 tools/test.py run ...`) and add/update entries in `tests/tests.jsonl` for new behavior.
 - The language spec and EBNF grammar is in `docs/language.md`; project overview is in `docs/project-overview.md`; feature proposals are in `docs/SLP-*.md`.
 - Serialize git index writes: never run `git add`, `git commit`, `git rm`, `git mv`, or similar index-mutating commands in parallel.
+- Merge worktree changes into `main` only when the operator explicitly asks (e.g. "merge to main" / "merge changes to the main repo"), by running `tools/agent-merge-worktree`.
+- If merge conflicts happen during `tools/agent-merge-worktree`, stop and resolve them interactively with the operator; do not auto-resolve conflicts.
