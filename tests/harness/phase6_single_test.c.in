@@ -1,3 +1,6 @@
 #define SINGLE_FILE_IMPL
 #include "@HEADER@"
-int test_codegen_phase6_single(void) { return (int)single_file__main(); }
+int test_codegen_phase6_single(void) {
+    __sl_MainContext context = { 0 };
+    return (int)single_file__main(&context);
+}

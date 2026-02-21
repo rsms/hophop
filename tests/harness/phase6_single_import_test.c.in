@@ -1,3 +1,6 @@
 #define APP_IMPL
 #include "@HEADER@"
-int test_codegen_phase6_single_import(void) { return (int)app__main(); }
+int test_codegen_phase6_single_import(void) {
+    __sl_MainContext context = { 0 };
+    return (int)app__main(&context);
+}

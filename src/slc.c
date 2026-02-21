@@ -1799,7 +1799,8 @@ static int IsBuiltinTypeName(const char* src, uint32_t start, uint32_t end) {
         || SliceEqCStr(src, start, end, "i16") || SliceEqCStr(src, start, end, "i32")
         || SliceEqCStr(src, start, end, "i64") || SliceEqCStr(src, start, end, "uint")
         || SliceEqCStr(src, start, end, "int") || SliceEqCStr(src, start, end, "f32")
-        || SliceEqCStr(src, start, end, "f64") || SliceEqCStr(src, start, end, "__sl_MemAllocator");
+        || SliceEqCStr(src, start, end, "f64") || SliceEqCStr(src, start, end, "__sl_MemAllocator")
+        || SliceEqCStr(src, start, end, "__sl_MainContext");
 }
 
 static int PackageHasExport(const SLPackage* pkg, const char* name) {
@@ -4182,12 +4183,12 @@ static int CompileProgram(const char* entryPath, const char* outExe) {
         goto end;
     }
 
-    /* Wrapper: defines sl_main() which calls the package entry point. */
+    /* Wrapper: defines sl_main(context) which calls the package entry point. */
     if (SBAppendCStr(&cBuilder, "#define SLC_IMPL\n#include \"") != 0
         || SBAppendCStr(&cBuilder, headerPath) != 0 || SBAppendCStr(&cBuilder, "\"\n\n") != 0
-        || SBAppendCStr(&cBuilder, "int sl_main(void) { ") != 0
+        || SBAppendCStr(&cBuilder, "int sl_main(__sl_MainContext *context) { ") != 0
         || SBAppendCStr(&cBuilder, entryPkg->name) != 0
-        || SBAppendCStr(&cBuilder, "__main(); return 0; }\n") != 0)
+        || SBAppendCStr(&cBuilder, "__main(context); return 0; }\n") != 0)
     {
         ErrorSimple("out of memory");
         goto end;

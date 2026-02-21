@@ -12,7 +12,7 @@
     #define debugassert(cond) ((void)0)
 #endif
 
-extern int sl_main(void);
+extern int sl_main(__sl_MainContext* context);
 #if defined(__clang__) || defined(__GNUC__)
 __attribute__((weak))
 #endif
@@ -106,6 +106,7 @@ __sl_i64 __sl_platform_call(
 
 int main(void) {
     static __sl_mem_Allocator gAllocator = { .impl = platform_mem_allocator_impl };
-    mem__platformAllocator = &gAllocator;
-    return sl_main();
+    __sl_MainContext          gMainContext = { .mem = &gAllocator, .console = 0 };
+    mem__platformAllocator = gMainContext.mem;
+    return sl_main(&gMainContext);
 }

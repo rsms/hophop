@@ -63,6 +63,11 @@ struct __sl_mem_Allocator {
         __sl_u32            flags);
 };
 
+typedef struct {
+    __sl_mem_Allocator* mem;
+    __sl_u64            console;
+} __sl_MainContext;
+
 enum __sl_PlatformOps {
     __sl_PlatformOp_NONE = 0,
     __sl_PlatformOp_PANIC = 1,

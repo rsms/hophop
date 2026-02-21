@@ -38,6 +38,7 @@ typedef enum {
     SLBuiltin_F32,
     SLBuiltin_F64,
     SLBuiltin_MEM_ALLOCATOR,
+    SLBuiltin_MAIN_CONTEXT,
 } SLBuiltinKind;
 
 typedef struct {
@@ -330,7 +331,8 @@ static int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
         || SLTCAddBuiltinType(c, "int", SLBuiltin_ISIZE) < 0
         || SLTCAddBuiltinType(c, "f32", SLBuiltin_F32) < 0
         || SLTCAddBuiltinType(c, "f64", SLBuiltin_F64) < 0
-        || SLTCAddBuiltinType(c, "__sl_MemAllocator", SLBuiltin_MEM_ALLOCATOR) < 0)
+        || SLTCAddBuiltinType(c, "__sl_MemAllocator", SLBuiltin_MEM_ALLOCATOR) < 0
+        || SLTCAddBuiltinType(c, "__sl_MainContext", SLBuiltin_MAIN_CONTEXT) < 0)
     {
         return -1;
     }
@@ -416,6 +418,11 @@ static int32_t SLTCFindBuiltinType(SLTypeCheckCtx* c, uint32_t start, uint32_t e
         }
         if (SLNameEqLiteral(c->src, start, end, "__sl_MemAllocator")
             && t->builtin == SLBuiltin_MEM_ALLOCATOR)
+        {
+            return (int32_t)i;
+        }
+        if (SLNameEqLiteral(c->src, start, end, "__sl_MainContext")
+            && t->builtin == SLBuiltin_MAIN_CONTEXT)
         {
             return (int32_t)i;
         }
