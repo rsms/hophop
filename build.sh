@@ -179,9 +179,12 @@ for srcfile in "${cli_sources[@]}" "${lib_sources[@]}"; do
     fi
 done
 
+git_index=$(git rev-parse --git-dir || true)
+[ -z "$git_index" ] || git_index=$git_index/index
+
 cat << _END >> $NF
 build ${diag_outputs[*]}: diaggen $diag_json $diag_tool
-build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | tools/amalgamate.sh tools/amalgamate.py .git/index ${diag_outputs[*]}
+build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | tools/amalgamate.sh tools/amalgamate.py ${git_index} ${diag_outputs[*]}
 build \$builddir/lib/sl-prelude.h: copy lib/sl-prelude.h
 build \$builddir/lib/platform_libc.c: copy lib/platform_libc.c
 build \$builddir/slc: link ${objfiles[*]}

@@ -4,6 +4,7 @@
 /.cache
 /.clangd
 /.agent-worklog.jsonl
+/.agent-worklog-state.json
 
 .env
 

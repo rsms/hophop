@@ -1,0 +1,2 @@
+[pre-merge]
+test = "./build.sh test"

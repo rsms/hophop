@@ -3,17 +3,21 @@
 ## Agent Coordination
 
 There are multiple concurrent agents running. You are one of them.
-Each agent is running in a dedicated git worktree; a subdirectory & branch of the form `wN`,
-i.e. `w1`, `w2` etc. Find out which one you're with `git branch --show-current`.
+Each agent should run in a dedicated git worktree managed by Worktrunk (`wt`).
+
+- Create/switch worktrees with `wt switch --create <branch>` and `wt switch <branch>`
+- Inspect active worktrees with `wt list`
+- Find your current branch with `git branch --show-current`
 
 When actively editing files or running commands that change code/data (not during planning/discussion-only phases), coordinate through worklogs:
 
 - Write announcements with `tools/agent-worklog <announcement> ...`
 - Every `tools/agent-worklog ...` announcement call also reads updates from other agents, so no separate immediate poll is needed after posting
 - If you have no new announcement, poll with `tools/agent-worklog` every 20-60 seconds
-- The script writes to `./.agent-worklog.jsonl` and reads from sibling worktrees at `../wN/.agent-worklog.jsonl`
+- The script writes to `./.agent-worklog.jsonl`, discovers other worktrees via `git worktree list`, and reads their `.agent-worklog.jsonl` files
 - Keep announcements short, clear, concise, and to the point
 - Announce before starting a concrete change and after each major step
+- When starting up, run `tools/agent-worklog` to catch up on what's happening.
 
 Announcement format:
 
@@ -25,7 +29,7 @@ Reacting to important updates:
 
 - If another agent announces a change that may affect your current work, use git to inspect or integrate it now.
 - Integration options include: `git stash` + merge/rebase + `git stash pop`, committing your WIP and then merging/rebasing, or another safe git workflow.
-- If you see `merge-worktree: done {branch} <-> main sync`, consider updating your branch from `main` promptly (`git merge main` or `git rebase main`) to pick up those changes.
+- If another agent reports they merged via `wt merge`, update your branch from `main` promptly (`git merge main` or `git rebase main`) to pick up those changes.
 
 ## Build and Test
 
@@ -100,5 +104,5 @@ Source → [Lexer] → Tokens → [Parser] → AST → [Typechecker] → [Codege
 - After changes, run `./build.sh test` (or `python3 tools/test.py run ...`) and add/update entries in `tests/tests.jsonl` for new behavior.
 - The language spec and EBNF grammar is in `docs/language.md`; project overview is in `docs/project-overview.md`; feature proposals are in `docs/SLP-*.md`.
 - Serialize git index writes: never run `git add`, `git commit`, `git rm`, `git mv`, or similar index-mutating commands in parallel.
-- Merge worktree changes into `main` only when the operator explicitly asks (e.g. "merge to main" / "merge changes to the main repo"), by running `tools/agent-merge-worktree`.
-- If merge conflicts happen during `tools/agent-merge-worktree`, stop and resolve them interactively with the operator; do not auto-resolve conflicts.
+- Merge worktree changes into `main` only when the operator explicitly asks (e.g. "merge to main" / "merge changes to the main repo"), by running `wt merge` from that worktree.
+- If merge conflicts happen during `wt merge`, stop and resolve them interactively with the operator; do not auto-resolve conflicts.

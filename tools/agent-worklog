@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import pathlib
-import re
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 
-def run_git(args: List[str], check: bool = True) -> subprocess.CompletedProcess:
+STATE_FILENAME = ".agent-worklog-state.json"
+
+
+def run_git(args: List[str], cwd: Optional[pathlib.Path] = None, check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["git", *args],
+        cwd=str(cwd) if cwd else None,
         check=check,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -21,18 +26,14 @@ def run_git(args: List[str], check: bool = True) -> subprocess.CompletedProcess:
     )
 
 
-def detect_agent_name(cwd: pathlib.Path) -> str:
-    for part in reversed(cwd.parts):
-        if re.fullmatch(r"w\d+", part):
-            return part
-    p = run_git(["branch", "--show-current"], check=False)
-    branch = p.stdout.strip()
-    m = re.search(r"(w\d+)", branch)
-    if m:
-        return m.group(1)
-    if branch:
-        return branch.replace("/", "_")
-    return cwd.name
+def detect_repo_root(cwd: pathlib.Path) -> pathlib.Path:
+    p = run_git(["rev-parse", "--show-toplevel"], cwd=cwd, check=False)
+    if p.returncode != 0:
+        return cwd
+    out = p.stdout.strip()
+    if not out:
+        return cwd
+    return pathlib.Path(out).resolve()
 
 
 def now_iso_utc() -> str:
@@ -53,11 +54,17 @@ def parse_iso_ts(value: str) -> dt.datetime:
 
 
 def parse_cli(argv: List[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Append local worklog announcements and read updates from sibling worktrees.")
-    p.add_argument("--peek", action="store_true", help="Read updates without advancing git-config read cursors.")
+    p = argparse.ArgumentParser(description="Append local worklog announcements and read updates from other git worktrees.")
+    p.add_argument("--peek", action="store_true", help="Read updates without advancing read cursors.")
     p.add_argument("--since", metavar="TIMESTAMP", help="Read all messages since ISO timestamp (e.g. 2026-02-21T20:00:00Z).")
-    p.add_argument("--from", dest="from_agents", action="append", default=[], metavar="wN",
-                   help="Only read updates from specific agent worktree name(s). Repeatable; also accepts comma-separated list.")
+    p.add_argument(
+        "--from",
+        dest="from_agents",
+        action="append",
+        default=[],
+        metavar="AGENT",
+        help="Only read updates from specific agent names/branches. Repeatable; also accepts comma-separated list.",
+    )
     p.add_argument("announcements", nargs="*", help="Announcement text or JSON object.")
     args = p.parse_args(argv)
     if args.since:
@@ -100,15 +107,42 @@ def append_local_announcements(log_file: pathlib.Path, announcements: Iterable[s
             f.write(json.dumps(obj, separators=(",", ":")) + "\n")
 
 
-def git_config_get(key: str) -> str:
-    p = run_git(["config", "--worktree", "--get", key], check=False)
-    if p.returncode != 0:
-        return ""
-    return p.stdout.strip()
+def cursor_key_for_path(path: pathlib.Path) -> str:
+    digest = hashlib.sha1(str(path).encode("utf-8")).hexdigest()[:16]
+    return f"cursor_{digest}"
 
 
-def git_config_set(key: str, value: str) -> None:
-    run_git(["config", "--worktree", key, value], check=True)
+def load_state(state_file: pathlib.Path) -> Dict[str, int]:
+    if not state_file.is_file():
+        return {}
+    try:
+        data = json.loads(state_file.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    cursors = data.get("cursors", data)
+    if not isinstance(cursors, dict):
+        return {}
+
+    out: Dict[str, int] = {}
+    for k, v in cursors.items():
+        if not isinstance(k, str):
+            continue
+        try:
+            i = int(v)
+        except Exception:
+            continue
+        if i >= 0:
+            out[k] = i
+    return out
+
+
+def save_state(state_file: pathlib.Path, state: Dict[str, int]) -> None:
+    payload = {"version": 1, "cursors": state}
+    tmp = state_file.with_suffix(state_file.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(state_file)
 
 
 def read_complete_lines(log_file: pathlib.Path, cursor: int) -> Tuple[bytes, int]:
@@ -184,74 +218,150 @@ def filter_by_since(updates: List[Dict[str, object]], since_dt: Optional[dt.date
     return out
 
 
-def read_new_entries_from_agent(
-    current_agent: str,
-    sibling_dir: pathlib.Path,
-    peek: bool,
-    since_dt: Optional[dt.datetime],
-) -> List[Dict[str, object]]:
-    agent = sibling_dir.name
-    log_file = sibling_dir / ".agent-worklog.jsonl"
-    if agent == current_agent or not log_file.is_file():
+@dataclass(frozen=True)
+class WorktreeInfo:
+    path: pathlib.Path
+    branch: str
+
+    @property
+    def agent_name(self) -> str:
+        if self.branch:
+            return self.branch.replace("/", "_")
+        return self.path.name
+
+    def aliases(self) -> Set[str]:
+        names = {self.path.name, self.agent_name}
+        if self.branch:
+            names.add(self.branch)
+        return names
+
+
+def list_worktrees(repo_root: pathlib.Path) -> List[WorktreeInfo]:
+    p = run_git(["worktree", "list", "--porcelain"], cwd=repo_root, check=False)
+    if p.returncode != 0:
         return []
 
-    cfg_key = f"custom.agent_log.{agent}"
+    out: List[WorktreeInfo] = []
+    block: Dict[str, str] = {}
+
+    def flush() -> None:
+        nonlocal block
+        worktree_path = block.get("worktree")
+        if not worktree_path:
+            block = {}
+            return
+
+        branch = ""
+        branch_ref = block.get("branch", "")
+        if branch_ref.startswith("refs/heads/"):
+            branch = branch_ref[len("refs/heads/") :]
+
+        out.append(WorktreeInfo(path=pathlib.Path(worktree_path).resolve(), branch=branch))
+        block = {}
+
+    for raw in p.stdout.splitlines():
+        line = raw.strip()
+        if not line:
+            flush()
+            continue
+        key, sep, value = line.partition(" ")
+        if sep:
+            block[key] = value.strip()
+        else:
+            block[key] = ""
+    flush()
+
+    return out
+
+
+def read_new_entries_from_worktree(
+    info: WorktreeInfo,
+    state: Dict[str, int],
+    peek: bool,
+    since_dt: Optional[dt.datetime],
+) -> Tuple[List[Dict[str, object]], bool]:
+    log_file = info.path / ".agent-worklog.jsonl"
+    if not log_file.is_file():
+        return [], False
+
+    cursor_key = cursor_key_for_path(info.path)
     cursor = 0
     if since_dt is None:
-        cursor_raw = git_config_get(cfg_key)
-        try:
-            cursor = int(cursor_raw) if cursor_raw else 0
-        except ValueError:
-            cursor = 0
+        cursor = state.get(cursor_key, 0)
         size = log_file.stat().st_size
         if cursor < 0 or cursor > size:
             cursor = 0
 
     payload, new_cursor = read_payload_with_retries(log_file, cursor)
     if not payload:
-        return []
+        return [], False
 
-    updates, ok = parse_jsonl_lines(agent, payload, strict=True)
+    updates, ok = parse_jsonl_lines(info.agent_name, payload, strict=True)
     if not ok:
-        updates, _ = parse_jsonl_lines(agent, payload, strict=False)
+        updates, _ = parse_jsonl_lines(info.agent_name, payload, strict=False)
 
     updates = filter_by_since(updates, since_dt)
 
+    state_changed = False
     if since_dt is None and not peek:
-        git_config_set(cfg_key, str(new_cursor))
-    return updates
+        prev = state.get(cursor_key)
+        if prev != new_cursor:
+            state[cursor_key] = new_cursor
+            state_changed = True
+
+    return updates, state_changed
 
 
 def read_other_agents(
-    current_agent: str,
-    cwd: pathlib.Path,
+    current_repo_root: pathlib.Path,
+    all_worktrees: List[WorktreeInfo],
     from_agents: Set[str],
+    state: Dict[str, int],
     peek: bool,
     since_dt: Optional[dt.datetime],
-) -> List[Dict[str, object]]:
-    parent = cwd.parent
+) -> Tuple[List[Dict[str, object]], bool]:
     out: List[Dict[str, object]] = []
-    for sibling in sorted(parent.glob("w[0-9]*")):
-        if sibling.is_dir():
-            if from_agents and sibling.name not in from_agents:
-                continue
-            out.extend(read_new_entries_from_agent(current_agent, sibling, peek=peek, since_dt=since_dt))
-    return out
+    state_changed = False
+
+    for info in sorted(all_worktrees, key=lambda x: (x.agent_name, str(x.path))):
+        if info.path == current_repo_root:
+            continue
+        if from_agents and not (info.aliases() & from_agents):
+            continue
+        updates, changed = read_new_entries_from_worktree(info, state=state, peek=peek, since_dt=since_dt)
+        out.extend(updates)
+        state_changed = state_changed or changed
+
+    return out, state_changed
 
 
 def main(argv: List[str]) -> int:
     args = parse_cli(argv)
     cwd = pathlib.Path.cwd().resolve()
-    agent = detect_agent_name(cwd)
+    repo_root = detect_repo_root(cwd)
 
     if args.announcements:
-        append_local_announcements(cwd / ".agent-worklog.jsonl", args.announcements)
+        append_local_announcements(repo_root / ".agent-worklog.jsonl", args.announcements)
+
+    state_file = repo_root / STATE_FILENAME
+    state = load_state(state_file)
 
     from_agents = normalize_from_agents(args.from_agents)
-    updates = read_other_agents(agent, cwd, from_agents=from_agents, peek=args.peek, since_dt=args.since_dt)
+    all_worktrees = list_worktrees(repo_root)
+    updates, state_changed = read_other_agents(
+        repo_root,
+        all_worktrees,
+        from_agents=from_agents,
+        state=state,
+        peek=args.peek,
+        since_dt=args.since_dt,
+    )
     for row in updates:
         sys.stdout.write(json.dumps(row, separators=(",", ":")))
         sys.stdout.write("\n")
+
+    if state_changed:
+        save_state(state_file, state)
     return 0
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import pathlib
-import re
+import shutil
 import subprocess
 import sys
 from typing import List
@@ -11,119 +11,43 @@ def run(cmd: List[str], cwd: pathlib.Path, check: bool = True) -> subprocess.Com
         cmd,
         cwd=str(cwd),
         check=check,
+    )
+
+
+def detect_repo_root(cwd: pathlib.Path) -> pathlib.Path:
+    p = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=str(cwd),
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
+    if p.returncode != 0 or not p.stdout:
+        return cwd
+    return pathlib.Path(p.stdout.strip()).resolve()
 
 
-def git(args: List[str], cwd: pathlib.Path, check: bool = True) -> subprocess.CompletedProcess:
-    return run(["git", *args], cwd=cwd, check=check)
-
-
-def fail(msg: str, code: int = 1) -> int:
-    print(msg, file=sys.stderr)
-    return code
-
-
-def merge_in_progress(repo: pathlib.Path) -> bool:
-    p = git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd=repo, check=False)
-    return p.returncode == 0
-
-
-def ensure_clean(repo: pathlib.Path, label: str) -> None:
-    p = git(["status", "--porcelain"], cwd=repo, check=True)
-    if p.stdout.strip():
-        raise RuntimeError(f"{label} has uncommitted changes; commit/stash them first")
-
-
-def conflict_files(repo: pathlib.Path) -> List[str]:
-    p = git(["diff", "--name-only", "--diff-filter=U"], cwd=repo, check=False)
-    out = [s for s in p.stdout.splitlines() if s.strip()]
-    return out
-
-
-def announce(wroot: pathlib.Path, message: str) -> None:
-    tool = wroot / "tools" / "agent-worklog"
+def announce(repo_root: pathlib.Path, message: str) -> None:
+    tool = repo_root / "tools" / "agent-worklog"
     if not tool.is_file():
         return
-    run([str(tool), message], cwd=wroot, check=False)
+    run([str(tool), "--peek", message], cwd=repo_root, check=False)
 
 
-def main() -> int:
-    cwd = pathlib.Path.cwd()
-    p = git(["rev-parse", "--show-toplevel"], cwd=cwd, check=False)
-    if p.returncode != 0:
-        return fail("Not inside a git repository")
-    wroot = pathlib.Path(p.stdout.strip())
+def main(argv: List[str]) -> int:
+    if not shutil.which("wt"):
+        print("worktrunk CLI not found on PATH (expected `wt`)", file=sys.stderr)
+        return 127
 
-    branch = git(["branch", "--show-current"], cwd=wroot, check=True).stdout.strip()
-    if not re.fullmatch(r"w\d+", branch):
-        return fail(f"Current branch is {branch!r}; expected a worktree branch like w1")
+    cwd = pathlib.Path.cwd().resolve()
+    repo_root = detect_repo_root(cwd)
+    announce(repo_root, "merge-worktree: delegating to wt merge")
+    print("tools/agent-merge-worktree is deprecated; running `wt merge`", file=sys.stderr)
 
-    main_repo = wroot.parent
-    p = git(["rev-parse", "--show-toplevel"], cwd=main_repo, check=False)
-    if p.returncode != 0:
-        return fail(f"Parent directory is not a git repository: {main_repo}")
-
-    parent_top = pathlib.Path(p.stdout.strip())
-    if parent_top != main_repo:
-        return fail(f"Expected main repo at {main_repo}, got {parent_top}")
-
-    if merge_in_progress(main_repo):
-        return fail(
-            f"Merge already in progress in main repo ({main_repo}). Resolve it with the operator, then continue."
-        )
-    if merge_in_progress(wroot):
-        return fail(
-            f"Merge already in progress in worktree ({wroot}). Resolve it with the operator, then continue."
-        )
-
-    try:
-        ensure_clean(main_repo, "Main repo")
-        ensure_clean(wroot, f"Worktree {branch}")
-    except RuntimeError as e:
-        return fail(str(e))
-
-    announce(wroot, f"merge-worktree: start merge {branch} -> main")
-
-    p = git(["switch", "main"], cwd=main_repo, check=False)
-    if p.returncode != 0:
-        return fail(p.stderr.strip() or "Failed to switch parent repo to main")
-
-    p = git(["merge", branch], cwd=main_repo, check=False)
-    if p.returncode != 0:
-        files = conflict_files(main_repo)
-        announce(wroot, f"merge-worktree: conflict merging {branch} into main")
-        if files:
-            print("Conflict while merging into main. Resolve interactively with the operator:")
-            for f in files:
-                print(f"  {f}")
-        else:
-            print("Merge into main failed. Resolve interactively with the operator.")
-        print(f"Main repo: {main_repo}")
-        return 2
-
-    announce(wroot, f"merge-worktree: merged {branch} into main; merge main -> {branch}")
-
-    p = git(["merge", "main"], cwd=wroot, check=False)
-    if p.returncode != 0:
-        files = conflict_files(wroot)
-        announce(wroot, f"merge-worktree: conflict merging main into {branch}")
-        if files:
-            print(f"Conflict while merging main into {branch}. Resolve interactively with the operator:")
-            for f in files:
-                print(f"  {f}")
-        else:
-            print(f"Merge of main into {branch} failed. Resolve interactively with the operator.")
-        print(f"Worktree repo: {wroot}")
-        return 3
-
-    announce(wroot, f"merge-worktree: done {branch} <-> main sync")
-    print(f"Merged {branch} into main in {main_repo}")
-    print(f"Merged main back into {branch} in {wroot}")
-    return 0
+    p = run(["wt", "merge", *argv], cwd=cwd, check=False)
+    return p.returncode
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))
