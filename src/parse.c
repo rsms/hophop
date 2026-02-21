@@ -555,47 +555,12 @@ static int SLPParseType(SLParser* p, int32_t* out) {
         if (SLPParseType(p, &child) != 0) {
             return -1;
         }
-        if (p->nodes[child].kind == SLAst_TYPE_SLICE || p->nodes[child].kind == SLAst_TYPE_MUTSLICE)
-        {
-            return SLPFail(p, SLDiag_EXPECTED_TYPE);
-        }
         p->nodes[typeNode].end = p->nodes[child].end;
         return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
     }
 
     if (SLPMatch(p, SLTok_MUT)) {
-        const SLToken* mutTok = SLPPrev(p);
-        if (SLPMatch(p, SLTok_AND)) {
-            typeNode = SLPNewNode(p, SLAst_TYPE_MUTREF, mutTok->start, mutTok->end);
-            if (typeNode < 0) {
-                return -1;
-            }
-            if (SLPParseType(p, &child) != 0) {
-                return -1;
-            }
-            if (p->nodes[child].kind == SLAst_TYPE_SLICE
-                || p->nodes[child].kind == SLAst_TYPE_MUTSLICE)
-            {
-                return SLPFail(p, SLDiag_EXPECTED_TYPE);
-            }
-            p->nodes[typeNode].end = p->nodes[child].end;
-            return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
-        }
-        if (SLPMatch(p, SLTok_LBRACK)) {
-            const SLToken* rb;
-            typeNode = SLPNewNode(p, SLAst_TYPE_MUTSLICE, mutTok->start, mutTok->end);
-            if (typeNode < 0) {
-                return -1;
-            }
-            if (SLPParseType(p, &child) != 0) {
-                return -1;
-            }
-            if (SLPExpect(p, SLTok_RBRACK, SLDiag_EXPECTED_TYPE, &rb) != 0) {
-                return -1;
-            }
-            p->nodes[typeNode].end = rb->end;
-            return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
-        }
+        (void)SLPPrev(p);
         return SLPFail(p, SLDiag_EXPECTED_TYPE);
     }
 

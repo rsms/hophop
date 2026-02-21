@@ -1,1 +1,1 @@
-tests/slice_bad_negative_range.sl:3:19: SL2004: type mismatch
+tests/slice_bad_negative_range.sl:3:20: SL2004: type mismatch

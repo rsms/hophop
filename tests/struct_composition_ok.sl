@@ -16,7 +16,7 @@ fn take_A(v A) int {
     return v.x
 }
 
-fn bump_A(v mut&A) {
+fn bump_A(v *C) {
     v.x = v.x + 1
 }
 

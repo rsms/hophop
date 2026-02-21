@@ -1,5 +1,5 @@
 struct Ctx {
-    mem mut&__sl_MemAllocator
+    mem *__sl_MemAllocator
 }
 
 fn f() context Ctx {}

@@ -31,7 +31,7 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/slc check examples/pointers_arrays.sl`
 - Variable-size struct (dependent trailing field): `examples/vss.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/vss.sl`
-- SLP-2 references/slices (`mut&`, `[T]`, `mut[T]`, slicing, implicit view conversions):
+- SLP-2 references/slices (`*`, `[T]`, `*[T]`, slicing, implicit view conversions):
   `examples/slp2_refs_slices.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/slp2_refs_slices.sl`
 - SLP-2 allocator `new(ma, ...)` forms: `examples/allocator.sl`

@@ -8,7 +8,7 @@ fn resize(oldSize, newSize, align, size uint) uint {
     return oldSize + newSize + align + size
 }
 
-fn rotate(v mut&Vec3, x, y, z f32) {
+fn rotate(v *Vec3, x, y, z f32) {
     v.x += x
     v.y += y
     v.z += z

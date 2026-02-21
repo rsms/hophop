@@ -1240,6 +1240,12 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 || childType.containerKind == SLTypeContainer_SLICE_MUT)
             {
                 childType.containerPtrDepth++;
+                if (childType.containerKind == SLTypeContainer_SLICE_RO
+                    || childType.containerKind == SLTypeContainer_SLICE_MUT)
+                {
+                    childType.containerKind =
+                        isRef ? SLTypeContainer_SLICE_RO : SLTypeContainer_SLICE_MUT;
+                }
                 if (isRef) {
                     childType.readOnly = isReadOnlyRef;
                 } else {
@@ -3067,8 +3073,9 @@ static int TypeRefAssignableCost(
             }
             return 0;
         }
-        if (src->containerKind == SLTypeContainer_ARRAY
-            && dst->containerPtrDepth == src->containerPtrDepth && dst->ptrDepth == src->ptrDepth
+        if (src->containerKind == SLTypeContainer_ARRAY && dst->ptrDepth == src->ptrDepth
+            && (dst->containerPtrDepth == src->containerPtrDepth
+                || dst->containerPtrDepth == src->containerPtrDepth + 1)
             && dst->baseName != NULL && src->baseName != NULL
             && StrEq(dst->baseName, src->baseName))
         {
@@ -3869,13 +3876,14 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 if (outType->containerKind == SLTypeContainer_ARRAY) {
                     outType->containerKind =
                         outType->readOnly ? SLTypeContainer_SLICE_RO : SLTypeContainer_SLICE_MUT;
-                    outType->containerPtrDepth = 0;
+                    outType->containerPtrDepth = 1;
                     outType->readOnly = outType->containerKind == SLTypeContainer_SLICE_RO;
                 } else if (
                     outType->containerKind == SLTypeContainer_SLICE_RO
                     || outType->containerKind == SLTypeContainer_SLICE_MUT)
                 {
-                    outType->containerPtrDepth = 0;
+                    outType->containerPtrDepth = 1;
+                    outType->readOnly = outType->containerKind == SLTypeContainer_SLICE_RO;
                 } else {
                     TypeRefSetInvalid(outType);
                 }
@@ -4127,9 +4135,9 @@ static int TypeRefContainerWritable(const SLTypeRef* t) {
     {
         return t->readOnly == 0;
     }
-    /* *[T]: owned runtime-length array (slice struct) */
+    /* For slice-pointer forms, readOnly distinguishes &[...] from *[...]. */
     if (t->containerKind == SLTypeContainer_SLICE_RO && t->containerPtrDepth > 0) {
-        return 1;
+        return t->readOnly == 0;
     }
     return 0;
 }
@@ -4325,53 +4333,8 @@ static int EmitSliceExpr(SLCBackendC* c, int32_t nodeId) {
     if (BufAppendChar(&c->out, ')') != 0) {
         return -1;
     }
-    if (outMut) {
-        if (BufAppendCStr(&c->out, "), (__sl_uint)((") != 0) {
-            return -1;
-        }
-        if (baseType.containerKind == SLTypeContainer_SLICE_MUT) {
-            if (baseType.containerPtrDepth > 0) {
-                int stars = SliceStructPtrDepth(&baseType);
-                if (stars > 0) {
-                    if (BufAppendChar(&c->out, '(') != 0 || EmitExpr(c, baseNode) != 0
-                        || BufAppendCStr(&c->out, ")->cap") != 0)
-                    {
-                        return -1;
-                    }
-                } else {
-                    if (BufAppendChar(&c->out, '(') != 0 || EmitExpr(c, baseNode) != 0
-                        || BufAppendCStr(&c->out, ").cap") != 0)
-                    {
-                        return -1;
-                    }
-                }
-            } else {
-                if (BufAppendChar(&c->out, '(') != 0 || EmitExpr(c, baseNode) != 0
-                    || BufAppendCStr(&c->out, ").cap") != 0)
-                {
-                    return -1;
-                }
-            }
-        } else if (baseType.hasArrayLen) {
-            if (BufAppendU32(&c->out, baseType.arrayLen) != 0) {
-                return -1;
-            }
-        } else if (EmitLenExprFromType(c, baseNode, &baseType) != 0) {
-            return -1;
-        }
-        if (BufAppendCStr(&c->out, ") - (") != 0) {
-            return -1;
-        }
-        if (startNode >= 0) {
-            if (EmitExpr(c, startNode) != 0) {
-                return -1;
-            }
-        } else if (BufAppendChar(&c->out, '0') != 0) {
-            return -1;
-        }
-        if (BufAppendCStr(&c->out, "))") != 0) {
-            return -1;
-        }
+    if (BufAppendChar(&c->out, ')') != 0) {
+        return -1;
     }
     return BufAppendCStr(&c->out, " })");
 }
@@ -4602,13 +4565,7 @@ static int EmitNewCallExpr(
             {
                 return -1;
             }
-            if (dstIsRuntimeArrayMut) {
-                if (BufAppendCStr(&c->out, ", (__sl_uint)(") != 0 || EmitExpr(c, countArg) != 0
-                    || BufAppendCStr(&c->out, ") })") != 0)
-                {
-                    return -1;
-                }
-            } else if (BufAppendCStr(&c->out, " })") != 0) {
+            if (BufAppendCStr(&c->out, " })") != 0) {
                 return -1;
             }
             return 0;
@@ -4796,6 +4753,21 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
          || dstType->containerKind == SLTypeContainer_SLICE_MUT)
         && dstType->containerPtrDepth > 0 && SliceStructPtrDepth(dstType) == 0)
     {
+        if (dstType->containerKind == SLTypeContainer_SLICE_RO
+            && srcType.containerKind == SLTypeContainer_SLICE_MUT && srcType.containerPtrDepth > 0
+            && SliceStructPtrDepth(&srcType) == 0 && srcType.ptrDepth == dstType->ptrDepth
+            && srcType.containerPtrDepth == dstType->containerPtrDepth && srcType.baseName != NULL
+            && dstType->baseName != NULL && StrEq(srcType.baseName, dstType->baseName))
+        {
+            if (BufAppendCStr(&c->out, "((__sl_slice_ro){ (const void*)((") != 0
+                || EmitExpr(c, exprNode) != 0
+                || BufAppendCStr(&c->out, ").ptr), (__sl_uint)((") != 0
+                || EmitExpr(c, exprNode) != 0 || BufAppendCStr(&c->out, ").len) })") != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
         if (srcType.containerKind == dstType->containerKind && srcType.containerPtrDepth > 0
             && srcType.ptrDepth == dstType->ptrDepth
             && srcType.containerPtrDepth == dstType->containerPtrDepth && srcType.baseName != NULL
@@ -4803,16 +4775,15 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
         {
             return EmitExpr(c, exprNode);
         }
-        if (srcType.containerKind == SLTypeContainer_ARRAY && srcType.containerPtrDepth > 0
-            && srcType.ptrDepth == dstType->ptrDepth
-            && srcType.containerPtrDepth == dstType->containerPtrDepth && srcType.baseName != NULL
-            && dstType->baseName != NULL && StrEq(srcType.baseName, dstType->baseName))
+        if (srcType.containerKind == SLTypeContainer_ARRAY && srcType.ptrDepth == dstType->ptrDepth
+            && (srcType.containerPtrDepth == dstType->containerPtrDepth
+                || srcType.containerPtrDepth + 1 == dstType->containerPtrDepth)
+            && srcType.baseName != NULL && dstType->baseName != NULL
+            && StrEq(srcType.baseName, dstType->baseName))
         {
             if (dstType->containerKind == SLTypeContainer_SLICE_MUT) {
                 if (BufAppendCStr(&c->out, "((__sl_slice_mut){ (void*)(") != 0
                     || EmitElemPtrExpr(c, exprNode, &srcType, 1) != 0
-                    || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0
-                    || EmitLenExprFromType(c, exprNode, &srcType) != 0
                     || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0
                     || EmitLenExprFromType(c, exprNode, &srcType) != 0
                     || BufAppendCStr(&c->out, ") })") != 0)
@@ -4857,8 +4828,6 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
         if (srcType.containerKind == SLTypeContainer_ARRAY) {
             if (BufAppendCStr(&c->out, "((__sl_slice_mut){ (void*)(") != 0
                 || EmitElemPtrExpr(c, exprNode, &srcType, 1) != 0
-                || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0
-                || EmitLenExprFromType(c, exprNode, &srcType) != 0
                 || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0
                 || EmitLenExprFromType(c, exprNode, &srcType) != 0
                 || BufAppendCStr(&c->out, ") })") != 0)
@@ -5843,15 +5812,51 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 }
                 return 0;
             }
-            if (InferExprType(c, inner, &innerType) == 0 && innerType.valid
-                && innerType.ptrDepth > 0)
-            {
-                SLTypeRef baseType = innerType;
-                baseType.ptrDepth--;
-                if (baseType.baseName != NULL && IsVarSizeTypeName(c, baseType.baseName)) {
-                    if (BufAppendCStr(&c->out, baseType.baseName) != 0
+            if (InferExprType(c, inner, &innerType) == 0 && innerType.valid) {
+                if (innerType.containerKind == SLTypeContainer_SCALAR && innerType.ptrDepth == 1
+                    && innerType.baseName != NULL && IsVarSizeTypeName(c, innerType.baseName))
+                {
+                    if (BufAppendCStr(&c->out, innerType.baseName) != 0
                         || BufAppendCStr(&c->out, "__sizeof(") != 0 || EmitExpr(c, inner) != 0
                         || BufAppendChar(&c->out, ')') != 0)
+                    {
+                        return -1;
+                    }
+                    return 0;
+                }
+                if (innerType.containerKind == SLTypeContainer_SCALAR && innerType.ptrDepth > 0) {
+                    SLTypeRef pointeeType = innerType;
+                    pointeeType.ptrDepth--;
+                    if (BufAppendCStr(&c->out, "sizeof(") != 0
+                        || EmitTypeNameWithDepth(c, &pointeeType) != 0
+                        || BufAppendChar(&c->out, ')') != 0)
+                    {
+                        return -1;
+                    }
+                    return 0;
+                }
+                if (innerType.containerKind == SLTypeContainer_ARRAY && innerType.hasArrayLen
+                    && innerType.containerPtrDepth == 1 && SliceStructPtrDepth(&innerType) == 0)
+                {
+                    if (BufAppendCStr(&c->out, "((__sl_uint)(") != 0
+                        || BufAppendU32(&c->out, innerType.arrayLen) != 0
+                        || BufAppendCStr(&c->out, "u) * sizeof(") != 0
+                        || EmitElementTypeName(c, &innerType, 0) != 0
+                        || BufAppendCStr(&c->out, "))") != 0)
+                    {
+                        return -1;
+                    }
+                    return 0;
+                }
+                if ((innerType.containerKind == SLTypeContainer_SLICE_RO
+                     || innerType.containerKind == SLTypeContainer_SLICE_MUT)
+                    && innerType.containerPtrDepth == 1 && SliceStructPtrDepth(&innerType) == 0)
+                {
+                    if (BufAppendCStr(&c->out, "((__sl_uint)(") != 0
+                        || EmitLenExprFromType(c, inner, &innerType) != 0
+                        || BufAppendCStr(&c->out, ") * sizeof(") != 0
+                        || EmitElementTypeName(c, &innerType, 0) != 0
+                        || BufAppendCStr(&c->out, "))") != 0)
                     {
                         return -1;
                     }

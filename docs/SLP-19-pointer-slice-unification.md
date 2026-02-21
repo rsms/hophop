@@ -1,5 +1,11 @@
 # SLP-19 pointer and slice unification
 
+## Status
+
+Implemented in trunk on February 21, 2026.
+
+Rollout mode used: hard switch (legacy `mut&`/`mut[...]` forms removed).
+
 ## Summary
 
 SLP-19 simplifies reference-like types into two mutability forms:
@@ -238,57 +244,33 @@ fn main() {
 
 ---
 
-## Implementation notes
+## Implementation result
 
 1. Parser/type syntax:
-   - keep `[T N]`
-   - treat `[T]` as unsized type node
-   - keep `*[T]`/`&[T]` as concrete pointer/ref-to-unsized forms
+   - `[T N]` kept as fixed-size array value type.
+   - `[T]` is parsed as unsized and rejected by-value in semantic checks.
+   - `*[T]`/`&[T]` are supported directly.
+   - legacy `mut&` and `mut[...]` forms are rejected.
 2. Typechecker:
-   - reject by-value unsized declarations/params/returns
-   - apply coercions listed above
-   - remove `mut&` and `mut[...]` forms
-3. Codegen:
-   - map `*[T]`/`&[T]` to `(ptr,len)` pairs
-   - lower `sizeof(expr)` dynamic branches as specified
-4. Diagnostics:
-   - dedicated error for "unsized type used by value"
-   - fix-it hints from old forms to new forms
+   - by-value unsized declarations/params/returns are rejected.
+   - coercions listed in this SLP are implemented.
+3. Codegen/runtime:
+   - `*[T]`/`&[T]` lower to `(ptr,len)` runtime representation.
+   - mutable slice runtime representation no longer carries `cap`.
+   - `sizeof(expr)` lowering follows the dynamic branches defined above.
+4. Validation:
+   - full project test suite passes with SLP-19 behavior.
+5. Platform context alignment:
+   - built-in `platform.Context.mem` uses `*__sl_MemAllocator`.
+   - implicit `main` context fallback for `mem` is pointer-typed.
+   - this removes legacy `mut&` assumptions during context compatibility checks.
 
-Detailed task tracking: `docs/SLP-19.1-implementation-checklist.md`.
+Detailed task tracking: `docs/SLP-19.1-implementation-checklist.md` (completed).
 
----
+## Resolved decisions
 
-## Open questions
-
-### 1. Nullability policy for pointers and refs
-
-Question:
-
-- Should plain `*T` / `&T` remain nullable-by-default (current model), with `?*T`/`?&T` reserved
-  for future explicit optional typing?
-- Or should a follow-up SLP make plain `*T` / `&T` non-null and require `?*T` / `?&T` for nullable?
-
-Current SLP-19 stance:
-
-- Keep current behavior unchanged for compatibility.
-- Defer any non-null-by-default transition to a dedicated nullability SLP.
-
-### 2. `sizeof(expr)` on null pointer to variable-size aggregate
-
-Question:
-
-- For `p : *V` / `&V` where `V` is variable-size, what should `sizeof(p)` do when `p` is null?
-  - trap/panic
-  - return `0`
-  - undefined behavior in all modes
-
-Current SLP-19 stance:
-
-- Safe mode: trap/panic on null.
-- Unsafe mode: undefined behavior.
-
-Rationale:
-
-- Returning `0` can mask bugs where `null` is accidentally treated as valid object storage.
-- Trap in safe mode aligns with existing bounds/validity checks and gives deterministic diagnostics.
+1. Nullability policy for pointers and refs:
+   - unchanged in SLP-19; non-null-by-default is deferred to a dedicated future SLP.
+2. `sizeof(expr)` on null pointer to variable-size aggregate:
+   - safe mode traps/panics.
+   - unsafe mode is undefined behavior.

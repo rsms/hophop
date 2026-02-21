@@ -9,7 +9,7 @@ struct Pair {
     y i32
 }
 
-fn explicit_forms(ma mut&mem.Allocator, n u32) {
+fn explicit_forms(ma *mem.Allocator, n u32) {
     var p *Pair = new(ma, Pair)
     var fixed *[i32 4] = new(ma, i32, 4)
     var dyn *[i32] = new(ma, i32, n)
@@ -23,7 +23,7 @@ fn explicit_forms(ma mut&mem.Allocator, n u32) {
     assert len(dyn) == n
 }
 
-fn selector_forms(ma mut&mem.Allocator, n u32) {
+fn selector_forms(ma *mem.Allocator, n u32) {
     var p *Pair = ma.new(Pair)
     var fixed *[i32 4] = ma.new(i32, 4)
     var dyn *[i32] = ma.new(i32, n)
@@ -37,7 +37,7 @@ fn selector_forms(ma mut&mem.Allocator, n u32) {
     assert len(dyn) == n
 }
 
-fn contextual_forms(n u32) context { mem mut&mem.Allocator } {
+fn contextual_forms(n u32) context { mem *mem.Allocator } {
     var p *Pair = new(Pair)
     var fixed *[i32 4] = new(i32, 4)
     var dyn *[i32] = new(i32, n)

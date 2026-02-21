@@ -47,7 +47,6 @@ typedef struct {
 typedef struct {
     void*     ptr;
     __sl_uint len;
-    __sl_uint cap;
 } __sl_slice_mut;
 
 typedef __sl_slice_ro __sl_str;
@@ -198,6 +197,5 @@ static inline __sl_slice_ro __sl_new_array_slice_ro(
 static inline __sl_slice_mut __sl_new_array_slice_mut(
     __sl_mem_Allocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
     void* p = __sl_new_array(ma, elemSize, elemAlign, count);
-    return (
-        __sl_slice_mut){ .ptr = p, .len = p != NULL ? count : 0u, .cap = p != NULL ? count : 0u };
+    return (__sl_slice_mut){ .ptr = p, .len = p != NULL ? count : 0u };
 }

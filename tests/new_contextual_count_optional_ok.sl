@@ -1,5 +1,5 @@
 struct Ctx {
-    mem mut&__sl_MemAllocator
+    mem *__sl_MemAllocator
 }
 
 fn allocs(n uint) context Ctx {
@@ -10,6 +10,6 @@ fn allocs(n uint) context Ctx {
 }
 
 fn main() {
-    var ma mut&__sl_MemAllocator = 0 as mut&__sl_MemAllocator
+    var ma *__sl_MemAllocator = 0 as *__sl_MemAllocator
     allocs(4) with { mem = ma }
 }

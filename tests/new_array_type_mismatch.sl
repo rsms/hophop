@@ -1,6 +1,6 @@
 import "std/mem"
 
-fn foo(ma mut&mem.Allocator) {
+fn foo(ma *mem.Allocator) {
     var many *i32 = new(ma, i32, 8)
     _ = many
 }

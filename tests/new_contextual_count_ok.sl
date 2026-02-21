@@ -1,7 +1,7 @@
 import "std/mem"
 
 struct Ctx {
-    mem mut&__sl_MemAllocator
+    mem *__sl_MemAllocator
 }
 
 fn allocs(n uint) context Ctx {

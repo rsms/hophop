@@ -2446,7 +2446,7 @@ static int LoadBuiltinPlatformPackage(SLPackageLoader* loader, SLPackage** outPk
         return ErrorSimple("out of memory");
     }
     if (AddBuiltinPubTypeDecl(
-            pkg, "Context", "pub struct Context { mem mut&__sl_MemAllocator; console i32 }")
+            pkg, "Context", "pub struct Context { mem *__sl_MemAllocator; console i32 }")
         != 0)
     {
         return -1;

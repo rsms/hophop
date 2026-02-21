@@ -1,4 +1,4 @@
 pub type Allocator __sl_MemAllocator
 
 // Initialized by platform runtime before sl_main.
-pub var platformAllocator mut&Allocator
+pub var platformAllocator *Allocator
