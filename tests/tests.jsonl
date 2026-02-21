@@ -211,8 +211,12 @@
 {"id":"integration.runtime.fntype_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/fntype_ok.sl","expect_exit":0}
 {"id":"checkpkg:tests/new_runtime_slice_ptr_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_runtime_slice_ptr_ok.sl"}
 {"id":"check:tests/new_builtin_allocator_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"check","input":"tests/new_builtin_allocator_ok.sl"}
+{"id":"checkpkg:tests/new_contextual_count_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_contextual_count_ok.sl"}
+{"id":"check:tests/new_contextual_count_optional_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"check","input":"tests/new_contextual_count_optional_ok.sl"}
 {"id":"integration.runtime.new_runtime_slice_ptr_ok.compile_only","suite":"std.unit","kind":"compile_only","input":"tests/new_runtime_slice_ptr_ok.sl"}
 {"id":"integration.runtime.new_builtin_allocator_ok.compile_only","suite":"std.unit","kind":"compile_only","input":"tests/new_builtin_allocator_ok.sl"}
+{"id":"integration.runtime.new_contextual_count_ok.compile_and_run","suite":"std.unit","kind":"compile_and_run","input":"tests/new_contextual_count_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
+{"id":"integration.runtime.new_contextual_count_optional_ok.compile_and_run","suite":"std.unit","kind":"compile_and_run","input":"tests/new_contextual_count_optional_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"check:tests/context_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/context_ok.sl"}
 {"id":"checkpkg:tests/context_convertible_allocator_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/context_convertible_allocator_ok.sl"}
 {"id":"check:tests/context_missing_field_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/context_missing_field_bad.sl","expect_stderr":"tests/context_missing_field_bad.stderr"}
