@@ -3914,7 +3914,6 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
 static int InferBuiltinNewCallType(SLCBackendC* c, int32_t callNode, SLTypeRef* outType) {
     int32_t          calleeNode = AstFirstChild(&c->ast, callNode);
     const SLAstNode* callee = NodeAt(c, calleeNode);
-    int32_t          allocArg = -1;
     int32_t          typeArg = -1;
     int32_t          countArg = -1;
     int32_t          extraArg = -1;
@@ -3937,7 +3936,6 @@ static int InferBuiltinNewCallType(SLCBackendC* c, int32_t callNode, SLTypeRef* 
             return 0;
         }
         if (arg3 >= 0) {
-            allocArg = arg1;
             typeArg = arg2;
             countArg = arg3;
         } else if (arg2 >= 0) {
@@ -3954,7 +3952,6 @@ static int InferBuiltinNewCallType(SLCBackendC* c, int32_t callNode, SLTypeRef* 
                 isAlloc = 1;
             }
             if (isAlloc) {
-                allocArg = arg1;
                 typeArg = arg2;
             } else {
                 typeArg = arg1;
@@ -3967,7 +3964,6 @@ static int InferBuiltinNewCallType(SLCBackendC* c, int32_t callNode, SLTypeRef* 
         callee->kind == SLAst_FIELD_EXPR
         && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "new"))
     {
-        allocArg = AstFirstChild(&c->ast, calleeNode);
         typeArg = AstNextSibling(&c->ast, calleeNode);
         countArg = typeArg >= 0 ? AstNextSibling(&c->ast, typeArg) : -1;
         extraArg = countArg >= 0 ? AstNextSibling(&c->ast, countArg) : -1;
