@@ -1,1 +1,1 @@
-tests/const_missing_init_local.sl:2:5: SL1038: const declaration requires initializer
+tests/const_missing_init_local.sl:2:5: SL2028: const declaration requires initializer

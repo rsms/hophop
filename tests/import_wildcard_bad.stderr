@@ -1,1 +1,1 @@
-tests/import_wildcard_bad.sl:1:21: SL1032: wildcard import is not supported
+tests/import_wildcard_bad.sl:1:21: SL2022: wildcard import is not supported

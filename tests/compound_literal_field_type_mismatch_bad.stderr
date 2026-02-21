@@ -1,1 +1,1 @@
-tests/compound_literal_field_type_mismatch_bad.sl:7:24: SL1052: compound literal field 'x' type mismatch
+tests/compound_literal_field_type_mismatch_bad.sl:7:24: SL2042: compound literal field 'x' type mismatch

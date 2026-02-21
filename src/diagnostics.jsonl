@@ -1,0 +1,64 @@
+// SL diagnostics (JSON Lines)
+// One JSON object per line. Required fields: id, name, category, message
+// Optional fields: type ("error"|"warning"), hint
+// Category -> id range:
+//   syntactic: SL1000-SL1999
+//   semantic:  SL2000-SL2999
+//   codegen:   SL3000-SL3999
+//   compiler:  SL4000-SL4999
+
+{"id": "SL1001", "name": "UNEXPECTED_CHAR", "category": "syntactic", "message": "unexpected character"}
+{"id": "SL1002", "name": "UNTERMINATED_STRING", "category": "syntactic", "message": "unterminated string literal"}
+{"id": "SL1003", "name": "INVALID_NUMBER", "category": "syntactic", "message": "invalid number literal"}
+{"id": "SL1004", "name": "UNEXPECTED_TOKEN", "category": "syntactic", "message": "unexpected token"}
+{"id": "SL1005", "name": "EXPECTED_DECL", "category": "syntactic", "message": "expected declaration"}
+{"id": "SL1006", "name": "EXPECTED_EXPR", "category": "syntactic", "message": "expected expression"}
+{"id": "SL1007", "name": "EXPECTED_TYPE", "category": "syntactic", "message": "expected type"}
+{"id": "SL1008", "name": "PARAM_MISSING_TYPE", "category": "syntactic", "message": "parameter '{s}' is missing type"}
+{"id": "SL2001", "name": "DUPLICATE_SYMBOL", "category": "semantic", "message": "duplicate symbol"}
+{"id": "SL2002", "name": "UNKNOWN_SYMBOL", "category": "semantic", "message": "unknown symbol"}
+{"id": "SL2003", "name": "UNKNOWN_TYPE", "category": "semantic", "message": "unknown type"}
+{"id": "SL2004", "name": "TYPE_MISMATCH", "category": "semantic", "message": "type mismatch"}
+{"id": "SL2005", "name": "ARITY_MISMATCH", "category": "semantic", "message": "call arity mismatch"}
+{"id": "SL2006", "name": "NOT_CALLABLE", "category": "semantic", "message": "expression is not callable"}
+{"id": "SL2007", "name": "RESERVED_NAME", "category": "semantic", "message": "identifier '{s}' is reserved"}
+{"id": "SL2008", "name": "RESERVED_SL_PREFIX", "category": "semantic", "message": "identifier prefix '__sl_' is reserved", "hint": "rename symbol to avoid '__sl_' prefix"}
+{"id": "SL2009", "name": "EXPECTED_BOOL", "category": "semantic", "message": "expected bool expression"}
+{"id": "SL2010", "name": "VOID_RETURN_TYPE", "category": "semantic", "message": "'void' is not a valid return type", "hint": "remove 'void'"}
+{"id": "SL2011", "name": "EMBEDDED_FIELD_NOT_FIRST", "category": "semantic", "message": "embedded field must be first in struct"}
+{"id": "SL2012", "name": "MULTIPLE_EMBEDDED_FIELDS", "category": "semantic", "message": "only one embedded field is allowed"}
+{"id": "SL2013", "name": "EMBEDDED_TYPE_NOT_STRUCT", "category": "semantic", "message": "embedded field type must be a struct"}
+{"id": "SL2014", "name": "EMBEDDED_CYCLE", "category": "semantic", "message": "embedded struct cycle detected"}
+{"id": "SL2015", "name": "NO_MATCHING_OVERLOAD", "category": "semantic", "message": "no matching overload"}
+{"id": "SL2016", "name": "AMBIGUOUS_CALL", "category": "semantic", "message": "ambiguous call"}
+{"id": "SL2017", "name": "INVALID_FN_GROUP_MEMBER", "category": "semantic", "message": "invalid function-group member"}
+{"id": "SL2018", "name": "DUPLICATE_FN_GROUP_MEMBER", "category": "semantic", "message": "duplicate function-group member"}
+{"id": "SL2019", "name": "INVALID_FN_GROUP_COLLISION", "category": "semantic", "message": "function-group name collides with existing symbol"}
+{"id": "SL2020", "name": "IMPORT_INVALID_PATH", "category": "semantic", "message": "invalid import path ({s})"}
+{"id": "SL2021", "name": "IMPORT_ALIAS_INFERENCE_FAILED", "category": "semantic", "message": "cannot infer package identifier; use 'import \"{s}\" as <name>'"}
+{"id": "SL2022", "name": "IMPORT_WILDCARD_NOT_SUPPORTED", "category": "semantic", "message": "wildcard import is not supported"}
+{"id": "SL2023", "name": "IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS", "category": "semantic", "message": "import with symbol list cannot use as _"}
+{"id": "SL2024", "name": "IMPORT_SYMBOL_ALIAS_INVALID", "category": "semantic", "message": "import symbol alias '_' is not allowed"}
+{"id": "SL2025", "name": "IMPORT_FEATURE_IMPORT_EXTRAS", "category": "semantic", "message": "feature imports must be path-only (no alias or symbol list)"}
+{"id": "SL2026", "name": "INFER_NULL_TYPE_UNKNOWN", "category": "semantic", "message": "cannot infer type from null; add explicit type"}
+{"id": "SL2027", "name": "INFER_VOID_TYPE_UNKNOWN", "category": "semantic", "message": "cannot infer type from void expression"}
+{"id": "SL2028", "name": "CONST_MISSING_INITIALIZER", "category": "semantic", "message": "const declaration requires initializer"}
+{"id": "SL2029", "name": "CONTEXT_REQUIRED", "category": "semantic", "message": "context is required here"}
+{"id": "SL2030", "name": "CONTEXT_MISSING_FIELD", "category": "semantic", "message": "required context field is missing"}
+{"id": "SL2031", "name": "CONTEXT_TYPE_MISMATCH", "category": "semantic", "message": "context field type mismatch"}
+{"id": "SL2032", "name": "CONTEXT_UNKNOWN_FIELD", "category": "semantic", "message": "unknown context field in with clause"}
+{"id": "SL2033", "name": "CONTEXT_DUPLICATE_FIELD", "category": "semantic", "message": "duplicate context field in with clause"}
+{"id": "SL2034", "name": "CONTEXT_CLAUSE_MISMATCH", "category": "semantic", "message": "function context clause mismatch"}
+{"id": "SL2035", "name": "WITH_CONTEXT_ON_NON_CALL", "category": "semantic", "message": "'with' context clause can only be applied to a call"}
+{"id": "SL2036", "name": "COMPOUND_TYPE_REQUIRED", "category": "semantic", "message": "compound literal requires an explicit aggregate type"}
+{"id": "SL2037", "name": "COMPOUND_INFER_NO_CONTEXT", "category": "semantic", "message": "cannot infer compound literal type from context"}
+{"id": "SL2038", "name": "COMPOUND_INFER_AMBIGUOUS", "category": "semantic", "message": "compound literal type inference is ambiguous"}
+{"id": "SL2039", "name": "COMPOUND_INFER_NON_AGGREGATE", "category": "semantic", "message": "inferred compound literal type is not an aggregate"}
+{"id": "SL2040", "name": "COMPOUND_FIELD_UNKNOWN", "category": "semantic", "message": "unknown compound literal field '{s}'"}
+{"id": "SL2041", "name": "COMPOUND_FIELD_DUPLICATE", "category": "semantic", "message": "duplicate compound literal field '{s}'"}
+{"id": "SL2042", "name": "COMPOUND_FIELD_TYPE_MISMATCH", "category": "semantic", "message": "compound literal field '{s}' type mismatch"}
+{"id": "SL2043", "name": "COMPOUND_MUT_REF_TEMPORARY", "category": "semantic", "message": "cannot bind compound literal temporary to mutable reference"}
+{"id": "SL2044", "name": "COMPOUND_UNION_MULTI_FIELD", "category": "semantic", "message": "union compound literal can initialize at most one field"}
+{"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
+{"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
+{"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}

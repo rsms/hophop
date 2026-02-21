@@ -54,7 +54,36 @@ def to_printf_fmt(message: str) -> tuple[str, int]:
     return ("".join(out), arg_count)
 
 
-def load_entries(path: Path) -> list[dict[str, str | int]]:
+def load_entries(path: Path) -> list[dict[str, object]]:
+    id_re = re.compile(r"^SL([1-9][0-9]*)$")
+    category_ranges = {
+        "syntactic": (1000, 1999),
+        "semantic": (2000, 2999),
+        "codegen": (3000, 3999),
+        "compiler": (4000, 4999),
+    }
+    seen_diag_ids: set[str] = set()
+    seen_enum: set[str] = set()
+    entries: list[dict[str, object]] = []
+
+    if path.suffix.lower() == ".jsonl":
+        rows = _load_rows_jsonl(path)
+    else:
+        rows = _load_rows_json_object(path)
+
+    for diag_id, row, where in rows:
+        if diag_id in seen_diag_ids:
+            fail(f"{where}: duplicate diagnostic id '{diag_id}'")
+        seen_diag_ids.add(diag_id)
+        entries.append(_validate_entry(path, diag_id, row, where, id_re, category_ranges, seen_enum))
+
+    if len(entries) == 0:
+        fail(f"{path}: diagnostics map must not be empty")
+
+    return entries
+
+
+def _load_rows_json_object(path: Path) -> list[tuple[str, dict[str, object], str]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
@@ -63,68 +92,110 @@ def load_entries(path: Path) -> list[dict[str, str | int]]:
     if not isinstance(data, dict):
         fail(f"{path}: top-level JSON value must be an object")
 
-    id_re = re.compile(r"^SL([1-9][0-9]*)$")
-    seen_enum: set[str] = set()
-    entries: list[dict[str, str | int]] = []
-
+    rows: list[tuple[str, dict[str, object], str]] = []
     for diag_id, v in data.items():
-        if not isinstance(diag_id, str) or id_re.match(diag_id) is None:
-            fail(f"{path}: invalid diagnostic key '{diag_id}', expected SL<positive-int>")
         if not isinstance(v, dict):
             fail(f"{path}:{diag_id}: expected object")
-        message = v.get("message")
-        if not isinstance(message, str) or message == "":
-            fail(f"{path}:{diag_id}: 'message' must be a non-empty string")
-        name = v.get("name")
-        if name is None:
-            enum_suffix = "_" + diag_id
-        else:
-            if not isinstance(name, str) or name == "":
-                fail(f"{path}:{diag_id}: 'name' must be a non-empty string when provided")
-            enum_suffix = sanitize_name(name)
-        enum_name = "SLDiag_" + enum_suffix
-        if enum_name in seen_enum:
-            fail(f"{path}:{diag_id}: duplicate enum name '{enum_name}'")
-        seen_enum.add(enum_name)
+        rows.append((diag_id, dict(v), f"{path}:{diag_id}"))
+    return rows
 
-        diag_type = v.get("type", "error")
-        if not isinstance(diag_type, str):
-            fail(f"{path}:{diag_id}: 'type' must be a string when provided")
-        if diag_type not in ("error", "warning"):
-            fail(f"{path}:{diag_id}: 'type' must be 'error' or 'warning'")
 
-        hint = v.get("hint", "")
-        if hint is None:
-            hint = ""
-        if not isinstance(hint, str):
-            fail(f"{path}:{diag_id}: 'hint' must be a string when provided")
+def _load_rows_jsonl(path: Path) -> list[tuple[str, dict[str, object], str]]:
+    rows: list[tuple[str, dict[str, object], str]] = []
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for lineno, line in enumerate(lines, start=1):
+        s = line.strip()
+        if s == "" or s.startswith("#") or s.startswith("//"):
+            continue
+        try:
+            obj = json.loads(s)
+        except json.JSONDecodeError as e:
+            fail(f"{path}:{lineno}: invalid JSON object: {e}")
+        if not isinstance(obj, dict):
+            fail(f"{path}:{lineno}: expected object")
+        diag_id = obj.get("id")
+        if not isinstance(diag_id, str):
+            fail(f"{path}:{lineno}: missing or invalid string field 'id'")
+        payload = dict(obj)
+        payload.pop("id", None)
+        rows.append((diag_id, payload, f"{path}:{lineno}:{diag_id}"))
+    return rows
 
-        printf_fmt, arg_count = to_printf_fmt(message)
-        if arg_count > 1:
-            fail(f"{path}:{diag_id}: currently supports at most one '{{s}}' placeholder")
 
-        entries.append(
-            {
-                "id": diag_id,
-                "enum": enum_name,
-                "message": message,
-                "fmt": printf_fmt,
-                "hint": hint,
-                "type": diag_type,
-                "arg_count": arg_count,
-            }
+def _validate_entry(
+    path: Path,
+    diag_id: str,
+    v: dict[str, object],
+    where: str,
+    id_re: re.Pattern[str],
+    category_ranges: dict[str, tuple[int, int]],
+    seen_enum: set[str],
+) -> dict[str, object]:
+    m = id_re.match(diag_id)
+    if m is None:
+        fail(f"{where}: invalid diagnostic id '{diag_id}', expected SL<positive-int>")
+    diag_num = int(m.group(1))
+
+    message = v.get("message")
+    if not isinstance(message, str) or message == "":
+        fail(f"{where}: 'message' must be a non-empty string")
+
+    name = v.get("name")
+    if name is None:
+        enum_suffix = "_" + diag_id
+    else:
+        if not isinstance(name, str) or name == "":
+            fail(f"{where}: 'name' must be a non-empty string when provided")
+        enum_suffix = sanitize_name(name)
+
+    enum_name = "SLDiag_" + enum_suffix
+    if enum_name in seen_enum:
+        fail(f"{where}: duplicate enum name '{enum_name}'")
+    seen_enum.add(enum_name)
+
+    diag_type = v.get("type", "error")
+    if not isinstance(diag_type, str):
+        fail(f"{where}: 'type' must be a string when provided")
+    if diag_type not in ("error", "warning"):
+        fail(f"{where}: 'type' must be 'error' or 'warning'")
+
+    hint = v.get("hint", "")
+    if hint is None:
+        hint = ""
+    if not isinstance(hint, str):
+        fail(f"{where}: 'hint' must be a string when provided")
+
+    category = v.get("category")
+    if not isinstance(category, str):
+        fail(f"{where}: 'category' must be a string")
+    if category not in category_ranges:
+        fail(
+            f"{where}: 'category' must be one of " + ", ".join(sorted(category_ranges.keys()))
         )
+    lo, hi = category_ranges[category]
+    if diag_num < lo or diag_num > hi:
+        fail(f"{where}: id must be in range SL{lo}-SL{hi} for category '{category}'")
 
-    if len(entries) == 0:
-        fail(f"{path}: diagnostics map must not be empty")
+    printf_fmt, arg_count = to_printf_fmt(message)
+    if arg_count > 1:
+        fail(f"{where}: currently supports at most one '{{s}}' placeholder")
 
-    return entries
+    return {
+        "id": diag_id,
+        "enum": enum_name,
+        "message": message,
+        "fmt": printf_fmt,
+        "hint": hint,
+        "type": diag_type,
+        "arg_count": arg_count,
+        "category": category,
+    }
 
 
-def render_enum_inc(entries: list[dict[str, str | int]], rel_json: str) -> str:
+def render_enum_inc(entries: list[dict[str, object]], rel_source: str) -> str:
     lines: list[str] = []
     lines.append("/* Code generated by tools/gen_diagnostics.py. DO NOT EDIT. */")
-    lines.append(f"/* Source: {rel_json} */")
+    lines.append(f"/* Source: {rel_source} */")
     lines.append("SLDiag_NONE = 0,")
     for e in entries:
         lines.append(f'{e["enum"]}, /* {e["id"]}: {e["message"]} */')
@@ -132,10 +203,10 @@ def render_enum_inc(entries: list[dict[str, str | int]], rel_json: str) -> str:
     return "\n".join(lines)
 
 
-def render_data_c(entries: list[dict[str, str | int]], rel_json: str) -> str:
+def render_data_c(entries: list[dict[str, object]], rel_source: str) -> str:
     lines: list[str] = []
     lines.append("/* Code generated by tools/gen_diagnostics.py. DO NOT EDIT. */")
-    lines.append(f"/* Source: {rel_json} */")
+    lines.append(f"/* Source: {rel_source} */")
     lines.append('#include "libsl-impl.h"')
     lines.append("")
     lines.append("SL_API_BEGIN")
@@ -206,16 +277,16 @@ def render_data_c(entries: list[dict[str, str | int]], rel_json: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--json", required=True, type=Path)
+    ap.add_argument("--input", "--json", dest="input", required=True, type=Path)
     ap.add_argument("--enum-out", required=True, type=Path)
     ap.add_argument("--c-out", required=True, type=Path)
     args = ap.parse_args()
 
-    entries = load_entries(args.json)
-    rel_json = str(args.json).replace("\\", "/")
+    entries = load_entries(args.input)
+    rel_source = str(args.input).replace("\\", "/")
 
-    write_file(args.enum_out, render_enum_inc(entries, rel_json))
-    write_file(args.c_out, render_data_c(entries, rel_json))
+    write_file(args.enum_out, render_enum_inc(entries, rel_source))
+    write_file(args.c_out, render_data_c(entries, rel_source))
     return 0
 
 

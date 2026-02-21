@@ -1,1 +1,1 @@
-tests/struct_composition_bad_not_first.sl:7:5: SL1020: embedded field must be first in struct
+tests/struct_composition_bad_not_first.sl:7:5: SL2011: embedded field must be first in struct

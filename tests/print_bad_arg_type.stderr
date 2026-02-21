@@ -1,1 +1,1 @@
-tests/print_bad_arg_type.sl:2:11: SL1012: type mismatch
+tests/print_bad_arg_type.sl:2:11: SL2004: type mismatch

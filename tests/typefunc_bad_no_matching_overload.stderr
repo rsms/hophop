@@ -1,1 +1,1 @@
-tests/typefunc_bad_no_matching_overload.sl:10:5: SL1024: no matching overload
+tests/typefunc_bad_no_matching_overload.sl:10:5: SL2015: no matching overload

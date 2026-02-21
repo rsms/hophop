@@ -1,1 +1,1 @@
-tests/enum_member_unknown_bad.sl:6:17: SL1010: unknown identifier 'Mode'
+tests/enum_member_unknown_bad.sl:6:17: SL2002: unknown identifier 'Mode'

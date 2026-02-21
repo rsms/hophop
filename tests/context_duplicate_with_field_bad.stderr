@@ -1,1 +1,1 @@
-tests/context_duplicate_with_field_bad.sl:8:16: SL1043: duplicate context field in with clause
+tests/context_duplicate_with_field_bad.sl:8:16: SL2033: duplicate context field in with clause

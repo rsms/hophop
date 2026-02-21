@@ -677,7 +677,7 @@ static int GetOrAddStringLiteral(
     uint32_t i;
 
     if (DecodeStringLiteral(c, c->unit->source, start, end, &decoded, &decodedLen) != 0) {
-        SetDiag(c->diag, SLDiag_UNEXPECTED_TOKEN, start, end);
+        SetDiag(c->diag, SLDiag_CODEGEN_INTERNAL, start, end);
         return -1;
     }
 
@@ -6363,7 +6363,7 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             }
             return AddDeferredStmt(c, child);
         }
-        default: SetDiag(c->diag, SLDiag_UNEXPECTED_TOKEN, n->start, n->end); return -1;
+        default: SetDiag(c->diag, SLDiag_CODEGEN_INTERNAL, n->start, n->end); return -1;
     }
 }
 
@@ -7612,7 +7612,7 @@ static int EmitCBackend(
     }
     if (CollectFnTypeAliases(&c) != 0) {
         if (diag != NULL && diag->code == SLDiag_NONE) {
-            SetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+            SetDiag(diag, SLDiag_CODEGEN_INTERNAL, 0, 0);
         }
         FreeContext(&c);
         return -1;
@@ -7631,7 +7631,7 @@ static int EmitCBackend(
     }
     if (EmitHeader(&c) != 0) {
         if (diag != NULL && diag->code == SLDiag_NONE) {
-            SetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+            SetDiag(diag, SLDiag_CODEGEN_INTERNAL, 0, 0);
         }
         FreeContext(&c);
         return -1;

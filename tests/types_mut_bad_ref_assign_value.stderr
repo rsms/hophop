@@ -1,1 +1,1 @@
-tests/types_mut_bad_ref_assign_value.sl:4:5: SL1012: type mismatch
+tests/types_mut_bad_ref_assign_value.sl:4:5: SL2004: type mismatch

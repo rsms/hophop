@@ -1,1 +1,1 @@
-tests/enum_member_unqualified_bad.sl:7:17: SL1010: unknown identifier 'A'
+tests/enum_member_unqualified_bad.sl:7:17: SL2002: unknown identifier 'A'

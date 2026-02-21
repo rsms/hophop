@@ -1,1 +1,1 @@
-tests/slp3_flow_narrow_bad_no_guard.sl:7:12: SL1012: type mismatch
+tests/slp3_flow_narrow_bad_no_guard.sl:7:12: SL2004: type mismatch

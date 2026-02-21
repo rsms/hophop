@@ -152,7 +152,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Pattern, Set, TextIO
 
 # Set of file roots when searching (equivalent compiler -I paths).
-roots: Set[Path] = set()
+roots: List[Path] = []
 
 # Set of (canonical) file Path objects to exclude from inlining (and not only
 # exclude but to add a compiler error directive when they're encountered).
@@ -241,20 +241,20 @@ def test_match_pragma() -> bool:
     return False
 
 def resolve_include(file: str, parent: Optional[Path] = None) -> Optional[Path]:
-    """Finds a file. First the list of 'root' paths are searched, followed by
-    the the currently processing file's 'parent' path, returning a valid Path in
+    """Finds a file. First the currently processing file's 'parent' path is searched,
+    followed by the list of 'root' paths, returning a valid Path in
     canonical form. If no match is found None is returned.
     """
-    for root in roots:
-        joined = root.joinpath(file).resolve()
-        if joined.is_file():
-            return joined
     if parent:
         joined = parent.joinpath(file).resolve()
     else:
         joined = Path(file)
     if joined.is_file():
         return joined
+    for root in roots:
+        joined = root.joinpath(file).resolve()
+        if joined.is_file():
+            return joined
     return None
 
 def resolve_excluded_files(file_list: Optional[List[str]], resolved: Set[Path], parent: Optional[Path] = None) -> None:
@@ -357,7 +357,9 @@ found.add(args.input)
 # Resolve all of the root paths upfront (we'll halt here on invalid roots)
 if args.root:
     for path in args.root:
-        roots.add(path.resolve(strict=True))
+        p = path.resolve(strict=True)
+        if p not in roots:
+            roots.append(p)
 
 # The remaining params: so resolve the excluded files and #pragma once directive
 resolve_excluded_files(args.exclude, excludes, args.input.parent)

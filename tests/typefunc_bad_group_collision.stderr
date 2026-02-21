@@ -1,1 +1,1 @@
-tests/typefunc_bad_group_collision.sl:2:4: SL1028: function-group name collides with existing symbol
+tests/typefunc_bad_group_collision.sl:2:4: SL2019: function-group name collides with existing symbol

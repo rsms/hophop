@@ -1,1 +1,1 @@
-tests/bad_reserved_name_struct.sl:1:8: SL1017: identifier prefix '__sl_' is reserved
+tests/bad_reserved_name_struct.sl:1:8: SL2008: identifier prefix '__sl_' is reserved

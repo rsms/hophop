@@ -1,1 +1,1 @@
-tests/bad_unknown_symbol.sl:2:12: SL1010: unknown identifier 'missing'
+tests/bad_unknown_symbol.sl:2:12: SL2002: unknown identifier 'missing'

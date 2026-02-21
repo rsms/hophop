@@ -1,1 +1,1 @@
-tests/slice_bad_negative_index.sl:3:14: SL1012: type mismatch
+tests/slice_bad_negative_index.sl:3:14: SL2004: type mismatch

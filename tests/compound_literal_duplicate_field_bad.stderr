@@ -1,1 +1,1 @@
-tests/compound_literal_duplicate_field_bad.sl:7:27: SL1051: duplicate compound literal field 'x'
+tests/compound_literal_duplicate_field_bad.sl:7:27: SL2041: duplicate compound literal field 'x'

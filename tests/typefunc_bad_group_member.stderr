@@ -1,1 +1,1 @@
-tests/typefunc_bad_group_member.sl:2:11: SL1026: invalid function-group member
+tests/typefunc_bad_group_member.sl:2:11: SL2017: invalid function-group member

@@ -1,1 +1,1 @@
-tests/feature_unknown.sl:1:1: SL1015: unknown feature 'bogus'
+tests/feature_unknown.sl:1:1: SL4002: unknown feature 'bogus'

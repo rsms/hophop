@@ -1,1 +1,1 @@
-tests/typefunc_bad_group_dup_member.sl:2:11: SL1027: duplicate function-group member
+tests/typefunc_bad_group_dup_member.sl:2:11: SL2018: duplicate function-group member
