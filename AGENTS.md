@@ -14,7 +14,7 @@ When actively editing files or running commands that change code/data (not durin
 - Write announcements with `tools/agent-worklog <announcement> ...`
 - Every `tools/agent-worklog ...` announcement call also reads updates from other agents, so no separate immediate poll is needed after posting
 - If you have no new announcement, poll with `tools/agent-worklog` every 20-60 seconds
-- The script writes to `./.agent-worklog.jsonl`, discovers other worktrees via `git worktree list`, and reads their `.agent-worklog.jsonl` files
+- The script writes to `$(git rev-parse --git-dir)/.agent-worklog.jsonl`, discovers other worktrees via `git worktree list`, and reads each worktree's git-dir `.agent-worklog.jsonl`
 - Keep announcements short, clear, concise, and to the point
 - Announce before starting a concrete change and after each major step
 - When starting up, run `tools/agent-worklog` to catch up on what's happening.
@@ -23,7 +23,7 @@ Announcement format:
 
 - Preferred: plain short message text, e.g. `tools/agent-worklog "editing typecheck: fix mut slice assign"`
 - Optional: JSON object when structured fields help, e.g. `tools/agent-worklog '{"message":"running tests","SLP":14}'`
-- If plain text is used, the script wraps it into JSON and adds `timestamp`
+- If plain text is used, the script wraps it into JSON and adds `timestamp` plus `from` (current branch name)
 
 Reacting to important updates:
 

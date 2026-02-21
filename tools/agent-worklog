@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
+import fcntl
 import hashlib
 import json
 import os
@@ -13,6 +14,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 
 STATE_FILENAME = ".agent-worklog-state.json"
+LOG_FILENAME = ".agent-worklog.jsonl"
 
 
 def run_git(args: List[str], cwd: Optional[pathlib.Path] = None, check: bool = True) -> subprocess.CompletedProcess:
@@ -36,6 +38,33 @@ def detect_repo_root(cwd: pathlib.Path) -> pathlib.Path:
     return pathlib.Path(out).resolve()
 
 
+def detect_git_dir(cwd: pathlib.Path) -> pathlib.Path:
+    p = run_git(["rev-parse", "--git-dir"], cwd=cwd, check=False)
+    if p.returncode != 0:
+        return (cwd / ".git").resolve()
+    out = p.stdout.strip()
+    if not out:
+        return (cwd / ".git").resolve()
+    git_dir = pathlib.Path(out)
+    if not git_dir.is_absolute():
+        git_dir = (cwd / git_dir).resolve()
+    return git_dir.resolve()
+
+
+def detect_branch(cwd: pathlib.Path) -> str:
+    p = run_git(["branch", "--show-current"], cwd=cwd, check=False)
+    if p.returncode == 0:
+        branch = p.stdout.strip()
+        if branch:
+            return branch
+    p = run_git(["rev-parse", "--short", "HEAD"], cwd=cwd, check=False)
+    if p.returncode == 0:
+        commit = p.stdout.strip()
+        if commit:
+            return f"detached-{commit}"
+    return "detached"
+
+
 def now_iso_utc() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -54,7 +83,9 @@ def parse_iso_ts(value: str) -> dt.datetime:
 
 
 def parse_cli(argv: List[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Append local worklog announcements and read updates from other git worktrees.")
+    p = argparse.ArgumentParser(
+        description="Append local worklog announcements and read updates from other git worktrees."
+    )
     p.add_argument("--peek", action="store_true", help="Read updates without advancing read cursors.")
     p.add_argument("--since", metavar="TIMESTAMP", help="Read all messages since ISO timestamp (e.g. 2026-02-21T20:00:00Z).")
     p.add_argument(
@@ -87,7 +118,7 @@ def normalize_from_agents(values: List[str]) -> Set[str]:
     return out
 
 
-def normalize_announcement(raw: str) -> Dict[str, object]:
+def normalize_announcement(raw: str, from_branch: str) -> Dict[str, object]:
     try:
         obj = json.loads(raw)
         if not isinstance(obj, dict):
@@ -96,15 +127,24 @@ def normalize_announcement(raw: str) -> Dict[str, object]:
         obj = {"message": raw}
     if "timestamp" not in obj and "ts" not in obj:
         obj["timestamp"] = now_iso_utc()
+    obj["from"] = from_branch
     return obj
 
 
-def append_local_announcements(log_file: pathlib.Path, announcements: Iterable[str]) -> None:
+def append_local_announcements(log_file: pathlib.Path, announcements: Iterable[str], from_branch: str) -> None:
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    with log_file.open("a", encoding="utf-8") as f:
-        for raw in announcements:
-            obj = normalize_announcement(raw)
-            f.write(json.dumps(obj, separators=(",", ":")) + "\n")
+    lock_file = log_file.with_suffix(log_file.suffix + ".lock")
+    with lock_file.open("a", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            with log_file.open("a", encoding="utf-8") as f:
+                for raw in announcements:
+                    obj = normalize_announcement(raw, from_branch)
+                    f.write(json.dumps(obj, separators=(",", ":")) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def cursor_key_for_path(path: pathlib.Path) -> str:
@@ -158,7 +198,7 @@ def read_complete_lines(log_file: pathlib.Path, cursor: int) -> Tuple[bytes, int
     return payload[:consumed], cursor + consumed
 
 
-def parse_jsonl_lines(agent: str, payload: bytes, strict: bool) -> Tuple[List[Dict[str, object]], bool]:
+def parse_jsonl_lines(payload: bytes, strict: bool) -> Tuple[List[Dict[str, object]], bool]:
     updates: List[Dict[str, object]] = []
     text = payload.decode("utf-8", errors="replace")
     for line in text.splitlines():
@@ -171,7 +211,10 @@ def parse_jsonl_lines(agent: str, payload: bytes, strict: bool) -> Tuple[List[Di
             if strict:
                 return [], False
             entry = {"message": line, "invalid_json": True}
-        entry["from"] = agent
+        if not isinstance(entry, dict):
+            if strict:
+                return [], False
+            entry = {"message": line, "invalid_json": True}
         updates.append(entry)
     return updates, True
 
@@ -183,7 +226,7 @@ def read_payload_with_retries(log_file: pathlib.Path, cursor: int, attempts: int
         payload, new_cursor = read_complete_lines(log_file, cursor)
         if not payload:
             return b"", cursor
-        _, ok = parse_jsonl_lines("", payload, strict=True)
+        _, ok = parse_jsonl_lines(payload, strict=True)
         if ok:
             return payload, new_cursor
         if i < attempts - 1:
@@ -222,17 +265,13 @@ def filter_by_since(updates: List[Dict[str, object]], since_dt: Optional[dt.date
 class WorktreeInfo:
     path: pathlib.Path
     branch: str
-
-    @property
-    def agent_name(self) -> str:
-        if self.branch:
-            return self.branch.replace("/", "_")
-        return self.path.name
+    git_dir: pathlib.Path
 
     def aliases(self) -> Set[str]:
-        names = {self.path.name, self.agent_name}
+        names = {self.path.name}
         if self.branch:
             names.add(self.branch)
+            names.add(self.branch.replace("/", "_"))
         return names
 
 
@@ -256,7 +295,8 @@ def list_worktrees(repo_root: pathlib.Path) -> List[WorktreeInfo]:
         if branch_ref.startswith("refs/heads/"):
             branch = branch_ref[len("refs/heads/") :]
 
-        out.append(WorktreeInfo(path=pathlib.Path(worktree_path).resolve(), branch=branch))
+        worktree = pathlib.Path(worktree_path).resolve()
+        out.append(WorktreeInfo(path=worktree, branch=branch, git_dir=detect_git_dir(worktree)))
         block = {}
 
     for raw in p.stdout.splitlines():
@@ -280,11 +320,11 @@ def read_new_entries_from_worktree(
     peek: bool,
     since_dt: Optional[dt.datetime],
 ) -> Tuple[List[Dict[str, object]], bool]:
-    log_file = info.path / ".agent-worklog.jsonl"
+    log_file = info.git_dir / LOG_FILENAME
     if not log_file.is_file():
         return [], False
 
-    cursor_key = cursor_key_for_path(info.path)
+    cursor_key = cursor_key_for_path(info.git_dir)
     cursor = 0
     if since_dt is None:
         cursor = state.get(cursor_key, 0)
@@ -296,9 +336,9 @@ def read_new_entries_from_worktree(
     if not payload:
         return [], False
 
-    updates, ok = parse_jsonl_lines(info.agent_name, payload, strict=True)
+    updates, ok = parse_jsonl_lines(payload, strict=True)
     if not ok:
-        updates, _ = parse_jsonl_lines(info.agent_name, payload, strict=False)
+        updates, _ = parse_jsonl_lines(payload, strict=False)
 
     updates = filter_by_since(updates, since_dt)
 
@@ -323,7 +363,7 @@ def read_other_agents(
     out: List[Dict[str, object]] = []
     state_changed = False
 
-    for info in sorted(all_worktrees, key=lambda x: (x.agent_name, str(x.path))):
+    for info in sorted(all_worktrees, key=lambda x: (x.branch, str(x.path))):
         if info.path == current_repo_root:
             continue
         if from_agents and not (info.aliases() & from_agents):
@@ -339,9 +379,11 @@ def main(argv: List[str]) -> int:
     args = parse_cli(argv)
     cwd = pathlib.Path.cwd().resolve()
     repo_root = detect_repo_root(cwd)
+    git_dir = detect_git_dir(cwd)
+    branch = detect_branch(cwd)
 
     if args.announcements:
-        append_local_announcements(repo_root / ".agent-worklog.jsonl", args.announcements)
+        append_local_announcements(git_dir / LOG_FILENAME, args.announcements, branch)
 
     state_file = repo_root / STATE_FILENAME
     state = load_state(state_file)
