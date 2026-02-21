@@ -7,27 +7,24 @@
 // - contextual built-ins (`new(T)` and `print(...)`)
 import "std/mem"
 
-struct AllocContext {
-    mem mut&mem.Allocator
-}
-
+// Context types can be named as they are simply struct types
 struct AppContext {
-    mem     mut&mem.Allocator
+    mem mut&mem.Allocator
     console u64
 }
 
-fn alloc_value() *i32 context AllocContext {
+fn alloc_value() *i32 context { mem mut&mem.Allocator } {
     var p *i32 = new(i32)
     *p = 42
     return p
 }
 
-fn announce(msg str) context AppContext {
+fn announce(msg str) context { mem mut&mem.Allocator, console u64 } {
     print(msg)
 }
 
 fn run_once() i32 context AppContext {
-    // Implicit forwarding from AppContext -> AllocContext (field subset by name)
+    // Implicit forwarding from caller context -> callee context (field subset by name)
     var p *i32 = alloc_value()
 
     // Ordinary calls auto-forward current context.

@@ -1890,16 +1890,20 @@ static int32_t SLTCContextFindOverlayNode(SLTypeCheckCtx* c) {
     return -1;
 }
 
-static int32_t SLTCContextFindOverlayBind(
-    SLTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd) {
+static int32_t SLTCContextFindOverlayBindMatch(
+    SLTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, const char* _Nullable fieldName) {
     int32_t overlayNode = SLTCContextFindOverlayNode(c);
     int32_t child = overlayNode >= 0 ? SLAstFirstChild(c->ast, overlayNode) : -1;
     while (child >= 0) {
         const SLAstNode* bind = &c->ast->nodes[child];
-        if (bind->kind == SLAst_CONTEXT_BIND
-            && SLNameEqSlice(c->src, bind->dataStart, bind->dataEnd, fieldStart, fieldEnd))
-        {
-            return child;
+        if (bind->kind == SLAst_CONTEXT_BIND) {
+            int matches =
+                fieldName != NULL
+                    ? SLNameEqLiteral(c->src, bind->dataStart, bind->dataEnd, fieldName)
+                    : SLNameEqSlice(c->src, bind->dataStart, bind->dataEnd, fieldStart, fieldEnd);
+            if (matches) {
+                return child;
+            }
         }
         child = SLAstNextSibling(c->ast, child);
     }
@@ -1907,18 +1911,7 @@ static int32_t SLTCContextFindOverlayBind(
 }
 
 static int32_t SLTCContextFindOverlayBindByLiteral(SLTypeCheckCtx* c, const char* fieldName) {
-    int32_t overlayNode = SLTCContextFindOverlayNode(c);
-    int32_t child = overlayNode >= 0 ? SLAstFirstChild(c->ast, overlayNode) : -1;
-    while (child >= 0) {
-        const SLAstNode* bind = &c->ast->nodes[child];
-        if (bind->kind == SLAst_CONTEXT_BIND
-            && SLNameEqLiteral(c->src, bind->dataStart, bind->dataEnd, fieldName))
-        {
-            return child;
-        }
-        child = SLAstNextSibling(c->ast, child);
-    }
-    return -1;
+    return SLTCContextFindOverlayBindMatch(c, 0, 0, fieldName);
 }
 
 static int SLTCGetEffectiveContextFieldType(
@@ -1927,7 +1920,7 @@ static int SLTCGetEffectiveContextFieldType(
     if (c->currentContextType < 0 && !c->hasImplicitMainRootContext) {
         return SLTCFailSpan(c, SLDiag_CONTEXT_REQUIRED, fieldStart, fieldEnd);
     }
-    bindNode = SLTCContextFindOverlayBind(c, fieldStart, fieldEnd);
+    bindNode = SLTCContextFindOverlayBindMatch(c, fieldStart, fieldEnd, NULL);
     if (bindNode >= 0) {
         int32_t exprNode = SLAstFirstChild(c->ast, bindNode);
         if (exprNode >= 0) {

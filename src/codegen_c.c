@@ -466,6 +466,19 @@ static void TypeRefSetScalar(SLTypeRef* t, const char* baseName) {
     t->isOptional = 0;
 }
 
+static const char* ResolveScalarAliasBaseName(const SLCBackendC* c, const char* typeName);
+
+static void CanonicalizeTypeRefBaseName(const SLCBackendC* c, SLTypeRef* t) {
+    const char* canonical;
+    if (t == NULL || !t->valid || t->baseName == NULL) {
+        return;
+    }
+    canonical = ResolveScalarAliasBaseName(c, t->baseName);
+    if (canonical != NULL) {
+        t->baseName = canonical;
+    }
+}
+
 static int TypeRefEqual(const SLTypeRef* a, const SLTypeRef* b);
 static int AddFieldInfo(
     SLCBackendC* c,
@@ -485,6 +498,13 @@ static int EnsureAnonTypeByFields(
     const char**     outCName);
 static int EnsureAnonTypeVisible(SLCBackendC* c, const SLTypeRef* type, uint32_t depth);
 static int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name);
+static int EmitDeclNode(
+    SLCBackendC* c,
+    int32_t      nodeId,
+    uint32_t     depth,
+    int          declarationOnly,
+    int          isPrivate,
+    int          emitBody);
 
 static int SliceStructPtrDepth(const SLTypeRef* t) {
     int stars = t->ptrDepth;
@@ -1141,6 +1161,7 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 if (typeNode < 0 || ParseTypeRef(c, typeNode, &fieldTypes[fieldCount]) != 0) {
                     return -1;
                 }
+                CanonicalizeTypeRefBaseName(c, &fieldTypes[fieldCount]);
                 fieldNames[fieldCount] = DupSlice(
                     c, c->unit->source, field->dataStart, field->dataEnd);
                 if (fieldNames[fieldCount] == NULL) {
@@ -3339,6 +3360,7 @@ static int InferCompoundLiteralType(
                     TypeRefSetInvalid(outType);
                     return -1;
                 }
+                CanonicalizeTypeRefBaseName(c, &exprType);
                 fieldNames[fieldCount] = DupSlice(
                     c, c->unit->source, fieldNode->dataStart, fieldNode->dataEnd);
                 if (fieldNames[fieldCount] == NULL) {
@@ -6748,6 +6770,26 @@ static int EmitAnonTypeDecls(SLCBackendC* c) {
     return 0;
 }
 
+static int EmitHeaderTypeAliasDecls(SLCBackendC* c) {
+    uint32_t i;
+    int      emittedAny = 0;
+    for (i = 0; i < c->topDeclLen; i++) {
+        int32_t          nodeId = c->topDecls[i].nodeId;
+        const SLAstNode* n = NodeAt(c, nodeId);
+        if (n == NULL || n->kind != SLAst_TYPE_ALIAS) {
+            continue;
+        }
+        if (EmitDeclNode(c, nodeId, 0, 1, 0, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
+            return -1;
+        }
+        emittedAny = 1;
+    }
+    if (emittedAny && BufAppendChar(&c->out, '\n') != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 static int EmitFnTypeAliasDecls(SLCBackendC* c) {
     uint32_t i;
     if (c->fnTypeAliasLen == 0) {
@@ -7212,6 +7254,9 @@ static int EmitHeader(SLCBackendC* c) {
         return -1;
     }
     if (EmitForwardAnonTypeDecls(c) != 0) {
+        return -1;
+    }
+    if (EmitHeaderTypeAliasDecls(c) != 0) {
         return -1;
     }
     if (EmitAnonTypeDecls(c) != 0) {
