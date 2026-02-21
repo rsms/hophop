@@ -59,6 +59,9 @@
 {"id": "SL2042", "name": "COMPOUND_FIELD_TYPE_MISMATCH", "category": "semantic", "message": "compound literal field '{s}' type mismatch"}
 {"id": "SL2043", "name": "COMPOUND_MUT_REF_TEMPORARY", "category": "semantic", "message": "cannot bind compound literal temporary to mutable reference"}
 {"id": "SL2044", "name": "COMPOUND_UNION_MULTI_FIELD", "category": "semantic", "message": "union compound literal can initialize at most one field"}
+{"id": "SL2045", "name": "FIELD_DEFAULT_FORWARD_REF", "category": "semantic", "message": "field default references later field '{s}'"}
+{"id": "SL2046", "name": "FIELD_DEFAULT_TYPE_MISMATCH", "category": "semantic", "message": "default expression type mismatch for field '{s}'"}
+{"id": "SL2047", "name": "FIELD_DEFAULT_ON_EMBEDDED", "category": "semantic", "message": "embedded field cannot have default initializer"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}

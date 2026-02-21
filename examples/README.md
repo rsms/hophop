@@ -50,6 +50,9 @@ Single-file mode is supported for package commands:
 - SLP-13 compound literals (typed/inferred forms, nested init, ref binding, zero fill):
   `examples/compound-literals.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/compound-literals.sl`
+- SLP-15 struct field defaults (sibling references, override behavior, evaluation order):
+  `examples/struct-field-defaults.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/struct-field-defaults.sl`
 
 ## Control Flow
 

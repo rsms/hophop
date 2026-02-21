@@ -106,7 +106,7 @@ static int SLPExpectDeclName(SLParser* p, const SLToken** out) {
 
 static int SLPIsFieldSeparator(SLTokenKind kind) {
     return kind == SLTok_SEMICOLON || kind == SLTok_COMMA || kind == SLTok_RBRACE
-        || kind == SLTok_EOF;
+        || kind == SLTok_ASSIGN || kind == SLTok_EOF;
 }
 
 static int SLPAnonymousFieldLookahead(SLParser* p, const SLToken** outLastIdent) {
@@ -1673,6 +1673,7 @@ static int SLPParseFieldList(SLParser* p, int32_t agg) {
         const SLToken* embeddedTypeName = NULL;
         int32_t        field;
         int32_t        type;
+        int32_t        defaultExpr = -1;
         int            isEmbedded = 0;
         if (SLPAt(p, SLTok_SEMICOLON) || SLPAt(p, SLTok_COMMA)) {
             p->pos++;
@@ -1706,6 +1707,15 @@ static int SLPParseFieldList(SLParser* p, int32_t agg) {
         }
         if (SLPAddChild(p, field, type) != 0) {
             return -1;
+        }
+        if (SLPMatch(p, SLTok_ASSIGN)) {
+            if (SLPParseExpr(p, 1, &defaultExpr) != 0) {
+                return -1;
+            }
+            p->nodes[field].end = p->nodes[defaultExpr].end;
+            if (SLPAddChild(p, field, defaultExpr) != 0) {
+                return -1;
+            }
         }
         if (SLPAddChild(p, agg, field) != 0) {
             return -1;

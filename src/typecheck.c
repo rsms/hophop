@@ -166,6 +166,11 @@ typedef struct {
     int     hasImplicitMainRootContext;
     int32_t implicitMainContextType;
     int32_t activeCallWithNode;
+
+    const int32_t* defaultFieldNodes;
+    const int32_t* defaultFieldTypes;
+    uint32_t       defaultFieldCount;
+    uint32_t       defaultFieldCurrentIndex;
 } SLTypeCheckCtx;
 
 #define SLTC_MAX_ANON_FIELDS 256u
@@ -2429,8 +2434,11 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
     SLAstKind            kind = c->ast->nodes[declNode].kind;
     int32_t              child;
     SLTCField*           pendingFields = NULL;
+    int32_t*             fieldNodes = NULL;
+    int32_t*             fieldTypesForDefaults = NULL;
     uint32_t             pendingCap = 0;
     uint32_t             fieldCount = 0;
+    uint32_t             fieldOrdinal = 0;
     int                  sawDependent = 0;
     int                  sawEmbedded = 0;
 
@@ -2468,8 +2476,24 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
         if (pendingCap > 0) {
             pendingFields = (SLTCField*)SLArenaAlloc(
                 c->arena, pendingCap * sizeof(SLTCField), (uint32_t)_Alignof(SLTCField));
-            if (pendingFields == NULL) {
+            fieldNodes = (int32_t*)SLArenaAlloc(
+                c->arena, pendingCap * sizeof(int32_t), (uint32_t)_Alignof(int32_t));
+            fieldTypesForDefaults = (int32_t*)SLArenaAlloc(
+                c->arena, pendingCap * sizeof(int32_t), (uint32_t)_Alignof(int32_t));
+            if (pendingFields == NULL || fieldNodes == NULL || fieldTypesForDefaults == NULL) {
                 return SLTCFailNode(c, declNode, SLDiag_ARENA_OOM);
+            }
+            scan = child;
+            pendingCap = 0;
+            while (scan >= 0) {
+                if (c->ast->nodes[scan].kind == SLAst_FIELD
+                    && (kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM))
+                {
+                    fieldNodes[pendingCap] = scan;
+                    fieldTypesForDefaults[pendingCap] = -1;
+                    pendingCap++;
+                }
+                scan = SLAstNextSibling(c->ast, scan);
             }
         }
     }
@@ -2479,6 +2503,7 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
         if (n->kind == SLAst_FIELD
             && (kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM))
         {
+            uint32_t currentFieldOrdinal = fieldOrdinal++;
             int32_t  typeNode = SLAstFirstChild(c->ast, child);
             int32_t  typeId;
             uint16_t fieldFlags = 0;
@@ -2604,6 +2629,10 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
                 }
             }
 
+            if (fieldTypesForDefaults != NULL && currentFieldOrdinal < pendingCap) {
+                fieldTypesForDefaults[currentFieldOrdinal] = typeId;
+            }
+
             for (i = 0; i < fieldCount; i++) {
                 if (SLNameEqSlice(
                         c->src,
@@ -2615,6 +2644,53 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
                     return SLTCFailSpan(c, SLDiag_DUPLICATE_SYMBOL, n->dataStart, n->dataEnd);
                 }
             }
+
+            if (kind == SLAst_STRUCT || kind == SLAst_UNION) {
+                int32_t defaultNode = typeNode >= 0 ? SLAstNextSibling(c->ast, typeNode) : -1;
+                if (defaultNode >= 0) {
+                    int32_t        defaultType;
+                    const int32_t* savedDefaultFieldNodes = c->defaultFieldNodes;
+                    const int32_t* savedDefaultFieldTypes = c->defaultFieldTypes;
+                    uint32_t       savedDefaultFieldCount = c->defaultFieldCount;
+                    uint32_t       savedDefaultFieldCurrentIndex = c->defaultFieldCurrentIndex;
+
+                    if (kind != SLAst_STRUCT) {
+                        return SLTCFailNode(c, defaultNode, SLDiag_TYPE_MISMATCH);
+                    }
+                    if (isEmbedded) {
+                        return SLTCFailSpan(
+                            c, SLDiag_FIELD_DEFAULT_ON_EMBEDDED, n->dataStart, n->dataEnd);
+                    }
+
+                    c->defaultFieldNodes = fieldNodes;
+                    c->defaultFieldTypes = fieldTypesForDefaults;
+                    c->defaultFieldCount = pendingCap;
+                    c->defaultFieldCurrentIndex = currentFieldOrdinal;
+                    if (SLTCTypeExprExpected(c, defaultNode, typeId, &defaultType) != 0) {
+                        c->defaultFieldNodes = savedDefaultFieldNodes;
+                        c->defaultFieldTypes = savedDefaultFieldTypes;
+                        c->defaultFieldCount = savedDefaultFieldCount;
+                        c->defaultFieldCurrentIndex = savedDefaultFieldCurrentIndex;
+                        return -1;
+                    }
+                    c->defaultFieldNodes = savedDefaultFieldNodes;
+                    c->defaultFieldTypes = savedDefaultFieldTypes;
+                    c->defaultFieldCount = savedDefaultFieldCount;
+                    c->defaultFieldCurrentIndex = savedDefaultFieldCurrentIndex;
+
+                    if (!SLTCCanAssign(c, typeId, defaultType)) {
+                        SLTCSetDiagWithArg(
+                            c->diag,
+                            SLDiag_FIELD_DEFAULT_TYPE_MISMATCH,
+                            c->ast->nodes[defaultNode].start,
+                            c->ast->nodes[defaultNode].end,
+                            n->dataStart,
+                            n->dataEnd);
+                        return -1;
+                    }
+                }
+            }
+
             if (fieldCount >= pendingCap) {
                 return SLTCFailNode(c, child, SLDiag_ARENA_OOM);
             }
@@ -3578,6 +3654,37 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
 
     switch (n->kind) {
         case SLAst_IDENT: {
+            uint32_t i;
+            if (c->defaultFieldNodes != NULL && c->defaultFieldTypes != NULL
+                && c->defaultFieldCurrentIndex < c->defaultFieldCount)
+            {
+                for (i = 0; i < c->defaultFieldCount; i++) {
+                    int32_t          fieldNode = c->defaultFieldNodes[i];
+                    const SLAstNode* f;
+                    if (fieldNode < 0 || (uint32_t)fieldNode >= c->ast->len) {
+                        continue;
+                    }
+                    f = &c->ast->nodes[fieldNode];
+                    if (f->kind != SLAst_FIELD
+                        || !SLNameEqSlice(
+                            c->src, f->dataStart, f->dataEnd, n->dataStart, n->dataEnd))
+                    {
+                        continue;
+                    }
+                    if (i < c->defaultFieldCurrentIndex && c->defaultFieldTypes[i] >= 0) {
+                        *outType = c->defaultFieldTypes[i];
+                        return 0;
+                    }
+                    SLTCSetDiagWithArg(
+                        c->diag,
+                        SLDiag_FIELD_DEFAULT_FORWARD_REF,
+                        n->start,
+                        n->end,
+                        f->dataStart,
+                        f->dataEnd);
+                    return -1;
+                }
+            }
             int32_t localIdx = SLTCLocalFind(c, n->dataStart, n->dataEnd);
             if (localIdx >= 0) {
                 *outType = c->locals[localIdx].typeId;
@@ -5244,6 +5351,10 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
     c.hasImplicitMainRootContext = 0;
     c.implicitMainContextType = -1;
     c.activeCallWithNode = -1;
+    c.defaultFieldNodes = NULL;
+    c.defaultFieldTypes = NULL;
+    c.defaultFieldCount = 0;
+    c.defaultFieldCurrentIndex = 0;
 
     if (SLTCEnsureInitialized(&c) != 0) {
         return -1;
@@ -5263,15 +5374,6 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
     if (SLTCResolveAllTypeAliases(&c) != 0) {
         return -1;
     }
-    if (SLTCResolveAllNamedTypeFields(&c) != 0) {
-        return -1;
-    }
-    if (SLTCCheckEmbeddedCycles(&c) != 0) {
-        return -1;
-    }
-    if (SLTCPropagateVarSizeNamedTypes(&c) != 0) {
-        return -1;
-    }
     if (SLTCCollectFunctionDecls(&c) != 0) {
         return -1;
     }
@@ -5279,6 +5381,15 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
         return -1;
     }
     if (SLTCFinalizeFunctionTypes(&c) != 0) {
+        return -1;
+    }
+    if (SLTCResolveAllNamedTypeFields(&c) != 0) {
+        return -1;
+    }
+    if (SLTCCheckEmbeddedCycles(&c) != 0) {
+        return -1;
+    }
+    if (SLTCPropagateVarSizeNamedTypes(&c) != 0) {
         return -1;
     }
     if (SLTCCheckTopLevelConstInitializers(&c) != 0) {

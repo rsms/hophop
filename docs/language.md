@@ -70,7 +70,8 @@ TopDecl         = ["pub"] (StructDecl | UnionDecl | EnumDecl | TypeAliasDecl | F
 
 StructDecl      = "struct" Ident "{" { StructFieldDecl [ "," | ";" ] } "}" [";"] ;
 UnionDecl       = "union"  Ident "{" { FieldDecl [ "," | ";" ] } "}" [";"] ;
-StructFieldDecl = FieldDecl | EmbeddedFieldDecl ;
+StructFieldDecl = FieldDecl [ FieldDefault ] | EmbeddedFieldDecl [ FieldDefault ] ;
+FieldDefault    = "=" Expr ;
 FieldDecl       = Ident Type ;
 EmbeddedFieldDecl = TypeName ;
 

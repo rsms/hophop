@@ -57,10 +57,14 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_COMPOUND_FIELD_UNKNOWN,       /* SL2040: unknown compound literal field '{s}' */
     SLDiag_COMPOUND_FIELD_DUPLICATE,     /* SL2041: duplicate compound literal field '{s}' */
     SLDiag_COMPOUND_FIELD_TYPE_MISMATCH, /* SL2042: compound literal field '{s}' type mismatch */
-    SLDiag_COMPOUND_MUT_REF_TEMPORARY, /* SL2043: cannot bind compound literal temporary to mutable
-                                          reference */
-    SLDiag_COMPOUND_UNION_MULTI_FIELD, /* SL2044: union compound literal can initialize at most one
-                                          field */
-    SLDiag_CODEGEN_INTERNAL,           /* SL3001: internal codegen error */
-    SLDiag_ARENA_OOM,                  /* SL4001: arena out of memory */
-    SLDiag_UNKNOWN_FEATURE,            /* SL4002: unknown feature '{s}' */
+    SLDiag_COMPOUND_MUT_REF_TEMPORARY,  /* SL2043: cannot bind compound literal temporary to mutable
+                                           reference */
+    SLDiag_COMPOUND_UNION_MULTI_FIELD,  /* SL2044: union compound literal can initialize at most one
+                                           field */
+    SLDiag_FIELD_DEFAULT_FORWARD_REF,   /* SL2045: field default references later field '{s}' */
+    SLDiag_FIELD_DEFAULT_TYPE_MISMATCH, /* SL2046: default expression type mismatch for field '{s}'
+                                         */
+    SLDiag_FIELD_DEFAULT_ON_EMBEDDED,   /* SL2047: embedded field cannot have default initializer */
+    SLDiag_CODEGEN_INTERNAL,            /* SL3001: internal codegen error */
+    SLDiag_ARENA_OOM,                   /* SL4001: arena out of memory */
+    SLDiag_UNKNOWN_FEATURE,             /* SL4002: unknown feature '{s}' */

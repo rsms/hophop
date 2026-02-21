@@ -1,0 +1,1 @@
+tests/struct_field_defaults_type_mismatch_bad.sl:2:13: SL2046: default expression type mismatch for field 'a'

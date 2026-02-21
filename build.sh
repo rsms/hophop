@@ -48,6 +48,10 @@ diag_tool=tools/gen_diagnostics.py
 diag_enum_out=src/diagnostics_enum.inc
 diag_c_out=src/diagnostics_data.c
 diag_outputs=( "$diag_enum_out" "$diag_c_out" )
+git_index_dep=.git/index
+if [ -f .git ]; then
+    git_index_dep=$(git rev-parse --git-path index 2>/dev/null || echo .git/index)
+fi
 
 cli_sources=( src/slc.c )
 lib_sources=( $(find src -maxdepth 2 -name '*.c' -and -not -name 'slc.c' | sort) )

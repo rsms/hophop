@@ -1,4 +1,4 @@
-# SLP-15 struct field defaults (draft)
+# SLP-15 struct field defaults (completed)
 
 ## Summary
 
