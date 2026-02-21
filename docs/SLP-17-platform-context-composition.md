@@ -1,4 +1,4 @@
-# SLP-17 platform context composition
+# SLP-17 platform context composition (completed)
 
 ## Status
 

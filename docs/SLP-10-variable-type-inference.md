@@ -1,4 +1,4 @@
-# SLP-10 variable type inference
+# SLP-10 variable type inference (completed)
 
 ## Summary
 

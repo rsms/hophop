@@ -1,4 +1,4 @@
-# SLP-11 function type syntax
+# SLP-11 function type syntax (completed)
 
 ## Summary
 

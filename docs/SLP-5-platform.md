@@ -1,4 +1,4 @@
-# SLP-5 platform
+# SLP-5 platform (completed)
 
 ## Summary
 

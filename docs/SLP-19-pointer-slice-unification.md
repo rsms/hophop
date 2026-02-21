@@ -1,4 +1,4 @@
-# SLP-19 pointer and slice unification
+# SLP-19 pointer and slice unification (completed)
 
 ## Status
 

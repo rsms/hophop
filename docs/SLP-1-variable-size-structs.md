@@ -1,4 +1,4 @@
-# SLP-1 variable-size structs
+# SLP-1 variable-size structs (completed)
 
 ## Summary
 

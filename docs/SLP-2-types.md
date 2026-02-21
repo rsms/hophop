@@ -1,4 +1,4 @@
-# SLP-2 types, pointers, references and slices
+# SLP-2 types, pointers, references and slices (completed)
 
 ## Summary
 

@@ -1,4 +1,4 @@
-# SLP-14 anonymous aggregate types (struct/union) (draft)
+# SLP-14 anonymous aggregate types (struct/union) (completed)
 
 ## Summary
 

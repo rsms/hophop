@@ -1,4 +1,4 @@
-# SLP-13 compound literals (draft)
+# SLP-13 compound literals (completed)
 
 ## Summary
 

@@ -1,4 +1,4 @@
-# SLP-19 implementation checklist
+# SLP-19 implementation checklist (completed)
 
 This checklist breaks SLP-19 into issue-sized tasks for parser, typechecker, codegen, tests, and
 migration support.

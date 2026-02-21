@@ -1,4 +1,4 @@
-# SLP-9 enum member namespaces
+# SLP-9 enum member namespaces (completed)
 
 ## Summary
 

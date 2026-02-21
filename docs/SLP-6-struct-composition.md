@@ -1,4 +1,4 @@
-# SLP-6 struct composition
+# SLP-6 struct composition (completed)
 
 ## Summary
 

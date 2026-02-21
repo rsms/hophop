@@ -1,4 +1,4 @@
-# SLP-12 typed contexts and call-site context overlays
+# SLP-12 typed contexts and call-site context overlays (completed)
 
 ## Summary
 

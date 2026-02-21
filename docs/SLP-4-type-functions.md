@@ -1,4 +1,4 @@
-# SLP-4 type functions
+# SLP-4 type functions (completed)
 
 ## Summary
 
