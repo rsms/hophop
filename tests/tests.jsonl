@@ -174,7 +174,7 @@
 {"id":"integration.examples.order_independent.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/order_independent.sl"}
 {"id":"integration.examples.pointers_arrays.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/pointers_arrays.sl"}
 {"id":"integration.examples.single_file.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/single_file.sl"}
-{"id":"integration.examples.slp2_new_allocator.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/slp2_new_allocator.sl"}
+{"id":"integration.examples.allocator.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/allocator.sl"}
 {"id":"integration.examples.context.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/context.sl"}
 {"id":"integration.examples.slp2_refs_slices.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/slp2_refs_slices.sl"}
 {"id":"integration.examples.struct_composition.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/struct_composition.sl"}

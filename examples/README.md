@@ -34,8 +34,8 @@ Single-file mode is supported for package commands:
 - SLP-2 references/slices (`mut&`, `[T]`, `mut[T]`, slicing, implicit view conversions):
   `examples/slp2_refs_slices.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/slp2_refs_slices.sl`
-- SLP-2 allocator `new(ma, ...)` forms: `examples/slp2_new_allocator.sl`
-  - Check: `./_build/macos-aarch64-debug/slc check examples/slp2_new_allocator.sl`
+- SLP-2 allocator `new(ma, ...)` forms: `examples/allocator.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/allocator.sl`
 - SLP-12 typed contexts/capabilities (`context`, `with { ... }`, `with context`):
   `examples/context.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/context.sl`
