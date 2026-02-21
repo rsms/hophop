@@ -1,2 +1,4 @@
+*.sl linguist-language=text
+
 src/diagnostics_data.c linguist-generated
 src/diagnostics_enum.inc linguist-generated
