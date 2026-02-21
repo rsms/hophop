@@ -1,5 +1,9 @@
 # SLP-17 platform context composition
 
+## Status
+
+Implemented (phase 1).
+
 ## Summary
 
 SLP-17 defines a two-layer platform context model:
@@ -16,10 +20,8 @@ Example:
 ```sl
 // built-in package "platform"
 pub struct Context {
-    mem     &__sl_MemAllocator
+    mem     mut&__sl_MemAllocator
     console i32
-    stdin   ?i32
-    fs      ?__sl_FileSystem
 }
 ```
 
@@ -72,9 +74,8 @@ The `platform` package defines the baseline context contract:
 - `mem` and `console` are required in all targets.
 - Additional cross-target capabilities may be optional (for example `stdin`, `fs`).
 
-The exact optional field set can evolve, but should stay small and conservative.
-In this draft, `fs` uses built-in type `__sl_FileSystem`.
-Future work may move such global types to a concrete `builtin.sl`.
+Implemented now: `platform.Context` contains `mem` and `console`.
+Optional fields (`stdin`, `fs`) are deferred.
 
 ### 2. Target context in `platform/<target>`
 
@@ -186,26 +187,37 @@ From current behavior:
 
 ---
 
-## Implementation plan
+## Implemented scope
 
-1. Add source for base context in the `platform` package API surface.
-2. Add target context package layout under `lib/platform/<target>/context.sl`.
-3. Extend target selection plumbing so `main` context type resolves to
-   `platform/<target>.Context`.
-4. Keep current generated C ABI stable initially, mapping selected target context to
-   internal `__sl_MainContext` during lowering.
-5. Add tests:
-   - `main` context is target-selected.
-   - target context upcasts to `platform.Context`.
-   - portable function requiring `platform.Context` callable from `main`.
-   - target-specific field use requires importing `platform/<target>`.
+1. `platform` pseudo package now exports `Context`, `exit`, and `console_log`.
+2. `platform.Context` currently is:
 
----
+```sl
+pub struct Context {
+    mem     mut&__sl_MemAllocator
+    console i32
+}
+```
 
-## Open questions
+3. `lib/platform/cli-libc/context.sl` exists and exports:
 
-1. Should `platform/<target>` be user-importable by default, or gated behind a build flag for
-   strict portability mode?
-2. Should optional base fields be standardized now (`stdin`, `fs`) or introduced incrementally?
-3. Should `__sl_FileSystem` remain a built-in type, or be replaced by a `builtin.sl`-defined
-   global type once prelude support is added?
+```sl
+import "platform"
+
+pub struct Context {
+    platform.Context
+    stderr i32
+}
+```
+
+4. `slc` supports `--platform <target>` for `checkpkg`, `genpkg[:backend]`, `compile`, and `run`.
+   Default target is `cli-libc`.
+5. `import "platform/<target>"` is user-importable by default.
+6. C ABI entrypoint remains `__sl_MainContext*` (ABI name unchanged), with runtime/layout updated
+   for the current target shape.
+
+## Deferred
+
+1. Optional base fields such as `stdin` and `fs`.
+2. Any prelude-based replacement for built-in host capability type names (for example
+   `__sl_FileSystem`).

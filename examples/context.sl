@@ -10,7 +10,7 @@ import "std/mem"
 // Context types can be named as they are simply struct types
 struct AppContext {
     mem mut&mem.Allocator
-    console u64
+    console i32
 }
 
 fn alloc_value() *i32 context { mem mut&mem.Allocator } {
@@ -19,7 +19,7 @@ fn alloc_value() *i32 context { mem mut&mem.Allocator } {
     return p
 }
 
-fn announce(msg str) context { mem mut&mem.Allocator, console u64 } {
+fn announce(msg str) context { mem mut&mem.Allocator, console i32 } {
     print(msg)
 }
 

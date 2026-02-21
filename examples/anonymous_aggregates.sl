@@ -40,12 +40,12 @@ fn read_pair(v { a i32, b str }) i32 {
     return v.a
 }
 
-fn announce(msg str) context { console u64 } {
+fn announce(msg str) context { console i32 } {
     // `context { ... }` declares required ambient capabilities for this call.
     print(msg)
 }
 
-fn run() i32 context { console u64 } {
+fn run() i32 context { console i32 } {
     var ex Example = {
         // Field values can use inferred anonymous literals too.
         pos = { x = 1, y = 2 },

@@ -3,6 +3,8 @@
 
 SL_API_BEGIN
 
+#define SLCCG_PLATFORM_TARGET_CONTEXT_TYPE "__platform_target__Context"
+
 typedef struct {
     const char* baseName;
     int         ptrDepth;
@@ -889,6 +891,16 @@ static const SLNameMap* _Nullable FindNameByCString(const SLCBackendC* c, const 
         }
     }
     return NULL;
+}
+
+static int ResolveMainSemanticContextType(SLCBackendC* c, SLTypeRef* outType) {
+    const SLNameMap* map = FindNameByCString(c, SLCCG_PLATFORM_TARGET_CONTEXT_TYPE);
+    if (map != NULL && IsTypeDeclKind(map->kind)) {
+        TypeRefSetScalar(outType, map->cName);
+        return 0;
+    }
+    TypeRefSetScalar(outType, "__sl_MainContext");
+    return 0;
 }
 
 static const SLNameMap* _Nullable FindNameByCName(const SLCBackendC* c, const char* cName) {
@@ -5410,7 +5422,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                            c,
                            "console",
                            &(SLTypeRef){
-                               .baseName = "__sl_u64",
+                               .baseName = "__sl_i32",
                                .ptrDepth = 0,
                                .valid = 1,
                                .containerKind = SLTypeContainer_SCALAR,
@@ -5550,7 +5562,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                                    c,
                                    "console",
                                    &(SLTypeRef){
-                                       .baseName = "__sl_u64",
+                                       .baseName = "__sl_i32",
                                        .ptrDepth = 0,
                                        .valid = 1,
                                        .containerKind = SLTypeContainer_SCALAR,
@@ -7012,10 +7024,12 @@ static int EmitFnDeclOrDef(
     int              savedCurrentFunctionIsMain = c->currentFunctionIsMain;
     SLTypeRef        fnReturnType;
     SLTypeRef        fnContextType;
+    SLTypeRef        fnSemanticContextType;
     SLTypeRef        fnContextParamType;
 
     TypeRefSetScalar(&fnReturnType, "void");
     TypeRefSetInvalid(&fnContextType);
+    TypeRefSetInvalid(&fnSemanticContextType);
     TypeRefSetInvalid(&fnContextParamType);
 
     if (n == NULL) {
@@ -7035,8 +7049,12 @@ static int EmitFnDeclOrDef(
     if (hasFnContext) {
         if (isMainFn) {
             TypeRefSetScalar(&fnContextType, "__sl_MainContext");
+            if (ResolveMainSemanticContextType(c, &fnSemanticContextType) != 0) {
+                return -1;
+            }
         } else {
             fnContextType = fnSig->contextType;
+            fnSemanticContextType = fnContextType;
         }
         fnContextParamType = fnContextType;
         fnContextParamType.ptrDepth++;
@@ -7154,7 +7172,7 @@ static int EmitFnDeclOrDef(
 
     c->currentReturnType = fnReturnType;
     c->hasCurrentReturnType = 1;
-    c->currentContextType = fnContextType;
+    c->currentContextType = fnSemanticContextType;
     c->hasCurrentContext = hasFnContext;
     c->currentFunctionIsMain = !hasFnContext && isMainFn;
     if (BufAppendChar(&c->out, ' ') != 0 || EmitBlockInline(c, bodyNode, depth) != 0) {

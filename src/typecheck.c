@@ -2,6 +2,8 @@
 
 SL_API_BEGIN
 
+#define SLTC_PLATFORM_TARGET_CONTEXT_TYPE "__platform_target__Context"
+
 typedef enum {
     SLTCType_INVALID = 0,
     SLTCType_BUILTIN,
@@ -162,6 +164,7 @@ typedef struct {
 
     int32_t currentContextType;
     int     hasImplicitMainRootContext;
+    int32_t implicitMainContextType;
     int32_t activeCallWithNode;
 } SLTypeCheckCtx;
 
@@ -445,6 +448,20 @@ static int32_t SLTCFindNamedTypeIndex(SLTypeCheckCtx* c, uint32_t start, uint32_
     for (i = 0; i < c->namedTypeLen; i++) {
         if (SLNameEqSlice(c->src, c->namedTypes[i].nameStart, c->namedTypes[i].nameEnd, start, end))
         {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static int32_t SLTCFindNamedTypeByLiteral(SLTypeCheckCtx* c, const char* name) {
+    uint32_t i;
+    for (i = 0; i < c->typeLen; i++) {
+        const SLTCType* t = &c->types[i];
+        if (t->kind != SLTCType_NAMED) {
+            continue;
+        }
+        if (SLNameEqLiteral(c->src, t->nameStart, t->nameEnd, name)) {
             return (int32_t)i;
         }
     }
@@ -1788,6 +1805,14 @@ static int SLTCIsMainFunction(SLTypeCheckCtx* c, const SLTCFunction* fn) {
     return SLNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "main");
 }
 
+static int32_t SLTCResolveImplicitMainContextType(SLTypeCheckCtx* c) {
+    int32_t typeId = SLTCFindNamedTypeByLiteral(c, SLTC_PLATFORM_TARGET_CONTEXT_TYPE);
+    if (typeId >= 0) {
+        return typeId;
+    }
+    return -1;
+}
+
 static int SLTCCurrentContextFieldType(
     SLTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, int32_t* outType) {
     if (c->currentContextType >= 0) {
@@ -1797,6 +1822,14 @@ static int SLTCCurrentContextFieldType(
         return -1;
     }
     if (c->hasImplicitMainRootContext) {
+        if (c->implicitMainContextType >= 0) {
+            if (SLTCFieldLookup(c, c->implicitMainContextType, fieldStart, fieldEnd, outType, NULL)
+                == 0)
+            {
+                return 0;
+            }
+            return -1;
+        }
         if (SLNameEqLiteral(c->src, fieldStart, fieldEnd, "mem")) {
             int32_t t = SLTCFindMemAllocatorType(c);
             int32_t refType;
@@ -1811,7 +1844,15 @@ static int SLTCCurrentContextFieldType(
             return 0;
         }
         if (SLNameEqLiteral(c->src, fieldStart, fieldEnd, "console")) {
-            int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_U64);
+            int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
+            if (t < 0) {
+                return -1;
+            }
+            *outType = t;
+            return 0;
+        }
+        if (SLNameEqLiteral(c->src, fieldStart, fieldEnd, "stderr")) {
+            int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
             if (t < 0) {
                 return -1;
             }
@@ -1853,6 +1894,35 @@ static int SLTCCurrentContextFieldTypeByLiteral(
         return -1;
     }
     if (c->hasImplicitMainRootContext) {
+        if (c->implicitMainContextType >= 0) {
+            int32_t  typeId = c->implicitMainContextType;
+            uint32_t i;
+            while (typeId >= 0 && (uint32_t)typeId < c->typeLen
+                   && c->types[typeId].kind == SLTCType_ALIAS)
+            {
+                if (SLTCResolveAliasTypeId(c, typeId) != 0) {
+                    return -1;
+                }
+                typeId = c->types[typeId].baseType;
+            }
+            if (typeId < 0 || (uint32_t)typeId >= c->typeLen
+                || (c->types[typeId].kind != SLTCType_NAMED
+                    && c->types[typeId].kind != SLTCType_ANON_STRUCT
+                    && c->types[typeId].kind != SLTCType_ANON_UNION))
+            {
+                return -1;
+            }
+            for (i = 0; i < c->types[typeId].fieldCount; i++) {
+                uint32_t idx = c->types[typeId].fieldStart + i;
+                if (SLNameEqLiteral(
+                        c->src, c->fields[idx].nameStart, c->fields[idx].nameEnd, fieldName))
+                {
+                    *outType = c->fields[idx].typeId;
+                    return 0;
+                }
+            }
+            return -1;
+        }
         if (fieldName[0] == 'm' && fieldName[1] == 'e' && fieldName[2] == 'm'
             && fieldName[3] == '\0')
         {
@@ -1872,7 +1942,17 @@ static int SLTCCurrentContextFieldTypeByLiteral(
             && fieldName[4] == 'o' && fieldName[5] == 'l' && fieldName[6] == 'e'
             && fieldName[7] == '\0')
         {
-            int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_U64);
+            int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
+            if (t < 0) {
+                return -1;
+            }
+            *outType = t;
+            return 0;
+        }
+        if (fieldName[0] == 's' && fieldName[1] == 't' && fieldName[2] == 'd' && fieldName[3] == 'e'
+            && fieldName[4] == 'r' && fieldName[5] == 'r' && fieldName[6] == '\0')
+        {
+            int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
             if (t < 0) {
                 return -1;
             }
@@ -3674,7 +3754,7 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     if (nextArgNode >= 0) {
                         return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
                     }
-                    expectedConsoleType = SLTCFindBuiltinByKind(c, SLBuiltin_U64);
+                    expectedConsoleType = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
                     if (expectedConsoleType < 0) {
                         return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
                     }
@@ -3892,7 +3972,7 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     if (nextArgNode >= 0) {
                         return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
                     }
-                    expectedConsoleType = SLTCFindBuiltinByKind(c, SLBuiltin_U64);
+                    expectedConsoleType = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
                     if (expectedConsoleType < 0) {
                         return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
                     }
@@ -4888,6 +4968,7 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
     int32_t             bodyNode = -1;
     int32_t             savedContextType = c->currentContextType;
     int                 savedImplicitRoot = c->hasImplicitMainRootContext;
+    int32_t             savedImplicitMainContextType = c->implicitMainContextType;
 
     if (nodeId < 0) {
         return 0;
@@ -4921,6 +5002,7 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
 
     c->currentContextType = -1;
     c->hasImplicitMainRootContext = 0;
+    c->implicitMainContextType = -1;
     if (fn->contextType >= 0) {
         int32_t contextLocalType = SLTCInternRefType(
             c, fn->contextType, 1, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end);
@@ -4930,6 +5012,7 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
         if (contextLocalType < 0) {
             c->currentContextType = savedContextType;
             c->hasImplicitMainRootContext = savedImplicitRoot;
+            c->implicitMainContextType = savedImplicitMainContextType;
             return -1;
         }
         while (fnChild >= 0) {
@@ -4946,10 +5029,12 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
         {
             c->currentContextType = savedContextType;
             c->hasImplicitMainRootContext = savedImplicitRoot;
+            c->implicitMainContextType = savedImplicitMainContextType;
             return -1;
         }
         c->currentContextType = fn->contextType;
     } else if (SLTCIsMainFunction(c, fn)) {
+        c->implicitMainContextType = SLTCResolveImplicitMainContextType(c);
         c->hasImplicitMainRootContext = 1;
     }
 
@@ -4957,6 +5042,7 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
         int rc = SLTCTypeBlock(c, bodyNode, fn->returnType, 0, 0);
         c->currentContextType = savedContextType;
         c->hasImplicitMainRootContext = savedImplicitRoot;
+        c->implicitMainContextType = savedImplicitMainContextType;
         return rc;
     }
 }
@@ -5050,6 +5136,7 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
     c.localCap = capBase * 4u;
     c.currentContextType = -1;
     c.hasImplicitMainRootContext = 0;
+    c.implicitMainContextType = -1;
     c.activeCallWithNode = -1;
 
     if (SLTCEnsureInitialized(&c) != 0) {

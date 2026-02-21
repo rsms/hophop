@@ -1,6 +1,6 @@
 struct Ctx {
     mem mut&__sl_MemAllocator
-    console u64
+    console i32
 }
 
 fn alloc() *i32 context Ctx {

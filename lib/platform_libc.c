@@ -106,7 +106,7 @@ __sl_i64 __sl_platform_call(
 
 int main(void) {
     static __sl_mem_Allocator gAllocator = { .impl = platform_mem_allocator_impl };
-    __sl_MainContext          gMainContext = { .mem = &gAllocator, .console = 0 };
+    __sl_MainContext          gMainContext = { &gAllocator, 0, 1 };
     mem__platformAllocator = gMainContext.mem;
     return sl_main(&gMainContext);
 }

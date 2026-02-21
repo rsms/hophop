@@ -65,7 +65,8 @@ struct __sl_mem_Allocator {
 
 typedef struct {
     __sl_mem_Allocator* mem;
-    __sl_u64            console;
+    __sl_i32            console;
+    __sl_i32            stderr;
 } __sl_MainContext;
 
 enum __sl_PlatformOps {
