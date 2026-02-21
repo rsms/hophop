@@ -224,9 +224,12 @@ static int SLPParseSwitchStmt(SLParser* p, int32_t* out);
 static int SLPIsTypeStart(SLTokenKind kind) {
     switch (kind) {
         case SLTok_IDENT:
+        case SLTok_STRUCT:
+        case SLTok_UNION:
         case SLTok_MUL:
         case SLTok_AND:
         case SLTok_MUT:
+        case SLTok_LBRACE:
         case SLTok_LBRACK:
         case SLTok_QUESTION: return 1;
         case SLTok_FN:       return 1;
@@ -416,6 +419,101 @@ static int SLPParseFnType(SLParser* p, int32_t* out) {
     return 0;
 }
 
+static int SLPParseAnonymousAggregateFieldDeclList(SLParser* p, int32_t aggTypeNode) {
+    while (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
+        const SLToken* names[256];
+        uint32_t       nameCount = 0;
+        int32_t        typeNode = -1;
+        uint32_t       i;
+
+        if (SLPMatch(p, SLTok_SEMICOLON) || SLPMatch(p, SLTok_COMMA)) {
+            continue;
+        }
+
+        if (SLPExpectDeclName(p, &names[nameCount]) != 0) {
+            return -1;
+        }
+        nameCount++;
+        while (SLPMatch(p, SLTok_COMMA)) {
+            if (!SLPAt(p, SLTok_IDENT)) {
+                return SLPFail(p, SLDiag_EXPECTED_TYPE);
+            }
+            if (nameCount >= (uint32_t)(sizeof(names) / sizeof(names[0]))) {
+                return SLPFail(p, SLDiag_ARENA_OOM);
+            }
+            if (SLPExpectDeclName(p, &names[nameCount]) != 0) {
+                return -1;
+            }
+            nameCount++;
+        }
+
+        if (SLPParseType(p, &typeNode) != 0) {
+            return -1;
+        }
+        for (i = 0; i < nameCount; i++) {
+            int32_t fieldNode;
+            int32_t fieldTypeNode;
+            if (i == 0) {
+                fieldTypeNode = typeNode;
+            } else {
+                if (SLPCloneSubtree(p, typeNode, &fieldTypeNode) != 0) {
+                    return -1;
+                }
+            }
+            fieldNode = SLPNewNode(p, SLAst_FIELD, names[i]->start, p->nodes[fieldTypeNode].end);
+            if (fieldNode < 0) {
+                return -1;
+            }
+            p->nodes[fieldNode].dataStart = names[i]->start;
+            p->nodes[fieldNode].dataEnd = names[i]->end;
+            if (SLPAddChild(p, fieldNode, fieldTypeNode) != 0) {
+                return -1;
+            }
+            if (SLPAddChild(p, aggTypeNode, fieldNode) != 0) {
+                return -1;
+            }
+        }
+
+        if (SLPMatch(p, SLTok_SEMICOLON) || SLPMatch(p, SLTok_COMMA)) {
+            continue;
+        }
+    }
+    return 0;
+}
+
+static int SLPParseAnonymousAggregateType(SLParser* p, int32_t* out) {
+    const SLToken* kw = NULL;
+    const SLToken* lb;
+    const SLToken* rb;
+    SLAstKind      kind = SLAst_TYPE_ANON_STRUCT;
+    int32_t        typeNode;
+
+    if (SLPAt(p, SLTok_STRUCT) || SLPAt(p, SLTok_UNION)) {
+        p->pos++;
+        kw = SLPPrev(p);
+        if (kw->kind == SLTok_UNION) {
+            kind = SLAst_TYPE_ANON_UNION;
+        }
+    }
+
+    if (SLPExpect(p, SLTok_LBRACE, SLDiag_EXPECTED_TYPE, &lb) != 0) {
+        return -1;
+    }
+    typeNode = SLPNewNode(p, kind, kw != NULL ? kw->start : lb->start, lb->end);
+    if (typeNode < 0) {
+        return -1;
+    }
+    if (SLPParseAnonymousAggregateFieldDeclList(p, typeNode) != 0) {
+        return -1;
+    }
+    if (SLPExpect(p, SLTok_RBRACE, SLDiag_EXPECTED_TYPE, &rb) != 0) {
+        return -1;
+    }
+    p->nodes[typeNode].end = rb->end;
+    *out = typeNode;
+    return 0;
+}
+
 static int SLPParseType(SLParser* p, int32_t* out) {
     const SLToken* t;
     int32_t        typeNode;
@@ -547,6 +645,10 @@ static int SLPParseType(SLParser* p, int32_t* out) {
 
     if (SLPAt(p, SLTok_FN)) {
         return SLPParseFnType(p, out);
+    }
+
+    if (SLPAt(p, SLTok_LBRACE) || SLPAt(p, SLTok_STRUCT) || SLPAt(p, SLTok_UNION)) {
+        return SLPParseAnonymousAggregateType(p, out);
     }
 
     if (SLPParseTypeName(p, out) != 0) {
@@ -1847,7 +1949,7 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
         if (contextClause < 0) {
             return -1;
         }
-        if (SLPParseTypeName(p, &contextType) != 0) {
+        if (SLPParseType(p, &contextType) != 0) {
             return -1;
         }
         if (SLPAddChild(p, contextClause, contextType) != 0) {
@@ -2114,6 +2216,8 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_TYPE_OPTIONAL:     return "TYPE_OPTIONAL";
         case SLAst_TYPE_FN:           return "TYPE_FN";
         case SLAst_TYPE_ALIAS:        return "TYPE_ALIAS";
+        case SLAst_TYPE_ANON_STRUCT:  return "TYPE_ANON_STRUCT";
+        case SLAst_TYPE_ANON_UNION:   return "TYPE_ANON_UNION";
         case SLAst_STRUCT:            return "STRUCT";
         case SLAst_UNION:             return "UNION";
         case SLAst_ENUM:              return "ENUM";

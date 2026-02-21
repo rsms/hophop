@@ -24,6 +24,9 @@ Single-file mode is supported for package commands:
 
 - Struct/union/enum: `examples/aggregates.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/aggregates.sl`
+- Anonymous struct/union types in fields, params, contexts, and inferred literals:
+  `examples/anonymous_aggregates.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/anonymous_aggregates.sl`
 - Pointers and arrays: `examples/pointers_arrays.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/pointers_arrays.sl`
 - Variable-size struct (dependent trailing field): `examples/vss.sl`

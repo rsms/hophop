@@ -262,6 +262,8 @@ typedef enum {
     SLAst_TYPE_OPTIONAL,
     SLAst_TYPE_FN,
     SLAst_TYPE_ALIAS,
+    SLAst_TYPE_ANON_STRUCT,
+    SLAst_TYPE_ANON_UNION,
     SLAst_STRUCT,
     SLAst_UNION,
     SLAst_ENUM,

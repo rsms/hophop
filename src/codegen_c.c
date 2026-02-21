@@ -77,6 +77,19 @@ typedef struct {
 } SLVarSizeType;
 
 typedef struct {
+    char*    key;
+    char*    cName;
+    int      isUnion;
+    uint32_t fieldStart;
+    uint16_t fieldCount;
+    uint16_t flags;
+} SLAnonTypeInfo;
+
+enum {
+    SLAnonTypeFlag_EMITTED_GLOBAL = 1u << 0,
+};
+
+typedef struct {
     char*     name;
     SLTypeRef type;
 } SLLocal;
@@ -142,6 +155,10 @@ typedef struct {
     uint32_t       varSizeTypeLen;
     uint32_t       varSizeTypeCap;
 
+    SLAnonTypeInfo* anonTypes;
+    uint32_t        anonTypeLen;
+    uint32_t        anonTypeCap;
+
     SLLocal* locals;
     uint32_t localLen;
     uint32_t localCap;
@@ -153,6 +170,14 @@ typedef struct {
     uint32_t* localScopeMarks;
     uint32_t  localScopeLen;
     uint32_t  localScopeCap;
+
+    char**   localAnonTypedefs;
+    uint32_t localAnonTypedefLen;
+    uint32_t localAnonTypedefCap;
+
+    uint32_t* localAnonTypedefScopeMarks;
+    uint32_t  localAnonTypedefScopeLen;
+    uint32_t  localAnonTypedefScopeCap;
 
     int32_t* deferredStmtNodes;
     uint32_t deferredStmtLen;
@@ -195,6 +220,17 @@ static int StrEq(const char* a, const char* b) {
         b++;
     }
     return *a == '\0' && *b == '\0';
+}
+
+static int StrHasPrefix(const char* s, const char* prefix) {
+    while (*prefix != '\0') {
+        if (*s != *prefix) {
+            return 0;
+        }
+        s++;
+        prefix++;
+    }
+    return 1;
 }
 
 static int IsAlnumChar(char ch) {
@@ -431,6 +467,24 @@ static void TypeRefSetScalar(SLTypeRef* t, const char* baseName) {
 }
 
 static int TypeRefEqual(const SLTypeRef* a, const SLTypeRef* b);
+static int AddFieldInfo(
+    SLCBackendC* c,
+    const char*  ownerType,
+    const char*  fieldName,
+    const char* _Nullable lenFieldName,
+    int       isDependent,
+    int       isEmbedded,
+    SLTypeRef type);
+static const SLAnonTypeInfo* _Nullable FindAnonTypeByCName(const SLCBackendC* c, const char* cName);
+static int EnsureAnonTypeByFields(
+    SLCBackendC*     c,
+    int              isUnion,
+    const char**     fieldNames,
+    const SLTypeRef* fieldTypes,
+    uint32_t         fieldCount,
+    const char**     outCName);
+static int EnsureAnonTypeVisible(SLCBackendC* c, const SLTypeRef* type, uint32_t depth);
+static int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name);
 
 static int SliceStructPtrDepth(const SLTypeRef* t) {
     int stars = t->ptrDepth;
@@ -1067,6 +1121,48 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             TypeRefSetScalar(outType, name);
             return 0;
         }
+        case SLAst_TYPE_ANON_STRUCT:
+        case SLAst_TYPE_ANON_UNION:  {
+            int32_t     fieldNode = AstFirstChild(&c->ast, nodeId);
+            const char* fieldNames[256];
+            SLTypeRef   fieldTypes[256];
+            uint32_t    fieldCount = 0;
+            const char* anonName;
+            while (fieldNode >= 0) {
+                const SLAstNode* field = NodeAt(c, fieldNode);
+                int32_t          typeNode;
+                if (field == NULL || field->kind != SLAst_FIELD) {
+                    return -1;
+                }
+                if (fieldCount >= (uint32_t)(sizeof(fieldNames) / sizeof(fieldNames[0]))) {
+                    return -1;
+                }
+                typeNode = AstFirstChild(&c->ast, fieldNode);
+                if (typeNode < 0 || ParseTypeRef(c, typeNode, &fieldTypes[fieldCount]) != 0) {
+                    return -1;
+                }
+                fieldNames[fieldCount] = DupSlice(
+                    c, c->unit->source, field->dataStart, field->dataEnd);
+                if (fieldNames[fieldCount] == NULL) {
+                    return -1;
+                }
+                fieldCount++;
+                fieldNode = AstNextSibling(&c->ast, fieldNode);
+            }
+            if (EnsureAnonTypeByFields(
+                    c,
+                    n->kind == SLAst_TYPE_ANON_UNION,
+                    fieldNames,
+                    fieldTypes,
+                    fieldCount,
+                    &anonName)
+                != 0)
+            {
+                return -1;
+            }
+            TypeRefSetScalar(outType, anonName);
+            return 0;
+        }
         case SLAst_TYPE_PTR:
         case SLAst_TYPE_REF:
         case SLAst_TYPE_MUTREF: {
@@ -1408,6 +1504,246 @@ static int AddFieldInfo(
     return 0;
 }
 
+static int AppendTypeRefKey(SLBuf* b, const SLTypeRef* t) {
+    if (t == NULL || !t->valid || t->baseName == NULL) {
+        return BufAppendCStr(b, "!");
+    }
+    if (BufAppendChar(b, 'T') != 0 || BufAppendChar(b, '[') != 0) {
+        return -1;
+    }
+    if (BufAppendCStr(b, t->baseName) != 0 || BufAppendChar(b, '|') != 0) {
+        return -1;
+    }
+    if (BufAppendU32(b, (uint32_t)t->ptrDepth) != 0 || BufAppendChar(b, '|') != 0) {
+        return -1;
+    }
+    if (BufAppendU32(b, (uint32_t)t->containerKind) != 0 || BufAppendChar(b, '|') != 0) {
+        return -1;
+    }
+    if (BufAppendU32(b, (uint32_t)t->containerPtrDepth) != 0 || BufAppendChar(b, '|') != 0) {
+        return -1;
+    }
+    if (BufAppendU32(b, (uint32_t)t->hasArrayLen) != 0 || BufAppendChar(b, '|') != 0) {
+        return -1;
+    }
+    if (BufAppendU32(b, t->arrayLen) != 0 || BufAppendChar(b, '|') != 0) {
+        return -1;
+    }
+    if (BufAppendU32(b, (uint32_t)t->readOnly) != 0 || BufAppendChar(b, '|') != 0) {
+        return -1;
+    }
+    if (BufAppendU32(b, (uint32_t)t->isOptional) != 0 || BufAppendCStr(b, "]") != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static const SLAnonTypeInfo* _Nullable FindAnonTypeByKey(const SLCBackendC* c, const char* key) {
+    uint32_t i;
+    for (i = 0; i < c->anonTypeLen; i++) {
+        if (StrEq(c->anonTypes[i].key, key)) {
+            return &c->anonTypes[i];
+        }
+    }
+    return NULL;
+}
+
+static const SLAnonTypeInfo* _Nullable FindAnonTypeByCName(
+    const SLCBackendC* c, const char* cName) {
+    uint32_t i;
+    for (i = 0; i < c->anonTypeLen; i++) {
+        if (StrEq(c->anonTypes[i].cName, cName)) {
+            return &c->anonTypes[i];
+        }
+    }
+    return NULL;
+}
+
+static int IsLocalAnonTypedefVisible(const SLCBackendC* c, const char* cName) {
+    uint32_t i = c->localAnonTypedefLen;
+    while (i > 0) {
+        i--;
+        if (StrEq(c->localAnonTypedefs[i], cName)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int MarkLocalAnonTypedefVisible(SLCBackendC* c, const char* cName) {
+    if (IsLocalAnonTypedefVisible(c, cName)) {
+        return 0;
+    }
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->localAnonTypedefs,
+            &c->localAnonTypedefCap,
+            c->localAnonTypedefLen + 1u,
+            sizeof(char*),
+            (uint32_t)_Alignof(char*))
+        != 0)
+    {
+        return -1;
+    }
+    c->localAnonTypedefs[c->localAnonTypedefLen++] = (char*)cName;
+    return 0;
+}
+
+static int IsAnonTypeNameVisible(const SLCBackendC* c, const char* cName) {
+    const SLAnonTypeInfo* info = FindAnonTypeByCName(c, cName);
+    if (info != NULL && (info->flags & SLAnonTypeFlag_EMITTED_GLOBAL) != 0) {
+        return 1;
+    }
+    return IsLocalAnonTypedefVisible(c, cName);
+}
+
+static int EmitAnonTypeDeclAtDepth(SLCBackendC* c, const SLAnonTypeInfo* t, uint32_t depth) {
+    uint32_t j;
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "typedef ") != 0
+        || BufAppendCStr(&c->out, t->isUnion ? "union " : "struct ") != 0
+        || BufAppendCStr(&c->out, t->cName) != 0 || BufAppendCStr(&c->out, " {\n") != 0)
+    {
+        return -1;
+    }
+    for (j = 0; j < t->fieldCount; j++) {
+        const SLFieldInfo* f = &c->fieldInfos[t->fieldStart + j];
+        EmitIndent(c, depth + 1u);
+        if (EmitTypeRefWithName(c, &f->type, f->fieldName) != 0
+            || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
+    }
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "} ") != 0 || BufAppendCStr(&c->out, t->cName) != 0
+        || BufAppendCStr(&c->out, ";\n") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int EnsureAnonTypeVisible(SLCBackendC* c, const SLTypeRef* type, uint32_t depth) {
+    const SLAnonTypeInfo* info;
+    uint32_t              i;
+    if (type == NULL || !type->valid || type->containerKind != SLTypeContainer_SCALAR
+        || type->containerPtrDepth != 0 || type->ptrDepth != 0 || type->isOptional
+        || type->baseName == NULL)
+    {
+        return 0;
+    }
+    info = FindAnonTypeByCName(c, type->baseName);
+    if (info == NULL) {
+        return 0;
+    }
+    if ((info->flags & SLAnonTypeFlag_EMITTED_GLOBAL) != 0
+        || IsLocalAnonTypedefVisible(c, info->cName))
+    {
+        return 0;
+    }
+    for (i = 0; i < info->fieldCount; i++) {
+        const SLFieldInfo* f = &c->fieldInfos[info->fieldStart + i];
+        if (EnsureAnonTypeVisible(c, &f->type, depth) != 0) {
+            return -1;
+        }
+    }
+    if (EmitAnonTypeDeclAtDepth(c, info, depth) != 0) {
+        return -1;
+    }
+    if (depth == 0) {
+        ((SLAnonTypeInfo*)info)->flags |= SLAnonTypeFlag_EMITTED_GLOBAL;
+        if (BufAppendChar(&c->out, '\n') != 0) {
+            return -1;
+        }
+    } else if (MarkLocalAnonTypedefVisible(c, info->cName) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int EnsureAnonTypeByFields(
+    SLCBackendC*     c,
+    int              isUnion,
+    const char**     fieldNames,
+    const SLTypeRef* fieldTypes,
+    uint32_t         fieldCount,
+    const char**     outCName) {
+    uint32_t i;
+    SLBuf    keyBuf = { 0 };
+    char*    key;
+
+    keyBuf.arena = &c->arena;
+    if (BufAppendCStr(&keyBuf, isUnion ? "U{" : "S{") != 0) {
+        return -1;
+    }
+    for (i = 0; i < fieldCount; i++) {
+        if (BufAppendCStr(&keyBuf, fieldNames[i]) != 0 || BufAppendChar(&keyBuf, ':') != 0
+            || AppendTypeRefKey(&keyBuf, &fieldTypes[i]) != 0 || BufAppendChar(&keyBuf, ';') != 0)
+        {
+            return -1;
+        }
+    }
+    if (BufAppendChar(&keyBuf, '}') != 0) {
+        return -1;
+    }
+    key = BufFinish(&keyBuf);
+    if (key == NULL) {
+        return -1;
+    }
+    {
+        const SLAnonTypeInfo* info = FindAnonTypeByKey(c, key);
+        if (info != NULL) {
+            *outCName = info->cName;
+            return 0;
+        }
+    }
+
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->anonTypes,
+            &c->anonTypeCap,
+            c->anonTypeLen + 1u,
+            sizeof(SLAnonTypeInfo),
+            (uint32_t)_Alignof(SLAnonTypeInfo))
+        != 0)
+    {
+        return -1;
+    }
+
+    {
+        SLBuf    cNameBuf = { 0 };
+        char*    cName;
+        uint32_t fieldStart = c->fieldInfoLen;
+        cNameBuf.arena = &c->arena;
+        if (BufAppendCStr(&cNameBuf, "__sl_anon_") != 0
+            || BufAppendChar(&cNameBuf, isUnion ? 'u' : 's') != 0
+            || BufAppendChar(&cNameBuf, '_') != 0 || BufAppendU32(&cNameBuf, c->anonTypeLen) != 0)
+        {
+            return -1;
+        }
+        cName = BufFinish(&cNameBuf);
+        if (cName == NULL) {
+            return -1;
+        }
+
+        for (i = 0; i < fieldCount; i++) {
+            if (AddFieldInfo(c, cName, fieldNames[i], NULL, 0, 0, fieldTypes[i]) != 0) {
+                return -1;
+            }
+        }
+        c->anonTypes[c->anonTypeLen].key = key;
+        c->anonTypes[c->anonTypeLen].cName = cName;
+        c->anonTypes[c->anonTypeLen].isUnion = isUnion;
+        c->anonTypes[c->anonTypeLen].fieldStart = fieldStart;
+        c->anonTypes[c->anonTypeLen].fieldCount = (uint16_t)fieldCount;
+        c->anonTypes[c->anonTypeLen].flags = 0;
+        c->anonTypeLen++;
+        *outCName = cName;
+        return 0;
+    }
+}
+
 static const SLFnSig* _Nullable FindFnSigBySlice(
     const SLCBackendC* c, uint32_t start, uint32_t end) {
     const SLFnSig* found = NULL;
@@ -1693,7 +2029,8 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                     || ch->kind == SLAst_TYPE_REF || ch->kind == SLAst_TYPE_MUTREF
                     || ch->kind == SLAst_TYPE_ARRAY || ch->kind == SLAst_TYPE_VARRAY
                     || ch->kind == SLAst_TYPE_SLICE || ch->kind == SLAst_TYPE_MUTSLICE
-                    || ch->kind == SLAst_TYPE_OPTIONAL || ch->kind == SLAst_TYPE_FN)
+                    || ch->kind == SLAst_TYPE_OPTIONAL || ch->kind == SLAst_TYPE_FN
+                    || ch->kind == SLAst_TYPE_ANON_STRUCT || ch->kind == SLAst_TYPE_ANON_UNION)
                 && ch->flags == 1)
             {
                 if (ParseTypeRef(c, child, &returnType) != 0) {
@@ -1842,7 +2179,7 @@ static int IsParseTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
         || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
-        || kind == SLAst_TYPE_FN;
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION;
 }
 
 static int CollectFnTypeAliasesFromNode(SLCBackendC* c, int32_t nodeId) {
@@ -2002,17 +2339,36 @@ static int PushScope(SLCBackendC* c) {
     {
         return -1;
     }
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->localAnonTypedefScopeMarks,
+            &c->localAnonTypedefScopeCap,
+            c->localAnonTypedefScopeLen + 1u,
+            sizeof(uint32_t),
+            (uint32_t)_Alignof(uint32_t))
+        != 0)
+    {
+        return -1;
+    }
     c->localScopeMarks[c->localScopeLen++] = c->localLen;
+    c->localAnonTypedefScopeMarks[c->localAnonTypedefScopeLen++] = c->localAnonTypedefLen;
     return 0;
 }
 
 static void PopScope(SLCBackendC* c) {
     if (c->localScopeLen == 0) {
         c->localLen = 0;
+        c->localAnonTypedefLen = 0;
         return;
     }
     c->localScopeLen--;
     c->localLen = c->localScopeMarks[c->localScopeLen];
+    if (c->localAnonTypedefScopeLen > 0) {
+        c->localAnonTypedefScopeLen--;
+        c->localAnonTypedefLen = c->localAnonTypedefScopeMarks[c->localAnonTypedefScopeLen];
+    } else {
+        c->localAnonTypedefLen = 0;
+    }
 }
 
 static int PushDeferScope(SLCBackendC* c) {
@@ -2116,7 +2472,9 @@ static int EnumDeclHasMemberBySlice(
                 || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
                 || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
                 || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
-                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN))
+                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN
+                || firstChild->kind == SLAst_TYPE_ANON_STRUCT
+                || firstChild->kind == SLAst_TYPE_ANON_UNION))
         {
             child = AstNextSibling(&c->ast, child);
         }
@@ -2191,6 +2549,8 @@ static int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
     int         i;
     const char* base = NULL;
     int         stars = 0;
+    int         inlineAnon = 0;
+    int         inlineAnonIsUnion = 0;
     if (!type->valid) {
         return BufAppendCStr(&c->out, "void");
     }
@@ -2214,12 +2574,37 @@ static int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
             return BufAppendCStr(&c->out, "void");
         }
         base = type->baseName;
+        if (StrHasPrefix(base, "__sl_anon_") && !IsAnonTypeNameVisible(c, base)) {
+            const SLAnonTypeInfo* info = FindAnonTypeByCName(c, base);
+            inlineAnon = 1;
+            inlineAnonIsUnion = info != NULL ? info->isUnion : (base[10] == 'u');
+        }
         stars = type->ptrDepth;
         if (type->containerKind == SLTypeContainer_ARRAY && type->containerPtrDepth > 0) {
             stars += type->containerPtrDepth;
         }
     }
-    if (BufAppendCStr(&c->out, base) != 0) {
+    if (inlineAnon) {
+        uint32_t i;
+        if (BufAppendCStr(&c->out, inlineAnonIsUnion ? "union {\n" : "struct {\n") != 0) {
+            return -1;
+        }
+        for (i = 0; i < c->fieldInfoLen; i++) {
+            const SLFieldInfo* f = &c->fieldInfos[i];
+            if (!StrEq(f->ownerType, base)) {
+                continue;
+            }
+            EmitIndent(c, 1);
+            if (EmitTypeRefWithName(c, &f->type, f->fieldName) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+        }
+        if (BufAppendChar(&c->out, '}') != 0) {
+            return -1;
+        }
+    } else if (BufAppendCStr(&c->out, base) != 0) {
         return -1;
     }
     for (i = 0; i < stars; i++) {
@@ -2304,6 +2689,37 @@ static int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) 
     return 0;
 }
 
+static int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name);
+
+static int EmitAnonInlineTypeWithName(
+    SLCBackendC* c, const char* ownerType, int isUnion, const char* name) {
+    uint32_t i;
+    int      sawField = 0;
+    if (BufAppendCStr(&c->out, isUnion ? "union {\n" : "struct {\n") != 0) {
+        return -1;
+    }
+    for (i = 0; i < c->fieldInfoLen; i++) {
+        const SLFieldInfo* f = &c->fieldInfos[i];
+        if (!StrEq(f->ownerType, ownerType)) {
+            continue;
+        }
+        sawField = 1;
+        EmitIndent(c, 1);
+        if (EmitTypeRefWithName(c, &f->type, f->fieldName) != 0
+            || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
+    }
+    if (!sawField) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "} ") != 0 || BufAppendCStr(&c->out, name) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 static int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
     int stars;
     int i;
@@ -2344,6 +2760,22 @@ static int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* n
     }
     if (t->baseName == NULL) {
         return -1;
+    }
+    if (t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth == 0 && t->containerPtrDepth == 0
+        && !t->isOptional)
+    {
+        const SLAnonTypeInfo* info = FindAnonTypeByCName(c, t->baseName);
+        if (info != NULL && (info->flags & SLAnonTypeFlag_EMITTED_GLOBAL) == 0
+            && !IsLocalAnonTypedefVisible(c, info->cName))
+        {
+            return EmitAnonInlineTypeWithName(c, info->cName, info->isUnion, name);
+        }
+        if (info == NULL && StrHasPrefix(t->baseName, "__sl_anon_")
+            && !IsAnonTypeNameVisible(c, t->baseName))
+        {
+            int isUnion = t->baseName[10] == 'u';
+            return EmitAnonInlineTypeWithName(c, t->baseName, isUnion, name);
+        }
     }
     if (BufAppendCStr(&c->out, t->baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
         return -1;
@@ -2394,7 +2826,7 @@ static int IsTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
         || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
-        || kind == SLAst_TYPE_FN;
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION;
 }
 
 static void ResolveVarLikeTypeAndInitNode(
@@ -2836,18 +3268,19 @@ static int ResolveCallTarget(
 
 static int InferCompoundLiteralType(
     SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType, SLTypeRef* outType) {
-    const SLAstNode* litNode = NodeAt(c, nodeId);
-    int32_t          child;
-    int32_t          firstField;
-    int              hasExplicitType;
-    SLTypeRef        explicitType;
-    SLTypeRef        targetValueType;
-    SLTypeRef        resultType;
-    const char*      ownerType = NULL;
-    const SLNameMap* ownerMap;
-    int              isUnion = 0;
-    uint32_t         explicitFieldCount = 0;
-    uint8_t          cost = 0;
+    const SLAstNode*      litNode = NodeAt(c, nodeId);
+    int32_t               child;
+    int32_t               firstField;
+    int                   hasExplicitType;
+    SLTypeRef             explicitType;
+    SLTypeRef             targetValueType;
+    SLTypeRef             resultType;
+    const char*           ownerType = NULL;
+    const SLNameMap*      ownerMap;
+    const SLAnonTypeInfo* anonOwner = NULL;
+    int                   isUnion = 0;
+    uint32_t              explicitFieldCount = 0;
+    uint8_t               cost = 0;
 
     if (litNode == NULL || litNode->kind != SLAst_COMPOUND_LIT) {
         TypeRefSetInvalid(outType);
@@ -2872,18 +3305,66 @@ static int InferCompoundLiteralType(
         resultType = explicitType;
     } else {
         if (expectedType == NULL || !expectedType->valid) {
-            TypeRefSetInvalid(outType);
-            return -1;
-        }
-        targetValueType = *expectedType;
-        if (targetValueType.containerKind != SLTypeContainer_SCALAR) {
-            if (targetValueType.containerPtrDepth > 0) {
-                targetValueType.containerPtrDepth--;
+            const char* fieldNames[256];
+            SLTypeRef   fieldTypes[256];
+            uint32_t    fieldCount = 0;
+            int32_t     scan = firstField;
+            const char* anonName;
+            while (scan >= 0) {
+                const SLAstNode* fieldNode = NodeAt(c, scan);
+                SLTypeRef        exprType;
+                int32_t          exprNode;
+                uint32_t         i;
+                if (fieldNode == NULL || fieldNode->kind != SLAst_COMPOUND_FIELD) {
+                    TypeRefSetInvalid(outType);
+                    return -1;
+                }
+                if (fieldCount >= (uint32_t)(sizeof(fieldNames) / sizeof(fieldNames[0]))) {
+                    TypeRefSetInvalid(outType);
+                    return -1;
+                }
+                for (i = 0; i < fieldCount; i++) {
+                    if (SliceEqName(
+                            c->unit->source,
+                            fieldNode->dataStart,
+                            fieldNode->dataEnd,
+                            fieldNames[i]))
+                    {
+                        TypeRefSetInvalid(outType);
+                        return -1;
+                    }
+                }
+                exprNode = AstFirstChild(&c->ast, scan);
+                if (exprNode < 0 || InferExprType(c, exprNode, &exprType) != 0 || !exprType.valid) {
+                    TypeRefSetInvalid(outType);
+                    return -1;
+                }
+                fieldNames[fieldCount] = DupSlice(
+                    c, c->unit->source, fieldNode->dataStart, fieldNode->dataEnd);
+                if (fieldNames[fieldCount] == NULL) {
+                    TypeRefSetInvalid(outType);
+                    return -1;
+                }
+                fieldTypes[fieldCount++] = exprType;
+                scan = AstNextSibling(&c->ast, scan);
             }
-        } else if (targetValueType.ptrDepth > 0) {
-            targetValueType.ptrDepth--;
+            if (EnsureAnonTypeByFields(c, 0, fieldNames, fieldTypes, fieldCount, &anonName) != 0) {
+                TypeRefSetInvalid(outType);
+                return -1;
+            }
+            TypeRefSetScalar(&targetValueType, anonName);
+            resultType = targetValueType;
+        } else {
+            targetValueType = *expectedType;
+            if (targetValueType.containerKind != SLTypeContainer_SCALAR) {
+                if (targetValueType.containerPtrDepth > 0) {
+                    targetValueType.containerPtrDepth--;
+                }
+            } else if (targetValueType.ptrDepth > 0) {
+                targetValueType.ptrDepth--;
+            }
+            resultType = *expectedType;
         }
-        resultType = *expectedType;
     }
 
     if (!targetValueType.valid || targetValueType.containerKind != SLTypeContainer_SCALAR
@@ -2900,11 +3381,18 @@ static int InferCompoundLiteralType(
         return -1;
     }
     ownerMap = FindNameByCName(c, ownerType);
-    if (ownerMap == NULL || (ownerMap->kind != SLAst_STRUCT && ownerMap->kind != SLAst_UNION)) {
+    anonOwner = FindAnonTypeByCName(c, ownerType);
+    if ((ownerMap == NULL || (ownerMap->kind != SLAst_STRUCT && ownerMap->kind != SLAst_UNION))
+        && anonOwner == NULL)
+    {
         TypeRefSetInvalid(outType);
         return -1;
     }
-    isUnion = ownerMap->kind == SLAst_UNION;
+    if (ownerMap != NULL) {
+        isUnion = ownerMap->kind == SLAst_UNION;
+    } else {
+        isUnion = anonOwner->isUnion;
+    }
 
     while (firstField >= 0) {
         const SLAstNode*   fieldNode = NodeAt(c, firstField);
@@ -5330,6 +5818,9 @@ static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int i
             return -1;
         }
     }
+    if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+        return -1;
+    }
 
     EmitIndent(c, depth);
     if (isConst && BufAppendCStr(&c->out, "const ") != 0) {
@@ -5796,7 +6287,9 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                 || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
                 || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
                 || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
-                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN))
+                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN
+                || firstChild->kind == SLAst_TYPE_ANON_STRUCT
+                || firstChild->kind == SLAst_TYPE_ANON_UNION))
         {
             child = AstNextSibling(&c->ast, child);
         }
@@ -6192,6 +6685,69 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
     return 0;
 }
 
+static int EmitForwardAnonTypeDecls(SLCBackendC* c) {
+    uint32_t i;
+    if (c->anonTypeLen == 0) {
+        return 0;
+    }
+    for (i = 0; i < c->anonTypeLen; i++) {
+        const SLAnonTypeInfo* t = &c->anonTypes[i];
+        EmitIndent(c, 0);
+        if (BufAppendCStr(&c->out, "typedef ") != 0
+            || BufAppendCStr(&c->out, t->isUnion ? "union " : "struct ") != 0
+            || BufAppendCStr(&c->out, t->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+            || BufAppendCStr(&c->out, t->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
+    }
+    return BufAppendChar(&c->out, '\n');
+}
+
+static int EmitAnonTypeDecls(SLCBackendC* c) {
+    uint32_t i;
+    if (c->anonTypeLen == 0) {
+        return 0;
+    }
+    for (i = 0; i < c->anonTypeLen; i++) {
+        SLAnonTypeInfo* t = &c->anonTypes[i];
+        uint32_t        j;
+        for (j = 0; j < t->fieldCount; j++) {
+            const SLFieldInfo* f = &c->fieldInfos[t->fieldStart + j];
+            if (EnsureAnonTypeVisible(c, &f->type, 0) != 0) {
+                return -1;
+            }
+        }
+        if ((t->flags & SLAnonTypeFlag_EMITTED_GLOBAL) != 0) {
+            continue;
+        }
+        EmitIndent(c, 0);
+        if (BufAppendCStr(&c->out, "typedef ") != 0
+            || BufAppendCStr(&c->out, t->isUnion ? "union " : "struct ") != 0
+            || BufAppendCStr(&c->out, t->cName) != 0 || BufAppendCStr(&c->out, " {\n") != 0)
+        {
+            return -1;
+        }
+        for (j = 0; j < t->fieldCount; j++) {
+            const SLFieldInfo* f = &c->fieldInfos[t->fieldStart + j];
+            EmitIndent(c, 1);
+            if (EmitTypeRefWithName(c, &f->type, f->fieldName) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+        }
+        EmitIndent(c, 0);
+        if (BufAppendCStr(&c->out, "} ") != 0 || BufAppendCStr(&c->out, t->cName) != 0
+            || BufAppendCStr(&c->out, ";\n\n") != 0)
+        {
+            return -1;
+        }
+        t->flags |= SLAnonTypeFlag_EMITTED_GLOBAL;
+    }
+    return 0;
+}
+
 static int EmitFnTypeAliasDecls(SLCBackendC* c) {
     uint32_t i;
     if (c->fnTypeAliasLen == 0) {
@@ -6334,7 +6890,8 @@ static int EmitFnDeclOrDef(
                 || ch->kind == SLAst_TYPE_REF || ch->kind == SLAst_TYPE_MUTREF
                 || ch->kind == SLAst_TYPE_ARRAY || ch->kind == SLAst_TYPE_VARRAY
                 || ch->kind == SLAst_TYPE_SLICE || ch->kind == SLAst_TYPE_MUTSLICE
-                || ch->kind == SLAst_TYPE_OPTIONAL || ch->kind == SLAst_TYPE_FN)
+                || ch->kind == SLAst_TYPE_OPTIONAL || ch->kind == SLAst_TYPE_FN
+                || ch->kind == SLAst_TYPE_ANON_STRUCT || ch->kind == SLAst_TYPE_ANON_UNION)
             && ch->flags == 1)
         {
             returnTypeNode = child;
@@ -6465,6 +7022,9 @@ static int EmitConstDecl(
             return -1;
         }
     }
+    if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+        return -1;
+    }
 
     EmitIndent(c, depth);
     if (declarationOnly) {
@@ -6519,6 +7079,9 @@ static int EmitVarDecl(
         if (InferVarLikeDeclType(c, initNode, &type) != 0) {
             return -1;
         }
+    }
+    if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+        return -1;
     }
 
     EmitIndent(c, depth);
@@ -6646,6 +7209,12 @@ static int EmitHeader(SLCBackendC* c) {
         return -1;
     }
     if (EmitForwardTypeDecls(c) != 0) {
+        return -1;
+    }
+    if (EmitForwardAnonTypeDecls(c) != 0) {
+        return -1;
+    }
+    if (EmitAnonTypeDecls(c) != 0) {
         return -1;
     }
     if (EmitFnTypeAliasDecls(c) != 0) {

@@ -166,6 +166,7 @@
 {"id":"integration.runtime.vss_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/vss_ok.sl"}
 {"id":"integration.runtime.vss_nested_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/vss_nested_ok.sl"}
 {"id":"integration.examples.aggregates.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/aggregates.sl"}
+{"id":"integration.examples.anonymous_aggregates.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/anonymous_aggregates.sl"}
 {"id":"integration.examples.basic.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/basic.sl"}
 {"id":"integration.examples.casts.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/casts.sl"}
 {"id":"integration.examples.control_flow.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/control_flow.sl"}
@@ -218,6 +219,10 @@
 {"id":"check:tests/context_unknown_with_field_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/context_unknown_with_field_bad.sl","expect_stderr":"tests/context_unknown_with_field_bad.stderr"}
 {"id":"check:tests/context_duplicate_with_field_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/context_duplicate_with_field_bad.sl","expect_stderr":"tests/context_duplicate_with_field_bad.stderr"}
 {"id":"check:tests/context_clause_mismatch_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/context_clause_mismatch_bad.sl","expect_stderr":"tests/context_clause_mismatch_bad.stderr"}
+{"id":"ast:tests/ast_anon_aggregate_types.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_anon_aggregate_types.sl","expect":"tests/ast_anon_aggregate_types.ast"}
+{"id":"check:tests/ast_anon_aggregate_types.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/ast_anon_aggregate_types.sl"}
+{"id":"check:tests/anon_struct_infer_no_context_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/anon_struct_infer_no_context_ok.sl"}
+{"id":"integration.runtime.anon_struct_infer_no_context_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/anon_struct_infer_no_context_ok.sl"}
 {"id":"integration.codegen.context_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/context_ok.sl","contains":["tests__alloc(tests__Ctx *context)","tests__log(tests__Ctx *context, __sl_str msg)","context->mem","context->console","(&((tests__Ctx){"]}
 {"id":"integration.codegen.context_convertible_allocator_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/context_convertible_allocator_ok.sl","contains":["tests__caller(tests__WrapCtx *context)",".mem = ((__sl_mem_Allocator*)((context->mem)))",".mem = mem__platformAllocator"]}
 {"id":"integration.runtime.context_convertible_allocator_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/context_convertible_allocator_ok.sl"}
@@ -229,7 +234,7 @@
 {"id":"check:tests/compound_literal_call_ref_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_call_ref_ok.sl"}
 {"id":"check:tests/compound_literal_zero_fill_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_zero_fill_ok.sl"}
 {"id":"check:tests/compound_literal_union_single_field_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_union_single_field_ok.sl"}
-{"id":"check:tests/compound_literal_infer_no_context_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/compound_literal_infer_no_context_bad.sl","expect_stderr":"tests/compound_literal_infer_no_context_bad.stderr"}
+{"id":"check:tests/compound_literal_infer_no_context_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_infer_no_context_ok.sl"}
 {"id":"check:tests/compound_literal_infer_non_aggregate_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/compound_literal_infer_non_aggregate_bad.sl","expect_stderr":"tests/compound_literal_infer_non_aggregate_bad.stderr"}
 {"id":"check:tests/compound_literal_ambiguous_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/compound_literal_ambiguous_bad.sl","expect_stderr":"tests/compound_literal_ambiguous_bad.stderr"}
 {"id":"check:tests/compound_literal_mutref_temp_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/compound_literal_mutref_temp_bad.sl","expect_stderr":"tests/compound_literal_mutref_temp_bad.stderr"}

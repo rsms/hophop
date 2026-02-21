@@ -7,6 +7,8 @@ typedef enum {
     SLTCType_BUILTIN,
     SLTCType_NAMED,
     SLTCType_ALIAS,
+    SLTCType_ANON_STRUCT,
+    SLTCType_ANON_UNION,
     SLTCType_PTR,
     SLTCType_REF,
     SLTCType_ARRAY,
@@ -161,6 +163,14 @@ typedef struct {
     int     hasImplicitMainRootContext;
     int32_t activeCallWithNode;
 } SLTypeCheckCtx;
+
+#define SLTC_MAX_ANON_FIELDS 256u
+
+typedef struct {
+    uint32_t nameStart;
+    uint32_t nameEnd;
+    int32_t  typeId;
+} SLTCAnonFieldSig;
 
 static void SLTCSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
@@ -638,6 +648,79 @@ static int32_t SLTCInternOptionalType(
     return SLTCAddType(c, &t, errStart, errEnd);
 }
 
+static int32_t SLTCInternAnonAggregateType(
+    SLTypeCheckCtx*         c,
+    int                     isUnion,
+    const SLTCAnonFieldSig* fields,
+    uint32_t                fieldCount,
+    int32_t                 declNode,
+    uint32_t                errStart,
+    uint32_t                errEnd) {
+    uint32_t i;
+    SLTCType t;
+
+    if (fieldCount > UINT16_MAX) {
+        return SLTCFailSpan(c, SLDiag_ARENA_OOM, errStart, errEnd);
+    }
+
+    for (i = 0; i < c->typeLen; i++) {
+        const SLTCType* ct = &c->types[i];
+        uint32_t        j;
+        int             same = 1;
+        if ((isUnion ? SLTCType_ANON_UNION : SLTCType_ANON_STRUCT) != ct->kind
+            || ct->fieldCount != fieldCount)
+        {
+            continue;
+        }
+        for (j = 0; j < fieldCount; j++) {
+            const SLTCField* f = &c->fields[ct->fieldStart + j];
+            if (f->typeId != fields[j].typeId
+                || !SLNameEqSlice(
+                    c->src, f->nameStart, f->nameEnd, fields[j].nameStart, fields[j].nameEnd))
+            {
+                same = 0;
+                break;
+            }
+        }
+        if (same) {
+            return (int32_t)i;
+        }
+    }
+
+    if (c->fieldLen + fieldCount > c->fieldCap) {
+        return SLTCFailSpan(c, SLDiag_ARENA_OOM, errStart, errEnd);
+    }
+
+    t.kind = isUnion ? SLTCType_ANON_UNION : SLTCType_ANON_STRUCT;
+    t.builtin = SLBuiltin_INVALID;
+    t.baseType = -1;
+    t.declNode = declNode;
+    t.funcIndex = -1;
+    t.arrayLen = 0;
+    t.nameStart = 0;
+    t.nameEnd = 0;
+    t.fieldStart = c->fieldLen;
+    t.fieldCount = (uint16_t)fieldCount;
+    t.flags = 0;
+    {
+        int32_t  typeId = SLTCAddType(c, &t, errStart, errEnd);
+        uint32_t j;
+        if (typeId < 0) {
+            return -1;
+        }
+        for (j = 0; j < fieldCount; j++) {
+            c->fields[c->fieldLen].nameStart = fields[j].nameStart;
+            c->fields[c->fieldLen].nameEnd = fields[j].nameEnd;
+            c->fields[c->fieldLen].typeId = fields[j].typeId;
+            c->fields[c->fieldLen].lenNameStart = 0;
+            c->fields[c->fieldLen].lenNameEnd = 0;
+            c->fields[c->fieldLen].flags = 0;
+            c->fieldLen++;
+        }
+        return typeId;
+    }
+}
+
 static int SLTCFunctionTypeMatchesSignature(
     SLTypeCheckCtx* c,
     const SLTCType* t,
@@ -873,6 +956,68 @@ static void SLTCMarkRuntimeBoundsCheck(SLTypeCheckCtx* c, int32_t nodeId) {
 static int SLTCTypeContainsVarSizeByValue(SLTypeCheckCtx* c, int32_t typeId);
 static int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
 
+static int SLTCResolveAnonAggregateTypeNode(
+    SLTypeCheckCtx* c, int32_t nodeId, int isUnion, int32_t* outType) {
+    int32_t          fieldNode = SLAstFirstChild(c->ast, nodeId);
+    SLTCAnonFieldSig fieldSigs[SLTC_MAX_ANON_FIELDS];
+    uint32_t         fieldCount = 0;
+
+    while (fieldNode >= 0) {
+        const SLAstNode* field = &c->ast->nodes[fieldNode];
+        int32_t          typeNode;
+        int32_t          typeId;
+        uint32_t         i;
+        if (field->kind != SLAst_FIELD) {
+            return SLTCFailNode(c, fieldNode, SLDiag_EXPECTED_TYPE);
+        }
+        if (fieldCount >= SLTC_MAX_ANON_FIELDS) {
+            return SLTCFailNode(c, fieldNode, SLDiag_ARENA_OOM);
+        }
+        for (i = 0; i < fieldCount; i++) {
+            if (SLNameEqSlice(
+                    c->src,
+                    fieldSigs[i].nameStart,
+                    fieldSigs[i].nameEnd,
+                    field->dataStart,
+                    field->dataEnd))
+            {
+                return SLTCFailSpan(c, SLDiag_DUPLICATE_SYMBOL, field->dataStart, field->dataEnd);
+            }
+        }
+        typeNode = SLAstFirstChild(c->ast, fieldNode);
+        if (typeNode < 0) {
+            return SLTCFailNode(c, fieldNode, SLDiag_EXPECTED_TYPE);
+        }
+        if (c->ast->nodes[typeNode].kind == SLAst_TYPE_VARRAY) {
+            return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
+        }
+        if (SLTCResolveTypeNode(c, typeNode, &typeId) != 0) {
+            return -1;
+        }
+        fieldSigs[fieldCount].nameStart = field->dataStart;
+        fieldSigs[fieldCount].nameEnd = field->dataEnd;
+        fieldSigs[fieldCount].typeId = typeId;
+        fieldCount++;
+        fieldNode = SLAstNextSibling(c->ast, fieldNode);
+    }
+
+    {
+        int32_t typeId = SLTCInternAnonAggregateType(
+            c,
+            isUnion,
+            fieldSigs,
+            fieldCount,
+            nodeId,
+            c->ast->nodes[nodeId].start,
+            c->ast->nodes[nodeId].end);
+        if (typeId < 0) {
+            return -1;
+        }
+        *outType = typeId;
+        return 0;
+    }
+}
+
 static int SLTCResolveAliasTypeId(SLTypeCheckCtx* c, int32_t typeId) {
     SLTCType*        t;
     int32_t          targetNode;
@@ -1094,8 +1239,10 @@ static int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outTy
                 return 0;
             }
         }
-        case SLAst_TYPE_VARRAY: return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
-        default:                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
+        case SLAst_TYPE_ANON_STRUCT: return SLTCResolveAnonAggregateTypeNode(c, nodeId, 0, outType);
+        case SLAst_TYPE_ANON_UNION:  return SLTCResolveAnonAggregateTypeNode(c, nodeId, 1, outType);
+        case SLAst_TYPE_VARRAY:      return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
+        default:                     return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
     }
 }
 
@@ -1234,7 +1381,7 @@ static int SLTCIsTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
         || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
-        || kind == SLAst_TYPE_FN;
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION;
 }
 
 static int SLTCConcretizeInferredType(SLTypeCheckCtx* c, int32_t typeId, int32_t* outType) {
@@ -1680,7 +1827,10 @@ static int SLTCCurrentContextFieldTypeByLiteral(
             }
             typeId = c->types[typeId].baseType;
         }
-        if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != SLTCType_NAMED)
+        if (typeId < 0 || (uint32_t)typeId >= c->typeLen
+            || (c->types[typeId].kind != SLTCType_NAMED
+                && c->types[typeId].kind != SLTCType_ANON_STRUCT
+                && c->types[typeId].kind != SLTCType_ANON_UNION))
         {
             return -1;
         }
@@ -1872,7 +2022,10 @@ static int SLTCValidateCallContextRequirements(SLTypeCheckCtx* c, int32_t requir
         }
         typeId = c->types[typeId].baseType;
     }
-    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != SLTCType_NAMED) {
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen
+        || (c->types[typeId].kind != SLTCType_NAMED
+            && c->types[typeId].kind != SLTCType_ANON_STRUCT))
+    {
         return SLTCFailSpan(c, SLDiag_TYPE_MISMATCH, 0, 0);
     }
     for (i = 0; i < c->types[typeId].fieldCount; i++) {
@@ -2096,7 +2249,8 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
     int32_t              declNode = nt->declNode;
     SLAstKind            kind = c->ast->nodes[declNode].kind;
     int32_t              child;
-    uint32_t             fieldStart = c->fieldLen;
+    SLTCField*           pendingFields = NULL;
+    uint32_t             pendingCap = 0;
     uint32_t             fieldCount = 0;
     int                  sawDependent = 0;
     int                  sawEmbedded = 0;
@@ -2115,9 +2269,30 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
             || c->ast->nodes[child].kind == SLAst_TYPE_SLICE
             || c->ast->nodes[child].kind == SLAst_TYPE_MUTSLICE
             || c->ast->nodes[child].kind == SLAst_TYPE_VARRAY
-            || c->ast->nodes[child].kind == SLAst_TYPE_FN))
+            || c->ast->nodes[child].kind == SLAst_TYPE_FN
+            || c->ast->nodes[child].kind == SLAst_TYPE_ANON_STRUCT
+            || c->ast->nodes[child].kind == SLAst_TYPE_ANON_UNION))
     {
         child = SLAstNextSibling(c->ast, child);
+    }
+
+    {
+        int32_t scan = child;
+        while (scan >= 0) {
+            if (c->ast->nodes[scan].kind == SLAst_FIELD
+                && (kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM))
+            {
+                pendingCap++;
+            }
+            scan = SLAstNextSibling(c->ast, scan);
+        }
+        if (pendingCap > 0) {
+            pendingFields = (SLTCField*)SLArenaAlloc(
+                c->arena, pendingCap * sizeof(SLTCField), (uint32_t)_Alignof(SLTCField));
+            if (pendingFields == NULL) {
+                return SLTCFailNode(c, declNode, SLDiag_ARENA_OOM);
+            }
+        }
     }
 
     while (child >= 0) {
@@ -2196,7 +2371,7 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
                     int32_t  elemType;
                     int32_t  ptrType;
                     int32_t  lenFieldType = -1;
-                    uint32_t lenFieldIdx;
+                    uint32_t j;
                     if (kind != SLAst_STRUCT) {
                         return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
                     }
@@ -2204,20 +2379,20 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
                     lenNameStart = c->ast->nodes[typeNode].dataStart;
                     lenNameEnd = c->ast->nodes[typeNode].dataEnd;
 
-                    lenFieldIdx = fieldStart;
-                    while (lenFieldIdx < c->fieldLen) {
-                        if ((c->fields[lenFieldIdx].flags & SLTCFieldFlag_DEPENDENT) == 0
+                    j = 0;
+                    while (j < fieldCount) {
+                        if ((pendingFields[j].flags & SLTCFieldFlag_DEPENDENT) == 0
                             && SLNameEqSlice(
                                 c->src,
-                                c->fields[lenFieldIdx].nameStart,
-                                c->fields[lenFieldIdx].nameEnd,
+                                pendingFields[j].nameStart,
+                                pendingFields[j].nameEnd,
                                 lenNameStart,
                                 lenNameEnd))
                         {
-                            lenFieldType = c->fields[lenFieldIdx].typeId;
+                            lenFieldType = pendingFields[j].typeId;
                             break;
                         }
-                        lenFieldIdx++;
+                        j++;
                     }
                     if (lenFieldType < 0) {
                         return SLTCFailSpan(c, SLDiag_UNKNOWN_SYMBOL, lenNameStart, lenNameEnd);
@@ -2250,33 +2425,42 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
                 }
             }
 
-            for (i = fieldStart; i < c->fieldLen; i++) {
+            for (i = 0; i < fieldCount; i++) {
                 if (SLNameEqSlice(
                         c->src,
-                        c->fields[i].nameStart,
-                        c->fields[i].nameEnd,
+                        pendingFields[i].nameStart,
+                        pendingFields[i].nameEnd,
                         n->dataStart,
                         n->dataEnd))
                 {
                     return SLTCFailSpan(c, SLDiag_DUPLICATE_SYMBOL, n->dataStart, n->dataEnd);
                 }
             }
-            if (c->fieldLen >= c->fieldCap) {
+            if (fieldCount >= pendingCap) {
                 return SLTCFailNode(c, child, SLDiag_ARENA_OOM);
             }
-            c->fields[c->fieldLen].nameStart = n->dataStart;
-            c->fields[c->fieldLen].nameEnd = n->dataEnd;
-            c->fields[c->fieldLen].typeId = typeId;
-            c->fields[c->fieldLen].lenNameStart = lenNameStart;
-            c->fields[c->fieldLen].lenNameEnd = lenNameEnd;
-            c->fields[c->fieldLen].flags = fieldFlags;
-            c->fieldLen++;
+            pendingFields[fieldCount].nameStart = n->dataStart;
+            pendingFields[fieldCount].nameEnd = n->dataEnd;
+            pendingFields[fieldCount].typeId = typeId;
+            pendingFields[fieldCount].lenNameStart = lenNameStart;
+            pendingFields[fieldCount].lenNameEnd = lenNameEnd;
+            pendingFields[fieldCount].flags = fieldFlags;
             fieldCount++;
         }
         child = SLAstNextSibling(c->ast, child);
     }
 
-    c->types[nt->typeId].fieldStart = fieldStart;
+    {
+        uint32_t fieldStart = c->fieldLen;
+        uint32_t i;
+        if (c->fieldLen + fieldCount > c->fieldCap) {
+            return SLTCFailNode(c, declNode, SLDiag_ARENA_OOM);
+        }
+        for (i = 0; i < fieldCount; i++) {
+            c->fields[c->fieldLen++] = pendingFields[i];
+        }
+        c->types[nt->typeId].fieldStart = fieldStart;
+    }
     c->types[nt->typeId].fieldCount = (uint16_t)fieldCount;
     return 0;
 }
@@ -2432,7 +2616,8 @@ static int SLTCReadFunctionSig(
              || n->kind == SLAst_TYPE_REF || n->kind == SLAst_TYPE_MUTREF
              || n->kind == SLAst_TYPE_SLICE || n->kind == SLAst_TYPE_MUTSLICE
              || n->kind == SLAst_TYPE_VARRAY || n->kind == SLAst_TYPE_OPTIONAL
-             || n->kind == SLAst_TYPE_FN)
+             || n->kind == SLAst_TYPE_FN || n->kind == SLAst_TYPE_ANON_STRUCT
+             || n->kind == SLAst_TYPE_ANON_UNION)
             && n->flags == 1)
         {
             if (SLTCResolveTypeNode(c, child, &returnType) != 0) {
@@ -2735,7 +2920,10 @@ static int SLTCFieldLookup(
     while (depth++ <= c->typeLen) {
         uint32_t i;
         int32_t  embedIdx = -1;
-        if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != SLTCType_NAMED)
+        if (typeId < 0 || (uint32_t)typeId >= c->typeLen
+            || (c->types[typeId].kind != SLTCType_NAMED
+                && c->types[typeId].kind != SLTCType_ANON_STRUCT
+                && c->types[typeId].kind != SLTCType_ANON_UNION))
         {
             return -1;
         }
@@ -2753,6 +2941,9 @@ static int SLTCFieldLookup(
             if ((c->fields[idx].flags & SLTCFieldFlag_EMBEDDED) != 0) {
                 embedIdx = (int32_t)idx;
             }
+        }
+        if (c->types[typeId].kind != SLTCType_NAMED) {
+            return -1;
         }
         if (embedIdx < 0) {
             return -1;
@@ -2836,6 +3027,80 @@ static int SLTCExprNeedsExpectedType(SLTypeCheckCtx* c, int32_t exprNode) {
     return 0;
 }
 
+static int SLTCInferAnonStructTypeFromCompound(
+    SLTypeCheckCtx* c, int32_t nodeId, int32_t firstField, int32_t* outType) {
+    SLTCAnonFieldSig fieldSigs[SLTC_MAX_ANON_FIELDS];
+    uint32_t         fieldCount = 0;
+    int32_t          fieldNode = firstField;
+    while (fieldNode >= 0) {
+        const SLAstNode* field = &c->ast->nodes[fieldNode];
+        int32_t          exprNode;
+        int32_t          fieldType;
+        uint32_t         i;
+        if (field->kind != SLAst_COMPOUND_FIELD) {
+            return SLTCFailNode(c, fieldNode, SLDiag_UNEXPECTED_TOKEN);
+        }
+        if (fieldCount >= SLTC_MAX_ANON_FIELDS) {
+            return SLTCFailNode(c, fieldNode, SLDiag_ARENA_OOM);
+        }
+        for (i = 0; i < fieldCount; i++) {
+            if (SLNameEqSlice(
+                    c->src,
+                    fieldSigs[i].nameStart,
+                    fieldSigs[i].nameEnd,
+                    field->dataStart,
+                    field->dataEnd))
+            {
+                SLTCSetDiagWithArg(
+                    c->diag,
+                    SLDiag_COMPOUND_FIELD_DUPLICATE,
+                    field->start,
+                    field->end,
+                    field->dataStart,
+                    field->dataEnd);
+                return -1;
+            }
+        }
+        exprNode = SLAstFirstChild(c->ast, fieldNode);
+        if (exprNode < 0) {
+            return SLTCFailNode(c, fieldNode, SLDiag_EXPECTED_EXPR);
+        }
+        if (SLTCTypeExpr(c, exprNode, &fieldType) != 0) {
+            return -1;
+        }
+        if (fieldType == c->typeNull) {
+            return SLTCFailNode(c, exprNode, SLDiag_INFER_NULL_TYPE_UNKNOWN);
+        }
+        if (fieldType == c->typeVoid) {
+            return SLTCFailNode(c, exprNode, SLDiag_INFER_VOID_TYPE_UNKNOWN);
+        }
+        if (SLTCConcretizeInferredType(c, fieldType, &fieldType) != 0) {
+            return -1;
+        }
+        fieldSigs[fieldCount].nameStart = field->dataStart;
+        fieldSigs[fieldCount].nameEnd = field->dataEnd;
+        fieldSigs[fieldCount].typeId = fieldType;
+        fieldCount++;
+        fieldNode = SLAstNextSibling(c->ast, fieldNode);
+    }
+
+    {
+        int32_t typeId = SLTCInternAnonAggregateType(
+            c,
+            0,
+            fieldSigs,
+            fieldCount,
+            -1,
+            c->ast->nodes[nodeId].start,
+            c->ast->nodes[nodeId].end);
+        if (typeId < 0) {
+            return -1;
+        }
+        *outType = typeId;
+        return 0;
+    }
+}
+
 static int SLTCTypeCompoundLit(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t expectedType, int32_t* outType) {
     int32_t  child = SLAstFirstChild(c->ast, nodeId);
@@ -2856,10 +3121,14 @@ static int SLTCTypeCompoundLit(
         firstField = SLAstNextSibling(c->ast, child);
     } else {
         if (expectedType < 0) {
-            return SLTCFailNode(c, nodeId, SLDiag_COMPOUND_INFER_NO_CONTEXT);
+            if (SLTCInferAnonStructTypeFromCompound(c, nodeId, firstField, &resolvedType) != 0) {
+                return -1;
+            }
+            targetType = resolvedType;
+        } else {
+            resolvedType = expectedType;
+            targetType = expectedType;
         }
-        resolvedType = expectedType;
-        targetType = expectedType;
     }
 
     if (expectedType >= 0 && (uint32_t)expectedType < c->typeLen
@@ -2893,7 +3162,10 @@ static int SLTCTypeCompoundLit(
                 ? SLDiag_COMPOUND_TYPE_REQUIRED
                 : SLDiag_COMPOUND_INFER_NON_AGGREGATE);
     }
-    if (c->types[targetAggregateType].kind != SLTCType_NAMED) {
+    if (c->types[targetAggregateType].kind != SLTCType_NAMED
+        && c->types[targetAggregateType].kind != SLTCType_ANON_STRUCT
+        && c->types[targetAggregateType].kind != SLTCType_ANON_UNION)
+    {
         return SLTCFailNode(
             c,
             nodeId,
@@ -2901,7 +3173,7 @@ static int SLTCTypeCompoundLit(
                 ? SLDiag_COMPOUND_TYPE_REQUIRED
                 : SLDiag_COMPOUND_INFER_NON_AGGREGATE);
     }
-    {
+    if (c->types[targetAggregateType].kind == SLTCType_NAMED) {
         int32_t declNode = c->types[targetAggregateType].declNode;
         if (declNode < 0 || (uint32_t)declNode >= c->ast->len
             || (c->ast->nodes[declNode].kind != SLAst_STRUCT
@@ -2915,6 +3187,8 @@ static int SLTCTypeCompoundLit(
                     : SLDiag_COMPOUND_INFER_NON_AGGREGATE);
         }
         isUnion = c->ast->nodes[declNode].kind == SLAst_UNION;
+    } else {
+        isUnion = c->types[targetAggregateType].kind == SLTCType_ANON_UNION;
     }
 
     while (firstField >= 0) {

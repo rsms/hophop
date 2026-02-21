@@ -1,1 +1,0 @@
-tests/compound_literal_infer_no_context_bad.sl:7:13: SL1047: cannot infer compound literal type from context
