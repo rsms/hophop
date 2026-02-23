@@ -13,27 +13,28 @@ Primitive scalar types and full language grammar are documented in `docs/languag
 ```sl
 T          // value
 [T N]      // fixed-size array value
-[T]        // read-only slice view (a form of reference)
-mut[T]     // mutable slice view (a form of reference)
+[T]        // unsized slice type (not by-value)
 
-*T         // pointer to value
+*T         // writable view of value
+&T         // read-only view of value
+
 *[T N]     // pointer to fixed-size array
+&[T N]     // read-only view of fixed-size array
 *[T]       // pointer to runtime-length array
-
-&T         // read-only reference to value
-mut&T      // mutable reference to value
-&[T N]     // read-only reference to fixed-size array
-mut&[T N]  // mutable reference to fixed-size array
+&[T]       // read-only runtime-length slice view
 ```
 
 Notes:
-- `[T N]` is a value type; `[T]`/`mut[T]` are view types.
-- `mut` changes mutability of a view/reference.
+- `[T N]` is a value type.
+- `[T]` is unsized and only valid behind `*` or `&`.
+- Mutability is encoded by `*` (writable) vs `&` (read-only).
 - Common implicit conversions include:
-  - `[T N] -> [T]`
-  - `[T N] -> mut[T]`
-  - `mut[T] -> [T]`
-  - `mut&[T N] -> &[T N]`
+  - `[T N] -> &[T]`
+  - `[T N] -> *[T]` when source is mutable lvalue
+  - `&[T N] -> &[T]`
+  - `*[T N] -> *[T]`
+  - `*[T] -> &[T]`
+  - `*T -> &T`
 
 ## Built-In Types
 
@@ -45,7 +46,7 @@ Conceptually, it is a specialized form of `[u8]` where the content is UTF-8 data
 Properties:
 - `len(s)` is byte length.
 - `cstr(s)` exposes a read-only reference to UTF-8 bytes for C interop.
-- Use `[u8]` / `mut[u8]` for arbitrary binary data.
+- Use `&[u8]` / `*[u8]` for arbitrary binary data.
 
 ### `__sl_MemAllocator`
 
@@ -54,7 +55,7 @@ Allocator implementations must zero newly allocated bytes:
 - fresh allocations are fully zeroed
 - resized allocations must zero bytes in `[oldSize, newSize)`
 
-For normal code, use `std/mem.Allocator` (a nominal alias of `__sl_MemAllocator`).
+For normal code, use `Allocator` (a nominal alias of `__sl_MemAllocator`).
 
 ## Built-In Functions
 
@@ -72,7 +73,7 @@ fn len(x Seq) u32
 ### `cstr`
 
 ```sl
-fn cstr(s str) &u8
+fn cstr(s str) *u8
 ```
 
 `cstr` returns a read-only reference to null-terminated UTF-8 bytes suitable for C APIs.
@@ -81,34 +82,28 @@ fn cstr(s str) &u8
 ### `new`
 
 ```sl
-fn new(ma mut&__sl_MemAllocator, type T) ?*T             // 1
-fn new(ma mut&__sl_MemAllocator, type T) *T              // 2
-fn new(ma mut&__sl_MemAllocator, type T, N uint) ?*[T N] // 3
-fn new(ma mut&__sl_MemAllocator, type T, N uint) *[T N]  // 4
-fn new(ma mut&__sl_MemAllocator, type T, N uint) ?*[T]   // 5
-fn new(ma mut&__sl_MemAllocator, type T, N uint) *[T]    // 6
+fn new(ma *Allocator, type T) *T
+fn new(ma *Allocator, type T, N uint) *[T N] // compile-time constant positive N
+fn new(ma *Allocator, type T, N uint) *[T]   // otherwise
 
-fn new(type T) ?*T             // 7  (contextual form)
-fn new(type T) *T              // 8
-fn new(type T, N uint) ?*[T N] // 9
-fn new(type T, N uint) *[T N]  // 10
-fn new(type T, N uint) ?*[T]   // 11
-fn new(type T, N uint) *[T]    // 12
+fn new(type T) *T
+fn new(type T, N uint) *[T N] // compile-time constant positive N
+fn new(type T, N uint) *[T]   // otherwise
 ```
 
 `new` allocates memory from a memory allocator.
 
-- `ma` must be convertible to `mut&__sl_MemAllocator`.
+- `ma` must be convertible to `*Allocator`.
 - Contextual forms (`new(T[, N])`) use allocator capability `mem` from effective context.
-- Effective context `mem` must be assignable to `mut&__sl_MemAllocator`.
+- Effective context `mem` must be assignable to `*Allocator`.
 - `T` is the allocated element type.
 - If `N` is provided, storage for a sequence of `T` is allocated.
-- If `N` is a positive compile-time constant, result type is a fixed-size array pointer (`*[T N]` / `?*[T N]`).
-- Otherwise, result type is a runtime-length sequence pointer (`*[T]` / `?*[T]`).
+- If `N` is a positive compile-time constant, result type is a fixed-size array pointer (`*[T N]`).
+- Otherwise, result type is a runtime-length sequence pointer (`*[T]`).
 - `T` cannot be a variable-size-by-value type.
 - Negative compile-time `N` is rejected.
-- `?*...` forms return null on allocation failure.
-- `*...` forms panic on allocation failure.
+- `new` can still be assigned to optional pointer forms (`?*...`) via regular assignability.
+- Panic-on-failure vs nullable behavior is determined by assignment target and lowering rules.
 - On success, newly allocated bytes are zero-initialized.
 
 
@@ -119,7 +114,7 @@ fn panic(message str)
 ```
 
 `panic` logs an error message and stops program execution.
-Exact behavior is platform-specific; it's implemented by `platform.panic`.
+Exact behavior is platform-specific; it lowers to the platform panic operation.
 
 
 ### `print`
@@ -143,8 +138,10 @@ fn sizeof(expr E) uint
 `sizeof` returns the size in bytes needed to represent a type or expression.
 
 - `sizeof(type T)` is compile-time.
-- `sizeof(type T)` is invalid for variable-sized-by-value types.
-- `sizeof(expr E)` is compile-time for fixed-size types and runtime for variable-sized values.
+- `sizeof(type T)` is invalid for unsized types (`[T]`) and variable-sized-by-value types.
+- `sizeof(expr E)` is compile-time for fixed-size values and runtime for:
+  - `*[T]` / `&[T]` as `len(E) * sizeof(type T)`
+  - `*V` / `&V` where `V` is variable-size aggregate
 
 
 ## Platform Package API
@@ -156,19 +153,17 @@ Import path:
 
 Surface API:
 - `platform.exit(status)`
-- `platform.panic(msg, flags)`
 - `platform.console_log(msg, flags)`
 
 Operation semantics:
 - `exit`: terminate process with status code.
-- `panic`: handles panic and does not return.
 - `console_log`: writes text (`flags=0` stdout, `flags=1` stderr).
 
-Allocation is provided by `std/mem.Allocator` via `new(...)`, with the platform setting
-`mem.platformAllocator` before `sl_main`.
+Allocation is provided by `Allocator` via `new(...)`, with the platform setting
+`context.mem` before `sl_main`.
 
 Concrete default platform implementation used by `slc compile`/`slc run`:
-- `lib/platform_libc.c`
+- `lib/platform/cli-libc/platform.c`
 
 ### Draft delta (SLP-17, not implemented)
 
@@ -178,7 +173,7 @@ Planned additions to platform library surface:
 
 ```sl
 pub struct Context {
-    mem     &__sl_MemAllocator
+    mem     *Allocator
     console i32
     stdin   ?i32
     fs      ?__sl_FileSystem
@@ -239,11 +234,8 @@ Exact signatures and typing rules are draft and defined in `docs/SLP-18-reflecti
 Common SL <-> C type correspondences:
 
 - `&T` <-> `const T*`
-- `mut&T` <-> `T*`
 - `*T` <-> `T*`
 - `*[T N]` <-> `T*`
 - `*[T]` <-> `struct { T* ptr; size_t len; }`
 - `&[T N]` <-> `const T*`
-- `mut&[T N]` <-> `T*`
 - `&[T]` <-> `struct { const T* ptr; size_t len; }`
-- `mut&[T]` <-> `struct { T* ptr; size_t len; }`

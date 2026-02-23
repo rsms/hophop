@@ -37,7 +37,6 @@ Understand architecture and compiler behavior:
 
 Work on runtime/platform integration:
 - `docs/SLP-5-platform.md`
-- `lib/sl-prelude.h`
 - `lib/platform_libc.c`
 
 Work on compiler/library APIs:

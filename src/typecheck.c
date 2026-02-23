@@ -2318,7 +2318,7 @@ static void SLTCGatherCallCandidates(
     *outCandidateCount = count;
 }
 
-/* Returns 0: success, 1: no name, 2: no match, 3: ambiguous, 4: mut-ref temporary,
+/* Returns 0: success, 1: no name, 2: no match, 3: ambiguous, 4: writable-ref temporary,
  * 5: compound infer ambiguous, -1: error */
 static int SLTCResolveCallByName(
     SLTypeCheckCtx* c,

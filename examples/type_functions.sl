@@ -1,5 +1,4 @@
 // type-function selector sugar with user-defined and built-in functions
-import "std/mem"
 
 struct Counter {
     value int

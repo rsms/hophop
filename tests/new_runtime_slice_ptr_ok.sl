@@ -1,4 +1,3 @@
-import "std/mem"
 
 fn main() {
     var ma *Allocator = 0 as *Allocator

@@ -5,7 +5,6 @@
 // - explicit pass-through (`with context`)
 // - call-local overlays (`with { ... }`)
 // - contextual built-ins (`new(T)` and `print(...)`)
-import "std/mem"
 
 // Context types can be named as they are simply struct types
 struct AppContext {

@@ -1,4 +1,3 @@
-import "std/mem"
 
 fn main() {
     var ma = context.mem

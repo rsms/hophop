@@ -10,7 +10,6 @@ SLP-12 introduces context-typed capability passing with two syntax additions:
 Example:
 
 ```sl
-import "std/mem"
 
 struct AppContext {
     mem     mut&__sl_MemAllocator
@@ -159,14 +158,13 @@ No syntax changes are required for future interface support.
 Example (name-sensitive check):
 
 ```sl
-import "std/mem"
 
 struct LogContext {
-    tmpmem mut&mem.Allocator
+    tmpmem mut&Allocator
 }
 
 struct ExampleContext {
-    mem mut&mem.Allocator
+    mem mut&Allocator
 }
 
 fn log_event(msg str) context LogContext {

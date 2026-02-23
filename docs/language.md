@@ -24,7 +24,10 @@ Out of scope:
 - Pattern: `[A-Za-z_][A-Za-z0-9_]*`.
 
 ### 1.3 Keywords
-`import pub struct union enum fn var const type mut if else for switch case default break continue return defer assert sizeof true false as null context with`
+`import pub struct union enum fn var const type if else for switch case default break continue return defer assert sizeof true false as null context with`
+
+Reserved legacy token:
+- `mut` is reserved for migration diagnostics and is rejected in type syntax.
 
 ### 1.4 Literals
 - Integer: decimal (`123`) or hex (`0x7F`, `0X7F`).
@@ -78,8 +81,9 @@ EmbeddedFieldDecl = TypeName ;
 EnumDecl        = "enum" Ident Type "{" { EnumItem [ "," | ";" ] } "}" [";"] ;
 EnumItem        = Ident ["=" Expr] ;
 
-FnDeclOrDef     = "fn" Ident "(" [ParamList] ")" [Type] [ContextClause] (";" | Block) ;
-FnGroupDecl     = "fn" Ident "{" GroupMember {"," GroupMember} "}" ";" ;
+FnDeclOrDef     = "fn" FnName "(" [ParamList] ")" [Type] [ContextClause] (";" | Block) ;
+FnGroupDecl     = "fn" FnName "{" GroupMember {"," GroupMember} "}" ";" ;
+FnName          = Ident | "sizeof" ;
 GroupMember     = Ident | Ident "." Ident { "." Ident } ;
 ParamList       = ParamGroup {"," ParamGroup} ;
 ParamGroup      = Ident {"," Ident} Type ;
@@ -91,23 +95,17 @@ TypeAliasDecl   = "type" Ident Type ";" ;
 Type            = OptionalType
                 | PtrType
                 | RefType
-                | MutRefType
                 | SliceType
-                | MutSliceType
                 | ArrayType
                 | VarArrayType
                 | TypeName ;
 
 OptionalType    = "?" Type ;
 PtrType         = "*" Type ;
-RefType         = "&" NonSliceType ;
-MutRefType      = "mut" "&" NonSliceType ;
+RefType         = "&" Type ;
 SliceType       = "[" Type "]" ;
-MutSliceType    = "mut" "[" Type "]" ;
 ArrayType       = "[" Type IntLit "]" ;
 VarArrayType    = "[" Type "." Ident "]" ;
-
-NonSliceType    = PtrType | RefType | MutRefType | ArrayType | VarArrayType | TypeName ;
 TypeName        = Ident { "." Ident } ;
 
 Block           = "{" { Stmt [";"] } "}" ;
@@ -192,7 +190,9 @@ FieldInit       = Ident "=" Expr ;
 ```
 
 Notes:
-- `&[T]` and `mut&[T]` are invalid type forms; use `[T]` and `mut[T]`.
+- `[T]` is an unsized type and cannot appear by-value (for example as local/param/return type).
+- Use `*[T]` and `&[T]` for runtime-length slices.
+- Legacy `mut&...` and `mut[...]` forms are rejected.
 - Compound literals support named fields only (`Type{ field = expr }`, `{ field = expr }`).
 - Inferred `{ ... }` requires expected aggregate type context.
 - `void` is a type name but is rejected as an explicit function return type. Omit return type for no return value.
@@ -288,10 +288,12 @@ Type-function selector-call sugar:
 - `u8 u16 u32 u64 i8 i16 i32 i64 uint int f32 f64`
 
 ### 5.2 Constructed types
-- Pointer: `*T`
-- Reference: `&T` (readonly), `mut&T` (mutable)
-- Slice: `[T]` (readonly), `mut[T]` (mutable)
+- Writable reference-like view: `*T`
+- Read-only reference-like view: `&T`
 - Fixed array: `[T N]` where `N` is an integer literal token
+- Runtime-length slice views: `*[T]`, `&[T]`
+- Fixed-array views: `*[T N]`, `&[T N]`
+- Unsized slice type: `[T]` (valid only behind `*` or `&`)
 - Dependent array type form: `[T .lenField]` (restricted; see variable-size structs)
 - Optional: `?T` (feature-gated; see section 8)
 - Named types: `Name`, `pkg.Name`
@@ -301,15 +303,15 @@ Exact type match is required except these implicit conversions:
 - `untyped_int -> any integer type`
 - `untyped_int -> any float type`
 - `untyped_float -> any float type`
-- `mut&T -> &T`
-- `*T -> &T` and `*T -> mut&T`
-- `&T` / `mut&T` -> `*T`
-- `mut[S] -> [S]`
-- `[S N] -> [S]` and `[S N] -> mut[S]`
-- `*[S N] -> [S]` and `*[S N] -> mut[S]`
+- `*T -> &T`
+- `[S N] -> &[S]`
+- `[S N] -> *[S]` when source is a mutable lvalue
+- `&[S N] -> &[S]`
+- `*[S N] -> *[S]`
+- `*[S] -> &[S]`
 - `Derived -> Base` for embedded-base ancestry
-- `&Derived -> &Base` and `mut&Derived -> mut&Base` for embedded-base ancestry
-- `*Derived -> &Base` and `*Derived -> mut&Base` for embedded-base ancestry
+- `&Derived -> &Base` for embedded-base ancestry
+- `*Derived -> *Base` and `*Derived -> &Base` for embedded-base ancestry
 - `T -> ?T`
 - `null -> ?T`
 - `?A -> ?B` if `A` is assignable to `B`
@@ -317,7 +319,8 @@ Exact type match is required except these implicit conversions:
 
 Not implicit:
 - `?T -> T` (requires unwrap or narrowing)
-- readonly-to-mutable reference/slice conversions
+- `*T -> *[T]` and `&T -> &[T]`
+- read-only-to-writable reference/slice conversions
 - numeric widening between concrete numeric types (for example `i32 -> i64`)
 
 ### 5.4 Literals and default typing
@@ -341,13 +344,13 @@ Operator constraints:
 - Unary `+ -`: numeric.
 - Unary `!`: bool only.
 - Unary `*`: pointer/reference dereference.
-- Unary `&`: produces mutable reference (`mut&T`).
+- Unary `&`: produces read-only view (`&T`).
 
 Assignment LHS must be assignable expression:
 - identifier
 - index expression (non-slice)
 - field expression (except dependent VSS fields)
-- dereference (`*expr`) of mutable location
+- dereference (`*expr`) of writable location
 
 Compound assignments (`+=`, etc.):
 - Same assignability as `=`.
@@ -414,7 +417,7 @@ Without that import:
 - `?` in type position is a parse/type error.
 
 Allowed optional targets currently:
-- pointer, reference, and slice families only.
+- reference-like families only (`*...` / `&...`, including slice forms).
 - `?i32`-style value optionals are rejected.
 
 Optional operations:
@@ -436,10 +439,13 @@ Flow narrowing (locals only, including params since params are locals):
 ### 9.1 `len(x)`
 - Accepted argument families:
   - `str`
-  - arrays/slices
-  - pointers/references to arrays/slices
+  - `[T N]`
+  - `*[T]`, `&[T]`
+  - `*[T N]`, `&[T N]`
 - Return type: `u32`.
-- Current generated runtime behavior for null pointer/ref-to-array/slice: yields `0`.
+- `[T N]` returns compile-time constant `N`.
+- `*[T N]`/`&[T N]` currently lower to `(x == 0 ? 0 : N)`.
+- `*[T]`/`&[T]` return runtime `len` field (`0` when pointer value is null).
 - Selector-call sugar is supported: `x.len()` is equivalent to `len(x)` when `x` has no field named `len`.
 
 ### 9.2 `cstr(s)`
@@ -450,18 +456,21 @@ Flow narrowing (locals only, including params since params are locals):
 - Supported forms:
   - `new(ma, T[, N])`
   - `new(T[, N])` (contextual allocator form)
-- In explicit form, `ma` must be convertible to `mut&__sl_MemAllocator`.
+- In explicit form, `ma` must be convertible to `*Allocator`.
 - In contextual form, effective context must provide field `mem` assignable to
-  `mut&__sl_MemAllocator`.
+  `*Allocator`.
 - `T` must be a type argument expression (identifier naming builtin or named type).
 - `N` (if present) must be integer-typed; constant negative values are rejected.
-- Return type: `*T`.
+- Return type:
+  - no `N`: `*T`
+  - constant positive `N`: `*[T N]`
+  - otherwise: `*[T]`
 - On successful allocation, newly allocated bytes are zero-initialized.
   - New allocation: full allocation is zeroed.
   - Resize/grow allocation: bytes in `[oldSize, newSize)` are zeroed.
 - Selector-call sugar is supported: `ma.new(T[, N])` is equivalent to `new(ma, T[, N])`
 
-Typical user code uses `std/mem.Allocator`, which is a nominal alias of `__sl_MemAllocator`.
+Typical user code uses `Allocator`, which is a nominal alias of `__sl_MemAllocator`.
 
 ### 9.4 `panic(msg)`
 - `msg` must be convertible to `str`.
@@ -470,11 +479,15 @@ Typical user code uses `std/mem.Allocator`, which is a nominal alias of `__sl_Me
 ### 9.5 `sizeof`
 - `sizeof(Type)` and `sizeof(expr)` are both supported.
 - Result type: `uint`.
-- `sizeof(Type)` rejects variable-size-by-value types.
+- `sizeof(Type)` rejects unsized types (for example `[T]`) and variable-size-by-value types.
+- `sizeof(expr)` behavior:
+  - fixed-size values: compile-time constant
+  - `*[T]` / `&[T]`: runtime `len(expr) * sizeof(T)`
+  - `*V` / `&V` where `V` is variable-size aggregate: runtime helper on referenced value
 
 ### 9.6 `print(msg)`
 - `msg` must be convertible to `str`.
-- Effective context must provide field `console` assignable to `u64`.
+- Effective context must provide field `console` assignable to `i32`.
 - Lowers to platform console logging with `flags=0` (current implementation).
 
 ## 10. Variable-Size Structs (VSS)
@@ -543,7 +556,9 @@ Special import prefix:
 - Unknown feature names emit a warning.
 - Feature imports are path-only and cannot use `as` or `{...}`.
 - `import "platform"` resolves to a built-in package named `platform`.
-- Built-in `platform` API currently exports `fn exit(status i32)`.
+- Built-in `platform` API currently exports:
+  - `fn exit(status i32)`
+  - `fn console_log(msg str, flags u64)`
 
 Use:
 - Package imports are referenced as `alias.Name` in type names and expressions.
@@ -603,7 +618,7 @@ Entry point:
 - Optional unwrap lowers to `sl_unwrap(...)` trap-on-null behavior.
 - `panic` lowers to platform panic hook (`sl_platform_call`).
 - `print` lowers to platform console log with `flags=0`.
-- `str` runtime representation is slice-like (`ptr + len`) in current prelude.
+- `str` runtime representation is slice-like (`ptr + len`) in current core runtime support.
 
 ## 13. Known Non-Goals / Not Implemented
 

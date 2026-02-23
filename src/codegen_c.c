@@ -7,7 +7,7 @@ typedef struct {
     const char* baseName;
     int         ptrDepth;
     int         valid;
-    int         containerKind; /* 0 scalar, 1 array, 2 ro-slice, 3 mut-slice */
+    int         containerKind; /* 0 scalar, 1 array, 2 ro-slice, 3 rw-slice */
     int         containerPtrDepth;
     uint32_t    arrayLen;
     int         hasArrayLen;
@@ -2634,7 +2634,7 @@ static int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
         || type->containerKind == SLTypeContainer_SLICE_MUT)
     {
         if (type->containerPtrDepth > 0) {
-            /* *[T] / *mut[T] lower to slice structs (ptr+len(+cap)) */
+            /* *[T] / &[T] lower to slice structs (ptr+len) */
             base = type->containerKind == SLTypeContainer_SLICE_MUT
                      ? "__sl_slice_mut"
                      : "__sl_slice_ro";

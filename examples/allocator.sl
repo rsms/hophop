@@ -2,7 +2,6 @@
 // - explicit allocator argument: `new(ma, T[, N])`
 // - selector sugar: `ma.new(T[, N])`
 // - contextual allocator: `new(T[, N])` with `mem` in context
-import "std/mem"
 
 struct Pair {
     x i32

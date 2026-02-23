@@ -196,11 +196,10 @@ build ${diag_outputs[*]}: diaggen $diag_json $diag_tool
 build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | tools/amalgamate.sh tools/amalgamate.py ${git_index} ${diag_outputs[*]}
 build \$builddir/lib/core/core_abi.stamp: coreabigen ${core_sl_sources[@]} lib/platform/platform.sl lib/core/core.h tools/gen_core_abi.py
 build \$builddir/lib/core/core.h: copy lib/core/core.h | \$builddir/lib/core/core_abi.stamp
-build \$builddir/lib/sl-prelude.h: copy lib/sl-prelude.h
 build \$builddir/lib/platform/cli-libc/platform.c: copy lib/platform/cli-libc/platform.c
 build \$builddir/slc: link ${objfiles[*]}
 
-default \$builddir/libsl.h \$builddir/lib/core/core.h \$builddir/lib/sl-prelude.h \$builddir/lib/platform/cli-libc/platform.c \$builddir/slc
+default \$builddir/libsl.h \$builddir/lib/core/core.h \$builddir/lib/platform/cli-libc/platform.c \$builddir/slc
 _END
 
 if git diff --no-index --minimal build.ninja $NF > build.ninja.diff; then

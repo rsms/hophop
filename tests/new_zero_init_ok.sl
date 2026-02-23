@@ -1,4 +1,3 @@
-import "std/mem"
 
 struct S {
     x int

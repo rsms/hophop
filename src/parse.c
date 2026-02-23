@@ -104,6 +104,16 @@ static int SLPExpectDeclName(SLParser* p, const SLToken** out) {
     return 0;
 }
 
+static int SLPExpectFnName(SLParser* p, const SLToken** out) {
+    const SLToken* tok = SLPPeek(p);
+    if (tok->kind == SLTok_SIZEOF) {
+        *out = tok;
+        p->pos++;
+        return 0;
+    }
+    return SLPExpectDeclName(p, out);
+}
+
 static int SLPIsFieldSeparator(SLTokenKind kind) {
     return kind == SLTok_SEMICOLON || kind == SLTok_COMMA || kind == SLTok_RBRACE
         || kind == SLTok_ASSIGN || kind == SLTok_EOF;
@@ -1819,7 +1829,7 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
     int32_t        fn;
 
     p->pos++;
-    if (SLPExpectDeclName(p, &name) != 0) {
+    if (SLPExpectFnName(p, &name) != 0) {
         return -1;
     }
 

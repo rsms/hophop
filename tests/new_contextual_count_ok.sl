@@ -1,4 +1,3 @@
-import "std/mem"
 
 struct Ctx {
     mem *Allocator

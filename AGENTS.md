@@ -67,42 +67,9 @@ slc run <dir|file.sl>       # compile + execute
 
 ## Architecture
 
-SL is a language currently compiled via a C11 backend in a multi-stage pipeline:
-
-```
-Source → [Lexer] → Tokens → [Parser] → AST → [Typechecker] → [Codegen] → C header
-```
-
-### Source Layout (`src/`)
-
-| File | Role |
-|---|---|
-| `libsl.h` | Public API: type definitions, token/AST node kinds, function declarations |
-| `libsl.c` | Freestanding core: arena allocator, lexer (with semicolon insertion), diagnostics |
-| `parse.c` | Recursive-descent parser; builds a flat array of AST nodes (indexed, not pointer-linked) |
-| `typecheck.c` | Symbol tables, name resolution, type inference, mutability/reference checking |
-| `slc.c` | Hosted CLI: package loading, import graph, command dispatch |
-| `codegen_c.c` | C backend: emits single-header library, mangles symbols, lowers defer, VSS accessors |
-| `codegen.h/.c` | Backend interface (currently only C backend exists) |
-| `tools/amalgamate.py` | Merges `libsl.*` sources into a single distributable header |
-
-### Key Design Points
-
-**Freestanding core**: `libsl.h/c` and `parse.c`/`typecheck.c` have no libc dependencies. All allocation goes through an explicit `SLArena` arena passed by the caller. The hosted CLI (`slc.c`) provides the growable backing store.
-
-**Flat AST**: Nodes are stored in a contiguous array; cross-references use `int32_t` indices, not pointers. This simplifies serialization and avoids pointer chasing.
-
-**Single-header output**: `genpkg:c` emits a `.h` file (C11, compilable as freestanding) containing all type definitions, function declarations, and implementations for a package.
-
-**Symbol mangling**: Package symbols are emitted as `pkg__Name` (double underscore separates package from identifier).
-
-**Selector inference**: The typechecker resolves `.` vs `->` so the codegen always knows whether to emit `.` or `->` for field access.
-
-**Defer lowering**: `defer` statements are reordered to LIFO at block exits during codegen, not in the AST.
-
-**Variable-size structs (SLP-1)**: Structs can have a trailing `[.lenField]T` dependent array. Codegen emits accessor functions and runtime `sizeof` helpers. See `docs/SLP-1-variable-size-structs.md`.
-
-**References and slices (SLP-2)**: `&T` = borrowed reference, `*T` = owned pointer, `[T]` = read-only slice, `mut[T]` = mutable slice. `new(ma, T)` allocates via an explicit `MemAllocator`. See `docs/SLP-2-types.md`.
+- Source of truth for language syntax/semantics: `docs/language.md`.
+- Source of truth for implementation details: the code itself (`src/`, `lib/`, `tools/`, `tests/`).
+- If a high-level summary conflicts with code, trust `docs/language.md` and current source files.
 
 ## Workflow Notes
 

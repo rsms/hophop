@@ -1,4 +1,3 @@
-import "std/mem"
 
 fn main() i32 {
     var ma Allocator
