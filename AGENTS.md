@@ -31,6 +31,11 @@ Reacting to important updates:
 - Integration options include: `git stash` + merge/rebase + `git stash pop`, committing your WIP and then merging/rebasing, or another safe git workflow.
 - If another agent reports they merged, update your branch from `main` promptly (`git merge main` or `git rebase main`) to pick up those changes.
 
+Guidelines for announcement types:
+
+- start of planned work: include an abbreviated version of the plan as a "plan" JSON property, e.g. `agent-worklog '{"message":"starting work on migrating prelude to core package","plan":"PLAN GOES HERE"}'`
+
+
 ## Build and Test
 
 - `./build.sh test` — build (debug) and run full test suite
