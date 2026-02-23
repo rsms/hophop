@@ -18,7 +18,7 @@ fn alloc_value() *i32 context { mem *Allocator } {
     return p
 }
 
-fn announce(msg str) context { mem *Allocator, console i32 } {
+fn announce(msg &str) context { mem *Allocator, console i32 } {
     print(msg)
 }
 

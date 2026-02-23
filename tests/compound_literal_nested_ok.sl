@@ -5,7 +5,7 @@ struct Size {
 
 struct Window {
     size Size
-    title str
+    title &str
 }
 
 fn main() {

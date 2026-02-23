@@ -1,4 +1,4 @@
-fn use(v { a int, b str }) int {
+fn use(v { a int, b &str }) int {
     return v.a
 }
 

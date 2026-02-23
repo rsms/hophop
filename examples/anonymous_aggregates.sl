@@ -36,11 +36,11 @@ fn set_value(e Example, v union { i i32, f f64 }) Example {
     return out
 }
 
-fn read_pair(v { a i32, b str }) i32 {
+fn read_pair(v { a i32, b &str }) i32 {
     return v.a
 }
 
-fn announce(msg str) context { console i32 } {
+fn announce(msg &str) context { console i32 } {
     // `context { ... }` declares required ambient capabilities for this call.
     print(msg)
 }

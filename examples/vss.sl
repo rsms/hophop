@@ -3,6 +3,7 @@
 struct Packet {
     payloadLen u32
     sampleLen  u32
+    name       str
     payload    [u8 .payloadLen]
     samples    [i32 .sampleLen]
 }
@@ -16,4 +17,9 @@ fn main() {
     var samples = p.samples
     var samplesPtr = &p.samples
     samples = *samplesPtr
+
+    var namePtr = &p.name
+    var nameBytes &[u8] = namePtr
+    assert len(namePtr) == namePtr.len()
+    assert len(nameBytes) == namePtr.len()
 }

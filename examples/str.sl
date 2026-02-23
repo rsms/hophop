@@ -1,0 +1,50 @@
+// string capabilities with the variable-size `str` representation:
+// - string literals default to `&str`
+// - explicit `*str` writable literals
+// - implicit conversion to `&[u8]` and `*[u8]`
+// - len/cstr builtins and receiver sugar
+// - concat allocation and free with allocator/context
+
+struct AppContext {
+    mem *Allocator
+    console i32
+}
+
+fn run() context AppContext {
+    var lit_ro &str = "hello"
+    var lit_rw *str = "world"
+
+    assert len(lit_ro) == 5
+    assert lit_ro.len() == 5
+    assert len(lit_rw) == 5
+    assert lit_rw.len() == 5
+
+    var ro0 &[u8] = lit_ro
+    var ro1 &[u8] = lit_rw
+    var rw *[u8] = lit_rw
+
+    assert len(ro0) == 5
+    assert len(ro1) == 5
+    assert len(rw) == 5
+
+    rw[0] = 87 // 'W'
+    rw[1] = 79 // 'O'
+    assert rw[0] == 87
+    assert rw[1] == 79
+
+    cstr(lit_ro)
+    lit_rw.cstr()
+
+    var joined *str = concat(lit_ro, lit_rw)
+    assert len(joined) == 10
+    print(joined)
+    free(joined)
+
+    var shout *str = concat(lit_ro, "!")
+    assert len(shout) == 6
+    context.mem.free(shout)
+}
+
+fn main() {
+    run() with { mem = context.mem, console = 0 }
+}

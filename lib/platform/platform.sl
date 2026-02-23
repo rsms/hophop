@@ -6,4 +6,4 @@ pub enum PlatformOps i32 {
 }
 
 pub fn exit(status i32) {}
-pub fn console_log(msg str, flags u64) {}
+pub fn console_log(msg &str, flags u64) {}

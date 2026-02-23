@@ -7,7 +7,7 @@ fn alloc() *i32 context Ctx {
     return new(i32)
 }
 
-fn log(msg str) context Ctx {
+fn log(msg &str) context Ctx {
     print(msg)
 }
 

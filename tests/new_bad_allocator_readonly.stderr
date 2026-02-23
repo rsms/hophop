@@ -1,1 +1,1 @@
-tests/new_bad_allocator_readonly.sl:13:18: SL2004: type mismatch
+tests/new_bad_allocator_readonly.sl:17:18: SL2004: type mismatch

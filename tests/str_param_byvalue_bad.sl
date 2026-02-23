@@ -1,0 +1,2 @@
+fn bad(s str) {
+}

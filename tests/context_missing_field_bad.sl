@@ -10,7 +10,7 @@ struct MemCtx {
     mem *Allocator
 }
 
-fn log_event(msg str) context TmpCtx {
+fn log_event(msg &str) context TmpCtx {
 }
 
 fn example() context MemCtx {

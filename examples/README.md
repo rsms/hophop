@@ -15,6 +15,8 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/slc check examples/order_independent.sl`
 - Strings, `assert`, `len`, `cstr`: `examples/strings.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/strings.sl`
+- Full `str` capabilities (`&str`, `*str`, `[u8]` views, `concat`, `free`): `examples/str.sl`
+  - Check: `./_build/macos-aarch64-debug/slc checkpkg examples/str.sl`
 - Casts (`as`): `examples/casts.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/casts.sl`
 - `defer`: `examples/defer.sl`
