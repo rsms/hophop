@@ -22,7 +22,7 @@ When making plans, editing files or running commands that change things (but not
 Announcement format:
 
 - Preferred: plain short message text, e.g. `agent-worklog "editing typecheck: fix mutable slice assign"`
-- Optional: JSON object when structured fields help, e.g. `agent-worklog '{"message":"running tests","proposal":"14A"}'`
+- Optional: JSON object when structured fields help, e.g. `agent-worklog '{"message":"running tests","SLP":"14"}'`
 - If plain text is used, `agent-worklog` wraps it into JSON and adds `timestamp` plus `from` (current branch name)
 
 Reacting to important updates:
@@ -34,6 +34,7 @@ Reacting to important updates:
 Guidelines for announcement types:
 
 - start of planned work: include an abbreviated version of the plan as a "plan" JSON property, e.g. `agent-worklog '{"message":"starting work on migrating prelude to core package","plan":"PLAN GOES HERE"}'`
+- adding, removing or modifying files: include a list of filenames, e.g. `agent-worklog '{"message":"MESSAGE HERE","files":["file1", "file2"]}'`
 
 
 ## Build and Test
