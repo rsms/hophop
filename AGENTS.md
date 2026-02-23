@@ -9,7 +9,7 @@ Each agent should run in a dedicated git worktree managed by Worktrunk (`wt`).
 - Inspect active worktrees with `wt list`
 - Find your current branch with `git branch --show-current`
 
-When editing files or running commands that change things (not during planning or discussion-only phases), coordinate through worklogs:
+When making plans, editing files or running commands that change things (but not during discussion-only phases), coordinate through worklogs:
 
 - Write announcements with `agent-worklog <announcement> ...`
 - Every `agent-worklog ...` announcement also read updates from other agents, so no separate immediate poll is needed after posting
