@@ -1,5 +1,5 @@
 struct Ctx {
-    mem *__sl_MemAllocator
+    mem *Allocator
     console i32
 }
 

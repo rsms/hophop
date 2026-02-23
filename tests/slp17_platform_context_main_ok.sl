@@ -1,6 +1,6 @@
 import "platform"
 
-fn alloc() *u8 context platform.Context {
+fn alloc() *u8 context Context {
     return new(u8)
 }
 

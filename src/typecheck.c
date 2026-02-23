@@ -2,8 +2,6 @@
 
 SL_API_BEGIN
 
-#define SLTC_PLATFORM_TARGET_CONTEXT_TYPE "__platform_target__Context"
-
 typedef enum {
     SLTCType_INVALID = 0,
     SLTCType_BUILTIN,
@@ -39,8 +37,6 @@ typedef enum {
     SLBuiltin_ISIZE,
     SLBuiltin_F32,
     SLBuiltin_F64,
-    SLBuiltin_MEM_ALLOCATOR,
-    SLBuiltin_MAIN_CONTEXT,
 } SLBuiltinKind;
 
 typedef struct {
@@ -272,6 +268,36 @@ static int SLNameEqLiteral(SLStrView src, uint32_t start, uint32_t end, const ch
     return lit[i] == '\0';
 }
 
+static int SLNameHasPrefix(SLStrView src, uint32_t start, uint32_t end, const char* prefix) {
+    uint32_t i = 0;
+    if (end < start) {
+        return 0;
+    }
+    while (prefix[i] != '\0') {
+        if (start + i >= end || src.ptr[start + i] != prefix[i]) {
+            return 0;
+        }
+        i++;
+    }
+    return 1;
+}
+
+static int SLNameHasSuffix(SLStrView src, uint32_t start, uint32_t end, const char* suffix) {
+    uint32_t suffixLen = 0;
+    uint32_t nameLen;
+    while (suffix[suffixLen] != '\0') {
+        suffixLen++;
+    }
+    if (end < start) {
+        return 0;
+    }
+    nameLen = end - start;
+    if (suffixLen > nameLen) {
+        return 0;
+    }
+    return memcmp(src.ptr + end - suffixLen, suffix, suffixLen) == 0;
+}
+
 static int32_t SLTCFindMemAllocatorType(SLTypeCheckCtx* c) {
     return c->typeMemAllocator;
 }
@@ -338,9 +364,7 @@ static int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
         || SLTCAddBuiltinType(c, "uint", SLBuiltin_USIZE) < 0
         || SLTCAddBuiltinType(c, "int", SLBuiltin_ISIZE) < 0
         || SLTCAddBuiltinType(c, "f32", SLBuiltin_F32) < 0
-        || SLTCAddBuiltinType(c, "f64", SLBuiltin_F64) < 0
-        || SLTCAddBuiltinType(c, "__sl_MemAllocator", SLBuiltin_MEM_ALLOCATOR) < 0
-        || SLTCAddBuiltinType(c, "__sl_MainContext", SLBuiltin_MAIN_CONTEXT) < 0)
+        || SLTCAddBuiltinType(c, "f64", SLBuiltin_F64) < 0)
     {
         return -1;
     }
@@ -422,16 +446,6 @@ static int32_t SLTCFindBuiltinType(SLTypeCheckCtx* c, uint32_t start, uint32_t e
             return (int32_t)i;
         }
         if (SLNameEqLiteral(c->src, start, end, "f64") && t->builtin == SLBuiltin_F64) {
-            return (int32_t)i;
-        }
-        if (SLNameEqLiteral(c->src, start, end, "__sl_MemAllocator")
-            && t->builtin == SLBuiltin_MEM_ALLOCATOR)
-        {
-            return (int32_t)i;
-        }
-        if (SLNameEqLiteral(c->src, start, end, "__sl_MainContext")
-            && t->builtin == SLBuiltin_MAIN_CONTEXT)
-        {
             return (int32_t)i;
         }
     }
@@ -1910,7 +1924,23 @@ static int SLTCIsMainFunction(SLTypeCheckCtx* c, const SLTCFunction* fn) {
 }
 
 static int32_t SLTCResolveImplicitMainContextType(SLTypeCheckCtx* c) {
-    int32_t typeId = SLTCFindNamedTypeByLiteral(c, SLTC_PLATFORM_TARGET_CONTEXT_TYPE);
+    uint32_t i;
+    int32_t  typeId = SLTCFindNamedTypeByLiteral(c, "core__Context");
+    if (typeId >= 0) {
+        return typeId;
+    }
+    for (i = 0; i < c->typeLen; i++) {
+        const SLTCType* t = &c->types[i];
+        if (t->kind != SLTCType_NAMED) {
+            continue;
+        }
+        if (SLNameHasPrefix(c->src, t->nameStart, t->nameEnd, "core")
+            && SLNameHasSuffix(c->src, t->nameStart, t->nameEnd, "__Context"))
+        {
+            return (int32_t)i;
+        }
+    }
+    typeId = SLTCFindNamedTypeByLiteral(c, "Context");
     if (typeId >= 0) {
         return typeId;
     }
@@ -2560,10 +2590,7 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
                             return SLTCFailSpan(
                                 c, SLDiag_EMBEDDED_TYPE_NOT_STRUCT, n->dataStart, n->dataEnd);
                         }
-                    } else if (
-                        c->types[embedType].kind != SLTCType_BUILTIN
-                        || c->types[embedType].builtin != SLBuiltin_MEM_ALLOCATOR)
-                    {
+                    } else if (c->types[embedType].kind != SLTCType_ANON_STRUCT) {
                         return SLTCFailSpan(
                             c, SLDiag_EMBEDDED_TYPE_NOT_STRUCT, n->dataStart, n->dataEnd);
                     }
@@ -3689,6 +3716,23 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
             if (localIdx >= 0) {
                 *outType = c->locals[localIdx].typeId;
                 return 0;
+            }
+            if (SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "context")) {
+                int32_t contextTypeId = -1;
+                if (c->currentContextType >= 0) {
+                    contextTypeId = c->currentContextType;
+                } else if (c->hasImplicitMainRootContext && c->implicitMainContextType >= 0) {
+                    contextTypeId = c->implicitMainContextType;
+                }
+                if (contextTypeId >= 0) {
+                    int32_t contextRefType = SLTCInternRefType(
+                        c, contextTypeId, 1, n->dataStart, n->dataEnd);
+                    if (contextRefType < 0) {
+                        return -1;
+                    }
+                    *outType = contextRefType;
+                    return 0;
+                }
             }
             {
                 int32_t fnIdx = SLTCFindFunctionIndex(c, n->dataStart, n->dataEnd);
@@ -5360,11 +5404,7 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
         return -1;
     }
     c.typeUsize = SLTCFindBuiltinByKind(&c, SLBuiltin_USIZE);
-    c.typeMemAllocator = SLTCFindBuiltinByKind(&c, SLBuiltin_MEM_ALLOCATOR);
     if (c.typeUsize < 0) {
-        return SLTCFailSpan(&c, SLDiag_UNKNOWN_TYPE, 0, 0);
-    }
-    if (c.typeMemAllocator < 0) {
         return SLTCFailSpan(&c, SLDiag_UNKNOWN_TYPE, 0, 0);
     }
 
@@ -5373,6 +5413,10 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
     }
     if (SLTCResolveAllTypeAliases(&c) != 0) {
         return -1;
+    }
+    c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "core__Allocator");
+    if (c.typeMemAllocator < 0) {
+        c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "Allocator");
     }
     if (SLTCCollectFunctionDecls(&c) != 0) {
         return -1;

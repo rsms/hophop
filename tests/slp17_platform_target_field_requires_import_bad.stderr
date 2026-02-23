@@ -1,1 +1,1 @@
-tests/slp17_platform_target_field_requires_import_bad.sl:6:25: SL2002: unknown identifier 'stderr'
+tests/slp17_platform_target_field_requires_import_bad.sl:20:25: SL2002: unknown identifier 'stdin'

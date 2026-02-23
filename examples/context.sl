@@ -9,17 +9,17 @@ import "std/mem"
 
 // Context types can be named as they are simply struct types
 struct AppContext {
-    mem *mem.Allocator
+    mem *Allocator
     console i32
 }
 
-fn alloc_value() *i32 context { mem *mem.Allocator } {
+fn alloc_value() *i32 context { mem *Allocator } {
     var p *i32 = new(i32)
     *p = 42
     return p
 }
 
-fn announce(msg str) context { mem *mem.Allocator, console i32 } {
+fn announce(msg str) context { mem *Allocator, console i32 } {
     print(msg)
 }
 
@@ -44,8 +44,8 @@ fn run_once() i32 context AppContext {
 
 fn main() {
     // `main` can supply call-local capabilities explicitly.
-    var a = run_once() with { mem = mem.platformAllocator, console = 0 }
-    var b = run_once() with { mem = mem.platformAllocator, console = 0 }
+    var a = run_once() with { mem = context.mem, console = 0 }
+    var b = run_once() with { mem = context.mem, console = 0 }
 
     assert a == 84
     assert b == 84

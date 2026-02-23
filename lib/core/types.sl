@@ -1,14 +1,8 @@
-struct Allocator {
+pub struct Allocator {
     impl fn(self *Allocator, addr, align, curSize uint, newSizeInOut *uint, flags u32) uint
 }
-
-struct CtxA {
+pub struct Context {
     mem *Allocator
+    console i32
+    stderr i32
 }
-
-struct CtxB {
-    mem *Allocator
-}
-
-fn f() context CtxA;
-fn f() context CtxB {}

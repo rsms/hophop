@@ -1,7 +1,7 @@
 import "std/mem"
 
 struct NeedCtx {
-    mem *__sl_MemAllocator
+    mem *Allocator
 }
 
 fn a() context NeedCtx {
@@ -9,5 +9,5 @@ fn a() context NeedCtx {
 }
 
 fn main() {
-    a() with { mem = mem.platformAllocator }
+    a() with { mem = context.mem }
 }

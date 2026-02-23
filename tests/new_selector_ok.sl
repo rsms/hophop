@@ -1,7 +1,7 @@
 import "std/mem"
 
 fn main() {
-    var ma = mem.platformAllocator
+    var ma = context.mem
     var p *i32 = ma.new(i32)
     var q *[i32 4] = ma.new(i32, 4)
 

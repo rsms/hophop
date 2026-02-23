@@ -6,7 +6,7 @@ struct S {
 }
 
 fn main() {
-    var ma = mem.platformAllocator
+    var ma = context.mem
     var p *S = new(ma, S)
     var q *[i32 4] = new(ma, i32, 4)
 

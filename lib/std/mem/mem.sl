@@ -1,4 +1,2 @@
-pub type Allocator __sl_MemAllocator
-
-// Initialized by platform runtime before sl_main.
-pub var platformAllocator *Allocator
+// Deprecated compatibility package.
+// Runtime allocator symbols now live in core and are implicitly available.

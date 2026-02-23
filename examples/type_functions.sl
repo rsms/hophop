@@ -18,7 +18,7 @@ fn main() {
     c.value = 21
 
     var msg = "hi"
-    var ma = 0 as *mem.Allocator
+    var ma = 0 as *Allocator
 
     assert c.doubled() == doubled(c)
     assert c.add(7) == add(c, 7)

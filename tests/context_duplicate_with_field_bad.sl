@@ -1,5 +1,9 @@
+struct Allocator {
+    impl fn(self *Allocator, addr, align, curSize uint, newSizeInOut *uint, flags u32) uint
+}
+
 struct Ctx {
-    mem *__sl_MemAllocator
+    mem *Allocator
 }
 
 fn f() context Ctx {}

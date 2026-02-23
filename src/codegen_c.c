@@ -3,8 +3,6 @@
 
 SL_API_BEGIN
 
-#define SLCCG_PLATFORM_TARGET_CONTEXT_TYPE "__platform_target__Context"
-
 typedef struct {
     const char* baseName;
     int         ptrDepth;
@@ -391,8 +389,7 @@ static int IsBuiltinType(const char* s) {
     return StrEq(s, "void") || StrEq(s, "bool") || StrEq(s, "str") || StrEq(s, "u8")
         || StrEq(s, "u16") || StrEq(s, "u32") || StrEq(s, "u64") || StrEq(s, "i8")
         || StrEq(s, "i16") || StrEq(s, "i32") || StrEq(s, "i64") || StrEq(s, "uint")
-        || StrEq(s, "int") || StrEq(s, "f32") || StrEq(s, "f64") || StrEq(s, "__sl_MemAllocator")
-        || StrEq(s, "__sl_MainContext");
+        || StrEq(s, "int") || StrEq(s, "f32") || StrEq(s, "f64");
 }
 
 static int IsIntegerCTypeName(const char* s) {
@@ -895,8 +892,39 @@ static const SLNameMap* _Nullable FindNameByCString(const SLCBackendC* c, const 
     return NULL;
 }
 
+static int NameHasPrefixSuffix(const char* name, const char* prefix, const char* suffix) {
+    size_t nameLen;
+    size_t prefixLen;
+    size_t suffixLen;
+    if (name == NULL || prefix == NULL || suffix == NULL) {
+        return 0;
+    }
+    nameLen = StrLen(name);
+    prefixLen = StrLen(prefix);
+    suffixLen = StrLen(suffix);
+    if (nameLen < prefixLen + suffixLen) {
+        return 0;
+    }
+    return memcmp(name, prefix, prefixLen) == 0
+        && memcmp(name + nameLen - suffixLen, suffix, suffixLen) == 0;
+}
+
 static int ResolveMainSemanticContextType(SLCBackendC* c, SLTypeRef* outType) {
-    const SLNameMap* map = FindNameByCString(c, SLCCG_PLATFORM_TARGET_CONTEXT_TYPE);
+    const SLNameMap* map = FindNameByCString(c, "core__Context");
+    uint32_t         i;
+    if (map != NULL && IsTypeDeclKind(map->kind)) {
+        TypeRefSetScalar(outType, map->cName);
+        return 0;
+    }
+    for (i = 0; i < c->nameLen; i++) {
+        if (IsTypeDeclKind(c->names[i].kind)
+            && NameHasPrefixSuffix(c->names[i].name, "core", "__Context"))
+        {
+            TypeRefSetScalar(outType, c->names[i].cName);
+            return 0;
+        }
+    }
+    map = FindNameByCString(c, "Context");
     if (map != NULL && IsTypeDeclKind(map->kind)) {
         TypeRefSetScalar(outType, map->cName);
         return 0;
@@ -968,42 +996,13 @@ static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uin
     char*                    normalized;
     uint32_t                 i;
     static const char* const builtinSlNames[] = {
-        "void",
-        "bool",
-        "str",
-        "u8",
-        "u16",
-        "u32",
-        "u64",
-        "i8",
-        "i16",
-        "i32",
-        "i64",
-        "uint",
-        "int",
-        "f32",
-        "f64",
-        "__sl_MemAllocator",
-        "__sl_MainContext",
+        "void", "bool", "str", "u8",   "u16", "u32", "u64", "i8",
+        "i16",  "i32",  "i64", "uint", "int", "f32", "f64",
     };
     static const char* const builtinCNames[] = {
-        "void",
-        "__sl_bool",
-        "__sl_str",
-        "__sl_u8",
-        "__sl_u16",
-        "__sl_u32",
-        "__sl_u64",
-        "__sl_i8",
-        "__sl_i16",
-        "__sl_i32",
-        "__sl_i64",
-        "__sl_uint",
-        "__sl_int",
-        "__sl_f32",
-        "__sl_f64",
-        "__sl_mem_Allocator",
-        "__sl_MainContext",
+        "void",     "__sl_bool", "__sl_str", "__sl_u8",  "__sl_u16",
+        "__sl_u32", "__sl_u64",  "__sl_i8",  "__sl_i16", "__sl_i32",
+        "__sl_i64", "__sl_uint", "__sl_int", "__sl_f32", "__sl_f64",
     };
 
     normalized = DupAndReplaceDots(c, c->unit->source, start, end);
@@ -2899,6 +2898,35 @@ static int EmitCompoundLiteral(
 static int EmitEffectiveContextFieldValue(
     SLCBackendC* c, const char* fieldName, const SLTypeRef* requiredType);
 static int InferBuiltinNewCallType(SLCBackendC* c, int32_t callNode, SLTypeRef* outType);
+static int TypeRefAssignableCost(
+    SLCBackendC* c, const SLTypeRef* dst, const SLTypeRef* src, uint8_t* outCost);
+
+static void SetPreferredAllocatorPtrType(SLTypeRef* outType) {
+    TypeRefSetScalar(outType, "core__Allocator");
+    outType->ptrDepth = 1;
+}
+
+static int IsAllocatorPtrType(SLCBackendC* c, const SLTypeRef* gotType) {
+    SLTypeRef want;
+    uint8_t   cost = 0;
+    SetPreferredAllocatorPtrType(&want);
+    if (TypeRefAssignableCost(c, &want, gotType, &cost) == 0) {
+        return 1;
+    }
+    TypeRefSetScalar(&want, "Allocator");
+    want.ptrDepth = 1;
+    if (TypeRefAssignableCost(c, &want, gotType, &cost) == 0) {
+        return 1;
+    }
+    TypeRefSetScalar(&want, "__sl_Allocator");
+    want.ptrDepth = 1;
+    if (TypeRefAssignableCost(c, &want, gotType, &cost) == 0) {
+        return 1;
+    }
+    TypeRefSetScalar(&want, "__sl_mem_Allocator");
+    want.ptrDepth = 1;
+    return TypeRefAssignableCost(c, &want, gotType, &cost) == 0;
+}
 
 static int IsTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
@@ -3969,15 +3997,9 @@ static int InferBuiltinNewCallType(SLCBackendC* c, int32_t callNode, SLTypeRef* 
             countArg = arg3;
         } else if (arg2 >= 0) {
             SLTypeRef got;
-            SLTypeRef want;
-            uint8_t   cost = 0;
             int       isAlloc = 0;
 
-            TypeRefSetScalar(&want, "__sl_mem_Allocator");
-            want.ptrDepth = 1;
-            if (InferExprType(c, arg1, &got) == 0 && got.valid
-                && TypeRefAssignableCost(c, &want, &got, &cost) == 0)
-            {
+            if (InferExprType(c, arg1, &got) == 0 && got.valid && IsAllocatorPtrType(c, &got)) {
                 isAlloc = 1;
             }
             if (isAlloc) {
@@ -4439,8 +4461,7 @@ static int EmitNewAllocArgExpr(SLCBackendC* c, int32_t allocArg) {
     }
     {
         SLTypeRef want;
-        TypeRefSetScalar(&want, "__sl_mem_Allocator");
-        want.ptrDepth = 1;
+        SetPreferredAllocatorPtrType(&want);
         return EmitEffectiveContextFieldValue(c, "mem", &want);
     }
 }
@@ -4483,14 +4504,8 @@ static int EmitNewCallExpr(
             countArg = arg3;
         } else if (arg2 >= 0) {
             SLTypeRef got;
-            SLTypeRef want;
-            uint8_t   cost = 0;
             int       isAlloc = 0;
-            TypeRefSetScalar(&want, "__sl_mem_Allocator");
-            want.ptrDepth = 1;
-            if (InferExprType(c, arg1, &got) == 0
-                && TypeRefAssignableCost(c, &want, &got, &cost) == 0)
-            {
+            if (InferExprType(c, arg1, &got) == 0 && IsAllocatorPtrType(c, &got)) {
                 isAlloc = 1;
             }
             if (isAlloc) {
@@ -4562,7 +4577,7 @@ static int EmitNewCallExpr(
             {
                 return -1;
             }
-            if (BufAppendCStr(&c->out, "__sl_new_array((__sl_mem_Allocator*)(") != 0
+            if (BufAppendCStr(&c->out, "__sl_new_array((__sl_Allocator*)(") != 0
                 || EmitNewAllocArgExpr(c, allocArg) != 0
                 || BufAppendCStr(&c->out, "), sizeof(") != 0
                 || BufAppendCStr(&c->out, typeName) != 0
@@ -4582,8 +4597,8 @@ static int EmitNewCallExpr(
 
         if (BufAppendCStr(
                 &c->out,
-                dstIsRuntimeArrayMut ? "__sl_new_array_slice_mut((__sl_mem_Allocator*)("
-                                     : "__sl_new_array_slice_ro((__sl_mem_Allocator*)(")
+                dstIsRuntimeArrayMut ? "__sl_new_array_slice_mut((__sl_Allocator*)("
+                                     : "__sl_new_array_slice_ro((__sl_Allocator*)(")
                 != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || BufAppendCStr(&c->out, typeName) != 0 || BufAppendCStr(&c->out, "), _Alignof(") != 0
@@ -4607,7 +4622,7 @@ static int EmitNewCallExpr(
         }
     }
     if (countArg >= 0) {
-        if (BufAppendCStr(&c->out, "__sl_new_array((__sl_mem_Allocator*)(") != 0
+        if (BufAppendCStr(&c->out, "__sl_new_array((__sl_Allocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || BufAppendCStr(&c->out, typeName) != 0 || BufAppendCStr(&c->out, "), _Alignof(") != 0
             || BufAppendCStr(&c->out, typeName) != 0
@@ -4617,7 +4632,7 @@ static int EmitNewCallExpr(
             return -1;
         }
     } else {
-        if (BufAppendCStr(&c->out, "__sl_new((__sl_mem_Allocator*)(") != 0
+        if (BufAppendCStr(&c->out, "__sl_new((__sl_Allocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || BufAppendCStr(&c->out, typeName) != 0 || BufAppendCStr(&c->out, "), _Alignof(") != 0
             || BufAppendCStr(&c->out, typeName) != 0 || BufAppendCStr(&c->out, "))") != 0)
@@ -6566,12 +6581,6 @@ static int IsMainFunctionNode(const SLCBackendC* c, int32_t nodeId) {
         && SliceEq(c->unit->source, n->dataStart, n->dataEnd, "main");
 }
 
-static int IsRuntimeAllocatorGlobalNode(const SLCBackendC* c, int32_t nodeId) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    return n != NULL && n->kind == SLAst_VAR
-        && SliceEq(c->unit->source, n->dataStart, n->dataEnd, "mem__platformAllocator");
-}
-
 static int IsExplicitlyExportedNode(const SLCBackendC* c, int32_t nodeId) {
     const SLAstNode* n = NodeAt(c, nodeId);
     const SLNameMap* map;
@@ -6584,9 +6593,6 @@ static int IsExplicitlyExportedNode(const SLCBackendC* c, int32_t nodeId) {
 
 static int IsExportedNode(const SLCBackendC* c, int32_t nodeId) {
     if (IsMainFunctionNode(c, nodeId)) {
-        return 1;
-    }
-    if (IsRuntimeAllocatorGlobalNode(c, nodeId)) {
         return 1;
     }
     return IsExplicitlyExportedNode(c, nodeId);
@@ -7207,11 +7213,13 @@ static int EmitFnDeclOrDef(
     SLTypeRef        fnContextType;
     SLTypeRef        fnSemanticContextType;
     SLTypeRef        fnContextParamType;
+    SLTypeRef        fnContextLocalType;
 
     TypeRefSetScalar(&fnReturnType, "void");
     TypeRefSetInvalid(&fnContextType);
     TypeRefSetInvalid(&fnSemanticContextType);
     TypeRefSetInvalid(&fnContextParamType);
+    TypeRefSetInvalid(&fnContextLocalType);
 
     if (n == NULL) {
         return -1;
@@ -7239,6 +7247,11 @@ static int EmitFnDeclOrDef(
         }
         fnContextParamType = fnContextType;
         fnContextParamType.ptrDepth++;
+        fnContextLocalType = fnContextParamType;
+        if (isMainFn) {
+            fnContextLocalType = fnSemanticContextType;
+            fnContextLocalType.ptrDepth++;
+        }
     }
 
     EmitIndent(c, depth);
@@ -7330,7 +7343,7 @@ static int EmitFnDeclOrDef(
         return -1;
     }
     if (hasFnContext) {
-        if (AddLocal(c, "context", fnContextParamType) != 0) {
+        if (AddLocal(c, "context", fnContextLocalType) != 0) {
             return -1;
         }
     }
@@ -7526,7 +7539,7 @@ static int EmitDeclNode(
 }
 
 static int EmitPrelude(SLCBackendC* c) {
-    return BufAppendCStr(&c->out, "#include <sl-prelude.h>\n");
+    return BufAppendCStr(&c->out, "#include <core/core.h>\n");
 }
 
 static char* _Nullable BuildDefaultMacro(SLCBackendC* c, const char* pkgName, const char* suffix) {

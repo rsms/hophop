@@ -118,9 +118,7 @@ typedef struct {
 static int BuildPrefixedName(const char* alias, const char* name, char** outName);
 static int IsAsciiSpaceChar(char c);
 
-#define SL_DEFAULT_PLATFORM_TARGET      "cli-libc"
-#define SL_PLATFORM_TARGET_ALIAS        "__platform_target"
-#define SL_PLATFORM_TARGET_CONTEXT_TYPE "__platform_target__Context"
+#define SL_DEFAULT_PLATFORM_TARGET "cli-libc"
 
 static int ASTFirstChild(const SLAst* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
@@ -1819,8 +1817,7 @@ static int IsBuiltinTypeName(const char* src, uint32_t start, uint32_t end) {
         || SliceEqCStr(src, start, end, "i16") || SliceEqCStr(src, start, end, "i32")
         || SliceEqCStr(src, start, end, "i64") || SliceEqCStr(src, start, end, "uint")
         || SliceEqCStr(src, start, end, "int") || SliceEqCStr(src, start, end, "f32")
-        || SliceEqCStr(src, start, end, "f64") || SliceEqCStr(src, start, end, "__sl_MemAllocator")
-        || SliceEqCStr(src, start, end, "__sl_MainContext");
+        || SliceEqCStr(src, start, end, "f64");
 }
 
 static int PackageHasExport(const SLPackage* pkg, const char* name) {
@@ -1857,6 +1854,23 @@ static int PackageHasExportedTypeSlice(
         if (strlen(pkg->pubDecls[i].name) == (size_t)(end - start)
             && memcmp(pkg->pubDecls[i].name, src + start, (size_t)(end - start)) == 0)
         {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int PackageHasImportedTypeSymbolSlice(
+    const SLPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+    uint32_t i;
+    for (i = 0; i < pkg->importSymbolLen; i++) {
+        const SLImportSymbolRef* sym = &pkg->importSymbols[i];
+        size_t                   nameLen;
+        if (!sym->isType) {
+            continue;
+        }
+        nameLen = strlen(sym->localName);
+        if (nameLen == (size_t)(end - start) && memcmp(sym->localName, src + start, nameLen) == 0) {
             return 1;
         }
     }
@@ -1916,6 +1930,9 @@ static int ValidatePubTypeNode(
                 return 0;
             }
             if (PackageHasExportedTypeSlice(pkg, file->source, n->dataStart, n->dataEnd)) {
+                return 0;
+            }
+            if (PackageHasImportedTypeSymbolSlice(pkg, file->source, n->dataStart, n->dataEnd)) {
                 return 0;
             }
             return Errorf(
@@ -2156,6 +2173,16 @@ static int PackageHasAnyDeclName(const SLPackage* pkg, const char* name) {
     return 0;
 }
 
+static int PackageHasImportSymbolLocalName(const SLPackage* pkg, const char* name) {
+    uint32_t i;
+    for (i = 0; i < pkg->importSymbolLen; i++) {
+        if (StrEq(pkg->importSymbols[i].localName, name)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int ValidateImportBindingConflicts(const SLPackage* pkg) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
@@ -2365,7 +2392,8 @@ static char* _Nullable ResolveLibImportDirInRoot(const char* rootDir, const char
 }
 
 static int IsLibImportPath(const char* importPath) {
-    return strncmp(importPath, "std/", 4u) == 0 || strncmp(importPath, "platform/", 9u) == 0;
+    return StrEq(importPath, "core") || StrEq(importPath, "platform")
+        || strncmp(importPath, "std/", 4u) == 0 || strncmp(importPath, "platform/", 9u) == 0;
 }
 
 static char* _Nullable ResolveLibImportDir(const char* startDir, const char* importPath) {
@@ -2397,72 +2425,103 @@ static char* _Nullable ResolveLibImportDir(const char* startDir, const char* imp
     return NULL;
 }
 
-#define SL_BUILTIN_PLATFORM_PATH "<builtin>/platform"
+static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SLPackage** outPkg);
 
-static int IsBuiltinPlatformImportPath(const char* importPath) {
-    return StrEq(importPath, "platform");
-}
-
-static int AddBuiltinPubDecl(
-    SLPackage* pkg, SLAstKind kind, const char* name, const char* declText) {
-    char* declName = DupCStr(name);
-    char* decl = DupCStr(declText);
-    if (declName == NULL || decl == NULL) {
-        free(declName);
-        free(decl);
-        return ErrorSimple("out of memory");
+static int FindImportIndexByPath(const SLPackage* pkg, const char* importPath) {
+    uint32_t i;
+    for (i = 0; i < pkg->importLen; i++) {
+        if (StrEq(pkg->imports[i].path, importPath)) {
+            return (int)i;
+        }
     }
-    if (AddSymbolDecl(
-            &pkg->pubDecls, &pkg->pubDeclLen, &pkg->pubDeclCap, kind, declName, decl, 0, 0, -1)
-        != 0)
-    {
-        free(declName);
-        free(decl);
-        return ErrorSimple("out of memory");
-    }
-    return 0;
+    return -1;
 }
 
-static int AddBuiltinPubFnDecl(SLPackage* pkg, const char* name, const char* declText) {
-    return AddBuiltinPubDecl(pkg, SLAst_FN, name, declText);
-}
-
-static int AddBuiltinPubTypeDecl(SLPackage* pkg, const char* name, const char* declText) {
-    return AddBuiltinPubDecl(pkg, SLAst_STRUCT, name, declText);
-}
-
-static int LoadBuiltinPlatformPackage(SLPackageLoader* loader, SLPackage** outPkg) {
-    SLPackage* pkg = FindPackageByDir(loader, SL_BUILTIN_PLATFORM_PATH);
-    if (pkg != NULL) {
-        *outPkg = pkg;
+static int IsCorePackage(const SLPackage* pkg) {
+    const char* base;
+    if (pkg == NULL || pkg->dirPath == NULL) {
         return 0;
     }
-    if (AddPackageSlot(loader, SL_BUILTIN_PLATFORM_PATH, &pkg) != 0) {
+    base = strrchr(pkg->dirPath, '/');
+    base = base != NULL ? base + 1 : pkg->dirPath;
+    return StrEq(base, "core");
+}
+
+static int EnsureImplicitCoreImport(SLPackage* pkg) {
+    char*    alias = NULL;
+    char*    importPath = NULL;
+    uint32_t importIndex = 0;
+    if (IsCorePackage(pkg)) {
+        return 0;
+    }
+    if (FindImportIndexByPath(pkg, "core") >= 0) {
+        return 0;
+    }
+    alias = MakeUniqueImportAlias(pkg, "core");
+    importPath = DupCStr("core");
+    if (alias == NULL || importPath == NULL) {
+        free(alias);
+        free(importPath);
         return ErrorSimple("out of memory");
     }
-    free(pkg->name);
-    pkg->name = DupCStr("platform");
-    if (pkg->name == NULL) {
+    if (AddImportRef(pkg, alias, NULL, importPath, 0, 0, 0, &importIndex) != 0) {
+        free(alias);
+        free(importPath);
         return ErrorSimple("out of memory");
     }
-    if (AddBuiltinPubTypeDecl(
-            pkg, "Context", "pub struct Context { mem *__sl_MemAllocator; console i32 }")
-        != 0)
-    {
-        return -1;
-    }
-    if (AddBuiltinPubFnDecl(pkg, "exit", "pub fn exit(status i32)") != 0) {
-        return -1;
-    }
-    if (AddBuiltinPubFnDecl(pkg, "console_log", "pub fn console_log(msg str, flags u64)") != 0) {
-        return -1;
-    }
-    pkg->loadState = 2;
-    *outPkg = pkg;
     return 0;
 }
 
-static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SLPackage** outPkg);
+static int EnsureImplicitCoreImportSymbols(SLPackage* pkg) {
+    int coreImportIndex = FindImportIndexByPath(pkg, "core");
+    if (coreImportIndex < 0) {
+        return 0;
+    }
+    {
+        const SLPackage* dep = pkg->imports[(uint32_t)coreImportIndex].target;
+        uint32_t         i;
+        if (dep == NULL) {
+            return ErrorSimple("internal error: unresolved core import");
+        }
+        for (i = 0; i < dep->pubDeclLen; i++) {
+            uint32_t j;
+            int      alreadyMapped = 0;
+            if (PackageHasAnyDeclName(pkg, dep->pubDecls[i].name)
+                || PackageHasImportSymbolLocalName(pkg, dep->pubDecls[i].name))
+            {
+                continue;
+            }
+            for (j = 0; j < pkg->importSymbolLen; j++) {
+                const SLImportSymbolRef* sym = &pkg->importSymbols[j];
+                if (sym->importIndex == (uint32_t)coreImportIndex
+                    && StrEq(sym->sourceName, dep->pubDecls[i].name)
+                    && StrEq(sym->localName, dep->pubDecls[i].name))
+                {
+                    alreadyMapped = 1;
+                    break;
+                }
+            }
+            if (!alreadyMapped) {
+                char* sourceName = DupCStr(dep->pubDecls[i].name);
+                char* localName = DupCStr(dep->pubDecls[i].name);
+                if (sourceName == NULL || localName == NULL) {
+                    free(sourceName);
+                    free(localName);
+                    return ErrorSimple("out of memory");
+                }
+                if (AddImportSymbolRef(
+                        pkg, (uint32_t)coreImportIndex, sourceName, localName, 0, 0, 0)
+                    != 0)
+                {
+                    free(sourceName);
+                    free(localName);
+                    return ErrorSimple("out of memory");
+                }
+            }
+        }
+    }
+    return 0;
+}
 
 static int LoadSelectedPlatformTargetPackage(
     SLPackageLoader* loader, const char* startDir, SLPackage** outPkg) {
@@ -2514,21 +2573,11 @@ static int LoadSelectedPlatformTargetPackage(
 
 static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage* pkg) {
     uint32_t i;
+    if (EnsureImplicitCoreImport(pkg) != 0) {
+        return -1;
+    }
     for (i = 0; i < pkg->importLen; i++) {
         char* resolvedDir;
-        if (IsBuiltinPlatformImportPath(pkg->imports[i].path)) {
-            if (LoadBuiltinPlatformPackage(loader, &pkg->imports[i].target) != 0) {
-                const SLParsedFile* file = &pkg->files[pkg->imports[i].fileIndex];
-                return Errorf(
-                    file->path,
-                    file->source,
-                    pkg->imports[i].start,
-                    pkg->imports[i].end,
-                    "failed to resolve import %s",
-                    pkg->imports[i].path);
-            }
-            continue;
-        }
         resolvedDir = JoinPath(loader->rootDir, pkg->imports[i].path);
         if (resolvedDir != NULL && IsLibImportPath(pkg->imports[i].path)
             && !IsDirectoryPath(resolvedDir))
@@ -2556,10 +2605,19 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
         free(resolvedDir);
     }
 
+    if (EnsureImplicitCoreImportSymbols(pkg) != 0) {
+        return -1;
+    }
+    if (ValidateImportBindingConflicts(pkg) != 0) {
+        return -1;
+    }
     if (ValidateAndFinalizeImportSymbols(pkg) != 0) {
         return -1;
     }
     if (ValidatePackageSelectors(pkg) != 0) {
+        return -1;
+    }
+    if (ValidatePubClosure(pkg) != 0) {
         return -1;
     }
     pkg->loadState = 2;
@@ -2629,14 +2687,7 @@ static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SL
         }
     }
 
-    if (ValidateImportBindingConflicts(pkg) != 0) {
-        return -1;
-    }
-
     if (ValidatePubFnDefinitions(pkg) != 0) {
-        return -1;
-    }
-    if (ValidatePubClosure(pkg) != 0) {
         return -1;
     }
     if (ResolvePackageImportsAndSelectors(loader, pkg) != 0) {
@@ -2691,14 +2742,7 @@ static int LoadSingleFilePackage(
         }
     }
 
-    if (ValidateImportBindingConflicts(pkg) != 0) {
-        return -1;
-    }
-
     if (ValidatePubFnDefinitions(pkg) != 0) {
-        return -1;
-    }
-    if (ValidatePubClosure(pkg) != 0) {
         return -1;
     }
     if (ResolvePackageImportsAndSelectors(loader, pkg) != 0) {
@@ -4282,6 +4326,8 @@ static int CompileProgram(
     char*                   headerPath = NULL;
     char*                   sourcePath = NULL;
     char*                   libDir = NULL;
+    char*                   platformDir = NULL;
+    char*                   platformTargetDir = NULL;
     char*                   platformPath = NULL;
     SLStringBuilder         cBuilder = { 0 };
     char*                   cSource = NULL;
@@ -4351,7 +4397,17 @@ static int CompileProgram(
         ErrorSimple("cannot locate lib directory (dirname of executable)");
         goto end;
     }
-    platformPath = JoinPath(libDir, "platform_libc.c");
+    platformDir = JoinPath(libDir, "platform");
+    if (platformDir == NULL) {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+    platformTargetDir = JoinPath(platformDir, loader.platformTarget);
+    if (platformTargetDir == NULL) {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+    platformPath = JoinPath(platformTargetDir, "platform.c");
     if (platformPath == NULL) {
         ErrorSimple("out of memory");
         goto end;
@@ -4424,6 +4480,8 @@ end:
     free(headerPath);
     free(sourcePath);
     free(platformPath);
+    free(platformTargetDir);
+    free(platformDir);
     free(libDir);
     free(outHeader);
     free(cSource);

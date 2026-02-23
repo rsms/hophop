@@ -1,4 +1,4 @@
-#include <sl-prelude.h>
+#include <core/core.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,21 +12,17 @@
     #define debugassert(cond) ((void)0)
 #endif
 
-extern int sl_main(__sl_MainContext* context);
-#if defined(__clang__) || defined(__GNUC__)
-__attribute__((weak))
-#endif
-__sl_mem_Allocator* mem__platformAllocator;
+extern int sl_main(__sl_Context* context);
 
 #define MALLOC_ALIGN ((size_t)_Alignof(max_align_t))
 
-static void* platform_mem_allocator_impl(
-    __sl_mem_Allocator* self,
-    __sl_uint           addr,
-    __sl_uint           align,
-    __sl_uint           curSize,
-    __sl_uint*          newSizeInOut,
-    __sl_u32            flags) {
+static __sl_uint platform_mem_allocator_impl(
+    __sl_Allocator* self,
+    __sl_uint       addr,
+    __sl_uint       align,
+    __sl_uint       curSize,
+    __sl_uint*      newSizeInOut,
+    __sl_u32        flags) {
 
     void* newPtr = NULL;
     (void)self;  // unused
@@ -36,7 +32,7 @@ static void* platform_mem_allocator_impl(
 
     if (*newSizeInOut == 0) {
         free((void*)(uintptr_t)addr);
-        return NULL;
+        return 0;
     }
 
     if UNLIKELY (align == 0 || (align & (align - 1u)) != 0u) {
@@ -67,7 +63,7 @@ static void* platform_mem_allocator_impl(
         memset((unsigned char*)newPtr + curSize, 0, (size_t)(*newSizeInOut - curSize));
     }
 
-    return newPtr;
+    return (__sl_uint)(uintptr_t)newPtr;
 }
 
 __sl_i64 __sl_platform_call(
@@ -105,8 +101,7 @@ __sl_i64 __sl_platform_call(
 }
 
 int main(void) {
-    static __sl_mem_Allocator gAllocator = { .impl = platform_mem_allocator_impl };
-    __sl_MainContext          gMainContext = { &gAllocator, 0, 1 };
-    mem__platformAllocator = gMainContext.mem;
+    static __sl_Allocator gAllocator = { .impl = platform_mem_allocator_impl };
+    __sl_Context          gMainContext = { &gAllocator, 0, 1 };
     return sl_main(&gMainContext);
 }

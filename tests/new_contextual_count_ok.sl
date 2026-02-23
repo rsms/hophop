@@ -1,7 +1,7 @@
 import "std/mem"
 
 struct Ctx {
-    mem *__sl_MemAllocator
+    mem *Allocator
 }
 
 fn allocs(n uint) context Ctx {
@@ -16,5 +16,5 @@ fn allocs(n uint) context Ctx {
 }
 
 fn main() {
-    allocs(4) with { mem = mem.platformAllocator }
+    allocs(4) with { mem = context.mem }
 }

@@ -1,1 +1,1 @@
-tests/context_clause_mismatch_bad.sl:10:1: SL2034: function context clause mismatch
+tests/context_clause_mismatch_bad.sl:14:1: SL2034: function context clause mismatch

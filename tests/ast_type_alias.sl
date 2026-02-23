@@ -1,2 +1,2 @@
 type MyInt int
-pub type Allocator __sl_MemAllocator
+pub type MyUInt uint

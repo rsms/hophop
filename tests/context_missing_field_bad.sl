@@ -1,9 +1,13 @@
+struct Allocator {
+    impl fn(self *Allocator, addr, align, curSize uint, newSizeInOut *uint, flags u32) uint
+}
+
 struct TmpCtx {
-    tmpmem *__sl_MemAllocator
+    tmpmem *Allocator
 }
 
 struct MemCtx {
-    mem *__sl_MemAllocator
+    mem *Allocator
 }
 
 fn log_event(msg str) context TmpCtx {

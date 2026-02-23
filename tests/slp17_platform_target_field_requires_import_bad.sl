@@ -1,5 +1,5 @@
 import "platform"
 
-fn write_err() context platform.Context {
-    var e i32 = context.stderr
+fn write_err() context Context {
+    var e i32 = context.stdin
 }
