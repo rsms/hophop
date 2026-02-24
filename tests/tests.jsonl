@@ -30,7 +30,7 @@
 {"id":"checkpkg:tests/platform_import_alias_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/platform_import_alias_ok.sl"}
 {"id":"checkpkg:tests/platform_import_named_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/platform_import_named_ok.sl"}
 {"id":"checkpkg:tests/platform_exit_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/platform_exit_ok.sl"}
-{"id":"checkpkg:tests/platform_console_log_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/platform_console_log_ok.sl"}
+{"id":"checkpkg:tests/platform_console_log_ok.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/platform_console_log_ok.sl","expect_stderr":"tests/platform_console_log_ok.stderr"}
 {"id":"checkpkg:tests/import_named_symbol/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/import_named_symbol/app"}
 {"id":"checkpkg:tests/import_named_symbol_alias/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/import_named_symbol_alias/app"}
 {"id":"checkpkg:tests/import_named_shadow/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/import_named_shadow/app"}
@@ -129,7 +129,7 @@
 {"id":"check:tests/str_param_byvalue_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"check","input":"tests/str_param_byvalue_bad.sl"}
 {"id":"check:tests/str_var_byvalue_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"check","input":"tests/str_var_byvalue_bad.sl"}
 {"id":"check:tests/str_slice_mut_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"check","input":"tests/str_slice_mut_bad.sl"}
-{"id":"integration.codegen.pkg_ok.genpkg_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg","input":"tests/pkg_ok/app","contains":["__sl_i32 app__main(__sl_MainContext *context"],"not_contains":["static __sl_i32 app__main(__sl_MainContext *context"],"harness":"tests/harness/app_codegen_test.c.in"}
+{"id":"integration.codegen.pkg_ok.genpkg_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg","input":"tests/pkg_ok/app","contains":["__sl_i32 app__main(__sl_Context *context"],"not_contains":["static __sl_i32 app__main(__sl_Context *context"],"harness":"tests/harness/app_codegen_test.c.in"}
 {"id":"integration.codegen.ptr.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/codegen_ptr","harness":"tests/harness/ptr_codegen_test.c.in"}
 {"id":"integration.codegen.strings_assert.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/codegen_strings_assert","contains":["#include <core/core.h>","__sl_assert(","__sl_assertf(","sl_lit_ro_0","sl_lit_rw_0"],"regex_count":[{"pattern":"^static const struct \\{ __sl_u32 len; __sl_u8 bytes\\[","count":1},{"pattern":"^static struct \\{ __sl_u32 len; __sl_u8 bytes\\[","count":1}],"harness":"tests/harness/phase5_codegen_test.c.in"}
 {"id":"integration.codegen.single_file.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/single_file/main.sl","harness":"tests/harness/phase6_single_test.c.in"}
@@ -138,8 +138,8 @@
 {"id":"integration.codegen.new_optional.no_unwrap_lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/new_optional_ok.sl","not_contains":["__sl_unwrap((const void*)(__sl_new"]}
 {"id":"integration.codegen.new_selector.unwrap_lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/new_selector_ok.sl","contains":["__sl_unwrap((const void*)(__sl_new(","__sl_unwrap((const void*)(__sl_new_array("]}
 {"id":"integration.codegen.new_selector_optional.no_unwrap_lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/new_selector_optional_ok.sl","not_contains":["__sl_unwrap((const void*)(__sl_new"]}
-{"id":"integration.codegen.platform_exit_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/platform_exit_ok.sl","contains":["__sl_platform_call(__sl_PlatformOp_EXIT"]}
-{"id":"integration.codegen.print_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/print_ok.sl","contains":["__sl_console_log("]}
+{"id":"integration.codegen.platform_exit_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/platform_exit_ok.sl","contains":["platform__exit("]}
+{"id":"integration.codegen.print_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/print_ok.sl","contains":[".handler != NULL","handler(&((context->log))"]}
 {"id":"integration.codegen.typefunc_import_group.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/typefunc_import_group/app","contains":["foo__pick_b"],"not_contains":["foo.pick_b"]}
 {"id":"integration.codegen.import_named_symbol.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/import_named_symbol/app","contains":["math__Double"],"not_contains":["return Double("]}
 {"id":"integration.codegen.enum_member_namespace.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/enum_member_namespace_ok.sl","contains":["tests__Mode__A","tests__Color__A"],"not_contains":["typedef enum tests__Mode {\n    A","typedef enum tests__Color {\n    A"]}
@@ -236,7 +236,7 @@
 {"id":"check:tests/ast_anon_aggregate_types.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/ast_anon_aggregate_types.sl"}
 {"id":"check:tests/anon_struct_infer_no_context_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/anon_struct_infer_no_context_ok.sl"}
 {"id":"integration.runtime.anon_struct_infer_no_context_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/anon_struct_infer_no_context_ok.sl"}
-{"id":"integration.codegen.context_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/context_ok.sl","contains":["tests__alloc(tests__Ctx *context)","tests__log(tests__Ctx *context, __sl_str *msg)","context->mem","context->console","(&((tests__Ctx){"]}
+{"id":"integration.codegen.context_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/context_ok.sl","contains":["tests__alloc(tests__Ctx *context)","tests__log(tests__Ctx *context, __sl_str *msg)","context->mem","context->log","(&((tests__Ctx){"]}
 {"id":"integration.codegen.context_convertible_allocator_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/context_convertible_allocator_ok.sl","contains":[".mem = context->mem"]}
 {"id":"integration.runtime.context_convertible_allocator_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/context_convertible_allocator_ok.sl"}
 {"id":"integration.runtime.slp17_platform_context_main_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/slp17_platform_context_main_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}

@@ -1,6 +1,6 @@
 struct Ctx {
     mem *Allocator
-    console i32
+    log Logger
 }
 
 fn alloc() *i32 context Ctx {
@@ -14,7 +14,7 @@ fn log(msg &str) context Ctx {
 fn caller() context Ctx {
     var p *i32 = alloc()
 
-    var p2 *i32 = alloc() with { mem, console }
+    var p2 *i32 = alloc() with { mem, log }
 
     var p3 ?*i32 = new(i32) with { mem = context.mem }
 

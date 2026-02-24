@@ -4,7 +4,7 @@
 #include <string.h>
 
 #define UNLIKELY   __sl_unlikely
-#define panic(msg) __sl_panic1(__FILE__, __LINE__, (msg), strlen(msg))
+#define panic(msg_lit) __sl_panic(__sl_strlit(msg_lit), __FILE__, __LINE__)
 
 #ifndef NDEBUG
     #define debugassert(cond) (UNLIKELY(!(cond)) ? panic("Assertion failure: " #cond) : ((void)0))
@@ -84,32 +84,31 @@ static void platform_log_handler(__sl_Logger* self, __sl_str* message, __sl_LogL
     fflush(out);
 }
 
-__sl_i64 __sl_platform_call(
-    __sl_u64 op,
-    __sl_u64 a,
-    __sl_u64 b,
-    __sl_u64 c,
-    __sl_u64 d,
-    __sl_u64 e,
-    __sl_u64 f,
-    __sl_u64 g) {
-    (void)d;
-    (void)e;
-    (void)f;
-    (void)g;
-    (void)c;
-    switch ((enum __sl_PlatformOps)op) {
-        case __sl_PlatformOp_NONE:  return 0;
-        case __sl_PlatformOp_PANIC: {
-            size_t n = b ? (size_t)b : strlen((const char*)(uintptr_t)a);
-            fprintf(stderr, "panic: %.*s\n", (int)n, (const char*)(uintptr_t)a);
-            fflush(stderr);
-            abort();
-        }
-        case __sl_PlatformOp_EXIT: exit((int)(__sl_i64)a); return 0;
+__sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 line) {
+    __sl_u32      message_len;
+    const __sl_u8 empty[] = "";
+    (void)file;
+    (void)line;
+
+    if (msg == NULL) {
+        msg = __sl_strlit("panic: null message");
     }
-    // note: intentionally no 'default' case so that the compiler can warn us if we forgot an op
-    return -1;
+    message_len = msg->len;
+
+    if (message_len > 0x7FFFFFFFu) {
+        message_len = 0x7FFFFFFFu;
+    }
+    fprintf(
+        stderr,
+        "panic: %.*s\n",
+        (int)message_len,
+        message_len > 0 ? (const char*)msg->bytes : (const char*)empty);
+    fflush(stderr);
+    abort();
+}
+
+__sl_noreturn void platform__exit(__sl_i32 status) {
+    exit(status);
 }
 
 int main(void) {

@@ -930,7 +930,7 @@ static int ResolveMainSemanticContextType(SLCBackendC* c, SLTypeRef* outType) {
         TypeRefSetScalar(outType, map->cName);
         return 0;
     }
-    TypeRefSetScalar(outType, "__sl_MainContext");
+    TypeRefSetScalar(outType, "__sl_Context");
     return 0;
 }
 
@@ -1186,6 +1186,8 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 outType->baseName = "__sl_str";
             } else if (outType->baseName != NULL && StrEq(outType->baseName, "core__Allocator")) {
                 outType->baseName = "__sl_Allocator";
+            } else if (outType->baseName != NULL && StrEq(outType->baseName, "core__Logger")) {
+                outType->baseName = "__sl_Logger";
             }
             return 0;
         }
@@ -2934,9 +2936,7 @@ static int IsAllocatorPtrType(SLCBackendC* c, const SLTypeRef* gotType) {
     if (TypeRefAssignableCost(c, &want, gotType, &cost) == 0) {
         return 1;
     }
-    TypeRefSetScalar(&want, "__sl_mem_Allocator");
-    want.ptrDepth = 1;
-    return TypeRefAssignableCost(c, &want, gotType, &cost) == 0;
+    return 0;
 }
 
 static int IsTypeNodeKind(SLAstKind kind) {
@@ -5785,8 +5785,8 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 if (msgArg < 0) {
                     return -1;
                 }
-                if (BufAppendCStr(&c->out, "__sl_panic(__FILE__, __LINE__, ") != 0
-                    || EmitExpr(c, msgArg) != 0 || BufAppendChar(&c->out, ')') != 0)
+                if (BufAppendCStr(&c->out, "__sl_panic(") != 0 || EmitExpr(c, msgArg) != 0
+                    || BufAppendCStr(&c->out, ", __FILE__, __LINE__)") != 0)
                 {
                     return -1;
                 }
@@ -5821,13 +5821,8 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 if (statusArg < 0 || extra >= 0) {
                     return -1;
                 }
-                if (BufAppendCStr(
-                        &c->out,
-                        "((void)__sl_platform_call(__sl_PlatformOp_"
-                        "EXIT, (__sl_u64)(__sl_i64)(")
-                        != 0
-                    || EmitExpr(c, statusArg) != 0
-                    || BufAppendCStr(&c->out, "), 0, 0, 0, 0, 0, 0))") != 0)
+                if (BufAppendCStr(&c->out, "platform__exit((__sl_i32)(") != 0
+                    || EmitExpr(c, statusArg) != 0 || BufAppendCStr(&c->out, "))") != 0)
                 {
                     return -1;
                 }
@@ -5843,9 +5838,17 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 if (msgArg < 0 || flagsArg < 0 || extra >= 0) {
                     return -1;
                 }
-                if (BufAppendCStr(&c->out, "__sl_console_log(") != 0 || EmitExpr(c, msgArg) != 0
-                    || BufAppendCStr(&c->out, ", (__sl_u64)(__sl_i64)(") != 0
-                    || EmitExpr(c, flagsArg) != 0 || BufAppendCStr(&c->out, "))") != 0)
+                if (BufAppendCStr(&c->out, "do { __sl_i32 _sl_level = (((__sl_u64)(__sl_i64)(") != 0
+                    || EmitExpr(c, flagsArg) != 0
+                    || BufAppendCStr(&c->out, ") & 1u) != 0u) ? (__sl_i32)30 : (__sl_i32)0; if ((")
+                           != 0
+                    || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
+                    || BufAppendCStr(&c->out, ").handler != NULL) (") != 0
+                    || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
+                    || BufAppendCStr(&c->out, ").handler(&(") != 0
+                    || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
+                    || BufAppendCStr(&c->out, "), ") != 0 || EmitExpr(c, msgArg) != 0
+                    || BufAppendCStr(&c->out, ", _sl_level); } while (0)") != 0)
                 {
                     return -1;
                 }
@@ -5934,8 +5937,8 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                         if (recvNode < 0 || extra >= 0) {
                             return -1;
                         }
-                        if (BufAppendCStr(&c->out, "__sl_panic(__FILE__, __LINE__, ") != 0
-                            || EmitExpr(c, recvNode) != 0 || BufAppendChar(&c->out, ')') != 0)
+                        if (BufAppendCStr(&c->out, "__sl_panic(") != 0 || EmitExpr(c, recvNode) != 0
+                            || BufAppendCStr(&c->out, ", __FILE__, __LINE__)") != 0)
                         {
                             return -1;
                         }
@@ -7457,7 +7460,7 @@ static int EmitFnDeclOrDef(
     hasFnContext = fnSig != NULL && (fnSig->hasContext || isMainFn);
     if (hasFnContext) {
         if (isMainFn) {
-            TypeRefSetScalar(&fnContextType, "__sl_MainContext");
+            TypeRefSetScalar(&fnContextType, "__sl_Context");
             if (ResolveMainSemanticContextType(c, &fnSemanticContextType) != 0) {
                 return -1;
             }
@@ -7516,7 +7519,7 @@ static int EmitFnDeclOrDef(
 
     if (hasFnContext) {
         if (isMainFn) {
-            if (BufAppendCStr(&c->out, "__sl_MainContext *context __attribute__((unused))") != 0) {
+            if (BufAppendCStr(&c->out, "__sl_Context *context __attribute__((unused))") != 0) {
                 return -1;
             }
         } else {

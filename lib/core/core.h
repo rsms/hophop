@@ -103,81 +103,30 @@ struct __sl_Context {
     __sl_Allocator* mem;
     __sl_Logger log;
 };
-
-/* Legacy aliases for compatibility with older generated/runtime C. */
-typedef __sl_Allocator __sl_mem_Allocator;
-typedef __sl_Context   __sl_MainContext;
-
-enum __sl_PlatformOps {
-    __sl_PlatformOp_NONE = 0,
-    __sl_PlatformOp_PANIC = 1,
-    __sl_PlatformOp_EXIT = 3,
-};
 // END generated code
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // functions
 
-extern __sl_i64 __sl_platform_call(
-    __sl_u64 op,
-    __sl_u64 a,
-    __sl_u64 b,
-    __sl_u64 c,
-    __sl_u64 d,
-    __sl_u64 e,
-    __sl_u64 f,
-    __sl_u64 g);
+__sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 line);
+#define __sl_strlit(strlit)             \
+    ((const __sl_str*)&(const struct {  \
+        __sl_u32 len;                   \
+        __sl_u8  bytes[sizeof(strlit)]; \
+    }){ .len = (__sl_u32)(sizeof(strlit) - 1u), .bytes = (strlit) })
 
-#if !defined(__sl_trap) && __has_builtin(__builtin_trap)
-    #define __sl_trap() __builtin_trap()
-#elif !defined(__sl_trap)
-static inline void __sl_trap(void) {
-    *(volatile int*)0 = 0;
-}
-#endif
-
-static inline __sl_noreturn void __sl_panic1(
-    const char* file, __sl_u32 line, const char* msg, __sl_uint msgLen) {
-    (void)__sl_platform_call(
-        __sl_PlatformOp_PANIC,
-        (__sl_u64)(uintptr_t)msg,
-        (__sl_u64)msgLen,
-        (__sl_u64)(uintptr_t)file,
-        (__sl_u64)line,
-        0,
-        0,
-        0);
-    __sl_trap();
-}
-
-#define __sl_debugpanic1 __sl_panic1
-// #define __sl_debugpanic1(...) __sl_trap()
-
-static inline void __sl_panic(const char* file, __sl_u32 line, const __sl_str* msg) {
-    if (msg == NULL) {
-        __sl_panic1(
-            file,
-            line,
-            "panic: null message",
-            (__sl_uint)sizeof((char[]){ "panic: null message" }));
-    }
-    __sl_panic1(file, line, (const char*)msg->bytes, msg->len);
-}
-
-#define __sl_strlit_tuple(strlit) strlit, sizeof((char[]){ strlit })
-
-#define __sl_assert(expr)                                                           \
-    do {                                                                            \
-        if __sl_unlikely (!(expr)) {                                                \
-            __sl_panic1(__FILE__, __LINE__, __sl_strlit_tuple("assertion failed")); \
-        }                                                                           \
+#define __sl_assert(expr)                                                    \
+    do {                                                                     \
+        if __sl_unlikely (!(expr)) {                                         \
+            __sl_panic(__sl_strlit("assertion failed"), __FILE__, __LINE__); \
+        }                                                                    \
     } while (0)
 
-#define __sl_assertf(expr, fmt_cstr_lit, ...)                                 \
-    do {                                                                      \
-        if __sl_unlikely (!(expr)) {                                          \
-            __sl_panic1(__FILE__, __LINE__, __sl_strlit_tuple(fmt_cstr_lit)); \
-        }                                                                     \
+#define __sl_assertf(expr, fmt_cstr_lit, ...)                          \
+    do {                                                               \
+        if __sl_unlikely (!(expr)) {                                   \
+            __sl_panic(__sl_strlit(fmt_cstr_lit), __FILE__, __LINE__); \
+        }                                                              \
     } while (0)
 
 static inline __sl_uint __sl_len(const __sl_str* s) {
@@ -195,9 +144,10 @@ static inline __sl_uint __sl_align_up(__sl_uint x, __sl_uint a) {
 static inline __sl_uint __sl_str_sizeof(const __sl_str* s) {
     return s != NULL ? (__sl_uint)(sizeof(__sl_u32) + (__sl_uint)s->len + 1u) : 0u;
 }
+
 static inline void* __sl_unwrap1(const char* file, __sl_u32 line, const void* p) {
     if __sl_unlikely (p == NULL) {
-        __sl_panic1(file, line, __sl_strlit_tuple("unwrap: null value"));
+        __sl_panic(__sl_strlit("unwrap: null value"), file, line);
     }
     return (void*)p;
 }
@@ -208,13 +158,13 @@ static inline void* __sl_new(__sl_Allocator* ma, __sl_uint size, __sl_uint align
     __sl_uint newSize = size;
 
     if __sl_unlikely (align == 0 || (align & (align - 1u)) != 0) {
-        __sl_debugpanic1("", 0, __sl_strlit_tuple("invalid alignment"));
+        __sl_panic(__sl_strlit("invalid alignment"), "", 0);
     }
 
     // TODO FIXME: make ma or ma->impl being NULL an error. For now we return NULL in that case,
     // as if allocation failed, since several tests makes this assumption.
     if __sl_unlikely (ma == NULL || ma->impl == NULL) {
-        // __sl_debugpanic1("", 0, __sl_strlit_tuple("ma.impl is null"));
+        // __sl_panic(__sl_strlit("ma.impl is null"), "", 0);
         return NULL;
     }
 

@@ -4308,8 +4308,8 @@ static int CreateTempDir(char* outPath, size_t outPathCap, const char* tag) {
 }
 
 /* Embedded cli-libc platform source — compiled alongside the generated SL
- * package. Provides __sl_platform_call() via libc and defines main() which
- * calls sl_main(). */
+ * package. Provides runtime platform functions via libc and defines main()
+ * which calls sl_main(). */
 static int CompileProgram(
     const char* entryPath, const char* outExe, const char* _Nullable platformTarget) {
     SLPackageLoader         loader = { 0 };
@@ -4432,7 +4432,7 @@ static int CompileProgram(
     /* Wrapper: defines sl_main(context) which calls the package entry point. */
     if (SBAppendCStr(&cBuilder, "#define SLC_IMPL\n#include \"") != 0
         || SBAppendCStr(&cBuilder, headerPath) != 0 || SBAppendCStr(&cBuilder, "\"\n\n") != 0
-        || SBAppendCStr(&cBuilder, "int sl_main(__sl_MainContext *context) { ") != 0
+        || SBAppendCStr(&cBuilder, "int sl_main(__sl_Context *context) { ") != 0
         || SBAppendCStr(&cBuilder, entryPkg->name) != 0
         || SBAppendCStr(&cBuilder, "__main(context); return 0; }\n") != 0)
     {

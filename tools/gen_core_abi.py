@@ -319,26 +319,12 @@ def load_core_decls(core_dir: Path) -> tuple[list[CoreDecl], set[str]]:
     return decls, type_names
 
 
-def load_platform_enums(platform_path: Path) -> dict[str, tuple[str, list[tuple[str, str]]]]:
-    src = strip_line_comments(platform_path.read_text(encoding="utf-8"))
-    enums: dict[str, tuple[str, list[tuple[str, str]]]] = {}
-    for d in parse_decls_from_source(src, str(platform_path)):
-        if isinstance(d, EnumDecl):
-            enums[d.name] = (d.base_type, d.members)
-    return enums
-
-
-def emit_core_abi(
-    decls: list[CoreDecl], known_types: set[str], platform_enums: dict[str, tuple[str, list[tuple[str, str]]]]
-) -> str:
+def emit_core_abi(decls: list[CoreDecl], known_types: set[str]) -> str:
     struct_order: list[str] = [d.name for d in decls if isinstance(d, StructDecl)]
     if "Allocator" not in struct_order:
         die("missing struct 'Allocator' in core package")
     if "Context" not in struct_order:
         die("missing struct 'Context' in core package")
-    if "PlatformOps" not in platform_enums:
-        die("missing 'enum PlatformOps ...' in lib/platform/platform.sl")
-    platform_ops_members = platform_enums["PlatformOps"][1]
 
     out: list[str] = []
     out.append(
@@ -384,16 +370,6 @@ def emit_core_abi(
             continue
 
         die("internal declaration dispatch error")
-
-    out.append("/* Legacy aliases for compatibility with older generated/runtime C. */")
-    out.append("typedef __sl_Allocator __sl_mem_Allocator;")
-    out.append("typedef __sl_Context   __sl_MainContext;")
-    out.append("")
-    out.append("enum __sl_PlatformOps {")
-    for member_name, expr in platform_ops_members:
-        out.append(f"    __sl_PlatformOp_{member_name} = {expr},")
-    out.append("};")
-    out.append("")
 
     return "\n".join(out)
 
@@ -443,10 +419,9 @@ def main() -> int:
 
     core_dir = Path(args.core_dir) if args.core_dir else Path(args.types).parent
     decls, type_names = load_core_decls(core_dir)
-    platform_enums = load_platform_enums(Path(args.platform))
     header_path = Path(args.header)
 
-    generated_block = emit_core_abi(decls, type_names, platform_enums)
+    generated_block = emit_core_abi(decls, type_names)
     header_text = header_path.read_text(encoding="utf-8")
     patched_header = patch_header_with_block(header_text, generated_block)
     write_if_changed(header_path, patched_header)

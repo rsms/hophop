@@ -40,12 +40,12 @@ fn read_pair(v { a i32, b &str }) i32 {
     return v.a
 }
 
-fn announce(msg &str) context { console i32 } {
+fn announce(msg &str) context { log Logger } {
     // `context { ... }` declares required ambient capabilities for this call.
     print(msg)
 }
 
-fn run() i32 context { console i32 } {
+fn run() i32 context { log Logger } {
     var ex Example = {
         // Field values can use inferred anonymous literals too.
         pos = { x = 1, y = 2 },
@@ -63,7 +63,7 @@ fn run() i32 context { console i32 } {
 
     announce(inferred.b)
     // `with { ... }` overlays call-local context values.
-    announce("overlay") with { console }
+    announce("overlay") with { log }
 
     // `point_sum_ref` expects `&{...}`, so we pass a reference explicitly.
     return ex.size.w * ex.size.h + point_sum(ex.pos) + point_sum_ref(&ex.pos) + choose(ex.value)
@@ -72,6 +72,6 @@ fn run() i32 context { console i32 } {
 
 fn main() {
     // `main` has no implicit context; provide required fields at the call site.
-    var total i32 = run() with { console = 0 }
+    var total i32 = run() with { log = context.log }
     assert total == 94
 }
