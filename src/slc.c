@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
@@ -308,6 +309,46 @@ static char* _Nullable DupSlice(const char* s, uint32_t start, uint32_t end) {
     return out;
 }
 
+static int IsIdentifierChar(char c) {
+    unsigned char uc = (unsigned char)c;
+    return c == '_' || isalnum((int)uc);
+}
+
+static int IsIdentifierStartChar(char c) {
+    unsigned char uc = (unsigned char)c;
+    return c == '_' || isalpha((int)uc);
+}
+
+static int NormalizeUnknownIdentifierSpan(
+    const char* source, uint32_t inStart, uint32_t inEnd, uint32_t* outStart, uint32_t* outEnd) {
+    uint32_t s = inStart;
+    uint32_t e = inEnd;
+    if (source == NULL || outStart == NULL || outEnd == NULL || e <= s) {
+        return 0;
+    }
+    while (source[s] != '\0' && s < e && !IsIdentifierChar(source[s])) {
+        s++;
+    }
+    while (e > s && !IsIdentifierChar(source[e - 1u])) {
+        e--;
+    }
+    if (e <= s || source[s] == '\0') {
+        return 0;
+    }
+    while (s > 0 && IsIdentifierChar(source[s - 1u])) {
+        s--;
+    }
+    while (source[e] != '\0' && IsIdentifierChar(source[e])) {
+        e++;
+    }
+    if (e <= s || !IsIdentifierStartChar(source[s])) {
+        return 0;
+    }
+    *outStart = s;
+    *outEnd = e;
+    return 1;
+}
+
 static void DiagOffsetToLineCol(
     const char* source, uint32_t offset, uint32_t* outLine, uint32_t* outCol) {
     uint32_t i = 0;
@@ -578,7 +619,11 @@ static int RemapCombinedOffset(
 }
 
 static void RemapCombinedDiag(
-    const SLCombinedSourceMap* map, const SLDiag* diagIn, SLDiag* diagOut, uint32_t* outFileIndex) {
+    const SLCombinedSourceMap* map,
+    const SLDiag*              diagIn,
+    SLDiag*                    diagOut,
+    uint32_t*                  outFileIndex,
+    const char* _Nullable source) {
     uint32_t fileIndexStart = 0;
     uint32_t fileIndexEnd = 0;
     int      startMapped;
@@ -605,6 +650,10 @@ static void RemapCombinedDiag(
         if (!RemapCombinedOffset(map, diagIn->argEnd, &diagOut->argEnd, &argFileIndex)) {
             diagOut->argEnd = diagIn->argEnd;
         }
+    }
+    if (source != NULL && diagOut->code == SLDiag_UNKNOWN_SYMBOL && diagOut->end > diagOut->start) {
+        (void)NormalizeUnknownIdentifierSpan(
+            source, diagOut->start, diagOut->end, &diagOut->start, &diagOut->end);
     }
 }
 
@@ -1280,7 +1329,7 @@ static int CheckSourceExWithSingleFileRemap(
     if (SLParse(&arena, (SLStrView){ source, sourceLen }, &ast, &diag) != 0) {
         SLDiag   remappedDiag;
         uint32_t remappedFileIndex = 0;
-        RemapCombinedDiag(remapMap, &diag, &remappedDiag, &remappedFileIndex);
+        RemapCombinedDiag(remapMap, &diag, &remappedDiag, &remappedFileIndex, remapSource);
         (void)remappedFileIndex;
         (void)(useLineColDiag ? PrintSLDiagLineCol(filename, remapSource, &remappedDiag, 0)
                               : PrintSLDiag(filename, remapSource, &remappedDiag, 0));
@@ -1324,7 +1373,7 @@ static int CheckSourceExWithSingleFileRemap(
                 afterUsed,
                 afterCap);
         }
-        RemapCombinedDiag(remapMap, &diag, &remappedDiag, &remappedFileIndex);
+        RemapCombinedDiag(remapMap, &diag, &remappedDiag, &remappedFileIndex, remapSource);
         (void)remappedFileIndex;
         {
             int diagStatus =

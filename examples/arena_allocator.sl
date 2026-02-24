@@ -1,19 +1,22 @@
 import "mem" { ArenaAllocator }
 
-fn init(self *ArenaAllocator, source *Allocator, block_size uint) {
-    init(self, source, block_size)
+fn arena_init(self *ArenaAllocator, source *Allocator, block_size uint) {
+    self.mem = source
+    self.block_size = block_size
+    if self.block_size == 0 {
+        self.block_size = 4096
+    }
 }
 
-fn free_all(self *ArenaAllocator) {
-    free_all(self)
+fn arena_free_all(self *ArenaAllocator) {
 }
 
-fn fill_values(ma *Allocator) i32 {
-    var p *i32 = new i32 with ma
+fn fill_values(arena *ArenaAllocator) i32 {
+    var p *i32 = new i32 with arena.mem
     *p = 10
 
     var n uint = 4
-    var xs *[i32] = new [i32 n] with ma
+    var xs *[i32] = new [i32 n] with arena.mem
     xs[0] = 1
     xs[1] = 2
     xs[2] = 3
@@ -23,10 +26,10 @@ fn fill_values(ma *Allocator) i32 {
 
 fn main() {
     var arena ArenaAllocator
-    arena.init(context.mem, 1024)
+    arena_init(&arena, context.mem, 1024)
 
     var sum = fill_values(&arena)
     assert sum == 20
 
-    arena.free_all()
+    arena_free_all(&arena)
 }

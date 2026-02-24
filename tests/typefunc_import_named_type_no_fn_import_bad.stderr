@@ -1,1 +1,1 @@
-tests/typefunc_import_named_type_no_fn_import_bad/app/main.sl:5:4: SL2002: unknown identifier ' ini'
+tests/typefunc_import_named_type_no_fn_import_bad/app/main.sl:5:5: SL2002: unknown identifier 'init'

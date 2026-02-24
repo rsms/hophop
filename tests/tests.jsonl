@@ -59,6 +59,7 @@
 {"id":"checkpkg:tests/typefunc_import_group/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/typefunc_import_group/app"}
 {"id":"checkpkg:tests/typefunc_import_named_type_no_fn_import/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/typefunc_import_named_type_no_fn_import/app"}
 {"id":"checkpkg:tests/typefunc_import_named_type_no_fn_import_bad/app","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/typefunc_import_named_type_no_fn_import_bad/app","expect_stderr":"tests/typefunc_import_named_type_no_fn_import_bad.stderr"}
+{"id":"checkpkg:tests/typefunc_import_named_type_with_fn_import/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/typefunc_import_named_type_with_fn_import/app"}
 {"id":"_:tests/bad_string.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"_","input":"tests/bad_string.sl","expect_stderr":"tests/bad_string.stderr"}
 {"id":"check:tests/bad_pub_block.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/bad_pub_block.sl","expect_stderr":"tests/bad_pub_block.stderr"}
 {"id":"ast:tests/ast_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"ast","input":"tests/ast_bad.sl","expect_stderr":"tests/ast_bad.stderr"}
@@ -207,6 +208,7 @@
 {"id":"integration.examples.pointers_arrays.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/pointers_arrays.sl"}
 {"id":"integration.examples.single_file.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/single_file.sl"}
 {"id":"integration.examples.allocator.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/allocator.sl"}
+{"id":"integration.examples.arena_allocator.compile_and_run","suite":"integration.examples","kind":"compile_and_run","input":"examples/arena_allocator.sl"}
 {"id":"integration.examples.context.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/context.sl"}
 {"id":"integration.examples.slp2_refs_slices.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/slp2_refs_slices.sl"}
 {"id":"integration.examples.struct_composition.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/struct_composition.sl"}
