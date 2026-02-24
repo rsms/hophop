@@ -1877,6 +1877,8 @@ static int SLTCCoerceForBinary(
 static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
 static int SLTCTypeExprExpected(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t expectedType, int32_t* outType);
+static int SLTCTypeExprExpected(
+    SLTypeCheckCtx* c, int32_t nodeId, int32_t expectedType, int32_t* outType);
 static int SLTCExprIsCompoundTemporary(SLTypeCheckCtx* c, int32_t exprNode);
 static int SLTCExprNeedsExpectedType(SLTypeCheckCtx* c, int32_t exprNode);
 static int SLTCExprIsAssignable(SLTypeCheckCtx* c, int32_t exprNode);
@@ -3366,6 +3368,94 @@ static int SLTCFieldLookup(
     return -1;
 }
 
+static int SLTCIsAsciiSpace(unsigned char ch) {
+    return ch == (unsigned char)' ' || ch == (unsigned char)'\t' || ch == (unsigned char)'\r'
+        || ch == (unsigned char)'\n' || ch == (unsigned char)'\f' || ch == (unsigned char)'\v';
+}
+
+static int SLTCIsIdentStartChar(unsigned char ch) {
+    return (ch >= (unsigned char)'a' && ch <= (unsigned char)'z')
+        || (ch >= (unsigned char)'A' && ch <= (unsigned char)'Z') || ch == (unsigned char)'_';
+}
+
+static int SLTCIsIdentContinueChar(unsigned char ch) {
+    return SLTCIsIdentStartChar(ch) || (ch >= (unsigned char)'0' && ch <= (unsigned char)'9');
+}
+
+/* Returns 0 for a segment, 1 for end-of-path, -1 for malformed path syntax. */
+static int SLTCFieldPathNextSegment(
+    SLTypeCheckCtx* c,
+    uint32_t        pathStart,
+    uint32_t        pathEnd,
+    uint32_t*       ioPos,
+    uint32_t*       outSegStart,
+    uint32_t*       outSegEnd) {
+    uint32_t pos = *ioPos;
+    while (pos < pathEnd && SLTCIsAsciiSpace((unsigned char)c->src.ptr[pos])) {
+        pos++;
+    }
+    if (pos >= pathEnd) {
+        *ioPos = pos;
+        return 1;
+    }
+    if (!SLTCIsIdentStartChar((unsigned char)c->src.ptr[pos])) {
+        return -1;
+    }
+    *outSegStart = pos;
+    pos++;
+    while (pos < pathEnd && SLTCIsIdentContinueChar((unsigned char)c->src.ptr[pos])) {
+        pos++;
+    }
+    *outSegEnd = pos;
+    while (pos < pathEnd && SLTCIsAsciiSpace((unsigned char)c->src.ptr[pos])) {
+        pos++;
+    }
+    if (pos < pathEnd) {
+        if (c->src.ptr[pos] != '.') {
+            return -1;
+        }
+        pos++;
+    }
+    *ioPos = pos;
+    (void)pathStart;
+    return 0;
+}
+
+static int SLTCFieldLookupPath(
+    SLTypeCheckCtx* c,
+    int32_t         ownerTypeId,
+    uint32_t        pathStart,
+    uint32_t        pathEnd,
+    int32_t*        outType) {
+    uint32_t pos = pathStart;
+    int32_t  curType = ownerTypeId;
+    int32_t  fieldType = -1;
+    int      hadSegment = 0;
+
+    for (;;) {
+        uint32_t segStart = 0;
+        uint32_t segEnd = 0;
+        int      rc = SLTCFieldPathNextSegment(c, pathStart, pathEnd, &pos, &segStart, &segEnd);
+        if (rc == 1) {
+            break;
+        }
+        if (rc != 0) {
+            return -1;
+        }
+        hadSegment = 1;
+        if (SLTCFieldLookup(c, curType, segStart, segEnd, &fieldType, NULL) != 0) {
+            return -1;
+        }
+        curType = fieldType;
+    }
+
+    if (!hadSegment) {
+        return -1;
+    }
+    *outType = fieldType;
+    return 0;
+}
+
 static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
 
 static int SLTCTypeNewExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
@@ -3373,6 +3463,7 @@ static int SLTCTypeNewExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) 
     int32_t          typeNode;
     int32_t          nextNode;
     int32_t          countArgNode = -1;
+    int32_t          initArgNode = -1;
     int32_t          allocArgNode = -1;
     int32_t          allocArgType = -1;
     int32_t          allocBaseType;
@@ -3384,6 +3475,7 @@ static int SLTCTypeNewExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) 
     int64_t          countValue = 0;
     int              countIsConst = 0;
     int              hasCount;
+    int              hasInit;
     int              hasAlloc;
 
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
@@ -3391,6 +3483,7 @@ static int SLTCTypeNewExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) 
     }
     n = &c->ast->nodes[nodeId];
     hasCount = (n->flags & SLAstFlag_NEW_HAS_COUNT) != 0;
+    hasInit = (n->flags & SLAstFlag_NEW_HAS_INIT) != 0;
     hasAlloc = (n->flags & SLAstFlag_NEW_HAS_ALLOC) != 0;
 
     typeNode = SLAstFirstChild(c->ast, nodeId);
@@ -3404,6 +3497,13 @@ static int SLTCTypeNewExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) 
             return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
         }
         nextNode = SLAstNextSibling(c->ast, countArgNode);
+    }
+    if (hasInit) {
+        initArgNode = nextNode;
+        if (initArgNode < 0) {
+            return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+        }
+        nextNode = SLAstNextSibling(c->ast, initArgNode);
     }
     if (hasAlloc) {
         allocArgNode = nextNode;
@@ -3442,8 +3542,22 @@ static int SLTCTypeNewExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) 
     if (SLTCResolveTypeNode(c, typeNode, &elemType) != 0) {
         return -1;
     }
-    if (SLTCTypeContainsVarSizeByValue(c, elemType)) {
+
+    if (countArgNode >= 0 && SLTCTypeContainsVarSizeByValue(c, elemType)) {
         return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
+    }
+    if (countArgNode < 0 && SLTCTypeContainsVarSizeByValue(c, elemType) && initArgNode < 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_NEW_VARSIZE_INIT_REQUIRED);
+    }
+
+    if (initArgNode >= 0) {
+        int32_t initType;
+        if (SLTCTypeExprExpected(c, initArgNode, elemType, &initType) != 0) {
+            return -1;
+        }
+        if (!SLTCCanAssign(c, elemType, initType)) {
+            return SLTCFailNode(c, initArgNode, SLDiag_TYPE_MISMATCH);
+        }
     }
 
     if (countArgNode >= 0) {
@@ -3728,8 +3842,8 @@ static int SLTCTypeCompoundLit(
             scan = SLAstNextSibling(c->ast, scan);
         }
 
-        if (SLTCFieldLookup(
-                c, targetAggregateType, fieldNode->dataStart, fieldNode->dataEnd, &fieldType, NULL)
+        if (SLTCFieldLookupPath(
+                c, targetAggregateType, fieldNode->dataStart, fieldNode->dataEnd, &fieldType)
             != 0)
         {
             SLTCSetDiagWithArg(

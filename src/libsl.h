@@ -327,6 +327,7 @@ enum {
     SLAstFlag_CALL_WITH_CONTEXT_PASSTHROUGH = 0x0020u,
     SLAstFlag_NEW_HAS_COUNT = 0x0040u,
     SLAstFlag_NEW_HAS_ALLOC = 0x0080u,
+    SLAstFlag_NEW_HAS_INIT = 0x0100u,
 };
 
 typedef uint32_t SLFeatures;

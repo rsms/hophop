@@ -665,6 +665,13 @@ static int SLPParseCompoundLiteralTail(SLParser* p, int32_t typeNode, int32_t* o
         }
         p->nodes[field].dataStart = fieldName->start;
         p->nodes[field].dataEnd = fieldName->end;
+        while (SLPMatch(p, SLTok_DOT)) {
+            const SLToken* seg;
+            if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &seg) != 0) {
+                return -1;
+            }
+            p->nodes[field].dataEnd = seg->end;
+        }
         if (SLPExpect(p, SLTok_ASSIGN, SLDiag_UNEXPECTED_TOKEN, &eqTok) != 0) {
             return -1;
         }
@@ -699,6 +706,7 @@ static int SLPParseNewExpr(SLParser* p, int32_t* out) {
     int32_t        n;
     int32_t        typeNode;
     int32_t        countNode = -1;
+    int32_t        initNode = -1;
     int32_t        allocNode = -1;
 
     n = SLPNewNode(p, SLAst_NEW, kw->start, kw->end);
@@ -723,6 +731,13 @@ static int SLPParseNewExpr(SLParser* p, int32_t* out) {
             return -1;
         }
         p->nodes[n].end = p->nodes[typeNode].end;
+        if (SLPAt(p, SLTok_LBRACE)) {
+            if (SLPParseCompoundLiteralTail(p, -1, &initNode) != 0) {
+                return -1;
+            }
+            p->nodes[n].flags |= SLAstFlag_NEW_HAS_INIT;
+            p->nodes[n].end = p->nodes[initNode].end;
+        }
     }
 
     if (SLPAddChild(p, n, typeNode) != 0) {
@@ -730,6 +745,11 @@ static int SLPParseNewExpr(SLParser* p, int32_t* out) {
     }
     if (countNode >= 0) {
         if (SLPAddChild(p, n, countNode) != 0) {
+            return -1;
+        }
+    }
+    if (initNode >= 0) {
+        if (SLPAddChild(p, n, initNode) != 0) {
             return -1;
         }
     }

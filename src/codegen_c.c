@@ -241,6 +241,20 @@ static int IsAlnumChar(char ch) {
         || (c >= (unsigned char)'a' && c <= (unsigned char)'z');
 }
 
+static int IsAsciiSpaceChar(unsigned char c) {
+    return c == (unsigned char)' ' || c == (unsigned char)'\t' || c == (unsigned char)'\n'
+        || c == (unsigned char)'\r' || c == (unsigned char)'\f' || c == (unsigned char)'\v';
+}
+
+static int IsIdentStartChar(unsigned char c) {
+    return (c >= (unsigned char)'A' && c <= (unsigned char)'Z')
+        || (c >= (unsigned char)'a' && c <= (unsigned char)'z') || c == (unsigned char)'_';
+}
+
+static int IsIdentContinueChar(unsigned char c) {
+    return IsIdentStartChar(c) || (c >= (unsigned char)'0' && c <= (unsigned char)'9');
+}
+
 static char ToUpperChar(char ch) {
     unsigned char c = (unsigned char)ch;
     if (c >= (unsigned char)'a' && c <= (unsigned char)'z') {
@@ -1942,7 +1956,37 @@ static const SLFieldInfo* _Nullable FindFieldInfoByName(
     return NULL;
 }
 
-static int ResolveFieldPathBySlice(
+static int ResolveCoreStrFieldBySlice(
+    const SLCBackendC* c, uint32_t fieldStart, uint32_t fieldEnd, const SLFieldInfo** outField) {
+    static int         inited = 0;
+    static SLFieldInfo lenField;
+    static SLFieldInfo bytesField;
+    if (!inited) {
+        memset(&lenField, 0, sizeof(lenField));
+        memset(&bytesField, 0, sizeof(bytesField));
+        lenField.ownerType = "core__str";
+        lenField.fieldName = "len";
+        TypeRefSetScalar(&lenField.type, "__sl_u32");
+
+        bytesField.ownerType = "core__str";
+        bytesField.fieldName = "bytes";
+        bytesField.isDependent = 1;
+        TypeRefSetScalar(&bytesField.type, "__sl_u8");
+        bytesField.type.ptrDepth = 1;
+        inited = 1;
+    }
+    if (SliceEqName(c->unit->source, fieldStart, fieldEnd, "len")) {
+        *outField = &lenField;
+        return 0;
+    }
+    if (SliceEqName(c->unit->source, fieldStart, fieldEnd, "bytes")) {
+        *outField = &bytesField;
+        return 0;
+    }
+    return -1;
+}
+
+static int ResolveFieldPathSingleSegment(
     const SLCBackendC*  c,
     const char*         ownerType,
     uint32_t            fieldStart,
@@ -1958,6 +2002,18 @@ static int ResolveFieldPathBySlice(
 
     if (outLen == NULL || cap == 0u) {
         return -1;
+    }
+
+    if (IsStrBaseName(ownerType)) {
+        const SLFieldInfo* strField = NULL;
+        if (ResolveCoreStrFieldBySlice(c, fieldStart, fieldEnd, &strField) == 0) {
+            outPath[0] = strField;
+            *outLen = 1u;
+            if (outField != NULL) {
+                *outField = strField;
+            }
+            return 0;
+        }
     }
 
     direct = FindFieldInfo(c, ownerType, fieldStart, fieldEnd);
@@ -1985,7 +2041,7 @@ static int ResolveFieldPathBySlice(
     if (embeddedBaseName == NULL) {
         return -1;
     }
-    if (ResolveFieldPathBySlice(
+    if (ResolveFieldPathSingleSegment(
             c, embeddedBaseName, fieldStart, fieldEnd, outPath + 1u, cap - 1u, &nestedLen, outField)
         != 0)
     {
@@ -1993,6 +2049,115 @@ static int ResolveFieldPathBySlice(
     }
     outPath[0] = embedded;
     *outLen = nestedLen + 1u;
+    return 0;
+}
+
+/* Returns 0 for a segment, 1 for end-of-path, -1 for malformed syntax. */
+static int FieldPathNextSegment(
+    const char* src,
+    uint32_t    pathEnd,
+    uint32_t*   ioPos,
+    uint32_t*   outSegStart,
+    uint32_t*   outSegEnd) {
+    uint32_t pos = *ioPos;
+    while (pos < pathEnd && IsAsciiSpaceChar((unsigned char)src[pos])) {
+        pos++;
+    }
+    if (pos >= pathEnd) {
+        *ioPos = pos;
+        return 1;
+    }
+    if (!IsIdentStartChar((unsigned char)src[pos])) {
+        return -1;
+    }
+    *outSegStart = pos;
+    pos++;
+    while (pos < pathEnd && IsIdentContinueChar((unsigned char)src[pos])) {
+        pos++;
+    }
+    *outSegEnd = pos;
+    while (pos < pathEnd && IsAsciiSpaceChar((unsigned char)src[pos])) {
+        pos++;
+    }
+    if (pos < pathEnd) {
+        if (src[pos] != '.') {
+            return -1;
+        }
+        pos++;
+    }
+    *ioPos = pos;
+    return 0;
+}
+
+static int ResolveFieldPathBySlice(
+    const SLCBackendC*  c,
+    const char*         ownerType,
+    uint32_t            fieldStart,
+    uint32_t            fieldEnd,
+    const SLFieldInfo** outPath,
+    uint32_t            cap,
+    uint32_t*           outLen,
+    const SLFieldInfo** _Nullable outField) {
+    uint32_t           pos = fieldStart;
+    uint32_t           totalLen = 0;
+    const char*        curOwnerType = ownerType;
+    const SLFieldInfo* lastField = NULL;
+
+    while (pos <= fieldEnd) {
+        const SLFieldInfo* segPath[64];
+        const SLFieldInfo* segField = NULL;
+        uint32_t           segLen = 0;
+        uint32_t           segStart = 0;
+        uint32_t           segEnd = 0;
+        int      nextRc = FieldPathNextSegment(c->unit->source, fieldEnd, &pos, &segStart, &segEnd);
+        uint32_t i;
+        if (nextRc == 1) {
+            break;
+        }
+        if (nextRc != 0 || curOwnerType == NULL) {
+            return -1;
+        }
+        if (ResolveFieldPathSingleSegment(
+                c,
+                curOwnerType,
+                segStart,
+                segEnd,
+                segPath,
+                (uint32_t)(sizeof(segPath) / sizeof(segPath[0])),
+                &segLen,
+                &segField)
+                != 0
+            || segLen == 0)
+        {
+            return -1;
+        }
+        if (totalLen + segLen > cap) {
+            return -1;
+        }
+        for (i = 0; i < segLen; i++) {
+            outPath[totalLen + i] = segPath[i];
+        }
+        totalLen += segLen;
+        lastField = segField;
+
+        if (segField != NULL && segField->type.valid
+            && segField->type.containerKind == SLTypeContainer_SCALAR
+            && segField->type.ptrDepth == 0 && segField->type.containerPtrDepth == 0
+            && segField->type.baseName != NULL && !segField->type.isOptional)
+        {
+            curOwnerType = ResolveScalarAliasBaseName(c, segField->type.baseName);
+        } else {
+            curOwnerType = NULL;
+        }
+    }
+
+    if (totalLen == 0) {
+        return -1;
+    }
+    *outLen = totalLen;
+    if (outField != NULL) {
+        *outField = lastField;
+    }
     return 0;
 }
 
@@ -2897,9 +3062,13 @@ static int InferExprTypeExpected(
 static int EmitExpr(SLCBackendC* c, int32_t nodeId);
 static int EmitCompoundLiteral(
     SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType);
+static int EmitCompoundLiteralOrderedStruct(
+    SLCBackendC* c, int32_t firstField, const char* ownerType, const SLTypeRef* valueType);
 static int EmitEffectiveContextFieldValue(
     SLCBackendC* c, const char* fieldName, const SLTypeRef* requiredType);
 static int InferNewExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
+static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType);
+static int StructHasFieldDefaults(const SLCBackendC* c, const char* ownerType);
 static int TypeRefAssignableCost(
     SLCBackendC* c, const SLTypeRef* dst, const SLTypeRef* src, uint8_t* outCost);
 
@@ -2920,16 +3089,19 @@ static int DecodeNewExprNodes(
     int32_t      nodeId,
     int32_t*     outTypeNode,
     int32_t*     outCountNode,
+    int32_t*     outInitNode,
     int32_t*     outAllocNode) {
     const SLAstNode* n = NodeAt(c, nodeId);
     int32_t          typeNode;
     int32_t          nextNode;
     int              hasCount;
+    int              hasInit;
     int              hasAlloc;
     if (n == NULL || n->kind != SLAst_NEW) {
         return -1;
     }
     hasCount = (n->flags & SLAstFlag_NEW_HAS_COUNT) != 0;
+    hasInit = (n->flags & SLAstFlag_NEW_HAS_INIT) != 0;
     hasAlloc = (n->flags & SLAstFlag_NEW_HAS_ALLOC) != 0;
 
     typeNode = AstFirstChild(&c->ast, nodeId);
@@ -2939,6 +3111,7 @@ static int DecodeNewExprNodes(
     nextNode = AstNextSibling(&c->ast, typeNode);
     *outTypeNode = typeNode;
     *outCountNode = -1;
+    *outInitNode = -1;
     *outAllocNode = -1;
 
     if (hasCount) {
@@ -2947,6 +3120,13 @@ static int DecodeNewExprNodes(
             return -1;
         }
         nextNode = AstNextSibling(&c->ast, *outCountNode);
+    }
+    if (hasInit) {
+        *outInitNode = nextNode;
+        if (*outInitNode < 0) {
+            return -1;
+        }
+        nextNode = AstNextSibling(&c->ast, *outInitNode);
     }
     if (hasAlloc) {
         *outAllocNode = nextNode;
@@ -4040,14 +4220,16 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
 static int InferNewExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
     int32_t          typeNode = -1;
     int32_t          countNode = -1;
+    int32_t          initNode = -1;
     int32_t          allocNode = -1;
     const SLAstNode* count;
     uint32_t         arrayLen = 0;
 
     TypeRefSetInvalid(outType);
-    if (DecodeNewExprNodes(c, nodeId, &typeNode, &countNode, &allocNode) != 0) {
+    if (DecodeNewExprNodes(c, nodeId, &typeNode, &countNode, &initNode, &allocNode) != 0) {
         return 0;
     }
+    (void)initNode;
     (void)allocNode;
 
     if (ParseTypeRef(c, typeNode, outType) != 0 || !outType->valid) {
@@ -4464,6 +4646,25 @@ static int EmitNewAllocArgExpr(SLCBackendC* c, int32_t allocArg) {
     }
 }
 
+static const char* _Nullable ResolveVarSizeValueBaseName(
+    SLCBackendC* c, const SLTypeRef* valueType) {
+    const char* baseName;
+    if (valueType == NULL || !valueType->valid || valueType->containerKind != SLTypeContainer_SCALAR
+        || valueType->containerPtrDepth != 0 || valueType->ptrDepth != 0
+        || valueType->baseName == NULL || valueType->isOptional)
+    {
+        return NULL;
+    }
+    baseName = ResolveScalarAliasBaseName(c, valueType->baseName);
+    if (baseName == NULL) {
+        baseName = valueType->baseName;
+    }
+    if (IsStrBaseName(baseName) || IsVarSizeTypeName(c, baseName)) {
+        return baseName;
+    }
+    return NULL;
+}
+
 static int EmitConcatCallExpr(SLCBackendC* c, int32_t calleeNode) {
     int32_t aNode = AstNextSibling(&c->ast, calleeNode);
     int32_t bNode = aNode >= 0 ? AstNextSibling(&c->ast, aNode) : -1;
@@ -4559,14 +4760,19 @@ static int EmitFreeCallExpr(SLCBackendC* c, int32_t allocArgNode, int32_t valueN
 
 static int EmitNewExpr(
     SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable dstType, int requireNonNull) {
-    int32_t   typeNode = -1;
-    int32_t   countArg = -1;
-    int32_t   allocArg = -1;
-    SLTypeRef elemType;
-    int       dstIsRuntimeArray = 0;
-    int       dstIsRuntimeArrayMut = 0;
+    int32_t          typeNode = -1;
+    int32_t          countArg = -1;
+    int32_t          initArg = -1;
+    int32_t          allocArg = -1;
+    SLTypeRef        elemType;
+    const char*      varSizeBaseName = NULL;
+    const char*      ownerTypeName = NULL;
+    const SLNameMap* ownerMap = NULL;
+    int              needsImplicitInit = 0;
+    int              dstIsRuntimeArray = 0;
+    int              dstIsRuntimeArrayMut = 0;
 
-    if (DecodeNewExprNodes(c, nodeId, &typeNode, &countArg, &allocArg) != 0) {
+    if (DecodeNewExprNodes(c, nodeId, &typeNode, &countArg, &initArg, &allocArg) != 0) {
         return -1;
     }
     if (ParseTypeRef(c, typeNode, &elemType) != 0 || !elemType.valid) {
@@ -4579,6 +4785,23 @@ static int EmitNewExpr(
     {
         dstIsRuntimeArray = 1;
         dstIsRuntimeArrayMut = dstType->containerKind == SLTypeContainer_SLICE_MUT;
+    }
+    if (countArg < 0) {
+        varSizeBaseName = ResolveVarSizeValueBaseName(c, &elemType);
+    }
+    if (countArg < 0 && initArg < 0 && varSizeBaseName == NULL
+        && elemType.containerKind == SLTypeContainer_SCALAR && elemType.containerPtrDepth == 0
+        && elemType.ptrDepth == 0 && elemType.baseName != NULL && !elemType.isOptional)
+    {
+        ownerTypeName = ResolveScalarAliasBaseName(c, elemType.baseName);
+        if (ownerTypeName != NULL) {
+            ownerMap = FindNameByCName(c, ownerTypeName);
+            if (ownerMap != NULL && ownerMap->kind == SLAst_STRUCT
+                && StructHasFieldDefaults(c, ownerTypeName))
+            {
+                needsImplicitInit = 1;
+            }
+        }
     }
 
     if (countArg >= 0 && dstIsRuntimeArray) {
@@ -4628,17 +4851,15 @@ static int EmitNewExpr(
         return 0;
     }
 
-    if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, &elemType) != 0
-        || BufAppendCStr(&c->out, "*)") != 0)
-    {
-        return -1;
-    }
-    if (requireNonNull) {
-        if (BufAppendCStr(&c->out, "__sl_unwrap((const void*)(") != 0) {
+    if (countArg >= 0) {
+        if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, &elemType) != 0
+            || BufAppendCStr(&c->out, "*)") != 0)
+        {
             return -1;
         }
-    }
-    if (countArg >= 0) {
+        if (requireNonNull && BufAppendCStr(&c->out, "__sl_unwrap((const void*)(") != 0) {
+            return -1;
+        }
         if (BufAppendCStr(&c->out, "__sl_new_array((__sl_Allocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
@@ -4649,7 +4870,23 @@ static int EmitNewExpr(
         {
             return -1;
         }
-    } else {
+        if (requireNonNull && BufAppendCStr(&c->out, "))") != 0) {
+            return -1;
+        }
+        return BufAppendChar(&c->out, ')');
+    }
+
+    if (countArg < 0 && initArg < 0 && !needsImplicitInit && varSizeBaseName == NULL) {
+        if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, &elemType) != 0
+            || BufAppendCStr(&c->out, "*)") != 0)
+        {
+            return -1;
+        }
+        if (requireNonNull) {
+            if (BufAppendCStr(&c->out, "__sl_unwrap((const void*)(") != 0) {
+                return -1;
+            }
+        }
         if (BufAppendCStr(&c->out, "__sl_new((__sl_Allocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
@@ -4658,6 +4895,159 @@ static int EmitNewExpr(
         {
             return -1;
         }
+        if (requireNonNull && BufAppendCStr(&c->out, "))") != 0) {
+            return -1;
+        }
+        return BufAppendChar(&c->out, ')');
+    }
+
+    if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, &elemType) != 0
+        || BufAppendCStr(&c->out, "*)") != 0)
+    {
+        return -1;
+    }
+    if (requireNonNull && BufAppendCStr(&c->out, "__sl_unwrap((const void*)(") != 0) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "(__extension__({\n    ") != 0
+        || EmitTypeNameWithDepth(c, &elemType) != 0 || BufAppendCStr(&c->out, "* __sl_p;\n") != 0)
+    {
+        return -1;
+    }
+
+    if (varSizeBaseName != NULL) {
+        const SLAstNode* initNode;
+        const char*      initOwnerType;
+        int32_t          fieldNode;
+        if (initArg < 0) {
+            return -1;
+        }
+        initNode = NodeAt(c, initArg);
+        initOwnerType = ResolveScalarAliasBaseName(c, elemType.baseName);
+        if (initOwnerType == NULL || initNode == NULL || initNode->kind != SLAst_COMPOUND_LIT) {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, "    ") != 0 || EmitTypeNameWithDepth(c, &elemType) != 0
+            || BufAppendCStr(&c->out, " __sl_init = {0};\n") != 0)
+        {
+            return -1;
+        }
+        fieldNode = AstFirstChild(&c->ast, initArg);
+        if (fieldNode >= 0 && IsTypeNodeKind(NodeAt(c, fieldNode)->kind)) {
+            fieldNode = AstNextSibling(&c->ast, fieldNode);
+        }
+        while (fieldNode >= 0) {
+            const SLAstNode*   field = NodeAt(c, fieldNode);
+            const SLFieldInfo* fieldPath[64];
+            const SLFieldInfo* resolvedField = NULL;
+            uint32_t           fieldPathLen = 0;
+            int32_t            exprNode;
+            uint32_t           i;
+            if (field == NULL || field->kind != SLAst_COMPOUND_FIELD) {
+                return -1;
+            }
+            exprNode = AstFirstChild(&c->ast, fieldNode);
+            if (exprNode < 0) {
+                return -1;
+            }
+            if (ResolveFieldPathBySlice(
+                    c,
+                    initOwnerType,
+                    field->dataStart,
+                    field->dataEnd,
+                    fieldPath,
+                    (uint32_t)(sizeof(fieldPath) / sizeof(fieldPath[0])),
+                    &fieldPathLen,
+                    &resolvedField)
+                    != 0
+                || fieldPathLen == 0)
+            {
+                return -1;
+            }
+            resolvedField = fieldPath[fieldPathLen - 1u];
+            if (BufAppendCStr(&c->out, "    __sl_init") != 0) {
+                return -1;
+            }
+            for (i = 0; i < fieldPathLen; i++) {
+                if (BufAppendChar(&c->out, '.') != 0
+                    || BufAppendCStr(&c->out, fieldPath[i]->fieldName) != 0)
+                {
+                    return -1;
+                }
+            }
+            if (BufAppendCStr(&c->out, " = ") != 0
+                || EmitExprCoerced(c, exprNode, &resolvedField->type) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+            fieldNode = AstNextSibling(&c->ast, fieldNode);
+        }
+        if (BufAppendCStr(&c->out, "    __sl_uint __sl_size = ") != 0) {
+            return -1;
+        }
+        if (IsStrBaseName(varSizeBaseName)) {
+            if (BufAppendCStr(&c->out, "__sl_str_sizeof((__sl_str*)&__sl_init)") != 0) {
+                return -1;
+            }
+        } else if (
+            BufAppendCStr(&c->out, varSizeBaseName) != 0
+            || BufAppendCStr(&c->out, "__sizeof(&__sl_init)") != 0)
+        {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, ";\n") != 0) {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, "    __sl_p = (") != 0
+            || EmitTypeNameWithDepth(c, &elemType) != 0
+            || BufAppendCStr(&c->out, "*)__sl_new((__sl_Allocator*)(") != 0
+            || EmitNewAllocArgExpr(c, allocArg) != 0
+            || BufAppendCStr(&c->out, "), __sl_size, _Alignof(") != 0
+            || EmitTypeNameWithDepth(c, &elemType) != 0 || BufAppendCStr(&c->out, "));\n") != 0)
+        {
+            return -1;
+        }
+        if (BufAppendCStr(
+                &c->out, "    if (__sl_p != NULL) {\n        *__sl_p = __sl_init;\n    }\n")
+            != 0)
+        {
+            return -1;
+        }
+    } else {
+        if (BufAppendCStr(&c->out, "    __sl_p = (") != 0
+            || EmitTypeNameWithDepth(c, &elemType) != 0
+            || BufAppendCStr(&c->out, "*)__sl_new((__sl_Allocator*)(") != 0
+            || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
+            || EmitTypeNameWithDepth(c, &elemType) != 0
+            || BufAppendCStr(&c->out, "), _Alignof(") != 0
+            || EmitTypeNameWithDepth(c, &elemType) != 0 || BufAppendCStr(&c->out, "));\n") != 0)
+        {
+            return -1;
+        }
+        if (initArg >= 0 || needsImplicitInit) {
+            if (BufAppendCStr(&c->out, "    if (__sl_p != NULL) {\n        *__sl_p = ") != 0) {
+                return -1;
+            }
+            if (initArg >= 0) {
+                if (EmitExprCoerced(c, initArg, &elemType) != 0) {
+                    return -1;
+                }
+            } else {
+                if (ownerTypeName == NULL
+                    || EmitCompoundLiteralOrderedStruct(c, -1, ownerTypeName, &elemType) != 0)
+                {
+                    return -1;
+                }
+            }
+            if (BufAppendCStr(&c->out, ";\n    }\n") != 0) {
+                return -1;
+            }
+        }
+    }
+
+    if (BufAppendCStr(&c->out, "    __sl_p;\n}))") != 0) {
+        return -1;
     }
     if (requireNonNull && BufAppendCStr(&c->out, "))") != 0) {
         return -1;
@@ -6857,6 +7247,45 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
                             {
                                 return -1;
                             }
+                        } else if (wt >= 0) {
+                            SLTypeRef   wFieldType;
+                            const char* wVarSizeBaseName = NULL;
+                            if (ParseTypeRef(c, wt, &wFieldType) != 0) {
+                                return -1;
+                            }
+                            wVarSizeBaseName = ResolveVarSizeValueBaseName(c, &wFieldType);
+                            if (wVarSizeBaseName != NULL) {
+                                EmitIndent(c, depth + 1u);
+                                if (BufAppendCStr(&c->out, "off += ") != 0) {
+                                    return -1;
+                                }
+                                if (IsStrBaseName(wVarSizeBaseName)) {
+                                    if (BufAppendCStr(&c->out, "__sl_str_sizeof((__sl_str*)&p->")
+                                            != 0
+                                        || BufAppendSlice(
+                                               &c->out, c->unit->source, wf->dataStart, wf->dataEnd)
+                                               != 0
+                                        || BufAppendCStr(&c->out, ")") != 0)
+                                    {
+                                        return -1;
+                                    }
+                                } else if (
+                                    BufAppendCStr(&c->out, wVarSizeBaseName) != 0
+                                    || BufAppendCStr(&c->out, "__sizeof(&p->") != 0
+                                    || BufAppendSlice(
+                                           &c->out, c->unit->source, wf->dataStart, wf->dataEnd)
+                                           != 0
+                                    || BufAppendChar(&c->out, ')') != 0)
+                                {
+                                    return -1;
+                                }
+                                if (BufAppendCStr(&c->out, " - sizeof(") != 0
+                                    || EmitTypeForCast(c, wt) != 0
+                                    || BufAppendCStr(&c->out, ");\n") != 0)
+                                {
+                                    return -1;
+                                }
+                            }
                         }
                     }
                     walk = AstNextSibling(&c->ast, walk);
@@ -6908,6 +7337,42 @@ static int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth)
                         || EmitTypeForCast(c, welem) != 0 || BufAppendCStr(&c->out, ");\n") != 0)
                     {
                         return -1;
+                    }
+                } else if (wt >= 0) {
+                    SLTypeRef   wFieldType;
+                    const char* wVarSizeBaseName = NULL;
+                    if (ParseTypeRef(c, wt, &wFieldType) != 0) {
+                        return -1;
+                    }
+                    wVarSizeBaseName = ResolveVarSizeValueBaseName(c, &wFieldType);
+                    if (wVarSizeBaseName != NULL) {
+                        EmitIndent(c, depth + 1u);
+                        if (BufAppendCStr(&c->out, "off += ") != 0) {
+                            return -1;
+                        }
+                        if (IsStrBaseName(wVarSizeBaseName)) {
+                            if (BufAppendCStr(&c->out, "__sl_str_sizeof((__sl_str*)&p->") != 0
+                                || BufAppendSlice(
+                                       &c->out, c->unit->source, wf->dataStart, wf->dataEnd)
+                                       != 0
+                                || BufAppendCStr(&c->out, ")") != 0)
+                            {
+                                return -1;
+                            }
+                        } else if (
+                            BufAppendCStr(&c->out, wVarSizeBaseName) != 0
+                            || BufAppendCStr(&c->out, "__sizeof(&p->") != 0
+                            || BufAppendSlice(&c->out, c->unit->source, wf->dataStart, wf->dataEnd)
+                                   != 0
+                            || BufAppendChar(&c->out, ')') != 0)
+                        {
+                            return -1;
+                        }
+                        if (BufAppendCStr(&c->out, " - sizeof(") != 0 || EmitTypeForCast(c, wt) != 0
+                            || BufAppendCStr(&c->out, ");\n") != 0)
+                        {
+                            return -1;
+                        }
                     }
                 }
             }

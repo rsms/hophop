@@ -62,6 +62,7 @@
 {"id": "SL2045", "name": "FIELD_DEFAULT_FORWARD_REF", "category": "semantic", "message": "field default references later field '{s}'"}
 {"id": "SL2046", "name": "FIELD_DEFAULT_TYPE_MISMATCH", "category": "semantic", "message": "default expression type mismatch for field '{s}'"}
 {"id": "SL2047", "name": "FIELD_DEFAULT_ON_EMBEDDED", "category": "semantic", "message": "embedded field cannot have default initializer"}
+{"id": "SL2048", "name": "NEW_VARSIZE_INIT_REQUIRED", "category": "semantic", "message": "new on variable-size type requires initializer (use new T{...})"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}

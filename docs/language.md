@@ -194,6 +194,7 @@ Notes:
 - Use `*[T]` and `&[T]` for runtime-length slices.
 - Legacy `mut&...` and `mut[...]` forms are rejected.
 - Compound literals support named fields only (`Type{ field = expr }`, `{ field = expr }`).
+- Field names in compound literals may use dotted paths (`Type{ inner.value = expr }`).
 - Inferred `{ ... }` requires expected aggregate type context.
 - `void` is a type name but is rejected as an explicit function return type. Omit return type for no return value.
 
@@ -455,14 +456,20 @@ Flow narrowing (locals only, including params since params are locals):
 ### 9.3 `new`
 - Supported forms:
   - `new T`
+  - `new T{}`
+  - `new T{ field = expr, ... }`
   - `new [T N]`
   - `new T with allocExpr`
+  - `new T{} with allocExpr`
+  - `new T{ field = expr, ... } with allocExpr`
   - `new [T N] with allocExpr`
 - In explicit form, `allocExpr` must be convertible to `*Allocator`.
 - In contextual form (no `with`), effective context must provide field `mem` assignable to
   `*Allocator`.
 - `T` is any valid type.
 - `N` (if present) must be integer-typed; constant negative values are rejected.
+- For non-variable-size `T`, `new T` is equivalent to `new T{}`.
+- For variable-size `T`, initializer is required: `new T{...}` (or `new T{}` when valid).
 - Return type:
   - no `N`: `*T`
   - constant positive `N`: `*[T N]`
