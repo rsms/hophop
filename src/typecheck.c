@@ -6108,9 +6108,13 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
             if (paramIndex >= fn->paramCount) {
                 return SLTCFailNode(c, child, SLDiag_ARITY_MISMATCH);
             }
-            if (SLTCLocalAdd(
-                    c, n->dataStart, n->dataEnd, c->funcParamTypes[fn->paramTypeStart + paramIndex])
-                != 0)
+            if (!SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")
+                && SLTCLocalAdd(
+                       c,
+                       n->dataStart,
+                       n->dataEnd,
+                       c->funcParamTypes[fn->paramTypeStart + paramIndex])
+                       != 0)
             {
                 return -1;
             }

@@ -609,6 +609,26 @@ static char* _Nullable DupSlice(SLCBackendC* c, const char* src, uint32_t start,
     return out;
 }
 
+static int SliceIsHoleName(const char* src, uint32_t start, uint32_t end) {
+    return end == start + 1u && src[start] == '_';
+}
+
+static char* _Nullable DupParamNameForEmit(
+    SLCBackendC* c, const SLAstNode* paramNode, uint32_t paramIndex) {
+    if (paramNode == NULL) {
+        return NULL;
+    }
+    if (SliceIsHoleName(c->unit->source, paramNode->dataStart, paramNode->dataEnd)) {
+        SLBuf b = { 0 };
+        b.arena = &c->arena;
+        if (BufAppendCStr(&b, "__sl_v") != 0 || BufAppendU32(&b, paramIndex) != 0) {
+            return NULL;
+        }
+        return BufFinish(&b);
+    }
+    return DupSlice(c, c->unit->source, paramNode->dataStart, paramNode->dataEnd);
+}
+
 static char* _Nullable DupAndReplaceDots(
     SLCBackendC* c, const char* src, uint32_t start, uint32_t end) {
     char*    out;
@@ -8751,23 +8771,27 @@ static int EmitFnDeclOrDef(
     }
 
     child = AstFirstChild(&c->ast, nodeId);
-    while (child >= 0) {
-        const SLAstNode* ch = NodeAt(c, child);
-        if (ch != NULL && ch->kind == SLAst_PARAM) {
-            int32_t typeNode = AstFirstChild(&c->ast, child);
-            char*   paramName = DupSlice(c, c->unit->source, ch->dataStart, ch->dataEnd);
-            if (paramName == NULL) {
-                return -1;
+    {
+        uint32_t paramIndex = 0;
+        while (child >= 0) {
+            const SLAstNode* ch = NodeAt(c, child);
+            if (ch != NULL && ch->kind == SLAst_PARAM) {
+                int32_t typeNode = AstFirstChild(&c->ast, child);
+                char*   paramName = DupParamNameForEmit(c, ch, paramIndex);
+                if (paramName == NULL) {
+                    return -1;
+                }
+                if (!firstParam && BufAppendCStr(&c->out, ", ") != 0) {
+                    return -1;
+                }
+                if (EmitTypeWithName(c, typeNode, paramName) != 0) {
+                    return -1;
+                }
+                firstParam = 0;
+                paramIndex++;
             }
-            if (!firstParam && BufAppendCStr(&c->out, ", ") != 0) {
-                return -1;
-            }
-            if (EmitTypeWithName(c, typeNode, paramName) != 0) {
-                return -1;
-            }
-            firstParam = 0;
+            child = AstNextSibling(&c->ast, child);
         }
-        child = AstNextSibling(&c->ast, child);
     }
 
     if (firstParam && BufAppendCStr(&c->out, "void") != 0) {
@@ -8791,20 +8815,24 @@ static int EmitFnDeclOrDef(
         }
     }
     child = AstFirstChild(&c->ast, nodeId);
-    while (child >= 0) {
-        const SLAstNode* ch = NodeAt(c, child);
-        if (ch != NULL && ch->kind == SLAst_PARAM) {
-            int32_t   typeNode = AstFirstChild(&c->ast, child);
-            SLTypeRef t;
-            char*     paramName = DupSlice(c, c->unit->source, ch->dataStart, ch->dataEnd);
-            if (paramName == NULL) {
-                return -1;
+    {
+        uint32_t paramIndex = 0;
+        while (child >= 0) {
+            const SLAstNode* ch = NodeAt(c, child);
+            if (ch != NULL && ch->kind == SLAst_PARAM) {
+                int32_t   typeNode = AstFirstChild(&c->ast, child);
+                SLTypeRef t;
+                char*     paramName = DupParamNameForEmit(c, ch, paramIndex);
+                if (paramName == NULL) {
+                    return -1;
+                }
+                if (ParseTypeRef(c, typeNode, &t) != 0 || AddLocal(c, paramName, t) != 0) {
+                    return -1;
+                }
+                paramIndex++;
             }
-            if (ParseTypeRef(c, typeNode, &t) != 0 || AddLocal(c, paramName, t) != 0) {
-                return -1;
-            }
+            child = AstNextSibling(&c->ast, child);
         }
-        child = AstNextSibling(&c->ast, child);
     }
 
     c->currentReturnType = fnReturnType;

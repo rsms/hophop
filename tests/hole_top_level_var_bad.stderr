@@ -1,0 +1,1 @@
+tests/hole_top_level_var_bad.sl:1:5: SL2007: identifier '_' is reserved

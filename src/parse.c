@@ -91,10 +91,22 @@ static int SLPReservedName(const SLParser* p, const SLToken* tok) {
     return n >= 5u && memcmp(p->src.ptr + tok->start, reservedPrefix, 5u) == 0;
 }
 
-static int SLPExpectDeclName(SLParser* p, const SLToken** out) {
+static int SLPIsHoleName(const SLParser* p, const SLToken* tok) {
+    return tok->kind == SLTok_IDENT && tok->end == tok->start + 1u && p->src.ptr[tok->start] == '_';
+}
+
+static int SLPFailReservedName(SLParser* p, const SLToken* tok) {
+    SLPSetDiagWithArg(p->diag, SLDiag_RESERVED_NAME, tok->start, tok->end, tok->start, tok->end);
+    return -1;
+}
+
+static int SLPExpectDeclName(SLParser* p, const SLToken** out, int allowHole) {
     const SLToken* tok;
     if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &tok) != 0) {
         return -1;
+    }
+    if (!allowHole && SLPIsHoleName(p, tok)) {
+        return SLPFailReservedName(p, tok);
     }
     if (SLPReservedName(p, tok)) {
         SLPSetDiag(p->diag, SLDiag_RESERVED_SL_PREFIX, tok->start, tok->end);
@@ -111,7 +123,7 @@ static int SLPExpectFnName(SLParser* p, const SLToken** out) {
         p->pos++;
         return 0;
     }
-    return SLPExpectDeclName(p, out);
+    return SLPExpectDeclName(p, out, 0);
 }
 
 static int SLPIsFieldSeparator(SLTokenKind kind) {
@@ -325,7 +337,7 @@ static int SLPTryParseFnTypeNamedParamGroup(
 
     for (;;) {
         const SLToken* name;
-        if (SLPExpectDeclName(p, &name) != 0) {
+        if (SLPExpectDeclName(p, &name, 0) != 0) {
             goto not_group;
         }
         nameCount++;
@@ -440,7 +452,7 @@ static int SLPParseAnonymousAggregateFieldDeclList(SLParser* p, int32_t aggTypeN
             continue;
         }
 
-        if (SLPExpectDeclName(p, &names[nameCount]) != 0) {
+        if (SLPExpectDeclName(p, &names[nameCount], 0) != 0) {
             return -1;
         }
         nameCount++;
@@ -451,7 +463,7 @@ static int SLPParseAnonymousAggregateFieldDeclList(SLParser* p, int32_t aggTypeN
             if (nameCount >= (uint32_t)(sizeof(names) / sizeof(names[0]))) {
                 return SLPFail(p, SLDiag_ARENA_OOM);
             }
-            if (SLPExpectDeclName(p, &names[nameCount]) != 0) {
+            if (SLPExpectDeclName(p, &names[nameCount], 0) != 0) {
                 return -1;
             }
             nameCount++;
@@ -1246,7 +1258,7 @@ static int SLPParseParamGroup(SLParser* p, int32_t fnNode) {
     for (;;) {
         const SLToken* name;
         int32_t        param;
-        if (SLPExpectDeclName(p, &name) != 0) {
+        if (SLPExpectDeclName(p, &name, 1) != 0) {
             return -1;
         }
         lastName = name;
@@ -1349,16 +1361,43 @@ static int SLPParseBlock(SLParser* p, int32_t* out) {
     return 0;
 }
 
-static int SLPParseVarLikeStmt(SLParser* p, SLAstKind kind, int requireSemi, int32_t* out) {
+static int SLPParseVarLikeStmt(
+    SLParser* p, SLAstKind kind, int requireSemi, int allowHole, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
     const SLToken* name;
+    uint32_t       stmtStart = kw->start;
     int32_t        n;
     int32_t        type = -1;
     int32_t        init = -1;
 
     p->pos++;
-    if (SLPExpectDeclName(p, &name) != 0) {
+    if (SLPExpectDeclName(p, &name, allowHole) != 0) {
         return -1;
+    }
+
+    if (SLPIsHoleName(p, name)) {
+        if (!SLPMatch(p, SLTok_ASSIGN)) {
+            return SLPFailReservedName(p, name);
+        }
+        if (SLPParseExpr(p, 1, &init) != 0) {
+            return -1;
+        }
+        if (!requireSemi) {
+            *out = init;
+            return 0;
+        }
+        if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
+            return -1;
+        }
+        n = SLPNewNode(p, SLAst_EXPR_STMT, stmtStart, kw->end);
+        if (n < 0) {
+            return -1;
+        }
+        if (SLPAddChild(p, n, init) != 0) {
+            return -1;
+        }
+        *out = n;
+        return 0;
     }
 
     if (SLPMatch(p, SLTok_ASSIGN)) {
@@ -1475,7 +1514,7 @@ static int SLPParseForStmt(SLParser* p, int32_t* out) {
         if (SLPAt(p, SLTok_SEMICOLON)) {
             p->pos++;
         } else if (SLPAt(p, SLTok_VAR)) {
-            if (SLPParseVarLikeStmt(p, SLAst_VAR, 0, &init) != 0) {
+            if (SLPParseVarLikeStmt(p, SLAst_VAR, 0, 1, &init) != 0) {
                 return -1;
             }
         } else {
@@ -1634,8 +1673,8 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
     int32_t        block;
 
     switch (SLPPeek(p)->kind) {
-        case SLTok_VAR:    return SLPParseVarLikeStmt(p, SLAst_VAR, 1, out);
-        case SLTok_CONST:  return SLPParseVarLikeStmt(p, SLAst_CONST, 1, out);
+        case SLTok_VAR:    return SLPParseVarLikeStmt(p, SLAst_VAR, 1, 1, out);
+        case SLTok_CONST:  return SLPParseVarLikeStmt(p, SLAst_CONST, 1, 1, out);
         case SLTok_IF:     return SLPParseIfStmt(p, out);
         case SLTok_FOR:    return SLPParseForStmt(p, out);
         case SLTok_SWITCH: return SLPParseSwitchStmt(p, out);
@@ -1782,7 +1821,7 @@ static int SLPParseFieldList(SLParser* p, int32_t agg) {
             isEmbedded = 1;
             nameCount = 1;
         } else {
-            if (SLPExpectDeclName(p, &names[nameCount]) != 0) {
+            if (SLPExpectDeclName(p, &names[nameCount], 0) != 0) {
                 return -1;
             }
             nameCount++;
@@ -1793,7 +1832,7 @@ static int SLPParseFieldList(SLParser* p, int32_t agg) {
                 if (nameCount >= (uint32_t)(sizeof(names) / sizeof(names[0]))) {
                     return SLPFail(p, SLDiag_ARENA_OOM);
                 }
-                if (SLPExpectDeclName(p, &names[nameCount]) != 0) {
+                if (SLPExpectDeclName(p, &names[nameCount], 0) != 0) {
                     return -1;
                 }
                 nameCount++;
@@ -1875,7 +1914,7 @@ static int SLPParseAggregateDecl(SLParser* p, int32_t* out) {
     }
 
     p->pos++;
-    if (SLPExpectDeclName(p, &name) != 0) {
+    if (SLPExpectDeclName(p, &name, 0) != 0) {
         return -1;
     }
     n = SLPNewNode(p, kind, kw->start, name->end);
@@ -1906,7 +1945,7 @@ static int SLPParseAggregateDecl(SLParser* p, int32_t* out) {
                 p->pos++;
                 continue;
             }
-            if (SLPExpectDeclName(p, &itemName) != 0) {
+            if (SLPExpectDeclName(p, &itemName, 0) != 0) {
                 return -1;
             }
             item = SLPNewNode(p, SLAst_FIELD, itemName->start, itemName->end);
@@ -2102,7 +2141,7 @@ static int SLPParseTypeAliasDecl(SLParser* p, int32_t* out) {
     int32_t        targetType;
 
     p->pos++;
-    if (SLPExpectDeclName(p, &name) != 0) {
+    if (SLPExpectDeclName(p, &name, 0) != 0) {
         return -1;
     }
     if (SLPParseType(p, &targetType) != 0) {
@@ -2281,8 +2320,8 @@ static int SLPParseDeclInner(SLParser* p, int allowBody, int32_t* out) {
                 p->nodes[*out].end = SLPPrev(p)->end;
             }
             return 0;
-        case SLTok_VAR:   return SLPParseVarLikeStmt(p, SLAst_VAR, 1, out);
-        case SLTok_CONST: return SLPParseVarLikeStmt(p, SLAst_CONST, 1, out);
+        case SLTok_VAR:   return SLPParseVarLikeStmt(p, SLAst_VAR, 1, 0, out);
+        case SLTok_CONST: return SLPParseVarLikeStmt(p, SLAst_CONST, 1, 0, out);
         default:          return SLPFail(p, SLDiag_EXPECTED_DECL);
     }
 }

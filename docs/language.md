@@ -22,6 +22,12 @@ Out of scope:
 
 ### 1.2 Identifiers
 - Pattern: `[A-Za-z_][A-Za-z0-9_]*`.
+- `_` is a hole identifier:
+  - It cannot be used to define named symbols (`fn _`, `type _`, `struct _`, `union _`, `enum _`,
+    field names, enum item names, normal variable/constant names).
+  - `var _ = expr` and `const _ = expr` are statement forms that evaluate `expr` and discard it.
+  - Function parameters may be named `_` to indicate unused parameters; `_` is not bound as a local.
+  - `import "path" as _` remains valid as side-effect import syntax.
 
 ### 1.3 Keywords
 `import pub struct union enum fn var const type if else for switch case default break continue return defer assert sizeof true false as null context with`
@@ -86,7 +92,7 @@ FnGroupDecl     = "fn" FnName "{" GroupMember {"," GroupMember} "}" ";" ;
 FnName          = Ident | "sizeof" ;
 GroupMember     = Ident | Ident "." Ident { "." Ident } ;
 ParamList       = ParamGroup {"," ParamGroup} ;
-ParamGroup      = Ident {"," Ident} Type ;
+ParamGroup      = (Ident | "_") {"," (Ident | "_")} Type ;
 ContextClause   = "context" TypeName ;
 
 ConstDecl       = "const" Ident ([Type] "=" Expr) ";" ;
@@ -205,6 +211,9 @@ Notes:
 - Top-level declaration kinds: `struct`, `union`, `enum`, `fn`, `const`.
 - `pub` is an attribute on a single top-level declaration.
 - Top-level `var` is not supported.
+- Hole declarations are rejected at top level:
+  - `var _ = expr` is invalid at top level.
+  - `const _ = expr` is invalid at top level.
 - `const` declarations always require an initializer:
   - `const x = expr`
   - `const x T = expr`
