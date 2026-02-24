@@ -558,7 +558,6 @@ Special import prefix:
 - `import "platform"` resolves to a built-in package named `platform`.
 - Built-in `platform` API currently exports:
   - `fn exit(status i32)`
-  - `fn console_log(msg str, flags u64)`
 
 Use:
 - Package imports are referenced as `alias.Name` in type names and expressions.

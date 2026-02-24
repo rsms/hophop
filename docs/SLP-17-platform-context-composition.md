@@ -189,7 +189,7 @@ From current behavior:
 
 ## Implemented scope
 
-1. `platform` pseudo package now exports `Context`, `exit`, and `console_log`.
+1. `platform` pseudo package now exports `Context` and `exit`.
 2. `platform.Context` currently is:
 
 ```sl

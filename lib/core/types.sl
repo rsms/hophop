@@ -22,13 +22,14 @@ pub enum LoggerFlag u32 {
     Function = 1 << 6
     Thread = 1 << 7
     Styling = 1 << 8
+    Prefix = 1 << 9
 }
 
 pub type LoggerFlags u32
 pub type LogFlags LoggerFlags
 
 pub struct Logger {
-    handler fn(self &Logger, message &str, level LogLevel)
+    handler fn(self &Logger, message &str, level LogLevel, flags LogFlags)
     min_level LogLevel
     flags LogFlags
     prefix &str

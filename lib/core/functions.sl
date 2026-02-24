@@ -24,7 +24,7 @@ fn free() {}
 fn panic(message &str) {}
 
 fn print(message &str) context Context {
-    context.log.handler(&context.log, message, LogLevel.Info)
+    context.log.handler(&context.log, message, LogLevel.Info, 0 as LogFlags)
 }
 
 fn sizeof() uint {

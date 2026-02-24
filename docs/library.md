@@ -124,8 +124,7 @@ fn print(message str)
 ```
 
 `print` writes a UTF-8 message to standard output.
-It requires `console` in effective context and is implemented via
-`platform.console_log(message, 0)`.
+It is implemented by calling `context.log.handler(&context.log, message, LogLevel.Info, 0)`.
 
 
 ### `sizeof`
@@ -153,11 +152,9 @@ Import path:
 
 Surface API:
 - `platform.exit(status)`
-- `platform.console_log(msg, flags)`
 
 Operation semantics:
 - `exit`: terminate process with status code.
-- `console_log`: writes text (`flags=0` stdout, `flags=1` stderr).
 
 Allocation is provided by `Allocator` via `new(...)`, with the platform setting
 `context.mem` before `sl_main`.

@@ -66,7 +66,11 @@ static __sl_uint platform_mem_allocator_impl(
     return (__sl_uint)(uintptr_t)newPtr;
 }
 
-static void platform_log_handler(__sl_Logger* self, __sl_str* message, __sl_LogLevel level) {
+static void platform_log_handler(
+    __sl_Logger*  self,
+    __sl_str*     message,
+    __sl_LogLevel level,
+    __sl_LogFlags flags) {
     size_t n = message != NULL ? (size_t)message->len : 0u;
     FILE*  out = (level >= __sl_LogLevel_Error) ? stderr : stdout;
 
@@ -74,7 +78,8 @@ static void platform_log_handler(__sl_Logger* self, __sl_str* message, __sl_LogL
         return;
     }
 
-    if (self != NULL && self->prefix != NULL && self->prefix->len > 0) {
+    if (self != NULL && (flags & __sl_LoggerFlag_Prefix) && self->prefix != NULL &&
+        self->prefix->len > 0) {
         fprintf(out, "%.*s", (int)self->prefix->len, (const char*)self->prefix->bytes);
     }
     if (message != NULL) {

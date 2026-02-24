@@ -5807,7 +5807,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                     || BufAppendCStr(&c->out, ").handler(&(") != 0
                     || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
                     || BufAppendCStr(&c->out, "), ") != 0 || EmitExpr(c, msgArg) != 0
-                    || BufAppendCStr(&c->out, ", (__sl_i32)0); } while (0)") != 0)
+                    || BufAppendCStr(&c->out, ", (__sl_i32)0, (__sl_u32)0); } while (0)") != 0)
                 {
                     return -1;
                 }
@@ -5823,32 +5823,6 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 }
                 if (BufAppendCStr(&c->out, "platform__exit((__sl_i32)(") != 0
                     || EmitExpr(c, statusArg) != 0 || BufAppendCStr(&c->out, "))") != 0)
-                {
-                    return -1;
-                }
-                return 0;
-            }
-            if (callee != NULL && callee->kind == SLAst_IDENT
-                && SliceEq(
-                    c->unit->source, callee->dataStart, callee->dataEnd, "platform__console_log"))
-            {
-                int32_t msgArg = AstNextSibling(&c->ast, child);
-                int32_t flagsArg = msgArg >= 0 ? AstNextSibling(&c->ast, msgArg) : -1;
-                int32_t extra = flagsArg >= 0 ? AstNextSibling(&c->ast, flagsArg) : -1;
-                if (msgArg < 0 || flagsArg < 0 || extra >= 0) {
-                    return -1;
-                }
-                if (BufAppendCStr(&c->out, "do { __sl_i32 _sl_level = (((__sl_u64)(__sl_i64)(") != 0
-                    || EmitExpr(c, flagsArg) != 0
-                    || BufAppendCStr(&c->out, ") & 1u) != 0u) ? (__sl_i32)30 : (__sl_i32)0; if ((")
-                           != 0
-                    || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
-                    || BufAppendCStr(&c->out, ").handler != NULL) (") != 0
-                    || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
-                    || BufAppendCStr(&c->out, ").handler(&(") != 0
-                    || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
-                    || BufAppendCStr(&c->out, "), ") != 0 || EmitExpr(c, msgArg) != 0
-                    || BufAppendCStr(&c->out, ", _sl_level); } while (0)") != 0)
                 {
                     return -1;
                 }
@@ -5956,7 +5930,8 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                             || BufAppendCStr(&c->out, ").handler(&(") != 0
                             || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
                             || BufAppendCStr(&c->out, "), ") != 0 || EmitExpr(c, recvNode) != 0
-                            || BufAppendCStr(&c->out, ", (__sl_i32)0); } while (0)") != 0)
+                            || BufAppendCStr(&c->out, ", (__sl_i32)0, (__sl_u32)0); } while (0)")
+                                   != 0)
                         {
                             return -1;
                         }

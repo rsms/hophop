@@ -82,6 +82,7 @@ typedef enum {
     __sl_LoggerFlag_Function = 1 << 6,
     __sl_LoggerFlag_Thread = 1 << 7,
     __sl_LoggerFlag_Styling = 1 << 8,
+    __sl_LoggerFlag_Prefix = 1 << 9,
 } __sl_LoggerFlag;
 
 typedef __sl_u32 __sl_LoggerFlags;
@@ -89,7 +90,7 @@ typedef __sl_u32 __sl_LoggerFlags;
 typedef __sl_LoggerFlags __sl_LogFlags;
 
 struct __sl_Logger {
-    void (*handler)(__sl_Logger* self, __sl_str* message, __sl_LogLevel level);
+    void (*handler)(__sl_Logger* self, __sl_str* message, __sl_LogLevel level, __sl_LogFlags flags);
     __sl_LogLevel min_level;
     __sl_LogFlags flags;
     __sl_str* prefix;
