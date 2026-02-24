@@ -202,7 +202,9 @@ build \$builddir/slc: link ${objfiles[*]}
 default \$builddir/libsl.h \$builddir/lib/core/core.h \$builddir/lib/platform/cli-libc/platform.c \$builddir/slc
 _END
 
-if git diff --no-index --minimal build.ninja $NF > build.ninja.diff; then
+if [ ! -f build.ninja ]; then
+    mv $NF build.ninja
+elif git diff --no-index --minimal build.ninja $NF > build.ninja.diff; then
     rm $NF
 else
     echo "build.ninja updated (diff at $build_dir/obj/build.ninja.diff)"
