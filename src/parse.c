@@ -1759,56 +1759,100 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
 
 static int SLPParseFieldList(SLParser* p, int32_t agg) {
     while (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
-        const SLToken* name = NULL;
+        const SLToken* names[256];
+        uint32_t       nameCount = 0;
         const SLToken* embeddedTypeName = NULL;
-        int32_t        field;
-        int32_t        type;
+        int32_t        type = -1;
         int32_t        defaultExpr = -1;
+        uint32_t       i;
         int            isEmbedded = 0;
         if (SLPAt(p, SLTok_SEMICOLON) || SLPAt(p, SLTok_COMMA)) {
             p->pos++;
             continue;
         }
-        if (SLPAnonymousFieldLookahead(p, &embeddedTypeName)) {
+        if (SLPAnonymousFieldLookahead(p, &embeddedTypeName)
+            && !(
+                p->pos + 2u < p->tokLen && p->tok[p->pos].kind == SLTok_IDENT
+                && p->tok[p->pos + 1u].kind == SLTok_COMMA
+                && p->tok[p->pos + 2u].kind == SLTok_IDENT))
+        {
             if (SLPParseTypeName(p, &type) != 0) {
                 return -1;
             }
             isEmbedded = 1;
+            nameCount = 1;
         } else {
-            if (SLPExpectDeclName(p, &name) != 0) {
+            if (SLPExpectDeclName(p, &names[nameCount]) != 0) {
                 return -1;
+            }
+            nameCount++;
+            while (SLPMatch(p, SLTok_COMMA)) {
+                if (!SLPAt(p, SLTok_IDENT)) {
+                    return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+                }
+                if (nameCount >= (uint32_t)(sizeof(names) / sizeof(names[0]))) {
+                    return SLPFail(p, SLDiag_ARENA_OOM);
+                }
+                if (SLPExpectDeclName(p, &names[nameCount]) != 0) {
+                    return -1;
+                }
+                nameCount++;
             }
             if (SLPParseType(p, &type) != 0) {
                 return -1;
             }
         }
-        field = SLPNewNode(
-            p, SLAst_FIELD, isEmbedded ? p->nodes[type].start : name->start, p->nodes[type].end);
-        if (field < 0) {
-            return -1;
-        }
-        if (isEmbedded) {
-            p->nodes[field].dataStart = embeddedTypeName->start;
-            p->nodes[field].dataEnd = embeddedTypeName->end;
-            p->nodes[field].flags |= SLAstFlag_FIELD_EMBEDDED;
-        } else {
-            p->nodes[field].dataStart = name->start;
-            p->nodes[field].dataEnd = name->end;
-        }
-        if (SLPAddChild(p, field, type) != 0) {
-            return -1;
-        }
         if (SLPMatch(p, SLTok_ASSIGN)) {
+            if (!isEmbedded && nameCount > 1) {
+                const SLToken* eq = SLPPrev(p);
+                SLPSetDiag(p->diag, SLDiag_UNEXPECTED_TOKEN, eq->start, eq->end);
+                return -1;
+            }
             if (SLPParseExpr(p, 1, &defaultExpr) != 0) {
                 return -1;
             }
-            p->nodes[field].end = p->nodes[defaultExpr].end;
-            if (SLPAddChild(p, field, defaultExpr) != 0) {
+        }
+        for (i = 0; i < nameCount; i++) {
+            int32_t field;
+            int32_t fieldType;
+            if (isEmbedded) {
+                fieldType = type;
+                if (i != 0) {
+                    return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+                }
+            } else if (i == 0) {
+                fieldType = type;
+            } else if (SLPCloneSubtree(p, type, &fieldType) != 0) {
                 return -1;
             }
-        }
-        if (SLPAddChild(p, agg, field) != 0) {
-            return -1;
+            field = SLPNewNode(
+                p,
+                SLAst_FIELD,
+                isEmbedded ? p->nodes[fieldType].start : names[i]->start,
+                p->nodes[fieldType].end);
+            if (field < 0) {
+                return -1;
+            }
+            if (isEmbedded) {
+                p->nodes[field].dataStart = embeddedTypeName->start;
+                p->nodes[field].dataEnd = embeddedTypeName->end;
+                p->nodes[field].flags |= SLAstFlag_FIELD_EMBEDDED;
+            } else {
+                p->nodes[field].dataStart = names[i]->start;
+                p->nodes[field].dataEnd = names[i]->end;
+            }
+            if (SLPAddChild(p, field, fieldType) != 0) {
+                return -1;
+            }
+            if (i == 0 && defaultExpr >= 0) {
+                p->nodes[field].end = p->nodes[defaultExpr].end;
+                if (SLPAddChild(p, field, defaultExpr) != 0) {
+                    return -1;
+                }
+            }
+            if (SLPAddChild(p, agg, field) != 0) {
+                return -1;
+            }
         }
         if (SLPMatch(p, SLTok_SEMICOLON) || SLPMatch(p, SLTok_COMMA)) {
             continue;

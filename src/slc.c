@@ -115,6 +115,21 @@ typedef struct {
     uint32_t cap;
 } SLStringBuilder;
 
+typedef struct {
+    uint32_t combinedStart;
+    uint32_t combinedEnd;
+    uint32_t sourceStart;
+    uint32_t sourceEnd;
+    uint32_t fileIndex;
+    int32_t  nodeId;
+} SLCombinedSourceSpan;
+
+typedef struct {
+    SLCombinedSourceSpan* spans;
+    uint32_t              len;
+    uint32_t              cap;
+} SLCombinedSourceMap;
+
 static int BuildPrefixedName(const char* alias, const char* name, char** outName);
 static int IsAsciiSpaceChar(char c);
 
@@ -486,6 +501,111 @@ static int EnsureCap(void** ptr, uint32_t* cap, uint32_t need, size_t elemSize) 
     *ptr = newPtr;
     *cap = newCap;
     return 0;
+}
+
+static void CombinedSourceMapFree(SLCombinedSourceMap* map) {
+    if (map == NULL) {
+        return;
+    }
+    free(map->spans);
+    map->spans = NULL;
+    map->len = 0;
+    map->cap = 0;
+}
+
+static int CombinedSourceMapAdd(
+    SLCombinedSourceMap* map,
+    uint32_t             combinedStart,
+    uint32_t             combinedEnd,
+    uint32_t             sourceStart,
+    uint32_t             sourceEnd,
+    uint32_t             fileIndex,
+    int32_t              nodeId) {
+    if (map == NULL) {
+        return 0;
+    }
+    if (EnsureCap((void**)&map->spans, &map->cap, map->len + 1u, sizeof(SLCombinedSourceSpan)) != 0)
+    {
+        return -1;
+    }
+    map->spans[map->len].combinedStart = combinedStart;
+    map->spans[map->len].combinedEnd = combinedEnd;
+    map->spans[map->len].sourceStart = sourceStart;
+    map->spans[map->len].sourceEnd = sourceEnd;
+    map->spans[map->len].fileIndex = fileIndex;
+    map->spans[map->len].nodeId = nodeId;
+    map->len++;
+    return 0;
+}
+
+static int RemapCombinedOffset(
+    const SLCombinedSourceMap* map, uint32_t offset, uint32_t* outOffset, uint32_t* outFileIndex) {
+    uint32_t i;
+    if (map == NULL || outOffset == NULL || outFileIndex == NULL) {
+        return 0;
+    }
+    for (i = 0; i < map->len; i++) {
+        const SLCombinedSourceSpan* s = &map->spans[i];
+        uint32_t                    combinedLen;
+        uint32_t                    sourceLen;
+        uint32_t                    rel;
+        uint32_t                    mapped;
+        if (offset < s->combinedStart || offset > s->combinedEnd) {
+            continue;
+        }
+        combinedLen = s->combinedEnd >= s->combinedStart ? (s->combinedEnd - s->combinedStart) : 0;
+        sourceLen = s->sourceEnd >= s->sourceStart ? (s->sourceEnd - s->sourceStart) : 0;
+        rel = offset - s->combinedStart;
+        if (sourceLen == 0 || combinedLen == 0) {
+            mapped = s->sourceStart;
+        } else if (rel >= combinedLen) {
+            mapped = s->sourceEnd;
+        } else {
+            mapped = s->sourceStart
+                   + (uint32_t)(((uint64_t)rel * (uint64_t)sourceLen) / (uint64_t)combinedLen);
+        }
+        if (mapped < s->sourceStart) {
+            mapped = s->sourceStart;
+        }
+        if (mapped > s->sourceEnd) {
+            mapped = s->sourceEnd;
+        }
+        *outOffset = mapped;
+        *outFileIndex = s->fileIndex;
+        return 1;
+    }
+    return 0;
+}
+
+static void RemapCombinedDiag(
+    const SLCombinedSourceMap* map, const SLDiag* diagIn, SLDiag* diagOut, uint32_t* outFileIndex) {
+    uint32_t fileIndexStart = 0;
+    uint32_t fileIndexEnd = 0;
+    int      startMapped;
+    int      endMapped;
+    *diagOut = *diagIn;
+    if (outFileIndex != NULL) {
+        *outFileIndex = 0;
+    }
+    if (map == NULL || map->len == 0) {
+        return;
+    }
+    startMapped = RemapCombinedOffset(map, diagIn->start, &diagOut->start, &fileIndexStart);
+    endMapped = RemapCombinedOffset(map, diagIn->end, &diagOut->end, &fileIndexEnd);
+    if (startMapped && outFileIndex != NULL) {
+        *outFileIndex = fileIndexStart;
+    } else if (endMapped && outFileIndex != NULL) {
+        *outFileIndex = fileIndexEnd;
+    }
+    if (diagIn->argEnd > diagIn->argStart) {
+        uint32_t argFileIndex = 0;
+        if (!RemapCombinedOffset(map, diagIn->argStart, &diagOut->argStart, &argFileIndex)) {
+            diagOut->argStart = diagIn->argStart;
+        }
+        if (!RemapCombinedOffset(map, diagIn->argEnd, &diagOut->argEnd, &argFileIndex)) {
+            diagOut->argEnd = diagIn->argEnd;
+        }
+    }
 }
 
 static int SBReserve(SLStringBuilder* b, uint32_t extra) {
@@ -1103,6 +1223,118 @@ static int CheckSourceEx(
         SLArenaDispose(&arena);
         free(arenaMem);
         return diagStatus;
+    }
+
+    afterTypecheckUsed = ArenaBytesUsed(&arena);
+    afterTypecheckCap = ArenaBytesCapacity(&arena);
+    if (ArenaDebugEnabled()) {
+        fprintf(
+            stderr,
+            "arena debug: ast=%u nodes (%u bytes), before check=%u/%u, after check=%u/%u\n",
+            ast.len,
+            ast.len <= UINT32_MAX / (uint32_t)sizeof(SLAstNode)
+                ? ast.len * (uint32_t)sizeof(SLAstNode)
+                : UINT32_MAX,
+            beforeTypecheckUsed,
+            beforeTypecheckCap,
+            afterTypecheckUsed,
+            afterTypecheckCap);
+    }
+
+    SLArenaDispose(&arena);
+    free(arenaMem);
+    return 0;
+}
+
+static int CheckSourceExWithSingleFileRemap(
+    const char*                filename,
+    const char*                source,
+    uint32_t                   sourceLen,
+    int                        useLineColDiag,
+    const char*                remapSource,
+    const SLCombinedSourceMap* remapMap) {
+    void*    arenaMem;
+    uint64_t arenaCap64;
+    size_t   arenaCap;
+    SLArena  arena;
+    SLAst    ast;
+    SLDiag   diag = {};
+    uint32_t beforeTypecheckUsed;
+    uint32_t beforeTypecheckCap;
+    uint32_t afterTypecheckUsed;
+    uint32_t afterTypecheckCap;
+
+    arenaCap64 = (uint64_t)(sourceLen + 128u) * (uint64_t)sizeof(SLAstNode) + 65536u;
+    if (arenaCap64 > (uint64_t)SIZE_MAX) {
+        fprintf(stderr, "arena too large\n");
+        return -1;
+    }
+    arenaCap = (size_t)arenaCap64;
+    arenaMem = malloc(arenaCap);
+    if (arenaMem == NULL) {
+        fprintf(stderr, "failed to allocate arena\n");
+        return -1;
+    }
+    SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    SLArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
+    if (SLParse(&arena, (SLStrView){ source, sourceLen }, &ast, &diag) != 0) {
+        SLDiag   remappedDiag;
+        uint32_t remappedFileIndex = 0;
+        RemapCombinedDiag(remapMap, &diag, &remappedDiag, &remappedFileIndex);
+        (void)remappedFileIndex;
+        (void)(useLineColDiag ? PrintSLDiagLineCol(filename, remapSource, &remappedDiag, 0)
+                              : PrintSLDiag(filename, remapSource, &remappedDiag, 0));
+        SLArenaDispose(&arena);
+        free(arenaMem);
+        return -1;
+    }
+    if (CompactAstInArena(&arena, &ast) != 0) {
+        SLDiag oomDiag = { 0 };
+        oomDiag.code = SLDiag_ARENA_OOM;
+        oomDiag.type = SLDiagTypeOfCode(SLDiag_ARENA_OOM);
+        oomDiag.start = 0;
+        oomDiag.end = 0;
+        oomDiag.argStart = ArenaBytesUsed(&arena);
+        oomDiag.argEnd = ArenaBytesCapacity(&arena);
+        (void)(useLineColDiag ? PrintSLDiagLineCol(filename, remapSource, &oomDiag, 0)
+                              : PrintSLDiag(filename, remapSource, &oomDiag, 0));
+        SLArenaDispose(&arena);
+        free(arenaMem);
+        return -1;
+    }
+
+    WarnUnknownFeatureImports(filename, source, &ast);
+    beforeTypecheckUsed = ArenaBytesUsed(&arena);
+    beforeTypecheckCap = ArenaBytesCapacity(&arena);
+
+    if (SLTypeCheck(&arena, &ast, (SLStrView){ source, sourceLen }, &diag) != 0) {
+        SLDiag   remappedDiag;
+        uint32_t remappedFileIndex = 0;
+        if (diag.code == SLDiag_ARENA_OOM) {
+            uint32_t afterUsed = ArenaBytesUsed(&arena);
+            uint32_t afterCap = ArenaBytesCapacity(&arena);
+            diag.argStart = afterUsed;
+            diag.argEnd = afterCap;
+            fprintf(
+                stderr,
+                "  note: typecheck arena delta %u bytes (before: %u/%u, after: %u/%u)\n",
+                afterUsed >= beforeTypecheckUsed ? afterUsed - beforeTypecheckUsed : 0u,
+                beforeTypecheckUsed,
+                beforeTypecheckCap,
+                afterUsed,
+                afterCap);
+        }
+        RemapCombinedDiag(remapMap, &diag, &remappedDiag, &remappedFileIndex);
+        (void)remappedFileIndex;
+        {
+            int diagStatus =
+                useLineColDiag
+                    ? PrintSLDiagLineCol(filename, remapSource, &remappedDiag, 1)
+                    : PrintSLDiag(filename, remapSource, &remappedDiag, 1);
+            SLArenaDispose(&arena);
+            free(arenaMem);
+            return diagStatus;
+        }
     }
 
     afterTypecheckUsed = ArenaBytesUsed(&arena);
@@ -3814,7 +4046,11 @@ static int AppendImportedPackageSurface(
 }
 
 static int BuildCombinedPackageSource(
-    SLPackageLoader* loader, const SLPackage* pkg, char** outSource, uint32_t* outLen) {
+    SLPackageLoader* loader,
+    const SLPackage* pkg,
+    char**           outSource,
+    uint32_t*        outLen,
+    SLCombinedSourceMap* _Nullable sourceMap) {
     SLStringBuilder         b = { 0 };
     uint32_t                i;
     SLEmittedImportSurface* emitted = NULL;
@@ -3823,6 +4059,9 @@ static int BuildCombinedPackageSource(
     (void)loader;
     *outSource = NULL;
     *outLen = 0;
+    if (sourceMap != NULL) {
+        CombinedSourceMapFree(sourceMap);
+    }
 
     for (i = 0; i < pkg->importLen; i++) {
         const SLPackage* dep = pkg->imports[i].target;
@@ -3841,6 +4080,16 @@ static int BuildCombinedPackageSource(
         const SLParsedFile* file = &pkg->files[decl->fileIndex];
         char*               namedRewritten = NULL;
         char*               rewritten = NULL;
+        uint32_t            combinedStart;
+        uint32_t            combinedEnd;
+        uint32_t            sourceStart = 0;
+        uint32_t            sourceEnd = 0;
+        uint32_t            rewrittenLen;
+        if (decl->nodeId >= 0 && (uint32_t)decl->nodeId < file->ast.len) {
+            const SLAstNode* n = &file->ast.nodes[decl->nodeId];
+            sourceStart = n->start;
+            sourceEnd = n->end;
+        }
         if (RewriteDeclTextForNamedImports(pkg, file, decl->nodeId, decl->text, &namedRewritten)
             != 0)
         {
@@ -3863,11 +4112,35 @@ static int BuildCombinedPackageSource(
             free(emitted);
             return -1;
         }
+        rewrittenLen = (uint32_t)strlen(rewritten);
+        combinedStart = b.len;
+        combinedEnd = combinedStart + rewrittenLen;
         if (SBAppendCStr(&b, rewritten) != 0 || SBAppendCStr(&b, "\n") != 0) {
             free(namedRewritten);
             free(rewritten);
             free(b.v);
             free(emitted);
+            if (sourceMap != NULL) {
+                CombinedSourceMapFree(sourceMap);
+            }
+            return ErrorSimple("out of memory");
+        }
+        if (sourceMap != NULL
+            && CombinedSourceMapAdd(
+                   sourceMap,
+                   combinedStart,
+                   combinedEnd,
+                   sourceStart,
+                   sourceEnd,
+                   decl->fileIndex,
+                   decl->nodeId)
+                   != 0)
+        {
+            free(namedRewritten);
+            free(rewritten);
+            free(b.v);
+            free(emitted);
+            CombinedSourceMapFree(sourceMap);
             return ErrorSimple("out of memory");
         }
         free(namedRewritten);
@@ -3877,22 +4150,30 @@ static int BuildCombinedPackageSource(
     *outSource = SBFinish(&b, outLen);
     free(emitted);
     if (*outSource == NULL) {
+        if (sourceMap != NULL) {
+            CombinedSourceMapFree(sourceMap);
+        }
         return ErrorSimple("out of memory");
     }
     return 0;
 }
 
 static int CheckLoadedPackage(SLPackageLoader* loader, SLPackage* pkg) {
-    char*       source = NULL;
-    uint32_t    sourceLen = 0;
-    int         lineColDiag = 0;
-    const char* checkPath = pkg->dirPath;
-    const char* checkSource = NULL;
-    uint32_t    checkSourceLen = 0;
+    char*               source = NULL;
+    uint32_t            sourceLen = 0;
+    int                 lineColDiag = 0;
+    const char*         checkPath = pkg->dirPath;
+    const char*         checkSource = NULL;
+    uint32_t            checkSourceLen = 0;
+    SLCombinedSourceMap sourceMap = { 0 };
+    int                 useSingleFileRemap = (pkg->fileLen == 1 && pkg->importLen > 0);
     if (pkg->checked) {
         return 0;
     }
-    if (BuildCombinedPackageSource(loader, pkg, &source, &sourceLen) != 0) {
+    if (BuildCombinedPackageSource(
+            loader, pkg, &source, &sourceLen, useSingleFileRemap ? &sourceMap : NULL)
+        != 0)
+    {
         return -1;
     }
     checkSource = source;
@@ -3905,10 +4186,22 @@ static int CheckLoadedPackage(SLPackageLoader* loader, SLPackage* pkg) {
             checkSourceLen = pkg->files[0].sourceLen;
         }
     }
-    if (CheckSourceEx(checkPath, checkSource, checkSourceLen, lineColDiag) != 0) {
+    if (useSingleFileRemap
+            ? CheckSourceExWithSingleFileRemap(
+                  checkPath,
+                  checkSource,
+                  checkSourceLen,
+                  lineColDiag,
+                  pkg->files[0].source,
+                  &sourceMap)
+                  != 0
+            : CheckSourceEx(checkPath, checkSource, checkSourceLen, lineColDiag) != 0)
+    {
+        CombinedSourceMapFree(&sourceMap);
         free(source);
         return -1;
     }
+    CombinedSourceMapFree(&sourceMap);
     free(source);
     pkg->checked = 1;
     return 0;
@@ -4209,7 +4502,7 @@ static int GeneratePackage(
         return -1;
     }
 
-    if (BuildCombinedPackageSource(&loader, entryPkg, &source, &sourceLen) != 0) {
+    if (BuildCombinedPackageSource(&loader, entryPkg, &source, &sourceLen, NULL) != 0) {
         FreeLoader(&loader);
         return -1;
     }
@@ -4344,7 +4637,7 @@ static int CompileProgram(
     if (ValidateEntryMainSignature(entryPkg) != 0) {
         goto end;
     }
-    if (BuildCombinedPackageSource(&loader, entryPkg, &source, &sourceLen) != 0) {
+    if (BuildCombinedPackageSource(&loader, entryPkg, &source, &sourceLen, NULL) != 0) {
         goto end;
     }
     if (!IsValidIdentifier(entryPkg->name)) {

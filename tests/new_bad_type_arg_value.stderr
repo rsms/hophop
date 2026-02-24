@@ -1,1 +1,1 @@
-tests/new_bad_type_arg_value.sl:49:22: SL2003: unknown type
+tests/new_bad_type_arg_value.sl:5:23: SL2003: unknown type

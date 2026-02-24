@@ -1,0 +1,8 @@
+FILE [0,32]
+  STRUCT "Vec3" [0,31]
+    FIELD "x" [18,29]
+      TYPE_NAME "i32" [26,29]
+    FIELD "y" [21,29]
+      TYPE_NAME "i32" [26,29]
+    FIELD "z" [24,29]
+      TYPE_NAME "i32" [26,29]

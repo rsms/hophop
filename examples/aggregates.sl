@@ -1,8 +1,7 @@
 // struct, union, and enum declarations with basic usage
 
 pub struct Pair {
-    x i32
-    y i32
+    x, y i32
 }
 
 pub union Number {

@@ -75,7 +75,7 @@ StructDecl      = "struct" Ident "{" { StructFieldDecl [ "," | ";" ] } "}" [";"]
 UnionDecl       = "union"  Ident "{" { FieldDecl [ "," | ";" ] } "}" [";"] ;
 StructFieldDecl = FieldDecl [ FieldDefault ] | EmbeddedFieldDecl [ FieldDefault ] ;
 FieldDefault    = "=" Expr ;
-FieldDecl       = Ident Type ;
+FieldDecl       = Ident {"," Ident} Type ;
 EmbeddedFieldDecl = TypeName ;
 
 EnumDecl        = "enum" Ident Type "{" { EnumItem [ "," | ";" ] } "}" [";"] ;
@@ -196,6 +196,8 @@ Notes:
 - Compound literals support named fields only (`Type{ field = expr }`, `{ field = expr }`).
 - Field names in compound literals may use dotted paths (`Type{ inner.value = expr }`).
 - Inferred `{ ... }` requires expected aggregate type context.
+- Grouped struct/union field names are allowed (`x, y, z T`).
+- Field defaults require a single named field (`x T = expr`); grouped defaults are rejected.
 - `void` is a type name but is rejected as an explicit function return type. Omit return type for no return value.
 
 ## 4. Declarations and Scope
