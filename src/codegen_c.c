@@ -3279,6 +3279,7 @@ static int ResolveCallTarget(
     const int32_t*   argNodes,
     const SLTypeRef* argTypes,
     uint32_t         argCount,
+    int              autoRefFirstArg,
     const SLFnSig**  outSig,
     const char**     outCalleeName) {
     const SLFnSig*   candidates[SLCCG_MAX_CALL_CANDIDATES];
@@ -3290,6 +3291,8 @@ static int ResolveCallTarget(
     uint32_t         bestTotal = 0;
     int              ambiguous = 0;
     int              nameFound = 0;
+    SLTypeRef        autoRefType;
+    int              hasAutoRefType = 0;
     uint32_t         i, j;
     const SLFnGroup* group = FindFnGroupBySlice(c, nameStart, nameEnd);
 
@@ -3336,6 +3339,21 @@ static int ResolveCallTarget(
     if (!nameFound) {
         return 1;
     }
+    if (autoRefFirstArg && argCount > 0) {
+        if (argTypes[0].valid) {
+            autoRefType = argTypes[0];
+        } else if (InferExprType(c, argNodes[0], &autoRefType) != 0 || !autoRefType.valid) {
+            autoRefFirstArg = 0;
+        }
+        if (autoRefFirstArg) {
+            if (autoRefType.containerKind == SLTypeContainer_SCALAR) {
+                autoRefType.ptrDepth++;
+            } else {
+                autoRefType.containerPtrDepth++;
+            }
+            hasAutoRefType = 1;
+        }
+    }
 
     for (i = 0; i < candidateLen; i++) {
         const SLFnSig* sig = candidates[i];
@@ -3350,7 +3368,9 @@ static int ResolveCallTarget(
         for (p = 0; p < argCount; p++) {
             SLTypeRef argType;
             uint8_t   cost = 0;
-            if (argTypes[p].valid) {
+            if (hasAutoRefType && p == 0) {
+                argType = autoRefType;
+            } else if (argTypes[p].valid) {
                 argType = argTypes[p];
             } else {
                 if (InferExprTypeExpected(c, argNodes[p], &sig->paramTypes[p], &argType) != 0
@@ -3770,6 +3790,7 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                            argNodes,
                            argTypes,
                            argCount,
+                           0,
                            &resolved,
                            &resolvedName)
                            == 0
@@ -3819,22 +3840,35 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                     const char*    resolvedName = NULL;
                     if (CollectCallArgInfo(
                             c, nodeId, callee, 1, recvNode, argNodes, argTypes, &argCount)
-                            == 0
-                        && ResolveCallTarget(
-                               c,
-                               cn->dataStart,
-                               cn->dataEnd,
-                               argNodes,
-                               argTypes,
-                               argCount,
-                               &resolved,
-                               &resolvedName)
-                               == 0
-                        && resolved != NULL)
+                        == 0)
                     {
-                        (void)resolvedName;
-                        *outType = resolved->returnType;
-                        return 0;
+                        int status = ResolveCallTarget(
+                            c,
+                            cn->dataStart,
+                            cn->dataEnd,
+                            argNodes,
+                            argTypes,
+                            argCount,
+                            0,
+                            &resolved,
+                            &resolvedName);
+                        if (status == 2) {
+                            status = ResolveCallTarget(
+                                c,
+                                cn->dataStart,
+                                cn->dataEnd,
+                                argNodes,
+                                argTypes,
+                                argCount,
+                                1,
+                                &resolved,
+                                &resolvedName);
+                        }
+                        if (status == 0 && resolved != NULL) {
+                            (void)resolvedName;
+                            *outType = resolved->returnType;
+                            return 0;
+                        }
                     }
                 }
             }
@@ -5093,7 +5127,8 @@ static int EmitResolvedCall(
     const char*    calleeName,
     const SLFnSig* sig,
     const int32_t* argNodes,
-    uint32_t       argCount) {
+    uint32_t       argCount,
+    int            autoRefFirstArg) {
     uint32_t i;
     (void)callNode;
     if (BufAppendCStr(&c->out, calleeName) != 0 || BufAppendChar(&c->out, '(') != 0) {
@@ -5111,7 +5146,22 @@ static int EmitResolvedCall(
         if (i != 0 && BufAppendCStr(&c->out, ", ") != 0) {
             return -1;
         }
-        if (sig != NULL && i < sig->paramLen) {
+        if (autoRefFirstArg && i == 0) {
+            if (sig != NULL && i < sig->paramLen) {
+                if (BufAppendCStr(&c->out, "((") != 0
+                    || EmitTypeNameWithDepth(c, &sig->paramTypes[i]) != 0
+                    || BufAppendCStr(&c->out, ")(&(") != 0 || EmitExpr(c, argNodes[i]) != 0
+                    || BufAppendCStr(&c->out, ")))") != 0)
+                {
+                    return -1;
+                }
+            } else if (
+                BufAppendCStr(&c->out, "(&(") != 0 || EmitExpr(c, argNodes[i]) != 0
+                || BufAppendCStr(&c->out, "))") != 0)
+            {
+                return -1;
+            }
+        } else if (sig != NULL && i < sig->paramLen) {
             if (EmitExprCoerced(c, argNodes[i], &sig->paramTypes[i]) != 0) {
                 return -1;
             }
@@ -5723,21 +5773,44 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                         const char*    resolvedName = NULL;
                         if (CollectCallArgInfo(
                                 c, nodeId, child, 1, recvNode, argNodes, argTypes, &argCount)
-                                == 0
-                            && ResolveCallTarget(
-                                   c,
-                                   callee->dataStart,
-                                   callee->dataEnd,
-                                   argNodes,
-                                   argTypes,
-                                   argCount,
-                                   &resolvedSig,
-                                   &resolvedName)
-                                   == 0
-                            && resolvedName != NULL)
+                            == 0)
                         {
-                            return EmitResolvedCall(
-                                c, nodeId, resolvedName, resolvedSig, argNodes, argCount);
+                            int status = ResolveCallTarget(
+                                c,
+                                callee->dataStart,
+                                callee->dataEnd,
+                                argNodes,
+                                argTypes,
+                                argCount,
+                                0,
+                                &resolvedSig,
+                                &resolvedName);
+                            if (status == 0 && resolvedName != NULL) {
+                                return EmitResolvedCall(
+                                    c, nodeId, resolvedName, resolvedSig, argNodes, argCount, 0);
+                            }
+                            if (status == 2) {
+                                status = ResolveCallTarget(
+                                    c,
+                                    callee->dataStart,
+                                    callee->dataEnd,
+                                    argNodes,
+                                    argTypes,
+                                    argCount,
+                                    1,
+                                    &resolvedSig,
+                                    &resolvedName);
+                                if (status == 0 && resolvedName != NULL) {
+                                    return EmitResolvedCall(
+                                        c,
+                                        nodeId,
+                                        resolvedName,
+                                        resolvedSig,
+                                        argNodes,
+                                        argCount,
+                                        1);
+                                }
+                            }
                         }
                     }
                 }
@@ -5756,13 +5829,14 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                            argNodes,
                            argTypes,
                            argCount,
+                           0,
                            &resolvedSig,
                            &resolvedName)
                            == 0
                     && resolvedName != NULL)
                 {
                     return EmitResolvedCall(
-                        c, nodeId, resolvedName, resolvedSig, argNodes, argCount);
+                        c, nodeId, resolvedName, resolvedSig, argNodes, argCount, 0);
                 }
             }
             {

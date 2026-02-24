@@ -2392,7 +2392,7 @@ static char* _Nullable ResolveLibImportDirInRoot(const char* rootDir, const char
 }
 
 static int IsLibImportPath(const char* importPath) {
-    return StrEq(importPath, "core") || StrEq(importPath, "platform")
+    return StrEq(importPath, "core") || StrEq(importPath, "mem") || StrEq(importPath, "platform")
         || strncmp(importPath, "std/", 4u) == 0 || strncmp(importPath, "platform/", 9u) == 0;
 }
 

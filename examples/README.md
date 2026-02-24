@@ -38,6 +38,8 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/slc check examples/slp2_refs_slices.sl`
 - SLP-2 allocator `new` keyword forms: `examples/allocator.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/allocator.sl`
+- Arena allocator with `import "mem"` and `free_all`: `examples/arena_allocator.sl`
+  - Check: `./_build/macos-aarch64-debug/slc checkpkg examples/arena_allocator.sl`
 - SLP-12 typed contexts/capabilities (`context`, `with { ... }`, `with context`):
   `examples/context.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/context.sl`

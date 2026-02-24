@@ -1773,6 +1773,11 @@ static int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
             {
                 return 1;
             }
+            if (dstBaseResolved >= 0 && srcBaseResolved >= 0
+                && SLTCIsTypeDerivedFromEmbedded(c, srcBaseResolved, dstBaseResolved))
+            {
+                return 1;
+            }
             if (src->baseType == c->typeStr && SLTCTypeIsU8Slice(c, dst->baseType, 1)) {
                 return 1;
             }
@@ -1874,6 +1879,7 @@ static int SLTCTypeExprExpected(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t expectedType, int32_t* outType);
 static int SLTCExprIsCompoundTemporary(SLTypeCheckCtx* c, int32_t exprNode);
 static int SLTCExprNeedsExpectedType(SLTypeCheckCtx* c, int32_t exprNode);
+static int SLTCExprIsAssignable(SLTypeCheckCtx* c, int32_t exprNode);
 
 static int SLTCConversionCost(
     SLTypeCheckCtx* c, int32_t dstType, int32_t srcType, uint8_t* outCost) {
@@ -1938,6 +1944,17 @@ static int SLTCConversionCost(
         }
         if (!SLTCTypeIsMutable(dst) && SLTCTypeIsMutable(src) && sameBase) {
             *outCost = 1;
+            return 0;
+        }
+    }
+
+    if (dst->kind == SLTCType_PTR && src->kind == SLTCType_PTR) {
+        int      sameBase = dst->baseType == src->baseType;
+        uint32_t upcastDistance = 0;
+        int      upcastBase =
+            SLTCEmbedDistanceToType(c, src->baseType, dst->baseType, &upcastDistance) == 0;
+        if (upcastBase && !sameBase) {
+            *outCost = (uint8_t)(2u + (upcastDistance > 0 ? (upcastDistance - 1u) : 0u));
             return 0;
         }
     }
@@ -2412,6 +2429,7 @@ static int SLTCResolveCallByName(
     uint32_t        nameEnd,
     const int32_t*  argNodes,
     uint32_t        argCount,
+    int             autoRefFirstArg,
     int32_t*        outFuncIndex,
     int32_t*        outMutRefTempArgNode) {
     int32_t  candidates[SLTC_MAX_CALL_CANDIDATES];
@@ -2425,6 +2443,8 @@ static int SLTCResolveCallByName(
     int      ambiguous = 0;
     int      hasExpectedDependentArg = 0;
     int32_t  mutRefTempArgNode = -1;
+    int32_t  autoRefType = -1;
+    int      hasAutoRefType = 0;
     uint32_t bestTotal = 0;
     uint32_t i;
     uint32_t p;
@@ -2436,6 +2456,18 @@ static int SLTCResolveCallByName(
 
     if (argCount > SLTC_MAX_CALL_ARGS) {
         return -1;
+    }
+    if (autoRefFirstArg && argCount > 0 && SLTCExprIsAssignable(c, argNodes[0])) {
+        int32_t          argType;
+        const SLAstNode* argNode = &c->ast->nodes[argNodes[0]];
+        if (SLTCTypeExpr(c, argNodes[0], &argType) != 0) {
+            return -1;
+        }
+        autoRefType = SLTCInternPtrType(c, argType, argNode->start, argNode->end);
+        if (autoRefType < 0) {
+            return -1;
+        }
+        hasAutoRefType = 1;
     }
     for (p = 0; p < argCount; p++) {
         argNeedsExpected[p] = (uint8_t)(SLTCExprNeedsExpectedType(c, argNodes[p]) ? 1 : 0);
@@ -2464,26 +2496,32 @@ static int SLTCResolveCallByName(
             int32_t paramType = c->funcParamTypes[fn->paramTypeStart + p];
             int32_t argType;
             uint8_t cost = 0;
-            if (SLTCIsMutableRefType(c, paramType) && SLTCExprIsCompoundTemporary(c, argNodes[p])) {
-                if (mutRefTempArgNode < 0) {
-                    mutRefTempArgNode = argNodes[p];
-                }
-                viable = 0;
-                break;
-            }
-            if (argHasPreType[p]) {
-                argType = preArgTypes[p];
+            if (hasAutoRefType && p == 0) {
+                argType = autoRefType;
             } else {
-                SLDiag savedDiag = { 0 };
-                if (c->diag != NULL) {
-                    savedDiag = *c->diag;
-                }
-                if (SLTCTypeExprExpected(c, argNodes[p], paramType, &argType) != 0) {
-                    if (c->diag != NULL) {
-                        *c->diag = savedDiag;
+                if (SLTCIsMutableRefType(c, paramType)
+                    && SLTCExprIsCompoundTemporary(c, argNodes[p]))
+                {
+                    if (mutRefTempArgNode < 0) {
+                        mutRefTempArgNode = argNodes[p];
                     }
                     viable = 0;
                     break;
+                }
+                if (argHasPreType[p]) {
+                    argType = preArgTypes[p];
+                } else {
+                    SLDiag savedDiag = { 0 };
+                    if (c->diag != NULL) {
+                        savedDiag = *c->diag;
+                    }
+                    if (SLTCTypeExprExpected(c, argNodes[p], paramType, &argType) != 0) {
+                        if (c->diag != NULL) {
+                            *c->diag = savedDiag;
+                        }
+                        viable = 0;
+                        break;
+                    }
                 }
             }
             if (SLTCConversionCost(c, paramType, argType, &cost) != 0) {
@@ -4224,6 +4262,7 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         callee->dataEnd,
                         argNodes,
                         argCount,
+                        0,
                         &resolvedFn,
                         &mutRefTempArgNode);
                     if (status == 0) {
@@ -4394,8 +4433,20 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         callee->dataEnd,
                         argNodes,
                         argCount,
+                        0,
                         &resolvedFn,
                         &mutRefTempArgNode);
+                    if (status == 2) {
+                        status = SLTCResolveCallByName(
+                            c,
+                            callee->dataStart,
+                            callee->dataEnd,
+                            argNodes,
+                            argCount,
+                            1,
+                            &resolvedFn,
+                            &mutRefTempArgNode);
+                    }
                     if (status == 0) {
                         if (SLTCValidateCallContextRequirements(c, c->funcs[resolvedFn].contextType)
                             != 0)
