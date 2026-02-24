@@ -21,8 +21,8 @@ Common CLI flow:
 ```sh
 _build/macos-aarch64-debug/slc checkpkg <dir|file.sl>
 _build/macos-aarch64-debug/slc genpkg:c <dir|file.sl> [out.h]
-_build/macos-aarch64-debug/slc compile <dir|file.sl> -o <exe>
-_build/macos-aarch64-debug/slc run <dir|file.sl>
+_build/macos-aarch64-debug/slc [--cache-dir <dir>] compile <dir|file.sl> [-o <exe>]
+_build/macos-aarch64-debug/slc [--cache-dir <dir>] run <dir|file.sl>
 ```
 
 ## Read By Goal

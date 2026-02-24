@@ -32,6 +32,7 @@ Common optional fields:
 - `slc_ok_stderr`
 - `slc_fail_no_stdout`
 - `compile_only`
+- `compile_cache_reuse`
 - `compile_and_run`
 - `slc_run`
 - `genpkg_text_check`

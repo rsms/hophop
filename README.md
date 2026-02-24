@@ -25,10 +25,10 @@ _build/macos-aarch64-debug/slc checkpkg <package-dir|file.sl>
 _build/macos-aarch64-debug/slc genpkg:c <package-dir|file.sl> [out.h]
 
 # compile program to native executable via cc
-_build/macos-aarch64-debug/slc compile <package-dir|file.sl> -o <output>
+_build/macos-aarch64-debug/slc [--cache-dir <dir>] compile <package-dir|file.sl> [-o <output>]
 
 # compile + exec
-_build/macos-aarch64-debug/slc run <package-dir|file.sl>
+_build/macos-aarch64-debug/slc [--cache-dir <dir>] run <package-dir|file.sl>
 ```
 
 ## Example

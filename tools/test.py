@@ -244,6 +244,22 @@ def run_compile(ctx: RunContext, input_path: str, output_path: Path) -> subproce
     return run_cmd([str(ctx.slc), "compile", input_path, "-o", str(output_path)])
 
 
+def run_compile_with_cache(
+    ctx: RunContext, input_path: str, output_path: Path, cache_dir: Path
+) -> subprocess.CompletedProcess[str]:
+    return run_cmd(
+        [
+            str(ctx.slc),
+            "--cache-dir",
+            str(cache_dir),
+            "compile",
+            input_path,
+            "-o",
+            str(output_path),
+        ]
+    )
+
+
 def kind_compile_only(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     exe = work_dir / "program"
     cp = run_compile(ctx, str(case["input"]), exe)
@@ -255,6 +271,52 @@ def kind_compile_only(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> 
         return fail(f"unexpected compile stderr:\n{cp.stderr}")
     if not exe.exists() or not os.access(exe, os.X_OK):
         return fail("compile output executable missing")
+    return ok()
+
+
+def kind_compile_cache_reuse(
+    ctx: RunContext, case: Dict[str, Any], work_dir: Path
+) -> tuple[bool, str]:
+    exe = work_dir / "program"
+    cache_dir = work_dir / "cache"
+    cache_pkg_dir = cache_dir / "v1" / "pkg"
+
+    cp1 = run_compile_with_cache(ctx, str(case["input"]), exe, cache_dir)
+    if cp1.returncode != 0:
+        return fail(f"compile failed (first run, exit {cp1.returncode})\nstderr:\n{cp1.stderr}")
+    if case.get("compile_stdout_empty", False) and cp1.stdout:
+        return fail(f"unexpected compile stdout:\n{cp1.stdout}")
+    if case.get("compile_stderr_empty", False) and cp1.stderr:
+        return fail(f"unexpected compile stderr:\n{cp1.stderr}")
+    if not exe.exists() or not os.access(exe, os.X_OK):
+        return fail("compile output executable missing on first run")
+
+    objs1 = sorted(cache_pkg_dir.rglob("pkg.o")) if cache_pkg_dir.exists() else []
+    if not objs1:
+        return fail("cache compile produced no package objects")
+    mtimes1 = {str(p): p.stat().st_mtime_ns for p in objs1}
+
+    time.sleep(1.1)
+
+    cp2 = run_compile_with_cache(ctx, str(case["input"]), exe, cache_dir)
+    if cp2.returncode != 0:
+        return fail(f"compile failed (second run, exit {cp2.returncode})\nstderr:\n{cp2.stderr}")
+    if case.get("compile_stdout_empty", False) and cp2.stdout:
+        return fail(f"unexpected compile stdout:\n{cp2.stdout}")
+    if case.get("compile_stderr_empty", False) and cp2.stderr:
+        return fail(f"unexpected compile stderr:\n{cp2.stderr}")
+    if not exe.exists() or not os.access(exe, os.X_OK):
+        return fail("compile output executable missing on second run")
+
+    objs2 = sorted(cache_pkg_dir.rglob("pkg.o")) if cache_pkg_dir.exists() else []
+    mtimes2 = {str(p): p.stat().st_mtime_ns for p in objs2}
+    if set(mtimes1.keys()) != set(mtimes2.keys()):
+        return fail("cache object set changed unexpectedly between runs")
+    for path, mtime1 in mtimes1.items():
+        mtime2 = mtimes2[path]
+        if mtime2 != mtime1:
+            return fail(f"cache object was rebuilt unexpectedly: {path}")
+
     return ok()
 
 
@@ -486,6 +548,8 @@ def execute_case(ctx: RunContext, case: TestCase, temp_root: Path) -> RunResult:
             ok_main, detail = kind_slc_fail_no_stdout(ctx, c)
         elif k == "compile_only":
             ok_main, detail = kind_compile_only(ctx, c, work_dir)
+        elif k == "compile_cache_reuse":
+            ok_main, detail = kind_compile_cache_reuse(ctx, c, work_dir)
         elif k == "compile_and_run":
             ok_main, detail = kind_compile_and_run(ctx, c, work_dir)
         elif k == "slc_run":

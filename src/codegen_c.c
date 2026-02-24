@@ -562,6 +562,7 @@ static int EmitDeclNode(
     int          isPrivate,
     int          emitBody);
 static int IsStrBaseName(const char* _Nullable s);
+static int ShouldEmitDeclNode(const SLCBackendC* c, int32_t nodeId);
 
 static int SliceStructPtrDepth(const SLTypeRef* t) {
     int stars = t->ptrDepth;
@@ -8398,6 +8399,9 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
         {
             continue;
         }
+        if (!ShouldEmitDeclNode(c, nodeId)) {
+            continue;
+        }
         map = FindNameBySlice(c, n->dataStart, n->dataEnd);
         if (map == NULL) {
             continue;
@@ -8443,6 +8447,9 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
         if (n == NULL
             || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION && n->kind != SLAst_ENUM))
         {
+            continue;
+        }
+        if (!ShouldEmitDeclNode(c, nodeId)) {
             continue;
         }
         map = FindNameBySlice(c, n->dataStart, n->dataEnd);
@@ -8559,6 +8566,9 @@ static int EmitHeaderTypeAliasDecls(SLCBackendC* c) {
         int32_t          nodeId = c->topDecls[i].nodeId;
         const SLAstNode* n = NodeAt(c, nodeId);
         if (n == NULL || n->kind != SLAst_TYPE_ALIAS) {
+            continue;
+        }
+        if (!ShouldEmitDeclNode(c, nodeId)) {
             continue;
         }
         if (EmitDeclNode(c, nodeId, 0, 1, 0, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
@@ -9085,6 +9095,9 @@ static int EmitHeader(SLCBackendC* c) {
         if (n == NULL) {
             continue;
         }
+        if (!ShouldEmitDeclNode(c, nodeId)) {
+            continue;
+        }
         if (EmitDeclNode(c, nodeId, 0, 1, 0, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
             return -1;
         }
@@ -9092,6 +9105,9 @@ static int EmitHeader(SLCBackendC* c) {
 
     for (i = 0; i < c->topDeclLen; i++) {
         int32_t nodeId = c->topDecls[i].nodeId;
+        if (!ShouldEmitDeclNode(c, nodeId)) {
+            continue;
+        }
         if (IsMainFunctionNode(c, nodeId) && !IsExplicitlyExportedNode(c, nodeId)) {
             if (EmitDeclNode(c, nodeId, 0, 1, 0, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
                 return -1;
@@ -9116,6 +9132,9 @@ static int EmitHeader(SLCBackendC* c) {
         if (n == NULL || n->kind != SLAst_TYPE_ALIAS || IsExportedTypeNode(c, nodeId)) {
             continue;
         }
+        if (!ShouldEmitDeclNode(c, nodeId)) {
+            continue;
+        }
         if (EmitDeclNode(c, nodeId, 0, 0, 1, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
             return -1;
         }
@@ -9127,6 +9146,9 @@ static int EmitHeader(SLCBackendC* c) {
         const SLAstNode* n = NodeAt(c, nodeId);
         int              exported;
         if (n == NULL || n->kind != SLAst_FN || !FnNodeHasBody(c, nodeId)) {
+            continue;
+        }
+        if (!ShouldEmitDeclNode(c, nodeId)) {
             continue;
         }
         exported = IsExportedNode(c, nodeId);
@@ -9142,6 +9164,9 @@ static int EmitHeader(SLCBackendC* c) {
         const SLAstNode* n = NodeAt(c, nodeId);
         int              exported;
         if (n == NULL) {
+            continue;
+        }
+        if (!ShouldEmitDeclNode(c, nodeId)) {
             continue;
         }
         exported = IsExportedNode(c, nodeId);
@@ -9186,6 +9211,23 @@ static int EmitHeader(SLCBackendC* c) {
         return -1;
     }
     return 0;
+}
+
+static int ShouldEmitDeclNode(const SLCBackendC* c, int32_t nodeId) {
+    const SLAstNode* n;
+    if (c == NULL) {
+        return 0;
+    }
+    n = NodeAt(c, nodeId);
+    if (n == NULL) {
+        return 0;
+    }
+    if (c->options != NULL && c->options->emitNodeStartOffsetEnabled != 0
+        && n->start < c->options->emitNodeStartOffset)
+    {
+        return 0;
+    }
+    return 1;
 }
 
 static int InitAst(SLCBackendC* c) {

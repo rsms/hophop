@@ -12,6 +12,8 @@ typedef struct {
 typedef struct {
     const char* _Nullable headerGuard; /* optional */
     const char* _Nullable implMacro;   /* optional */
+    uint32_t emitNodeStartOffset;      /* optional, only used when emitNodeStartOffsetEnabled */
+    uint8_t  emitNodeStartOffsetEnabled;
     void* _Nullable allocatorCtx;      /* optional */
     SLArenaGrowFn _Nullable arenaGrow; /* optional; required for emit output allocation */
     SLArenaFreeFn _Nullable arenaFree; /* optional */

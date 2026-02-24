@@ -131,8 +131,42 @@ typedef struct {
     uint32_t              cap;
 } SLCombinedSourceMap;
 
+typedef struct {
+    const SLPackage* pkg;
+    uint32_t         pkgIndex;
+    char*            key;
+    char*            linkPrefix;
+    char*            cacheDir;
+    char*            cPath;
+    char*            oPath;
+    char*            sigPath;
+    uint64_t         objMtimeNs;
+} SLPackageArtifact;
+
+typedef struct {
+    SLImportRef* imp;
+    char*        oldAlias;
+    char*        newAlias;
+} SLAliasOverride;
+
+typedef struct {
+    SLImportSymbolRef* sym;
+    char*              oldQualifiedName;
+    char*              newQualifiedName;
+} SLImportSymbolOverride;
+
 static int BuildPrefixedName(const char* alias, const char* name, char** outName);
 static int IsAsciiSpaceChar(char c);
+static int IsIdentStartChar(unsigned char c);
+static int IsIdentContinueChar(unsigned char c);
+static int ResolveLibDir(char** outLibDir);
+static int BuildCachedPackageArtifacts(
+    SLPackageLoader* loader,
+    const char* _Nullable cacheDirArg,
+    const char*         libDir,
+    SLPackageArtifact** outArtifacts,
+    uint32_t*           outArtifactLen);
+static void FreePackageArtifacts(SLPackageArtifact* artifacts, uint32_t artifactLen);
 
 #define SL_DEFAULT_PLATFORM_TARGET "cli-libc"
 
@@ -794,6 +828,122 @@ static char* _Nullable GetExeDir(void) {
 #else
     return NULL;
 #endif
+}
+
+static uint64_t StatMtimeNs(const struct stat* st) {
+#if defined(__APPLE__)
+    return (uint64_t)st->st_mtimespec.tv_sec * 1000000000ull + (uint64_t)st->st_mtimespec.tv_nsec;
+#elif defined(__linux__)
+    return (uint64_t)st->st_mtim.tv_sec * 1000000000ull + (uint64_t)st->st_mtim.tv_nsec;
+#else
+    return (uint64_t)st->st_mtime * 1000000000ull;
+#endif
+}
+
+static int GetFileMtimeNs(const char* path, uint64_t* outMtimeNs) {
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return -1;
+    }
+    *outMtimeNs = StatMtimeNs(&st);
+    return 0;
+}
+
+static int EnsureDirPath(const char* path) {
+    struct stat st;
+    if (stat(path, &st) == 0) {
+        if (S_ISDIR(st.st_mode)) {
+            return 0;
+        }
+        return -1;
+    }
+    if (mkdir(path, 0777) == 0) {
+        return 0;
+    }
+    if (errno == EEXIST && stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
+        return 0;
+    }
+    return -1;
+}
+
+static int EnsureDirRecursive(const char* path) {
+    char   tmp[PATH_MAX];
+    char*  p;
+    size_t len = strlen(path);
+    if (len == 0 || len >= sizeof(tmp)) {
+        return -1;
+    }
+    memcpy(tmp, path, len + 1u);
+    for (p = tmp + 1; *p != '\0'; p++) {
+        if (*p != '/') {
+            continue;
+        }
+        *p = '\0';
+        if (EnsureDirPath(tmp) != 0) {
+            return -1;
+        }
+        *p = '/';
+    }
+    return EnsureDirPath(tmp);
+}
+
+static char* _Nullable MakeAbsolutePathDup(const char* path) {
+    char cwd[PATH_MAX];
+    if (path == NULL || path[0] == '\0') {
+        return NULL;
+    }
+    if (path[0] == '/') {
+        return DupCStr(path);
+    }
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+        return NULL;
+    }
+    return JoinPath(cwd, path);
+}
+
+static uint64_t HashFNV1a64(const char* s) {
+    uint64_t h = 1469598103934665603ull;
+    size_t   i;
+    for (i = 0; s[i] != '\0'; i++) {
+        __uint128_t x = (((__uint128_t)h) ^ (uint8_t)s[i]) * 1099511628211ull;
+        h = (uint64_t)x;
+    }
+    return h;
+}
+
+static char* _Nullable BuildSanitizedIdent(const char* s, const char* fallback) {
+    size_t i;
+    size_t len;
+    char*  out;
+    if (s == NULL || s[0] == '\0') {
+        return DupCStr(fallback);
+    }
+    len = strlen(s);
+    out = (char*)malloc(len + 2u);
+    if (out == NULL) {
+        return NULL;
+    }
+    out[0] = '\0';
+    if (!IsIdentStartChar((unsigned char)s[0])) {
+        out[0] = 'p';
+        out[1] = '\0';
+    }
+    for (i = 0; s[i] != '\0'; i++) {
+        char ch = s[i];
+        if (!IsIdentContinueChar((unsigned char)ch)) {
+            ch = '_';
+        }
+        {
+            size_t outLen = strlen(out);
+            out[outLen] = ch;
+            out[outLen + 1u] = '\0';
+        }
+    }
+    if (out[0] == '\0') {
+        free(out);
+        return DupCStr(fallback);
+    }
+    return out;
 }
 
 static int HasSuffix(const char* s, const char* suffix) {
@@ -4099,7 +4249,8 @@ static int BuildCombinedPackageSource(
     const SLPackage* pkg,
     char**           outSource,
     uint32_t*        outLen,
-    SLCombinedSourceMap* _Nullable sourceMap) {
+    SLCombinedSourceMap* _Nullable sourceMap,
+    uint32_t* _Nullable outOwnDeclStartOffset) {
     SLStringBuilder         b = { 0 };
     uint32_t                i;
     SLEmittedImportSurface* emitted = NULL;
@@ -4108,6 +4259,9 @@ static int BuildCombinedPackageSource(
     (void)loader;
     *outSource = NULL;
     *outLen = 0;
+    if (outOwnDeclStartOffset != NULL) {
+        *outOwnDeclStartOffset = 0;
+    }
     if (sourceMap != NULL) {
         CombinedSourceMapFree(sourceMap);
     }
@@ -4122,6 +4276,9 @@ static int BuildCombinedPackageSource(
             free(emitted);
             return -1;
         }
+    }
+    if (outOwnDeclStartOffset != NULL) {
+        *outOwnDeclStartOffset = b.len;
     }
 
     for (i = 0; i < pkg->declTextLen; i++) {
@@ -4220,7 +4377,7 @@ static int CheckLoadedPackage(SLPackageLoader* loader, SLPackage* pkg) {
         return 0;
     }
     if (BuildCombinedPackageSource(
-            loader, pkg, &source, &sourceLen, useSingleFileRemap ? &sourceMap : NULL)
+            loader, pkg, &source, &sourceLen, useSingleFileRemap ? &sourceMap : NULL, NULL)
         != 0)
     {
         return -1;
@@ -4517,10 +4674,12 @@ static void PrintUsage(const char* argv0) {
         stderr,
         "usage: %s --version\n"
         "       %s [lex|ast|check] <file.sl>\n"
-        "       %s [--platform <target>] checkpkg <package-dir|file.sl>\n"
-        "       %s [--platform <target>] genpkg[:backend] <package-dir|file.sl> [out.h]\n"
-        "       %s [--platform <target>] compile <package-dir|file.sl> -o <output>\n"
-        "       %s [--platform <target>] run <package-dir|file.sl>\n",
+        "       %s [--platform <target>] [--cache-dir <dir>] checkpkg <package-dir|file.sl>\n"
+        "       %s [--platform <target>] [--cache-dir <dir>] genpkg[:backend] "
+        "<package-dir|file.sl> [out.h]\n"
+        "       %s [--platform <target>] [--cache-dir <dir>] compile <package-dir|file.sl> "
+        "[-o <output>]\n"
+        "       %s [--platform <target>] [--cache-dir <dir>] run <package-dir|file.sl>\n",
         argv0,
         argv0,
         argv0,
@@ -4537,7 +4696,8 @@ static int GeneratePackage(
     const char* entryPath,
     const char* backendName,
     const char* _Nullable outFilename,
-    const char* _Nullable platformTarget) {
+    const char* _Nullable platformTarget,
+    const char* _Nullable cacheDirArg) {
     SLPackageLoader         loader;
     SLPackage*              entryPkg;
     char*                   source = NULL;
@@ -4546,12 +4706,13 @@ static int GeneratePackage(
     SLDiag                  diag = {};
     SLCodegenUnit           unit;
     const SLCodegenBackend* backend;
+    (void)cacheDirArg;
 
     if (LoadAndCheckPackage(entryPath, platformTarget, &loader, &entryPkg) != 0) {
         return -1;
     }
 
-    if (BuildCombinedPackageSource(&loader, entryPkg, &source, &sourceLen, NULL) != 0) {
+    if (BuildCombinedPackageSource(&loader, entryPkg, &source, &sourceLen, NULL, NULL) != 0) {
         FreeLoader(&loader);
         return -1;
     }
@@ -4650,75 +4811,464 @@ static int CreateTempDir(char* outPath, size_t outPathCap, const char* tag) {
     return dir != NULL ? 0 : -1;
 }
 
-/* Embedded cli-libc platform source — compiled alongside the generated SL
- * package. Provides runtime platform functions via libc and defines main()
- * which calls sl_main(). */
-static int CompileProgram(
-    const char* entryPath, const char* outExe, const char* _Nullable platformTarget) {
-    SLPackageLoader         loader = { 0 };
-    int                     loaderReady = 0;
-    SLPackage*              entryPkg;
-    char*                   source = NULL;
-    uint32_t                sourceLen = 0;
-    char*                   outHeader = NULL;
-    SLDiag                  diag = {};
-    SLCodegenUnit           unit;
-    const SLCodegenBackend* backend;
-    SLCodegenOptions        codegenOptions = { 0 };
-    char                    tmpDir[PATH_MAX];
-    char*                   headerPath = NULL;
-    char*                   sourcePath = NULL;
-    char*                   libDir = NULL;
-    char*                   platformDir = NULL;
-    char*                   platformTargetDir = NULL;
-    char*                   platformPath = NULL;
-    SLStringBuilder         cBuilder = { 0 };
-    char*                   cSource = NULL;
-    const char*             ccArgv[12];
-    int                     rc = -1;
+static void FreePackageArtifacts(SLPackageArtifact* artifacts, uint32_t artifactLen) {
+    uint32_t i;
+    if (artifacts == NULL) {
+        return;
+    }
+    for (i = 0; i < artifactLen; i++) {
+        free(artifacts[i].key);
+        free(artifacts[i].linkPrefix);
+        free(artifacts[i].cacheDir);
+        free(artifacts[i].cPath);
+        free(artifacts[i].oPath);
+        free(artifacts[i].sigPath);
+    }
+    free(artifacts);
+}
 
-    tmpDir[0] = '\0';
+static int ResolveLibDir(char** outLibDir) {
+    char* exeDir = GetExeDir();
+    char* libDir = NULL;
+    *outLibDir = NULL;
+    if (exeDir != NULL) {
+        libDir = JoinPath(exeDir, "lib");
+        free(exeDir);
+    }
+    if (libDir == NULL) {
+        return ErrorSimple("cannot locate lib directory (dirname of executable)");
+    }
+    *outLibDir = libDir;
+    return 0;
+}
 
-    if (LoadAndCheckPackage(entryPath, platformTarget, &loader, &entryPkg) != 0) {
-        goto end;
+static int ResolvePlatformPath(
+    const char* libDir, const char* platformTarget, char** outPlatformPath) {
+    char* platformDir = NULL;
+    char* platformTargetDir = NULL;
+    char* platformPath = NULL;
+    *outPlatformPath = NULL;
+    platformDir = JoinPath(libDir, "platform");
+    if (platformDir == NULL) {
+        return ErrorSimple("out of memory");
     }
-    loaderReady = 1;
-    if (ValidateEntryMainSignature(entryPkg) != 0) {
-        goto end;
+    platformTargetDir = JoinPath(platformDir, platformTarget);
+    if (platformTargetDir == NULL) {
+        free(platformDir);
+        return ErrorSimple("out of memory");
     }
-    if (BuildCombinedPackageSource(&loader, entryPkg, &source, &sourceLen, NULL) != 0) {
-        goto end;
+    platformPath = JoinPath(platformTargetDir, "platform.c");
+    free(platformTargetDir);
+    free(platformDir);
+    if (platformPath == NULL) {
+        return ErrorSimple("out of memory");
     }
-    if (!IsValidIdentifier(entryPkg->name)) {
-        ErrorSimple(
-            "entry package name \"%s\" is not a valid identifier (inferred "
-            "from path)",
-            entryPkg->name);
-        goto end;
+    *outPlatformPath = platformPath;
+    return 0;
+}
+
+static int FindPackageIndex(const SLPackageLoader* loader, const SLPackage* pkg) {
+    uint32_t i;
+    for (i = 0; i < loader->packageLen; i++) {
+        if (&loader->packages[i] == pkg) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static const char* _Nullable FindPreferredImportPath(
+    const SLPackageLoader* loader, const SLPackage* pkg) {
+    const char* best = NULL;
+    uint32_t    i;
+    for (i = 0; i < loader->packageLen; i++) {
+        const SLPackage* src = &loader->packages[i];
+        uint32_t         j;
+        for (j = 0; j < src->importLen; j++) {
+            if (src->imports[j].target != pkg) {
+                continue;
+            }
+            if (best == NULL || strlen(src->imports[j].path) < strlen(best)
+                || (strlen(src->imports[j].path) == strlen(best)
+                    && strcmp(src->imports[j].path, best) < 0))
+            {
+                best = src->imports[j].path;
+            }
+        }
+    }
+    return best;
+}
+
+static char* _Nullable BuildPackageKey(const SLPackageLoader* loader, const SLPackage* pkg) {
+    const char* hashSource = pkg->dirPath;
+    const char* keyHint = FindPreferredImportPath(loader, pkg);
+    char*       keyBase = NULL;
+    char*       out = NULL;
+    uint64_t    h;
+    int         n;
+    if (pkg->fileLen == 1) {
+        hashSource = pkg->files[0].path;
+    }
+    keyBase = BuildSanitizedIdent(keyHint != NULL ? keyHint : pkg->name, "pkg");
+    if (keyBase == NULL) {
+        return NULL;
+    }
+    h = HashFNV1a64(hashSource);
+    out = (char*)malloc(strlen(keyBase) + 1u + 16u + 1u);
+    if (out == NULL) {
+        free(keyBase);
+        return NULL;
+    }
+    n = snprintf(
+        out, strlen(keyBase) + 1u + 16u + 1u, "%s-%016llx", keyBase, (unsigned long long)h);
+    free(keyBase);
+    if (n <= 0) {
+        free(out);
+        return NULL;
+    }
+    return out;
+}
+
+static char* _Nullable BuildPackageLinkPrefix(const SLPackage* pkg) {
+    (void)pkg;
+    return BuildSanitizedIdent(pkg->name, "pkg");
+}
+
+static char* _Nullable BuildPackageMacro(const char* key, const char* suffix) {
+    char*  sanitized = BuildSanitizedIdent(key, "pkg");
+    size_t keyLen;
+    size_t suffixLen;
+    char*  out;
+    size_t i;
+    if (sanitized == NULL) {
+        return NULL;
+    }
+    keyLen = strlen(sanitized);
+    suffixLen = strlen(suffix);
+    out = (char*)malloc(keyLen + suffixLen + 1u);
+    if (out == NULL) {
+        free(sanitized);
+        return NULL;
+    }
+    for (i = 0; i < keyLen; i++) {
+        char ch = sanitized[i];
+        if (ch >= 'a' && ch <= 'z') {
+            ch = (char)('A' + (ch - 'a'));
+        }
+        out[i] = ch;
+    }
+    memcpy(out + keyLen, suffix, suffixLen + 1u);
+    free(sanitized);
+    return out;
+}
+
+static SLPackageArtifact* _Nullable FindArtifactByPkg(
+    SLPackageArtifact* artifacts, uint32_t artifactLen, const SLPackage* pkg) {
+    uint32_t i;
+    for (i = 0; i < artifactLen; i++) {
+        if (artifacts[i].pkg == pkg) {
+            return &artifacts[i];
+        }
+    }
+    return NULL;
+}
+
+static int BuildToolchainSignature(
+    const SLPackageLoader* loader, const char* libDir, char** outSignature) {
+    SLStringBuilder b = { 0 };
+    char*           sig;
+    char            tmp[64];
+    int             n;
+    *outSignature = NULL;
+    n = snprintf(tmp, sizeof(tmp), "%d", SL_VERSION);
+    if (n <= 0) {
+        return -1;
+    }
+    if (SBAppendCStr(&b, "sl_version=") != 0 || SBAppend(&b, tmp, (uint32_t)n) != 0) {
+        free(b.v);
+        return -1;
+    }
+    if (SBAppendCStr(&b, ";source_hash=") != 0 || SBAppendCStr(&b, SL_SOURCE_HASH) != 0
+        || SBAppendCStr(&b, ";backend=c;platform=") != 0
+        || SBAppendCStr(&b, loader->platformTarget) != 0
+        || SBAppendCStr(&b, ";cc=cc;-std=c11;-g;-w;lib=") != 0 || SBAppendCStr(&b, libDir) != 0)
+    {
+        free(b.v);
+        return -1;
+    }
+    sig = SBFinish(&b, NULL);
+    if (sig == NULL) {
+        return -1;
+    }
+    *outSignature = sig;
+    return 0;
+}
+
+static int ToolchainSignatureMatches(const char* sigPath, const char* signature) {
+    char*    actual = NULL;
+    uint32_t actualLen = 0;
+    uint32_t expectedLen = (uint32_t)strlen(signature);
+    if (ReadFile(sigPath, &actual, &actualLen) != 0) {
+        return 0;
+    }
+    if (actualLen != expectedLen || memcmp(actual, signature, expectedLen) != 0) {
+        free(actual);
+        return 0;
+    }
+    free(actual);
+    return 1;
+}
+
+static int PackageNewestSourceMtime(const SLPackage* pkg, uint64_t* outMtimeNs) {
+    uint64_t maxMtime = 0;
+    uint64_t mt;
+    uint32_t i;
+    if (GetFileMtimeNs(pkg->dirPath, &maxMtime) != 0) {
+        return -1;
+    }
+    for (i = 0; i < pkg->fileLen; i++) {
+        if (GetFileMtimeNs(pkg->files[i].path, &mt) != 0) {
+            return -1;
+        }
+        if (mt > maxMtime) {
+            maxMtime = mt;
+        }
+    }
+    *outMtimeNs = maxMtime;
+    return 0;
+}
+
+static int PackageHasUnsupportedImportedPubGlobals(const SLPackage* pkg) {
+    uint32_t i;
+    for (i = 0; i < pkg->importLen; i++) {
+        const SLImportRef* imp = &pkg->imports[i];
+        const SLPackage*   dep = imp->target;
+        uint32_t           j;
+        if (dep == NULL) {
+            return ErrorSimple("internal error: unresolved import");
+        }
+        for (j = 0; j < dep->pubDeclLen; j++) {
+            if (dep->pubDecls[j].kind == SLAst_VAR || dep->pubDecls[j].kind == SLAst_CONST) {
+                const SLParsedFile* file = &pkg->files[imp->fileIndex];
+                return Errorf(
+                    file->path,
+                    file->source,
+                    imp->start,
+                    imp->end,
+                    "imported public globals are not supported in cached multi-object mode");
+            }
+        }
+    }
+    return 0;
+}
+
+static int IsPackageArtifactUpToDate(
+    const SLPackage*   pkg,
+    SLPackageArtifact* artifact,
+    SLPackageArtifact* artifacts,
+    uint32_t           artifactLen,
+    const char*        toolchainSignature) {
+    struct stat st;
+    uint64_t    objMtime;
+    uint64_t    srcMtime;
+    uint32_t    i;
+    if (stat(artifact->cPath, &st) != 0 || !S_ISREG(st.st_mode)) {
+        return 0;
+    }
+    if (stat(artifact->oPath, &st) != 0 || !S_ISREG(st.st_mode)) {
+        return 0;
+    }
+    objMtime = StatMtimeNs(&st);
+    if (!ToolchainSignatureMatches(artifact->sigPath, toolchainSignature)) {
+        return 0;
+    }
+    if (PackageNewestSourceMtime(pkg, &srcMtime) != 0 || srcMtime > objMtime) {
+        return 0;
+    }
+    for (i = 0; i < pkg->importLen; i++) {
+        SLPackageArtifact* depArtifact = FindArtifactByPkg(
+            artifacts, artifactLen, pkg->imports[i].target);
+        uint64_t depMtime = 0;
+        if (depArtifact == NULL) {
+            return 0;
+        }
+        if (depArtifact->objMtimeNs > 0) {
+            depMtime = depArtifact->objMtimeNs;
+        } else if (GetFileMtimeNs(depArtifact->oPath, &depMtime) != 0) {
+            return 0;
+        }
+        if (depMtime > objMtime) {
+            return 0;
+        }
+    }
+    artifact->objMtimeNs = objMtime;
+    return 1;
+}
+
+static void RestoreImportOverrides(
+    SLAliasOverride*        aliasOverrides,
+    uint32_t                aliasOverrideLen,
+    SLImportSymbolOverride* symbolOverrides,
+    uint32_t                symbolOverrideLen) {
+    uint32_t i;
+    for (i = 0; i < aliasOverrideLen; i++) {
+        aliasOverrides[i].imp->alias = aliasOverrides[i].oldAlias;
+        free(aliasOverrides[i].newAlias);
+    }
+    for (i = 0; i < symbolOverrideLen; i++) {
+        symbolOverrides[i].sym->qualifiedName = symbolOverrides[i].oldQualifiedName;
+        free(symbolOverrides[i].newQualifiedName);
+    }
+    free(aliasOverrides);
+    free(symbolOverrides);
+}
+
+static int ApplyLinkPrefixImportOverrides(
+    SLPackageLoader*         loader,
+    SLPackageArtifact*       artifacts,
+    uint32_t                 artifactLen,
+    SLAliasOverride**        outAliasOverrides,
+    uint32_t*                outAliasOverrideLen,
+    SLImportSymbolOverride** outSymbolOverrides,
+    uint32_t*                outSymbolOverrideLen) {
+    SLAliasOverride*        aliasOverrides = NULL;
+    SLImportSymbolOverride* symbolOverrides = NULL;
+    uint32_t                aliasCap = 0;
+    uint32_t                symbolCap = 0;
+    uint32_t                aliasLen = 0;
+    uint32_t                symbolLen = 0;
+    uint32_t                i;
+    for (i = 0; i < loader->packageLen; i++) {
+        aliasCap += loader->packages[i].importLen;
+        symbolCap += loader->packages[i].importSymbolLen;
+    }
+    if (aliasCap > 0) {
+        aliasOverrides = (SLAliasOverride*)calloc(aliasCap, sizeof(SLAliasOverride));
+        if (aliasOverrides == NULL) {
+            return ErrorSimple("out of memory");
+        }
+    }
+    if (symbolCap > 0) {
+        symbolOverrides = (SLImportSymbolOverride*)calloc(
+            symbolCap, sizeof(SLImportSymbolOverride));
+        if (symbolOverrides == NULL) {
+            free(aliasOverrides);
+            return ErrorSimple("out of memory");
+        }
     }
 
-    backend = SLCodegenFindBackend("c");
-    if (backend == NULL) {
-        ErrorSimple("unknown backend: c");
-        goto end;
+    for (i = 0; i < loader->packageLen; i++) {
+        SLPackage* pkg = &loader->packages[i];
+        uint32_t   j;
+        for (j = 0; j < pkg->importLen; j++) {
+            SLImportRef*       imp = &pkg->imports[j];
+            SLPackageArtifact* depArtifact = FindArtifactByPkg(artifacts, artifactLen, imp->target);
+            char*              newAlias;
+            if (depArtifact == NULL) {
+                RestoreImportOverrides(aliasOverrides, aliasLen, symbolOverrides, symbolLen);
+                return ErrorSimple("internal error: unresolved import artifact");
+            }
+            newAlias = DupCStr(depArtifact->linkPrefix);
+            if (newAlias == NULL) {
+                RestoreImportOverrides(aliasOverrides, aliasLen, symbolOverrides, symbolLen);
+                return ErrorSimple("out of memory");
+            }
+            aliasOverrides[aliasLen].imp = imp;
+            aliasOverrides[aliasLen].oldAlias = imp->alias;
+            aliasOverrides[aliasLen].newAlias = newAlias;
+            imp->alias = newAlias;
+            aliasLen++;
+        }
     }
 
-    unit.packageName = entryPkg->name;
+    for (i = 0; i < loader->packageLen; i++) {
+        SLPackage* pkg = &loader->packages[i];
+        uint32_t   j;
+        for (j = 0; j < pkg->importSymbolLen; j++) {
+            SLImportSymbolRef* sym = &pkg->importSymbols[j];
+            SLImportRef*       imp;
+            char*              newQualifiedName = NULL;
+            if (sym->importIndex >= pkg->importLen) {
+                RestoreImportOverrides(aliasOverrides, aliasLen, symbolOverrides, symbolLen);
+                return ErrorSimple("internal error: invalid import symbol mapping");
+            }
+            imp = &pkg->imports[sym->importIndex];
+            if (BuildPrefixedName(imp->alias, sym->sourceName, &newQualifiedName) != 0) {
+                RestoreImportOverrides(aliasOverrides, aliasLen, symbolOverrides, symbolLen);
+                return ErrorSimple("out of memory");
+            }
+            symbolOverrides[symbolLen].sym = sym;
+            symbolOverrides[symbolLen].oldQualifiedName = sym->qualifiedName;
+            symbolOverrides[symbolLen].newQualifiedName = newQualifiedName;
+            sym->qualifiedName = newQualifiedName;
+            symbolLen++;
+        }
+    }
+
+    *outAliasOverrides = aliasOverrides;
+    *outAliasOverrideLen = aliasLen;
+    *outSymbolOverrides = symbolOverrides;
+    *outSymbolOverrideLen = symbolLen;
+    return 0;
+}
+
+static int EmitPackageArtifact(
+    SLPackageLoader*        loader,
+    const SLPackage*        pkg,
+    SLPackageArtifact*      artifact,
+    SLPackageArtifact*      artifacts,
+    uint32_t                artifactLen,
+    const char*             libDir,
+    const char*             cachePkgDir,
+    const char*             toolchainSignature,
+    const SLCodegenBackend* backend) {
+    char*            source = NULL;
+    uint32_t         sourceLen = 0;
+    uint32_t         ownDeclStartOffset = 0;
+    SLCodegenUnit    unit;
+    SLCodegenOptions codegenOptions = { 0 };
+    SLDiag           diag = {};
+    char*            outHeader = NULL;
+    char*            headerGuard = NULL;
+    char*            implMacro = NULL;
+    SLStringBuilder  cBuilder = { 0 };
+    char*            cSource = NULL;
+    const char*      ccArgv[16];
+    uint32_t         i;
+    int              rc = -1;
+
+    if (PackageHasUnsupportedImportedPubGlobals(pkg) != 0) {
+        return -1;
+    }
+    if (BuildCombinedPackageSource(loader, pkg, &source, &sourceLen, NULL, &ownDeclStartOffset)
+        != 0)
+    {
+        return -1;
+    }
+
+    unit.packageName = artifact->linkPrefix;
     unit.source = source;
     unit.sourceLen = sourceLen;
-    codegenOptions.implMacro = "SLC_IMPL";
-    codegenOptions.headerGuard = "SLC_PROGRAM_H";
+    headerGuard = BuildPackageMacro(artifact->key, "_H");
+    implMacro = BuildPackageMacro(artifact->key, "_IMPL");
+    if (headerGuard == NULL || implMacro == NULL) {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+    codegenOptions.headerGuard = headerGuard;
+    codegenOptions.implMacro = implMacro;
+    codegenOptions.emitNodeStartOffset = ownDeclStartOffset;
+    codegenOptions.emitNodeStartOffsetEnabled = 1;
     codegenOptions.arenaGrow = CodegenArenaGrow;
     codegenOptions.arenaFree = CodegenArenaFree;
 
     if (backend->emit(backend, &unit, &codegenOptions, &outHeader, &diag) != 0) {
         if (diag.code != SLDiag_NONE) {
             int diagStatus;
-            if (entryPkg->fileLen == 1 && entryPkg->importLen == 0) {
-                diagStatus = PrintSLDiagLineCol(
-                    entryPkg->files[0].path, entryPkg->files[0].source, &diag, 1);
+            if (pkg->fileLen == 1 && pkg->importLen == 0) {
+                diagStatus = PrintSLDiagLineCol(pkg->files[0].path, pkg->files[0].source, &diag, 1);
             } else {
-                diagStatus = PrintSLDiag(entryPkg->dirPath, source, &diag, 1);
+                diagStatus = PrintSLDiag(pkg->dirPath, source, &diag, 1);
             }
             if (!(diagStatus == 0 && outHeader != NULL)) {
                 goto end;
@@ -4729,56 +5279,42 @@ static int CompileProgram(
         }
     }
 
-    {
-        char* exeDir = GetExeDir();
-        if (exeDir != NULL) {
-            libDir = JoinPath(exeDir, "lib");
-            free(exeDir);
+    for (i = 0; i < pkg->importLen; i++) {
+        const SLPackage*   dep = pkg->imports[i].target;
+        SLPackageArtifact* depArtifact;
+        uint32_t           j;
+        int                alreadyIncluded = 0;
+        if (dep == NULL || dep->pubDeclLen == 0) {
+            continue;
+        }
+        depArtifact = FindArtifactByPkg(artifacts, artifactLen, dep);
+        if (depArtifact == NULL) {
+            ErrorSimple("internal error: unresolved import artifact");
+            goto end;
+        }
+        for (j = 0; j < i; j++) {
+            const SLPackage* prevDep = pkg->imports[j].target;
+            if (prevDep != NULL && prevDep == dep) {
+                alreadyIncluded = 1;
+                break;
+            }
+        }
+        if (alreadyIncluded) {
+            continue;
+        }
+        if (SBAppendCStr(&cBuilder, "#include <") != 0
+            || SBAppendCStr(&cBuilder, depArtifact->key) != 0
+            || SBAppendCStr(&cBuilder, "/pkg.c>\n") != 0)
+        {
+            ErrorSimple("out of memory");
+            goto end;
         }
     }
-    if (libDir == NULL) {
-        ErrorSimple("cannot locate lib directory (dirname of executable)");
-        goto end;
-    }
-    platformDir = JoinPath(libDir, "platform");
-    if (platformDir == NULL) {
+    if (cBuilder.len > 0 && SBAppendCStr(&cBuilder, "\n") != 0) {
         ErrorSimple("out of memory");
         goto end;
     }
-    platformTargetDir = JoinPath(platformDir, loader.platformTarget);
-    if (platformTargetDir == NULL) {
-        ErrorSimple("out of memory");
-        goto end;
-    }
-    platformPath = JoinPath(platformTargetDir, "platform.c");
-    if (platformPath == NULL) {
-        ErrorSimple("out of memory");
-        goto end;
-    }
-
-    if (CreateTempDir(tmpDir, sizeof(tmpDir), "compile") != 0) {
-        ErrorSimple("failed to create temporary directory");
-        goto end;
-    }
-
-    headerPath = JoinPath(tmpDir, "program.h");
-    sourcePath = JoinPath(tmpDir, "program.c");
-    if (headerPath == NULL || sourcePath == NULL) {
-        ErrorSimple("out of memory");
-        goto end;
-    }
-    if (WriteOutput(headerPath, outHeader, (uint32_t)strlen(outHeader)) != 0) {
-        ErrorSimple("failed to write generated header");
-        goto end;
-    }
-
-    /* Wrapper: defines sl_main(context) which calls the package entry point. */
-    if (SBAppendCStr(&cBuilder, "#define SLC_IMPL\n#include \"") != 0
-        || SBAppendCStr(&cBuilder, headerPath) != 0 || SBAppendCStr(&cBuilder, "\"\n\n") != 0
-        || SBAppendCStr(&cBuilder, "int sl_main(__sl_Context *context) { ") != 0
-        || SBAppendCStr(&cBuilder, entryPkg->name) != 0
-        || SBAppendCStr(&cBuilder, "__main(context); return 0; }\n") != 0)
-    {
+    if (SBAppendCStr(&cBuilder, outHeader) != 0) {
         ErrorSimple("out of memory");
         goto end;
     }
@@ -4787,56 +5323,416 @@ static int CompileProgram(
         ErrorSimple("out of memory");
         goto end;
     }
-    if (WriteOutput(sourcePath, cSource, (uint32_t)strlen(cSource)) != 0) {
-        ErrorSimple("failed to write generated C source");
+
+    if (EnsureDirRecursive(artifact->cacheDir) != 0) {
+        ErrorSimple("failed to create cache directory");
+        goto end;
+    }
+    if (WriteOutput(artifact->cPath, cSource, (uint32_t)strlen(cSource)) != 0) {
+        ErrorSimple("failed to write cached C source");
         goto end;
     }
 
     ccArgv[0] = "cc";
     ccArgv[1] = "-std=c11";
     ccArgv[2] = "-g";
-    ccArgv[3] = "-isystem";
-    ccArgv[4] = libDir;
-    ccArgv[5] = "-o";
-    ccArgv[6] = outExe;
-    ccArgv[7] = sourcePath;
-    ccArgv[8] = platformPath;
-    ccArgv[9] = NULL;
-
+    ccArgv[3] = "-w";
+    ccArgv[4] = "-isystem";
+    ccArgv[5] = libDir;
+    ccArgv[6] = "-I";
+    ccArgv[7] = cachePkgDir;
+    ccArgv[8] = "-D";
+    ccArgv[9] = implMacro;
+    ccArgv[10] = "-c";
+    ccArgv[11] = artifact->cPath;
+    ccArgv[12] = "-o";
+    ccArgv[13] = artifact->oPath;
+    ccArgv[14] = NULL;
     if (RunCommand(ccArgv) != 0) {
         ErrorSimple("C compilation failed");
+        goto end;
+    }
+
+    if (WriteOutput(artifact->sigPath, toolchainSignature, (uint32_t)strlen(toolchainSignature))
+        != 0)
+    {
+        ErrorSimple("failed to write cache toolchain signature");
+        goto end;
+    }
+    if (GetFileMtimeNs(artifact->oPath, &artifact->objMtimeNs) != 0) {
+        ErrorSimple("failed to stat cached object");
+        goto end;
+    }
+    rc = 0;
+
+end:
+    free(headerGuard);
+    free(implMacro);
+    free(outHeader);
+    free(source);
+    free(cSource);
+    free(cBuilder.v);
+    return rc;
+}
+
+static int VisitTopoPackage(
+    const SLPackageLoader* loader,
+    uint32_t               pkgIndex,
+    uint8_t*               state,
+    uint32_t*              order,
+    uint32_t*              orderLen) {
+    const SLPackage* pkg = &loader->packages[pkgIndex];
+    uint32_t         i;
+    if (state[pkgIndex] == 2) {
+        return 0;
+    }
+    if (state[pkgIndex] == 1) {
+        return ErrorSimple("import cycle detected");
+    }
+    state[pkgIndex] = 1;
+    for (i = 0; i < pkg->importLen; i++) {
+        int depIndex = FindPackageIndex(loader, pkg->imports[i].target);
+        if (depIndex < 0) {
+            return ErrorSimple("internal error: unresolved import");
+        }
+        if (VisitTopoPackage(loader, (uint32_t)depIndex, state, order, orderLen) != 0) {
+            return -1;
+        }
+    }
+    state[pkgIndex] = 2;
+    order[(*orderLen)++] = pkgIndex;
+    return 0;
+}
+
+static int BuildPackageTopologicalOrder(
+    const SLPackageLoader* loader,
+    uint32_t*              outOrder,
+    uint32_t               outOrderCap,
+    uint32_t*              outOrderLen) {
+    uint8_t* state = NULL;
+    uint32_t i;
+    *outOrderLen = 0;
+    if (outOrderCap < loader->packageLen) {
+        return -1;
+    }
+    state = (uint8_t*)calloc(loader->packageLen, sizeof(uint8_t));
+    if (state == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    for (i = 0; i < loader->packageLen; i++) {
+        if (VisitTopoPackage(loader, i, state, outOrder, outOrderLen) != 0) {
+            free(state);
+            return -1;
+        }
+    }
+    free(state);
+    return 0;
+}
+
+static int BuildCachedPackageArtifacts(
+    SLPackageLoader* loader,
+    const char* _Nullable cacheDirArg,
+    const char*         libDir,
+    SLPackageArtifact** outArtifacts,
+    uint32_t*           outArtifactLen) {
+    SLPackageArtifact*      artifacts = NULL;
+    uint32_t                artifactLen = loader->packageLen;
+    char*                   cacheRoot = NULL;
+    char*                   cacheV1Dir = NULL;
+    char*                   cachePkgDir = NULL;
+    char*                   toolchainSignature = NULL;
+    const SLCodegenBackend* backend;
+    uint32_t*               topoOrder = NULL;
+    uint32_t                topoOrderLen = 0;
+    SLAliasOverride*        aliasOverrides = NULL;
+    uint32_t                aliasOverrideLen = 0;
+    SLImportSymbolOverride* symbolOverrides = NULL;
+    uint32_t                symbolOverrideLen = 0;
+    uint32_t                i;
+
+    *outArtifacts = NULL;
+    *outArtifactLen = 0;
+
+    backend = SLCodegenFindBackend("c");
+    if (backend == NULL) {
+        return ErrorSimple("unknown backend: c");
+    }
+
+    if (cacheDirArg != NULL) {
+        cacheRoot = MakeAbsolutePathDup(cacheDirArg);
+    } else {
+        cacheRoot = JoinPath(loader->rootDir, ".sl-cache");
+    }
+    if (cacheRoot == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    cacheV1Dir = JoinPath(cacheRoot, "v1");
+    cachePkgDir = cacheV1Dir != NULL ? JoinPath(cacheV1Dir, "pkg") : NULL;
+    if (cacheV1Dir == NULL || cachePkgDir == NULL) {
+        free(cachePkgDir);
+        free(cacheV1Dir);
+        free(cacheRoot);
+        return ErrorSimple("out of memory");
+    }
+    if (EnsureDirRecursive(cachePkgDir) != 0) {
+        free(cachePkgDir);
+        free(cacheV1Dir);
+        free(cacheRoot);
+        return ErrorSimple("failed to create cache directory");
+    }
+
+    artifacts = (SLPackageArtifact*)calloc(artifactLen, sizeof(SLPackageArtifact));
+    topoOrder = (uint32_t*)calloc(artifactLen, sizeof(uint32_t));
+    if ((artifactLen > 0 && artifacts == NULL) || (artifactLen > 0 && topoOrder == NULL)) {
+        free(topoOrder);
+        free(artifacts);
+        free(cachePkgDir);
+        free(cacheV1Dir);
+        free(cacheRoot);
+        return ErrorSimple("out of memory");
+    }
+
+    for (i = 0; i < artifactLen; i++) {
+        SLPackageArtifact* a = &artifacts[i];
+        a->pkg = &loader->packages[i];
+        a->pkgIndex = i;
+        a->key = BuildPackageKey(loader, a->pkg);
+        a->linkPrefix = BuildPackageLinkPrefix(a->pkg);
+        if (a->key == NULL || a->linkPrefix == NULL) {
+            goto fail;
+        }
+        a->cacheDir = JoinPath(cachePkgDir, a->key);
+        a->cPath = a->cacheDir != NULL ? JoinPath(a->cacheDir, "pkg.c") : NULL;
+        a->oPath = a->cacheDir != NULL ? JoinPath(a->cacheDir, "pkg.o") : NULL;
+        a->sigPath = a->cacheDir != NULL ? JoinPath(a->cacheDir, "toolchain.sig") : NULL;
+        if (a->cacheDir == NULL || a->cPath == NULL || a->oPath == NULL || a->sigPath == NULL) {
+            goto fail;
+        }
+    }
+
+    if (BuildToolchainSignature(loader, libDir, &toolchainSignature) != 0) {
+        goto fail;
+    }
+    if (BuildPackageTopologicalOrder(loader, topoOrder, artifactLen, &topoOrderLen) != 0) {
+        goto fail;
+    }
+    if (ApplyLinkPrefixImportOverrides(
+            loader,
+            artifacts,
+            artifactLen,
+            &aliasOverrides,
+            &aliasOverrideLen,
+            &symbolOverrides,
+            &symbolOverrideLen)
+        != 0)
+    {
+        goto fail;
+    }
+
+    for (i = 0; i < topoOrderLen; i++) {
+        uint32_t           pkgIndex = topoOrder[i];
+        SLPackageArtifact* artifact = &artifacts[pkgIndex];
+        if (IsPackageArtifactUpToDate(
+                artifact->pkg, artifact, artifacts, artifactLen, toolchainSignature))
+        {
+            continue;
+        }
+        if (EmitPackageArtifact(
+                loader,
+                artifact->pkg,
+                artifact,
+                artifacts,
+                artifactLen,
+                libDir,
+                cachePkgDir,
+                toolchainSignature,
+                backend)
+            != 0)
+        {
+            goto fail;
+        }
+    }
+
+    RestoreImportOverrides(aliasOverrides, aliasOverrideLen, symbolOverrides, symbolOverrideLen);
+    free(topoOrder);
+    free(toolchainSignature);
+    free(cachePkgDir);
+    free(cacheV1Dir);
+    free(cacheRoot);
+    *outArtifacts = artifacts;
+    *outArtifactLen = artifactLen;
+    return 0;
+
+fail:
+    RestoreImportOverrides(aliasOverrides, aliasOverrideLen, symbolOverrides, symbolOverrideLen);
+    free(topoOrder);
+    free(toolchainSignature);
+    free(cachePkgDir);
+    free(cacheV1Dir);
+    free(cacheRoot);
+    FreePackageArtifacts(artifacts, artifactLen);
+    return -1;
+}
+
+/* Embedded cli-libc platform source — compiled alongside the generated SL
+ * package. Provides runtime platform functions via libc and defines main()
+ * which calls sl_main(). */
+static int CompileProgram(
+    const char* entryPath,
+    const char* outExe,
+    const char* _Nullable platformTarget,
+    const char* _Nullable cacheDirArg) {
+    SLPackageLoader    loader = { 0 };
+    SLPackage*         entryPkg = NULL;
+    int                loaderReady = 0;
+    char*              libDir = NULL;
+    char*              platformPath = NULL;
+    SLPackageArtifact* artifacts = NULL;
+    uint32_t           artifactLen = 0;
+    SLPackageArtifact* entryArtifact;
+    char               tmpDir[PATH_MAX];
+    char*              wrapperCPath = NULL;
+    char*              wrapperOPath = NULL;
+    SLStringBuilder    wrapperBuilder = { 0 };
+    char*              wrapperSource = NULL;
+    const char*        ccCompileArgv[12];
+    const char**       ccLinkArgv = NULL;
+    uint32_t           i;
+    int                rc = -1;
+
+    tmpDir[0] = '\0';
+
+    if (LoadAndCheckPackage(entryPath, platformTarget, &loader, &entryPkg) != 0) {
+        goto end;
+    }
+    loaderReady = 1;
+    if (ValidateEntryMainSignature(entryPkg) != 0) {
+        goto end;
+    }
+    if (ResolveLibDir(&libDir) != 0) {
+        goto end;
+    }
+    if (ResolvePlatformPath(libDir, loader.platformTarget, &platformPath) != 0) {
+        goto end;
+    }
+    if (BuildCachedPackageArtifacts(&loader, cacheDirArg, libDir, &artifacts, &artifactLen) != 0) {
+        goto end;
+    }
+    entryArtifact = FindArtifactByPkg(artifacts, artifactLen, entryPkg);
+    if (entryArtifact == NULL) {
+        ErrorSimple("internal error: entry package artifact missing");
+        goto end;
+    }
+
+    if (CreateTempDir(tmpDir, sizeof(tmpDir), "compile") != 0) {
+        ErrorSimple("failed to create temporary directory");
+        goto end;
+    }
+    wrapperCPath = JoinPath(tmpDir, "wrapper.c");
+    wrapperOPath = JoinPath(tmpDir, "wrapper.o");
+    if (wrapperCPath == NULL || wrapperOPath == NULL) {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+
+    if (SBAppendCStr(&wrapperBuilder, "#include <core/core.h>\n\nvoid ") != 0
+        || SBAppendCStr(&wrapperBuilder, entryArtifact->linkPrefix) != 0
+        || SBAppendCStr(&wrapperBuilder, "__main(__sl_Context *context);\n\n") != 0
+        || SBAppendCStr(&wrapperBuilder, "int sl_main(__sl_Context *context) { ") != 0
+        || SBAppendCStr(&wrapperBuilder, entryArtifact->linkPrefix) != 0
+        || SBAppendCStr(&wrapperBuilder, "__main(context); return 0; }\n") != 0)
+    {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+    wrapperSource = SBFinish(&wrapperBuilder, NULL);
+    if (wrapperSource == NULL) {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+    if (WriteOutput(wrapperCPath, wrapperSource, (uint32_t)strlen(wrapperSource)) != 0) {
+        ErrorSimple("failed to write wrapper source");
+        goto end;
+    }
+
+    ccCompileArgv[0] = "cc";
+    ccCompileArgv[1] = "-std=c11";
+    ccCompileArgv[2] = "-g";
+    ccCompileArgv[3] = "-w";
+    ccCompileArgv[4] = "-isystem";
+    ccCompileArgv[5] = libDir;
+    ccCompileArgv[6] = "-c";
+    ccCompileArgv[7] = wrapperCPath;
+    ccCompileArgv[8] = "-o";
+    ccCompileArgv[9] = wrapperOPath;
+    ccCompileArgv[10] = NULL;
+    if (RunCommand(ccCompileArgv) != 0) {
+        ErrorSimple("C compilation failed");
+        goto end;
+    }
+
+    ccLinkArgv = (const char**)calloc((size_t)artifactLen + 11u, sizeof(char*));
+    if (ccLinkArgv == NULL) {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+    i = 0;
+    ccLinkArgv[i++] = "cc";
+    ccLinkArgv[i++] = "-std=c11";
+    ccLinkArgv[i++] = "-g";
+    ccLinkArgv[i++] = "-w";
+    ccLinkArgv[i++] = "-isystem";
+    ccLinkArgv[i++] = libDir;
+    ccLinkArgv[i++] = "-o";
+    ccLinkArgv[i++] = outExe;
+    ccLinkArgv[i++] = wrapperOPath;
+    {
+        uint32_t j;
+        for (j = 0; j < artifactLen; j++) {
+            if (StrEq(artifacts[j].pkg->name, "core") || StrEq(artifacts[j].pkg->name, "platform"))
+            {
+                continue;
+            }
+            ccLinkArgv[i++] = artifacts[j].oPath;
+        }
+    }
+    ccLinkArgv[i++] = platformPath;
+    ccLinkArgv[i] = NULL;
+    if (RunCommand(ccLinkArgv) != 0) {
+        ErrorSimple("C link failed");
         goto end;
     }
 
     rc = 0;
 
 end:
-    if (headerPath != NULL) {
-        unlink(headerPath);
+    if (wrapperCPath != NULL) {
+        unlink(wrapperCPath);
     }
-    if (sourcePath != NULL) {
-        unlink(sourcePath);
+    if (wrapperOPath != NULL) {
+        unlink(wrapperOPath);
     }
     if (tmpDir[0] != '\0') {
         rmdir(tmpDir);
     }
-    free(headerPath);
-    free(sourcePath);
+    free(ccLinkArgv);
+    free(wrapperSource);
+    free(wrapperBuilder.v);
+    free(wrapperCPath);
+    free(wrapperOPath);
     free(platformPath);
-    free(platformTargetDir);
-    free(platformDir);
     free(libDir);
-    free(outHeader);
-    free(cSource);
-    free(cBuilder.v);
-    free(source);
+    FreePackageArtifacts(artifacts, artifactLen);
     if (loaderReady) {
         FreeLoader(&loader);
     }
     return rc;
 }
 
-static int RunProgram(const char* entryPath, const char* _Nullable platformTarget) {
+static int RunProgram(
+    const char* entryPath,
+    const char* _Nullable platformTarget,
+    const char* _Nullable cacheDirArg) {
     const char* tmpBase = getenv("TMPDIR");
     char        exeTemplate[PATH_MAX];
     int         n;
@@ -4857,7 +5753,7 @@ static int RunProgram(const char* entryPath, const char* _Nullable platformTarge
     close(fd);
     unlink(exeTemplate);
 
-    if (CompileProgram(entryPath, exeTemplate, platformTarget) != 0) {
+    if (CompileProgram(entryPath, exeTemplate, platformTarget, cacheDirArg) != 0) {
         unlink(exeTemplate);
         return -1;
     }
@@ -4872,6 +5768,7 @@ int main(int argc, char* argv[]) {
     const char* filename = NULL;
     const char* outFilename = NULL;
     const char* platformTarget = SL_DEFAULT_PLATFORM_TARGET;
+    const char* cacheDirArg = NULL;
     char        backendName[32];
     int         genpkgMode;
     char*       source;
@@ -4883,13 +5780,26 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    while (argi < argc && StrEq(argv[argi], "--platform")) {
-        if (argi + 1 >= argc) {
-            PrintUsage(argv[0]);
-            return 2;
+    while (argi < argc) {
+        if (StrEq(argv[argi], "--platform")) {
+            if (argi + 1 >= argc) {
+                PrintUsage(argv[0]);
+                return 2;
+            }
+            platformTarget = argv[argi + 1];
+            argi += 2;
+            continue;
         }
-        platformTarget = argv[argi + 1];
-        argi += 2;
+        if (StrEq(argv[argi], "--cache-dir")) {
+            if (argi + 1 >= argc) {
+                PrintUsage(argv[0]);
+                return 2;
+            }
+            cacheDirArg = argv[argi + 1];
+            argi += 2;
+            continue;
+        }
+        break;
     }
 
     if (!IsValidPlatformTargetName(platformTarget)) {
@@ -4898,18 +5808,25 @@ int main(int argc, char* argv[]) {
     }
 
     if (argc - argi >= 1 && StrEq(argv[argi], "compile")) {
+        if (argc - argi == 2) {
+            return CompileProgram(argv[argi + 1], "a.out", platformTarget, cacheDirArg) == 0
+                     ? 0
+                     : 1;
+        }
         if (argc - argi != 4 || !StrEq(argv[argi + 2], "-o")) {
             PrintUsage(argv[0]);
             return 2;
         }
-        return CompileProgram(argv[argi + 1], argv[argi + 3], platformTarget) == 0 ? 0 : 1;
+        return CompileProgram(argv[argi + 1], argv[argi + 3], platformTarget, cacheDirArg) == 0
+                 ? 0
+                 : 1;
     }
     if (argc - argi >= 1 && StrEq(argv[argi], "run")) {
         if (argc - argi != 2) {
             PrintUsage(argv[0]);
             return 2;
         }
-        return RunProgram(argv[argi + 1], platformTarget) == 0 ? 0 : 1;
+        return RunProgram(argv[argi + 1], platformTarget, cacheDirArg) == 0 ? 0 : 1;
     }
 
     if (argc - argi == 1) {
@@ -4932,7 +5849,9 @@ int main(int argc, char* argv[]) {
         return 2;
     }
     if (genpkgMode == 1) {
-        return GeneratePackage(filename, backendName, outFilename, platformTarget) == 0 ? 0 : 1;
+        return GeneratePackage(filename, backendName, outFilename, platformTarget, cacheDirArg) == 0
+                 ? 0
+                 : 1;
     }
 
     if (mode[0] == 'c' && mode[1] == 'h' && mode[2] == 'e' && mode[3] == 'c' && mode[4] == 'k'
