@@ -1,11 +1,11 @@
-import "mem"
+import "mem" { ArenaAllocator }
 
-fn init(self *mem.ArenaAllocator, source *Allocator, block_size uint) {
-    mem.init(self, source, block_size)
+fn init(self *ArenaAllocator, source *Allocator, block_size uint) {
+    init(self, source, block_size)
 }
 
-fn free_all(self *mem.ArenaAllocator) {
-    mem.free_all(self)
+fn free_all(self *ArenaAllocator) {
+    free_all(self)
 }
 
 fn fill_values(ma *Allocator) i32 {
@@ -22,7 +22,7 @@ fn fill_values(ma *Allocator) i32 {
 }
 
 fn main() {
-    var arena mem.ArenaAllocator
+    var arena ArenaAllocator
     arena.init(context.mem, 1024)
 
     var sum = fill_values(&arena)
