@@ -100,7 +100,7 @@ contexts:
               2: variable.other.definition.slang
 
     keywords:
-        - match: '\b(import|pub|struct|union|enum|type|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|sizeof|as|with)\b'
+        - match: '\b(import|pub|struct|union|enum|type|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|sizeof|new|as|with)\b'
           scope: keyword.control.slang
         - match: '\b(context)\b(?=\s+{{ident}}\b)'
           scope: keyword.control.slang
@@ -112,7 +112,7 @@ contexts:
     builtins:
         - match: '\b(u8|u16|u32|u64|i8|i16|i32|i64|uint|int|f32|f64|bool|void|str|MemAllocator|__sl_MemAllocator)\b'
           scope: support.type.builtin.slang
-        - match: '\b(new|len|cstr)\b'
+        - match: '\b(len|cstr)\b'
           scope: support.function.builtin.slang
 
     operators:

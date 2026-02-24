@@ -4,7 +4,7 @@ struct NeedCtx {
 }
 
 fn a() context NeedCtx {
-    var p *i32 = new(i32)
+    var p *i32 = new i32
 }
 
 fn main() {

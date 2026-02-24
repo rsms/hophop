@@ -4,8 +4,8 @@ struct Ctx {
 }
 
 fn allocs(n uint) context Ctx {
-    var a *[i32 4] = new(i32, 4)
-    var b *[i32] = new(i32, n)
+    var a *[i32 4] = new [i32 4]
+    var b *[i32] = new [i32 n]
 
     a[0] = 11
     b[0] = a[0]

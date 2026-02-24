@@ -1,8 +1,8 @@
 
 fn main() {
     var ma = context.mem
-    var p *i32 = ma.new(i32)
-    var q *[i32 4] = ma.new(i32, 4)
+    var p *i32 = new i32 with ma
+    var q *[i32 4] = new [i32 4] with ma
 
     *p = 7
     q[0] = *p

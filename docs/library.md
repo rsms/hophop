@@ -50,7 +50,7 @@ Properties:
 
 ### `__sl_MemAllocator`
 
-`__sl_MemAllocator` is the low-level allocator capability used by `new(...)`.
+`__sl_MemAllocator` is the low-level allocator capability used by `new`.
 Allocator implementations must zero newly allocated bytes:
 - fresh allocations are fully zeroed
 - resized allocations must zero bytes in `[oldSize, newSize)`
@@ -82,19 +82,16 @@ fn cstr(s str) *u8
 ### `new`
 
 ```sl
-fn new(ma *Allocator, type T) *T
-fn new(ma *Allocator, type T, N uint) *[T N] // compile-time constant positive N
-fn new(ma *Allocator, type T, N uint) *[T]   // otherwise
-
-fn new(type T) *T
-fn new(type T, N uint) *[T N] // compile-time constant positive N
-fn new(type T, N uint) *[T]   // otherwise
+new T
+new [T N]
+new T with alloc
+new [T N] with alloc
 ```
 
 `new` allocates memory from a memory allocator.
 
-- `ma` must be convertible to `*Allocator`.
-- Contextual forms (`new(T[, N])`) use allocator capability `mem` from effective context.
+- `alloc` must be convertible to `*Allocator`.
+- Contextual forms (`new T`, `new [T N]`) use allocator capability `mem` from effective context.
 - Effective context `mem` must be assignable to `*Allocator`.
 - `T` is the allocated element type.
 - If `N` is provided, storage for a sequence of `T` is allocated.
@@ -156,7 +153,7 @@ Surface API:
 Operation semantics:
 - `exit`: terminate process with status code.
 
-Allocation is provided by `Allocator` via `new(...)`, with the platform setting
+Allocation is provided by `Allocator` via `new`, with the platform setting
 `context.mem` before `sl_main`.
 
 Concrete default platform implementation used by `slc compile`/`slc run`:

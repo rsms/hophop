@@ -2905,6 +2905,7 @@ static int CollectExprImportRewritesNode(
         case SLAst_INDEX:
         case SLAst_CAST:
         case SLAst_SIZEOF:
+        case SLAst_NEW:
         case SLAst_UNWRAP:
             child = ASTFirstChild(&file->ast, nodeId);
             while (child >= 0) {

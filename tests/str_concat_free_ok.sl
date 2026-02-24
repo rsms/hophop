@@ -8,6 +8,6 @@ fn caller() context Ctx {
     assert len(s) == 6
     free(s)
 
-    var arr *[u8 4] = new(u8, 4)
+    var arr *[u8 4] = new [u8 4]
     free(arr)
 }

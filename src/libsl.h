@@ -177,6 +177,7 @@ typedef enum {
     SLTok_DEFER,
     SLTok_ASSERT,
     SLTok_SIZEOF,
+    SLTok_NEW,
     SLTok_TRUE,
     SLTok_FALSE,
     SLTok_AS,
@@ -299,6 +300,7 @@ typedef enum {
     SLAst_FIELD_EXPR,
     SLAst_CAST,
     SLAst_SIZEOF,
+    SLAst_NEW,
     SLAst_NULL,
     SLAst_UNWRAP,
 } SLAstKind;
@@ -323,6 +325,8 @@ enum {
     SLAstFlag_INDEX_RUNTIME_BOUNDS = 0x0008u,
     SLAstFlag_FIELD_EMBEDDED = 0x0010u,
     SLAstFlag_CALL_WITH_CONTEXT_PASSTHROUGH = 0x0020u,
+    SLAstFlag_NEW_HAS_COUNT = 0x0040u,
+    SLAstFlag_NEW_HAS_ALLOC = 0x0080u,
 };
 
 typedef uint32_t SLFeatures;

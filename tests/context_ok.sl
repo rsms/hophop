@@ -5,7 +5,7 @@ struct Ctx {
 }
 
 fn alloc() *i32 context Ctx {
-    return new(i32)
+    return new i32
 }
 
 fn log(msg &str) context Ctx {
@@ -17,7 +17,7 @@ fn caller() context Ctx {
 
     var p2 *i32 = alloc() with { mem, temp_mem, log }
 
-    var p3 ?*i32 = new(i32) with { mem = context.mem }
+    var p3 ?*i32 = new i32 with context.mem
 
     log("ok") with context
 }

@@ -4,7 +4,7 @@
 // - implicit context forwarding
 // - explicit pass-through (`with context`)
 // - call-local overlays (`with { ... }`)
-// - contextual built-ins (`new(T)` and `print(...)`)
+// - contextual built-ins (`new T` and `print(...)`)
 
 // Context types can be named as they are simply struct types
 struct AppContext {
@@ -13,7 +13,7 @@ struct AppContext {
 }
 
 fn alloc_value() *i32 context { mem *Allocator } {
-    var p *i32 = new(i32)
+    var p *i32 = new i32
     *p = 42
     return p
 }

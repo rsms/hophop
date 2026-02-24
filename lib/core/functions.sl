@@ -11,10 +11,6 @@ fn cstr(s &str) &u8 {
     return s.cstr()
 }
 
-fn new() *u8 {
-    return 0 as *u8
-}
-
 fn concat(a &str, b &str) *str {
     return 0 as *str
 }

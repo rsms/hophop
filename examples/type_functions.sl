@@ -23,8 +23,8 @@ fn main() {
     assert c.add(7) == add(c, 7)
     assert msg.len() == len(msg)
 
-    var p ?*i32 = ma.new(i32)
-    var q ?*[i32 4] = ma.new(i32, 4)
+    var p ?*i32 = new i32 with ma
+    var q ?*[i32 4] = new [i32 4] with ma
 
     assert p == null
     assert q == null

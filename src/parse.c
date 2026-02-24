@@ -693,6 +693,62 @@ static int SLPParseCompoundLiteralTail(SLParser* p, int32_t typeNode, int32_t* o
     return 0;
 }
 
+static int SLPParseNewExpr(SLParser* p, int32_t* out) {
+    const SLToken* kw = SLPPrev(p);
+    const SLToken* rb;
+    int32_t        n;
+    int32_t        typeNode;
+    int32_t        countNode = -1;
+    int32_t        allocNode = -1;
+
+    n = SLPNewNode(p, SLAst_NEW, kw->start, kw->end);
+    if (n < 0) {
+        return -1;
+    }
+
+    if (SLPMatch(p, SLTok_LBRACK)) {
+        if (SLPParseType(p, &typeNode) != 0) {
+            return -1;
+        }
+        if (SLPParseExpr(p, 1, &countNode) != 0) {
+            return -1;
+        }
+        if (SLPExpect(p, SLTok_RBRACK, SLDiag_EXPECTED_EXPR, &rb) != 0) {
+            return -1;
+        }
+        p->nodes[n].flags |= SLAstFlag_NEW_HAS_COUNT;
+        p->nodes[n].end = rb->end;
+    } else {
+        if (SLPParseType(p, &typeNode) != 0) {
+            return -1;
+        }
+        p->nodes[n].end = p->nodes[typeNode].end;
+    }
+
+    if (SLPAddChild(p, n, typeNode) != 0) {
+        return -1;
+    }
+    if (countNode >= 0) {
+        if (SLPAddChild(p, n, countNode) != 0) {
+            return -1;
+        }
+    }
+
+    if (SLPMatch(p, SLTok_WITH)) {
+        if (SLPParseExpr(p, 1, &allocNode) != 0) {
+            return -1;
+        }
+        if (SLPAddChild(p, n, allocNode) != 0) {
+            return -1;
+        }
+        p->nodes[n].flags |= SLAstFlag_NEW_HAS_ALLOC;
+        p->nodes[n].end = p->nodes[allocNode].end;
+    }
+
+    *out = n;
+    return 0;
+}
+
 static int SLPParsePrimary(SLParser* p, int32_t* out) {
     const SLToken* t = SLPPeek(p);
     int32_t        n;
@@ -845,6 +901,10 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
         p->nodes[n].end = rp->end;
         *out = n;
         return 0;
+    }
+
+    if (SLPMatch(p, SLTok_NEW)) {
+        return SLPParseNewExpr(p, out);
     }
 
     return SLPFail(p, SLDiag_EXPECTED_EXPR);
@@ -2238,6 +2298,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_FIELD_EXPR:        return "FIELD_EXPR";
         case SLAst_CAST:              return "CAST";
         case SLAst_SIZEOF:            return "SIZEOF";
+        case SLAst_NEW:               return "NEW";
         case SLAst_NULL:              return "NULL";
         case SLAst_UNWRAP:            return "UNWRAP";
     }

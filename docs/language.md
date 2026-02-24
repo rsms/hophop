@@ -242,7 +242,7 @@ Type-function selector-call sugar:
 - Context compatibility is structural-by-field and name-sensitive.
 - Built-in capability use:
   - `print(msg)` requires `console` in effective context
-  - `new(T[, N])` requires `mem` in effective context
+  - `new T` / `new [T N]` require `mem` in effective context unless explicit allocator is provided
 - Entrypoint rule remains `fn main()` with no explicit `context` clause.
 - Inside `main`, the implementation provides an implicit root context with fields:
   - `mem` (platform allocator)
@@ -454,12 +454,14 @@ Flow narrowing (locals only, including params since params are locals):
 
 ### 9.3 `new`
 - Supported forms:
-  - `new(ma, T[, N])`
-  - `new(T[, N])` (contextual allocator form)
-- In explicit form, `ma` must be convertible to `*Allocator`.
-- In contextual form, effective context must provide field `mem` assignable to
+  - `new T`
+  - `new [T N]`
+  - `new T with allocExpr`
+  - `new [T N] with allocExpr`
+- In explicit form, `allocExpr` must be convertible to `*Allocator`.
+- In contextual form (no `with`), effective context must provide field `mem` assignable to
   `*Allocator`.
-- `T` must be a type argument expression (identifier naming builtin or named type).
+- `T` is any valid type.
 - `N` (if present) must be integer-typed; constant negative values are rejected.
 - Return type:
   - no `N`: `*T`
@@ -468,8 +470,6 @@ Flow narrowing (locals only, including params since params are locals):
 - On successful allocation, newly allocated bytes are zero-initialized.
   - New allocation: full allocation is zeroed.
   - Resize/grow allocation: bytes in `[oldSize, newSize)` are zeroed.
-- Selector-call sugar is supported: `ma.new(T[, N])` is equivalent to `new(ma, T[, N])`
-
 Typical user code uses `Allocator`, which is a nominal alias of `__sl_MemAllocator`.
 
 ### 9.4 `panic(msg)`
