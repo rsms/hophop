@@ -66,6 +66,24 @@ static __sl_uint platform_mem_allocator_impl(
     return (__sl_uint)(uintptr_t)newPtr;
 }
 
+static void platform_log_handler(__sl_Logger* self, __sl_str* message, __sl_LogLevel level) {
+    size_t n = message != NULL ? (size_t)message->len : 0u;
+    FILE*  out = (level >= __sl_LogLevel_Error) ? stderr : stdout;
+
+    if (self != NULL && level < self->min_level) {
+        return;
+    }
+
+    if (self != NULL && self->prefix != NULL && self->prefix->len > 0) {
+        fprintf(out, "%.*s", (int)self->prefix->len, (const char*)self->prefix->bytes);
+    }
+    if (message != NULL) {
+        fprintf(out, "%.*s", (int)n, (const char*)message->bytes);
+    }
+    fputc('\n', out);
+    fflush(out);
+}
+
 __sl_i64 __sl_platform_call(
     __sl_u64 op,
     __sl_u64 a,
@@ -79,6 +97,7 @@ __sl_i64 __sl_platform_call(
     (void)e;
     (void)f;
     (void)g;
+    (void)c;
     switch ((enum __sl_PlatformOps)op) {
         case __sl_PlatformOp_NONE:  return 0;
         case __sl_PlatformOp_PANIC: {
@@ -86,13 +105,6 @@ __sl_i64 __sl_platform_call(
             fprintf(stderr, "panic: %.*s\n", (int)n, (const char*)(uintptr_t)a);
             fflush(stderr);
             abort();
-        }
-        case __sl_PlatformOp_CONSOLE_LOG: {
-            size_t n = b ? (size_t)b : strlen((const char*)(uintptr_t)a);
-            FILE*  out = (c & 1u) ? stderr : stdout;
-            fprintf(out, "%.*s\n", (int)n, (const char*)(uintptr_t)a);
-            fflush(out);
-            return 0;
         }
         case __sl_PlatformOp_EXIT: exit((int)(__sl_i64)a); return 0;
     }
@@ -102,6 +114,15 @@ __sl_i64 __sl_platform_call(
 
 int main(void) {
     static __sl_Allocator gAllocator = { .impl = platform_mem_allocator_impl };
-    __sl_Context          gMainContext = { &gAllocator, 0, 1 };
+    __sl_Context          gMainContext = {
+        .mem = &gAllocator,
+        .log =
+            {
+                .handler = platform_log_handler,
+                .min_level = __sl_LogLevel_Info,
+                .flags = __sl_LoggerFlag_Level,
+                .prefix = NULL,
+            },
+    };
     return sl_main(&gMainContext);
 }

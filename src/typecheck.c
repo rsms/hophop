@@ -2070,18 +2070,16 @@ static int SLTCCurrentContextFieldType(
             *outType = ptrType;
             return 0;
         }
-        if (SLNameEqLiteral(c->src, fieldStart, fieldEnd, "console")) {
-            int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
+        if (SLNameEqLiteral(c->src, fieldStart, fieldEnd, "log")) {
+            int32_t t = SLTCFindNamedTypeByLiteral(c, "core__Logger");
             if (t < 0) {
-                return -1;
+                t = SLTCFindNamedTypeByLiteral(c, "Logger");
             }
-            *outType = t;
-            return 0;
-        }
-        if (SLNameEqLiteral(c->src, fieldStart, fieldEnd, "stderr")) {
-            int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
             if (t < 0) {
-                return -1;
+                t = c->typeStr;
+                if (t < 0) {
+                    return -1;
+                }
             }
             *outType = t;
             return 0;
@@ -2165,23 +2163,18 @@ static int SLTCCurrentContextFieldTypeByLiteral(
             *outType = ptrType;
             return 0;
         }
-        if (fieldName[0] == 'c' && fieldName[1] == 'o' && fieldName[2] == 'n' && fieldName[3] == 's'
-            && fieldName[4] == 'o' && fieldName[5] == 'l' && fieldName[6] == 'e'
-            && fieldName[7] == '\0')
+        if (fieldName[0] == 'l' && fieldName[1] == 'o' && fieldName[2] == 'g'
+            && fieldName[3] == '\0')
         {
-            int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
+            int32_t t = SLTCFindNamedTypeByLiteral(c, "core__Logger");
             if (t < 0) {
-                return -1;
+                t = SLTCFindNamedTypeByLiteral(c, "Logger");
             }
-            *outType = t;
-            return 0;
-        }
-        if (fieldName[0] == 's' && fieldName[1] == 't' && fieldName[2] == 'd' && fieldName[3] == 'e'
-            && fieldName[4] == 'r' && fieldName[5] == 'r' && fieldName[6] == '\0')
-        {
-            int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
             if (t < 0) {
-                return -1;
+                t = c->typeStr;
+                if (t < 0) {
+                    return -1;
+                }
             }
             *outType = t;
             return 0;
@@ -4222,8 +4215,7 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     int32_t msgArgNode = SLAstNextSibling(c->ast, calleeNode);
                     int32_t msgArgType;
                     int32_t nextArgNode;
-                    int32_t consoleType;
-                    int32_t expectedConsoleType;
+                    int32_t logType;
                     int32_t wantStrType;
                     if (msgArgNode < 0) {
                         return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
@@ -4242,16 +4234,8 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     if (nextArgNode >= 0) {
                         return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
                     }
-                    expectedConsoleType = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
-                    if (expectedConsoleType < 0) {
-                        return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
-                    }
-                    if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "console", &consoleType) != 0)
-                    {
+                    if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "log", &logType) != 0) {
                         return -1;
-                    }
-                    if (!SLTCCanAssign(c, expectedConsoleType, consoleType)) {
-                        return SLTCFailNode(c, nodeId, SLDiag_CONTEXT_TYPE_MISMATCH);
                     }
                     *outType = c->typeVoid;
                     return 0;
@@ -4489,8 +4473,7 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                 }
                 if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "print")) {
                     int32_t nextArgNode = SLAstNextSibling(c->ast, calleeNode);
-                    int32_t consoleType;
-                    int32_t expectedConsoleType;
+                    int32_t logType;
                     int32_t wantStrType = SLTCGetStrRefType(c, callee->start, callee->end);
                     if (wantStrType < 0) {
                         return SLTCFailNode(c, calleeNode, SLDiag_UNKNOWN_TYPE);
@@ -4501,16 +4484,8 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     if (nextArgNode >= 0) {
                         return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
                     }
-                    expectedConsoleType = SLTCFindBuiltinByKind(c, SLBuiltin_I32);
-                    if (expectedConsoleType < 0) {
-                        return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
-                    }
-                    if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "console", &consoleType) != 0)
-                    {
+                    if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "log", &logType) != 0) {
                         return -1;
-                    }
-                    if (!SLTCCanAssign(c, expectedConsoleType, consoleType)) {
-                        return SLTCFailNode(c, nodeId, SLDiag_CONTEXT_TYPE_MISMATCH);
                     }
                     *outType = c->typeVoid;
                     return 0;

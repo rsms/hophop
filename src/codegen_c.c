@@ -5171,6 +5171,23 @@ static int EmitCurrentContextFieldValue(
                 }
                 return 0;
             }
+
+            if (StrEq(fieldName, "log") && srcField->type.containerKind == SLTypeContainer_SCALAR
+                && requiredType->containerKind == SLTypeContainer_SCALAR
+                && srcField->type.baseName != NULL && requiredType->baseName != NULL
+                && srcField->type.ptrDepth == 0 && requiredType->ptrDepth == 0
+                && srcField->type.containerPtrDepth == 0 && requiredType->containerPtrDepth == 0)
+            {
+                if (BufAppendCStr(&c->out, "(*((") != 0
+                    || EmitTypeNameWithDepth(c, requiredType) != 0
+                    || BufAppendCStr(&c->out, "*)(void*)&(") != 0
+                    || EmitCurrentContextFieldRaw(c, fieldName) != 0
+                    || BufAppendCStr(&c->out, ")))") != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
         }
     }
     return EmitCurrentContextFieldRaw(c, fieldName);
@@ -5783,24 +5800,14 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                 if (msgArg < 0 || extra >= 0) {
                     return -1;
                 }
-                if (BufAppendCStr(&c->out, "__sl_console_log(") != 0 || EmitExpr(c, msgArg) != 0
-                    || BufAppendCStr(&c->out, ", (__sl_u64)(__sl_i64)(") != 0
-                    || EmitEffectiveContextFieldValue(
-                           c,
-                           "console",
-                           &(SLTypeRef){
-                               .baseName = "__sl_i32",
-                               .ptrDepth = 0,
-                               .valid = 1,
-                               .containerKind = SLTypeContainer_SCALAR,
-                               .containerPtrDepth = 0,
-                               .arrayLen = 0,
-                               .hasArrayLen = 0,
-                               .readOnly = 0,
-                               .isOptional = 0,
-                           })
-                           != 0
-                    || BufAppendCStr(&c->out, "))") != 0)
+                if (BufAppendCStr(&c->out, "do { if ((") != 0
+                    || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
+                    || BufAppendCStr(&c->out, ").handler != NULL) (") != 0
+                    || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
+                    || BufAppendCStr(&c->out, ").handler(&(") != 0
+                    || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
+                    || BufAppendCStr(&c->out, "), ") != 0 || EmitExpr(c, msgArg) != 0
+                    || BufAppendCStr(&c->out, ", (__sl_i32)0); } while (0)") != 0)
                 {
                     return -1;
                 }
@@ -5939,25 +5946,14 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
                         if (recvNode < 0 || extra >= 0) {
                             return -1;
                         }
-                        if (BufAppendCStr(&c->out, "__sl_console_log(") != 0
-                            || EmitExpr(c, recvNode) != 0
-                            || BufAppendCStr(&c->out, ", (__sl_u64)(__sl_i64)(") != 0
-                            || EmitEffectiveContextFieldValue(
-                                   c,
-                                   "console",
-                                   &(SLTypeRef){
-                                       .baseName = "__sl_i32",
-                                       .ptrDepth = 0,
-                                       .valid = 1,
-                                       .containerKind = SLTypeContainer_SCALAR,
-                                       .containerPtrDepth = 0,
-                                       .arrayLen = 0,
-                                       .hasArrayLen = 0,
-                                       .readOnly = 0,
-                                       .isOptional = 0,
-                                   })
-                                   != 0
-                            || BufAppendCStr(&c->out, "))") != 0)
+                        if (BufAppendCStr(&c->out, "do { if ((") != 0
+                            || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
+                            || BufAppendCStr(&c->out, ").handler != NULL) (") != 0
+                            || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
+                            || BufAppendCStr(&c->out, ").handler(&(") != 0
+                            || EmitEffectiveContextFieldValue(c, "log", &(SLTypeRef){ 0 }) != 0
+                            || BufAppendCStr(&c->out, "), ") != 0 || EmitExpr(c, recvNode) != 0
+                            || BufAppendCStr(&c->out, ", (__sl_i32)0); } while (0)") != 0)
                         {
                             return -1;
                         }

@@ -1,20 +1,11 @@
 #!/usr/bin/env python3
 """
 Generate C ABI declarations for the core package from lib/core/*.sl and
-lib/platform/platform.sl, and
-patch lib/core/core.h in-place between fenced markers.
+lib/platform/platform.sl, and patch lib/core/core.h in-place between fenced markers.
 
 Fence markers in core.h:
   // BEGIN generated code
   // END generated code
-
-This currently emits:
-  - __sl_Allocator
-  - __sl_Context
-  - enum __sl_PlatformOps
-and legacy aliases used by older generated/runtime C:
-  - __sl_mem_Allocator
-  - __sl_MainContext
 """
 
 from __future__ import annotations
@@ -22,6 +13,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -47,6 +39,31 @@ BEGIN_MARKER = "// BEGIN generated code"
 END_MARKER = "// END generated code"
 
 
+@dataclass(frozen=True)
+class EnumDecl:
+    name: str
+    base_type: str
+    members: list[tuple[str, str]]
+    file: str
+
+
+@dataclass(frozen=True)
+class AliasDecl:
+    name: str
+    type_expr: str
+    file: str
+
+
+@dataclass(frozen=True)
+class StructDecl:
+    name: str
+    fields: list[tuple[str, str]]
+    file: str
+
+
+CoreDecl = EnumDecl | AliasDecl | StructDecl
+
+
 def die(msg: str) -> "None":
     print(f"gen_core_abi.py: {msg}", file=sys.stderr)
     raise SystemExit(1)
@@ -56,135 +73,269 @@ def strip_line_comments(src: str) -> str:
     return re.sub(r"//.*$", "", src, flags=re.MULTILINE)
 
 
-def parse_structs(src: str) -> dict[str, list[str]]:
-    structs: dict[str, list[str]] = {}
-    pattern = re.compile(r"pub\s+struct\s+([A-Za-z_]\w*)\s*\{([^}]*)\}", flags=re.DOTALL)
-    for match in pattern.finditer(src):
-        name = match.group(1)
-        body = match.group(2)
-        lines = [line.strip() for line in body.splitlines() if line.strip()]
-        structs[name] = lines
-    return structs
+def split_top_level_commas(src: str) -> list[str]:
+    out: list[str] = []
+    cur: list[str] = []
+    paren = 0
+    bracket = 0
+    for ch in src:
+        if ch == "," and paren == 0 and bracket == 0:
+            seg = "".join(cur).strip()
+            if seg:
+                out.append(seg)
+            cur = []
+            continue
+        if ch == "(":
+            paren += 1
+        elif ch == ")":
+            paren -= 1
+            if paren < 0:
+                die(f"unbalanced ')' in parameter list: {src!r}")
+        elif ch == "[":
+            bracket += 1
+        elif ch == "]":
+            bracket -= 1
+            if bracket < 0:
+                die(f"unbalanced ']' in parameter list: {src!r}")
+        cur.append(ch)
+    if paren != 0 or bracket != 0:
+        die(f"unbalanced delimiters in parameter list: {src!r}")
+    seg = "".join(cur).strip()
+    if seg:
+        out.append(seg)
+    return out
 
 
-def parse_enums(src: str) -> dict[str, tuple[str, list[tuple[str, int]]]]:
-    enums: dict[str, tuple[str, list[tuple[str, int]]]] = {}
-    pattern = re.compile(
-        r"(?:pub\s+)?enum\s+([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*\{([^}]*)\}",
-        flags=re.DOTALL,
-    )
-    for match in pattern.finditer(src):
-        name = match.group(1)
-        base_type = match.group(2)
-        body = match.group(3)
-        members: list[tuple[str, int]] = []
-        for raw_line in body.splitlines():
-            line = raw_line.strip().rstrip(",")
-            if not line:
-                continue
-            mm = re.fullmatch(r"([A-Za-z_]\w*)\s*=\s*(-?\d+)", line)
-            if not mm:
-                die(f"unsupported enum member syntax in {name}: {line!r}")
-            members.append((mm.group(1), int(mm.group(2))))
-        if not members:
-            die(f"enum {name!r} has no members")
-        enums[name] = (base_type, members)
-    return enums
+def split_name_and_type(src: str) -> tuple[str, str]:
+    parts = src.strip().split(None, 1)
+    if len(parts) != 2:
+        die(f"expected '<name> <type>', got: {src!r}")
+    name = parts[0]
+    type_expr = parts[1].strip()
+    if not re.fullmatch(r"[A-Za-z_]\w*", name):
+        die(f"invalid identifier {name!r} in: {src!r}")
+    if not type_expr:
+        die(f"missing type in: {src!r}")
+    return name, type_expr
 
 
-def split_type_expr(type_expr: str) -> tuple[str, int]:
-    ptr_depth = 0
-    t = type_expr.strip()
-    while t.startswith("*"):
-        ptr_depth += 1
-        t = t[1:].strip()
-    if not re.match(r"^[A-Za-z_]\w*$", t):
-        die(f"unsupported type expression: {type_expr!r}")
-    return t, ptr_depth
+def parse_param_list(src: str) -> list[tuple[str, str]]:
+    params: list[tuple[str, str]] = []
+    pending_names: list[str] = []
+    for seg in split_top_level_commas(src):
+        parts = seg.split(None, 1)
+        if len(parts) == 1:
+            name = parts[0]
+            if not re.fullmatch(r"[A-Za-z_]\w*", name):
+                die(f"invalid parameter name {name!r} in segment {seg!r}")
+            pending_names.append(name)
+            continue
+        name = parts[0]
+        type_expr = parts[1].strip()
+        if not re.fullmatch(r"[A-Za-z_]\w*", name):
+            die(f"invalid parameter name {name!r} in segment {seg!r}")
+        names = pending_names + [name]
+        for n in names:
+            params.append((n, type_expr))
+        pending_names = []
+    if pending_names:
+        die(f"parameter names without type: {', '.join(pending_names)}")
+    return params
 
 
-def map_base_type(base: str, known_structs: set[str]) -> str:
+def parse_fn_type_expr(type_expr: str) -> tuple[str, list[tuple[str, str]]] | None:
+    s = type_expr.strip()
+    m = re.match(r"fn\s*\(", s)
+    if m is None:
+        return None
+    open_i = s.find("(", m.start())
+    depth = 0
+    close_i = -1
+    for i in range(open_i, len(s)):
+        ch = s[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                close_i = i
+                break
+            if depth < 0:
+                die(f"invalid function type expression: {type_expr!r}")
+    if close_i < 0 or depth != 0:
+        die(f"invalid function type expression: {type_expr!r}")
+    params_src = s[open_i + 1 : close_i].strip()
+    ret_expr = s[close_i + 1 :].strip()
+    if not ret_expr:
+        ret_expr = "void"
+    params = parse_param_list(params_src) if params_src else []
+    return ret_expr, params
+
+
+def parse_array_type_expr(type_expr: str) -> tuple[str, str] | None:
+    s = type_expr.strip()
+    if not (s.startswith("[") and s.endswith("]")):
+        return None
+    inner = s[1:-1].strip()
+    parts = inner.split()
+    if len(parts) < 2:
+        die(f"unsupported array type expression: {type_expr!r}")
+    elem_expr = " ".join(parts[:-1]).strip()
+    len_expr = parts[-1].strip()
+    if not elem_expr or not len_expr:
+        die(f"unsupported array type expression: {type_expr!r}")
+    return elem_expr, len_expr
+
+
+def split_ptr_ref_type(type_expr: str) -> tuple[str, int]:
+    depth = 0
+    s = type_expr.strip()
+    while s.startswith("*") or s.startswith("&"):
+        depth += 1
+        s = s[1:].strip()
+    return s, depth
+
+
+def map_base_type(base: str, known_types: set[str]) -> str:
     if base in BUILTIN_C_TYPE:
         return BUILTIN_C_TYPE[base]
-    if base in known_structs:
+    if not re.fullmatch(r"[A-Za-z_]\w*", base):
+        die(f"unsupported type expression: {base!r}")
+    if base in known_types:
         return f"__sl_{base}"
     return f"__sl_{base}"
 
 
-def map_type(type_expr: str, known_structs: set[str]) -> str:
-    base, ptr_depth = split_type_expr(type_expr)
-    c_type = map_base_type(base, known_structs)
-    return c_type + ("*" * ptr_depth)
+def map_type_expr(type_expr: str, known_types: set[str]) -> str:
+    if parse_fn_type_expr(type_expr) is not None:
+        die(f"function type cannot be used as a plain type expression: {type_expr!r}")
+    if parse_array_type_expr(type_expr) is not None:
+        die(f"array type cannot be used as a plain type expression: {type_expr!r}")
+    base, depth = split_ptr_ref_type(type_expr)
+    c_base = map_base_type(base, known_types)
+    return c_base + ("*" * depth)
 
 
-def parse_named_typed_token(line: str) -> tuple[str, str]:
-    parts = line.split()
-    if len(parts) != 2:
-        die(f"expected '<name> <type>', got: {line!r}")
-    return parts[0], parts[1]
+def emit_params(params: list[tuple[str, str]], known_types: set[str]) -> str:
+    if not params:
+        return "void"
+    c_parts: list[str] = []
+    for name, type_expr in params:
+        c_parts.append(f"{map_type_expr(type_expr, known_types)} {name}")
+    return ", ".join(c_parts)
 
 
-def parse_allocator_signature(line: str) -> tuple[str, list[tuple[str, str]]]:
-    match = re.match(r"impl\s+fn\s*\((.*)\)\s+([*A-Za-z_]\w*)\s*$", line)
-    if not match:
-        die(f"invalid Allocator impl signature: {line!r}")
-    params_raw = [x.strip() for x in match.group(1).split(",") if x.strip()]
-    return_type = match.group(2).strip()
-    params: list[tuple[str, str]] = []
-    pending_names: list[str] = []
-    for p in params_raw:
-        parts = p.split()
-        if len(parts) == 1:
-            pending_names.append(parts[0])
+def emit_named_type(name: str, type_expr: str, known_types: set[str], allow_array: bool) -> str:
+    fn_sig = parse_fn_type_expr(type_expr)
+    if fn_sig is not None:
+        ret_expr, params = fn_sig
+        ret_c = map_type_expr(ret_expr, known_types)
+        return f"{ret_c} (*{name})({emit_params(params, known_types)})"
+
+    arr = parse_array_type_expr(type_expr)
+    if arr is not None:
+        if not allow_array:
+            die(f"array type not supported in this declaration context: {type_expr!r}")
+        elem_expr, len_expr = arr
+        elem_c = map_type_expr(elem_expr, known_types)
+        if len_expr.startswith("."):
+            return f"{elem_c} {name}[]"
+        if re.fullmatch(r"\d+", len_expr):
+            return f"{elem_c} {name}[{len_expr}]"
+        die(f"unsupported array length expression: {len_expr!r}")
+
+    return f"{map_type_expr(type_expr, known_types)} {name}"
+
+
+def parse_enum_members(body: str, enum_name: str) -> list[tuple[str, str]]:
+    members: list[tuple[str, str]] = []
+    for raw_line in body.splitlines():
+        line = raw_line.strip().rstrip(",")
+        if not line:
             continue
-        if len(parts) == 2:
-            name, type_expr = parts
-            names = pending_names + [name]
-            for n in names:
-                params.append((n, type_expr))
-            pending_names = []
+        mm = re.fullmatch(r"([A-Za-z_]\w*)\s*=\s*(.+)", line)
+        if mm is None:
+            die(f"unsupported enum member syntax in {enum_name}: {line!r}")
+        members.append((mm.group(1), mm.group(2).strip()))
+    if not members:
+        die(f"enum {enum_name!r} has no members")
+    return members
+
+
+def parse_decls_from_source(src: str, file_label: str) -> list[CoreDecl]:
+    decls: list[CoreDecl] = []
+    decl_pattern = re.compile(
+        r"(?:pub\s+)?struct\s+([A-Za-z_]\w*)\s*\{([^}]*)\}"
+        r"|(?:pub\s+)?type\s+([A-Za-z_]\w*)\s+([^\n]+)"
+        r"|(?:pub\s+)?enum\s+([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*\{([^}]*)\}",
+        flags=re.DOTALL,
+    )
+    for m in decl_pattern.finditer(src):
+        if m.group(1) is not None:
+            name = m.group(1)
+            body = m.group(2)
+            fields: list[tuple[str, str]] = []
+            for raw_line in body.splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                fields.append(split_name_and_type(line))
+            decls.append(StructDecl(name=name, fields=fields, file=file_label))
             continue
-        die(f"invalid parameter segment: {p!r}")
-    if pending_names:
-        die(f"parameter names without type: {', '.join(pending_names)}")
-    return return_type, params
+
+        if m.group(3) is not None:
+            name = m.group(3)
+            type_expr = m.group(4).strip()
+            decls.append(AliasDecl(name=name, type_expr=type_expr, file=file_label))
+            continue
+
+        if m.group(5) is not None:
+            name = m.group(5)
+            base_type = m.group(6)
+            body = m.group(7)
+            members = parse_enum_members(body, name)
+            decls.append(EnumDecl(name=name, base_type=base_type, members=members, file=file_label))
+            continue
+
+        die(f"internal parser error in {file_label}")
+    return decls
 
 
-def load_core_structs(core_dir: Path) -> dict[str, list[str]]:
-    structs: dict[str, list[str]] = {}
+def load_core_decls(core_dir: Path) -> tuple[list[CoreDecl], set[str]]:
     sl_files = sorted(core_dir.glob("*.sl"))
     if not sl_files:
         die(f"no .sl files found in {core_dir}")
+
+    decls: list[CoreDecl] = []
+    type_names: set[str] = set()
     for path in sl_files:
         src = strip_line_comments(path.read_text(encoding="utf-8"))
-        parsed = parse_structs(src)
-        for name, lines in parsed.items():
-            if name in structs:
-                die(f"duplicate struct {name!r} in core package ({path})")
-            structs[name] = lines
-    return structs
+        file_decls = parse_decls_from_source(src, str(path))
+        for d in file_decls:
+            if d.name in type_names:
+                die(f"duplicate type declaration {d.name!r} in {path}")
+            type_names.add(d.name)
+            decls.append(d)
+    return decls, type_names
 
 
-def load_platform_enums(platform_path: Path) -> dict[str, tuple[str, list[tuple[str, int]]]]:
+def load_platform_enums(platform_path: Path) -> dict[str, tuple[str, list[tuple[str, str]]]]:
     src = strip_line_comments(platform_path.read_text(encoding="utf-8"))
-    return parse_enums(src)
+    enums: dict[str, tuple[str, list[tuple[str, str]]]] = {}
+    for d in parse_decls_from_source(src, str(platform_path)):
+        if isinstance(d, EnumDecl):
+            enums[d.name] = (d.base_type, d.members)
+    return enums
 
 
 def emit_core_abi(
-    structs: dict[str, list[str]], platform_enums: dict[str, tuple[str, list[tuple[str, int]]]]
+    decls: list[CoreDecl], known_types: set[str], platform_enums: dict[str, tuple[str, list[tuple[str, str]]]]
 ) -> str:
-    if "Allocator" not in structs:
-        die("missing 'pub struct Allocator' in core package")
-    if "Context" not in structs:
-        die("missing 'pub struct Context' in core package")
-    known_structs = set(structs.keys())
-
-    alloc_lines = structs["Allocator"]
-    if len(alloc_lines) != 1:
-        die("Allocator must contain exactly one impl line")
-    ret_type, params = parse_allocator_signature(alloc_lines[0])
-
-    ctx_fields = [parse_named_typed_token(line) for line in structs["Context"]]
+    struct_order: list[str] = [d.name for d in decls if isinstance(d, StructDecl)]
+    if "Allocator" not in struct_order:
+        die("missing struct 'Allocator' in core package")
+    if "Context" not in struct_order:
+        die("missing struct 'Context' in core package")
     if "PlatformOps" not in platform_enums:
         die("missing 'enum PlatformOps ...' in lib/platform/platform.sl")
     platform_ops_members = platform_enums["PlatformOps"][1]
@@ -195,29 +346,55 @@ def emit_core_abi(
         "lib/platform/platform.sl. DO NOT EDIT. */"
     )
     out.append("")
-    out.append("typedef struct __sl_Allocator __sl_Allocator;")
-    out.append("struct __sl_Allocator {")
-    out.append(f"    {map_type(ret_type, known_structs)} (*impl)(")
-    for i, (name, type_expr) in enumerate(params):
-        comma = "," if i + 1 < len(params) else ""
-        out.append(f"        {map_type(type_expr, known_structs)} {name}{comma}")
-    out.append("        );")
-    out.append("};")
+
+    for name in struct_order:
+        out.append(f"typedef struct __sl_{name} __sl_{name};")
     out.append("")
-    out.append("typedef struct {")
-    for name, type_expr in ctx_fields:
-        out.append(f"    {map_type(type_expr, known_structs)} {name};")
-    out.append("} __sl_Context;")
-    out.append("")
+
+    for d in decls:
+        if isinstance(d, EnumDecl):
+            out.append("typedef enum {")
+            for member_name, expr in d.members:
+                out.append(f"    __sl_{d.name}_{member_name} = {expr},")
+            out.append(f"}} __sl_{d.name};")
+            out.append("")
+            continue
+
+        if isinstance(d, AliasDecl):
+            fn_sig = parse_fn_type_expr(d.type_expr)
+            if fn_sig is not None:
+                ret_expr, params = fn_sig
+                ret_c = map_type_expr(ret_expr, known_types)
+                out.append(
+                    f"typedef {ret_c} (*__sl_{d.name})({emit_params(params, known_types)});"
+                )
+            else:
+                out.append(f"typedef {map_type_expr(d.type_expr, known_types)} __sl_{d.name};")
+            out.append("")
+            continue
+
+        if isinstance(d, StructDecl):
+            out.append(f"struct __sl_{d.name} {{")
+            for field_name, type_expr in d.fields:
+                out.append(
+                    f"    {emit_named_type(field_name, type_expr, known_types, allow_array=True)};"
+                )
+            out.append("};")
+            out.append("")
+            continue
+
+        die("internal declaration dispatch error")
+
     out.append("/* Legacy aliases for compatibility with older generated/runtime C. */")
     out.append("typedef __sl_Allocator __sl_mem_Allocator;")
     out.append("typedef __sl_Context   __sl_MainContext;")
     out.append("")
     out.append("enum __sl_PlatformOps {")
-    for member_name, value in platform_ops_members:
-        out.append(f"    __sl_PlatformOp_{member_name} = {value},")
+    for member_name, expr in platform_ops_members:
+        out.append(f"    __sl_PlatformOp_{member_name} = {expr},")
     out.append("};")
     out.append("")
+
     return "\n".join(out)
 
 
@@ -264,15 +441,12 @@ def main() -> int:
     ap.add_argument("--stamp", help="Optional stamp file to touch/write")
     args = ap.parse_args()
 
-    if args.core_dir:
-        structs = load_core_structs(Path(args.core_dir))
-    else:
-        types_path = Path(args.types)
-        structs = load_core_structs(types_path.parent)
+    core_dir = Path(args.core_dir) if args.core_dir else Path(args.types).parent
+    decls, type_names = load_core_decls(core_dir)
     platform_enums = load_platform_enums(Path(args.platform))
     header_path = Path(args.header)
 
-    generated_block = emit_core_abi(structs, platform_enums)
+    generated_block = emit_core_abi(decls, type_names, platform_enums)
     header_text = header_path.read_text(encoding="utf-8")
     patched_header = patch_header_with_block(header_text, generated_block)
     write_if_changed(header_path, patched_header)
