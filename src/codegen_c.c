@@ -450,6 +450,46 @@ static int SliceSpanEq(
     return memcmp(src + aStart, src + bStart, (size_t)len) == 0;
 }
 
+static int NameEqPkgPrefixedMethod(
+    const char* name,
+    const char* src,
+    uint32_t    pkgStart,
+    uint32_t    pkgEnd,
+    uint32_t    methodStart,
+    uint32_t    methodEnd) {
+    uint32_t pkgLen;
+    uint32_t methodLen;
+    if (name == NULL || pkgEnd < pkgStart || methodEnd < methodStart) {
+        return 0;
+    }
+    pkgLen = pkgEnd - pkgStart;
+    methodLen = methodEnd - methodStart;
+    if (StrLen(name) != (size_t)(pkgLen + 2u + methodLen)) {
+        return 0;
+    }
+    if (memcmp(name, src + pkgStart, (size_t)pkgLen) != 0 || name[pkgLen] != '_'
+        || name[pkgLen + 1u] != '_')
+    {
+        return 0;
+    }
+    return memcmp(name + pkgLen + 2u, src + methodStart, (size_t)methodLen) == 0;
+}
+
+static int TypeNamePkgPrefixLen(const char* typeName, uint32_t* outPkgLen) {
+    uint32_t i = 0;
+    if (typeName == NULL || outPkgLen == NULL) {
+        return 0;
+    }
+    while (typeName[i] != '\0') {
+        if (typeName[i] == '_' && typeName[i + 1u] == '_' && i > 0) {
+            *outPkgLen = i;
+            return 1;
+        }
+        i++;
+    }
+    return 0;
+}
+
 enum {
     SLTypeContainer_SCALAR = 0,
     SLTypeContainer_ARRAY = 1,
@@ -3451,28 +3491,17 @@ static int CollectCallArgInfo(
     return 0;
 }
 
-/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
-static int ResolveCallTarget(
-    SLCBackendC*     c,
-    uint32_t         nameStart,
-    uint32_t         nameEnd,
-    const int32_t*   argNodes,
-    const SLTypeRef* argTypes,
-    uint32_t         argCount,
-    int              autoRefFirstArg,
-    const SLFnSig**  outSig,
-    const char**     outCalleeName) {
+static void GatherCallCandidatesBySlice(
+    const SLCBackendC* c,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLFnSig**    outCandidates,
+    uint32_t*          outCandidateLen,
+    int*               outNameFound) {
     const SLFnSig*   candidates[SLCCG_MAX_CALL_CANDIDATES];
     const SLFnSig*   byName[SLCCG_MAX_CALL_CANDIDATES];
     uint32_t         candidateLen = 0;
-    const SLFnSig*   bestSig = NULL;
-    const char*      bestName = NULL;
-    uint8_t          bestCosts[SLCCG_MAX_CALL_ARGS];
-    uint32_t         bestTotal = 0;
-    int              ambiguous = 0;
     int              nameFound = 0;
-    SLTypeRef        autoRefType;
-    int              hasAutoRefType = 0;
     uint32_t         i, j;
     const SLFnGroup* group = FindFnGroupBySlice(c, nameStart, nameEnd);
 
@@ -3515,6 +3544,94 @@ static int ResolveCallTarget(
             }
         }
     }
+    for (i = 0; i < candidateLen; i++) {
+        outCandidates[i] = candidates[i];
+    }
+    *outCandidateLen = candidateLen;
+    *outNameFound = nameFound;
+}
+
+static void GatherCallCandidatesByPkgMethod(
+    const SLCBackendC* c,
+    uint32_t           pkgStart,
+    uint32_t           pkgEnd,
+    uint32_t           methodStart,
+    uint32_t           methodEnd,
+    const SLFnSig**    outCandidates,
+    uint32_t*          outCandidateLen,
+    int*               outNameFound) {
+    const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+    uint32_t       candidateLen = 0;
+    int            nameFound = 0;
+    uint32_t       i;
+    for (i = 0; i < c->fnSigLen && candidateLen < SLCCG_MAX_CALL_CANDIDATES; i++) {
+        if (NameEqPkgPrefixedMethod(
+                c->fnSigs[i].slName, c->unit->source, pkgStart, pkgEnd, methodStart, methodEnd))
+        {
+            candidates[candidateLen++] = &c->fnSigs[i];
+            nameFound = 1;
+        }
+    }
+    for (i = 0; i < c->fnGroupLen && candidateLen < SLCCG_MAX_CALL_CANDIDATES; i++) {
+        const SLFnGroup* group = &c->fnGroups[i];
+        uint32_t         j;
+        if (!NameEqPkgPrefixedMethod(
+                group->name, c->unit->source, pkgStart, pkgEnd, methodStart, methodEnd))
+        {
+            continue;
+        }
+        nameFound = 1;
+        for (j = 0; j < group->memberCount && candidateLen < SLCCG_MAX_CALL_CANDIDATES; j++) {
+            const char*    memberName = c->fnGroupMembers[group->memberStart + j];
+            const SLFnSig* byName[SLCCG_MAX_CALL_CANDIDATES];
+            uint32_t       n = FindFnSigCandidatesByName(
+                c, memberName, byName, (uint32_t)(sizeof(byName) / sizeof(byName[0])));
+            uint32_t k;
+            uint32_t m;
+            if (n > (uint32_t)(sizeof(byName) / sizeof(byName[0]))) {
+                n = (uint32_t)(sizeof(byName) / sizeof(byName[0]));
+            }
+            for (k = 0; k < n && candidateLen < SLCCG_MAX_CALL_CANDIDATES; k++) {
+                int dup = 0;
+                for (m = 0; m < candidateLen; m++) {
+                    if (candidates[m] == byName[k]) {
+                        dup = 1;
+                        break;
+                    }
+                }
+                if (!dup) {
+                    candidates[candidateLen++] = byName[k];
+                }
+            }
+        }
+    }
+    for (i = 0; i < candidateLen; i++) {
+        outCandidates[i] = candidates[i];
+    }
+    *outCandidateLen = candidateLen;
+    *outNameFound = nameFound;
+}
+
+/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
+static int ResolveCallTargetFromCandidates(
+    SLCBackendC*     c,
+    const SLFnSig**  candidates,
+    uint32_t         candidateLen,
+    int              nameFound,
+    const int32_t*   argNodes,
+    const SLTypeRef* argTypes,
+    uint32_t         argCount,
+    int              autoRefFirstArg,
+    const SLFnSig**  outSig,
+    const char**     outCalleeName) {
+    const SLFnSig* bestSig = NULL;
+    const char*    bestName = NULL;
+    uint8_t        bestCosts[SLCCG_MAX_CALL_ARGS];
+    uint32_t       bestTotal = 0;
+    int            ambiguous = 0;
+    SLTypeRef      autoRefType;
+    int            hasAutoRefType = 0;
+    uint32_t       i;
 
     if (!nameFound) {
         return 1;
@@ -3607,6 +3724,65 @@ static int ResolveCallTarget(
     *outSig = bestSig;
     *outCalleeName = bestName;
     return 0;
+}
+
+/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
+static int ResolveCallTarget(
+    SLCBackendC*     c,
+    uint32_t         nameStart,
+    uint32_t         nameEnd,
+    const int32_t*   argNodes,
+    const SLTypeRef* argTypes,
+    uint32_t         argCount,
+    int              autoRefFirstArg,
+    const SLFnSig**  outSig,
+    const char**     outCalleeName) {
+    const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+    uint32_t       candidateLen = 0;
+    int            nameFound = 0;
+    GatherCallCandidatesBySlice(c, nameStart, nameEnd, candidates, &candidateLen, &nameFound);
+    return ResolveCallTargetFromCandidates(
+        c,
+        candidates,
+        candidateLen,
+        nameFound,
+        argNodes,
+        argTypes,
+        argCount,
+        autoRefFirstArg,
+        outSig,
+        outCalleeName);
+}
+
+/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
+static int ResolveCallTargetByPkgMethod(
+    SLCBackendC*     c,
+    uint32_t         pkgStart,
+    uint32_t         pkgEnd,
+    uint32_t         methodStart,
+    uint32_t         methodEnd,
+    const int32_t*   argNodes,
+    const SLTypeRef* argTypes,
+    uint32_t         argCount,
+    int              autoRefFirstArg,
+    const SLFnSig**  outSig,
+    const char**     outCalleeName) {
+    const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+    uint32_t       candidateLen = 0;
+    int            nameFound = 0;
+    GatherCallCandidatesByPkgMethod(
+        c, pkgStart, pkgEnd, methodStart, methodEnd, candidates, &candidateLen, &nameFound);
+    return ResolveCallTargetFromCandidates(
+        c,
+        candidates,
+        candidateLen,
+        nameFound,
+        argNodes,
+        argTypes,
+        argCount,
+        autoRefFirstArg,
+        outSig,
+        outCalleeName);
 }
 
 static int InferCompoundLiteralType(
@@ -4019,6 +4195,9 @@ static int InferExprType_CALL(
             uint32_t       argCount = 0;
             const SLFnSig* resolved = NULL;
             const char*    resolvedName = NULL;
+            uint32_t       recvPkgLen = 0;
+            int            recvHasPkgPrefix =
+                recvType.baseName != NULL && TypeNamePkgPrefixLen(recvType.baseName, &recvPkgLen);
             if (CollectCallArgInfo(c, nodeId, callee, 1, recvNode, argNodes, argTypes, &argCount)
                 == 0)
             {
@@ -4043,6 +4222,37 @@ static int InferExprType_CALL(
                         1,
                         &resolved,
                         &resolvedName);
+                }
+                if ((status == 1 || status == 2) && recvHasPkgPrefix) {
+                    int prefixedStatus = ResolveCallTargetByPkgMethod(
+                        c,
+                        0,
+                        recvPkgLen,
+                        cn->dataStart,
+                        cn->dataEnd,
+                        argNodes,
+                        argTypes,
+                        argCount,
+                        0,
+                        &resolved,
+                        &resolvedName);
+                    if (prefixedStatus == 2) {
+                        prefixedStatus = ResolveCallTargetByPkgMethod(
+                            c,
+                            0,
+                            recvPkgLen,
+                            cn->dataStart,
+                            cn->dataEnd,
+                            argNodes,
+                            argTypes,
+                            argCount,
+                            1,
+                            &resolved,
+                            &resolvedName);
+                    }
+                    if (prefixedStatus == 0) {
+                        status = 0;
+                    }
                 }
                 if (status == 0 && resolved != NULL) {
                     (void)resolvedName;
@@ -6262,6 +6472,10 @@ static int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                 uint32_t       argCount = 0;
                 const SLFnSig* resolvedSig = NULL;
                 const char*    resolvedName = NULL;
+                uint32_t       recvPkgLen = 0;
+                int            recvHasPkgPrefix =
+                    recvType.baseName != NULL
+                    && TypeNamePkgPrefixLen(recvType.baseName, &recvPkgLen);
                 if (CollectCallArgInfo(c, nodeId, child, 1, recvNode, argNodes, argTypes, &argCount)
                     == 0)
                 {
@@ -6293,6 +6507,42 @@ static int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                         if (status == 0 && resolvedName != NULL) {
                             return EmitResolvedCall(
                                 c, nodeId, resolvedName, resolvedSig, argNodes, argCount, 1);
+                        }
+                    }
+                    if ((status == 1 || status == 2) && recvHasPkgPrefix) {
+                        int prefixedStatus = ResolveCallTargetByPkgMethod(
+                            c,
+                            0,
+                            recvPkgLen,
+                            callee->dataStart,
+                            callee->dataEnd,
+                            argNodes,
+                            argTypes,
+                            argCount,
+                            0,
+                            &resolvedSig,
+                            &resolvedName);
+                        if (prefixedStatus == 0 && resolvedName != NULL) {
+                            return EmitResolvedCall(
+                                c, nodeId, resolvedName, resolvedSig, argNodes, argCount, 0);
+                        }
+                        if (prefixedStatus == 2) {
+                            prefixedStatus = ResolveCallTargetByPkgMethod(
+                                c,
+                                0,
+                                recvPkgLen,
+                                callee->dataStart,
+                                callee->dataEnd,
+                                argNodes,
+                                argTypes,
+                                argCount,
+                                1,
+                                &resolvedSig,
+                                &resolvedName);
+                            if (prefixedStatus == 0 && resolvedName != NULL) {
+                                return EmitResolvedCall(
+                                    c, nodeId, resolvedName, resolvedSig, argNodes, argCount, 1);
+                            }
                         }
                     }
                 }

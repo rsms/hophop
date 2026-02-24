@@ -553,6 +553,90 @@ static int32_t SLTCFindFnGroupIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t 
     return -1;
 }
 
+static int SLTCResolveAliasTypeId(SLTypeCheckCtx* c, int32_t typeId);
+
+static int SLTCNameEqPkgPrefixedMethod(
+    SLTypeCheckCtx* c,
+    uint32_t        candidateStart,
+    uint32_t        candidateEnd,
+    uint32_t        pkgStart,
+    uint32_t        pkgEnd,
+    uint32_t        methodStart,
+    uint32_t        methodEnd) {
+    uint32_t pkgLen;
+    uint32_t methodLen;
+    if (candidateEnd < candidateStart || pkgEnd < pkgStart || methodEnd < methodStart) {
+        return 0;
+    }
+    pkgLen = pkgEnd - pkgStart;
+    methodLen = methodEnd - methodStart;
+    if (candidateEnd - candidateStart != pkgLen + 2u + methodLen) {
+        return 0;
+    }
+    if (!SLNameEqSlice(c->src, candidateStart, candidateStart + pkgLen, pkgStart, pkgEnd)) {
+        return 0;
+    }
+    if (c->src.ptr[candidateStart + pkgLen] != '_'
+        || c->src.ptr[candidateStart + pkgLen + 1u] != '_')
+    {
+        return 0;
+    }
+    return SLNameEqSlice(
+        c->src, candidateStart + pkgLen + 2u, candidateEnd, methodStart, methodEnd);
+}
+
+static int SLTCExtractPkgPrefixFromTypeName(
+    SLTypeCheckCtx* c,
+    uint32_t        typeNameStart,
+    uint32_t        typeNameEnd,
+    uint32_t*       outPkgStart,
+    uint32_t*       outPkgEnd) {
+    uint32_t i;
+    if (typeNameEnd <= typeNameStart + 2u) {
+        return 0;
+    }
+    for (i = typeNameStart; i + 1u < typeNameEnd; i++) {
+        if (c->src.ptr[i] == '_' && c->src.ptr[i + 1u] == '_') {
+            if (i == typeNameStart) {
+                return 0;
+            }
+            *outPkgStart = typeNameStart;
+            *outPkgEnd = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int SLTCResolveReceiverPkgPrefix(
+    SLTypeCheckCtx* c, int32_t typeId, uint32_t* outPkgStart, uint32_t* outPkgEnd) {
+    uint32_t depth = 0;
+    while (typeId >= 0 && (uint32_t)typeId < c->typeLen && depth++ <= c->typeLen) {
+        const SLTCType* t = &c->types[typeId];
+        switch (t->kind) {
+            case SLTCType_PTR:
+            case SLTCType_REF:
+            case SLTCType_OPTIONAL: typeId = t->baseType; continue;
+            case SLTCType_ALIAS:
+                if (SLTCResolveAliasTypeId(c, typeId) != 0) {
+                    return -1;
+                }
+                if (SLTCExtractPkgPrefixFromTypeName(
+                        c, t->nameStart, t->nameEnd, outPkgStart, outPkgEnd))
+                {
+                    return 1;
+                }
+                typeId = t->baseType;
+                continue;
+            case SLTCType_NAMED:
+                return SLTCExtractPkgPrefixFromTypeName(
+                    c, t->nameStart, t->nameEnd, outPkgStart, outPkgEnd);
+            default: return 0;
+        }
+    }
+    return 0;
+}
+
 static int SLTCFieldLookup(
     SLTypeCheckCtx* c,
     int32_t         typeId,
@@ -2423,24 +2507,75 @@ static void SLTCGatherCallCandidates(
     *outCandidateCount = count;
 }
 
+static void SLTCGatherCallCandidatesByPkgMethod(
+    SLTypeCheckCtx* c,
+    uint32_t        pkgStart,
+    uint32_t        pkgEnd,
+    uint32_t        methodStart,
+    uint32_t        methodEnd,
+    int32_t*        outCandidates,
+    uint32_t*       outCandidateCount,
+    int*            outNameFound) {
+    uint32_t count = 0;
+    uint32_t i;
+    *outNameFound = 0;
+    for (i = 0; i < c->funcLen && count < SLTC_MAX_CALL_CANDIDATES; i++) {
+        if (SLTCNameEqPkgPrefixedMethod(
+                c,
+                c->funcs[i].nameStart,
+                c->funcs[i].nameEnd,
+                pkgStart,
+                pkgEnd,
+                methodStart,
+                methodEnd))
+        {
+            outCandidates[count++] = (int32_t)i;
+            *outNameFound = 1;
+        }
+    }
+    for (i = 0; i < c->fnGroupLen; i++) {
+        const SLTCFnGroup* g = &c->fnGroups[i];
+        uint32_t           j;
+        if (!SLTCNameEqPkgPrefixedMethod(
+                c, g->nameStart, g->nameEnd, pkgStart, pkgEnd, methodStart, methodEnd))
+        {
+            continue;
+        }
+        *outNameFound = 1;
+        for (j = 0; j < g->memberCount && count < SLTC_MAX_CALL_CANDIDATES; j++) {
+            int32_t  fnIdx = c->fnGroupMembers[g->memberStart + j];
+            uint32_t k;
+            int      dup = 0;
+            for (k = 0; k < count; k++) {
+                if (outCandidates[k] == fnIdx) {
+                    dup = 1;
+                    break;
+                }
+            }
+            if (!dup) {
+                outCandidates[count++] = fnIdx;
+            }
+        }
+    }
+    *outCandidateCount = count;
+}
+
 /* Returns 0: success, 1: no name, 2: no match, 3: ambiguous, 4: writable-ref temporary,
  * 5: compound infer ambiguous, -1: error */
-static int SLTCResolveCallByName(
+static int SLTCResolveCallFromCandidates(
     SLTypeCheckCtx* c,
-    uint32_t        nameStart,
-    uint32_t        nameEnd,
+    const int32_t*  candidates,
+    uint32_t        candidateCount,
+    int             nameFound,
     const int32_t*  argNodes,
     uint32_t        argCount,
     int             autoRefFirstArg,
     int32_t*        outFuncIndex,
     int32_t*        outMutRefTempArgNode) {
-    int32_t  candidates[SLTC_MAX_CALL_CANDIDATES];
     uint8_t  bestCosts[SLTC_MAX_CALL_ARGS];
     int32_t  preArgTypes[SLTC_MAX_CALL_ARGS];
     uint8_t  argNeedsExpected[SLTC_MAX_CALL_ARGS];
     uint8_t  argHasPreType[SLTC_MAX_CALL_ARGS];
-    uint32_t candidateCount = 0;
-    int      nameFound = 0;
     int      haveBest = 0;
     int      ambiguous = 0;
     int      hasExpectedDependentArg = 0;
@@ -2450,8 +2585,6 @@ static int SLTCResolveCallByName(
     uint32_t bestTotal = 0;
     uint32_t i;
     uint32_t p;
-
-    SLTCGatherCallCandidates(c, nameStart, nameEnd, candidates, &candidateCount, &nameFound);
     if (!nameFound) {
         return 1;
     }
@@ -2582,6 +2715,64 @@ static int SLTCResolveCallByName(
         *outMutRefTempArgNode = -1;
     }
     return 0;
+}
+
+/* Returns 0: success, 1: no name, 2: no match, 3: ambiguous, 4: writable-ref temporary,
+ * 5: compound infer ambiguous, -1: error */
+static int SLTCResolveCallByName(
+    SLTypeCheckCtx* c,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    const int32_t*  argNodes,
+    uint32_t        argCount,
+    int             autoRefFirstArg,
+    int32_t*        outFuncIndex,
+    int32_t*        outMutRefTempArgNode) {
+    int32_t  candidates[SLTC_MAX_CALL_CANDIDATES];
+    uint32_t candidateCount = 0;
+    int      nameFound = 0;
+
+    SLTCGatherCallCandidates(c, nameStart, nameEnd, candidates, &candidateCount, &nameFound);
+    return SLTCResolveCallFromCandidates(
+        c,
+        candidates,
+        candidateCount,
+        nameFound,
+        argNodes,
+        argCount,
+        autoRefFirstArg,
+        outFuncIndex,
+        outMutRefTempArgNode);
+}
+
+/* Returns 0: success, 1: no name, 2: no match, 3: ambiguous, 4: writable-ref temporary,
+ * 5: compound infer ambiguous, -1: error */
+static int SLTCResolveCallByPkgMethod(
+    SLTypeCheckCtx* c,
+    uint32_t        pkgStart,
+    uint32_t        pkgEnd,
+    uint32_t        methodStart,
+    uint32_t        methodEnd,
+    const int32_t*  argNodes,
+    uint32_t        argCount,
+    int             autoRefFirstArg,
+    int32_t*        outFuncIndex,
+    int32_t*        outMutRefTempArgNode) {
+    int32_t  candidates[SLTC_MAX_CALL_CANDIDATES];
+    uint32_t candidateCount = 0;
+    int      nameFound = 0;
+    SLTCGatherCallCandidatesByPkgMethod(
+        c, pkgStart, pkgEnd, methodStart, methodEnd, candidates, &candidateCount, &nameFound);
+    return SLTCResolveCallFromCandidates(
+        c,
+        candidates,
+        candidateCount,
+        nameFound,
+        argNodes,
+        argCount,
+        autoRefFirstArg,
+        outFuncIndex,
+        outMutRefTempArgNode);
 }
 
 static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
@@ -4556,6 +4747,9 @@ static int SLTCTypeExpr_CALL(
             int32_t  resolvedFn = -1;
             int32_t  mutRefTempArgNode = -1;
             int      status;
+            int      recvPkgStatus = 0;
+            uint32_t recvPkgStart = 0;
+            uint32_t recvPkgEnd = 0;
             if (SLTCCollectCallArgs(c, nodeId, calleeNode, 1, recvNode, argNodes, NULL, &argCount)
                 != 0)
             {
@@ -4580,6 +4774,43 @@ static int SLTCTypeExpr_CALL(
                     1,
                     &resolvedFn,
                     &mutRefTempArgNode);
+            }
+            recvPkgStatus = SLTCResolveReceiverPkgPrefix(c, recvType, &recvPkgStart, &recvPkgEnd);
+            if (recvPkgStatus < 0) {
+                return -1;
+            }
+            if ((status == 1 || status == 2) && recvPkgStatus == 1) {
+                int prefixedStatus = SLTCResolveCallByPkgMethod(
+                    c,
+                    recvPkgStart,
+                    recvPkgEnd,
+                    callee->dataStart,
+                    callee->dataEnd,
+                    argNodes,
+                    argCount,
+                    0,
+                    &resolvedFn,
+                    &mutRefTempArgNode);
+                if (prefixedStatus == 2) {
+                    prefixedStatus = SLTCResolveCallByPkgMethod(
+                        c,
+                        recvPkgStart,
+                        recvPkgEnd,
+                        callee->dataStart,
+                        callee->dataEnd,
+                        argNodes,
+                        argCount,
+                        1,
+                        &resolvedFn,
+                        &mutRefTempArgNode);
+                }
+                if (prefixedStatus == 0) {
+                    status = 0;
+                } else if (status == 2 && (prefixedStatus == 1 || prefixedStatus == 2)) {
+                    status = 2;
+                } else if (prefixedStatus != 1) {
+                    status = prefixedStatus;
+                }
             }
             if (status == 0) {
                 if (SLTCValidateCallContextRequirements(c, c->funcs[resolvedFn].contextType) != 0) {
