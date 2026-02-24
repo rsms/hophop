@@ -102,6 +102,7 @@ struct __sl_Allocator {
 
 struct __sl_Context {
     __sl_Allocator* mem;
+    __sl_Allocator* temp_mem;
     __sl_Logger log;
 };
 // END generated code

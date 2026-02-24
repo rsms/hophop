@@ -120,6 +120,7 @@ int main(void) {
     static __sl_Allocator gAllocator = { .impl = platform_mem_allocator_impl };
     __sl_Context          gMainContext = {
         .mem = &gAllocator,
+        .temp_mem = &gAllocator,
         .log =
             {
                 .handler = platform_log_handler,

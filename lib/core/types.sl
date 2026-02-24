@@ -41,5 +41,6 @@ pub struct Allocator {
 
 pub struct Context {
     mem *Allocator
+    temp_mem *Allocator
     log Logger
 }
