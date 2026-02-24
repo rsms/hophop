@@ -152,6 +152,67 @@ static inline __sl_uint __sl_str_sizeof(const __sl_str* s) {
     return s != NULL ? (__sl_uint)(sizeof(__sl_u32) + (__sl_uint)s->len + 1u) : 0u;
 }
 
+static inline __sl_bool __sl_mem_equal(const void* a, const void* b, __sl_uint n) {
+    return n == 0u || memcmp(a, b, n) == 0;
+}
+
+static inline __sl_int __sl_mem_order(
+    const void* a, __sl_uint a_len, const void* b, __sl_uint b_len) {
+    __sl_uint n = a_len < b_len ? a_len : b_len;
+    int       cmp = n > 0u ? memcmp(a, b, n) : 0;
+    if (cmp < 0) {
+        return -1;
+    }
+    if (cmp > 0) {
+        return 1;
+    }
+    if (a_len < b_len) {
+        return -1;
+    }
+    if (a_len > b_len) {
+        return 1;
+    }
+    return 0;
+}
+
+static inline __sl_bool __sl_str_equal(const __sl_str* a, const __sl_str* b) {
+    __sl_uint   a_len = a != NULL ? (__sl_uint)a->len : 0u;
+    __sl_uint   b_len = b != NULL ? (__sl_uint)b->len : 0u;
+    const void* a_ptr = (a != NULL && a_len > 0u) ? (const void*)a->bytes : (const void*)0;
+    const void* b_ptr = (b != NULL && b_len > 0u) ? (const void*)b->bytes : (const void*)0;
+    return a_len == b_len && __sl_mem_equal(a_ptr, b_ptr, a_len);
+}
+
+static inline __sl_int __sl_str_order(const __sl_str* a, const __sl_str* b) {
+    __sl_uint   a_len = a != NULL ? (__sl_uint)a->len : 0u;
+    __sl_uint   b_len = b != NULL ? (__sl_uint)b->len : 0u;
+    const void* a_ptr = (a != NULL && a_len > 0u) ? (const void*)a->bytes : (const void*)0;
+    const void* b_ptr = (b != NULL && b_len > 0u) ? (const void*)b->bytes : (const void*)0;
+    return __sl_mem_order(a_ptr, a_len, b_ptr, b_len);
+}
+
+static inline __sl_bool __sl_slice_equal_ro(__sl_slice_ro a, __sl_slice_ro b, __sl_uint elem_size) {
+    __sl_uint a_bytes = a.len * elem_size;
+    __sl_uint b_bytes = b.len * elem_size;
+    return a.len == b.len && __sl_mem_equal(a.ptr, b.ptr, a_bytes < b_bytes ? a_bytes : b_bytes);
+}
+
+static inline __sl_int __sl_slice_order_ro(__sl_slice_ro a, __sl_slice_ro b, __sl_uint elem_size) {
+    return __sl_mem_order(a.ptr, a.len * elem_size, b.ptr, b.len * elem_size);
+}
+
+static inline __sl_int __sl_ptr_order(const void* a, const void* b) {
+    uintptr_t aa = (uintptr_t)a;
+    uintptr_t bb = (uintptr_t)b;
+    if (aa < bb) {
+        return -1;
+    }
+    if (aa > bb) {
+        return 1;
+    }
+    return 0;
+}
+
 static inline void* __sl_unwrap1(const char* file, __sl_u32 line, const void* p) {
     if __sl_unlikely (p == NULL) {
         __sl_panic(__sl_strlit("unwrap: null value"), file, line);

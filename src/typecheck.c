@@ -162,6 +162,8 @@ typedef struct {
     int     hasImplicitMainRootContext;
     int32_t implicitMainContextType;
     int32_t activeCallWithNode;
+    int32_t currentFunctionIndex;
+    int     currentFunctionIsCompareHook;
 
     const int32_t* defaultFieldNodes;
     const int32_t* defaultFieldTypes;
@@ -1597,6 +1599,117 @@ static int SLTCIsBoolType(SLTypeCheckCtx* c, int32_t typeId) {
     return typeId == c->typeBool;
 }
 
+static int SLTCIsNamedDeclKind(SLTypeCheckCtx* c, int32_t typeId, SLAstKind kind) {
+    int32_t declNode;
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != SLTCType_NAMED) {
+        return 0;
+    }
+    declNode = c->types[typeId].declNode;
+    return declNode >= 0 && (uint32_t)declNode < c->ast->len
+        && c->ast->nodes[declNode].kind == kind;
+}
+
+static int SLTCIsStringLikeType(SLTypeCheckCtx* c, int32_t typeId) {
+    int32_t baseType;
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
+        return 0;
+    }
+    if (typeId == c->typeStr) {
+        return 1;
+    }
+    if (c->types[typeId].kind != SLTCType_PTR && c->types[typeId].kind != SLTCType_REF) {
+        return 0;
+    }
+    baseType = SLTCResolveAliasBaseType(c, c->types[typeId].baseType);
+    return baseType == c->typeStr;
+}
+
+static int SLTCIsComparableTypeRec(SLTypeCheckCtx* c, int32_t typeId, uint32_t depth) {
+    uint32_t i;
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || depth > c->typeLen) {
+        return 0;
+    }
+    if (SLTCIsStringLikeType(c, typeId)) {
+        return 1;
+    }
+    switch (c->types[typeId].kind) {
+        case SLTCType_BUILTIN:
+        case SLTCType_UNTYPED_INT:
+        case SLTCType_UNTYPED_FLOAT:
+            return SLTCIsBoolType(c, typeId) || SLTCIsNumericType(c, typeId);
+        case SLTCType_ARRAY:
+        case SLTCType_SLICE:
+            return SLTCIsComparableTypeRec(c, c->types[typeId].baseType, depth + 1u);
+        case SLTCType_PTR:
+        case SLTCType_REF: return 1;
+        case SLTCType_NAMED:
+            if (SLTCIsNamedDeclKind(c, typeId, SLAst_ENUM)) {
+                return 1;
+            }
+            for (i = 0; i < c->types[typeId].fieldCount; i++) {
+                uint32_t fieldIdx = c->types[typeId].fieldStart + i;
+                if (!SLTCIsComparableTypeRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
+                    return 0;
+                }
+            }
+            return 1;
+        case SLTCType_ANON_STRUCT:
+            for (i = 0; i < c->types[typeId].fieldCount; i++) {
+                uint32_t fieldIdx = c->types[typeId].fieldStart + i;
+                if (!SLTCIsComparableTypeRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
+                    return 0;
+                }
+            }
+            return 1;
+        case SLTCType_ANON_UNION:
+            for (i = 0; i < c->types[typeId].fieldCount; i++) {
+                uint32_t fieldIdx = c->types[typeId].fieldStart + i;
+                if (!SLTCIsComparableTypeRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
+                    return 0;
+                }
+            }
+            return 1;
+        case SLTCType_OPTIONAL:
+            return SLTCIsComparableTypeRec(c, c->types[typeId].baseType, depth + 1u);
+        case SLTCType_NULL: return 1;
+        default:            return 0;
+    }
+}
+
+static int SLTCIsOrderedTypeRec(SLTypeCheckCtx* c, int32_t typeId, uint32_t depth) {
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || depth > c->typeLen) {
+        return 0;
+    }
+    if (SLTCIsStringLikeType(c, typeId)) {
+        return 1;
+    }
+    switch (c->types[typeId].kind) {
+        case SLTCType_BUILTIN:
+        case SLTCType_UNTYPED_INT:
+        case SLTCType_UNTYPED_FLOAT: return SLTCIsNumericType(c, typeId);
+        case SLTCType_ARRAY:
+        case SLTCType_SLICE:         return SLTCIsOrderedTypeRec(c, c->types[typeId].baseType, depth + 1u);
+        case SLTCType_PTR:
+        case SLTCType_REF:           return 1;
+        case SLTCType_NAMED:         return SLTCIsNamedDeclKind(c, typeId, SLAst_ENUM);
+        case SLTCType_OPTIONAL:
+            return SLTCIsOrderedTypeRec(c, c->types[typeId].baseType, depth + 1u);
+        default: return 0;
+    }
+}
+
+static int SLTCIsComparableType(SLTypeCheckCtx* c, int32_t typeId) {
+    return SLTCIsComparableTypeRec(c, typeId, 0u);
+}
+
+static int SLTCIsOrderedType(SLTypeCheckCtx* c, int32_t typeId) {
+    return SLTCIsOrderedTypeRec(c, typeId, 0u);
+}
+
 static int SLTCTypeSupportsLen(SLTypeCheckCtx* c, int32_t typeId) {
     typeId = SLTCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
@@ -1683,6 +1796,19 @@ static int SLTCTypeContainsVarSizeByValue(SLTypeCheckCtx* c, int32_t typeId) {
         return SLTCTypeContainsVarSizeByValue(c, c->types[typeId].baseType);
     }
     return SLTCTypeIsVarSize(c, typeId);
+}
+
+static int SLTCIsComparisonHookName(
+    SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int* outIsEqualHook) {
+    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "__equal")) {
+        *outIsEqualHook = 1;
+        return 1;
+    }
+    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "__order")) {
+        *outIsEqualHook = 0;
+        return 1;
+    }
+    return 0;
 }
 
 static int SLTCTypeIsU8Slice(SLTypeCheckCtx* c, int32_t typeId, int requireMutable) {
@@ -2466,6 +2592,91 @@ static int SLTCGetFunctionTypeSignature(
     *outParamStart = t->fieldStart;
     *outParamCount = t->fieldCount;
     return 0;
+}
+
+static int SLTCResolveComparisonHookArgCost(
+    SLTypeCheckCtx* c, int32_t paramType, int32_t argType, uint8_t* outCost) {
+    int32_t resolvedParam = SLTCResolveAliasBaseType(c, paramType);
+    uint8_t baseCost = 0;
+    if (SLTCConversionCost(c, paramType, argType, outCost) == 0) {
+        return 0;
+    }
+    if (resolvedParam < 0 || (uint32_t)resolvedParam >= c->typeLen) {
+        return -1;
+    }
+    if (c->types[resolvedParam].kind == SLTCType_REF && !SLTCTypeIsMutable(&c->types[resolvedParam])
+        && SLTCConversionCost(c, c->types[resolvedParam].baseType, argType, &baseCost) == 0)
+    {
+        *outCost = (uint8_t)(baseCost < 254u ? baseCost + 1u : 255u);
+        return 0;
+    }
+    return -1;
+}
+
+/* Returns 0 success, 1 no hook name, 2 no viable hook, 3 ambiguous */
+static int SLTCResolveComparisonHook(
+    SLTypeCheckCtx* c,
+    const char*     hookName,
+    int32_t         lhsType,
+    int32_t         rhsType,
+    int32_t*        outFuncIndex) {
+    uint8_t  bestCosts[2];
+    int      haveBest = 0;
+    int      ambiguous = 0;
+    int      nameFound = 0;
+    uint32_t bestTotal = 0;
+    uint32_t i;
+    for (i = 0; i < c->funcLen; i++) {
+        const SLTCFunction* fn = &c->funcs[i];
+        uint8_t             curCosts[2];
+        uint32_t            curTotal = 0;
+        int                 cmp;
+        if (!SLNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, hookName)) {
+            continue;
+        }
+        nameFound = 1;
+        if (fn->paramCount != 2) {
+            continue;
+        }
+        if (SLTCResolveComparisonHookArgCost(
+                c, c->funcParamTypes[fn->paramTypeStart], lhsType, &curCosts[0])
+                != 0
+            || SLTCResolveComparisonHookArgCost(
+                   c, c->funcParamTypes[fn->paramTypeStart + 1u], rhsType, &curCosts[1])
+                   != 0)
+        {
+            continue;
+        }
+        curTotal = (uint32_t)curCosts[0] + (uint32_t)curCosts[1];
+        if (!haveBest) {
+            *outFuncIndex = (int32_t)i;
+            haveBest = 1;
+            ambiguous = 0;
+            bestTotal = curTotal;
+            bestCosts[0] = curCosts[0];
+            bestCosts[1] = curCosts[1];
+            continue;
+        }
+        cmp = SLTCCostVectorCompare(curCosts, bestCosts, 2u);
+        if (cmp < 0 || (cmp == 0 && curTotal < bestTotal)) {
+            *outFuncIndex = (int32_t)i;
+            ambiguous = 0;
+            bestTotal = curTotal;
+            bestCosts[0] = curCosts[0];
+            bestCosts[1] = curCosts[1];
+            continue;
+        }
+        if (cmp == 0 && curTotal == bestTotal) {
+            ambiguous = 1;
+        }
+    }
+    if (!nameFound) {
+        return 1;
+    }
+    if (!haveBest) {
+        return 2;
+    }
+    return ambiguous ? 3 : 0;
 }
 
 static void SLTCGatherCallCandidates(
@@ -3279,6 +3490,24 @@ static int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
     }
     if (contextType >= 0 && SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "main")) {
         return SLTCFailSpan(c, SLDiag_UNEXPECTED_TOKEN, n->start, n->end);
+    }
+    {
+        int isEqualHook = 0;
+        int intType = -1;
+        if (SLTCIsComparisonHookName(c, n->dataStart, n->dataEnd, &isEqualHook)) {
+            if (paramCount != 2 || contextType >= 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_INVALID_COMPARISON_HOOK_SIGNATURE);
+            }
+            intType = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+            if ((isEqualHook && returnType != c->typeBool)
+                || (!isEqualHook && returnType != intType))
+            {
+                return SLTCFailNode(c, nodeId, SLDiag_INVALID_COMPARISON_HOOK_SIGNATURE);
+            }
+            if (!SLTCCanAssign(c, c->scratchParamTypes[0], c->scratchParamTypes[1])) {
+                return SLTCFailNode(c, nodeId, SLDiag_INVALID_COMPARISON_HOOK_SIGNATURE);
+            }
+        }
     }
 
     {
@@ -4263,6 +4492,9 @@ static int SLTCTypeExpr_IDENT(
         }
     }
     if (SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "context")) {
+        if (c->currentFunctionIsCompareHook) {
+            return SLTCFailNode(c, nodeId, SLDiag_COMPARISON_HOOK_IMPURE);
+        }
         int32_t contextTypeId = -1;
         if (c->currentContextType >= 0) {
             contextTypeId = c->currentContextType;
@@ -4289,6 +4521,9 @@ static int SLTCTypeExpr_IDENT(
     {
         int32_t varLikeNode = SLTCFindTopLevelVarLikeNode(c, n->dataStart, n->dataEnd);
         if (varLikeNode >= 0) {
+            if (c->currentFunctionIsCompareHook) {
+                return SLTCFailNode(c, nodeId, SLDiag_COMPARISON_HOOK_IMPURE);
+            }
             return SLTCTypeTopLevelVarLikeNode(c, varLikeNode, outType);
         }
     }
@@ -4359,6 +4594,9 @@ static int SLTCTypeExpr_CALL_WITH_CONTEXT(
 static int SLTCTypeExpr_NEW(
     SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
     (void)n;
+    if (c->currentFunctionIsCompareHook) {
+        return SLTCFailNode(c, nodeId, SLDiag_COMPARISON_HOOK_IMPURE);
+    }
     return SLTCTypeNewExpr(c, nodeId, outType);
 }
 
@@ -4371,6 +4609,9 @@ static int SLTCTypeExpr_CALL(
     (void)n;
     if (calleeNode < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_NOT_CALLABLE);
+    }
+    if (c->currentFunctionIsCompareHook) {
+        return SLTCFailNode(c, nodeId, SLDiag_COMPARISON_HOOK_IMPURE);
     }
     if (c->ast->nodes[calleeNode].kind == SLAst_IDENT) {
         const SLAstNode* callee = &c->ast->nodes[calleeNode];
@@ -5168,6 +5409,7 @@ static int SLTCTypeExpr_BINARY(
     int32_t     lhsType;
     int32_t     rhsType;
     int32_t     commonType;
+    int32_t     hookFn = -1;
     SLTokenKind op;
     if (lhsNode < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
@@ -5221,15 +5463,40 @@ static int SLTCTypeExpr_BINARY(
         }
     }
 
-    if (SLTCCoerceForBinary(c, lhsType, rhsType, &commonType) != 0) {
-        return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
-    }
-
     if (op == SLTok_EQ || op == SLTok_NEQ || op == SLTok_LT || op == SLTok_GT || op == SLTok_LTE
         || op == SLTok_GTE)
     {
+        int hookStatus = SLTCResolveComparisonHook(
+            c,
+            (op == SLTok_EQ || op == SLTok_NEQ) ? "__equal" : "__order",
+            lhsType,
+            rhsType,
+            &hookFn);
+        if (hookStatus == 0) {
+            *outType = c->typeBool;
+            return 0;
+        }
+        if (hookStatus == 3) {
+            return SLTCFailNode(c, nodeId, SLDiag_AMBIGUOUS_CALL);
+        }
+        if (SLTCCoerceForBinary(c, lhsType, rhsType, &commonType) != 0) {
+            return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+        }
+        if (op == SLTok_EQ || op == SLTok_NEQ) {
+            if (!SLTCIsComparableType(c, commonType)) {
+                return SLTCFailNode(c, nodeId, SLDiag_TYPE_NOT_COMPARABLE);
+            }
+        } else {
+            if (!SLTCIsOrderedType(c, commonType)) {
+                return SLTCFailNode(c, nodeId, SLDiag_TYPE_NOT_ORDERED);
+            }
+        }
         *outType = c->typeBool;
         return 0;
+    }
+
+    if (SLTCCoerceForBinary(c, lhsType, rhsType, &commonType) != 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
     }
 
     if (!SLTCIsNumericType(c, commonType)) {
@@ -5821,12 +6088,18 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
     int32_t             savedContextType = c->currentContextType;
     int                 savedImplicitRoot = c->hasImplicitMainRootContext;
     int32_t             savedImplicitMainContextType = c->implicitMainContextType;
+    int32_t             savedFunctionIndex = c->currentFunctionIndex;
+    int                 savedFunctionIsCompareHook = c->currentFunctionIsCompareHook;
+    int                 isEqualHook = 0;
 
     if (nodeId < 0) {
         return 0;
     }
 
     c->localLen = 0;
+    c->currentFunctionIndex = funcIndex;
+    c->currentFunctionIsCompareHook = SLTCIsComparisonHookName(
+        c, fn->nameStart, fn->nameEnd, &isEqualHook);
 
     child = SLAstFirstChild(c->ast, nodeId);
     while (child >= 0) {
@@ -5849,6 +6122,8 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
     }
 
     if (bodyNode < 0) {
+        c->currentFunctionIndex = savedFunctionIndex;
+        c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;
         return 0;
     }
 
@@ -5862,6 +6137,8 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
         uint32_t contextNameStart = 0;
         uint32_t contextNameEnd = 0;
         if (contextLocalType < 0) {
+            c->currentFunctionIndex = savedFunctionIndex;
+            c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;
             c->currentContextType = savedContextType;
             c->hasImplicitMainRootContext = savedImplicitRoot;
             c->implicitMainContextType = savedImplicitMainContextType;
@@ -5879,6 +6156,8 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
         if (contextNameEnd <= contextNameStart
             || SLTCLocalAdd(c, contextNameStart, contextNameEnd, contextLocalType) != 0)
         {
+            c->currentFunctionIndex = savedFunctionIndex;
+            c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;
             c->currentContextType = savedContextType;
             c->hasImplicitMainRootContext = savedImplicitRoot;
             c->implicitMainContextType = savedImplicitMainContextType;
@@ -5892,6 +6171,8 @@ static int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
 
     {
         int rc = SLTCTypeBlock(c, bodyNode, fn->returnType, 0, 0);
+        c->currentFunctionIndex = savedFunctionIndex;
+        c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;
         c->currentContextType = savedContextType;
         c->hasImplicitMainRootContext = savedImplicitRoot;
         c->implicitMainContextType = savedImplicitMainContextType;
@@ -5990,6 +6271,8 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
     c.hasImplicitMainRootContext = 0;
     c.implicitMainContextType = -1;
     c.activeCallWithNode = -1;
+    c.currentFunctionIndex = -1;
+    c.currentFunctionIsCompareHook = 0;
     c.defaultFieldNodes = NULL;
     c.defaultFieldTypes = NULL;
     c.defaultFieldCount = 0;

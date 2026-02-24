@@ -3108,6 +3108,7 @@ static int EmitEffectiveContextFieldValue(
     SLCBackendC* c, const char* fieldName, const SLTypeRef* requiredType);
 static int InferNewExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
 static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType);
+static int EmitContextArgForSig(SLCBackendC* c, const SLFnSig* sig);
 static int StructHasFieldDefaults(const SLCBackendC* c, const char* ownerType);
 static int TypeRefAssignableCost(
     SLCBackendC* c, const SLTypeRef* dst, const SLTypeRef* src, uint8_t* outCost);
@@ -4932,6 +4933,249 @@ static int TypeRefIsOwnedRuntimeArrayStruct(const SLTypeRef* t) {
     return SliceStructPtrDepth(t) == 0;
 }
 
+static int TypeRefIsNamedDeclKind(const SLCBackendC* c, const SLTypeRef* t, SLAstKind wantKind) {
+    const char*           baseName;
+    const SLNameMap*      map;
+    const SLAnonTypeInfo* anon;
+    if (t == NULL || !t->valid || t->containerKind != SLTypeContainer_SCALAR
+        || t->containerPtrDepth != 0 || t->ptrDepth != 0 || t->baseName == NULL)
+    {
+        return 0;
+    }
+    baseName = ResolveScalarAliasBaseName(c, t->baseName);
+    if (baseName == NULL) {
+        baseName = t->baseName;
+    }
+    map = FindNameByCName(c, baseName);
+    if (map != NULL) {
+        return map->kind == wantKind;
+    }
+    anon = FindAnonTypeByCName(c, baseName);
+    if (anon != NULL) {
+        if (wantKind == SLAst_STRUCT) {
+            return anon->isUnion == 0;
+        }
+        if (wantKind == SLAst_UNION) {
+            return anon->isUnion != 0;
+        }
+    }
+    return 0;
+}
+
+static int TypeRefDerefReadonlyRefLike(const SLTypeRef* in, SLTypeRef* outBase) {
+    if (in == NULL || outBase == NULL || !in->valid || !in->readOnly) {
+        return -1;
+    }
+    *outBase = *in;
+    if (outBase->containerKind == SLTypeContainer_SCALAR) {
+        if (outBase->ptrDepth == 0) {
+            return -1;
+        }
+        outBase->ptrDepth--;
+        outBase->readOnly = 0;
+        return 0;
+    }
+    if (outBase->containerKind == SLTypeContainer_ARRAY
+        || outBase->containerKind == SLTypeContainer_SLICE_RO
+        || outBase->containerKind == SLTypeContainer_SLICE_MUT)
+    {
+        if (outBase->containerPtrDepth == 0) {
+            return -1;
+        }
+        outBase->containerPtrDepth--;
+        outBase->readOnly = 0;
+        return 0;
+    }
+    return -1;
+}
+
+static int ResolveComparisonHookArgCost(
+    SLCBackendC*     c,
+    const SLTypeRef* paramType,
+    const SLTypeRef* argType,
+    uint8_t*         outCost,
+    int*             outAutoRef) {
+    uint8_t   baseCost = 0;
+    SLTypeRef byValueType;
+    if (TypeRefAssignableCost(c, paramType, argType, outCost) == 0) {
+        *outAutoRef = 0;
+        return 0;
+    }
+    if (TypeRefDerefReadonlyRefLike(paramType, &byValueType) == 0
+        && TypeRefAssignableCost(c, &byValueType, argType, &baseCost) == 0)
+    {
+        *outCost = (uint8_t)(baseCost < 254u ? baseCost + 1u : 255u);
+        *outAutoRef = 1;
+        return 0;
+    }
+    return -1;
+}
+
+/* Returns 0 success, 1 no hook name, 2 no viable hook, 3 ambiguous */
+static int ResolveComparisonHook(
+    SLCBackendC*     c,
+    const char*      hookName,
+    const SLTypeRef* lhsType,
+    const SLTypeRef* rhsType,
+    const SLFnSig**  outSig,
+    const char**     outCalleeName,
+    int              outAutoRef[2]) {
+    const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+    uint32_t       candidateLen = 0;
+    const SLFnSig* bestSig = NULL;
+    const char*    bestCalleeName = NULL;
+    uint8_t        bestCosts[2];
+    uint32_t       bestTotal = 0;
+    int            ambiguous = 0;
+    uint32_t       i;
+    candidateLen = FindFnSigCandidatesByName(
+        c, hookName, candidates, (uint32_t)(sizeof(candidates) / sizeof(candidates[0])));
+    if (candidateLen == 0) {
+        return 1;
+    }
+    if (candidateLen > (uint32_t)(sizeof(candidates) / sizeof(candidates[0]))) {
+        candidateLen = (uint32_t)(sizeof(candidates) / sizeof(candidates[0]));
+    }
+    for (i = 0; i < candidateLen; i++) {
+        const SLFnSig* sig = candidates[i];
+        uint8_t        costs[2];
+        int            autoRef[2] = { 0, 0 };
+        uint32_t       total = 0;
+        int            cmp;
+        if (sig->paramLen != 2) {
+            continue;
+        }
+        if (ResolveComparisonHookArgCost(c, &sig->paramTypes[0], lhsType, &costs[0], &autoRef[0])
+                != 0
+            || ResolveComparisonHookArgCost(c, &sig->paramTypes[1], rhsType, &costs[1], &autoRef[1])
+                   != 0)
+        {
+            continue;
+        }
+        total = (uint32_t)costs[0] + (uint32_t)costs[1];
+        if (bestSig == NULL) {
+            bestSig = sig;
+            bestCalleeName = sig->cName;
+            bestCosts[0] = costs[0];
+            bestCosts[1] = costs[1];
+            bestTotal = total;
+            ambiguous = 0;
+            outAutoRef[0] = autoRef[0];
+            outAutoRef[1] = autoRef[1];
+            continue;
+        }
+        cmp = CostVecCmp(costs, bestCosts, 2u);
+        if (cmp < 0 || (cmp == 0 && total < bestTotal)) {
+            bestSig = sig;
+            bestCalleeName = sig->cName;
+            bestCosts[0] = costs[0];
+            bestCosts[1] = costs[1];
+            bestTotal = total;
+            ambiguous = 0;
+            outAutoRef[0] = autoRef[0];
+            outAutoRef[1] = autoRef[1];
+            continue;
+        }
+        if (cmp == 0 && total == bestTotal) {
+            ambiguous = 1;
+        }
+    }
+    if (bestSig == NULL) {
+        return 2;
+    }
+    if (ambiguous) {
+        return 3;
+    }
+    *outSig = bestSig;
+    *outCalleeName = bestCalleeName;
+    return 0;
+}
+
+static int EmitExprAutoRefCoerced(SLCBackendC* c, int32_t argNode, const SLTypeRef* paramType) {
+    SLTypeRef byValueType;
+    if (TypeRefDerefReadonlyRefLike(paramType, &byValueType) != 0) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "(__extension__({ ") != 0
+        || EmitTypeNameWithDepth(c, &byValueType) != 0
+        || BufAppendCStr(&c->out, " __sl_cmp_arg = ") != 0
+        || EmitExprCoerced(c, argNode, &byValueType) != 0 || BufAppendCStr(&c->out, "; ((") != 0
+        || EmitTypeNameWithDepth(c, paramType) != 0
+        || BufAppendCStr(&c->out, ")(&__sl_cmp_arg)); }))") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitExprAsSliceRO(SLCBackendC* c, int32_t exprNode, const SLTypeRef* exprType) {
+    if (BufAppendCStr(&c->out, "((__sl_slice_ro){ (const void*)(") != 0
+        || EmitElemPtrExpr(c, exprNode, exprType, 0) != 0
+        || BufAppendCStr(&c->out, "), (__sl_uint)(") != 0
+        || EmitLenExprFromType(c, exprNode, exprType) != 0 || BufAppendCStr(&c->out, ") })") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitComparisonHookCall(
+    SLCBackendC*   c,
+    const SLFnSig* sig,
+    const char*    calleeName,
+    int32_t        lhsNode,
+    int32_t        rhsNode,
+    const int      autoRef[2]) {
+    int32_t  argNodes[2];
+    uint32_t i;
+    argNodes[0] = lhsNode;
+    argNodes[1] = rhsNode;
+    if (BufAppendCStr(&c->out, calleeName) != 0 || BufAppendChar(&c->out, '(') != 0) {
+        return -1;
+    }
+    if (sig != NULL && sig->hasContext) {
+        if (EmitContextArgForSig(c, sig) != 0) {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+    }
+    for (i = 0; i < 2u; i++) {
+        if (i > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        if (autoRef[i]) {
+            if (EmitExprAutoRefCoerced(c, argNodes[i], &sig->paramTypes[i]) != 0) {
+                return -1;
+            }
+        } else if (EmitExprCoerced(c, argNodes[i], &sig->paramTypes[i]) != 0) {
+            return -1;
+        }
+    }
+    if (BufAppendChar(&c->out, ')') != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitPointerIdentityExpr(SLCBackendC* c, int32_t exprNode, const SLTypeRef* exprType) {
+    if (TypeRefIsOwnedRuntimeArrayStruct(exprType)) {
+        if (BufAppendCStr(&c->out, "((const void*)((") != 0 || EmitExpr(c, exprNode) != 0
+            || BufAppendCStr(&c->out, ").ptr))") != 0)
+        {
+            return -1;
+        }
+        return 0;
+    }
+    if (BufAppendCStr(&c->out, "((const void*)(") != 0 || EmitExpr(c, exprNode) != 0
+        || BufAppendCStr(&c->out, "))") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
 static int EmitNewAllocArgExpr(SLCBackendC* c, int32_t allocArg) {
     if (allocArg >= 0) {
         return EmitExpr(c, allocArg);
@@ -6215,6 +6459,19 @@ static int EmitExpr_UNARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
             }
         }
     }
+    if ((SLTokenKind)n->op == SLTok_MUL && child >= 0) {
+        SLTypeRef childType;
+        if (InferExprType(c, child, &childType) == 0 && childType.valid
+            && TypeRefIsOwnedRuntimeArrayStruct(&childType))
+        {
+            if (BufAppendChar(&c->out, '(') != 0 || EmitExpr(c, child) != 0
+                || BufAppendChar(&c->out, ')') != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+    }
     if (BufAppendChar(&c->out, '(') != 0
         || BufAppendCStr(&c->out, UnaryOpString((SLTokenKind)n->op)) != 0 || EmitExpr(c, child) != 0
         || BufAppendChar(&c->out, ')') != 0)
@@ -6225,9 +6482,10 @@ static int EmitExpr_UNARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
 }
 
 static int EmitExpr_BINARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
-    int32_t lhs = AstFirstChild(&c->ast, nodeId);
-    int32_t rhs = AstNextSibling(&c->ast, lhs);
-    if ((SLTokenKind)n->op == SLTok_ASSIGN) {
+    int32_t     lhs = AstFirstChild(&c->ast, nodeId);
+    int32_t     rhs = AstNextSibling(&c->ast, lhs);
+    SLTokenKind op = (SLTokenKind)n->op;
+    if (op == SLTok_ASSIGN) {
         SLTypeRef lhsType;
         if (lhs < 0 || rhs < 0) {
             return -1;
@@ -6243,18 +6501,35 @@ static int EmitExpr_BINARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
         }
         return 0;
     }
-    if ((SLTokenKind)n->op == SLTok_EQ || (SLTokenKind)n->op == SLTok_NEQ) {
-        SLTypeRef lhsType;
-        SLTypeRef rhsType;
-        int lhsNull = lhs >= 0 && NodeAt(c, lhs) != NULL && NodeAt(c, lhs)->kind == SLAst_NULL;
-        int rhsNull = rhs >= 0 && NodeAt(c, rhs) != NULL && NodeAt(c, rhs)->kind == SLAst_NULL;
-        if (lhs >= 0 && rhs >= 0 && InferExprType(c, lhs, &lhsType) == 0
-            && InferExprType(c, rhs, &rhsType) == 0)
+    if (op == SLTok_EQ || op == SLTok_NEQ || op == SLTok_LT || op == SLTok_LTE || op == SLTok_GT
+        || op == SLTok_GTE)
+    {
+        SLTypeRef        lhsType;
+        SLTypeRef        rhsType;
+        const SLFnSig*   hookSig = NULL;
+        const char*      hookCalleeName = NULL;
+        int              hookAutoRef[2] = { 0, 0 };
+        int              hookStatus;
+        int              lhsNull;
+        int              rhsNull;
+        int              isEqOp = (op == SLTok_EQ || op == SLTok_NEQ);
+        const SLTypeRef* seqType = NULL;
+        lhsNull = lhs >= 0 && NodeAt(c, lhs) != NULL && NodeAt(c, lhs)->kind == SLAst_NULL;
+        rhsNull = rhs >= 0 && NodeAt(c, rhs) != NULL && NodeAt(c, rhs)->kind == SLAst_NULL;
+        if (lhs < 0 || rhs < 0 || InferExprType(c, lhs, &lhsType) != 0
+            || InferExprType(c, rhs, &rhsType) != 0)
         {
+            goto emit_raw_binary;
+        }
+        if ((!lhsType.valid && !lhsNull) || (!rhsType.valid && !rhsNull)) {
+            goto emit_raw_binary;
+        }
+
+        if (isEqOp) {
             if (TypeRefIsOwnedRuntimeArrayStruct(&lhsType) && rhsNull) {
                 if (BufAppendCStr(&c->out, "(((") != 0 || EmitExpr(c, lhs) != 0
                     || BufAppendCStr(&c->out, ").ptr) ") != 0
-                    || BufAppendCStr(&c->out, BinaryOpString((SLTokenKind)n->op)) != 0
+                    || BufAppendCStr(&c->out, BinaryOpString(op)) != 0
                     || BufAppendCStr(&c->out, " NULL)") != 0)
                 {
                     return -1;
@@ -6263,7 +6538,7 @@ static int EmitExpr_BINARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
             }
             if (TypeRefIsOwnedRuntimeArrayStruct(&rhsType) && lhsNull) {
                 if (BufAppendCStr(&c->out, "(NULL ") != 0
-                    || BufAppendCStr(&c->out, BinaryOpString((SLTokenKind)n->op)) != 0
+                    || BufAppendCStr(&c->out, BinaryOpString(op)) != 0
                     || BufAppendCStr(&c->out, " ((") != 0 || EmitExpr(c, rhs) != 0
                     || BufAppendCStr(&c->out, ").ptr))") != 0)
                 {
@@ -6272,7 +6547,279 @@ static int EmitExpr_BINARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                 return 0;
             }
         }
+
+        hookStatus = ResolveComparisonHook(
+            c,
+            isEqOp ? "__equal" : "__order",
+            &lhsType,
+            &rhsType,
+            &hookSig,
+            &hookCalleeName,
+            hookAutoRef);
+        if (hookStatus == 0) {
+            if (isEqOp) {
+                if (op == SLTok_NEQ && BufAppendCStr(&c->out, "(!") != 0) {
+                    return -1;
+                }
+                if (BufAppendChar(&c->out, '(') != 0
+                    || EmitComparisonHookCall(c, hookSig, hookCalleeName, lhs, rhs, hookAutoRef)
+                           != 0
+                    || BufAppendChar(&c->out, ')') != 0)
+                {
+                    return -1;
+                }
+                if (op == SLTok_NEQ && BufAppendChar(&c->out, ')') != 0) {
+                    return -1;
+                }
+                return 0;
+            }
+            if (BufAppendChar(&c->out, '(') != 0
+                || EmitComparisonHookCall(c, hookSig, hookCalleeName, lhs, rhs, hookAutoRef) != 0
+                || BufAppendCStr(&c->out, " ") != 0)
+            {
+                return -1;
+            }
+            switch (op) {
+                case SLTok_LT:
+                    if (BufAppendCStr(&c->out, "< 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_LTE:
+                    if (BufAppendCStr(&c->out, "<= 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_GT:
+                    if (BufAppendCStr(&c->out, "> 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_GTE:
+                    if (BufAppendCStr(&c->out, ">= 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                default: return -1;
+            }
+            return 0;
+        }
+
+        if (TypeRefIsStr(&lhsType) || TypeRefIsStr(&rhsType)) {
+            if (isEqOp) {
+                if (op == SLTok_NEQ && BufAppendCStr(&c->out, "(!") != 0) {
+                    return -1;
+                }
+                if (BufAppendCStr(&c->out, "__sl_str_equal((const __sl_str*)(") != 0
+                    || EmitExprCoerced(c, lhs, &lhsType) != 0
+                    || BufAppendCStr(&c->out, "), (const __sl_str*)(") != 0
+                    || EmitExprCoerced(c, rhs, &lhsType) != 0 || BufAppendCStr(&c->out, "))") != 0)
+                {
+                    return -1;
+                }
+                if (op == SLTok_NEQ && BufAppendChar(&c->out, ')') != 0) {
+                    return -1;
+                }
+                return 0;
+            }
+            if (BufAppendCStr(&c->out, "(__sl_str_order((const __sl_str*)(") != 0
+                || EmitExprCoerced(c, lhs, &lhsType) != 0
+                || BufAppendCStr(&c->out, "), (const __sl_str*)(") != 0
+                || EmitExprCoerced(c, rhs, &lhsType) != 0 || BufAppendCStr(&c->out, ")) ") != 0)
+            {
+                return -1;
+            }
+            switch (op) {
+                case SLTok_LT:
+                    if (BufAppendCStr(&c->out, "< 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_LTE:
+                    if (BufAppendCStr(&c->out, "<= 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_GT:
+                    if (BufAppendCStr(&c->out, "> 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_GTE:
+                    if (BufAppendCStr(&c->out, ">= 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                default: return -1;
+            }
+            return 0;
+        }
+
+        if ((TypeRefIsPointerLike(&lhsType) && TypeRefIsPointerLike(&rhsType))
+            || (TypeRefIsPointerLike(&lhsType) && rhsNull)
+            || (TypeRefIsPointerLike(&rhsType) && lhsNull))
+        {
+            if (isEqOp) {
+                if (BufAppendChar(&c->out, '(') != 0) {
+                    return -1;
+                }
+                if (lhsNull) {
+                    if (BufAppendCStr(&c->out, "NULL") != 0) {
+                        return -1;
+                    }
+                } else if (EmitPointerIdentityExpr(c, lhs, &lhsType) != 0) {
+                    return -1;
+                }
+                if (BufAppendChar(&c->out, ' ') != 0
+                    || BufAppendCStr(&c->out, BinaryOpString(op)) != 0
+                    || BufAppendChar(&c->out, ' ') != 0)
+                {
+                    return -1;
+                }
+                if (rhsNull) {
+                    if (BufAppendCStr(&c->out, "NULL") != 0) {
+                        return -1;
+                    }
+                } else if (EmitPointerIdentityExpr(c, rhs, &rhsType) != 0) {
+                    return -1;
+                }
+                if (BufAppendChar(&c->out, ')') != 0) {
+                    return -1;
+                }
+                return 0;
+            }
+            if (BufAppendCStr(&c->out, "(__sl_ptr_order(") != 0) {
+                return -1;
+            }
+            if (lhsNull) {
+                if (BufAppendCStr(&c->out, "NULL") != 0) {
+                    return -1;
+                }
+            } else if (EmitPointerIdentityExpr(c, lhs, &lhsType) != 0) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, ", ") != 0) {
+                return -1;
+            }
+            if (rhsNull) {
+                if (BufAppendCStr(&c->out, "NULL") != 0) {
+                    return -1;
+                }
+            } else if (EmitPointerIdentityExpr(c, rhs, &rhsType) != 0) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, ") ") != 0) {
+                return -1;
+            }
+            switch (op) {
+                case SLTok_LT:
+                    if (BufAppendCStr(&c->out, "< 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_LTE:
+                    if (BufAppendCStr(&c->out, "<= 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_GT:
+                    if (BufAppendCStr(&c->out, "> 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_GTE:
+                    if (BufAppendCStr(&c->out, ">= 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                default: return -1;
+            }
+            return 0;
+        }
+
+        if ((lhsType.containerKind == SLTypeContainer_ARRAY
+             || lhsType.containerKind == SLTypeContainer_SLICE_RO
+             || lhsType.containerKind == SLTypeContainer_SLICE_MUT)
+            && !TypeRefIsPointerLike(&lhsType))
+        {
+            seqType = &lhsType;
+            if (isEqOp) {
+                if (op == SLTok_NEQ && BufAppendCStr(&c->out, "(!") != 0) {
+                    return -1;
+                }
+                if (BufAppendCStr(&c->out, "__sl_slice_equal_ro(") != 0
+                    || EmitExprAsSliceRO(c, lhs, &lhsType) != 0 || BufAppendCStr(&c->out, ", ") != 0
+                    || EmitExprAsSliceRO(c, rhs, &rhsType) != 0
+                    || BufAppendCStr(&c->out, ", (__sl_uint)sizeof(") != 0
+                    || EmitElementTypeName(c, seqType, 0) != 0 || BufAppendCStr(&c->out, "))") != 0)
+                {
+                    return -1;
+                }
+                if (op == SLTok_NEQ && BufAppendChar(&c->out, ')') != 0) {
+                    return -1;
+                }
+                return 0;
+            }
+            if (BufAppendCStr(&c->out, "(__sl_slice_order_ro(") != 0
+                || EmitExprAsSliceRO(c, lhs, &lhsType) != 0 || BufAppendCStr(&c->out, ", ") != 0
+                || EmitExprAsSliceRO(c, rhs, &rhsType) != 0
+                || BufAppendCStr(&c->out, ", (__sl_uint)sizeof(") != 0
+                || EmitElementTypeName(c, seqType, 0) != 0 || BufAppendCStr(&c->out, ")) ") != 0)
+            {
+                return -1;
+            }
+            switch (op) {
+                case SLTok_LT:
+                    if (BufAppendCStr(&c->out, "< 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_LTE:
+                    if (BufAppendCStr(&c->out, "<= 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_GT:
+                    if (BufAppendCStr(&c->out, "> 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                case SLTok_GTE:
+                    if (BufAppendCStr(&c->out, ">= 0)") != 0) {
+                        return -1;
+                    }
+                    break;
+                default: return -1;
+            }
+            return 0;
+        }
+
+        if (isEqOp
+            && (TypeRefIsNamedDeclKind(c, &lhsType, SLAst_STRUCT)
+                || TypeRefIsNamedDeclKind(c, &lhsType, SLAst_UNION)))
+        {
+            if (op == SLTok_NEQ && BufAppendCStr(&c->out, "(!") != 0) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, "(__extension__({ __auto_type __sl_cmp_a = ") != 0
+                || EmitExprCoerced(c, lhs, &lhsType) != 0
+                || BufAppendCStr(&c->out, "; __auto_type __sl_cmp_b = ") != 0
+                || EmitExprCoerced(c, rhs, &lhsType) != 0
+                || BufAppendCStr(
+                       &c->out,
+                       "; __sl_mem_equal((const void*)&__sl_cmp_a, (const "
+                       "void*)&__sl_cmp_b, (__sl_uint)sizeof(__sl_cmp_a)); }))")
+                       != 0)
+            {
+                return -1;
+            }
+            if (op == SLTok_NEQ && BufAppendChar(&c->out, ')') != 0) {
+                return -1;
+            }
+            return 0;
+        }
     }
+emit_raw_binary:
     if (BufAppendChar(&c->out, '(') != 0 || EmitExpr(c, lhs) != 0
         || BufAppendChar(&c->out, ' ') != 0
         || BufAppendCStr(&c->out, BinaryOpString((SLTokenKind)n->op)) != 0

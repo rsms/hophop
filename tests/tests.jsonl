@@ -188,6 +188,7 @@
 {"id":"integration.examples.anonymous_aggregates.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/anonymous_aggregates.sl"}
 {"id":"integration.examples.basic.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/basic.sl"}
 {"id":"integration.examples.casts.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/casts.sl"}
+{"id":"integration.examples.comparison.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/comparison.sl"}
 {"id":"integration.examples.control_flow.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/control_flow.sl"}
 {"id":"integration.examples.defer.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/defer.sl"}
 {"id":"integration.examples.order_independent.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/order_independent.sl"}
@@ -290,3 +291,9 @@
 {"id":"integration.runtime.compound_literal_union_single_field_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/compound_literal_union_single_field_ok.sl"}
 {"id":"integration.runtime.struct_field_defaults_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/struct_field_defaults_ok.sl","expect_exit":0}
 {"id":"integration.runtime.struct_field_defaults_order_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/struct_field_defaults_order_ok.sl","expect_exit":0}
+{"id":"check:tests/comparison_hook_bad_signature.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/comparison_hook_bad_signature.sl","expect_stderr":"tests/comparison_hook_bad_signature.stderr"}
+{"id":"check:tests/comparison_hook_impure_global_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/comparison_hook_impure_global_bad.sl","expect_stderr":"tests/comparison_hook_impure_global_bad.stderr"}
+{"id":"integration.codegen.comparison_runtime_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/comparison_runtime_ok.sl","contains":["__sl_str_equal(","__sl_slice_equal_ro(","__sl_mem_equal("]}
+{"id":"integration.codegen.comparison_hook_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/comparison_hook_ok.sl","contains":["__equal(","__order("]}
+{"id":"integration.runtime.comparison_runtime_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/comparison_runtime_ok.sl","expect_exit":0}
+{"id":"integration.runtime.comparison_hook_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/comparison_hook_ok.sl","expect_exit":0}

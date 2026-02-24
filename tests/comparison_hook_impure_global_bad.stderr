@@ -1,0 +1,1 @@
+tests/comparison_hook_impure_global_bad.sl:4:12: SL2052: comparison hook must be pure

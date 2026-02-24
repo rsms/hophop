@@ -67,6 +67,10 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_FIELD_DEFAULT_ON_EMBEDDED,   /* SL2047: embedded field cannot have default initializer */
     SLDiag_NEW_VARSIZE_INIT_REQUIRED, /* SL2048: new on variable-size type requires initializer (use
                                          new T{...}) */
-    SLDiag_CODEGEN_INTERNAL,          /* SL3001: internal codegen error */
-    SLDiag_ARENA_OOM,                 /* SL4001: arena out of memory */
-    SLDiag_UNKNOWN_FEATURE,           /* SL4002: unknown feature '{s}' */
+    SLDiag_INVALID_COMPARISON_HOOK_SIGNATURE, /* SL2049: invalid comparison hook signature */
+    SLDiag_TYPE_NOT_COMPARABLE,               /* SL2050: type is not comparable */
+    SLDiag_TYPE_NOT_ORDERED,                  /* SL2051: type is not ordered */
+    SLDiag_COMPARISON_HOOK_IMPURE,            /* SL2052: comparison hook must be pure */
+    SLDiag_CODEGEN_INTERNAL,                  /* SL3001: internal codegen error */
+    SLDiag_ARENA_OOM,                         /* SL4001: arena out of memory */
+    SLDiag_UNKNOWN_FEATURE,                   /* SL4002: unknown feature '{s}' */
