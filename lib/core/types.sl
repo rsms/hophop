@@ -44,3 +44,7 @@ pub struct Context {
     temp_mem *Allocator
     log Logger
 }
+
+pub struct PrintContext {
+    log Logger
+}

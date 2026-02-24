@@ -23,7 +23,7 @@ fn free() {}
 
 fn panic(message &str) {}
 
-fn print(message &str) context Context {
+pub fn print(message &str) context PrintContext {
     context.log.handler(&context.log, message, LogLevel.Info, 0 as LogFlags)
 }
 

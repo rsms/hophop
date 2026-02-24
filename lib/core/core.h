@@ -57,6 +57,7 @@ typedef struct __sl_str __sl_str;
 typedef struct __sl_Logger __sl_Logger;
 typedef struct __sl_Allocator __sl_Allocator;
 typedef struct __sl_Context __sl_Context;
+typedef struct __sl_PrintContext __sl_PrintContext;
 
 struct __sl_str {
     __sl_u32 len;
@@ -103,6 +104,10 @@ struct __sl_Allocator {
 struct __sl_Context {
     __sl_Allocator* mem;
     __sl_Allocator* temp_mem;
+    __sl_Logger log;
+};
+
+struct __sl_PrintContext {
     __sl_Logger log;
 };
 // END generated code

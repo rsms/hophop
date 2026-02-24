@@ -89,6 +89,14 @@ static void platform_log_handler(
     fflush(out);
 }
 
+typedef struct core__PrintContext {
+    __sl_Logger log;
+} core__PrintContext;
+
+void core__print(core__PrintContext* context, __sl_str* message) {
+    context->log.handler(&context->log, message, __sl_LogLevel_Info, (__sl_LogFlags)0);
+}
+
 __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 line) {
     __sl_u32      message_len;
     const __sl_u8 empty[] = "";
