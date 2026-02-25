@@ -2017,6 +2017,24 @@ static const SLFieldInfo* _Nullable FindFieldInfoByName(
     return NULL;
 }
 
+static const char* _Nullable CanonicalFieldOwnerType(
+    const SLCBackendC* c, const char* _Nullable ownerType) {
+    const char* canonical = ResolveScalarAliasBaseName(c, ownerType);
+    if (canonical == NULL) {
+        canonical = ownerType;
+    }
+    if (canonical == NULL) {
+        return NULL;
+    }
+    if (StrEq(canonical, "__sl_Allocator")) {
+        return "core__Allocator";
+    }
+    if (StrEq(canonical, "__sl_Logger")) {
+        return "core__Logger";
+    }
+    return canonical;
+}
+
 static int ResolveCoreStrFieldBySlice(
     const SLCBackendC* c, uint32_t fieldStart, uint32_t fieldEnd, const SLFieldInfo** outField) {
     static int         inited = 0;
@@ -2049,7 +2067,7 @@ static int ResolveCoreStrFieldBySlice(
 
 static int ResolveFieldPathSingleSegment(
     const SLCBackendC*  c,
-    const char*         ownerType,
+    const char*         ownerTypeIn,
     uint32_t            fieldStart,
     uint32_t            fieldEnd,
     const SLFieldInfo** outPath,
@@ -2059,9 +2077,15 @@ static int ResolveFieldPathSingleSegment(
     const SLFieldInfo* direct;
     const SLFieldInfo* embedded;
     const char*        embeddedBaseName;
+    const char*        ownerType;
     uint32_t           nestedLen = 0;
 
     if (outLen == NULL || cap == 0u) {
+        return -1;
+    }
+
+    ownerType = CanonicalFieldOwnerType(c, ownerTypeIn);
+    if (ownerType == NULL) {
         return -1;
     }
 
@@ -2098,7 +2122,7 @@ static int ResolveFieldPathSingleSegment(
         return -1;
     }
 
-    embeddedBaseName = ResolveScalarAliasBaseName(c, embedded->type.baseName);
+    embeddedBaseName = CanonicalFieldOwnerType(c, embedded->type.baseName);
     if (embeddedBaseName == NULL) {
         return -1;
     }
@@ -4212,6 +4236,24 @@ static int InferExprType_CALL(
             }
         }
         if (field == NULL && recvNode >= 0) {
+            if (recvType.valid && recvType.containerKind == SLTypeContainer_SCALAR
+                && recvType.ptrDepth == 0 && recvType.containerPtrDepth == 0
+                && recvType.baseName != NULL
+                && SliceEq(c->unit->source, cn->dataStart, cn->dataEnd, "impl")
+                && StrEq(recvType.baseName, "__sl_Allocator"))
+            {
+                TypeRefSetScalar(outType, "__sl_uint");
+                return 0;
+            }
+            if (recvType.valid && recvType.containerKind == SLTypeContainer_SCALAR
+                && recvType.ptrDepth == 0 && recvType.containerPtrDepth == 0
+                && recvType.baseName != NULL
+                && SliceEq(c->unit->source, cn->dataStart, cn->dataEnd, "handler")
+                && StrEq(recvType.baseName, "__sl_Logger"))
+            {
+                TypeRefSetScalar(outType, "void");
+                return 0;
+            }
             int32_t        argNodes[SLCCG_MAX_CALL_ARGS];
             SLTypeRef      argTypes[SLCCG_MAX_CALL_ARGS];
             uint32_t       argCount = 0;
@@ -4281,6 +4323,16 @@ static int InferExprType_CALL(
                     *outType = resolved->returnType;
                     return 0;
                 }
+            }
+        } else if (
+            field != NULL && field->type.valid
+            && field->type.containerKind == SLTypeContainer_SCALAR && field->type.ptrDepth == 0
+            && field->type.containerPtrDepth == 0 && field->type.baseName != NULL)
+        {
+            const SLFnTypeAlias* alias = FindFnTypeAliasByName(c, field->type.baseName);
+            if (alias != NULL) {
+                *outType = alias->returnType;
+                return 0;
             }
         }
     }
@@ -6512,7 +6564,7 @@ static int EmitExpr_BINARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
             return -1;
         }
         if (InferExprType(c, lhs, &lhsType) != 0 || !lhsType.valid) {
-            return -1;
+            goto emit_raw_binary;
         }
         if (BufAppendChar(&c->out, '(') != 0 || EmitExpr(c, lhs) != 0
             || BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, rhs, &lhsType) != 0

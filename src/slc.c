@@ -5005,13 +5005,40 @@ static int BuildToolchainSignature(
 }
 
 static int ToolchainSignatureMatches(const char* sigPath, const char* signature) {
-    char*    actual = NULL;
-    uint32_t actualLen = 0;
+    FILE*    f;
+    long     flen;
+    char*    actual;
+    size_t   nread;
     uint32_t expectedLen = (uint32_t)strlen(signature);
-    if (ReadFile(sigPath, &actual, &actualLen) != 0) {
+    f = fopen(sigPath, "rb");
+    if (f == NULL) {
         return 0;
     }
-    if (actualLen != expectedLen || memcmp(actual, signature, expectedLen) != 0) {
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return 0;
+    }
+    flen = ftell(f);
+    if (flen < 0 || (uint64_t)flen > (uint64_t)UINT32_MAX) {
+        fclose(f);
+        return 0;
+    }
+    if ((uint32_t)flen != expectedLen) {
+        fclose(f);
+        return 0;
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return 0;
+    }
+    actual = (char*)malloc((size_t)expectedLen);
+    if (actual == NULL) {
+        fclose(f);
+        return 0;
+    }
+    nread = fread(actual, 1u, (size_t)expectedLen, f);
+    fclose(f);
+    if (nread != (size_t)expectedLen || memcmp(actual, signature, (size_t)expectedLen) != 0) {
         free(actual);
         return 0;
     }
