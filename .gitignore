@@ -2,6 +2,7 @@
 /_*
 /compile_commands.json
 /.cache
+/.sl-cache
 /.clangd
 /.agent-worklog.jsonl
 /.agent-worklog.jsonl.lock
