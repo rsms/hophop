@@ -160,35 +160,20 @@ static inline __sl_int __sl_mem_order(
     const void* a, __sl_uint a_len, const void* b, __sl_uint b_len) {
     __sl_uint n = a_len < b_len ? a_len : b_len;
     int       cmp = n > 0u ? memcmp(a, b, n) : 0;
-    if (cmp < 0) {
-        return -1;
-    }
-    if (cmp > 0) {
-        return 1;
-    }
-    if (a_len < b_len) {
-        return -1;
-    }
-    if (a_len > b_len) {
-        return 1;
-    }
-    return 0;
+    return cmp != 0 ? (__sl_int)((cmp > 0) - (cmp < 0))
+                    : (__sl_int)((a_len > b_len) - (a_len < b_len));
 }
 
 static inline __sl_bool __sl_str_equal(const __sl_str* a, const __sl_str* b) {
-    __sl_uint   a_len = a != NULL ? (__sl_uint)a->len : 0u;
-    __sl_uint   b_len = b != NULL ? (__sl_uint)b->len : 0u;
-    const void* a_ptr = (a != NULL && a_len > 0u) ? (const void*)a->bytes : (const void*)0;
-    const void* b_ptr = (b != NULL && b_len > 0u) ? (const void*)b->bytes : (const void*)0;
-    return a_len == b_len && __sl_mem_equal(a_ptr, b_ptr, a_len);
+    __sl_uint a_len = __sl_len(a);
+    __sl_uint b_len = __sl_len(b);
+    return a_len == b_len
+        && __sl_mem_equal((const void*)__sl_cstr(a), (const void*)__sl_cstr(b), a_len);
 }
 
 static inline __sl_int __sl_str_order(const __sl_str* a, const __sl_str* b) {
-    __sl_uint   a_len = a != NULL ? (__sl_uint)a->len : 0u;
-    __sl_uint   b_len = b != NULL ? (__sl_uint)b->len : 0u;
-    const void* a_ptr = (a != NULL && a_len > 0u) ? (const void*)a->bytes : (const void*)0;
-    const void* b_ptr = (b != NULL && b_len > 0u) ? (const void*)b->bytes : (const void*)0;
-    return __sl_mem_order(a_ptr, a_len, b_ptr, b_len);
+    return __sl_mem_order(
+        (const void*)__sl_cstr(a), __sl_len(a), (const void*)__sl_cstr(b), __sl_len(b));
 }
 
 static inline __sl_bool __sl_slice_equal_ro(__sl_slice_ro a, __sl_slice_ro b, __sl_uint elem_size) {
