@@ -1,0 +1,1 @@
+sl_version=1;source_hash=0d51fd859f48ec3e5fd5;backend=c;platform=cli-libc;cc=cc;-std=c11;-g;-w;lib=/Users/rsms/src/slang.slc-perf/_build/macos-aarch64-release/lib

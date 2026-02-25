@@ -4796,21 +4796,6 @@ static int RunCommand(const char* const* argv) {
     return -1;
 }
 
-static int CreateTempDir(char* outPath, size_t outPathCap, const char* tag) {
-    const char* tmpBase = getenv("TMPDIR");
-    int         n;
-    char*       dir;
-    if (tmpBase == NULL || tmpBase[0] == '\0') {
-        tmpBase = "/tmp";
-    }
-    n = snprintf(outPath, outPathCap, "%s/slc-%s.XXXXXX", tmpBase, tag);
-    if (n <= 0 || (size_t)n >= outPathCap) {
-        return -1;
-    }
-    dir = mkdtemp(outPath);
-    return dir != NULL ? 0 : -1;
-}
-
 static void FreePackageArtifacts(SLPackageArtifact* artifacts, uint32_t artifactLen) {
     uint32_t i;
     if (artifacts == NULL) {
@@ -4864,6 +4849,22 @@ static int ResolvePlatformPath(
         return ErrorSimple("out of memory");
     }
     *outPlatformPath = platformPath;
+    return 0;
+}
+
+static int ResolveCacheRoot(
+    const SLPackageLoader* loader, const char* _Nullable cacheDirArg, char** outCacheRoot) {
+    char* cacheRoot;
+    *outCacheRoot = NULL;
+    if (cacheDirArg != NULL) {
+        cacheRoot = MakeAbsolutePathDup(cacheDirArg);
+    } else {
+        cacheRoot = JoinPath(loader->rootDir, ".sl-cache");
+    }
+    if (cacheRoot == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    *outCacheRoot = cacheRoot;
     return 0;
 }
 
@@ -5485,13 +5486,8 @@ static int BuildCachedPackageArtifacts(
         return ErrorSimple("unknown backend: c");
     }
 
-    if (cacheDirArg != NULL) {
-        cacheRoot = MakeAbsolutePathDup(cacheDirArg);
-    } else {
-        cacheRoot = JoinPath(loader->rootDir, ".sl-cache");
-    }
-    if (cacheRoot == NULL) {
-        return ErrorSimple("out of memory");
+    if (ResolveCacheRoot(loader, cacheDirArg, &cacheRoot) != 0) {
+        return -1;
     }
     cacheV1Dir = JoinPath(cacheRoot, "v1");
     cachePkgDir = cacheV1Dir != NULL ? JoinPath(cacheV1Dir, "pkg") : NULL;
@@ -5601,6 +5597,303 @@ fail:
     return -1;
 }
 
+static int BuildCachedPlatformObject(
+    const SLPackageLoader* loader,
+    const char* _Nullable cacheDirArg,
+    const char* libDir,
+    const char* platformPath,
+    const char* toolchainSignature,
+    char**      outPlatformObjPath) {
+    char*       cacheRoot = NULL;
+    char*       cacheV1Dir = NULL;
+    char*       cachePlatformDir = NULL;
+    char*       cachePlatformTargetDir = NULL;
+    char*       platformObjPath = NULL;
+    char*       platformSigPath = NULL;
+    uint64_t    srcMtimeNs = 0;
+    uint64_t    objMtimeNs = 0;
+    const char* ccArgv[12];
+    int         isUpToDate = 0;
+
+    *outPlatformObjPath = NULL;
+    if (ResolveCacheRoot(loader, cacheDirArg, &cacheRoot) != 0) {
+        return -1;
+    }
+    cacheV1Dir = JoinPath(cacheRoot, "v1");
+    cachePlatformDir = cacheV1Dir != NULL ? JoinPath(cacheV1Dir, "platform") : NULL;
+    cachePlatformTargetDir =
+        cachePlatformDir != NULL ? JoinPath(cachePlatformDir, loader->platformTarget) : NULL;
+    platformObjPath =
+        cachePlatformTargetDir != NULL ? JoinPath(cachePlatformTargetDir, "platform.o") : NULL;
+    platformSigPath =
+        cachePlatformTargetDir != NULL ? JoinPath(cachePlatformTargetDir, "toolchain.sig") : NULL;
+    if (cacheV1Dir == NULL || cachePlatformDir == NULL || cachePlatformTargetDir == NULL
+        || platformObjPath == NULL || platformSigPath == NULL)
+    {
+        ErrorSimple("out of memory");
+        goto fail;
+    }
+    if (EnsureDirRecursive(cachePlatformTargetDir) != 0) {
+        ErrorSimple("failed to create cache directory");
+        goto fail;
+    }
+
+    if (ToolchainSignatureMatches(platformSigPath, toolchainSignature)
+        && GetFileMtimeNs(platformPath, &srcMtimeNs) == 0
+        && GetFileMtimeNs(platformObjPath, &objMtimeNs) == 0 && srcMtimeNs <= objMtimeNs)
+    {
+        isUpToDate = 1;
+    }
+
+    if (!isUpToDate) {
+        ccArgv[0] = "cc";
+        ccArgv[1] = "-std=c11";
+        ccArgv[2] = "-g";
+        ccArgv[3] = "-w";
+        ccArgv[4] = "-isystem";
+        ccArgv[5] = libDir;
+        ccArgv[6] = "-c";
+        ccArgv[7] = platformPath;
+        ccArgv[8] = "-o";
+        ccArgv[9] = platformObjPath;
+        ccArgv[10] = NULL;
+        if (RunCommand(ccArgv) != 0) {
+            ErrorSimple("C compilation failed");
+            goto fail;
+        }
+        if (WriteOutput(platformSigPath, toolchainSignature, (uint32_t)strlen(toolchainSignature))
+            != 0)
+        {
+            ErrorSimple("failed to write cache toolchain signature");
+            goto fail;
+        }
+    }
+
+    free(platformSigPath);
+    free(cachePlatformTargetDir);
+    free(cachePlatformDir);
+    free(cacheV1Dir);
+    free(cacheRoot);
+    *outPlatformObjPath = platformObjPath;
+    return 0;
+
+fail:
+    free(platformObjPath);
+    free(platformSigPath);
+    free(cachePlatformTargetDir);
+    free(cachePlatformDir);
+    free(cacheV1Dir);
+    free(cacheRoot);
+    return -1;
+}
+
+static int BuildCachedWrapperObject(
+    const SLPackageLoader* loader,
+    const char* _Nullable cacheDirArg,
+    const char* libDir,
+    const char* wrapperLinkPrefix,
+    const char* toolchainSignature,
+    char**      outWrapperObjPath) {
+    char*           cacheRoot = NULL;
+    char*           cacheV1Dir = NULL;
+    char*           cacheWrapperDir = NULL;
+    char*           cacheWrapperTargetDir = NULL;
+    char*           wrapperKey = NULL;
+    char*           cacheWrapperEntryDir = NULL;
+    char*           wrapperCPath = NULL;
+    char*           wrapperOPath = NULL;
+    char*           wrapperSigPath = NULL;
+    SLStringBuilder wrapperBuilder = { 0 };
+    char*           wrapperSource = NULL;
+    uint32_t        wrapperSourceLen = 0;
+    char*           existingSource = NULL;
+    FILE*           existingSourceFile = NULL;
+    long            existingSourceFileLen = 0;
+    size_t          nread = 0;
+    uint64_t        srcMtimeNs = 0;
+    uint64_t        objMtimeNs = 0;
+    const char*     ccArgv[12];
+    int             sourceMatches = 0;
+    int             isUpToDate = 0;
+
+    *outWrapperObjPath = NULL;
+    if (ResolveCacheRoot(loader, cacheDirArg, &cacheRoot) != 0) {
+        return -1;
+    }
+    cacheV1Dir = JoinPath(cacheRoot, "v1");
+    cacheWrapperDir = cacheV1Dir != NULL ? JoinPath(cacheV1Dir, "wrapper") : NULL;
+    cacheWrapperTargetDir =
+        cacheWrapperDir != NULL ? JoinPath(cacheWrapperDir, loader->platformTarget) : NULL;
+    wrapperKey = BuildSanitizedIdent(wrapperLinkPrefix, "entry");
+    cacheWrapperEntryDir =
+        (cacheWrapperTargetDir != NULL && wrapperKey != NULL)
+            ? JoinPath(cacheWrapperTargetDir, wrapperKey)
+            : NULL;
+    wrapperCPath =
+        cacheWrapperEntryDir != NULL ? JoinPath(cacheWrapperEntryDir, "wrapper.c") : NULL;
+    wrapperOPath =
+        cacheWrapperEntryDir != NULL ? JoinPath(cacheWrapperEntryDir, "wrapper.o") : NULL;
+    wrapperSigPath =
+        cacheWrapperEntryDir != NULL ? JoinPath(cacheWrapperEntryDir, "toolchain.sig") : NULL;
+    if (cacheV1Dir == NULL || cacheWrapperDir == NULL || cacheWrapperTargetDir == NULL
+        || wrapperKey == NULL || cacheWrapperEntryDir == NULL || wrapperCPath == NULL
+        || wrapperOPath == NULL || wrapperSigPath == NULL)
+    {
+        ErrorSimple("out of memory");
+        goto fail;
+    }
+    if (EnsureDirRecursive(cacheWrapperEntryDir) != 0) {
+        ErrorSimple("failed to create cache directory");
+        goto fail;
+    }
+
+    if (SBAppendCStr(&wrapperBuilder, "#include <core/core.h>\n\nvoid ") != 0
+        || SBAppendCStr(&wrapperBuilder, wrapperLinkPrefix) != 0
+        || SBAppendCStr(&wrapperBuilder, "__main(__sl_Context *context);\n\n") != 0
+        || SBAppendCStr(&wrapperBuilder, "int sl_main(__sl_Context *context) { ") != 0
+        || SBAppendCStr(&wrapperBuilder, wrapperLinkPrefix) != 0
+        || SBAppendCStr(&wrapperBuilder, "__main(context); return 0; }\n") != 0)
+    {
+        ErrorSimple("out of memory");
+        goto fail;
+    }
+    wrapperSource = SBFinish(&wrapperBuilder, NULL);
+    wrapperBuilder.v = NULL;
+    wrapperBuilder.len = 0;
+    wrapperBuilder.cap = 0;
+    if (wrapperSource == NULL) {
+        ErrorSimple("out of memory");
+        goto fail;
+    }
+    wrapperSourceLen = (uint32_t)strlen(wrapperSource);
+
+    existingSourceFile = fopen(wrapperCPath, "rb");
+    if (existingSourceFile != NULL && fseek(existingSourceFile, 0, SEEK_END) == 0) {
+        existingSourceFileLen = ftell(existingSourceFile);
+        if (existingSourceFileLen >= 0 && (uint64_t)existingSourceFileLen <= (uint64_t)UINT32_MAX
+            && (uint32_t)existingSourceFileLen == wrapperSourceLen
+            && fseek(existingSourceFile, 0, SEEK_SET) == 0)
+        {
+            if (wrapperSourceLen == 0) {
+                sourceMatches = 1;
+            } else {
+                existingSource = (char*)malloc((size_t)wrapperSourceLen);
+                if (existingSource != NULL) {
+                    nread = fread(existingSource, 1u, (size_t)wrapperSourceLen, existingSourceFile);
+                    if (nread == (size_t)wrapperSourceLen
+                        && memcmp(existingSource, wrapperSource, wrapperSourceLen) == 0)
+                    {
+                        sourceMatches = 1;
+                    }
+                }
+            }
+        }
+    }
+    if (existingSourceFile != NULL) {
+        fclose(existingSourceFile);
+    }
+    free(existingSource);
+    existingSource = NULL;
+
+    if (!sourceMatches) {
+        if (WriteOutput(wrapperCPath, wrapperSource, wrapperSourceLen) != 0) {
+            ErrorSimple("failed to write wrapper source");
+            goto fail;
+        }
+    }
+
+    if (sourceMatches && ToolchainSignatureMatches(wrapperSigPath, toolchainSignature)
+        && GetFileMtimeNs(wrapperCPath, &srcMtimeNs) == 0
+        && GetFileMtimeNs(wrapperOPath, &objMtimeNs) == 0 && srcMtimeNs <= objMtimeNs)
+    {
+        isUpToDate = 1;
+    }
+
+    if (!isUpToDate) {
+        ccArgv[0] = "cc";
+        ccArgv[1] = "-std=c11";
+        ccArgv[2] = "-g";
+        ccArgv[3] = "-w";
+        ccArgv[4] = "-isystem";
+        ccArgv[5] = libDir;
+        ccArgv[6] = "-c";
+        ccArgv[7] = wrapperCPath;
+        ccArgv[8] = "-o";
+        ccArgv[9] = wrapperOPath;
+        ccArgv[10] = NULL;
+        if (RunCommand(ccArgv) != 0) {
+            ErrorSimple("C compilation failed");
+            goto fail;
+        }
+        if (WriteOutput(wrapperSigPath, toolchainSignature, (uint32_t)strlen(toolchainSignature))
+            != 0)
+        {
+            ErrorSimple("failed to write cache toolchain signature");
+            goto fail;
+        }
+    }
+
+    free(wrapperSource);
+    free(wrapperSigPath);
+    free(wrapperCPath);
+    free(cacheWrapperEntryDir);
+    free(wrapperKey);
+    free(cacheWrapperTargetDir);
+    free(cacheWrapperDir);
+    free(cacheV1Dir);
+    free(cacheRoot);
+    *outWrapperObjPath = wrapperOPath;
+    return 0;
+
+fail:
+    free(existingSource);
+    free(wrapperSource);
+    free(wrapperBuilder.v);
+    free(wrapperSigPath);
+    free(wrapperOPath);
+    free(wrapperCPath);
+    free(cacheWrapperEntryDir);
+    free(wrapperKey);
+    free(cacheWrapperTargetDir);
+    free(cacheWrapperDir);
+    free(cacheV1Dir);
+    free(cacheRoot);
+    return -1;
+}
+
+static int IsLinkedOutputUpToDate(
+    const char*              outExe,
+    const char*              wrapperObjPath,
+    const char*              platformObjPath,
+    const SLPackageArtifact* artifacts,
+    uint32_t                 artifactLen) {
+    struct stat outSt;
+    uint64_t    outMtimeNs;
+    uint64_t    inputMtimeNs;
+    uint32_t    i;
+
+    if (stat(outExe, &outSt) != 0 || !S_ISREG(outSt.st_mode)) {
+        return 0;
+    }
+    outMtimeNs = StatMtimeNs(&outSt);
+
+    if (GetFileMtimeNs(wrapperObjPath, &inputMtimeNs) != 0 || inputMtimeNs > outMtimeNs) {
+        return 0;
+    }
+    if (GetFileMtimeNs(platformObjPath, &inputMtimeNs) != 0 || inputMtimeNs > outMtimeNs) {
+        return 0;
+    }
+    for (i = 0; i < artifactLen; i++) {
+        if (StrEq(artifacts[i].pkg->name, "core") || StrEq(artifacts[i].pkg->name, "platform")) {
+            continue;
+        }
+        if (GetFileMtimeNs(artifacts[i].oPath, &inputMtimeNs) != 0 || inputMtimeNs > outMtimeNs) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /* Embedded cli-libc platform source — compiled alongside the generated SL
  * package. Provides runtime platform functions via libc and defines main()
  * which calls sl_main(). */
@@ -5614,20 +5907,15 @@ static int CompileProgram(
     int                loaderReady = 0;
     char*              libDir = NULL;
     char*              platformPath = NULL;
+    char*              platformObjPath = NULL;
+    char*              wrapperObjPath = NULL;
+    char*              toolchainSignature = NULL;
     SLPackageArtifact* artifacts = NULL;
     uint32_t           artifactLen = 0;
     SLPackageArtifact* entryArtifact;
-    char               tmpDir[PATH_MAX];
-    char*              wrapperCPath = NULL;
-    char*              wrapperOPath = NULL;
-    SLStringBuilder    wrapperBuilder = { 0 };
-    char*              wrapperSource = NULL;
-    const char*        ccCompileArgv[12];
     const char**       ccLinkArgv = NULL;
     uint32_t           i;
     int                rc = -1;
-
-    tmpDir[0] = '\0';
 
     if (LoadAndCheckPackage(entryPath, platformTarget, &loader, &entryPkg) != 0) {
         goto end;
@@ -5642,6 +5930,16 @@ static int CompileProgram(
     if (ResolvePlatformPath(libDir, loader.platformTarget, &platformPath) != 0) {
         goto end;
     }
+    if (BuildToolchainSignature(&loader, libDir, &toolchainSignature) != 0) {
+        ErrorSimple("out of memory");
+        goto end;
+    }
+    if (BuildCachedPlatformObject(
+            &loader, cacheDirArg, libDir, platformPath, toolchainSignature, &platformObjPath)
+        != 0)
+    {
+        goto end;
+    }
     if (BuildCachedPackageArtifacts(&loader, cacheDirArg, libDir, &artifacts, &artifactLen) != 0) {
         goto end;
     }
@@ -5650,51 +5948,20 @@ static int CompileProgram(
         ErrorSimple("internal error: entry package artifact missing");
         goto end;
     }
-
-    if (CreateTempDir(tmpDir, sizeof(tmpDir), "compile") != 0) {
-        ErrorSimple("failed to create temporary directory");
-        goto end;
-    }
-    wrapperCPath = JoinPath(tmpDir, "wrapper.c");
-    wrapperOPath = JoinPath(tmpDir, "wrapper.o");
-    if (wrapperCPath == NULL || wrapperOPath == NULL) {
-        ErrorSimple("out of memory");
-        goto end;
-    }
-
-    if (SBAppendCStr(&wrapperBuilder, "#include <core/core.h>\n\nvoid ") != 0
-        || SBAppendCStr(&wrapperBuilder, entryArtifact->linkPrefix) != 0
-        || SBAppendCStr(&wrapperBuilder, "__main(__sl_Context *context);\n\n") != 0
-        || SBAppendCStr(&wrapperBuilder, "int sl_main(__sl_Context *context) { ") != 0
-        || SBAppendCStr(&wrapperBuilder, entryArtifact->linkPrefix) != 0
-        || SBAppendCStr(&wrapperBuilder, "__main(context); return 0; }\n") != 0)
+    if (BuildCachedWrapperObject(
+            &loader,
+            cacheDirArg,
+            libDir,
+            entryArtifact->linkPrefix,
+            toolchainSignature,
+            &wrapperObjPath)
+        != 0)
     {
-        ErrorSimple("out of memory");
-        goto end;
-    }
-    wrapperSource = SBFinish(&wrapperBuilder, NULL);
-    if (wrapperSource == NULL) {
-        ErrorSimple("out of memory");
-        goto end;
-    }
-    if (WriteOutput(wrapperCPath, wrapperSource, (uint32_t)strlen(wrapperSource)) != 0) {
-        ErrorSimple("failed to write wrapper source");
         goto end;
     }
 
-    ccCompileArgv[0] = "cc";
-    ccCompileArgv[1] = "-std=c11";
-    ccCompileArgv[2] = "-g";
-    ccCompileArgv[3] = "-w";
-    ccCompileArgv[4] = "-isystem";
-    ccCompileArgv[5] = libDir;
-    ccCompileArgv[6] = "-c";
-    ccCompileArgv[7] = wrapperCPath;
-    ccCompileArgv[8] = "-o";
-    ccCompileArgv[9] = wrapperOPath;
-    ccCompileArgv[10] = NULL;
-    if (RunCommand(ccCompileArgv) != 0) {
-        ErrorSimple("C compilation failed");
+    if (IsLinkedOutputUpToDate(outExe, wrapperObjPath, platformObjPath, artifacts, artifactLen)) {
+        rc = 0;
         goto end;
     }
 
@@ -5712,7 +5979,7 @@ static int CompileProgram(
     ccLinkArgv[i++] = libDir;
     ccLinkArgv[i++] = "-o";
     ccLinkArgv[i++] = outExe;
-    ccLinkArgv[i++] = wrapperOPath;
+    ccLinkArgv[i++] = wrapperObjPath;
     {
         uint32_t j;
         for (j = 0; j < artifactLen; j++) {
@@ -5723,7 +5990,7 @@ static int CompileProgram(
             ccLinkArgv[i++] = artifacts[j].oPath;
         }
     }
-    ccLinkArgv[i++] = platformPath;
+    ccLinkArgv[i++] = platformObjPath;
     ccLinkArgv[i] = NULL;
     if (RunCommand(ccLinkArgv) != 0) {
         ErrorSimple("C link failed");
@@ -5733,20 +6000,10 @@ static int CompileProgram(
     rc = 0;
 
 end:
-    if (wrapperCPath != NULL) {
-        unlink(wrapperCPath);
-    }
-    if (wrapperOPath != NULL) {
-        unlink(wrapperOPath);
-    }
-    if (tmpDir[0] != '\0') {
-        rmdir(tmpDir);
-    }
     free(ccLinkArgv);
-    free(wrapperSource);
-    free(wrapperBuilder.v);
-    free(wrapperCPath);
-    free(wrapperOPath);
+    free(wrapperObjPath);
+    free(toolchainSignature);
+    free(platformObjPath);
     free(platformPath);
     free(libDir);
     FreePackageArtifacts(artifacts, artifactLen);
