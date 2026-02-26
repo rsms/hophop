@@ -15,6 +15,9 @@
 {"id": "SL1006", "name": "EXPECTED_EXPR", "category": "syntactic", "message": "expected expression"}
 {"id": "SL1007", "name": "EXPECTED_TYPE", "category": "syntactic", "message": "expected type"}
 {"id": "SL1008", "name": "PARAM_MISSING_TYPE", "category": "syntactic", "message": "parameter '{s}' is missing type"}
+{"id": "SL1009", "name": "INVALID_STRING_ESCAPE", "category": "syntactic", "message": "invalid string escape sequence"}
+{"id": "SL1010", "name": "INVALID_STRING_CODEPOINT", "category": "syntactic", "message": "invalid Unicode code point in string literal"}
+{"id": "SL1011", "name": "INVALID_UTF8_STRING", "category": "syntactic", "message": "string literal must decode to valid UTF-8"}
 {"id": "SL2001", "name": "DUPLICATE_SYMBOL", "category": "semantic", "message": "duplicate symbol"}
 {"id": "SL2002", "name": "UNKNOWN_SYMBOL", "category": "semantic", "message": "unknown symbol"}
 {"id": "SL2003", "name": "UNKNOWN_TYPE", "category": "semantic", "message": "unknown type"}
@@ -67,6 +70,7 @@
 {"id": "SL2050", "name": "TYPE_NOT_COMPARABLE", "category": "semantic", "message": "type is not comparable"}
 {"id": "SL2051", "name": "TYPE_NOT_ORDERED", "category": "semantic", "message": "type is not ordered"}
 {"id": "SL2052", "name": "COMPARISON_HOOK_IMPURE", "category": "semantic", "message": "comparison hook must be pure"}
+{"id": "SL2053", "name": "STRING_CONCAT_LITERAL_ONLY", "category": "semantic", "message": "string '+' currently only supports non-parenthesized literal chains"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}

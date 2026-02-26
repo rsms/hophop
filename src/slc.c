@@ -1587,77 +1587,6 @@ static int FnNodeHasBody(const SLAst* ast, int32_t nodeId) {
     return 0;
 }
 
-static int DecodeHexDigit(char c) {
-    if (c >= '0' && c <= '9') {
-        return c - '0';
-    }
-    if (c >= 'a' && c <= 'f') {
-        return 10 + (c - 'a');
-    }
-    if (c >= 'A' && c <= 'F') {
-        return 10 + (c - 'A');
-    }
-    return -1;
-}
-
-static char* _Nullable DecodeStringLiteral(const char* src, uint32_t start, uint32_t end) {
-    SLStringBuilder b = { 0 };
-    uint32_t        i;
-    if (end <= start + 1u || src[start] != '"' || src[end - 1u] != '"') {
-        return NULL;
-    }
-    i = start + 1u;
-    while (i < end - 1u) {
-        char c = src[i++];
-        if (c != '\\') {
-            if (SBAppend(&b, &c, 1) != 0) {
-                free(b.v);
-                return NULL;
-            }
-            continue;
-        }
-        if (i >= end - 1u) {
-            free(b.v);
-            return NULL;
-        }
-        c = src[i++];
-        switch (c) {
-            case 'n':  c = '\n'; break;
-            case 'r':  c = '\r'; break;
-            case 't':  c = '\t'; break;
-            case '\\': break;
-            case '"':  break;
-            case 'x':  {
-                int  hi;
-                int  lo;
-                char v;
-                if (i + 1u >= end - 1u) {
-                    free(b.v);
-                    return NULL;
-                }
-                hi = DecodeHexDigit(src[i++]);
-                lo = DecodeHexDigit(src[i++]);
-                if (hi < 0 || lo < 0) {
-                    free(b.v);
-                    return NULL;
-                }
-                v = (char)((hi << 4) | lo);
-                if (SBAppend(&b, &v, 1) != 0) {
-                    free(b.v);
-                    return NULL;
-                }
-                continue;
-            }
-            default: break;
-        }
-        if (SBAppend(&b, &c, 1) != 0) {
-            free(b.v);
-            return NULL;
-        }
-    }
-    return SBFinish(&b, NULL);
-}
-
 static char* _Nullable DefaultImportAlias(const char* importPath) {
     const char* slash = strrchr(importPath, '/');
     const char* name = importPath;
@@ -1731,47 +1660,82 @@ static char* _Nullable MakeUniqueImportAlias(const SLPackage* pkg, const char* p
     return NULL;
 }
 
+static int StringLiteralHasDirectOffsetMapping(const char* source, const SLAstNode* n) {
+    uint32_t      i;
+    unsigned char delim;
+    if (n->dataEnd <= n->dataStart + 1u) {
+        return 0;
+    }
+    delim = (unsigned char)source[n->dataStart];
+    if ((delim != (unsigned char)'"' && delim != (unsigned char)'`')
+        || (unsigned char)source[n->dataEnd - 1u] != delim)
+    {
+        return 0;
+    }
+    for (i = n->dataStart + 1u; i < n->dataEnd - 1u; i++) {
+        unsigned char c = (unsigned char)source[i];
+        if (c == (unsigned char)'\r') {
+            return 0;
+        }
+        if (delim == (unsigned char)'"' && c == (unsigned char)'\\') {
+            return 0;
+        }
+        if (delim == (unsigned char)'`' && c == (unsigned char)'\\' && i + 1u < n->dataEnd - 1u
+            && (unsigned char)source[i + 1u] == (unsigned char)'`')
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static void WarnUnknownFeatureImports(const char* filename, const char* source, const SLAst* ast) {
     int32_t child = ASTFirstChild(ast, ast->root);
     while (child >= 0) {
         const SLAstNode* n = &ast->nodes[child];
         if (n->kind == SLAst_IMPORT) {
-            uint32_t strStart;
-            uint32_t strEnd;
-            uint32_t strLen;
-            if (n->dataEnd <= n->dataStart + 1u || source[n->dataStart] != '"'
-                || source[n->dataEnd - 1u] != '"')
+            uint8_t* decoded = NULL;
+            uint32_t decodedLen = 0;
+            if (SLDecodeStringLiteralMalloc(
+                    source, n->dataStart, n->dataEnd, &decoded, &decodedLen, NULL)
+                != 0)
             {
                 child = ASTNextSibling(ast, child);
                 continue;
             }
-            strStart = n->dataStart + 1u;
-            strEnd = n->dataEnd - 1u;
-            strLen = strEnd - strStart;
             {
                 uint32_t featureStart = 0;
-                if (strLen > 14u && memcmp(source + strStart, "slang/feature/", 14u) == 0) {
-                    featureStart = strStart + 14u;
-                } else if (strLen > 8u && memcmp(source + strStart, "feature/", 8u) == 0) {
-                    featureStart = strStart + 8u;
+                if (decodedLen > 14u && memcmp(decoded, "slang/feature/", 14u) == 0) {
+                    featureStart = 14u;
+                } else if (decodedLen > 8u && memcmp(decoded, "feature/", 8u) == 0) {
+                    featureStart = 8u;
                 }
-                if (featureStart == 0) {
-                    child = ASTNextSibling(ast, child);
-                    continue;
-                }
-                uint32_t featureLen = strEnd - featureStart;
-                if (!(featureLen == 8u && memcmp(source + featureStart, "optional", 8u) == 0)) {
-                    SLDiag diag = {
-                        .code = SLDiag_UNKNOWN_FEATURE,
-                        .type = SLDiagTypeOfCode(SLDiag_UNKNOWN_FEATURE),
-                        .start = n->start,
-                        .end = n->end,
-                        .argStart = featureStart,
-                        .argEnd = strEnd,
-                    };
-                    (void)PrintSLDiag(filename, source, &diag, 0);
+                if (featureStart != 0) {
+                    uint32_t featureLen = decodedLen - featureStart;
+                    if (!(featureLen == 8u && memcmp(decoded + featureStart, "optional", 8u) == 0))
+                    {
+                        uint32_t argStart = n->dataStart;
+                        uint32_t argEnd = n->dataEnd;
+                        if (n->dataEnd > n->dataStart + 1u) {
+                            argStart = n->dataStart + 1u;
+                            argEnd = n->dataEnd - 1u;
+                            if (StringLiteralHasDirectOffsetMapping(source, n)) {
+                                argStart += featureStart;
+                            }
+                        }
+                        SLDiag diag = {
+                            .code = SLDiag_UNKNOWN_FEATURE,
+                            .type = SLDiagTypeOfCode(SLDiag_UNKNOWN_FEATURE),
+                            .start = n->start,
+                            .end = n->end,
+                            .argStart = argStart,
+                            .argEnd = argEnd,
+                        };
+                        (void)PrintSLDiag(filename, source, &diag, 0);
+                    }
                 }
             }
+            free(decoded);
         }
         child = ASTNextSibling(ast, child);
     }
@@ -2022,8 +1986,9 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
             int32_t          importChild = ASTFirstChild(ast, child);
             const SLAstNode* aliasNode = NULL;
             int              hasSymbols = 0;
-            char*            decodedPath;
+            uint8_t*         decodedPathBytes = NULL;
             const char*      pathErr = NULL;
+            char*            decodedPath = NULL;
             char*            importPath = NULL;
             uint32_t         decodedPathLen = 0;
             char* _Nullable bindName = NULL;
@@ -2052,8 +2017,15 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
                 importChild = ASTNextSibling(ast, importChild);
             }
 
-            decodedPath = DecodeStringLiteral(file->source, n->dataStart, n->dataEnd);
-            if (decodedPath == NULL) {
+            if (SLDecodeStringLiteralMalloc(
+                    file->source,
+                    n->dataStart,
+                    n->dataEnd,
+                    &decodedPathBytes,
+                    &decodedPathLen,
+                    NULL)
+                != 0)
+            {
                 return Errorf(
                     file->path,
                     file->source,
@@ -2062,9 +2034,31 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
                     "invalid import path literal");
             }
 
-            while (decodedPath[decodedPathLen] != '\0') {
-                decodedPathLen++;
+            {
+                uint32_t i;
+                for (i = 0; i < decodedPathLen; i++) {
+                    if (decodedPathBytes[i] == (uint8_t)'\0') {
+                        free(decodedPathBytes);
+                        return ErrorDiagf(
+                            file->path,
+                            file->source,
+                            n->start,
+                            n->end,
+                            SLDiag_IMPORT_INVALID_PATH,
+                            "contains NUL byte");
+                    }
+                }
             }
+            decodedPath = (char*)malloc((size_t)decodedPathLen + 1u);
+            if (decodedPath == NULL) {
+                free(decodedPathBytes);
+                return ErrorSimple("out of memory");
+            }
+            memcpy(decodedPath, decodedPathBytes, (size_t)decodedPathLen);
+            decodedPath[decodedPathLen] = '\0';
+            free(decodedPathBytes);
+            decodedPathBytes = NULL;
+
             importPath = (char*)malloc((size_t)decodedPathLen + 1u);
             if (importPath == NULL) {
                 free(decodedPath);

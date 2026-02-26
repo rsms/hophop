@@ -57,10 +57,13 @@ See also:
 ### 2.4 Literals
 - [LEX-LIT-001][Stable] Integer literals: decimal or hex (`0x` / `0X`).
 - [LEX-LIT-002][Stable] Float literals: decimal with fraction and/or exponent.
-- [LEX-LIT-003][Stable] String literals are double-quoted.
+- [LEX-LIT-003][Stable] String literals are either interpreted (`"..."`) or raw (`` `...` ``).
 - [LEX-LIT-004][Stable] Boolean literals: `true`, `false`.
 - [LEX-LIT-005][Stable] Null literal: `null`.
-- [LEX-LIT-006][Provisional] Recognized string escapes include `\\`, `\"`, `\n`, `\r`, `\t`, `\0`, `\xNN`; unknown escapes are accepted as escaped character bytes in `Reference-slc`.
+- [LEX-LIT-006][Provisional] Interpreted-string escapes follow Go-style forms: `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v`, `\\`, `\"`, `\'`, octal `\NNN`, hex `\xNN`, Unicode `\uNNNN`, `\UNNNNNNNN`.
+- [LEX-LIT-007][Provisional] Both interpreted and raw string literals may span multiple source lines. Source line endings are normalized to `\n` in decoded string bytes.
+- [LEX-LIT-008][Provisional] In interpreted strings, `\` immediately followed by a line break elides that line break. In raw strings, only ``\` `` is treated specially (it encodes a literal backtick).
+- [LEX-LIT-009][Provisional] String literals MUST decode to valid UTF-8 byte sequences.
 
 ### 2.5 Semicolon insertion
 - [LEX-SEMI-001][Stable] The formal syntax uses semicolons `";"` as terminators in a number of productions. SL programs may omit most of these semicolons using the following two rules:
@@ -85,6 +88,7 @@ See also:
 
 ```ebnf
 SourceFile      = { ImportDecl ";" } { TopDecl ";" } .
+StringLit       = /* lexical string literal; see [LEX-LIT-006] through [LEX-LIT-009] */ .
 
 ImportDecl      = "import" StringLit [ ImportAlias ] [ ImportSymbols ] .
 ImportAlias     = "as" ( Ident | "_" ) .
@@ -330,6 +334,7 @@ fn f() {
 - [EXPR-CAST-003][Provisional] Future profiles may add stricter cast-compatibility rules; `Reference-slc` currently follows [EXPR-CAST-002].
 - [EXPR-UNWRAP-001][Stable] `x!` requires `x : ?T` and yields `T`.
 - [EXPR-UNWRAP-002][Stable] Unwrapping `null` is a runtime trap (panic), never undefined behavior.
+- [EXPR-ADD-001][Provisional] String `+` currently supports compile-time concatenation only for non-parenthesized literal chains (e.g. `"a" + "b" + "c"`). Other string `+` forms are invalid in `Reference-slc`.
 
 ### 6.1 Comparable and ordered types
 - [EXPR-COMMON-001][Stable] Binary-operation common-type selection is:

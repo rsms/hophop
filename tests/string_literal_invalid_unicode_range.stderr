@@ -1,0 +1,1 @@
+tests/string_literal_invalid_unicode_range.sl:1:12: SL1010: invalid Unicode code point in string literal

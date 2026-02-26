@@ -34,6 +34,7 @@ static void SLPSetDiagWithArg(
 
 typedef struct {
     SLStrView      src;
+    SLArena*       arena;
     const SLToken* tok;
     uint32_t       tokLen;
     uint32_t       pos;
@@ -882,6 +883,9 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
         }
         if (SLPExpect(p, SLTok_RPAREN, SLDiag_EXPECTED_EXPR, &t) != 0) {
             return -1;
+        }
+        if (*out >= 0) {
+            p->nodes[*out].flags |= SLAstFlag_PAREN;
         }
         return 0;
     }
@@ -2271,26 +2275,32 @@ static int SLPParseImport(SLParser* p, int32_t* out) {
         p->nodes[n].end = kw->end;
     }
 
-    /* Detect feature imports and set feature flags. */
-    /* String literal includes quotes: src[path->start] == '"', src[path->end-1]
-     * == '"'. */
+    /* Detect feature imports and set feature flags using decoded import path bytes. */
     {
-        uint32_t    strStart = path->start + 1u;           /* skip opening quote */
-        uint32_t    strLen = path->end - path->start - 2u; /* exclude both quotes */
-        const char* name = NULL;
-        uint32_t    nameLen = 0;
-        if (strLen > 14u && memcmp(p->src.ptr + strStart, "slang/feature/", 14u) == 0) {
-            name = p->src.ptr + strStart + 14u;
-            nameLen = strLen - 14u;
-        } else if (strLen > 8u && memcmp(p->src.ptr + strStart, "feature/", 8u) == 0) {
-            name = p->src.ptr + strStart + 8u;
-            nameLen = strLen - 8u;
+        SLStringLitErr litErr = { 0 };
+        uint8_t*       decoded = NULL;
+        uint32_t       decodedLen = 0;
+        const uint8_t* name = NULL;
+        uint32_t       nameLen = 0;
+        if (SLDecodeStringLiteralArena(
+                p->arena, p->src.ptr, path->start, path->end, &decoded, &decodedLen, &litErr)
+            != 0)
+        {
+            SLPSetDiag(p->diag, SLStringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
+            return -1;
+        }
+        if (decodedLen > 14u && memcmp(decoded, "slang/feature/", 14u) == 0) {
+            name = decoded + 14u;
+            nameLen = decodedLen - 14u;
+        } else if (decodedLen > 8u && memcmp(decoded, "feature/", 8u) == 0) {
+            name = decoded + 8u;
+            nameLen = decodedLen - 8u;
         }
         if (name != NULL) {
             /* "optional" = 8 chars */
-            if (nameLen == 8u && name[0] == 'o' && name[1] == 'p' && name[2] == 't'
-                && name[3] == 'i' && name[4] == 'o' && name[5] == 'n' && name[6] == 'a'
-                && name[7] == 'l')
+            if (nameLen == 8u && name[0] == (uint8_t)'o' && name[1] == (uint8_t)'p'
+                && name[2] == (uint8_t)'t' && name[3] == (uint8_t)'i' && name[4] == (uint8_t)'o'
+                && name[5] == (uint8_t)'n' && name[6] == (uint8_t)'a' && name[7] == (uint8_t)'l')
             {
                 p->features |= SLFeature_OPTIONAL;
             }
@@ -2426,6 +2436,7 @@ int SLParse(SLArena* arena, SLStrView src, SLAst* out, SLDiag* diag) {
     }
 
     p.src = src;
+    p.arena = arena;
     p.tok = ts.v;
     p.tokLen = ts.len;
     p.pos = 0;

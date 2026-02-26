@@ -8,6 +8,9 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_EXPECTED_EXPR,                /* SL1006: expected expression */
     SLDiag_EXPECTED_TYPE,                /* SL1007: expected type */
     SLDiag_PARAM_MISSING_TYPE,           /* SL1008: parameter '{s}' is missing type */
+    SLDiag_INVALID_STRING_ESCAPE,        /* SL1009: invalid string escape sequence */
+    SLDiag_INVALID_STRING_CODEPOINT,     /* SL1010: invalid Unicode code point in string literal */
+    SLDiag_INVALID_UTF8_STRING,          /* SL1011: string literal must decode to valid UTF-8 */
     SLDiag_DUPLICATE_SYMBOL,             /* SL2001: duplicate symbol */
     SLDiag_UNKNOWN_SYMBOL,               /* SL2002: unknown symbol */
     SLDiag_UNKNOWN_TYPE,                 /* SL2003: unknown type */
@@ -71,6 +74,8 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_TYPE_NOT_COMPARABLE,               /* SL2050: type is not comparable */
     SLDiag_TYPE_NOT_ORDERED,                  /* SL2051: type is not ordered */
     SLDiag_COMPARISON_HOOK_IMPURE,            /* SL2052: comparison hook must be pure */
+    SLDiag_STRING_CONCAT_LITERAL_ONLY,        /* SL2053: string '+' currently only supports
+                                                 non-parenthesized literal chains */
     SLDiag_CODEGEN_INTERNAL,                  /* SL3001: internal codegen error */
     SLDiag_ARENA_OOM,                         /* SL4001: arena out of memory */
     SLDiag_UNKNOWN_FEATURE,                   /* SL4002: unknown feature '{s}' */

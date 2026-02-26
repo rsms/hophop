@@ -37,13 +37,32 @@ contexts:
     strings:
         - match: '"'
           scope: punctuation.definition.string.begin.slang
-          push:
-              - meta_scope: string.quoted.double.slang
-              - match: '\\(?:[\\"ntr0]|x[0-9A-Fa-f]{2})'
-                scope: constant.character.escape.slang
-              - match: '"'
-                scope: punctuation.definition.string.end.slang
-                pop: true
+          push: interpreted-string
+        - match: '`'
+          scope: punctuation.definition.string.begin.slang
+          push: raw-string
+
+    interpreted-string:
+        - meta_include_prototype: false
+        - meta_scope: string.quoted.double.slang
+        - match: '\\\r?\n'
+          scope: constant.character.escape.line-continuation.slang
+        - match: '\\(?:[abfnrtv\\''"]|[0-7]{3}|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'
+          scope: constant.character.escape.slang
+        - match: '\\.'
+          scope: invalid.illegal.escape.slang
+        - match: '"'
+          scope: punctuation.definition.string.end.slang
+          pop: true
+
+    raw-string:
+        - meta_include_prototype: false
+        - meta_scope: string.quoted.raw.slang
+        - match: '\\`'
+          scope: constant.character.escape.slang
+        - match: '`'
+          scope: punctuation.definition.string.end.slang
+          pop: true
 
     numbers:
         - match: '\b0[xX][0-9A-Fa-f]+\b'
@@ -59,7 +78,7 @@ contexts:
               1: storage.modifier.visibility.slang
               2: keyword.declaration.function.slang
               3: entity.name.function.slang
-        - match: '\b(import)\s+({{ident}})(?=\s+")'
+        - match: '\b(import)\s+({{ident}})(?=\s+["`])'
           captures:
               1: keyword.control.import.slang
               2: entity.name.namespace.alias.slang

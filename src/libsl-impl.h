@@ -26,3 +26,38 @@
         #define memcmp __builtin_memcmp
     #endif
 #endif
+
+typedef enum {
+    SLStringLitErr_NONE = 0,
+    SLStringLitErr_UNTERMINATED,
+    SLStringLitErr_INVALID_ESCAPE,
+    SLStringLitErr_INVALID_CODEPOINT,
+    SLStringLitErr_INVALID_UTF8,
+    SLStringLitErr_ARENA_OOM,
+} SLStringLitErrKind;
+
+typedef struct {
+    SLStringLitErrKind kind;
+    uint32_t           start;
+    uint32_t           end;
+} SLStringLitErr;
+
+SLDiagCode SLStringLitErrDiagCode(SLStringLitErrKind kind);
+int        SLDecodeStringLiteralValidate(
+           const char* _Nonnull src, uint32_t start, uint32_t end, SLStringLitErr* _Nullable outErr);
+int SLDecodeStringLiteralArena(
+    SLArena* _Nonnull arena,
+    const char* _Nonnull src,
+    uint32_t start,
+    uint32_t end,
+    uint8_t* _Nullable* _Nonnull outBytes,
+    uint32_t* _Nonnull outLen,
+    SLStringLitErr* _Nullable outErr);
+int SLDecodeStringLiteralMalloc(
+    const char* _Nonnull src,
+    uint32_t start,
+    uint32_t end,
+    uint8_t* _Nullable* _Nonnull outBytes,
+    uint32_t* _Nonnull outLen,
+    SLStringLitErr* _Nullable outErr);
+int SLIsStringLiteralConcatChain(const SLAst* _Nonnull ast, int32_t nodeId);

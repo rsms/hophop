@@ -4317,7 +4317,10 @@ static int SLTCTypeExprExpected(
         return SLTCTypeCompoundLit(c, nodeId, expectedType, outType);
     }
 
-    if (n->kind == SLAst_STRING) {
+    if (n->kind == SLAst_STRING
+        || (n->kind == SLAst_BINARY && (SLTokenKind)n->op == SLTok_ADD
+            && SLIsStringLiteralConcatChain(c->ast, nodeId)))
+    {
         int32_t defaultType = SLTCGetStrRefType(c, n->start, n->end);
         if (defaultType < 0) {
             return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
@@ -5410,7 +5413,7 @@ static int SLTCTypeExpr_BINARY(
     int32_t     rhsType;
     int32_t     commonType;
     int32_t     hookFn = -1;
-    SLTokenKind op;
+    SLTokenKind op = (SLTokenKind)n->op;
     if (lhsNode < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
     }
@@ -5418,12 +5421,19 @@ static int SLTCTypeExpr_BINARY(
     if (rhsNode < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
     }
+    if (op == SLTok_ADD && SLIsStringLiteralConcatChain(c->ast, nodeId)) {
+        int32_t strRefType = SLTCGetStrRefType(c, n->start, n->end);
+        if (strRefType < 0) {
+            return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+        }
+        *outType = strRefType;
+        return 0;
+    }
     if (SLTCTypeExpr(c, lhsNode, &lhsType) != 0
         || SLTCTypeExprExpected(c, rhsNode, lhsType, &rhsType) != 0)
     {
         return -1;
     }
-    op = (SLTokenKind)n->op;
 
     if (op == SLTok_ASSIGN || op == SLTok_ADD_ASSIGN || op == SLTok_SUB_ASSIGN
         || op == SLTok_MUL_ASSIGN || op == SLTok_DIV_ASSIGN || op == SLTok_MOD_ASSIGN
@@ -5493,6 +5503,10 @@ static int SLTCTypeExpr_BINARY(
         }
         *outType = c->typeBool;
         return 0;
+    }
+
+    if (op == SLTok_ADD && (SLTCIsStringLikeType(c, lhsType) || SLTCIsStringLikeType(c, rhsType))) {
+        return SLTCFailNode(c, nodeId, SLDiag_STRING_CONCAT_LITERAL_ONLY);
     }
 
     if (SLTCCoerceForBinary(c, lhsType, rhsType, &commonType) != 0) {

@@ -765,12 +765,27 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                         }
                     }
                 }
-            } else if (c == (unsigned char)'"') {
+            } else if (c == (unsigned char)'"' || c == (unsigned char)'`') {
+                unsigned char quote = c;
                 kind = SLTok_STRING;
                 pos++;
                 while (pos < src.len) {
                     c = (unsigned char)src.ptr[pos];
-                    if (c == (unsigned char)'"') {
+                    if (quote == (unsigned char)'`') {
+                        if (c == (unsigned char)'\\' && pos + 1u < src.len
+                            && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'`')
+                        {
+                            pos += 2u;
+                            continue;
+                        }
+                        if (c == (unsigned char)'`') {
+                            pos++;
+                            break;
+                        }
+                        pos++;
+                        continue;
+                    }
+                    if (c == quote) {
                         pos++;
                         break;
                     }
@@ -780,18 +795,28 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                             SLSetDiag(diag, SLDiag_UNTERMINATED_STRING, start, pos);
                             return -1;
                         }
-                        pos++;
+                        if ((unsigned char)src.ptr[pos] == (unsigned char)'\r' && pos + 1u < src.len
+                            && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'\n')
+                        {
+                            pos += 2u;
+                        } else {
+                            pos++;
+                        }
                         continue;
-                    }
-                    if (c == (unsigned char)'\n' || c == (unsigned char)'\r') {
-                        SLSetDiag(diag, SLDiag_UNTERMINATED_STRING, start, pos);
-                        return -1;
                     }
                     pos++;
                 }
-                if (pos > src.len || src.ptr[pos - 1] != '"') {
+                if (pos > src.len || (unsigned char)src.ptr[pos - 1u] != quote) {
                     SLSetDiag(diag, SLDiag_UNTERMINATED_STRING, start, pos);
                     return -1;
+                }
+                {
+                    SLStringLitErr litErr = { 0 };
+                    if (SLDecodeStringLiteralValidate(src.ptr, start, pos, &litErr) != 0) {
+                        SLSetDiag(
+                            diag, SLStringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
+                        return -1;
+                    }
                 }
             } else {
                 pos++;

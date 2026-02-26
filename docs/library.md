@@ -46,6 +46,7 @@ Conceptually, it is a specialized form of `[u8]` where the content is UTF-8 data
 Properties:
 - `len(s)` is byte length.
 - `cstr(s)` exposes a read-only reference to UTF-8 bytes for C interop.
+- String literals assigned to `str` are validated to decode as UTF-8.
 - Use `&[u8]` / `*[u8]` for arbitrary binary data.
 
 ### `__sl_MemAllocator`

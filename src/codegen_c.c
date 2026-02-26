@@ -665,96 +665,109 @@ static char* _Nullable DupCStr(SLCBackendC* c, const char* s) {
     return out;
 }
 
-static int HexDigitValue(unsigned char c) {
-    if (c >= (unsigned char)'0' && c <= (unsigned char)'9') {
-        return (int)(c - (unsigned char)'0');
+static int32_t AstFirstChild(const SLAst* ast, int32_t nodeId);
+static int32_t AstNextSibling(const SLAst* ast, int32_t nodeId);
+static const SLAstNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId);
+
+static int DecodeStringLiteralNode(
+    SLCBackendC* c, const SLAstNode* n, uint8_t** outBytes, uint32_t* outLen) {
+    SLStringLitErr litErr = { 0 };
+    if (n == NULL || n->kind != SLAst_STRING) {
+        return -1;
     }
-    if (c >= (unsigned char)'a' && c <= (unsigned char)'f') {
-        return 10 + (int)(c - (unsigned char)'a');
+    if (SLDecodeStringLiteralArena(
+            &c->arena, c->unit->source, n->dataStart, n->dataEnd, outBytes, outLen, &litErr)
+        != 0)
+    {
+        SetDiag(c->diag, SLStringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
+        return -1;
     }
-    if (c >= (unsigned char)'A' && c <= (unsigned char)'F') {
-        return 10 + (int)(c - (unsigned char)'A');
+    return 0;
+}
+
+static int AppendDecodedStringExpr(
+    SLCBackendC* c, int32_t nodeId, uint8_t** bytes, uint32_t* len, uint32_t* cap) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    if (n == NULL) {
+        return -1;
+    }
+    if (n->kind == SLAst_STRING) {
+        uint8_t* part = NULL;
+        uint32_t partLen = 0;
+        if (DecodeStringLiteralNode(c, n, &part, &partLen) != 0) {
+            return -1;
+        }
+        if (partLen > 0) {
+            if (EnsureCapArena(
+                    &c->arena,
+                    (void**)bytes,
+                    cap,
+                    *len + partLen,
+                    sizeof(uint8_t),
+                    (uint32_t)_Alignof(uint8_t))
+                != 0)
+            {
+                SetDiag(c->diag, SLDiag_ARENA_OOM, n->start, n->end);
+                return -1;
+            }
+            memcpy(*bytes + *len, part, partLen);
+            *len += partLen;
+        }
+        return 0;
+    }
+    if (n->kind == SLAst_BINARY && (SLTokenKind)n->op == SLTok_ADD
+        && SLIsStringLiteralConcatChain(&c->ast, nodeId))
+    {
+        int32_t lhs = AstFirstChild(&c->ast, nodeId);
+        int32_t rhs = AstNextSibling(&c->ast, lhs);
+        if (lhs < 0 || rhs < 0) {
+            return -1;
+        }
+        if (AppendDecodedStringExpr(c, lhs, bytes, len, cap) != 0
+            || AppendDecodedStringExpr(c, rhs, bytes, len, cap) != 0)
+        {
+            return -1;
+        }
+        return 0;
     }
     return -1;
 }
 
-static int DecodeStringLiteral(
+static int DecodeStringExpr(
     SLCBackendC* c,
-    const char*  src,
-    uint32_t     start,
-    uint32_t     end,
+    int32_t      nodeId,
     uint8_t**    outBytes,
-    uint32_t*    outLen) {
-    uint8_t* bytes = NULL;
-    uint32_t len = 0;
-    uint32_t cap = 0;
-    uint32_t i;
-
-    if (end <= start + 1u || src[start] != '"' || src[end - 1u] != '"') {
+    uint32_t*    outLen,
+    uint32_t*    outStart,
+    uint32_t*    outEnd) {
+    uint8_t*         bytes = NULL;
+    uint32_t         len = 0;
+    uint32_t         cap = 0;
+    const SLAstNode* n = NodeAt(c, nodeId);
+    if (n == NULL) {
         return -1;
     }
-
-    i = start + 1u;
-    while (i < end - 1u) {
-        unsigned char ch = (unsigned char)src[i++];
-        if (ch == (unsigned char)'\\') {
-            unsigned char esc;
-            if (i >= end - 1u) {
-                return -1;
-            }
-            esc = (unsigned char)src[i++];
-            switch (esc) {
-                case (unsigned char)'\\': ch = (unsigned char)'\\'; break;
-                case (unsigned char)'"':  ch = (unsigned char)'"'; break;
-                case (unsigned char)'n':  ch = (unsigned char)'\n'; break;
-                case (unsigned char)'t':  ch = (unsigned char)'\t'; break;
-                case (unsigned char)'r':  ch = (unsigned char)'\r'; break;
-                case (unsigned char)'0':  ch = (unsigned char)'\0'; break;
-                case (unsigned char)'x':  {
-                    int hi;
-                    int lo;
-                    if (i + 1u >= end - 1u) {
-                        return -1;
-                    }
-                    hi = HexDigitValue((unsigned char)src[i]);
-                    lo = HexDigitValue((unsigned char)src[i + 1u]);
-                    if (hi < 0 || lo < 0) {
-                        return -1;
-                    }
-                    ch = (unsigned char)((hi << 4) | lo);
-                    i += 2u;
-                    break;
-                }
-                default: ch = esc; break;
-            }
-        }
-        if (EnsureCapArena(
-                &c->arena,
-                (void**)&bytes,
-                &cap,
-                len + 1u,
-                sizeof(uint8_t),
-                (uint32_t)_Alignof(uint8_t))
-            != 0)
-        {
-            return -1;
-        }
-        bytes[len++] = (uint8_t)ch;
+    if (AppendDecodedStringExpr(c, nodeId, &bytes, &len, &cap) != 0) {
+        return -1;
     }
-
     *outBytes = bytes;
     *outLen = len;
+    *outStart = n->start;
+    *outEnd = n->end;
     return 0;
 }
 
-static int GetOrAddStringLiteral(
-    SLCBackendC* c, uint32_t start, uint32_t end, int32_t* outLiteralId) {
+static int GetOrAddStringLiteralExpr(SLCBackendC* c, int32_t nodeId, int32_t* outLiteralId) {
     uint8_t* decoded = NULL;
     uint32_t decodedLen = 0;
+    uint32_t spanStart = 0;
+    uint32_t spanEnd = 0;
     uint32_t i;
 
-    if (DecodeStringLiteral(c, c->unit->source, start, end, &decoded, &decodedLen) != 0) {
-        SetDiag(c->diag, SLDiag_CODEGEN_INTERNAL, start, end);
+    if (DecodeStringExpr(c, nodeId, &decoded, &decodedLen, &spanStart, &spanEnd) != 0) {
+        if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+            SetDiag(c->diag, SLDiag_CODEGEN_INTERNAL, spanStart, spanEnd);
+        }
         return -1;
     }
 
@@ -777,7 +790,7 @@ static int GetOrAddStringLiteral(
             (uint32_t)_Alignof(SLStringLiteral))
         != 0)
     {
-        SetDiag(c->diag, SLDiag_ARENA_OOM, start, end);
+        SetDiag(c->diag, SLDiag_ARENA_OOM, spanStart, spanEnd);
         return -1;
     }
 
@@ -787,9 +800,6 @@ static int GetOrAddStringLiteral(
     c->stringLitLen++;
     return 0;
 }
-
-static int32_t AstFirstChild(const SLAst* ast, int32_t nodeId);
-static int32_t AstNextSibling(const SLAst* ast, int32_t nodeId);
 
 static int CollectStringLiterals(SLCBackendC* c) {
     uint32_t nodeId;
@@ -806,7 +816,16 @@ static int CollectStringLiterals(SLCBackendC* c) {
 
     for (nodeId = 0; nodeId < c->ast.len; nodeId++) {
         const SLAstNode* n = &c->ast.nodes[nodeId];
+        int              shouldCollect = 0;
         if (n->kind == SLAst_STRING) {
+            shouldCollect = 1;
+        } else if (
+            n->kind == SLAst_BINARY && (SLTokenKind)n->op == SLTok_ADD
+            && SLIsStringLiteralConcatChain(&c->ast, (int32_t)nodeId))
+        {
+            shouldCollect = 1;
+        }
+        if (shouldCollect) {
             uint32_t scanNodeId;
             int      skip = 0;
             for (scanNodeId = 0; scanNodeId < c->ast.len; scanNodeId++) {
@@ -814,7 +833,7 @@ static int CollectStringLiterals(SLCBackendC* c) {
                 if (parent->kind == SLAst_ASSERT) {
                     int32_t condNode = AstFirstChild(&c->ast, (int32_t)scanNodeId);
                     int32_t fmtNode = AstNextSibling(&c->ast, condNode);
-                    if (fmtNode == (int32_t)nodeId) {
+                    if (n->kind == SLAst_STRING && fmtNode == (int32_t)nodeId) {
                         skip = 1;
                         break;
                     }
@@ -823,11 +842,13 @@ static int CollectStringLiterals(SLCBackendC* c) {
             if (skip) {
                 continue;
             }
-            int32_t literalId;
-            if (GetOrAddStringLiteral(c, n->dataStart, n->dataEnd, &literalId) != 0) {
-                return -1;
+            {
+                int32_t literalId;
+                if (GetOrAddStringLiteralExpr(c, (int32_t)nodeId, &literalId) != 0) {
+                    return -1;
+                }
+                c->stringLitByNode[nodeId] = literalId;
             }
-            c->stringLitByNode[nodeId] = literalId;
         }
     }
     return 0;
@@ -5681,7 +5702,9 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
         int requireNonNull = TypeRefIsPointerLike(dstType) && !dstType->isOptional;
         return EmitNewExpr(c, exprNode, dstType, requireNonNull);
     }
-    if (expr != NULL && expr->kind == SLAst_STRING
+    if (expr != NULL
+        && (expr->kind == SLAst_STRING
+            || (expr->kind == SLAst_BINARY && (SLTokenKind)expr->op == SLTok_ADD))
         && dstType->containerKind == SLTypeContainer_SCALAR && dstType->containerPtrDepth == 0
         && dstType->ptrDepth > 0 && IsStrBaseName(dstType->baseName))
     {
@@ -6558,6 +6581,15 @@ static int EmitExpr_BINARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
     int32_t     lhs = AstFirstChild(&c->ast, nodeId);
     int32_t     rhs = AstNextSibling(&c->ast, lhs);
     SLTokenKind op = (SLTokenKind)n->op;
+    if (op == SLTok_ADD) {
+        int32_t literalId = -1;
+        if (nodeId >= 0 && (uint32_t)nodeId < c->stringLitByNodeLen) {
+            literalId = c->stringLitByNode[nodeId];
+        }
+        if (literalId >= 0) {
+            return EmitStringLiteralRef(c, literalId, 0);
+        }
+    }
     if (op == SLTok_ASSIGN) {
         SLTypeRef lhsType;
         if (lhs < 0 || rhs < 0) {

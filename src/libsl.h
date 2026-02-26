@@ -328,6 +328,7 @@ enum {
     SLAstFlag_NEW_HAS_COUNT = 0x0040u,
     SLAstFlag_NEW_HAS_ALLOC = 0x0080u,
     SLAstFlag_NEW_HAS_INIT = 0x0100u,
+    SLAstFlag_PAREN = 0x0200u,
 };
 
 typedef uint32_t SLFeatures;
