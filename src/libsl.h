@@ -138,6 +138,8 @@ typedef struct {
     uint32_t   end;
     uint32_t   argStart;
     uint32_t   argEnd;
+    const char* _Nullable detail;
+    const char* _Nullable hintOverride;
 } SLDiag;
 
 void        SLDiagClear(SLDiag* diag);

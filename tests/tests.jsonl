@@ -102,6 +102,7 @@
 {"id":"check:tests/enum_member_unqualified_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/enum_member_unqualified_bad.sl","expect_stderr":"tests/enum_member_unqualified_bad.stderr"}
 {"id":"check:tests/enum_member_unknown_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/enum_member_unknown_bad.sl","expect_stderr":"tests/enum_member_unknown_bad.stderr"}
 {"id":"check:tests/bad_type_mismatch.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/bad_type_mismatch.sl","expect_stderr":"tests/bad_type_mismatch.stderr"}
+{"id":"check:tests/type_mismatch_var_init_ident_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/type_mismatch_var_init_ident_bad.sl","expect_stderr":"tests/type_mismatch_var_init_ident_bad.stderr"}
 {"id":"check:tests/switch_bad_subject_type.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/switch_bad_subject_type.sl","expect_stderr":"tests/switch_bad_subject_type.stderr"}
 {"id":"check:tests/switch_bad_condition_type.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/switch_bad_condition_type.sl","expect_stderr":"tests/switch_bad_condition_type.stderr"}
 {"id":"check:tests/switch_bad_default_dup.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/switch_bad_default_dup.sl","expect_stderr":"tests/switch_bad_default_dup.stderr"}
@@ -158,7 +159,7 @@
 {"id":"check:tests/vss_bad_var_value.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"check","input":"tests/vss_bad_var_value.sl"}
 {"id":"check:tests/vss_bad_sizeof_type.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"check","input":"tests/vss_bad_sizeof_type.sl"}
 {"id":"check:tests/str_param_byvalue_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"check","input":"tests/str_param_byvalue_bad.sl"}
-{"id":"check:tests/str_var_byvalue_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"check","input":"tests/str_var_byvalue_bad.sl"}
+{"id":"check:tests/str_var_byvalue_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/str_var_byvalue_bad.sl","expect_stderr":"tests/str_var_byvalue_bad.stderr"}
 {"id":"check:tests/str_slice_mut_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"check","input":"tests/str_slice_mut_bad.sl"}
 {"id":"integration.codegen.pkg_ok.genpkg_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg","input":"tests/pkg_ok/app","contains":["__sl_i32 app__main(__sl_Context *context"],"not_contains":["static __sl_i32 app__main(__sl_Context *context"],"harness":"tests/harness/app_codegen_test.c.in"}
 {"id":"integration.codegen.ptr.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/codegen_ptr","harness":"tests/harness/ptr_codegen_test.c.in"}

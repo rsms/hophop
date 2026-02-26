@@ -189,6 +189,8 @@ static void SLTCSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t 
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->detail = NULL;
+    diag->hintOverride = NULL;
 }
 
 static void SLTCSetDiagWithArg(
@@ -207,6 +209,8 @@ static void SLTCSetDiagWithArg(
     diag->end = end;
     diag->argStart = argStart;
     diag->argEnd = argEnd;
+    diag->detail = NULL;
+    diag->hintOverride = NULL;
 }
 
 static int SLTCFailSpan(SLTypeCheckCtx* c, SLDiagCode code, uint32_t start, uint32_t end) {
@@ -219,6 +223,273 @@ static int SLTCFailNode(SLTypeCheckCtx* c, int32_t nodeId, SLDiagCode code) {
         return SLTCFailSpan(c, code, 0, 0);
     }
     return SLTCFailSpan(c, code, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end);
+}
+
+#define SLTC_DIAG_TEXT_CAP 128u
+
+typedef struct {
+    char*    ptr;
+    uint32_t cap;
+    uint32_t len;
+} SLTCTextBuf;
+
+static void SLTCTextBufInit(SLTCTextBuf* b, char* ptr, uint32_t cap) {
+    b->ptr = ptr;
+    b->cap = cap;
+    b->len = 0;
+    if (cap > 0) {
+        ptr[0] = '\0';
+    }
+}
+
+static void SLTCTextBufAppendChar(SLTCTextBuf* b, char ch) {
+    if (b->cap == 0 || b->ptr == NULL) {
+        return;
+    }
+    if (b->len + 1u < b->cap) {
+        b->ptr[b->len++] = ch;
+        b->ptr[b->len] = '\0';
+    }
+}
+
+static void SLTCTextBufAppendCStr(SLTCTextBuf* b, const char* s) {
+    uint32_t i = 0;
+    if (s == NULL) {
+        return;
+    }
+    while (s[i] != '\0') {
+        SLTCTextBufAppendChar(b, s[i]);
+        i++;
+    }
+}
+
+static void SLTCTextBufAppendSlice(SLTCTextBuf* b, SLStrView src, uint32_t start, uint32_t end) {
+    uint32_t i;
+    if (end < start || end > src.len) {
+        return;
+    }
+    for (i = start; i < end; i++) {
+        SLTCTextBufAppendChar(b, src.ptr[i]);
+    }
+}
+
+static void SLTCTextBufAppendU32(SLTCTextBuf* b, uint32_t v) {
+    char     tmp[16];
+    uint32_t n = 0;
+    if (v == 0) {
+        SLTCTextBufAppendChar(b, '0');
+        return;
+    }
+    while (v > 0 && n < (uint32_t)sizeof(tmp)) {
+        tmp[n++] = (char)('0' + (v % 10u));
+        v /= 10u;
+    }
+    while (n > 0) {
+        n--;
+        SLTCTextBufAppendChar(b, tmp[n]);
+    }
+}
+
+static const char* SLTCBuiltinName(SLTypeCheckCtx* c, int32_t typeId, SLBuiltinKind kind) {
+    switch (kind) {
+        case SLBuiltin_VOID:  return "void";
+        case SLBuiltin_BOOL:  return "bool";
+        case SLBuiltin_U8:    return "u8";
+        case SLBuiltin_U16:   return "u16";
+        case SLBuiltin_U32:   return "u32";
+        case SLBuiltin_U64:   return "u64";
+        case SLBuiltin_I8:    return "i8";
+        case SLBuiltin_I16:   return "i16";
+        case SLBuiltin_I32:   return "i32";
+        case SLBuiltin_I64:   return "i64";
+        case SLBuiltin_USIZE: return "uint";
+        case SLBuiltin_ISIZE: return "int";
+        case SLBuiltin_F32:   return "f32";
+        case SLBuiltin_F64:   return "f64";
+        case SLBuiltin_STR:   return "str";
+        case SLBuiltin_INVALID:
+            if (typeId >= 0 && typeId == c->typeStr) {
+                return "str";
+            }
+            return "<builtin>";
+    }
+    return "<builtin>";
+}
+
+static void SLTCFormatTypeRec(SLTypeCheckCtx* c, int32_t typeId, SLTCTextBuf* b, uint32_t depth) {
+    const SLTCType* t;
+    if (depth > 32u) {
+        SLTCTextBufAppendCStr(b, "...");
+        return;
+    }
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
+        SLTCTextBufAppendCStr(b, "<invalid>");
+        return;
+    }
+    t = &c->types[typeId];
+    switch (t->kind) {
+        case SLTCType_BUILTIN:
+            SLTCTextBufAppendCStr(b, SLTCBuiltinName(c, typeId, t->builtin));
+            return;
+        case SLTCType_NAMED:
+        case SLTCType_ALIAS:
+            if (t->nameEnd > t->nameStart && t->nameEnd <= c->src.len) {
+                SLTCTextBufAppendSlice(b, c->src, t->nameStart, t->nameEnd);
+            } else {
+                SLTCTextBufAppendCStr(b, "<unnamed>");
+            }
+            return;
+        case SLTCType_PTR:
+            SLTCTextBufAppendChar(b, '*');
+            SLTCFormatTypeRec(c, t->baseType, b, depth + 1u);
+            return;
+        case SLTCType_REF:
+            SLTCTextBufAppendChar(b, (t->flags & SLTCTypeFlag_MUTABLE) != 0 ? '*' : '&');
+            SLTCFormatTypeRec(c, t->baseType, b, depth + 1u);
+            return;
+        case SLTCType_ARRAY:
+            SLTCTextBufAppendChar(b, '[');
+            SLTCFormatTypeRec(c, t->baseType, b, depth + 1u);
+            SLTCTextBufAppendChar(b, ' ');
+            SLTCTextBufAppendU32(b, t->arrayLen);
+            SLTCTextBufAppendChar(b, ']');
+            return;
+        case SLTCType_SLICE:
+            SLTCTextBufAppendChar(b, '[');
+            SLTCFormatTypeRec(c, t->baseType, b, depth + 1u);
+            SLTCTextBufAppendChar(b, ']');
+            return;
+        case SLTCType_OPTIONAL:
+            SLTCTextBufAppendChar(b, '?');
+            SLTCFormatTypeRec(c, t->baseType, b, depth + 1u);
+            return;
+        case SLTCType_UNTYPED_INT:   SLTCTextBufAppendCStr(b, "untyped_int"); return;
+        case SLTCType_UNTYPED_FLOAT: SLTCTextBufAppendCStr(b, "untyped_float"); return;
+        case SLTCType_NULL:          SLTCTextBufAppendCStr(b, "null"); return;
+        case SLTCType_FUNCTION:      SLTCTextBufAppendCStr(b, "fn(...)"); return;
+        case SLTCType_ANON_STRUCT:   SLTCTextBufAppendCStr(b, "struct{...}"); return;
+        case SLTCType_ANON_UNION:    SLTCTextBufAppendCStr(b, "union{...}"); return;
+        case SLTCType_INVALID:
+        default:                     SLTCTextBufAppendCStr(b, "<type>"); return;
+    }
+}
+
+static int SLTCExprIsStringConstant(SLTypeCheckCtx* c, int32_t nodeId) {
+    const SLAstNode* n;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[nodeId];
+    if (n->kind == SLAst_STRING) {
+        return 1;
+    }
+    if (n->kind == SLAst_BINARY && (SLTokenKind)n->op == SLTok_ADD
+        && SLIsStringLiteralConcatChain(c->ast, nodeId))
+    {
+        return 1;
+    }
+    return 0;
+}
+
+static void SLTCFormatExprSubject(SLTypeCheckCtx* c, int32_t nodeId, SLTCTextBuf* b) {
+    const SLAstNode* n;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        SLTCTextBufAppendCStr(b, "expression");
+        return;
+    }
+    n = &c->ast->nodes[nodeId];
+    if (n->kind == SLAst_IDENT && n->dataEnd > n->dataStart && n->dataEnd <= c->src.len) {
+        SLTCTextBufAppendChar(b, '\'');
+        SLTCTextBufAppendSlice(b, c->src, n->dataStart, n->dataEnd);
+        SLTCTextBufAppendChar(b, '\'');
+        return;
+    }
+    if (SLTCExprIsStringConstant(c, nodeId)) {
+        SLTCTextBufAppendCStr(b, "string constant");
+        return;
+    }
+    SLTCTextBufAppendCStr(b, "expression");
+}
+
+static char* _Nullable SLTCAllocDiagText(SLTypeCheckCtx* c, const char* text) {
+    uint32_t len;
+    char*    p;
+    if (text == NULL) {
+        return NULL;
+    }
+    len = 0;
+    while (text[len] != '\0') {
+        if (len == UINT32_MAX) {
+            return NULL;
+        }
+        len++;
+    }
+    if (len > UINT32_MAX - 1u) {
+        return NULL;
+    }
+    p = (char*)SLArenaAlloc(c->arena, len + 1u, 1u);
+    if (p == NULL) {
+        return NULL;
+    }
+    memcpy(p, text, len + 1u);
+    return p;
+}
+
+static int SLTCFailTypeMismatchDetail(
+    SLTypeCheckCtx* c, int32_t failNode, int32_t exprNode, int32_t srcType, int32_t dstType) {
+    uint32_t    start = 0;
+    uint32_t    end = 0;
+    char        subjectBuf[SLTC_DIAG_TEXT_CAP];
+    char        srcTypeBuf[SLTC_DIAG_TEXT_CAP];
+    char        dstTypeBuf[SLTC_DIAG_TEXT_CAP];
+    char        detailBuf[384];
+    SLTCTextBuf subject;
+    SLTCTextBuf srcTypeText;
+    SLTCTextBuf dstTypeText;
+    SLTCTextBuf detailText;
+    char*       detail;
+    int         sourceIsStringLike = 0;
+
+    if (failNode >= 0 && (uint32_t)failNode < c->ast->len) {
+        start = c->ast->nodes[failNode].start;
+        end = c->ast->nodes[failNode].end;
+    }
+    SLTCSetDiag(c->diag, SLDiag_TYPE_MISMATCH, start, end);
+    if (c->diag == NULL) {
+        return -1;
+    }
+
+    SLTCTextBufInit(&subject, subjectBuf, (uint32_t)sizeof(subjectBuf));
+    SLTCTextBufInit(&srcTypeText, srcTypeBuf, (uint32_t)sizeof(srcTypeBuf));
+    SLTCTextBufInit(&dstTypeText, dstTypeBuf, (uint32_t)sizeof(dstTypeBuf));
+    SLTCFormatExprSubject(c, exprNode, &subject);
+    SLTCFormatTypeRec(c, srcType, &srcTypeText, 0);
+    SLTCFormatTypeRec(c, dstType, &dstTypeText, 0);
+
+    SLTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    SLTCTextBufAppendCStr(&detailText, "cannot use ");
+    SLTCTextBufAppendCStr(&detailText, subjectBuf);
+    SLTCTextBufAppendCStr(&detailText, " of type ");
+    SLTCTextBufAppendCStr(&detailText, srcTypeBuf);
+    SLTCTextBufAppendCStr(&detailText, " as ");
+    SLTCTextBufAppendCStr(&detailText, dstTypeBuf);
+    detail = SLTCAllocDiagText(c, detailBuf);
+    if (detail != NULL) {
+        c->diag->detail = detail;
+    }
+
+    if (srcType >= 0 && (uint32_t)srcType < c->typeLen) {
+        const SLTCType* src = &c->types[srcType];
+        sourceIsStringLike =
+            srcType == c->typeStr
+            || ((src->kind == SLTCType_PTR || src->kind == SLTCType_REF)
+                && src->baseType == c->typeStr);
+    }
+
+    if (dstType == c->typeStr && SLTCExprIsStringConstant(c, exprNode) && sourceIsStringLike) {
+        c->diag->hintOverride = SLTCAllocDiagText(c, "change type to &str or *str");
+    }
+    return -1;
 }
 
 static int32_t SLAstFirstChild(const SLAst* ast, int32_t nodeId) {
@@ -5610,11 +5881,18 @@ static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
     if (SLTCResolveTypeNode(c, typeNode, &declType) != 0) {
         return -1;
     }
+    initNode = SLAstNextSibling(c->ast, typeNode);
     if (SLTCTypeContainsVarSizeByValue(c, declType)) {
+        if (initNode >= 0) {
+            int32_t initType;
+            if (SLTCTypeExprExpected(c, initNode, declType, &initType) != 0) {
+                return -1;
+            }
+            return SLTCFailTypeMismatchDetail(c, initNode, initNode, initType, declType);
+        }
         return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
     }
 
-    initNode = SLAstNextSibling(c->ast, typeNode);
     if (n->kind == SLAst_CONST && initNode < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_CONST_MISSING_INITIALIZER);
     }
@@ -5624,7 +5902,7 @@ static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
             return -1;
         }
         if (!SLTCCanAssign(c, declType, initType)) {
-            return SLTCFailNode(c, initNode, SLDiag_TYPE_MISMATCH);
+            return SLTCFailTypeMismatchDetail(c, initNode, initNode, initType, declType);
         }
     }
 

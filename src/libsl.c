@@ -17,6 +17,8 @@ static void SLSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t en
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->detail = NULL;
+    diag->hintOverride = NULL;
 }
 
 void SLDiagClear(SLDiag* diag) {
@@ -29,6 +31,8 @@ void SLDiagClear(SLDiag* diag) {
     diag->end = 0;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->detail = NULL;
+    diag->hintOverride = NULL;
 }
 
 static uint32_t SLArenaAlignUpU32(uint32_t value, uint32_t align) {

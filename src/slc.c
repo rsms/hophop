@@ -447,6 +447,9 @@ static int PrintSLDiagEx(
     } else {
         fputs(msg, stderr);
     }
+    if (diag->detail != NULL && diag->detail[0] != '\0') {
+        fprintf(stderr, ": %s", diag->detail);
+    }
     if (diag->code == SLDiag_ARENA_OOM && diag->argEnd > 0) {
         fprintf(
             stderr,
@@ -458,7 +461,10 @@ static int PrintSLDiagEx(
     fputc('\n', stderr);
 
     if (includeHint) {
-        const char* hint = SLDiagHint(diag->code);
+        const char* hint =
+            (diag->hintOverride != NULL && diag->hintOverride[0] != '\0')
+                ? diag->hintOverride
+                : SLDiagHint(diag->code);
         if (hint != NULL) {
             fprintf(stderr, "  tip: %s\n", hint);
         }
