@@ -67,8 +67,8 @@ slc run <dir|file.sl>       # compile + execute
 
 ## Architecture
 
-- Source of truth for language syntax/semantics: `docs/language.md`.
-- Source of truth for implementation details: the code itself (`src/`, `lib/`, `tools/`, `tests/`).
+- Source of truth for language syntax & semantics: `docs/language.md`.
+- Source of truth for implementation details: the code itself (`src/`, `lib/`, `examples/`, `tests/`).
 - If a high-level summary conflicts with code, trust `docs/language.md` and current source files.
 
 ## Workflow Notes

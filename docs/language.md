@@ -8,6 +8,10 @@ Primary goals:
 - separate required language semantics from reference-implementation details
 - support incremental evolution with explicit stability tags
 
+See also:
+- [spec-glossary.md](spec-glossary.md) for a glossary of terminology use in specification docs
+- [spec-conformance.md](spec-conformance.md) for specification conformance matrix
+
 ## 1. Conformance Model
 
 ### 1.1 Normative terms
