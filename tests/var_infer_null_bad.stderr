@@ -1,1 +1,1 @@
-tests/var_infer_null_bad.sl:2:13: SL2026: cannot infer type from null; add explicit type
+tests/var_infer_null_bad.sl:2:10: SL2026: cannot infer type from null; add explicit type

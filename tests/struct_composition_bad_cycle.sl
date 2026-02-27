@@ -1,7 +1,7 @@
 struct A {
-    B
+	B
 }
 
 struct B {
-    A
+	A
 }

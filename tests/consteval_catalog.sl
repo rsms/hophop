@@ -2,119 +2,132 @@
 //
 // Keep this file as the broad regression surface for compile-time evaluation.
 // This file is intended for `slc check` coverage.
-
 const BASE = 3
 
 fn expect_i(actual int, want int) int {
-    assert actual == want
-    return actual
+	assert actual == want
+	return actual
 }
 
 fn stride(x int) int {
-    const doubled = x * 2
-    return doubled + 1
+	const doubled = x * 2
+	return doubled + 1
 }
 
 fn checked_stride(x int) int {
-    assert x > 0
-    return stride(x)
+	assert x > 0
+	return stride(x)
 }
 
 fn sum_to(n int) int {
-    var i int = 0
-    var sum int = 0
-    for i < n {
-        sum += i
-        i += 1
-    }
-    return sum
+	var i   int = 0
+	var sum int = 0
+	for i < n {
+		sum += i
+		i += 1
+	}
+	return sum
 }
 
 fn odd_count_upto(limit int) int {
-    var i int = 0
-    var count int = 0
-    for i = 0; i < limit; i += 1 {
-        if i == 10 {
-            break
-        }
-        if i % 2 == 0 {
-            continue
-        }
-        count += 1
-    }
-    return count
+	var i     int = 0
+	var count int = 0
+	for i = 0; i < limit; i += 1 {
+		if i == 10 {
+			break
+		}
+		if i % 2 == 0 {
+			continue
+		}
+		count += 1
+	}
+	return count
 }
 
 fn classify(x int) int {
-    switch x {
-    case 0 {
-        return 1
-    }
-    case 1, 2 {
-        return 2
-    }
-    default {
-        return 3
-    }
-    }
+	switch x {
+		case 0    { return 1 }
+		case 1, 2 { return 2 }
+		default   { return 3 }
+	}
 }
 
 fn defer_value(x int) int {
-    var y int = x
-    defer y += 1
-    return y
+	var y int = x
+	defer y += 1
+	return y
 }
 
 fn local_elem_size() int {
-    var x int = 1
-    return sizeof(x) as int
+	var x int = 1
+	return sizeof(x) as int
 }
 
 fn local_infer_elem_size() int {
-    var x = 1
-    return sizeof(x) as int
+	var x = 1
+	return sizeof(x) as int
 }
 
 fn choose(a int, b int, flip bool) int {
-    if flip {
-        return a
-    }
-    if b > a {
-        return b
-    }
-    return a + b
+	if flip {
+		return a
+	}
+	if b > a {
+		return b
+	}
+	return a + b
 }
 
 const WIDTH = expect_i(BASE * 4 + 1, 13)
+
 const COUNT = expect_i(stride(WIDTH), 27)
+
 const CHECKED = expect_i(checked_stride(5), 11)
+
 const TRI = expect_i(sum_to(6), 15)
+
 const ODD_COUNT = expect_i(odd_count_upto(20), 5)
+
 const KIND = expect_i(classify(2), 2)
+
 const DEFER_VALUE = expect_i(defer_value(4), 5)
+
 const PICKED = expect_i(choose(2, 7, false), 7)
+
 const PICKED_FLIP = expect_i(choose(2, 7, true), 2)
 
 const PI f64 = 3.14159
+
 const PI_INT int = PI as int
+
 const PI_INT_OK = expect_i(PI_INT, 3)
+
 const SIZE_I32 int = sizeof(i32) as int
+
 const SIZE_I32_OK = expect_i(SIZE_I32, 4)
+
 const INT_SIZE int = sizeof(1 as int) as int
+
 const SIZE_PI_INT int = sizeof(PI_INT) as int
+
 const SIZE_PI_INT_OK = expect_i(SIZE_PI_INT, INT_SIZE)
+
 const LOCAL_ELEM_SIZE = expect_i(local_elem_size(), INT_SIZE)
+
 const LOCAL_INFER_ELEM_SIZE = expect_i(local_infer_elem_size(), INT_SIZE)
+
 const ZERO_FROM_NULL int = null as int
+
 const ZERO_FROM_NULL_OK = expect_i(ZERO_FROM_NULL, 0)
+
 const NONE ?*int = null
 
 fn main() {
-    // Keep const-in-length checks here; codegen currently has a known gap for
-    // named const array lengths, but check mode validates this surface.
-    var a [i32 WIDTH]
-    var b [u8 COUNT + 2]
+	// Keep const-in-length checks here; codegen currently has a known gap for
+	// named const array lengths, but check mode validates this surface.
+	var a [i32 WIDTH]
+	var b [u8 COUNT + 2]
 
-    assert a[0] == 0
-    assert b[0] == 0
+	assert a[0] == 0
+	assert b[0] == 0
 }

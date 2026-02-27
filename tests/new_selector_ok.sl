@@ -1,10 +1,9 @@
-
 fn main() {
-    var ma = context.mem
-    var p *i32 = new i32 with ma
-    var q *[i32 4] = new [i32 4] with ma
+	var ma         = context.mem
+	var p *i32     = new i32 with ma
+	var q *[i32 4] = new [i32 4] with ma
 
-    *p = 7
-    q[0] = *p
-    assert q[0] == 7
+	*p = 7
+	q[0] = *p
+	assert q[0] == 7
 }

@@ -1,1 +1,47 @@
 input.sl
+input.sl:1:1: line content differs
+  current : "import \"feature/optional\"   ; import \"math/basic\" as math { Add as Sum ,Sub }"
+  expected: "import \"feature/optional\""
+input.sl:2:1: line should be inserted
+  current : ""
+  expected: "import \"math/basic\" as math { Add as Sum, Sub }"
+input.sl:3:1: line content differs
+  current : "struct Foo { x int // trailing comment about field x"
+  expected: "struct Foo {"
+input.sl:4:1: line content differs
+  current : "// leading comment about field y"
+  expected: "\tx int // trailing comment about field x"
+input.sl:5:1: line content differs
+  current : "y int = 2"
+  expected: "\t// leading comment about field y"
+input.sl:6:1: line should be inserted
+  current : ""
+  expected: "\ty int = 2"
+input.sl:8:1: line content differs
+  current : "fn add(a,b int) int {"
+  expected: "fn add(a int, b int) int {"
+input.sl:9:1: internal whitespace differs
+  current : "for var i int =0; i < 10; i += 1 {"
+  expected: "\tfor var i int = 0; i < 10; i += 1 {"
+input.sl:10:1: leading or trailing whitespace differs
+  current : "if i % 2 == 0 {"
+  expected: "\t\tif i % 2 == 0 {"
+input.sl:11:1: leading or trailing whitespace differs
+  current : "continue"
+  expected: "\t\t\tcontinue"
+input.sl:12:1: leading or trailing whitespace differs
+  current : "} else {"
+  expected: "\t\t} else {"
+input.sl:13:1: leading or trailing whitespace differs
+  current : "break"
+  expected: "\t\t\tbreak"
+input.sl:14:1: leading or trailing whitespace differs
+  current : "}"
+  expected: "\t\t}"
+input.sl:15:1: leading or trailing whitespace differs
+  current : "}"
+  expected: "\t}"
+input.sl:16:1: internal whitespace differs
+  current : "return a+b"
+  expected: "\treturn a + b"
+  issues: 15

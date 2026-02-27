@@ -1,14 +1,15 @@
 struct Allocator {
-    impl fn(self *Allocator, addr, align, curSize uint, newSizeInOut *uint, flags u32) uint
+	impl fn(*Allocator, uint, uint, uint, *uint, u32) uint
 }
 
 struct CtxA {
-    mem *Allocator
+	mem *Allocator
 }
 
 struct CtxB {
-    mem *Allocator
+	mem *Allocator
 }
 
-fn f() context CtxA;
+fn f() context CtxA
+
 fn f() context CtxB {}

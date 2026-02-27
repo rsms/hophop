@@ -1,3 +1,3 @@
 pub fn bad() {
-    panic()
+	panic()
 }

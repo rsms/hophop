@@ -2,8 +2,8 @@ import "slang/feature/optional"
 
 // Inside if x == null { ... }, x is null-typed — cannot dereference.
 pub fn bad(x ?*i32) i32 {
-    if x == null {
-        return *x
-    }
-    return 0
+	if x == null {
+		return *x
+	}
+	return 0
 }

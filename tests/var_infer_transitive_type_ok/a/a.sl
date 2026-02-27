@@ -1,3 +1,3 @@
 pub struct A {
-    x int
+	x int
 }

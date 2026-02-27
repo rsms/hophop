@@ -1,1 +1,1 @@
-tests/struct_field_defaults_forward_ref_bad.sl:2:13: SL2045: field default references later field 'b'
+tests/struct_field_defaults_forward_ref_bad.sl:2:10: SL2045: field default references later field 'b'

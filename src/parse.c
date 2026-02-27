@@ -718,7 +718,7 @@ static int SLPParseCompoundLiteralTail(SLParser* p, int32_t typeNode, int32_t* o
         }
         p->nodes[field].end = p->nodes[expr].end;
 
-        if (SLPMatch(p, SLTok_COMMA)) {
+        if (SLPMatch(p, SLTok_COMMA) || SLPMatch(p, SLTok_SEMICOLON)) {
             if (SLPAt(p, SLTok_RBRACE)) {
                 break;
             }

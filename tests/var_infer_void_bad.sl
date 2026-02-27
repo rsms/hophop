@@ -1,7 +1,6 @@
-fn noop() {
-}
+fn noop() {}
 
 fn example() {
-    var x = noop()
-    _ = x
+	var x = noop()
+	_ = x
 }

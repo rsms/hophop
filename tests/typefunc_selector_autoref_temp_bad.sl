@@ -1,16 +1,16 @@
 struct S {
-    x int
+	x int
 }
 
 fn set_ptr(s *S, v int) {
-    s.x = v
+	s.x = v
 }
 
 fn make_s() S {
-    var s S
-    return s
+	var s S
+	return s
 }
 
 fn main() {
-    make_s().set_ptr(1)
+	make_s().set_ptr(1)
 }

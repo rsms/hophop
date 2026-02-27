@@ -136,6 +136,24 @@ static int SLFmtWriteSlice(SLFmtCtx* c, uint32_t start, uint32_t end) {
     return SLFmtWrite(c, c->src.ptr + start, end - start);
 }
 
+static int SLFmtWriteSliceLiteral(SLFmtCtx* c, uint32_t start, uint32_t end) {
+    uint32_t i;
+    if (end < start || end > c->src.len) {
+        return -1;
+    }
+    if (c->lineStart && SLFmtWriteIndent(c) != 0) {
+        return -1;
+    }
+    for (i = start; i < end; i++) {
+        char ch = c->src.ptr[i];
+        if (SLFmtBufAppendChar(&c->out, ch) != 0) {
+            return -1;
+        }
+        c->lineStart = (ch == '\n');
+    }
+    return 0;
+}
+
 static int SLFmtNewline(SLFmtCtx* c) {
     return SLFmtWriteChar(c, '\n');
 }
@@ -159,6 +177,24 @@ static int SLFmtIsTypeNodeKind(SLAstKind kind) {
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
         || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
         || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION;
+}
+
+static int SLFmtIsStmtNodeKind(SLAstKind kind) {
+    switch (kind) {
+        case SLAst_BLOCK:
+        case SLAst_VAR:
+        case SLAst_CONST:
+        case SLAst_IF:
+        case SLAst_FOR:
+        case SLAst_SWITCH:
+        case SLAst_RETURN:
+        case SLAst_BREAK:
+        case SLAst_CONTINUE:
+        case SLAst_DEFER:
+        case SLAst_ASSERT:
+        case SLAst_EXPR_STMT: return 1;
+        default:              return 0;
+    }
 }
 
 static int SLFmtIsAssignmentOp(SLTokenKind kind) {
@@ -249,6 +285,49 @@ static int SLFmtContainsSemicolonInRange(SLStrView src, uint32_t start, uint32_t
     }
     for (i = start; i < end; i++) {
         if (src.ptr[i] == ';') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int SLFmtRangeHasChar(SLStrView src, uint32_t start, uint32_t end, char ch) {
+    uint32_t i;
+    if (end < start || end > src.len) {
+        return 0;
+    }
+    for (i = start; i < end; i++) {
+        if (src.ptr[i] == ch) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int SLFmtFindCharForwardInRange(
+    SLStrView src, uint32_t start, uint32_t end, char ch, uint32_t* outPos) {
+    uint32_t i;
+    if (end < start || end > src.len) {
+        return 0;
+    }
+    for (i = start; i < end; i++) {
+        if (src.ptr[i] == ch) {
+            *outPos = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int SLFmtFindCharBackwardInRange(
+    SLStrView src, uint32_t start, uint32_t end, char ch, uint32_t* outPos) {
+    uint32_t i;
+    if (end < start || end > src.len) {
+        return 0;
+    }
+    for (i = end; i > start; i--) {
+        if (src.ptr[i - 1u] == ch) {
+            *outPos = i - 1u;
             return 1;
         }
     }
@@ -496,10 +575,47 @@ static int SLFmtEmitTrailingCommentsForNodes(
     return 0;
 }
 
+static int SLFmtFindSourceTrailingLineComment(
+    const SLFmtCtx* c, int32_t nodeId, uint32_t* outStart, uint32_t* outEnd) {
+    uint32_t i;
+    uint32_t lineEnd;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len || outStart == NULL || outEnd == NULL) {
+        return 0;
+    }
+    i = c->ast->nodes[nodeId].end;
+    while (i < c->src.len && c->src.ptr[i] != '\n') {
+        if (i + 1u < c->src.len && c->src.ptr[i] == '/' && c->src.ptr[i + 1u] == '/') {
+            lineEnd = i;
+            while (lineEnd < c->src.len && c->src.ptr[lineEnd] != '\n') {
+                lineEnd++;
+            }
+            *outStart = i;
+            *outEnd = SLFmtTrimSliceEnd(c->src.ptr, i, lineEnd);
+            return 1;
+        }
+        if (c->src.ptr[i] != ' ' && c->src.ptr[i] != '\t' && c->src.ptr[i] != '\r') {
+            return 0;
+        }
+        i++;
+    }
+    return 0;
+}
+
+static void SLFmtMarkCommentUsedAtStart(SLFmtCtx* c, uint32_t start) {
+    uint32_t i;
+    for (i = 0; i < c->commentLen; i++) {
+        if (c->comments[i].start == start) {
+            c->commentUsed[i] = 1;
+            return;
+        }
+    }
+}
+
 static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitExpr(SLFmtCtx* c, int32_t nodeId, int forceParen);
 static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId);
+static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId);
 
 static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId) {
     const SLAstNode* n;
@@ -600,6 +716,9 @@ static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId) {
         case SLAst_TYPE_ANON_STRUCT:
         case SLAst_TYPE_ANON_UNION:  {
             int32_t field = SLFmtFirstChild(c->ast, nodeId);
+            if (SLFmtCountNewlinesInRange(c->src, n->start, n->end) == 0u) {
+                return SLFmtWriteSlice(c, n->start, n->end);
+            }
             if (n->kind == SLAst_TYPE_ANON_UNION) {
                 if (SLFmtWriteCStr(c, "union ") != 0) {
                     return -1;
@@ -610,38 +729,8 @@ static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId) {
             if (SLFmtWriteChar(c, '{') != 0) {
                 return -1;
             }
-            if (field >= 0) {
-                if (SLFmtNewline(c) != 0) {
-                    return -1;
-                }
-                c->indent++;
-                while (field >= 0) {
-                    const SLAstNode* fn = &c->ast->nodes[field];
-                    int32_t          ftype = SLFmtFirstChild(c->ast, field);
-                    int32_t          fdef = ftype >= 0 ? SLFmtNextSibling(c->ast, ftype) : -1;
-                    if (SLFmtWriteSlice(c, fn->dataStart, fn->dataEnd) != 0
-                        || SLFmtWriteChar(c, ' ') != 0
-                        || (ftype >= 0 && SLFmtEmitType(c, ftype) != 0))
-                    {
-                        return -1;
-                    }
-                    if (fdef >= 0) {
-                        if (SLFmtWriteCStr(c, " = ") != 0 || SLFmtEmitExpr(c, fdef, 0) != 0) {
-                            return -1;
-                        }
-                    }
-                    if (SLFmtEmitTrailingCommentsForNode(c, field) != 0) {
-                        return -1;
-                    }
-                    field = SLFmtNextSibling(c->ast, field);
-                    if (field >= 0 && SLFmtNewline(c) != 0) {
-                        return -1;
-                    }
-                }
-                c->indent--;
-                if (SLFmtNewline(c) != 0) {
-                    return -1;
-                }
+            if (field >= 0 && SLFmtEmitAggregateFieldBody(c, field) != 0) {
+                return -1;
             }
             return SLFmtWriteChar(c, '}');
         }
@@ -721,8 +810,8 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
         case SLAst_IDENT:
         case SLAst_INT:
         case SLAst_FLOAT:
-        case SLAst_STRING:
         case SLAst_BOOL:   return SLFmtWriteSlice(c, n->dataStart, n->dataEnd);
+        case SLAst_STRING: return SLFmtWriteSliceLiteral(c, n->dataStart, n->dataEnd);
         case SLAst_NULL:   return SLFmtWriteCStr(c, "null");
         case SLAst_UNARY:  {
             const char* op = SLFmtTokenOpText((SLTokenKind)n->op);
@@ -936,7 +1025,14 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
                     return -1;
                 }
                 if (init >= 0) {
-                    if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitExpr(c, init, 0) != 0) {
+                    int32_t initFirst = SLFmtFirstChild(c->ast, init);
+                    int     initTight =
+                        c->ast->nodes[init].kind == SLAst_COMPOUND_LIT
+                        && (initFirst < 0 || !SLFmtIsTypeNodeKind(c->ast->nodes[initFirst].kind));
+                    if (!initTight && SLFmtWriteChar(c, ' ') != 0) {
+                        return -1;
+                    }
+                    if (SLFmtEmitExpr(c, init, 0) != 0) {
                         return -1;
                     }
                 }
@@ -949,14 +1045,21 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
             return 0;
         }
         case SLAst_COMPOUND_LIT: {
-            int32_t cur = SLFmtFirstChild(c->ast, nodeId);
-            int32_t type = -1;
-            int32_t field;
+            int32_t  cur = SLFmtFirstChild(c->ast, nodeId);
+            int32_t  type = -1;
+            int32_t  field;
+            uint32_t lbPos;
+            uint32_t rbPos;
             if (cur >= 0 && SLFmtIsTypeNodeKind(c->ast->nodes[cur].kind)) {
                 type = cur;
                 cur = SLFmtNextSibling(c->ast, cur);
             }
             if (type >= 0 && SLFmtEmitType(c, type) != 0) {
+                return -1;
+            }
+            if (!SLFmtFindCharForwardInRange(c->src, n->start, n->end, '{', &lbPos)
+                || !SLFmtFindCharBackwardInRange(c->src, n->start, n->end, '}', &rbPos))
+            {
                 return -1;
             }
             if (SLFmtWriteChar(c, '{') != 0) {
@@ -965,21 +1068,71 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
             if (cur < 0) {
                 return SLFmtWriteChar(c, '}');
             }
-            if (SLFmtWriteChar(c, ' ') != 0) {
-                return -1;
+            if (!SLFmtRangeHasChar(c->src, lbPos + 1u, rbPos, '\n')) {
+                if (SLFmtWriteChar(c, ' ') != 0) {
+                    return -1;
+                }
+                field = cur;
+                while (field >= 0) {
+                    int32_t next = SLFmtNextSibling(c->ast, field);
+                    if (SLFmtEmitExpr(c, field, 0) != 0) {
+                        return -1;
+                    }
+                    if (next >= 0 && SLFmtWriteCStr(c, ", ") != 0) {
+                        return -1;
+                    }
+                    field = next;
+                }
+                return SLFmtWriteCStr(c, " }");
             }
+            c->indent++;
             field = cur;
             while (field >= 0) {
-                int32_t next = SLFmtNextSibling(c->ast, field);
+                int32_t  next = SLFmtNextSibling(c->ast, field);
+                uint32_t gapStart = c->ast->nodes[field].end;
+                uint32_t gapEnd = next >= 0 ? c->ast->nodes[next].start : rbPos;
+                int      hasComma = SLFmtRangeHasChar(c->src, gapStart, gapEnd, ',');
+                int      hasNewline = SLFmtRangeHasChar(c->src, gapStart, gapEnd, '\n');
+                if (field == cur) {
+                    int firstHasNewline = SLFmtRangeHasChar(
+                        c->src, lbPos + 1u, c->ast->nodes[field].start, '\n');
+                    if (firstHasNewline) {
+                        if (SLFmtNewline(c) != 0) {
+                            return -1;
+                        }
+                    } else if (SLFmtWriteChar(c, ' ') != 0) {
+                        return -1;
+                    }
+                }
                 if (SLFmtEmitExpr(c, field, 0) != 0) {
                     return -1;
                 }
-                if (next >= 0 && SLFmtWriteCStr(c, ", ") != 0) {
+                if (hasComma && SLFmtWriteChar(c, ',') != 0) {
                     return -1;
+                }
+                if (next >= 0) {
+                    if (hasNewline) {
+                        if (SLFmtNewline(c) != 0) {
+                            return -1;
+                        }
+                    } else if (SLFmtWriteChar(c, ' ') != 0) {
+                        return -1;
+                    }
+                } else {
+                    c->indent--;
+                    if (hasNewline) {
+                        if (SLFmtNewline(c) != 0) {
+                            return -1;
+                        }
+                    } else if (SLFmtWriteChar(c, ' ') != 0) {
+                        return -1;
+                    }
+                    return SLFmtWriteChar(c, '}');
                 }
                 field = next;
             }
-            return SLFmtWriteCStr(c, " }");
+            c->indent--;
+            return SLFmtWriteChar(c, '}');
         }
         case SLAst_COMPOUND_FIELD:
             ch = SLFmtFirstChild(c->ast, nodeId);
@@ -1056,7 +1209,9 @@ static int SLFmtNeedsBlankLineBeforeNode(SLFmtCtx* c, int32_t prevNodeId, int32_
     if (gapNl <= 1u) {
         return 0;
     }
-    if (SLFmtHasUnusedLeadingCommentsForNode(c, nextNodeId)) {
+    if (SLFmtHasUnusedLeadingCommentsForNode(c, nextNodeId)
+        && !SLFmtIsStmtNodeKind(c->ast->nodes[nextNodeId].kind))
+    {
         return 0;
     }
     return 1;
@@ -1231,6 +1386,20 @@ static int SLFmtNodeSourceTextEqual(SLFmtCtx* c, int32_t aNodeId, int32_t bNodeI
         return 1;
     }
     return memcmp(c->src.ptr + a->start, c->src.ptr + b->start, aLen) == 0;
+}
+
+static int SLFmtIsInlineAnonAggregateType(SLFmtCtx* c, int32_t typeNodeId) {
+    SLAstKind kind;
+    if (typeNodeId < 0 || (uint32_t)typeNodeId >= c->ast->len) {
+        return 0;
+    }
+    kind = c->ast->nodes[typeNodeId].kind;
+    if (kind != SLAst_TYPE_ANON_STRUCT && kind != SLAst_TYPE_ANON_UNION) {
+        return 0;
+    }
+    return SLFmtCountNewlinesInRange(
+               c->src, c->ast->nodes[typeNodeId].start, c->ast->nodes[typeNodeId].end)
+        == 0u;
 }
 
 static int SLFmtEmitAlignedVarOrConstGroup(
@@ -1412,7 +1581,6 @@ static int SLFmtEmitAlignedAssignGroup(
     uint32_t               maxLhsLen = 0;
     uint32_t               maxOpLen = 0;
     SLFmtAlignedAssignRow* rows;
-    uint32_t*              commentRunMaxLens;
 
     while (cur >= 0) {
         int32_t  lhsNode;
@@ -1480,37 +1648,9 @@ static int SLFmtEmitAlignedAssignGroup(
             rows[i].lhsLen + padBeforeOp + rows[i].opLen + padAfterOp + rows[i].rhsLen;
     }
 
-    commentRunMaxLens = (uint32_t*)SLArenaAlloc(
-        c->out.arena, count * (uint32_t)sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
-    if (commentRunMaxLens == NULL) {
-        return -1;
-    }
-    memset(commentRunMaxLens, 0, count * (uint32_t)sizeof(uint32_t));
-
-    for (i = 0; i < count;) {
-        uint32_t j;
-        uint32_t runMax = 0;
-        if (!rows[i].hasTrailingComment) {
-            i++;
-            continue;
-        }
-        j = i;
-        while (j < count && rows[j].hasTrailingComment) {
-            if (rows[j].codeLen > runMax) {
-                runMax = rows[j].codeLen;
-            }
-            j++;
-        }
-        while (i < j) {
-            commentRunMaxLens[i] = runMax;
-            i++;
-        }
-    }
-
     for (i = 0; i < count; i++) {
         uint32_t    padBeforeOp = (maxLhsLen + 1u) - rows[i].lhsLen;
         uint32_t    padAfterOp = (maxOpLen + 1u) - rows[i].opLen;
-        uint32_t    lineLen = rows[i].codeLen;
         const char* opText = SLFmtTokenOpText((SLTokenKind)rows[i].op);
         if (SLFmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
             return -1;
@@ -1522,7 +1662,7 @@ static int SLFmtEmitAlignedAssignGroup(
             return -1;
         }
         if (rows[i].hasTrailingComment) {
-            uint32_t padComment = (commentRunMaxLens[i] - lineLen) + 1u;
+            uint32_t padComment = 1u;
             int32_t  nodeId = rows[i].nodeId;
             if (SLFmtEmitTrailingCommentsForNodes(c, &nodeId, 1u, padComment) != 0) {
                 return -1;
@@ -1729,7 +1869,10 @@ static int SLFmtEmitSwitchClauseGroup(
         if (r->inlineBody) {
             padBeforeBody = (inlineRunMaxHeadLens[i] - r->headLen) + 1u;
         } else if (i > 0u && rows[i - 1u].inlineBody) {
-            padBeforeBody = (inlineRunMaxHeadLens[i - 1u] - r->headLen) + 1u;
+            uint32_t prevRunMaxHeadLen = inlineRunMaxHeadLens[i - 1u];
+            if (prevRunMaxHeadLen > r->headLen) {
+                padBeforeBody = (prevRunMaxHeadLen - r->headLen) + 1u;
+            }
         }
         if (SLFmtEmitLeadingCommentsForNode(c, r->nodeId) != 0) {
             return -1;
@@ -2505,7 +2648,8 @@ typedef struct {
     uint32_t codeLen;
     uint8_t  hasDefault;
     uint8_t  hasTrailingComment;
-    uint8_t  _pad[2];
+    uint8_t  noTypeAlign;
+    uint8_t  _pad;
 } SLFmtAlignedFieldRow;
 
 typedef struct {
@@ -2538,6 +2682,15 @@ static int SLFmtFieldTypesMatch(SLFmtCtx* c, int32_t aTypeNodeId, int32_t bTypeN
         return 1;
     }
     return memcmp(c->src.ptr + a->start, c->src.ptr + b->start, aLen) == 0;
+}
+
+static int SLFmtIsAnonAggregateTypeNode(SLFmtCtx* c, int32_t typeNodeId) {
+    SLAstKind kind;
+    if (typeNodeId < 0 || (uint32_t)typeNodeId >= c->ast->len) {
+        return 0;
+    }
+    kind = c->ast->nodes[typeNodeId].kind;
+    return kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION;
 }
 
 static int SLFmtCanMergeFieldNames(SLFmtCtx* c, int32_t leftFieldNodeId, int32_t rightFieldNodeId) {
@@ -2666,6 +2819,7 @@ static int SLFmtEmitSimpleFieldDecl(SLFmtCtx* c, int32_t fieldNodeId) {
     int32_t          typeNode = SLFmtFirstChild(c->ast, fieldNodeId);
     int32_t          defaultNode = typeNode >= 0 ? SLFmtNextSibling(c->ast, typeNode) : -1;
     int32_t          nodeIds[1];
+    int              hasTrailing;
     if ((fn->flags & SLAstFlag_FIELD_EMBEDDED) != 0) {
         if (typeNode >= 0 && SLFmtEmitType(c, typeNode) != 0) {
             return -1;
@@ -2682,13 +2836,28 @@ static int SLFmtEmitSimpleFieldDecl(SLFmtCtx* c, int32_t fieldNodeId) {
         }
     }
     nodeIds[0] = fieldNodeId;
-    return SLFmtEmitTrailingCommentsForNodes(c, nodeIds, 1u, 1u);
+    hasTrailing = SLFmtHasUnusedTrailingCommentsForNodes(c, nodeIds, 1u);
+    if (hasTrailing) {
+        return SLFmtEmitTrailingCommentsForNodes(c, nodeIds, 1u, 1u);
+    }
+    {
+        uint32_t cmStart;
+        uint32_t cmEnd;
+        if (SLFmtFindSourceTrailingLineComment(c, fieldNodeId, &cmStart, &cmEnd)) {
+            if (SLFmtWriteChar(c, ' ') != 0 || SLFmtWriteSlice(c, cmStart, cmEnd) != 0) {
+                return -1;
+            }
+            SLFmtMarkCommentUsedAtStart(c, cmStart);
+        }
+    }
+    return 0;
 }
 
 static int SLFmtEmitAlignedFieldGroup(
     SLFmtCtx* c, int32_t firstFieldNodeId, int32_t* outLastNodeId, int32_t* outNextNodeId) {
     int32_t               cur = firstFieldNodeId;
     int32_t               prev = -1;
+    int                   prevInlineAnon = 0;
     uint32_t              count = 0;
     uint32_t              i;
     uint32_t              maxNameLen = 0;
@@ -2699,17 +2868,28 @@ static int SLFmtEmitAlignedFieldGroup(
     while (cur >= 0) {
         SLFmtAlignedFieldRow row;
         int32_t              next;
+        int                  curInlineAnon;
         if (c->ast->nodes[cur].kind != SLAst_FIELD) {
+            break;
+        }
+        if ((c->ast->nodes[cur].flags & SLAstFlag_FIELD_EMBEDDED) != 0) {
             break;
         }
         if (SLFmtBuildFieldRow(c, cur, &row, &next) != 0) {
             return -1;
         }
-        if (prev >= 0 && !SLFmtCanContinueAlignedGroup(c, prev, row.firstNodeId)) {
-            break;
+        curInlineAnon = SLFmtIsInlineAnonAggregateType(c, row.typeNodeId);
+        if (prev >= 0) {
+            if (!SLFmtCanContinueAlignedGroup(c, prev, row.firstNodeId)) {
+                break;
+            }
+            if (prevInlineAnon != curInlineAnon) {
+                break;
+            }
         }
         count++;
         prev = row.lastNodeId;
+        prevInlineAnon = curInlineAnon;
         cur = next;
     }
 
@@ -2732,8 +2912,19 @@ static int SLFmtEmitAlignedFieldGroup(
     }
 
     for (i = 0; i < count; i++) {
+        int isAnon = SLFmtIsAnonAggregateTypeNode(c, rows[i].typeNodeId);
+        int prevAnon = i > 0u && SLFmtIsAnonAggregateTypeNode(c, rows[i - 1u].typeNodeId);
+        int nextAnon = i + 1u < count && SLFmtIsAnonAggregateTypeNode(c, rows[i + 1u].typeNodeId);
+        rows[i].noTypeAlign = (uint8_t)(isAnon && (prevAnon || nextAnon));
+    }
+
+    for (i = 0; i < count; i++) {
         if (rows[i].hasDefault) {
-            uint32_t beforeOpLen = maxNameLen + 1u + rows[i].typeLen;
+            uint32_t beforeOpLen;
+            if (rows[i].noTypeAlign) {
+                continue;
+            }
+            beforeOpLen = maxNameLen + 1u + rows[i].typeLen;
             if (beforeOpLen > maxBeforeOpLen) {
                 maxBeforeOpLen = beforeOpLen;
             }
@@ -2741,10 +2932,17 @@ static int SLFmtEmitAlignedFieldGroup(
     }
 
     for (i = 0; i < count; i++) {
-        uint32_t codeLen = maxNameLen + 1u + rows[i].typeLen;
+        uint32_t codeLen =
+            rows[i].noTypeAlign
+                ? (rows[i].nameLen + 1u + rows[i].typeLen)
+                : (maxNameLen + 1u + rows[i].typeLen);
         if (rows[i].hasDefault) {
-            uint32_t padBeforeOp = (maxBeforeOpLen + 1u) - codeLen;
-            codeLen += padBeforeOp + 1u + 1u + rows[i].defaultLen;
+            if (rows[i].noTypeAlign) {
+                codeLen += 3u + rows[i].defaultLen;
+            } else {
+                uint32_t padBeforeOp = (maxBeforeOpLen + 1u) - codeLen;
+                codeLen += padBeforeOp + 1u + 1u + rows[i].defaultLen;
+            }
         }
         rows[i].codeLen = codeLen;
     }
@@ -2786,28 +2984,54 @@ static int SLFmtEmitAlignedFieldGroup(
             return -1;
         }
         lineLen += rows[i].nameLen;
-        if (SLFmtWriteSpaces(c, maxNameLen - rows[i].nameLen + 1u) != 0) {
-            return -1;
+        if (rows[i].noTypeAlign) {
+            if (SLFmtWriteChar(c, ' ') != 0) {
+                return -1;
+            }
+            lineLen = rows[i].nameLen + 1u;
+        } else {
+            if (SLFmtWriteSpaces(c, maxNameLen - rows[i].nameLen + 1u) != 0) {
+                return -1;
+            }
+            lineLen = maxNameLen + 1u;
         }
-        lineLen = maxNameLen + 1u;
         if (rows[i].typeNodeId >= 0 && SLFmtEmitType(c, rows[i].typeNodeId) != 0) {
             return -1;
         }
         lineLen += rows[i].typeLen;
         if (rows[i].hasDefault) {
-            uint32_t padBeforeOp = (maxBeforeOpLen + 1u) - lineLen;
-            if (SLFmtWriteSpaces(c, padBeforeOp) != 0 || SLFmtWriteChar(c, '=') != 0
-                || SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitExpr(c, rows[i].defaultNodeId, 0) != 0)
-            {
-                return -1;
+            if (rows[i].noTypeAlign) {
+                if (SLFmtWriteCStr(c, " = ") != 0
+                    || SLFmtEmitExpr(c, rows[i].defaultNodeId, 0) != 0)
+                {
+                    return -1;
+                }
+                lineLen += 3u + rows[i].defaultLen;
+            } else {
+                uint32_t padBeforeOp = (maxBeforeOpLen + 1u) - lineLen;
+                if (SLFmtWriteSpaces(c, padBeforeOp) != 0 || SLFmtWriteChar(c, '=') != 0
+                    || SLFmtWriteChar(c, ' ') != 0
+                    || SLFmtEmitExpr(c, rows[i].defaultNodeId, 0) != 0)
+                {
+                    return -1;
+                }
+                lineLen += padBeforeOp + 1u + 1u + rows[i].defaultLen;
             }
-            lineLen += padBeforeOp + 1u + 1u + rows[i].defaultLen;
         }
         if (rows[i].hasTrailingComment) {
             uint32_t padComment = (commentRunMaxLens[i] - lineLen) + 1u;
             nodeIds[0] = rows[i].firstNodeId;
             if (SLFmtEmitTrailingCommentsForNodes(c, nodeIds, 1u, padComment) != 0) {
                 return -1;
+            }
+        } else {
+            uint32_t cmStart;
+            uint32_t cmEnd;
+            if (SLFmtFindSourceTrailingLineComment(c, rows[i].lastNodeId, &cmStart, &cmEnd)) {
+                if (SLFmtWriteChar(c, ' ') != 0 || SLFmtWriteSlice(c, cmStart, cmEnd) != 0) {
+                    return -1;
+                }
+                SLFmtMarkCommentUsedAtStart(c, cmStart);
             }
         }
         if (i + 1u < count && SLFmtNewline(c) != 0) {
@@ -2943,6 +3167,47 @@ static int SLFmtEmitAlignedEnumGroup(
     return 0;
 }
 
+static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId) {
+    int32_t child = firstFieldNodeId;
+    int32_t prevEmitted = -1;
+
+    if (child < 0) {
+        return 0;
+    }
+    if (SLFmtNewline(c) != 0) {
+        return -1;
+    }
+    c->indent++;
+    while (child >= 0) {
+        int32_t next = SLFmtNextSibling(c->ast, child);
+        int32_t last = child;
+        if (prevEmitted >= 0) {
+            if (SLFmtNewline(c) != 0) {
+                return -1;
+            }
+            if (SLFmtNeedsBlankLineBeforeNode(c, prevEmitted, child) && SLFmtNewline(c) != 0) {
+                return -1;
+            }
+        }
+        if ((c->ast->nodes[child].flags & SLAstFlag_FIELD_EMBEDDED) != 0) {
+            if (SLFmtEmitLeadingCommentsForNode(c, child) != 0
+                || SLFmtEmitSimpleFieldDecl(c, child) != 0)
+            {
+                return -1;
+            }
+        } else if (SLFmtEmitAlignedFieldGroup(c, child, &last, &next) != 0) {
+            return -1;
+        }
+        prevEmitted = last;
+        child = next;
+    }
+    c->indent--;
+    if (SLFmtNewline(c) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 static int SLFmtEmitAggregateDecl(SLFmtCtx* c, int32_t nodeId, const char* kw) {
     const SLAstNode* n = &c->ast->nodes[nodeId];
     int32_t          child = SLFmtFirstChild(c->ast, nodeId);
@@ -2971,41 +3236,35 @@ static int SLFmtEmitAggregateDecl(SLFmtCtx* c, int32_t nodeId, const char* kw) {
     }
 
     if (child >= 0) {
-        if (SLFmtNewline(c) != 0) {
-            return -1;
-        }
-        c->indent++;
-        while (child >= 0) {
-            int32_t next = SLFmtNextSibling(c->ast, child);
-            int32_t last = child;
-            if (prevEmitted >= 0) {
-                if (SLFmtNewline(c) != 0) {
-                    return -1;
-                }
-                if (SLFmtNeedsBlankLineBeforeNode(c, prevEmitted, child) && SLFmtNewline(c) != 0) {
-                    return -1;
-                }
+        if (n->kind == SLAst_ENUM) {
+            if (SLFmtNewline(c) != 0) {
+                return -1;
             }
-            if (n->kind == SLAst_ENUM) {
+            c->indent++;
+            while (child >= 0) {
+                int32_t next = SLFmtNextSibling(c->ast, child);
+                int32_t last = child;
+                if (prevEmitted >= 0) {
+                    if (SLFmtNewline(c) != 0) {
+                        return -1;
+                    }
+                    if (SLFmtNeedsBlankLineBeforeNode(c, prevEmitted, child)
+                        && SLFmtNewline(c) != 0)
+                    {
+                        return -1;
+                    }
+                }
                 if (SLFmtEmitAlignedEnumGroup(c, child, &last, &next) != 0) {
                     return -1;
                 }
-            } else if ((c->ast->nodes[child].flags & SLAstFlag_FIELD_EMBEDDED) != 0) {
-                if (SLFmtEmitLeadingCommentsForNode(c, child) != 0
-                    || SLFmtEmitSimpleFieldDecl(c, child) != 0)
-                {
-                    return -1;
-                }
-            } else {
-                if (SLFmtEmitAlignedFieldGroup(c, child, &last, &next) != 0) {
-                    return -1;
-                }
+                prevEmitted = last;
+                child = next;
             }
-            prevEmitted = last;
-            child = next;
-        }
-        c->indent--;
-        if (SLFmtNewline(c) != 0) {
+            c->indent--;
+            if (SLFmtNewline(c) != 0) {
+                return -1;
+            }
+        } else if (SLFmtEmitAggregateFieldBody(c, child) != 0) {
             return -1;
         }
     }

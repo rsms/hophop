@@ -1,12 +1,11 @@
-
 struct NeedCtx {
-    mem *Allocator
+	mem *Allocator
 }
 
 fn a() context NeedCtx {
-    var p *i32 = new i32
+	var p *i32 = new i32
 }
 
 fn main() {
-    a() with { mem = context.mem }
+	a() with { mem = context.mem }
 }

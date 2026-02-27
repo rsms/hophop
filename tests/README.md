@@ -56,6 +56,19 @@ Optional:
 - `expect_stdout` (string): golden stdout file to compare
 - `stderr_empty` (bool, default `true`)
 - `verify_files` (array): each item is `{"path":"<relative path in temp workdir>","expect":"<golden file>"}` and is compared after command execution
+- `pretest_fmt_exempt_input` (bool, default `false`): exclude this fixture input from the global pre-test formatter gate
+- `pretest_fmt_exempt_paths` (array of strings): for directory inputs, exclude specific relative `.sl` paths from the global pre-test formatter gate
+
+## Pre-test formatting gate
+
+`tools/test.py run` executes a repository formatting gate before running tests:
+
+- runs `slc fmt --check` against recursive `*.sl` files under `examples/`, `lib/`, and `tests/`
+- always excludes `tests/fmt_canonical.sl`
+- applies `pretest_fmt_exempt_input` / `pretest_fmt_exempt_paths` from `slc_fmt` manifest entries
+- reports each dirty file with an actionable command to fix formatting
+
+Some negative fixtures are intentionally not formatter-compatible; those are skipped when `slc fmt --check` emits diagnostics for that file.
 
 ### `compile_and_run`
 

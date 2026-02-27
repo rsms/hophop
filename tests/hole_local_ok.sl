@@ -1,8 +1,7 @@
-fn noop() {
-}
+fn noop() {}
 
-fn example(a, _, c int) int {
-    var _ = noop()
-    const _ = noop()
-    return a + c
+fn example(a int, _ int, c int) int {
+	noop()
+	noop()
+	return a + c
 }

@@ -1,1 +1,1 @@
-tests/var_infer_void_bad.sl:5:13: SL2027: cannot infer type from void expression
+tests/var_infer_void_bad.sl:4:10: SL2027: cannot infer type from void expression

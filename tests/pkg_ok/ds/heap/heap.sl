@@ -1,11 +1,11 @@
 pub struct Box {
-    v i32
+	v i32
 }
 
 pub fn Make(v i32) Box
 
 fn Make(v i32) Box {
-    var b Box
-    b.v = v
-    return b
+	var b Box
+	b.v = v
+	return b
 }

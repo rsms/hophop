@@ -1,3 +1,3 @@
 struct Bad {
-    a i32 = "x"
+	a i32 = "x"
 }

@@ -1,5 +1,5 @@
 import "platform"
 
 fn main() {
-    platform.exit(123)
+	platform.exit(123)
 }

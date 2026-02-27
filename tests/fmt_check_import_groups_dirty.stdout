@@ -1,0 +1,23 @@
+input.sl
+input.sl:1:1: line should be removed
+  current : "import \"kiosk\" // ice cream pealse"
+  expected: ""
+input.sl:4:1: line should be inserted
+  current : ""
+  expected: "import \"kiosk\" // ice cream pealse"
+input.sl:5:1: line content differs
+  current : "import \"garage\" {CV2 as Car} // comment"
+  expected: "import \"bar\"  { Coke }        // comment"
+input.sl:6:1: line content differs
+  current : "import \"bar\" {Coke} // comment"
+  expected: "import \"data\" { A, B as Bee } // comment"
+input.sl:7:1: line should be removed
+  current : "import \"xml\" {lol} // yay"
+  expected: ""
+input.sl:9:1: line content differs
+  current : "import \"data\" {A, B as Bee} // comment"
+  expected: "import \"garage\" { CV2 as Car } // comment"
+input.sl:10:1: line should be inserted
+  current : ""
+  expected: "import \"xml\"    { lol }        // yay"
+  issues: 7

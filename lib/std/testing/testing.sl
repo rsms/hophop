@@ -1,3 +1,3 @@
 pub struct FailingAllocator {
-    failed bool
+	failed bool
 }

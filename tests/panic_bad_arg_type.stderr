@@ -1,1 +1,1 @@
-tests/panic_bad_arg_type.sl:2:11: SL2004: type mismatch
+tests/panic_bad_arg_type.sl:2:8: SL2004: type mismatch

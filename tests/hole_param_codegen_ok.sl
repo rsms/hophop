@@ -1,3 +1,3 @@
-fn example(a, _, c int) int {
-    return a + c
+fn example(a int, _ int, c int) int {
+	return a + c
 }

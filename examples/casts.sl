@@ -1,12 +1,11 @@
 // explicit type conversion using `as` between numeric types
-
 fn main() {
-    var x = 7
-    var y = x as f64
+	var x = 7
+	var y = x as f64
 
-    if y > 0.0 {
-        assert x == 7
-    } else {
-        assert 0 == 1
-    }
+	if y > 0.0 {
+		assert x == 7
+	} else {
+		assert 0 == 1
+	}
 }

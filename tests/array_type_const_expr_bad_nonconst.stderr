@@ -1,1 +1,1 @@
-tests/array_type_const_expr_bad_nonconst.sl:3:16: SL2054: array length must be a const integer expression: identifier is not a const value in this context
+tests/array_type_const_expr_bad_nonconst.sl:3:13: SL2054: array length must be a const integer expression: identifier is not a const value in this context

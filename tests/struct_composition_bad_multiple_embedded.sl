@@ -1,12 +1,12 @@
 struct A {
-    x int
+	x int
 }
 
 struct B {
-    y int
+	y int
 }
 
 struct C {
-    A
-    B
+	A
+	B
 }

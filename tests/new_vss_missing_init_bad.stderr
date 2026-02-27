@@ -1,1 +1,1 @@
-tests/new_vss_missing_init_bad.sl:11:26: SL2048: new on variable-size type requires initializer (use new T{...})
+tests/new_vss_missing_init_bad.sl:11:23: SL2048: new on variable-size type requires initializer (use new T{...})

@@ -1,14 +1,14 @@
 struct A {
-    x int
+	x int
 }
 
 struct B {
-    a A
+	a A
 }
 
 fn main() {
-    var x int
-    var b B
-    assert x == 0
-    assert b.a.x == 0
+	var x int
+	var b B
+	assert x == 0
+	assert b.a.x == 0
 }

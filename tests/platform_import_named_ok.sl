@@ -1,5 +1,5 @@
 import "platform" { exit }
 
 fn main() {
-    exit(0)
+	exit(0)
 }

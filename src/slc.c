@@ -1270,6 +1270,273 @@ static int WriteFileAtomic(const char* filename, const char* data, uint32_t len)
     return rc;
 }
 
+typedef struct {
+    uint32_t start;
+    uint32_t end;
+} SLFmtCheckLine;
+
+static int SLFmtCheckBuildLines(
+    const char* src, uint32_t srcLen, SLFmtCheckLine** outLines, uint32_t* outLineLen) {
+    SLFmtCheckLine* lines = NULL;
+    uint32_t        lineCap = 1u;
+    uint32_t        lineLen = 0u;
+    uint32_t        i;
+    uint32_t        start;
+
+    for (i = 0; i < srcLen; i++) {
+        if (src[i] == '\n') {
+            lineCap++;
+        }
+    }
+    lines = (SLFmtCheckLine*)malloc((size_t)lineCap * sizeof(SLFmtCheckLine));
+    if (lines == NULL) {
+        return -1;
+    }
+
+    start = 0u;
+    while (start <= srcLen) {
+        uint32_t end = start;
+        while (end < srcLen && src[end] != '\n') {
+            end++;
+        }
+        lines[lineLen].start = start;
+        lines[lineLen].end = end;
+        lineLen++;
+        if (end >= srcLen) {
+            break;
+        }
+        start = end + 1u;
+    }
+
+    *outLines = lines;
+    *outLineLen = lineLen;
+    return 0;
+}
+
+static int SLFmtCheckLineEq(
+    const char* a, const SLFmtCheckLine* al, const char* b, const SLFmtCheckLine* bl) {
+    uint32_t aLen = al->end - al->start;
+    uint32_t bLen = bl->end - bl->start;
+    if (aLen != bLen) {
+        return 0;
+    }
+    if (aLen == 0) {
+        return 1;
+    }
+    return memcmp(a + al->start, b + bl->start, aLen) == 0;
+}
+
+static uint32_t SLFmtCheckTrimLeft(const char* s, uint32_t start, uint32_t end) {
+    while (start < end && isspace((unsigned char)s[start])) {
+        start++;
+    }
+    return start;
+}
+
+static uint32_t SLFmtCheckTrimRight(const char* s, uint32_t start, uint32_t end) {
+    while (end > start && isspace((unsigned char)s[end - 1u])) {
+        end--;
+    }
+    return end;
+}
+
+static int SLFmtCheckLineEqTrimmed(
+    const char* a, const SLFmtCheckLine* al, const char* b, const SLFmtCheckLine* bl) {
+    uint32_t aStart = SLFmtCheckTrimLeft(a, al->start, al->end);
+    uint32_t aEnd = SLFmtCheckTrimRight(a, aStart, al->end);
+    uint32_t bStart = SLFmtCheckTrimLeft(b, bl->start, bl->end);
+    uint32_t bEnd = SLFmtCheckTrimRight(b, bStart, bl->end);
+    uint32_t aLen = aEnd - aStart;
+    uint32_t bLen = bEnd - bStart;
+    if (aLen != bLen) {
+        return 0;
+    }
+    if (aLen == 0) {
+        return 1;
+    }
+    return memcmp(a + aStart, b + bStart, aLen) == 0;
+}
+
+static int SLFmtCheckLineEqNoWhitespace(
+    const char* a, const SLFmtCheckLine* al, const char* b, const SLFmtCheckLine* bl) {
+    uint32_t ai = al->start;
+    uint32_t bi = bl->start;
+    while (ai < al->end || bi < bl->end) {
+        while (ai < al->end && isspace((unsigned char)a[ai])) {
+            ai++;
+        }
+        while (bi < bl->end && isspace((unsigned char)b[bi])) {
+            bi++;
+        }
+        if (ai >= al->end || bi >= bl->end) {
+            break;
+        }
+        if (a[ai] != b[bi]) {
+            return 0;
+        }
+        ai++;
+        bi++;
+    }
+    while (ai < al->end && isspace((unsigned char)a[ai])) {
+        ai++;
+    }
+    while (bi < bl->end && isspace((unsigned char)b[bi])) {
+        bi++;
+    }
+    return ai == al->end && bi == bl->end;
+}
+
+static void SLFmtCheckPrintEscapedLine(const char* s, uint32_t start, uint32_t end) {
+    uint32_t i;
+    fputc('"', stdout);
+    for (i = start; i < end; i++) {
+        unsigned char ch = (unsigned char)s[i];
+        switch (ch) {
+            case '\t': fputs("\\t", stdout); break;
+            case '\r': fputs("\\r", stdout); break;
+            case '"':  fputs("\\\"", stdout); break;
+            case '\\': fputs("\\\\", stdout); break;
+            default:
+                if (ch >= 0x20 && ch <= 0x7e) {
+                    fputc((int)ch, stdout);
+                } else {
+                    fprintf(stdout, "\\x%02x", (unsigned)ch);
+                }
+                break;
+        }
+    }
+    fputc('"', stdout);
+}
+
+static void SLFmtCheckPrintIssue(
+    const char*           filename,
+    uint32_t              lineNo,
+    const char*           reason,
+    const char*           current,
+    const SLFmtCheckLine* currentLine,
+    const char*           expected,
+    const SLFmtCheckLine* expectedLine) {
+    fprintf(stdout, "%s:%u:1: %s\n", filename, lineNo, reason);
+    fputs("  current : ", stdout);
+    SLFmtCheckPrintEscapedLine(current, currentLine->start, currentLine->end);
+    fputc('\n', stdout);
+    fputs("  expected: ", stdout);
+    SLFmtCheckPrintEscapedLine(expected, expectedLine->start, expectedLine->end);
+    fputc('\n', stdout);
+}
+
+static void SLFmtCheckReport(
+    const char* filename,
+    const char* current,
+    uint32_t    currentLen,
+    const char* expected,
+    uint32_t    expectedLen) {
+    SLFmtCheckLine* currentLines = NULL;
+    SLFmtCheckLine* expectedLines = NULL;
+    uint32_t        currentLineLen = 0;
+    uint32_t        expectedLineLen = 0;
+    uint32_t        i = 0;
+    uint32_t        j = 0;
+    uint32_t        issues = 0;
+
+    if (SLFmtCheckBuildLines(current, currentLen, &currentLines, &currentLineLen) != 0
+        || SLFmtCheckBuildLines(expected, expectedLen, &expectedLines, &expectedLineLen) != 0)
+    {
+        fputs("  note: unable to allocate detailed formatter mismatch report\n", stdout);
+        free(currentLines);
+        free(expectedLines);
+        return;
+    }
+
+    while (i < currentLineLen || j < expectedLineLen) {
+        SLFmtCheckLine empty = { 0, 0 };
+        if (i < currentLineLen && j < expectedLineLen
+            && SLFmtCheckLineEq(current, &currentLines[i], expected, &expectedLines[j]))
+        {
+            i++;
+            j++;
+            continue;
+        }
+
+        if (i + 1u < currentLineLen && j < expectedLineLen
+            && SLFmtCheckLineEq(current, &currentLines[i + 1u], expected, &expectedLines[j]))
+        {
+            SLFmtCheckPrintIssue(
+                filename,
+                i + 1u,
+                "line should be removed",
+                current,
+                &currentLines[i],
+                expected,
+                &empty);
+            issues++;
+            i++;
+            continue;
+        }
+        if (i < currentLineLen && j + 1u < expectedLineLen
+            && SLFmtCheckLineEq(current, &currentLines[i], expected, &expectedLines[j + 1u]))
+        {
+            SLFmtCheckPrintIssue(
+                filename,
+                i + 1u,
+                "line should be inserted",
+                current,
+                &empty,
+                expected,
+                &expectedLines[j]);
+            issues++;
+            j++;
+            continue;
+        }
+
+        if (i < currentLineLen && j < expectedLineLen) {
+            const char* reason = "line content differs";
+            if (SLFmtCheckLineEqTrimmed(current, &currentLines[i], expected, &expectedLines[j])) {
+                reason = "leading or trailing whitespace differs";
+            } else if (SLFmtCheckLineEqNoWhitespace(
+                           current, &currentLines[i], expected, &expectedLines[j]))
+            {
+                reason = "internal whitespace differs";
+            }
+            SLFmtCheckPrintIssue(
+                filename, i + 1u, reason, current, &currentLines[i], expected, &expectedLines[j]);
+            issues++;
+            i++;
+            j++;
+            continue;
+        }
+
+        if (i < currentLineLen) {
+            SLFmtCheckPrintIssue(
+                filename,
+                i + 1u,
+                "line should be removed",
+                current,
+                &currentLines[i],
+                expected,
+                &empty);
+            issues++;
+            i++;
+            continue;
+        }
+        SLFmtCheckPrintIssue(
+            filename,
+            currentLineLen + 1u,
+            "line should be inserted",
+            current,
+            &empty,
+            expected,
+            &expectedLines[j]);
+        issues++;
+        j++;
+    }
+
+    fprintf(stdout, "  issues: %u\n", issues);
+
+    free(currentLines);
+    free(expectedLines);
+}
+
 static int FormatOneFile(const char* filename, int checkOnly, int* outChanged) {
     char*     source = NULL;
     uint32_t  sourceLen = 0;
@@ -1312,6 +1579,7 @@ static int FormatOneFile(const char* filename, int checkOnly, int* outChanged) {
     if (changed) {
         if (checkOnly) {
             fprintf(stdout, "%s\n", filename);
+            SLFmtCheckReport(filename, source, sourceLen, formatted.ptr, formatted.len);
         } else if (WriteFileAtomic(filename, formatted.ptr, formatted.len) != 0) {
             fprintf(stderr, "error: failed to write %s\n", filename);
             goto done;

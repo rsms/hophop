@@ -1,46 +1,46 @@
 struct A {
-    x int
+	x int
 }
 
 struct B {
-    A
-    y int
+	A
+	y int
 }
 
 struct C {
-    B
-    z int
+	B
+	z int
 }
 
 fn score_A(v A) int {
-    return v.x
+	return v.x
 }
 
 fn score_B(v B) int {
-    return v.y
+	return v.y
 }
 
-fn score{score_A, score_B};
+fn score { score_A, score_B }
 
 fn main() {
-    var a A
-    var b B
-    var c C
+	var a A
+	var b B
+	var c C
 
-    a.x = 1
+	a.x = 1
 
-    b.x = 2
-    b.y = 3
+	b.x = 2
+	b.y = 3
 
-    c.x = 4
-    c.y = 5
-    c.z = 6
+	c.x = 4
+	c.y = 5
+	c.z = 6
 
-    assert score(a) == 1
-    assert score(b) == 3
-    assert score(c) == 5
+	assert score(a) == 1
+	assert score(b) == 3
+	assert score(c) == 5
 
-    assert a.score() == 1
-    assert b.score() == 3
-    assert c.score() == 5
+	assert a.score() == 1
+	assert b.score() == 3
+	assert c.score() == 5
 }

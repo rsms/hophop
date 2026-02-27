@@ -1,5 +1,5 @@
 struct Vec3 {
-    x, y, z NoSuchType
+	x, y, z NoSuchType
 }
 
 fn main() {}

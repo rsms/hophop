@@ -1,1 +1,3 @@
-struct Inner{ y int }
+struct Inner {
+	y int
+}

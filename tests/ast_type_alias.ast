@@ -1,5 +1,5 @@
-FILE [0,36]
+FILE [0,37]
   TYPE_ALIAS "MyInt" [0,14]
     TYPE_NAME "int" [11,14]
-  TYPE_ALIAS flags=32768 "MyUInt" [15,35]
-    TYPE_NAME "uint" [31,35]
+  TYPE_ALIAS flags=32768 "MyUInt" [16,36]
+    TYPE_NAME "uint" [32,36]

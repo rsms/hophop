@@ -91,14 +91,14 @@ typedef __sl_u32 __sl_LoggerFlags;
 typedef __sl_LoggerFlags __sl_LogFlags;
 
 struct __sl_Logger {
-    void (*handler)(__sl_Logger* self, __sl_str* message, __sl_LogLevel level, __sl_LogFlags flags);
+    void (*handler)(__sl_Logger* arg0, __sl_str* arg1, __sl_LogLevel arg2, __sl_LogFlags arg3);
     __sl_LogLevel min_level;
     __sl_LogFlags flags;
     __sl_str* prefix;
 };
 
 struct __sl_Allocator {
-    __sl_uint (*impl)(__sl_Allocator* self, __sl_uint addr, __sl_uint align, __sl_uint curSize, __sl_uint* newSizeInOut, __sl_u32 flags);
+    __sl_uint (*impl)(__sl_Allocator* arg0, __sl_uint arg1, __sl_uint arg2, __sl_uint arg3, __sl_uint* arg4, __sl_u32 arg5);
 };
 
 struct __sl_Context {

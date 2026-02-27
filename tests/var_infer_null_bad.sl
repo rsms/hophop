@@ -1,4 +1,4 @@
 fn example() {
-    var x = null
-    _ = x
+	var x = null
+	_ = x
 }

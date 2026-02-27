@@ -1,8 +1,8 @@
 struct A {
-    x int
+	x int
 }
 
 struct B {
-    y int
-    A
+	y int
+	A
 }

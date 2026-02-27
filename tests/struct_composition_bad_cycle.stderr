@@ -1,1 +1,1 @@
-tests/struct_composition_bad_cycle.sl:6:5: SL2014: embedded struct cycle detected
+tests/struct_composition_bad_cycle.sl:6:2: SL2014: embedded struct cycle detected

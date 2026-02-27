@@ -1,3 +1,3 @@
 struct Bad {
-    int
+	int
 }

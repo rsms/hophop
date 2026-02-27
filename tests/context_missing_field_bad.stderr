@@ -1,1 +1,1 @@
-tests/context_missing_field_bad.sl:6:5: SL2030: required context field is missing
+tests/context_missing_field_bad.sl:6:2: SL2030: required context field is missing

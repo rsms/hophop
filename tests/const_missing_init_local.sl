@@ -1,4 +1,4 @@
 fn main() {
-    const x i32
-    _ = x
+	const x i32
+	_ = x
 }

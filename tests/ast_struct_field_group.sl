@@ -1,3 +1,3 @@
 struct Vec3 {
-    x, y, z i32
+	x, y, z i32
 }

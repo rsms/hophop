@@ -1,2 +1,1 @@
-fn bad(s str) {
-}
+fn bad(s str) {}

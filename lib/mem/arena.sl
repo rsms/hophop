@@ -1,105 +1,99 @@
 import "core"
 
 pub struct ArenaBlock {
-    next *ArenaBlock
-    addr uint
-    size uint
-    used uint
-    align uint
+	next  *ArenaBlock
+	addr  uint
+	size  uint
+	used  uint
+	align uint
 }
 
 pub struct ArenaAllocator {
-    core.Allocator
-    mem *core.Allocator
-    head *ArenaBlock
-    block_size uint
+	core.Allocator
+	mem        *core.Allocator
+	head       *ArenaBlock
+	block_size uint
 }
 
 fn alloc_block(arena *ArenaAllocator, minSize uint, align uint) *ArenaBlock {
-    var payload_size = arena.block_size
-    if payload_size < minSize {
-        payload_size = minSize
-    }
+	var payload_size = arena.block_size
+	if payload_size < minSize {
+		payload_size = minSize
+	}
 
-    if arena.mem == 0 as *core.Allocator {
-        return 0 as *ArenaBlock
-    }
+	if arena.mem == 0 as *core.Allocator {
+		return 0 as *ArenaBlock
+	}
 
-    var payload_addr = arena.mem.impl(arena.mem, 0, align, 0, &payload_size, 0)
-    if payload_addr == 0 {
-        return 0 as *ArenaBlock
-    }
+	var payload_addr = arena.mem.impl(arena.mem, 0, align, 0, &payload_size, 0)
+	if payload_addr == 0 {
+		return 0 as *ArenaBlock
+	}
 
-    var block *ArenaBlock = new ArenaBlock with arena.mem
-    block.next = arena.head
-    block.addr = payload_addr
-    block.size = payload_size
-    block.used = minSize
-    block.align = align
-    arena.head = block
-    return block
+	var block *ArenaBlock = new ArenaBlock with arena.mem
+	block.next = arena.head
+	block.addr = payload_addr
+	block.size = payload_size
+	block.used = minSize
+	block.align = align
+	arena.head = block
+	return block
 }
 
-fn arena_alloc_impl(
-    self *core.Allocator,
-    addr uint,
-    align uint,
-    curSize uint,
-    newSizeInOut *uint,
-    flags u32) uint {
-    var arena = self as *ArenaAllocator
-    if newSizeInOut == 0 as *uint {
-        return 0
-    }
+fn arena_alloc_impl(self *core.Allocator, addr uint, align uint, curSize uint, newSizeInOut *uint, flags u32) uint {
+	var arena = self as *ArenaAllocator
+	if newSizeInOut == 0 as *uint {
+		return 0
+	}
 
-    if addr != 0 || curSize != 0 || flags != 0 {
-        return 0
-    }
+	if addr != 0 || curSize != 0 || flags != 0 {
+		return 0
+	}
 
-    if align == 0 {
-        return 0
-    }
+	if align == 0 {
+		return 0
+	}
 
-    var newSize uint = *newSizeInOut
-    if newSize == 0 {
-        return 0
-    }
+	var newSize uint = *newSizeInOut
+	if newSize == 0 {
+		return 0
+	}
 
-    var block = alloc_block(arena, newSize, align)
-    if block == 0 as *ArenaBlock {
-        return 0
-    }
-    return block.addr
+	var block = alloc_block(arena, newSize, align)
+	if block == 0 as *ArenaBlock {
+		return 0
+	}
+	return block.addr
 }
 
 pub fn init(self *ArenaAllocator, source *core.Allocator, block_size uint) {
-    self.mem = source
-    self.head = 0 as *ArenaBlock
-    self.block_size = block_size
-    if self.block_size == 0 {
-        self.block_size = 4096
-    }
-    self.impl = arena_alloc_impl
+	self.mem = source
+	self.head = 0 as *ArenaBlock
+	self.block_size = block_size
+	if self.block_size == 0 {
+		self.block_size = 4096
+	}
+	self.impl = arena_alloc_impl
 }
 
 fn free_block_chain(source *core.Allocator, block *ArenaBlock) {
-    if block == 0 as *ArenaBlock {
-        return
-    }
+	if block == 0 as *ArenaBlock {
+		return
+	}
 
-    var next *ArenaBlock = block.next
-    var zero uint = 0
-    source.impl(source, block.addr, block.align, block.size, &zero, 0)
-    free(source, block)
-    free_block_chain(source, next)
+	var next *ArenaBlock = block.next
+	var zero uint        = 0
+	source.impl(source, block.addr, block.align, block.size, &zero, 0)
+	free(source, block)
+	free_block_chain(source, next)
 }
 
 pub fn free_all(self *ArenaAllocator) {
-    if self.mem == 0 as *core.Allocator {
-        self.head = 0 as *ArenaBlock
-        return
-    }
+	if self.mem == 0 as *core.Allocator {
+		self.head = 0 as *ArenaBlock
+		return
+	}
 
-    free_block_chain(self.mem, self.head)
-    self.head = 0 as *ArenaBlock
+	free_block_chain(self.mem, self.head)
+	self.head = 0 as *ArenaBlock
 }

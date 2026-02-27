@@ -1,1 +1,1 @@
-tests/slp3_flow_narrow_bad_null_branch_deref.sl:6:16: SL2004: type mismatch
+tests/slp3_flow_narrow_bad_null_branch_deref.sl:6:10: SL2004: type mismatch

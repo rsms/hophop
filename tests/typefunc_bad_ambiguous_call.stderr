@@ -1,1 +1,1 @@
-tests/typefunc_bad_ambiguous_call.sl:7:5: SL2016: ambiguous call
+tests/typefunc_bad_ambiguous_call.sl:9:2: SL2016: ambiguous call

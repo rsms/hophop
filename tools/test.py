@@ -14,13 +14,15 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "tests" / "tests.jsonl"
 ARENA_GROW_TEST_C_PATH = ROOT / "tests" / "harness" / "arena_grow_test.c"
 TEST_ROOT_IGNORED_NAMES = {"tests.jsonl", "README.md", "harness", ".DS_Store"}
 TEST_ROOT_TRACKED_SUFFIXES = {".sl", ".stderr", ".ast", ".tokens"}
+PRETEST_FMT_ROOTS = ("examples", "lib", "tests")
+PRETEST_FMT_DEFAULT_EXCLUDES = {"tests/fmt_canonical.sl"}
 
 
 @dataclass
@@ -110,6 +112,169 @@ def run_cmd(args: List[str], cwd: Optional[Path] = None) -> subprocess.Completed
         text=True,
         check=False,
     )
+
+
+def normalize_rel_path(path: str) -> str:
+    return Path(path).as_posix().rstrip("/")
+
+
+def collect_pretest_fmt_exemptions(cases: List[TestCase]) -> Tuple[Set[str], List[str]]:
+    exempt_paths: Set[str] = set(PRETEST_FMT_DEFAULT_EXCLUDES)
+    errors: List[str] = []
+
+    for case in cases:
+        if case.kind != "slc_fmt":
+            continue
+        c = case.data
+        input_value = c.get("input")
+        if not isinstance(input_value, str) or not input_value:
+            continue
+
+        input_rel = normalize_rel_path(input_value)
+        input_abs = abs_path(input_rel)
+
+        exempt_input = c.get("pretest_fmt_exempt_input", False)
+        if not isinstance(exempt_input, bool):
+            errors.append(f"{case.id}: pretest_fmt_exempt_input must be a bool")
+            exempt_input = False
+
+        if exempt_input:
+            if input_abs.is_file():
+                exempt_paths.add(input_rel)
+            elif input_abs.is_dir():
+                for p in input_abs.rglob("*.sl"):
+                    if p.is_file():
+                        exempt_paths.add(p.relative_to(ROOT).as_posix())
+            else:
+                errors.append(
+                    f"{case.id}: pretest_fmt_exempt_input requires existing input path"
+                )
+
+        raw_exempt_paths = c.get("pretest_fmt_exempt_paths")
+        if raw_exempt_paths is None:
+            continue
+        if not isinstance(raw_exempt_paths, list):
+            errors.append(f"{case.id}: pretest_fmt_exempt_paths must be an array of strings")
+            continue
+        if not input_abs.is_dir():
+            errors.append(
+                f"{case.id}: pretest_fmt_exempt_paths requires directory input, got {input_rel}"
+            )
+            continue
+
+        input_root = input_abs.resolve()
+        for item in raw_exempt_paths:
+            if not isinstance(item, str) or not item:
+                errors.append(f"{case.id}: pretest_fmt_exempt_paths entries must be non-empty strings")
+                continue
+            if Path(item).is_absolute():
+                errors.append(
+                    f"{case.id}: pretest_fmt_exempt_paths entry must be relative: {item}"
+                )
+                continue
+
+            normalized_item = os.path.normpath(item)
+            if normalized_item in ("", "."):
+                errors.append(f"{case.id}: invalid pretest_fmt_exempt_paths entry: {item!r}")
+                continue
+            if normalized_item == ".." or normalized_item.startswith(f"..{os.sep}"):
+                errors.append(
+                    f"{case.id}: pretest_fmt_exempt_paths entry escapes input directory: {item}"
+                )
+                continue
+
+            candidate = (input_abs / normalized_item).resolve()
+            try:
+                candidate.relative_to(input_root)
+            except ValueError:
+                errors.append(
+                    f"{case.id}: pretest_fmt_exempt_paths entry escapes input directory: {item}"
+                )
+                continue
+            if candidate.suffix != ".sl":
+                errors.append(f"{case.id}: pretest_fmt_exempt_paths entry is not an .sl file: {item}")
+                continue
+            if not candidate.is_file():
+                errors.append(
+                    f"{case.id}: pretest_fmt_exempt_paths entry does not exist: {item}"
+                )
+                continue
+            exempt_paths.add(candidate.relative_to(ROOT).as_posix())
+
+    return exempt_paths, errors
+
+
+def collect_pretest_fmt_targets(exempt_paths: Set[str]) -> List[str]:
+    targets: List[str] = []
+    for root_name in PRETEST_FMT_ROOTS:
+        root_path = ROOT / root_name
+        if not root_path.exists():
+            continue
+        for path in root_path.rglob("*.sl"):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(ROOT).as_posix()
+            if rel in exempt_paths:
+                continue
+            targets.append(rel)
+    targets.sort()
+    return targets
+
+
+def run_pretest_fmt_check(ctx: RunContext, all_cases: List[TestCase]) -> tuple[bool, str]:
+    exempt_paths, config_errors = collect_pretest_fmt_exemptions(all_cases)
+    if config_errors:
+        return fail("pre-test formatter config errors:\n" + "\n".join(config_errors))
+
+    targets = collect_pretest_fmt_targets(exempt_paths)
+    if not targets:
+        return ok()
+
+    dirty_paths: Set[str] = set()
+    command_errors: List[str] = []
+
+    for path in targets:
+        cp = run_cmd([str(ctx.slc), "fmt", "--check", path])
+        stdout_lines = [line.strip() for line in cp.stdout.splitlines() if line.strip()]
+
+        if cp.returncode == 0:
+            continue
+        if cp.stderr:
+            # Some negative fixtures are intentionally not formatter-compatible.
+            continue
+        if stdout_lines:
+            normalized = normalize_rel_path(path)
+            has_mismatch_report = any(
+                line == path
+                or line == normalized
+                or line.startswith(path + ":")
+                or line.startswith(normalized + ":")
+                for line in stdout_lines
+            )
+            if has_mismatch_report:
+                dirty_paths.add(path)
+                continue
+            path_like = [line for line in stdout_lines if line.endswith(".sl")]
+            if path_like:
+                dirty_paths.update(path_like)
+                continue
+            command_errors.append(
+                f"{path}: unexpected fmt --check output without recognizable path marker"
+            )
+            continue
+        command_errors.append(f"{path}: unexpected fmt --check failure without diagnostic output")
+
+    if command_errors:
+        return fail("pre-test formatting check errors:\n" + "\n".join(command_errors))
+
+    if dirty_paths:
+        details = [
+            f"{path}: non-standard formatting; run `{ctx.slc} fmt {path}` to correct formatting"
+            for path in sorted(dirty_paths)
+        ]
+        return fail("pre-test formatting check failed:\n" + "\n".join(details))
+
+    return ok()
 
 
 def sanitize_name(name: str) -> str:
@@ -898,6 +1063,8 @@ def cmd_lint(args: argparse.Namespace) -> int:
     errors: List[str] = []
     for case in cases:
         errors.extend(lint_case_fields(case))
+    _, fmt_errors = collect_pretest_fmt_exemptions(cases)
+    errors.extend(fmt_errors)
     errors.extend(lint_manifest_coverage(cases))
 
     if errors:
@@ -912,8 +1079,8 @@ def cmd_lint(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     manifest = abs_path(args.manifest)
-    fixtures = load_cases(manifest)
-    fixtures = filter_cases(fixtures, args.suite, args.id_contains)
+    all_fixtures = load_cases(manifest)
+    fixtures = filter_cases(all_fixtures, args.suite, args.id_contains)
     if not fixtures:
         print("no tests selected")
         return 0
@@ -932,6 +1099,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         update=args.update,
         sidecar_codegen=not args.no_sidecar_codegen,
     )
+
+    fmt_ok, fmt_detail = run_pretest_fmt_check(ctx, all_fixtures)
+    if not fmt_ok:
+        print(fmt_detail, file=sys.stderr)
+        return 1
 
     jobs = args.jobs if args.jobs and args.jobs > 0 else (os.cpu_count() or 1)
     temp_root = Path(tempfile.mkdtemp(prefix="slang-tests."))

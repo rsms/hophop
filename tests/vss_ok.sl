@@ -1,17 +1,17 @@
 struct Packet {
-    payloadLen u32
-    sampleLen  u32
-    payload    [u8 .payloadLen]
-    samples    [i32 .sampleLen]
+	payloadLen u32
+	sampleLen  u32
+	payload    [u8 .payloadLen]
+	samples    [i32 .sampleLen]
 }
 
 fn main() {
-    var p *Packet = 0 as *Packet
-    var payload *u8 = p.payload
-    var payloadPtr &*u8 = &p.payload
-    payload = *payloadPtr
+	var p          *Packet = 0 as *Packet
+	var payload    *u8     = p.payload
+	var payloadPtr &*u8    = &p.payload
+	payload = *payloadPtr
 
-    var samples *i32 = p.samples
-    var samplesPtr &*i32 = &p.samples
-    samples = *samplesPtr
+	var samples    *i32  = p.samples
+	var samplesPtr &*i32 = &p.samples
+	samples = *samplesPtr
 }

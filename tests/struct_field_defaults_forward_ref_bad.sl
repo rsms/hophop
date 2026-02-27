@@ -1,4 +1,4 @@
 struct Bad {
-    a i32 = b
-    b i32
+	a i32 = b
+	b i32
 }

@@ -1,1 +1,1 @@
-tests/string_concat_nonliteral_bad.sl:3:13: SL2053: string '+' currently only supports non-parenthesized literal chains
+tests/string_concat_nonliteral_bad.sl:3:10: SL2053: string '+' currently only supports non-parenthesized literal chains

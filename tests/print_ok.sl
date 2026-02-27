@@ -1,3 +1,3 @@
 fn main() {
-    print("hello from print")
+	print("hello from print")
 }

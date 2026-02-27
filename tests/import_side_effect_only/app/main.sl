@@ -1,5 +1,5 @@
 import "lib/math" as _
 
 fn main() i32 {
-    return 0
+	return 0
 }

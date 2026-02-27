@@ -122,13 +122,33 @@ def split_name_and_type(src: str) -> tuple[str, str]:
 def parse_param_list(src: str) -> list[tuple[str, str]]:
     params: list[tuple[str, str]] = []
     pending_names: list[str] = []
-    for seg in split_top_level_commas(src):
+    segments = split_top_level_commas(src)
+    for i, seg in enumerate(segments):
         parts = seg.split(None, 1)
         if len(parts) == 1:
-            name = parts[0]
-            if not re.fullmatch(r"[A-Za-z_]\w*", name):
-                die(f"invalid parameter name {name!r} in segment {seg!r}")
-            pending_names.append(name)
+            token = parts[0]
+            if not token:
+                continue
+
+            next_has_named_type = False
+            if i + 1 < len(segments):
+                next_parts = segments[i + 1].split(None, 1)
+                if len(next_parts) == 2 and re.fullmatch(r"[A-Za-z_]\w*", next_parts[0]):
+                    next_has_named_type = True
+
+            if pending_names and not next_has_named_type:
+                for n in pending_names:
+                    params.append((n, token))
+                pending_names = []
+                continue
+
+            if next_has_named_type:
+                if not re.fullmatch(r"[A-Za-z_]\w*", token):
+                    die(f"invalid parameter name {token!r} in segment {seg!r}")
+                pending_names.append(token)
+                continue
+
+            params.append((f"arg{len(params)}", token))
             continue
         name = parts[0]
         type_expr = parts[1].strip()

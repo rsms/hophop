@@ -1,1 +1,1 @@
-tests/types_mut_bad_readonly_to_mutref_assign.sl:6:5: SL2004: type mismatch
+tests/types_mut_bad_readonly_to_mutref_assign.sl:6:2: SL2004: type mismatch

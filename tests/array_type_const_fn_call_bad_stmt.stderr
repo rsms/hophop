@@ -1,1 +1,1 @@
-tests/array_type_const_fn_call_bad_stmt.sl:7:16: SL2054: array length must be a const integer expression: deferred statement cannot alter control flow in const evaluation
+tests/array_type_const_fn_call_bad_stmt.sl:7:13: SL2054: array length must be a const integer expression: deferred statement cannot alter control flow in const evaluation
