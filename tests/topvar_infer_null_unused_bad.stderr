@@ -1,0 +1,1 @@
+tests/topvar_infer_null_unused_bad.sl:1:9: SL2026: cannot infer type from null; add explicit type

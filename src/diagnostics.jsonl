@@ -71,6 +71,8 @@
 {"id": "SL2051", "name": "TYPE_NOT_ORDERED", "category": "semantic", "message": "type is not ordered"}
 {"id": "SL2052", "name": "COMPARISON_HOOK_IMPURE", "category": "semantic", "message": "comparison hook must be pure"}
 {"id": "SL2053", "name": "STRING_CONCAT_LITERAL_ONLY", "category": "semantic", "message": "string '+' currently only supports non-parenthesized literal chains"}
+{"id": "SL2054", "name": "ARRAY_LEN_CONST_REQUIRED", "category": "semantic", "message": "array length must be a const integer expression"}
+{"id": "SL2055", "name": "CONST_INIT_CONST_REQUIRED", "category": "semantic", "message": "const initializer must be a const expression"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}

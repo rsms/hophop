@@ -132,7 +132,7 @@ OptionalType    = "?" Type .
 PtrType         = "*" Type .
 RefType         = "&" Type .
 SliceType       = "[" Type "]" .
-ArrayType       = "[" Type IntLit "]" .
+ArrayType       = "[" Type Expr "]" .
 VarArrayType    = "[" Type "." Ident "]" .
 FnType          = "fn" "(" [ FnTypeParamList ] ")" [ Type ] .
 FnTypeParamList = FnTypeParam { "," FnTypeParam } .
@@ -582,6 +582,12 @@ This section is non-core and documents current reference behavior.
 - [REF-IMPL-007][Provisional] Current codegen lowering may re-evaluate expression-switch subject per case-label comparison; this is a known divergence from [STMT-SWITCH-007].
 - [REF-IMPL-007A][Provisional] `Reference-slc` compatibility does not require reproducing [REF-IMPL-007]; both single-evaluation ([STMT-SWITCH-007]) and re-evaluation behavior are accepted.
 - [REF-IMPL-008][Provisional] `assert(cond, fmt, args...)` currently ignores formatting arguments in panic payload construction.
+- [REF-IMPL-009][Provisional] Top-level `const` initializers are eagerly const-evaluated and rejected when non-const-evaluable.
+- [REF-IMPL-010][Provisional] Current const-eval supports:
+  - const-evaluable function calls with local declarations, `if`, `for`, `switch`, `assert`, `defer`, `break`, `continue`
+  - `sizeof(Type)` and `sizeof(expr)` (including identifiers resolved from const-eval local/param bindings)
+  - casts among numeric/bool forms, `string -> bool`, and `null -> bool/numeric/pointer-like`
+- [REF-IMPL-011][Provisional] Cast forms outside [REF-IMPL-010] may typecheck by [EXPR-CAST-002] but still be non-const-evaluable in `Reference-slc`.
 
 ## 15. Evolution Policy
 

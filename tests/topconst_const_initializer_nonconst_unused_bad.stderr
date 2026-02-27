@@ -1,0 +1,1 @@
+tests/topconst_const_initializer_nonconst_unused_bad.sl:2:11: SL2055: const initializer must be a const expression: identifier is not a const value in this context

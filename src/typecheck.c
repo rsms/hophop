@@ -1,4 +1,6 @@
 #include "libsl-impl.h"
+#include "ctfe.h"
+#include "ctfe_exec.h"
 
 SL_API_BEGIN
 
@@ -149,6 +151,14 @@ typedef struct {
     uint32_t   localLen;
     uint32_t   localCap;
 
+    SLCTFEValue* constEvalValues;
+    uint8_t*     constEvalState;
+    int32_t*     topVarLikeTypes;
+    uint8_t*     topVarLikeTypeState;
+    const char*  lastConstEvalReason;
+    uint32_t     lastConstEvalReasonStart;
+    uint32_t     lastConstEvalReasonEnd;
+
     int32_t typeVoid;
     int32_t typeBool;
     int32_t typeStr;
@@ -170,6 +180,19 @@ typedef struct {
     uint32_t       defaultFieldCount;
     uint32_t       defaultFieldCurrentIndex;
 } SLTypeCheckCtx;
+
+enum {
+    SLTCConstEval_UNSEEN = 0,
+    SLTCConstEval_VISITING,
+    SLTCConstEval_READY,
+    SLTCConstEval_NONCONST,
+};
+
+enum {
+    SLTCTopVarLikeType_UNSEEN = 0,
+    SLTCTopVarLikeType_VISITING,
+    SLTCTopVarLikeType_READY,
+};
 
 #define SLTC_MAX_ANON_FIELDS 256u
 
@@ -1334,59 +1357,907 @@ static int SLTCResolveIndexBaseInfo(SLTypeCheckCtx* c, int32_t baseType, SLTCInd
     }
 }
 
-static int SLTCParseIntLiteralToI64(SLTypeCheckCtx* c, uint32_t start, uint32_t end, int64_t* out) {
-    uint64_t v = 0;
-    uint32_t i;
-    if (end <= start) {
+static int32_t SLTCFindTopLevelVarLikeNode(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
+static int     SLTCTypeTopLevelVarLikeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
+static int     SLTCIsTypeNodeKind(SLAstKind kind);
+static int32_t SLTCLocalFind(SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd);
+static int     SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
+static int     SLTCTypeContainsVarSizeByValue(SLTypeCheckCtx* c, int32_t typeId);
+static int     SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
+static int32_t SLTCResolveAliasBaseType(SLTypeCheckCtx* c, int32_t typeId);
+static int     SLTCIsIntegerType(SLTypeCheckCtx* c, int32_t typeId);
+static int     SLTCIsFloatType(SLTypeCheckCtx* c, int32_t typeId);
+static int     SLTCIsBoolType(SLTypeCheckCtx* c, int32_t typeId);
+
+static int32_t SLTCVarLikeInitExprNode(SLTypeCheckCtx* c, int32_t nodeId) {
+    int32_t firstChild = SLAstFirstChild(c->ast, nodeId);
+    if (firstChild < 0) {
         return -1;
     }
-    for (i = start; i < end; i++) {
-        unsigned char ch = (unsigned char)c->src.ptr[i];
-        if (ch < (unsigned char)'0' || ch > (unsigned char)'9') {
-            return -1;
-        }
-        if (v > (uint64_t)INT64_MAX / 10u
-            || (v == (uint64_t)INT64_MAX / 10u
-                && (uint64_t)(ch - (unsigned char)'0') > (uint64_t)INT64_MAX % 10u))
-        {
-            return -1;
-        }
-        v = v * 10u + (uint64_t)(ch - (unsigned char)'0');
+    if (SLTCIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
+        return SLAstNextSibling(c->ast, firstChild);
     }
-    *out = (int64_t)v;
+    return firstChild;
+}
+
+#define SLTC_CONST_CALL_MAX_DEPTH 64u
+#define SLTC_CONST_FOR_MAX_ITERS  100000u
+
+typedef struct {
+    SLTypeCheckCtx* tc;
+    SLCTFEExecCtx*  execCtx;
+    int32_t         fnStack[SLTC_CONST_CALL_MAX_DEPTH];
+    uint32_t        fnDepth;
+    const char*     nonConstReason;
+    uint32_t        nonConstStart;
+    uint32_t        nonConstEnd;
+} SLTCConstEvalCtx;
+
+static int SLTCEvalTopLevelConstNode(
+    SLTypeCheckCtx*   c,
+    SLTCConstEvalCtx* evalCtx,
+    int32_t           nodeId,
+    SLCTFEValue*      outValue,
+    int*              outIsConst);
+static int SLTCEvalConstExprNode(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
+static int SLTCResolveConstCall(
+    void*              ctx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag);
+
+static void SLTCConstSetReason(
+    SLTCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason) {
+    if (evalCtx == NULL || reason == NULL || reason[0] == '\0' || evalCtx->nonConstReason != NULL) {
+        return;
+    }
+    evalCtx->nonConstReason = reason;
+    evalCtx->nonConstStart = start;
+    evalCtx->nonConstEnd = end;
+    if (evalCtx->execCtx != NULL) {
+        SLCTFEExecSetReason(evalCtx->execCtx, start, end, reason);
+    }
+}
+
+static void SLTCConstSetReasonNode(SLTCConstEvalCtx* evalCtx, int32_t nodeId, const char* reason) {
+    SLTypeCheckCtx* c;
+    if (evalCtx == NULL) {
+        return;
+    }
+    c = evalCtx->tc;
+    if (c != NULL && nodeId >= 0 && (uint32_t)nodeId < c->ast->len) {
+        SLTCConstSetReason(evalCtx, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end, reason);
+        return;
+    }
+    SLTCConstSetReason(evalCtx, 0, 0, reason);
+}
+
+static void SLTCAttachConstEvalReason(SLTypeCheckCtx* c) {
+    if (c == NULL || c->diag == NULL || c->lastConstEvalReason == NULL
+        || c->lastConstEvalReason[0] == '\0')
+    {
+        return;
+    }
+    c->diag->detail = SLTCAllocDiagText(c, c->lastConstEvalReason);
+}
+
+static int SLTCResolveConstIdent(
+    void*        ctx,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*   c;
+    int32_t           nodeId;
+    (void)diag;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+    if (evalCtx->execCtx != NULL
+        && SLCTFEExecEnvLookup(evalCtx->execCtx, nameStart, nameEnd, outValue))
+    {
+        *outIsConst = 1;
+        return 0;
+    }
+    nodeId = SLTCFindTopLevelVarLikeNode(c, nameStart, nameEnd);
+    if (nodeId < 0 || c->ast->nodes[nodeId].kind != SLAst_CONST) {
+        SLTCConstSetReason(
+            evalCtx, nameStart, nameEnd, "identifier is not a const value in this context");
+        *outIsConst = 0;
+        return 0;
+    }
+    return SLTCEvalTopLevelConstNode(c, evalCtx, nodeId, outValue, outIsConst);
+}
+
+static int SLTCConstLookupExecBindingType(
+    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, int32_t* outType) {
+    const SLCTFEExecEnv* frame;
+    if (evalCtx == NULL || evalCtx->execCtx == NULL || outType == NULL) {
+        return 0;
+    }
+    frame = evalCtx->execCtx->env;
+    while (frame != NULL) {
+        uint32_t i = frame->bindingLen;
+        while (i > 0) {
+            const SLCTFEExecBinding* b;
+            i--;
+            b = &frame->bindings[i];
+            if (SLNameEqSlice(evalCtx->tc->src, b->nameStart, b->nameEnd, nameStart, nameEnd)
+                && b->typeId >= 0)
+            {
+                *outType = b->typeId;
+                return 1;
+            }
+        }
+        frame = frame->parent;
+    }
+    return 0;
+}
+
+static int SLTCConstBuiltinSizeBytes(SLBuiltinKind b, uint64_t* outBytes) {
+    if (outBytes == NULL) {
+        return 0;
+    }
+    switch (b) {
+        case SLBuiltin_BOOL:
+        case SLBuiltin_U8:
+        case SLBuiltin_I8:    *outBytes = 1u; return 1;
+        case SLBuiltin_U16:
+        case SLBuiltin_I16:   *outBytes = 2u; return 1;
+        case SLBuiltin_U32:
+        case SLBuiltin_I32:
+        case SLBuiltin_F32:   *outBytes = 4u; return 1;
+        case SLBuiltin_U64:
+        case SLBuiltin_I64:
+        case SLBuiltin_F64:   *outBytes = 8u; return 1;
+        case SLBuiltin_USIZE:
+        case SLBuiltin_ISIZE: *outBytes = (uint64_t)sizeof(void*); return 1;
+        default:              return 0;
+    }
+}
+
+static int SLTCConstBuiltinAlignBytes(SLBuiltinKind b, uint64_t* outAlign) {
+    uint64_t size = 0;
+    if (outAlign == NULL || !SLTCConstBuiltinSizeBytes(b, &size)) {
+        return 0;
+    }
+    *outAlign = size > (uint64_t)sizeof(void*) ? (uint64_t)sizeof(void*) : size;
+    if (*outAlign == 0) {
+        *outAlign = 1;
+    }
+    return 1;
+}
+
+static uint64_t SLTCConstAlignUpU64(uint64_t v, uint64_t align) {
+    if (align == 0) {
+        return v;
+    }
+    return (v + align - 1u) & ~(align - 1u);
+}
+
+static int SLTCConstTypeLayout(
+    SLTypeCheckCtx* c, int32_t typeId, uint64_t* outSize, uint64_t* outAlign, uint32_t depth) {
+    const SLTCType* t;
+    uint64_t        ptrSize = (uint64_t)sizeof(void*);
+    uint64_t        usizeSize = (uint64_t)sizeof(uintptr_t);
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || outSize == NULL || outAlign == NULL
+        || depth > c->typeLen)
+    {
+        return 0;
+    }
+    t = &c->types[typeId];
+    switch (t->kind) {
+        case SLTCType_BUILTIN:
+            if (!SLTCConstBuiltinSizeBytes(t->builtin, outSize)
+                || !SLTCConstBuiltinAlignBytes(t->builtin, outAlign))
+            {
+                if (typeId == c->typeStr) {
+                    *outSize = SLTCConstAlignUpU64(usizeSize, ptrSize) + ptrSize;
+                    *outAlign = ptrSize;
+                    return 1;
+                }
+                return 0;
+            }
+            return 1;
+        case SLTCType_UNTYPED_INT:
+            *outSize = (uint64_t)sizeof(ptrdiff_t);
+            *outAlign = *outSize;
+            return 1;
+        case SLTCType_UNTYPED_FLOAT:
+            *outSize = 8u;
+            *outAlign = 8u;
+            return 1;
+        case SLTCType_PTR:
+        case SLTCType_REF:
+        case SLTCType_FUNCTION:
+            *outSize = ptrSize;
+            *outAlign = ptrSize;
+            return 1;
+        case SLTCType_ARRAY: {
+            uint64_t elemSize = 0;
+            uint64_t elemAlign = 0;
+            if (!SLTCConstTypeLayout(c, t->baseType, &elemSize, &elemAlign, depth + 1u)) {
+                return 0;
+            }
+            if (t->arrayLen > 0 && elemSize > UINT64_MAX / (uint64_t)t->arrayLen) {
+                return 0;
+            }
+            *outSize = elemSize * (uint64_t)t->arrayLen;
+            *outAlign = elemAlign;
+            return 1;
+        }
+        case SLTCType_SLICE:
+            *outSize = SLTCConstAlignUpU64(usizeSize, ptrSize) + ptrSize;
+            *outAlign = ptrSize;
+            return 1;
+        case SLTCType_OPTIONAL:
+            return SLTCConstTypeLayout(c, t->baseType, outSize, outAlign, depth + 1u);
+        case SLTCType_NAMED:
+        case SLTCType_ANON_STRUCT: {
+            uint64_t offset = 0;
+            uint64_t maxAlign = 1;
+            uint32_t i;
+            for (i = 0; i < t->fieldCount; i++) {
+                uint64_t fieldSize = 0;
+                uint64_t fieldAlign = 0;
+                uint32_t fieldIdx = t->fieldStart + i;
+                if (fieldIdx >= c->fieldLen
+                    || !SLTCConstTypeLayout(
+                        c, c->fields[fieldIdx].typeId, &fieldSize, &fieldAlign, depth + 1u))
+                {
+                    return 0;
+                }
+                if (fieldAlign > maxAlign) {
+                    maxAlign = fieldAlign;
+                }
+                offset = SLTCConstAlignUpU64(offset, fieldAlign);
+                if (fieldSize > UINT64_MAX - offset) {
+                    return 0;
+                }
+                offset += fieldSize;
+            }
+            *outSize = SLTCConstAlignUpU64(offset, maxAlign);
+            *outAlign = maxAlign;
+            return 1;
+        }
+        case SLTCType_ANON_UNION: {
+            uint64_t maxSize = 0;
+            uint64_t maxAlign = 1;
+            uint32_t i;
+            for (i = 0; i < t->fieldCount; i++) {
+                uint64_t fieldSize = 0;
+                uint64_t fieldAlign = 0;
+                uint32_t fieldIdx = t->fieldStart + i;
+                if (fieldIdx >= c->fieldLen
+                    || !SLTCConstTypeLayout(
+                        c, c->fields[fieldIdx].typeId, &fieldSize, &fieldAlign, depth + 1u))
+                {
+                    return 0;
+                }
+                if (fieldSize > maxSize) {
+                    maxSize = fieldSize;
+                }
+                if (fieldAlign > maxAlign) {
+                    maxAlign = fieldAlign;
+                }
+            }
+            *outSize = SLTCConstAlignUpU64(maxSize, maxAlign);
+            *outAlign = maxAlign;
+            return 1;
+        }
+        case SLTCType_NULL:
+            *outSize = ptrSize;
+            *outAlign = ptrSize;
+            return 1;
+        default: return 0;
+    }
+}
+
+static int SLTCConstEvalSizeOf(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx*  c;
+    const SLAstNode* n;
+    int32_t          innerNode;
+    int32_t          innerType = -1;
+    uint64_t         sizeBytes = 0;
+    uint64_t         alignBytes = 0;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return -1;
+    }
+    n = &c->ast->nodes[exprNode];
+    innerNode = SLAstFirstChild(c->ast, exprNode);
+    if (innerNode < 0) {
+        SLTCConstSetReasonNode(evalCtx, exprNode, "sizeof expression is malformed");
+        *outIsConst = 0;
+        return 0;
+    }
+
+    if (n->flags == 1) {
+        if (SLTCResolveTypeNode(c, innerNode, &innerType) != 0) {
+            if (c->diag != NULL) {
+                *c->diag = (SLDiag){ 0 };
+            }
+            if (c->ast->nodes[innerNode].kind == SLAst_TYPE_NAME) {
+                int32_t localIdx = SLTCLocalFind(
+                    c, c->ast->nodes[innerNode].dataStart, c->ast->nodes[innerNode].dataEnd);
+                if (localIdx >= 0) {
+                    innerType = c->locals[localIdx].typeId;
+                } else {
+                    int32_t fnIdx = SLTCFindFunctionIndex(
+                        c, c->ast->nodes[innerNode].dataStart, c->ast->nodes[innerNode].dataEnd);
+                    if (fnIdx >= 0) {
+                        innerType = c->funcs[fnIdx].funcTypeId;
+                    } else {
+                        int32_t topNode = SLTCFindTopLevelVarLikeNode(
+                            c,
+                            c->ast->nodes[innerNode].dataStart,
+                            c->ast->nodes[innerNode].dataEnd);
+                        if (topNode >= 0) {
+                            if (SLTCTypeTopLevelVarLikeNode(c, topNode, &innerType) != 0) {
+                                return -1;
+                            }
+                        }
+                    }
+                }
+                if (innerType < 0
+                    && SLTCConstLookupExecBindingType(
+                        evalCtx,
+                        c->ast->nodes[innerNode].dataStart,
+                        c->ast->nodes[innerNode].dataEnd,
+                        &innerType))
+                {
+                    /* resolved from const-eval execution environment */
+                }
+            }
+        }
+    } else {
+        if (SLTCTypeExpr(c, innerNode, &innerType) != 0) {
+            return -1;
+        }
+        if (SLTCTypeContainsVarSizeByValue(c, innerType)) {
+            SLTCConstSetReasonNode(
+                evalCtx, innerNode, "sizeof operand type is not const-evaluable");
+            *outIsConst = 0;
+            return 0;
+        }
+    }
+    if (innerType < 0) {
+        SLTCConstSetReasonNode(evalCtx, innerNode, "sizeof operand type is not const-evaluable");
+        *outIsConst = 0;
+        return 0;
+    }
+    if (!SLTCConstTypeLayout(c, innerType, &sizeBytes, &alignBytes, 0)
+        || sizeBytes > (uint64_t)INT64_MAX || alignBytes == 0)
+    {
+        SLTCConstSetReasonNode(evalCtx, innerNode, "sizeof operand type is not const-evaluable");
+        *outIsConst = 0;
+        return 0;
+    }
+
+    outValue->kind = SLCTFEValue_INT;
+    outValue->i64 = (int64_t)sizeBytes;
+    outValue->f64 = 0.0;
+    outValue->b = 0;
+    outValue->s.bytes = NULL;
+    outValue->s.len = 0;
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLTCConstEvalCast(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx* c;
+    int32_t         valueNode;
+    int32_t         typeNode;
+    int32_t         targetType;
+    int32_t         baseTarget;
+    SLCTFEValue     inValue;
+    int             inIsConst = 0;
+
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return -1;
+    }
+
+    valueNode = SLAstFirstChild(c->ast, exprNode);
+    typeNode = valueNode >= 0 ? SLAstNextSibling(c->ast, valueNode) : -1;
+    if (valueNode < 0 || typeNode < 0) {
+        SLTCConstSetReasonNode(evalCtx, exprNode, "cast expression is malformed");
+        *outIsConst = 0;
+        return 0;
+    }
+
+    if (SLTCResolveTypeNode(c, typeNode, &targetType) != 0) {
+        return -1;
+    }
+    if (SLTCEvalConstExprNode(evalCtx, valueNode, &inValue, &inIsConst) != 0) {
+        return -1;
+    }
+    if (!inIsConst) {
+        *outIsConst = 0;
+        return 0;
+    }
+
+    baseTarget = SLTCResolveAliasBaseType(c, targetType);
+    if (baseTarget < 0 || (uint32_t)baseTarget >= c->typeLen) {
+        *outIsConst = 0;
+        return 0;
+    }
+
+    if (SLTCIsIntegerType(c, baseTarget)) {
+        int64_t asInt = 0;
+        if (inValue.kind == SLCTFEValue_INT) {
+            asInt = inValue.i64;
+        } else if (inValue.kind == SLCTFEValue_BOOL) {
+            asInt = inValue.b ? 1 : 0;
+        } else if (inValue.kind == SLCTFEValue_FLOAT) {
+            if (inValue.f64 != inValue.f64 || inValue.f64 > (double)INT64_MAX
+                || inValue.f64 < (double)INT64_MIN)
+            {
+                SLTCConstSetReasonNode(
+                    evalCtx, valueNode, "cast result is out of range for const integer");
+                *outIsConst = 0;
+                return 0;
+            }
+            asInt = (int64_t)inValue.f64;
+        } else if (inValue.kind == SLCTFEValue_NULL) {
+            asInt = 0;
+        } else {
+            *outIsConst = 0;
+            return 0;
+        }
+        outValue->kind = SLCTFEValue_INT;
+        outValue->i64 = asInt;
+        outValue->f64 = 0.0;
+        outValue->b = 0;
+        outValue->s.bytes = NULL;
+        outValue->s.len = 0;
+        *outIsConst = 1;
+        return 0;
+    }
+
+    if (SLTCIsFloatType(c, baseTarget)) {
+        double asFloat = 0.0;
+        if (inValue.kind == SLCTFEValue_FLOAT) {
+            asFloat = inValue.f64;
+        } else if (inValue.kind == SLCTFEValue_INT) {
+            asFloat = (double)inValue.i64;
+        } else if (inValue.kind == SLCTFEValue_BOOL) {
+            asFloat = inValue.b ? 1.0 : 0.0;
+        } else if (inValue.kind == SLCTFEValue_NULL) {
+            asFloat = 0.0;
+        } else {
+            *outIsConst = 0;
+            return 0;
+        }
+        outValue->kind = SLCTFEValue_FLOAT;
+        outValue->i64 = 0;
+        outValue->f64 = asFloat;
+        outValue->b = 0;
+        outValue->s.bytes = NULL;
+        outValue->s.len = 0;
+        *outIsConst = 1;
+        return 0;
+    }
+
+    if (SLTCIsBoolType(c, baseTarget)) {
+        uint8_t asBool = 0;
+        if (inValue.kind == SLCTFEValue_BOOL) {
+            asBool = inValue.b ? 1u : 0u;
+        } else if (inValue.kind == SLCTFEValue_INT) {
+            asBool = inValue.i64 != 0 ? 1u : 0u;
+        } else if (inValue.kind == SLCTFEValue_FLOAT) {
+            asBool = inValue.f64 != 0.0 ? 1u : 0u;
+        } else if (inValue.kind == SLCTFEValue_STRING) {
+            asBool = 1u;
+        } else if (inValue.kind == SLCTFEValue_NULL) {
+            asBool = 0;
+        } else {
+            *outIsConst = 0;
+            return 0;
+        }
+        outValue->kind = SLCTFEValue_BOOL;
+        outValue->i64 = 0;
+        outValue->f64 = 0.0;
+        outValue->b = asBool;
+        outValue->s.bytes = NULL;
+        outValue->s.len = 0;
+        *outIsConst = 1;
+        return 0;
+    }
+
+    if ((c->types[baseTarget].kind == SLTCType_PTR || c->types[baseTarget].kind == SLTCType_REF
+         || c->types[baseTarget].kind == SLTCType_OPTIONAL
+         || c->types[baseTarget].kind == SLTCType_FUNCTION)
+        && inValue.kind == SLCTFEValue_NULL)
+    {
+        *outValue = inValue;
+        *outIsConst = 1;
+        return 0;
+    }
+
+    *outValue = inValue;
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLTCEvalConstExprNode(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx* c;
+    SLAstKind       kind;
+    int             rc;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+    if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return -1;
+    }
+    kind = c->ast->nodes[exprNode].kind;
+    if (kind == SLAst_SIZEOF) {
+        return SLTCConstEvalSizeOf(evalCtx, exprNode, outValue, outIsConst);
+    }
+    if (kind == SLAst_CAST) {
+        return SLTCConstEvalCast(evalCtx, exprNode, outValue, outIsConst);
+    }
+    rc = SLCTFEEvalExpr(
+        c->arena,
+        c->ast,
+        c->src,
+        exprNode,
+        SLTCResolveConstIdent,
+        SLTCResolveConstCall,
+        evalCtx,
+        outValue,
+        outIsConst,
+        c->diag);
+    if (rc == 0 && !*outIsConst) {
+        SLTCConstSetReasonNode(evalCtx, exprNode, "expression is not const-evaluable");
+    }
+    return rc;
+}
+
+static int SLTCEvalConstExecExprCb(
+    void* ctx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
+    return SLTCEvalConstExprNode((SLTCConstEvalCtx*)ctx, exprNode, outValue, outIsConst);
+}
+
+static int SLTCEvalConstExecResolveTypeCb(void* ctx, int32_t typeNode, int32_t* outTypeId) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    if (evalCtx == NULL || evalCtx->tc == NULL || outTypeId == NULL) {
+        return -1;
+    }
+    return SLTCResolveTypeNode(evalCtx->tc, typeNode, outTypeId);
+}
+
+static int SLTCEvalConstExecInferValueTypeCb(
+    void* ctx, const SLCTFEValue* value, int32_t* outTypeId) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*   c;
+    if (evalCtx == NULL || value == NULL || outTypeId == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+    switch (value->kind) {
+        case SLCTFEValue_INT:
+            *outTypeId = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+            return *outTypeId >= 0 ? 0 : -1;
+        case SLCTFEValue_FLOAT:
+            *outTypeId = SLTCFindBuiltinByKind(c, SLBuiltin_F64);
+            return *outTypeId >= 0 ? 0 : -1;
+        case SLCTFEValue_BOOL: *outTypeId = c->typeBool; return *outTypeId >= 0 ? 0 : -1;
+        case SLCTFEValue_STRING:
+            *outTypeId = SLTCGetStrRefType(c, 0, 0);
+            return *outTypeId >= 0 ? 0 : -1;
+        case SLCTFEValue_NULL: *outTypeId = c->typeNull; return *outTypeId >= 0 ? 0 : -1;
+        default:               return -1;
+    }
+}
+
+static int32_t SLTCFindConstCallableFunction(
+    SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, uint32_t argCount) {
+    uint32_t i;
+    int32_t  found = -1;
+    for (i = 0; i < c->funcLen; i++) {
+        const SLTCFunction* f = &c->funcs[i];
+        if (!SLNameEqSlice(c->src, f->nameStart, f->nameEnd, nameStart, nameEnd)) {
+            continue;
+        }
+        if (f->contextType >= 0 || f->paramCount != argCount || f->defNode < 0) {
+            continue;
+        }
+        if (found >= 0) {
+            return -2;
+        }
+        found = (int32_t)i;
+    }
+    return found;
+}
+
+static int SLTCResolveConstCall(
+    void*              ctx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx*  evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*    c;
+    int32_t            fnIndex;
+    int32_t            fnNode;
+    int32_t            bodyNode = -1;
+    int32_t            child;
+    uint32_t           paramCount = 0;
+    SLCTFEExecBinding* paramBindings = NULL;
+    SLCTFEExecEnv      paramFrame;
+    SLCTFEExecCtx      execCtx;
+    SLCTFEExecCtx*     savedExecCtx;
+    uint32_t           savedDepth;
+    SLCTFEValue        retValue;
+    int                didReturn = 0;
+    int                isConst = 0;
+    int                rc;
+
+    (void)diag;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+
+    fnIndex = SLTCFindConstCallableFunction(c, nameStart, nameEnd, argCount);
+    if (fnIndex < 0) {
+        SLTCConstSetReason(
+            evalCtx,
+            nameStart,
+            nameEnd,
+            "call target is not a const-evaluable function for these arguments");
+        *outIsConst = 0;
+        return 0;
+    }
+
+    for (savedDepth = 0; savedDepth < evalCtx->fnDepth; savedDepth++) {
+        if (evalCtx->fnStack[savedDepth] == fnIndex) {
+            SLTCConstSetReason(
+                evalCtx, nameStart, nameEnd, "recursive const function calls are not supported");
+            *outIsConst = 0;
+            return 0;
+        }
+    }
+    if (evalCtx->fnDepth >= SLTC_CONST_CALL_MAX_DEPTH) {
+        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "const-eval call depth limit exceeded");
+        *outIsConst = 0;
+        return 0;
+    }
+
+    fnNode = c->funcs[fnIndex].defNode;
+    if (fnNode < 0 || (uint32_t)fnNode >= c->ast->len || c->ast->nodes[fnNode].kind != SLAst_FN) {
+        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "call target has no const-evaluable body");
+        *outIsConst = 0;
+        return 0;
+    }
+
+    child = SLAstFirstChild(c->ast, fnNode);
+    while (child >= 0) {
+        const SLAstNode* n = &c->ast->nodes[child];
+        if (n->kind == SLAst_PARAM) {
+            if (paramCount >= argCount) {
+                SLTCConstSetReasonNode(
+                    evalCtx, fnNode, "function signature does not match const-eval call arguments");
+                *outIsConst = 0;
+                return 0;
+            }
+            paramCount++;
+        } else if (n->kind == SLAst_BLOCK) {
+            if (bodyNode >= 0) {
+                SLTCConstSetReasonNode(
+                    evalCtx, fnNode, "function body shape is not const-evaluable");
+                *outIsConst = 0;
+                return 0;
+            }
+            bodyNode = child;
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    if (paramCount != argCount || bodyNode < 0) {
+        SLTCConstSetReasonNode(evalCtx, fnNode, "function body shape is not const-evaluable");
+        *outIsConst = 0;
+        return 0;
+    }
+
+    if (argCount > 0) {
+        paramBindings = (SLCTFEExecBinding*)SLArenaAlloc(
+            c->arena, sizeof(SLCTFEExecBinding) * argCount, (uint32_t)_Alignof(SLCTFEExecBinding));
+        if (paramBindings == NULL) {
+            return SLTCFailNode(c, fnNode, SLDiag_ARENA_OOM);
+        }
+    }
+    paramCount = 0;
+    child = SLAstFirstChild(c->ast, fnNode);
+    while (child >= 0) {
+        const SLAstNode* n = &c->ast->nodes[child];
+        if (n->kind == SLAst_PARAM) {
+            int32_t paramTypeNode = SLAstFirstChild(c->ast, child);
+            int32_t paramTypeId = -1;
+            if (paramTypeNode < 0 || SLTCResolveTypeNode(c, paramTypeNode, &paramTypeId) != 0) {
+                return -1;
+            }
+            paramBindings[paramCount].nameStart = n->dataStart;
+            paramBindings[paramCount].nameEnd = n->dataEnd;
+            paramBindings[paramCount].typeId = paramTypeId;
+            paramBindings[paramCount].mutable = 1;
+            paramBindings[paramCount]._reserved[0] = 0;
+            paramBindings[paramCount]._reserved[1] = 0;
+            paramBindings[paramCount]._reserved[2] = 0;
+            paramBindings[paramCount].value = args[paramCount];
+            paramCount++;
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+
+    savedExecCtx = evalCtx->execCtx;
+    savedDepth = evalCtx->fnDepth;
+
+    paramFrame.parent = NULL;
+    paramFrame.bindings = paramBindings;
+    paramFrame.bindingLen = argCount;
+    memset(&execCtx, 0, sizeof(execCtx));
+    execCtx.arena = c->arena;
+    execCtx.ast = c->ast;
+    execCtx.src = c->src;
+    execCtx.diag = c->diag;
+    execCtx.env = &paramFrame;
+    execCtx.evalExpr = SLTCEvalConstExecExprCb;
+    execCtx.evalExprCtx = evalCtx;
+    execCtx.resolveType = SLTCEvalConstExecResolveTypeCb;
+    execCtx.resolveTypeCtx = evalCtx;
+    execCtx.inferValueType = SLTCEvalConstExecInferValueTypeCb;
+    execCtx.inferValueTypeCtx = evalCtx;
+    execCtx.pendingReturnExprNode = -1;
+    execCtx.forIterLimit = SLTC_CONST_FOR_MAX_ITERS;
+    SLCTFEExecResetReason(&execCtx);
+    evalCtx->execCtx = &execCtx;
+    evalCtx->fnStack[evalCtx->fnDepth++] = fnIndex;
+
+    rc = SLCTFEExecEvalBlock(&execCtx, bodyNode, &retValue, &didReturn, &isConst);
+    evalCtx->fnDepth = savedDepth;
+    evalCtx->execCtx = savedExecCtx;
+    if (rc != 0) {
+        return -1;
+    }
+    if (!isConst || !didReturn) {
+        if (execCtx.nonConstReason != NULL) {
+            evalCtx->nonConstReason = execCtx.nonConstReason;
+            evalCtx->nonConstStart = execCtx.nonConstStart;
+            evalCtx->nonConstEnd = execCtx.nonConstEnd;
+        }
+        if (!didReturn) {
+            SLTCConstSetReasonNode(
+                evalCtx, bodyNode, "const-evaluable function must produce a const return value");
+        }
+        *outIsConst = 0;
+        return 0;
+    }
+    *outValue = retValue;
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLTCEvalTopLevelConstNode(
+    SLTypeCheckCtx*   c,
+    SLTCConstEvalCtx* evalCtx,
+    int32_t           nodeId,
+    SLCTFEValue*      outValue,
+    int*              outIsConst) {
+    uint8_t state;
+    int32_t initNode;
+    int     isConst = 0;
+    if (c == NULL || evalCtx == NULL || outValue == NULL || outIsConst == NULL || nodeId < 0
+        || (uint32_t)nodeId >= c->ast->len)
+    {
+        return -1;
+    }
+    if (c->constEvalState == NULL || c->constEvalValues == NULL) {
+        *outIsConst = 0;
+        return 0;
+    }
+    state = c->constEvalState[nodeId];
+    if (state == SLTCConstEval_READY) {
+        *outValue = c->constEvalValues[nodeId];
+        *outIsConst = 1;
+        return 0;
+    }
+    if (state == SLTCConstEval_NONCONST || state == SLTCConstEval_VISITING) {
+        if (state == SLTCConstEval_VISITING) {
+            SLTCConstSetReasonNode(
+                evalCtx, nodeId, "cyclic const dependency is not supported in const evaluation");
+        }
+        *outIsConst = 0;
+        return 0;
+    }
+
+    c->constEvalState[nodeId] = SLTCConstEval_VISITING;
+    initNode = SLTCVarLikeInitExprNode(c, nodeId);
+    if (initNode < 0) {
+        SLTCConstSetReasonNode(evalCtx, nodeId, "const declaration is missing an initializer");
+        c->constEvalState[nodeId] = SLTCConstEval_NONCONST;
+        *outIsConst = 0;
+        return 0;
+    }
+    if (SLTCEvalConstExprNode(evalCtx, initNode, outValue, &isConst) != 0) {
+        c->constEvalState[nodeId] = SLTCConstEval_UNSEEN;
+        return -1;
+    }
+    if (!isConst) {
+        SLTCConstSetReasonNode(evalCtx, initNode, "const initializer is not const-evaluable");
+        c->constEvalState[nodeId] = SLTCConstEval_NONCONST;
+        *outIsConst = 0;
+        return 0;
+    }
+    c->constEvalValues[nodeId] = *outValue;
+    c->constEvalState[nodeId] = SLTCConstEval_READY;
+    *outIsConst = 1;
     return 0;
 }
 
 static int SLTCConstIntExpr(SLTypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isConst) {
-    const SLAstNode* n;
+    SLTCConstEvalCtx evalCtx;
+    SLCTFEValue      value;
+    int              valueIsConst = 0;
     *isConst = 0;
+    c->lastConstEvalReason = NULL;
+    c->lastConstEvalReasonStart = 0;
+    c->lastConstEvalReasonEnd = 0;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return -1;
     }
-    n = &c->ast->nodes[nodeId];
-    if (n->kind == SLAst_INT) {
-        if (SLTCParseIntLiteralToI64(c, n->dataStart, n->dataEnd, out) != 0) {
-            return -1;
-        }
-        *isConst = 1;
+    memset(&evalCtx, 0, sizeof(evalCtx));
+    evalCtx.tc = c;
+    if (SLTCEvalConstExprNode(&evalCtx, nodeId, &value, &valueIsConst) != 0) {
+        return -1;
+    }
+    c->lastConstEvalReason = evalCtx.nonConstReason;
+    c->lastConstEvalReasonStart = evalCtx.nonConstStart;
+    c->lastConstEvalReasonEnd = evalCtx.nonConstEnd;
+    if (!valueIsConst) {
         return 0;
     }
-    if (n->kind == SLAst_UNARY) {
-        int32_t           child = SLAstFirstChild(c->ast, nodeId);
-        int               childConst = 0;
-        int64_t           childValue = 0;
-        const SLTokenKind op = (SLTokenKind)n->op;
-        if ((op == SLTok_ADD || op == SLTok_SUB)
-            && SLTCConstIntExpr(c, child, &childValue, &childConst) == 0 && childConst)
-        {
-            if (op == SLTok_SUB) {
-                childValue = -childValue;
-            }
-            *out = childValue;
-            *isConst = 1;
-            return 0;
-        }
+    if (SLCTFEValueToInt64(&value, out) != 0) {
+        c->lastConstEvalReason = "expression evaluated to a non-integer value";
+        c->lastConstEvalReasonStart = c->ast->nodes[nodeId].start;
+        c->lastConstEvalReasonEnd = c->ast->nodes[nodeId].end;
+        return 0;
     }
+    *isConst = 1;
     return 0;
 }
 
@@ -1400,6 +2271,8 @@ static void SLTCMarkRuntimeBoundsCheck(SLTypeCheckCtx* c, int32_t nodeId) {
 static int     SLTCTypeContainsVarSizeByValue(SLTypeCheckCtx* c, int32_t typeId);
 static int     SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
 static int32_t SLTCResolveAliasBaseType(SLTypeCheckCtx* c, int32_t typeId);
+static int     SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
+static int     SLTCIsIntegerType(SLTypeCheckCtx* c, int32_t typeId);
 
 static int SLTCResolveAnonAggregateTypeNode(
     SLTypeCheckCtx* c, int32_t nodeId, int isUnion, int32_t* outType) {
@@ -1661,10 +2534,39 @@ static int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outTy
         }
         case SLAst_TYPE_ARRAY: {
             int32_t  child = SLAstFirstChild(c->ast, nodeId);
+            int32_t  lenNode = child >= 0 ? SLAstNextSibling(c->ast, child) : -1;
             int32_t  baseType;
             int32_t  arrayType;
+            int64_t  lenValue = 0;
+            int      lenIsConst = 0;
             uint32_t arrayLen;
-            if (SLTCParseArrayLen(c, n, &arrayLen) != 0) {
+            if (child < 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
+            }
+            if (lenNode >= 0) {
+                int32_t lenType;
+                if (SLAstNextSibling(c->ast, lenNode) >= 0) {
+                    return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
+                }
+                if (SLTCTypeExpr(c, lenNode, &lenType) != 0) {
+                    return -1;
+                }
+                if (!SLTCIsIntegerType(c, lenType)) {
+                    return SLTCFailNode(c, lenNode, SLDiag_TYPE_MISMATCH);
+                }
+                if (SLTCConstIntExpr(c, lenNode, &lenValue, &lenIsConst) != 0) {
+                    return -1;
+                }
+                if (!lenIsConst) {
+                    int rc = SLTCFailNode(c, lenNode, SLDiag_ARRAY_LEN_CONST_REQUIRED);
+                    SLTCAttachConstEvalReason(c);
+                    return rc;
+                }
+                if (lenValue < 0 || lenValue > (int64_t)UINT32_MAX) {
+                    return SLTCFailNode(c, lenNode, SLDiag_ARRAY_LEN_CONST_REQUIRED);
+                }
+                arrayLen = (uint32_t)lenValue;
+            } else if (SLTCParseArrayLen(c, n, &arrayLen) != 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
             }
             if (SLTCResolveTypeNode(c, child, &baseType) != 0) {
@@ -3876,36 +4778,76 @@ static int32_t SLTCFindTopLevelVarLikeNode(SLTypeCheckCtx* c, uint32_t start, ui
 }
 
 static int SLTCTypeTopLevelVarLikeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
-    int32_t firstChild = SLAstFirstChild(c->ast, nodeId);
+    uint8_t state;
+    int32_t firstChild;
+    int32_t resolvedType;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
+    }
+    if (c->topVarLikeTypeState == NULL || c->topVarLikeTypes == NULL) {
+        return SLTCFailNode(c, nodeId, SLDiag_ARENA_OOM);
+    }
+    state = c->topVarLikeTypeState[nodeId];
+    if (state == SLTCTopVarLikeType_READY) {
+        *outType = c->topVarLikeTypes[nodeId];
+        return 0;
+    }
+    if (state == SLTCTopVarLikeType_VISITING) {
+        int rc;
+        if (c->ast->nodes[nodeId].kind == SLAst_CONST) {
+            rc = SLTCFailNode(c, nodeId, SLDiag_CONST_INIT_CONST_REQUIRED);
+            c->diag->detail = SLTCAllocDiagText(c, "cyclic top-level initializer dependency");
+            return rc;
+        }
+        rc = SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+        c->diag->detail = SLTCAllocDiagText(c, "cyclic top-level initializer dependency");
+        return rc;
+    }
+
+    c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_VISITING;
+    firstChild = SLAstFirstChild(c->ast, nodeId);
     if (firstChild < 0) {
+        c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
     }
     if (SLTCIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
         int32_t initNode = SLAstNextSibling(c->ast, firstChild);
         if (c->ast->nodes[nodeId].kind == SLAst_CONST && initNode < 0) {
+            c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return SLTCFailNode(c, nodeId, SLDiag_CONST_MISSING_INITIALIZER);
         }
-        return SLTCResolveTypeNode(c, firstChild, outType);
-    }
-    {
+        if (SLTCResolveTypeNode(c, firstChild, &resolvedType) != 0) {
+            c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
+            return -1;
+        }
+    } else {
         int32_t initType;
         if (SLTCTypeExpr(c, firstChild, &initType) != 0) {
+            c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return -1;
         }
         if (initType == c->typeNull) {
+            c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return SLTCFailNode(c, firstChild, SLDiag_INFER_NULL_TYPE_UNKNOWN);
         }
         if (initType == c->typeVoid) {
+            c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return SLTCFailNode(c, firstChild, SLDiag_INFER_VOID_TYPE_UNKNOWN);
         }
-        if (SLTCConcretizeInferredType(c, initType, outType) != 0) {
+        if (SLTCConcretizeInferredType(c, initType, &resolvedType) != 0) {
+            c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return -1;
         }
-        if (SLTCTypeContainsVarSizeByValue(c, *outType)) {
+        if (SLTCTypeContainsVarSizeByValue(c, resolvedType)) {
+            c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return SLTCFailNode(c, firstChild, SLDiag_TYPE_MISMATCH);
         }
-        return 0;
     }
+
+    c->topVarLikeTypes[nodeId] = resolvedType;
+    c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_READY;
+    *outType = resolvedType;
+    return 0;
 }
 
 static int SLTCCollectFnGroupFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
@@ -5909,13 +6851,32 @@ static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
     return SLTCLocalAdd(c, n->dataStart, n->dataEnd, declType);
 }
 
-static int SLTCTypeTopLevelInferredConsts(SLTypeCheckCtx* c) {
+static int SLTCTypeTopLevelConsts(SLTypeCheckCtx* c) {
     int32_t child = SLAstFirstChild(c->ast, c->ast->root);
     while (child >= 0) {
         const SLAstNode* n = &c->ast->nodes[child];
         if (n->kind == SLAst_CONST) {
             int32_t firstChild = SLAstFirstChild(c->ast, child);
-            if (firstChild >= 0 && !SLTCIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
+            if (firstChild >= 0 && SLTCIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
+                int32_t initNode = SLAstNextSibling(c->ast, firstChild);
+                int32_t declType;
+                int32_t initType;
+                if (initNode < 0) {
+                    return SLTCFailNode(c, child, SLDiag_CONST_MISSING_INITIALIZER);
+                }
+                if (SLTCResolveTypeNode(c, firstChild, &declType) != 0) {
+                    return -1;
+                }
+                if (SLTCTypeContainsVarSizeByValue(c, declType)) {
+                    return SLTCFailNode(c, firstChild, SLDiag_TYPE_MISMATCH);
+                }
+                if (SLTCTypeExprExpected(c, initNode, declType, &initType) != 0) {
+                    return -1;
+                }
+                if (!SLTCCanAssign(c, declType, initType)) {
+                    return SLTCFailTypeMismatchDetail(c, initNode, initNode, initType, declType);
+                }
+            } else if (firstChild >= 0) {
                 int32_t initType;
                 int32_t declType;
                 if (SLTCTypeExpr(c, firstChild, &initType) != 0) {
@@ -5940,6 +6901,47 @@ static int SLTCTypeTopLevelInferredConsts(SLTypeCheckCtx* c) {
     return 0;
 }
 
+static int SLTCTypeTopLevelVars(SLTypeCheckCtx* c) {
+    int32_t child = SLAstFirstChild(c->ast, c->ast->root);
+    while (child >= 0) {
+        const SLAstNode* n = &c->ast->nodes[child];
+        if (n->kind == SLAst_VAR) {
+            int32_t firstChild = SLAstFirstChild(c->ast, child);
+            if (firstChild < 0) {
+                return SLTCFailNode(c, child, SLDiag_EXPECTED_TYPE);
+            }
+            if (SLTCIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
+                int32_t initNode = SLAstNextSibling(c->ast, firstChild);
+                if (initNode >= 0) {
+                    int32_t declType;
+                    int32_t initType;
+                    if (SLTCResolveTypeNode(c, firstChild, &declType) != 0) {
+                        return -1;
+                    }
+                    if (SLTCTypeContainsVarSizeByValue(c, declType)) {
+                        return SLTCFailNode(c, firstChild, SLDiag_TYPE_MISMATCH);
+                    }
+                    if (SLTCTypeExprExpected(c, initNode, declType, &initType) != 0) {
+                        return -1;
+                    }
+                    if (!SLTCCanAssign(c, declType, initType)) {
+                        return SLTCFailTypeMismatchDetail(
+                            c, initNode, initNode, initType, declType);
+                    }
+                }
+            } else {
+                int32_t inferredType;
+                if (SLTCTypeTopLevelVarLikeNode(c, child, &inferredType) != 0) {
+                    return -1;
+                }
+                (void)inferredType;
+            }
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    return 0;
+}
+
 static int SLTCCheckTopLevelConstInitializers(SLTypeCheckCtx* c) {
     int32_t child = SLAstFirstChild(c->ast, c->ast->root);
     while (child >= 0) {
@@ -5953,6 +6955,56 @@ static int SLTCCheckTopLevelConstInitializers(SLTypeCheckCtx* c) {
                 && SLAstNextSibling(c->ast, firstChild) < 0)
             {
                 return SLTCFailNode(c, child, SLDiag_CONST_MISSING_INITIALIZER);
+            }
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    return 0;
+}
+
+static int SLTCValidateTopLevelConstEvaluable(SLTypeCheckCtx* c) {
+    SLTCConstEvalCtx evalCtx;
+    int32_t          child;
+    memset(&evalCtx, 0, sizeof(evalCtx));
+    evalCtx.tc = c;
+    child = SLAstFirstChild(c->ast, c->ast->root);
+    while (child >= 0) {
+        const SLAstNode* n = &c->ast->nodes[child];
+        if (n->kind == SLAst_CONST) {
+            int32_t     initNode = SLTCVarLikeInitExprNode(c, child);
+            SLCTFEValue value;
+            int         isConst = 0;
+            c->lastConstEvalReason = NULL;
+            c->lastConstEvalReasonStart = 0;
+            c->lastConstEvalReasonEnd = 0;
+            evalCtx.nonConstReason = NULL;
+            evalCtx.nonConstStart = 0;
+            evalCtx.nonConstEnd = 0;
+            evalCtx.fnDepth = 0;
+            evalCtx.execCtx = NULL;
+            if (SLTCEvalTopLevelConstNode(c, &evalCtx, child, &value, &isConst) != 0) {
+                return -1;
+            }
+            c->lastConstEvalReason = evalCtx.nonConstReason;
+            c->lastConstEvalReasonStart = evalCtx.nonConstStart;
+            c->lastConstEvalReasonEnd = evalCtx.nonConstEnd;
+            if (!isConst) {
+                int rc;
+                if (c->lastConstEvalReasonStart < c->lastConstEvalReasonEnd
+                    && c->lastConstEvalReasonEnd <= c->src.len)
+                {
+                    rc = SLTCFailSpan(
+                        c,
+                        SLDiag_CONST_INIT_CONST_REQUIRED,
+                        c->lastConstEvalReasonStart,
+                        c->lastConstEvalReasonEnd);
+                } else if (initNode >= 0) {
+                    rc = SLTCFailNode(c, initNode, SLDiag_CONST_INIT_CONST_REQUIRED);
+                } else {
+                    rc = SLTCFailNode(c, child, SLDiag_CONST_INIT_CONST_REQUIRED);
+                }
+                SLTCAttachConstEvalReason(c);
+                return rc;
             }
         }
         child = SLAstNextSibling(c->ast, child);
@@ -6537,10 +7589,19 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
         arena, sizeof(int32_t) * capBase, (uint32_t)_Alignof(int32_t));
     c.locals = (SLTCLocal*)SLArenaAlloc(
         arena, sizeof(SLTCLocal) * capBase * 4u, (uint32_t)_Alignof(SLTCLocal));
+    c.constEvalValues = (SLCTFEValue*)SLArenaAlloc(
+        arena, sizeof(SLCTFEValue) * ast->len, (uint32_t)_Alignof(SLCTFEValue));
+    c.constEvalState = (uint8_t*)SLArenaAlloc(
+        arena, sizeof(uint8_t) * ast->len, (uint32_t)_Alignof(uint8_t));
+    c.topVarLikeTypes = (int32_t*)SLArenaAlloc(
+        arena, sizeof(int32_t) * ast->len, (uint32_t)_Alignof(int32_t));
+    c.topVarLikeTypeState = (uint8_t*)SLArenaAlloc(
+        arena, sizeof(uint8_t) * ast->len, (uint32_t)_Alignof(uint8_t));
 
     if (c.types == NULL || c.fields == NULL || c.namedTypes == NULL || c.funcs == NULL
         || c.funcParamTypes == NULL || c.fnGroups == NULL || c.fnGroupMembers == NULL
-        || c.scratchParamTypes == NULL || c.locals == NULL)
+        || c.scratchParamTypes == NULL || c.locals == NULL || c.constEvalValues == NULL
+        || c.constEvalState == NULL || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL)
     {
         SLTCSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
@@ -6573,6 +7634,22 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
     c.defaultFieldTypes = NULL;
     c.defaultFieldCount = 0;
     c.defaultFieldCurrentIndex = 0;
+    c.lastConstEvalReason = NULL;
+    c.lastConstEvalReasonStart = 0;
+    c.lastConstEvalReasonEnd = 0;
+    if (ast->len > 0) {
+        memset(c.constEvalState, 0, sizeof(uint8_t) * ast->len);
+        memset(c.topVarLikeTypeState, 0, sizeof(uint8_t) * ast->len);
+        for (i = 0; i < ast->len; i++) {
+            c.topVarLikeTypes[i] = -1;
+            c.constEvalValues[i].kind = SLCTFEValue_INVALID;
+            c.constEvalValues[i].i64 = 0;
+            c.constEvalValues[i].f64 = 0.0;
+            c.constEvalValues[i].b = 0;
+            c.constEvalValues[i].s.bytes = NULL;
+            c.constEvalValues[i].s.len = 0;
+        }
+    }
 
     if (SLTCEnsureInitialized(&c) != 0) {
         return -1;
@@ -6628,7 +7705,10 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
     if (SLTCCheckTopLevelConstInitializers(&c) != 0) {
         return -1;
     }
-    if (SLTCTypeTopLevelInferredConsts(&c) != 0) {
+    if (SLTCTypeTopLevelConsts(&c) != 0) {
+        return -1;
+    }
+    if (SLTCTypeTopLevelVars(&c) != 0) {
         return -1;
     }
 
@@ -6636,6 +7716,9 @@ int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
         if (SLTCTypeFunctionBody(&c, (int32_t)i) != 0) {
             return -1;
         }
+    }
+    if (SLTCValidateTopLevelConstEvaluable(&c) != 0) {
+        return -1;
     }
 
     return 0;

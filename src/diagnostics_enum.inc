@@ -76,6 +76,8 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_COMPARISON_HOOK_IMPURE,            /* SL2052: comparison hook must be pure */
     SLDiag_STRING_CONCAT_LITERAL_ONLY,        /* SL2053: string '+' currently only supports
                                                  non-parenthesized literal chains */
-    SLDiag_CODEGEN_INTERNAL,                  /* SL3001: internal codegen error */
-    SLDiag_ARENA_OOM,                         /* SL4001: arena out of memory */
-    SLDiag_UNKNOWN_FEATURE,                   /* SL4002: unknown feature '{s}' */
+    SLDiag_ARRAY_LEN_CONST_REQUIRED,  /* SL2054: array length must be a const integer expression */
+    SLDiag_CONST_INIT_CONST_REQUIRED, /* SL2055: const initializer must be a const expression */
+    SLDiag_CODEGEN_INTERNAL,          /* SL3001: internal codegen error */
+    SLDiag_ARENA_OOM,                 /* SL4001: arena out of memory */
+    SLDiag_UNKNOWN_FEATURE,           /* SL4002: unknown feature '{s}' */

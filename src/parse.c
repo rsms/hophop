@@ -590,6 +590,7 @@ static int SLPParseType(SLParser* p, int32_t* out) {
     if (SLPMatch(p, SLTok_LBRACK)) {
         const SLToken* lb = SLPPrev(p);
         const SLToken* nTok = NULL;
+        int32_t        lenExpr = -1;
         const SLToken* rb;
         SLAstKind      kind;
 
@@ -613,7 +614,7 @@ static int SLPParseType(SLParser* p, int32_t* out) {
             }
         } else {
             kind = SLAst_TYPE_ARRAY;
-            if (SLPExpect(p, SLTok_INT, SLDiag_EXPECTED_TYPE, &nTok) != 0) {
+            if (SLPParseExpr(p, 1, &lenExpr) != 0) {
                 return -1;
             }
         }
@@ -622,13 +623,34 @@ static int SLPParseType(SLParser* p, int32_t* out) {
         if (typeNode < 0) {
             return -1;
         }
-        p->nodes[typeNode].dataStart = nTok->start;
-        p->nodes[typeNode].dataEnd = nTok->end;
+        if (nTok != NULL) {
+            p->nodes[typeNode].dataStart = nTok->start;
+            p->nodes[typeNode].dataEnd = nTok->end;
+        }
         if (SLPExpect(p, SLTok_RBRACK, SLDiag_EXPECTED_TYPE, &rb) != 0) {
             return -1;
         }
         p->nodes[typeNode].end = rb->end;
-        return SLPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
+        if (SLPAddChild(p, typeNode, child) != 0) {
+            return -1;
+        }
+        if (kind == SLAst_TYPE_ARRAY) {
+            const SLAstNode* lenNode = &p->nodes[lenExpr];
+            if ((lenNode->kind == SLAst_INT && lenNode->dataEnd > lenNode->dataStart)
+                && (lenNode->flags & SLAstFlag_PAREN) == 0)
+            {
+                p->nodes[typeNode].dataStart = lenNode->dataStart;
+                p->nodes[typeNode].dataEnd = lenNode->dataEnd;
+            } else {
+                p->nodes[typeNode].dataStart = lenNode->start;
+                p->nodes[typeNode].dataEnd = lenNode->end;
+                if (SLPAddChild(p, typeNode, lenExpr) != 0) {
+                    return -1;
+                }
+            }
+        }
+        *out = typeNode;
+        return 0;
     }
 
     if (SLPAt(p, SLTok_FN)) {

@@ -1,0 +1,1 @@
+tests/array_type_const_fn_call_bad_assign_const.sl:8:16: SL2054: array length must be a const integer expression: assignment target is not mutable during const evaluation
