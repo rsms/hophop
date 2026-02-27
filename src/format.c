@@ -172,6 +172,37 @@ static int32_t SLFmtNextSibling(const SLAst* ast, int32_t nodeId) {
     return ast->nodes[nodeId].nextSibling;
 }
 
+static uint32_t SLFmtListCount(const SLAst* ast, int32_t listNodeId) {
+    uint32_t count = 0;
+    int32_t  cur;
+    if (listNodeId < 0 || (uint32_t)listNodeId >= ast->len) {
+        return 0;
+    }
+    cur = ast->nodes[listNodeId].firstChild;
+    while (cur >= 0) {
+        count++;
+        cur = ast->nodes[cur].nextSibling;
+    }
+    return count;
+}
+
+static int32_t SLFmtListItemAt(const SLAst* ast, int32_t listNodeId, uint32_t index) {
+    uint32_t i = 0;
+    int32_t  cur;
+    if (listNodeId < 0 || (uint32_t)listNodeId >= ast->len) {
+        return -1;
+    }
+    cur = ast->nodes[listNodeId].firstChild;
+    while (cur >= 0) {
+        if (i == index) {
+            return cur;
+        }
+        i++;
+        cur = ast->nodes[cur].nextSibling;
+    }
+    return -1;
+}
+
 static int SLFmtIsTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
@@ -192,9 +223,19 @@ static int SLFmtIsStmtNodeKind(SLAstKind kind) {
         case SLAst_CONTINUE:
         case SLAst_DEFER:
         case SLAst_ASSERT:
-        case SLAst_EXPR_STMT: return 1;
-        default:              return 0;
+        case SLAst_MULTI_ASSIGN:
+        case SLAst_EXPR_STMT:    return 1;
+        default:                 return 0;
     }
+}
+
+static int SLFmtIsGroupedVarLike(const SLFmtCtx* c, int32_t nodeId) {
+    int32_t firstChild;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    firstChild = SLFmtFirstChild(c->ast, nodeId);
+    return firstChild >= 0 && c->ast->nodes[firstChild].kind == SLAst_NAME_LIST;
 }
 
 static int SLFmtIsAssignmentOp(SLTokenKind kind) {
@@ -1989,11 +2030,11 @@ static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId) {
                     return -1;
                 }
             }
-            if (c->ast->nodes[stmt].kind == SLAst_VAR) {
+            if (c->ast->nodes[stmt].kind == SLAst_VAR && !SLFmtIsGroupedVarLike(c, stmt)) {
                 if (SLFmtEmitAlignedVarOrConstGroup(c, stmt, "var", &last, &next) != 0) {
                     return -1;
                 }
-            } else if (c->ast->nodes[stmt].kind == SLAst_CONST) {
+            } else if (c->ast->nodes[stmt].kind == SLAst_CONST && !SLFmtIsGroupedVarLike(c, stmt)) {
                 if (SLFmtEmitAlignedVarOrConstGroup(c, stmt, "const", &last, &next) != 0) {
                     return -1;
                 }
@@ -2019,27 +2060,133 @@ static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId) {
 }
 
 static int SLFmtEmitVarLike(SLFmtCtx* c, int32_t nodeId, const char* kw) {
-    const SLAstNode* n = &c->ast->nodes[nodeId];
-    int32_t          type = SLFmtFirstChild(c->ast, nodeId);
-    int32_t          init = -1;
-    if (type >= 0 && !SLFmtIsTypeNodeKind(c->ast->nodes[type].kind)) {
-        init = type;
-        type = -1;
-    } else if (type >= 0) {
-        init = SLFmtNextSibling(c->ast, type);
+    int32_t firstChild = SLFmtFirstChild(c->ast, nodeId);
+    int32_t type = -1;
+    int32_t init = -1;
+    if (firstChild >= 0 && c->ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
+        uint32_t i;
+        uint32_t nameCount = SLFmtListCount(c->ast, firstChild);
+        int32_t  afterNames = SLFmtNextSibling(c->ast, firstChild);
+        if (afterNames >= 0 && SLFmtIsTypeNodeKind(c->ast->nodes[afterNames].kind)) {
+            type = afterNames;
+            init = SLFmtNextSibling(c->ast, afterNames);
+        } else {
+            init = afterNames;
+        }
+        if (SLFmtWriteCStr(c, kw) != 0 || SLFmtWriteChar(c, ' ') != 0) {
+            return -1;
+        }
+        for (i = 0; i < nameCount; i++) {
+            int32_t nameNode = SLFmtListItemAt(c->ast, firstChild, i);
+            if (nameNode < 0) {
+                return -1;
+            }
+            if (i > 0 && SLFmtWriteCStr(c, ", ") != 0) {
+                return -1;
+            }
+            if (SLFmtWriteSlice(
+                    c, c->ast->nodes[nameNode].dataStart, c->ast->nodes[nameNode].dataEnd)
+                != 0)
+            {
+                return -1;
+            }
+        }
+        if (type >= 0) {
+            if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitType(c, type) != 0) {
+                return -1;
+            }
+        }
+        if (init >= 0) {
+            if (SLFmtWriteCStr(c, " = ") != 0) {
+                return -1;
+            }
+            if (c->ast->nodes[init].kind == SLAst_EXPR_LIST) {
+                uint32_t i2;
+                uint32_t exprCount = SLFmtListCount(c->ast, init);
+                for (i2 = 0; i2 < exprCount; i2++) {
+                    int32_t exprNode = SLFmtListItemAt(c->ast, init, i2);
+                    if (exprNode < 0) {
+                        return -1;
+                    }
+                    if (i2 > 0 && SLFmtWriteCStr(c, ", ") != 0) {
+                        return -1;
+                    }
+                    if (SLFmtEmitExpr(c, exprNode, 0) != 0) {
+                        return -1;
+                    }
+                }
+            } else if (SLFmtEmitExpr(c, init, 0) != 0) {
+                return -1;
+            }
+        }
+        return 0;
     }
-    if (SLFmtWriteCStr(c, kw) != 0 || SLFmtWriteChar(c, ' ') != 0
-        || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
+
+    {
+        const SLAstNode* n = &c->ast->nodes[nodeId];
+        type = firstChild;
+        if (type >= 0 && !SLFmtIsTypeNodeKind(c->ast->nodes[type].kind)) {
+            init = type;
+            type = -1;
+        } else if (type >= 0) {
+            init = SLFmtNextSibling(c->ast, type);
+        }
+        if (SLFmtWriteCStr(c, kw) != 0 || SLFmtWriteChar(c, ' ') != 0
+            || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
+        {
+            return -1;
+        }
+        if (type >= 0) {
+            if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitType(c, type) != 0) {
+                return -1;
+            }
+        }
+        if (init >= 0) {
+            if (SLFmtWriteCStr(c, " = ") != 0 || SLFmtEmitExpr(c, init, 0) != 0) {
+                return -1;
+            }
+        }
+        return 0;
+    }
+}
+
+static int SLFmtEmitMultiAssign(SLFmtCtx* c, int32_t nodeId) {
+    int32_t  lhsList = SLFmtFirstChild(c->ast, nodeId);
+    int32_t  rhsList = lhsList >= 0 ? SLFmtNextSibling(c->ast, lhsList) : -1;
+    uint32_t i;
+    uint32_t lhsCount;
+    uint32_t rhsCount;
+    if (lhsList < 0 || rhsList < 0 || c->ast->nodes[lhsList].kind != SLAst_EXPR_LIST
+        || c->ast->nodes[rhsList].kind != SLAst_EXPR_LIST)
     {
         return -1;
     }
-    if (type >= 0) {
-        if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitType(c, type) != 0) {
+    lhsCount = SLFmtListCount(c->ast, lhsList);
+    rhsCount = SLFmtListCount(c->ast, rhsList);
+    for (i = 0; i < lhsCount; i++) {
+        int32_t lhsNode = SLFmtListItemAt(c->ast, lhsList, i);
+        if (lhsNode < 0) {
+            return -1;
+        }
+        if (i > 0 && SLFmtWriteCStr(c, ", ") != 0) {
+            return -1;
+        }
+        if (SLFmtEmitExpr(c, lhsNode, 0) != 0) {
             return -1;
         }
     }
-    if (init >= 0) {
-        if (SLFmtWriteCStr(c, " = ") != 0 || SLFmtEmitExpr(c, init, 0) != 0) {
+    if (SLFmtWriteCStr(c, " = ") != 0) {
+        return -1;
+    }
+    for (i = 0; i < rhsCount; i++) {
+        int32_t rhsNode = SLFmtListItemAt(c->ast, rhsList, i);
+        if (rhsNode < 0) {
+            return -1;
+        }
+        if (i > 0 && SLFmtWriteCStr(c, ", ") != 0) {
+            return -1;
+        }
+        if (SLFmtEmitExpr(c, rhsNode, 0) != 0) {
             return -1;
         }
     }
@@ -2161,10 +2308,11 @@ static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId) {
     }
     n = &c->ast->nodes[nodeId];
     switch (n->kind) {
-        case SLAst_BLOCK: return SLFmtEmitBlock(c, nodeId);
-        case SLAst_VAR:   return SLFmtEmitVarLike(c, nodeId, "var");
-        case SLAst_CONST: return SLFmtEmitVarLike(c, nodeId, "const");
-        case SLAst_IF:    {
+        case SLAst_BLOCK:        return SLFmtEmitBlock(c, nodeId);
+        case SLAst_VAR:          return SLFmtEmitVarLike(c, nodeId, "var");
+        case SLAst_CONST:        return SLFmtEmitVarLike(c, nodeId, "const");
+        case SLAst_MULTI_ASSIGN: return SLFmtEmitMultiAssign(c, nodeId);
+        case SLAst_IF:           {
             int32_t cond = SLFmtFirstChild(c->ast, nodeId);
             int32_t thenNode = cond >= 0 ? SLFmtNextSibling(c->ast, cond) : -1;
             int32_t elseNode = thenNode >= 0 ? SLFmtNextSibling(c->ast, thenNode) : -1;

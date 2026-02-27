@@ -1,0 +1,4 @@
+fn main() {
+	var x, y = 1, 2
+	x, y = 3
+}

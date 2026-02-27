@@ -182,7 +182,9 @@ static int BuildCachedPackageArtifacts(
     const char*         libDir,
     SLPackageArtifact** outArtifacts,
     uint32_t*           outArtifactLen);
-static void FreePackageArtifacts(SLPackageArtifact* artifacts, uint32_t artifactLen);
+static void     FreePackageArtifacts(SLPackageArtifact* artifacts, uint32_t artifactLen);
+static uint32_t AstListCount(const SLAst* ast, int32_t listNode);
+static int32_t  AstListItemAt(const SLAst* ast, int32_t listNode, uint32_t index);
 
 #define SL_DEFAULT_PLATFORM_TARGET "cli-libc"
 #define SL_EVAL_PLATFORM_TARGET    "cli-eval"
@@ -2471,39 +2473,142 @@ static char* _Nullable DupPubDeclText(const SLParsedFile* file, int32_t nodeId) 
 static int AddDeclFromNode(
     SLPackage* pkg, const SLParsedFile* file, uint32_t fileIndex, int32_t nodeId, int isPub) {
     const SLAstNode* n = &file->ast.nodes[nodeId];
-    char*            name;
-    char*            declText;
+    int32_t          firstChild;
 
     if (!IsDeclKind(n->kind)) {
         return 0;
     }
-    if (n->dataEnd <= n->dataStart || n->end < n->start || n->end > file->sourceLen) {
+    if (n->end < n->start || n->end > file->sourceLen) {
         return Errorf(file->path, file->source, n->start, n->end, "invalid declaration");
     }
-    name = DupSlice(file->source, n->dataStart, n->dataEnd);
-    declText = isPub ? DupPubDeclText(file, nodeId) : DupSlice(file->source, n->start, n->end);
-    if (name == NULL || declText == NULL) {
-        free(name);
-        free(declText);
-        return ErrorSimple("out of memory");
-    }
-
-    if (isPub) {
+    firstChild = ASTFirstChild(&file->ast, nodeId);
+    if ((n->kind == SLAst_VAR || n->kind == SLAst_CONST) && firstChild >= 0
+        && file->ast.nodes[firstChild].kind == SLAst_NAME_LIST)
+    {
         uint32_t i;
-        for (i = 0; i < pkg->pubDeclLen; i++) {
-            if (pkg->pubDecls[i].kind == n->kind && StrEq(pkg->pubDecls[i].name, name)
-                && n->kind != SLAst_FN)
+        uint32_t nameCount = AstListCount(&file->ast, firstChild);
+        for (i = 0; i < nameCount; i++) {
+            int32_t          nameNode = AstListItemAt(&file->ast, firstChild, i);
+            const SLAstNode* nameAst =
+                (nameNode >= 0 && (uint32_t)nameNode < file->ast.len)
+                    ? &file->ast.nodes[nameNode]
+                    : NULL;
+            char* name;
+            char* declText;
+            if (nameAst == NULL || nameAst->dataEnd <= nameAst->dataStart) {
+                return Errorf(file->path, file->source, n->start, n->end, "invalid declaration");
+            }
+            name = DupSlice(file->source, nameAst->dataStart, nameAst->dataEnd);
+            declText =
+                isPub ? DupPubDeclText(file, nodeId) : DupSlice(file->source, n->start, n->end);
+            if (name == NULL || declText == NULL) {
+                free(name);
+                free(declText);
+                return ErrorSimple("out of memory");
+            }
+            if (isPub) {
+                uint32_t j;
+                for (j = 0; j < pkg->pubDeclLen; j++) {
+                    if (pkg->pubDecls[j].kind == n->kind && StrEq(pkg->pubDecls[j].name, name)
+                        && n->kind != SLAst_FN)
+                    {
+                        free(name);
+                        free(declText);
+                        return Errorf(
+                            file->path,
+                            file->source,
+                            nameAst->dataStart,
+                            nameAst->dataEnd,
+                            "duplicate public symbol");
+                    }
+                }
+                if (AddSymbolDecl(
+                        &pkg->pubDecls,
+                        &pkg->pubDeclLen,
+                        &pkg->pubDeclCap,
+                        n->kind,
+                        name,
+                        declText,
+                        FnNodeHasBody(&file->ast, nodeId),
+                        fileIndex,
+                        nodeId)
+                    != 0)
+                {
+                    free(name);
+                    free(declText);
+                    return ErrorSimple("out of memory");
+                }
+            } else if (
+                AddSymbolDecl(
+                    &pkg->decls,
+                    &pkg->declLen,
+                    &pkg->declCap,
+                    n->kind,
+                    name,
+                    declText,
+                    FnNodeHasBody(&file->ast, nodeId),
+                    fileIndex,
+                    nodeId)
+                != 0)
             {
                 free(name);
                 free(declText);
-                return Errorf(
-                    file->path, file->source, n->dataStart, n->dataEnd, "duplicate public symbol");
+                return ErrorSimple("out of memory");
             }
         }
+        return 0;
+    }
+
+    if (n->dataEnd <= n->dataStart) {
+        return Errorf(file->path, file->source, n->start, n->end, "invalid declaration");
+    }
+    {
+        char* name = DupSlice(file->source, n->dataStart, n->dataEnd);
+        char* declText =
+            isPub ? DupPubDeclText(file, nodeId) : DupSlice(file->source, n->start, n->end);
+        if (name == NULL || declText == NULL) {
+            free(name);
+            free(declText);
+            return ErrorSimple("out of memory");
+        }
+        if (isPub) {
+            uint32_t i;
+            for (i = 0; i < pkg->pubDeclLen; i++) {
+                if (pkg->pubDecls[i].kind == n->kind && StrEq(pkg->pubDecls[i].name, name)
+                    && n->kind != SLAst_FN)
+                {
+                    free(name);
+                    free(declText);
+                    return Errorf(
+                        file->path,
+                        file->source,
+                        n->dataStart,
+                        n->dataEnd,
+                        "duplicate public symbol");
+                }
+            }
+            if (AddSymbolDecl(
+                    &pkg->pubDecls,
+                    &pkg->pubDeclLen,
+                    &pkg->pubDeclCap,
+                    n->kind,
+                    name,
+                    declText,
+                    FnNodeHasBody(&file->ast, nodeId),
+                    fileIndex,
+                    nodeId)
+                != 0)
+            {
+                free(name);
+                free(declText);
+                return ErrorSimple("out of memory");
+            }
+            return 0;
+        }
         if (AddSymbolDecl(
-                &pkg->pubDecls,
-                &pkg->pubDeclLen,
-                &pkg->pubDeclCap,
+                &pkg->decls,
+                &pkg->declLen,
+                &pkg->declCap,
                 n->kind,
                 name,
                 declText,
@@ -2518,24 +2623,6 @@ static int AddDeclFromNode(
         }
         return 0;
     }
-
-    if (AddSymbolDecl(
-            &pkg->decls,
-            &pkg->declLen,
-            &pkg->declCap,
-            n->kind,
-            name,
-            declText,
-            FnNodeHasBody(&file->ast, nodeId),
-            fileIndex,
-            nodeId)
-        != 0)
-    {
-        free(name);
-        free(declText);
-        return ErrorSimple("out of memory");
-    }
-    return 0;
 }
 
 static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
@@ -4095,13 +4182,52 @@ static int CollectBlockImportRewritesNode(
 
 static int32_t VarLikeInitNode(const SLParsedFile* file, int32_t varLikeNodeId) {
     int32_t firstChild = ASTFirstChild(&file->ast, varLikeNodeId);
+    int32_t afterNames;
     if (firstChild < 0) {
         return -1;
+    }
+    if (file->ast.nodes[firstChild].kind == SLAst_NAME_LIST) {
+        afterNames = ASTNextSibling(&file->ast, firstChild);
+        if (afterNames >= 0 && IsFnReturnTypeNodeKind(file->ast.nodes[afterNames].kind)) {
+            return ASTNextSibling(&file->ast, afterNames);
+        }
+        return afterNames;
     }
     if (IsFnReturnTypeNodeKind(file->ast.nodes[firstChild].kind)) {
         return ASTNextSibling(&file->ast, firstChild);
     }
     return firstChild;
+}
+
+static uint32_t AstListCount(const SLAst* ast, int32_t listNode) {
+    uint32_t count = 0;
+    int32_t  child;
+    if (listNode < 0 || (uint32_t)listNode >= ast->len) {
+        return 0;
+    }
+    child = ast->nodes[listNode].firstChild;
+    while (child >= 0) {
+        count++;
+        child = ast->nodes[child].nextSibling;
+    }
+    return count;
+}
+
+static int32_t AstListItemAt(const SLAst* ast, int32_t listNode, uint32_t index) {
+    uint32_t i = 0;
+    int32_t  child;
+    if (listNode < 0 || (uint32_t)listNode >= ast->len) {
+        return -1;
+    }
+    child = ast->nodes[listNode].firstChild;
+    while (child >= 0) {
+        if (i == index) {
+            return child;
+        }
+        i++;
+        child = ast->nodes[child].nextSibling;
+    }
+    return -1;
 }
 
 static int CollectStmtImportRewritesNode(
@@ -4137,6 +4263,59 @@ static int CollectStmtImportRewritesNode(
         case SLAst_VAR:
         case SLAst_CONST: {
             int32_t initNode = VarLikeInitNode(file, nodeId);
+            int32_t firstChild = ASTFirstChild(&file->ast, nodeId);
+            if (firstChild >= 0 && file->ast.nodes[firstChild].kind == SLAst_NAME_LIST) {
+                uint32_t i;
+                uint32_t nameCount = AstListCount(&file->ast, firstChild);
+                if (initNode >= 0) {
+                    if (file->ast.nodes[initNode].kind == SLAst_EXPR_LIST) {
+                        uint32_t initCount = AstListCount(&file->ast, initNode);
+                        for (i = 0; i < initCount; i++) {
+                            int32_t exprNode = AstListItemAt(&file->ast, initNode, i);
+                            if (exprNode >= 0
+                                && CollectExprImportRewritesNode(
+                                       pkg,
+                                       file,
+                                       exprNode,
+                                       shadowCounts,
+                                       rewrites,
+                                       rewriteLen,
+                                       rewriteCap)
+                                       != 0)
+                            {
+                                return -1;
+                            }
+                        }
+                    } else if (
+                        CollectExprImportRewritesNode(
+                            pkg, file, initNode, shadowCounts, rewrites, rewriteLen, rewriteCap)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                }
+                for (i = 0; i < nameCount; i++) {
+                    int32_t          nameNode = AstListItemAt(&file->ast, firstChild, i);
+                    const SLAstNode* name = nameNode >= 0 ? &file->ast.nodes[nameNode] : NULL;
+                    if (name == NULL) {
+                        continue;
+                    }
+                    if (PushShadowIfValueImportName(
+                            pkg,
+                            file,
+                            name->dataStart,
+                            name->dataEnd,
+                            shadowCounts,
+                            shadowStack,
+                            shadowLen,
+                            shadowCap)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                }
+                return 0;
+            }
             if (initNode >= 0
                 && CollectExprImportRewritesNode(
                        pkg, file, initNode, shadowCounts, rewrites, rewriteLen, rewriteCap)
@@ -4213,27 +4392,97 @@ static int CollectStmtImportRewritesNode(
                 uint32_t idx = 0;
                 if (partCount >= 2u && file->ast.nodes[parts[0]].kind == SLAst_VAR) {
                     int32_t initNode = VarLikeInitNode(file, parts[0]);
-                    if (initNode >= 0
-                        && CollectExprImportRewritesNode(
-                               pkg, file, initNode, shadowCounts, rewrites, rewriteLen, rewriteCap)
-                               != 0)
-                    {
-                        PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
-                        return -1;
-                    }
-                    if (PushShadowIfValueImportName(
-                            pkg,
-                            file,
-                            file->ast.nodes[parts[0]].dataStart,
-                            file->ast.nodes[parts[0]].dataEnd,
-                            shadowCounts,
-                            shadowStack,
-                            shadowLen,
-                            shadowCap)
-                        != 0)
-                    {
-                        PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
-                        return -1;
+                    int32_t firstChild = ASTFirstChild(&file->ast, parts[0]);
+                    if (firstChild >= 0 && file->ast.nodes[firstChild].kind == SLAst_NAME_LIST) {
+                        uint32_t i;
+                        uint32_t nameCount = AstListCount(&file->ast, firstChild);
+                        if (initNode >= 0) {
+                            if (file->ast.nodes[initNode].kind == SLAst_EXPR_LIST) {
+                                uint32_t initCount = AstListCount(&file->ast, initNode);
+                                for (i = 0; i < initCount; i++) {
+                                    int32_t exprNode = AstListItemAt(&file->ast, initNode, i);
+                                    if (exprNode >= 0
+                                        && CollectExprImportRewritesNode(
+                                               pkg,
+                                               file,
+                                               exprNode,
+                                               shadowCounts,
+                                               rewrites,
+                                               rewriteLen,
+                                               rewriteCap)
+                                               != 0)
+                                    {
+                                        PopShadowToMark(
+                                            shadowCounts, *shadowStack, shadowLen, mark);
+                                        return -1;
+                                    }
+                                }
+                            } else if (
+                                CollectExprImportRewritesNode(
+                                    pkg,
+                                    file,
+                                    initNode,
+                                    shadowCounts,
+                                    rewrites,
+                                    rewriteLen,
+                                    rewriteCap)
+                                != 0)
+                            {
+                                PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                                return -1;
+                            }
+                        }
+                        for (i = 0; i < nameCount; i++) {
+                            int32_t          nameNode = AstListItemAt(&file->ast, firstChild, i);
+                            const SLAstNode* name =
+                                nameNode >= 0 ? &file->ast.nodes[nameNode] : NULL;
+                            if (name == NULL) {
+                                continue;
+                            }
+                            if (PushShadowIfValueImportName(
+                                    pkg,
+                                    file,
+                                    name->dataStart,
+                                    name->dataEnd,
+                                    shadowCounts,
+                                    shadowStack,
+                                    shadowLen,
+                                    shadowCap)
+                                != 0)
+                            {
+                                PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                                return -1;
+                            }
+                        }
+                    } else {
+                        if (initNode >= 0
+                            && CollectExprImportRewritesNode(
+                                   pkg,
+                                   file,
+                                   initNode,
+                                   shadowCounts,
+                                   rewrites,
+                                   rewriteLen,
+                                   rewriteCap)
+                                   != 0)
+                        {
+                            PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                            return -1;
+                        }
+                        if (PushShadowIfValueImportName(
+                                pkg,
+                                file,
+                                file->ast.nodes[parts[0]].dataStart,
+                                file->ast.nodes[parts[0]].dataEnd,
+                                shadowCounts,
+                                shadowStack,
+                                shadowLen,
+                                shadowCap)
+                            != 0)
+                        {
+                            PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                            return -1;
+                        }
                     }
                     idx = 1;
                 } else if (partCount >= 2u && file->ast.nodes[parts[0]].kind != SLAst_BLOCK) {

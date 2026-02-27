@@ -433,3 +433,9 @@
 {"id":"check:tests/compound_literal_field_shorthand_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_field_shorthand_ok.sl"}
 {"id":"integration.runtime.compound_literal_field_shorthand_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/compound_literal_field_shorthand_ok.sl","expect_exit":0}
 {"id":"check:tests/compound_literal_field_shorthand_invalid_name_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/compound_literal_field_shorthand_invalid_name_bad.sl","expect_stderr":"tests/compound_literal_field_shorthand_invalid_name_bad.stderr"}
+{"id":"ast:tests/ast_multi_var_assign.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_multi_var_assign.sl","expect":"tests/ast_multi_var_assign.ast"}
+{"id":"check:tests/multi_var_const_assign_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/multi_var_const_assign_ok.sl"}
+{"id":"check:tests/multi_assign_arity_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/multi_assign_arity_bad.sl","expect_stderr":"tests/multi_assign_arity_bad.stderr"}
+{"id":"check:tests/multi_assign_type_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/multi_assign_type_bad.sl","expect_stderr":"tests/multi_assign_type_bad.stderr"}
+{"id":"checkpkg:tests/multi_assign_eval_order_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/multi_assign_eval_order_ok.sl"}
+{"id":"integration.runtime.multi_assign_eval_order_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/multi_assign_eval_order_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"fail"}

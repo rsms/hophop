@@ -1334,6 +1334,96 @@ static int SLPParseExpr(SLParser* p, int minPrec, int32_t* out) {
     return 0;
 }
 
+static int SLPBuildListNode(
+    SLParser* p, SLAstKind kind, int32_t* items, uint32_t itemCount, int32_t* out) {
+    int32_t  n;
+    uint32_t i;
+    if (itemCount == 0) {
+        return SLPFail(p, SLDiag_EXPECTED_EXPR);
+    }
+    n = SLPNewNode(p, kind, p->nodes[items[0]].start, p->nodes[items[itemCount - 1u]].end);
+    if (n < 0) {
+        return -1;
+    }
+    for (i = 0; i < itemCount; i++) {
+        if (SLPAddChild(p, n, items[i]) != 0) {
+            return -1;
+        }
+    }
+    *out = n;
+    return 0;
+}
+
+static int SLPParseExprList(SLParser* p, int32_t* out) {
+    int32_t  items[256];
+    uint32_t itemCount = 0;
+    if (SLPParseExpr(p, 1, &items[itemCount]) != 0) {
+        return -1;
+    }
+    itemCount++;
+    while (SLPMatch(p, SLTok_COMMA)) {
+        if (itemCount >= (uint32_t)(sizeof(items) / sizeof(items[0]))) {
+            return SLPFail(p, SLDiag_ARENA_OOM);
+        }
+        if (SLPParseExpr(p, 1, &items[itemCount]) != 0) {
+            return -1;
+        }
+        itemCount++;
+    }
+    return SLPBuildListNode(p, SLAst_EXPR_LIST, items, itemCount, out);
+}
+
+static int SLPParseDeclNameList(
+    SLParser*       p,
+    int             allowHole,
+    const SLToken** names,
+    uint32_t        namesCap,
+    uint32_t*       outNameCount,
+    const SLToken** outFirstHole) {
+    uint32_t       nameCount = 0;
+    const SLToken* hole = NULL;
+    if (SLPExpectDeclName(p, &names[nameCount], allowHole) != 0) {
+        return -1;
+    }
+    if (hole == NULL && SLPIsHoleName(p, names[nameCount])) {
+        hole = names[nameCount];
+    }
+    nameCount++;
+    while (SLPMatch(p, SLTok_COMMA)) {
+        if (nameCount >= namesCap) {
+            return SLPFail(p, SLDiag_ARENA_OOM);
+        }
+        if (!SLPAt(p, SLTok_IDENT)) {
+            return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+        }
+        if (SLPExpectDeclName(p, &names[nameCount], allowHole) != 0) {
+            return -1;
+        }
+        if (hole == NULL && SLPIsHoleName(p, names[nameCount])) {
+            hole = names[nameCount];
+        }
+        nameCount++;
+    }
+    *outNameCount = nameCount;
+    *outFirstHole = hole;
+    return 0;
+}
+
+static int SLPBuildNameListNode(
+    SLParser* p, const SLToken** names, uint32_t nameCount, int32_t* outNameList) {
+    int32_t  items[256];
+    uint32_t i;
+    for (i = 0; i < nameCount; i++) {
+        items[i] = SLPNewNode(p, SLAst_IDENT, names[i]->start, names[i]->end);
+        if (items[i] < 0) {
+            return -1;
+        }
+        p->nodes[items[i]].dataStart = names[i]->start;
+        p->nodes[items[i]].dataEnd = names[i]->end;
+    }
+    return SLPBuildListNode(p, SLAst_NAME_LIST, items, nameCount, outNameList);
+}
+
 static int SLPParseParamGroup(SLParser* p, int32_t fnNode) {
     const SLToken* lastName = NULL;
     int32_t        firstParam = -1;
@@ -1467,21 +1557,32 @@ static int SLPConsumeStmtTerminator(SLParser* p, const SLToken** semiTok) {
 static int SLPParseVarLikeStmt(
     SLParser* p, SLAstKind kind, int requireSemi, int allowHole, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
-    const SLToken* name;
+    const SLToken* names[256];
+    const SLToken* firstHole = NULL;
     uint32_t       stmtStart = kw->start;
+    uint32_t       nameCount = 0;
     int32_t        n;
+    int32_t        nameList = -1;
     int32_t        type = -1;
     int32_t        init = -1;
 
     p->pos++;
-    if (SLPExpectDeclName(p, &name, allowHole) != 0) {
+    if (SLPParseDeclNameList(
+            p,
+            allowHole,
+            names,
+            (uint32_t)(sizeof(names) / sizeof(names[0])),
+            &nameCount,
+            &firstHole)
+        != 0)
+    {
         return -1;
     }
 
-    if (SLPIsHoleName(p, name)) {
+    if (nameCount == 1u && firstHole != NULL) {
         int hasSemi;
         if (!SLPMatch(p, SLTok_ASSIGN)) {
-            return SLPFailReservedName(p, name);
+            return SLPFailReservedName(p, firstHole);
         }
         if (SLPParseExpr(p, 1, &init) != 0) {
             return -1;
@@ -1506,26 +1607,52 @@ static int SLPParseVarLikeStmt(
     }
 
     if (SLPMatch(p, SLTok_ASSIGN)) {
-        if (SLPParseExpr(p, 1, &init) != 0) {
-            return -1;
+        if (nameCount == 1u) {
+            if (SLPParseExpr(p, 1, &init) != 0) {
+                return -1;
+            }
+        } else {
+            if (SLPParseExprList(p, &init) != 0) {
+                return -1;
+            }
         }
     } else {
+        if (firstHole != NULL) {
+            return SLPFailReservedName(p, firstHole);
+        }
         if (SLPParseType(p, &type) != 0) {
             return -1;
         }
         if (SLPMatch(p, SLTok_ASSIGN)) {
-            if (SLPParseExpr(p, 1, &init) != 0) {
+            if (nameCount == 1u) {
+                if (SLPParseExpr(p, 1, &init) != 0) {
+                    return -1;
+                }
+            } else if (SLPParseExprList(p, &init) != 0) {
                 return -1;
             }
         }
     }
 
-    n = SLPNewNode(p, kind, kw->start, init >= 0 ? p->nodes[init].end : p->nodes[type].end);
+    n = SLPNewNode(
+        p,
+        kind,
+        kw->start,
+        init >= 0 ? p->nodes[init].end
+                  : (type >= 0 ? p->nodes[type].end : names[nameCount - 1u]->end));
     if (n < 0) {
         return -1;
     }
-    p->nodes[n].dataStart = name->start;
-    p->nodes[n].dataEnd = name->end;
+    p->nodes[n].dataStart = names[0]->start;
+    p->nodes[n].dataEnd = names[0]->end;
+    if (nameCount > 1u) {
+        if (SLPBuildNameListNode(p, names, nameCount, &nameList) != 0) {
+            return -1;
+        }
+        if (SLPAddChild(p, n, nameList) != 0) {
+            return -1;
+        }
+    }
     if (type >= 0) {
         if (SLPAddChild(p, n, type) != 0) {
             return -1;
@@ -1909,6 +2036,66 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
             int hasSemi;
             if (SLPParseExpr(p, 1, &expr) != 0) {
                 return -1;
+            }
+            if (SLPMatch(p, SLTok_COMMA)) {
+                int32_t  lhsExprs[256];
+                int32_t  rhsExprs[256];
+                uint32_t lhsCount = 0;
+                uint32_t rhsCount = 0;
+                int32_t  lhsList;
+                int32_t  rhsList;
+                lhsExprs[lhsCount++] = expr;
+                if (SLPParseExpr(p, 2, &lhsExprs[lhsCount]) != 0) {
+                    return -1;
+                }
+                lhsCount++;
+                while (SLPMatch(p, SLTok_COMMA)) {
+                    if (lhsCount >= (uint32_t)(sizeof(lhsExprs) / sizeof(lhsExprs[0]))) {
+                        return SLPFail(p, SLDiag_ARENA_OOM);
+                    }
+                    if (SLPParseExpr(p, 2, &lhsExprs[lhsCount]) != 0) {
+                        return -1;
+                    }
+                    lhsCount++;
+                }
+                if (!SLPMatch(p, SLTok_ASSIGN)) {
+                    return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+                }
+                if (SLPParseExpr(p, 1, &rhsExprs[rhsCount]) != 0) {
+                    return -1;
+                }
+                rhsCount++;
+                while (SLPMatch(p, SLTok_COMMA)) {
+                    if (rhsCount >= (uint32_t)(sizeof(rhsExprs) / sizeof(rhsExprs[0]))) {
+                        return SLPFail(p, SLDiag_ARENA_OOM);
+                    }
+                    if (SLPParseExpr(p, 1, &rhsExprs[rhsCount]) != 0) {
+                        return -1;
+                    }
+                    rhsCount++;
+                }
+                if (SLPBuildListNode(p, SLAst_EXPR_LIST, lhsExprs, lhsCount, &lhsList) != 0
+                    || SLPBuildListNode(p, SLAst_EXPR_LIST, rhsExprs, rhsCount, &rhsList) != 0)
+                {
+                    return -1;
+                }
+                n = SLPNewNode(
+                    p, SLAst_MULTI_ASSIGN, p->nodes[lhsList].start, p->nodes[rhsList].end);
+                if (n < 0) {
+                    return -1;
+                }
+                if (SLPAddChild(p, n, lhsList) != 0 || SLPAddChild(p, n, rhsList) != 0) {
+                    return -1;
+                }
+                hasSemi = SLPConsumeStmtTerminator(p, &kw);
+                if (hasSemi < 0) {
+                    return -1;
+                }
+                if (hasSemi) {
+                    p->nodes[n].end = kw->end;
+                }
+                *out = n;
+                return 0;
             }
             hasSemi = SLPConsumeStmtTerminator(p, &kw);
             if (hasSemi < 0) {
@@ -2470,6 +2657,9 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_DEFER:             return "DEFER";
         case SLAst_ASSERT:            return "ASSERT";
         case SLAst_EXPR_STMT:         return "EXPR_STMT";
+        case SLAst_MULTI_ASSIGN:      return "MULTI_ASSIGN";
+        case SLAst_NAME_LIST:         return "NAME_LIST";
+        case SLAst_EXPR_LIST:         return "EXPR_LIST";
         case SLAst_IDENT:             return "IDENT";
         case SLAst_INT:               return "INT";
         case SLAst_FLOAT:             return "FLOAT";

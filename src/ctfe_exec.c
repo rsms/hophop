@@ -93,6 +93,13 @@ static int32_t SLCTFEExecVarLikeInitExprNode(const SLAst* ast, int32_t nodeId) {
     if (firstChild < 0) {
         return -1;
     }
+    if (ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
+        int32_t afterNames = ast->nodes[firstChild].nextSibling;
+        if (afterNames >= 0 && SLCTFEExecIsTypeNodeKind(ast->nodes[afterNames].kind)) {
+            return ast->nodes[afterNames].nextSibling;
+        }
+        return afterNames;
+    }
     if (SLCTFEExecIsTypeNodeKind(ast->nodes[firstChild].kind)) {
         return ast->nodes[firstChild].nextSibling;
     }
@@ -747,6 +754,11 @@ static int SLCTFEExecEvalStmt(
         int32_t     declTypeId = -1;
         SLCTFEValue v;
         int         isConst = 0;
+        if (declTypeNode >= 0 && c->ast->nodes[declTypeNode].kind == SLAst_NAME_LIST) {
+            SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
+            *outIsConst = 0;
+            return 0;
+        }
         if (initNode < 0 || frame->bindingLen >= bindingCap || frame->bindings == NULL) {
             SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
             *outIsConst = 0;

@@ -1,1 +1,1 @@
-tests/topvar_initializer_cycle_unused_bad.sl:1:1: SL2004: type mismatch: cyclic top-level initializer dependency
+tests/topvar_initializer_cycle_unused_bad.sl:3:1: SL2004: type mismatch: cyclic top-level initializer dependency

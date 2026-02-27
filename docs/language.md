@@ -103,6 +103,9 @@ ImportSymbol    = Ident [ "as" Ident ] .
 ImportSep       = "," | ";" .
 
 TopDecl         = [ "pub" ] ( StructDecl | UnionDecl | EnumDecl | TypeAliasDecl | FnDeclOrDef | TopConstDecl ) .
+DeclName        = Ident | "_" .
+DeclNameList    = DeclName { "," DeclName } .
+TopDeclNameList = Ident { "," Ident } .
 
 StructDecl      = "struct" Ident "{" [ StructFieldDeclList ] "}" .
 UnionDecl       = "union" Ident "{" [ FieldDeclList ] "}" .
@@ -127,8 +130,8 @@ ParamList       = ParamGroup { "," ParamGroup } .
 ParamGroup      = ( Ident | "_" ) { "," ( Ident | "_" ) } Type .
 ContextClause   = "context" Type .
 
-TopConstDecl    = "const" Ident ( [ Type ] "=" Expr ) .
-LocalConstDecl  = "const" ( Ident | "_" ) ( [ Type ] "=" Expr ) .
+TopConstDecl    = "const" TopDeclNameList ( [ Type ] "=" ExprList ) .
+LocalConstDecl  = "const" DeclNameList ( [ Type ] "=" ExprList ) .
 
 Type            = OptionalType | PtrType | RefType | SliceType | ArrayType | VarArrayType
                 | FnType | AnonStructType | AnonUnionType | TypeName .
@@ -148,9 +151,11 @@ TypeName        = Ident { "." Ident } .
 Block           = "{" [ StmtList ] "}" .
 StmtList        = Stmt { ";" Stmt } [ ";" ] .
 Stmt            = Block | VarDeclStmt | LocalConstDecl | IfStmt | ForStmt | SwitchStmt
-                | ReturnStmt | BreakStmt | ContinueStmt | DeferStmt | AssertStmt | ExprStmt .
+                | ReturnStmt | BreakStmt | ContinueStmt | DeferStmt | AssertStmt
+                | MultiAssignStmt | ExprStmt .
 
-VarDeclStmt     = "var" ( Ident | "_" ) ( Type [ "=" Expr ] | "=" Expr ) .
+VarDeclStmt     = "var" DeclNameList ( Type [ "=" ExprList ] | "=" ExprList ) .
+MultiAssignStmt = ExprList "=" ExprList .
 IfStmt          = "if" Expr Block [ "else" ( IfStmt | Block ) ] .
 ForStmt         = "for" ( Block | Expr Block | ForClause Block ) .
 ForClause       = [ ForInit ] ";" [ Expr ] ";" [ Expr ] .
@@ -238,6 +243,7 @@ fn f() {
 - [DECL-TOP-004][Stable] `pub` applies to a single following top-level declaration.
 - [DECL-HOLE-001][Stable] `_` MUST NOT name top-level symbols, struct/union fields, enum items, or type aliases.
 - [DECL-HOLE-002][Stable] Local discard declarations `var _ = expr` and `const _ = expr` are valid statement forms.
+- [DECL-HOLE-003][Stable] In declaration and assignment lists, `_` discards the corresponding RHS value and does not create or update a binding.
 - [DECL-SCOPE-001][Stable] Scope is lexical by block; nearest declaration wins.
 - [DECL-SCOPE-002][Stable] Function/type declarations are collected before body checking (declaration-order independent).
 
@@ -314,6 +320,8 @@ fn f() {
 - [TYPE-ASSIGN-006][Stable] Alias conversion direction is nominal one-way: `Alias -> Target` implicit, `Target -> Alias` not implicit.
 - [TYPE-ASSIGN-007][Stable] No implicit numeric widening between concrete numeric types.
 - [TYPE-ASSIGN-008][Stable] Rune expressions (`rune`) can implicitly convert to integer destinations only when const evaluation produces an in-range value.
+- [TYPE-ASSIGN-009][Stable] Any typed value is assignable to `_`.
+- [TYPE-ASSIGN-010][Stable] Assigning an untyped constant to `_` first applies implicit defaulting (`untyped_int -> int`, `untyped_float -> f64`, `untyped_bool -> bool`).
 
 ### 5.5 Inference and zero values
 - [TYPE-INFER-001][Stable] `var x = expr` and `const x = expr` infer from `expr` after concretization.
@@ -321,6 +329,7 @@ fn f() {
 - [TYPE-INFER-003][Stable] Inference from `null` or no-value expressions is invalid.
 - [TYPE-INFER-004][Stable] Rune literals infer type `rune`.
 - [TYPE-ZERO-001][Stable] `var x T` zero-initializes `x`.
+- [TYPE-INFER-005][Stable] Grouped declarations infer and/or check per position (`var a, b = 1, 2`; `var a, b T = x, y`), and declaration arities MUST match initializer arities.
 
 ## 6. Expressions and Operators
 
@@ -329,6 +338,7 @@ fn f() {
 - [EXPR-UNARY-002][Stable] Unary `*` dereferences pointer/reference; unary `&` forms read-only references.
 - [EXPR-ASSIGN-001][Stable] Assignment LHS MUST be assignable (identifier/index/non-dependent field/dereference of writable location).
 - [EXPR-ASSIGN-002][Stable] Compound assignment requires assignable LHS and numeric LHS type.
+- [EXPR-ASSIGN-003][Stable] Multi-assignment (`lhs1, lhs2, ... = rhs1, rhs2, ...`) requires equal arity. RHS expressions are evaluated before stores; then stores apply left-to-right.
 - [EXPR-CMP-001][Stable] Equality/ordering require coercion to a common comparable/ordered type, except optional-null equality special-case.
 - [EXPR-CAST-001][Stable] `as` is explicit cast syntax.
 - [EXPR-CAST-002][Stable] A cast expression is well-typed iff source expression typing succeeds and target type resolution succeeds; no additional cast-compatibility gate is applied by Core static semantics.

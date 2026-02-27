@@ -192,6 +192,9 @@ typedef struct {
     SLConstEvalSession* _Nullable constEval;
 } SLCBackendC;
 
+static uint32_t ListCount(const SLAst* ast, int32_t listNode);
+static int32_t  ListItemAt(const SLAst* ast, int32_t listNode, uint32_t index);
+
 static size_t StrLen(const char* s) {
     size_t n = 0;
     while (s[n] != '\0') {
@@ -1326,7 +1329,24 @@ static int CollectDeclSets(SLCBackendC* c) {
                     return -1;
                 }
             }
-            if (GetDeclNameSpan(c, child, &start, &end) == 0) {
+            if ((n->kind == SLAst_VAR || n->kind == SLAst_CONST)
+                && NodeAt(c, AstFirstChild(&c->ast, child)) != NULL
+                && NodeAt(c, AstFirstChild(&c->ast, child))->kind == SLAst_NAME_LIST)
+            {
+                int32_t  nameList = AstFirstChild(&c->ast, child);
+                uint32_t i;
+                uint32_t nameCount = ListCount(&c->ast, nameList);
+                for (i = 0; i < nameCount; i++) {
+                    int32_t          nameNode = ListItemAt(&c->ast, nameList, i);
+                    const SLAstNode* name = NodeAt(c, nameNode);
+                    if (name == NULL) {
+                        return -1;
+                    }
+                    if (AddName(c, name->dataStart, name->dataEnd, n->kind, isExported) != 0) {
+                        return -1;
+                    }
+                }
+            } else if (GetDeclNameSpan(c, child, &start, &end) == 0) {
                 if (AddName(c, start, end, n->kind, isExported) != 0) {
                     return -1;
                 }
@@ -3365,22 +3385,80 @@ static int DecodeNewExprNodes(
     return 0;
 }
 
-static void ResolveVarLikeTypeAndInitNode(
-    SLCBackendC* c, int32_t nodeId, int32_t* outTypeNode, int32_t* outInitNode) {
+typedef struct {
+    int32_t  nameListNode;
+    int32_t  typeNode;
+    int32_t  initNode;
+    uint32_t nameCount;
+    uint8_t  grouped;
+} SLCCGVarLikeParts;
+
+static uint32_t ListCount(const SLAst* ast, int32_t listNode) {
+    uint32_t count = 0;
+    int32_t  child;
+    if (listNode < 0 || (uint32_t)listNode >= ast->len) {
+        return 0;
+    }
+    child = ast->nodes[listNode].firstChild;
+    while (child >= 0) {
+        count++;
+        child = ast->nodes[child].nextSibling;
+    }
+    return count;
+}
+
+static int32_t ListItemAt(const SLAst* ast, int32_t listNode, uint32_t index) {
+    int32_t  child;
+    uint32_t i = 0;
+    if (listNode < 0 || (uint32_t)listNode >= ast->len) {
+        return -1;
+    }
+    child = ast->nodes[listNode].firstChild;
+    while (child >= 0) {
+        if (i == index) {
+            return child;
+        }
+        i++;
+        child = ast->nodes[child].nextSibling;
+    }
+    return -1;
+}
+
+static int ResolveVarLikeParts(SLCBackendC* c, int32_t nodeId, SLCCGVarLikeParts* out) {
     int32_t          firstChild = AstFirstChild(&c->ast, nodeId);
     const SLAstNode* firstNode;
-    *outTypeNode = -1;
-    *outInitNode = -1;
+    out->nameListNode = -1;
+    out->typeNode = -1;
+    out->initNode = -1;
+    out->nameCount = 0;
+    out->grouped = 0;
     if (firstChild < 0) {
-        return;
+        return 0;
     }
     firstNode = NodeAt(c, firstChild);
-    if (firstNode != NULL && IsTypeNodeKind(firstNode->kind)) {
-        *outTypeNode = firstChild;
-        *outInitNode = AstNextSibling(&c->ast, firstChild);
-    } else {
-        *outInitNode = firstChild;
+    if (firstNode != NULL && firstNode->kind == SLAst_NAME_LIST) {
+        int32_t afterNames = AstNextSibling(&c->ast, firstChild);
+        out->grouped = 1;
+        out->nameListNode = firstChild;
+        out->nameCount = ListCount(&c->ast, firstChild);
+        if (afterNames >= 0 && NodeAt(c, afterNames) != NULL
+            && IsTypeNodeKind(NodeAt(c, afterNames)->kind))
+        {
+            out->typeNode = afterNames;
+            out->initNode = AstNextSibling(&c->ast, afterNames);
+        } else {
+            out->initNode = afterNames;
+        }
+        return 0;
     }
+    out->nameCount = 1;
+    if (firstNode != NULL && IsTypeNodeKind(firstNode->kind)) {
+        out->typeNode = firstChild;
+        out->initNode = AstNextSibling(&c->ast, firstChild);
+    } else {
+        out->initNode = firstChild;
+    }
+    return 0;
 }
 
 static int InferVarLikeDeclType(SLCBackendC* c, int32_t initNode, SLTypeRef* outType) {
@@ -3409,24 +3487,65 @@ static int FindTopLevelVarLikeNodeBySlice(
     for (i = 0; i < c->topDeclLen; i++) {
         int32_t          nodeId = c->topDecls[i].nodeId;
         const SLAstNode* n = NodeAt(c, nodeId);
-        if (n != NULL && (n->kind == SLAst_VAR || n->kind == SLAst_CONST)
-            && SliceSpanEq(c->unit->source, n->dataStart, n->dataEnd, start, end))
-        {
-            *outNodeId = nodeId;
-            return 0;
+        if (n != NULL && (n->kind == SLAst_VAR || n->kind == SLAst_CONST)) {
+            if (SliceSpanEq(c->unit->source, n->dataStart, n->dataEnd, start, end)) {
+                *outNodeId = nodeId;
+                return 0;
+            }
+            {
+                int32_t          firstChild = AstFirstChild(&c->ast, nodeId);
+                const SLAstNode* firstNode = NodeAt(c, firstChild);
+                if (firstNode != NULL && firstNode->kind == SLAst_NAME_LIST) {
+                    uint32_t j;
+                    uint32_t nameCount = ListCount(&c->ast, firstChild);
+                    for (j = 0; j < nameCount; j++) {
+                        int32_t          nameNode = ListItemAt(&c->ast, firstChild, j);
+                        const SLAstNode* name = NodeAt(c, nameNode);
+                        if (name != NULL
+                            && SliceSpanEq(
+                                c->unit->source, name->dataStart, name->dataEnd, start, end))
+                        {
+                            *outNodeId = nodeId;
+                            return 0;
+                        }
+                    }
+                }
+            }
         }
     }
     return -1;
 }
 
-static int InferTopLevelVarLikeType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
-    int32_t typeNode;
-    int32_t initNode;
-    ResolveVarLikeTypeAndInitNode(c, nodeId, &typeNode, &initNode);
-    if (typeNode >= 0) {
-        return ParseTypeRef(c, typeNode, outType);
+static int InferTopLevelVarLikeType(
+    SLCBackendC* c, int32_t nodeId, uint32_t nameStart, uint32_t nameEnd, SLTypeRef* outType) {
+    SLCCGVarLikeParts parts;
+    if (ResolveVarLikeParts(c, nodeId, &parts) != 0 || parts.nameCount == 0) {
+        return -1;
     }
-    return InferVarLikeDeclType(c, initNode, outType);
+    if (parts.typeNode >= 0) {
+        return ParseTypeRef(c, parts.typeNode, outType);
+    }
+    if (!parts.grouped) {
+        return InferVarLikeDeclType(c, parts.initNode, outType);
+    }
+    if (parts.initNode >= 0 && NodeAt(c, parts.initNode) != NULL
+        && NodeAt(c, parts.initNode)->kind == SLAst_EXPR_LIST)
+    {
+        uint32_t i;
+        uint32_t initCount = ListCount(&c->ast, parts.initNode);
+        for (i = 0; i < parts.nameCount && i < initCount; i++) {
+            int32_t          nameNode = ListItemAt(&c->ast, parts.nameListNode, i);
+            const SLAstNode* name = NodeAt(c, nameNode);
+            if (name != NULL
+                && SliceSpanEq(c->unit->source, name->dataStart, name->dataEnd, nameStart, nameEnd))
+            {
+                int32_t initNode = ListItemAt(&c->ast, parts.initNode, i);
+                return InferVarLikeDeclType(c, initNode, outType);
+            }
+        }
+    }
+    TypeRefSetInvalid(outType);
+    return -1;
 }
 
 #define SLCCG_MAX_CALL_ARGS       128u
@@ -4454,7 +4573,7 @@ static int InferExprType_IDENT(
     {
         int32_t topVarLikeNode = -1;
         if (FindTopLevelVarLikeNodeBySlice(c, n->dataStart, n->dataEnd, &topVarLikeNode) == 0) {
-            return InferTopLevelVarLikeType(c, topVarLikeNode, outType);
+            return InferTopLevelVarLikeType(c, topVarLikeNode, n->dataStart, n->dataEnd, outType);
         }
     }
     TypeRefSetInvalid(outType);
@@ -8023,57 +8142,206 @@ static int EmitBlockInline(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
 }
 
 static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int isConst) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    int32_t          typeNode;
-    int32_t          initNode;
-    char*            name;
-    SLTypeRef        type;
+    const SLAstNode*  n = NodeAt(c, nodeId);
+    SLCCGVarLikeParts parts;
+    SLTypeRef         sharedType;
+    uint32_t          i;
 
     if (n == NULL) {
         return -1;
     }
-    ResolveVarLikeTypeAndInitNode(c, nodeId, &typeNode, &initNode);
-    name = DupSlice(c, c->unit->source, n->dataStart, n->dataEnd);
-    if (name == NULL) {
+    if (ResolveVarLikeParts(c, nodeId, &parts) != 0 || parts.nameCount == 0) {
         return -1;
     }
-    if (typeNode >= 0) {
-        if (ParseTypeRef(c, typeNode, &type) != 0) {
+
+    if (!parts.grouped) {
+        int32_t   typeNode = parts.typeNode;
+        int32_t   initNode = parts.initNode;
+        char*     name = DupSlice(c, c->unit->source, n->dataStart, n->dataEnd);
+        SLTypeRef type;
+        if (name == NULL) {
+            return -1;
+        }
+        if (typeNode >= 0) {
+            if (ParseTypeRef(c, typeNode, &type) != 0) {
+                return -1;
+            }
+        } else {
+            if (InferVarLikeDeclType(c, initNode, &type) != 0) {
+                return -1;
+            }
+        }
+        if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+            return -1;
+        }
+
+        EmitIndent(c, depth);
+        if (isConst && BufAppendCStr(&c->out, "const ") != 0) {
+            return -1;
+        }
+        if ((typeNode >= 0 && EmitTypeWithName(c, typeNode, name) != 0)
+            || (typeNode < 0 && EmitTypeRefWithName(c, &type, name) != 0))
+        {
+            return -1;
+        }
+        if (initNode >= 0) {
+            if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0) {
+                return -1;
+            }
+        } else if (!isConst && BufAppendCStr(&c->out, " = {0}") != 0) {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, ";\n") != 0) {
+            return -1;
+        }
+
+        if (AddLocal(c, name, type) != 0) {
+            return -1;
+        }
+        return 0;
+    }
+
+    if (parts.typeNode >= 0) {
+        if (ParseTypeRef(c, parts.typeNode, &sharedType) != 0) {
+            return -1;
+        }
+        if (EnsureAnonTypeVisible(c, &sharedType, depth) != 0) {
             return -1;
         }
     } else {
-        if (InferVarLikeDeclType(c, initNode, &type) != 0) {
+        TypeRefSetInvalid(&sharedType);
+    }
+
+    for (i = 0; i < parts.nameCount; i++) {
+        int32_t          nameNode = ListItemAt(&c->ast, parts.nameListNode, i);
+        const SLAstNode* nameAst = NodeAt(c, nameNode);
+        int32_t          initNode = -1;
+        char*            name;
+        int              isHole;
+        SLTypeRef        type;
+        if (nameAst == NULL) {
+            return -1;
+        }
+        name = DupSlice(c, c->unit->source, nameAst->dataStart, nameAst->dataEnd);
+        if (name == NULL) {
+            return -1;
+        }
+        isHole = StrEq(name, "_");
+        if (parts.initNode >= 0 && NodeAt(c, parts.initNode) != NULL
+            && NodeAt(c, parts.initNode)->kind == SLAst_EXPR_LIST)
+        {
+            initNode = ListItemAt(&c->ast, parts.initNode, i);
+        }
+        if (parts.typeNode >= 0) {
+            type = sharedType;
+        } else {
+            if (initNode < 0 || InferVarLikeDeclType(c, initNode, &type) != 0) {
+                return -1;
+            }
+            if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+                return -1;
+            }
+        }
+
+        if (isHole) {
+            if (initNode >= 0) {
+                EmitIndent(c, depth);
+                if (BufAppendCStr(&c->out, "(void)(") != 0) {
+                    return -1;
+                }
+                if (parts.typeNode >= 0) {
+                    if (EmitExprCoerced(c, initNode, &type) != 0) {
+                        return -1;
+                    }
+                } else if (EmitExpr(c, initNode) != 0) {
+                    return -1;
+                }
+                if (BufAppendCStr(&c->out, ");\n") != 0) {
+                    return -1;
+                }
+            }
+            continue;
+        }
+
+        EmitIndent(c, depth);
+        if (isConst && BufAppendCStr(&c->out, "const ") != 0) {
+            return -1;
+        }
+        if ((parts.typeNode >= 0 && EmitTypeWithName(c, parts.typeNode, name) != 0)
+            || (parts.typeNode < 0 && EmitTypeRefWithName(c, &type, name) != 0))
+        {
+            return -1;
+        }
+        if (initNode >= 0) {
+            if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0) {
+                return -1;
+            }
+        } else if (!isConst && BufAppendCStr(&c->out, " = {0}") != 0) {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, ";\n") != 0) {
+            return -1;
+        }
+        if (AddLocal(c, name, type) != 0) {
             return -1;
         }
     }
-    if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
-        return -1;
-    }
+    return 0;
+}
 
-    EmitIndent(c, depth);
-    if (isConst && BufAppendCStr(&c->out, "const ") != 0) {
-        return -1;
-    }
-    if ((typeNode >= 0 && EmitTypeWithName(c, typeNode, name) != 0)
-        || (typeNode < 0 && EmitTypeRefWithName(c, &type, name) != 0))
+static int EmitMultiAssignStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
+    int32_t  lhsList = AstFirstChild(&c->ast, nodeId);
+    int32_t  rhsList = lhsList >= 0 ? AstNextSibling(&c->ast, lhsList) : -1;
+    uint32_t count;
+    uint32_t i;
+    if (lhsList < 0 || rhsList < 0 || NodeAt(c, lhsList) == NULL || NodeAt(c, rhsList) == NULL
+        || NodeAt(c, lhsList)->kind != SLAst_EXPR_LIST
+        || NodeAt(c, rhsList)->kind != SLAst_EXPR_LIST)
     {
         return -1;
     }
-    if (initNode >= 0) {
-        if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0) {
+    count = ListCount(&c->ast, lhsList);
+    if (count != ListCount(&c->ast, rhsList)) {
+        return -1;
+    }
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "{\n") != 0) {
+        return -1;
+    }
+    for (i = 0; i < count; i++) {
+        int32_t   rhsNode = ListItemAt(&c->ast, rhsList, i);
+        SLTypeRef rhsType;
+        if (rhsNode < 0 || InferExprType(c, rhsNode, &rhsType) != 0 || !rhsType.valid) {
             return -1;
         }
-    } else if (!isConst && BufAppendCStr(&c->out, " = {0}") != 0) {
-        return -1;
+        EmitIndent(c, depth + 1u);
+        if (BufAppendCStr(&c->out, "__auto_type __sl_tmp_") != 0 || BufAppendU32(&c->out, i) != 0
+            || BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, rhsNode, &rhsType) != 0
+            || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
     }
-    if (BufAppendCStr(&c->out, ";\n") != 0) {
-        return -1;
+    for (i = 0; i < count; i++) {
+        int32_t          lhsNode = ListItemAt(&c->ast, lhsList, i);
+        const SLAstNode* lhs = NodeAt(c, lhsNode);
+        if (lhs == NULL) {
+            return -1;
+        }
+        if (lhs->kind == SLAst_IDENT
+            && SliceEqName(c->unit->source, lhs->dataStart, lhs->dataEnd, "_"))
+        {
+            continue;
+        }
+        EmitIndent(c, depth + 1u);
+        if (EmitExpr(c, lhsNode) != 0 || BufAppendCStr(&c->out, " = __sl_tmp_") != 0
+            || BufAppendU32(&c->out, i) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
     }
-
-    if (AddLocal(c, name, type) != 0) {
-        return -1;
-    }
-    return 0;
+    EmitIndent(c, depth);
+    return BufAppendCStr(&c->out, "}\n");
 }
 
 static int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
@@ -8323,10 +8591,11 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     }
 
     switch (n->kind) {
-        case SLAst_BLOCK:     return EmitBlock(c, nodeId, depth);
-        case SLAst_VAR:       return EmitVarLikeStmt(c, nodeId, depth, 0);
-        case SLAst_CONST:     return EmitVarLikeStmt(c, nodeId, depth, 1);
-        case SLAst_EXPR_STMT: {
+        case SLAst_BLOCK:        return EmitBlock(c, nodeId, depth);
+        case SLAst_VAR:          return EmitVarLikeStmt(c, nodeId, depth, 0);
+        case SLAst_CONST:        return EmitVarLikeStmt(c, nodeId, depth, 1);
+        case SLAst_MULTI_ASSIGN: return EmitMultiAssignStmt(c, nodeId, depth);
+        case SLAst_EXPR_STMT:    {
             int32_t expr = AstFirstChild(&c->ast, nodeId);
             EmitIndent(c, depth);
             if (EmitExpr(c, expr) != 0 || BufAppendCStr(&c->out, ";\n") != 0) {
@@ -9360,123 +9629,294 @@ static int EmitFnDeclOrDef(
 
 static int EmitConstDecl(
     SLCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
-    int32_t          typeNode;
-    int32_t          initNode;
-    SLTypeRef        type;
-
-    ResolveVarLikeTypeAndInitNode(c, nodeId, &typeNode, &initNode);
-    if (typeNode >= 0) {
-        if (ParseTypeRef(c, typeNode, &type) != 0) {
-            return -1;
-        }
-    } else {
-        if (InferVarLikeDeclType(c, initNode, &type) != 0) {
-            return -1;
-        }
-    }
-    if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+    const SLAstNode*  n = NodeAt(c, nodeId);
+    SLCCGVarLikeParts parts;
+    uint32_t          i;
+    SLTypeRef         sharedType;
+    if (n == NULL) {
         return -1;
     }
-
-    EmitIndent(c, depth);
-    if (declarationOnly) {
-        if (BufAppendCStr(&c->out, "extern const ") != 0) {
-            return -1;
-        }
-    } else {
-        if (isPrivate && BufAppendCStr(&c->out, "static ") != 0) {
-            return -1;
-        }
-        if (BufAppendCStr(&c->out, "const ") != 0) {
-            return -1;
-        }
-    }
-
-    if ((typeNode >= 0 && EmitTypeWithName(c, typeNode, map->cName) != 0)
-        || (typeNode < 0 && EmitTypeRefWithName(c, &type, map->cName) != 0))
-    {
+    if (ResolveVarLikeParts(c, nodeId, &parts) != 0 || parts.nameCount == 0) {
         return -1;
     }
-
-    if (!declarationOnly) {
-        if (BufAppendCStr(&c->out, " = ") != 0) {
+    if (!parts.grouped) {
+        const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        int32_t          typeNode = parts.typeNode;
+        int32_t          initNode = parts.initNode;
+        SLTypeRef        type;
+        if (map == NULL) {
             return -1;
         }
-        if (initNode >= 0) {
-            int emittedConstValue = 0;
-            if (c->constEval != NULL) {
-                SLCTFEValue constValue;
-                int         isConst = 0;
-                if (SLConstEvalSessionEvalTopLevelConst(c->constEval, nodeId, &constValue, &isConst)
-                    != 0)
-                {
-                    return -1;
-                }
-                if (isConst
-                    && EmitConstEvaluatedScalar(c, &type, &constValue, &emittedConstValue) != 0)
-                {
-                    return -1;
-                }
-            }
-            if (!emittedConstValue && EmitExprCoerced(c, initNode, &type) != 0) {
+        if (typeNode >= 0) {
+            if (ParseTypeRef(c, typeNode, &type) != 0) {
                 return -1;
             }
-        } else if (BufAppendChar(&c->out, '0') != 0) {
+        } else {
+            if (InferVarLikeDeclType(c, initNode, &type) != 0) {
+                return -1;
+            }
+        }
+        if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+            return -1;
+        }
+        EmitIndent(c, depth);
+        if (declarationOnly) {
+            if (BufAppendCStr(&c->out, "extern const ") != 0) {
+                return -1;
+            }
+        } else {
+            if (isPrivate && BufAppendCStr(&c->out, "static ") != 0) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, "const ") != 0) {
+                return -1;
+            }
+        }
+        if ((typeNode >= 0 && EmitTypeWithName(c, typeNode, map->cName) != 0)
+            || (typeNode < 0 && EmitTypeRefWithName(c, &type, map->cName) != 0))
+        {
+            return -1;
+        }
+        if (!declarationOnly) {
+            if (BufAppendCStr(&c->out, " = ") != 0) {
+                return -1;
+            }
+            if (initNode >= 0) {
+                int emittedConstValue = 0;
+                if (c->constEval != NULL) {
+                    SLCTFEValue constValue;
+                    int         isConst = 0;
+                    if (SLConstEvalSessionEvalTopLevelConst(
+                            c->constEval, nodeId, &constValue, &isConst)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (isConst
+                        && EmitConstEvaluatedScalar(c, &type, &constValue, &emittedConstValue) != 0)
+                    {
+                        return -1;
+                    }
+                }
+                if (!emittedConstValue && EmitExprCoerced(c, initNode, &type) != 0) {
+                    return -1;
+                }
+            } else if (BufAppendChar(&c->out, '0') != 0) {
+                return -1;
+            }
+        }
+        return BufAppendCStr(&c->out, ";\n");
+    }
+
+    if (parts.typeNode >= 0) {
+        if (ParseTypeRef(c, parts.typeNode, &sharedType) != 0) {
+            return -1;
+        }
+        if (EnsureAnonTypeVisible(c, &sharedType, depth) != 0) {
+            return -1;
+        }
+    } else {
+        TypeRefSetInvalid(&sharedType);
+    }
+    for (i = 0; i < parts.nameCount; i++) {
+        int32_t          nameNode = ListItemAt(&c->ast, parts.nameListNode, i);
+        const SLAstNode* nameAst = NodeAt(c, nameNode);
+        const SLNameMap* map;
+        int32_t          initNode = -1;
+        SLTypeRef        type;
+        if (nameAst == NULL) {
+            return -1;
+        }
+        map = FindNameBySlice(c, nameAst->dataStart, nameAst->dataEnd);
+        if (map == NULL) {
+            return -1;
+        }
+        if (parts.initNode >= 0) {
+            if (NodeAt(c, parts.initNode) == NULL
+                || NodeAt(c, parts.initNode)->kind != SLAst_EXPR_LIST)
+            {
+                return -1;
+            }
+            initNode = ListItemAt(&c->ast, parts.initNode, i);
+        }
+        if (parts.typeNode >= 0) {
+            type = sharedType;
+        } else {
+            if (initNode < 0 || InferVarLikeDeclType(c, initNode, &type) != 0) {
+                return -1;
+            }
+            if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+                return -1;
+            }
+        }
+
+        EmitIndent(c, depth);
+        if (declarationOnly) {
+            if (BufAppendCStr(&c->out, "extern const ") != 0) {
+                return -1;
+            }
+        } else {
+            if (isPrivate && BufAppendCStr(&c->out, "static ") != 0) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, "const ") != 0) {
+                return -1;
+            }
+        }
+        if ((parts.typeNode >= 0 && EmitTypeWithName(c, parts.typeNode, map->cName) != 0)
+            || (parts.typeNode < 0 && EmitTypeRefWithName(c, &type, map->cName) != 0))
+        {
+            return -1;
+        }
+        if (!declarationOnly) {
+            if (BufAppendCStr(&c->out, " = ") != 0) {
+                return -1;
+            }
+            if (initNode >= 0) {
+                if (EmitExprCoerced(c, initNode, &type) != 0) {
+                    return -1;
+                }
+            } else if (BufAppendChar(&c->out, '0') != 0) {
+                return -1;
+            }
+        }
+        if (BufAppendCStr(&c->out, ";\n") != 0) {
             return -1;
         }
     }
-
-    return BufAppendCStr(&c->out, ";\n");
+    return 0;
 }
 
 static int EmitVarDecl(
     SLCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
-    int32_t          typeNode;
-    int32_t          initNode;
-    SLTypeRef        type;
+    const SLAstNode*  n = NodeAt(c, nodeId);
+    SLCCGVarLikeParts parts;
+    uint32_t          i;
+    SLTypeRef         sharedType;
+    if (n == NULL) {
+        return -1;
+    }
+    if (ResolveVarLikeParts(c, nodeId, &parts) != 0 || parts.nameCount == 0) {
+        return -1;
+    }
+    if (!parts.grouped) {
+        const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        int32_t          typeNode = parts.typeNode;
+        int32_t          initNode = parts.initNode;
+        SLTypeRef        type;
+        if (map == NULL) {
+            return -1;
+        }
+        if (typeNode >= 0) {
+            if (ParseTypeRef(c, typeNode, &type) != 0) {
+                return -1;
+            }
+        } else {
+            if (InferVarLikeDeclType(c, initNode, &type) != 0) {
+                return -1;
+            }
+        }
+        if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+            return -1;
+        }
 
-    ResolveVarLikeTypeAndInitNode(c, nodeId, &typeNode, &initNode);
-    if (typeNode >= 0) {
-        if (ParseTypeRef(c, typeNode, &type) != 0) {
+        EmitIndent(c, depth);
+        if (declarationOnly) {
+            if (BufAppendCStr(&c->out, "extern ") != 0) {
+                return -1;
+            }
+        } else if (isPrivate && BufAppendCStr(&c->out, "static ") != 0) {
+            return -1;
+        }
+        if ((typeNode >= 0 && EmitTypeWithName(c, typeNode, map->cName) != 0)
+            || (typeNode < 0 && EmitTypeRefWithName(c, &type, map->cName) != 0))
+        {
+            return -1;
+        }
+        if (!declarationOnly) {
+            if (initNode >= 0) {
+                if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0)
+                {
+                    return -1;
+                }
+            } else if (BufAppendCStr(&c->out, " = {0}") != 0) {
+                return -1;
+            }
+        }
+        return BufAppendCStr(&c->out, ";\n");
+    }
+
+    if (parts.typeNode >= 0) {
+        if (ParseTypeRef(c, parts.typeNode, &sharedType) != 0) {
+            return -1;
+        }
+        if (EnsureAnonTypeVisible(c, &sharedType, depth) != 0) {
             return -1;
         }
     } else {
-        if (InferVarLikeDeclType(c, initNode, &type) != 0) {
-            return -1;
-        }
-    }
-    if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
-        return -1;
+        TypeRefSetInvalid(&sharedType);
     }
 
-    EmitIndent(c, depth);
-    if (declarationOnly) {
-        if (BufAppendCStr(&c->out, "extern ") != 0) {
+    for (i = 0; i < parts.nameCount; i++) {
+        int32_t          nameNode = ListItemAt(&c->ast, parts.nameListNode, i);
+        const SLAstNode* nameAst = NodeAt(c, nameNode);
+        const SLNameMap* map;
+        int32_t          initNode = -1;
+        SLTypeRef        type;
+        if (nameAst == NULL) {
             return -1;
         }
-    } else if (isPrivate && BufAppendCStr(&c->out, "static ") != 0) {
-        return -1;
-    }
-
-    if ((typeNode >= 0 && EmitTypeWithName(c, typeNode, map->cName) != 0)
-        || (typeNode < 0 && EmitTypeRefWithName(c, &type, map->cName) != 0))
-    {
-        return -1;
-    }
-    if (!declarationOnly) {
-        if (initNode >= 0) {
-            if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0) {
+        map = FindNameBySlice(c, nameAst->dataStart, nameAst->dataEnd);
+        if (map == NULL) {
+            return -1;
+        }
+        if (parts.initNode >= 0) {
+            if (NodeAt(c, parts.initNode) == NULL
+                || NodeAt(c, parts.initNode)->kind != SLAst_EXPR_LIST)
+            {
                 return -1;
             }
-        } else if (BufAppendCStr(&c->out, " = {0}") != 0) {
+            initNode = ListItemAt(&c->ast, parts.initNode, i);
+        }
+        if (parts.typeNode >= 0) {
+            type = sharedType;
+        } else {
+            if (initNode < 0 || InferVarLikeDeclType(c, initNode, &type) != 0) {
+                return -1;
+            }
+            if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+                return -1;
+            }
+        }
+
+        EmitIndent(c, depth);
+        if (declarationOnly) {
+            if (BufAppendCStr(&c->out, "extern ") != 0) {
+                return -1;
+            }
+        } else if (isPrivate && BufAppendCStr(&c->out, "static ") != 0) {
+            return -1;
+        }
+        if ((parts.typeNode >= 0 && EmitTypeWithName(c, parts.typeNode, map->cName) != 0)
+            || (parts.typeNode < 0 && EmitTypeRefWithName(c, &type, map->cName) != 0))
+        {
+            return -1;
+        }
+        if (!declarationOnly) {
+            if (initNode >= 0) {
+                if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0)
+                {
+                    return -1;
+                }
+            } else if (BufAppendCStr(&c->out, " = {0}") != 0) {
+                return -1;
+            }
+        }
+        if (BufAppendCStr(&c->out, ";\n") != 0) {
             return -1;
         }
     }
-    return BufAppendCStr(&c->out, ";\n");
+    return 0;
 }
 
 static int EmitTypeAliasDecl(
