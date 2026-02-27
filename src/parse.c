@@ -1387,6 +1387,24 @@ static int SLPParseBlock(SLParser* p, int32_t* out) {
     return 0;
 }
 
+/* Statement separators may omit trailing semicolon before closing `}`. */
+static int SLPConsumeStmtTerminator(SLParser* p, const SLToken** semiTok) {
+    if (SLPAt(p, SLTok_SEMICOLON)) {
+        if (semiTok != NULL) {
+            *semiTok = SLPPeek(p);
+        }
+        p->pos++;
+        return 1;
+    }
+    if (SLPAt(p, SLTok_RBRACE)) {
+        if (semiTok != NULL) {
+            *semiTok = NULL;
+        }
+        return 0;
+    }
+    return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+}
+
 static int SLPParseVarLikeStmt(
     SLParser* p, SLAstKind kind, int requireSemi, int allowHole, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
@@ -1402,6 +1420,7 @@ static int SLPParseVarLikeStmt(
     }
 
     if (SLPIsHoleName(p, name)) {
+        int hasSemi;
         if (!SLPMatch(p, SLTok_ASSIGN)) {
             return SLPFailReservedName(p, name);
         }
@@ -1412,10 +1431,11 @@ static int SLPParseVarLikeStmt(
             *out = init;
             return 0;
         }
-        if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
+        hasSemi = SLPConsumeStmtTerminator(p, &kw);
+        if (hasSemi < 0) {
             return -1;
         }
-        n = SLPNewNode(p, SLAst_EXPR_STMT, stmtStart, kw->end);
+        n = SLPNewNode(p, SLAst_EXPR_STMT, stmtStart, hasSemi ? kw->end : p->nodes[init].end);
         if (n < 0) {
             return -1;
         }
@@ -1459,10 +1479,13 @@ static int SLPParseVarLikeStmt(
     }
 
     if (requireSemi) {
-        if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
+        int hasSemi = SLPConsumeStmtTerminator(p, &kw);
+        if (hasSemi < 0) {
             return -1;
         }
-        p->nodes[n].end = kw->end;
+        if (hasSemi) {
+            p->nodes[n].end = kw->end;
+        }
     }
 
     *out = n;
@@ -1720,10 +1743,15 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
                 }
                 p->nodes[n].end = p->nodes[expr].end;
             }
-            if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
-                return -1;
+            {
+                int hasSemi = SLPConsumeStmtTerminator(p, &kw);
+                if (hasSemi < 0) {
+                    return -1;
+                }
+                if (hasSemi) {
+                    p->nodes[n].end = kw->end;
+                }
             }
-            p->nodes[n].end = kw->end;
             *out = n;
             return 0;
         case SLTok_BREAK:
@@ -1733,10 +1761,15 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
             if (n < 0) {
                 return -1;
             }
-            if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
-                return -1;
+            {
+                int hasSemi = SLPConsumeStmtTerminator(p, &kw);
+                if (hasSemi < 0) {
+                    return -1;
+                }
+                if (hasSemi) {
+                    p->nodes[n].end = kw->end;
+                }
             }
-            p->nodes[n].end = kw->end;
             *out = n;
             return 0;
         case SLTok_CONTINUE:
@@ -1746,10 +1779,15 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
             if (n < 0) {
                 return -1;
             }
-            if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
-                return -1;
+            {
+                int hasSemi = SLPConsumeStmtTerminator(p, &kw);
+                if (hasSemi < 0) {
+                    return -1;
+                }
+                if (hasSemi) {
+                    p->nodes[n].end = kw->end;
+                }
             }
-            p->nodes[n].end = kw->end;
             *out = n;
             return 0;
         case SLTok_DEFER:
@@ -1796,21 +1834,29 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
                     return -1;
                 }
             }
-            if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
-                return -1;
+            {
+                int hasSemi = SLPConsumeStmtTerminator(p, &kw);
+                if (hasSemi < 0) {
+                    return -1;
+                }
+                if (hasSemi) {
+                    p->nodes[n].end = kw->end;
+                }
             }
-            p->nodes[n].end = kw->end;
             *out = n;
             return 0;
         case SLTok_LBRACE: return SLPParseBlock(p, out);
-        default:
+        default:           {
+            int hasSemi;
             if (SLPParseExpr(p, 1, &expr) != 0) {
                 return -1;
             }
-            if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &kw) != 0) {
+            hasSemi = SLPConsumeStmtTerminator(p, &kw);
+            if (hasSemi < 0) {
                 return -1;
             }
-            n = SLPNewNode(p, SLAst_EXPR_STMT, p->nodes[expr].start, kw->end);
+            n = SLPNewNode(
+                p, SLAst_EXPR_STMT, p->nodes[expr].start, hasSemi ? kw->end : p->nodes[expr].end);
             if (n < 0) {
                 return -1;
             }
@@ -1819,6 +1865,7 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
             }
             *out = n;
             return 0;
+        }
     }
 }
 
