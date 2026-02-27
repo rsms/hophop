@@ -434,7 +434,6 @@ def main() -> int:
     group.add_argument("--core-dir", help="Path to lib/core directory")
     ap.add_argument("--platform", required=True, help="Path to lib/platform/platform.sl")
     ap.add_argument("--header", required=True, help="Path to lib/core/core.h")
-    ap.add_argument("--stamp", help="Optional stamp file to touch/write")
     args = ap.parse_args()
 
     core_dir = Path(args.core_dir) if args.core_dir else Path(args.types).parent
@@ -445,11 +444,6 @@ def main() -> int:
     header_text = header_path.read_text(encoding="utf-8")
     patched_header = patch_header_with_block(header_text, generated_block)
     write_if_changed(header_path, patched_header)
-
-    if args.stamp:
-        stamp = Path(args.stamp)
-        stamp.parent.mkdir(parents=True, exist_ok=True)
-        stamp.write_text("ok\n", encoding="utf-8")
 
     return 0
 

@@ -168,7 +168,7 @@ rule copy
     description = copy \$out
 
 rule coreabigen
-    command = python3 tools/gen_core_abi.py --core-dir lib/core --platform lib/platform/platform.sl --header lib/core/core.h --stamp \$out
+    command = mkdir -p \`dirname \$out\` && python3 tools/gen_core_abi.py --core-dir lib/core --platform lib/platform/platform.sl --header lib/core/core.h && clang-format --Werror --style=file:clang-format.yaml -i lib/core/core.h && touch \$out
     description = generate \$out
 
 rule diaggen
@@ -196,7 +196,7 @@ git_index=$(git rev-parse --git-dir || true)
 cat << _END >> $NF
 build ${diag_outputs[*]}: diaggen $diag_json $diag_tool
 build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | tools/amalgamate.sh tools/amalgamate.py ${git_index} ${diag_outputs[*]}
-build \$builddir/lib/core/core_abi.stamp: coreabigen ${core_sl_sources[@]} lib/platform/platform.sl lib/core/core.h tools/gen_core_abi.py
+build \$builddir/lib/core/core_abi.stamp: coreabigen ${core_sl_sources[@]} lib/platform/platform.sl tools/gen_core_abi.py
 build \$builddir/lib/core/core.h: copy lib/core/core.h | \$builddir/lib/core/core_abi.stamp
 build \$builddir/lib/platform/cli-libc/platform.c: copy lib/platform/cli-libc/platform.c
 build \$builddir/slc: link ${objfiles[*]}
