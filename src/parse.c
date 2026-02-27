@@ -447,6 +447,7 @@ static int SLPParseAnonymousAggregateFieldDeclList(SLParser* p, int32_t aggTypeN
         const SLToken* names[256];
         uint32_t       nameCount = 0;
         int32_t        typeNode = -1;
+        int32_t        defaultExpr = -1;
         uint32_t       i;
 
         if (SLPMatch(p, SLTok_SEMICOLON) || SLPMatch(p, SLTok_COMMA)) {
@@ -473,6 +474,16 @@ static int SLPParseAnonymousAggregateFieldDeclList(SLParser* p, int32_t aggTypeN
         if (SLPParseType(p, &typeNode) != 0) {
             return -1;
         }
+        if (SLPMatch(p, SLTok_ASSIGN)) {
+            if (nameCount > 1) {
+                const SLToken* eq = SLPPrev(p);
+                SLPSetDiag(p->diag, SLDiag_UNEXPECTED_TOKEN, eq->start, eq->end);
+                return -1;
+            }
+            if (SLPParseExpr(p, 1, &defaultExpr) != 0) {
+                return -1;
+            }
+        }
         for (i = 0; i < nameCount; i++) {
             int32_t fieldNode;
             int32_t fieldTypeNode;
@@ -491,6 +502,12 @@ static int SLPParseAnonymousAggregateFieldDeclList(SLParser* p, int32_t aggTypeN
             p->nodes[fieldNode].dataEnd = names[i]->end;
             if (SLPAddChild(p, fieldNode, fieldTypeNode) != 0) {
                 return -1;
+            }
+            if (i == 0 && defaultExpr >= 0) {
+                p->nodes[fieldNode].end = p->nodes[defaultExpr].end;
+                if (SLPAddChild(p, fieldNode, defaultExpr) != 0) {
+                    return -1;
+                }
             }
             if (SLPAddChild(p, aggTypeNode, fieldNode) != 0) {
                 return -1;

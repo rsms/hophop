@@ -331,6 +331,7 @@
 {"id":"checkpkg:tests/slp17_platform_target_field_requires_import_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/slp17_platform_target_field_requires_import_bad.sl","expect_stderr":"tests/slp17_platform_target_field_requires_import_bad.stderr"}
 {"id":"ast:tests/ast_anon_aggregate_types.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_anon_aggregate_types.sl","expect":"tests/ast_anon_aggregate_types.ast"}
 {"id":"check:tests/ast_anon_aggregate_types.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/ast_anon_aggregate_types.sl"}
+{"id":"check:tests/anon_struct_field_defaults_nested_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/anon_struct_field_defaults_nested_ok.sl"}
 {"id":"check:tests/anon_struct_infer_no_context_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/anon_struct_infer_no_context_ok.sl"}
 {"id":"integration.runtime.anon_struct_infer_no_context_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/anon_struct_infer_no_context_ok.sl"}
 {"id":"integration.codegen.context_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/context_ok.sl","contains":["tests__alloc(tests__Ctx *context)","tests__log(tests__Ctx *context, __sl_str *msg)","context->mem","context->log","(&((tests__Ctx){"]}
