@@ -202,6 +202,7 @@ typedef struct {
     int       hasCurrentContext;
     int       currentFunctionIsMain;
     int32_t   activeCallWithNode;
+    SLConstEvalSession* _Nullable constEval;
 } SLCBackendC;
 
 static size_t StrLen(const char* s) {
@@ -554,6 +555,8 @@ static int EnsureAnonTypeByFields(
     const char**     outCName);
 static int EnsureAnonTypeVisible(SLCBackendC* c, const SLTypeRef* type, uint32_t depth);
 static int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name);
+static int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type);
+static int TypeRefIsPointerLike(const SLTypeRef* t);
 static int EmitDeclNode(
     SLCBackendC* c,
     int32_t      nodeId,
@@ -571,6 +574,8 @@ static int SliceStructPtrDepth(const SLTypeRef* t) {
     }
     return stars;
 }
+
+static const SLAstNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId);
 
 static int ParseArrayLenLiteral(const char* src, uint32_t start, uint32_t end, uint32_t* outLen) {
     uint64_t v = 0;
@@ -590,6 +595,99 @@ static int ParseArrayLenLiteral(const char* src, uint32_t start, uint32_t end, u
     }
     *outLen = (uint32_t)v;
     return 0;
+}
+
+static void SetDiagNode(SLCBackendC* c, int32_t nodeId, SLDiagCode code) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    if (n != NULL) {
+        SetDiag(c->diag, code, n->start, n->end);
+    } else {
+        SetDiag(c->diag, code, 0, 0);
+    }
+}
+
+static int BufAppendI64(SLBuf* b, int64_t value) {
+    char     tmp[32];
+    uint32_t len = 0;
+    uint64_t mag;
+    if (value < 0) {
+        if (BufAppendChar(b, '-') != 0) {
+            return -1;
+        }
+        mag = (uint64_t)(-(value + 1)) + 1u;
+    } else {
+        mag = (uint64_t)value;
+    }
+    if (mag == 0) {
+        return BufAppendChar(b, '0');
+    }
+    while (mag > 0) {
+        tmp[len++] = (char)('0' + (mag % 10u));
+        mag /= 10u;
+    }
+    while (len > 0) {
+        if (BufAppendChar(b, tmp[--len]) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int EvalConstIntExpr(SLCBackendC* c, int32_t nodeId, int64_t* outValue, int* outIsConst) {
+    if (outIsConst == NULL || outValue == NULL) {
+        return -1;
+    }
+    *outIsConst = 0;
+    if (c->constEval == NULL) {
+        return 0;
+    }
+    return SLConstEvalSessionEvalIntExpr(c->constEval, nodeId, outValue, outIsConst);
+}
+
+static int EmitConstEvaluatedScalar(
+    SLCBackendC* c, const SLTypeRef* dstType, const SLCTFEValue* value, int* outEmitted) {
+    if (outEmitted == NULL || c == NULL || dstType == NULL || value == NULL) {
+        return -1;
+    }
+    *outEmitted = 0;
+    if (!dstType->valid || dstType->containerKind != SLTypeContainer_SCALAR
+        || dstType->containerPtrDepth != 0 || dstType->isOptional)
+    {
+        return 0;
+    }
+    switch (value->kind) {
+        case SLCTFEValue_INT:
+            if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, dstType) != 0
+                || BufAppendCStr(&c->out, ")(") != 0 || BufAppendI64(&c->out, value->i64) != 0
+                || BufAppendCStr(&c->out, "))") != 0)
+            {
+                return -1;
+            }
+            *outEmitted = 1;
+            return 0;
+        case SLCTFEValue_BOOL:
+            if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, dstType) != 0
+                || BufAppendCStr(&c->out, ")(") != 0
+                || BufAppendChar(&c->out, value->b ? '1' : '0') != 0
+                || BufAppendCStr(&c->out, "))") != 0)
+            {
+                return -1;
+            }
+            *outEmitted = 1;
+            return 0;
+        case SLCTFEValue_NULL:
+            if (!TypeRefIsPointerLike(dstType)) {
+                return 0;
+            }
+            if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, dstType) != 0
+                || BufAppendCStr(&c->out, ")(NULL))") != 0)
+            {
+                return -1;
+            }
+            *outEmitted = 1;
+            return 0;
+        default: return 0;
+    }
 }
 
 static char* _Nullable DupSlice(SLCBackendC* c, const char* src, uint32_t start, uint32_t end) {
@@ -1358,7 +1456,10 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
         }
         case SLAst_TYPE_ARRAY: {
             int32_t   child = AstFirstChild(&c->ast, nodeId);
+            int32_t   lenNode = AstNextSibling(&c->ast, child);
             SLTypeRef elemType;
+            int64_t   lenValue = 0;
+            int       lenIsConst = 0;
             uint32_t  len = 0;
             if (ParseTypeRef(c, child, &elemType) != 0) {
                 return -1;
@@ -1367,9 +1468,21 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 TypeRefSetInvalid(outType);
                 return -1;
             }
-            if (ParseArrayLenLiteral(c->unit->source, n->dataStart, n->dataEnd, &len) != 0) {
-                TypeRefSetInvalid(outType);
-                return -1;
+            if (lenNode < 0) {
+                if (ParseArrayLenLiteral(c->unit->source, n->dataStart, n->dataEnd, &len) != 0) {
+                    SetDiagNode(c, nodeId, SLDiag_CODEGEN_INTERNAL);
+                    TypeRefSetInvalid(outType);
+                    return -1;
+                }
+            } else {
+                if (EvalConstIntExpr(c, lenNode, &lenValue, &lenIsConst) != 0 || !lenIsConst
+                    || lenValue < 0 || lenValue > (int64_t)UINT32_MAX)
+                {
+                    SetDiagNode(c, lenNode, SLDiag_CODEGEN_INTERNAL);
+                    TypeRefSetInvalid(outType);
+                    return -1;
+                }
+                len = (uint32_t)lenValue;
             }
             elemType.containerKind = SLTypeContainer_ARRAY;
             elemType.containerPtrDepth = 0;
@@ -4610,12 +4723,13 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
 }
 
 static int InferNewExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
-    int32_t          typeNode = -1;
-    int32_t          countNode = -1;
-    int32_t          initNode = -1;
-    int32_t          allocNode = -1;
-    const SLAstNode* count;
-    uint32_t         arrayLen = 0;
+    int32_t  typeNode = -1;
+    int32_t  countNode = -1;
+    int32_t  initNode = -1;
+    int32_t  allocNode = -1;
+    int64_t  countValue = 0;
+    int      countIsConst = 0;
+    uint32_t arrayLen;
 
     TypeRefSetInvalid(outType);
     if (DecodeNewExprNodes(c, nodeId, &typeNode, &countNode, &initNode, &allocNode) != 0) {
@@ -4629,12 +4743,10 @@ static int InferNewExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) 
         return 0;
     }
     if (countNode >= 0) {
-        count = NodeAt(c, countNode);
-        if (count != NULL && count->kind == SLAst_INT
-            && ParseArrayLenLiteral(c->unit->source, count->dataStart, count->dataEnd, &arrayLen)
-                   == 0
-            && arrayLen > 0)
+        if (EvalConstIntExpr(c, countNode, &countValue, &countIsConst) == 0 && countIsConst
+            && countValue > 0 && countValue <= (int64_t)UINT32_MAX)
         {
+            arrayLen = (uint32_t)countValue;
             outType->containerKind = SLTypeContainer_ARRAY;
             outType->containerPtrDepth = 1;
             outType->hasArrayLen = 1;
@@ -9000,7 +9112,22 @@ static int EmitConstDecl(
             return -1;
         }
         if (initNode >= 0) {
-            if (EmitExprCoerced(c, initNode, &type) != 0) {
+            int emittedConstValue = 0;
+            if (c->constEval != NULL) {
+                SLCTFEValue constValue;
+                int         isConst = 0;
+                if (SLConstEvalSessionEvalTopLevelConst(c->constEval, nodeId, &constValue, &isConst)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (isConst
+                    && EmitConstEvaluatedScalar(c, &type, &constValue, &emittedConstValue) != 0)
+                {
+                    return -1;
+                }
+            }
+            if (!emittedConstValue && EmitExprCoerced(c, initNode, &type) != 0) {
                 return -1;
             }
         } else if (BufAppendChar(&c->out, '0') != 0) {
@@ -9408,6 +9535,13 @@ static int EmitCBackend(
     *outHeader = NULL;
 
     if (InitAst(&c) != 0) {
+        FreeContext(&c);
+        return -1;
+    }
+    if (SLConstEvalSessionInit(
+            &c.arena, &c.ast, (SLStrView){ c.unit->source, c.unit->sourceLen }, &c.constEval, diag)
+        != 0)
+    {
         FreeContext(&c);
         return -1;
     }

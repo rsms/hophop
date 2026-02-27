@@ -1,6 +1,7 @@
 // constants, macros, types and functions only needed by the implementation, not part of the API
 #pragma once
 #include "libsl.h"
+#include "ctfe.h"
 
 #ifndef __has_builtin
     #define __has_builtin(...) 0
@@ -61,3 +62,27 @@ int SLDecodeStringLiteralMalloc(
     uint32_t* _Nonnull outLen,
     SLStringLitErr* _Nullable outErr);
 int SLIsStringLiteralConcatChain(const SLAst* _Nonnull ast, int32_t nodeId);
+
+typedef struct SLConstEvalSession SLConstEvalSession;
+
+int SLConstEvalSessionInit(
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    SLConstEvalSession* _Nullable* _Nonnull outSession,
+    SLDiag* _Nullable diag);
+int SLConstEvalSessionEvalExpr(
+    SLConstEvalSession* _Nonnull session,
+    int32_t exprNode,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
+int SLConstEvalSessionEvalIntExpr(
+    SLConstEvalSession* _Nonnull session,
+    int32_t exprNode,
+    int64_t* _Nonnull outValue,
+    int* _Nonnull outIsConst);
+int SLConstEvalSessionEvalTopLevelConst(
+    SLConstEvalSession* _Nonnull session,
+    int32_t constNode,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
