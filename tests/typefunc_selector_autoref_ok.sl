@@ -10,15 +10,13 @@ fn read_val(s S) int {
 	return s.x
 }
 
-fn choose_val(s S) int {
+fn choose(s S) int {
 	return 1
 }
 
-fn choose_ptr(s *S) int {
+fn choose(s *S) int {
 	return 2
 }
-
-fn choose { choose_val, choose_ptr }
 
 fn main() {
 	var s S

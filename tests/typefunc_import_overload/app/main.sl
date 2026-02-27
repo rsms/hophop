@@ -4,11 +4,13 @@ struct A {
 	x int
 }
 
-fn pick_a(v A) int {
+fn pick(v A) int {
 	return v.x
 }
 
-fn pick { pick_a, foo.pick_b }
+fn pick(v foo.B) int {
+	return foo.pick_b(v)
+}
 
 fn main() {
 	var a A

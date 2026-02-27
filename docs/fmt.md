@@ -72,7 +72,6 @@ For one-line braced forms, interior spacing is canonicalized to `{ ... }`.
 This includes:
 
 - import symbol lists
-- function groups (`fn name { ... }`)
 - context overlay expressions
 - compound literals
 - inline switch clause bodies

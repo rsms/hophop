@@ -34,9 +34,6 @@
 {"id": "SL2014", "name": "EMBEDDED_CYCLE", "category": "semantic", "message": "embedded struct cycle detected"}
 {"id": "SL2015", "name": "NO_MATCHING_OVERLOAD", "category": "semantic", "message": "no matching overload"}
 {"id": "SL2016", "name": "AMBIGUOUS_CALL", "category": "semantic", "message": "ambiguous call"}
-{"id": "SL2017", "name": "INVALID_FN_GROUP_MEMBER", "category": "semantic", "message": "invalid function-group member"}
-{"id": "SL2018", "name": "DUPLICATE_FN_GROUP_MEMBER", "category": "semantic", "message": "duplicate function-group member"}
-{"id": "SL2019", "name": "INVALID_FN_GROUP_COLLISION", "category": "semantic", "message": "function-group name collides with existing symbol"}
 {"id": "SL2020", "name": "IMPORT_INVALID_PATH", "category": "semantic", "message": "invalid import path ({s})"}
 {"id": "SL2021", "name": "IMPORT_ALIAS_INFERENCE_FAILED", "category": "semantic", "message": "cannot infer package identifier; use 'import \"{s}\" as <name>'"}
 {"id": "SL2022", "name": "IMPORT_WILDCARD_NOT_SUPPORTED", "category": "semantic", "message": "wildcard import is not supported"}

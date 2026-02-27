@@ -2086,60 +2086,6 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
         return -1;
     }
 
-    if (SLPMatch(p, SLTok_LBRACE)) {
-        const SLToken* rb;
-        const SLToken* semi;
-        int32_t        group = SLPNewNode(p, SLAst_FN_GROUP, kw->start, name->end);
-        if (group < 0) {
-            return -1;
-        }
-        p->nodes[group].dataStart = name->start;
-        p->nodes[group].dataEnd = name->end;
-
-        if (SLPAt(p, SLTok_RBRACE)) {
-            return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
-        }
-
-        for (;;) {
-            const SLToken* memberFirst;
-            const SLToken* memberLast;
-            int32_t        memberNode;
-            if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &memberFirst) != 0) {
-                return -1;
-            }
-            memberLast = memberFirst;
-            while (SLPMatch(p, SLTok_DOT)) {
-                const SLToken* segment;
-                if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &segment) != 0) {
-                    return -1;
-                }
-                memberLast = segment;
-            }
-            memberNode = SLPNewNode(p, SLAst_IDENT, memberFirst->start, memberLast->end);
-            if (memberNode < 0) {
-                return -1;
-            }
-            p->nodes[memberNode].dataStart = memberFirst->start;
-            p->nodes[memberNode].dataEnd = memberLast->end;
-            if (SLPAddChild(p, group, memberNode) != 0) {
-                return -1;
-            }
-            if (!SLPMatch(p, SLTok_COMMA)) {
-                break;
-            }
-        }
-
-        if (SLPExpect(p, SLTok_RBRACE, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
-            return -1;
-        }
-        if (SLPExpect(p, SLTok_SEMICOLON, SLDiag_UNEXPECTED_TOKEN, &semi) != 0) {
-            return -1;
-        }
-        p->nodes[group].end = semi->end;
-        *out = group;
-        return 0;
-    }
-
     if (SLPExpect(p, SLTok_LPAREN, SLDiag_UNEXPECTED_TOKEN, &t) != 0) {
         return -1;
     }
@@ -2446,7 +2392,6 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_IMPORT_SYMBOL:     return "IMPORT_SYMBOL";
         case SLAst_PUB:               return "PUB";
         case SLAst_FN:                return "FN";
-        case SLAst_FN_GROUP:          return "FN_GROUP";
         case SLAst_PARAM:             return "PARAM";
         case SLAst_CONTEXT_CLAUSE:    return "CONTEXT_CLAUSE";
         case SLAst_TYPE_NAME:         return "TYPE_NAME";

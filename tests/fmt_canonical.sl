@@ -70,7 +70,7 @@ struct Example {
 	}
 }
 
-fn metrics { value.size, value.capacity }
+fn metrics(value int) int
 
 fn add(a int, b int) int {
 	return a + b

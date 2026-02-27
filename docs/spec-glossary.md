@@ -23,7 +23,7 @@ This glossary defines terms used normatively in [`docs/language.md`](./language.
 - `Context overlay`: Call-site field bindings provided by `with { ... }`.
 - `Context requirement`: Field set declared by callee `context Type`; each required field must be present and assignable in effective context.
 - `Loader root`: Base directory used to resolve normalized import paths in package loading mode.
-- `Function group`: Explicit overload set declared with `fn Name{member1, member2, ...}` (terminated by explicit or inserted semicolon token).
+- `Function overload set`: All visible functions sharing the same call name.
 - `Selector-call sugar`: Call-only rewrite candidate from `recv.f(args...)` to `f(recv, args...)` when field lookup does not resolve `f`.
 - `Core conformance`: Implements all `Stable` rules in `docs/language.md`.
 - `Reference-slc conformance`: Core conformance plus `Provisional` and section 14 reference-profile behaviors.

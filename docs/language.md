@@ -97,7 +97,7 @@ ImportSymbolList = ImportSymbol { ImportSep ImportSymbol } [ ImportSep ] .
 ImportSymbol    = Ident [ "as" Ident ] .
 ImportSep       = "," | ";" .
 
-TopDecl         = [ "pub" ] ( StructDecl | UnionDecl | EnumDecl | TypeAliasDecl | FnDeclOrDef | FnGroupDecl | TopConstDecl ) .
+TopDecl         = [ "pub" ] ( StructDecl | UnionDecl | EnumDecl | TypeAliasDecl | FnDeclOrDef | TopConstDecl ) .
 
 StructDecl      = "struct" Ident "{" [ StructFieldDeclList ] "}" .
 UnionDecl       = "union" Ident "{" [ FieldDeclList ] "}" .
@@ -115,10 +115,7 @@ FieldDefault    = "=" Expr .
 EnumItem        = Ident [ "=" Expr ] .
 
 FnDeclOrDef     = "fn" FnName "(" [ ParamList ] ")" [ Type ] [ ContextClause ] [ Block ] .
-FnGroupDecl     = "fn" FnName "{" GroupMemberList "}" .
 FnName          = Ident | "sizeof" .
-GroupMemberList = GroupMember { "," GroupMember } .
-GroupMember     = Ident | Ident "." Ident { "." Ident } .
 ParamList       = ParamGroup { "," ParamGroup } .
 ParamGroup      = ( Ident | "_" ) { "," ( Ident | "_" ) } Type .
 ContextClause   = "context" Type .
@@ -229,7 +226,7 @@ fn f() {
 
 ## 4. Declarations, Scope, and Binding
 
-- [DECL-TOP-001][Stable] Top-level declaration kinds: `fn` declarations/definitions (including function-group declarations `fn Name{...}`), `struct`, `union`, `enum`, `type`, `const`.
+- [DECL-TOP-001][Stable] Top-level declaration kinds: `fn` declarations/definitions, `struct`, `union`, `enum`, `type`, `const`.
 - [DECL-TOP-002][Stable] Top-level `var` is invalid.
 - [DECL-TOP-003][Stable] `const` MUST have an initializer.
 - [DECL-TOP-004][Stable] `pub` applies to a single following top-level declaration.
@@ -238,16 +235,11 @@ fn f() {
 - [DECL-SCOPE-001][Stable] Scope is lexical by block; nearest declaration wins.
 - [DECL-SCOPE-002][Stable] Function/type declarations are collected before body checking (declaration-order independent).
 
-### 4.1 Function declarations and groups
+### 4.1 Function declarations and overloading
 - [DECL-FN-001][Stable] Multiple declarations for the same function signature are allowed; at most one definition body is allowed.
 - [DECL-FN-002][Stable] For a fixed function signature, `context` clauses MUST match exactly.
 - [DECL-FN-003][Stable] `context` is not an overload dimension.
 - [DECL-FN-004][Stable] `sizeof` is accepted as a declaration name for builtin-signature compatibility, but `sizeof(...)` expression syntax is always the builtin form and is not shadowable by user functions.
-- [DECL-FNGROUP-001][Stable] `fn Group{...}` defines explicit overload set membership.
-- [DECL-FNGROUP-001A][Stable] Function-group declarations follow normal top-level declaration separators: separating semicolon token may be explicit `;` or inserted automatically after closing `}` at newline/EOF by [LEX-SEMI-001].
-- [DECL-FNGROUP-002][Stable] Group members MUST refer to existing functions.
-- [DECL-FNGROUP-003][Stable] Group members MUST be unique.
-- [DECL-FNGROUP-004][Stable] Group name MUST NOT collide with an existing symbol.
 
 ### 4.2 Struct composition and enum member scope
 - [DECL-EMBED-001][Stable] `struct` may embed one base field (type-name-only) as first field.

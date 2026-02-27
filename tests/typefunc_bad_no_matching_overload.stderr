@@ -1,1 +1,1 @@
-tests/typefunc_bad_no_matching_overload.sl:13:2: SL2015: no matching overload
+tests/typefunc_bad_no_matching_overload.sl:11:2: SL2015: no matching overload

@@ -100,13 +100,6 @@ typedef struct {
 typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
-    uint32_t memberStart;
-    uint16_t memberCount;
-} SLTCFnGroup;
-
-typedef struct {
-    uint32_t nameStart;
-    uint32_t nameEnd;
     int32_t  typeId;
 } SLTCLocal;
 
@@ -135,14 +128,6 @@ typedef struct {
     int32_t* funcParamTypes;
     uint32_t funcParamLen;
     uint32_t funcParamCap;
-
-    SLTCFnGroup* fnGroups;
-    uint32_t     fnGroupLen;
-    uint32_t     fnGroupCap;
-
-    int32_t* fnGroupMembers;
-    uint32_t fnGroupMemberLen;
-    uint32_t fnGroupMemberCap;
 
     int32_t* scratchParamTypes;
     uint32_t scratchParamCap;
@@ -841,16 +826,6 @@ static int SLTCFunctionNameEq(
     const SLTypeCheckCtx* c, uint32_t funcIndex, uint32_t start, uint32_t end) {
     return SLNameEqSlice(
         c->src, c->funcs[funcIndex].nameStart, c->funcs[funcIndex].nameEnd, start, end);
-}
-
-static int32_t SLTCFindFnGroupIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
-    uint32_t i;
-    for (i = 0; i < c->fnGroupLen; i++) {
-        if (SLNameEqSlice(c->src, c->fnGroups[i].nameStart, c->fnGroups[i].nameEnd, start, end)) {
-            return (int32_t)i;
-        }
-    }
-    return -1;
 }
 
 static int SLTCResolveAliasTypeId(SLTypeCheckCtx* c, int32_t typeId);
@@ -3863,7 +3838,6 @@ static void SLTCGatherCallCandidates(
     int32_t*        outCandidates,
     uint32_t*       outCandidateCount,
     int*            outNameFound) {
-    int32_t  groupIdx = SLTCFindFnGroupIndex(c, nameStart, nameEnd);
     uint32_t count = 0;
     uint32_t i;
     *outNameFound = 0;
@@ -3871,25 +3845,6 @@ static void SLTCGatherCallCandidates(
         if (SLTCFunctionNameEq(c, i, nameStart, nameEnd)) {
             outCandidates[count++] = (int32_t)i;
             *outNameFound = 1;
-        }
-    }
-    if (groupIdx >= 0) {
-        uint32_t           j;
-        const SLTCFnGroup* g = &c->fnGroups[groupIdx];
-        *outNameFound = 1;
-        for (j = 0; j < g->memberCount && count < SLTC_MAX_CALL_CANDIDATES; j++) {
-            int32_t  fnIdx = c->fnGroupMembers[g->memberStart + j];
-            uint32_t k;
-            int      dup = 0;
-            for (k = 0; k < count; k++) {
-                if (outCandidates[k] == fnIdx) {
-                    dup = 1;
-                    break;
-                }
-            }
-            if (!dup) {
-                outCandidates[count++] = fnIdx;
-            }
         }
     }
     *outCandidateCount = count;
@@ -3919,30 +3874,6 @@ static void SLTCGatherCallCandidatesByPkgMethod(
         {
             outCandidates[count++] = (int32_t)i;
             *outNameFound = 1;
-        }
-    }
-    for (i = 0; i < c->fnGroupLen; i++) {
-        const SLTCFnGroup* g = &c->fnGroups[i];
-        uint32_t           j;
-        if (!SLTCNameEqPkgPrefixedMethod(
-                c, g->nameStart, g->nameEnd, pkgStart, pkgEnd, methodStart, methodEnd))
-        {
-            continue;
-        }
-        *outNameFound = 1;
-        for (j = 0; j < g->memberCount && count < SLTC_MAX_CALL_CANDIDATES; j++) {
-            int32_t  fnIdx = c->fnGroupMembers[g->memberStart + j];
-            uint32_t k;
-            int      dup = 0;
-            for (k = 0; k < count; k++) {
-                if (outCandidates[k] == fnIdx) {
-                    dup = 1;
-                    break;
-                }
-            }
-            if (!dup) {
-                outCandidates[count++] = fnIdx;
-            }
         }
     }
     *outCandidateCount = count;
@@ -4851,77 +4782,6 @@ static int SLTCTypeTopLevelVarLikeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_
     c->topVarLikeTypes[nodeId] = resolvedType;
     c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_READY;
     *outType = resolvedType;
-    return 0;
-}
-
-static int SLTCCollectFnGroupFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
-    const SLAstNode* n = &c->ast->nodes[nodeId];
-    uint32_t         memberStart;
-    uint16_t         memberCount = 0;
-    int32_t          child;
-    if (n->kind != SLAst_FN_GROUP) {
-        return 0;
-    }
-
-    if (SLTCFindFunctionIndex(c, n->dataStart, n->dataEnd) >= 0
-        || SLTCFindNamedTypeIndex(c, n->dataStart, n->dataEnd) >= 0
-        || SLTCFindTopLevelVarLikeNode(c, n->dataStart, n->dataEnd) >= 0
-        || SLTCFindFnGroupIndex(c, n->dataStart, n->dataEnd) >= 0)
-    {
-        return SLTCFailSpan(c, SLDiag_INVALID_FN_GROUP_COLLISION, n->dataStart, n->dataEnd);
-    }
-
-    if (c->fnGroupLen >= c->fnGroupCap) {
-        return SLTCFailNode(c, nodeId, SLDiag_ARENA_OOM);
-    }
-    memberStart = c->fnGroupMemberLen;
-    child = SLAstFirstChild(c->ast, nodeId);
-    while (child >= 0) {
-        const SLAstNode* member = &c->ast->nodes[child];
-        int32_t          fnIdx;
-        uint32_t         i;
-        if (member->kind != SLAst_IDENT) {
-            return SLTCFailNode(c, child, SLDiag_INVALID_FN_GROUP_MEMBER);
-        }
-        fnIdx = SLTCFindFunctionIndex(c, member->dataStart, member->dataEnd);
-        if (fnIdx < 0) {
-            return SLTCFailSpan(
-                c, SLDiag_INVALID_FN_GROUP_MEMBER, member->dataStart, member->dataEnd);
-        }
-        for (i = memberStart; i < c->fnGroupMemberLen; i++) {
-            if (c->fnGroupMembers[i] == fnIdx) {
-                return SLTCFailSpan(
-                    c, SLDiag_DUPLICATE_FN_GROUP_MEMBER, member->dataStart, member->dataEnd);
-            }
-        }
-        if (c->fnGroupMemberLen >= c->fnGroupMemberCap) {
-            return SLTCFailNode(c, child, SLDiag_ARENA_OOM);
-        }
-        c->fnGroupMembers[c->fnGroupMemberLen++] = fnIdx;
-        memberCount++;
-        child = SLAstNextSibling(c->ast, child);
-    }
-
-    if (memberCount == 0) {
-        return SLTCFailSpan(c, SLDiag_INVALID_FN_GROUP_MEMBER, n->dataStart, n->dataEnd);
-    }
-
-    c->fnGroups[c->fnGroupLen].nameStart = n->dataStart;
-    c->fnGroups[c->fnGroupLen].nameEnd = n->dataEnd;
-    c->fnGroups[c->fnGroupLen].memberStart = memberStart;
-    c->fnGroups[c->fnGroupLen].memberCount = memberCount;
-    c->fnGroupLen++;
-    return 0;
-}
-
-static int SLTCCollectFunctionGroups(SLTypeCheckCtx* c) {
-    int32_t child = SLAstFirstChild(c->ast, c->ast->root);
-    while (child >= 0) {
-        if (SLTCCollectFnGroupFromNode(c, child) != 0) {
-            return -1;
-        }
-        child = SLAstNextSibling(c->ast, child);
-    }
     return 0;
 }
 
@@ -7590,10 +7450,6 @@ static int SLTCBuildCheckedContext(
         arena, sizeof(SLTCFunction) * capBase, (uint32_t)_Alignof(SLTCFunction));
     c.funcParamTypes = (int32_t*)SLArenaAlloc(
         arena, sizeof(int32_t) * capBase * 8u, (uint32_t)_Alignof(int32_t));
-    c.fnGroups = (SLTCFnGroup*)SLArenaAlloc(
-        arena, sizeof(SLTCFnGroup) * capBase, (uint32_t)_Alignof(SLTCFnGroup));
-    c.fnGroupMembers = (int32_t*)SLArenaAlloc(
-        arena, sizeof(int32_t) * capBase, (uint32_t)_Alignof(int32_t));
     c.scratchParamTypes = (int32_t*)SLArenaAlloc(
         arena, sizeof(int32_t) * capBase, (uint32_t)_Alignof(int32_t));
     c.locals = (SLTCLocal*)SLArenaAlloc(
@@ -7608,9 +7464,9 @@ static int SLTCBuildCheckedContext(
         arena, sizeof(uint8_t) * ast->len, (uint32_t)_Alignof(uint8_t));
 
     if (c.types == NULL || c.fields == NULL || c.namedTypes == NULL || c.funcs == NULL
-        || c.funcParamTypes == NULL || c.fnGroups == NULL || c.fnGroupMembers == NULL
-        || c.scratchParamTypes == NULL || c.locals == NULL || c.constEvalValues == NULL
-        || c.constEvalState == NULL || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL)
+        || c.funcParamTypes == NULL || c.scratchParamTypes == NULL || c.locals == NULL
+        || c.constEvalValues == NULL || c.constEvalState == NULL || c.topVarLikeTypes == NULL
+        || c.topVarLikeTypeState == NULL)
     {
         SLTCSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
@@ -7626,10 +7482,6 @@ static int SLTCBuildCheckedContext(
     c.funcCap = capBase;
     c.funcParamLen = 0;
     c.funcParamCap = capBase * 8u;
-    c.fnGroupLen = 0;
-    c.fnGroupCap = capBase;
-    c.fnGroupMemberLen = 0;
-    c.fnGroupMemberCap = capBase;
     c.scratchParamCap = capBase;
     c.localLen = 0;
     c.localCap = capBase * 4u;
@@ -7694,9 +7546,6 @@ static int SLTCBuildCheckedContext(
         return -1;
     }
     if (SLTCCollectFunctionDecls(&c) != 0) {
-        return -1;
-    }
-    if (SLTCCollectFunctionGroups(&c) != 0) {
         return -1;
     }
     if (SLTCFinalizeFunctionTypes(&c) != 0) {

@@ -1,4 +1,4 @@
-// function groups (explicit overload sets) and selector-call dispatch
+// same-name overloads and selector-call dispatch
 struct Cat {
 	score int
 }
@@ -7,15 +7,13 @@ struct Dog {
 	score int
 }
 
-fn pick_cat(v Cat) int {
+fn pick(v Cat) int {
 	return v.score
 }
 
-fn pick_dog(v Dog) int {
+fn pick(v Dog) int {
 	return v.score
 }
-
-fn pick { pick_cat, pick_dog }
 
 fn main() {
 	var cat Cat

@@ -56,12 +56,6 @@ typedef struct {
 } SLTypeAliasInfo;
 
 typedef struct {
-    char*    name;
-    uint32_t memberStart;
-    uint16_t memberCount;
-} SLFnGroup;
-
-typedef struct {
     char*     ownerType;
     char*     fieldName;
     char*     lenFieldName;
@@ -139,14 +133,6 @@ typedef struct {
     SLTypeAliasInfo* typeAliases;
     uint32_t         typeAliasLen;
     uint32_t         typeAliasCap;
-
-    SLFnGroup* fnGroups;
-    uint32_t   fnGroupLen;
-    uint32_t   fnGroupCap;
-
-    char**   fnGroupMembers;
-    uint32_t fnGroupMemberLen;
-    uint32_t fnGroupMemberCap;
 
     SLFieldInfo* fieldInfos;
     uint32_t     fieldInfoLen;
@@ -970,8 +956,7 @@ static int IsTypeDeclKind(SLAstKind kind) {
 
 static int IsDeclKind(SLAstKind kind) {
     return kind == SLAst_FN || kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
-        || kind == SLAst_TYPE_ALIAS || kind == SLAst_VAR || kind == SLAst_CONST
-        || kind == SLAst_FN_GROUP;
+        || kind == SLAst_TYPE_ALIAS || kind == SLAst_VAR || kind == SLAst_CONST;
 }
 
 static int IsPubDeclNode(const SLAstNode* n) {
@@ -1712,49 +1697,6 @@ static int AddFnSig(
     return 0;
 }
 
-static int AddFnGroup(SLCBackendC* c, const char* name, char** memberNames, uint16_t memberCount) {
-    uint32_t i;
-    for (i = 0; i < c->fnGroupLen; i++) {
-        if (StrEq(c->fnGroups[i].name, name)) {
-            c->fnGroups[i].memberStart = c->fnGroupMemberLen;
-            c->fnGroups[i].memberCount = memberCount;
-            break;
-        }
-    }
-    if (i == c->fnGroupLen) {
-        if (EnsureCapArena(
-                &c->arena,
-                (void**)&c->fnGroups,
-                &c->fnGroupCap,
-                c->fnGroupLen + 1u,
-                sizeof(SLFnGroup),
-                (uint32_t)_Alignof(SLFnGroup))
-            != 0)
-        {
-            return -1;
-        }
-        c->fnGroups[c->fnGroupLen].name = (char*)name;
-        c->fnGroups[c->fnGroupLen].memberStart = c->fnGroupMemberLen;
-        c->fnGroups[c->fnGroupLen].memberCount = memberCount;
-        c->fnGroupLen++;
-    }
-    for (i = 0; i < memberCount; i++) {
-        if (EnsureCapArena(
-                &c->arena,
-                (void**)&c->fnGroupMembers,
-                &c->fnGroupMemberCap,
-                c->fnGroupMemberLen + 1u,
-                sizeof(char*),
-                (uint32_t)_Alignof(char*))
-            != 0)
-        {
-            return -1;
-        }
-        c->fnGroupMembers[c->fnGroupMemberLen++] = memberNames[i];
-    }
-    return 0;
-}
-
 static int AddFieldInfo(
     SLCBackendC* c,
     const char*  ownerType,
@@ -2090,25 +2032,6 @@ static const SLFnSig* _Nullable FindFnSigByNodeId(const SLCBackendC* c, int32_t 
     for (i = 0; i < c->fnSigLen; i++) {
         if (StrEq(c->fnSigs[i].cName, cName)) {
             return &c->fnSigs[i];
-        }
-    }
-    return NULL;
-}
-
-static const SLFnGroup* _Nullable FindFnGroupBySlice(
-    const SLCBackendC* c, uint32_t start, uint32_t end) {
-    uint32_t         i;
-    const SLNameMap* map = FindNameBySlice(c, start, end);
-    if (map != NULL) {
-        for (i = 0; i < c->fnGroupLen; i++) {
-            if (StrEq(c->fnGroups[i].name, map->cName)) {
-                return &c->fnGroups[i];
-            }
-        }
-    }
-    for (i = 0; i < c->fnGroupLen; i++) {
-        if (SliceEqName(c->unit->source, start, end, c->fnGroups[i].name)) {
-            return &c->fnGroups[i];
         }
     }
     return NULL;
@@ -2512,29 +2435,6 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
             paramLen,
             hasContext,
             contextType);
-    }
-
-    if (n->kind == SLAst_FN_GROUP) {
-        int32_t  child = AstFirstChild(&c->ast, nodeId);
-        char*    members[256];
-        uint16_t memberCount = 0;
-        while (child >= 0) {
-            const SLAstNode* member = NodeAt(c, child);
-            const SLNameMap* memberMap;
-            if (member == NULL || member->kind != SLAst_IDENT) {
-                return -1;
-            }
-            memberMap = FindNameBySlice(c, member->dataStart, member->dataEnd);
-            if (memberMap == NULL) {
-                return -1;
-            }
-            if (memberCount >= (uint16_t)(sizeof(members) / sizeof(members[0]))) {
-                return -1;
-            }
-            members[memberCount++] = memberMap->name;
-            child = AstNextSibling(&c->ast, child);
-        }
-        return AddFnGroup(c, mapName->cName, members, memberCount);
     }
 
     if (n->kind == SLAst_STRUCT || n->kind == SLAst_UNION) {
@@ -3678,12 +3578,11 @@ static void GatherCallCandidatesBySlice(
     const SLFnSig**    outCandidates,
     uint32_t*          outCandidateLen,
     int*               outNameFound) {
-    const SLFnSig*   candidates[SLCCG_MAX_CALL_CANDIDATES];
-    const SLFnSig*   byName[SLCCG_MAX_CALL_CANDIDATES];
-    uint32_t         candidateLen = 0;
-    int              nameFound = 0;
-    uint32_t         i, j;
-    const SLFnGroup* group = FindFnGroupBySlice(c, nameStart, nameEnd);
+    const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+    const SLFnSig* byName[SLCCG_MAX_CALL_CANDIDATES];
+    uint32_t       candidateLen = 0;
+    int            nameFound = 0;
+    uint32_t       i, j;
 
     i = FindFnSigCandidatesBySlice(
         c, nameStart, nameEnd, byName, (uint32_t)(sizeof(byName) / sizeof(byName[0])));
@@ -3694,34 +3593,6 @@ static void GatherCallCandidatesBySlice(
         }
         for (j = 0; j < i && candidateLen < SLCCG_MAX_CALL_CANDIDATES; j++) {
             candidates[candidateLen++] = byName[j];
-        }
-    }
-    if (group != NULL) {
-        nameFound = 1;
-        for (i = 0; i < group->memberCount && candidateLen < SLCCG_MAX_CALL_CANDIDATES; i++) {
-            uint32_t n = FindFnSigCandidatesByName(
-                c,
-                c->fnGroupMembers[group->memberStart + i],
-                byName,
-                (uint32_t)(sizeof(byName) / sizeof(byName[0])));
-            if (n > 0) {
-                uint32_t k;
-                if (n > (uint32_t)(sizeof(byName) / sizeof(byName[0]))) {
-                    n = (uint32_t)(sizeof(byName) / sizeof(byName[0]));
-                }
-                for (j = 0; j < n && candidateLen < SLCCG_MAX_CALL_CANDIDATES; j++) {
-                    int dup = 0;
-                    for (k = 0; k < candidateLen; k++) {
-                        if (candidates[k] == byName[j]) {
-                            dup = 1;
-                            break;
-                        }
-                    }
-                    if (!dup) {
-                        candidates[candidateLen++] = byName[j];
-                    }
-                }
-            }
         }
     }
     for (i = 0; i < candidateLen; i++) {
@@ -3750,39 +3621,6 @@ static void GatherCallCandidatesByPkgMethod(
         {
             candidates[candidateLen++] = &c->fnSigs[i];
             nameFound = 1;
-        }
-    }
-    for (i = 0; i < c->fnGroupLen && candidateLen < SLCCG_MAX_CALL_CANDIDATES; i++) {
-        const SLFnGroup* group = &c->fnGroups[i];
-        uint32_t         j;
-        if (!NameEqPkgPrefixedMethod(
-                group->name, c->unit->source, pkgStart, pkgEnd, methodStart, methodEnd))
-        {
-            continue;
-        }
-        nameFound = 1;
-        for (j = 0; j < group->memberCount && candidateLen < SLCCG_MAX_CALL_CANDIDATES; j++) {
-            const char*    memberName = c->fnGroupMembers[group->memberStart + j];
-            const SLFnSig* byName[SLCCG_MAX_CALL_CANDIDATES];
-            uint32_t       n = FindFnSigCandidatesByName(
-                c, memberName, byName, (uint32_t)(sizeof(byName) / sizeof(byName[0])));
-            uint32_t k;
-            uint32_t m;
-            if (n > (uint32_t)(sizeof(byName) / sizeof(byName[0]))) {
-                n = (uint32_t)(sizeof(byName) / sizeof(byName[0]));
-            }
-            for (k = 0; k < n && candidateLen < SLCCG_MAX_CALL_CANDIDATES; k++) {
-                int dup = 0;
-                for (m = 0; m < candidateLen; m++) {
-                    if (candidates[m] == byName[k]) {
-                        dup = 1;
-                        break;
-                    }
-                }
-                if (!dup) {
-                    candidates[candidateLen++] = byName[k];
-                }
-            }
         }
     }
     for (i = 0; i < candidateLen; i++) {

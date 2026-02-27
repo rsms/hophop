@@ -12,15 +12,13 @@ struct C {
 	z int
 }
 
-fn score_A(v A) int {
+fn score(v A) int {
 	return v.x
 }
 
-fn score_B(v B) int {
+fn score(v B) int {
 	return v.y
 }
-
-fn score { score_A, score_B }
 
 fn main() {
 	var a A

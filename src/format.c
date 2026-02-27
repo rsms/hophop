@@ -3373,39 +3373,7 @@ static int SLFmtEmitDecl(SLFmtCtx* c, int32_t nodeId) {
             }
             return SLFmtEmitTrailingCommentsForNode(c, nodeId);
         }
-        case SLAst_FN:       return SLFmtEmitFnDecl(c, nodeId);
-        case SLAst_FN_GROUP: {
-            int32_t member = SLFmtFirstChild(c->ast, nodeId);
-            if ((n->flags & SLAstFlag_PUB) != 0 && SLFmtWriteCStr(c, "pub ") != 0) {
-                return -1;
-            }
-            if (SLFmtWriteCStr(c, "fn ") != 0 || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0
-                || SLFmtWriteCStr(c, " {") != 0)
-            {
-                return -1;
-            }
-            if (member >= 0 && SLFmtWriteChar(c, ' ') != 0) {
-                return -1;
-            }
-            while (member >= 0) {
-                const SLAstNode* mn = &c->ast->nodes[member];
-                int32_t          next = SLFmtNextSibling(c->ast, member);
-                if (SLFmtWriteSlice(c, mn->dataStart, mn->dataEnd) != 0) {
-                    return -1;
-                }
-                if (next >= 0 && SLFmtWriteCStr(c, ", ") != 0) {
-                    return -1;
-                }
-                member = next;
-            }
-            if (SLFmtWriteChar(c, ' ') != 0) {
-                return -1;
-            }
-            if (SLFmtWriteChar(c, '}') != 0) {
-                return -1;
-            }
-            return SLFmtEmitTrailingCommentsForNode(c, nodeId);
-        }
+        case SLAst_FN: return SLFmtEmitFnDecl(c, nodeId);
         case SLAst_VAR:
             if ((n->flags & SLAstFlag_PUB) != 0 && SLFmtWriteCStr(c, "pub ") != 0) {
                 return -1;

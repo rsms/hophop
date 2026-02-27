@@ -46,7 +46,6 @@ Equivalent expansion:
 Notes:
 
 - This applies only to function parameter lists.
-- Function-group syntax (`fn name{...};`) is unchanged.
 
 ---
 
@@ -140,6 +139,4 @@ SLP-8 does not add:
 
 - compressed runs for locals, fields, or other declaration kinds
 - changes to return type syntax
-- changes to function-group declarations
 - parameter-list trailing-comma syntax changes
-

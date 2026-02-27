@@ -1,10 +1,8 @@
 type MyInt int
 
-fn a_int(x int) int {
+fn a(x int) int {
 	return x + 1
 }
-
-fn a { a_int }
 
 fn main() {
 	var v MyInt = 3 as MyInt

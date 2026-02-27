@@ -1,10 +1,7 @@
-fn f_a(v int) {}
+fn f(v i32) {}
 
-fn f_b(v int) {}
-
-fn f { f_a, f_b }
+fn f(v i64) {}
 
 fn main() {
-	var n int
-	f(n)
+	f(1)
 }

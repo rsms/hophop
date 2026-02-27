@@ -251,7 +251,6 @@ typedef enum {
     SLAst_IMPORT_SYMBOL,
     SLAst_PUB,
     SLAst_FN,
-    SLAst_FN_GROUP,
     SLAst_PARAM,
     SLAst_CONTEXT_CLAUSE,
     SLAst_TYPE_NAME,

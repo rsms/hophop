@@ -12,9 +12,9 @@ Conventions:
 | Rule family | Profile | Primary evidence tests |
 |---|---|---|
 | `LEX-*` (tokens, comments, semicolon insertion baseline) | Core | `_:tests/basic.sl`, `_:tests/bad_string.sl`, `ast:tests/ast_basic.sl` |
-| `SYN-*` declarations/grammar | Core | `ast:tests/ast_basic.sl`, `ast:tests/ast_fn_group.sl`, `ast:tests/ast_type_alias.sl`, `ast:tests/ast_fn_type.sl`, `ast:tests/ast_anon_aggregate_types.sl` |
+| `SYN-*` declarations/grammar | Core | `ast:tests/ast_basic.sl`, `ast:tests/ast_type_alias.sl`, `ast:tests/ast_fn_type.sl`, `ast:tests/ast_anon_aggregate_types.sl` |
 | `DECL-HOLE-*` and reserved naming | Core | `check:tests/hole_local_ok.sl`, `check:tests/hole_param_codegen_ok.sl`, `check:tests/hole_*_bad.sl`, `check:tests/bad_reserved_name_*.sl` |
-| `DECL-FN-*` / overload groups | Core | `check:tests/typefunc_group_ok.sl`, `check:tests/typefunc_bad_group_member.sl`, `check:tests/typefunc_bad_group_dup_member.sl`, `check:tests/typefunc_bad_group_collision.sl` |
+| `DECL-FN-*` overloads | Core | `check:tests/typefunc_overload_ok.sl`, `check:tests/typefunc_arity_overload_ok.sl`, `check:tests/typefunc_bad_no_matching_overload.sl`, `check:tests/typefunc_bad_ambiguous_call.sl` |
 | Struct embedding / enum member namespace | Core | `check:tests/struct_composition_ok.sl`, `check:tests/ptr_embedded_upcast_ok.sl`, `check:tests/enum_member_namespace_ok.sl`, `check:tests/enum_member_unqualified_bad.sl` |
 | Type aliases and directionality | Core | `check:tests/type_alias_direction_bad.sl`, `integration.runtime.typefunc_alias_*.compile_and_run` |
 | Optional typing and narrowing | Core | `check:tests/feature_optional_ok.sl`, `check:tests/feature_optional_no_import.sl`, `check:tests/slp3_null_unwrap.sl`, `check:tests/slp3_flow_narrow_ok.sl` |

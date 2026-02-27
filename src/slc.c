@@ -47,6 +47,12 @@ typedef struct {
     char*    localName;
     char* _Nullable qualifiedName;
     uint8_t  isType;
+    uint8_t  isFunction;
+    uint8_t  useWrapper;
+    uint32_t exportFileIndex;
+    int32_t  exportNodeId;
+    char* _Nullable fnShapeKey;
+    char* _Nullable wrapperDeclText;
     uint32_t fileIndex;
     uint32_t start;
     uint32_t end;
@@ -158,6 +164,14 @@ typedef struct {
 } SLImportSymbolOverride;
 
 static int BuildPrefixedName(const char* alias, const char* name, char** outName);
+static int RewriteAliasedPubDeclText(
+    const SLPackage* sourcePkg, const SLSymbolDecl* pubDecl, const char* alias, char** outText);
+static int BuildFnImportShapeAndWrapper(
+    const char* aliasedDeclText,
+    const char* localName,
+    const char* qualifiedName,
+    char**      outShapeKey,
+    char**      outWrapperDeclText);
 static int IsAsciiSpaceChar(char c);
 static int IsIdentStartChar(unsigned char c);
 static int IsIdentContinueChar(unsigned char c);
@@ -2108,8 +2122,7 @@ static int CheckSource(const char* filename, const char* source, uint32_t source
 
 static int IsDeclKind(SLAstKind kind) {
     return kind == SLAst_FN || kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
-        || kind == SLAst_TYPE_ALIAS || kind == SLAst_VAR || kind == SLAst_CONST
-        || kind == SLAst_FN_GROUP;
+        || kind == SLAst_TYPE_ALIAS || kind == SLAst_VAR || kind == SLAst_CONST;
 }
 
 static int IsTypeDeclKind(SLAstKind kind) {
@@ -2400,6 +2413,12 @@ static int AddImportSymbolRef(
     sym->localName = localName;
     sym->qualifiedName = NULL;
     sym->isType = 0;
+    sym->isFunction = 0;
+    sym->useWrapper = 0;
+    sym->exportFileIndex = 0;
+    sym->exportNodeId = -1;
+    sym->fnShapeKey = NULL;
+    sym->wrapperDeclText = NULL;
     sym->fileIndex = fileIndex;
     sym->start = start;
     sym->end = end;
@@ -2472,7 +2491,9 @@ static int AddDeclFromNode(
     if (isPub) {
         uint32_t i;
         for (i = 0; i < pkg->pubDeclLen; i++) {
-            if (pkg->pubDecls[i].kind == n->kind && StrEq(pkg->pubDecls[i].name, name)) {
+            if (pkg->pubDecls[i].kind == n->kind && StrEq(pkg->pubDecls[i].name, name)
+                && n->kind != SLAst_FN)
+            {
                 free(name);
                 free(declText);
                 return Errorf(
@@ -3153,7 +3174,7 @@ static int PackageHasImportSymbolLocalName(const SLPackage* pkg, const char* nam
     return 0;
 }
 
-static int ValidateImportBindingConflicts(const SLPackage* pkg) {
+static int ValidateImportBindingConflicts(SLPackage* pkg) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
         const SLImportRef* imp = &pkg->imports[i];
@@ -3192,45 +3213,47 @@ static int ValidateImportBindingConflicts(const SLPackage* pkg) {
     }
 
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        const SLImportSymbolRef* sym = &pkg->importSymbols[i];
-        uint32_t                 j;
+        SLImportSymbolRef* sym = &pkg->importSymbols[i];
+        uint32_t           j;
         if (PackageHasAnyDeclName(pkg, sym->localName)) {
             const SLParsedFile* file = &pkg->files[sym->fileIndex];
             return Errorf(
                 file->path, file->source, sym->start, sym->end, "import binding conflict");
         }
         for (j = i + 1u; j < pkg->importSymbolLen; j++) {
-            if (StrEq(pkg->importSymbols[j].localName, sym->localName)) {
-                const SLParsedFile* file = &pkg->files[pkg->importSymbols[j].fileIndex];
+            SLImportSymbolRef* other = &pkg->importSymbols[j];
+            if (!StrEq(other->localName, sym->localName)) {
+                continue;
+            }
+            if (sym->isFunction && other->isFunction) {
+                if (sym->fnShapeKey == NULL || other->fnShapeKey == NULL) {
+                    return ErrorSimple("internal error: missing import function shape");
+                }
+                if (!StrEq(sym->fnShapeKey, other->fnShapeKey)) {
+                    sym->useWrapper = 1;
+                    other->useWrapper = 1;
+                    continue;
+                }
+            }
+            {
+                const SLParsedFile* file = &pkg->files[other->fileIndex];
                 return Errorf(
-                    file->path,
-                    file->source,
-                    pkg->importSymbols[j].start,
-                    pkg->importSymbols[j].end,
-                    "import binding conflict");
+                    file->path, file->source, other->start, other->end, "import binding conflict");
             }
         }
     }
     return 0;
 }
 
-static const SLSymbolDecl* _Nullable FindExportDeclByName(const SLPackage* pkg, const char* name) {
-    uint32_t i;
-    for (i = 0; i < pkg->pubDeclLen; i++) {
-        if (StrEq(pkg->pubDecls[i].name, name)) {
-            return &pkg->pubDecls[i];
-        }
-    }
-    return NULL;
-}
-
 static int ValidateAndFinalizeImportSymbols(SLPackage* pkg) {
+    uint32_t baseLen = pkg->importSymbolLen;
     uint32_t i;
-    for (i = 0; i < pkg->importSymbolLen; i++) {
-        SLImportSymbolRef*  sym = &pkg->importSymbols[i];
-        const SLImportRef*  imp;
-        const SLPackage*    dep;
-        const SLSymbolDecl* exportDecl;
+    for (i = 0; i < baseLen; i++) {
+        SLImportSymbolRef* sym = &pkg->importSymbols[i];
+        const SLImportRef* imp;
+        const SLPackage*   dep;
+        uint32_t           j;
+        uint32_t           matchCount = 0;
         if (sym->importIndex >= pkg->importLen) {
             return ErrorSimple("internal error: invalid import symbol mapping");
         }
@@ -3239,17 +3262,74 @@ static int ValidateAndFinalizeImportSymbols(SLPackage* pkg) {
         if (dep == NULL) {
             return ErrorSimple("internal error: unresolved import");
         }
-        exportDecl = FindExportDeclByName(dep, sym->sourceName);
-        if (exportDecl == NULL) {
+        for (j = 0; j < dep->pubDeclLen; j++) {
+            const SLSymbolDecl* exportDecl = &dep->pubDecls[j];
+            SLImportSymbolRef*  dstSym = sym;
+            char*               rewrittenDecl = NULL;
+            char*               shapeKey = NULL;
+            char*               wrapperDecl = NULL;
+            if (!StrEq(exportDecl->name, sym->sourceName)) {
+                continue;
+            }
+            if (matchCount > 0) {
+                char* sourceName = DupCStr(sym->sourceName);
+                char* localName = DupCStr(sym->localName);
+                if (sourceName == NULL || localName == NULL) {
+                    free(sourceName);
+                    free(localName);
+                    return ErrorSimple("out of memory");
+                }
+                if (AddImportSymbolRef(
+                        pkg,
+                        sym->importIndex,
+                        sourceName,
+                        localName,
+                        sym->fileIndex,
+                        sym->start,
+                        sym->end)
+                    != 0)
+                {
+                    free(sourceName);
+                    free(localName);
+                    return ErrorSimple("out of memory");
+                }
+                dstSym = &pkg->importSymbols[pkg->importSymbolLen - 1u];
+            }
+            dstSym->isType = IsTypeDeclKind(exportDecl->kind) ? 1u : 0u;
+            dstSym->isFunction = exportDecl->kind == SLAst_FN ? 1u : 0u;
+            dstSym->useWrapper = 0;
+            dstSym->exportFileIndex = exportDecl->fileIndex;
+            dstSym->exportNodeId = exportDecl->nodeId;
+            if (dstSym->qualifiedName == NULL
+                && BuildPrefixedName(imp->alias, dstSym->sourceName, &dstSym->qualifiedName) != 0)
+            {
+                return ErrorSimple("out of memory");
+            }
+            if (dstSym->isFunction) {
+                if (RewriteAliasedPubDeclText(dep, exportDecl, imp->alias, &rewrittenDecl) != 0) {
+                    return -1;
+                }
+                if (BuildFnImportShapeAndWrapper(
+                        rewrittenDecl,
+                        dstSym->localName,
+                        dstSym->qualifiedName,
+                        &shapeKey,
+                        &wrapperDecl)
+                    != 0)
+                {
+                    free(rewrittenDecl);
+                    return -1;
+                }
+                free(rewrittenDecl);
+                dstSym->fnShapeKey = shapeKey;
+                dstSym->wrapperDeclText = wrapperDecl;
+            }
+            matchCount++;
+        }
+        if (matchCount == 0) {
             const SLParsedFile* file = &pkg->files[sym->fileIndex];
             return Errorf(
                 file->path, file->source, sym->start, sym->end, "unknown imported symbol");
-        }
-        sym->isType = IsTypeDeclKind(exportDecl->kind) ? 1u : 0u;
-        if (sym->qualifiedName == NULL
-            && BuildPrefixedName(imp->alias, sym->sourceName, &sym->qualifiedName) != 0)
-        {
-            return ErrorSimple("out of memory");
         }
     }
     return 0;
@@ -3578,10 +3658,10 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
     if (EnsureImplicitCoreImportSymbols(pkg) != 0) {
         return -1;
     }
-    if (ValidateImportBindingConflicts(pkg) != 0) {
+    if (ValidateAndFinalizeImportSymbols(pkg) != 0) {
         return -1;
     }
-    if (ValidateAndFinalizeImportSymbols(pkg) != 0) {
+    if (ValidateImportBindingConflicts(pkg) != 0) {
         return -1;
     }
     if (ValidatePackageSelectors(pkg) != 0) {
@@ -3771,6 +3851,9 @@ static int FindImportSymbolBindingIndexBySlice(
         const SLImportSymbolRef* sym = &pkg->importSymbols[i];
         size_t                   nameLen;
         if ((sym->isType ? 1 : 0) != (wantType ? 1 : 0)) {
+            continue;
+        }
+        if (!wantType && sym->useWrapper) {
             continue;
         }
         nameLen = strlen(sym->localName);
@@ -4634,6 +4717,262 @@ static int BuildPrefixedName(const char* alias, const char* name, char** outName
     return *outName == NULL ? -1 : 0;
 }
 
+static int RewriteAliasedPubDeclText(
+    const SLPackage* sourcePkg, const SLSymbolDecl* pubDecl, const char* alias, char** outText) {
+    SLIdentMap* maps = NULL;
+    uint32_t    i;
+    int         rc = -1;
+    *outText = NULL;
+    if (sourcePkg->pubDeclLen == 0) {
+        return ErrorSimple("internal error: empty public declaration set");
+    }
+    maps = (SLIdentMap*)malloc(sizeof(SLIdentMap) * sourcePkg->pubDeclLen);
+    if (maps == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    for (i = 0; i < sourcePkg->pubDeclLen; i++) {
+        maps[i].name = sourcePkg->pubDecls[i].name;
+        maps[i].replacement = NULL;
+        if (BuildPrefixedName(alias, sourcePkg->pubDecls[i].name, (char**)&maps[i].replacement)
+            != 0)
+        {
+            goto done;
+        }
+    }
+    rc = RewriteText(
+        pubDecl->declText,
+        (uint32_t)strlen(pubDecl->declText),
+        sourcePkg->imports,
+        sourcePkg->importLen,
+        maps,
+        sourcePkg->pubDeclLen,
+        outText);
+
+done:
+    if (maps != NULL) {
+        for (i = 0; i < sourcePkg->pubDeclLen; i++) {
+            free((void*)maps[i].replacement);
+        }
+    }
+    free(maps);
+    return rc;
+}
+
+static int BuildFnImportShapeAndWrapper(
+    const char* aliasedDeclText,
+    const char* localName,
+    const char* qualifiedName,
+    char**      outShapeKey,
+    char**      outWrapperDeclText) {
+    SLAst           ast = { 0 };
+    void*           arenaMem = NULL;
+    int32_t         fnNode = -1;
+    int32_t         child;
+    int32_t         returnTypeNode = -1;
+    int32_t         contextTypeNode = -1;
+    SLStringBuilder shape = { 0 };
+    SLStringBuilder wrapper = { 0 };
+    SLStringBuilder callArgs = { 0 };
+    uint32_t        paramIndex = 0;
+
+    *outShapeKey = NULL;
+    *outWrapperDeclText = NULL;
+
+    if (ParseSourceEx(
+            "<generated-import-fn>",
+            aliasedDeclText,
+            (uint32_t)strlen(aliasedDeclText),
+            &ast,
+            &arenaMem,
+            NULL,
+            0)
+        != 0)
+    {
+        return ErrorSimple("internal error: failed to parse rewritten import function declaration");
+    }
+
+    fnNode = ASTFirstChild(&ast, ast.root);
+    if (fnNode < 0 || (uint32_t)fnNode >= ast.len || ast.nodes[fnNode].kind != SLAst_FN) {
+        free(arenaMem);
+        return ErrorSimple("internal error: expected function declaration in rewritten import");
+    }
+
+    if (SBAppendCStr(&shape, "ctx:") != 0) {
+        free(arenaMem);
+        goto oom;
+    }
+    child = ASTFirstChild(&ast, fnNode);
+    while (child >= 0) {
+        const SLAstNode* n = &ast.nodes[child];
+        if (n->kind == SLAst_PARAM) {
+            /* handled later */
+        } else if (n->kind == SLAst_CONTEXT_CLAUSE) {
+            contextTypeNode = ASTFirstChild(&ast, child);
+        } else if (IsFnReturnTypeNodeKind(n->kind) && n->flags == 1u) {
+            returnTypeNode = child;
+        }
+        child = ASTNextSibling(&ast, child);
+    }
+    if (contextTypeNode >= 0) {
+        if (SBAppendSlice(
+                &shape,
+                aliasedDeclText,
+                ast.nodes[contextTypeNode].start,
+                ast.nodes[contextTypeNode].end)
+            != 0)
+        {
+            free(arenaMem);
+            goto oom;
+        }
+    } else if (SBAppendCStr(&shape, "-") != 0) {
+        free(arenaMem);
+        goto oom;
+    }
+    if (SBAppendCStr(&shape, "|params:") != 0) {
+        free(arenaMem);
+        goto oom;
+    }
+
+    if (SBAppendCStr(&wrapper, "fn ") != 0 || SBAppendCStr(&wrapper, localName) != 0
+        || SBAppendCStr(&wrapper, "(") != 0)
+    {
+        free(arenaMem);
+        goto oom;
+    }
+
+    child = ASTFirstChild(&ast, fnNode);
+    while (child >= 0) {
+        const SLAstNode* n = &ast.nodes[child];
+        if (n->kind == SLAst_PARAM) {
+            int32_t     typeNode = ASTFirstChild(&ast, child);
+            uint32_t    nameStart = n->dataStart;
+            uint32_t    nameEnd = n->dataEnd;
+            const char* tempName = NULL;
+            char        tempNameBuf[32];
+            if (typeNode < 0 || (uint32_t)typeNode >= ast.len) {
+                free(arenaMem);
+                return ErrorSimple(
+                    "internal error: malformed function parameter in rewritten import");
+            }
+            if (paramIndex > 0) {
+                if (SBAppendCStr(&shape, ";") != 0 || SBAppendCStr(&wrapper, ", ") != 0
+                    || SBAppendCStr(&callArgs, ", ") != 0)
+                {
+                    free(arenaMem);
+                    goto oom;
+                }
+            }
+            if (SBAppendSlice(
+                    &shape, aliasedDeclText, ast.nodes[typeNode].start, ast.nodes[typeNode].end)
+                != 0)
+            {
+                free(arenaMem);
+                goto oom;
+            }
+            if (nameEnd <= nameStart
+                || (nameEnd == nameStart + 1u && aliasedDeclText[nameStart] == '_'))
+            {
+                int nbytes = snprintf(
+                    tempNameBuf, sizeof(tempNameBuf), "__sl_arg%u", (unsigned)paramIndex);
+                if (nbytes <= 0 || (size_t)nbytes >= sizeof(tempNameBuf)) {
+                    free(arenaMem);
+                    return ErrorSimple(
+                        "internal error: generated import wrapper arg name overflow");
+                }
+                tempName = tempNameBuf;
+                if (SBAppendCStr(&wrapper, tempName) != 0 || SBAppendCStr(&callArgs, tempName) != 0)
+                {
+                    free(arenaMem);
+                    goto oom;
+                }
+            } else {
+                if (SBAppendSlice(&wrapper, aliasedDeclText, nameStart, nameEnd) != 0
+                    || SBAppendSlice(&callArgs, aliasedDeclText, nameStart, nameEnd) != 0)
+                {
+                    free(arenaMem);
+                    goto oom;
+                }
+            }
+            if (SBAppendCStr(&wrapper, " ") != 0
+                || SBAppendSlice(
+                       &wrapper,
+                       aliasedDeclText,
+                       ast.nodes[typeNode].start,
+                       ast.nodes[typeNode].end)
+                       != 0)
+            {
+                free(arenaMem);
+                goto oom;
+            }
+            paramIndex++;
+        }
+        child = ASTNextSibling(&ast, child);
+    }
+
+    if (SBAppendCStr(&wrapper, ")") != 0) {
+        free(arenaMem);
+        goto oom;
+    }
+    if (returnTypeNode >= 0
+        && (SBAppendCStr(&wrapper, " ") != 0
+            || SBAppendSlice(
+                   &wrapper,
+                   aliasedDeclText,
+                   ast.nodes[returnTypeNode].start,
+                   ast.nodes[returnTypeNode].end)
+                   != 0))
+    {
+        free(arenaMem);
+        goto oom;
+    }
+    if (contextTypeNode >= 0
+        && (SBAppendCStr(&wrapper, " context ") != 0
+            || SBAppendSlice(
+                   &wrapper,
+                   aliasedDeclText,
+                   ast.nodes[contextTypeNode].start,
+                   ast.nodes[contextTypeNode].end)
+                   != 0))
+    {
+        free(arenaMem);
+        goto oom;
+    }
+    if (SBAppendCStr(&wrapper, " { ") != 0) {
+        free(arenaMem);
+        goto oom;
+    }
+    if (returnTypeNode >= 0 && SBAppendCStr(&wrapper, "return ") != 0) {
+        free(arenaMem);
+        goto oom;
+    }
+    if (SBAppendCStr(&wrapper, qualifiedName) != 0 || SBAppendCStr(&wrapper, "(") != 0
+        || SBAppendCStr(&wrapper, callArgs.v != NULL ? callArgs.v : "") != 0
+        || SBAppendCStr(&wrapper, "); }\n") != 0)
+    {
+        free(arenaMem);
+        goto oom;
+    }
+
+    *outShapeKey = SBFinish(&shape, NULL);
+    *outWrapperDeclText = SBFinish(&wrapper, NULL);
+    free(callArgs.v);
+    free(arenaMem);
+    if (*outShapeKey == NULL || *outWrapperDeclText == NULL) {
+        free(*outShapeKey);
+        free(*outWrapperDeclText);
+        *outShapeKey = NULL;
+        *outWrapperDeclText = NULL;
+        return ErrorSimple("out of memory");
+    }
+    return 0;
+
+oom:
+    free(shape.v);
+    free(wrapper.v);
+    free(callArgs.v);
+    return ErrorSimple("out of memory");
+}
+
 static int AppendAliasedPubDecls(
     SLStringBuilder* b,
     const SLPackage* sourcePkg,
@@ -4783,6 +5122,20 @@ static int AppendImportedPackageSurface(
     return 0;
 }
 
+static int AppendImportFunctionWrappers(SLStringBuilder* b, const SLPackage* pkg) {
+    uint32_t i;
+    for (i = 0; i < pkg->importSymbolLen; i++) {
+        const SLImportSymbolRef* sym = &pkg->importSymbols[i];
+        if (!sym->isFunction || !sym->useWrapper || sym->wrapperDeclText == NULL) {
+            continue;
+        }
+        if (SBAppendCStr(b, sym->wrapperDeclText) != 0 || SBAppendCStr(b, "\n") != 0) {
+            return ErrorSimple("out of memory");
+        }
+    }
+    return 0;
+}
+
 static int BuildCombinedPackageSource(
     SLPackageLoader* loader,
     const SLPackage* pkg,
@@ -4815,6 +5168,11 @@ static int BuildCombinedPackageSource(
             free(emitted);
             return -1;
         }
+    }
+    if (AppendImportFunctionWrappers(&b, pkg) != 0) {
+        free(b.v);
+        free(emitted);
+        return -1;
     }
     if (outOwnDeclStartOffset != NULL) {
         *outOwnDeclStartOffset = b.len;
@@ -4972,6 +5330,8 @@ static void FreePackage(SLPackage* pkg) {
         free(pkg->importSymbols[i].sourceName);
         free(pkg->importSymbols[i].localName);
         free(pkg->importSymbols[i].qualifiedName);
+        free(pkg->importSymbols[i].fnShapeKey);
+        free(pkg->importSymbols[i].wrapperDeclText);
     }
     free(pkg->importSymbols);
     for (i = 0; i < pkg->declLen; i++) {

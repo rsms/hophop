@@ -11,30 +11,22 @@ x.f(a, b)
 
 Both forms are equivalent and resolve to the same target function.
 
-SLP-4 also adds explicit overload groups so a package can expose one call name with multiple concrete implementations:
-
-```sl
-fn update_pet(pet mut&Pet, ts u64)
-fn update_ship(ship mut&Spaceship)
-fn update{update_pet, update_ship}
-```
-
 Dispatch is compile-time only. There is no runtime dispatch table.
 
 ---
 
 ## Motivation
 
-SL already uses package-level functions as its core abstraction. This proposal improves ergonomics without introducing methods as a new declaration kind.
+SL already uses package-level functions as its core abstraction. This improves call-site ergonomics without introducing methods as a new declaration kind.
 
 Goals:
 - make call sites read naturally (`x.update(...)`)
 - preserve package-level function model
-- support controlled overloading with deterministic resolution
+- support deterministic overloading
 - keep lowering simple and static
 
 Non-goal:
-- adding interfaces, traits, or runtime method dispatch
+- interfaces, traits, or runtime method dispatch
 
 ---
 
@@ -42,7 +34,7 @@ Non-goal:
 
 ### Selector call sugar
 
-No new expression syntax is needed. Existing selector+call syntax gains new meaning when selector resolution does not produce a field:
+No new expression syntax is required. Existing selector+call syntax gains new meaning when selector resolution does not produce a field:
 
 ```sl
 expr.name(args...)
@@ -50,29 +42,10 @@ expr.name(args...)
 
 It can resolve as a type-function call to `name(expr, args...)`.
 
-### Overload group declaration
-
-New top-level declaration form:
-
-```sl
-fn Name{member1, member2, ...}
-```
-
-Members are existing function names in the same package.
-
-Example:
-
-```sl
-fn update_pet(pet mut&Pet, ts u64)
-fn update_ship(ship mut&Spaceship)
-fn update{update_pet, update_ship}
-```
-
 ### EBNF additions
 
 ```ebnf
-TopDecl            = ["pub"] (StructDecl | UnionDecl | EnumDecl | FnDeclOrDef | FnGroupDecl | ConstDecl) ;
-FnGroupDecl        = "fn" Ident "{" Ident {"," Ident} "}" ";" ;
+TopDecl            = ["pub"] (StructDecl | UnionDecl | EnumDecl | FnDeclOrDef | ConstDecl) ;
 ```
 
 ---
@@ -87,7 +60,7 @@ A selector-call expression
 E.f(A1, ..., An)
 ```
 
-is resolved during typecheck as if it were a call
+is resolved during typecheck as if it were
 
 ```sl
 f(E, A1, ..., An)
@@ -107,8 +80,6 @@ Selector resolution order for `E.f(...)`:
 2. if field exists, use field expression result; normal call rules then apply
 3. only if no field is found, attempt type-function resolution
 
-This avoids ambiguity with existing field semantics.
-
 ### 3. Call-form-only in v1
 
 `E.f` without `(...)` is not a type-function value.
@@ -117,7 +88,7 @@ Only call form participates in type-function resolution.
 
 ### 4. Package lookup
 
-- `E.f(...)` resolves `f` in the current package scope.
+- `E.f(...)` resolves `f` in current package scope.
 - `pkg.f(...)` resolves directly in imported package `pkg` export scope.
 - `E.f(...)` does not perform implicit cross-package lookup.
 
@@ -125,30 +96,12 @@ Only call form participates in type-function resolution.
 
 ## Multiple dispatch model
 
-SLP-4 uses explicit overload groups.
+SLP-4 resolves overloads from visible functions sharing the target call name.
 
-### Group constraints
+### Dispatch and ranking
 
-For `fn G{m1, m2, ...}`:
-- each member must be either:
-  - an unqualified local function name (`m`)
-  - an imported function name (`pkg.m`)
-- member names must be unique within the group
-- group name must not collide with an existing function, type, const, or group name
-- group declarations may appear before member definitions (resolved after collection)
-
-### Export/import behavior
-
-- `pub fn G{...}` exports group `G`
-- group members are not part of public API unless separately `pub`
-- import rewriting maps `pkg.G` to `pkg__G` like other exported symbols
-
----
-
-## Dispatch and ranking
-
-Given candidate call name `N` and argument list `(a0, a1, ... ak)`:
-- unqualified call: from function `N` (if present) and all members of group `N` (if present)
+Given call name `N` and argument list `(a0, a1, ... ak)`:
+- unqualified call: candidates are functions named `N`
 - selector-call: same candidate set, using receiver-injected arguments
 
 Candidate filtering:
@@ -177,7 +130,7 @@ Comparison:
 
 Built-in functions participate in selector-call sugar when the call shape matches.
 
-At minimum, these are supported:
+At minimum:
 - `x.len()` => `len(x)`
 - `ma.new(T[, N])` => `new(ma, T[, N])`
 - `s.cstr()` => `cstr(s)`
@@ -202,28 +155,18 @@ fn example(f &Foo) {
 }
 ```
 
-### Explicit overload group with receiver sugar
+### Overloaded receiver sugar
 
 ```sl
 struct Pet {}
 struct Spaceship {}
 
-fn update_pet(pet mut&Pet, timestamp u64)
-fn update_ship(ship mut&Spaceship)
-fn update{update_pet, update_ship}
+fn update(pet mut&Pet, timestamp u64)
+fn update(ship mut&Spaceship)
 
 fn example(pet mut&Pet, ship mut&Spaceship, timestamp u64) {
-    pet.update(timestamp) // update_pet
-    ship.update()         // update_ship
-}
-```
-
-### Built-in sugar
-
-```sl
-fn example(s str) {
-    var n u32 = s.len()
-    assert n == len(s)
+    pet.update(timestamp)
+    ship.update()
 }
 ```
 
@@ -231,12 +174,8 @@ fn example(s str) {
 
 ## Diagnostics
 
-Add dedicated diagnostics:
 - `NO_MATCHING_OVERLOAD`: name exists but no viable candidate for argument types
 - `AMBIGUOUS_CALL`: multiple best candidates after ranking
-- `INVALID_FN_GROUP_MEMBER`: group member is missing or not a function
-- `DUPLICATE_FN_GROUP_MEMBER`: repeated function name in a group
-- `INVALID_FN_GROUP_COLLISION`: group name collides with existing symbol
 
 `slc` should print a short candidate list for overload errors (bounded length).
 
@@ -259,7 +198,7 @@ No runtime mechanism is added.
 
 After typecheck selects a concrete function, codegen emits a direct call to that function.
 
-For selector sugar, this means codegen emits the resolved target with receiver inserted as first argument.
+For selector sugar, codegen emits the resolved target with receiver inserted as first argument.
 
 ---
 
