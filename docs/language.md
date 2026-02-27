@@ -38,7 +38,8 @@ See also:
 - [LEX-SRC-001][Stable] Source is byte-oriented.
 - [LEX-WS-001][Stable] Whitespace bytes: `space`, `tab`, `\r`, `\n`, `\f`, `\v`.
 - [LEX-COMMENT-001][Stable] Line comments use `//` to end-of-line.
-- [LEX-COMMENT-002][Stable] Block comments are not part of the language.
+- [LEX-COMMENT-002][Stable] Block comments use `/*` and `*/`.
+- [LEX-COMMENT-003][Stable] Block comments may nest; lexical processing consumes nested pairs until matching outer `*/`.
 
 ### 2.2 Identifiers and reserved names
 - [LEX-ID-001][Stable] Identifier pattern: `[A-Za-z_][A-Za-z0-9_]*`.

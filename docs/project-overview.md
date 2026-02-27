@@ -107,7 +107,8 @@ Defaults in prelude trap; projects may override macros.
 
 #### Comments
 
-* Only `//` line comments.
+* `//` line comments.
+* `/* ... */` block comments (nesting supported).
 
 #### Semicolons (Go-style insertion)
 

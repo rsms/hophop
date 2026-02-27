@@ -18,6 +18,7 @@
 {"id": "SL1009", "name": "INVALID_STRING_ESCAPE", "category": "syntactic", "message": "invalid string escape sequence"}
 {"id": "SL1010", "name": "INVALID_STRING_CODEPOINT", "category": "syntactic", "message": "invalid Unicode code point in string literal"}
 {"id": "SL1011", "name": "INVALID_UTF8_STRING", "category": "syntactic", "message": "string literal must decode to valid UTF-8"}
+{"id": "SL1012", "name": "UNTERMINATED_BLOCK_COMMENT", "category": "syntactic", "message": "unterminated block comment"}
 {"id": "SL2001", "name": "DUPLICATE_SYMBOL", "category": "semantic", "message": "duplicate symbol"}
 {"id": "SL2002", "name": "UNKNOWN_SYMBOL", "category": "semantic", "message": "unknown symbol"}
 {"id": "SL2003", "name": "UNKNOWN_TYPE", "category": "semantic", "message": "unknown type"}

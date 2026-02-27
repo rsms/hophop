@@ -11,6 +11,7 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR,  /* SL1001: unexpected character */
     SLDiag_INVALID_STRING_ESCAPE,         /* SL1009: invalid string escape sequence */
     SLDiag_INVALID_STRING_CODEPOINT,      /* SL1010: invalid Unicode code point in string literal */
     SLDiag_INVALID_UTF8_STRING,           /* SL1011: string literal must decode to valid UTF-8 */
+    SLDiag_UNTERMINATED_BLOCK_COMMENT,    /* SL1012: unterminated block comment */
     SLDiag_DUPLICATE_SYMBOL,              /* SL2001: duplicate symbol */
     SLDiag_UNKNOWN_SYMBOL,                /* SL2002: unknown symbol */
     SLDiag_UNKNOWN_TYPE,                  /* SL2003: unknown type */

@@ -1,4 +1,5 @@
 {"id":"_:tests/basic.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"_","input":"tests/basic.sl","expect":"tests/basic.tokens"}
+{"id":"_:tests/block_comments.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"_","input":"tests/block_comments.sl","expect":"tests/block_comments.tokens"}
 {"id":"ast:tests/ast_basic.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_basic.sl","expect":"tests/ast_basic.ast"}
 {"id":"ast:tests/switch_ast.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/switch_ast.sl","expect":"tests/switch_ast.ast"}
 {"id":"ast:tests/ast_types_new.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_types_new.sl","expect":"tests/ast_types_new.ast"}
@@ -67,7 +68,9 @@
 {"id":"checkpkg:tests/typefunc_import_named_type_no_fn_import_bad/app","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/typefunc_import_named_type_no_fn_import_bad/app","expect_stderr":"tests/typefunc_import_named_type_no_fn_import_bad.stderr"}
 {"id":"checkpkg:tests/typefunc_import_named_type_with_fn_import/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/typefunc_import_named_type_with_fn_import/app"}
 {"id":"checkpkg:tests/typefunc_import_named_collision_bad/app","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/typefunc_import_named_collision_bad/app","expect_stderr":"tests/typefunc_import_named_collision_bad.stderr"}
+{"id":"check:tests/block_comments_check_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/block_comments_check_ok.sl"}
 {"id":"_:tests/bad_string.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"_","input":"tests/bad_string.sl","expect_stderr":"tests/bad_string.stderr"}
+{"id":"_:tests/bad_block_comment.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"_","input":"tests/bad_block_comment.sl","expect_stderr":"tests/bad_block_comment.stderr"}
 {"id":"check:tests/string_literal_invalid_escape.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/string_literal_invalid_escape.sl","expect_stderr":"tests/string_literal_invalid_escape.stderr"}
 {"id":"check:tests/string_literal_invalid_unicode_surrogate.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/string_literal_invalid_unicode_surrogate.sl","expect_stderr":"tests/string_literal_invalid_unicode_surrogate.stderr"}
 {"id":"check:tests/string_literal_invalid_unicode_range.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/string_literal_invalid_unicode_range.sl","expect_stderr":"tests/string_literal_invalid_unicode_range.stderr"}
@@ -380,6 +383,7 @@
 {"id":"integration.runtime.comparison_runtime_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/comparison_runtime_ok.sl","expect_exit":0,"eval_expect":"fail"}
 {"id":"integration.runtime.comparison_hook_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/comparison_hook_ok.sl","expect_exit":0,"eval_expect":"fail"}
 {"id":"formatter.canonical.check_clean","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_canonical.sl","check":true,"expect_exit":0,"expect_stdout":"tests/fmt_check_clean.stdout"}
+{"id":"formatter.block_comments.exempt_pretest","suite":"formatter","kind":"slc_fmt","input":"tests/block_comments.sl","expect_exit":0,"pretest_fmt_exempt_input":true}
 {"id":"formatter.messy.check_dirty","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_messy.sl","check":true,"expect_exit":1,"expect_stdout":"tests/fmt_check_dirty.stdout","pretest_fmt_exempt_input":true}
 {"id":"formatter.messy.rewrite","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_messy.sl","expect_exit":0,"verify_files":[{"path":"input.sl","expect":"tests/fmt_messy.expected.sl"}],"pretest_fmt_exempt_input":true}
 {"id":"formatter.import_groups.check_dirty","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_import_groups.sl","check":true,"expect_exit":1,"expect_stdout":"tests/fmt_check_import_groups_dirty.stdout","pretest_fmt_exempt_input":true}

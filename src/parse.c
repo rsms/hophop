@@ -2614,6 +2614,38 @@ static int SLPNextCommentRange(
             *outEnd = pos;
             return 1;
         }
+        if (c == (unsigned char)'/' && pos + 1u < src.len
+            && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'*')
+        {
+            uint32_t start = pos;
+            uint32_t depth = 1u;
+            pos += 2u;
+            while (pos < src.len) {
+                c = (unsigned char)src.ptr[pos];
+                if (c == (unsigned char)'/' && pos + 1u < src.len
+                    && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'*')
+                {
+                    depth++;
+                    pos += 2u;
+                    continue;
+                }
+                if (c == (unsigned char)'*' && pos + 1u < src.len
+                    && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'/')
+                {
+                    depth--;
+                    pos += 2u;
+                    if (depth == 0u) {
+                        break;
+                    }
+                    continue;
+                }
+                pos++;
+            }
+            *ioPos = pos;
+            *outStart = start;
+            *outEnd = pos;
+            return 1;
+        }
         pos++;
     }
     *ioPos = pos;
@@ -2671,6 +2703,15 @@ static int SLPCollectFormattingData(
         comments[count].end = end;
         comments[count].textStart = start + 2u <= end ? start + 2u : end;
         comments[count].textEnd = end;
+        if (start + 1u < end && (unsigned char)src.ptr[start + 1u] == (unsigned char)'*'
+            && end >= 2u && (unsigned char)src.ptr[end - 2u] == (unsigned char)'*'
+            && (unsigned char)src.ptr[end - 1u] == (unsigned char)'/')
+        {
+            comments[count].textEnd = end >= 2u ? end - 2u : end;
+            if (comments[count].textEnd < comments[count].textStart) {
+                comments[count].textEnd = comments[count].textStart;
+            }
+        }
         comments[count].containerNode = containerNode;
         comments[count].anchorNode = -1;
         comments[count].attachment = SLCommentAttachment_FLOATING;

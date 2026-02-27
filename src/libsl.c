@@ -533,6 +533,40 @@ static int SLPushToken(
     return 0;
 }
 
+static int SLSkipBlockComment(
+    SLStrView src, uint32_t* ioPos, int* ioSawNewline, uint32_t* ioNewlinePos) {
+    uint32_t pos = *ioPos + 2u;
+    uint32_t depth = 1u;
+    while (pos < src.len) {
+        unsigned char c = (unsigned char)src.ptr[pos];
+        if (c == (unsigned char)'\n' && !*ioSawNewline) {
+            *ioSawNewline = 1;
+            *ioNewlinePos = pos;
+        }
+        if (c == (unsigned char)'/' && pos + 1u < src.len
+            && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'*')
+        {
+            depth++;
+            pos += 2u;
+            continue;
+        }
+        if (c == (unsigned char)'*' && pos + 1u < src.len
+            && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'/')
+        {
+            depth--;
+            pos += 2u;
+            if (depth == 0u) {
+                *ioPos = pos;
+                return 0;
+            }
+            continue;
+        }
+        pos++;
+    }
+    *ioPos = pos;
+    return -1;
+}
+
 const char* SLTokenKindName(SLTokenKind kind) {
     switch (kind) {
         case SLTok_INVALID:       return "INVALID";
@@ -672,6 +706,16 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                 pos += 2;
                 while (pos < src.len && (unsigned char)src.ptr[pos] != (unsigned char)'\n') {
                     pos++;
+                }
+                continue;
+            }
+            if (c == (unsigned char)'/' && pos + 1u < src.len
+                && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'*')
+            {
+                uint32_t commentStart = pos;
+                if (SLSkipBlockComment(src, &pos, &sawNewline, &newlinePos) != 0) {
+                    SLSetDiag(diag, SLDiag_UNTERMINATED_BLOCK_COMMENT, commentStart, pos);
+                    return -1;
                 }
                 continue;
             }
