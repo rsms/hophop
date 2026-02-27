@@ -237,4 +237,5 @@ _v ninja "${ninja_args[@]}"
 # test
 
 [ $test = 1 ] || exit 0
-python3 tools/test.py run --build-dir "$build_dir" --cc "$cc"
+echo "python3 tools/test.py run --build-dir '$build_dir' --cc '$cc'"
+exec python3 tools/test.py run --build-dir "$build_dir" --cc "$cc"
