@@ -109,9 +109,11 @@ UnionDecl       = "union" Ident "{" [ FieldDeclList ] "}" .
 EnumDecl        = "enum" Ident Type "{" [ EnumItemList ] "}" .
 TypeAliasDecl   = "type" Ident Type .
 FieldSep        = "," | ";" .
+AnonFieldSep    = ";" .
 
 StructFieldDeclList = StructFieldDecl { FieldSep StructFieldDecl } [ FieldSep ] .
 FieldDeclList   = FieldDecl { FieldSep FieldDecl } [ FieldSep ] .
+AnonFieldDeclList = FieldDecl { AnonFieldSep FieldDecl } [ AnonFieldSep ] .
 EnumItemList    = EnumItem { FieldSep EnumItem } [ FieldSep ] .
 StructFieldDecl = ( FieldDecl | EmbeddedFieldDecl ) [ FieldDefault ] .
 FieldDecl       = Ident { "," Ident } Type .
@@ -139,8 +141,8 @@ VarArrayType    = "[" Type "." Ident "]" .
 FnType          = "fn" "(" [ FnTypeParamList ] ")" [ Type ] .
 FnTypeParamList = FnTypeParam { "," FnTypeParam } .
 FnTypeParam     = Type | ( Ident { "," Ident } Type ) .
-AnonStructType  = [ "struct" ] "{" [ FieldDeclList ] "}" .
-AnonUnionType   = "union" "{" [ FieldDeclList ] "}" .
+AnonStructType  = [ "struct" ] "{" [ AnonFieldDeclList ] "}" .
+AnonUnionType   = "union" "{" [ AnonFieldDeclList ] "}" .
 TypeName        = Ident { "." Ident } .
 
 Block           = "{" [ StmtList ] "}" .
@@ -205,7 +207,6 @@ FieldInit       = Ident { "." Ident } ":" Expr .
   2. if that parse fails, backtrack and parse the segment as `Type`
 - [SYN-DISAMBIG-002][Stable] Function-type parameter segments are parsed left-to-right with the above backtracking rule.
 - [SYN-DISAMBIG-003][Stable] `context` is always lexed as keyword token `CONTEXT`; when accepted as a primary expression it is represented as identifier-like operand, never as a bindable identifier declaration name.
-- [SYN-DISAMBIG-004][Stable] In aggregate field/item lists (`struct`, `union`, `enum`, anonymous aggregate types), separators are required between consecutive entries; only a final trailing separator is optional.
 - [SYN-DISAMBIG-005][Stable] In statement context (`Stmt`), leading `{` is parsed unconditionally as `Block`.
 - [SYN-DISAMBIG-006][Stable] `ExprStmt` in statement context MUST NOT consume unparenthesized brace-leading compound-literal forms (`{ ... }`). If a compound-literal expression statement is intended, it MUST be parenthesized (`({ ... })`).
 

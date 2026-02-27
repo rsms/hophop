@@ -450,10 +450,9 @@ static int SLPParseAnonymousAggregateFieldDeclList(SLParser* p, int32_t aggTypeN
         int32_t        defaultExpr = -1;
         uint32_t       i;
 
-        if (SLPMatch(p, SLTok_SEMICOLON) || SLPMatch(p, SLTok_COMMA)) {
+        if (SLPMatch(p, SLTok_SEMICOLON)) {
             continue;
         }
-
         if (SLPExpectDeclName(p, &names[nameCount], 0) != 0) {
             return -1;
         }
@@ -514,8 +513,11 @@ static int SLPParseAnonymousAggregateFieldDeclList(SLParser* p, int32_t aggTypeN
             }
         }
 
-        if (SLPMatch(p, SLTok_SEMICOLON) || SLPMatch(p, SLTok_COMMA)) {
+        if (SLPMatch(p, SLTok_SEMICOLON)) {
             continue;
+        }
+        if (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
+            return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
         }
     }
     return 0;
@@ -2025,6 +2027,9 @@ static int SLPParseFieldList(SLParser* p, int32_t agg) {
         }
         if (SLPMatch(p, SLTok_SEMICOLON) || SLPMatch(p, SLTok_COMMA)) {
             continue;
+        }
+        if (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
+            return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
         }
     }
     return 0;

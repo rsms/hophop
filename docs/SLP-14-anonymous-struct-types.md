@@ -5,10 +5,10 @@
 SLP-14 adds inline anonymous aggregate type syntax:
 
 ```sl
-{ mem MemAllocator, fs ReadFS }              // anonymous struct (`struct` keyword omitted)
-struct { mem MemAllocator, fs ReadFS }       // equivalent anonymous struct
-union { i int, f f64 }                       // anonymous union
-&{ mem MemAllocator, fs ReadFS }
+{ mem MemAllocator; fs ReadFS }              // anonymous struct (`struct` keyword omitted)
+struct { mem MemAllocator; fs ReadFS }       // equivalent anonymous struct
+union { i int; f f64 }                       // anonymous union
+&{ mem MemAllocator; fs ReadFS }
 ```
 
 The goal is to express one-off structural shapes without introducing named top-level declarations.
@@ -30,7 +30,7 @@ Type                    = ... | AnonStructType | AnonUnionType ;
 AnonStructType          = ["struct"] "{" [AnonFieldDeclList] "}" ;
 AnonUnionType           = "union" "{" [AnonFieldDeclList] "}" ;
 AnonFieldDeclList       = AnonFieldDecl { AnonFieldSep AnonFieldDecl } [AnonFieldSep] ;
-AnonFieldSep            = "," | ";" ;
+AnonFieldSep            = ";" ;
 AnonFieldDecl           = Ident { "," Ident } Type ;
 ```
 
@@ -48,13 +48,13 @@ Requested forms:
 ```sl
 struct Example {
     pos   { x, y int }                  // anonymous struct type
-    size  struct { w, h int }           // `struct` keyword is optional
-    value union { i int, f f64 }        // anonymous union requires `union`
+    size  struct { w int; h int }       // `struct` keyword is optional
+    value union { i int; f f64 }        // anonymous union requires `union`
 }
 
 fn f_struct(pos { x, y int })
 fn f_struct2(pos struct { x, y int })
-fn f_union(value union { i int, f f64 })
+fn f_union(value union { i int; f f64 })
 ```
 
 Context + compound-literal interaction:
@@ -127,15 +127,15 @@ Field selection uses normal selector rules (`v.mem`, `v.fs`).
 For anonymous struct/union targets, use inferred form in typed context:
 
 ```sl
-var x { a i32, b i32 } = { a: 1, b: 2 }
-var y union { i int, f f64 } = { i: 1 }
+var x { a i32; b i32 } = { a: 1, b: 2 }
+var y union { i int; f f64 } = { i: 1 }
 ```
 
 If inferred `{ ... }` is ambiguous, disambiguate with explicit type context, for example:
 
 ```sl
-var x { a i32, b i32 } = { a: 1, b: 2 }
-var y = ({ a: 1, b: 2 } as { a i32, b i32 })
+var x { a i32; b i32 } = { a: 1, b: 2 }
+var y = ({ a: 1, b: 2 } as { a i32; b i32 })
 ```
 
 ### 6. Context overlay interaction (SLP-12)
