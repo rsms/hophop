@@ -53,8 +53,8 @@ if [ -f .git ]; then
     git_index_dep=$(git rev-parse --git-path index 2>/dev/null || echo .git/index)
 fi
 
-cli_sources=( src/slc.c )
-lib_sources=( $(find src -maxdepth 2 -name '*.c' -and -not -name 'slc.c' | sort) )
+cli_sources=( src/slc.c src/platform_cli-eval.c )
+lib_sources=( $(find src -maxdepth 2 -name '*.c' -and -not -name 'slc.c' -and -not -name 'platform_cli-eval.c' | sort) )
 case " ${lib_sources[*]} " in
 *" $diag_c_out "*) ;;
 *) lib_sources+=( "$diag_c_out" ) ;;
@@ -185,6 +185,8 @@ for srcfile in "${cli_sources[@]}" "${lib_sources[@]}"; do
     if [ $srcfile = "src/slc.c" ]; then
         SL_SOURCE_HASH=$(git rev-parse --short=20 HEAD 2>/dev/null || echo src)
         echo "  flags = -DSL_SOURCE_HASH=\\\"$SL_SOURCE_HASH\\\"" >> $NF
+    elif [ $srcfile = "src/platform_cli-eval.c" ]; then
+        echo "  flags = -isystem lib" >> $NF
     fi
 done
 

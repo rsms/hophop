@@ -66,16 +66,25 @@ Optional:
 - `run_stdout_empty` (bool, default `true`)
 - `run_stderr_empty` (bool, default `true`)
 - `stderr_contains` (string)
+- `eval_expect` (string): `pass` or `fail` for `slc run --platform cli-eval`
+- `eval_expect_exit` (int): expected `cli-eval` exit code when `eval_expect` is `pass`
+- `eval_expect_nonzero` (bool): require non-zero `cli-eval` exit when `eval_expect` is `pass`
+- `eval_stderr_contains` (string): expected substring in `cli-eval` stderr
 
 ### `slc_run`
 
 Optional:
 
+- `platform` (string): `slc --platform` target override for the run
 - `expect_exit` (int, default `0`)
 - `expect_nonzero` (bool)
 - `stdout_empty` (bool, default `true`)
 - `stderr_empty` (bool, default `true`)
 - `stderr_contains` (string)
+- `eval_expect` (string): `pass` or `fail` for `slc run --platform cli-eval`
+- `eval_expect_exit` (int): expected `cli-eval` exit code when `eval_expect` is `pass`
+- `eval_expect_nonzero` (bool): require non-zero `cli-eval` exit when `eval_expect` is `pass`
+- `eval_stderr_contains` (string): expected substring in `cli-eval` stderr
 
 ## Codegen golden sidecars
 

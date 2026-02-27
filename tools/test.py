@@ -43,7 +43,7 @@ class TestCase:
 
 @dataclass
 class RunResult:
-    case: TestCase
+    case: "ExecutionCase"
     ok: bool
     duration: float
     detail: str
@@ -58,12 +58,36 @@ class RunContext:
     sidecar_codegen: bool
 
 
+@dataclass
+class ExecutionCase:
+    index: int
+    fixture: TestCase
+    variant: str
+    id: str
+
+    @property
+    def suite(self) -> str:
+        return self.fixture.suite
+
+    @property
+    def kind(self) -> str:
+        if self.variant == "default":
+            return self.fixture.kind
+        return f"{self.fixture.kind}[{self.variant}]"
+
+
 def fail(msg: str) -> tuple[bool, str]:
     return False, msg
 
 
 def ok(msg: str = "") -> tuple[bool, str]:
     return True, msg
+
+
+def count_noun(count: int, singular: str, plural: Optional[str] = None) -> str:
+    if count == 1:
+        return f"{count} {singular}"
+    return f"{count} {plural or (singular + 's')}"
 
 
 def abs_path(path: str) -> Path:
@@ -421,8 +445,50 @@ def kind_compile_and_run(ctx: RunContext, case: Dict[str, Any], work_dir: Path) 
     return ok()
 
 
+def run_slc_run_cmd(
+    ctx: RunContext, input_path: str, platform: Optional[str]
+) -> subprocess.CompletedProcess[str]:
+    args = [str(ctx.slc)]
+    if platform:
+        args.extend(["--platform", platform])
+    args.extend(["run", input_path])
+    return run_cmd(args)
+
+
+def kind_eval_run_expectation(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
+    eval_expect = case.get("eval_expect")
+    if eval_expect not in ("pass", "fail"):
+        return fail(f"invalid eval_expect value {eval_expect!r}; expected 'pass' or 'fail'")
+
+    input_path = str(case["input"])
+    cp = run_slc_run_cmd(ctx, input_path, "cli-eval")
+    default_expect_nonzero = bool(case.get("expect_nonzero", False))
+    default_expect_exit = int(case.get("expect_exit", 0))
+    if eval_expect == "fail":
+        if cp.returncode == 0:
+            return fail("expected cli-eval run failure, but run succeeded")
+    else:
+        expect_nonzero = bool(case.get("eval_expect_nonzero", default_expect_nonzero))
+        expect_exit = int(case.get("eval_expect_exit", default_expect_exit))
+        if expect_nonzero:
+            if cp.returncode == 0:
+                return fail("expected non-zero cli-eval exit code")
+        elif cp.returncode != expect_exit:
+            return fail(
+                f"unexpected cli-eval exit code: expected {expect_exit}, got {cp.returncode}"
+            )
+
+    eval_stderr_contains = case.get("eval_stderr_contains")
+    if eval_stderr_contains is not None and str(eval_stderr_contains) not in cp.stderr:
+        return fail(
+            f"cli-eval stderr missing expected text {eval_stderr_contains!r}\n{cp.stderr}"
+        )
+    return ok()
+
+
 def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
-    cp = run_cmd([str(ctx.slc), "run", str(case["input"])])
+    platform = str(case["platform"]) if case.get("platform") is not None else None
+    cp = run_slc_run_cmd(ctx, str(case["input"]), platform)
     expect_nonzero = bool(case.get("expect_nonzero", False))
     expect_exit = int(case.get("expect_exit", 0))
     if expect_nonzero:
@@ -591,47 +657,83 @@ def kind_arena_grow_test(ctx: RunContext, work_dir: Path) -> tuple[bool, str]:
     return ok()
 
 
-def execute_case(ctx: RunContext, case: TestCase, temp_root: Path) -> RunResult:
+def case_has_eval_variant(case: TestCase) -> bool:
+    if case.kind not in ("compile_and_run", "slc_run"):
+        return False
+    if case.data.get("eval_expect") is None:
+        return False
+    return case.data.get("platform") != "cli-eval"
+
+
+def expand_execution_cases(fixtures: List[TestCase]) -> List[ExecutionCase]:
+    cases: List[ExecutionCase] = []
+    for fixture in fixtures:
+        has_eval = case_has_eval_variant(fixture)
+        default_id = fixture.id if not has_eval else f"{fixture.id}[default]"
+        cases.append(
+            ExecutionCase(
+                index=len(cases),
+                fixture=fixture,
+                variant="default",
+                id=default_id,
+            )
+        )
+        if has_eval:
+            cases.append(
+                ExecutionCase(
+                    index=len(cases),
+                    fixture=fixture,
+                    variant="cli-eval",
+                    id=f"{fixture.id}[cli-eval]",
+                )
+            )
+    return cases
+
+
+def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunResult:
     start = time.time()
     work_dir = temp_root / f"{case.index:04d}-{sanitize_name(case.id)}"
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    c = case.data
-    k = case.kind
+    c = case.fixture.data
+    k = case.fixture.kind
 
     try:
-        if k == "slc_stdout_eq":
-            ok_main, detail = kind_slc_stdout_eq(ctx, c)
-        elif k == "slc_ok":
-            ok_main, detail = kind_slc_ok(ctx, c)
-        elif k == "slc_fail_stderr":
-            ok_main, detail = kind_slc_fail_stderr(ctx, c)
-        elif k == "slc_ok_stderr":
-            ok_main, detail = kind_slc_ok_stderr(ctx, c)
-        elif k == "slc_fail_no_stdout":
-            ok_main, detail = kind_slc_fail_no_stdout(ctx, c)
-        elif k == "slc_fmt":
-            ok_main, detail = kind_slc_fmt(ctx, c, work_dir)
-        elif k == "compile_only":
-            ok_main, detail = kind_compile_only(ctx, c, work_dir)
-        elif k == "compile_cache_reuse":
-            ok_main, detail = kind_compile_cache_reuse(ctx, c, work_dir)
-        elif k == "compile_and_run":
-            ok_main, detail = kind_compile_and_run(ctx, c, work_dir)
-        elif k == "slc_run":
-            ok_main, detail = kind_slc_run(ctx, c)
-        elif k == "genpkg_text_check":
-            ok_main, detail = kind_genpkg_text_check(ctx, c)
-        elif k == "genpkg_compile":
-            ok_main, detail = kind_genpkg_compile(ctx, c, work_dir)
-        elif k == "libsl_freestanding":
-            ok_main, detail = kind_libsl_freestanding(ctx, work_dir)
-        elif k == "arena_grow_test":
-            ok_main, detail = kind_arena_grow_test(ctx, work_dir)
+        if case.variant == "cli-eval":
+            ok_main, detail = kind_eval_run_expectation(ctx, c)
         else:
-            ok_main, detail = fail(f"unknown kind: {k}")
+            if k == "slc_stdout_eq":
+                ok_main, detail = kind_slc_stdout_eq(ctx, c)
+            elif k == "slc_ok":
+                ok_main, detail = kind_slc_ok(ctx, c)
+            elif k == "slc_fail_stderr":
+                ok_main, detail = kind_slc_fail_stderr(ctx, c)
+            elif k == "slc_ok_stderr":
+                ok_main, detail = kind_slc_ok_stderr(ctx, c)
+            elif k == "slc_fail_no_stdout":
+                ok_main, detail = kind_slc_fail_no_stdout(ctx, c)
+            elif k == "slc_fmt":
+                ok_main, detail = kind_slc_fmt(ctx, c, work_dir)
+            elif k == "compile_only":
+                ok_main, detail = kind_compile_only(ctx, c, work_dir)
+            elif k == "compile_cache_reuse":
+                ok_main, detail = kind_compile_cache_reuse(ctx, c, work_dir)
+            elif k == "compile_and_run":
+                ok_main, detail = kind_compile_and_run(ctx, c, work_dir)
+            elif k == "slc_run":
+                ok_main, detail = kind_slc_run(ctx, c)
+            elif k == "genpkg_text_check":
+                ok_main, detail = kind_genpkg_text_check(ctx, c)
+            elif k == "genpkg_compile":
+                ok_main, detail = kind_genpkg_compile(ctx, c, work_dir)
+            elif k == "libsl_freestanding":
+                ok_main, detail = kind_libsl_freestanding(ctx, work_dir)
+            elif k == "arena_grow_test":
+                ok_main, detail = kind_arena_grow_test(ctx, work_dir)
+            else:
+                ok_main, detail = fail(f"unknown kind: {k}")
 
-        if ok_main:
+        if ok_main and case.variant == "default":
             ok_sidecar, sidecar_detail = maybe_check_codegen_sidecar(ctx, c)
             if not ok_sidecar:
                 ok_main, detail = False, sidecar_detail
@@ -688,7 +790,7 @@ def cmd_list(args: argparse.Namespace) -> int:
     cases = filter_cases(cases, args.suite, args.id_contains)
     for c in cases:
         print(f"{c.id}\t{c.suite}\t{c.kind}")
-    print(f"\n{len(cases)} test(s)")
+    print(f"\n{count_noun(len(cases), 'test')}")
     return 0
 
 
@@ -801,20 +903,21 @@ def cmd_lint(args: argparse.Namespace) -> int:
     if errors:
         for e in errors:
             print(e, file=sys.stderr)
-        print(f"\n{len(errors)} lint error(s)", file=sys.stderr)
+        print(f"\n{count_noun(len(errors), 'lint error')}", file=sys.stderr)
         return 1
 
-    print(f"manifest OK: {len(cases)} test(s)")
+    print(f"manifest OK: {count_noun(len(cases), 'test')}")
     return 0
 
 
 def cmd_run(args: argparse.Namespace) -> int:
     manifest = abs_path(args.manifest)
-    cases = load_cases(manifest)
-    cases = filter_cases(cases, args.suite, args.id_contains)
-    if not cases:
+    fixtures = load_cases(manifest)
+    fixtures = filter_cases(fixtures, args.suite, args.id_contains)
+    if not fixtures:
         print("no tests selected")
         return 0
+    cases = expand_execution_cases(fixtures)
 
     build_dir = abs_path(args.build_dir)
     slc = build_dir / "slc"
@@ -833,7 +936,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     jobs = args.jobs if args.jobs and args.jobs > 0 else (os.cpu_count() or 1)
     temp_root = Path(tempfile.mkdtemp(prefix="slang-tests."))
 
-    print(f"Running {len(cases)} test(s) with {jobs} job(s)")
+    print(
+        f"Running {count_noun(len(fixtures), 'fixture')}, "
+        f"{count_noun(len(cases), 'execution')} with {count_noun(jobs, 'job')}"
+    )
     start = time.time()
     results: List[RunResult] = []
 
@@ -858,12 +964,16 @@ def cmd_run(args: argparse.Namespace) -> int:
                 print(r.detail, file=sys.stderr)
                 print("", file=sys.stderr)
         print(
-            f"{len(results) - len(failed)} passed, {len(failed)} failed in {time.time() - start:.2f}s",
+            f"{count_noun(len(results) - len(failed), 'execution')} passed, "
+            f"{count_noun(len(failed), 'execution')} failed in {time.time() - start:.2f}s",
             file=sys.stderr,
         )
         return 1
 
-    print(f"tests passed ({len(results)} total) in {time.time() - start:.2f}s")
+    print(
+        f"all {count_noun(len(results), 'execution')} passed "
+        f"({count_noun(len(fixtures), 'fixture')}) in {time.time() - start:.2f}s"
+    )
     return 0
 
 

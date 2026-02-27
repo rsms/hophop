@@ -124,18 +124,21 @@ __sl_noreturn void platform__exit(__sl_i32 status) {
     exit(status);
 }
 
+static __sl_Allocator gAllocator = { .impl = platform_mem_allocator_impl };
+static __sl_Context   gMainContext = {
+    .mem = &gAllocator,
+    .temp_mem = &gAllocator,
+    .log =
+        {
+            .handler = platform_log_handler,
+            .min_level = __sl_LogLevel_Info,
+            .flags = __sl_LoggerFlag_Level,
+            .prefix = NULL,
+        },
+};
+
+#ifndef SL_PLATFORM_NO_MAIN
 int main(void) {
-    static __sl_Allocator gAllocator = { .impl = platform_mem_allocator_impl };
-    __sl_Context          gMainContext = {
-        .mem = &gAllocator,
-        .temp_mem = &gAllocator,
-        .log =
-            {
-                .handler = platform_log_handler,
-                .min_level = __sl_LogLevel_Info,
-                .flags = __sl_LoggerFlag_Level,
-                .prefix = NULL,
-            },
-    };
     return sl_main(&gMainContext);
 }
+#endif
