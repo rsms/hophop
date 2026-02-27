@@ -370,3 +370,10 @@
 {"id":"integration.codegen.hole_param_codegen_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/hole_param_codegen_ok.sl","contains":["tests__example(__sl_int a, __sl_int __sl_v1, __sl_int c)"]}
 {"id":"integration.runtime.comparison_runtime_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/comparison_runtime_ok.sl","expect_exit":0}
 {"id":"integration.runtime.comparison_hook_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/comparison_hook_ok.sl","expect_exit":0}
+{"id":"formatter.canonical.check_clean","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_canonical.sl","check":true,"expect_exit":0,"expect_stdout":"tests/fmt_check_clean.stdout"}
+{"id":"formatter.messy.check_dirty","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_messy.sl","check":true,"expect_exit":1,"expect_stdout":"tests/fmt_check_dirty.stdout"}
+{"id":"formatter.messy.rewrite","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_messy.sl","expect_exit":0,"verify_files":[{"path":"input.sl","expect":"tests/fmt_messy.expected.sl"}]}
+{"id":"formatter.import_groups.check_dirty","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_import_groups.sl","check":true,"expect_exit":1,"expect_stdout":"tests/fmt_check_dirty.stdout"}
+{"id":"formatter.import_groups.rewrite","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_import_groups.sl","expect_exit":0,"verify_files":[{"path":"input.sl","expect":"tests/fmt_import_groups.expected.sl"}]}
+{"id":"formatter.dir.check_top_level_only","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_dir","check":true,"expect_exit":1,"expect_stdout":"tests/fmt_check_dir_top.stdout"}
+{"id":"formatter.dir.rewrite_top_level_only","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_dir","expect_exit":0,"verify_files":[{"path":"input/top.sl","expect":"tests/fmt_dir_top.expected.sl"},{"path":"input/nested/inner.sl","expect":"tests/fmt_dir/nested/inner.sl"}]}

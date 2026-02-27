@@ -1,0 +1,1 @@
+struct Foo{ x int }

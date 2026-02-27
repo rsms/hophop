@@ -9336,7 +9336,14 @@ static int InitAst(SLCBackendC* c) {
         growFn,
         freeFn);
     c->out.arena = &c->arena;
-    if (SLParse(&c->arena, (SLStrView){ c->unit->source, c->unit->sourceLen }, &c->ast, &diag) != 0)
+    if (SLParse(
+            &c->arena,
+            (SLStrView){ c->unit->source, c->unit->sourceLen },
+            NULL,
+            &c->ast,
+            NULL,
+            &diag)
+        != 0)
     {
         if (c->diag != NULL) {
             *c->diag = diag;

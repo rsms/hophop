@@ -2487,13 +2487,274 @@ const char* SLAstKindName(SLAstKind kind) {
     return "UNKNOWN";
 }
 
-int SLParse(SLArena* arena, SLStrView src, SLAst* out, SLDiag* diag) {
+static int SLPIsSpaceButNotNewline(char c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v';
+}
+
+static int SLPHasCodeOnLineBefore(const char* src, uint32_t lineStart, uint32_t pos) {
+    uint32_t i;
+    for (i = lineStart; i < pos; i++) {
+        char c = src[i];
+        if (!SLPIsSpaceButNotNewline(c)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static uint32_t SLPFindLineStart(const char* src, uint32_t pos) {
+    while (pos > 0) {
+        if (src[pos - 1] == '\n') {
+            break;
+        }
+        pos--;
+    }
+    return pos;
+}
+
+static int32_t SLPFindPrevNodeByEnd(const SLAst* ast, uint32_t pos) {
+    int32_t  best = -1;
+    uint32_t bestEnd = 0;
+    uint32_t bestSpan = 0;
+    uint32_t i;
+    for (i = 0; i < ast->len; i++) {
+        const SLAstNode* n;
+        uint32_t         span;
+        if ((int32_t)i == ast->root) {
+            continue;
+        }
+        n = &ast->nodes[i];
+        if (n->end > pos) {
+            continue;
+        }
+        span = n->end >= n->start ? (n->end - n->start) : 0;
+        if (best < 0 || n->end > bestEnd || (n->end == bestEnd && span > bestSpan)) {
+            best = (int32_t)i;
+            bestEnd = n->end;
+            bestSpan = span;
+        }
+    }
+    return best;
+}
+
+static int32_t SLPFindNextNodeByStart(const SLAst* ast, uint32_t pos) {
+    int32_t  best = -1;
+    uint32_t bestStart = 0;
+    uint32_t bestSpan = 0;
+    uint32_t i;
+    for (i = 0; i < ast->len; i++) {
+        const SLAstNode* n;
+        uint32_t         span;
+        if ((int32_t)i == ast->root) {
+            continue;
+        }
+        n = &ast->nodes[i];
+        if (n->start < pos) {
+            continue;
+        }
+        span = n->end >= n->start ? (n->end - n->start) : 0;
+        if (best < 0 || n->start < bestStart || (n->start == bestStart && span > bestSpan)) {
+            best = (int32_t)i;
+            bestStart = n->start;
+            bestSpan = span;
+        }
+    }
+    return best;
+}
+
+static int32_t SLPFindContainerNode(const SLAst* ast, uint32_t pos) {
+    int32_t nodeId = ast->root;
+    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return -1;
+    }
+    for (;;) {
+        int32_t  bestChild = -1;
+        int32_t  child = ast->nodes[nodeId].firstChild;
+        uint32_t bestSpan = 0;
+        while (child >= 0) {
+            const SLAstNode* n = &ast->nodes[child];
+            if (n->start <= pos && pos <= n->end) {
+                uint32_t span = n->end >= n->start ? (n->end - n->start) : 0;
+                if (bestChild < 0 || span < bestSpan) {
+                    bestChild = child;
+                    bestSpan = span;
+                }
+            }
+            child = ast->nodes[child].nextSibling;
+        }
+        if (bestChild < 0) {
+            break;
+        }
+        nodeId = bestChild;
+    }
+    return nodeId;
+}
+
+static int SLPNextCommentRange(
+    SLStrView src, uint32_t* ioPos, uint32_t* outStart, uint32_t* outEnd) {
+    uint32_t pos = *ioPos;
+    while (pos < src.len) {
+        unsigned char c = (unsigned char)src.ptr[pos];
+        if (c == (unsigned char)'"') {
+            pos++;
+            while (pos < src.len) {
+                c = (unsigned char)src.ptr[pos];
+                if (c == (unsigned char)'"') {
+                    pos++;
+                    break;
+                }
+                if (c == (unsigned char)'\\') {
+                    pos++;
+                    if (pos >= src.len) {
+                        break;
+                    }
+                    if ((unsigned char)src.ptr[pos] == (unsigned char)'\r' && pos + 1u < src.len
+                        && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'\n')
+                    {
+                        pos += 2u;
+                    } else {
+                        pos++;
+                    }
+                    continue;
+                }
+                pos++;
+            }
+            continue;
+        }
+        if (c == (unsigned char)'`') {
+            pos++;
+            while (pos < src.len) {
+                c = (unsigned char)src.ptr[pos];
+                if (c == (unsigned char)'\\' && pos + 1u < src.len
+                    && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'`')
+                {
+                    pos += 2u;
+                    continue;
+                }
+                if (c == (unsigned char)'`') {
+                    pos++;
+                    break;
+                }
+                pos++;
+            }
+            continue;
+        }
+        if (c == (unsigned char)'/' && pos + 1u < src.len
+            && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'/')
+        {
+            uint32_t start = pos;
+            pos += 2u;
+            while (pos < src.len && (unsigned char)src.ptr[pos] != (unsigned char)'\n') {
+                pos++;
+            }
+            *ioPos = pos;
+            *outStart = start;
+            *outEnd = pos;
+            return 1;
+        }
+        pos++;
+    }
+    *ioPos = pos;
+    return 0;
+}
+
+static int SLPCollectFormattingData(
+    SLArena*       arena,
+    SLStrView      src,
+    const SLAst*   ast,
+    SLParseExtras* outExtras,
+    SLDiag* _Nullable diag) {
+    SLComment* comments;
+    uint32_t   count = 0;
+    uint32_t   pos = 0;
+    for (;;) {
+        uint32_t start;
+        uint32_t end;
+        if (!SLPNextCommentRange(src, &pos, &start, &end)) {
+            break;
+        }
+        count++;
+    }
+    if (count == 0) {
+        outExtras->comments = NULL;
+        outExtras->commentLen = 0;
+        return 0;
+    }
+
+    comments = (SLComment*)SLArenaAlloc(
+        arena, count * (uint32_t)sizeof(SLComment), (uint32_t)_Alignof(SLComment));
+    if (comments == NULL) {
+        SLPSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        return -1;
+    }
+
+    pos = 0;
+    count = 0;
+    for (;;) {
+        uint32_t start;
+        uint32_t end;
+        uint32_t lineStart;
+        int32_t  prevNode;
+        int32_t  nextNode;
+        int32_t  containerNode;
+        if (!SLPNextCommentRange(src, &pos, &start, &end)) {
+            break;
+        }
+        lineStart = SLPFindLineStart(src.ptr, start);
+        prevNode = SLPFindPrevNodeByEnd(ast, start);
+        nextNode = SLPFindNextNodeByStart(ast, end);
+        containerNode = SLPFindContainerNode(ast, start);
+
+        comments[count].start = start;
+        comments[count].end = end;
+        comments[count].textStart = start + 2u <= end ? start + 2u : end;
+        comments[count].textEnd = end;
+        comments[count].containerNode = containerNode;
+        comments[count].anchorNode = -1;
+        comments[count].attachment = SLCommentAttachment_FLOATING;
+        comments[count]._reserved[0] = 0;
+        comments[count]._reserved[1] = 0;
+        comments[count]._reserved[2] = 0;
+
+        if (SLPHasCodeOnLineBefore(src.ptr, lineStart, start)) {
+            comments[count].attachment = SLCommentAttachment_TRAILING;
+            comments[count].anchorNode = prevNode >= 0 ? prevNode : containerNode;
+        } else if (nextNode >= 0) {
+            comments[count].attachment = SLCommentAttachment_LEADING;
+            comments[count].anchorNode = nextNode;
+        } else if (prevNode >= 0) {
+            comments[count].attachment = SLCommentAttachment_TRAILING;
+            comments[count].anchorNode = prevNode;
+        } else {
+            comments[count].attachment = SLCommentAttachment_FLOATING;
+            comments[count].anchorNode = containerNode;
+        }
+        count++;
+    }
+
+    outExtras->comments = comments;
+    outExtras->commentLen = count;
+    return 0;
+}
+
+int SLParse(
+    SLArena*  arena,
+    SLStrView src,
+    const SLParseOptions* _Nullable options,
+    SLAst* out,
+    SLParseExtras* _Nullable outExtras,
+    SLDiag* diag) {
     SLTokenStream ts;
     SLParser      p;
     int32_t       root;
+    uint32_t      parseFlags = options != NULL ? options->flags : 0;
 
     if (diag != NULL) {
         *diag = (SLDiag){ 0 };
+    }
+    if (outExtras != NULL) {
+        outExtras->comments = NULL;
+        outExtras->commentLen = 0;
     }
     out->nodes = NULL;
     out->len = 0;
@@ -2553,6 +2814,11 @@ int SLParse(SLArena* arena, SLStrView src, SLAst* out, SLDiag* diag) {
     out->len = p.nodeLen;
     out->root = root;
     out->features = p.features;
+    if ((parseFlags & SLParseFlag_COLLECT_FORMATTING) != 0 && outExtras != NULL
+        && SLPCollectFormattingData(arena, src, out, outExtras, diag) != 0)
+    {
+        return -1;
+    }
     return 0;
 }
 

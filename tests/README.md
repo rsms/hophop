@@ -31,6 +31,7 @@ Common optional fields:
 - `slc_fail_stderr`
 - `slc_ok_stderr`
 - `slc_fail_no_stdout`
+- `slc_fmt`
 - `compile_only`
 - `compile_cache_reuse`
 - `compile_and_run`
@@ -41,6 +42,20 @@ Common optional fields:
 - `arena_grow_test`
 
 Kind-specific fields:
+
+### `slc_fmt`
+
+Required:
+
+- `input` (string): file or directory fixture copied into temp workdir before running `slc fmt`
+
+Optional:
+
+- `check` (bool, default `false`): run `slc fmt --check`
+- `expect_exit` (int, default `0`)
+- `expect_stdout` (string): golden stdout file to compare
+- `stderr_empty` (bool, default `true`)
+- `verify_files` (array): each item is `{"path":"<relative path in temp workdir>","expect":"<golden file>"}` and is compared after command execution
 
 ### `compile_and_run`
 

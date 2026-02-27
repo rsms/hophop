@@ -1174,6 +1174,273 @@ static int ReadFile(const char* filename, char** outData, uint32_t* outLen) {
     return 0;
 }
 
+static int ListTopLevelSLFilesForFmt(const char* dirPath, char*** outFiles, uint32_t* outLen) {
+    DIR*           dir = opendir(dirPath);
+    struct dirent* ent;
+    char**         files = NULL;
+    uint32_t       len = 0;
+    uint32_t       cap = 0;
+
+    *outFiles = NULL;
+    *outLen = 0;
+
+    if (dir == NULL) {
+        return ErrorSimple("failed to open directory %s", dirPath);
+    }
+
+    for (;;) {
+        char*       filePath;
+        struct stat st;
+        if ((ent = readdir(dir)) == NULL) {
+            break;
+        }
+        if (ent->d_name[0] == '.') {
+            continue;
+        }
+        if (!HasSuffix(ent->d_name, ".sl")) {
+            continue;
+        }
+        filePath = JoinPath(dirPath, ent->d_name);
+        if (filePath == NULL) {
+            closedir(dir);
+            return ErrorSimple("out of memory");
+        }
+        if (stat(filePath, &st) != 0 || !S_ISREG(st.st_mode)) {
+            free(filePath);
+            continue;
+        }
+        if (EnsureCap((void**)&files, &cap, len + 1u, sizeof(char*)) != 0) {
+            free(filePath);
+            closedir(dir);
+            return ErrorSimple("out of memory");
+        }
+        files[len++] = filePath;
+    }
+    closedir(dir);
+
+    if (len > 0) {
+        qsort(files, (size_t)len, sizeof(char*), CompareStringPtrs);
+    }
+    *outFiles = files;
+    *outLen = len;
+    return 0;
+}
+
+static int WriteFileAtomic(const char* filename, const char* data, uint32_t len) {
+    size_t  filenameLen = strlen(filename);
+    size_t  tmpCap = filenameLen + 32u;
+    char*   tmpPath;
+    int     fd;
+    ssize_t nwritten;
+    int     rc = -1;
+
+    tmpPath = (char*)malloc(tmpCap);
+    if (tmpPath == NULL) {
+        return -1;
+    }
+    snprintf(tmpPath, tmpCap, "%s.tmp.XXXXXX", filename);
+    fd = mkstemp(tmpPath);
+    if (fd < 0) {
+        free(tmpPath);
+        return -1;
+    }
+
+    nwritten = write(fd, data, (size_t)len);
+    if (nwritten != (ssize_t)len) {
+        close(fd);
+        unlink(tmpPath);
+        free(tmpPath);
+        return -1;
+    }
+    if (close(fd) != 0) {
+        unlink(tmpPath);
+        free(tmpPath);
+        return -1;
+    }
+    if (rename(tmpPath, filename) == 0) {
+        rc = 0;
+    } else {
+        unlink(tmpPath);
+    }
+    free(tmpPath);
+    return rc;
+}
+
+static int FormatOneFile(const char* filename, int checkOnly, int* outChanged) {
+    char*     source = NULL;
+    uint32_t  sourceLen = 0;
+    uint64_t  arenaCap64;
+    size_t    arenaCap;
+    void*     arenaMem = NULL;
+    SLArena   arena;
+    SLDiag    diag = {};
+    SLStrView formatted = { 0 };
+    int       changed = 0;
+    int       rc = -1;
+
+    *outChanged = 0;
+    if (ReadFile(filename, &source, &sourceLen) != 0) {
+        return -1;
+    }
+
+    arenaCap64 = (uint64_t)(sourceLen + 128u) * (uint64_t)sizeof(SLAstNode) + 65536u;
+    if (arenaCap64 > (uint64_t)SIZE_MAX) {
+        fprintf(stderr, "arena too large\n");
+        goto done;
+    }
+    arenaCap = (size_t)arenaCap64;
+    arenaMem = malloc(arenaCap);
+    if (arenaMem == NULL) {
+        fprintf(stderr, "failed to allocate arena\n");
+        goto done;
+    }
+    SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    SLArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
+
+    if (SLFormat(&arena, (SLStrView){ source, sourceLen }, NULL, &formatted, &diag) != 0) {
+        (void)PrintSLDiagLineCol(filename, source, &diag, 0);
+        goto done;
+    }
+
+    changed = sourceLen != formatted.len
+           || memcmp(source, formatted.ptr, sourceLen < formatted.len ? sourceLen : formatted.len)
+                  != 0;
+    if (changed) {
+        if (checkOnly) {
+            fprintf(stdout, "%s\n", filename);
+        } else if (WriteFileAtomic(filename, formatted.ptr, formatted.len) != 0) {
+            fprintf(stderr, "error: failed to write %s\n", filename);
+            goto done;
+        }
+    }
+
+    *outChanged = changed;
+    rc = 0;
+
+done:
+    if (arenaMem != NULL) {
+        SLArenaDispose(&arena);
+        free(arenaMem);
+    }
+    free(source);
+    return rc;
+}
+
+static int AddFmtPath(char*** outFiles, uint32_t* outLen, uint32_t* outCap, const char* path) {
+    char* dup;
+    if (EnsureCap((void**)outFiles, outCap, *outLen + 1u, sizeof(char*)) != 0) {
+        return -1;
+    }
+    dup = DupCStr(path);
+    if (dup == NULL) {
+        return -1;
+    }
+    (*outFiles)[(*outLen)++] = dup;
+    return 0;
+}
+
+static int RunFmtCommand(int argc, const char* const* argv) {
+    int      checkOnly = 0;
+    char**   files = NULL;
+    uint32_t fileLen = 0;
+    uint32_t fileCap = 0;
+    uint32_t i;
+    int      hadMismatch = 0;
+    int      hadError = 0;
+
+    for (i = 0; i < (uint32_t)argc; i++) {
+        const char* arg = argv[i];
+        if (StrEq(arg, "--check")) {
+            checkOnly = 1;
+            continue;
+        }
+        {
+            struct stat st;
+            if (stat(arg, &st) != 0) {
+                fprintf(stderr, "error: path does not exist: %s\n", arg);
+                hadError = 1;
+                continue;
+            }
+            if (S_ISDIR(st.st_mode)) {
+                char**   dirFiles = NULL;
+                uint32_t dirLen = 0;
+                uint32_t j;
+                if (ListTopLevelSLFilesForFmt(arg, &dirFiles, &dirLen) != 0) {
+                    hadError = 1;
+                    continue;
+                }
+                for (j = 0; j < dirLen; j++) {
+                    if (AddFmtPath(&files, &fileLen, &fileCap, dirFiles[j]) != 0) {
+                        hadError = 1;
+                    }
+                    free(dirFiles[j]);
+                }
+                free(dirFiles);
+                continue;
+            }
+            if (!S_ISREG(st.st_mode)) {
+                fprintf(stderr, "error: not a regular file or directory: %s\n", arg);
+                hadError = 1;
+                continue;
+            }
+            if (!HasSuffix(arg, ".sl")) {
+                fprintf(stderr, "error: not an .sl file: %s\n", arg);
+                hadError = 1;
+                continue;
+            }
+            if (AddFmtPath(&files, &fileLen, &fileCap, arg) != 0) {
+                fprintf(stderr, "error: out of memory\n");
+                hadError = 1;
+                continue;
+            }
+        }
+    }
+
+    if (argc == 0) {
+        char**   dirFiles = NULL;
+        uint32_t dirLen = 0;
+        uint32_t j;
+        if (ListTopLevelSLFilesForFmt(".", &dirFiles, &dirLen) != 0) {
+            hadError = 1;
+        } else {
+            for (j = 0; j < dirLen; j++) {
+                if (AddFmtPath(&files, &fileLen, &fileCap, dirFiles[j]) != 0) {
+                    hadError = 1;
+                }
+                free(dirFiles[j]);
+            }
+            free(dirFiles);
+        }
+    }
+
+    if (fileLen > 1u) {
+        qsort(files, (size_t)fileLen, sizeof(char*), CompareStringPtrs);
+    }
+    for (i = 0; i < fileLen; i++) {
+        int changed = 0;
+        if (FormatOneFile(files[i], checkOnly, &changed) != 0) {
+            hadError = 1;
+            continue;
+        }
+        if (changed) {
+            hadMismatch = 1;
+        }
+    }
+
+    for (i = 0; i < fileLen; i++) {
+        free(files[i]);
+    }
+    free(files);
+
+    if (hadError) {
+        return 1;
+    }
+    if (checkOnly && hadMismatch) {
+        return 1;
+    }
+    return 0;
+}
+
 static void PrintEscaped(FILE* out, const char* s, uint32_t start, uint32_t end) {
     uint32_t i;
 
@@ -1275,7 +1542,7 @@ static int DumpAST(const char* filename, const char* source, uint32_t sourceLen)
     }
 
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
-    if (SLParse(&arena, (SLStrView){ source, sourceLen }, &ast, &diag) != 0) {
+    if (SLParse(&arena, (SLStrView){ source, sourceLen }, NULL, &ast, NULL, &diag) != 0) {
         int diagStatus = PrintSLDiag(filename, source, &diag, 0);
         free(arenaMem);
         return diagStatus;
@@ -1340,7 +1607,7 @@ static int ParseSourceEx(
     if (outArena != NULL) {
         SLArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
     }
-    if (SLParse(&arena, (SLStrView){ source, sourceLen }, outAst, &diag) != 0) {
+    if (SLParse(&arena, (SLStrView){ source, sourceLen }, NULL, outAst, NULL, &diag) != 0) {
         (void)(useLineColDiag ? PrintSLDiagLineCol(filename, source, &diag, 0)
                               : PrintSLDiag(filename, source, &diag, 0));
         SLArenaDispose(&arena);
@@ -1482,7 +1749,7 @@ static int CheckSourceExWithSingleFileRemap(
     }
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
     SLArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
-    if (SLParse(&arena, (SLStrView){ source, sourceLen }, &ast, &diag) != 0) {
+    if (SLParse(&arena, (SLStrView){ source, sourceLen }, NULL, &ast, NULL, &diag) != 0) {
         SLDiag   remappedDiag;
         uint32_t remappedFileIndex = 0;
         RemapCombinedDiag(remapMap, &diag, &remappedDiag, &remappedFileIndex, remapSource);
@@ -4674,12 +4941,14 @@ static void PrintUsage(const char* argv0) {
         stderr,
         "usage: %s --version\n"
         "       %s [lex|ast|check] <file.sl>\n"
+        "       %s fmt [--check] [<file-or-dir> ...]\n"
         "       %s [--platform <target>] [--cache-dir <dir>] checkpkg <package-dir|file.sl>\n"
         "       %s [--platform <target>] [--cache-dir <dir>] genpkg[:backend] "
         "<package-dir|file.sl> [out.h]\n"
         "       %s [--platform <target>] [--cache-dir <dir>] compile <package-dir|file.sl> "
         "[-o <output>]\n"
         "       %s [--platform <target>] [--cache-dir <dir>] run <package-dir|file.sl>\n",
+        argv0,
         argv0,
         argv0,
         argv0,
@@ -6111,6 +6380,9 @@ int main(int argc, char* argv[]) {
             return 2;
         }
         return RunProgram(argv[argi + 1], platformTarget, cacheDirArg) == 0 ? 0 : 1;
+    }
+    if (argc - argi >= 1 && StrEq(argv[argi], "fmt")) {
+        return RunFmtCommand(argc - argi - 1, (const char* const*)&argv[argi + 1]);
     }
 
     if (argc - argi == 1) {

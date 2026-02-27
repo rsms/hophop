@@ -1,0 +1,1 @@
+struct Inner{ y int }

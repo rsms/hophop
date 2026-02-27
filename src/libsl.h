@@ -337,12 +337,48 @@ typedef uint32_t SLFeatures;
 #define SLFeature_NONE     ((SLFeatures)0)
 #define SLFeature_OPTIONAL ((SLFeatures)(1u << 0))
 
+typedef enum {
+    SLCommentAttachment_FLOATING = 0,
+    SLCommentAttachment_LEADING = 1,
+    SLCommentAttachment_TRAILING = 2,
+} SLCommentAttachment;
+
+typedef struct {
+    uint32_t            start;
+    uint32_t            end;
+    uint32_t            textStart;
+    uint32_t            textEnd;
+    int32_t             anchorNode;
+    int32_t             containerNode;
+    SLCommentAttachment attachment;
+    uint8_t             _reserved[3];
+} SLComment;
+
 typedef struct {
     const SLAstNode* nodes;
     uint32_t         len;
     int32_t          root;
     SLFeatures       features;
 } SLAst;
+
+typedef enum {
+    SLParseFlag_NONE = 0,
+    SLParseFlag_COLLECT_FORMATTING = 1u << 0,
+} SLParseFlag;
+
+typedef struct {
+    uint32_t flags;
+} SLParseOptions;
+
+typedef struct {
+    const SLComment* comments;
+    uint32_t         commentLen;
+} SLParseExtras;
+
+typedef struct {
+    uint32_t flags;
+    uint32_t indentWidth;
+} SLFormatOptions;
 
 const char* SLTokenKindName(SLTokenKind kind);
 const char* SLAstKindName(SLAstKind kind);
@@ -360,7 +396,19 @@ int SLNormalizeImportPath(
 // Tokenize src into arena memory and return a view over tokens.
 // Returns 0 on success, -1 on failure. On failure, diag is set.
 int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag);
-int SLParse(SLArena* arena, SLStrView src, SLAst* out, SLDiag* diag);
+int SLParse(
+    SLArena*  arena,
+    SLStrView src,
+    const SLParseOptions* _Nullable options,
+    SLAst* out,
+    SLParseExtras* _Nullable outExtras,
+    SLDiag* diag);
+int SLFormat(
+    SLArena*  arena,
+    SLStrView src,
+    const SLFormatOptions* _Nullable options,
+    SLStrView* out,
+    SLDiag*    diag);
 int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag);
 int SLAstDump(const SLAst* ast, SLStrView src, SLWriter* w, SLDiag* diag);
 

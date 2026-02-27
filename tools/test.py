@@ -240,6 +240,70 @@ def kind_slc_fail_no_stdout(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool
     return ok()
 
 
+def kind_slc_fmt(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
+    input_path = abs_path(str(case["input"]))
+    check = bool(case.get("check", False))
+    expect_exit = int(case.get("expect_exit", 0))
+    stderr_empty = bool(case.get("stderr_empty", True))
+    expected_stdout_path = case.get("expect_stdout")
+    verify_files = case.get("verify_files", [])
+    cmd_target: str
+
+    if input_path.is_dir():
+        dst_dir = work_dir / "input"
+        shutil.copytree(input_path, dst_dir)
+        cmd_target = "input"
+    else:
+        dst_file = work_dir / "input.sl"
+        shutil.copy2(input_path, dst_file)
+        cmd_target = "input.sl"
+
+    args = [str(ctx.slc), "fmt"]
+    if check:
+        args.append("--check")
+    args.append(cmd_target)
+    cp = run_cmd(args, cwd=work_dir)
+
+    if cp.returncode != expect_exit:
+        return fail(f"unexpected exit code: expected {expect_exit}, got {cp.returncode}")
+    if stderr_empty and cp.stderr:
+        return fail(f"unexpected stderr:\n{cp.stderr}")
+
+    if expected_stdout_path is not None:
+        expected_stdout = read_text(str(expected_stdout_path))
+        if cp.stdout != expected_stdout:
+            diff = "".join(
+                difflib.unified_diff(
+                    expected_stdout.splitlines(True),
+                    cp.stdout.splitlines(True),
+                    fromfile=str(expected_stdout_path),
+                    tofile="actual.stdout",
+                )
+            )
+            return fail(f"stdout mismatch:\n{diff}")
+
+    for item in verify_files:
+        rel_path = str(item["path"])
+        expect_path = str(item["expect"])
+        actual_path = work_dir / rel_path
+        if not actual_path.exists():
+            return fail(f"missing expected output file: {rel_path}")
+        actual = actual_path.read_text()
+        expected = read_text(expect_path)
+        if actual != expected:
+            diff = "".join(
+                difflib.unified_diff(
+                    expected.splitlines(True),
+                    actual.splitlines(True),
+                    fromfile=expect_path,
+                    tofile=rel_path,
+                )
+            )
+            return fail(f"formatted content mismatch for {rel_path}:\n{diff}")
+
+    return ok()
+
+
 def run_compile(ctx: RunContext, input_path: str, output_path: Path) -> subprocess.CompletedProcess[str]:
     return run_cmd([str(ctx.slc), "compile", input_path, "-o", str(output_path)])
 
@@ -546,6 +610,8 @@ def execute_case(ctx: RunContext, case: TestCase, temp_root: Path) -> RunResult:
             ok_main, detail = kind_slc_ok_stderr(ctx, c)
         elif k == "slc_fail_no_stdout":
             ok_main, detail = kind_slc_fail_no_stdout(ctx, c)
+        elif k == "slc_fmt":
+            ok_main, detail = kind_slc_fmt(ctx, c, work_dir)
         elif k == "compile_only":
             ok_main, detail = kind_compile_only(ctx, c, work_dir)
         elif k == "compile_cache_reuse":
@@ -629,7 +695,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 def lint_case_fields(case: TestCase) -> List[str]:
     errors: List[str] = []
     c = case.data
-    for field in ("input", "expect", "expect_stderr", "harness"):
+    for field in ("input", "expect", "expect_stderr", "expect_stdout", "harness"):
         v = c.get(field)
         if isinstance(v, str) and v and field != "harness":
             p = abs_path(v)
@@ -644,6 +710,18 @@ def lint_case_fields(case: TestCase) -> List[str]:
             if not p.is_file():
                 errors.append(f"{case.id}: missing harness file {v}")
 
+    verify_files = c.get("verify_files")
+    if isinstance(verify_files, list):
+        for item in verify_files:
+            if not isinstance(item, dict):
+                errors.append(f"{case.id}: verify_files item must be an object")
+                continue
+            expect = item.get("expect")
+            if isinstance(expect, str) and expect:
+                p = abs_path(expect)
+                if not p.is_file():
+                    errors.append(f"{case.id}: missing verify_files expect file {expect}")
+
     return errors
 
 
@@ -651,13 +729,23 @@ def iter_manifest_test_paths(cases: List[TestCase]) -> List[str]:
     paths: List[str] = []
     for case in cases:
         c = case.data
-        for field in ("input", "expect", "expect_stderr", "harness"):
+        for field in ("input", "expect", "expect_stderr", "expect_stdout", "harness"):
             v = c.get(field)
             if not isinstance(v, str) or not v:
                 continue
             path = Path(v).as_posix().rstrip("/")
             if path.startswith("tests/"):
                 paths.append(path)
+        verify_files = c.get("verify_files")
+        if isinstance(verify_files, list):
+            for item in verify_files:
+                if not isinstance(item, dict):
+                    continue
+                expect = item.get("expect")
+                if isinstance(expect, str) and expect:
+                    path = Path(expect).as_posix().rstrip("/")
+                    if path.startswith("tests/"):
+                        paths.append(path)
     return paths
 
 
