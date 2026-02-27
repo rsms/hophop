@@ -6,30 +6,18 @@ Build with `./build.sh` (you'll need `clang` in `PATH`)
 
 Documentation home: `docs/index.md`
 
-## CLI
+## `slc` at a glance
 
-```sh
-# tokenize
-_build/macos-aarch64-debug/slc file.sl
+After `./build.sh`, use `_build/macos-aarch64-debug/slc`.
+Run `_build/macos-aarch64-debug/slc --help` (or `_build/macos-aarch64-debug/slc`) for the full command reference.
 
-# parse + print AST
-_build/macos-aarch64-debug/slc ast file.sl
-
-# typecheck single file
-_build/macos-aarch64-debug/slc check file.sl
-
-# typecheck package directory or a single file as a package
-_build/macos-aarch64-debug/slc checkpkg <package-dir|file.sl>
-
-# generate C header for package directory or single file
-_build/macos-aarch64-debug/slc genpkg:c <package-dir|file.sl> [out.h]
-
-# compile program to native executable via cc
-_build/macos-aarch64-debug/slc [--cache-dir <dir>] compile <package-dir|file.sl> [-o <output>]
-
-# compile + exec
-_build/macos-aarch64-debug/slc [--cache-dir <dir>] run <package-dir|file.sl>
-```
+- Lexing, AST dump, and single-file checking.
+- Package-level checking (`checkpkg`) with import loading.
+- Package code generation (`genpkg[:backend]`), including C header generation.
+- Formatting (`fmt`) with optional check mode.
+- Native compilation (`compile`) through the C11 backend.
+- Compile-and-run (`run`) for quick iteration.
+- `--platform` and `--cache-dir` options for target/runtime selection and build cache control.
 
 ## Example
 
