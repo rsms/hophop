@@ -266,7 +266,7 @@ fn f() {
 ## 5. Type System
 
 ### 5.1 Built-in and constructed types
-- [TYPE-BUILTIN-001][Stable] Built-ins include `void`, `bool`, and `str`.
+- [TYPE-BUILTIN-001][Stable] Built-ins include `bool` and `str`.
 - [TYPE-BUILTIN-002][Stable] Source-level numeric type names are:
   - unsigned integers: `u8`, `u16`, `u32`, `u64`, `uint`
   - signed integers: `i8`, `i16`, `i32`, `i64`, `int`
@@ -276,8 +276,8 @@ fn f() {
 - [TYPE-BUILTIN-005][Stable] `rune` is a source-level alias type provided by core declarations and modeled as `type rune u32`.
 - [TYPE-CONSTR-001][Stable] Constructed types: pointers `*T`, references `&T`, arrays `[T N]`, slices `[T]`, dependent arrays `[T .n]`, optionals `?T`, function types, anonymous aggregates.
 - [TYPE-CONSTR-002][Stable] `[T]` is unsized and MUST NOT be used by value.
-- [TYPE-CONSTR-003][Stable] Function type return type defaults to `void` when omitted.
-- [TYPE-CONSTR-004][Stable] Function type explicit return type MUST NOT be `void`.
+- [TYPE-CONSTR-003][Stable] Function type return type defaults to no-value when omitted.
+- [TYPE-CONSTR-004][Stable] No-value function return has no source-level type spelling.
 - [TYPE-CONSTR-005][Stable] Variable-size-by-value types are invalid in local/param/return/function-type positions.
 
 ### 5.2 Mutability model
@@ -318,7 +318,7 @@ fn f() {
 ### 5.5 Inference and zero values
 - [TYPE-INFER-001][Stable] `var x = expr` and `const x = expr` infer from `expr` after concretization.
 - [TYPE-INFER-002][Stable] `untyped_int` defaults to `int`; `untyped_float` defaults to `f64`.
-- [TYPE-INFER-003][Stable] Inference from `null` or `void` expressions is invalid.
+- [TYPE-INFER-003][Stable] Inference from `null` or no-value expressions is invalid.
 - [TYPE-INFER-004][Stable] Rune literals infer type `rune`.
 - [TYPE-ZERO-001][Stable] `var x T` zero-initializes `x`.
 
@@ -427,7 +427,7 @@ fn f() {
 - [STMT-SWITCH-006][Stable] Duplicate case labels are not required to be diagnosed statically.
 - [STMT-SWITCH-007][Stable] Expression-switch semantics are defined as if subject expression is evaluated once before case-label matching.
 - [STMT-CTRL-001][Stable] `break` valid inside `for`/`switch`; `continue` only inside `for`.
-- [STMT-RETURN-001][Stable] `return expr` required iff function return type is non-void.
+- [STMT-RETURN-001][Stable] `return expr` is required iff function has an explicit return type.
 - [STMT-DEFER-001][Stable] `defer` supports statement or block, executes LIFO on scope exit.
 - [STMT-DEFER-002][Stable] Defers are guaranteed on structured scope exits (normal fallthrough, `return`, `break`, `continue`), but not guaranteed after runtime traps/aborts (`panic`, failed `assert`, process termination).
 - [STMT-ASSERT-001][Stable] First assert argument MUST be bool; if format argument exists it MUST be `str`-assignable.
@@ -487,7 +487,7 @@ fn f() {
 
 ### 9.5 `panic(msg)`
 - [BI-PANIC-001][Stable] Argument MUST be `str`-assignable.
-- [BI-PANIC-002][Stable] Return type is `void`.
+- [BI-PANIC-002][Stable] Returns no value.
 
 ### 9.6 `sizeof`
 - [BI-SIZEOF-001][Stable] `sizeof(Type)` and `sizeof(expr)` forms are supported.

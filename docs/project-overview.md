@@ -209,7 +209,7 @@ fn b(x i32) i32 { return x + 1 } // private
 
 #### Built-in types
 
-`u8 u16 u32 u64 i8 i16 i32 i64 uint int f32 f64 bool void str`
+`u8 u16 u32 u64 i8 i16 i32 i64 uint int f32 f64 bool str`
 
 #### Derived
 
@@ -824,12 +824,12 @@ pub struct PQueue {
     cap  i32
 }
 
-pub fn Init(q *PQueue, backing *i32, cap i32) void;
+pub fn Init(q *PQueue, backing *i32, cap i32);
 pub fn Push(q *PQueue, x i32) bool;
 pub fn Pop(q *PQueue, out *i32) bool;
 pub fn Peek(q *PQueue, out *i32) bool;
 
-fn Init(q *PQueue, backing *i32, cap i32) void {
+fn Init(q *PQueue, backing *i32, cap i32) {
     q.data = backing
     q.len  = 0
     q.cap  = cap

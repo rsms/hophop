@@ -1,2 +1,0 @@
-tests/bad_void_return_type.sl:1:13: SL2010: 'void' is not a valid return type
-  tip: remove 'void'

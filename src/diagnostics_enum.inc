@@ -28,7 +28,6 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_RESERVED_NAME,                 /* SL2007: identifier '{s}' is reserved */
     SLDiag_RESERVED_SL_PREFIX,            /* SL2008: identifier prefix '__sl_' is reserved */
     SLDiag_EXPECTED_BOOL,                 /* SL2009: expected bool expression */
-    SLDiag_VOID_RETURN_TYPE,              /* SL2010: 'void' is not a valid return type */
     SLDiag_EMBEDDED_FIELD_NOT_FIRST,      /* SL2011: embedded field must be first in struct */
     SLDiag_MULTIPLE_EMBEDDED_FIELDS,      /* SL2012: only one embedded field is allowed */
     SLDiag_EMBEDDED_TYPE_NOT_STRUCT,      /* SL2013: embedded field type must be a struct */
@@ -45,7 +44,7 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_IMPORT_FEATURE_IMPORT_EXTRAS, /* SL2025: feature imports must be path-only (no alias or
                                             symbol list) */
     SLDiag_INFER_NULL_TYPE_UNKNOWN,   /* SL2026: cannot infer type from null; add explicit type */
-    SLDiag_INFER_VOID_TYPE_UNKNOWN,   /* SL2027: cannot infer type from void expression */
+    SLDiag_INFER_VOID_TYPE_UNKNOWN,   /* SL2027: cannot infer type from expression with no value */
     SLDiag_CONST_MISSING_INITIALIZER, /* SL2028: const declaration requires initializer */
     SLDiag_CONTEXT_REQUIRED,          /* SL2029: context is required here */
     SLDiag_CONTEXT_MISSING_FIELD,     /* SL2030: required context field is missing */

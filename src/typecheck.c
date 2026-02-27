@@ -769,9 +769,6 @@ static int32_t SLTCFindBuiltinType(SLTypeCheckCtx* c, uint32_t start, uint32_t e
         if (t->kind != SLTCType_BUILTIN) {
             continue;
         }
-        if (SLNameEqLiteral(c->src, start, end, "void") && t->builtin == SLBuiltin_VOID) {
-            return (int32_t)i;
-        }
         if (SLNameEqLiteral(c->src, start, end, "bool") && t->builtin == SLBuiltin_BOOL) {
             return (int32_t)i;
         }
@@ -2662,9 +2659,6 @@ static int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outTy
                     }
                     if (SLTCResolveTypeNode(c, child, &returnType) != 0) {
                         return -1;
-                    }
-                    if (returnType == c->typeVoid) {
-                        return SLTCFailNode(c, child, SLDiag_VOID_RETURN_TYPE);
                     }
                     if (SLTCTypeContainsVarSizeByValue(c, returnType)) {
                         return SLTCFailNode(c, child, SLDiag_TYPE_MISMATCH);
@@ -4881,9 +4875,6 @@ static int SLTCReadFunctionSig(
         {
             if (SLTCResolveTypeNode(c, child, &returnType) != 0) {
                 return -1;
-            }
-            if (returnType == c->typeVoid) {
-                return SLTCFailNode(c, child, SLDiag_VOID_RETURN_TYPE);
             }
             if (SLTCTypeContainsVarSizeByValue(c, returnType)) {
                 return SLTCFailNode(c, child, SLDiag_TYPE_MISMATCH);
