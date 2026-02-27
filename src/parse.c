@@ -704,7 +704,7 @@ static int SLPParseCompoundLiteralTail(SLParser* p, int32_t typeNode, int32_t* o
 
     while (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
         const SLToken* fieldName;
-        const SLToken* eqTok;
+        const SLToken* colonTok;
         int32_t        field;
         int32_t        expr;
 
@@ -724,7 +724,7 @@ static int SLPParseCompoundLiteralTail(SLParser* p, int32_t typeNode, int32_t* o
             }
             p->nodes[field].dataEnd = seg->end;
         }
-        if (SLPExpect(p, SLTok_ASSIGN, SLDiag_UNEXPECTED_TOKEN, &eqTok) != 0) {
+        if (SLPExpect(p, SLTok_COLON, SLDiag_UNEXPECTED_TOKEN, &colonTok) != 0) {
             return -1;
         }
         if (SLPParseExpr(p, 1, &expr) != 0) {
@@ -1064,7 +1064,7 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
                         }
                         p->nodes[bindNode].dataStart = bindTok->start;
                         p->nodes[bindNode].dataEnd = bindTok->end;
-                        if (SLPMatch(p, SLTok_ASSIGN)) {
+                        if (SLPMatch(p, SLTok_COLON)) {
                             if (SLPParseExpr(p, 1, &bindExpr) != 0) {
                                 return -1;
                             }

@@ -6,5 +6,5 @@ struct Vec2 {
 fn round(v *Vec2) {}
 
 fn main() {
-	round(&{ x = 1, y = 2 })
+	round(&{ x: 1, y: 2 })
 }

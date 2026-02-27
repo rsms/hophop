@@ -4,6 +4,6 @@ struct Vec2 {
 }
 
 fn main() {
-	var v Vec2 = { x = "x", y = 1 }
+	var v Vec2 = { x: "x", y: 1 }
 	_ = v
 }

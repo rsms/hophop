@@ -13,6 +13,6 @@ struct C {
 }
 
 fn main() {
-	var c C = { s = {} }
+	var c C = { s: {} }
 	assert (c.s.x == 1)
 }

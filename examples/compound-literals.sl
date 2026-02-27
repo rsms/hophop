@@ -31,26 +31,26 @@ fn y_of(v &Vec2) i32 {
 
 fn main() {
 	// explicit target type
-	var a = Vec2{ x = 1, y = 2 }
+	var a = Vec2{ x: 1, y: 2 }
 
 	// inferred target type from declared type and assignment target
-	var b Vec2 = { x = 3, y = 4 }
-	b = { x = 5, y = 6 }
+	var b Vec2 = { x: 3, y: 4 }
+	b = { x: 5, y: 6 }
 
 	// inferred target type at call sites
-	var c i32 = sum({ x = 7, y = 8 })
-	var d i32 = y_of({ x = 9, y = 10 })
-	var e i32 = y_of(Vec2{ x = 11, y = 12 })
+	var c i32 = sum({ x: 7, y: 8 })
+	var d i32 = y_of({ x: 9, y: 10 })
+	var e i32 = y_of(Vec2{ x: 11, y: 12 })
 
 	// address-of typed literal
-	var p &Vec2 = &Vec2{ x = 13, y = 14 }
+	var p &Vec2 = &Vec2{ x: 13, y: 14 }
 
 	// nested inference and omitted fields (zero fill)
-	var r      = Rect{ pos = { x = 21, y = 22 }, size = { x = 30 } }
+	var r      = Rect{ pos: { x: 21, y: 22 }, size: { x: 30 } }
 	var z Vec2 = {}
 
 	// union single-field init
-	var n = Number{ i = 42 }
+	var n = Number{ i: 42 }
 
 	assert a.x == 1
 	assert a.y == 2

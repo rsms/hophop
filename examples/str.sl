@@ -45,5 +45,5 @@ fn run() context AppContext {
 }
 
 fn main() {
-	run() with { mem = context.mem, console = 0 }
+	run() with { mem: context.mem, console: 0 }
 }

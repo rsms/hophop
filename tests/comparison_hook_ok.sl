@@ -31,10 +31,10 @@ fn __order(a &Disc, b &Disc) int {
 }
 
 fn main() {
-	var a = Disc{ x = 10.0, y = 10.0, radius = 12.0 }
-	var b = Disc{ x = 10.0, y = 10.0, radius = 11.0 }
-	var c = Disc{ x = 10.0, y = 10.0, radius = 15.0 }
-	var d = Disc{ x = 10.0, y = 10.0, radius = 12.0 }
+	var a = Disc{ x: 10.0, y: 10.0, radius: 12.0 }
+	var b = Disc{ x: 10.0, y: 10.0, radius: 11.0 }
+	var c = Disc{ x: 10.0, y: 10.0, radius: 15.0 }
+	var d = Disc{ x: 10.0, y: 10.0, radius: 12.0 }
 
 	assert (a == b)
 	assert (!(a != b))

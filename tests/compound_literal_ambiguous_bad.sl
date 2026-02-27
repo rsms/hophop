@@ -18,6 +18,6 @@ fn measure(v Vec3) i32 {
 }
 
 fn main() {
-	var n i32 = measure({ x = 1, y = 2 })
+	var n i32 = measure({ x: 1, y: 2 })
 	assert (n == 0)
 }

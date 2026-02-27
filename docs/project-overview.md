@@ -414,7 +414,7 @@ x * (y as i64)
 #### Compound literals (named fields only)
 
 ```sl
-T { field = expr, other = expr }
+T { field: expr, other: expr }
 ```
 
 All fields must be named; missing fields default to zero (C designated init behavior).

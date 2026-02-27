@@ -16,7 +16,7 @@ The goal is to express one-off structural shapes without introducing named top-l
 This proposal is designed to compose with:
 
 - SLP-12 contexts (`context { ... }`)
-- SLP-13 compound literals (inferred `{ field = ... }` targets)
+- SLP-13 compound literals (inferred `{ field: ... }` targets)
 
 ## Motivation
 
@@ -61,7 +61,7 @@ Context + compound-literal interaction:
 
 ```sl
 fn run() context { mem mut&__sl_MemAllocator, console u64 } {
-    var p { x, y int } = { x = 1, y = 2 }
+    var p { x, y int } = { x: 1, y: 2 }
     _ = p
 }
 ```
@@ -76,7 +76,7 @@ struct Example {
 fn f_enum(kind enum { A, B })
 
 fn main() {
-    var x = Example{ kind = .A }
+    var x = Example{ kind: .A }
     f_enum(.B)
 }
 ```
@@ -127,15 +127,15 @@ Field selection uses normal selector rules (`v.mem`, `v.fs`).
 For anonymous struct/union targets, use inferred form in typed context:
 
 ```sl
-var x { a i32, b i32 } = { a = 1, b = 2 }
-var y union { i int, f f64 } = { i = 1 }
+var x { a i32, b i32 } = { a: 1, b: 2 }
+var y union { i int, f f64 } = { i: 1 }
 ```
 
 If inferred `{ ... }` is ambiguous, disambiguate with explicit type context, for example:
 
 ```sl
-var x { a i32, b i32 } = { a = 1, b = 2 }
-var y = ({ a = 1, b = 2 } as { a i32, b i32 })
+var x { a i32, b i32 } = { a: 1, b: 2 }
+var y = ({ a: 1, b: 2 } as { a i32, b i32 })
 ```
 
 ### 6. Context overlay interaction (SLP-12)
@@ -196,7 +196,7 @@ Existing diagnostics reused:
    - local variable with `{...}` and `struct { ... }`
    - `context { ... }` function and call compatibility
    - inferred compound literal into anonymous typed variable
-   - `with { field = { ... } }` where field type is anonymous aggregate
+   - `with { field: { ... } }` where field type is anonymous aggregate
 2. Negative:
    - duplicate field names in anonymous aggregate type
    - reordered fields rejected under exact-match assignability

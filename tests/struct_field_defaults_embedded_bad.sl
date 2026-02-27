@@ -3,6 +3,6 @@ struct Base {
 }
 
 struct Bad {
-	Base = Base{ x = 1 }
+	Base = Base{ x: 1 }
 	y i32
 }

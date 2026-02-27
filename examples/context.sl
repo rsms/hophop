@@ -35,7 +35,7 @@ fn run_once() i32 context AppContext {
 	announce("explicit") with context
 
 	// Call-local overlay, with explicit and shorthand binds.
-	var p2 *i32 = alloc_value() with { mem = context.mem }
+	var p2 *i32 = alloc_value() with { mem: context.mem }
 	announce("overlay") with { log, mem }
 
 	assert *p == 42
@@ -45,8 +45,8 @@ fn run_once() i32 context AppContext {
 
 fn main() {
 	// `main` can supply call-local capabilities explicitly.
-	var a = run_once() with { mem = context.mem, log = context.log }
-	var b = run_once() with { mem = context.mem, log = context.log }
+	var a = run_once() with { mem: context.mem, log: context.log }
+	var b = run_once() with { mem: context.mem, log: context.log }
 
 	assert a == 84
 	assert b == 84

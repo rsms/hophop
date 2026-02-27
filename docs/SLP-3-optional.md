@@ -165,7 +165,7 @@ Then:
 
 - `var s S` is an error.
 - `var s S = {}` is an error.
-- `var s S = { r = &x }` is valid.
+- `var s S = { r: &x }` is valid.
 
 Arrays of such types:
 

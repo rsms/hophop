@@ -4,8 +4,8 @@ struct Point {
 }
 
 fn main() {
-	var p       = Point{ x = 10, y = 20 }
-	var q Point = { x = 30, y = 40 }
+	var p       = Point{ x: 10, y: 20 }
+	var q Point = { x: 30, y: 40 }
 	_ = p
 	_ = q
 }

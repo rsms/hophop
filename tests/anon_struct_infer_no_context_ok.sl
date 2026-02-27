@@ -6,7 +6,7 @@ fn use(v struct {
 }
 
 fn main() {
-	var x     = { a = 1, b = "hello" }
+	var x     = { a: 1, b: "hello" }
 	var y int = use(x)
 	assert (y == 1)
 }

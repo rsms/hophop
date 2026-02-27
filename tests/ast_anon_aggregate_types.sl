@@ -29,7 +29,7 @@ fn f_union(value union {
 }) {}
 
 fn main() {
-	var ex Example = { pos = { x = 1, y = 2 }, dims = { w = 3, h = 4 }, value = { i = 5 } }
+	var ex Example = { pos: { x: 1, y: 2 }, dims: { w: 3, h: 4 }, value: { i: 5 } }
 	f_struct(ex.pos)
 	f_struct2(ex.pos)
 	f_union(ex.value)

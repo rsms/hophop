@@ -5,8 +5,8 @@
 SLP-13 adds compound literals in two forms:
 
 ```sl
-TypeName{ field = expr, ... }   // explicit target type
-{ field = expr, ... }           // target type inferred from context
+TypeName{ field: expr, ... }   // explicit target type
+{ field: expr, ... }           // target type inferred from context
 ```
 
 This enables concise construction of structs/unions and supports context-overlay ergonomics in
@@ -25,7 +25,7 @@ important ergonomics for context and config-heavy APIs.
 PrimaryExpr       = ... | CompoundLit ;
 CompoundLit       = [TypeName] "{" [FieldInitList] "}" ;
 FieldInitList     = FieldInit { "," FieldInit } [","] ;
-FieldInit         = Ident "=" Expr ;
+FieldInit         = Ident ":" Expr ;
 ```
 
 Notes:
@@ -57,13 +57,13 @@ SLP-14 keeps the explicit form unchanged: `TypeName{...}`.
 Anonymous aggregate targets are supported through inferred `{...}` when expected type context is
 available, for example:
 
-- `var x { a i32, b i32 } = { a = 1, b = 2 }`
-- `var y union { i int, f f64 } = { i = 1 }`
+- `var x { a i32, b i32 } = { a: 1, b: 2 }`
+- `var y union { i int, f f64 } = { i: 1 }`
 - argument position where parameter type is anonymous aggregate
-- `with { field = { ... } }` when `field` has anonymous aggregate type
+- `with { field: { ... } }` when `field` has anonymous aggregate type
 
 If inference is ambiguous, disambiguate with explicit type context (typed variable/parameter or
-cast), for example `({ a = 1, b = 2 } as { a i32, b i32 })`.
+cast), for example `({ a: 1, b: 2 } as { a i32, b i32 })`.
 
 ### 2. Field rules
 
@@ -105,7 +105,7 @@ struct Point {
     y i32
 }
 
-var p = Point{ x = 10, y = 20 }
+var p = Point{ x: 10, y: 20 }
 ```
 
 ### 2. Inferred literal in initialization and assignment
@@ -117,8 +117,8 @@ struct Vec2 {
 }
 
 fn example_assign() {
-    var a Vec2 = { x = 10, y = 20 }
-    a = { x = 10, y = 30 }
+    var a Vec2 = { x: 10, y: 20 }
+    a = { x: 10, y: 30 }
 }
 ```
 
@@ -130,7 +130,7 @@ struct Config {
     timeout_ms i32
 }
 
-var a = Config{ timeout_ms = 500 } // retries from default (SLP-15)
+var a = Config{ timeout_ms: 500 } // retries from default (SLP-15)
 var b = Config{}                   // retries = 3, timeout_ms = 0
 ```
 
@@ -148,8 +148,8 @@ struct Window {
 }
 
 var w = Window{
-    size = { w = 800, h = 600 }, // inferred as Size from field type
-    title = "sl",
+    size: { w: 800, h: 600 }, // inferred as Size from field type
+    title: "sl",
 }
 ```
 
@@ -166,13 +166,13 @@ fn len(v Vec2) i32
 fn len(v Vec3) i32
 
 fn example_calls() {
-    distance({ x = 11, y = 42 })
-    distance_by_ref({ x = 11, y = 42 }) // ok: temporary binds to &Vec2
+    distance({ x: 11, y: 42 })
+    distance_by_ref({ x: 11, y: 42 }) // ok: temporary binds to &Vec2
 
-    round({ x = 11, y = 42 })           // error: mut&Vec2 requires mutable lvalue
-    round(&{ x = 11, y = 42 })          // error: &{...} is read-only reference
+    round({ x: 11, y: 42 })           // error: mut&Vec2 requires mutable lvalue
+    round(&{ x: 11, y: 42 })          // error: &{...} is read-only reference
 
-    len({ x = 11, y = 42 })             // error: ambiguous target type (Vec2 or Vec3)
+    len({ x: 11, y: 42 })             // error: ambiguous target type (Vec2 or Vec3)
 }
 ```
 
@@ -186,7 +186,7 @@ struct Limits {
 
 fn main() context platform.Context {
     var err = load("cfg/app.toml") with {
-        limits = { max_files = 64, timeout_ms = 5000 }, // inferred as Limits
+        limits: { max_files: 64, timeout_ms: 5000 }, // inferred as Limits
     }
     _ = err
 }

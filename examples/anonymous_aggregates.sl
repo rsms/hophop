@@ -76,16 +76,16 @@ fn run() i32 context struct {
 	log Logger
 } {
 	var ex Example = {
-		pos = { x = 1, y = 2 }
-		size = { w = 3, h = 4 }
-		value = { i = 5 }
+		pos:   { x: 1, y: 2 }
+		size:  { w: 3, h: 4 }
+		value: { i: 5 }
 	}
 
-	ex = move_to(ex, { x = 11, y = 22 })
-	ex = set_value(ex, { i = 9 })
+	ex = move_to(ex, { x: 11, y: 22 })
+	ex = set_value(ex, { i: 9 })
 
 	// Inferred local anonymous struct type from field names + value types.
-	var inferred          = { a = (7 as i32), b = "hello" }
+	var inferred          = { a: (7 as i32), b: "hello" }
 	var from_inferred i32 = read_pair(inferred)
 
 	announce(inferred.b)
@@ -98,7 +98,7 @@ fn run() i32 context struct {
 
 fn main() {
 	// `main` has no implicit context; provide required fields at the call site.
-	var total i32 = run() with { log = context.log }
+	var total i32 = run() with { log: context.log }
 	assert total == 94
 } // `context { ... }` declares required ambient capabilities for this call.
 // Field values can use inferred anonymous literals too.

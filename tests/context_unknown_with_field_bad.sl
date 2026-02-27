@@ -9,5 +9,5 @@ struct Ctx {
 fn f() context Ctx {}
 
 fn g() context Ctx {
-	f() with { nope = context.mem }
+	f() with { nope: context.mem }
 }

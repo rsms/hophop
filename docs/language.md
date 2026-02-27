@@ -180,7 +180,7 @@ ExprList        = Expr { "," Expr } .
 WithContextClause = "with" ( "context" | ContextOverlay ) .
 ContextOverlay  = "{" [ ContextBindList ] "}" .
 ContextBindList = ContextBind { "," ContextBind } [ "," ] .
-ContextBind     = Ident [ "=" Expr ] .
+ContextBind     = Ident [ ":" Expr ] .
 IndexSuffix     = "[" Expr "]" | "[" [ Expr ] ":" [ Expr ] "]" .
 SelectorSuffix  = "." Ident .
 CastSuffix      = "as" Type .
@@ -191,7 +191,7 @@ PrimaryExpr     = Ident | "context" | IntLit | FloatLit | StringLit | BoolLit | 
 NewExpr         = "new" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "with" Expr ] .
 CompoundLit     = [ TypeName ] "{" [ FieldInitList ] "}" .
 FieldInitList   = FieldInit { "," FieldInit } [ "," ] .
-FieldInit       = Ident { "." Ident } "=" Expr .
+FieldInit       = Ident { "." Ident } ":" Expr .
 ```
 
 ### 3.3 Parsing disambiguation rules
@@ -214,7 +214,7 @@ fn f() {
 
 ```sl
 fn f() {
-    ({ x = 1 })    // expression statement: compound literal value discarded
+    ({ x: 1 })    // expression statement: compound literal value discarded
 }
 ```
 
@@ -393,9 +393,9 @@ fn f() {
 
 ### 6.3 Compound literals
 - [EXPR-COMPOUND-001][Stable] Compound literals are named-field only.
-- [EXPR-COMPOUND-002][Stable] Field names may be dotted (`a.b.c = ...`).
+- [EXPR-COMPOUND-002][Stable] Field names may be dotted (`a.b.c: ...`).
 - [EXPR-COMPOUND-003][Stable] Inferred `{ ... }` without explicit type requires expected aggregate type context or anonymous-struct inference.
-- [EXPR-COMPOUND-004][Stable] Anonymous-struct inference from `{ field = expr, ... }` uses field names and concretized field value types.
+- [EXPR-COMPOUND-004][Stable] Anonymous-struct inference from `{ field: expr, ... }` uses field names and concretized field value types.
 - [EXPR-COMPOUND-005][Stable] Duplicate field initializer paths in the same literal are invalid.
 - [EXPR-COMPOUND-006][Stable] Omitted fields are allowed:
   - struct fields without explicit initializer and without field-default evaluate to zero-value

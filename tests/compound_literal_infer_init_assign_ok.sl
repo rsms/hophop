@@ -4,8 +4,8 @@ struct Vec2 {
 }
 
 fn main() {
-	var a Vec2 = { x = 1, y = 2 }
-	a = { x = 3, y = 4 }
+	var a Vec2 = { x: 1, y: 2 }
+	a = { x: 3, y: 4 }
 	assert (a.x == 3)
 	assert (a.y == 4)
 }

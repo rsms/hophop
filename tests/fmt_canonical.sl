@@ -147,8 +147,8 @@ fn use_context(x int) int context AppContext {
 	sum = sizeof(int) + sizeof(sum)
 	sum = sum + (new [int len(arr)] with context.alloc) as int
 	_ = add(sum, 1) with context
-	_ = add(sum, 1) with { alloc = context.alloc }
-	_ = Foo{ x = 1, y = 2 }.x
+	_ = add(sum, 1) with { alloc: context.alloc }
+	_ = Foo{ x: 1, y: 2 }.x
 	_ = (&arr[0])!
 	return sum
 }
@@ -157,40 +157,40 @@ fn declarations_only(a int) int
 
 // Struct & union literals should have their "linebreak or comma" forms preserved
 fn preserve_line_form() {
-	var a Example = { pos = { x = 1, y = 2 }, size = { w = 3, h = 4 }, value = { i = 5 } }
+	var a Example = { pos: { x: 1, y: 2 }, size: { w: 3, h: 4 }, value: { i: 5 } }
 	var b Example = {
-		pos = { x = 1, y = 2 }
-		size = { w = 3, h = 4 }
-		value = { i = 5 }
+		pos:   { x: 1, y: 2 }
+		size:  { w: 3, h: 4 }
+		value: { i: 5 }
 	}
 	var c Example = {
-		pos = {
-			x = 1
-			y = 2
+		pos:   {
+			x: 1
+			y: 2
 		}
-		size = { w = 3, h = 4 }
-		value = { i = 5 }
+		size:  { w: 3, h: 4 }
+		value: { i: 5 }
 	}
 	var d Example = {
-		pos = {
-			x = 1
-			y = 2
+		pos:   {
+			x: 1
+			y: 2
 		}
-		size = { w = 3,
-			h = 4 }
-		value = { i = 5 }
+		size:  { w: 3,
+			h: 4 }
+		value: { i: 5 }
 	}
 	var e Example = {
-		pos = {
-			x = 1
-			y = 2
+		pos:   {
+			x: 1
+			y: 2
 		}
-		size = {
-			w = 3
-			h = 4
+		size:  {
+			w: 3
+			h: 4
 		}
-		value = {
-			i = 5
+		value: {
+			i: 5
 		}
 	}
 }

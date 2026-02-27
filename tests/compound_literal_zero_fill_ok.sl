@@ -4,7 +4,7 @@ struct Config {
 }
 
 fn main() {
-	var c Config = { timeout_ms = 500 }
+	var c Config = { timeout_ms: 500 }
 	assert (c.retries == 0)
 	assert (c.timeout_ms == 500)
 }

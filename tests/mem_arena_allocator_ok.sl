@@ -31,7 +31,7 @@ fn main() {
 	var p *i32 = takes_allocator(&arena)
 	assert *p == 7
 
-	var xs *[i32] = contextual_alloc() with { mem = &arena }
+	var xs *[i32] = contextual_alloc() with { mem: &arena }
 	assert len(xs) == 4
 	assert xs[0] == 1
 	assert xs[3] == 9

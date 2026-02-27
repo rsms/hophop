@@ -617,6 +617,35 @@ static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId);
 
+static int SLFmtEmitCompoundFieldWithAlign(SLFmtCtx* c, int32_t nodeId, uint32_t maxKeyLen) {
+    const SLAstNode* n;
+    int32_t          exprNode;
+    uint32_t         keyLen;
+    uint32_t         pad;
+
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return -1;
+    }
+    n = &c->ast->nodes[nodeId];
+    if (n->kind != SLAst_COMPOUND_FIELD) {
+        return -1;
+    }
+    exprNode = SLFmtFirstChild(c->ast, nodeId);
+    keyLen = n->dataEnd - n->dataStart;
+    if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0 || SLFmtWriteChar(c, ':') != 0) {
+        return -1;
+    }
+    if (maxKeyLen > keyLen) {
+        pad = (maxKeyLen - keyLen) + 1u;
+        if (SLFmtWriteSpaces(c, pad) != 0) {
+            return -1;
+        }
+    } else if (SLFmtWriteChar(c, ' ') != 0) {
+        return -1;
+    }
+    return exprNode >= 0 ? SLFmtEmitExpr(c, exprNode, 0) : 0;
+}
+
 static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId) {
     const SLAstNode* n;
     int32_t          ch;
@@ -922,7 +951,7 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
                 return -1;
             }
             if (ch >= 0) {
-                if (SLFmtWriteCStr(c, " = ") != 0 || SLFmtEmitExpr(c, ch, 0) != 0) {
+                if (SLFmtWriteCStr(c, ": ") != 0 || SLFmtEmitExpr(c, ch, 0) != 0) {
                     return -1;
                 }
             }
@@ -1048,6 +1077,7 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
             int32_t  cur = SLFmtFirstChild(c->ast, nodeId);
             int32_t  type = -1;
             int32_t  field;
+            uint32_t maxKeyLen = 0;
             uint32_t lbPos;
             uint32_t rbPos;
             if (cur >= 0 && SLFmtIsTypeNodeKind(c->ast->nodes[cur].kind)) {
@@ -1086,6 +1116,13 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
                 return SLFmtWriteCStr(c, " }");
             }
             c->indent++;
+            for (field = cur; field >= 0; field = SLFmtNextSibling(c->ast, field)) {
+                const SLAstNode* fn = &c->ast->nodes[field];
+                uint32_t         keyLen = fn->dataEnd - fn->dataStart;
+                if (fn->kind == SLAst_COMPOUND_FIELD && keyLen > maxKeyLen) {
+                    maxKeyLen = keyLen;
+                }
+            }
             field = cur;
             while (field >= 0) {
                 int32_t  next = SLFmtNextSibling(c->ast, field);
@@ -1104,7 +1141,7 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
                         return -1;
                     }
                 }
-                if (SLFmtEmitExpr(c, field, 0) != 0) {
+                if (SLFmtEmitCompoundFieldWithAlign(c, field, maxKeyLen) != 0) {
                     return -1;
                 }
                 if (hasComma && SLFmtWriteChar(c, ',') != 0) {
@@ -1134,13 +1171,7 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
             c->indent--;
             return SLFmtWriteChar(c, '}');
         }
-        case SLAst_COMPOUND_FIELD:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0 || SLFmtWriteCStr(c, " = ") != 0)
-            {
-                return -1;
-            }
-            return ch >= 0 ? SLFmtEmitExpr(c, ch, 0) : 0;
+        case SLAst_COMPOUND_FIELD: return SLFmtEmitCompoundFieldWithAlign(c, nodeId, 0u);
         case SLAst_UNWRAP:
             ch = SLFmtFirstChild(c->ast, nodeId);
             if (ch >= 0 && SLFmtEmitExpr(c, ch, 0) != 0) {

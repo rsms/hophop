@@ -4,6 +4,6 @@ union U {
 }
 
 fn main() {
-	var u U = { a = 1, b = 2 }
+	var u U = { a: 1, b: 2 }
 	_ = u
 }

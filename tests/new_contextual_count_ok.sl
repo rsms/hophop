@@ -14,5 +14,5 @@ fn allocs(n uint) context Ctx {
 }
 
 fn main() {
-	allocs(4) with { mem = context.mem }
+	allocs(4) with { mem: context.mem }
 }

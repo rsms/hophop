@@ -94,17 +94,17 @@ CallExprWithContext = CallExpr [WithContextClause] ;
 WithContextClause   = "with" ("context" | ContextOverlay) ;
 ContextOverlay      = "{" [ContextBindList] "}" ;
 ContextBindList     = ContextBind { "," ContextBind } [","] ;
-ContextBind         = Ident [ "=" Expr ] ;
+ContextBind         = Ident [ ":" Expr ] ;
 ```
 
 Shorthand:
 
-- `name` is equivalent to `name = context.name`.
+- `name` is equivalent to `name: context.name`.
 
 Examples:
 
 ```sl
-load("cfg") with { fs = sandboxFs("/app"), mem = arena }
+load("cfg") with { fs: sandboxFs("/app"), mem: arena }
 show_ok() with context
 ```
 
@@ -238,7 +238,7 @@ SLP-12 can stay strict while keeping code readable. Options:
    - Keep regular calls short in routine code.
 
 4. Future sugar for repeated overrides (future SLP)
-   - Optional block sugar such as `with { mem = arena } do { ... }`.
+   - Optional block sugar such as `with { mem: arena } do { ... }`.
    - Pure sugar over repeated call-site overlays.
 
 5. Narrow context types for library APIs

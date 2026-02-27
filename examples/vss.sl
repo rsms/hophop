@@ -20,7 +20,7 @@ fn main() {
 	var ma = context.mem
 
 	// VSS: initializer is required so runtime allocation size can be computed.
-	var packet *Packet = new Packet{ payloadLen = 3, sampleLen = 2, name.len = 4 } with ma
+	var packet *Packet = new Packet{ payloadLen: 3, sampleLen: 2, name.len: 4 } with ma
 	assert packet.payloadLen == 3
 	assert packet.sampleLen == 2
 	assert packet.name.len == 4
@@ -40,7 +40,7 @@ fn main() {
 	assert b.x == 7
 	assert b.y == 9
 
-	var c *PlainStruct = new PlainStruct{ name = "Monz", y = 2 } with ma
+	var c *PlainStruct = new PlainStruct{ name: "Monz", y: 2 } with ma
 	assert c.name == "Monz"
 	assert c.x == 7
 	assert c.y == 2

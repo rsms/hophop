@@ -12,7 +12,7 @@ struct S {
 }
 
 fn main() {
-	var s = S{ c = step(9), a = step(1) }
+	var s = S{ c: step(9), a: step(1) }
 
 	assert (g == 913)
 	assert (s.a == 1)

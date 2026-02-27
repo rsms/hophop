@@ -86,7 +86,7 @@ struct Example {
 fn f_enum(kind enum { A, B })
 
 fn main() {
-    var x = Example{ kind = .A }
+    var x = Example{ kind: .A }
     f_enum(.B)
 }
 ```

@@ -137,9 +137,9 @@ fn enum_struct_union_examples() {
 	assert Priority.Low < Priority.Medium
 	assert Priority.High > Priority.Low
 
-	var v1 = Vec3{ x = 1.0, y = 2.0, z = 3.0 }
-	var v2 = Vec3{ x = 1.0, y = 2.0, z = 3.0 }
-	var v3 = Vec3{ x = 1.0, y = 2.0, z = 4.0 }
+	var v1 = Vec3{ x: 1.0, y: 2.0, z: 3.0 }
+	var v2 = Vec3{ x: 1.0, y: 2.0, z: 3.0 }
+	var v3 = Vec3{ x: 1.0, y: 2.0, z: 4.0 }
 
 	// Struct values compare by fields.
 	assert v1 == v2
@@ -158,9 +158,9 @@ fn enum_struct_union_examples() {
 }
 
 fn custom_hook_examples() {
-	var a = Disc{ x = 0.0, y = 0.0, radius = 3.0 }
-	var b = Disc{ x = 0.0, y = 0.0, radius = 1.0 }
-	var c = Disc{ x = 0.0, y = 0.0, radius = 3.0 }
+	var a = Disc{ x: 0.0, y: 0.0, radius: 3.0 }
+	var b = Disc{ x: 0.0, y: 0.0, radius: 1.0 }
+	var c = Disc{ x: 0.0, y: 0.0, radius: 3.0 }
 
 	// Uses __equal: same center means equal.
 	assert a == b

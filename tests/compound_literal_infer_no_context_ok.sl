@@ -4,7 +4,7 @@ struct Vec2 {
 }
 
 fn main() {
-	var v = { x = 1, y = 2 }
+	var v = { x: 1, y: 2 }
 	assert (v.x == 1)
 	assert (v.y == 2)
 }

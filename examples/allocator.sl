@@ -41,5 +41,5 @@ fn main() {
 	var n u32 = 6
 
 	explicit_forms(ma, n)
-	contextual_forms(n) with { mem = ma }
+	contextual_forms(n) with { mem: ma }
 }
