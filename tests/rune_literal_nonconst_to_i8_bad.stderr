@@ -1,0 +1,1 @@
+tests/rune_literal_nonconst_to_i8_bad.sl:3:15: SL2004: type mismatch: cannot use 'r' of type rune as i8

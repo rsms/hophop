@@ -43,7 +43,24 @@ typedef struct {
     uint32_t           end;
 } SLStringLitErr;
 
+typedef enum {
+    SLRuneLitErr_NONE = 0,
+    SLRuneLitErr_UNTERMINATED,
+    SLRuneLitErr_EMPTY,
+    SLRuneLitErr_MULTIPLE_CODEPOINTS,
+    SLRuneLitErr_INVALID_ESCAPE,
+    SLRuneLitErr_INVALID_CODEPOINT,
+    SLRuneLitErr_INVALID_UTF8,
+} SLRuneLitErrKind;
+
+typedef struct {
+    SLRuneLitErrKind kind;
+    uint32_t         start;
+    uint32_t         end;
+} SLRuneLitErr;
+
 SLDiagCode SLStringLitErrDiagCode(SLStringLitErrKind kind);
+SLDiagCode SLRuneLitErrDiagCode(SLRuneLitErrKind kind);
 int        SLDecodeStringLiteralValidate(
            const char* _Nonnull src, uint32_t start, uint32_t end, SLStringLitErr* _Nullable outErr);
 int SLDecodeStringLiteralArena(
@@ -61,6 +78,12 @@ int SLDecodeStringLiteralMalloc(
     uint8_t* _Nullable* _Nonnull outBytes,
     uint32_t* _Nonnull outLen,
     SLStringLitErr* _Nullable outErr);
+int SLDecodeRuneLiteralValidate(
+    const char* _Nonnull src,
+    uint32_t start,
+    uint32_t end,
+    uint32_t* _Nonnull outRune,
+    SLRuneLitErr* _Nullable outErr);
 int SLIsStringLiteralConcatChain(const SLAst* _Nonnull ast, int32_t nodeId);
 
 typedef struct SLConstEvalSession SLConstEvalSession;

@@ -3,6 +3,8 @@ pub struct str {
 	bytes [u8 .len]
 }
 
+pub type rune u32
+
 pub enum LogLevel i32 {
 	Trace   = -20
 	Debug   = -10

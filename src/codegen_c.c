@@ -631,6 +631,37 @@ static int EvalConstIntExpr(SLCBackendC* c, int32_t nodeId, int64_t* outValue, i
     return SLConstEvalSessionEvalIntExpr(c->constEval, nodeId, outValue, outIsConst);
 }
 
+static int ConstIntFitsIntegerType(const char* typeName, int64_t value) {
+    if (typeName == NULL) {
+        return 0;
+    }
+    if (StrEq(typeName, "__sl_u8")) {
+        return value >= 0 && value <= (int64_t)UINT8_MAX;
+    }
+    if (StrEq(typeName, "__sl_u16")) {
+        return value >= 0 && value <= (int64_t)UINT16_MAX;
+    }
+    if (StrEq(typeName, "__sl_u32")) {
+        return value >= 0 && value <= (int64_t)UINT32_MAX;
+    }
+    if (StrEq(typeName, "__sl_u64") || StrEq(typeName, "__sl_uint")) {
+        return value >= 0;
+    }
+    if (StrEq(typeName, "__sl_i8")) {
+        return value >= (int64_t)INT8_MIN && value <= (int64_t)INT8_MAX;
+    }
+    if (StrEq(typeName, "__sl_i16")) {
+        return value >= (int64_t)INT16_MIN && value <= (int64_t)INT16_MAX;
+    }
+    if (StrEq(typeName, "__sl_i32")) {
+        return value >= (int64_t)INT32_MIN && value <= (int64_t)INT32_MAX;
+    }
+    if (StrEq(typeName, "__sl_i64") || StrEq(typeName, "__sl_int")) {
+        return 1;
+    }
+    return 0;
+}
+
 static int EmitConstEvaluatedScalar(
     SLCBackendC* c, const SLTypeRef* dstType, const SLCTFEValue* value, int* outEmitted) {
     if (outEmitted == NULL || c == NULL || dstType == NULL || value == NULL) {
@@ -1114,6 +1145,26 @@ static int ResolveMainSemanticContextType(SLCBackendC* c, SLTypeRef* outType) {
     return 0;
 }
 
+static const char* ResolveRuneTypeBaseName(SLCBackendC* c) {
+    const SLNameMap* map = FindNameByCString(c, "core__rune");
+    uint32_t         i;
+    if (map != NULL && IsTypeDeclKind(map->kind)) {
+        return map->cName;
+    }
+    for (i = 0; i < c->nameLen; i++) {
+        if (IsTypeDeclKind(c->names[i].kind)
+            && NameHasPrefixSuffix(c->names[i].name, "core", "__rune"))
+        {
+            return c->names[i].cName;
+        }
+    }
+    map = FindNameByCString(c, "rune");
+    if (map != NULL && IsTypeDeclKind(map->kind)) {
+        return map->cName;
+    }
+    return "__sl_u32";
+}
+
 static const SLNameMap* _Nullable FindNameByCName(const SLCBackendC* c, const char* cName) {
     uint32_t i;
     for (i = 0; i < c->nameLen; i++) {
@@ -1170,6 +1221,36 @@ static const char* ResolveScalarAliasBaseName(const SLCBackendC* c, const char* 
         typeName = alias->targetType.baseName;
     }
     return typeName;
+}
+
+static int TypeRefIsRuneLike(const SLCBackendC* c, const SLTypeRef* typeRef) {
+    const char* runeType;
+    const char* typeName;
+    uint32_t    guard = 0;
+    if (typeRef == NULL || !typeRef->valid || typeRef->containerKind != SLTypeContainer_SCALAR
+        || typeRef->ptrDepth != 0 || typeRef->containerPtrDepth != 0 || typeRef->isOptional
+        || typeRef->baseName == NULL)
+    {
+        return 0;
+    }
+    runeType = ResolveRuneTypeBaseName((SLCBackendC*)c);
+    typeName = typeRef->baseName;
+    while (typeName != NULL && guard++ <= c->typeAliasLen + 1u) {
+        const SLTypeAliasInfo* alias;
+        if (StrEq(typeName, runeType)) {
+            return 1;
+        }
+        alias = FindTypeAliasInfoByAliasName(c, typeName);
+        if (alias == NULL || !alias->targetType.valid || alias->targetType.baseName == NULL
+            || alias->targetType.containerKind != SLTypeContainer_SCALAR
+            || alias->targetType.ptrDepth != 0 || alias->targetType.containerPtrDepth != 0
+            || alias->targetType.isOptional)
+        {
+            break;
+        }
+        typeName = alias->targetType.baseName;
+    }
+    return 0;
 }
 
 static const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t end) {
@@ -4318,6 +4399,35 @@ static int InferExprTypeExpected(
         }
     }
 
+    if (expectedType != NULL && expectedType->valid
+        && expectedType->containerKind == SLTypeContainer_SCALAR && expectedType->ptrDepth == 0
+        && expectedType->containerPtrDepth == 0)
+    {
+        SLTypeRef   srcType;
+        const char* dstBase = ResolveScalarAliasBaseName(c, expectedType->baseName);
+        int64_t     value = 0;
+        int         isConst = 0;
+        if (dstBase != NULL && IsIntegerCTypeName(dstBase)
+            && InferExprType(c, nodeId, &srcType) == 0 && srcType.valid
+            && TypeRefIsRuneLike(c, &srcType))
+        {
+            if (EvalConstIntExpr(c, nodeId, &value, &isConst) != 0) {
+                TypeRefSetInvalid(outType);
+                return -1;
+            }
+            if (!isConst) {
+                *outType = srcType;
+                return 0;
+            }
+            if (!ConstIntFitsIntegerType(dstBase, value)) {
+                SetDiagNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+                return -1;
+            }
+            *outType = *expectedType;
+            return 0;
+        }
+    }
+
     return InferExprType(c, nodeId, outType);
 }
 
@@ -4756,6 +4866,14 @@ static int InferExprType_INT(
     return 0;
 }
 
+static int InferExprType_RUNE(
+    SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType) {
+    (void)nodeId;
+    (void)n;
+    TypeRefSetScalar(outType, ResolveRuneTypeBaseName(c));
+    return 0;
+}
+
 static int InferExprType_FLOAT(
     SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType) {
     (void)c;
@@ -4817,6 +4935,7 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
         case SLAst_STRING:            return InferExprType_STRING(c, nodeId, n, outType);
         case SLAst_BOOL:              return InferExprType_BOOL(c, nodeId, n, outType);
         case SLAst_INT:               return InferExprType_INT(c, nodeId, n, outType);
+        case SLAst_RUNE:              return InferExprType_RUNE(c, nodeId, n, outType);
         case SLAst_FLOAT:             return InferExprType_FLOAT(c, nodeId, n, outType);
         case SLAst_NULL:              return InferExprType_NULL(c, nodeId, n, outType);
         case SLAst_UNWRAP:            return InferExprType_UNWRAP(c, nodeId, n, outType);
@@ -6696,6 +6815,19 @@ static int EmitExpr_INT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
     return BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd);
 }
 
+static int EmitExpr_RUNE(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
+    uint32_t     rune = 0;
+    SLRuneLitErr runeErr = { 0 };
+    (void)nodeId;
+    if (SLDecodeRuneLiteralValidate(c->unit->source, n->dataStart, n->dataEnd, &rune, &runeErr)
+        != 0)
+    {
+        SetDiag(c->diag, SLRuneLitErrDiagCode(runeErr.kind), runeErr.start, runeErr.end);
+        return -1;
+    }
+    return BufAppendU32(&c->out, rune);
+}
+
 static int EmitExpr_FLOAT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
     (void)nodeId;
     return BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd);
@@ -7802,6 +7934,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
     switch (n->kind) {
         case SLAst_IDENT:             return EmitExpr_IDENT(c, nodeId, n);
         case SLAst_INT:               return EmitExpr_INT(c, nodeId, n);
+        case SLAst_RUNE:              return EmitExpr_RUNE(c, nodeId, n);
         case SLAst_FLOAT:             return EmitExpr_FLOAT(c, nodeId, n);
         case SLAst_BOOL:              return EmitExpr_BOOL(c, nodeId, n);
         case SLAst_COMPOUND_LIT:      return EmitExpr_COMPOUND_LIT(c, nodeId, n);

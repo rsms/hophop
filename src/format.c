@@ -844,6 +844,7 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
         case SLAst_FLOAT:
         case SLAst_BOOL:   return SLFmtWriteSlice(c, n->dataStart, n->dataEnd);
         case SLAst_STRING: return SLFmtWriteSliceLiteral(c, n->dataStart, n->dataEnd);
+        case SLAst_RUNE:   return SLFmtWriteSliceLiteral(c, n->dataStart, n->dataEnd);
         case SLAst_NULL:   return SLFmtWriteCStr(c, "null");
         case SLAst_UNARY:  {
             const char* op = SLFmtTokenOpText((SLTokenKind)n->op);

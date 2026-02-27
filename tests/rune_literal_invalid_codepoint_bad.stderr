@@ -1,0 +1,1 @@
+tests/rune_literal_invalid_codepoint_bad.sl:1:12: SL1017: invalid Unicode code point in rune literal

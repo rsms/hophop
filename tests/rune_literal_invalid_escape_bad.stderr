@@ -1,0 +1,1 @@
+tests/rune_literal_invalid_escape_bad.sl:1:12: SL1016: invalid rune escape sequence

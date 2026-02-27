@@ -59,6 +59,7 @@
 {"id":"check:tests/feature_optional_escape_import_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/feature_optional_escape_import_ok.sl"}
 {"id":"check:tests/feature_optional_raw_import_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/feature_optional_raw_import_ok.sl"}
 {"id":"check:tests/string_literals_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/string_literals_ok.sl"}
+{"id":"check:tests/rune_literals_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/rune_literals_ok.sl"}
 {"id":"check:tests/slp3_null_unwrap.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/slp3_null_unwrap.sl"}
 {"id":"check:tests/slp3_flow_narrow_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/slp3_flow_narrow_ok.sl"}
 {"id":"checkpkg:tests/pkg_ok/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/pkg_ok/app"}
@@ -75,6 +76,14 @@
 {"id":"check:tests/string_literal_invalid_unicode_surrogate.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/string_literal_invalid_unicode_surrogate.sl","expect_stderr":"tests/string_literal_invalid_unicode_surrogate.stderr"}
 {"id":"check:tests/string_literal_invalid_unicode_range.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/string_literal_invalid_unicode_range.sl","expect_stderr":"tests/string_literal_invalid_unicode_range.stderr"}
 {"id":"check:tests/string_literal_invalid_utf8.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/string_literal_invalid_utf8.sl","expect_stderr":"tests/string_literal_invalid_utf8.stderr"}
+{"id":"check:tests/rune_literal_empty_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/rune_literal_empty_bad.sl","expect_stderr":"tests/rune_literal_empty_bad.stderr"}
+{"id":"check:tests/rune_literal_multiple_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/rune_literal_multiple_bad.sl","expect_stderr":"tests/rune_literal_multiple_bad.stderr"}
+{"id":"check:tests/rune_literal_invalid_escape_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/rune_literal_invalid_escape_bad.sl","expect_stderr":"tests/rune_literal_invalid_escape_bad.stderr"}
+{"id":"check:tests/rune_literal_invalid_codepoint_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/rune_literal_invalid_codepoint_bad.sl","expect_stderr":"tests/rune_literal_invalid_codepoint_bad.stderr"}
+{"id":"check:tests/rune_literal_invalid_utf8_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/rune_literal_invalid_utf8_bad.sl","expect_stderr":"tests/rune_literal_invalid_utf8_bad.stderr"}
+{"id":"check:tests/rune_literal_range_i16_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/rune_literal_range_i16_bad.sl","expect_stderr":"tests/rune_literal_range_i16_bad.stderr"}
+{"id":"check:tests/rune_literal_range_u8_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/rune_literal_range_u8_bad.sl","expect_stderr":"tests/rune_literal_range_u8_bad.stderr"}
+{"id":"check:tests/rune_literal_nonconst_to_i8_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/rune_literal_nonconst_to_i8_bad.sl","expect_stderr":"tests/rune_literal_nonconst_to_i8_bad.stderr"}
 {"id":"check:tests/string_concat_parenthesized_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/string_concat_parenthesized_bad.sl","expect_stderr":"tests/string_concat_parenthesized_bad.stderr"}
 {"id":"check:tests/string_concat_nonliteral_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/string_concat_nonliteral_bad.sl","expect_stderr":"tests/string_concat_nonliteral_bad.stderr"}
 {"id":"check:tests/bad_pub_block.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/bad_pub_block.sl","expect_stderr":"tests/bad_pub_block.stderr"}

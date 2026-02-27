@@ -902,6 +902,17 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
         return 0;
     }
 
+    if (SLPMatch(p, SLTok_RUNE)) {
+        n = SLPNewNode(p, SLAst_RUNE, t->start, t->end);
+        if (n < 0) {
+            return -1;
+        }
+        p->nodes[n].dataStart = t->start;
+        p->nodes[n].dataEnd = t->end;
+        *out = n;
+        return 0;
+    }
+
     if (SLPMatch(p, SLTok_TRUE) || SLPMatch(p, SLTok_FALSE)) {
         t = SLPPrev(p);
         n = SLPNewNode(p, SLAst_BOOL, t->start, t->end);
@@ -2458,6 +2469,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_INT:               return "INT";
         case SLAst_FLOAT:             return "FLOAT";
         case SLAst_STRING:            return "STRING";
+        case SLAst_RUNE:              return "RUNE";
         case SLAst_BOOL:              return "BOOL";
         case SLAst_UNARY:             return "UNARY";
         case SLAst_BINARY:            return "BINARY";

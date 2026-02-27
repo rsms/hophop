@@ -19,6 +19,12 @@
 {"id": "SL1010", "name": "INVALID_STRING_CODEPOINT", "category": "syntactic", "message": "invalid Unicode code point in string literal"}
 {"id": "SL1011", "name": "INVALID_UTF8_STRING", "category": "syntactic", "message": "string literal must decode to valid UTF-8"}
 {"id": "SL1012", "name": "UNTERMINATED_BLOCK_COMMENT", "category": "syntactic", "message": "unterminated block comment"}
+{"id": "SL1013", "name": "UNTERMINATED_RUNE", "category": "syntactic", "message": "unterminated rune literal"}
+{"id": "SL1014", "name": "EMPTY_RUNE", "category": "syntactic", "message": "empty rune literal"}
+{"id": "SL1015", "name": "RUNE_CODEPOINT_COUNT", "category": "syntactic", "message": "rune literal must contain exactly one Unicode code point"}
+{"id": "SL1016", "name": "INVALID_RUNE_ESCAPE", "category": "syntactic", "message": "invalid rune escape sequence"}
+{"id": "SL1017", "name": "INVALID_RUNE_CODEPOINT", "category": "syntactic", "message": "invalid Unicode code point in rune literal"}
+{"id": "SL1018", "name": "INVALID_UTF8_RUNE", "category": "syntactic", "message": "rune literal must decode to valid UTF-8"}
 {"id": "SL2001", "name": "DUPLICATE_SYMBOL", "category": "semantic", "message": "duplicate symbol"}
 {"id": "SL2002", "name": "UNKNOWN_SYMBOL", "category": "semantic", "message": "unknown symbol"}
 {"id": "SL2003", "name": "UNKNOWN_TYPE", "category": "semantic", "message": "unknown type"}

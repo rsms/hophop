@@ -149,6 +149,7 @@ typedef struct {
     int32_t typeVoid;
     int32_t typeBool;
     int32_t typeStr;
+    int32_t typeRune;
     int32_t typeMemAllocator;
     int32_t typeUsize;
     int32_t typeUntypedInt;
@@ -304,6 +305,24 @@ static void SLTCTextBufAppendU32(SLTCTextBuf* b, uint32_t v) {
     }
 }
 
+static void SLTCTextBufAppendHexU64(SLTCTextBuf* b, uint64_t v) {
+    char     tmp[16];
+    uint32_t n = 0;
+    if (v == 0u) {
+        SLTCTextBufAppendChar(b, '0');
+        return;
+    }
+    while (v > 0u && n < (uint32_t)sizeof(tmp)) {
+        uint32_t digit = (uint32_t)(v & 0xFu);
+        tmp[n++] = (char)(digit < 10u ? ('0' + digit) : ('a' + (digit - 10u)));
+        v >>= 4u;
+    }
+    while (n > 0u) {
+        n--;
+        SLTCTextBufAppendChar(b, tmp[n]);
+    }
+}
+
 static const char* SLTCBuiltinName(SLTypeCheckCtx* c, int32_t typeId, SLBuiltinKind kind) {
     switch (kind) {
         case SLBuiltin_VOID:  return "void";
@@ -347,6 +366,10 @@ static void SLTCFormatTypeRec(SLTypeCheckCtx* c, int32_t typeId, SLTCTextBuf* b,
             return;
         case SLTCType_NAMED:
         case SLTCType_ALIAS:
+            if (typeId == c->typeRune && (t->nameEnd <= t->nameStart || t->nameEnd > c->src.len)) {
+                SLTCTextBufAppendCStr(b, "rune");
+                return;
+            }
             if (t->nameEnd > t->nameStart && t->nameEnd <= c->src.len) {
                 SLTCTextBufAppendSlice(b, c->src, t->nameStart, t->nameEnd);
             } else {
@@ -640,12 +663,16 @@ static int32_t SLTCAddBuiltinType(SLTypeCheckCtx* c, const char* name, SLBuiltin
     return SLTCAddType(c, &t, 0, 0);
 }
 
+static int32_t SLTCFindBuiltinByKind(SLTypeCheckCtx* c, SLBuiltinKind builtinKind);
+
 static int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     SLTCType t;
+    int32_t  u32Type;
 
     c->typeVoid = -1;
     c->typeBool = -1;
     c->typeStr = -1;
+    c->typeRune = -1;
     c->typeMemAllocator = -1;
     c->typeUsize = -1;
     c->typeUntypedInt = -1;
@@ -675,6 +702,25 @@ static int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     }
     c->typeStr = SLTCAddBuiltinType(c, "str", SLBuiltin_INVALID);
     if (c->typeStr < 0) {
+        return -1;
+    }
+    u32Type = SLTCFindBuiltinByKind(c, SLBuiltin_U32);
+    if (u32Type < 0) {
+        return -1;
+    }
+    t.kind = SLTCType_ALIAS;
+    t.builtin = SLBuiltin_INVALID;
+    t.baseType = u32Type;
+    t.declNode = -1;
+    t.funcIndex = -1;
+    t.arrayLen = 0;
+    t.nameStart = 0;
+    t.nameEnd = 0;
+    t.fieldStart = 0;
+    t.fieldCount = 0;
+    t.flags = SLTCTypeFlag_ALIAS_RESOLVED;
+    c->typeRune = SLTCAddType(c, &t, 0, 0);
+    if (c->typeRune < 0) {
         return -1;
     }
 
@@ -711,6 +757,12 @@ static int32_t SLTCFindBuiltinType(SLTypeCheckCtx* c, uint32_t start, uint32_t e
         || SLNameEqLiteral(c->src, start, end, "core__str"))
     {
         return c->typeStr;
+    }
+    if ((SLNameEqLiteral(c->src, start, end, "rune")
+         || SLNameEqLiteral(c->src, start, end, "core__rune"))
+        && c->typeRune >= 0)
+    {
+        return c->typeRune;
     }
     for (i = 0; i < c->typeLen; i++) {
         const SLTCType* t = &c->types[i];
@@ -2728,6 +2780,67 @@ static int SLTCIsIntegerType(SLTypeCheckCtx* c, int32_t typeId) {
     return b == SLBuiltin_U8 || b == SLBuiltin_U16 || b == SLBuiltin_U32 || b == SLBuiltin_U64
         || b == SLBuiltin_I8 || b == SLBuiltin_I16 || b == SLBuiltin_I32 || b == SLBuiltin_I64
         || b == SLBuiltin_USIZE || b == SLBuiltin_ISIZE;
+}
+
+static int SLTCTypeIsRuneLike(SLTypeCheckCtx* c, int32_t typeId) {
+    uint32_t depth = 0;
+    while (typeId >= 0 && (uint32_t)typeId < c->typeLen && depth++ <= c->typeLen) {
+        if (typeId == c->typeRune) {
+            return 1;
+        }
+        if (c->types[typeId].kind != SLTCType_ALIAS) {
+            break;
+        }
+        if (SLTCResolveAliasTypeId(c, typeId) != 0) {
+            return 0;
+        }
+        typeId = c->types[typeId].baseType;
+    }
+    return 0;
+}
+
+static int SLTCConstIntFitsType(SLTypeCheckCtx* c, int64_t value, int32_t typeId) {
+    SLBuiltinKind b;
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != SLTCType_BUILTIN) {
+        return 0;
+    }
+    b = c->types[typeId].builtin;
+    switch (b) {
+        case SLBuiltin_U8:    return value >= 0 && value <= (int64_t)UINT8_MAX;
+        case SLBuiltin_U16:   return value >= 0 && value <= (int64_t)UINT16_MAX;
+        case SLBuiltin_U32:   return value >= 0 && value <= (int64_t)UINT32_MAX;
+        case SLBuiltin_U64:
+        case SLBuiltin_USIZE: return value >= 0;
+        case SLBuiltin_I8:    return value >= (int64_t)INT8_MIN && value <= (int64_t)INT8_MAX;
+        case SLBuiltin_I16:   return value >= (int64_t)INT16_MIN && value <= (int64_t)INT16_MAX;
+        case SLBuiltin_I32:   return value >= (int64_t)INT32_MIN && value <= (int64_t)INT32_MAX;
+        case SLBuiltin_I64:
+        case SLBuiltin_ISIZE: return 1;
+        default:              return 0;
+    }
+}
+
+static int SLTCFailConstIntRange(
+    SLTypeCheckCtx* c, int32_t nodeId, int64_t value, int32_t expectedType) {
+    char        dstTypeBuf[SLTC_DIAG_TEXT_CAP];
+    char        detailBuf[256];
+    SLTCTextBuf dstTypeText;
+    SLTCTextBuf detailText;
+    SLTCSetDiag(
+        c->diag, SLDiag_TYPE_MISMATCH, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end);
+    if (c->diag == NULL) {
+        return -1;
+    }
+    SLTCTextBufInit(&dstTypeText, dstTypeBuf, (uint32_t)sizeof(dstTypeBuf));
+    SLTCFormatTypeRec(c, expectedType, &dstTypeText, 0);
+    SLTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    SLTCTextBufAppendCStr(&detailText, "constant value 0x");
+    SLTCTextBufAppendHexU64(&detailText, (uint64_t)value);
+    SLTCTextBufAppendCStr(&detailText, " is out of range for ");
+    SLTCTextBufAppendCStr(&detailText, dstTypeBuf);
+    c->diag->detail = SLTCAllocDiagText(c, detailBuf);
+    return -1;
 }
 
 static int SLTCIsFloatType(SLTypeCheckCtx* c, int32_t typeId) {
@@ -5756,6 +5869,31 @@ static int SLTCTypeExprExpected(
         return 0;
     }
 
+    if (expectedType >= 0 && (uint32_t)expectedType < c->typeLen
+        && SLTCIsIntegerType(c, expectedType))
+    {
+        int32_t srcType;
+        if (SLTCTypeExpr(c, nodeId, &srcType) != 0) {
+            return -1;
+        }
+        if (SLTCTypeIsRuneLike(c, srcType)) {
+            int64_t value = 0;
+            int     isConst = 0;
+            if (SLTCConstIntExpr(c, nodeId, &value, &isConst) != 0) {
+                return -1;
+            }
+            if (!isConst) {
+                *outType = srcType;
+                return 0;
+            }
+            if (!SLTCConstIntFitsType(c, value, expectedType)) {
+                return SLTCFailConstIntRange(c, nodeId, value, expectedType);
+            }
+            *outType = expectedType;
+            return 0;
+        }
+    }
+
     if (n->kind == SLAst_UNARY && n->op == SLTok_AND) {
         int32_t rhsNode = SLAstFirstChild(c->ast, nodeId);
         if (rhsNode >= 0 && (uint32_t)rhsNode < c->ast->len
@@ -5969,6 +6107,16 @@ static int SLTCTypeExpr_STRING(
         return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
     }
     *outType = strRefType;
+    return 0;
+}
+
+static int SLTCTypeExpr_RUNE(
+    SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
+    (void)n;
+    if (c->typeRune < 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+    }
+    *outType = c->typeRune;
     return 0;
 }
 
@@ -7039,6 +7187,7 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
         case SLAst_INT:               return SLTCTypeExpr_INT(c, nodeId, n, outType);
         case SLAst_FLOAT:             return SLTCTypeExpr_FLOAT(c, nodeId, n, outType);
         case SLAst_STRING:            return SLTCTypeExpr_STRING(c, nodeId, n, outType);
+        case SLAst_RUNE:              return SLTCTypeExpr_RUNE(c, nodeId, n, outType);
         case SLAst_BOOL:              return SLTCTypeExpr_BOOL(c, nodeId, n, outType);
         case SLAst_COMPOUND_LIT:      return SLTCTypeExpr_COMPOUND_LIT(c, nodeId, n, outType);
         case SLAst_CALL_WITH_CONTEXT: return SLTCTypeExpr_CALL_WITH_CONTEXT(c, nodeId, n, outType);
@@ -7948,6 +8097,18 @@ static int SLTCBuildCheckedContext(
         }
         if (namedStrType >= 0) {
             c.typeStr = namedStrType;
+        }
+    }
+    {
+        int32_t namedRuneType = SLTCFindNamedTypeByLiteral(&c, "core__rune");
+        if (namedRuneType < 0) {
+            namedRuneType = SLTCFindCoreNamedTypeBySuffix(&c, "__rune");
+        }
+        if (namedRuneType < 0) {
+            namedRuneType = SLTCFindNamedTypeByLiteral(&c, "rune");
+        }
+        if (namedRuneType >= 0) {
+            c.typeRune = namedRuneType;
         }
     }
     c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "core__Allocator");

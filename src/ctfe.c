@@ -602,14 +602,28 @@ int SLCTFEEvalExpr(
         const SLMirInst* ins = &run.ip[run.pc++];
         switch (ins->op) {
             case SLMirOp_PUSH_INT: {
-                SLCTFEValue v;
+                SLCTFEValue  v;
+                uint32_t     rune = 0;
+                SLRuneLitErr runeErr = { 0 };
                 v.kind = SLCTFEValue_INT;
                 v.f64 = 0.0;
                 v.b = 0;
                 v.s.bytes = NULL;
                 v.s.len = 0;
-                if (SLCTFEParseIntLiteral(run.src, ins->start, ins->end, &v.i64) != 0) {
-                    return 0;
+                if ((SLTokenKind)ins->tok == SLTok_RUNE) {
+                    if (SLDecodeRuneLiteralValidate(
+                            run.src.ptr, ins->start, ins->end, &rune, &runeErr)
+                        != 0)
+                    {
+                        SLCTFESetDiag(
+                            diag, SLRuneLitErrDiagCode(runeErr.kind), runeErr.start, runeErr.end);
+                        return -1;
+                    }
+                    v.i64 = (int64_t)rune;
+                } else {
+                    if (SLCTFEParseIntLiteral(run.src, ins->start, ins->end, &v.i64) != 0) {
+                        return 0;
+                    }
                 }
                 if (SLCTFEPush(&run, &v) != 0) {
                     return -1;

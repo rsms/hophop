@@ -65,6 +65,8 @@ struct __sl_str {
     __sl_u8  bytes[];
 };
 
+typedef __sl_u32 __sl_rune;
+
 typedef enum {
     __sl_LogLevel_Trace = -20,
     __sl_LogLevel_Debug = -10,

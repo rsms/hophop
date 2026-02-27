@@ -504,6 +504,7 @@ static int SLTokenCanEndStmt(SLTokenKind kind) {
         case SLTok_INT:
         case SLTok_FLOAT:
         case SLTok_STRING:
+        case SLTok_RUNE:
         case SLTok_TRUE:
         case SLTok_FALSE:
         case SLTok_BREAK:
@@ -575,6 +576,7 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_INT:           return "INT";
         case SLTok_FLOAT:         return "FLOAT";
         case SLTok_STRING:        return "STRING";
+        case SLTok_RUNE:          return "RUNE";
         case SLTok_IMPORT:        return "IMPORT";
         case SLTok_PUB:           return "PUB";
         case SLTok_STRUCT:        return "STRUCT";
@@ -811,6 +813,45 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                             SLSetDiag(diag, SLDiag_INVALID_NUMBER, start, pos);
                             return -1;
                         }
+                    }
+                }
+            } else if (c == (unsigned char)'\'') {
+                kind = SLTok_RUNE;
+                pos++;
+                while (pos < src.len) {
+                    c = (unsigned char)src.ptr[pos];
+                    if (c == (unsigned char)'\'') {
+                        pos++;
+                        break;
+                    }
+                    if (c == (unsigned char)'\\') {
+                        pos++;
+                        if (pos >= src.len) {
+                            SLSetDiag(diag, SLDiag_UNTERMINATED_RUNE, start, pos);
+                            return -1;
+                        }
+                        if ((unsigned char)src.ptr[pos] == (unsigned char)'\r' && pos + 1u < src.len
+                            && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'\n')
+                        {
+                            pos += 2u;
+                        } else {
+                            pos++;
+                        }
+                        continue;
+                    }
+                    pos++;
+                }
+                if (pos > src.len || (unsigned char)src.ptr[pos - 1u] != (unsigned char)'\'') {
+                    SLSetDiag(diag, SLDiag_UNTERMINATED_RUNE, start, pos);
+                    return -1;
+                }
+                {
+                    SLRuneLitErr runeErr = { 0 };
+                    uint32_t     rune = 0;
+                    if (SLDecodeRuneLiteralValidate(src.ptr, start, pos, &rune, &runeErr) != 0) {
+                        SLSetDiag(
+                            diag, SLRuneLitErrDiagCode(runeErr.kind), runeErr.start, runeErr.end);
+                        return -1;
                     }
                 }
             } else if (c == (unsigned char)'"' || c == (unsigned char)'`') {

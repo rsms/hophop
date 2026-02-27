@@ -332,7 +332,7 @@ static int SLDecodeStringLiteralImpl(
         goto fail;
     }
     delim = (unsigned char)src[start];
-    if ((delim != (unsigned char)'"' && delim != (unsigned char)'`')
+    if ((delim != (unsigned char)'"' && delim != (unsigned char)'`' && delim != (unsigned char)'\'')
         || (unsigned char)src[end - 1u] != delim)
     {
         SLSetStringLitErr(&err, SLStringLitErr_UNTERMINATED, start, end);
@@ -538,6 +538,62 @@ fail:
     return -1;
 }
 
+typedef struct {
+    uint32_t rune;
+    uint32_t codepointCount;
+    uint32_t currentRune;
+    uint8_t  seqNeed;
+    uint8_t  seqHave;
+} SLRuneCollector;
+
+static int SLRuneCollectorEmit(void* _Nullable ctx, uint8_t b) {
+    SLRuneCollector* c = (SLRuneCollector*)ctx;
+    if (c == NULL) {
+        return -1;
+    }
+    if (c->seqNeed == 0u) {
+        if (b <= 0x7Fu) {
+            if (c->codepointCount == 0u) {
+                c->rune = (uint32_t)b;
+            }
+            c->codepointCount++;
+            return 0;
+        }
+        if (b >= 0xC2u && b <= 0xDFu) {
+            c->seqNeed = 2u;
+            c->seqHave = 1u;
+            c->currentRune = (uint32_t)(b & 0x1Fu);
+            return 0;
+        }
+        if (b >= 0xE0u && b <= 0xEFu) {
+            c->seqNeed = 3u;
+            c->seqHave = 1u;
+            c->currentRune = (uint32_t)(b & 0x0Fu);
+            return 0;
+        }
+        if (b >= 0xF0u && b <= 0xF4u) {
+            c->seqNeed = 4u;
+            c->seqHave = 1u;
+            c->currentRune = (uint32_t)(b & 0x07u);
+            return 0;
+        }
+        return -1;
+    }
+
+    c->currentRune = (c->currentRune << 6u) | (uint32_t)(b & 0x3Fu);
+    c->seqHave++;
+    if (c->seqHave == c->seqNeed) {
+        if (c->codepointCount == 0u) {
+            c->rune = c->currentRune;
+        }
+        c->codepointCount++;
+        c->seqNeed = 0u;
+        c->seqHave = 0u;
+        c->currentRune = 0u;
+    }
+    return 0;
+}
+
 SLDiagCode SLStringLitErrDiagCode(SLStringLitErrKind kind) {
     switch (kind) {
         case SLStringLitErr_NONE:              return SLDiag_NONE;
@@ -550,9 +606,83 @@ SLDiagCode SLStringLitErrDiagCode(SLStringLitErrKind kind) {
     return SLDiag_UNTERMINATED_STRING;
 }
 
+SLDiagCode SLRuneLitErrDiagCode(SLRuneLitErrKind kind) {
+    switch (kind) {
+        case SLRuneLitErr_NONE:                return SLDiag_NONE;
+        case SLRuneLitErr_UNTERMINATED:        return SLDiag_UNTERMINATED_RUNE;
+        case SLRuneLitErr_EMPTY:               return SLDiag_EMPTY_RUNE;
+        case SLRuneLitErr_MULTIPLE_CODEPOINTS: return SLDiag_RUNE_CODEPOINT_COUNT;
+        case SLRuneLitErr_INVALID_ESCAPE:      return SLDiag_INVALID_RUNE_ESCAPE;
+        case SLRuneLitErr_INVALID_CODEPOINT:   return SLDiag_INVALID_RUNE_CODEPOINT;
+        case SLRuneLitErr_INVALID_UTF8:        return SLDiag_INVALID_UTF8_RUNE;
+    }
+    return SLDiag_UNTERMINATED_RUNE;
+}
+
 int SLDecodeStringLiteralValidate(
     const char* _Nonnull src, uint32_t start, uint32_t end, SLStringLitErr* _Nullable outErr) {
     return SLDecodeStringLiteralImpl(src, start, end, NULL, NULL, outErr);
+}
+
+int SLDecodeRuneLiteralValidate(
+    const char* _Nonnull src,
+    uint32_t start,
+    uint32_t end,
+    uint32_t* _Nonnull outRune,
+    SLRuneLitErr* _Nullable outErr) {
+    SLStringLitErr  stringErr = { 0 };
+    SLRuneCollector collector = { 0 };
+    if (outErr != NULL) {
+        outErr->kind = SLRuneLitErr_NONE;
+        outErr->start = start;
+        outErr->end = end;
+    }
+    if (src == NULL || outRune == NULL) {
+        if (outErr != NULL) {
+            outErr->kind = SLRuneLitErr_UNTERMINATED;
+        }
+        return -1;
+    }
+    *outRune = 0u;
+    if (SLDecodeStringLiteralImpl(src, start, end, SLRuneCollectorEmit, &collector, &stringErr)
+        != 0)
+    {
+        if (outErr != NULL) {
+            outErr->start = stringErr.start;
+            outErr->end = stringErr.end;
+            switch (stringErr.kind) {
+                case SLStringLitErr_UNTERMINATED: outErr->kind = SLRuneLitErr_UNTERMINATED; break;
+                case SLStringLitErr_INVALID_ESCAPE:
+                    outErr->kind = SLRuneLitErr_INVALID_ESCAPE;
+                    break;
+                case SLStringLitErr_INVALID_CODEPOINT:
+                    outErr->kind = SLRuneLitErr_INVALID_CODEPOINT;
+                    break;
+                case SLStringLitErr_INVALID_UTF8: outErr->kind = SLRuneLitErr_INVALID_UTF8; break;
+                case SLStringLitErr_NONE:
+                case SLStringLitErr_ARENA_OOM:    outErr->kind = SLRuneLitErr_INVALID_UTF8; break;
+            }
+        }
+        return -1;
+    }
+    if (collector.codepointCount == 0u) {
+        if (outErr != NULL) {
+            outErr->kind = SLRuneLitErr_EMPTY;
+            outErr->start = start;
+            outErr->end = end;
+        }
+        return -1;
+    }
+    if (collector.codepointCount != 1u) {
+        if (outErr != NULL) {
+            outErr->kind = SLRuneLitErr_MULTIPLE_CODEPOINTS;
+            outErr->start = start;
+            outErr->end = end;
+        }
+        return -1;
+    }
+    *outRune = collector.rune;
+    return 0;
 }
 
 int SLDecodeStringLiteralArena(

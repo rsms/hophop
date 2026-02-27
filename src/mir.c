@@ -83,6 +83,8 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
     switch (n->kind) {
         case SLAst_INT:
             return SLMirEmitInst(b, SLMirOp_PUSH_INT, SLTok_INT, n->dataStart, n->dataEnd);
+        case SLAst_RUNE:
+            return SLMirEmitInst(b, SLMirOp_PUSH_INT, SLTok_RUNE, n->dataStart, n->dataEnd);
         case SLAst_FLOAT:
             return SLMirEmitInst(b, SLMirOp_PUSH_FLOAT, SLTok_FLOAT, n->dataStart, n->dataEnd);
         case SLAst_BOOL:

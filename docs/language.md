@@ -61,17 +61,20 @@ See also:
 - [LEX-LIT-003][Stable] String literals are either interpreted (`"..."`) or raw (`` `...` ``).
 - [LEX-LIT-004][Stable] Boolean literals: `true`, `false`.
 - [LEX-LIT-005][Stable] Null literal: `null`.
+- [LEX-LIT-010][Stable] Rune literals use single quotes (`'...'`) and denote Unicode scalar values.
 - [LEX-LIT-006][Provisional] Interpreted-string escapes follow Go-style forms: `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v`, `\\`, `\"`, `\'`, octal `\NNN`, hex `\xNN`, Unicode `\uNNNN`, `\UNNNNNNNN`.
 - [LEX-LIT-007][Provisional] Both interpreted and raw string literals may span multiple source lines. Source line endings are normalized to `\n` in decoded string bytes.
 - [LEX-LIT-008][Provisional] In interpreted strings, `\` immediately followed by a line break elides that line break. In raw strings, only ``\` `` is treated specially (it encodes a literal backtick).
 - [LEX-LIT-009][Provisional] String literals MUST decode to valid UTF-8 byte sequences.
+- [LEX-LIT-011][Stable] Rune literals use interpreted-string escape forms (same escape grammar as interpreted strings).
+- [LEX-LIT-012][Stable] Rune literals MUST decode to exactly one Unicode scalar value.
 
 ### 2.5 Semicolon insertion
 - [LEX-SEMI-001][Stable] The formal syntax uses semicolons `";"` as terminators in a number of productions. SL programs may omit most of these semicolons using the following two rules:
   1. A semicolon is inserted at newline when the preceding token can end a statement.
   2. A semicolon is inserted at EOF when the final token can end a statement.
 - [LEX-SEMI-002][Stable] Statement-ending tokens are exactly:
-  - `IDENT`, `INT`, `FLOAT`, `STRING`, `TRUE`, `FALSE`, `NULL`
+  - `IDENT`, `INT`, `FLOAT`, `STRING`, `RUNE`, `TRUE`, `FALSE`, `NULL`
   - `BREAK`, `CONTINUE`, `RETURN`
   - `RPAREN`, `RBRACK`, `RBRACE`
   - `NOT` (postfix unwrap `!` at line end)
@@ -90,6 +93,7 @@ See also:
 ```ebnf
 SourceFile      = { ImportDecl ";" } { TopDecl ";" } .
 StringLit       = /* lexical string literal; see [LEX-LIT-006] through [LEX-LIT-009] */ .
+RuneLit         = /* lexical rune literal; see [LEX-LIT-010] through [LEX-LIT-012] */ .
 
 ImportDecl      = "import" StringLit [ ImportAlias ] [ ImportSymbols ] .
 ImportAlias     = "as" ( Ident | "_" ) .
@@ -187,7 +191,7 @@ SelectorSuffix  = "." Ident .
 CastSuffix      = "as" Type .
 UnwrapSuffix    = "!" .
 
-PrimaryExpr     = Ident | "context" | IntLit | FloatLit | StringLit | BoolLit | "null"
+PrimaryExpr     = Ident | "context" | IntLit | FloatLit | StringLit | RuneLit | BoolLit | "null"
                 | CompoundLit | NewExpr | "sizeof" "(" ( Type | Expr ) ")" | "(" Expr ")" .
 NewExpr         = "new" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "with" Expr ] .
 CompoundLit     = [ TypeName ] "{" [ FieldInitList ] "}" .
@@ -268,6 +272,7 @@ fn f() {
   - floating point: `f32`, `f64`
 - [TYPE-BUILTIN-003][Stable] `int` and `uint` are pointer-sized signed/unsigned integers for the target.
 - [TYPE-BUILTIN-004][Stable] `Allocator` is a source-level type provided by core library declarations (for example `core.Allocator` and implicit core imports), not a language builtin type.
+- [TYPE-BUILTIN-005][Stable] `rune` is a source-level alias type provided by core declarations and modeled as `type rune u32`.
 - [TYPE-CONSTR-001][Stable] Constructed types: pointers `*T`, references `&T`, arrays `[T N]`, slices `[T]`, dependent arrays `[T .n]`, optionals `?T`, function types, anonymous aggregates.
 - [TYPE-CONSTR-002][Stable] `[T]` is unsized and MUST NOT be used by value.
 - [TYPE-CONSTR-003][Stable] Function type return type defaults to `void` when omitted.
@@ -307,11 +312,13 @@ fn f() {
 - [TYPE-ASSIGN-005][Stable] Embedded-base upcasts are allowed by value and pointer/reference forms.
 - [TYPE-ASSIGN-006][Stable] Alias conversion direction is nominal one-way: `Alias -> Target` implicit, `Target -> Alias` not implicit.
 - [TYPE-ASSIGN-007][Stable] No implicit numeric widening between concrete numeric types.
+- [TYPE-ASSIGN-008][Stable] Rune expressions (`rune`) can implicitly convert to integer destinations only when const evaluation produces an in-range value.
 
 ### 5.5 Inference and zero values
 - [TYPE-INFER-001][Stable] `var x = expr` and `const x = expr` infer from `expr` after concretization.
 - [TYPE-INFER-002][Stable] `untyped_int` defaults to `int`; `untyped_float` defaults to `f64`.
 - [TYPE-INFER-003][Stable] Inference from `null` or `void` expressions is invalid.
+- [TYPE-INFER-004][Stable] Rune literals infer type `rune`.
 - [TYPE-ZERO-001][Stable] `var x T` zero-initializes `x`.
 
 ## 6. Expressions and Operators

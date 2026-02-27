@@ -49,6 +49,16 @@ Properties:
 - String literals assigned to `str` are validated to decode as UTF-8.
 - Use `&[u8]` / `*[u8]` for arbitrary binary data.
 
+### `rune`
+
+`rune` is a core alias type:
+
+```sl
+type rune u32
+```
+
+Rune literals (`'a'`, `'\n'`, `'本'`) produce `rune` values.
+
 ### `__sl_MemAllocator`
 
 `__sl_MemAllocator` is the low-level allocator capability used by `new`.

@@ -156,6 +156,7 @@ typedef enum {
     SLTok_INT,
     SLTok_FLOAT,
     SLTok_STRING,
+    SLTok_RUNE,
 
     SLTok_IMPORT,
     SLTok_PUB,
@@ -288,6 +289,7 @@ typedef enum {
     SLAst_INT,
     SLAst_FLOAT,
     SLAst_STRING,
+    SLAst_RUNE,
     SLAst_BOOL,
     SLAst_UNARY,
     SLAst_BINARY,
