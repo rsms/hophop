@@ -25,7 +25,7 @@ fn alloc_block(arena *ArenaAllocator, minSize uint, align uint) *ArenaBlock {
 		return 0 as *ArenaBlock
 	}
 
-	var payload_addr = arena.mem.impl(arena.mem, 0, align, 0, &payload_size, 0)
+	var payload_addr = arena.mem.impl(arena.mem, addr: 0, align: align, curSize: 0, newSizeInOut: &payload_size, flags: 0)
 	if payload_addr == 0 {
 		return 0 as *ArenaBlock
 	}
@@ -59,7 +59,7 @@ fn arena_alloc_impl(self *core.Allocator, addr uint, align uint, curSize uint, n
 		return 0
 	}
 
-	var block = alloc_block(arena, newSize, align)
+	var block = alloc_block(arena, minSize: newSize, align: align)
 	if block == 0 as *ArenaBlock {
 		return 0
 	}
@@ -83,9 +83,9 @@ fn free_block_chain(source *core.Allocator, block *ArenaBlock) {
 
 	var next *ArenaBlock = block.next
 	var zero uint        = 0
-	source.impl(source, block.addr, block.align, block.size, &zero, 0)
+	source.impl(source, addr: block.addr, align: block.align, curSize: block.size, newSizeInOut: &zero, flags: 0)
 	free(source, block)
-	free_block_chain(source, next)
+	free_block_chain(source, block: next)
 }
 
 pub fn free_all(self *ArenaAllocator) {
@@ -94,6 +94,6 @@ pub fn free_all(self *ArenaAllocator) {
 		return
 	}
 
-	free_block_chain(self.mem, self.head)
+	free_block_chain(self.mem, block: self.head)
 	self.head = 0 as *ArenaBlock
 }

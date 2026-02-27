@@ -38,6 +38,7 @@ typedef struct {
     char*      cName;
     SLTypeRef  returnType;
     SLTypeRef* paramTypes;
+    char**     paramNames;
     uint32_t   paramLen;
     SLTypeRef  contextType;
     int        hasContext;
@@ -1574,9 +1575,10 @@ static int AddFnSig(
     int32_t      nodeId,
     SLTypeRef    returnType,
     SLTypeRef*   paramTypes,
-    uint32_t     paramLen,
-    int          hasContext,
-    SLTypeRef    contextType) {
+    char** _Nullable paramNames,
+    uint32_t  paramLen,
+    int       hasContext,
+    SLTypeRef contextType) {
     const char* cName = baseCName;
     uint32_t    i;
 
@@ -1675,6 +1677,7 @@ static int AddFnSig(
     c->fnSigs[c->fnSigLen].cName = (char*)cName;
     c->fnSigs[c->fnSigLen].returnType = returnType;
     c->fnSigs[c->fnSigLen].paramTypes = paramTypes;
+    c->fnSigs[c->fnSigLen].paramNames = paramNames;
     c->fnSigs[c->fnSigLen].paramLen = paramLen;
     c->fnSigs[c->fnSigLen].hasContext = hasContext;
     c->fnSigs[c->fnSigLen].contextType = contextType;
@@ -2374,8 +2377,10 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
         int32_t    child = AstFirstChild(&c->ast, nodeId);
         SLTypeRef  returnType;
         SLTypeRef* paramTypes = NULL;
+        char**     paramNames = NULL;
         uint32_t   paramLen = 0;
-        uint32_t   paramCap = 0;
+        uint32_t   paramTypeCap = 0;
+        uint32_t   paramNameCap = 0;
         SLTypeRef  contextType;
         int        hasContext = 0;
         TypeRefSetScalar(&returnType, "void");
@@ -2388,12 +2393,12 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                 if (ParseTypeRef(c, typeNode, &paramType) != 0) {
                     return -1;
                 }
-                if (paramLen >= paramCap) {
+                if (paramLen >= paramTypeCap) {
                     uint32_t need = paramLen + 1u;
                     if (EnsureCapArena(
                             &c->arena,
                             (void**)&paramTypes,
-                            &paramCap,
+                            &paramTypeCap,
                             need,
                             sizeof(SLTypeRef),
                             (uint32_t)_Alignof(SLTypeRef))
@@ -2401,8 +2406,24 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                     {
                         return -1;
                     }
+                    if (EnsureCapArena(
+                            &c->arena,
+                            (void**)&paramNames,
+                            &paramNameCap,
+                            need,
+                            sizeof(char*),
+                            (uint32_t)_Alignof(char*))
+                        != 0)
+                    {
+                        return -1;
+                    }
                 }
                 paramTypes[paramLen++] = paramType;
+                paramNames[paramLen - 1u] = DupSlice(
+                    c, c->unit->source, ch->dataStart, ch->dataEnd);
+                if (paramNames[paramLen - 1u] == NULL) {
+                    return -1;
+                }
             } else if (
                 ch != NULL
                 && (ch->kind == SLAst_TYPE_NAME || ch->kind == SLAst_TYPE_PTR
@@ -2432,6 +2453,7 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
             nodeId,
             returnType,
             paramTypes,
+            paramNames,
             paramLen,
             hasContext,
             contextType);
@@ -3187,6 +3209,8 @@ static int EmitEffectiveContextFieldValue(
     SLCBackendC* c, const char* fieldName, const SLTypeRef* requiredType);
 static int InferNewExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
 static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType);
+static int EmitCompoundFieldValueCoerced(
+    SLCBackendC* c, const SLAstNode* field, int32_t exprNode, const SLTypeRef* _Nullable dstType);
 static int EmitContextArgForSig(SLCBackendC* c, const SLFnSig* sig);
 static int StructHasFieldDefaults(const SLCBackendC* c, const char* ownerType);
 static int TypeRefAssignableCost(
@@ -3511,6 +3535,10 @@ static int ExprNeedsExpectedType(const SLCBackendC* c, int32_t exprNode) {
     if (n == NULL) {
         return 0;
     }
+    if (n->kind == SLAst_CALL_ARG) {
+        int32_t inner = AstFirstChild(&c->ast, exprNode);
+        return ExprNeedsExpectedType(c, inner);
+    }
     if (n->kind == SLAst_COMPOUND_LIT) {
         return 1;
     }
@@ -3526,15 +3554,33 @@ static int ExprNeedsExpectedType(const SLCBackendC* c, int32_t exprNode) {
     return 0;
 }
 
+typedef struct {
+    int32_t  argNode;
+    int32_t  exprNode;
+    uint32_t nameStart;
+    uint32_t nameEnd;
+} SLCCallArgInfo;
+
+static int32_t UnwrapCallArgExprNode(const SLCBackendC* c, int32_t argNode) {
+    const SLAstNode* n = NodeAt(c, argNode);
+    if (n == NULL) {
+        return -1;
+    }
+    if (n->kind == SLAst_CALL_ARG) {
+        return AstFirstChild(&c->ast, argNode);
+    }
+    return argNode;
+}
+
 static int CollectCallArgInfo(
-    SLCBackendC* c,
-    int32_t      callNode,
-    int32_t      calleeNode,
-    int          includeReceiver,
-    int32_t      receiverNode,
-    int32_t*     outArgNodes,
-    SLTypeRef*   outArgTypes,
-    uint32_t*    outArgCount) {
+    SLCBackendC*    c,
+    int32_t         callNode,
+    int32_t         calleeNode,
+    int             includeReceiver,
+    int32_t         receiverNode,
+    SLCCallArgInfo* outArgs,
+    SLTypeRef*      outArgTypes,
+    uint32_t*       outArgCount) {
     int32_t  argNode = AstNextSibling(&c->ast, calleeNode);
     uint32_t argCount = 0;
     (void)callNode;
@@ -3542,7 +3588,10 @@ static int CollectCallArgInfo(
         if (argCount >= SLCCG_MAX_CALL_ARGS) {
             return -1;
         }
-        outArgNodes[argCount] = receiverNode;
+        outArgs[argCount].argNode = receiverNode;
+        outArgs[argCount].exprNode = receiverNode;
+        outArgs[argCount].nameStart = 0;
+        outArgs[argCount].nameEnd = 0;
         if (!ExprNeedsExpectedType(c, receiverNode)
             && InferExprType(c, receiverNode, &outArgTypes[argCount]) != 0)
         {
@@ -3553,15 +3602,33 @@ static int CollectCallArgInfo(
         argCount++;
     }
     while (argNode >= 0) {
+        const SLAstNode* arg = NodeAt(c, argNode);
+        int32_t          exprNode = UnwrapCallArgExprNode(c, argNode);
         if (argCount >= SLCCG_MAX_CALL_ARGS) {
             return -1;
         }
-        outArgNodes[argCount] = argNode;
-        if (!ExprNeedsExpectedType(c, argNode)
-            && InferExprType(c, argNode, &outArgTypes[argCount]) != 0)
+        if (arg == NULL || exprNode < 0) {
+            return -1;
+        }
+        outArgs[argCount].argNode = argNode;
+        outArgs[argCount].exprNode = exprNode;
+        outArgs[argCount].nameStart = 0;
+        outArgs[argCount].nameEnd = 0;
+        if (arg->dataEnd > arg->dataStart) {
+            outArgs[argCount].nameStart = arg->dataStart;
+            outArgs[argCount].nameEnd = arg->dataEnd;
+        } else {
+            const SLAstNode* expr = NodeAt(c, exprNode);
+            if (expr != NULL && expr->kind == SLAst_IDENT) {
+                outArgs[argCount].nameStart = expr->dataStart;
+                outArgs[argCount].nameEnd = expr->dataEnd;
+            }
+        }
+        if (!ExprNeedsExpectedType(c, exprNode)
+            && InferExprType(c, exprNode, &outArgTypes[argCount]) != 0)
         {
             return -1;
-        } else if (ExprNeedsExpectedType(c, argNode)) {
+        } else if (ExprNeedsExpectedType(c, exprNode)) {
             TypeRefSetInvalid(&outArgTypes[argCount]);
         }
         argCount++;
@@ -3630,21 +3697,91 @@ static void GatherCallCandidatesByPkgMethod(
     *outNameFound = nameFound;
 }
 
+static int MapCallArgsToParams(
+    const SLCBackendC*    c,
+    const SLFnSig*        sig,
+    const SLCCallArgInfo* callArgs,
+    uint32_t              argCount,
+    uint32_t              firstPositionalArgIndex,
+    int32_t*              outMappedArgNodes,
+    SLTypeRef*            outMappedArgTypes,
+    const SLTypeRef*      argTypes) {
+    uint8_t  assigned[SLCCG_MAX_CALL_ARGS];
+    uint32_t i;
+    if (sig->paramLen != argCount || argCount > SLCCG_MAX_CALL_ARGS) {
+        return -1;
+    }
+    memset(assigned, 0, sizeof(assigned));
+    for (i = 0; i < argCount; i++) {
+        outMappedArgNodes[i] = -1;
+        TypeRefSetInvalid(&outMappedArgTypes[i]);
+    }
+    if (firstPositionalArgIndex < argCount) {
+        outMappedArgNodes[firstPositionalArgIndex] = callArgs[firstPositionalArgIndex].exprNode;
+        outMappedArgTypes[firstPositionalArgIndex] = argTypes[firstPositionalArgIndex];
+        assigned[firstPositionalArgIndex] = 1;
+    }
+    for (i = 0; i < argCount; i++) {
+        const SLCCallArgInfo* a = &callArgs[i];
+        uint32_t              p;
+        if (i < firstPositionalArgIndex) {
+            outMappedArgNodes[i] = a->exprNode;
+            outMappedArgTypes[i] = argTypes[i];
+            assigned[i] = 1;
+            continue;
+        }
+        if (i == firstPositionalArgIndex) {
+            continue;
+        }
+        if (!(a->nameEnd > a->nameStart)) {
+            return -1;
+        }
+        for (p = firstPositionalArgIndex + 1u; p < argCount; p++) {
+            const char* pn = (sig->paramNames != NULL) ? sig->paramNames[p] : NULL;
+            if (pn == NULL || pn[0] == '\0') {
+                continue;
+            }
+            if (SliceEqName(c->unit->source, a->nameStart, a->nameEnd, pn)) {
+                if (assigned[p]) {
+                    return -1;
+                }
+                assigned[p] = 1;
+                outMappedArgNodes[p] = a->exprNode;
+                outMappedArgTypes[p] = argTypes[i];
+                break;
+            }
+        }
+        if (p == argCount) {
+            return -1;
+        }
+    }
+    for (i = 0; i < argCount; i++) {
+        if (!assigned[i]) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
 static int ResolveCallTargetFromCandidates(
-    SLCBackendC*     c,
-    const SLFnSig**  candidates,
-    uint32_t         candidateLen,
-    int              nameFound,
-    const int32_t*   argNodes,
-    const SLTypeRef* argTypes,
-    uint32_t         argCount,
-    int              autoRefFirstArg,
-    const SLFnSig**  outSig,
-    const char**     outCalleeName) {
+    SLCBackendC*          c,
+    const SLFnSig**       candidates,
+    uint32_t              candidateLen,
+    int                   nameFound,
+    const SLCCallArgInfo* callArgs,
+    const int32_t*        argNodes,
+    const SLTypeRef*      argTypes,
+    uint32_t              argCount,
+    uint32_t              firstPositionalArgIndex,
+    int                   autoRefFirstArg,
+    int32_t* _Nullable outMappedArgNodes,
+    const SLFnSig** outSig,
+    const char**    outCalleeName) {
     const SLFnSig* bestSig = NULL;
     const char*    bestName = NULL;
     uint8_t        bestCosts[SLCCG_MAX_CALL_ARGS];
+    int32_t        bestMappedArgNodes[SLCCG_MAX_CALL_ARGS];
     uint32_t       bestTotal = 0;
     int            ambiguous = 0;
     SLTypeRef      autoRefType;
@@ -3673,6 +3810,8 @@ static int ResolveCallTargetFromCandidates(
     for (i = 0; i < candidateLen; i++) {
         const SLFnSig* sig = candidates[i];
         uint8_t        costs[SLCCG_MAX_CALL_ARGS];
+        int32_t        mappedArgNodes[SLCCG_MAX_CALL_ARGS];
+        SLTypeRef      mappedArgTypes[SLCCG_MAX_CALL_ARGS];
         uint32_t       total = 0;
         uint32_t       p;
         int            viable = 1;
@@ -3680,15 +3819,49 @@ static int ResolveCallTargetFromCandidates(
         if (sig->paramLen != argCount) {
             continue;
         }
+        if (argCount > firstPositionalArgIndex + 1u) {
+            int hasNamedArgs = 0;
+            for (p = firstPositionalArgIndex + 1u; p < argCount; p++) {
+                if (callArgs[p].nameEnd > callArgs[p].nameStart) {
+                    hasNamedArgs = 1;
+                    break;
+                }
+            }
+            if (hasNamedArgs) {
+                if (MapCallArgsToParams(
+                        c,
+                        sig,
+                        callArgs,
+                        argCount,
+                        firstPositionalArgIndex,
+                        mappedArgNodes,
+                        mappedArgTypes,
+                        argTypes)
+                    != 0)
+                {
+                    continue;
+                }
+            } else {
+                for (p = 0; p < argCount; p++) {
+                    mappedArgNodes[p] = argNodes[p];
+                    mappedArgTypes[p] = argTypes[p];
+                }
+            }
+        } else {
+            for (p = 0; p < argCount; p++) {
+                mappedArgNodes[p] = argNodes[p];
+                mappedArgTypes[p] = argTypes[p];
+            }
+        }
         for (p = 0; p < argCount; p++) {
             SLTypeRef argType;
             uint8_t   cost = 0;
             if (hasAutoRefType && p == 0) {
                 argType = autoRefType;
-            } else if (argTypes[p].valid) {
-                argType = argTypes[p];
+            } else if (mappedArgTypes[p].valid) {
+                argType = mappedArgTypes[p];
             } else {
-                if (InferExprTypeExpected(c, argNodes[p], &sig->paramTypes[p], &argType) != 0
+                if (InferExprTypeExpected(c, mappedArgNodes[p], &sig->paramTypes[p], &argType) != 0
                     || !argType.valid)
                 {
                     viable = 0;
@@ -3713,6 +3886,7 @@ static int ResolveCallTargetFromCandidates(
             ambiguous = 0;
             for (j = 0; j < argCount; j++) {
                 bestCosts[j] = costs[j];
+                bestMappedArgNodes[j] = mappedArgNodes[j];
             }
             continue;
         }
@@ -3725,6 +3899,7 @@ static int ResolveCallTargetFromCandidates(
             ambiguous = 0;
             for (j = 0; j < argCount; j++) {
                 bestCosts[j] = costs[j];
+                bestMappedArgNodes[j] = mappedArgNodes[j];
             }
             continue;
         }
@@ -3739,6 +3914,11 @@ static int ResolveCallTargetFromCandidates(
     if (ambiguous) {
         return 3;
     }
+    if (outMappedArgNodes != NULL) {
+        for (i = 0; i < argCount; i++) {
+            outMappedArgNodes[i] = bestMappedArgNodes[i];
+        }
+    }
     *outSig = bestSig;
     *outCalleeName = bestName;
     return 0;
@@ -3746,15 +3926,18 @@ static int ResolveCallTargetFromCandidates(
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
 static int ResolveCallTarget(
-    SLCBackendC*     c,
-    uint32_t         nameStart,
-    uint32_t         nameEnd,
-    const int32_t*   argNodes,
-    const SLTypeRef* argTypes,
-    uint32_t         argCount,
-    int              autoRefFirstArg,
-    const SLFnSig**  outSig,
-    const char**     outCalleeName) {
+    SLCBackendC*          c,
+    uint32_t              nameStart,
+    uint32_t              nameEnd,
+    const SLCCallArgInfo* callArgs,
+    const int32_t*        argNodes,
+    const SLTypeRef*      argTypes,
+    uint32_t              argCount,
+    uint32_t              firstPositionalArgIndex,
+    int                   autoRefFirstArg,
+    int32_t* _Nullable outMappedArgNodes,
+    const SLFnSig** outSig,
+    const char**    outCalleeName) {
     const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
     uint32_t       candidateLen = 0;
     int            nameFound = 0;
@@ -3764,27 +3947,33 @@ static int ResolveCallTarget(
         candidates,
         candidateLen,
         nameFound,
+        callArgs,
         argNodes,
         argTypes,
         argCount,
+        firstPositionalArgIndex,
         autoRefFirstArg,
+        outMappedArgNodes,
         outSig,
         outCalleeName);
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
 static int ResolveCallTargetByPkgMethod(
-    SLCBackendC*     c,
-    uint32_t         pkgStart,
-    uint32_t         pkgEnd,
-    uint32_t         methodStart,
-    uint32_t         methodEnd,
-    const int32_t*   argNodes,
-    const SLTypeRef* argTypes,
-    uint32_t         argCount,
-    int              autoRefFirstArg,
-    const SLFnSig**  outSig,
-    const char**     outCalleeName) {
+    SLCBackendC*          c,
+    uint32_t              pkgStart,
+    uint32_t              pkgEnd,
+    uint32_t              methodStart,
+    uint32_t              methodEnd,
+    const SLCCallArgInfo* callArgs,
+    const int32_t*        argNodes,
+    const SLTypeRef*      argTypes,
+    uint32_t              argCount,
+    uint32_t              firstPositionalArgIndex,
+    int                   autoRefFirstArg,
+    int32_t* _Nullable outMappedArgNodes,
+    const SLFnSig** outSig,
+    const char**    outCalleeName) {
     const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
     uint32_t       candidateLen = 0;
     int            nameFound = 0;
@@ -3795,13 +3984,19 @@ static int ResolveCallTargetByPkgMethod(
         candidates,
         candidateLen,
         nameFound,
+        callArgs,
         argNodes,
         argTypes,
         argCount,
+        firstPositionalArgIndex,
         autoRefFirstArg,
+        outMappedArgNodes,
         outSig,
         outCalleeName);
 }
+
+static int InferExprType_IDENT(
+    SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
 
 static int InferCompoundLiteralType(
     SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType, SLTypeRef* outType) {
@@ -3872,7 +4067,26 @@ static int InferCompoundLiteralType(
                     }
                 }
                 exprNode = AstFirstChild(&c->ast, scan);
-                if (exprNode < 0 || InferExprType(c, exprNode, &exprType) != 0 || !exprType.valid) {
+                if (exprNode < 0) {
+                    if ((fieldNode->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) == 0) {
+                        TypeRefSetInvalid(outType);
+                        return -1;
+                    }
+                    {
+                        SLAstNode identNode = { 0 };
+                        identNode.kind = SLAst_IDENT;
+                        identNode.start = fieldNode->start;
+                        identNode.end = fieldNode->end;
+                        identNode.dataStart = fieldNode->dataStart;
+                        identNode.dataEnd = fieldNode->dataEnd;
+                        if (InferExprType_IDENT(c, scan, &identNode, &exprType) != 0
+                            || !exprType.valid)
+                        {
+                            TypeRefSetInvalid(outType);
+                            return -1;
+                        }
+                    }
+                } else if (InferExprType(c, exprNode, &exprType) != 0 || !exprType.valid) {
                     TypeRefSetInvalid(outType);
                     return -1;
                 }
@@ -3964,7 +4178,7 @@ static int InferCompoundLiteralType(
         }
 
         exprNode = AstFirstChild(&c->ast, firstField);
-        if (exprNode < 0) {
+        if (exprNode < 0 && (fieldNode->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) == 0) {
             TypeRefSetInvalid(outType);
             return -1;
         }
@@ -3985,7 +4199,20 @@ static int InferCompoundLiteralType(
             return -1;
         }
         field = fieldPath[fieldPathLen - 1u];
-        if (InferExprTypeExpected(c, exprNode, &field->type, &exprType) != 0 || !exprType.valid) {
+        if (exprNode < 0) {
+            SLAstNode identNode = { 0 };
+            identNode.kind = SLAst_IDENT;
+            identNode.start = fieldNode->start;
+            identNode.end = fieldNode->end;
+            identNode.dataStart = fieldNode->dataStart;
+            identNode.dataEnd = fieldNode->dataEnd;
+            if (InferExprType_IDENT(c, firstField, &identNode, &exprType) != 0 || !exprType.valid) {
+                TypeRefSetInvalid(outType);
+                return -1;
+            }
+        } else if (
+            InferExprTypeExpected(c, exprNode, &field->type, &exprType) != 0 || !exprType.valid)
+        {
             TypeRefSetInvalid(outType);
             return -1;
         }
@@ -4153,28 +4380,37 @@ static int InferExprType_CALL(
     const SLAstNode* cn = NodeAt(c, callee);
     (void)n;
     if (cn != NULL && cn->kind == SLAst_IDENT) {
+        SLCCallArgInfo callArgs[SLCCG_MAX_CALL_ARGS];
         int32_t        argNodes[SLCCG_MAX_CALL_ARGS];
         SLTypeRef      argTypes[SLCCG_MAX_CALL_ARGS];
         uint32_t       argCount = 0;
+        uint32_t       i;
         const SLFnSig* resolved = NULL;
         const char*    resolvedName = NULL;
-        if (CollectCallArgInfo(c, nodeId, callee, 0, -1, argNodes, argTypes, &argCount) == 0
-            && ResolveCallTarget(
-                   c,
-                   cn->dataStart,
-                   cn->dataEnd,
-                   argNodes,
-                   argTypes,
-                   argCount,
-                   0,
-                   &resolved,
-                   &resolvedName)
-                   == 0
-            && resolved != NULL)
-        {
-            (void)resolvedName;
-            *outType = resolved->returnType;
-            return 0;
+        if (CollectCallArgInfo(c, nodeId, callee, 0, -1, callArgs, argTypes, &argCount) == 0) {
+            for (i = 0; i < argCount; i++) {
+                argNodes[i] = callArgs[i].exprNode;
+            }
+            if (ResolveCallTarget(
+                    c,
+                    cn->dataStart,
+                    cn->dataEnd,
+                    callArgs,
+                    argNodes,
+                    argTypes,
+                    argCount,
+                    0,
+                    0,
+                    NULL,
+                    &resolved,
+                    &resolvedName)
+                    == 0
+                && resolved != NULL)
+            {
+                (void)resolvedName;
+                *outType = resolved->returnType;
+                return 0;
+            }
         }
     } else if (cn != NULL && cn->kind == SLAst_FIELD_EXPR) {
         int32_t            recvNode = AstFirstChild(&c->ast, callee);
@@ -4226,25 +4462,33 @@ static int InferExprType_CALL(
                 TypeRefSetScalar(outType, "void");
                 return 0;
             }
+            SLCCallArgInfo callArgs[SLCCG_MAX_CALL_ARGS];
             int32_t        argNodes[SLCCG_MAX_CALL_ARGS];
             SLTypeRef      argTypes[SLCCG_MAX_CALL_ARGS];
             uint32_t       argCount = 0;
+            uint32_t       i;
             const SLFnSig* resolved = NULL;
             const char*    resolvedName = NULL;
             uint32_t       recvPkgLen = 0;
             int            recvHasPkgPrefix =
                 recvType.baseName != NULL && TypeNamePkgPrefixLen(recvType.baseName, &recvPkgLen);
-            if (CollectCallArgInfo(c, nodeId, callee, 1, recvNode, argNodes, argTypes, &argCount)
+            if (CollectCallArgInfo(c, nodeId, callee, 1, recvNode, callArgs, argTypes, &argCount)
                 == 0)
             {
+                for (i = 0; i < argCount; i++) {
+                    argNodes[i] = callArgs[i].exprNode;
+                }
                 int status = ResolveCallTarget(
                     c,
                     cn->dataStart,
                     cn->dataEnd,
+                    callArgs,
                     argNodes,
                     argTypes,
                     argCount,
+                    1,
                     0,
+                    NULL,
                     &resolved,
                     &resolvedName);
                 if (status == 2) {
@@ -4252,10 +4496,13 @@ static int InferExprType_CALL(
                         c,
                         cn->dataStart,
                         cn->dataEnd,
+                        callArgs,
                         argNodes,
                         argTypes,
                         argCount,
                         1,
+                        1,
+                        NULL,
                         &resolved,
                         &resolvedName);
                 }
@@ -4266,10 +4513,13 @@ static int InferExprType_CALL(
                         recvPkgLen,
                         cn->dataStart,
                         cn->dataEnd,
+                        callArgs,
                         argNodes,
                         argTypes,
                         argCount,
+                        1,
                         0,
+                        NULL,
                         &resolved,
                         &resolvedName);
                     if (prefixedStatus == 2) {
@@ -4279,10 +4529,13 @@ static int InferExprType_CALL(
                             recvPkgLen,
                             cn->dataStart,
                             cn->dataEnd,
+                            callArgs,
                             argNodes,
                             argTypes,
                             argCount,
                             1,
+                            1,
+                            NULL,
                             &resolved,
                             &resolvedName);
                     }
@@ -4532,6 +4785,17 @@ static int InferExprType_UNWRAP(
     return 0;
 }
 
+static int InferExprType_CALL_ARG(
+    SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType) {
+    int32_t inner = AstFirstChild(&c->ast, nodeId);
+    (void)n;
+    if (inner < 0) {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+    return InferExprType(c, inner, outType);
+}
+
 static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -4556,6 +4820,7 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
         case SLAst_FLOAT:             return InferExprType_FLOAT(c, nodeId, n, outType);
         case SLAst_NULL:              return InferExprType_NULL(c, nodeId, n, outType);
         case SLAst_UNWRAP:            return InferExprType_UNWRAP(c, nodeId, n, outType);
+        case SLAst_CALL_ARG:          return InferExprType_CALL_ARG(c, nodeId, n, outType);
         default:                      TypeRefSetInvalid(outType); return 0;
     }
 }
@@ -5532,7 +5797,7 @@ static int EmitNewExpr(
                 return -1;
             }
             exprNode = AstFirstChild(&c->ast, fieldNode);
-            if (exprNode < 0) {
+            if (exprNode < 0 && (field->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) == 0) {
                 return -1;
             }
             if (ResolveFieldPathBySlice(
@@ -5561,7 +5826,7 @@ static int EmitNewExpr(
                 }
             }
             if (BufAppendCStr(&c->out, " = ") != 0
-                || EmitExprCoerced(c, exprNode, &resolvedField->type) != 0
+                || EmitCompoundFieldValueCoerced(c, field, exprNode, &resolvedField->type) != 0
                 || BufAppendCStr(&c->out, ";\n") != 0)
             {
                 return -1;
@@ -6163,6 +6428,17 @@ static int EmitFieldPathLValue(
     return 0;
 }
 
+static int EmitCompoundFieldValueCoerced(
+    SLCBackendC* c, const SLAstNode* field, int32_t exprNode, const SLTypeRef* _Nullable dstType) {
+    if (exprNode >= 0) {
+        return EmitExprCoerced(c, exprNode, dstType);
+    }
+    if (field == NULL || (field->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) == 0) {
+        return -1;
+    }
+    return BufAppendSlice(&c->out, c->unit->source, field->dataStart, field->dataEnd);
+}
+
 static int EmitCompoundLiteralDesignated(
     SLCBackendC* c, int32_t firstField, const char* ownerType, const SLTypeRef* valueType) {
     int32_t fieldNode = firstField;
@@ -6184,7 +6460,7 @@ static int EmitCompoundLiteralDesignated(
             return -1;
         }
         exprNode = AstFirstChild(&c->ast, fieldNode);
-        if (exprNode < 0) {
+        if (exprNode < 0 && (field->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) == 0) {
             return -1;
         }
         if (ResolveFieldPathBySlice(
@@ -6209,7 +6485,7 @@ static int EmitCompoundLiteralDesignated(
         if (BufAppendChar(&c->out, '.') != 0
             || BufAppendCStr(&c->out, resolvedField->fieldName) != 0
             || BufAppendCStr(&c->out, " = ") != 0
-            || EmitExprCoerced(c, exprNode, &resolvedField->type) != 0)
+            || EmitCompoundFieldValueCoerced(c, field, exprNode, &resolvedField->type) != 0)
         {
             return -1;
         }
@@ -6265,7 +6541,7 @@ static int EmitCompoundLiteralOrderedStruct(
             return -1;
         }
         exprNode = AstFirstChild(&c->ast, fieldNode);
-        if (exprNode < 0) {
+        if (exprNode < 0 && (field->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) == 0) {
             PopScope(c);
             return -1;
         }
@@ -6290,7 +6566,7 @@ static int EmitCompoundLiteralOrderedStruct(
             || EmitTypeNameWithDepth(c, &resolvedField->type) != 0
             || BufAppendCStr(&c->out, " __sl_exp_") != 0 || BufAppendU32(&c->out, tempIndex) != 0
             || BufAppendCStr(&c->out, " = ") != 0
-            || EmitExprCoerced(c, exprNode, &resolvedField->type) != 0
+            || EmitCompoundFieldValueCoerced(c, field, exprNode, &resolvedField->type) != 0
             || BufAppendCStr(&c->out, ";\n    ") != 0
             || EmitFieldPathLValue(c, "__sl_tmp", fieldPath, fieldPathLen) != 0
             || BufAppendCStr(&c->out, " = __sl_exp_") != 0 || BufAppendU32(&c->out, tempIndex) != 0
@@ -7069,46 +7345,59 @@ static int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                 return 0;
             }
             if (recvNode >= 0) {
+                SLCCallArgInfo callArgs[SLCCG_MAX_CALL_ARGS];
                 int32_t        argNodes[SLCCG_MAX_CALL_ARGS];
+                int32_t        mappedArgNodes[SLCCG_MAX_CALL_ARGS];
                 SLTypeRef      argTypes[SLCCG_MAX_CALL_ARGS];
                 uint32_t       argCount = 0;
+                uint32_t       i;
                 const SLFnSig* resolvedSig = NULL;
                 const char*    resolvedName = NULL;
                 uint32_t       recvPkgLen = 0;
                 int            recvHasPkgPrefix =
                     recvType.baseName != NULL
                     && TypeNamePkgPrefixLen(recvType.baseName, &recvPkgLen);
-                if (CollectCallArgInfo(c, nodeId, child, 1, recvNode, argNodes, argTypes, &argCount)
+                if (CollectCallArgInfo(c, nodeId, child, 1, recvNode, callArgs, argTypes, &argCount)
                     == 0)
                 {
+                    for (i = 0; i < argCount; i++) {
+                        argNodes[i] = callArgs[i].exprNode;
+                        mappedArgNodes[i] = argNodes[i];
+                    }
                     int status = ResolveCallTarget(
                         c,
                         callee->dataStart,
                         callee->dataEnd,
+                        callArgs,
                         argNodes,
                         argTypes,
                         argCount,
+                        1,
                         0,
+                        mappedArgNodes,
                         &resolvedSig,
                         &resolvedName);
                     if (status == 0 && resolvedName != NULL) {
                         return EmitResolvedCall(
-                            c, nodeId, resolvedName, resolvedSig, argNodes, argCount, 0);
+                            c, nodeId, resolvedName, resolvedSig, mappedArgNodes, argCount, 0);
                     }
                     if (status == 2) {
                         status = ResolveCallTarget(
                             c,
                             callee->dataStart,
                             callee->dataEnd,
+                            callArgs,
                             argNodes,
                             argTypes,
                             argCount,
                             1,
+                            1,
+                            mappedArgNodes,
                             &resolvedSig,
                             &resolvedName);
                         if (status == 0 && resolvedName != NULL) {
                             return EmitResolvedCall(
-                                c, nodeId, resolvedName, resolvedSig, argNodes, argCount, 1);
+                                c, nodeId, resolvedName, resolvedSig, mappedArgNodes, argCount, 1);
                         }
                     }
                     if ((status == 1 || status == 2) && recvHasPkgPrefix) {
@@ -7118,15 +7407,18 @@ static int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                             recvPkgLen,
                             callee->dataStart,
                             callee->dataEnd,
+                            callArgs,
                             argNodes,
                             argTypes,
                             argCount,
+                            1,
                             0,
+                            mappedArgNodes,
                             &resolvedSig,
                             &resolvedName);
                         if (prefixedStatus == 0 && resolvedName != NULL) {
                             return EmitResolvedCall(
-                                c, nodeId, resolvedName, resolvedSig, argNodes, argCount, 0);
+                                c, nodeId, resolvedName, resolvedSig, mappedArgNodes, argCount, 0);
                         }
                         if (prefixedStatus == 2) {
                             prefixedStatus = ResolveCallTargetByPkgMethod(
@@ -7135,15 +7427,24 @@ static int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                                 recvPkgLen,
                                 callee->dataStart,
                                 callee->dataEnd,
+                                callArgs,
                                 argNodes,
                                 argTypes,
                                 argCount,
                                 1,
+                                1,
+                                mappedArgNodes,
                                 &resolvedSig,
                                 &resolvedName);
                             if (prefixedStatus == 0 && resolvedName != NULL) {
                                 return EmitResolvedCall(
-                                    c, nodeId, resolvedName, resolvedSig, argNodes, argCount, 1);
+                                    c,
+                                    nodeId,
+                                    resolvedName,
+                                    resolvedSig,
+                                    mappedArgNodes,
+                                    argCount,
+                                    1);
                             }
                         }
                     }
@@ -7152,26 +7453,38 @@ static int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
         }
     }
     if (callee != NULL && callee->kind == SLAst_IDENT) {
+        SLCCallArgInfo callArgs[SLCCG_MAX_CALL_ARGS];
         int32_t        argNodes[SLCCG_MAX_CALL_ARGS];
+        int32_t        mappedArgNodes[SLCCG_MAX_CALL_ARGS];
         SLTypeRef      argTypes[SLCCG_MAX_CALL_ARGS];
         uint32_t       argCount = 0;
+        uint32_t       i;
         const SLFnSig* resolvedSig = NULL;
         const char*    resolvedName = NULL;
-        if (CollectCallArgInfo(c, nodeId, child, 0, -1, argNodes, argTypes, &argCount) == 0
-            && ResolveCallTarget(
-                   c,
-                   callee->dataStart,
-                   callee->dataEnd,
-                   argNodes,
-                   argTypes,
-                   argCount,
-                   0,
-                   &resolvedSig,
-                   &resolvedName)
-                   == 0
-            && resolvedName != NULL)
-        {
-            return EmitResolvedCall(c, nodeId, resolvedName, resolvedSig, argNodes, argCount, 0);
+        if (CollectCallArgInfo(c, nodeId, child, 0, -1, callArgs, argTypes, &argCount) == 0) {
+            for (i = 0; i < argCount; i++) {
+                argNodes[i] = callArgs[i].exprNode;
+                mappedArgNodes[i] = argNodes[i];
+            }
+            if (ResolveCallTarget(
+                    c,
+                    callee->dataStart,
+                    callee->dataEnd,
+                    callArgs,
+                    argNodes,
+                    argTypes,
+                    argCount,
+                    0,
+                    0,
+                    mappedArgNodes,
+                    &resolvedSig,
+                    &resolvedName)
+                    == 0
+                && resolvedName != NULL)
+            {
+                return EmitResolvedCall(
+                    c, nodeId, resolvedName, resolvedSig, mappedArgNodes, argCount, 0);
+            }
         }
     }
     {
@@ -7471,6 +7784,15 @@ static int EmitExpr_UNWRAP(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
     return 0;
 }
 
+static int EmitExpr_CALL_ARG(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
+    int32_t inner = AstFirstChild(&c->ast, nodeId);
+    (void)n;
+    if (inner < 0) {
+        return -1;
+    }
+    return EmitExpr(c, inner);
+}
+
 static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -7495,6 +7817,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
         case SLAst_SIZEOF:            return EmitExpr_SIZEOF(c, nodeId, n);
         case SLAst_NULL:              return EmitExpr_NULL(c, nodeId, n);
         case SLAst_UNWRAP:            return EmitExpr_UNWRAP(c, nodeId, n);
+        case SLAst_CALL_ARG:          return EmitExpr_CALL_ARG(c, nodeId, n);
         default:
             /* Unsupported AST kind in expression context. */
             return -1;

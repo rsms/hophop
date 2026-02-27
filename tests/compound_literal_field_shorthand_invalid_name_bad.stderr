@@ -1,0 +1,1 @@
+tests/compound_literal_field_shorthand_invalid_name_bad.sl:8:17: SL2040: unknown compound literal field 'z'

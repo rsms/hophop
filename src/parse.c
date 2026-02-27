@@ -704,9 +704,9 @@ static int SLPParseCompoundLiteralTail(SLParser* p, int32_t typeNode, int32_t* o
 
     while (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
         const SLToken* fieldName;
-        const SLToken* colonTok;
         int32_t        field;
-        int32_t        expr;
+        int32_t        expr = -1;
+        int            hasDottedPath = 0;
 
         if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &fieldName) != 0) {
             return -1;
@@ -723,17 +723,25 @@ static int SLPParseCompoundLiteralTail(SLParser* p, int32_t typeNode, int32_t* o
                 return -1;
             }
             p->nodes[field].dataEnd = seg->end;
+            hasDottedPath = 1;
         }
-        if (SLPExpect(p, SLTok_COLON, SLDiag_UNEXPECTED_TOKEN, &colonTok) != 0) {
+        if (SLPMatch(p, SLTok_COLON)) {
+            if (SLPParseExpr(p, 1, &expr) != 0) {
+                return -1;
+            }
+            if (SLPAddChild(p, field, expr) != 0) {
+                return -1;
+            }
+            p->nodes[field].end = p->nodes[expr].end;
+        } else {
+            if (hasDottedPath) {
+                return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+            }
+            p->nodes[field].flags |= SLAstFlag_COMPOUND_FIELD_SHORTHAND;
+        }
+        if (SLPAddChild(p, lit, field) != 0) {
             return -1;
         }
-        if (SLPParseExpr(p, 1, &expr) != 0) {
-            return -1;
-        }
-        if (SLPAddChild(p, field, expr) != 0 || SLPAddChild(p, lit, field) != 0) {
-            return -1;
-        }
-        p->nodes[field].end = p->nodes[expr].end;
 
         if (SLPMatch(p, SLTok_COMMA) || SLPMatch(p, SLTok_SEMICOLON)) {
             if (SLPAt(p, SLTok_RBRACE)) {
@@ -1000,11 +1008,32 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
             }
             if (!SLPAt(p, SLTok_RPAREN)) {
                 for (;;) {
-                    int32_t arg;
+                    int32_t        arg;
+                    int32_t        argNode;
+                    const SLToken* labelTok = NULL;
+                    uint32_t       argStart = SLPPeek(p)->start;
+                    if (SLPAt(p, SLTok_IDENT) && (p->pos + 1u) < p->tokLen
+                        && p->tok[p->pos + 1u].kind == SLTok_COLON)
+                    {
+                        labelTok = SLPPeek(p);
+                        p->pos += 2u;
+                    }
                     if (SLPParseExpr(p, 1, &arg) != 0) {
                         return -1;
                     }
-                    if (SLPAddChild(p, n, arg) != 0) {
+                    argNode = SLPNewNode(
+                        p,
+                        SLAst_CALL_ARG,
+                        labelTok != NULL ? labelTok->start : argStart,
+                        p->nodes[arg].end);
+                    if (argNode < 0) {
+                        return -1;
+                    }
+                    if (labelTok != NULL) {
+                        p->nodes[argNode].dataStart = labelTok->start;
+                        p->nodes[argNode].dataEnd = labelTok->end;
+                    }
+                    if (SLPAddChild(p, argNode, arg) != 0 || SLPAddChild(p, n, argNode) != 0) {
                         return -1;
                     }
                     if (!SLPMatch(p, SLTok_COMMA)) {
@@ -2433,6 +2462,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_UNARY:             return "UNARY";
         case SLAst_BINARY:            return "BINARY";
         case SLAst_CALL:              return "CALL";
+        case SLAst_CALL_ARG:          return "CALL_ARG";
         case SLAst_CALL_WITH_CONTEXT: return "CALL_WITH_CONTEXT";
         case SLAst_CONTEXT_OVERLAY:   return "CONTEXT_OVERLAY";
         case SLAst_CONTEXT_BIND:      return "CONTEXT_BIND";

@@ -14,6 +14,6 @@ fn main() {
 	var f fn(i32) i32 = add1
 	var w Wrapper
 	w.cb = f
-	assert apply(41, w.cb) == 42
+	assert apply(41, f: w.cb) == 42
 	assert w.cb(1) == 2
 }

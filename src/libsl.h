@@ -292,6 +292,7 @@ typedef enum {
     SLAst_UNARY,
     SLAst_BINARY,
     SLAst_CALL,
+    SLAst_CALL_ARG,
     SLAst_CALL_WITH_CONTEXT,
     SLAst_CONTEXT_OVERLAY,
     SLAst_CONTEXT_BIND,
@@ -330,6 +331,7 @@ enum {
     SLAstFlag_NEW_HAS_ALLOC = 0x0080u,
     SLAstFlag_NEW_HAS_INIT = 0x0100u,
     SLAstFlag_PAREN = 0x0200u,
+    SLAstFlag_COMPOUND_FIELD_SHORTHAND = 0x0400u,
 };
 
 typedef uint32_t SLFeatures;

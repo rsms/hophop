@@ -25,7 +25,7 @@ fn fill_values(arena *ArenaAllocator) i32 {
 
 fn main() {
 	var arena ArenaAllocator
-	arena_init(&arena, context.mem, 1024)
+	arena_init(&arena, source: context.mem, block_size: 1024)
 
 	var sum = fill_values(&arena)
 	assert sum == 20

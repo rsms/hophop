@@ -631,6 +631,9 @@ static int SLFmtEmitCompoundFieldWithAlign(SLFmtCtx* c, int32_t nodeId, uint32_t
         return -1;
     }
     exprNode = SLFmtFirstChild(c->ast, nodeId);
+    if ((n->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) != 0 && exprNode < 0) {
+        return SLFmtWriteSlice(c, n->dataStart, n->dataEnd);
+    }
     keyLen = n->dataEnd - n->dataStart;
     if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0 || SLFmtWriteChar(c, ':') != 0) {
         return -1;
@@ -907,6 +910,17 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
                 arg = next;
             }
             return SLFmtWriteChar(c, ')');
+        }
+        case SLAst_CALL_ARG: {
+            int32_t exprNode = SLFmtFirstChild(c->ast, nodeId);
+            if (n->dataEnd > n->dataStart) {
+                if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0
+                    || SLFmtWriteCStr(c, ": ") != 0)
+                {
+                    return -1;
+                }
+            }
+            return exprNode >= 0 ? SLFmtEmitExpr(c, exprNode, 0) : 0;
         }
         case SLAst_CALL_WITH_CONTEXT: {
             int32_t callNode = SLFmtFirstChild(c->ast, nodeId);

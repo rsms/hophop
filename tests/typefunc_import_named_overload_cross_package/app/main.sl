@@ -8,7 +8,7 @@ fn main() {
 	var yf f32 = 3.0
 
 	assert foo(xi) == 3
-	assert foo(xi, yi) == 5
+	assert foo(xi, y: yi) == 5
 	assert foo(xf) == 3.0
-	assert foo(xf, yf) == 4.5
+	assert foo(xf, y: yf) == 4.5
 }

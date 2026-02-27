@@ -75,6 +75,13 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR,  /* SL1001: unexpected character */
                                                  non-parenthesized literal chains */
     SLDiag_ARRAY_LEN_CONST_REQUIRED,  /* SL2054: array length must be a const integer expression */
     SLDiag_CONST_INIT_CONST_REQUIRED, /* SL2055: const initializer must be a const expression */
-    SLDiag_CODEGEN_INTERNAL,          /* SL3001: internal codegen error */
-    SLDiag_ARENA_OOM,                 /* SL4001: arena out of memory */
-    SLDiag_UNKNOWN_FEATURE,           /* SL4002: unknown feature '{s}' */
+    SLDiag_CALL_ARG_NAME_REQUIRED,    /* SL2056: call argument must be named (or be an identifier)
+                                         after the first argument */
+    SLDiag_CALL_ARG_UNKNOWN_NAME,     /* SL2057: no parameter named '{s}' */
+    SLDiag_CALL_ARG_DUPLICATE,        /* SL2058: duplicate argument for parameter '{s}' */
+    SLDiag_CALL_ARG_MISSING,          /* SL2059: missing argument for parameter '{s}' */
+    SLDiag_CALL_FIRST_ARG_NAME_MISMATCH, /* SL2060: first argument name must match parameter '{s}'
+                                          */
+    SLDiag_CODEGEN_INTERNAL,             /* SL3001: internal codegen error */
+    SLDiag_ARENA_OOM,                    /* SL4001: arena out of memory */
+    SLDiag_UNKNOWN_FEATURE,              /* SL4002: unknown feature '{s}' */

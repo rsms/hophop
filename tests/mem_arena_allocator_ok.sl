@@ -26,7 +26,7 @@ fn contextual_alloc() *[i32] context struct {
 
 fn main() {
 	var arena mem.ArenaAllocator
-	arena.init(context.mem, 64)
+	arena.init(context.mem, block_size: 64)
 
 	var p *i32 = takes_allocator(&arena)
 	assert *p == 7

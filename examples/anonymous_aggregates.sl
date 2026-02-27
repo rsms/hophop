@@ -81,8 +81,8 @@ fn run() i32 context struct {
 		value: { i: 5 }
 	}
 
-	ex = move_to(ex, { x: 11, y: 22 })
-	ex = set_value(ex, { i: 9 })
+	ex = move_to(ex, p: { x: 11, y: 22 })
+	ex = set_value(ex, v: { i: 9 })
 
 	// Inferred local anonymous struct type from field names + value types.
 	var inferred          = { a: (7 as i32), b: "hello" }

@@ -19,7 +19,7 @@ fn main() {
 	var ma  = 0 as *Allocator
 
 	assert c.doubled() == doubled(c)
-	assert c.add(7) == add(c, 7)
+	assert c.add(7) == add(c, d: 7)
 	assert msg.len() == len(msg)
 
 	var p ?*i32     = new i32 with ma

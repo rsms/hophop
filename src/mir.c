@@ -102,7 +102,15 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             }
             arg = b->ast->nodes[callee].nextSibling;
             while (arg >= 0) {
-                if (SLMirBuildExprNode(b, arg) != 0) {
+                int32_t exprNode = arg;
+                if (b->ast->nodes[arg].kind == SLAst_CALL_ARG) {
+                    exprNode = b->ast->nodes[arg].firstChild;
+                    if (exprNode < 0) {
+                        b->supported = 0;
+                        return 0;
+                    }
+                }
+                if (SLMirBuildExprNode(b, exprNode) != 0) {
                     return -1;
                 }
                 if (argc == UINT16_MAX) {

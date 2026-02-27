@@ -16,6 +16,6 @@ fn rotate(v *Vec3, x f32, y f32, z f32) {
 
 fn main() i32 {
 	var v Vec3
-	rotate(&v, 1.0, 2.0, 3.0)
-	return resize(1, 2, 3, 4) as i32
+	rotate(&v, x: 1.0, y: 2.0, z: 3.0)
+	return resize(1, newSize: 2, align: 3, size: 4) as i32
 }

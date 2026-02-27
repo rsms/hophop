@@ -8,5 +8,5 @@ fn m(a int, b int) int {
 
 fn main() {
 	assert m(1) == 11
-	assert m(1, 2) == 3
+	assert m(1, b: 2) == 3
 }

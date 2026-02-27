@@ -19,7 +19,7 @@ fn main() {
 	var rr &i32 = mr
 
 	var arf *[i32 4] = &a
-	setfirst(arf, 9)
+	setfirst(arf, v: 9)
 
 	var rof   &[i32 4] = arf
 	var all   *[i32]   = a[:]

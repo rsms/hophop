@@ -78,47 +78,47 @@ fn choose(a int, b int, flip bool) int {
 	return a + b
 }
 
-const WIDTH = expect_i(BASE * 4 + 1, 13)
+const WIDTH = expect_i(BASE * 4 + 1, want: 13)
 
-const COUNT = expect_i(stride(WIDTH), 27)
+const COUNT = expect_i(stride(WIDTH), want: 27)
 
-const CHECKED = expect_i(checked_stride(5), 11)
+const CHECKED = expect_i(checked_stride(5), want: 11)
 
-const TRI = expect_i(sum_to(6), 15)
+const TRI = expect_i(sum_to(6), want: 15)
 
-const ODD_COUNT = expect_i(odd_count_upto(20), 5)
+const ODD_COUNT = expect_i(odd_count_upto(20), want: 5)
 
-const KIND = expect_i(classify(2), 2)
+const KIND = expect_i(classify(2), want: 2)
 
-const DEFER_VALUE = expect_i(defer_value(4), 5)
+const DEFER_VALUE = expect_i(defer_value(4), want: 5)
 
-const PICKED = expect_i(choose(2, 7, false), 7)
+const PICKED = expect_i(choose(2, b: 7, flip: false), want: 7)
 
-const PICKED_FLIP = expect_i(choose(2, 7, true), 2)
+const PICKED_FLIP = expect_i(choose(2, b: 7, flip: true), want: 2)
 
 const PI f64 = 3.14159
 
 const PI_INT int = PI as int
 
-const PI_INT_OK = expect_i(PI_INT, 3)
+const PI_INT_OK = expect_i(PI_INT, want: 3)
 
 const SIZE_I32 int = sizeof(i32) as int
 
-const SIZE_I32_OK = expect_i(SIZE_I32, 4)
+const SIZE_I32_OK = expect_i(SIZE_I32, want: 4)
 
 const INT_SIZE int = sizeof(1 as int) as int
 
 const SIZE_PI_INT int = sizeof(PI_INT) as int
 
-const SIZE_PI_INT_OK = expect_i(SIZE_PI_INT, INT_SIZE)
+const SIZE_PI_INT_OK = expect_i(SIZE_PI_INT, want: INT_SIZE)
 
-const LOCAL_ELEM_SIZE = expect_i(local_elem_size(), INT_SIZE)
+const LOCAL_ELEM_SIZE = expect_i(local_elem_size(), want: INT_SIZE)
 
-const LOCAL_INFER_ELEM_SIZE = expect_i(local_infer_elem_size(), INT_SIZE)
+const LOCAL_INFER_ELEM_SIZE = expect_i(local_infer_elem_size(), want: INT_SIZE)
 
 const ZERO_FROM_NULL int = null as int
 
-const ZERO_FROM_NULL_OK = expect_i(ZERO_FROM_NULL, 0)
+const ZERO_FROM_NULL_OK = expect_i(ZERO_FROM_NULL, want: 0)
 
 const NONE ?*int = null
 

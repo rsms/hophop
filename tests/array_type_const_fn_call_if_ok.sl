@@ -7,7 +7,7 @@ fn choose(flag bool, a i32, b i32) i32 {
 	}
 }
 
-const N = choose(true, 4, 9) + choose(false, 7, 3)
+const N = choose(true, a: 4, b: 9) + choose(false, a: 7, b: 3)
 
 fn main() {
 	var arr [i32 N]

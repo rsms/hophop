@@ -7317,6 +7317,13 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         return -1;
     }
     n = &ast->nodes[exprNode];
+    while (n->kind == SLAst_CALL_ARG) {
+        exprNode = n->firstChild;
+        if (exprNode < 0 || (uint32_t)exprNode >= ast->len) {
+            return -1;
+        }
+        n = &ast->nodes[exprNode];
+    }
 
     if (n->kind == SLAst_CALL) {
         int32_t calleeNode = n->firstChild;

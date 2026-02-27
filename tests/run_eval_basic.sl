@@ -3,6 +3,6 @@ fn add(a i32, b i32) i32 {
 }
 
 fn main() {
-	var x = add(2, 3)
+	var x = add(2, b: 3)
 	assert x == 5
 }

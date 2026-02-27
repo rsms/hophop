@@ -125,9 +125,11 @@ typedef struct {
     uint32_t      funcLen;
     uint32_t      funcCap;
 
-    int32_t* funcParamTypes;
-    uint32_t funcParamLen;
-    uint32_t funcParamCap;
+    int32_t*  funcParamTypes;
+    uint32_t* funcParamNameStarts;
+    uint32_t* funcParamNameEnds;
+    uint32_t  funcParamLen;
+    uint32_t  funcParamCap;
 
     int32_t* scratchParamTypes;
     uint32_t scratchParamCap;
@@ -1222,6 +1224,8 @@ static int32_t SLTCInternFunctionType(
     t.flags = 0;
     for (i = 0; i < paramCount; i++) {
         c->funcParamTypes[c->funcParamLen++] = paramTypes[i];
+        c->funcParamNameStarts[c->funcParamLen - 1u] = 0;
+        c->funcParamNameEnds[c->funcParamLen - 1u] = 0;
     }
     return SLTCAddType(c, &t, errStart, errEnd);
 }
@@ -3245,6 +3249,17 @@ static int SLTCExprIsCompoundTemporary(SLTypeCheckCtx* c, int32_t exprNode);
 static int SLTCExprNeedsExpectedType(SLTypeCheckCtx* c, int32_t exprNode);
 static int SLTCExprIsAssignable(SLTypeCheckCtx* c, int32_t exprNode);
 
+typedef struct {
+    int32_t  argNode;
+    int32_t  exprNode;
+    uint32_t start;
+    uint32_t end;
+    uint32_t explicitNameStart;
+    uint32_t explicitNameEnd;
+    uint32_t implicitNameStart;
+    uint32_t implicitNameEnd;
+} SLTCCallArgInfo;
+
 static int SLTCConversionCost(
     SLTypeCheckCtx* c, int32_t dstType, int32_t srcType, uint8_t* outCost) {
     const SLTCType* dst;
@@ -3357,33 +3372,80 @@ static int SLTCCostVectorCompare(const uint8_t* a, const uint8_t* b, uint32_t le
     return 0;
 }
 
-static int SLTCCollectCallArgs(
-    SLTypeCheckCtx* c,
-    int32_t         callNode,
-    int32_t         calleeNode,
-    int             includeReceiver,
-    int32_t         receiverNode,
-    int32_t*        outArgNodes,
+static int32_t SLTCUnwrapCallArgExprNode(SLTypeCheckCtx* c, int32_t argNode) {
+    const SLAstNode* n;
+    if (argNode < 0 || (uint32_t)argNode >= c->ast->len) {
+        return -1;
+    }
+    n = &c->ast->nodes[argNode];
+    if (n->kind == SLAst_CALL_ARG) {
+        return SLAstFirstChild(c->ast, argNode);
+    }
+    return argNode;
+}
+
+static int SLTCCollectCallArgInfo(
+    SLTypeCheckCtx*  c,
+    int32_t          callNode,
+    int32_t          calleeNode,
+    int              includeReceiver,
+    int32_t          receiverNode,
+    SLTCCallArgInfo* outArgs,
     int32_t* _Nullable outArgTypes,
     uint32_t* outArgCount) {
     uint32_t argCount = 0;
     int32_t  argNode = SLAstNextSibling(c->ast, calleeNode);
     if (includeReceiver) {
+        const SLAstNode* recvNode;
+        if (receiverNode < 0 || (uint32_t)receiverNode >= c->ast->len) {
+            return SLTCFailNode(c, callNode, SLDiag_EXPECTED_EXPR);
+        }
         if (argCount >= SLTC_MAX_CALL_ARGS) {
             return SLTCFailNode(c, callNode, SLDiag_ARENA_OOM);
         }
-        outArgNodes[argCount] = receiverNode;
+        recvNode = &c->ast->nodes[receiverNode];
+        outArgs[argCount] = (SLTCCallArgInfo){
+            .argNode = receiverNode,
+            .exprNode = receiverNode,
+            .start = recvNode->start,
+            .end = recvNode->end,
+            .explicitNameStart = 0,
+            .explicitNameEnd = 0,
+            .implicitNameStart = 0,
+            .implicitNameEnd = 0,
+        };
         if (outArgTypes != NULL && SLTCTypeExpr(c, receiverNode, &outArgTypes[argCount]) != 0) {
             return -1;
         }
         argCount++;
     }
     while (argNode >= 0) {
+        const SLAstNode* arg = &c->ast->nodes[argNode];
+        int32_t          exprNode = SLTCUnwrapCallArgExprNode(c, argNode);
         if (argCount >= SLTC_MAX_CALL_ARGS) {
             return SLTCFailNode(c, callNode, SLDiag_ARENA_OOM);
         }
-        outArgNodes[argCount] = argNode;
-        if (outArgTypes != NULL && SLTCTypeExpr(c, argNode, &outArgTypes[argCount]) != 0) {
+        if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+            return SLTCFailNode(c, argNode, SLDiag_EXPECTED_EXPR);
+        }
+        outArgs[argCount] = (SLTCCallArgInfo){
+            .argNode = argNode,
+            .exprNode = exprNode,
+            .start = arg->start,
+            .end = arg->end,
+            .explicitNameStart = arg->dataStart,
+            .explicitNameEnd = arg->dataEnd,
+            .implicitNameStart = 0,
+            .implicitNameEnd = 0,
+        };
+        if ((arg->kind == SLAst_CALL_ARG || arg->kind == SLAst_IDENT)
+            && !(outArgs[argCount].explicitNameEnd > outArgs[argCount].explicitNameStart)
+            && c->ast->nodes[exprNode].kind == SLAst_IDENT)
+        {
+            outArgs[argCount].implicitNameStart = c->ast->nodes[exprNode].dataStart;
+            outArgs[argCount].implicitNameEnd = c->ast->nodes[exprNode].dataEnd;
+        }
+        if (outArgTypes != NULL && SLTCTypeExpr(c, exprNode, &outArgTypes[argCount]) != 0) {
             return -1;
         }
         argCount++;
@@ -3746,6 +3808,143 @@ static int SLTCGetFunctionTypeSignature(
     return 0;
 }
 
+typedef struct {
+    SLDiagCode code;
+    uint32_t   start;
+    uint32_t   end;
+    uint32_t   argStart;
+    uint32_t   argEnd;
+} SLTCCallMapError;
+
+static void SLTCCallMapErrorClear(SLTCCallMapError* err) {
+    err->code = 0;
+    err->start = 0;
+    err->end = 0;
+    err->argStart = 0;
+    err->argEnd = 0;
+}
+
+static int SLTCMapCallArgsToParams(
+    SLTypeCheckCtx*        c,
+    const SLTCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    const uint32_t*        paramNameStarts,
+    const uint32_t*        paramNameEnds,
+    uint32_t               paramCount,
+    uint32_t               firstPositionalArgIndex,
+    int32_t*               outMappedArgExprNodes,
+    SLTCCallMapError* _Nullable outError) {
+    uint8_t  paramAssigned[SLTC_MAX_CALL_ARGS];
+    uint32_t i;
+    if (paramCount > SLTC_MAX_CALL_ARGS || argCount != paramCount) {
+        return -1;
+    }
+    memset(paramAssigned, 0, sizeof(paramAssigned));
+    for (i = 0; i < paramCount; i++) {
+        outMappedArgExprNodes[i] = -1;
+    }
+
+    if (firstPositionalArgIndex < argCount) {
+        const SLTCCallArgInfo* a = &callArgs[firstPositionalArgIndex];
+        outMappedArgExprNodes[firstPositionalArgIndex] = a->exprNode;
+        paramAssigned[firstPositionalArgIndex] = 1;
+        if (a->explicitNameEnd > a->explicitNameStart
+            && !SLNameEqSlice(
+                c->src,
+                a->explicitNameStart,
+                a->explicitNameEnd,
+                paramNameStarts[firstPositionalArgIndex],
+                paramNameEnds[firstPositionalArgIndex]))
+        {
+            if (outError != NULL) {
+                outError->code = SLDiag_CALL_FIRST_ARG_NAME_MISMATCH;
+                outError->start = a->start;
+                outError->end = a->end;
+                outError->argStart = paramNameStarts[firstPositionalArgIndex];
+                outError->argEnd = paramNameEnds[firstPositionalArgIndex];
+            }
+            return 1;
+        }
+    }
+
+    for (i = 0; i < argCount; i++) {
+        const SLTCCallArgInfo* a = &callArgs[i];
+        uint32_t               nameStart = 0;
+        uint32_t               nameEnd = 0;
+        uint32_t               p;
+        int                    foundName = 0;
+        if (i < firstPositionalArgIndex) {
+            outMappedArgExprNodes[i] = a->exprNode;
+            paramAssigned[i] = 1;
+            continue;
+        }
+        if (i == firstPositionalArgIndex) {
+            continue;
+        }
+        if (a->explicitNameEnd > a->explicitNameStart) {
+            nameStart = a->explicitNameStart;
+            nameEnd = a->explicitNameEnd;
+            foundName = 1;
+        } else if (a->implicitNameEnd > a->implicitNameStart) {
+            nameStart = a->implicitNameStart;
+            nameEnd = a->implicitNameEnd;
+            foundName = 1;
+        }
+        if (!foundName) {
+            if (outError != NULL) {
+                outError->code = SLDiag_CALL_ARG_NAME_REQUIRED;
+                outError->start = a->start;
+                outError->end = a->end;
+                outError->argStart = 0;
+                outError->argEnd = 0;
+            }
+            return 1;
+        }
+
+        for (p = firstPositionalArgIndex + 1u; p < paramCount; p++) {
+            if (SLNameEqSlice(c->src, nameStart, nameEnd, paramNameStarts[p], paramNameEnds[p])) {
+                if (paramAssigned[p]) {
+                    if (outError != NULL) {
+                        outError->code = SLDiag_CALL_ARG_DUPLICATE;
+                        outError->start = a->start;
+                        outError->end = a->end;
+                        outError->argStart = nameStart;
+                        outError->argEnd = nameEnd;
+                    }
+                    return 1;
+                }
+                outMappedArgExprNodes[p] = a->exprNode;
+                paramAssigned[p] = 1;
+                break;
+            }
+        }
+        if (p == paramCount) {
+            if (outError != NULL) {
+                outError->code = SLDiag_CALL_ARG_UNKNOWN_NAME;
+                outError->start = a->start;
+                outError->end = a->end;
+                outError->argStart = nameStart;
+                outError->argEnd = nameEnd;
+            }
+            return 1;
+        }
+    }
+
+    for (i = 0; i < paramCount; i++) {
+        if (!paramAssigned[i]) {
+            if (outError != NULL) {
+                outError->code = SLDiag_CALL_ARG_MISSING;
+                outError->start = callArgs[0].start;
+                outError->end = callArgs[argCount - 1u].end;
+                outError->argStart = paramNameStarts[i];
+                outError->argEnd = paramNameEnds[i];
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int SLTCResolveComparisonHookArgCost(
     SLTypeCheckCtx* c, int32_t paramType, int32_t argType, uint8_t* outCost) {
     int32_t resolvedParam = SLTCResolveAliasBaseType(c, paramType);
@@ -3880,30 +4079,31 @@ static void SLTCGatherCallCandidatesByPkgMethod(
 }
 
 /* Returns 0: success, 1: no name, 2: no match, 3: ambiguous, 4: writable-ref temporary,
- * 5: compound infer ambiguous, -1: error */
+ * 5: compound infer ambiguous, 6: named argument error, -1: error */
 static int SLTCResolveCallFromCandidates(
-    SLTypeCheckCtx* c,
-    const int32_t*  candidates,
-    uint32_t        candidateCount,
-    int             nameFound,
-    const int32_t*  argNodes,
-    uint32_t        argCount,
-    int             autoRefFirstArg,
-    int32_t*        outFuncIndex,
-    int32_t*        outMutRefTempArgNode) {
-    uint8_t  bestCosts[SLTC_MAX_CALL_ARGS];
-    int32_t  preArgTypes[SLTC_MAX_CALL_ARGS];
-    uint8_t  argNeedsExpected[SLTC_MAX_CALL_ARGS];
-    uint8_t  argHasPreType[SLTC_MAX_CALL_ARGS];
-    int      haveBest = 0;
-    int      ambiguous = 0;
-    int      hasExpectedDependentArg = 0;
-    int32_t  mutRefTempArgNode = -1;
-    int32_t  autoRefType = -1;
-    int      hasAutoRefType = 0;
-    uint32_t bestTotal = 0;
-    uint32_t i;
-    uint32_t p;
+    SLTypeCheckCtx*        c,
+    const int32_t*         candidates,
+    uint32_t               candidateCount,
+    int                    nameFound,
+    const SLTCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int                    autoRefFirstArg,
+    int32_t*               outFuncIndex,
+    int32_t*               outMutRefTempArgNode) {
+    uint8_t          bestCosts[SLTC_MAX_CALL_ARGS];
+    int              haveBest = 0;
+    int              ambiguous = 0;
+    int              hasExpectedDependentArg = 0;
+    int32_t          mutRefTempArgNode = -1;
+    int32_t          autoRefType = -1;
+    int              hasAutoRefType = 0;
+    SLTCCallMapError firstMapError;
+    int              hasMapError = 0;
+    uint32_t         bestTotal = 0;
+    uint32_t         i;
+    uint32_t         p;
+    SLTCCallMapErrorClear(&firstMapError);
     if (!nameFound) {
         return 1;
     }
@@ -3911,10 +4111,10 @@ static int SLTCResolveCallFromCandidates(
     if (argCount > SLTC_MAX_CALL_ARGS) {
         return -1;
     }
-    if (autoRefFirstArg && argCount > 0 && SLTCExprIsAssignable(c, argNodes[0])) {
+    if (autoRefFirstArg && argCount > 0 && SLTCExprIsAssignable(c, callArgs[0].exprNode)) {
         int32_t          argType;
-        const SLAstNode* argNode = &c->ast->nodes[argNodes[0]];
-        if (SLTCTypeExpr(c, argNodes[0], &argType) != 0) {
+        const SLAstNode* argNode = &c->ast->nodes[callArgs[0].exprNode];
+        if (SLTCTypeExpr(c, callArgs[0].exprNode, &argType) != 0) {
             return -1;
         }
         autoRefType = SLTCInternPtrType(c, argType, argNode->start, argNode->end);
@@ -3924,52 +4124,66 @@ static int SLTCResolveCallFromCandidates(
         hasAutoRefType = 1;
     }
     for (p = 0; p < argCount; p++) {
-        argNeedsExpected[p] = (uint8_t)(SLTCExprNeedsExpectedType(c, argNodes[p]) ? 1 : 0);
-        hasExpectedDependentArg = hasExpectedDependentArg || argNeedsExpected[p] != 0;
-        if (argNeedsExpected[p]) {
-            argHasPreType[p] = 0;
-            continue;
-        }
-        if (SLTCTypeExpr(c, argNodes[p], &preArgTypes[p]) != 0) {
-            return -1;
-        }
-        argHasPreType[p] = 1;
+        hasExpectedDependentArg =
+            hasExpectedDependentArg || SLTCExprNeedsExpectedType(c, callArgs[p].exprNode) != 0;
     }
 
     for (i = 0; i < candidateCount; i++) {
         int32_t             fnIdx = candidates[i];
         const SLTCFunction* fn = &c->funcs[fnIdx];
         uint8_t             curCosts[SLTC_MAX_CALL_ARGS];
+        int32_t             mappedArgNodes[SLTC_MAX_CALL_ARGS];
         uint32_t            curTotal = 0;
         int                 viable = 1;
         int                 cmp;
+        SLTCCallMapError    mapError;
         if (fn->paramCount != argCount) {
+            continue;
+        }
+        SLTCCallMapErrorClear(&mapError);
+        if (SLTCMapCallArgsToParams(
+                c,
+                callArgs,
+                argCount,
+                &c->funcParamNameStarts[fn->paramTypeStart],
+                &c->funcParamNameEnds[fn->paramTypeStart],
+                fn->paramCount,
+                firstPositionalArgIndex,
+                mappedArgNodes,
+                &mapError)
+            != 0)
+        {
+            if (!hasMapError && mapError.code != 0) {
+                hasMapError = 1;
+                firstMapError = mapError;
+            }
             continue;
         }
         for (p = 0; p < argCount; p++) {
             int32_t paramType = c->funcParamTypes[fn->paramTypeStart + p];
+            int32_t argNode = mappedArgNodes[p];
             int32_t argType;
             uint8_t cost = 0;
             if (hasAutoRefType && p == 0) {
                 argType = autoRefType;
             } else {
-                if (SLTCIsMutableRefType(c, paramType)
-                    && SLTCExprIsCompoundTemporary(c, argNodes[p]))
-                {
+                if (SLTCIsMutableRefType(c, paramType) && SLTCExprIsCompoundTemporary(c, argNode)) {
                     if (mutRefTempArgNode < 0) {
-                        mutRefTempArgNode = argNodes[p];
+                        mutRefTempArgNode = argNode;
                     }
                     viable = 0;
                     break;
                 }
-                if (argHasPreType[p]) {
-                    argType = preArgTypes[p];
+                if (!SLTCExprNeedsExpectedType(c, argNode)) {
+                    if (SLTCTypeExpr(c, argNode, &argType) != 0) {
+                        return -1;
+                    }
                 } else {
                     SLDiag savedDiag = { 0 };
                     if (c->diag != NULL) {
                         savedDiag = *c->diag;
                     }
-                    if (SLTCTypeExprExpected(c, argNodes[p], paramType, &argType) != 0) {
+                    if (SLTCTypeExprExpected(c, argNode, paramType, &argType) != 0) {
                         if (c->diag != NULL) {
                             *c->diag = savedDiag;
                         }
@@ -4016,6 +4230,16 @@ static int SLTCResolveCallFromCandidates(
     }
 
     if (!haveBest) {
+        if (hasMapError && c->diag != NULL) {
+            SLTCSetDiagWithArg(
+                c->diag,
+                firstMapError.code,
+                firstMapError.start,
+                firstMapError.end,
+                firstMapError.argStart,
+                firstMapError.argEnd);
+            return 6;
+        }
         if (outMutRefTempArgNode != NULL && mutRefTempArgNode >= 0) {
             *outMutRefTempArgNode = mutRefTempArgNode;
         }
@@ -4037,16 +4261,17 @@ static int SLTCResolveCallFromCandidates(
 }
 
 /* Returns 0: success, 1: no name, 2: no match, 3: ambiguous, 4: writable-ref temporary,
- * 5: compound infer ambiguous, -1: error */
+ * 5: compound infer ambiguous, 6: named argument error, -1: error */
 static int SLTCResolveCallByName(
-    SLTypeCheckCtx* c,
-    uint32_t        nameStart,
-    uint32_t        nameEnd,
-    const int32_t*  argNodes,
-    uint32_t        argCount,
-    int             autoRefFirstArg,
-    int32_t*        outFuncIndex,
-    int32_t*        outMutRefTempArgNode) {
+    SLTypeCheckCtx*        c,
+    uint32_t               nameStart,
+    uint32_t               nameEnd,
+    const SLTCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int                    autoRefFirstArg,
+    int32_t*               outFuncIndex,
+    int32_t*               outMutRefTempArgNode) {
     int32_t  candidates[SLTC_MAX_CALL_CANDIDATES];
     uint32_t candidateCount = 0;
     int      nameFound = 0;
@@ -4057,26 +4282,28 @@ static int SLTCResolveCallByName(
         candidates,
         candidateCount,
         nameFound,
-        argNodes,
+        callArgs,
         argCount,
+        firstPositionalArgIndex,
         autoRefFirstArg,
         outFuncIndex,
         outMutRefTempArgNode);
 }
 
 /* Returns 0: success, 1: no name, 2: no match, 3: ambiguous, 4: writable-ref temporary,
- * 5: compound infer ambiguous, -1: error */
+ * 5: compound infer ambiguous, 6: named argument error, -1: error */
 static int SLTCResolveCallByPkgMethod(
-    SLTypeCheckCtx* c,
-    uint32_t        pkgStart,
-    uint32_t        pkgEnd,
-    uint32_t        methodStart,
-    uint32_t        methodEnd,
-    const int32_t*  argNodes,
-    uint32_t        argCount,
-    int             autoRefFirstArg,
-    int32_t*        outFuncIndex,
-    int32_t*        outMutRefTempArgNode) {
+    SLTypeCheckCtx*        c,
+    uint32_t               pkgStart,
+    uint32_t               pkgEnd,
+    uint32_t               methodStart,
+    uint32_t               methodEnd,
+    const SLTCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int                    autoRefFirstArg,
+    int32_t*               outFuncIndex,
+    int32_t*               outMutRefTempArgNode) {
     int32_t  candidates[SLTC_MAX_CALL_CANDIDATES];
     uint32_t candidateCount = 0;
     int      nameFound = 0;
@@ -4087,8 +4314,9 @@ static int SLTCResolveCallByPkgMethod(
         candidates,
         candidateCount,
         nameFound,
-        argNodes,
+        callArgs,
         argCount,
+        firstPositionalArgIndex,
         autoRefFirstArg,
         outFuncIndex,
         outMutRefTempArgNode);
@@ -4655,9 +4883,10 @@ static int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
     }
 
     {
-        uint32_t      i;
         uint32_t      idx = c->funcLen++;
         SLTCFunction* f = &c->funcs[idx];
+        int32_t       child = SLAstFirstChild(c->ast, nodeId);
+        uint32_t      paramIndex = 0;
         f->nameStart = n->dataStart;
         f->nameEnd = n->dataEnd;
         f->returnType = returnType;
@@ -4667,8 +4896,22 @@ static int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
         f->declNode = nodeId;
         f->defNode = hasBody ? nodeId : -1;
         f->funcTypeId = -1;
-        for (i = 0; i < paramCount; i++) {
-            c->funcParamTypes[c->funcParamLen++] = c->scratchParamTypes[i];
+        while (child >= 0) {
+            const SLAstNode* ch = &c->ast->nodes[child];
+            if (ch->kind == SLAst_PARAM) {
+                if (paramIndex >= paramCount) {
+                    return SLTCFailNode(c, nodeId, SLDiag_ARENA_OOM);
+                }
+                c->funcParamTypes[c->funcParamLen] = c->scratchParamTypes[paramIndex];
+                c->funcParamNameStarts[c->funcParamLen] = ch->dataStart;
+                c->funcParamNameEnds[c->funcParamLen] = ch->dataEnd;
+                c->funcParamLen++;
+                paramIndex++;
+            }
+            child = SLAstNextSibling(c->ast, child);
+        }
+        if (paramIndex != paramCount) {
+            return SLTCFailNode(c, nodeId, SLDiag_ARENA_OOM);
         }
     }
 
@@ -4979,6 +5222,7 @@ static int SLTCTypeNewExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) 
         return SLTCFailSpan(c, SLDiag_EXPECTED_EXPR, 0, 0);
     }
     n = &c->ast->nodes[nodeId];
+
     hasCount = (n->flags & SLAstFlag_NEW_HAS_COUNT) != 0;
     hasInit = (n->flags & SLAstFlag_NEW_HAS_INIT) != 0;
     hasAlloc = (n->flags & SLAstFlag_NEW_HAS_ALLOC) != 0;
@@ -5103,6 +5347,10 @@ static int SLTCExprIsCompoundTemporary(SLTypeCheckCtx* c, int32_t exprNode) {
         return 0;
     }
     n = &c->ast->nodes[exprNode];
+    if (n->kind == SLAst_CALL_ARG) {
+        int32_t inner = SLAstFirstChild(c->ast, exprNode);
+        return SLTCExprIsCompoundTemporary(c, inner);
+    }
     if (n->kind == SLAst_COMPOUND_LIT) {
         return 1;
     }
@@ -5123,6 +5371,10 @@ static int SLTCExprNeedsExpectedType(SLTypeCheckCtx* c, int32_t exprNode) {
         return 0;
     }
     n = &c->ast->nodes[exprNode];
+    if (n->kind == SLAst_CALL_ARG) {
+        int32_t inner = SLAstFirstChild(c->ast, exprNode);
+        return SLTCExprNeedsExpectedType(c, inner);
+    }
     if (n->kind == SLAst_COMPOUND_LIT) {
         return 1;
     }
@@ -5136,6 +5388,53 @@ static int SLTCExprNeedsExpectedType(SLTypeCheckCtx* c, int32_t exprNode) {
         }
     }
     return 0;
+}
+
+static int SLTCResolveIdentifierExprType(
+    SLTypeCheckCtx* c,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    uint32_t        spanStart,
+    uint32_t        spanEnd,
+    int32_t*        outType) {
+    int32_t localIdx = SLTCLocalFind(c, nameStart, nameEnd);
+    if (localIdx >= 0) {
+        *outType = c->locals[localIdx].typeId;
+        return 0;
+    }
+    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "context")) {
+        int32_t contextTypeId = -1;
+        if (c->currentContextType >= 0) {
+            contextTypeId = c->currentContextType;
+        } else if (c->hasImplicitMainRootContext && c->implicitMainContextType >= 0) {
+            contextTypeId = c->implicitMainContextType;
+        }
+        if (contextTypeId >= 0) {
+            int32_t contextRefType = SLTCInternRefType(c, contextTypeId, 1, spanStart, spanEnd);
+            if (contextRefType < 0) {
+                return -1;
+            }
+            *outType = contextRefType;
+            return 0;
+        }
+    }
+    {
+        int32_t fnIdx = SLTCFindFunctionIndex(c, nameStart, nameEnd);
+        if (fnIdx >= 0) {
+            *outType = c->funcs[fnIdx].funcTypeId;
+            return 0;
+        }
+    }
+    {
+        int32_t varLikeNode = SLTCFindTopLevelVarLikeNode(c, nameStart, nameEnd);
+        if (varLikeNode >= 0) {
+            if (c->currentFunctionIsCompareHook) {
+                return SLTCFailSpan(c, SLDiag_COMPARISON_HOOK_IMPURE, spanStart, spanEnd);
+            }
+            return SLTCTypeTopLevelVarLikeNode(c, varLikeNode, outType);
+        }
+    }
+    return SLTCFailSpan(c, SLDiag_UNKNOWN_SYMBOL, nameStart, nameEnd);
 }
 
 static int SLTCInferAnonStructTypeFromCompound(
@@ -5174,10 +5473,19 @@ static int SLTCInferAnonStructTypeFromCompound(
         }
         exprNode = SLAstFirstChild(c->ast, fieldNode);
         if (exprNode < 0) {
-            return SLTCFailNode(c, fieldNode, SLDiag_EXPECTED_EXPR);
-        }
-        if (SLTCTypeExpr(c, exprNode, &fieldType) != 0) {
-            return -1;
+            if ((field->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) == 0) {
+                return SLTCFailNode(c, fieldNode, SLDiag_EXPECTED_EXPR);
+            }
+            if (SLTCResolveIdentifierExprType(
+                    c, field->dataStart, field->dataEnd, field->start, field->end, &fieldType)
+                != 0)
+            {
+                return -1;
+            }
+        } else {
+            if (SLTCTypeExpr(c, exprNode, &fieldType) != 0) {
+                return -1;
+            }
         }
         if (fieldType == c->typeNull) {
             return SLTCFailNode(c, exprNode, SLDiag_INFER_NULL_TYPE_UNKNOWN);
@@ -5355,17 +5663,33 @@ static int SLTCTypeCompoundLit(
 
         exprNode = SLAstFirstChild(c->ast, firstField);
         if (exprNode < 0) {
-            return SLTCFailNode(c, firstField, SLDiag_EXPECTED_EXPR);
-        }
-        if (SLTCTypeExprExpected(c, exprNode, fieldType, &exprType) != 0) {
+            if ((fieldNode->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) == 0) {
+                return SLTCFailNode(c, firstField, SLDiag_EXPECTED_EXPR);
+            }
+            if (SLTCResolveIdentifierExprType(
+                    c,
+                    fieldNode->dataStart,
+                    fieldNode->dataEnd,
+                    fieldNode->start,
+                    fieldNode->end,
+                    &exprType)
+                != 0)
+            {
+                return -1;
+            }
+        } else if (SLTCTypeExprExpected(c, exprNode, fieldType, &exprType) != 0) {
             return -1;
         }
         if (!SLTCCanAssign(c, fieldType, exprType)) {
+            uint32_t errStart =
+                exprNode >= 0 ? c->ast->nodes[exprNode].start : c->ast->nodes[firstField].start;
+            uint32_t errEnd =
+                exprNode >= 0 ? c->ast->nodes[exprNode].end : c->ast->nodes[firstField].end;
             SLTCSetDiagWithArg(
                 c->diag,
                 SLDiag_COMPOUND_FIELD_TYPE_MISMATCH,
-                c->ast->nodes[exprNode].start,
-                c->ast->nodes[exprNode].end,
+                errStart,
+                errEnd,
                 fieldNode->dataStart,
                 fieldNode->dataEnd);
             return -1;
@@ -5389,6 +5713,14 @@ static int SLTCTypeExprExpected(
         return SLTCFailSpan(c, SLDiag_EXPECTED_EXPR, 0, 0);
     }
     n = &c->ast->nodes[nodeId];
+
+    if (n->kind == SLAst_CALL_ARG) {
+        int32_t inner = SLAstFirstChild(c->ast, nodeId);
+        if (inner < 0) {
+            return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        }
+        return SLTCTypeExprExpected(c, inner, expectedType, outType);
+    }
 
     if (n->kind == SLAst_COMPOUND_LIT) {
         return SLTCTypeCompoundLit(c, nodeId, expectedType, outType);
@@ -5459,6 +5791,10 @@ static int SLTCExprIsAssignable(SLTypeCheckCtx* c, int32_t exprNode) {
         return 0;
     }
     n = &c->ast->nodes[exprNode];
+    if (n->kind == SLAst_CALL_ARG) {
+        int32_t inner = SLAstFirstChild(c->ast, exprNode);
+        return SLTCExprIsAssignable(c, inner);
+    }
     if (n->kind == SLAst_IDENT) {
         return 1;
     }
@@ -5682,10 +6018,8 @@ static int SLTCTypeExpr_NEW(
 
 static int SLTCTypeExpr_CALL(
     SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
-    int32_t  calleeNode = SLAstFirstChild(c->ast, nodeId);
-    int32_t  calleeType;
-    int32_t  argNode;
-    uint32_t argIndex = 0;
+    int32_t calleeNode = SLAstFirstChild(c->ast, nodeId);
+    int32_t calleeType;
     (void)n;
     if (calleeNode < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_NOT_CALLABLE);
@@ -5903,20 +6237,23 @@ static int SLTCTypeExpr_CALL(
             return 0;
         }
         {
-            int32_t  argNodes[SLTC_MAX_CALL_ARGS];
-            uint32_t argCount = 0;
-            int32_t  resolvedFn = -1;
-            int32_t  mutRefTempArgNode = -1;
-            int      status;
-            if (SLTCCollectCallArgs(c, nodeId, calleeNode, 0, -1, argNodes, NULL, &argCount) != 0) {
+            SLTCCallArgInfo callArgs[SLTC_MAX_CALL_ARGS];
+            uint32_t        argCount = 0;
+            int32_t         resolvedFn = -1;
+            int32_t         mutRefTempArgNode = -1;
+            int             status;
+            if (SLTCCollectCallArgInfo(c, nodeId, calleeNode, 0, -1, callArgs, NULL, &argCount)
+                != 0)
+            {
                 return -1;
             }
             status = SLTCResolveCallByName(
                 c,
                 callee->dataStart,
                 callee->dataEnd,
-                argNodes,
+                callArgs,
                 argCount,
+                0,
                 0,
                 &resolvedFn,
                 &mutRefTempArgNode);
@@ -5940,6 +6277,9 @@ static int SLTCTypeExpr_CALL(
             if (status == 5) {
                 return SLTCFailSpan(
                     c, SLDiag_COMPOUND_INFER_AMBIGUOUS, callee->dataStart, callee->dataEnd);
+            }
+            if (status == 6) {
+                return -1;
             }
         }
     } else if (c->ast->nodes[calleeNode].kind == SLAst_FIELD_EXPR) {
@@ -6063,15 +6403,16 @@ static int SLTCTypeExpr_CALL(
         }
 
         {
-            int32_t  argNodes[SLTC_MAX_CALL_ARGS];
-            uint32_t argCount = 0;
-            int32_t  resolvedFn = -1;
-            int32_t  mutRefTempArgNode = -1;
-            int      status;
-            int      recvPkgStatus = 0;
-            uint32_t recvPkgStart = 0;
-            uint32_t recvPkgEnd = 0;
-            if (SLTCCollectCallArgs(c, nodeId, calleeNode, 1, recvNode, argNodes, NULL, &argCount)
+            SLTCCallArgInfo callArgs[SLTC_MAX_CALL_ARGS];
+            uint32_t        argCount = 0;
+            int32_t         resolvedFn = -1;
+            int32_t         mutRefTempArgNode = -1;
+            int             status;
+            int             recvPkgStatus = 0;
+            uint32_t        recvPkgStart = 0;
+            uint32_t        recvPkgEnd = 0;
+            if (SLTCCollectCallArgInfo(
+                    c, nodeId, calleeNode, 1, recvNode, callArgs, NULL, &argCount)
                 != 0)
             {
                 return -1;
@@ -6080,8 +6421,9 @@ static int SLTCTypeExpr_CALL(
                 c,
                 callee->dataStart,
                 callee->dataEnd,
-                argNodes,
+                callArgs,
                 argCount,
+                1,
                 0,
                 &resolvedFn,
                 &mutRefTempArgNode);
@@ -6090,8 +6432,9 @@ static int SLTCTypeExpr_CALL(
                     c,
                     callee->dataStart,
                     callee->dataEnd,
-                    argNodes,
+                    callArgs,
                     argCount,
+                    1,
                     1,
                     &resolvedFn,
                     &mutRefTempArgNode);
@@ -6107,8 +6450,9 @@ static int SLTCTypeExpr_CALL(
                     recvPkgEnd,
                     callee->dataStart,
                     callee->dataEnd,
-                    argNodes,
+                    callArgs,
                     argCount,
+                    1,
                     0,
                     &resolvedFn,
                     &mutRefTempArgNode);
@@ -6119,8 +6463,9 @@ static int SLTCTypeExpr_CALL(
                         recvPkgEnd,
                         callee->dataStart,
                         callee->dataEnd,
-                        argNodes,
+                        callArgs,
                         argCount,
+                        1,
                         1,
                         &resolvedFn,
                         &mutRefTempArgNode);
@@ -6154,6 +6499,9 @@ static int SLTCTypeExpr_CALL(
                 return SLTCFailSpan(
                     c, SLDiag_COMPOUND_INFER_AMBIGUOUS, callee->dataStart, callee->dataEnd);
             }
+            if (status == 6) {
+                return -1;
+            }
             return SLTCFailSpan(c, SLDiag_UNKNOWN_SYMBOL, callee->dataStart, callee->dataEnd);
         }
     }
@@ -6161,36 +6509,92 @@ static int SLTCTypeExpr_CALL(
         return -1;
     }
 typed_call_from_callee_type: {
-    int32_t  fnReturnType;
-    uint32_t fnParamStart = 0;
-    uint32_t fnParamCount = 0;
+    int32_t          fnReturnType;
+    uint32_t         fnParamStart = 0;
+    uint32_t         fnParamCount = 0;
+    SLTCCallArgInfo  callArgs[SLTC_MAX_CALL_ARGS];
+    int32_t          mappedArgs[SLTC_MAX_CALL_ARGS];
+    uint32_t         paramNameStarts[SLTC_MAX_CALL_ARGS];
+    uint32_t         paramNameEnds[SLTC_MAX_CALL_ARGS];
+    uint32_t         callArgCount = 0;
+    uint32_t         p;
+    int              hasParamNames = 1;
+    SLTCCallMapError mapError;
     if (SLTCGetFunctionTypeSignature(c, calleeType, &fnReturnType, &fnParamStart, &fnParamCount)
         != 0)
     {
         return SLTCFailNode(c, calleeNode, SLDiag_NOT_CALLABLE);
     }
-    argNode = SLAstNextSibling(c->ast, calleeNode);
-    while (argNode >= 0) {
-        int32_t argType;
-        int32_t paramType;
-        if (argIndex >= fnParamCount) {
-            return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+    if (SLTCCollectCallArgInfo(c, nodeId, calleeNode, 0, -1, callArgs, NULL, &callArgCount) != 0) {
+        return -1;
+    }
+    if (callArgCount != fnParamCount) {
+        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+    }
+    for (p = 0; p < fnParamCount; p++) {
+        paramNameStarts[p] = c->funcParamNameStarts[fnParamStart + p];
+        paramNameEnds[p] = c->funcParamNameEnds[fnParamStart + p];
+    }
+    if (calleeType >= 0 && (uint32_t)calleeType < c->typeLen && c->types[calleeType].funcIndex >= 0
+        && (uint32_t)c->types[calleeType].funcIndex < c->funcLen)
+    {
+        const SLTCFunction* fn = &c->funcs[c->types[calleeType].funcIndex];
+        if (fn->paramCount == fnParamCount) {
+            for (p = 0; p < fnParamCount; p++) {
+                paramNameStarts[p] = c->funcParamNameStarts[fn->paramTypeStart + p];
+                paramNameEnds[p] = c->funcParamNameEnds[fn->paramTypeStart + p];
+            }
         }
-        paramType = c->funcParamTypes[fnParamStart + argIndex];
-        if (SLTCTypeExprExpected(c, argNode, paramType, &argType) != 0) {
+    }
+    for (p = 1; p < fnParamCount; p++) {
+        if (paramNameEnds[p] <= paramNameStarts[p]) {
+            hasParamNames = 0;
+            break;
+        }
+    }
+    for (p = 0; p < fnParamCount; p++) {
+        mappedArgs[p] = callArgs[p].exprNode;
+    }
+    if (hasParamNames && fnParamCount > 1u) {
+        SLTCCallMapErrorClear(&mapError);
+        if (SLTCMapCallArgsToParams(
+                c,
+                callArgs,
+                callArgCount,
+                paramNameStarts,
+                paramNameEnds,
+                fnParamCount,
+                0,
+                mappedArgs,
+                &mapError)
+            != 0)
+        {
+            if (mapError.code != 0) {
+                SLTCSetDiagWithArg(
+                    c->diag,
+                    mapError.code,
+                    mapError.start,
+                    mapError.end,
+                    mapError.argStart,
+                    mapError.argEnd);
+            }
             return -1;
         }
-        if (SLTCIsMutableRefType(c, paramType) && SLTCExprIsCompoundTemporary(c, argNode)) {
-            return SLTCFailNode(c, argNode, SLDiag_COMPOUND_MUT_REF_TEMPORARY);
+    }
+    for (p = 0; p < fnParamCount; p++) {
+        int32_t argType;
+        int32_t paramType;
+        int32_t argExprNode = mappedArgs[p];
+        paramType = c->funcParamTypes[fnParamStart + p];
+        if (SLTCTypeExprExpected(c, argExprNode, paramType, &argType) != 0) {
+            return -1;
+        }
+        if (SLTCIsMutableRefType(c, paramType) && SLTCExprIsCompoundTemporary(c, argExprNode)) {
+            return SLTCFailNode(c, argExprNode, SLDiag_COMPOUND_MUT_REF_TEMPORARY);
         }
         if (!SLTCCanAssign(c, paramType, argType)) {
-            return SLTCFailNode(c, argNode, SLDiag_TYPE_MISMATCH);
+            return SLTCFailNode(c, argExprNode, SLDiag_TYPE_MISMATCH);
         }
-        argIndex++;
-        argNode = SLAstNextSibling(c->ast, argNode);
-    }
-    if (argIndex != fnParamCount) {
-        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
     }
     *outType = fnReturnType;
     return 0;
@@ -6640,15 +7044,22 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
         case SLAst_CALL_WITH_CONTEXT: return SLTCTypeExpr_CALL_WITH_CONTEXT(c, nodeId, n, outType);
         case SLAst_NEW:               return SLTCTypeExpr_NEW(c, nodeId, n, outType);
         case SLAst_CALL:              return SLTCTypeExpr_CALL(c, nodeId, n, outType);
-        case SLAst_CAST:              return SLTCTypeExpr_CAST(c, nodeId, n, outType);
-        case SLAst_SIZEOF:            return SLTCTypeExpr_SIZEOF(c, nodeId, n, outType);
-        case SLAst_FIELD_EXPR:        return SLTCTypeExpr_FIELD_EXPR(c, nodeId, n, outType);
-        case SLAst_INDEX:             return SLTCTypeExpr_INDEX(c, nodeId, n, outType);
-        case SLAst_UNARY:             return SLTCTypeExpr_UNARY(c, nodeId, n, outType);
-        case SLAst_BINARY:            return SLTCTypeExpr_BINARY(c, nodeId, n, outType);
-        case SLAst_NULL:              return SLTCTypeExpr_NULL(c, nodeId, n, outType);
-        case SLAst_UNWRAP:            return SLTCTypeExpr_UNWRAP(c, nodeId, n, outType);
-        default:                      return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        case SLAst_CALL_ARG:          {
+            int32_t inner = SLAstFirstChild(c->ast, nodeId);
+            if (inner < 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+            }
+            return SLTCTypeExpr(c, inner, outType);
+        }
+        case SLAst_CAST:       return SLTCTypeExpr_CAST(c, nodeId, n, outType);
+        case SLAst_SIZEOF:     return SLTCTypeExpr_SIZEOF(c, nodeId, n, outType);
+        case SLAst_FIELD_EXPR: return SLTCTypeExpr_FIELD_EXPR(c, nodeId, n, outType);
+        case SLAst_INDEX:      return SLTCTypeExpr_INDEX(c, nodeId, n, outType);
+        case SLAst_UNARY:      return SLTCTypeExpr_UNARY(c, nodeId, n, outType);
+        case SLAst_BINARY:     return SLTCTypeExpr_BINARY(c, nodeId, n, outType);
+        case SLAst_NULL:       return SLTCTypeExpr_NULL(c, nodeId, n, outType);
+        case SLAst_UNWRAP:     return SLTCTypeExpr_UNWRAP(c, nodeId, n, outType);
+        default:               return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
     }
 }
 
@@ -7450,6 +7861,10 @@ static int SLTCBuildCheckedContext(
         arena, sizeof(SLTCFunction) * capBase, (uint32_t)_Alignof(SLTCFunction));
     c.funcParamTypes = (int32_t*)SLArenaAlloc(
         arena, sizeof(int32_t) * capBase * 8u, (uint32_t)_Alignof(int32_t));
+    c.funcParamNameStarts = (uint32_t*)SLArenaAlloc(
+        arena, sizeof(uint32_t) * capBase * 8u, (uint32_t)_Alignof(uint32_t));
+    c.funcParamNameEnds = (uint32_t*)SLArenaAlloc(
+        arena, sizeof(uint32_t) * capBase * 8u, (uint32_t)_Alignof(uint32_t));
     c.scratchParamTypes = (int32_t*)SLArenaAlloc(
         arena, sizeof(int32_t) * capBase, (uint32_t)_Alignof(int32_t));
     c.locals = (SLTCLocal*)SLArenaAlloc(
@@ -7464,9 +7879,9 @@ static int SLTCBuildCheckedContext(
         arena, sizeof(uint8_t) * ast->len, (uint32_t)_Alignof(uint8_t));
 
     if (c.types == NULL || c.fields == NULL || c.namedTypes == NULL || c.funcs == NULL
-        || c.funcParamTypes == NULL || c.scratchParamTypes == NULL || c.locals == NULL
-        || c.constEvalValues == NULL || c.constEvalState == NULL || c.topVarLikeTypes == NULL
-        || c.topVarLikeTypeState == NULL)
+        || c.funcParamTypes == NULL || c.funcParamNameStarts == NULL || c.funcParamNameEnds == NULL
+        || c.scratchParamTypes == NULL || c.locals == NULL || c.constEvalValues == NULL
+        || c.constEvalState == NULL || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL)
     {
         SLTCSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
