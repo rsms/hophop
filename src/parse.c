@@ -238,6 +238,7 @@ static int SLBinPrec(SLTokenKind kind) {
 
 static int SLPParseType(SLParser* p, int32_t* out);
 static int SLPParseFnType(SLParser* p, int32_t* out);
+static int SLPParseTupleType(SLParser* p, int32_t* out);
 static int SLPParseExpr(SLParser* p, int minPrec, int32_t* out);
 static int SLPParseStmt(SLParser* p, int32_t* out);
 static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out);
@@ -254,6 +255,7 @@ static int SLPIsTypeStart(SLTokenKind kind) {
         case SLTok_MUT:
         case SLTok_LBRACE:
         case SLTok_LBRACK:
+        case SLTok_LPAREN:
         case SLTok_QUESTION: return 1;
         case SLTok_FN:       return 1;
         default:             return 0;
@@ -442,6 +444,160 @@ static int SLPParseFnType(SLParser* p, int32_t* out) {
     return 0;
 }
 
+static int SLPParseTupleType(SLParser* p, int32_t* out) {
+    const SLToken* lp = NULL;
+    const SLToken* rp = NULL;
+    int32_t        items[256];
+    uint32_t       itemCount = 0;
+    int32_t        tupleNode;
+    uint32_t       i;
+
+    if (SLPExpect(p, SLTok_LPAREN, SLDiag_EXPECTED_TYPE, &lp) != 0) {
+        return -1;
+    }
+    if (SLPParseType(p, &items[itemCount]) != 0) {
+        return -1;
+    }
+    itemCount++;
+    if (!SLPMatch(p, SLTok_COMMA)) {
+        return SLPFail(p, SLDiag_EXPECTED_TYPE);
+    }
+    for (;;) {
+        if (itemCount >= (uint32_t)(sizeof(items) / sizeof(items[0]))) {
+            return SLPFail(p, SLDiag_ARENA_OOM);
+        }
+        if (SLPParseType(p, &items[itemCount]) != 0) {
+            return -1;
+        }
+        itemCount++;
+        if (!SLPMatch(p, SLTok_COMMA)) {
+            break;
+        }
+    }
+    if (SLPExpect(p, SLTok_RPAREN, SLDiag_EXPECTED_TYPE, &rp) != 0) {
+        return -1;
+    }
+
+    tupleNode = SLPNewNode(p, SLAst_TYPE_TUPLE, lp->start, rp->end);
+    if (tupleNode < 0) {
+        return -1;
+    }
+    for (i = 0; i < itemCount; i++) {
+        if (SLPAddChild(p, tupleNode, items[i]) != 0) {
+            return -1;
+        }
+    }
+    *out = tupleNode;
+    return 0;
+}
+
+static int SLPParseFnResultClause(SLParser* p, int32_t fnNode) {
+    const SLToken* lp = NULL;
+    const SLToken* rp = NULL;
+    int32_t        resultTypes[256];
+    uint32_t       resultCount = 0;
+    int32_t        resultTypeNode = -1;
+    uint32_t       i;
+
+    if (SLPExpect(p, SLTok_LPAREN, SLDiag_EXPECTED_TYPE, &lp) != 0) {
+        return -1;
+    }
+    if (SLPAt(p, SLTok_RPAREN)) {
+        return SLPFail(p, SLDiag_EXPECTED_TYPE);
+    }
+
+    for (;;) {
+        int consumedGroup = 0;
+        if (SLPAt(p, SLTok_IDENT)) {
+            uint32_t savedPos = p->pos;
+            uint32_t savedNodeLen = p->nodeLen;
+            SLDiag   savedDiag = { 0 };
+            uint32_t nameCount = 0;
+            int32_t  groupType = -1;
+            if (p->diag != NULL) {
+                savedDiag = *p->diag;
+            }
+            for (;;) {
+                const SLToken* name;
+                if (SLPExpectDeclName(p, &name, 0) != 0) {
+                    break;
+                }
+                (void)name;
+                nameCount++;
+                if (!SLPMatch(p, SLTok_COMMA)) {
+                    break;
+                }
+                if (!SLPAt(p, SLTok_IDENT)) {
+                    break;
+                }
+            }
+            if (nameCount > 0 && SLPIsTypeStart(SLPPeek(p)->kind)
+                && SLPParseType(p, &groupType) == 0)
+            {
+                for (i = 0; i < nameCount; i++) {
+                    int32_t itemType = -1;
+                    if (resultCount >= (uint32_t)(sizeof(resultTypes) / sizeof(resultTypes[0]))) {
+                        return SLPFail(p, SLDiag_ARENA_OOM);
+                    }
+                    if (i == 0) {
+                        itemType = groupType;
+                    } else if (SLPCloneSubtree(p, groupType, &itemType) != 0) {
+                        return -1;
+                    }
+                    resultTypes[resultCount++] = itemType;
+                }
+                consumedGroup = 1;
+            } else {
+                p->pos = savedPos;
+                p->nodeLen = savedNodeLen;
+                if (p->diag != NULL) {
+                    *p->diag = savedDiag;
+                }
+            }
+        }
+        if (!consumedGroup) {
+            if (resultCount >= (uint32_t)(sizeof(resultTypes) / sizeof(resultTypes[0]))) {
+                return SLPFail(p, SLDiag_ARENA_OOM);
+            }
+            if (SLPParseType(p, &resultTypes[resultCount]) != 0) {
+                return -1;
+            }
+            resultCount++;
+        }
+        if (!SLPMatch(p, SLTok_COMMA)) {
+            break;
+        }
+    }
+
+    if (SLPExpect(p, SLTok_RPAREN, SLDiag_EXPECTED_TYPE, &rp) != 0) {
+        return -1;
+    }
+    if (resultCount == 0) {
+        return SLPFail(p, SLDiag_EXPECTED_TYPE);
+    }
+
+    if (resultCount == 1) {
+        resultTypeNode = resultTypes[0];
+    } else {
+        resultTypeNode = SLPNewNode(p, SLAst_TYPE_TUPLE, lp->start, rp->end);
+        if (resultTypeNode < 0) {
+            return -1;
+        }
+        for (i = 0; i < resultCount; i++) {
+            if (SLPAddChild(p, resultTypeNode, resultTypes[i]) != 0) {
+                return -1;
+            }
+        }
+    }
+
+    p->nodes[resultTypeNode].flags = 1;
+    if (SLPAddChild(p, fnNode, resultTypeNode) != 0) {
+        return -1;
+    }
+    p->nodes[fnNode].end = p->nodes[resultTypeNode].end;
+    return 0;
+}
+
 static int SLPParseAnonymousAggregateFieldDeclList(SLParser* p, int32_t aggTypeNode) {
     while (!SLPAt(p, SLTok_RBRACE) && !SLPAt(p, SLTok_EOF)) {
         const SLToken* names[256];
@@ -604,6 +760,10 @@ static int SLPParseType(SLParser* p, int32_t* out) {
     if (SLPMatch(p, SLTok_MUT)) {
         (void)SLPPrev(p);
         return SLPFail(p, SLDiag_EXPECTED_TYPE);
+    }
+
+    if (SLPAt(p, SLTok_LPAREN)) {
+        return SLPParseTupleType(p, out);
     }
 
     if (SLPMatch(p, SLTok_LBRACK)) {
@@ -938,15 +1098,52 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
     }
 
     if (SLPMatch(p, SLTok_LPAREN)) {
-        if (SLPParseExpr(p, 1, out) != 0) {
+        const SLToken* lp = SLPPrev(p);
+        int32_t        firstExpr = -1;
+        int32_t        exprItems[256];
+        uint32_t       exprCount = 0;
+        int32_t        tupleExpr = -1;
+        uint32_t       i;
+        if (SLPParseExpr(p, 1, &firstExpr) != 0) {
             return -1;
+        }
+        if (!SLPMatch(p, SLTok_COMMA)) {
+            *out = firstExpr;
+            if (SLPExpect(p, SLTok_RPAREN, SLDiag_EXPECTED_EXPR, &t) != 0) {
+                return -1;
+            }
+            if (*out >= 0) {
+                p->nodes[*out].flags |= SLAstFlag_PAREN;
+            }
+            return 0;
+        }
+
+        exprItems[exprCount++] = firstExpr;
+        for (;;) {
+            if (exprCount >= (uint32_t)(sizeof(exprItems) / sizeof(exprItems[0]))) {
+                return SLPFail(p, SLDiag_ARENA_OOM);
+            }
+            if (SLPParseExpr(p, 1, &exprItems[exprCount]) != 0) {
+                return -1;
+            }
+            exprCount++;
+            if (!SLPMatch(p, SLTok_COMMA)) {
+                break;
+            }
         }
         if (SLPExpect(p, SLTok_RPAREN, SLDiag_EXPECTED_EXPR, &t) != 0) {
             return -1;
         }
-        if (*out >= 0) {
-            p->nodes[*out].flags |= SLAstFlag_PAREN;
+        tupleExpr = SLPNewNode(p, SLAst_TUPLE_EXPR, lp->start, t->end);
+        if (tupleExpr < 0) {
+            return -1;
         }
+        for (i = 0; i < exprCount; i++) {
+            if (SLPAddChild(p, tupleExpr, exprItems[i]) != 0) {
+                return -1;
+            }
+        }
+        *out = tupleExpr;
         return 0;
     }
 
@@ -1924,6 +2121,28 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
                 if (SLPParseExpr(p, 1, &expr) != 0) {
                     return -1;
                 }
+                if (SLPMatch(p, SLTok_COMMA)) {
+                    int32_t  items[256];
+                    uint32_t itemCount = 0;
+                    int32_t  exprList;
+                    items[itemCount++] = expr;
+                    for (;;) {
+                        if (itemCount >= (uint32_t)(sizeof(items) / sizeof(items[0]))) {
+                            return SLPFail(p, SLDiag_ARENA_OOM);
+                        }
+                        if (SLPParseExpr(p, 1, &items[itemCount]) != 0) {
+                            return -1;
+                        }
+                        itemCount++;
+                        if (!SLPMatch(p, SLTok_COMMA)) {
+                            break;
+                        }
+                    }
+                    if (SLPBuildListNode(p, SLAst_EXPR_LIST, items, itemCount, &exprList) != 0) {
+                        return -1;
+                    }
+                    expr = exprList;
+                }
                 if (SLPAddChild(p, n, expr) != 0) {
                     return -1;
                 }
@@ -2346,15 +2565,21 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
     p->nodes[fn].end = t->end;
 
     if (!SLPAt(p, SLTok_LBRACE) && !SLPAt(p, SLTok_SEMICOLON) && !SLPAt(p, SLTok_CONTEXT)) {
-        int32_t retType;
-        if (SLPParseType(p, &retType) != 0) {
-            return -1;
+        if (SLPAt(p, SLTok_LPAREN)) {
+            if (SLPParseFnResultClause(p, fn) != 0) {
+                return -1;
+            }
+        } else {
+            int32_t retType;
+            if (SLPParseType(p, &retType) != 0) {
+                return -1;
+            }
+            p->nodes[retType].flags = 1;
+            if (SLPAddChild(p, fn, retType) != 0) {
+                return -1;
+            }
+            p->nodes[fn].end = p->nodes[retType].end;
         }
-        p->nodes[retType].flags = 1;
-        if (SLPAddChild(p, fn, retType) != 0) {
-            return -1;
-        }
-        p->nodes[fn].end = p->nodes[retType].end;
     }
 
     if (SLPMatch(p, SLTok_CONTEXT)) {
@@ -2639,6 +2864,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_TYPE_ALIAS:        return "TYPE_ALIAS";
         case SLAst_TYPE_ANON_STRUCT:  return "TYPE_ANON_STRUCT";
         case SLAst_TYPE_ANON_UNION:   return "TYPE_ANON_UNION";
+        case SLAst_TYPE_TUPLE:        return "TYPE_TUPLE";
         case SLAst_STRUCT:            return "STRUCT";
         case SLAst_UNION:             return "UNION";
         case SLAst_ENUM:              return "ENUM";
@@ -2660,6 +2886,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_MULTI_ASSIGN:      return "MULTI_ASSIGN";
         case SLAst_NAME_LIST:         return "NAME_LIST";
         case SLAst_EXPR_LIST:         return "EXPR_LIST";
+        case SLAst_TUPLE_EXPR:        return "TUPLE_EXPR";
         case SLAst_IDENT:             return "IDENT";
         case SLAst_INT:               return "INT";
         case SLAst_FLOAT:             return "FLOAT";

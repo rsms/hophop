@@ -313,7 +313,7 @@ static int IsFnReturnTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
         || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
-        || kind == SLAst_TYPE_FN;
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_TUPLE;
 }
 
 static int SliceEqSlice(
@@ -3031,6 +3031,16 @@ static int ValidatePubTypeNode(
             int32_t child = ASTFirstChild(&file->ast, typeNodeId);
             return ValidatePubTypeNode(pkg, file, child, contextMsg);
         }
+        case SLAst_TYPE_TUPLE: {
+            int32_t child = ASTFirstChild(&file->ast, typeNodeId);
+            while (child >= 0) {
+                if (ValidatePubTypeNode(pkg, file, child, contextMsg) != 0) {
+                    return -1;
+                }
+                child = ASTNextSibling(&file->ast, child);
+            }
+            return 0;
+        }
         case SLAst_TYPE_FN: {
             int32_t child = ASTFirstChild(&file->ast, typeNodeId);
             while (child >= 0) {
@@ -3060,14 +3070,7 @@ static int ValidatePubClosure(const SLPackage* pkg) {
                     if (ValidatePubTypeNode(pkg, file, typeNode, "function parameter") != 0) {
                         return -1;
                     }
-                } else if (
-                    (n->kind == SLAst_TYPE_NAME || n->kind == SLAst_TYPE_PTR
-                     || n->kind == SLAst_TYPE_REF || n->kind == SLAst_TYPE_MUTREF
-                     || n->kind == SLAst_TYPE_ARRAY || n->kind == SLAst_TYPE_VARRAY
-                     || n->kind == SLAst_TYPE_SLICE || n->kind == SLAst_TYPE_MUTSLICE
-                     || n->kind == SLAst_TYPE_FN)
-                    && n->flags == 1)
-                {
+                } else if (IsFnReturnTypeNodeKind(n->kind) && n->flags == 1) {
                     if (ValidatePubTypeNode(pkg, file, child, "function return type") != 0) {
                         return -1;
                     }
@@ -3092,7 +3095,7 @@ static int ValidatePubClosure(const SLPackage* pkg) {
                     || n->kind == SLAst_TYPE_REF || n->kind == SLAst_TYPE_MUTREF
                     || n->kind == SLAst_TYPE_ARRAY || n->kind == SLAst_TYPE_VARRAY
                     || n->kind == SLAst_TYPE_SLICE || n->kind == SLAst_TYPE_MUTSLICE
-                    || n->kind == SLAst_TYPE_FN)
+                    || n->kind == SLAst_TYPE_FN || n->kind == SLAst_TYPE_TUPLE)
                 {
                     if (ValidatePubTypeNode(pkg, file, child, "enum base type") != 0) {
                         return -1;

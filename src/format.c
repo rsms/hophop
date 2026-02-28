@@ -207,7 +207,8 @@ static int SLFmtIsTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
         || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
-        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION;
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION
+        || kind == SLAst_TYPE_TUPLE;
 }
 
 static int SLFmtIsStmtNodeKind(SLAstKind kind) {
@@ -807,6 +808,24 @@ static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId) {
             }
             return SLFmtWriteChar(c, '}');
         }
+        case SLAst_TYPE_TUPLE: {
+            int32_t cur = SLFmtFirstChild(c->ast, nodeId);
+            int     first = 1;
+            if (SLFmtWriteChar(c, '(') != 0) {
+                return -1;
+            }
+            while (cur >= 0) {
+                if (!first && SLFmtWriteCStr(c, ", ") != 0) {
+                    return -1;
+                }
+                if (SLFmtEmitType(c, cur) != 0) {
+                    return -1;
+                }
+                first = 0;
+                cur = SLFmtNextSibling(c->ast, cur);
+            }
+            return SLFmtWriteChar(c, ')');
+        }
         default: return SLFmtWriteSlice(c, n->start, n->end);
     }
 }
@@ -963,6 +982,24 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
                 }
             }
             return exprNode >= 0 ? SLFmtEmitExpr(c, exprNode, 0) : 0;
+        }
+        case SLAst_TUPLE_EXPR: {
+            int32_t cur = SLFmtFirstChild(c->ast, nodeId);
+            int     first = 1;
+            if (SLFmtWriteChar(c, '(') != 0) {
+                return -1;
+            }
+            while (cur >= 0) {
+                if (!first && SLFmtWriteCStr(c, ", ") != 0) {
+                    return -1;
+                }
+                if (SLFmtEmitExpr(c, cur, 0) != 0) {
+                    return -1;
+                }
+                first = 0;
+                cur = SLFmtNextSibling(c->ast, cur);
+            }
+            return SLFmtWriteChar(c, ')');
         }
         case SLAst_CALL_WITH_CONTEXT: {
             int32_t callNode = SLFmtFirstChild(c->ast, nodeId);
@@ -1506,6 +1543,9 @@ static int SLFmtEmitAlignedVarOrConstGroup(
     while (cur >= 0) {
         int32_t next = SLFmtNextSibling(c->ast, cur);
         if (c->ast->nodes[cur].kind != kind) {
+            break;
+        }
+        if (SLFmtIsGroupedVarLike(c, cur)) {
             break;
         }
         if (prev >= 0 && !SLFmtCanContinueAlignedGroup(c, prev, cur)) {

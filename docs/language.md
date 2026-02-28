@@ -124,17 +124,19 @@ EmbeddedFieldDecl = TypeName .
 FieldDefault    = "=" Expr .
 EnumItem        = Ident [ "=" Expr ] .
 
-FnDeclOrDef     = "fn" FnName "(" [ ParamList ] ")" [ Type ] [ ContextClause ] [ Block ] .
+FnDeclOrDef     = "fn" FnName "(" [ ParamList ] ")" [ FnResultClause ] [ ContextClause ] [ Block ] .
 FnName          = Ident | "sizeof" .
 ParamList       = ParamGroup { "," ParamGroup } .
 ParamGroup      = ( Ident | "_" ) { "," ( Ident | "_" ) } Type .
+FnResultClause  = Type | "(" FnResultGroup { "," FnResultGroup } ")" .
+FnResultGroup   = Type | ( Ident { "," Ident } Type ) .
 ContextClause   = "context" Type .
 
 TopConstDecl    = "const" TopDeclNameList ( [ Type ] "=" ExprList ) .
 LocalConstDecl  = "const" DeclNameList ( [ Type ] "=" ExprList ) .
 
 Type            = OptionalType | PtrType | RefType | SliceType | ArrayType | VarArrayType
-                | FnType | AnonStructType | AnonUnionType | TypeName .
+                | FnType | TupleType | AnonStructType | AnonUnionType | TypeName .
 OptionalType    = "?" Type .
 PtrType         = "*" Type .
 RefType         = "&" Type .
@@ -142,6 +144,7 @@ SliceType       = "[" Type "]" .
 ArrayType       = "[" Type Expr "]" .
 VarArrayType    = "[" Type "." Ident "]" .
 FnType          = "fn" "(" [ FnTypeParamList ] ")" [ Type ] .
+TupleType       = "(" Type "," Type { "," Type } ")" .
 FnTypeParamList = FnTypeParam { "," FnTypeParam } .
 FnTypeParam     = Type | ( Ident { "," Ident } Type ) .
 AnonStructType  = [ "struct" ] "{" [ AnonFieldDeclList ] "}" .
@@ -163,7 +166,7 @@ ForInit         = VarDeclStmt | Expr .
 SwitchStmt      = "switch" [ Expr ] "{" { CaseClause } [ DefaultClause ] "}" .
 CaseClause      = "case" Expr { "," Expr } Block .
 DefaultClause   = "default" Block .
-ReturnStmt      = "return" [ Expr ] .
+ReturnStmt      = "return" [ ExprList ] .
 BreakStmt       = "break" .
 ContinueStmt    = "continue" .
 DeferStmt       = "defer" ( Block | Stmt ) .
@@ -199,7 +202,9 @@ CastSuffix      = "as" Type .
 UnwrapSuffix    = "!" .
 
 PrimaryExpr     = Ident | "context" | IntLit | FloatLit | StringLit | RuneLit | BoolLit | "null"
-                | CompoundLit | NewExpr | "sizeof" "(" ( Type | Expr ) ")" | "(" Expr ")" .
+                | CompoundLit | NewExpr | "sizeof" "(" ( Type | Expr ) ")" | "(" Expr ")"
+                | TupleExpr .
+TupleExpr       = "(" Expr "," Expr { "," Expr } ")" .
 NewExpr         = "new" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "with" Expr ] .
 CompoundLit     = [ TypeName ] "{" [ FieldInitList ] "}" .
 FieldInitList   = FieldInit { "," FieldInit } [ "," ] .
@@ -252,6 +257,7 @@ fn f() {
 - [DECL-FN-002][Stable] For a fixed function signature, `context` clauses MUST match exactly.
 - [DECL-FN-003][Stable] `context` is not an overload dimension.
 - [DECL-FN-004][Stable] `sizeof` is accepted as a declaration name for builtin-signature compatibility, but `sizeof(...)` expression syntax is always the builtin form and is not shadowable by user functions.
+- [DECL-FN-005][Stable] Function result clause may be a tuple-style list. Named result groups (`(x, y T)`) provide names for readability only; result names are not local bindings.
 
 ### 4.2 Struct composition and enum member scope
 - [DECL-EMBED-001][Stable] `struct` may embed one base field (type-name-only) as first field.
@@ -280,11 +286,12 @@ fn f() {
 - [TYPE-BUILTIN-003][Stable] `int` and `uint` are pointer-sized signed/unsigned integers for the target.
 - [TYPE-BUILTIN-004][Stable] `Allocator` is a source-level type provided by core library declarations (for example `core.Allocator` and implicit core imports), not a language builtin type.
 - [TYPE-BUILTIN-005][Stable] `rune` is a source-level alias type provided by core declarations and modeled as `type rune u32`.
-- [TYPE-CONSTR-001][Stable] Constructed types: pointers `*T`, references `&T`, arrays `[T N]`, slices `[T]`, dependent arrays `[T .n]`, optionals `?T`, function types, anonymous aggregates.
+- [TYPE-CONSTR-001][Stable] Constructed types: pointers `*T`, references `&T`, arrays `[T N]`, slices `[T]`, dependent arrays `[T .n]`, optionals `?T`, function types, tuple types `(T1, T2, ...)`, anonymous aggregates.
 - [TYPE-CONSTR-002][Stable] `[T]` is unsized and MUST NOT be used by value.
 - [TYPE-CONSTR-003][Stable] Function type return type defaults to no-value when omitted.
 - [TYPE-CONSTR-004][Stable] No-value function return has no source-level type spelling.
 - [TYPE-CONSTR-005][Stable] Variable-size-by-value types are invalid in local/param/return/function-type positions.
+- [TYPE-CONSTR-006][Stable] Tuple types require at least two element types.
 
 ### 5.2 Mutability model
 - [TYPE-MUT-001][Stable] `*T` is writable reference-like access to `T`.
@@ -329,7 +336,7 @@ fn f() {
 - [TYPE-INFER-003][Stable] Inference from `null` or no-value expressions is invalid.
 - [TYPE-INFER-004][Stable] Rune literals infer type `rune`.
 - [TYPE-ZERO-001][Stable] `var x T` zero-initializes `x`.
-- [TYPE-INFER-005][Stable] Grouped declarations infer and/or check per position (`var a, b = 1, 2`; `var a, b T = x, y`), and declaration arities MUST match initializer arities.
+- [TYPE-INFER-005][Stable] Grouped declarations infer and/or check per position (`var a, b = 1, 2`; `var a, b T = x, y`). Initializer arity must match declaration arity, except a single tuple-typed RHS may be decomposed positionally.
 
 ## 6. Expressions and Operators
 
@@ -338,7 +345,7 @@ fn f() {
 - [EXPR-UNARY-002][Stable] Unary `*` dereferences pointer/reference; unary `&` forms read-only references.
 - [EXPR-ASSIGN-001][Stable] Assignment LHS MUST be assignable (identifier/index/non-dependent field/dereference of writable location).
 - [EXPR-ASSIGN-002][Stable] Compound assignment requires assignable LHS and numeric LHS type.
-- [EXPR-ASSIGN-003][Stable] Multi-assignment (`lhs1, lhs2, ... = rhs1, rhs2, ...`) requires equal arity. RHS expressions are evaluated before stores; then stores apply left-to-right.
+- [EXPR-ASSIGN-003][Stable] Multi-assignment (`lhs1, lhs2, ... = rhs1, rhs2, ...`) requires equal arity, except a single tuple-typed RHS may be decomposed positionally. RHS expressions are evaluated before stores; then stores apply left-to-right.
 - [EXPR-CMP-001][Stable] Equality/ordering require coercion to a common comparable/ordered type, except optional-null equality special-case.
 - [EXPR-CAST-001][Stable] `as` is explicit cast syntax.
 - [EXPR-CAST-002][Stable] A cast expression is well-typed iff source expression typing succeeds and target type resolution succeeds; no additional cast-compatibility gate is applied by Core static semantics.
@@ -437,7 +444,9 @@ fn f() {
 - [STMT-SWITCH-006][Stable] Duplicate case labels are not required to be diagnosed statically.
 - [STMT-SWITCH-007][Stable] Expression-switch semantics are defined as if subject expression is evaluated once before case-label matching.
 - [STMT-CTRL-001][Stable] `break` valid inside `for`/`switch`; `continue` only inside `for`.
-- [STMT-RETURN-001][Stable] `return expr` is required iff function has an explicit return type.
+- [STMT-RETURN-001][Stable] If a function has no return type, `return` must not provide values.
+- [STMT-RETURN-002][Stable] If a function has a non-tuple return type, `return` must provide exactly one value assignable to that type.
+- [STMT-RETURN-003][Stable] If a function has a tuple return type, `return` must provide exactly one value per tuple element, each assignable by position.
 - [STMT-DEFER-001][Stable] `defer` supports statement or block, executes LIFO on scope exit.
 - [STMT-DEFER-002][Stable] Defers are guaranteed on structured scope exits (normal fallthrough, `return`, `break`, `continue`), but not guaranteed after runtime traps/aborts (`panic`, failed `assert`, process termination).
 - [STMT-ASSERT-001][Stable] First assert argument MUST be bool; if format argument exists it MUST be `str`-assignable.

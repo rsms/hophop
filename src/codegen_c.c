@@ -1438,6 +1438,15 @@ static int EnsureFnTypeAlias(
     }
 }
 
+static const char* _Nullable TupleFieldName(SLCBackendC* c, uint32_t index) {
+    SLBuf b = { 0 };
+    b.arena = &c->arena;
+    if (BufAppendCStr(&b, "__sl_t") != 0 || BufAppendU32(&b, index) != 0) {
+        return NULL;
+    }
+    return BufFinish(&b);
+}
+
 static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -1664,6 +1673,36 @@ static int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             TypeRefSetScalar(outType, aliasName);
             return 0;
         }
+        case SLAst_TYPE_TUPLE: {
+            int32_t     child = AstFirstChild(&c->ast, nodeId);
+            const char* fieldNames[256];
+            SLTypeRef   fieldTypes[256];
+            uint32_t    fieldCount = 0;
+            const char* anonName = NULL;
+            while (child >= 0) {
+                if (fieldCount >= (uint32_t)(sizeof(fieldNames) / sizeof(fieldNames[0]))) {
+                    return -1;
+                }
+                if (ParseTypeRef(c, child, &fieldTypes[fieldCount]) != 0) {
+                    return -1;
+                }
+                CanonicalizeTypeRefBaseName(c, &fieldTypes[fieldCount]);
+                fieldNames[fieldCount] = TupleFieldName(c, fieldCount);
+                if (fieldNames[fieldCount] == NULL) {
+                    return -1;
+                }
+                fieldCount++;
+                child = AstNextSibling(&c->ast, child);
+            }
+            if (fieldCount < 2u) {
+                return -1;
+            }
+            if (EnsureAnonTypeByFields(c, 0, fieldNames, fieldTypes, fieldCount, &anonName) != 0) {
+                return -1;
+            }
+            TypeRefSetScalar(outType, anonName);
+            return 0;
+        }
         default: TypeRefSetInvalid(outType); return -1;
     }
 }
@@ -1884,6 +1923,69 @@ static const SLAnonTypeInfo* _Nullable FindAnonTypeByCName(
         }
     }
     return NULL;
+}
+
+static int IsTupleFieldName(const char* name, uint32_t index) {
+    const char* prefix = "__sl_t";
+    uint32_t    i = 0;
+    uint32_t    n = index;
+    char        digits[16];
+    uint32_t    dlen = 0;
+    if (name == NULL) {
+        return 0;
+    }
+    while (prefix[i] != '\0') {
+        if (name[i] != prefix[i]) {
+            return 0;
+        }
+        i++;
+    }
+    if (n == 0) {
+        digits[dlen++] = '0';
+    } else {
+        while (n > 0 && dlen < (uint32_t)sizeof(digits)) {
+            digits[dlen++] = (char)('0' + (n % 10u));
+            n /= 10u;
+        }
+    }
+    if (name[i + dlen] != '\0') {
+        return 0;
+    }
+    while (dlen > 0) {
+        dlen--;
+        if (name[i++] != digits[dlen]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int TypeRefTupleInfo(
+    const SLCBackendC* c, const SLTypeRef* t, const SLAnonTypeInfo** outInfo) {
+    const SLAnonTypeInfo* info;
+    uint32_t              i;
+    if (outInfo != NULL) {
+        *outInfo = NULL;
+    }
+    if (t == NULL || !t->valid || t->baseName == NULL || t->ptrDepth != 0 || t->isOptional
+        || t->containerKind != SLTypeContainer_SCALAR || t->containerPtrDepth != 0)
+    {
+        return 0;
+    }
+    info = FindAnonTypeByCName(c, t->baseName);
+    if (info == NULL || info->isUnion || info->fieldCount < 2u) {
+        return 0;
+    }
+    for (i = 0; i < info->fieldCount; i++) {
+        const SLFieldInfo* f = &c->fieldInfos[info->fieldStart + i];
+        if (!IsTupleFieldName(f->fieldName, i)) {
+            return 0;
+        }
+    }
+    if (outInfo != NULL) {
+        *outInfo = info;
+    }
+    return 1;
 }
 
 static int IsLocalAnonTypedefVisible(const SLCBackendC* c, const char* cName) {
@@ -2531,7 +2633,8 @@ static int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                     || ch->kind == SLAst_TYPE_ARRAY || ch->kind == SLAst_TYPE_VARRAY
                     || ch->kind == SLAst_TYPE_SLICE || ch->kind == SLAst_TYPE_MUTSLICE
                     || ch->kind == SLAst_TYPE_OPTIONAL || ch->kind == SLAst_TYPE_FN
-                    || ch->kind == SLAst_TYPE_ANON_STRUCT || ch->kind == SLAst_TYPE_ANON_UNION)
+                    || ch->kind == SLAst_TYPE_ANON_STRUCT || ch->kind == SLAst_TYPE_ANON_UNION
+                    || ch->kind == SLAst_TYPE_TUPLE)
                 && ch->flags == 1)
             {
                 if (ParseTypeRef(c, child, &returnType) != 0) {
@@ -2663,7 +2766,8 @@ static int IsParseTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
         || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
-        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION;
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION
+        || kind == SLAst_TYPE_TUPLE;
 }
 
 static int CollectFnTypeAliasesFromNode(SLCBackendC* c, int32_t nodeId) {
@@ -2958,7 +3062,8 @@ static int EnumDeclHasMemberBySlice(
                 || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
                 || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN
                 || firstChild->kind == SLAst_TYPE_ANON_STRUCT
-                || firstChild->kind == SLAst_TYPE_ANON_UNION))
+                || firstChild->kind == SLAst_TYPE_ANON_UNION
+                || firstChild->kind == SLAst_TYPE_TUPLE))
         {
             child = AstNextSibling(&c->ast, child);
         }
@@ -3325,7 +3430,8 @@ static int IsTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
         || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
-        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION;
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION
+        || kind == SLAst_TYPE_TUPLE;
 }
 
 static int DecodeNewExprNodes(
@@ -5021,6 +5127,43 @@ static int InferExprType_UNWRAP(
     return 0;
 }
 
+static int InferExprType_TUPLE_EXPR(
+    SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType) {
+    int32_t     child = AstFirstChild(&c->ast, nodeId);
+    const char* fieldNames[256];
+    SLTypeRef   fieldTypes[256];
+    uint32_t    fieldCount = 0;
+    const char* anonName = NULL;
+    (void)n;
+    while (child >= 0) {
+        if (fieldCount >= (uint32_t)(sizeof(fieldNames) / sizeof(fieldNames[0]))) {
+            TypeRefSetInvalid(outType);
+            return 0;
+        }
+        if (InferExprType(c, child, &fieldTypes[fieldCount]) != 0 || !fieldTypes[fieldCount].valid)
+        {
+            TypeRefSetInvalid(outType);
+            return 0;
+        }
+        CanonicalizeTypeRefBaseName(c, &fieldTypes[fieldCount]);
+        fieldNames[fieldCount] = TupleFieldName(c, fieldCount);
+        if (fieldNames[fieldCount] == NULL) {
+            TypeRefSetInvalid(outType);
+            return 0;
+        }
+        fieldCount++;
+        child = AstNextSibling(&c->ast, child);
+    }
+    if (fieldCount < 2u
+        || EnsureAnonTypeByFields(c, 0, fieldNames, fieldTypes, fieldCount, &anonName) != 0)
+    {
+        TypeRefSetInvalid(outType);
+        return 0;
+    }
+    TypeRefSetScalar(outType, anonName);
+    return 0;
+}
+
 static int InferExprType_CALL_ARG(
     SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType) {
     int32_t inner = AstFirstChild(&c->ast, nodeId);
@@ -5057,6 +5200,7 @@ static int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
         case SLAst_FLOAT:             return InferExprType_FLOAT(c, nodeId, n, outType);
         case SLAst_NULL:              return InferExprType_NULL(c, nodeId, n, outType);
         case SLAst_UNWRAP:            return InferExprType_UNWRAP(c, nodeId, n, outType);
+        case SLAst_TUPLE_EXPR:        return InferExprType_TUPLE_EXPR(c, nodeId, n, outType);
         case SLAst_CALL_ARG:          return InferExprType_CALL_ARG(c, nodeId, n, outType);
         default:                      TypeRefSetInvalid(outType); return 0;
     }
@@ -8043,6 +8187,44 @@ static int EmitExpr_CALL_ARG(SLCBackendC* c, int32_t nodeId, const SLAstNode* n)
     return EmitExpr(c, inner);
 }
 
+static int EmitExpr_TUPLE_EXPR(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
+    SLTypeRef             tupleType;
+    const SLAnonTypeInfo* tupleInfo = NULL;
+    uint32_t              i;
+    int32_t               child;
+    (void)n;
+    if (InferExprType(c, nodeId, &tupleType) != 0 || !tupleType.valid
+        || !TypeRefTupleInfo(c, &tupleType, &tupleInfo))
+    {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, &tupleType) != 0
+        || BufAppendCStr(&c->out, "){") != 0)
+    {
+        return -1;
+    }
+    child = AstFirstChild(&c->ast, nodeId);
+    for (i = 0; i < tupleInfo->fieldCount; i++) {
+        const SLFieldInfo* f = &c->fieldInfos[tupleInfo->fieldStart + i];
+        if (child < 0) {
+            return -1;
+        }
+        if (i > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        if (BufAppendChar(&c->out, '.') != 0 || BufAppendCStr(&c->out, f->fieldName) != 0
+            || BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, child, &f->type) != 0)
+        {
+            return -1;
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    if (child >= 0) {
+        return -1;
+    }
+    return BufAppendCStr(&c->out, "})");
+}
+
 static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -8068,6 +8250,7 @@ static int EmitExpr(SLCBackendC* c, int32_t nodeId) {
         case SLAst_SIZEOF:            return EmitExpr_SIZEOF(c, nodeId, n);
         case SLAst_NULL:              return EmitExpr_NULL(c, nodeId, n);
         case SLAst_UNWRAP:            return EmitExpr_UNWRAP(c, nodeId, n);
+        case SLAst_TUPLE_EXPR:        return EmitExpr_TUPLE_EXPR(c, nodeId, n);
         case SLAst_CALL_ARG:          return EmitExpr_CALL_ARG(c, nodeId, n);
         default:
             /* Unsupported AST kind in expression context. */
@@ -8212,87 +8395,177 @@ static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int i
         TypeRefSetInvalid(&sharedType);
     }
 
-    for (i = 0; i < parts.nameCount; i++) {
-        int32_t          nameNode = ListItemAt(&c->ast, parts.nameListNode, i);
-        const SLAstNode* nameAst = NodeAt(c, nameNode);
-        int32_t          initNode = -1;
-        char*            name;
-        int              isHole;
-        SLTypeRef        type;
-        if (nameAst == NULL) {
-            return -1;
-        }
-        name = DupSlice(c, c->unit->source, nameAst->dataStart, nameAst->dataEnd);
-        if (name == NULL) {
-            return -1;
-        }
-        isHole = StrEq(name, "_");
-        if (parts.initNode >= 0 && NodeAt(c, parts.initNode) != NULL
-            && NodeAt(c, parts.initNode)->kind == SLAst_EXPR_LIST)
-        {
-            initNode = ListItemAt(&c->ast, parts.initNode, i);
-        }
-        if (parts.typeNode >= 0) {
-            type = sharedType;
-        } else {
-            if (initNode < 0 || InferVarLikeDeclType(c, initNode, &type) != 0) {
+    {
+        int                   useTupleDecompose = 0;
+        int32_t               tupleInitNode = -1;
+        SLTypeRef             tupleInitType;
+        const SLAnonTypeInfo* tupleInfo = NULL;
+        if (parts.initNode >= 0) {
+            if (NodeAt(c, parts.initNode) == NULL
+                || NodeAt(c, parts.initNode)->kind != SLAst_EXPR_LIST)
+            {
                 return -1;
             }
-            if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
-                return -1;
-            }
-        }
-
-        if (isHole) {
-            if (initNode >= 0) {
-                EmitIndent(c, depth);
-                if (BufAppendCStr(&c->out, "(void)(") != 0) {
-                    return -1;
-                }
-                if (parts.typeNode >= 0) {
-                    if (EmitExprCoerced(c, initNode, &type) != 0) {
+            {
+                uint32_t initCount = ListCount(&c->ast, parts.initNode);
+                if (initCount == parts.nameCount) {
+                } else if (initCount == 1u) {
+                    tupleInitNode = ListItemAt(&c->ast, parts.initNode, 0);
+                    if (tupleInitNode < 0 || InferExprType(c, tupleInitNode, &tupleInitType) != 0
+                        || !tupleInitType.valid || !TypeRefTupleInfo(c, &tupleInitType, &tupleInfo)
+                        || tupleInfo->fieldCount != parts.nameCount)
+                    {
                         return -1;
                     }
-                } else if (EmitExpr(c, initNode) != 0) {
-                    return -1;
-                }
-                if (BufAppendCStr(&c->out, ");\n") != 0) {
+                    useTupleDecompose = 1;
+                } else {
                     return -1;
                 }
             }
-            continue;
         }
 
-        EmitIndent(c, depth);
-        if (isConst && BufAppendCStr(&c->out, "const ") != 0) {
-            return -1;
-        }
-        if ((parts.typeNode >= 0 && EmitTypeWithName(c, parts.typeNode, name) != 0)
-            || (parts.typeNode < 0 && EmitTypeRefWithName(c, &type, name) != 0))
-        {
-            return -1;
-        }
-        if (initNode >= 0) {
-            if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0) {
+        if (useTupleDecompose) {
+            EmitIndent(c, depth);
+            if (BufAppendCStr(&c->out, "__auto_type __sl_tmp_tuple = ") != 0
+                || EmitExprCoerced(c, tupleInitNode, &tupleInitType) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
+            {
                 return -1;
             }
-        } else if (!isConst && BufAppendCStr(&c->out, " = {0}") != 0) {
-            return -1;
+            for (i = 0; i < parts.nameCount; i++) {
+                int32_t            nameNode = ListItemAt(&c->ast, parts.nameListNode, i);
+                const SLAstNode*   nameAst = NodeAt(c, nameNode);
+                const SLFieldInfo* tf = &c->fieldInfos[tupleInfo->fieldStart + i];
+                char*              name;
+                int                isHole;
+                SLTypeRef          type;
+                if (nameAst == NULL) {
+                    return -1;
+                }
+                name = DupSlice(c, c->unit->source, nameAst->dataStart, nameAst->dataEnd);
+                if (name == NULL) {
+                    return -1;
+                }
+                isHole = StrEq(name, "_");
+                type = parts.typeNode >= 0 ? sharedType : tf->type;
+                if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+                    return -1;
+                }
+                EmitIndent(c, depth);
+                if (isHole) {
+                    if (BufAppendCStr(&c->out, "(void)(__sl_tmp_tuple.") != 0
+                        || BufAppendCStr(&c->out, tf->fieldName) != 0
+                        || BufAppendCStr(&c->out, ");\n") != 0)
+                    {
+                        return -1;
+                    }
+                    continue;
+                }
+                if (isConst && BufAppendCStr(&c->out, "const ") != 0) {
+                    return -1;
+                }
+                if ((parts.typeNode >= 0 && EmitTypeWithName(c, parts.typeNode, name) != 0)
+                    || (parts.typeNode < 0 && EmitTypeRefWithName(c, &type, name) != 0))
+                {
+                    return -1;
+                }
+                if (BufAppendCStr(&c->out, " = __sl_tmp_tuple.") != 0
+                    || BufAppendCStr(&c->out, tf->fieldName) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0)
+                {
+                    return -1;
+                }
+                if (AddLocal(c, name, type) != 0) {
+                    return -1;
+                }
+            }
+            return 0;
         }
-        if (BufAppendCStr(&c->out, ";\n") != 0) {
-            return -1;
+
+        for (i = 0; i < parts.nameCount; i++) {
+            int32_t          nameNode = ListItemAt(&c->ast, parts.nameListNode, i);
+            const SLAstNode* nameAst = NodeAt(c, nameNode);
+            int32_t          initNode = -1;
+            char*            name;
+            int              isHole;
+            SLTypeRef        type;
+            if (nameAst == NULL) {
+                return -1;
+            }
+            name = DupSlice(c, c->unit->source, nameAst->dataStart, nameAst->dataEnd);
+            if (name == NULL) {
+                return -1;
+            }
+            isHole = StrEq(name, "_");
+            if (parts.initNode >= 0 && NodeAt(c, parts.initNode) != NULL
+                && NodeAt(c, parts.initNode)->kind == SLAst_EXPR_LIST)
+            {
+                initNode = ListItemAt(&c->ast, parts.initNode, i);
+            }
+            if (parts.typeNode >= 0) {
+                type = sharedType;
+            } else {
+                if (initNode < 0 || InferVarLikeDeclType(c, initNode, &type) != 0) {
+                    return -1;
+                }
+                if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
+                    return -1;
+                }
+            }
+
+            if (isHole) {
+                if (initNode >= 0) {
+                    EmitIndent(c, depth);
+                    if (BufAppendCStr(&c->out, "(void)(") != 0) {
+                        return -1;
+                    }
+                    if (parts.typeNode >= 0) {
+                        if (EmitExprCoerced(c, initNode, &type) != 0) {
+                            return -1;
+                        }
+                    } else if (EmitExpr(c, initNode) != 0) {
+                        return -1;
+                    }
+                    if (BufAppendCStr(&c->out, ");\n") != 0) {
+                        return -1;
+                    }
+                }
+                continue;
+            }
+
+            EmitIndent(c, depth);
+            if (isConst && BufAppendCStr(&c->out, "const ") != 0) {
+                return -1;
+            }
+            if ((parts.typeNode >= 0 && EmitTypeWithName(c, parts.typeNode, name) != 0)
+                || (parts.typeNode < 0 && EmitTypeRefWithName(c, &type, name) != 0))
+            {
+                return -1;
+            }
+            if (initNode >= 0) {
+                if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0)
+                {
+                    return -1;
+                }
+            } else if (!isConst && BufAppendCStr(&c->out, " = {0}") != 0) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, ";\n") != 0) {
+                return -1;
+            }
+            if (AddLocal(c, name, type) != 0) {
+                return -1;
+            }
         }
-        if (AddLocal(c, name, type) != 0) {
-            return -1;
-        }
+        return 0;
     }
-    return 0;
 }
 
 static int EmitMultiAssignStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     int32_t  lhsList = AstFirstChild(&c->ast, nodeId);
     int32_t  rhsList = lhsList >= 0 ? AstNextSibling(&c->ast, lhsList) : -1;
-    uint32_t count;
+    uint32_t lhsCount;
+    uint32_t rhsCount;
     uint32_t i;
     if (lhsList < 0 || rhsList < 0 || NodeAt(c, lhsList) == NULL || NodeAt(c, rhsList) == NULL
         || NodeAt(c, lhsList)->kind != SLAst_EXPR_LIST
@@ -8300,29 +8573,57 @@ static int EmitMultiAssignStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     {
         return -1;
     }
-    count = ListCount(&c->ast, lhsList);
-    if (count != ListCount(&c->ast, rhsList)) {
-        return -1;
-    }
+    lhsCount = ListCount(&c->ast, lhsList);
+    rhsCount = ListCount(&c->ast, rhsList);
     EmitIndent(c, depth);
     if (BufAppendCStr(&c->out, "{\n") != 0) {
         return -1;
     }
-    for (i = 0; i < count; i++) {
-        int32_t   rhsNode = ListItemAt(&c->ast, rhsList, i);
-        SLTypeRef rhsType;
-        if (rhsNode < 0 || InferExprType(c, rhsNode, &rhsType) != 0 || !rhsType.valid) {
-            return -1;
+    if (rhsCount == lhsCount) {
+        for (i = 0; i < lhsCount; i++) {
+            int32_t   rhsNode = ListItemAt(&c->ast, rhsList, i);
+            SLTypeRef rhsType;
+            if (rhsNode < 0 || InferExprType(c, rhsNode, &rhsType) != 0 || !rhsType.valid) {
+                return -1;
+            }
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "__auto_type __sl_tmp_") != 0
+                || BufAppendU32(&c->out, i) != 0 || BufAppendCStr(&c->out, " = ") != 0
+                || EmitExprCoerced(c, rhsNode, &rhsType) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
         }
-        EmitIndent(c, depth + 1u);
-        if (BufAppendCStr(&c->out, "__auto_type __sl_tmp_") != 0 || BufAppendU32(&c->out, i) != 0
-            || BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, rhsNode, &rhsType) != 0
-            || BufAppendCStr(&c->out, ";\n") != 0)
+    } else if (rhsCount == 1u) {
+        int32_t               rhsNode = ListItemAt(&c->ast, rhsList, 0);
+        SLTypeRef             rhsType;
+        const SLAnonTypeInfo* tupleInfo = NULL;
+        if (rhsNode < 0 || InferExprType(c, rhsNode, &rhsType) != 0 || !rhsType.valid
+            || !TypeRefTupleInfo(c, &rhsType, &tupleInfo) || tupleInfo->fieldCount != lhsCount)
         {
             return -1;
         }
+        EmitIndent(c, depth + 1u);
+        if (BufAppendCStr(&c->out, "__auto_type __sl_tmp_tuple = ") != 0
+            || EmitExprCoerced(c, rhsNode, &rhsType) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
+        for (i = 0; i < lhsCount; i++) {
+            const SLFieldInfo* f = &c->fieldInfos[tupleInfo->fieldStart + i];
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "__auto_type __sl_tmp_") != 0
+                || BufAppendU32(&c->out, i) != 0
+                || BufAppendCStr(&c->out, " = __sl_tmp_tuple.") != 0
+                || BufAppendCStr(&c->out, f->fieldName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+        }
+    } else {
+        return -1;
     }
-    for (i = 0; i < count; i++) {
+    for (i = 0; i < lhsCount; i++) {
         int32_t          lhsNode = ListItemAt(&c->ast, lhsList, i);
         const SLAstNode* lhs = NodeAt(c, lhsNode);
         if (lhs == NULL) {
@@ -8613,12 +8914,53 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                 return -1;
             }
             if (expr >= 0) {
-                if (BufAppendChar(&c->out, ' ') != 0
-                    || EmitExprCoerced(
-                           c, expr, c->hasCurrentReturnType ? &c->currentReturnType : NULL)
-                           != 0)
-                {
-                    return -1;
+                if (NodeAt(c, expr) != NULL && NodeAt(c, expr)->kind == SLAst_EXPR_LIST) {
+                    const SLAnonTypeInfo* tupleInfo = NULL;
+                    uint32_t              i;
+                    int32_t               itemNode;
+                    if (!c->hasCurrentReturnType
+                        || !TypeRefTupleInfo(c, &c->currentReturnType, &tupleInfo))
+                    {
+                        return -1;
+                    }
+                    if (ListCount(&c->ast, expr) != tupleInfo->fieldCount) {
+                        return -1;
+                    }
+                    if (BufAppendCStr(&c->out, " ((") != 0
+                        || EmitTypeNameWithDepth(c, &c->currentReturnType) != 0
+                        || BufAppendCStr(&c->out, "){") != 0)
+                    {
+                        return -1;
+                    }
+                    itemNode = AstFirstChild(&c->ast, expr);
+                    for (i = 0; i < tupleInfo->fieldCount; i++) {
+                        const SLFieldInfo* f = &c->fieldInfos[tupleInfo->fieldStart + i];
+                        if (itemNode < 0) {
+                            return -1;
+                        }
+                        if (i > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+                            return -1;
+                        }
+                        if (BufAppendChar(&c->out, '.') != 0
+                            || BufAppendCStr(&c->out, f->fieldName) != 0
+                            || BufAppendCStr(&c->out, " = ") != 0
+                            || EmitExprCoerced(c, itemNode, &f->type) != 0)
+                        {
+                            return -1;
+                        }
+                        itemNode = AstNextSibling(&c->ast, itemNode);
+                    }
+                    if (itemNode >= 0 || BufAppendCStr(&c->out, "})") != 0) {
+                        return -1;
+                    }
+                } else {
+                    if (BufAppendChar(&c->out, ' ') != 0
+                        || EmitExprCoerced(
+                               c, expr, c->hasCurrentReturnType ? &c->currentReturnType : NULL)
+                               != 0)
+                    {
+                        return -1;
+                    }
                 }
             }
             return BufAppendCStr(&c->out, ";\n");
@@ -8777,7 +9119,8 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                 || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
                 || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN
                 || firstChild->kind == SLAst_TYPE_ANON_STRUCT
-                || firstChild->kind == SLAst_TYPE_ANON_UNION))
+                || firstChild->kind == SLAst_TYPE_ANON_UNION
+                || firstChild->kind == SLAst_TYPE_TUPLE))
         {
             child = AstNextSibling(&c->ast, child);
         }
@@ -9500,7 +9843,8 @@ static int EmitFnDeclOrDef(
                 || ch->kind == SLAst_TYPE_ARRAY || ch->kind == SLAst_TYPE_VARRAY
                 || ch->kind == SLAst_TYPE_SLICE || ch->kind == SLAst_TYPE_MUTSLICE
                 || ch->kind == SLAst_TYPE_OPTIONAL || ch->kind == SLAst_TYPE_FN
-                || ch->kind == SLAst_TYPE_ANON_STRUCT || ch->kind == SLAst_TYPE_ANON_UNION)
+                || ch->kind == SLAst_TYPE_ANON_STRUCT || ch->kind == SLAst_TYPE_ANON_UNION
+                || ch->kind == SLAst_TYPE_TUPLE)
             && ch->flags == 1)
         {
             returnTypeNode = child;

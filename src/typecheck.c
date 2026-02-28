@@ -18,6 +18,7 @@ typedef enum {
     SLTCType_UNTYPED_INT,
     SLTCType_UNTYPED_FLOAT,
     SLTCType_FUNCTION,
+    SLTCType_TUPLE,
     SLTCType_OPTIONAL,
     SLTCType_NULL,
 } SLTCTypeKind;
@@ -400,6 +401,18 @@ static void SLTCFormatTypeRec(SLTypeCheckCtx* c, int32_t typeId, SLTCTextBuf* b,
             SLTCTextBufAppendChar(b, '?');
             SLTCFormatTypeRec(c, t->baseType, b, depth + 1u);
             return;
+        case SLTCType_TUPLE: {
+            uint32_t i;
+            SLTCTextBufAppendChar(b, '(');
+            for (i = 0; i < t->fieldCount; i++) {
+                if (i > 0) {
+                    SLTCTextBufAppendCStr(b, ", ");
+                }
+                SLTCFormatTypeRec(c, c->funcParamTypes[t->fieldStart + i], b, depth + 1u);
+            }
+            SLTCTextBufAppendChar(b, ')');
+            return;
+        }
         case SLTCType_UNTYPED_INT:   SLTCTextBufAppendCStr(b, "untyped_int"); return;
         case SLTCType_UNTYPED_FLOAT: SLTCTextBufAppendCStr(b, "untyped_float"); return;
         case SLTCType_NULL:          SLTCTextBufAppendCStr(b, "null"); return;
@@ -1279,6 +1292,59 @@ static int32_t SLTCInternFunctionType(
     return SLTCAddType(c, &t, errStart, errEnd);
 }
 
+static int SLTCTupleTypeMatchesSignature(
+    SLTypeCheckCtx* c, const SLTCType* t, const int32_t* elemTypes, uint32_t elemCount) {
+    uint32_t i;
+    if (t->kind != SLTCType_TUPLE || t->fieldCount != elemCount) {
+        return 0;
+    }
+    for (i = 0; i < elemCount; i++) {
+        if (c->funcParamTypes[t->fieldStart + i] != elemTypes[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int32_t SLTCInternTupleType(
+    SLTypeCheckCtx* c,
+    const int32_t*  elemTypes,
+    uint32_t        elemCount,
+    uint32_t        errStart,
+    uint32_t        errEnd) {
+    uint32_t i;
+    SLTCType t;
+    if (elemCount < 2u || elemCount > UINT16_MAX) {
+        return SLTCFailSpan(c, SLDiag_EXPECTED_TYPE, errStart, errEnd);
+    }
+    for (i = 0; i < c->typeLen; i++) {
+        if (SLTCTupleTypeMatchesSignature(c, &c->types[i], elemTypes, elemCount)) {
+            return (int32_t)i;
+        }
+    }
+    if (c->funcParamLen + elemCount > c->funcParamCap) {
+        return SLTCFailSpan(c, SLDiag_ARENA_OOM, errStart, errEnd);
+    }
+    t.kind = SLTCType_TUPLE;
+    t.builtin = SLBuiltin_INVALID;
+    t.baseType = -1;
+    t.declNode = -1;
+    t.funcIndex = -1;
+    t.arrayLen = 0;
+    t.nameStart = 0;
+    t.nameEnd = 0;
+    t.fieldStart = c->funcParamLen;
+    t.fieldCount = (uint16_t)elemCount;
+    t.flags = 0;
+    for (i = 0; i < elemCount; i++) {
+        c->funcParamTypes[c->funcParamLen] = elemTypes[i];
+        c->funcParamNameStarts[c->funcParamLen] = 0;
+        c->funcParamNameEnds[c->funcParamLen] = 0;
+        c->funcParamLen++;
+    }
+    return SLTCAddType(c, &t, errStart, errEnd);
+}
+
 static int SLTCParseArrayLen(SLTypeCheckCtx* c, const SLAstNode* node, uint32_t* outLen) {
     uint32_t i;
     uint32_t v = 0;
@@ -1508,6 +1574,8 @@ static int32_t SLTCVarLikeNameIndexBySlice(
 
 static int32_t SLTCVarLikeInitExprNodeAt(SLTypeCheckCtx* c, int32_t nodeId, int32_t nameIndex) {
     SLTCVarLikeParts parts;
+    uint32_t         initCount;
+    int32_t          onlyInit;
     if (SLTCVarLikeGetParts(c, nodeId, &parts) != 0) {
         return -1;
     }
@@ -1519,7 +1587,20 @@ static int32_t SLTCVarLikeInitExprNodeAt(SLTypeCheckCtx* c, int32_t nodeId, int3
     {
         return -1;
     }
-    return SLTCListItemAt(c->ast, parts.initNode, (uint32_t)nameIndex);
+    initCount = SLTCListCount(c->ast, parts.initNode);
+    if (initCount == parts.nameCount) {
+        return SLTCListItemAt(c->ast, parts.initNode, (uint32_t)nameIndex);
+    }
+    if (initCount != 1u) {
+        return -1;
+    }
+    onlyInit = SLTCListItemAt(c->ast, parts.initNode, 0);
+    if (onlyInit < 0 || (uint32_t)onlyInit >= c->ast->len
+        || c->ast->nodes[onlyInit].kind != SLAst_TUPLE_EXPR)
+    {
+        return -1;
+    }
+    return SLTCListItemAt(c->ast, onlyInit, (uint32_t)nameIndex);
 }
 
 static int32_t SLTCVarLikeInitExprNode(SLTypeCheckCtx* c, int32_t nodeId) {
@@ -2837,6 +2918,36 @@ static int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outTy
                 return 0;
             }
         }
+        case SLAst_TYPE_TUPLE: {
+            int32_t  child = SLAstFirstChild(c->ast, nodeId);
+            uint32_t elemCount = 0;
+            while (child >= 0) {
+                int32_t elemType;
+                if (elemCount >= c->scratchParamCap) {
+                    return SLTCFailNode(c, child, SLDiag_ARENA_OOM);
+                }
+                if (SLTCResolveTypeNode(c, child, &elemType) != 0) {
+                    return -1;
+                }
+                if (SLTCTypeContainsVarSizeByValue(c, elemType)) {
+                    return SLTCFailNode(c, child, SLDiag_TYPE_MISMATCH);
+                }
+                c->scratchParamTypes[elemCount++] = elemType;
+                child = SLAstNextSibling(c->ast, child);
+            }
+            if (elemCount < 2u) {
+                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
+            }
+            {
+                int32_t tupleType = SLTCInternTupleType(
+                    c, c->scratchParamTypes, elemCount, n->start, n->end);
+                if (tupleType < 0) {
+                    return -1;
+                }
+                *outType = tupleType;
+                return 0;
+            }
+        }
         case SLAst_TYPE_ANON_STRUCT: return SLTCResolveAnonAggregateTypeNode(c, nodeId, 0, outType);
         case SLAst_TYPE_ANON_UNION:  return SLTCResolveAnonAggregateTypeNode(c, nodeId, 1, outType);
         case SLAst_TYPE_VARRAY:      return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
@@ -3154,10 +3265,13 @@ static int SLTCIsTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
         || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
-        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION;
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION
+        || kind == SLAst_TYPE_TUPLE;
 }
 
 static int SLTCConcretizeInferredType(SLTypeCheckCtx* c, int32_t typeId, int32_t* outType) {
+    const SLTCType* t;
+    uint32_t        i;
     if (typeId == c->typeUntypedInt) {
         int32_t t = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
         if (t < 0) {
@@ -3173,6 +3287,35 @@ static int SLTCConcretizeInferredType(SLTypeCheckCtx* c, int32_t typeId, int32_t
         }
         *outType = t;
         return 0;
+    }
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
+        *outType = typeId;
+        return 0;
+    }
+    t = &c->types[typeId];
+    if (t->kind == SLTCType_TUPLE) {
+        int32_t elems[256];
+        int     changed = 0;
+        if (t->fieldCount > (uint16_t)(sizeof(elems) / sizeof(elems[0]))) {
+            return SLTCFailSpan(c, SLDiag_ARENA_OOM, 0, 0);
+        }
+        for (i = 0; i < t->fieldCount; i++) {
+            int32_t elem = c->funcParamTypes[t->fieldStart + i];
+            int32_t concreteElem = elem;
+            if (SLTCConcretizeInferredType(c, elem, &concreteElem) != 0) {
+                return -1;
+            }
+            if (concreteElem != elem) {
+                changed = 1;
+            }
+            elems[i] = concreteElem;
+        }
+        if (!changed) {
+            *outType = typeId;
+            return 0;
+        }
+        *outType = SLTCInternTupleType(c, elems, t->fieldCount, 0, 0);
+        return *outType < 0 ? -1 : 0;
     }
     *outType = typeId;
     return 0;
@@ -3205,6 +3348,17 @@ static int SLTCTypeContainsVarSizeByValue(SLTypeCheckCtx* c, int32_t typeId) {
     }
     if (c->types[typeId].kind == SLTCType_ARRAY) {
         return SLTCTypeContainsVarSizeByValue(c, c->types[typeId].baseType);
+    }
+    if (c->types[typeId].kind == SLTCType_TUPLE) {
+        uint32_t i;
+        for (i = 0; i < c->types[typeId].fieldCount; i++) {
+            if (SLTCTypeContainsVarSizeByValue(
+                    c, c->funcParamTypes[c->types[typeId].fieldStart + i]))
+            {
+                return 1;
+            }
+        }
+        return 0;
     }
     return SLTCTypeIsVarSize(c, typeId);
 }
@@ -3344,6 +3498,21 @@ static int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
 
     dst = &c->types[dstType];
     src = &c->types[srcType];
+
+    if (dst->kind == SLTCType_TUPLE) {
+        uint32_t i;
+        if (src->kind != SLTCType_TUPLE || dst->fieldCount != src->fieldCount) {
+            return 0;
+        }
+        for (i = 0; i < dst->fieldCount; i++) {
+            int32_t dstElem = c->funcParamTypes[dst->fieldStart + i];
+            int32_t srcElem = c->funcParamTypes[src->fieldStart + i];
+            if (!SLTCCanAssign(c, dstElem, srcElem)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
 
     if (src->kind == SLTCType_NAMED && SLTCIsTypeDerivedFromEmbedded(c, srcType, dstType)) {
         return 1;
@@ -3557,6 +3726,24 @@ static int SLTCConversionCost(
     }
     dst = &c->types[dstType];
     src = &c->types[srcType];
+
+    if (dst->kind == SLTCType_TUPLE && src->kind == SLTCType_TUPLE
+        && dst->fieldCount == src->fieldCount)
+    {
+        uint32_t total = 0;
+        uint32_t i;
+        for (i = 0; i < dst->fieldCount; i++) {
+            uint8_t elemCost = 0;
+            int32_t dstElem = c->funcParamTypes[dst->fieldStart + i];
+            int32_t srcElem = c->funcParamTypes[src->fieldStart + i];
+            if (SLTCConversionCost(c, dstElem, srcElem, &elemCost) != 0) {
+                return -1;
+            }
+            total += elemCost;
+        }
+        *outCost = total > 255u ? 255u : (uint8_t)total;
+        return 0;
+    }
 
     if (dst->kind == SLTCType_OPTIONAL && src->kind != SLTCType_OPTIONAL) {
         *outCost = 4;
@@ -4607,7 +4794,8 @@ static int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
             || c->ast->nodes[child].kind == SLAst_TYPE_VARRAY
             || c->ast->nodes[child].kind == SLAst_TYPE_FN
             || c->ast->nodes[child].kind == SLAst_TYPE_ANON_STRUCT
-            || c->ast->nodes[child].kind == SLAst_TYPE_ANON_UNION))
+            || c->ast->nodes[child].kind == SLAst_TYPE_ANON_UNION
+            || c->ast->nodes[child].kind == SLAst_TYPE_TUPLE))
     {
         child = SLAstNextSibling(c->ast, child);
     }
@@ -5018,7 +5206,7 @@ static int SLTCReadFunctionSig(
              || n->kind == SLAst_TYPE_SLICE || n->kind == SLAst_TYPE_MUTSLICE
              || n->kind == SLAst_TYPE_VARRAY || n->kind == SLAst_TYPE_OPTIONAL
              || n->kind == SLAst_TYPE_FN || n->kind == SLAst_TYPE_ANON_STRUCT
-             || n->kind == SLAst_TYPE_ANON_UNION)
+             || n->kind == SLAst_TYPE_ANON_UNION || n->kind == SLAst_TYPE_TUPLE)
             && n->flags == 1)
         {
             if (SLTCResolveTypeNode(c, child, &returnType) != 0) {
@@ -6032,6 +6220,38 @@ static int SLTCTypeExprExpected(
         }
         *outType = defaultType;
         return 0;
+    }
+
+    if (n->kind == SLAst_TUPLE_EXPR) {
+        int32_t expectedBase = SLTCResolveAliasBaseType(c, expectedType);
+        if (expectedBase >= 0 && (uint32_t)expectedBase < c->typeLen
+            && c->types[expectedBase].kind == SLTCType_TUPLE)
+        {
+            int32_t  child = SLAstFirstChild(c->ast, nodeId);
+            uint32_t idx = 0;
+            while (child >= 0) {
+                int32_t srcType;
+                int32_t dstType;
+                if (idx >= c->types[expectedBase].fieldCount) {
+                    return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                }
+                dstType = c->funcParamTypes[c->types[expectedBase].fieldStart + idx];
+                if (SLTCTypeExprExpected(c, child, dstType, &srcType) != 0) {
+                    return -1;
+                }
+                if (!SLTCCanAssign(c, dstType, srcType)) {
+                    return SLTCFailTypeMismatchDetail(c, child, child, srcType, dstType);
+                }
+                idx++;
+                child = SLAstNextSibling(c->ast, child);
+            }
+            if (idx != c->types[expectedBase].fieldCount) {
+                return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+            }
+            *outType = expectedBase;
+            return 0;
+        }
+        return SLTCTypeExpr(c, nodeId, outType);
     }
 
     if (expectedType >= 0 && (uint32_t)expectedType < c->typeLen
@@ -7359,6 +7579,38 @@ static int SLTCTypeExpr_UNWRAP(
     return 0;
 }
 
+static int SLTCTypeExpr_TUPLE_EXPR(
+    SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
+    int32_t  child = SLAstFirstChild(c->ast, nodeId);
+    uint32_t elemCount = 0;
+    (void)n;
+    while (child >= 0) {
+        int32_t elemType;
+        if (elemCount >= c->scratchParamCap) {
+            return SLTCFailNode(c, child, SLDiag_ARENA_OOM);
+        }
+        if (SLTCTypeExpr(c, child, &elemType) != 0) {
+            return -1;
+        }
+        if (elemType == c->typeNull) {
+            return SLTCFailNode(c, child, SLDiag_INFER_NULL_TYPE_UNKNOWN);
+        }
+        if (elemType == c->typeVoid) {
+            return SLTCFailNode(c, child, SLDiag_INFER_VOID_TYPE_UNKNOWN);
+        }
+        if (SLTCConcretizeInferredType(c, elemType, &elemType) != 0) {
+            return -1;
+        }
+        c->scratchParamTypes[elemCount++] = elemType;
+        child = SLAstNextSibling(c->ast, child);
+    }
+    if (elemCount < 2u) {
+        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+    }
+    *outType = SLTCInternTupleType(c, c->scratchParamTypes, elemCount, n->start, n->end);
+    return *outType < 0 ? -1 : 0;
+}
+
 static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     const SLAstNode* n;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
@@ -7392,6 +7644,7 @@ static int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
         case SLAst_BINARY:     return SLTCTypeExpr_BINARY(c, nodeId, n, outType);
         case SLAst_NULL:       return SLTCTypeExpr_NULL(c, nodeId, n, outType);
         case SLAst_UNWRAP:     return SLTCTypeExpr_UNWRAP(c, nodeId, n, outType);
+        case SLAst_TUPLE_EXPR: return SLTCTypeExpr_TUPLE_EXPR(c, nodeId, n, outType);
         default:               return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
     }
 }
@@ -7475,21 +7728,47 @@ static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
                 return SLTCFailNode(c, parts.initNode, SLDiag_EXPECTED_EXPR);
             }
             initCount = SLTCListCount(c->ast, parts.initNode);
-            if (initCount != parts.nameCount) {
-                return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
-            }
-            for (i = 0; i < initCount; i++) {
-                int32_t initNode = SLTCListItemAt(c->ast, parts.initNode, i);
-                int32_t initType;
+            if (initCount == parts.nameCount) {
+                for (i = 0; i < initCount; i++) {
+                    int32_t initNode = SLTCListItemAt(c->ast, parts.initNode, i);
+                    int32_t initType;
+                    if (initNode < 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+                    }
+                    if (SLTCTypeExprExpected(c, initNode, declType, &initType) != 0) {
+                        return -1;
+                    }
+                    if (!SLTCCanAssign(c, declType, initType)) {
+                        return SLTCFailTypeMismatchDetail(
+                            c, initNode, initNode, initType, declType);
+                    }
+                }
+            } else if (initCount == 1u) {
+                int32_t         initNode = SLTCListItemAt(c->ast, parts.initNode, 0);
+                int32_t         initType;
+                const SLTCType* t;
                 if (initNode < 0) {
                     return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
                 }
-                if (SLTCTypeExprExpected(c, initNode, declType, &initType) != 0) {
+                if (SLTCTypeExpr(c, initNode, &initType) != 0) {
                     return -1;
                 }
-                if (!SLTCCanAssign(c, declType, initType)) {
-                    return SLTCFailTypeMismatchDetail(c, initNode, initNode, initType, declType);
+                if (initType < 0 || (uint32_t)initType >= c->typeLen) {
+                    return SLTCFailNode(c, initNode, SLDiag_TYPE_MISMATCH);
                 }
+                t = &c->types[initType];
+                if (t->kind != SLTCType_TUPLE || t->fieldCount != parts.nameCount) {
+                    return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                }
+                for (i = 0; i < parts.nameCount; i++) {
+                    int32_t elemType = c->funcParamTypes[t->fieldStart + i];
+                    if (!SLTCCanAssign(c, declType, elemType)) {
+                        return SLTCFailTypeMismatchDetail(
+                            c, initNode, initNode, elemType, declType);
+                    }
+                }
+            } else {
+                return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
             }
         }
         for (i = 0; i < parts.nameCount; i++) {
@@ -7511,38 +7790,79 @@ static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
     if (parts.initNode < 0 || c->ast->nodes[parts.initNode].kind != SLAst_EXPR_LIST) {
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
     }
-    if (SLTCListCount(c->ast, parts.initNode) != parts.nameCount) {
-        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
-    }
-    for (i = 0; i < parts.nameCount; i++) {
-        int32_t          nameNode = SLTCListItemAt(c->ast, parts.nameListNode, i);
-        const SLAstNode* name;
-        int32_t          initNode = SLTCListItemAt(c->ast, parts.initNode, i);
-        int32_t          initType;
-        int32_t          inferredType;
-        if (nameNode < 0 || initNode < 0) {
-            return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
-        }
-        if (SLTCTypeExpr(c, initNode, &initType) != 0) {
-            return -1;
-        }
-        if (initType == c->typeNull) {
-            return SLTCFailNode(c, initNode, SLDiag_INFER_NULL_TYPE_UNKNOWN);
-        }
-        if (initType == c->typeVoid) {
-            return SLTCFailNode(c, initNode, SLDiag_INFER_VOID_TYPE_UNKNOWN);
-        }
-        if (SLTCConcretizeInferredType(c, initType, &inferredType) != 0) {
-            return -1;
-        }
-        if (SLTCTypeContainsVarSizeByValue(c, inferredType)) {
-            return SLTCFailNode(c, initNode, SLDiag_TYPE_MISMATCH);
-        }
-        name = &c->ast->nodes[nameNode];
-        if (!SLNameEqLiteral(c->src, name->dataStart, name->dataEnd, "_")
-            && SLTCLocalAdd(c, name->dataStart, name->dataEnd, inferredType) != 0)
-        {
-            return -1;
+    {
+        uint32_t initCount = SLTCListCount(c->ast, parts.initNode);
+        if (initCount == parts.nameCount) {
+            for (i = 0; i < parts.nameCount; i++) {
+                int32_t          nameNode = SLTCListItemAt(c->ast, parts.nameListNode, i);
+                const SLAstNode* name;
+                int32_t          initNode = SLTCListItemAt(c->ast, parts.initNode, i);
+                int32_t          initType;
+                int32_t          inferredType;
+                if (nameNode < 0 || initNode < 0) {
+                    return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+                }
+                if (SLTCTypeExpr(c, initNode, &initType) != 0) {
+                    return -1;
+                }
+                if (initType == c->typeNull) {
+                    return SLTCFailNode(c, initNode, SLDiag_INFER_NULL_TYPE_UNKNOWN);
+                }
+                if (initType == c->typeVoid) {
+                    return SLTCFailNode(c, initNode, SLDiag_INFER_VOID_TYPE_UNKNOWN);
+                }
+                if (SLTCConcretizeInferredType(c, initType, &inferredType) != 0) {
+                    return -1;
+                }
+                if (SLTCTypeContainsVarSizeByValue(c, inferredType)) {
+                    return SLTCFailNode(c, initNode, SLDiag_TYPE_MISMATCH);
+                }
+                name = &c->ast->nodes[nameNode];
+                if (!SLNameEqLiteral(c->src, name->dataStart, name->dataEnd, "_")
+                    && SLTCLocalAdd(c, name->dataStart, name->dataEnd, inferredType) != 0)
+                {
+                    return -1;
+                }
+            }
+        } else if (initCount == 1u) {
+            int32_t         initNode = SLTCListItemAt(c->ast, parts.initNode, 0);
+            int32_t         initType;
+            const SLTCType* t;
+            if (initNode < 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+            }
+            if (SLTCTypeExpr(c, initNode, &initType) != 0) {
+                return -1;
+            }
+            if (initType < 0 || (uint32_t)initType >= c->typeLen) {
+                return SLTCFailNode(c, initNode, SLDiag_TYPE_MISMATCH);
+            }
+            t = &c->types[initType];
+            if (t->kind != SLTCType_TUPLE || t->fieldCount != parts.nameCount) {
+                return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+            }
+            for (i = 0; i < parts.nameCount; i++) {
+                int32_t          nameNode = SLTCListItemAt(c->ast, parts.nameListNode, i);
+                const SLAstNode* name;
+                int32_t          inferredType = c->funcParamTypes[t->fieldStart + i];
+                if (nameNode < 0) {
+                    return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+                }
+                if (SLTCConcretizeInferredType(c, inferredType, &inferredType) != 0) {
+                    return -1;
+                }
+                if (SLTCTypeContainsVarSizeByValue(c, inferredType)) {
+                    return SLTCFailNode(c, initNode, SLDiag_TYPE_MISMATCH);
+                }
+                name = &c->ast->nodes[nameNode];
+                if (!SLNameEqLiteral(c->src, name->dataStart, name->dataEnd, "_")
+                    && SLTCLocalAdd(c, name->dataStart, name->dataEnd, inferredType) != 0)
+                {
+                    return -1;
+                }
+            }
+        } else {
+            return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
         }
     }
     return 0;
@@ -7622,22 +7942,47 @@ static int SLTCTypeTopLevelVarLikes(SLTypeCheckCtx* c, SLAstKind wantKind) {
                         return SLTCFailNode(c, parts.initNode, SLDiag_EXPECTED_EXPR);
                     }
                     initCount = SLTCListCount(c->ast, parts.initNode);
-                    if (initCount != parts.nameCount) {
-                        return SLTCFailNode(c, child, SLDiag_ARITY_MISMATCH);
-                    }
-                    for (i = 0; i < initCount; i++) {
-                        int32_t initNode = SLTCListItemAt(c->ast, parts.initNode, i);
-                        int32_t initType;
+                    if (initCount == parts.nameCount) {
+                        for (i = 0; i < initCount; i++) {
+                            int32_t initNode = SLTCListItemAt(c->ast, parts.initNode, i);
+                            int32_t initType;
+                            if (initNode < 0) {
+                                return SLTCFailNode(c, child, SLDiag_EXPECTED_EXPR);
+                            }
+                            if (SLTCTypeExprExpected(c, initNode, declType, &initType) != 0) {
+                                return -1;
+                            }
+                            if (!SLTCCanAssign(c, declType, initType)) {
+                                return SLTCFailTypeMismatchDetail(
+                                    c, initNode, initNode, initType, declType);
+                            }
+                        }
+                    } else if (initCount == 1u) {
+                        int32_t         initNode = SLTCListItemAt(c->ast, parts.initNode, 0);
+                        int32_t         initType;
+                        const SLTCType* t;
                         if (initNode < 0) {
                             return SLTCFailNode(c, child, SLDiag_EXPECTED_EXPR);
                         }
-                        if (SLTCTypeExprExpected(c, initNode, declType, &initType) != 0) {
+                        if (SLTCTypeExpr(c, initNode, &initType) != 0) {
                             return -1;
                         }
-                        if (!SLTCCanAssign(c, declType, initType)) {
-                            return SLTCFailTypeMismatchDetail(
-                                c, initNode, initNode, initType, declType);
+                        if (initType < 0 || (uint32_t)initType >= c->typeLen) {
+                            return SLTCFailNode(c, initNode, SLDiag_TYPE_MISMATCH);
                         }
+                        t = &c->types[initType];
+                        if (t->kind != SLTCType_TUPLE || t->fieldCount != parts.nameCount) {
+                            return SLTCFailNode(c, child, SLDiag_ARITY_MISMATCH);
+                        }
+                        for (i = 0; i < parts.nameCount; i++) {
+                            int32_t elemType = c->funcParamTypes[t->fieldStart + i];
+                            if (!SLTCCanAssign(c, declType, elemType)) {
+                                return SLTCFailTypeMismatchDetail(
+                                    c, initNode, initNode, elemType, declType);
+                            }
+                        }
+                    } else {
+                        return SLTCFailNode(c, child, SLDiag_ARITY_MISMATCH);
                     }
                 }
             } else {
@@ -7645,8 +7990,30 @@ static int SLTCTypeTopLevelVarLikes(SLTypeCheckCtx* c, SLAstKind wantKind) {
                 if (parts.initNode < 0 || c->ast->nodes[parts.initNode].kind != SLAst_EXPR_LIST) {
                     return SLTCFailNode(c, child, SLDiag_EXPECTED_EXPR);
                 }
-                if (SLTCListCount(c->ast, parts.initNode) != parts.nameCount) {
-                    return SLTCFailNode(c, child, SLDiag_ARITY_MISMATCH);
+                {
+                    uint32_t initCount = SLTCListCount(c->ast, parts.initNode);
+                    int      tupleDecompose = 0;
+                    if (initCount == parts.nameCount) {
+                        tupleDecompose = 1;
+                    } else if (initCount == 1u) {
+                        int32_t         initNode = SLTCListItemAt(c->ast, parts.initNode, 0);
+                        int32_t         initType;
+                        const SLTCType* t;
+                        if (initNode < 0) {
+                            return SLTCFailNode(c, child, SLDiag_EXPECTED_EXPR);
+                        }
+                        if (SLTCTypeExpr(c, initNode, &initType) != 0) {
+                            return -1;
+                        }
+                        if (initType >= 0 && (uint32_t)initType < c->typeLen) {
+                            t = &c->types[initType];
+                            tupleDecompose =
+                                t->kind == SLTCType_TUPLE && t->fieldCount == parts.nameCount;
+                        }
+                    }
+                    if (!tupleDecompose) {
+                        return SLTCFailNode(c, child, SLDiag_ARITY_MISMATCH);
+                    }
                 }
                 for (i = 0; i < parts.nameCount; i++) {
                     int32_t inferredType;
@@ -7743,11 +8110,11 @@ static int SLTCValidateTopLevelConstEvaluable(SLTypeCheckCtx* c) {
                     return SLTCFailNode(c, child, SLDiag_EXPECTED_EXPR);
                 }
                 for (i = 0; i < parts.nameCount; i++) {
-                    int32_t     initNode = SLTCListItemAt(c->ast, parts.initNode, i);
+                    int32_t     initNode = SLTCVarLikeInitExprNodeAt(c, child, (int32_t)i);
                     SLCTFEValue value;
                     int         isConst = 0;
                     if (initNode < 0) {
-                        return SLTCFailNode(c, child, SLDiag_EXPECTED_EXPR);
+                        return SLTCFailNode(c, child, SLDiag_ARITY_MISMATCH);
                     }
                     c->lastConstEvalReason = NULL;
                     c->lastConstEvalReasonStart = 0;
@@ -8069,16 +8436,35 @@ static int SLTCTypeMultiAssignStmt(SLTypeCheckCtx* c, int32_t nodeId) {
     }
     lhsCount = SLTCListCount(c->ast, lhsList);
     rhsCount = SLTCListCount(c->ast, rhsList);
-    if (lhsCount != rhsCount || lhsCount == 0
-        || lhsCount > (uint32_t)(sizeof(rhsTypes) / sizeof(rhsTypes[0])))
-    {
+    if (lhsCount == 0 || lhsCount > (uint32_t)(sizeof(rhsTypes) / sizeof(rhsTypes[0]))) {
         return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
     }
-    for (i = 0; i < rhsCount; i++) {
-        int32_t rhsNode = SLTCListItemAt(c->ast, rhsList, i);
-        if (rhsNode < 0 || SLTCTypeExpr(c, rhsNode, &rhsTypes[i]) != 0) {
+    if (rhsCount == lhsCount) {
+        for (i = 0; i < rhsCount; i++) {
+            int32_t rhsNode = SLTCListItemAt(c->ast, rhsList, i);
+            if (rhsNode < 0 || SLTCTypeExpr(c, rhsNode, &rhsTypes[i]) != 0) {
+                return -1;
+            }
+        }
+    } else if (rhsCount == 1u) {
+        int32_t         rhsNode = SLTCListItemAt(c->ast, rhsList, 0);
+        int32_t         rhsType;
+        const SLTCType* t;
+        if (rhsNode < 0 || SLTCTypeExpr(c, rhsNode, &rhsType) != 0) {
             return -1;
         }
+        if (rhsType < 0 || (uint32_t)rhsType >= c->typeLen) {
+            return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+        }
+        t = &c->types[rhsType];
+        if (t->kind != SLTCType_TUPLE || t->fieldCount != lhsCount) {
+            return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+        }
+        for (i = 0; i < lhsCount; i++) {
+            rhsTypes[i] = c->funcParamTypes[t->fieldStart + i];
+        }
+    } else {
+        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
     }
     for (i = 0; i < lhsCount; i++) {
         int32_t lhsNode = SLTCListItemAt(c->ast, lhsList, i);
@@ -8131,6 +8517,38 @@ static int SLTCTypeStmt(
             if (expr < 0) {
                 if (returnType != c->typeVoid) {
                     return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+                }
+                return 0;
+            }
+            if (c->ast->nodes[expr].kind == SLAst_EXPR_LIST) {
+                const SLTCType* rt;
+                uint32_t        wantCount;
+                uint32_t        i;
+                if (returnType < 0 || (uint32_t)returnType >= c->typeLen) {
+                    return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+                }
+                rt = &c->types[returnType];
+                if (rt->kind != SLTCType_TUPLE) {
+                    return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                }
+                wantCount = rt->fieldCount;
+                if (SLTCListCount(c->ast, expr) != wantCount) {
+                    return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                }
+                for (i = 0; i < wantCount; i++) {
+                    int32_t itemNode = SLTCListItemAt(c->ast, expr, i);
+                    int32_t itemType;
+                    int32_t dstType;
+                    if (itemNode < 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+                    }
+                    dstType = c->funcParamTypes[rt->fieldStart + i];
+                    if (SLTCTypeExprExpected(c, itemNode, dstType, &itemType) != 0) {
+                        return -1;
+                    }
+                    if (!SLTCCanAssign(c, dstType, itemType)) {
+                        return SLTCFailTypeMismatchDetail(c, itemNode, itemNode, itemType, dstType);
+                    }
                 }
                 return 0;
             }
