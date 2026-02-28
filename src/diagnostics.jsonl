@@ -81,6 +81,7 @@
 {"id": "SL2058", "name": "CALL_ARG_DUPLICATE", "category": "semantic", "message": "duplicate argument for parameter '{s}'"}
 {"id": "SL2059", "name": "CALL_ARG_MISSING", "category": "semantic", "message": "missing argument for parameter '{s}'"}
 {"id": "SL2060", "name": "CALL_FIRST_ARG_NAME_MISMATCH", "category": "semantic", "message": "first argument name must match parameter '{s}'"}
+{"id": "SL2061", "name": "SWITCH_MISSING_CASES", "category": "semantic", "message": "missing cases in switch"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}

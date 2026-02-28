@@ -279,6 +279,7 @@ typedef enum {
     SLAst_FOR,
     SLAst_SWITCH,
     SLAst_CASE,
+    SLAst_CASE_PATTERN,
     SLAst_DEFAULT,
     SLAst_RETURN,
     SLAst_BREAK,

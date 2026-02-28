@@ -122,7 +122,8 @@ StructFieldDecl = ( FieldDecl | EmbeddedFieldDecl ) [ FieldDefault ] .
 FieldDecl       = Ident { "," Ident } Type .
 EmbeddedFieldDecl = TypeName .
 FieldDefault    = "=" Expr .
-EnumItem        = Ident [ "=" Expr ] .
+EnumItem        = Ident [ EnumPayload ] [ "=" Expr ] .
+EnumPayload     = "{" [ FieldDeclList ] "}" .
 
 FnDeclOrDef     = "fn" FnName "(" [ ParamList ] ")" [ FnResultClause ] [ ContextClause ] [ Block ] .
 FnName          = Ident | "sizeof" .
@@ -164,7 +165,8 @@ ForStmt         = "for" ( Block | Expr Block | ForClause Block ) .
 ForClause       = [ ForInit ] ";" [ Expr ] ";" [ Expr ] .
 ForInit         = VarDeclStmt | Expr .
 SwitchStmt      = "switch" [ Expr ] "{" { CaseClause } [ DefaultClause ] "}" .
-CaseClause      = "case" Expr { "," Expr } Block .
+CaseClause      = "case" CasePattern { "," CasePattern } Block .
+CasePattern     = Expr [ "as" Ident ] .
 DefaultClause   = "default" Block .
 ReturnStmt      = "return" [ ExprList ] .
 BreakStmt       = "break" .
@@ -268,6 +270,10 @@ fn f() {
 - [DECL-ENUM-002][Stable] Enum values are selected as `Enum.Item` or `pkg.Enum.Item`.
 - [DECL-ENUM-003][Stable] Enum base type in `enum Name BaseType { ... }` MUST be an integer type.
 - [DECL-ENUM-004][Stable] There are no implicit conversions between enum types and integer types; explicit `as` casts are required.
+- [DECL-ENUM-005][Stable] Enum variants may define payload fields using struct-field syntax inside `{ ... }` on the variant.
+- [DECL-ENUM-006][Stable] Variant explicit tags are allowed for both payload and non-payload variants: `Variant = n` and `Variant{ ... } = n`.
+- [DECL-ENUM-007][Stable] Payload variant constructors use compound-literal syntax `Enum.Variant{ ... }`.
+- [DECL-ENUM-008][Stable] In payload constructors, omitted payload fields are initialized using the same rules as struct literals.
 
 ### 4.3 Namespace model
 - [DECL-NS-001][Stable] Type names and value names are distinct lookup spaces.
@@ -345,6 +351,7 @@ fn f() {
 - [TYPE-INFER-003][Stable] Inference from `null` or no-value expressions is invalid.
 - [TYPE-INFER-004][Stable] Rune literals infer type `rune`.
 - [TYPE-ZERO-001][Stable] `var x T` zero-initializes `x`.
+- [TYPE-ZERO-002][Stable] For enum types, `var x EnumType` is valid only when one variant has effective tag value `0`.
 - [TYPE-INFER-005][Stable] Grouped declarations infer and/or check per position (`var a, b = 1, 2`; `var a, b T = x, y`). Initializer arity must match declaration arity, except a single tuple-typed RHS may be decomposed positionally.
 
 ## 6. Expressions and Operators
@@ -391,6 +398,8 @@ fn f() {
   - pointers/references (and pointer-vs-`null`): identity equality; ordering by pointer-address order
   - arrays/slices: bytewise sequence equality/order over `len * sizeof(element)`
   - `struct`/`union` equality: bytewise object-representation equality
+  - tagged-enum equality: bytewise value equality (tag and payload)
+  - tagged-enum ordering: by tag value only
   - other scalar comparable/ordered types: native scalar compare after coercion
 - [EXPR-CMPSEM-002][Stable] If a visible comparison hook `__equal(lhs, rhs)` or `__order(lhs, rhs)` is a best overload match, hook result semantics override [EXPR-CMPSEM-001] for that operation.
 - [EXPR-CMPHOOK-001][Stable] Comparison-hook declarations are:
@@ -438,6 +447,8 @@ fn f() {
   - union literals may initialize at most one field explicitly; with zero explicit fields the union is zero-initialized.
 - [EXPR-COMPOUND-007][Stable] Explicit initializers take precedence over defaults for the same direct field.
 - [EXPR-COMPOUND-008][Stable] Default-suppression matching is by direct field name; dotted subfield initializer paths do not suppress defaults of containing direct fields.
+- [EXPR-COMPOUND-009][Stable] Tagged-enum payload construction is via explicit variant type in the literal type position: `Enum.Variant{ ... }`.
+- [EXPR-COMPOUND-010][Stable] `Enum.Variant{ ... }` type-checks against payload fields of that exact variant only.
 
 ## 7. Statements and Control Flow
 
@@ -452,6 +463,10 @@ fn f() {
 - [STMT-SWITCH-005][Stable] Case labels are tested left-to-right and first matching case body executes.
 - [STMT-SWITCH-006][Stable] Duplicate case labels are not required to be diagnosed statically.
 - [STMT-SWITCH-007][Stable] Expression-switch semantics are defined as if subject expression is evaluated once before case-label matching.
+- [STMT-SWITCH-008][Stable] For finite-domain subjects (`bool`, `enum`), switches MUST be exhaustive unless a `default` clause is present.
+- [STMT-SWITCH-009][Stable] Case pattern `Enum.Variant as name` introduces `name` in case-body scope and narrows it to that variant.
+- [STMT-SWITCH-010][Stable] Subject-identifier narrowing for enum payload field access is switch-only: within a single-variant case body, the subject identifier is narrowed to that variant.
+- [STMT-SWITCH-011][Stable] Payload field selection requires a narrowed value (subject identifier narrowed by switch case, or `as` alias).
 - [STMT-CTRL-001][Stable] `break` valid inside `for`/`switch`; `continue` only inside `for`.
 - [STMT-RETURN-001][Stable] If a function has no return type, `return` must not provide values.
 - [STMT-RETURN-002][Stable] If a function has a non-tuple return type, `return` must provide exactly one value assignable to that type.
@@ -608,8 +623,7 @@ This section is non-core and documents current reference behavior.
   3. named `Context`
   4. fallback synthesized fields `mem` and `log`
 - [REF-IMPL-006][Provisional] Optional feature imports are recognized but optional syntax is not hard-gated on those imports.
-- [REF-IMPL-007][Provisional] Current codegen lowering may re-evaluate expression-switch subject per case-label comparison; this is a known divergence from [STMT-SWITCH-007].
-- [REF-IMPL-007A][Provisional] `Reference-slc` compatibility does not require reproducing [REF-IMPL-007]; both single-evaluation ([STMT-SWITCH-007]) and re-evaluation behavior are accepted.
+- [REF-IMPL-007][Provisional] Expression-switch lowering evaluates subject once and compares against case labels using a cached temporary, consistent with [STMT-SWITCH-007].
 - [REF-IMPL-008][Provisional] `assert(cond, fmt, args...)` currently ignores formatting arguments in panic payload construction.
 - [REF-IMPL-009][Provisional] Top-level `const` initializers are eagerly const-evaluated and rejected when non-const-evaluable.
 - [REF-IMPL-010][Provisional] Current const-eval supports:

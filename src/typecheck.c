@@ -105,6 +105,13 @@ typedef struct {
 } SLTCLocal;
 
 typedef struct {
+    int32_t  localIdx;
+    int32_t  enumTypeId;
+    uint32_t variantStart;
+    uint32_t variantEnd;
+} SLTCVariantNarrow;
+
+typedef struct {
     SLArena*     arena;
     const SLAst* ast;
     SLStrView    src;
@@ -138,6 +145,10 @@ typedef struct {
     SLTCLocal* locals;
     uint32_t   localLen;
     uint32_t   localCap;
+
+    SLTCVariantNarrow* variantNarrows;
+    uint32_t           variantNarrowLen;
+    uint32_t           variantNarrowCap;
 
     SLCTFEValue* constEvalValues;
     uint8_t*     constEvalState;
@@ -539,6 +550,131 @@ static int SLTCFailTypeMismatchDetail(
     if (dstType == c->typeStr && SLTCExprIsStringConstant(c, exprNode) && sourceIsStringLike) {
         c->diag->hintOverride = SLTCAllocDiagText(c, "change type to &str or *str");
     }
+    return -1;
+}
+
+static int SLTCFailSwitchMissingCases(
+    SLTypeCheckCtx* c,
+    int32_t         failNode,
+    int32_t         subjectType,
+    int32_t         subjectEnumType,
+    uint32_t        enumVariantCount,
+    const uint32_t* enumVariantStarts,
+    const uint32_t* enumVariantEnds,
+    const uint8_t*  enumCovered,
+    int             boolCoveredTrue,
+    int             boolCoveredFalse) {
+    uint32_t          start = 0;
+    uint32_t          end = 0;
+    char              typeBuf[SLTC_DIAG_TEXT_CAP];
+    SLTCTextBuf       typeText;
+    uint32_t          missingCount = 0;
+    uint32_t          missingNameLen = 0;
+    uint32_t          detailLen;
+    uint32_t          i;
+    char*             detail;
+    SLTCTextBuf       detailText;
+    static const char prefix[] = "of type ";
+
+    if (failNode >= 0 && (uint32_t)failNode < c->ast->len) {
+        start = c->ast->nodes[failNode].start;
+        end = c->ast->nodes[failNode].end;
+    }
+    SLTCSetDiag(c->diag, SLDiag_SWITCH_MISSING_CASES, start, end);
+    if (c->diag == NULL) {
+        return -1;
+    }
+
+    SLTCTextBufInit(&typeText, typeBuf, (uint32_t)sizeof(typeBuf));
+    SLTCFormatTypeRec(c, subjectType, &typeText, 0);
+
+    if (subjectEnumType >= 0) {
+        for (i = 0; i < enumVariantCount; i++) {
+            if (enumCovered[i]) {
+                continue;
+            }
+            if (enumVariantEnds[i] >= enumVariantStarts[i]) {
+                uint32_t nameLen = enumVariantEnds[i] - enumVariantStarts[i];
+                if (UINT32_MAX - missingNameLen < nameLen) {
+                    return -1;
+                }
+                missingNameLen += nameLen;
+            }
+            missingCount++;
+        }
+    } else {
+        if (!boolCoveredTrue) {
+            missingNameLen += 4u;
+            missingCount++;
+        }
+        if (!boolCoveredFalse) {
+            missingNameLen += 5u;
+            missingCount++;
+        }
+    }
+
+    if (missingCount > 1u) {
+        if (UINT32_MAX - missingNameLen < (missingCount - 1u) * 2u) {
+            return -1;
+        }
+        missingNameLen += (missingCount - 1u) * 2u;
+    }
+
+    detailLen = (uint32_t)(sizeof(prefix) - 1u);
+    if (UINT32_MAX - detailLen < typeText.len) {
+        return -1;
+    }
+    detailLen += typeText.len;
+    if (UINT32_MAX - detailLen < 2u) {
+        return -1;
+    }
+    detailLen += 2u;
+    if (UINT32_MAX - detailLen < missingNameLen) {
+        return -1;
+    }
+    detailLen += missingNameLen;
+    if (UINT32_MAX - detailLen < 1u) {
+        return -1;
+    }
+    detailLen += 1u;
+
+    detail = (char*)SLArenaAlloc(c->arena, detailLen, 1u);
+    if (detail == NULL) {
+        return -1;
+    }
+
+    SLTCTextBufInit(&detailText, detail, detailLen);
+    SLTCTextBufAppendCStr(&detailText, prefix);
+    SLTCTextBufAppendCStr(&detailText, typeBuf);
+    SLTCTextBufAppendCStr(&detailText, ": ");
+
+    if (subjectEnumType >= 0) {
+        int first = 1;
+        for (i = 0; i < enumVariantCount; i++) {
+            if (enumCovered[i]) {
+                continue;
+            }
+            if (!first) {
+                SLTCTextBufAppendCStr(&detailText, ", ");
+            }
+            first = 0;
+            SLTCTextBufAppendSlice(&detailText, c->src, enumVariantStarts[i], enumVariantEnds[i]);
+        }
+    } else {
+        int first = 1;
+        if (!boolCoveredTrue) {
+            SLTCTextBufAppendCStr(&detailText, "true");
+            first = 0;
+        }
+        if (!boolCoveredFalse) {
+            if (!first) {
+                SLTCTextBufAppendCStr(&detailText, ", ");
+            }
+            SLTCTextBufAppendCStr(&detailText, "false");
+        }
+    }
+
+    c->diag->detail = detail;
     return -1;
 }
 
@@ -983,6 +1119,7 @@ static int SLTCFieldLookup(
     uint32_t        fieldEnd,
     int32_t*        outType,
     uint32_t* _Nullable outFieldIndex);
+static int SLTCIsTypeNodeKind(SLAstKind kind);
 
 static int SLTCResolveEnumMemberType(
     SLTypeCheckCtx* c,
@@ -1459,6 +1596,7 @@ static int32_t SLTCFindTopLevelVarLikeNode(
     SLTypeCheckCtx* c, uint32_t start, uint32_t end, int32_t* outNameIndex);
 static int SLTCTypeTopLevelVarLikeNode(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t nameIndex, int32_t* outType);
+static int     SLTCEnumTypeHasTagZero(SLTypeCheckCtx* c, int32_t enumTypeId);
 static int     SLTCIsTypeNodeKind(SLAstKind kind);
 static int32_t SLTCLocalFind(SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd);
 static int     SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
@@ -5449,6 +5587,12 @@ static int SLTCTypeTopLevelVarLikeNode(
             c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return -1;
         }
+        if (c->ast->nodes[nodeId].kind == SLAst_VAR && initNode < 0
+            && !SLTCEnumTypeHasTagZero(c, resolvedType))
+        {
+            c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
+            return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+        }
         c->topVarLikeTypes[nodeId] = resolvedType;
         c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_READY;
         *outType = resolvedType;
@@ -5514,6 +5658,260 @@ static int SLTCLocalAdd(SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd,
     c->locals[c->localLen].typeId = typeId;
     c->localLen++;
     return 0;
+}
+
+static int SLTCVariantNarrowPush(
+    SLTypeCheckCtx* c,
+    int32_t         localIdx,
+    int32_t         enumTypeId,
+    uint32_t        variantStart,
+    uint32_t        variantEnd) {
+    if (c->variantNarrowLen >= c->variantNarrowCap) {
+        return SLTCFailSpan(c, SLDiag_ARENA_OOM, variantStart, variantEnd);
+    }
+    c->variantNarrows[c->variantNarrowLen].localIdx = localIdx;
+    c->variantNarrows[c->variantNarrowLen].enumTypeId = enumTypeId;
+    c->variantNarrows[c->variantNarrowLen].variantStart = variantStart;
+    c->variantNarrows[c->variantNarrowLen].variantEnd = variantEnd;
+    c->variantNarrowLen++;
+    return 0;
+}
+
+static int SLTCVariantNarrowFind(
+    SLTypeCheckCtx* c, int32_t localIdx, const SLTCVariantNarrow** outNarrow) {
+    uint32_t i = c->variantNarrowLen;
+    while (i > 0) {
+        i--;
+        if (c->variantNarrows[i].localIdx == localIdx) {
+            *outNarrow = &c->variantNarrows[i];
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int32_t SLTCEnumDeclFirstVariantNode(SLTypeCheckCtx* c, int32_t enumDeclNode) {
+    int32_t child = SLAstFirstChild(c->ast, enumDeclNode);
+    if (child >= 0 && SLTCIsTypeNodeKind(c->ast->nodes[child].kind)) {
+        child = SLAstNextSibling(c->ast, child);
+    }
+    return child;
+}
+
+static int32_t SLTCEnumVariantTagExprNode(SLTypeCheckCtx* c, int32_t variantNode) {
+    int32_t child = SLAstFirstChild(c->ast, variantNode);
+    while (child >= 0) {
+        if (c->ast->nodes[child].kind != SLAst_FIELD) {
+            return child;
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    return -1;
+}
+
+static int32_t SLTCFindEnumVariantNodeByName(
+    SLTypeCheckCtx* c, int32_t enumTypeId, uint32_t variantStart, uint32_t variantEnd) {
+    int32_t declNode;
+    int32_t variant;
+    if (enumTypeId < 0 || (uint32_t)enumTypeId >= c->typeLen) {
+        return -1;
+    }
+    declNode = c->types[enumTypeId].declNode;
+    if (declNode < 0 || (uint32_t)declNode >= c->ast->len
+        || c->ast->nodes[declNode].kind != SLAst_ENUM)
+    {
+        return -1;
+    }
+    variant = SLTCEnumDeclFirstVariantNode(c, declNode);
+    while (variant >= 0) {
+        const SLAstNode* vn = &c->ast->nodes[variant];
+        if (vn->kind == SLAst_FIELD
+            && SLNameEqSlice(c->src, vn->dataStart, vn->dataEnd, variantStart, variantEnd))
+        {
+            return variant;
+        }
+        variant = SLAstNextSibling(c->ast, variant);
+    }
+    return -1;
+}
+
+static int SLTCEnumVariantPayloadFieldType(
+    SLTypeCheckCtx* c,
+    int32_t         enumTypeId,
+    uint32_t        variantStart,
+    uint32_t        variantEnd,
+    uint32_t        fieldStart,
+    uint32_t        fieldEnd,
+    int32_t*        outType) {
+    int32_t variantNode = SLTCFindEnumVariantNodeByName(c, enumTypeId, variantStart, variantEnd);
+    int32_t ch;
+    if (variantNode < 0) {
+        return -1;
+    }
+    ch = SLAstFirstChild(c->ast, variantNode);
+    while (ch >= 0) {
+        const SLAstNode* fn = &c->ast->nodes[ch];
+        int32_t          typeNode;
+        int32_t          typeId;
+        if (fn->kind != SLAst_FIELD) {
+            break;
+        }
+        if (!SLNameEqSlice(c->src, fn->dataStart, fn->dataEnd, fieldStart, fieldEnd)) {
+            ch = SLAstNextSibling(c->ast, ch);
+            continue;
+        }
+        typeNode = SLAstFirstChild(c->ast, ch);
+        if (typeNode < 0) {
+            return -1;
+        }
+        if (SLTCResolveTypeNode(c, typeNode, &typeId) != 0) {
+            return -1;
+        }
+        *outType = typeId;
+        return 0;
+    }
+    return -1;
+}
+
+static int SLTCEnumTypeHasTagZero(SLTypeCheckCtx* c, int32_t enumTypeId) {
+    int32_t declNode;
+    int32_t variant;
+    int64_t nextValue = 0;
+    int     haveKnownSequence = 1;
+    if (!SLTCIsNamedDeclKind(c, enumTypeId, SLAst_ENUM)) {
+        return 1;
+    }
+    declNode = c->types[SLTCResolveAliasBaseType(c, enumTypeId)].declNode;
+    if (declNode < 0 || (uint32_t)declNode >= c->ast->len) {
+        return 1;
+    }
+    variant = SLTCEnumDeclFirstVariantNode(c, declNode);
+    while (variant >= 0) {
+        int32_t initExpr = SLTCEnumVariantTagExprNode(c, variant);
+        int64_t v = 0;
+        int     isConst = 0;
+        if (initExpr >= 0) {
+            if (SLTCConstIntExpr(c, initExpr, &v, &isConst) != 0 || !isConst) {
+                haveKnownSequence = 0;
+            } else {
+                nextValue = v;
+                haveKnownSequence = 1;
+            }
+        }
+        if (haveKnownSequence && nextValue == 0) {
+            return 1;
+        }
+        if (haveKnownSequence) {
+            nextValue++;
+        }
+        variant = SLAstNextSibling(c->ast, variant);
+    }
+    return 0;
+}
+
+static int SLTCCasePatternParts(
+    SLTypeCheckCtx* c, int32_t caseLabelNode, int32_t* outExprNode, int32_t* outAliasNode) {
+    const SLAstNode* n = &c->ast->nodes[caseLabelNode];
+    if (n->kind == SLAst_CASE_PATTERN) {
+        int32_t expr = SLAstFirstChild(c->ast, caseLabelNode);
+        int32_t alias = expr >= 0 ? SLAstNextSibling(c->ast, expr) : -1;
+        if (expr < 0) {
+            return SLTCFailNode(c, caseLabelNode, SLDiag_EXPECTED_EXPR);
+        }
+        *outExprNode = expr;
+        *outAliasNode = alias;
+        return 0;
+    }
+    *outExprNode = caseLabelNode;
+    *outAliasNode = -1;
+    return 0;
+}
+
+/* Returns: 1 recognized variant pattern, 0 not a variant pattern, -1 error */
+static int SLTCDecodeVariantPatternExpr(
+    SLTypeCheckCtx* c,
+    int32_t         exprNode,
+    int32_t*        outEnumType,
+    uint32_t*       outVariantStart,
+    uint32_t*       outVariantEnd) {
+    const SLAstNode* n;
+    int32_t          recvNode;
+    const SLAstNode* recv;
+    int32_t          namedIndex;
+    int32_t          enumTypeId;
+    int32_t          declNode;
+    int32_t          ignoredType;
+    n = &c->ast->nodes[exprNode];
+    if (n->kind != SLAst_FIELD_EXPR) {
+        return 0;
+    }
+    recvNode = SLAstFirstChild(c->ast, exprNode);
+    if (recvNode < 0) {
+        return 0;
+    }
+    recv = &c->ast->nodes[recvNode];
+    if (recv->kind != SLAst_IDENT) {
+        return 0;
+    }
+    namedIndex = SLTCFindNamedTypeIndex(c, recv->dataStart, recv->dataEnd);
+    if (namedIndex < 0) {
+        return 0;
+    }
+    enumTypeId = c->namedTypes[(uint32_t)namedIndex].typeId;
+    declNode = c->namedTypes[(uint32_t)namedIndex].declNode;
+    if (declNode < 0 || (uint32_t)declNode >= c->ast->len
+        || c->ast->nodes[declNode].kind != SLAst_ENUM)
+    {
+        return 0;
+    }
+    if (SLTCFieldLookup(c, enumTypeId, n->dataStart, n->dataEnd, &ignoredType, NULL) != 0) {
+        return SLTCFailSpan(c, SLDiag_UNKNOWN_SYMBOL, n->dataStart, n->dataEnd);
+    }
+    *outEnumType = enumTypeId;
+    *outVariantStart = n->dataStart;
+    *outVariantEnd = n->dataEnd;
+    return 1;
+}
+
+/* Returns: 1 resolved enum.variant type-name, 0 not an enum.variant type-name, -1 error */
+static int SLTCResolveEnumVariantTypeName(
+    SLTypeCheckCtx* c,
+    int32_t         typeNameNode,
+    int32_t*        outEnumType,
+    uint32_t*       outVariantStart,
+    uint32_t*       outVariantEnd) {
+    const SLAstNode* n = &c->ast->nodes[typeNameNode];
+    uint32_t         dot = n->dataEnd;
+    int32_t          namedIdx;
+    int32_t          enumTypeId;
+    int32_t          ignoredType;
+    if (n->kind != SLAst_TYPE_NAME || n->dataEnd <= n->dataStart) {
+        return 0;
+    }
+    while (dot > n->dataStart) {
+        dot--;
+        if (c->src.ptr[dot] == '.') {
+            break;
+        }
+    }
+    if (dot <= n->dataStart || c->src.ptr[dot] != '.' || dot + 1u >= n->dataEnd) {
+        return 0;
+    }
+    namedIdx = SLTCFindNamedTypeIndex(c, n->dataStart, dot);
+    if (namedIdx < 0) {
+        return 0;
+    }
+    enumTypeId = c->namedTypes[(uint32_t)namedIdx].typeId;
+    if (!SLTCIsNamedDeclKind(c, enumTypeId, SLAst_ENUM)) {
+        return 0;
+    }
+    if (SLTCFieldLookup(c, enumTypeId, dot + 1u, n->dataEnd, &ignoredType, NULL) != 0) {
+        return SLTCFailSpan(c, SLDiag_UNKNOWN_SYMBOL, dot + 1u, n->dataEnd);
+    }
+    *outEnumType = enumTypeId;
+    *outVariantStart = dot + 1u;
+    *outVariantEnd = n->dataEnd;
+    return 1;
 }
 
 static int SLTCFieldLookup(
@@ -5994,13 +6392,26 @@ static int SLTCTypeCompoundLit(
     int32_t  targetType = -1;
     int32_t  targetAggregateType = -1;
     int32_t  expectedBaseType = -1;
+    int32_t  enumVariantType = -1;
+    uint32_t enumVariantStart = 0;
+    uint32_t enumVariantEnd = 0;
     int      expectedReadonlyRef = 0;
     int      isUnion = 0;
+    int      isEnumVariantLiteral = 0;
     uint32_t explicitFieldCount = 0;
 
     if (child >= 0 && SLTCIsTypeNodeKind(c->ast->nodes[child].kind)) {
         if (SLTCResolveTypeNode(c, child, &resolvedType) != 0) {
-            return -1;
+            int variantRc = SLTCResolveEnumVariantTypeName(
+                c, child, &enumVariantType, &enumVariantStart, &enumVariantEnd);
+            if (variantRc < 0) {
+                return -1;
+            }
+            if (variantRc == 0) {
+                return -1;
+            }
+            resolvedType = enumVariantType;
+            isEnumVariantLiteral = 1;
         }
         targetType = resolvedType;
         firstField = SLAstNextSibling(c->ast, child);
@@ -6058,7 +6469,12 @@ static int SLTCTypeCompoundLit(
                 ? SLDiag_COMPOUND_TYPE_REQUIRED
                 : SLDiag_COMPOUND_INFER_NON_AGGREGATE);
     }
-    if (c->types[targetAggregateType].kind == SLTCType_NAMED) {
+    if (isEnumVariantLiteral) {
+        if (!SLTCIsNamedDeclKind(c, targetAggregateType, SLAst_ENUM)) {
+            return SLTCFailNode(c, nodeId, SLDiag_COMPOUND_TYPE_REQUIRED);
+        }
+        isUnion = 0;
+    } else if (c->types[targetAggregateType].kind == SLTCType_NAMED) {
         int32_t declNode = c->types[targetAggregateType].declNode;
         if (declNode < 0 || (uint32_t)declNode >= c->ast->len
             || (c->ast->nodes[declNode].kind != SLAst_STRUCT
@@ -6113,9 +6529,20 @@ static int SLTCTypeCompoundLit(
             scan = SLAstNextSibling(c->ast, scan);
         }
 
-        if (SLTCFieldLookupPath(
-                c, targetAggregateType, fieldNode->dataStart, fieldNode->dataEnd, &fieldType)
-            != 0)
+        if ((!isEnumVariantLiteral
+             && SLTCFieldLookupPath(
+                    c, targetAggregateType, fieldNode->dataStart, fieldNode->dataEnd, &fieldType)
+                    != 0)
+            || (isEnumVariantLiteral
+                && SLTCEnumVariantPayloadFieldType(
+                       c,
+                       targetAggregateType,
+                       enumVariantStart,
+                       enumVariantEnd,
+                       fieldNode->dataStart,
+                       fieldNode->dataEnd,
+                       &fieldType)
+                       != 0))
         {
             SLTCSetDiagWithArg(
                 c->diag,
@@ -7210,6 +7637,7 @@ static int SLTCTypeExpr_FIELD_EXPR(
     int32_t          recvNode = SLAstFirstChild(c->ast, nodeId);
     int32_t          recvType;
     int32_t          fieldType;
+    int32_t          localIdx;
     const SLAstNode* recv;
     if (recvNode < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_SYMBOL);
@@ -7221,6 +7649,24 @@ static int SLTCTypeExpr_FIELD_EXPR(
     {
         *outType = fieldType;
         return 0;
+    }
+    localIdx = recv->kind == SLAst_IDENT ? SLTCLocalFind(c, recv->dataStart, recv->dataEnd) : -1;
+    if (localIdx >= 0) {
+        const SLTCVariantNarrow* narrow;
+        if (SLTCVariantNarrowFind(c, localIdx, &narrow)
+            && SLTCEnumVariantPayloadFieldType(
+                   c,
+                   narrow->enumTypeId,
+                   narrow->variantStart,
+                   narrow->variantEnd,
+                   n->dataStart,
+                   n->dataEnd,
+                   &fieldType)
+                   == 0)
+        {
+            *outType = fieldType;
+            return 0;
+        }
     }
     if (SLTCTypeExpr(c, recvNode, &recvType) != 0) {
         return -1;
@@ -7698,6 +8144,9 @@ static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
         if (n->kind == SLAst_CONST && parts.initNode < 0) {
             return SLTCFailNode(c, nodeId, SLDiag_CONST_MISSING_INITIALIZER);
         }
+        if (n->kind == SLAst_VAR && parts.initNode < 0 && !SLTCEnumTypeHasTagZero(c, declType)) {
+            return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+        }
         if (parts.initNode >= 0) {
             int32_t initType;
             if (SLTCTypeExprExpected(c, parts.initNode, declType, &initType) != 0) {
@@ -7721,6 +8170,9 @@ static int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
         }
         if (n->kind == SLAst_CONST && parts.initNode < 0) {
             return SLTCFailNode(c, nodeId, SLDiag_CONST_MISSING_INITIALIZER);
+        }
+        if (n->kind == SLAst_VAR && parts.initNode < 0 && !SLTCEnumTypeHasTagZero(c, declType)) {
+            return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
         }
         if (parts.initNode >= 0) {
             uint32_t initCount;
@@ -8249,6 +8701,7 @@ typedef struct {
 static int SLTCTypeBlock(
     SLTypeCheckCtx* c, int32_t blockNode, int32_t returnType, int loopDepth, int switchDepth) {
     uint32_t       savedLocalLen = c->localLen;
+    uint32_t       savedVariantNarrowLen = c->variantNarrowLen;
     int32_t        child = SLAstFirstChild(c->ast, blockNode);
     SLTCNarrowSave narrows[8]; /* saved narrowings applied during this block */
     int            narrowLen = 0;
@@ -8261,6 +8714,7 @@ static int SLTCTypeBlock(
                 c->locals[narrows[i].localIdx].typeId = narrows[i].savedType;
             }
             c->localLen = savedLocalLen;
+            c->variantNarrowLen = savedVariantNarrowLen;
             return -1;
         }
         /*
@@ -8292,6 +8746,7 @@ static int SLTCTypeBlock(
         c->locals[narrows[i].localIdx].typeId = narrows[i].savedType;
     }
     c->localLen = savedLocalLen;
+    c->variantNarrowLen = savedVariantNarrowLen;
     return 0;
 }
 
@@ -8348,14 +8803,63 @@ static int SLTCTypeSwitchStmt(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
     const SLAstNode* sw = &c->ast->nodes[nodeId];
     int32_t          child = SLAstFirstChild(c->ast, nodeId);
+    int32_t          subjectNode = -1;
     int32_t          subjectType = -1;
+    int32_t          subjectEnumType = -1;
+    int32_t          subjectLocalIdx = -1;
+    uint32_t         enumVariantCount = 0;
+    uint32_t*        enumVariantStarts = NULL;
+    uint32_t*        enumVariantEnds = NULL;
+    uint8_t*         enumCovered = NULL;
+    int              boolCoveredTrue = 0;
+    int              boolCoveredFalse = 0;
+    int              hasDefault = 0;
+    int              i;
 
     if (sw->flags == 1) {
         if (child < 0) {
             return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
         }
+        subjectNode = child;
         if (SLTCTypeExpr(c, child, &subjectType) != 0) {
             return -1;
+        }
+        if (c->ast->nodes[subjectNode].kind == SLAst_IDENT) {
+            subjectLocalIdx = SLTCLocalFind(
+                c, c->ast->nodes[subjectNode].dataStart, c->ast->nodes[subjectNode].dataEnd);
+        }
+        if (SLTCIsNamedDeclKind(c, subjectType, SLAst_ENUM)) {
+            int32_t declNode = c->types[SLTCResolveAliasBaseType(c, subjectType)].declNode;
+            int32_t variant = SLTCEnumDeclFirstVariantNode(c, declNode);
+            while (variant >= 0) {
+                if (c->ast->nodes[variant].kind == SLAst_FIELD) {
+                    enumVariantCount++;
+                }
+                variant = SLAstNextSibling(c->ast, variant);
+            }
+            if (enumVariantCount > 0) {
+                uint32_t idx = 0;
+                variant = SLTCEnumDeclFirstVariantNode(c, declNode);
+                enumVariantStarts = (uint32_t*)SLArenaAlloc(
+                    c->arena, enumVariantCount * sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
+                enumVariantEnds = (uint32_t*)SLArenaAlloc(
+                    c->arena, enumVariantCount * sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
+                enumCovered = (uint8_t*)SLArenaAlloc(
+                    c->arena, enumVariantCount * sizeof(uint8_t), (uint32_t)_Alignof(uint8_t));
+                if (enumVariantStarts == NULL || enumVariantEnds == NULL || enumCovered == NULL) {
+                    return SLTCFailNode(c, nodeId, SLDiag_ARENA_OOM);
+                }
+                while (variant >= 0 && idx < enumVariantCount) {
+                    if (c->ast->nodes[variant].kind == SLAst_FIELD) {
+                        enumVariantStarts[idx] = c->ast->nodes[variant].dataStart;
+                        enumVariantEnds[idx] = c->ast->nodes[variant].dataEnd;
+                        enumCovered[idx] = 0;
+                        idx++;
+                    }
+                    variant = SLAstNextSibling(c->ast, variant);
+                }
+                subjectEnumType = SLTCResolveAliasBaseType(c, subjectType);
+            }
         }
         child = SLAstNextSibling(c->ast, child);
     }
@@ -8363,41 +8867,169 @@ static int SLTCTypeSwitchStmt(
     while (child >= 0) {
         const SLAstNode* clause = &c->ast->nodes[child];
         if (clause->kind == SLAst_CASE) {
-            int32_t caseChild = SLAstFirstChild(c->ast, child);
-            int32_t bodyNode = -1;
+            uint32_t savedLocalLen = c->localLen;
+            uint32_t savedVariantNarrowLen = c->variantNarrowLen;
+            int32_t  caseChild = SLAstFirstChild(c->ast, child);
+            int32_t  bodyNode = -1;
+            int      labelCount = 0;
+            int      singleVariantLabel = 0;
+            uint32_t singleVariantStart = 0;
+            uint32_t singleVariantEnd = 0;
             while (caseChild >= 0) {
                 int32_t next = SLAstNextSibling(c->ast, caseChild);
+                int32_t labelExprNode;
+                int32_t aliasNode;
                 if (next < 0) {
                     bodyNode = caseChild;
                     break;
                 }
+                if (SLTCCasePatternParts(c, caseChild, &labelExprNode, &aliasNode) != 0) {
+                    c->localLen = savedLocalLen;
+                    c->variantNarrowLen = savedVariantNarrowLen;
+                    return -1;
+                }
                 if (sw->flags == 1) {
+                    int32_t  labelEnumType = -1;
+                    uint32_t labelVariantStart = 0;
+                    uint32_t labelVariantEnd = 0;
+                    int      variantRc = SLTCDecodeVariantPatternExpr(
+                        c, labelExprNode, &labelEnumType, &labelVariantStart, &labelVariantEnd);
                     int32_t labelType;
-                    if (SLTCTypeExpr(c, caseChild, &labelType) != 0) {
+                    if (variantRc < 0) {
+                        c->localLen = savedLocalLen;
+                        c->variantNarrowLen = savedVariantNarrowLen;
                         return -1;
                     }
-                    if (!SLTCCanAssign(c, subjectType, labelType)) {
-                        return SLTCFailNode(c, caseChild, SLDiag_TYPE_MISMATCH);
+                    if (variantRc == 1) {
+                        if (subjectEnumType < 0 || labelEnumType != subjectEnumType) {
+                            c->localLen = savedLocalLen;
+                            c->variantNarrowLen = savedVariantNarrowLen;
+                            return SLTCFailNode(c, labelExprNode, SLDiag_TYPE_MISMATCH);
+                        }
+                        for (i = 0; i < (int)enumVariantCount; i++) {
+                            if (SLNameEqSlice(
+                                    c->src,
+                                    enumVariantStarts[i],
+                                    enumVariantEnds[i],
+                                    labelVariantStart,
+                                    labelVariantEnd))
+                            {
+                                enumCovered[i] = 1;
+                                break;
+                            }
+                        }
+                        if (labelCount == 0) {
+                            singleVariantLabel = 1;
+                            singleVariantStart = labelVariantStart;
+                            singleVariantEnd = labelVariantEnd;
+                        } else {
+                            singleVariantLabel = 0;
+                        }
+                    } else {
+                        if (SLTCTypeExpr(c, labelExprNode, &labelType) != 0) {
+                            c->localLen = savedLocalLen;
+                            c->variantNarrowLen = savedVariantNarrowLen;
+                            return -1;
+                        }
+                        if (!SLTCCanAssign(c, subjectType, labelType)) {
+                            c->localLen = savedLocalLen;
+                            c->variantNarrowLen = savedVariantNarrowLen;
+                            return SLTCFailNode(c, labelExprNode, SLDiag_TYPE_MISMATCH);
+                        }
+                        if (SLTCIsBoolType(c, subjectType)
+                            && c->ast->nodes[labelExprNode].kind == SLAst_BOOL)
+                        {
+                            if (SLNameEqLiteral(
+                                    c->src,
+                                    c->ast->nodes[labelExprNode].dataStart,
+                                    c->ast->nodes[labelExprNode].dataEnd,
+                                    "true"))
+                            {
+                                boolCoveredTrue = 1;
+                            } else {
+                                boolCoveredFalse = 1;
+                            }
+                        }
+                        singleVariantLabel = 0;
+                    }
+                    if (aliasNode >= 0) {
+                        if (variantRc != 1 || subjectEnumType < 0) {
+                            c->localLen = savedLocalLen;
+                            c->variantNarrowLen = savedVariantNarrowLen;
+                            return SLTCFailNode(c, aliasNode, SLDiag_TYPE_MISMATCH);
+                        }
+                        if (SLTCLocalAdd(
+                                c,
+                                c->ast->nodes[aliasNode].dataStart,
+                                c->ast->nodes[aliasNode].dataEnd,
+                                subjectType)
+                            != 0)
+                        {
+                            c->localLen = savedLocalLen;
+                            c->variantNarrowLen = savedVariantNarrowLen;
+                            return -1;
+                        }
+                        if (SLTCVariantNarrowPush(
+                                c,
+                                (int32_t)c->localLen - 1,
+                                subjectEnumType,
+                                labelVariantStart,
+                                labelVariantEnd)
+                            != 0)
+                        {
+                            c->localLen = savedLocalLen;
+                            c->variantNarrowLen = savedVariantNarrowLen;
+                            return -1;
+                        }
                     }
                 } else {
                     int32_t condType;
-                    if (SLTCTypeExpr(c, caseChild, &condType) != 0) {
+                    if (aliasNode >= 0) {
+                        c->localLen = savedLocalLen;
+                        c->variantNarrowLen = savedVariantNarrowLen;
+                        return SLTCFailNode(c, aliasNode, SLDiag_UNEXPECTED_TOKEN);
+                    }
+                    if (SLTCTypeExpr(c, labelExprNode, &condType) != 0) {
+                        c->localLen = savedLocalLen;
+                        c->variantNarrowLen = savedVariantNarrowLen;
                         return -1;
                     }
                     if (!SLTCIsBoolType(c, condType)) {
-                        return SLTCFailNode(c, caseChild, SLDiag_EXPECTED_BOOL);
+                        c->localLen = savedLocalLen;
+                        c->variantNarrowLen = savedVariantNarrowLen;
+                        return SLTCFailNode(c, labelExprNode, SLDiag_EXPECTED_BOOL);
                     }
                 }
+                labelCount++;
                 caseChild = next;
             }
             if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != SLAst_BLOCK) {
+                c->localLen = savedLocalLen;
+                c->variantNarrowLen = savedVariantNarrowLen;
                 return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
             }
+            if (sw->flags == 1 && subjectEnumType >= 0 && subjectLocalIdx >= 0 && labelCount == 1
+                && singleVariantLabel)
+            {
+                if (SLTCVariantNarrowPush(
+                        c, subjectLocalIdx, subjectEnumType, singleVariantStart, singleVariantEnd)
+                    != 0)
+                {
+                    c->localLen = savedLocalLen;
+                    c->variantNarrowLen = savedVariantNarrowLen;
+                    return -1;
+                }
+            }
             if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth, switchDepth + 1) != 0) {
+                c->localLen = savedLocalLen;
+                c->variantNarrowLen = savedVariantNarrowLen;
                 return -1;
             }
+            c->localLen = savedLocalLen;
+            c->variantNarrowLen = savedVariantNarrowLen;
         } else if (clause->kind == SLAst_DEFAULT) {
             int32_t bodyNode = SLAstFirstChild(c->ast, child);
+            hasDefault = 1;
             if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != SLAst_BLOCK) {
                 return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
             }
@@ -8408,6 +9040,45 @@ static int SLTCTypeSwitchStmt(
             return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
         }
         child = SLAstNextSibling(c->ast, child);
+    }
+
+    if (sw->flags == 1 && !hasDefault) {
+        if (subjectEnumType >= 0) {
+            int hasMissing = 0;
+            for (i = 0; i < (int)enumVariantCount; i++) {
+                if (!enumCovered[i]) {
+                    hasMissing = 1;
+                    break;
+                }
+            }
+            if (hasMissing) {
+                return SLTCFailSwitchMissingCases(
+                    c,
+                    nodeId,
+                    subjectType,
+                    subjectEnumType,
+                    enumVariantCount,
+                    enumVariantStarts,
+                    enumVariantEnds,
+                    enumCovered,
+                    boolCoveredTrue,
+                    boolCoveredFalse);
+            }
+        } else if (SLTCIsBoolType(c, subjectType)) {
+            if (!boolCoveredTrue || !boolCoveredFalse) {
+                return SLTCFailSwitchMissingCases(
+                    c,
+                    nodeId,
+                    subjectType,
+                    subjectEnumType,
+                    enumVariantCount,
+                    enumVariantStarts,
+                    enumVariantEnds,
+                    enumCovered,
+                    boolCoveredTrue,
+                    boolCoveredFalse);
+            }
+        }
     }
 
     return 0;
@@ -8852,6 +9523,8 @@ static int SLTCBuildCheckedContext(
         arena, sizeof(int32_t) * capBase, (uint32_t)_Alignof(int32_t));
     c.locals = (SLTCLocal*)SLArenaAlloc(
         arena, sizeof(SLTCLocal) * capBase * 4u, (uint32_t)_Alignof(SLTCLocal));
+    c.variantNarrows = (SLTCVariantNarrow*)SLArenaAlloc(
+        arena, sizeof(SLTCVariantNarrow) * capBase * 4u, (uint32_t)_Alignof(SLTCVariantNarrow));
     c.constEvalValues = (SLCTFEValue*)SLArenaAlloc(
         arena, sizeof(SLCTFEValue) * ast->len, (uint32_t)_Alignof(SLCTFEValue));
     c.constEvalState = (uint8_t*)SLArenaAlloc(
@@ -8864,7 +9537,8 @@ static int SLTCBuildCheckedContext(
     if (c.types == NULL || c.fields == NULL || c.namedTypes == NULL || c.funcs == NULL
         || c.funcParamTypes == NULL || c.funcParamNameStarts == NULL || c.funcParamNameEnds == NULL
         || c.scratchParamTypes == NULL || c.locals == NULL || c.constEvalValues == NULL
-        || c.constEvalState == NULL || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL)
+        || c.constEvalState == NULL || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL
+        || c.variantNarrows == NULL)
     {
         SLTCSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
@@ -8883,6 +9557,8 @@ static int SLTCBuildCheckedContext(
     c.scratchParamCap = capBase;
     c.localLen = 0;
     c.localCap = capBase * 4u;
+    c.variantNarrowLen = 0;
+    c.variantNarrowCap = capBase * 4u;
     c.currentContextType = -1;
     c.hasImplicitMainRootContext = 0;
     c.implicitMainContextType = -1;

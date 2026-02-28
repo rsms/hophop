@@ -57,6 +57,9 @@ Single-file mode is supported for package commands:
 - SLP-15 struct field defaults (sibling references, override behavior, evaluation order):
   `examples/struct-field-defaults.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/struct-field-defaults.sl`
+- SLP-20 tagged unions (enum payload variants, switch narrowing, payload comparisons):
+  `examples/tagged-union.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/tagged-union.sl`
 
 ## Control Flow
 

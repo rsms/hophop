@@ -966,7 +966,20 @@ static int SLCTFEExecEvalStmt(
                 int     matched = 0;
 
                 while (caseChild >= 0) {
-                    int32_t next = c->ast->nodes[caseChild].nextSibling;
+                    int32_t next;
+                    int32_t labelExprNode = caseChild;
+                    if (c->ast->nodes[caseChild].kind == SLAst_CASE_PATTERN) {
+                        labelExprNode = c->ast->nodes[caseChild].firstChild;
+                        if (labelExprNode < 0) {
+                            SLCTFEExecSetReasonNode(
+                                c,
+                                caseChild,
+                                "switch case pattern is malformed for const evaluation");
+                            *outIsConst = 0;
+                            return 0;
+                        }
+                    }
+                    next = c->ast->nodes[caseChild].nextSibling;
                     if (next < 0) {
                         bodyNode = caseChild;
                         break;
@@ -976,19 +989,19 @@ static int SLCTFEExecEvalStmt(
                         SLCTFEValue labelValue;
                         int         labelIsConst = 0;
                         int         labelMatch = 0;
-                        if (SLCTFEExecEvalExpr(c, caseChild, &labelValue, &labelIsConst) != 0) {
+                        if (SLCTFEExecEvalExpr(c, labelExprNode, &labelValue, &labelIsConst) != 0) {
                             return -1;
                         }
                         if (!labelIsConst) {
                             SLCTFEExecSetReasonNode(
-                                c, caseChild, "switch case label must be const-evaluable");
+                                c, labelExprNode, "switch case label must be const-evaluable");
                             *outIsConst = 0;
                             return 0;
                         }
                         if (!SLCTFEExecValueEq(&subjectValue, &labelValue, &labelMatch)) {
                             SLCTFEExecSetReasonNode(
                                 c,
-                                caseChild,
+                                labelExprNode,
                                 "switch case label is not comparable to const-evaluated subject");
                             *outIsConst = 0;
                             return 0;
@@ -999,13 +1012,13 @@ static int SLCTFEExecEvalStmt(
                     } else {
                         SLCTFEValue condValue;
                         int         condIsConst = 0;
-                        if (SLCTFEExecEvalExpr(c, caseChild, &condValue, &condIsConst) != 0) {
+                        if (SLCTFEExecEvalExpr(c, labelExprNode, &condValue, &condIsConst) != 0) {
                             return -1;
                         }
                         if (!condIsConst || condValue.kind != SLCTFEValue_BOOL) {
                             SLCTFEExecSetReasonNode(
                                 c,
-                                caseChild,
+                                labelExprNode,
                                 "switch case condition must be a const bool expression");
                             *outIsConst = 0;
                             return 0;

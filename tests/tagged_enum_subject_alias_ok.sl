@@ -1,0 +1,21 @@
+enum Token u8 {
+	End
+	Int{
+		value i32
+	}
+}
+
+fn next() Token {
+	return Token.Int{ value: 4 }
+}
+
+fn read() i32 {
+	switch next() {
+		case Token.End      { return 0 }
+		case Token.Int as t { return t.value }
+	}
+}
+
+fn main() {
+	assert read() == 4
+}

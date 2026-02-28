@@ -1,0 +1,1 @@
+tests/tagged_enum_zero_init_no_zero_tag_bad.sl:7:2: SL2004: type mismatch

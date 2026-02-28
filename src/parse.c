@@ -2038,11 +2038,109 @@ static int SLPParseSwitchStmt(SLParser* p, int32_t* out) {
             }
 
             for (;;) {
-                int32_t labelExpr;
-                if (SLPParseExpr(p, 1, &labelExpr) != 0) {
-                    return -1;
+                uint32_t savedPos = p->pos;
+                uint32_t savedNodeLen = p->nodeLen;
+                SLDiag   savedDiag = { 0 };
+                int32_t  patternExpr = -1;
+                int32_t  patternNode = -1;
+                int32_t  aliasNode = -1;
+                if (p->diag != NULL) {
+                    savedDiag = *p->diag;
                 }
-                if (SLPAddChild(p, caseNode, labelExpr) != 0) {
+
+                /*
+                 * Variant pattern fast-path:
+                 *   case Type.Variant [as alias]
+                 * This avoids interpreting `as alias` as a cast in case labels.
+                 */
+                if (SLPAt(p, SLTok_IDENT)) {
+                    const SLToken* firstSeg = NULL;
+                    const SLToken* seg = NULL;
+                    int            sawDot = 0;
+                    if (SLPExpect(p, SLTok_IDENT, SLDiag_EXPECTED_EXPR, &firstSeg) == 0) {
+                        patternExpr = SLPNewNode(p, SLAst_IDENT, firstSeg->start, firstSeg->end);
+                        if (patternExpr < 0) {
+                            return -1;
+                        }
+                        p->nodes[patternExpr].dataStart = firstSeg->start;
+                        p->nodes[patternExpr].dataEnd = firstSeg->end;
+                        while (SLPMatch(p, SLTok_DOT)) {
+                            int32_t fieldExpr;
+                            if (SLPExpect(p, SLTok_IDENT, SLDiag_EXPECTED_EXPR, &seg) != 0) {
+                                goto parse_case_label_fallback;
+                            }
+                            sawDot = 1;
+                            fieldExpr = SLPNewNode(
+                                p, SLAst_FIELD_EXPR, p->nodes[patternExpr].start, seg->end);
+                            if (fieldExpr < 0) {
+                                return -1;
+                            }
+                            if (SLPAddChild(p, fieldExpr, patternExpr) != 0) {
+                                return -1;
+                            }
+                            p->nodes[fieldExpr].dataStart = seg->start;
+                            p->nodes[fieldExpr].dataEnd = seg->end;
+                            patternExpr = fieldExpr;
+                        }
+                        if (sawDot) {
+                            if (SLPMatch(p, SLTok_AS)) {
+                                const SLToken* aliasTok;
+                                if (SLPExpectDeclName(p, &aliasTok, 0) != 0) {
+                                    goto parse_case_label_fallback;
+                                }
+                                aliasNode = SLPNewNode(
+                                    p, SLAst_IDENT, aliasTok->start, aliasTok->end);
+                                if (aliasNode < 0) {
+                                    return -1;
+                                }
+                                p->nodes[aliasNode].dataStart = aliasTok->start;
+                                p->nodes[aliasNode].dataEnd = aliasTok->end;
+                            }
+                            if (SLPAt(p, SLTok_COMMA) || SLPAt(p, SLTok_LBRACE)) {
+                                patternNode = SLPNewNode(
+                                    p,
+                                    SLAst_CASE_PATTERN,
+                                    p->nodes[patternExpr].start,
+                                    aliasNode >= 0 ? p->nodes[aliasNode].end
+                                                   : p->nodes[patternExpr].end);
+                                if (patternNode < 0) {
+                                    return -1;
+                                }
+                                if (SLPAddChild(p, patternNode, patternExpr) != 0) {
+                                    return -1;
+                                }
+                                if (aliasNode >= 0 && SLPAddChild(p, patternNode, aliasNode) != 0) {
+                                    return -1;
+                                }
+                            }
+                        }
+                    }
+                }
+
+            parse_case_label_fallback:
+                if (patternNode < 0) {
+                    p->pos = savedPos;
+                    p->nodeLen = savedNodeLen;
+                    if (p->diag != NULL) {
+                        *p->diag = savedDiag;
+                    }
+                    if (SLPParseExpr(p, 1, &patternExpr) != 0) {
+                        return -1;
+                    }
+                    patternNode = SLPNewNode(
+                        p,
+                        SLAst_CASE_PATTERN,
+                        p->nodes[patternExpr].start,
+                        p->nodes[patternExpr].end);
+                    if (patternNode < 0) {
+                        return -1;
+                    }
+                    if (SLPAddChild(p, patternNode, patternExpr) != 0) {
+                        return -1;
+                    }
+                }
+
+                if (SLPAddChild(p, caseNode, patternNode) != 0) {
                     return -1;
                 }
                 if (!SLPMatch(p, SLTok_COMMA)) {
@@ -2495,6 +2593,15 @@ static int SLPParseAggregateDecl(SLParser* p, int32_t* out) {
             }
             p->nodes[item].dataStart = itemName->start;
             p->nodes[item].dataEnd = itemName->end;
+            if (SLPMatch(p, SLTok_LBRACE)) {
+                if (SLPParseFieldList(p, item) != 0) {
+                    return -1;
+                }
+                if (SLPExpect(p, SLTok_RBRACE, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+                    return -1;
+                }
+                p->nodes[item].end = rb->end;
+            }
             if (SLPMatch(p, SLTok_ASSIGN)) {
                 int32_t vexpr;
                 if (SLPParseExpr(p, 1, &vexpr) != 0) {
@@ -2876,6 +2983,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_FOR:               return "FOR";
         case SLAst_SWITCH:            return "SWITCH";
         case SLAst_CASE:              return "CASE";
+        case SLAst_CASE_PATTERN:      return "CASE_PATTERN";
         case SLAst_DEFAULT:           return "DEFAULT";
         case SLAst_RETURN:            return "RETURN";
         case SLAst_BREAK:             return "BREAK";

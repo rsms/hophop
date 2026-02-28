@@ -75,3 +75,4 @@ Implemented core includes:
 - [SLP-17-platform-context-composition.md](SLP-17-platform-context-composition.md)
 - [SLP-18-reflection.md](SLP-18-reflection.md)
 - [SLP-19-pointer-slice-unification.md](SLP-19-pointer-slice-unification.md)
+- [SLP-20-tagged-unions.md](SLP-20-tagged-unions.md)

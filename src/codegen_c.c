@@ -91,6 +91,13 @@ typedef struct {
 } SLLocal;
 
 typedef struct {
+    int32_t  localIdx;
+    char*    enumTypeName;
+    uint32_t variantStart;
+    uint32_t variantEnd;
+} SLVariantNarrow;
+
+typedef struct {
     int32_t nodeId;
     char*   cName;
 } SLFnNodeName;
@@ -150,6 +157,10 @@ typedef struct {
     SLLocal* locals;
     uint32_t localLen;
     uint32_t localCap;
+
+    SLVariantNarrow* variantNarrows;
+    uint32_t         variantNarrowLen;
+    uint32_t         variantNarrowCap;
 
     SLFnNodeName* fnNodeNames;
     uint32_t      fnNodeNameLen;
@@ -2943,14 +2954,18 @@ static int PushScope(SLCBackendC* c) {
     return 0;
 }
 
+static void TrimVariantNarrowsToLocalLen(SLCBackendC* c);
+
 static void PopScope(SLCBackendC* c) {
     if (c->localScopeLen == 0) {
         c->localLen = 0;
         c->localAnonTypedefLen = 0;
+        c->variantNarrowLen = 0;
         return;
     }
     c->localScopeLen--;
     c->localLen = c->localScopeMarks[c->localScopeLen];
+    TrimVariantNarrowsToLocalLen(c);
     if (c->localAnonTypedefScopeLen > 0) {
         c->localAnonTypedefScopeLen--;
         c->localAnonTypedefLen = c->localAnonTypedefScopeMarks[c->localAnonTypedefScopeLen];
@@ -3018,6 +3033,63 @@ static int AddLocal(SLCBackendC* c, const char* name, SLTypeRef type) {
     return 0;
 }
 
+static void TrimVariantNarrowsToLocalLen(SLCBackendC* c) {
+    while (c->variantNarrowLen > 0) {
+        if (c->variantNarrows[c->variantNarrowLen - 1u].localIdx < (int32_t)c->localLen) {
+            break;
+        }
+        c->variantNarrowLen--;
+    }
+}
+
+static int AddVariantNarrow(
+    SLCBackendC* c,
+    int32_t      localIdx,
+    const char*  enumTypeName,
+    uint32_t     variantStart,
+    uint32_t     variantEnd) {
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->variantNarrows,
+            &c->variantNarrowCap,
+            c->variantNarrowLen + 1u,
+            sizeof(SLVariantNarrow),
+            (uint32_t)_Alignof(SLVariantNarrow))
+        != 0)
+    {
+        return -1;
+    }
+    c->variantNarrows[c->variantNarrowLen].localIdx = localIdx;
+    c->variantNarrows[c->variantNarrowLen].enumTypeName = (char*)enumTypeName;
+    c->variantNarrows[c->variantNarrowLen].variantStart = variantStart;
+    c->variantNarrows[c->variantNarrowLen].variantEnd = variantEnd;
+    c->variantNarrowLen++;
+    return 0;
+}
+
+static int32_t FindLocalIndexBySlice(const SLCBackendC* c, uint32_t start, uint32_t end) {
+    uint32_t i = c->localLen;
+    while (i > 0) {
+        i--;
+        if (SliceEqName(c->unit->source, start, end, c->locals[i].name)) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static const SLVariantNarrow* _Nullable FindVariantNarrowByLocalIdx(
+    const SLCBackendC* c, int32_t localIdx) {
+    uint32_t i = c->variantNarrowLen;
+    while (i > 0) {
+        i--;
+        if (c->variantNarrows[i].localIdx == localIdx) {
+            return &c->variantNarrows[i];
+        }
+    }
+    return NULL;
+}
+
 static const SLLocal* _Nullable FindLocalBySlice(
     const SLCBackendC* c, uint32_t start, uint32_t end) {
     uint32_t i = c->localLen;
@@ -3081,8 +3153,16 @@ static int EnumDeclHasMemberBySlice(
     return 0;
 }
 
+static int EnumDeclHasPayload(const SLCBackendC* c, int32_t enumNodeId);
+
 static int ResolveEnumSelectorByFieldExpr(
-    const SLCBackendC* c, int32_t fieldExprNode, const SLNameMap** outEnumMap) {
+    const SLCBackendC* c,
+    int32_t            fieldExprNode,
+    const SLNameMap** _Nullable outEnumMap,
+    int32_t* _Nullable outEnumDeclNode,
+    int* _Nullable outEnumHasPayload,
+    uint32_t* _Nullable outVariantStart,
+    uint32_t* _Nullable outVariantEnd) {
     const SLAstNode* n = NodeAt(c, fieldExprNode);
     int32_t          recvNode;
     const SLAstNode* recv;
@@ -3092,6 +3172,18 @@ static int ResolveEnumSelectorByFieldExpr(
 
     if (outEnumMap != NULL) {
         *outEnumMap = NULL;
+    }
+    if (outEnumDeclNode != NULL) {
+        *outEnumDeclNode = -1;
+    }
+    if (outEnumHasPayload != NULL) {
+        *outEnumHasPayload = 0;
+    }
+    if (outVariantStart != NULL) {
+        *outVariantStart = 0;
+    }
+    if (outVariantEnd != NULL) {
+        *outVariantEnd = 0;
     }
     if (n == NULL || n->kind != SLAst_FIELD_EXPR) {
         return 0;
@@ -3117,6 +3209,288 @@ static int ResolveEnumSelectorByFieldExpr(
     }
     if (outEnumMap != NULL) {
         *outEnumMap = map;
+    }
+    if (outEnumDeclNode != NULL) {
+        *outEnumDeclNode = enumDeclNode;
+    }
+    if (outEnumHasPayload != NULL) {
+        *outEnumHasPayload = EnumDeclHasPayload(c, enumDeclNode);
+    }
+    if (outVariantStart != NULL) {
+        *outVariantStart = n->dataStart;
+    }
+    if (outVariantEnd != NULL) {
+        *outVariantEnd = n->dataEnd;
+    }
+    return 1;
+}
+
+static int EnumDeclHasPayload(const SLCBackendC* c, int32_t enumNodeId) {
+    int32_t child = AstFirstChild(&c->ast, enumNodeId);
+    if (child >= 0) {
+        const SLAstNode* firstChild = NodeAt(c, child);
+        if (firstChild != NULL
+            && (firstChild->kind == SLAst_TYPE_NAME || firstChild->kind == SLAst_TYPE_PTR
+                || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
+                || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
+                || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
+                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN
+                || firstChild->kind == SLAst_TYPE_ANON_STRUCT
+                || firstChild->kind == SLAst_TYPE_ANON_UNION
+                || firstChild->kind == SLAst_TYPE_TUPLE))
+        {
+            child = AstNextSibling(&c->ast, child);
+        }
+    }
+    while (child >= 0) {
+        int32_t payload = AstFirstChild(&c->ast, child);
+        while (payload >= 0) {
+            if (NodeAt(c, payload) != NULL && NodeAt(c, payload)->kind == SLAst_FIELD) {
+                return 1;
+            }
+            payload = AstNextSibling(&c->ast, payload);
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    return 0;
+}
+
+static int32_t EnumVariantTagExprNode(const SLCBackendC* c, int32_t variantNode) {
+    int32_t child = AstFirstChild(&c->ast, variantNode);
+    while (child >= 0) {
+        const SLAstNode* n = NodeAt(c, child);
+        if (n != NULL && n->kind != SLAst_FIELD) {
+            return child;
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    return -1;
+}
+
+static int FindEnumDeclNodeByCName(
+    const SLCBackendC* c, const char* enumCName, int32_t* outNodeId) {
+    uint32_t i;
+    if (enumCName == NULL || outNodeId == NULL) {
+        return -1;
+    }
+    for (i = 0; i < c->topDeclLen; i++) {
+        int32_t          nodeId = c->topDecls[i].nodeId;
+        const SLAstNode* n = NodeAt(c, nodeId);
+        const SLNameMap* map;
+        if (n == NULL || n->kind != SLAst_ENUM) {
+            continue;
+        }
+        map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        if (map != NULL && StrEq(map->cName, enumCName)) {
+            *outNodeId = nodeId;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int FindEnumVariantNodeBySlice(
+    const SLCBackendC* c,
+    int32_t            enumNodeId,
+    uint32_t           variantStart,
+    uint32_t           variantEnd,
+    int32_t*           outVariantNode) {
+    int32_t child = AstFirstChild(&c->ast, enumNodeId);
+    if (child >= 0) {
+        const SLAstNode* firstChild = NodeAt(c, child);
+        if (firstChild != NULL
+            && (firstChild->kind == SLAst_TYPE_NAME || firstChild->kind == SLAst_TYPE_PTR
+                || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
+                || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
+                || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
+                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN
+                || firstChild->kind == SLAst_TYPE_ANON_STRUCT
+                || firstChild->kind == SLAst_TYPE_ANON_UNION
+                || firstChild->kind == SLAst_TYPE_TUPLE))
+        {
+            child = AstNextSibling(&c->ast, child);
+        }
+    }
+    while (child >= 0) {
+        const SLAstNode* v = NodeAt(c, child);
+        if (v != NULL && v->kind == SLAst_FIELD
+            && SliceSpanEq(c->unit->source, v->dataStart, v->dataEnd, variantStart, variantEnd))
+        {
+            *outVariantNode = child;
+            return 0;
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    return -1;
+}
+
+static int ResolveEnumVariantPayloadFieldType(
+    SLCBackendC* c,
+    const char*  enumTypeName,
+    uint32_t     variantStart,
+    uint32_t     variantEnd,
+    uint32_t     fieldStart,
+    uint32_t     fieldEnd,
+    SLTypeRef*   outType) {
+    int32_t enumNodeId;
+    int32_t variantNode;
+    int32_t payload = -1;
+    if (FindEnumDeclNodeByCName(c, enumTypeName, &enumNodeId) != 0) {
+        return -1;
+    }
+    if (FindEnumVariantNodeBySlice(c, enumNodeId, variantStart, variantEnd, &variantNode) != 0) {
+        return -1;
+    }
+    payload = AstFirstChild(&c->ast, variantNode);
+    while (payload >= 0) {
+        const SLAstNode* f = NodeAt(c, payload);
+        int32_t          typeNode;
+        if (f == NULL || f->kind != SLAst_FIELD) {
+            break;
+        }
+        if (!SliceSpanEq(c->unit->source, f->dataStart, f->dataEnd, fieldStart, fieldEnd)) {
+            payload = AstNextSibling(&c->ast, payload);
+            continue;
+        }
+        typeNode = AstFirstChild(&c->ast, payload);
+        if (typeNode < 0 || ParseTypeRef(c, typeNode, outType) != 0) {
+            return -1;
+        }
+        CanonicalizeTypeRefBaseName(c, outType);
+        return 0;
+    }
+    return -1;
+}
+
+/* Returns 1 on success, 0 if node is not enum.variant syntax, -1 on error. */
+static int ResolveEnumVariantTypeNameNode(
+    const SLCBackendC* c,
+    int32_t            typeNode,
+    const char**       outEnumCName,
+    uint32_t*          outVariantStart,
+    uint32_t*          outVariantEnd) {
+    const SLAstNode* typeNameNode = NodeAt(c, typeNode);
+    uint32_t         dotPos;
+    const SLNameMap* enumMap;
+    int32_t          enumDeclNode;
+    if (typeNameNode == NULL || typeNameNode->kind != SLAst_TYPE_NAME) {
+        return 0;
+    }
+    dotPos = typeNameNode->dataEnd;
+    while (dotPos > typeNameNode->dataStart) {
+        dotPos--;
+        if (c->unit->source[dotPos] == '.') {
+            break;
+        }
+    }
+    if (dotPos <= typeNameNode->dataStart || c->unit->source[dotPos] != '.'
+        || dotPos + 1u >= typeNameNode->dataEnd)
+    {
+        return 0;
+    }
+    enumMap = FindNameBySlice(c, typeNameNode->dataStart, dotPos);
+    if (enumMap == NULL || enumMap->kind != SLAst_ENUM) {
+        return 0;
+    }
+    if (FindEnumDeclNodeBySlice(c, typeNameNode->dataStart, dotPos, &enumDeclNode) != 0) {
+        return -1;
+    }
+    if (!EnumDeclHasMemberBySlice(c, enumDeclNode, dotPos + 1u, typeNameNode->dataEnd)) {
+        return -1;
+    }
+    *outEnumCName = enumMap->cName;
+    *outVariantStart = dotPos + 1u;
+    *outVariantEnd = typeNameNode->dataEnd;
+    return 1;
+}
+
+static int CasePatternParts(
+    const SLCBackendC* c, int32_t caseLabelNode, int32_t* outExprNode, int32_t* outAliasNode) {
+    const SLAstNode* n = NodeAt(c, caseLabelNode);
+    if (n == NULL) {
+        return -1;
+    }
+    if (n->kind == SLAst_CASE_PATTERN) {
+        int32_t expr = AstFirstChild(&c->ast, caseLabelNode);
+        int32_t alias = expr >= 0 ? AstNextSibling(&c->ast, expr) : -1;
+        if (expr < 0) {
+            return -1;
+        }
+        *outExprNode = expr;
+        *outAliasNode = alias;
+        return 0;
+    }
+    *outExprNode = caseLabelNode;
+    *outAliasNode = -1;
+    return 0;
+}
+
+/* Returns 1 for enum variant selector syntax (Enum.Variant), 0 otherwise, -1 on error. */
+static int DecodeEnumVariantPatternExpr(
+    const SLCBackendC* c,
+    int32_t            exprNode,
+    const SLNameMap** _Nullable outEnumMap,
+    int32_t* _Nullable outEnumDeclNode,
+    int* _Nullable outEnumHasPayload,
+    uint32_t* _Nullable outVariantStart,
+    uint32_t* _Nullable outVariantEnd) {
+    const SLAstNode* n = NodeAt(c, exprNode);
+    if (outEnumMap != NULL) {
+        *outEnumMap = NULL;
+    }
+    if (outEnumDeclNode != NULL) {
+        *outEnumDeclNode = -1;
+    }
+    if (outEnumHasPayload != NULL) {
+        *outEnumHasPayload = 0;
+    }
+    if (outVariantStart != NULL) {
+        *outVariantStart = 0;
+    }
+    if (outVariantEnd != NULL) {
+        *outVariantEnd = 0;
+    }
+    if (n == NULL || n->kind != SLAst_FIELD_EXPR) {
+        return 0;
+    }
+    return ResolveEnumSelectorByFieldExpr(
+        c,
+        exprNode,
+        outEnumMap,
+        outEnumDeclNode,
+        outEnumHasPayload,
+        outVariantStart,
+        outVariantEnd);
+}
+
+static int ResolvePayloadEnumType(
+    const SLCBackendC* c, const SLTypeRef* t, const char** outEnumName) {
+    const char*      baseName;
+    const SLNameMap* map;
+    int32_t          enumNodeId;
+    if (outEnumName != NULL) {
+        *outEnumName = NULL;
+    }
+    if (t == NULL || !t->valid || t->containerKind != SLTypeContainer_SCALAR
+        || t->containerPtrDepth != 0 || t->ptrDepth != 0 || t->baseName == NULL)
+    {
+        return 0;
+    }
+    baseName = ResolveScalarAliasBaseName(c, t->baseName);
+    if (baseName == NULL) {
+        baseName = t->baseName;
+    }
+    map = FindNameByCName(c, baseName);
+    if (map == NULL || map->kind != SLAst_ENUM) {
+        return 0;
+    }
+    if (FindEnumDeclNodeByCName(c, baseName, &enumNodeId) != 0
+        || !EnumDeclHasPayload(c, enumNodeId))
+    {
+        return 0;
+    }
+    if (outEnumName != NULL) {
+        *outEnumName = baseName;
     }
     return 1;
 }
@@ -4316,6 +4690,9 @@ static int InferCompoundLiteralType(
     const SLNameMap*      ownerMap;
     const SLAnonTypeInfo* anonOwner = NULL;
     int                   isUnion = 0;
+    int                   isEnumVariantLiteral = 0;
+    uint32_t              enumVariantStart = 0;
+    uint32_t              enumVariantEnd = 0;
     uint32_t              explicitFieldCount = 0;
     uint8_t               cost = 0;
 
@@ -4334,7 +4711,21 @@ static int InferCompoundLiteralType(
     TypeRefSetInvalid(&resultType);
 
     if (hasExplicitType) {
-        if (ParseTypeRef(c, child, &explicitType) != 0 || !explicitType.valid) {
+        const char* enumTypeName = NULL;
+        int         variantRc = ResolveEnumVariantTypeNameNode(
+            c, child, &enumTypeName, &enumVariantStart, &enumVariantEnd);
+        if (variantRc < 0) {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+        if (variantRc == 1) {
+            if (enumTypeName == NULL) {
+                TypeRefSetInvalid(outType);
+                return -1;
+            }
+            TypeRefSetScalar(&explicitType, enumTypeName);
+            isEnumVariantLiteral = 1;
+        } else if (ParseTypeRef(c, child, &explicitType) != 0 || !explicitType.valid) {
             TypeRefSetInvalid(outType);
             return -1;
         }
@@ -4439,26 +4830,35 @@ static int InferCompoundLiteralType(
     }
     ownerMap = FindNameByCName(c, ownerType);
     anonOwner = FindAnonTypeByCName(c, ownerType);
-    if ((ownerMap == NULL || (ownerMap->kind != SLAst_STRUCT && ownerMap->kind != SLAst_UNION))
+    if ((ownerMap == NULL
+         || (ownerMap->kind != SLAst_STRUCT && ownerMap->kind != SLAst_UNION
+             && ownerMap->kind != SLAst_ENUM))
         && anonOwner == NULL)
     {
         TypeRefSetInvalid(outType);
         return -1;
     }
-    if (ownerMap != NULL) {
+    if (ownerMap != NULL && ownerMap->kind == SLAst_ENUM) {
+        int32_t enumNodeId = -1;
+        if (!isEnumVariantLiteral || FindEnumDeclNodeByCName(c, ownerType, &enumNodeId) != 0
+            || !EnumDeclHasPayload(c, enumNodeId))
+        {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+        isUnion = 0;
+    } else if (ownerMap != NULL) {
         isUnion = ownerMap->kind == SLAst_UNION;
     } else {
         isUnion = anonOwner->isUnion;
     }
 
     while (firstField >= 0) {
-        const SLAstNode*   fieldNode = NodeAt(c, firstField);
-        const SLFieldInfo* fieldPath[64];
-        const SLFieldInfo* field = NULL;
-        uint32_t           fieldPathLen = 0;
-        int32_t            exprNode;
-        int32_t            scan;
-        SLTypeRef          exprType;
+        const SLAstNode* fieldNode = NodeAt(c, firstField);
+        int32_t          exprNode;
+        int32_t          scan;
+        SLTypeRef        exprType;
+        SLTypeRef        fieldType;
 
         if (fieldNode == NULL || fieldNode->kind != SLAst_COMPOUND_FIELD) {
             TypeRefSetInvalid(outType);
@@ -4488,22 +4888,42 @@ static int InferCompoundLiteralType(
             return -1;
         }
 
-        if (ResolveFieldPathBySlice(
-                c,
-                ownerType,
-                fieldNode->dataStart,
-                fieldNode->dataEnd,
-                fieldPath,
-                (uint32_t)(sizeof(fieldPath) / sizeof(fieldPath[0])),
-                &fieldPathLen,
-                &field)
-                != 0
-            || fieldPathLen == 0)
-        {
-            TypeRefSetInvalid(outType);
-            return -1;
+        if (isEnumVariantLiteral) {
+            if (ResolveEnumVariantPayloadFieldType(
+                    c,
+                    ownerType,
+                    enumVariantStart,
+                    enumVariantEnd,
+                    fieldNode->dataStart,
+                    fieldNode->dataEnd,
+                    &fieldType)
+                != 0)
+            {
+                TypeRefSetInvalid(outType);
+                return -1;
+            }
+        } else {
+            const SLFieldInfo* fieldPath[64];
+            const SLFieldInfo* field = NULL;
+            uint32_t           fieldPathLen = 0;
+            if (ResolveFieldPathBySlice(
+                    c,
+                    ownerType,
+                    fieldNode->dataStart,
+                    fieldNode->dataEnd,
+                    fieldPath,
+                    (uint32_t)(sizeof(fieldPath) / sizeof(fieldPath[0])),
+                    &fieldPathLen,
+                    &field)
+                    != 0
+                || fieldPathLen == 0)
+            {
+                TypeRefSetInvalid(outType);
+                return -1;
+            }
+            field = fieldPath[fieldPathLen - 1u];
+            fieldType = field->type;
         }
-        field = fieldPath[fieldPathLen - 1u];
         if (exprNode < 0) {
             SLAstNode identNode = { 0 };
             identNode.kind = SLAst_IDENT;
@@ -4516,19 +4936,19 @@ static int InferCompoundLiteralType(
                 return -1;
             }
         } else if (
-            InferExprTypeExpected(c, exprNode, &field->type, &exprType) != 0 || !exprType.valid)
+            InferExprTypeExpected(c, exprNode, &fieldType, &exprType) != 0 || !exprType.valid)
         {
             TypeRefSetInvalid(outType);
             return -1;
         }
-        if (TypeRefAssignableCost(c, &field->type, &exprType, &cost) != 0) {
+        if (TypeRefAssignableCost(c, &fieldType, &exprType, &cost) != 0) {
             const SLAstNode* expr = NodeAt(c, exprNode);
             const char*      dstBase =
-                field->type.baseName != NULL
-                         ? ResolveScalarAliasBaseName(c, field->type.baseName)
+                fieldType.baseName != NULL
+                         ? ResolveScalarAliasBaseName(c, fieldType.baseName)
                          : NULL;
             if (dstBase == NULL) {
-                dstBase = field->type.baseName;
+                dstBase = fieldType.baseName;
             }
             if (!(expr != NULL && expr->kind == SLAst_INT && dstBase != NULL
                   && (IsIntegerCTypeName(dstBase) || IsFloatCTypeName(dstBase)))
@@ -4953,14 +5373,40 @@ static int InferExprType_UNARY(
 
 static int InferExprType_FIELD_EXPR(
     SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType) {
-    const SLNameMap*   enumMap = NULL;
-    int32_t            recv = AstFirstChild(&c->ast, nodeId);
-    SLTypeRef          recvType;
-    const SLFieldInfo* fieldPath[64];
-    uint32_t           fieldPathLen = 0;
-    const SLFieldInfo* field = NULL;
-    if (ResolveEnumSelectorByFieldExpr(c, nodeId, &enumMap) != 0 && enumMap != NULL) {
+    const SLNameMap*       enumMap = NULL;
+    int32_t                recv = AstFirstChild(&c->ast, nodeId);
+    const SLAstNode*       recvNode = NodeAt(c, recv);
+    const SLVariantNarrow* narrow = NULL;
+    int32_t                recvLocalIdx = -1;
+    SLTypeRef              recvType;
+    const SLFieldInfo*     fieldPath[64];
+    uint32_t               fieldPathLen = 0;
+    const SLFieldInfo*     field = NULL;
+    SLTypeRef              narrowFieldType;
+    if (ResolveEnumSelectorByFieldExpr(c, nodeId, &enumMap, NULL, NULL, NULL, NULL) != 0
+        && enumMap != NULL)
+    {
         TypeRefSetScalar(outType, enumMap->cName);
+        return 0;
+    }
+    if (recvNode != NULL && recvNode->kind == SLAst_IDENT) {
+        recvLocalIdx = FindLocalIndexBySlice(c, recvNode->dataStart, recvNode->dataEnd);
+        if (recvLocalIdx >= 0) {
+            narrow = FindVariantNarrowByLocalIdx(c, recvLocalIdx);
+        }
+    }
+    if (narrow != NULL
+        && ResolveEnumVariantPayloadFieldType(
+               c,
+               narrow->enumTypeName,
+               narrow->variantStart,
+               narrow->variantEnd,
+               n->dataStart,
+               n->dataEnd,
+               &narrowFieldType)
+               == 0)
+    {
+        *outType = narrowFieldType;
         return 0;
     }
     if (InferExprType(c, recv, &recvType) != 0 || !recvType.valid) {
@@ -6820,6 +7266,60 @@ static int EmitCompoundFieldValueCoerced(
     return BufAppendSlice(&c->out, c->unit->source, field->dataStart, field->dataEnd);
 }
 
+static int EmitEnumVariantCompoundLiteral(
+    SLCBackendC*     c,
+    int32_t          nodeId,
+    int32_t          firstField,
+    const char*      enumTypeName,
+    uint32_t         variantStart,
+    uint32_t         variantEnd,
+    const SLTypeRef* valueType) {
+    int32_t fieldNode = firstField;
+    if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, valueType) != 0
+        || BufAppendCStr(&c->out, "){ .tag = ") != 0 || BufAppendCStr(&c->out, enumTypeName) != 0
+        || BufAppendCStr(&c->out, "__") != 0
+        || BufAppendSlice(&c->out, c->unit->source, variantStart, variantEnd) != 0)
+    {
+        return -1;
+    }
+    while (fieldNode >= 0) {
+        const SLAstNode* field = NodeAt(c, fieldNode);
+        int32_t          exprNode;
+        SLTypeRef        fieldType;
+        if (field == NULL || field->kind != SLAst_COMPOUND_FIELD) {
+            return -1;
+        }
+        exprNode = AstFirstChild(&c->ast, fieldNode);
+        if (exprNode < 0 && (field->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) == 0) {
+            return -1;
+        }
+        if (ResolveEnumVariantPayloadFieldType(
+                c,
+                enumTypeName,
+                variantStart,
+                variantEnd,
+                field->dataStart,
+                field->dataEnd,
+                &fieldType)
+            != 0)
+        {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, ", .payload.") != 0
+            || BufAppendSlice(&c->out, c->unit->source, variantStart, variantEnd) != 0
+            || BufAppendChar(&c->out, '.') != 0
+            || BufAppendSlice(&c->out, c->unit->source, field->dataStart, field->dataEnd) != 0
+            || BufAppendCStr(&c->out, " = ") != 0
+            || EmitCompoundFieldValueCoerced(c, field, exprNode, &fieldType) != 0)
+        {
+            return -1;
+        }
+        fieldNode = AstNextSibling(&c->ast, fieldNode);
+    }
+    (void)nodeId;
+    return BufAppendCStr(&c->out, "})");
+}
+
 static int EmitCompoundLiteralDesignated(
     SLCBackendC* c, int32_t firstField, const char* ownerType, const SLTypeRef* valueType) {
     int32_t fieldNode = firstField;
@@ -7023,6 +7523,7 @@ static int EmitCompoundLiteral(
     const char*      ownerType;
     const SLNameMap* ownerMap;
     int32_t          fieldNode;
+    int32_t          typeNode = -1;
 
     if (litNode == NULL || litNode->kind != SLAst_COMPOUND_LIT) {
         return -1;
@@ -7057,7 +7558,25 @@ static int EmitCompoundLiteral(
     if (fieldNode >= 0 && NodeAt(c, fieldNode) != NULL
         && IsTypeNodeKind(NodeAt(c, fieldNode)->kind))
     {
+        typeNode = fieldNode;
         fieldNode = AstNextSibling(&c->ast, fieldNode);
+    }
+
+    if (ownerMap != NULL && ownerMap->kind == SLAst_ENUM) {
+        const char* enumTypeName = NULL;
+        uint32_t    variantStart = 0;
+        uint32_t    variantEnd = 0;
+        int         variantRc;
+        if (typeNode < 0) {
+            return -1;
+        }
+        variantRc = ResolveEnumVariantTypeNameNode(
+            c, typeNode, &enumTypeName, &variantStart, &variantEnd);
+        if (variantRc != 1 || enumTypeName == NULL) {
+            return -1;
+        }
+        return EmitEnumVariantCompoundLiteral(
+            c, nodeId, fieldNode, enumTypeName, variantStart, variantEnd, &valueType);
     }
 
     if (ownerMap != NULL && ownerMap->kind == SLAst_STRUCT && StructHasFieldDefaults(c, ownerType))
@@ -7248,6 +7767,46 @@ static int EmitExpr_BINARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
         }
         if ((!lhsType.valid && !lhsNull) || (!rhsType.valid && !rhsNull)) {
             goto emit_raw_binary;
+        }
+
+        {
+            const char* lhsPayloadEnum = NULL;
+            const char* rhsPayloadEnum = NULL;
+            if (ResolvePayloadEnumType(c, &lhsType, &lhsPayloadEnum)
+                && ResolvePayloadEnumType(c, &rhsType, &rhsPayloadEnum) && lhsPayloadEnum != NULL
+                && rhsPayloadEnum != NULL && StrEq(lhsPayloadEnum, rhsPayloadEnum))
+            {
+                if (isEqOp) {
+                    if (op == SLTok_NEQ && BufAppendCStr(&c->out, "(!") != 0) {
+                        return -1;
+                    }
+                    if (BufAppendCStr(&c->out, "(__extension__({ __auto_type __sl_cmp_a = ") != 0
+                        || EmitExprCoerced(c, lhs, &lhsType) != 0
+                        || BufAppendCStr(&c->out, "; __auto_type __sl_cmp_b = ") != 0
+                        || EmitExprCoerced(c, rhs, &lhsType) != 0
+                        || BufAppendCStr(
+                               &c->out,
+                               "; __sl_mem_equal((const void*)&__sl_cmp_a, (const "
+                               "void*)&__sl_cmp_b, (__sl_uint)sizeof(__sl_cmp_a)); }))")
+                               != 0)
+                    {
+                        return -1;
+                    }
+                    if (op == SLTok_NEQ && BufAppendChar(&c->out, ')') != 0) {
+                        return -1;
+                    }
+                    return 0;
+                }
+                if (BufAppendCStr(&c->out, "((") != 0 || EmitExprCoerced(c, lhs, &lhsType) != 0
+                    || BufAppendCStr(&c->out, ").tag ") != 0
+                    || BufAppendCStr(&c->out, BinaryOpString(op)) != 0
+                    || BufAppendCStr(&c->out, " (") != 0 || EmitExprCoerced(c, rhs, &lhsType) != 0
+                    || BufAppendCStr(&c->out, ").tag)") != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
         }
 
         if (isEqOp) {
@@ -7974,22 +8533,46 @@ static int EmitExpr_INDEX(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
 }
 
 static int EmitExpr_FIELD_EXPR(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
-    const SLNameMap*   enumMap = NULL;
-    int32_t            recv = AstFirstChild(&c->ast, nodeId);
-    SLTypeRef          recvType;
-    SLTypeRef          ownerType;
-    const SLFieldInfo* fieldPath[64];
-    uint32_t           fieldPathLen = 0;
-    const SLFieldInfo* field = NULL;
-    int                useArrow = 0;
-    uint32_t           i;
+    const SLNameMap*       enumMap = NULL;
+    int32_t                enumDeclNode = -1;
+    int                    enumHasPayload = 0;
+    uint32_t               enumVariantStart = 0;
+    uint32_t               enumVariantEnd = 0;
+    int32_t                recv = AstFirstChild(&c->ast, nodeId);
+    const SLAstNode*       recvNode = NodeAt(c, recv);
+    int32_t                recvLocalIdx = -1;
+    const SLVariantNarrow* narrow = NULL;
+    SLTypeRef              recvType;
+    SLTypeRef              ownerType;
+    SLTypeRef              narrowFieldType;
+    const SLFieldInfo*     fieldPath[64];
+    uint32_t               fieldPathLen = 0;
+    const SLFieldInfo*     field = NULL;
+    int                    useArrow = 0;
+    uint32_t               i;
 
-    if (ResolveEnumSelectorByFieldExpr(c, nodeId, &enumMap) != 0 && enumMap != NULL) {
-        if (BufAppendCStr(&c->out, enumMap->cName) != 0 || BufAppendCStr(&c->out, "__") != 0
-            || BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd) != 0)
+    if (ResolveEnumSelectorByFieldExpr(
+            c, nodeId, &enumMap, &enumDeclNode, &enumHasPayload, &enumVariantStart, &enumVariantEnd)
+            != 0
+        && enumMap != NULL)
+    {
+        if (!enumHasPayload) {
+            if (BufAppendCStr(&c->out, enumMap->cName) != 0 || BufAppendCStr(&c->out, "__") != 0
+                || BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd) != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+        if (BufAppendCStr(&c->out, "((") != 0 || BufAppendCStr(&c->out, enumMap->cName) != 0
+            || BufAppendCStr(&c->out, "){ .tag = ") != 0
+            || BufAppendCStr(&c->out, enumMap->cName) != 0 || BufAppendCStr(&c->out, "__") != 0
+            || BufAppendSlice(&c->out, c->unit->source, enumVariantStart, enumVariantEnd) != 0
+            || BufAppendCStr(&c->out, " })") != 0)
         {
             return -1;
         }
+        (void)enumDeclNode;
         return 0;
     }
 
@@ -8017,6 +8600,36 @@ static int EmitExpr_FIELD_EXPR(SLCBackendC* c, int32_t nodeId, const SLAstNode* 
                 field = fieldPath[fieldPathLen - 1u];
             }
         }
+    }
+
+    if (recvNode != NULL && recvNode->kind == SLAst_IDENT) {
+        recvLocalIdx = FindLocalIndexBySlice(c, recvNode->dataStart, recvNode->dataEnd);
+        if (recvLocalIdx >= 0) {
+            narrow = FindVariantNarrowByLocalIdx(c, recvLocalIdx);
+        }
+    }
+    if (narrow != NULL
+        && ResolveEnumVariantPayloadFieldType(
+               c,
+               narrow->enumTypeName,
+               narrow->variantStart,
+               narrow->variantEnd,
+               n->dataStart,
+               n->dataEnd,
+               &narrowFieldType)
+               == 0)
+    {
+        (void)narrowFieldType;
+        if (EmitExpr(c, recv) != 0
+            || BufAppendCStr(&c->out, useArrow ? "->payload." : ".payload.") != 0
+            || BufAppendSlice(&c->out, c->unit->source, narrow->variantStart, narrow->variantEnd)
+                   != 0
+            || BufAppendChar(&c->out, '.') != 0
+            || BufAppendSlice(&c->out, c->unit->source, n->dataStart, n->dataEnd) != 0)
+        {
+            return -1;
+        }
+        return 0;
     }
 
     if (field != NULL && field->isDependent && fieldPathLen > 0) {
@@ -8771,16 +9384,47 @@ static int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
 static int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     const SLAstNode* sw = NodeAt(c, nodeId);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
-    int32_t          subject = -1;
+    int32_t          subjectNode = -1;
+    int32_t          subjectLocalIdx = -1;
+    SLTypeRef        subjectType;
+    int              haveSubjectType = 0;
+    int              subjectEnumHasPayload = 0;
     int              firstClause = 1;
+    const char*      switchSubjectTemp = "__sl_sw_subject";
 
+    TypeRefSetInvalid(&subjectType);
     if (sw == NULL) {
         return -1;
     }
 
     if (sw->flags == 1) {
-        subject = child;
+        const SLAstNode* subjectAst;
+        subjectNode = child;
         child = AstNextSibling(&c->ast, child);
+        subjectAst = NodeAt(c, subjectNode);
+        if (subjectAst != NULL && subjectAst->kind == SLAst_IDENT) {
+            subjectLocalIdx = FindLocalIndexBySlice(c, subjectAst->dataStart, subjectAst->dataEnd);
+        }
+        if (InferExprType(c, subjectNode, &subjectType) == 0 && subjectType.valid) {
+            haveSubjectType = 1;
+            if (subjectType.containerKind == SLTypeContainer_SCALAR
+                && subjectType.containerPtrDepth == 0 && subjectType.ptrDepth == 0
+                && subjectType.baseName != NULL)
+            {
+                const char*      baseName = ResolveScalarAliasBaseName(c, subjectType.baseName);
+                const SLNameMap* map;
+                int32_t          enumNodeId;
+                if (baseName == NULL) {
+                    baseName = subjectType.baseName;
+                }
+                map = FindNameByCName(c, baseName);
+                if (map != NULL && map->kind == SLAst_ENUM
+                    && FindEnumDeclNodeByCName(c, baseName, &enumNodeId) == 0)
+                {
+                    subjectEnumHasPayload = EnumDeclHasPayload(c, enumNodeId);
+                }
+            }
+        }
     }
 
     EmitIndent(c, depth);
@@ -8788,12 +9432,33 @@ static int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         return -1;
     }
 
+    if (sw->flags == 1) {
+        EmitIndent(c, depth + 1u);
+        if (BufAppendCStr(&c->out, "__auto_type ") != 0
+            || BufAppendCStr(&c->out, switchSubjectTemp) != 0 || BufAppendCStr(&c->out, " = ") != 0
+            || EmitExpr(c, subjectNode) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
+    }
+
     while (child >= 0) {
         const SLAstNode* clause = NodeAt(c, child);
         if (clause != NULL && clause->kind == SLAst_CASE) {
             int32_t          caseChild = AstFirstChild(&c->ast, child);
             int32_t          bodyNode = -1;
+            int              labelCount = 0;
+            int              aliasCount = 0;
+            int              singleVariant = 0;
+            uint32_t         singleVariantStart = 0;
+            uint32_t         singleVariantEnd = 0;
+            const char*      singleVariantEnumTypeName = NULL;
+            int32_t          aliasNodes[64];
+            uint32_t         aliasVariantStarts[64];
+            uint32_t         aliasVariantEnds[64];
+            const char*      aliasEnumTypeNames[64];
             const SLAstNode* bodyStmt;
+
             EmitIndent(c, depth + 1u);
             if (BufAppendCStr(&c->out, firstClause ? "if (" : "else if (") != 0) {
                 return -1;
@@ -8802,65 +9467,237 @@ static int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
 
             while (caseChild >= 0) {
                 int32_t next = AstNextSibling(&c->ast, caseChild);
+                int32_t labelExprNode = -1;
+                int32_t aliasNode = -1;
                 if (next < 0) {
                     bodyNode = caseChild;
                     break;
                 }
+                if (CasePatternParts(c, caseChild, &labelExprNode, &aliasNode) != 0) {
+                    return -1;
+                }
+                if (labelCount > 0 && BufAppendCStr(&c->out, " || ") != 0) {
+                    return -1;
+                }
                 if (sw->flags == 1) {
-                    if (BufAppendChar(&c->out, '(') != 0 || EmitExpr(c, subject) != 0
-                        || BufAppendCStr(&c->out, ") == (") != 0 || EmitExpr(c, caseChild) != 0
+                    const SLNameMap* labelEnumMap = NULL;
+                    int32_t          labelEnumDeclNode = -1;
+                    int              labelEnumHasPayload = 0;
+                    uint32_t         labelVariantStart = 0;
+                    uint32_t         labelVariantEnd = 0;
+                    int              variantRc = DecodeEnumVariantPatternExpr(
+                        c,
+                        labelExprNode,
+                        &labelEnumMap,
+                        &labelEnumDeclNode,
+                        &labelEnumHasPayload,
+                        &labelVariantStart,
+                        &labelVariantEnd);
+                    if (variantRc < 0) {
+                        return -1;
+                    }
+                    if (variantRc == 1 && labelEnumMap != NULL) {
+                        if (labelEnumHasPayload) {
+                            if (BufAppendCStr(&c->out, "((") != 0
+                                || BufAppendCStr(&c->out, switchSubjectTemp) != 0
+                                || BufAppendCStr(&c->out, ").tag == ") != 0
+                                || BufAppendCStr(&c->out, labelEnumMap->cName) != 0
+                                || BufAppendCStr(&c->out, "__") != 0
+                                || BufAppendSlice(
+                                       &c->out, c->unit->source, labelVariantStart, labelVariantEnd)
+                                       != 0
+                                || BufAppendChar(&c->out, ')') != 0)
+                            {
+                                return -1;
+                            }
+                        } else {
+                            if (BufAppendCStr(&c->out, "((") != 0
+                                || BufAppendCStr(&c->out, switchSubjectTemp) != 0
+                                || BufAppendCStr(&c->out, ") == ") != 0
+                                || BufAppendCStr(&c->out, labelEnumMap->cName) != 0
+                                || BufAppendCStr(&c->out, "__") != 0
+                                || BufAppendSlice(
+                                       &c->out, c->unit->source, labelVariantStart, labelVariantEnd)
+                                       != 0
+                                || BufAppendChar(&c->out, ')') != 0)
+                            {
+                                return -1;
+                            }
+                        }
+                        if (labelCount == 0) {
+                            singleVariant = 1;
+                            singleVariantStart = labelVariantStart;
+                            singleVariantEnd = labelVariantEnd;
+                            singleVariantEnumTypeName = labelEnumMap->cName;
+                        } else {
+                            singleVariant = 0;
+                        }
+                        if (aliasNode >= 0) {
+                            if (aliasCount >= (int)(sizeof(aliasNodes) / sizeof(aliasNodes[0]))) {
+                                return -1;
+                            }
+                            aliasNodes[aliasCount] = aliasNode;
+                            aliasVariantStarts[aliasCount] = labelVariantStart;
+                            aliasVariantEnds[aliasCount] = labelVariantEnd;
+                            aliasEnumTypeNames[aliasCount] = labelEnumMap->cName;
+                            aliasCount++;
+                        }
+                    } else {
+                        singleVariant = 0;
+                        if (aliasNode >= 0) {
+                            return -1;
+                        }
+                        if (subjectEnumHasPayload) {
+                            if (BufAppendCStr(&c->out, "(__extension__({ __auto_type __sl_cmp_b = ")
+                                    != 0
+                                || EmitExpr(c, labelExprNode) != 0
+                                || BufAppendCStr(&c->out, "; __sl_mem_equal((const void*)&") != 0
+                                || BufAppendCStr(&c->out, switchSubjectTemp) != 0
+                                || BufAppendCStr(
+                                       &c->out, ", (const void*)&__sl_cmp_b, (__sl_uint)sizeof(")
+                                       != 0
+                                || BufAppendCStr(&c->out, switchSubjectTemp) != 0
+                                || BufAppendCStr(&c->out, ")); }))") != 0)
+                            {
+                                return -1;
+                            }
+                        } else {
+                            if (BufAppendCStr(&c->out, "((") != 0
+                                || BufAppendCStr(&c->out, switchSubjectTemp) != 0
+                                || BufAppendCStr(&c->out, ") == (") != 0
+                                || EmitExpr(c, labelExprNode) != 0
+                                || BufAppendCStr(&c->out, "))") != 0)
+                            {
+                                return -1;
+                            }
+                        }
+                    }
+                    (void)labelEnumDeclNode;
+                } else {
+                    if (aliasNode >= 0) {
+                        return -1;
+                    }
+                    if (BufAppendChar(&c->out, '(') != 0 || EmitExpr(c, labelExprNode) != 0
                         || BufAppendChar(&c->out, ')') != 0)
                     {
                         return -1;
                     }
-                } else if (EmitExpr(c, caseChild) != 0) {
-                    return -1;
                 }
-                if (AstNextSibling(&c->ast, next) >= 0) {
-                    if (BufAppendCStr(&c->out, " || ") != 0) {
-                        return -1;
-                    }
-                }
+                labelCount++;
                 caseChild = next;
             }
 
+            if (bodyNode < 0) {
+                return -1;
+            }
             bodyStmt = NodeAt(c, bodyNode);
-            if (bodyStmt != NULL && bodyStmt->kind == SLAst_BLOCK) {
-                if (BufAppendChar(&c->out, ')') != 0 || BufAppendChar(&c->out, ' ') != 0) {
-                    return -1;
+            if (BufAppendCStr(&c->out, ") {\n") != 0) {
+                return -1;
+            }
+            if (PushScope(c) != 0) {
+                return -1;
+            }
+            if (sw->flags == 1) {
+                int a;
+                for (a = 0; a < aliasCount; a++) {
+                    char* aliasName;
+                    if (!haveSubjectType) {
+                        PopScope(c);
+                        return -1;
+                    }
+                    aliasName = DupSlice(
+                        c,
+                        c->unit->source,
+                        NodeAt(c, aliasNodes[a])->dataStart,
+                        NodeAt(c, aliasNodes[a])->dataEnd);
+                    if (aliasName == NULL) {
+                        PopScope(c);
+                        return -1;
+                    }
+                    EmitIndent(c, depth + 2u);
+                    if (BufAppendCStr(&c->out, "__auto_type ") != 0
+                        || BufAppendCStr(&c->out, aliasName) != 0
+                        || BufAppendCStr(&c->out, " = ") != 0
+                        || BufAppendCStr(&c->out, switchSubjectTemp) != 0
+                        || BufAppendCStr(&c->out, ";\n") != 0)
+                    {
+                        PopScope(c);
+                        return -1;
+                    }
+                    if (AddLocal(c, aliasName, subjectType) != 0
+                        || AddVariantNarrow(
+                               c,
+                               (int32_t)c->localLen - 1,
+                               aliasEnumTypeNames[a],
+                               aliasVariantStarts[a],
+                               aliasVariantEnds[a])
+                               != 0)
+                    {
+                        PopScope(c);
+                        return -1;
+                    }
                 }
-                if (EmitBlockInline(c, bodyNode, depth + 1u) != 0) {
+                if (subjectLocalIdx >= 0 && labelCount == 1 && singleVariant
+                    && singleVariantEnumTypeName != NULL)
+                {
+                    if (AddVariantNarrow(
+                            c,
+                            subjectLocalIdx,
+                            singleVariantEnumTypeName,
+                            singleVariantStart,
+                            singleVariantEnd)
+                        != 0)
+                    {
+                        PopScope(c);
+                        return -1;
+                    }
+                }
+            }
+            if (bodyStmt != NULL && bodyStmt->kind == SLAst_BLOCK) {
+                if (EmitBlockInline(c, bodyNode, depth + 2u) != 0) {
+                    PopScope(c);
                     return -1;
                 }
             } else {
-                if (BufAppendCStr(&c->out, ")\n") != 0) {
+                if (EmitStmt(c, bodyNode, depth + 2u) != 0) {
+                    PopScope(c);
                     return -1;
                 }
-                if (EmitStmt(c, bodyNode, depth + 1u) != 0) {
-                    return -1;
-                }
+            }
+            PopScope(c);
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "}\n") != 0) {
+                return -1;
             }
         } else if (clause != NULL && clause->kind == SLAst_DEFAULT) {
             int32_t          bodyNode = AstFirstChild(&c->ast, child);
             const SLAstNode* bodyStmt = NodeAt(c, bodyNode);
-            int              isFirstClause = firstClause;
             EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, firstClause ? "if (1) {\n" : "else {\n") != 0) {
+                return -1;
+            }
+            firstClause = 0;
+            if (PushScope(c) != 0) {
+                return -1;
+            }
             if (bodyStmt != NULL && bodyStmt->kind == SLAst_BLOCK) {
-                if (BufAppendCStr(&c->out, isFirstClause ? "if (1) " : "else ") != 0) {
-                    return -1;
-                }
-                if (EmitBlockInline(c, bodyNode, depth + 1u) != 0) {
+                if (EmitBlockInline(c, bodyNode, depth + 2u) != 0) {
+                    PopScope(c);
                     return -1;
                 }
             } else {
-                if (BufAppendCStr(&c->out, isFirstClause ? "if (1)\n" : "else\n") != 0) {
-                    return -1;
-                }
-                if (EmitStmt(c, bodyNode, depth + 1u) != 0) {
+                if (EmitStmt(c, bodyNode, depth + 2u) != 0) {
+                    PopScope(c);
                     return -1;
                 }
             }
-            firstClause = 0;
+            PopScope(c);
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "}\n") != 0) {
+                return -1;
+            }
+        } else {
+            return -1;
         }
         child = AstNextSibling(&c->ast, child);
     }
@@ -9101,14 +9938,8 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     const SLAstNode* n = NodeAt(c, nodeId);
     const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
+    int              hasPayload = EnumDeclHasPayload(c, nodeId);
     int              first = 1;
-
-    EmitIndent(c, depth);
-    if (BufAppendCStr(&c->out, "typedef enum ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
-        || BufAppendCStr(&c->out, " {\n") != 0)
-    {
-        return -1;
-    }
 
     if (child >= 0) {
         const SLAstNode* firstChild = NodeAt(c, child);
@@ -9126,10 +9957,61 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         }
     }
 
+    if (!hasPayload) {
+        EmitIndent(c, depth);
+        if (BufAppendCStr(&c->out, "typedef enum ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+            || BufAppendCStr(&c->out, " {\n") != 0)
+        {
+            return -1;
+        }
+        while (child >= 0) {
+            const SLAstNode* item = NodeAt(c, child);
+            if (item != NULL && item->kind == SLAst_FIELD) {
+                int32_t initExpr = EnumVariantTagExprNode(c, child);
+                EmitIndent(c, depth + 1u);
+                if (!first && BufAppendCStr(&c->out, ",\n") != 0) {
+                    return -1;
+                }
+                if (first) {
+                    first = 0;
+                }
+                if (BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__") != 0
+                    || BufAppendSlice(&c->out, c->unit->source, item->dataStart, item->dataEnd)
+                           != 0)
+                {
+                    return -1;
+                }
+                if (initExpr >= 0) {
+                    if (BufAppendCStr(&c->out, " = ") != 0 || EmitExpr(c, initExpr) != 0) {
+                        return -1;
+                    }
+                }
+            }
+            child = AstNextSibling(&c->ast, child);
+        }
+        if (!first && BufAppendChar(&c->out, '\n') != 0) {
+            return -1;
+        }
+
+        EmitIndent(c, depth);
+        if (BufAppendCStr(&c->out, "} ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+            || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
+        return 0;
+    }
+
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "typedef enum ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+        || BufAppendCStr(&c->out, "__tag {\n") != 0)
+    {
+        return -1;
+    }
     while (child >= 0) {
         const SLAstNode* item = NodeAt(c, child);
         if (item != NULL && item->kind == SLAst_FIELD) {
-            int32_t initExpr = AstFirstChild(&c->ast, child);
+            int32_t initExpr = EnumVariantTagExprNode(c, child);
             EmitIndent(c, depth + 1u);
             if (!first && BufAppendCStr(&c->out, ",\n") != 0) {
                 return -1;
@@ -9153,7 +10035,99 @@ static int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     if (!first && BufAppendChar(&c->out, '\n') != 0) {
         return -1;
     }
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "} ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+        || BufAppendCStr(&c->out, "__tag;\n") != 0)
+    {
+        return -1;
+    }
 
+    child = AstFirstChild(&c->ast, nodeId);
+    if (child >= 0) {
+        const SLAstNode* firstChild = NodeAt(c, child);
+        if (firstChild != NULL
+            && (firstChild->kind == SLAst_TYPE_NAME || firstChild->kind == SLAst_TYPE_PTR
+                || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
+                || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
+                || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
+                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN
+                || firstChild->kind == SLAst_TYPE_ANON_STRUCT
+                || firstChild->kind == SLAst_TYPE_ANON_UNION
+                || firstChild->kind == SLAst_TYPE_TUPLE))
+        {
+            child = AstNextSibling(&c->ast, child);
+        }
+    }
+
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "typedef union ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+        || BufAppendCStr(&c->out, "__payload {\n") != 0)
+    {
+        return -1;
+    }
+    while (child >= 0) {
+        const SLAstNode* item = NodeAt(c, child);
+        int32_t          payload = AstFirstChild(&c->ast, child);
+        if (item != NULL && item->kind == SLAst_FIELD && payload >= 0 && NodeAt(c, payload) != NULL
+            && NodeAt(c, payload)->kind == SLAst_FIELD)
+        {
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "struct {\n") != 0) {
+                return -1;
+            }
+            while (payload >= 0) {
+                const SLAstNode* pf = NodeAt(c, payload);
+                int32_t          typeNode;
+                char*            fieldName;
+                if (pf == NULL || pf->kind != SLAst_FIELD) {
+                    break;
+                }
+                typeNode = AstFirstChild(&c->ast, payload);
+                fieldName = DupSlice(c, c->unit->source, pf->dataStart, pf->dataEnd);
+                if (fieldName == NULL) {
+                    return -1;
+                }
+                EmitIndent(c, depth + 2u);
+                if (EmitTypeWithName(c, typeNode, fieldName) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0)
+                {
+                    return -1;
+                }
+                payload = AstNextSibling(&c->ast, payload);
+            }
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "} ") != 0
+                || BufAppendSlice(&c->out, c->unit->source, item->dataStart, item->dataEnd) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "} ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+        || BufAppendCStr(&c->out, "__payload;\n") != 0)
+    {
+        return -1;
+    }
+
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "typedef struct ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
+        || BufAppendCStr(&c->out, " {\n") != 0)
+    {
+        return -1;
+    }
+    EmitIndent(c, depth + 1u);
+    if (BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__tag tag;\n") != 0) {
+        return -1;
+    }
+    EmitIndent(c, depth + 1u);
+    if (BufAppendCStr(&c->out, map->cName) != 0
+        || BufAppendCStr(&c->out, "__payload payload;\n") != 0)
+    {
+        return -1;
+    }
     EmitIndent(c, depth);
     if (BufAppendCStr(&c->out, "} ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
         || BufAppendCStr(&c->out, ";\n") != 0)
@@ -9509,11 +10483,22 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
         }
         EmitIndent(c, 0);
         if (n->kind == SLAst_ENUM) {
-            if (BufAppendCStr(&c->out, "typedef enum ") != 0
-                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
-                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
-            {
-                return -1;
+            if (EnumDeclHasPayload(c, nodeId)) {
+                if (BufAppendCStr(&c->out, "typedef struct ") != 0
+                    || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+                    || BufAppendCStr(&c->out, map->cName) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0)
+                {
+                    return -1;
+                }
+            } else {
+                if (BufAppendCStr(&c->out, "typedef enum ") != 0
+                    || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+                    || BufAppendCStr(&c->out, map->cName) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0)
+                {
+                    return -1;
+                }
             }
         } else if (n->kind == SLAst_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
             if (BufAppendCStr(&c->out, "typedef struct ") != 0
@@ -9559,11 +10544,22 @@ static int EmitForwardTypeDecls(SLCBackendC* c) {
         }
         EmitIndent(c, 0);
         if (n->kind == SLAst_ENUM) {
-            if (BufAppendCStr(&c->out, "typedef enum ") != 0
-                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
-                || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
-            {
-                return -1;
+            if (EnumDeclHasPayload(c, nodeId)) {
+                if (BufAppendCStr(&c->out, "typedef struct ") != 0
+                    || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+                    || BufAppendCStr(&c->out, map->cName) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0)
+                {
+                    return -1;
+                }
+            } else {
+                if (BufAppendCStr(&c->out, "typedef enum ") != 0
+                    || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+                    || BufAppendCStr(&c->out, map->cName) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0)
+                {
+                    return -1;
+                }
             }
         } else if (n->kind == SLAst_STRUCT && NodeHasDirectDependentFields(c, nodeId)) {
             if (BufAppendCStr(&c->out, "typedef struct ") != 0
@@ -9968,6 +10964,7 @@ static int EmitFnDeclOrDef(
 
     PopScope(c);
     c->localLen = savedLocalLen;
+    TrimVariantNarrowsToLocalLen(c);
     return 0;
 }
 

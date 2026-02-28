@@ -88,6 +88,7 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_CALL_ARG_MISSING,          /* SL2059: missing argument for parameter '{s}' */
     SLDiag_CALL_FIRST_ARG_NAME_MISMATCH, /* SL2060: first argument name must match parameter '{s}'
                                           */
+    SLDiag_SWITCH_MISSING_CASES,         /* SL2061: missing cases in switch */
     SLDiag_CODEGEN_INTERNAL,             /* SL3001: internal codegen error */
     SLDiag_ARENA_OOM,                    /* SL4001: arena out of memory */
     SLDiag_UNKNOWN_FEATURE,              /* SL4002: unknown feature '{s}' */

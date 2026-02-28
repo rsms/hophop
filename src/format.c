@@ -1817,15 +1817,29 @@ static int SLFmtMeasureCaseHeadLen(
             bodyNodeId = k;
             break;
         }
+        int32_t          exprNode = k;
+        int32_t          aliasNode = -1;
+        const SLAstNode* kn = &c->ast->nodes[k];
+        if (kn->kind == SLAst_CASE_PATTERN) {
+            exprNode = SLFmtFirstChild(c->ast, k);
+            aliasNode = exprNode >= 0 ? SLFmtNextSibling(c->ast, exprNode) : -1;
+            if (exprNode < 0) {
+                return -1;
+            }
+        }
         if (!first) {
             len += 2u;
         }
         {
             uint32_t exprLen;
-            if (SLFmtMeasureExprLen(c, k, 0, &exprLen) != 0) {
+            if (SLFmtMeasureExprLen(c, exprNode, 0, &exprLen) != 0) {
                 return -1;
             }
             len += exprLen;
+        }
+        if (aliasNode >= 0) {
+            const SLAstNode* alias = &c->ast->nodes[aliasNode];
+            len += 4u + (alias->dataEnd - alias->dataStart); /* " as " + alias */
         }
         first = 0;
         k = next;
@@ -1846,14 +1860,31 @@ static int SLFmtEmitCaseHead(SLFmtCtx* c, int32_t caseNodeId) {
     }
     while (k >= 0) {
         int32_t next = SLFmtNextSibling(c->ast, k);
+        int32_t exprNode = k;
+        int32_t aliasNode = -1;
         if (next < 0) {
             break;
+        }
+        if (c->ast->nodes[k].kind == SLAst_CASE_PATTERN) {
+            exprNode = SLFmtFirstChild(c->ast, k);
+            aliasNode = exprNode >= 0 ? SLFmtNextSibling(c->ast, exprNode) : -1;
+            if (exprNode < 0) {
+                return -1;
+            }
         }
         if (!first && SLFmtWriteCStr(c, ", ") != 0) {
             return -1;
         }
-        if (SLFmtEmitExpr(c, k, 0) != 0) {
+        if (SLFmtEmitExpr(c, exprNode, 0) != 0) {
             return -1;
+        }
+        if (aliasNode >= 0) {
+            const SLAstNode* alias = &c->ast->nodes[aliasNode];
+            if (SLFmtWriteCStr(c, " as ") != 0
+                || SLFmtWriteSlice(c, alias->dataStart, alias->dataEnd) != 0)
+            {
+                return -1;
+            }
         }
         first = 0;
         k = next;
@@ -3127,6 +3158,12 @@ static int SLFmtEmitAlignedFieldGroup(
         cur = next;
     }
 
+    if (count == 0) {
+        *outLastNodeId = firstFieldNodeId;
+        *outNextNodeId = SLFmtNextSibling(c->ast, firstFieldNodeId);
+        return 0;
+    }
+
     rows = (SLFmtAlignedFieldRow*)SLArenaAlloc(
         c->out.arena,
         count * (uint32_t)sizeof(SLFmtAlignedFieldRow),
@@ -3313,9 +3350,13 @@ static int SLFmtEmitAlignedEnumGroup(
     cur = firstFieldNodeId;
     for (i = 0; i < count; i++) {
         const SLAstNode* n = &c->ast->nodes[cur];
+        int32_t          valueNode = SLFmtFirstChild(c->ast, cur);
         rows[i].nodeId = cur;
         rows[i].nameLen = n->dataEnd - n->dataStart;
-        rows[i].valueNodeId = SLFmtFirstChild(c->ast, cur);
+        while (valueNode >= 0 && c->ast->nodes[valueNode].kind == SLAst_FIELD) {
+            valueNode = SLFmtNextSibling(c->ast, valueNode);
+        }
+        rows[i].valueNodeId = valueNode;
         rows[i].hasValue = (uint8_t)(rows[i].valueNodeId >= 0);
         if (rows[i].hasValue
             && SLFmtMeasureExprLen(c, rows[i].valueNodeId, 0, &rows[i].valueLen) != 0)
@@ -3413,6 +3454,9 @@ static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId) {
     }
     c->indent++;
     while (child >= 0) {
+        if (c->ast->nodes[child].kind != SLAst_FIELD) {
+            break;
+        }
         int32_t next = SLFmtNextSibling(c->ast, child);
         int32_t last = child;
         if (prevEmitted >= 0) {
@@ -3471,28 +3515,97 @@ static int SLFmtEmitAggregateDecl(SLFmtCtx* c, int32_t nodeId, const char* kw) {
 
     if (child >= 0) {
         if (n->kind == SLAst_ENUM) {
+            int     enumHasPayload = 0;
+            int32_t scanItem = child;
+            while (scanItem >= 0) {
+                int32_t vch = SLFmtFirstChild(c->ast, scanItem);
+                while (vch >= 0) {
+                    if (c->ast->nodes[vch].kind == SLAst_FIELD) {
+                        enumHasPayload = 1;
+                        break;
+                    }
+                    vch = SLFmtNextSibling(c->ast, vch);
+                }
+                if (enumHasPayload) {
+                    break;
+                }
+                scanItem = SLFmtNextSibling(c->ast, scanItem);
+            }
             if (SLFmtNewline(c) != 0) {
                 return -1;
             }
             c->indent++;
-            while (child >= 0) {
-                int32_t next = SLFmtNextSibling(c->ast, child);
-                int32_t last = child;
-                if (prevEmitted >= 0) {
-                    if (SLFmtNewline(c) != 0) {
+            if (!enumHasPayload) {
+                while (child >= 0) {
+                    int32_t next = SLFmtNextSibling(c->ast, child);
+                    int32_t last = child;
+                    if (prevEmitted >= 0) {
+                        if (SLFmtNewline(c) != 0) {
+                            return -1;
+                        }
+                        if (SLFmtNeedsBlankLineBeforeNode(c, prevEmitted, child)
+                            && SLFmtNewline(c) != 0)
+                        {
+                            return -1;
+                        }
+                    }
+                    if (SLFmtEmitAlignedEnumGroup(c, child, &last, &next) != 0) {
                         return -1;
                     }
-                    if (SLFmtNeedsBlankLineBeforeNode(c, prevEmitted, child)
-                        && SLFmtNewline(c) != 0)
+                    prevEmitted = last;
+                    child = next;
+                }
+            } else {
+                while (child >= 0) {
+                    int32_t          next = SLFmtNextSibling(c->ast, child);
+                    const SLAstNode* item = &c->ast->nodes[child];
+                    int32_t          payloadFirst = -1;
+                    int32_t          tagExpr = -1;
+                    int32_t          ch = SLFmtFirstChild(c->ast, child);
+                    if (prevEmitted >= 0) {
+                        if (SLFmtNewline(c) != 0) {
+                            return -1;
+                        }
+                        if (SLFmtNeedsBlankLineBeforeNode(c, prevEmitted, child)
+                            && SLFmtNewline(c) != 0)
+                        {
+                            return -1;
+                        }
+                    }
+                    if (SLFmtEmitLeadingCommentsForNode(c, child) != 0
+                        || SLFmtWriteSlice(c, item->dataStart, item->dataEnd) != 0)
                     {
                         return -1;
                     }
+                    while (ch >= 0) {
+                        if (c->ast->nodes[ch].kind == SLAst_FIELD) {
+                            if (payloadFirst < 0) {
+                                payloadFirst = ch;
+                            }
+                        } else if (tagExpr < 0) {
+                            tagExpr = ch;
+                        }
+                        ch = SLFmtNextSibling(c->ast, ch);
+                    }
+                    if (payloadFirst >= 0) {
+                        if (SLFmtWriteChar(c, '{') != 0
+                            || SLFmtEmitAggregateFieldBody(c, payloadFirst) != 0
+                            || SLFmtWriteChar(c, '}') != 0)
+                        {
+                            return -1;
+                        }
+                    }
+                    if (tagExpr >= 0) {
+                        if (SLFmtWriteCStr(c, " = ") != 0 || SLFmtEmitExpr(c, tagExpr, 0) != 0) {
+                            return -1;
+                        }
+                    }
+                    if (SLFmtEmitTrailingCommentsForNode(c, child) != 0) {
+                        return -1;
+                    }
+                    prevEmitted = child;
+                    child = next;
                 }
-                if (SLFmtEmitAlignedEnumGroup(c, child, &last, &next) != 0) {
-                    return -1;
-                }
-                prevEmitted = last;
-                child = next;
             }
             c->indent--;
             if (SLFmtNewline(c) != 0) {

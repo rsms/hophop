@@ -468,7 +468,11 @@ static int PrintSLDiagEx(
         fputs(msg, stderr);
     }
     if (diag->detail != NULL && diag->detail[0] != '\0') {
-        fprintf(stderr, ": %s", diag->detail);
+        if (diag->code == SLDiag_SWITCH_MISSING_CASES) {
+            fprintf(stderr, " %s", diag->detail);
+        } else {
+            fprintf(stderr, ": %s", diag->detail);
+        }
     }
     if (diag->code == SLDiag_ARENA_OOM && diag->argEnd > 0) {
         fprintf(
@@ -3178,6 +3182,27 @@ static const SLImportRef* _Nullable FindImportByAliasSlice(
     return NULL;
 }
 
+static int PackageHasEnumDeclBySlice(
+    const SLPackage* pkg, const char* src, uint32_t nameStart, uint32_t nameEnd) {
+    uint32_t i;
+    size_t   n = (size_t)(nameEnd - nameStart);
+    for (i = 0; i < pkg->declLen; i++) {
+        if (pkg->decls[i].kind == SLAst_ENUM && strlen(pkg->decls[i].name) == n
+            && memcmp(pkg->decls[i].name, src + nameStart, n) == 0)
+        {
+            return 1;
+        }
+    }
+    for (i = 0; i < pkg->pubDeclLen; i++) {
+        if (pkg->pubDecls[i].kind == SLAst_ENUM && strlen(pkg->pubDecls[i].name) == n
+            && memcmp(pkg->pubDecls[i].name, src + nameStart, n) == 0)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int ValidateSelectorsNode(const SLPackage* pkg, const SLParsedFile* file, int32_t nodeId) {
     const SLAstNode* n;
     int32_t          child;
@@ -3192,6 +3217,9 @@ static int ValidateSelectorsNode(const SLPackage* pkg, const SLParsedFile* file,
             if (file->source[i] == '.') {
                 const SLImportRef* imp = FindImportByAliasSlice(pkg, file->source, n->dataStart, i);
                 if (imp == NULL) {
+                    if (PackageHasEnumDeclBySlice(pkg, file->source, n->dataStart, i)) {
+                        break;
+                    }
                     return Errorf(
                         file->path, file->source, n->start, n->end, "unknown import alias");
                 }

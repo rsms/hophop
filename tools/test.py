@@ -22,6 +22,7 @@ ARENA_GROW_TEST_C_PATH = ROOT / "tests" / "harness" / "arena_grow_test.c"
 TEST_ROOT_IGNORED_NAMES = {"tests.jsonl", "README.md", "harness", ".DS_Store"}
 TEST_ROOT_TRACKED_SUFFIXES = {".sl", ".stderr", ".ast", ".tokens"}
 PRETEST_FMT_ROOTS = ("examples", "lib", "tests")
+PRETEST_FMT_STRICT_ROOTS = ("examples", "lib")
 PRETEST_FMT_DEFAULT_EXCLUDES = {"tests/fmt_canonical.sl"}
 
 
@@ -221,6 +222,14 @@ def collect_pretest_fmt_targets(exempt_paths: Set[str]) -> List[str]:
     return targets
 
 
+def is_pretest_fmt_strict_target(path: str) -> bool:
+    normalized = normalize_rel_path(path)
+    for root_name in PRETEST_FMT_STRICT_ROOTS:
+        if normalized == root_name or normalized.startswith(root_name + "/"):
+            return True
+    return False
+
+
 def run_pretest_fmt_check(ctx: RunContext, all_cases: List[TestCase]) -> tuple[bool, str]:
     exempt_paths, config_errors = collect_pretest_fmt_exemptions(all_cases)
     if config_errors:
@@ -236,11 +245,20 @@ def run_pretest_fmt_check(ctx: RunContext, all_cases: List[TestCase]) -> tuple[b
     for path in targets:
         cp = run_cmd([str(ctx.slc), "fmt", "--check", path])
         stdout_lines = [line.strip() for line in cp.stdout.splitlines() if line.strip()]
+        is_strict_target = is_pretest_fmt_strict_target(path)
 
         if cp.returncode == 0:
             continue
         if cp.stderr:
-            # Some negative fixtures are intentionally not formatter-compatible.
+            if is_strict_target:
+                stderr_first = cp.stderr.strip().splitlines()
+                if stderr_first:
+                    command_errors.append(f"{path}: fmt --check failed: {stderr_first[0]}")
+                else:
+                    command_errors.append(f"{path}: fmt --check failed")
+            else:
+                # Some tests fixtures are intentionally not formatter-compatible.
+                continue
             continue
         if stdout_lines:
             normalized = normalize_rel_path(path)
