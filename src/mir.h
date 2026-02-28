@@ -1,6 +1,8 @@
 #pragma once
 #include "libsl.h"
 
+// Documentation for this IR lives in docs/mir.md
+
 SL_API_BEGIN
 
 typedef enum {
