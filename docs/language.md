@@ -293,6 +293,15 @@ fn f() {
 - [TYPE-CONSTR-005][Stable] Variable-size-by-value types are invalid in local/param/return/function-type positions.
 - [TYPE-CONSTR-006][Stable] Tuple types require at least two element types.
 
+### 5.1.1 Textual types (`str` and `rune`)
+- [TYPE-TEXT-001][Stable] `str` denotes textual byte sequences constrained to valid UTF-8.
+- [TYPE-TEXT-002][Stable] String literals MUST decode to valid UTF-8 and therefore produce well-formed `str` data ([LEX-LIT-003], [LEX-LIT-009]).
+- [TYPE-TEXT-003][Stable] `str` operations are byte-oriented by default: `len(s)` reports byte length, not Unicode scalar-value count ([BI-LEN-001], [BI-LEN-002]).
+- [TYPE-TEXT-004][Stable] `str` is for textual data; arbitrary binary payloads SHOULD use `[u8]` families (`[u8 N]`, `*[u8]`, `&[u8]`) instead of `str`.
+- [TYPE-TEXT-005][Stable] `rune` denotes one Unicode scalar value and is modeled as core alias `type rune u32` ([TYPE-BUILTIN-005], [LEX-LIT-010], [LEX-LIT-012]).
+- [TYPE-TEXT-006][Stable] Rune literals infer type `rune`; implicit conversion from `rune` to integer destinations is limited to the in-range const-evaluated case ([TYPE-INFER-004], [TYPE-ASSIGN-008]).
+- [TYPE-TEXT-007][Stable] C interop over string bytes uses `cstr(s)`, which exposes `str` storage as `&u8` with the lifetime/termination guarantees in [BI-CSTR-001] through [BI-CSTR-005].
+
 ### 5.2 Mutability model
 - [TYPE-MUT-001][Stable] `*T` is writable reference-like access to `T`.
 - [TYPE-MUT-002][Stable] `&T` is read-only reference-like access to `T`.
