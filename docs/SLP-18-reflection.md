@@ -4,16 +4,29 @@
 
 SLP-18 proposes compile-time type reflection for SL.
 
+Current status in `Reference-slc` (phase 1 building blocks):
+
+- builtin metatype `type` exists
+- type names are valid value expressions of type `type`
+- `typeof(expr)` exists and returns a `type` value
+- `type` values support `==` / `!=`
+- builtin `kind(t)` / `t.kind()` exists (returns `reflect.Kind`, fallback `u8` if unavailable)
+- builtin `base(t)` / `t.base()` exists for alias type values
+- builtin `is_alias(t)` / `t.is_alias()` exists (returns `bool`)
+- builtin `type_name(t)` / `t.type_name()` exists (returns `&str`)
+- `typeof(TypeName)` currently evaluates to `type` (metatype of type-values)
+- `reflect.Kind` enum package surface exists; `fields()` is not implemented yet
+
 It introduces:
 
-- `import "std/reflection"`
+- `import "reflect"`
 - a built-in `typeof(...)` form
 - type reflection operations such as `.kind()`, `.base()`, `.fields()`
 
 Example sketch:
 
 ```sl
-import "std/reflection"
+import "reflect"
 
 type MyInt int
 struct Foo { x, y int }
@@ -24,10 +37,10 @@ fn main() {
     assert typeof(i32) == __sl_primtype
     assert typeof(MyInt) == int
 
-    assert i32.kind() == reflection.Kind.Primitive
-    assert MyInt.kind() == reflection.Kind.Alias
+    assert i32.kind() == reflect.Kind.Primitive
+    assert MyInt.kind() == reflect.Kind.Alias
     assert MyInt.base() == int
-    assert Foo.kind() == reflection.Kind.Struct
+    assert Foo.kind() == reflect.Kind.Struct
     assert Foo.fields().len() == 2
 }
 ```
@@ -67,7 +80,7 @@ introducing runtime-only host probing.
 
 ### 1. Reflection package
 
-`std/reflection` provides reflection primitives and metadata types.
+`reflect` provides reflection primitives and metadata types.
 
 Draft API:
 
@@ -108,9 +121,13 @@ Draft forms:
 
 Operations on type values:
 
-- `T.kind() -> reflection.Kind`
+- `T.kind() -> reflect.Kind`
 - `T.base() -> __sl_primtype` (valid for alias types; otherwise compile-time error)
-- `T.fields() -> [reflection.Field]` (valid for `struct`/`union`; otherwise compile-time error)
+- `T.type_name() -> &str`
+- `T.fields() -> [reflect.Field]` (valid for `struct`/`union`; otherwise compile-time error)
+- `ptr(T) -> __sl_primtype`
+- `slice(T) -> __sl_primtype`
+- `array(T, N) -> __sl_primtype`
 
 ### 4. Equality
 
@@ -136,11 +153,11 @@ SLP-17 makes `main` context target-specific (`platform/<target>.Context`).
 Reflection provides a way to inspect context shape:
 
 ```sl
-import "std/reflection"
+import "reflect"
 
 fn main() {
     const k = typeof(context).kind()
-    assert k == reflection.Kind.Struct
+    assert k == reflect.Kind.Struct
 }
 ```
 
@@ -162,7 +179,7 @@ This does not add conditional imports; package selection remains a build-time co
 1. Add internal metatype representation (`__sl_primtype`) in typechecker.
 2. Parse/typecheck `typeof(...)` as a built-in expression form.
 3. Add compile-time evaluation path for kind/base/fields.
-4. Add `std/reflection` package surface.
+4. Add `reflect` package surface.
 5. Add tests for:
    - primitive/alias/struct kind detection
    - alias base extraction

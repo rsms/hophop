@@ -1,0 +1,1 @@
+tests/variadic_spread_non_slice_bad.sl:7:6: SL2069: spread argument must be assignable to the variadic slice type

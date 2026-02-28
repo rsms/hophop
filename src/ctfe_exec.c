@@ -61,6 +61,7 @@ static int SLCTFEExecValueEq(const SLCTFEValue* a, const SLCTFEValue* b, int* ou
         case SLCTFEValue_FLOAT:  *outEq = a->f64 == b->f64; return 1;
         case SLCTFEValue_BOOL:   *outEq = a->b == b->b; return 1;
         case SLCTFEValue_STRING: *outEq = SLCTFEExecStringEq(&a->s, &b->s); return 1;
+        case SLCTFEValue_TYPE:   *outEq = a->typeTag == b->typeTag; return 1;
         case SLCTFEValue_NULL:   *outEq = 1; return 1;
         default:                 return 0;
     }
@@ -408,6 +409,7 @@ static int SLCTFEExecEvalAssignExpr(
         b->value.i64 = v;
         b->value.f64 = 0.0;
         b->value.b = 0;
+        b->value.typeTag = 0;
         b->value.s.bytes = NULL;
         b->value.s.len = 0;
         *outValue = b->value;
@@ -439,6 +441,7 @@ static int SLCTFEExecEvalAssignExpr(
         b->value.i64 = 0;
         b->value.f64 = out;
         b->value.b = 0;
+        b->value.typeTag = 0;
         b->value.s.bytes = NULL;
         b->value.s.len = 0;
         *outValue = b->value;

@@ -76,3 +76,5 @@ Implemented core includes:
 - [SLP-18-reflection.md](SLP-18-reflection.md)
 - [SLP-19-pointer-slice-unification.md](SLP-19-pointer-slice-unification.md)
 - [SLP-20-tagged-unions.md](SLP-20-tagged-unions.md)
+- [SLP-21-variadic-function-parameters.md](SLP-21-variadic-function-parameters.md)
+- [SLP-22-consteval-diagnostics.md](SLP-22-consteval-diagnostics.md)

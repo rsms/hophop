@@ -1,0 +1,1 @@
+tests/variadic_param_not_last_bad.sl:1:21: SL2066: variadic parameter must be last

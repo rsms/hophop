@@ -88,6 +88,60 @@ int SLIsStringLiteralConcatChain(const SLAst* _Nonnull ast, int32_t nodeId);
 
 typedef struct SLConstEvalSession SLConstEvalSession;
 
+typedef enum {
+    SLConstEvalTypeKind_INVALID = 0,
+    SLConstEvalTypeKind_BUILTIN,
+    SLConstEvalTypeKind_NAMED,
+    SLConstEvalTypeKind_ALIAS,
+    SLConstEvalTypeKind_ANON_STRUCT,
+    SLConstEvalTypeKind_ANON_UNION,
+    SLConstEvalTypeKind_PTR,
+    SLConstEvalTypeKind_REF,
+    SLConstEvalTypeKind_ARRAY,
+    SLConstEvalTypeKind_SLICE,
+    SLConstEvalTypeKind_UNTYPED_INT,
+    SLConstEvalTypeKind_UNTYPED_FLOAT,
+    SLConstEvalTypeKind_FUNCTION,
+    SLConstEvalTypeKind_TUPLE,
+    SLConstEvalTypeKind_OPTIONAL,
+    SLConstEvalTypeKind_NULL,
+} SLConstEvalTypeKind;
+
+typedef enum {
+    SLConstEvalBuiltinKind_INVALID = 0,
+    SLConstEvalBuiltinKind_VOID,
+    SLConstEvalBuiltinKind_BOOL,
+    SLConstEvalBuiltinKind_STR,
+    SLConstEvalBuiltinKind_TYPE,
+    SLConstEvalBuiltinKind_U8,
+    SLConstEvalBuiltinKind_U16,
+    SLConstEvalBuiltinKind_U32,
+    SLConstEvalBuiltinKind_U64,
+    SLConstEvalBuiltinKind_I8,
+    SLConstEvalBuiltinKind_I16,
+    SLConstEvalBuiltinKind_I32,
+    SLConstEvalBuiltinKind_I64,
+    SLConstEvalBuiltinKind_USIZE,
+    SLConstEvalBuiltinKind_ISIZE,
+    SLConstEvalBuiltinKind_F32,
+    SLConstEvalBuiltinKind_F64,
+} SLConstEvalBuiltinKind;
+
+enum {
+    SLConstEvalTypeFlag_MUTABLE = 1u << 1,
+};
+
+typedef struct {
+    SLConstEvalTypeKind    kind;
+    SLConstEvalBuiltinKind builtin;
+    int32_t                baseTypeId;
+    int32_t                declNode;
+    uint32_t               arrayLen;
+    uint32_t               nameStart;
+    uint32_t               nameEnd;
+    uint16_t               flags;
+} SLConstEvalTypeInfo;
+
 int SLConstEvalSessionInit(
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,
@@ -109,3 +163,9 @@ int SLConstEvalSessionEvalTopLevelConst(
     int32_t constNode,
     SLCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
+int SLConstEvalSessionDecodeTypeTag(
+    SLConstEvalSession* _Nonnull session, uint64_t typeTag, int32_t* _Nonnull outTypeId);
+int SLConstEvalSessionGetTypeInfo(
+    SLConstEvalSession* _Nonnull session,
+    int32_t typeId,
+    SLConstEvalTypeInfo* _Nonnull outTypeInfo);

@@ -1095,6 +1095,9 @@ static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId) {
                 if (!first && SLFmtWriteCStr(c, ", ") != 0) {
                     return -1;
                 }
+                if ((chn->flags & SLAstFlag_PARAM_VARIADIC) != 0 && SLFmtWriteCStr(c, "...") != 0) {
+                    return -1;
+                }
                 if (SLFmtEmitType(c, cur) != 0) {
                     return -1;
                 }
@@ -1305,7 +1308,13 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
                     return -1;
                 }
             }
-            return exprNode >= 0 ? SLFmtEmitExpr(c, exprNode, 0) : 0;
+            if (exprNode >= 0 && SLFmtEmitExpr(c, exprNode, 0) != 0) {
+                return -1;
+            }
+            if ((n->flags & SLAstFlag_CALL_ARG_SPREAD) != 0) {
+                return SLFmtWriteCStr(c, "...");
+            }
+            return 0;
         }
         case SLAst_TUPLE_EXPR: {
             int32_t cur = SLFmtFirstChild(c->ast, nodeId);
@@ -3975,6 +3984,7 @@ static int SLFmtEmitFnDecl(SLFmtCtx* c, int32_t nodeId) {
         {
             int32_t ptype = SLFmtFirstChild(c->ast, child);
             if (SLFmtWriteSlice(c, ch->dataStart, ch->dataEnd) != 0 || SLFmtWriteChar(c, ' ') != 0
+                || ((ch->flags & SLAstFlag_PARAM_VARIADIC) != 0 && SLFmtWriteCStr(c, "...") != 0)
                 || (ptype >= 0 && SLFmtEmitType(c, ptype) != 0))
             {
                 return -1;

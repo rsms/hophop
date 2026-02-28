@@ -14,6 +14,10 @@ fn concat(a &str, b &str) *str {
 	return 0 as *str
 }
 
+fn fmt() *str {
+	return 0 as *str
+}
+
 fn free() {}
 
 fn panic(message &str) {}

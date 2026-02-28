@@ -39,6 +39,7 @@ typedef ptrdiff_t __sl_int;
 typedef float     __sl_f32;
 typedef double    __sl_f64;
 typedef _Bool     __sl_bool;
+typedef __sl_u64  __sl_type;
 
 typedef struct {
     const void* ptr;
@@ -275,4 +276,231 @@ static inline __sl_str* __sl_concat(__sl_Allocator* ma, const __sl_str* a, const
     }
     out->bytes[outLen] = 0;
     return out;
+}
+
+typedef struct {
+    __sl_Allocator* ma;
+    __sl_u8*        bytes;
+    __sl_uint       len;
+    __sl_uint       cap;
+} __sl_fmt_builder;
+
+static inline void __sl_fmt_builder_init(__sl_fmt_builder* b, __sl_Allocator* ma) {
+    b->ma = ma;
+    b->bytes = NULL;
+    b->len = 0;
+    b->cap = 0;
+}
+
+static inline __sl_bool __sl_fmt_builder_reserve(__sl_fmt_builder* b, __sl_uint add) {
+    __sl_uint need;
+    __sl_uint newCap;
+    __sl_u8*  newBytes;
+    if (b == NULL) {
+        return 0;
+    }
+    if (add == 0) {
+        return 1;
+    }
+    need = b->len + add;
+    if (need <= b->cap) {
+        return 1;
+    }
+    newCap = b->cap == 0 ? 64u : b->cap;
+    while (newCap < need) {
+        newCap *= 2u;
+    }
+    newBytes = (__sl_u8*)__sl_new(b->ma, newCap, _Alignof(__sl_u8));
+    if (newBytes == NULL) {
+        return 0;
+    }
+    if (b->bytes != NULL && b->len > 0u) {
+        memcpy(newBytes, b->bytes, b->len);
+        __sl_free(b->ma, b->bytes, b->cap, _Alignof(__sl_u8));
+    }
+    b->bytes = newBytes;
+    b->cap = newCap;
+    return 1;
+}
+
+static inline __sl_bool __sl_fmt_builder_append_bytes(
+    __sl_fmt_builder* b, const __sl_u8* bytes, __sl_uint len) {
+    if (b == NULL || (len > 0u && bytes == NULL) || !__sl_fmt_builder_reserve(b, len)) {
+        return 0;
+    }
+    if (len > 0u) {
+        memcpy(b->bytes + b->len, bytes, len);
+        b->len += len;
+    }
+    return 1;
+}
+
+static inline __sl_bool __sl_fmt_builder_append_char(__sl_fmt_builder* b, __sl_u8 ch) {
+    return __sl_fmt_builder_append_bytes(b, &ch, 1u);
+}
+
+static inline __sl_bool __sl_fmt_builder_append_str(__sl_fmt_builder* b, const __sl_str* s) {
+    if (s == NULL) {
+        static const __sl_u8 nullText[] = { 'n', 'u', 'l', 'l' };
+        return __sl_fmt_builder_append_bytes(b, nullText, (__sl_uint)sizeof(nullText));
+    }
+    return __sl_fmt_builder_append_bytes(b, s->bytes, (__sl_uint)s->len);
+}
+
+static inline __sl_bool __sl_fmt_builder_append_u64(__sl_fmt_builder* b, __sl_u64 value) {
+    __sl_u8   tmp[32];
+    __sl_uint n = 0;
+    if (value == 0u) {
+        return __sl_fmt_builder_append_char(b, (__sl_u8)'0');
+    }
+    while (value > 0u && n < (__sl_uint)sizeof(tmp)) {
+        tmp[n++] = (__sl_u8)('0' + (value % 10u));
+        value /= 10u;
+    }
+    while (n > 0u) {
+        n--;
+        if (!__sl_fmt_builder_append_char(b, tmp[n])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static inline __sl_bool __sl_fmt_builder_append_i64(__sl_fmt_builder* b, __sl_i64 value) {
+    __sl_u64 mag;
+    if (value < 0) {
+        if (!__sl_fmt_builder_append_char(b, (__sl_u8)'-')) {
+            return 0;
+        }
+        mag = (__sl_u64)(-(value + 1)) + 1u;
+    } else {
+        mag = (__sl_u64)value;
+    }
+    return __sl_fmt_builder_append_u64(b, mag);
+}
+
+static inline __sl_bool __sl_fmt_builder_append_escaped_str(
+    __sl_fmt_builder* b, const __sl_str* s) {
+    __sl_uint i = 0;
+    if (!__sl_fmt_builder_append_char(b, (__sl_u8)'"')) {
+        return 0;
+    }
+    if (s == NULL) {
+        static const __sl_u8 nullText[] = { 'n', 'u', 'l', 'l' };
+        if (!__sl_fmt_builder_append_bytes(b, nullText, (__sl_uint)sizeof(nullText))) {
+            return 0;
+        }
+    } else {
+        while (i < (__sl_uint)s->len) {
+            __sl_u8 ch = s->bytes[i++];
+            if (ch == (__sl_u8)'\\') {
+                static const __sl_u8 esc[] = { '\\', '\\' };
+                if (!__sl_fmt_builder_append_bytes(b, esc, (__sl_uint)sizeof(esc))) {
+                    return 0;
+                }
+            } else if (ch == (__sl_u8)'"') {
+                static const __sl_u8 esc[] = { '\\', '"' };
+                if (!__sl_fmt_builder_append_bytes(b, esc, (__sl_uint)sizeof(esc))) {
+                    return 0;
+                }
+            } else if (ch == (__sl_u8)'\n') {
+                static const __sl_u8 esc[] = { '\\', 'n' };
+                if (!__sl_fmt_builder_append_bytes(b, esc, (__sl_uint)sizeof(esc))) {
+                    return 0;
+                }
+            } else if (ch == (__sl_u8)'\r') {
+                static const __sl_u8 esc[] = { '\\', 'r' };
+                if (!__sl_fmt_builder_append_bytes(b, esc, (__sl_uint)sizeof(esc))) {
+                    return 0;
+                }
+            } else if (ch == (__sl_u8)'\t') {
+                static const __sl_u8 esc[] = { '\\', 't' };
+                if (!__sl_fmt_builder_append_bytes(b, esc, (__sl_uint)sizeof(esc))) {
+                    return 0;
+                }
+            } else if (!__sl_fmt_builder_append_char(b, ch)) {
+                return 0;
+            }
+        }
+    }
+    return __sl_fmt_builder_append_char(b, (__sl_u8)'"');
+}
+
+static inline __sl_str* __sl_fmt_builder_finish(__sl_fmt_builder* b) {
+    __sl_str* out;
+    __sl_uint len;
+    if (b == NULL) {
+        return NULL;
+    }
+    len = b->len;
+    out = (__sl_str*)__sl_new(b->ma, sizeof(__sl_u32) + len + 1u, _Alignof(__sl_u32));
+    if (out == NULL) {
+        if (b->bytes != NULL) {
+            __sl_free(b->ma, b->bytes, b->cap, _Alignof(__sl_u8));
+        }
+        b->bytes = NULL;
+        b->len = 0;
+        b->cap = 0;
+        return NULL;
+    }
+    out->len = (__sl_u32)len;
+    if (len > 0u && b->bytes != NULL) {
+        memcpy(out->bytes, b->bytes, len);
+    }
+    out->bytes[len] = 0;
+    if (b->bytes != NULL) {
+        __sl_free(b->ma, b->bytes, b->cap, _Alignof(__sl_u8));
+    }
+    b->bytes = NULL;
+    b->len = 0;
+    b->cap = 0;
+    return out;
+}
+
+static inline __sl_bool __sl_fmt_apply_runtime(
+    __sl_fmt_builder* b, const __sl_str* fmt, const __sl_str* const* args, __sl_uint argCount) {
+    __sl_uint i = 0;
+    __sl_uint argIndex = 0;
+    if (b == NULL || fmt == NULL) {
+        return 0;
+    }
+    while (i < (__sl_uint)fmt->len) {
+        __sl_u8 ch = fmt->bytes[i];
+        if (ch == (__sl_u8)'{' && i + 1u < (__sl_uint)fmt->len
+            && fmt->bytes[i + 1u] == (__sl_u8)'{')
+        {
+            if (!__sl_fmt_builder_append_char(b, (__sl_u8)'{')) {
+                return 0;
+            }
+            i += 2u;
+            continue;
+        }
+        if (ch == (__sl_u8)'}' && i + 1u < (__sl_uint)fmt->len
+            && fmt->bytes[i + 1u] == (__sl_u8)'}')
+        {
+            if (!__sl_fmt_builder_append_char(b, (__sl_u8)'}')) {
+                return 0;
+            }
+            i += 2u;
+            continue;
+        }
+        if (ch == (__sl_u8)'{' && i + 2u < (__sl_uint)fmt->len
+            && (fmt->bytes[i + 1u] == (__sl_u8)'i' || fmt->bytes[i + 1u] == (__sl_u8)'r')
+            && fmt->bytes[i + 2u] == (__sl_u8)'}')
+        {
+            if (argIndex < argCount) {
+                if (!__sl_fmt_builder_append_str(b, args[argIndex])) {
+                    return 0;
+                }
+                argIndex++;
+            }
+            i += 3u;
+            continue;
+        }
+        if (!__sl_fmt_builder_append_char(b, ch)) {
+            return 0;
+        }
+        i++;
+    }
+    return 1;
 }

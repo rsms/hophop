@@ -515,7 +515,8 @@ static int SLTokenCanEndStmt(SLTokenKind kind) {
         case SLTok_RBRACE:
         case SLTok_NOT:
         case SLTok_NULL:
-        case SLTok_CONTEXT:  return 1;
+        case SLTok_CONTEXT:
+        case SLTok_TYPE:     return 1;
         default:             return 0;
     }
 }
@@ -613,6 +614,7 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_RBRACK:        return "RBRACK";
         case SLTok_COMMA:         return "COMMA";
         case SLTok_DOT:           return "DOT";
+        case SLTok_ELLIPSIS:      return "ELLIPSIS";
         case SLTok_SEMICOLON:     return "SEMICOLON";
         case SLTok_COLON:         return "COLON";
         case SLTok_ASSIGN:        return "ASSIGN";
@@ -917,7 +919,16 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
                     case (unsigned char)'[': kind = SLTok_LBRACK; break;
                     case (unsigned char)']': kind = SLTok_RBRACK; break;
                     case (unsigned char)',': kind = SLTok_COMMA; break;
-                    case (unsigned char)'.': kind = SLTok_DOT; break;
+                    case (unsigned char)'.':
+                        if (pos + 1u < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'.'
+                            && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'.')
+                        {
+                            pos += 2u;
+                            kind = SLTok_ELLIPSIS;
+                        } else {
+                            kind = SLTok_DOT;
+                        }
+                        break;
                     case (unsigned char)';': kind = SLTok_SEMICOLON; break;
                     case (unsigned char)':': kind = SLTok_COLON; break;
 

@@ -9,6 +9,7 @@ typedef enum {
     SLCTFEValue_FLOAT,
     SLCTFEValue_BOOL,
     SLCTFEValue_STRING,
+    SLCTFEValue_TYPE,
     SLCTFEValue_NULL,
 } SLCTFEValueKind;
 
@@ -22,6 +23,7 @@ typedef struct {
     int64_t         i64;
     double          f64;
     uint8_t         b;
+    uint64_t        typeTag;
     SLCTFEString    s;
 } SLCTFEValue;
 

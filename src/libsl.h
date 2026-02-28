@@ -195,6 +195,7 @@ typedef enum {
     SLTok_RBRACK,
     SLTok_COMMA,
     SLTok_DOT,
+    SLTok_ELLIPSIS,
     SLTok_SEMICOLON,
     SLTok_COLON,
 
@@ -341,6 +342,8 @@ enum {
     SLAstFlag_PAREN = 0x0200u,
     SLAstFlag_COMPOUND_FIELD_SHORTHAND = 0x0400u,
     SLAstFlag_CONTEXT_BIND_SHORTHAND = 0x0800u,
+    SLAstFlag_PARAM_VARIADIC = 0x1000u,
+    SLAstFlag_CALL_ARG_SPREAD = 0x2000u,
 };
 
 typedef uint32_t SLFeatures;

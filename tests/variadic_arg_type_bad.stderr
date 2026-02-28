@@ -1,0 +1,1 @@
+tests/variadic_arg_type_bad.sl:6:9: SL2068: variadic argument type mismatch

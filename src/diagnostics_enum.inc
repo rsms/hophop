@@ -89,6 +89,18 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_CALL_FIRST_ARG_NAME_MISMATCH, /* SL2060: first argument name must match parameter '{s}'
                                           */
     SLDiag_SWITCH_MISSING_CASES,         /* SL2061: missing cases in switch */
+    SLDiag_FORMAT_INVALID,               /* SL2062: invalid format string */
+    SLDiag_FORMAT_ARG_COUNT_MISMATCH,    /* SL2063: format placeholder count does not match argument
+                                            count */
+    SLDiag_FORMAT_ARG_TYPE_MISMATCH,     /* SL2064: format argument type mismatch */
+    SLDiag_FORMAT_UNSUPPORTED_TYPE,      /* SL2065: format does not support this type */
+    SLDiag_VARIADIC_PARAM_NOT_LAST,      /* SL2066: variadic parameter must be last */
+    SLDiag_VARIADIC_PARAM_DUPLICATE,     /* SL2067: only one variadic parameter is allowed */
+    SLDiag_VARIADIC_ARG_TYPE_MISMATCH,   /* SL2068: variadic argument type mismatch */
+    SLDiag_VARIADIC_SPREAD_NON_SLICE, /* SL2069: spread argument must be assignable to the variadic
+                                         slice type */
+    SLDiag_VARIADIC_SPREAD_NOT_LAST,  /* SL2070: spread argument must be the final argument */
+    SLDiag_VARIADIC_CALL_SHAPE_MISMATCH, /* SL2071: invalid variadic argument shape */
     SLDiag_CODEGEN_INTERNAL,             /* SL3001: internal codegen error */
     SLDiag_ARENA_OOM,                    /* SL4001: arena out of memory */
     SLDiag_UNKNOWN_FEATURE,              /* SL4002: unknown feature '{s}' */

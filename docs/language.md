@@ -284,7 +284,7 @@ fn f() {
 ## 5. Type System
 
 ### 5.1 Built-in and constructed types
-- [TYPE-BUILTIN-001][Stable] Built-ins include `bool` and `str`.
+- [TYPE-BUILTIN-001][Stable] Built-ins include `bool`, `str`, and `type`.
 - [TYPE-BUILTIN-002][Stable] Source-level numeric type names are:
   - unsigned integers: `u8`, `u16`, `u32`, `u64`, `uint`
   - signed integers: `i8`, `i16`, `i32`, `i64`, `int`
@@ -298,6 +298,8 @@ fn f() {
 - [TYPE-CONSTR-004][Stable] No-value function return has no source-level type spelling.
 - [TYPE-CONSTR-005][Stable] Variable-size-by-value types are invalid in local/param/return/function-type positions.
 - [TYPE-CONSTR-006][Stable] Tuple types require at least two element types.
+- [TYPE-CONSTR-007][Provisional] In type positions, a top-level `const` name is valid when that constant const-evaluates to a `type` value.
+- [TYPE-CONSTR-008][Provisional] `const B = A` (with `A` a type value) is a non-distinct type alias; `B` resolves to the same type as `A`. Use `type B A` for a distinct named type.
 
 ### 5.1.1 Textual types (`str` and `rune`)
 - [TYPE-TEXT-001][Stable] `str` denotes textual byte sequences constrained to valid UTF-8.
@@ -380,6 +382,7 @@ fn f() {
 - [EXPR-COMMON-002][Stable] Equality/ordering comparisons that are not handled by optional-null special case or comparison hooks MUST use [EXPR-COMMON-001].
 - [EXPR-CMPSET-001][Stable] Comparable types are:
   - `bool` and numeric types
+  - `type` values
   - string-like values (`str`, `*str`, `&str`)
   - pointers/references
   - arrays/slices whose element type is comparable
@@ -542,6 +545,30 @@ fn f() {
 - [BI-PRINT-002][Stable] Effective context MUST provide field `log`.
 - [BI-PRINT-003][Stable] Core type checking imposes no additional static shape/type requirement on `log` beyond field presence.
 - [BI-PRINT-004][Provisional] `Reference-slc` currently validates `log` field presence at typecheck time and may rely on backend coercion at codegen time for concrete logger compatibility.
+
+### 9.8 `fmt(format, args...)`
+- [BI-FMT-001][Provisional] `fmt` requires at least one argument; the first argument MUST be `str`-assignable.
+- [BI-FMT-002][Provisional] `fmt` requires effective context field `mem` compatible with `*Allocator`.
+- [BI-FMT-003][Provisional] `fmt` returns `*str`.
+- [BI-FMT-004][Provisional] In v1, supported placeholders are `{i}` (integer) and `{r}` (reflective).
+- [BI-FMT-005][Provisional] `{{` and `}}` represent literal braces.
+- [BI-FMT-006][Provisional] If format is const-evaluable, placeholder count and argument compatibility are checked at typecheck time.
+
+### 9.9 `typeof(x)`
+- [BI-TYPEOF-001][Provisional] `typeof(x)` requires exactly one argument.
+- [BI-TYPEOF-002][Provisional] `typeof(x)` returns a value of builtin metatype `type`.
+- [BI-TYPEOF-003][Provisional] The returned type value represents the static type of `x`.
+- [BI-TYPEOF-004][Provisional] For type-name operands, `typeof(T)` is `type` (because type names are value expressions whose type is `type`).
+
+### 9.10 `kind(...)` and `base(...)`
+- [BI-REFLECT-001][Provisional] `kind(t)` and `t.kind()` require one `type` operand and return `reflect.Kind` (fallback `u8` when `reflect.Kind` is unavailable).
+- [BI-REFLECT-002][Provisional] `base(t)` and `t.base()` require one `type` operand and return `type`.
+- [BI-REFLECT-003][Provisional] `base(...)` is valid only for alias type values; non-alias operands are a type error.
+- [BI-REFLECT-004][Provisional] `is_alias(t)` and `t.is_alias()` require one `type` operand and return `bool`.
+- [BI-REFLECT-005][Provisional] `type_name(t)` and `t.type_name()` require one `type` operand and return `&str`.
+- [BI-REFLECT-006][Provisional] `ptr(t)` requires one `type` operand and returns `type` representing `*t`.
+- [BI-REFLECT-007][Provisional] `slice(t)` requires one `type` operand and returns `type` representing `[t]`.
+- [BI-REFLECT-008][Provisional] `array(t, n)` requires `type` + integer operands and returns `type` representing `[t n]`; `n` must be const-evaluable and in `0..UINT32_MAX` when materialized.
 
 ## 10. Variable-Size Structs (VSS)
 

@@ -36,6 +36,7 @@ static void SLCTFEValueInvalid(SLCTFEValue* v) {
     v->i64 = 0;
     v->f64 = 0.0;
     v->b = 0;
+    v->typeTag = 0;
     v->s.bytes = NULL;
     v->s.len = 0;
 }
@@ -484,6 +485,20 @@ static int SLCTFEEvalBinary(
         }
     }
 
+    if (lhs->kind == SLCTFEValue_TYPE && rhs->kind == SLCTFEValue_TYPE) {
+        switch (op) {
+            case SLTok_EQ:
+                out->kind = SLCTFEValue_BOOL;
+                out->b = lhs->typeTag == rhs->typeTag;
+                return 1;
+            case SLTok_NEQ:
+                out->kind = SLCTFEValue_BOOL;
+                out->b = lhs->typeTag != rhs->typeTag;
+                return 1;
+            default: break;
+        }
+    }
+
     if (SLCTFEValueToF64(lhs, &lf) && SLCTFEValueToF64(rhs, &rf)) {
         switch (op) {
             case SLTok_ADD:
@@ -608,6 +623,7 @@ int SLCTFEEvalExpr(
                 v.kind = SLCTFEValue_INT;
                 v.f64 = 0.0;
                 v.b = 0;
+                v.typeTag = 0;
                 v.s.bytes = NULL;
                 v.s.len = 0;
                 if ((SLTokenKind)ins->tok == SLTok_RUNE) {
@@ -635,6 +651,7 @@ int SLCTFEEvalExpr(
                 v.kind = SLCTFEValue_FLOAT;
                 v.i64 = 0;
                 v.b = 0;
+                v.typeTag = 0;
                 v.s.bytes = NULL;
                 v.s.len = 0;
                 if (SLCTFEParseFloatLiteral(run.arena, run.src, ins->start, ins->end, &v.f64) != 0)
@@ -656,6 +673,7 @@ int SLCTFEEvalExpr(
                 v.i64 = 0;
                 v.f64 = 0.0;
                 v.b = b;
+                v.typeTag = 0;
                 v.s.bytes = NULL;
                 v.s.len = 0;
                 if (SLCTFEPush(&run, &v) != 0) {
@@ -680,6 +698,7 @@ int SLCTFEEvalExpr(
                 v.i64 = 0;
                 v.f64 = 0.0;
                 v.b = 0;
+                v.typeTag = 0;
                 v.s.bytes = bytes;
                 v.s.len = len;
                 if (SLCTFEPush(&run, &v) != 0) {
@@ -693,6 +712,7 @@ int SLCTFEEvalExpr(
                 v.i64 = 0;
                 v.f64 = 0.0;
                 v.b = 0;
+                v.typeTag = 0;
                 v.s.bytes = NULL;
                 v.s.len = 0;
                 if (SLCTFEPush(&run, &v) != 0) {

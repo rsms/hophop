@@ -248,6 +248,7 @@ static int SLPParseSwitchStmt(SLParser* p, int32_t* out);
 static int SLPIsTypeStart(SLTokenKind kind) {
     switch (kind) {
         case SLTok_IDENT:
+        case SLTok_TYPE:
         case SLTok_STRUCT:
         case SLTok_UNION:
         case SLTok_MUL:
@@ -294,12 +295,15 @@ static int SLPCloneSubtree(SLParser* p, int32_t nodeId, int32_t* out) {
 }
 
 static int SLPParseTypeName(SLParser* p, int32_t* out) {
-    const SLToken* first;
+    const SLToken* first = NULL;
     const SLToken* last;
     int32_t        n;
 
-    if (SLPExpect(p, SLTok_IDENT, SLDiag_EXPECTED_TYPE, &first) != 0) {
-        return -1;
+    if (SLPAt(p, SLTok_IDENT) || SLPAt(p, SLTok_TYPE)) {
+        p->pos++;
+        first = SLPPrev(p);
+    } else {
+        return SLPFail(p, SLDiag_EXPECTED_TYPE);
     }
     last = first;
     while ((p->pos + 1u) < p->tokLen && p->tok[p->pos].kind == SLTok_DOT
@@ -387,6 +391,7 @@ static int SLPParseFnType(SLParser* p, int32_t* out) {
     const SLToken* fnTok;
     const SLToken* rp;
     int32_t        fnTypeNode;
+    int            sawVariadic = 0;
 
     if (SLPExpect(p, SLTok_FN, SLDiag_EXPECTED_TYPE, &fnTok) != 0) {
         return -1;
@@ -403,7 +408,21 @@ static int SLPParseFnType(SLParser* p, int32_t* out) {
     if (!SLPAt(p, SLTok_RPAREN)) {
         for (;;) {
             int consumedGroup = 0;
-            if (SLPAt(p, SLTok_IDENT)
+            if (SLPMatch(p, SLTok_ELLIPSIS)) {
+                int32_t paramType = -1;
+                if (sawVariadic) {
+                    return SLPFail(p, SLDiag_VARIADIC_PARAM_DUPLICATE);
+                }
+                if (SLPParseType(p, &paramType) != 0) {
+                    return -1;
+                }
+                p->nodes[paramType].flags |= SLAstFlag_PARAM_VARIADIC;
+                if (SLPAddChild(p, fnTypeNode, paramType) != 0) {
+                    return -1;
+                }
+                sawVariadic = 1;
+            } else if (
+                SLPAt(p, SLTok_IDENT)
                 && SLPTryParseFnTypeNamedParamGroup(p, fnTypeNode, &consumedGroup) != 0)
             {
                 return -1;
@@ -419,6 +438,9 @@ static int SLPParseFnType(SLParser* p, int32_t* out) {
             }
             if (!SLPMatch(p, SLTok_COMMA)) {
                 break;
+            }
+            if (sawVariadic) {
+                return SLPFail(p, SLDiag_VARIADIC_PARAM_NOT_LAST);
             }
         }
     }
@@ -1019,7 +1041,7 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
         return SLPParseCompoundLiteralTail(p, -1, out);
     }
 
-    if (SLPMatch(p, SLTok_IDENT) || SLPMatch(p, SLTok_CONTEXT)) {
+    if (SLPMatch(p, SLTok_IDENT) || SLPMatch(p, SLTok_CONTEXT) || SLPMatch(p, SLTok_TYPE)) {
         t = SLPPrev(p);
         n = SLPNewNode(p, SLAst_IDENT, t->start, t->end);
         if (n < 0) {
@@ -1221,6 +1243,7 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
                     int32_t        arg;
                     int32_t        argNode;
                     const SLToken* labelTok = NULL;
+                    const SLToken* spreadTok = NULL;
                     uint32_t       argStart = SLPPeek(p)->start;
                     if (SLPAt(p, SLTok_IDENT) && (p->pos + 1u) < p->tokLen
                         && p->tok[p->pos + 1u].kind == SLTok_COLON)
@@ -1231,17 +1254,23 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
                     if (SLPParseExpr(p, 1, &arg) != 0) {
                         return -1;
                     }
+                    if (SLPMatch(p, SLTok_ELLIPSIS)) {
+                        spreadTok = SLPPrev(p);
+                    }
                     argNode = SLPNewNode(
                         p,
                         SLAst_CALL_ARG,
                         labelTok != NULL ? labelTok->start : argStart,
-                        p->nodes[arg].end);
+                        spreadTok != NULL ? spreadTok->end : p->nodes[arg].end);
                     if (argNode < 0) {
                         return -1;
                     }
                     if (labelTok != NULL) {
                         p->nodes[argNode].dataStart = labelTok->start;
                         p->nodes[argNode].dataEnd = labelTok->end;
+                    }
+                    if (spreadTok != NULL) {
+                        p->nodes[argNode].flags |= SLAstFlag_CALL_ARG_SPREAD;
                     }
                     if (SLPAddChild(p, argNode, arg) != 0 || SLPAddChild(p, n, argNode) != 0) {
                         return -1;
@@ -1621,11 +1650,26 @@ static int SLPBuildNameListNode(
     return SLPBuildListNode(p, SLAst_NAME_LIST, items, nameCount, outNameList);
 }
 
-static int SLPParseParamGroup(SLParser* p, int32_t fnNode) {
+static int SLPFnHasVariadicParam(SLParser* p, int32_t fnNode) {
+    int32_t child = p->nodes[fnNode].firstChild;
+    while (child >= 0) {
+        if (p->nodes[child].kind == SLAst_PARAM
+            && (p->nodes[child].flags & SLAstFlag_PARAM_VARIADIC) != 0)
+        {
+            return 1;
+        }
+        child = p->nodes[child].nextSibling;
+    }
+    return 0;
+}
+
+static int SLPParseParamGroup(SLParser* p, int32_t fnNode, int* outIsVariadic) {
     const SLToken* lastName = NULL;
     int32_t        firstParam = -1;
     int32_t        lastParam = -1;
     int32_t        type = -1;
+    int            isVariadic = 0;
+    int            hasExistingVariadic = SLPFnHasVariadicParam(p, fnNode);
 
     for (;;) {
         const SLToken* name;
@@ -1653,6 +1697,18 @@ static int SLPParseParamGroup(SLParser* p, int32_t fnNode) {
         if (!SLPAt(p, SLTok_IDENT)) {
             return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
         }
+    }
+
+    if (SLPMatch(p, SLTok_ELLIPSIS)) {
+        if (firstParam != lastParam) {
+            return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+        }
+        if (hasExistingVariadic) {
+            return SLPFail(p, SLDiag_VARIADIC_PARAM_DUPLICATE);
+        }
+        isVariadic = 1;
+    } else if (hasExistingVariadic) {
+        return SLPFail(p, SLDiag_VARIADIC_PARAM_NOT_LAST);
     }
 
     if (!SLPIsTypeStart(SLPPeek(p)->kind)) {
@@ -1687,6 +1743,9 @@ static int SLPParseParamGroup(SLParser* p, int32_t fnNode) {
             if (SLPAddChild(p, param, typeNode) != 0) {
                 return -1;
             }
+            if (isVariadic) {
+                p->nodes[param].flags |= SLAstFlag_PARAM_VARIADIC;
+            }
             p->nodes[param].end = p->nodes[typeNode].end;
             param = nextParam;
         }
@@ -1694,6 +1753,9 @@ static int SLPParseParamGroup(SLParser* p, int32_t fnNode) {
 
     if (SLPAddChild(p, fnNode, firstParam) != 0) {
         return -1;
+    }
+    if (outIsVariadic != NULL) {
+        *outIsVariadic = isVariadic;
     }
     return 0;
 }
@@ -2657,7 +2719,8 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
 
     if (!SLPAt(p, SLTok_RPAREN)) {
         for (;;) {
-            if (SLPParseParamGroup(p, fn) != 0) {
+            int isVariadic = 0;
+            if (SLPParseParamGroup(p, fn, &isVariadic) != 0) {
                 return -1;
             }
             if (!SLPMatch(p, SLTok_COMMA)) {

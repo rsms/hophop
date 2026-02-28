@@ -47,8 +47,12 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/slc check examples/struct_composition.sl`
 - Type functions (receiver sugar, `x.len()`): `examples/type_functions.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/type_functions.sl`
+- Variadic functions (`...` params, forwarding, fixed+variadic calls): `examples/variadic.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/variadic.sl`
 - Type aliases (nominal alias + overload selection): `examples/type_alias.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/type_alias.sl`
+- Reflection (`type`, `typeof`, `kind`, `base`): `examples/reflection.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/reflection.sl`
 - Overload dispatch (same-name overloads): `examples/function_groups.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/function_groups.sl`
 - SLP-13 compound literals (typed/inferred forms, nested init, ref binding, zero fill):

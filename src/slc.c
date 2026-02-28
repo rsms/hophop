@@ -2893,12 +2893,13 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
 
 static int IsBuiltinTypeName(const char* src, uint32_t start, uint32_t end) {
     return SliceEqCStr(src, start, end, "bool") || SliceEqCStr(src, start, end, "str")
-        || SliceEqCStr(src, start, end, "u8") || SliceEqCStr(src, start, end, "u16")
-        || SliceEqCStr(src, start, end, "u32") || SliceEqCStr(src, start, end, "u64")
-        || SliceEqCStr(src, start, end, "i8") || SliceEqCStr(src, start, end, "i16")
-        || SliceEqCStr(src, start, end, "i32") || SliceEqCStr(src, start, end, "i64")
-        || SliceEqCStr(src, start, end, "uint") || SliceEqCStr(src, start, end, "int")
-        || SliceEqCStr(src, start, end, "f32") || SliceEqCStr(src, start, end, "f64");
+        || SliceEqCStr(src, start, end, "type") || SliceEqCStr(src, start, end, "u8")
+        || SliceEqCStr(src, start, end, "u16") || SliceEqCStr(src, start, end, "u32")
+        || SliceEqCStr(src, start, end, "u64") || SliceEqCStr(src, start, end, "i8")
+        || SliceEqCStr(src, start, end, "i16") || SliceEqCStr(src, start, end, "i32")
+        || SliceEqCStr(src, start, end, "i64") || SliceEqCStr(src, start, end, "uint")
+        || SliceEqCStr(src, start, end, "int") || SliceEqCStr(src, start, end, "f32")
+        || SliceEqCStr(src, start, end, "f64");
 }
 
 static int PackageHasExport(const SLPackage* pkg, const char* name) {
@@ -3559,8 +3560,9 @@ static char* _Nullable ResolveLibImportDirInRoot(const char* rootDir, const char
 }
 
 static int IsLibImportPath(const char* importPath) {
-    return StrEq(importPath, "core") || StrEq(importPath, "mem") || StrEq(importPath, "platform")
-        || strncmp(importPath, "std/", 4u) == 0 || strncmp(importPath, "platform/", 9u) == 0;
+    return StrEq(importPath, "core") || StrEq(importPath, "reflect") || StrEq(importPath, "mem")
+        || StrEq(importPath, "platform") || strncmp(importPath, "std/", 4u) == 0
+        || strncmp(importPath, "platform/", 9u) == 0;
 }
 
 static char* _Nullable ResolveLibImportDir(const char* startDir, const char* importPath) {
@@ -3614,6 +3616,16 @@ static int IsCorePackage(const SLPackage* pkg) {
     return StrEq(base, "core");
 }
 
+static int IsReflectPackage(const SLPackage* pkg) {
+    const char* base;
+    if (pkg == NULL || pkg->dirPath == NULL) {
+        return 0;
+    }
+    base = strrchr(pkg->dirPath, '/');
+    base = base != NULL ? base + 1 : pkg->dirPath;
+    return StrEq(base, "reflect");
+}
+
 static int EnsureImplicitCoreImport(SLPackage* pkg) {
     char*    alias = NULL;
     char*    importPath = NULL;
@@ -3626,6 +3638,31 @@ static int EnsureImplicitCoreImport(SLPackage* pkg) {
     }
     alias = MakeUniqueImportAlias(pkg, "core");
     importPath = DupCStr("core");
+    if (alias == NULL || importPath == NULL) {
+        free(alias);
+        free(importPath);
+        return ErrorSimple("out of memory");
+    }
+    if (AddImportRef(pkg, alias, NULL, importPath, 0, 0, 0, &importIndex) != 0) {
+        free(alias);
+        free(importPath);
+        return ErrorSimple("out of memory");
+    }
+    return 0;
+}
+
+static int EnsureImplicitReflectImport(SLPackage* pkg) {
+    char*    alias = NULL;
+    char*    importPath = NULL;
+    uint32_t importIndex = 0;
+    if (IsCorePackage(pkg) || IsReflectPackage(pkg)) {
+        return 0;
+    }
+    if (FindImportIndexByPath(pkg, "reflect") >= 0) {
+        return 0;
+    }
+    alias = MakeUniqueImportAlias(pkg, "reflect");
+    importPath = DupCStr("reflect");
     if (alias == NULL || importPath == NULL) {
         free(alias);
         free(importPath);
@@ -3741,6 +3778,9 @@ static int LoadSelectedPlatformTargetPackage(
 static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage* pkg) {
     uint32_t i;
     if (EnsureImplicitCoreImport(pkg) != 0) {
+        return -1;
+    }
+    if (EnsureImplicitReflectImport(pkg) != 0) {
         return -1;
     }
     for (i = 0; i < pkg->importLen; i++) {
@@ -7238,6 +7278,7 @@ static void SLEvalValueSetNull(SLCTFEValue* value) {
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
+    value->typeTag = 0;
     value->s.bytes = NULL;
     value->s.len = 0;
 }

@@ -1,0 +1,1 @@
+tests/reflection_typeof_bad_arity.sl:2:2: SL2005: call arity mismatch

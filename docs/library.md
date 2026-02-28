@@ -125,6 +125,25 @@ fn panic(message str)
 Exact behavior is platform-specific; it lowers to the platform panic operation.
 
 
+### `fmt`
+
+```sl
+fn fmt(format str, ...args) *str
+```
+
+`fmt` builds a newly allocated string using `context.mem`.
+
+- Returns `*str`; caller owns the allocation and should `free(...)` it.
+- Placeholders in v1:
+  - `{i}` integer decimal
+  - `{r}` reflective rendering
+- Escapes:
+  - `{{` emits `{`
+  - `}}` emits `}`
+- When `format` is const-evaluable, placeholder shape/count and argument compatibility are checked at typecheck time.
+- For non-const format strings, validation is deferred to runtime parsing.
+
+
 ### `print`
 
 ```sl
@@ -203,20 +222,24 @@ global host types in `prelude.sl` instead.
 
 ## Reflection Package (Draft)
 
-`std/reflection` is proposed in SLP-18 as a compile-time reflection API.
+`reflect` is proposed in SLP-18 as a compile-time reflection API.
 
 Planned surface (draft):
 
-- `reflection.Kind` enum for type categories (`Primitive`, `Alias`, `Struct`, etc.)
+- `reflect.Kind` enum for type categories (`Primitive`, `Alias`, `Struct`, etc.)
 - Type reflection operations via `typeof` and type-value methods:
   - `.kind()`
   - `.base()` (for aliases)
   - `.fields()` (for aggregates)
+- Type constructor operations on `type` values:
+  - `ptr(T)`
+  - `slice(T)`
+  - `array(T, N)`
 
 Sketch examples:
 
 ```sl
-import "std/reflection"
+import "reflect"
 
 type MyInt int
 struct Foo { x, y int }
@@ -224,10 +247,10 @@ struct Foo { x, y int }
 fn main() {
     var x i32
     assert typeof(x) == i32
-    assert i32.kind() == reflection.Kind.Primitive
-    assert MyInt.kind() == reflection.Kind.Alias
+    assert i32.kind() == reflect.Kind.Primitive
+    assert MyInt.kind() == reflect.Kind.Alias
     assert MyInt.base() == int
-    assert Foo.kind() == reflection.Kind.Struct
+    assert Foo.kind() == reflect.Kind.Struct
     assert Foo.fields().len() == 2
 }
 ```

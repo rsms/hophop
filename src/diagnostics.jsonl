@@ -82,6 +82,16 @@
 {"id": "SL2059", "name": "CALL_ARG_MISSING", "category": "semantic", "message": "missing argument for parameter '{s}'"}
 {"id": "SL2060", "name": "CALL_FIRST_ARG_NAME_MISMATCH", "category": "semantic", "message": "first argument name must match parameter '{s}'"}
 {"id": "SL2061", "name": "SWITCH_MISSING_CASES", "category": "semantic", "message": "missing cases in switch"}
+{"id": "SL2062", "name": "FORMAT_INVALID", "category": "semantic", "message": "invalid format string"}
+{"id": "SL2063", "name": "FORMAT_ARG_COUNT_MISMATCH", "category": "semantic", "message": "format placeholder count does not match argument count"}
+{"id": "SL2064", "name": "FORMAT_ARG_TYPE_MISMATCH", "category": "semantic", "message": "format argument type mismatch"}
+{"id": "SL2065", "name": "FORMAT_UNSUPPORTED_TYPE", "category": "semantic", "message": "format does not support this type"}
+{"id": "SL2066", "name": "VARIADIC_PARAM_NOT_LAST", "category": "semantic", "message": "variadic parameter must be last"}
+{"id": "SL2067", "name": "VARIADIC_PARAM_DUPLICATE", "category": "semantic", "message": "only one variadic parameter is allowed"}
+{"id": "SL2068", "name": "VARIADIC_ARG_TYPE_MISMATCH", "category": "semantic", "message": "variadic argument type mismatch"}
+{"id": "SL2069", "name": "VARIADIC_SPREAD_NON_SLICE", "category": "semantic", "message": "spread argument must be assignable to the variadic slice type"}
+{"id": "SL2070", "name": "VARIADIC_SPREAD_NOT_LAST", "category": "semantic", "message": "spread argument must be the final argument"}
+{"id": "SL2071", "name": "VARIADIC_CALL_SHAPE_MISMATCH", "category": "semantic", "message": "invalid variadic argument shape"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}
