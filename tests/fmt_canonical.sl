@@ -76,6 +76,13 @@ fn add(a int, b int) int {
 	return a + b
 }
 
+fn shorthand_examples(y int) {
+	_ = add(1, y)
+	_ = add(1, y: (y))
+	_ = Foo{ x: 1, y }
+	_ = Foo{ x: 1, y: (y) }
+}
+
 fn use_context(x int) int context AppContext {
 	var arr    [int 3]
 	var maybe  ?int  = null            // comment
@@ -147,7 +154,8 @@ fn use_context(x int) int context AppContext {
 	sum = sizeof(int) + sizeof(sum)
 	sum = sum + (new [int len(arr)] with context.alloc) as int
 	_ = add(sum, 1) with context
-	_ = add(sum, 1) with { alloc: context.alloc }
+	_ = add(sum, 1) with { alloc }
+	_ = add(sum, 1) with { alloc: (context).alloc }
 	_ = Foo{ x: 1, y: 2 }.x
 	_ = (&arr[0])!
 	return sum

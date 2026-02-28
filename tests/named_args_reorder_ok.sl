@@ -6,5 +6,5 @@ fn main() {
 	var a i32 = 1
 	var c i32 = 3
 	var b i32 = 2
-	assert build(a, c, b: b) == 123
+	assert build(a, c, b) == 123
 }

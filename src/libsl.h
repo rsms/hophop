@@ -340,6 +340,7 @@ enum {
     SLAstFlag_NEW_HAS_INIT = 0x0100u,
     SLAstFlag_PAREN = 0x0200u,
     SLAstFlag_COMPOUND_FIELD_SHORTHAND = 0x0400u,
+    SLAstFlag_CONTEXT_BIND_SHORTHAND = 0x0800u,
 };
 
 typedef uint32_t SLFeatures;

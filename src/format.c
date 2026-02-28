@@ -203,6 +203,330 @@ static int32_t SLFmtListItemAt(const SLAst* ast, int32_t listNodeId, uint32_t in
     return -1;
 }
 
+static int SLFmtSlicesEqual(
+    SLStrView src, uint32_t aStart, uint32_t aEnd, uint32_t bStart, uint32_t bEnd) {
+    uint32_t len;
+    if (aEnd < aStart || bEnd < bStart || aEnd > src.len || bEnd > src.len) {
+        return 0;
+    }
+    len = aEnd - aStart;
+    if (len != bEnd - bStart) {
+        return 0;
+    }
+    if (len == 0) {
+        return 1;
+    }
+    return memcmp(src.ptr + aStart, src.ptr + bStart, len) == 0;
+}
+
+static int SLFmtSliceEqLiteral(SLStrView src, uint32_t start, uint32_t end, const char* lit) {
+    uint32_t len = SLFmtCStrLen(lit);
+    if (end < start || end > src.len || (end - start) != len) {
+        return 0;
+    }
+    return len == 0 || memcmp(src.ptr + start, lit, len) == 0;
+}
+
+static int SLFmtSliceHasChar(SLStrView src, uint32_t start, uint32_t end, char ch) {
+    uint32_t i;
+    if (end < start || end > src.len) {
+        return 0;
+    }
+    for (i = start; i < end; i++) {
+        if (src.ptr[i] == ch) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int SLFmtExprIsPlainIdent(
+    const SLAst* ast, int32_t exprNodeId, uint32_t* outStart, uint32_t* outEnd) {
+    const SLAstNode* n;
+    if (exprNodeId < 0 || (uint32_t)exprNodeId >= ast->len || outStart == NULL || outEnd == NULL) {
+        return 0;
+    }
+    n = &ast->nodes[exprNodeId];
+    if (n->kind != SLAst_IDENT || (n->flags & SLAstFlag_PAREN) != 0 || n->dataEnd <= n->dataStart) {
+        return 0;
+    }
+    *outStart = n->dataStart;
+    *outEnd = n->dataEnd;
+    return 1;
+}
+
+static int SLFmtNodeDeclaresNameLiteral(
+    const SLAst* ast, SLStrView src, int32_t nodeId, const char* nameLit) {
+    const SLAstNode* n;
+    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return 0;
+    }
+    n = &ast->nodes[nodeId];
+    if ((n->kind == SLAst_PARAM || n->kind == SLAst_VAR || n->kind == SLAst_CONST)
+        && SLFmtSliceEqLiteral(src, n->dataStart, n->dataEnd, nameLit))
+    {
+        return 1;
+    }
+    if (n->kind == SLAst_VAR || n->kind == SLAst_CONST) {
+        int32_t child = SLFmtFirstChild(ast, nodeId);
+        if (child >= 0 && (uint32_t)child < ast->len && ast->nodes[child].kind == SLAst_NAME_LIST) {
+            int32_t nameNode = SLFmtFirstChild(ast, child);
+            while (nameNode >= 0) {
+                const SLAstNode* nn = &ast->nodes[nameNode];
+                if (nn->kind == SLAst_IDENT
+                    && SLFmtSliceEqLiteral(src, nn->dataStart, nn->dataEnd, nameLit))
+                {
+                    return 1;
+                }
+                nameNode = SLFmtNextSibling(ast, nameNode);
+            }
+        }
+    }
+    return 0;
+}
+
+static int32_t SLFmtFindEnclosingFnNode(const SLAst* ast, int32_t nodeId) {
+    const SLAstNode* target;
+    int32_t          best = -1;
+    uint32_t         bestSpan = UINT32_MAX;
+    uint32_t         i;
+    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return -1;
+    }
+    target = &ast->nodes[nodeId];
+    for (i = 0; i < ast->len; i++) {
+        const SLAstNode* n = &ast->nodes[i];
+        if (n->kind != SLAst_FN) {
+            continue;
+        }
+        if (n->start <= target->start && target->end <= n->end) {
+            uint32_t span = n->end - n->start;
+            if (span < bestSpan) {
+                best = (int32_t)i;
+                bestSpan = span;
+            }
+        }
+    }
+    return best;
+}
+
+static int SLFmtFnHasImplicitContextLocal(const SLAst* ast, SLStrView src, int32_t fnNodeId) {
+    const SLAstNode* fn;
+    int32_t          child;
+    if (fnNodeId < 0 || (uint32_t)fnNodeId >= ast->len) {
+        return 0;
+    }
+    fn = &ast->nodes[fnNodeId];
+    if (fn->kind != SLAst_FN) {
+        return 0;
+    }
+    if (SLFmtSliceEqLiteral(src, fn->dataStart, fn->dataEnd, "main")) {
+        return 1;
+    }
+    child = SLFmtFirstChild(ast, fnNodeId);
+    while (child >= 0) {
+        if (ast->nodes[child].kind == SLAst_CONTEXT_CLAUSE) {
+            return 1;
+        }
+        child = SLFmtNextSibling(ast, child);
+    }
+    return 0;
+}
+
+static int SLFmtFnHasShadowingContextLocalBefore(
+    const SLAst* ast, SLStrView src, int32_t fnNodeId, uint32_t beforePos) {
+    const SLAstNode* fn;
+    uint32_t         i;
+    if (fnNodeId < 0 || (uint32_t)fnNodeId >= ast->len) {
+        return 0;
+    }
+    fn = &ast->nodes[fnNodeId];
+    if (fn->kind != SLAst_FN) {
+        return 0;
+    }
+    for (i = 0; i < ast->len; i++) {
+        const SLAstNode* n = &ast->nodes[i];
+        if (n->start < fn->start || n->end > fn->end || n->start >= beforePos) {
+            continue;
+        }
+        if (SLFmtNodeDeclaresNameLiteral(ast, src, (int32_t)i, "context")) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int SLFmtExprIsImplicitContextFieldForBind(
+    const SLAst* ast, SLStrView src, const SLAstNode* bindNode, int32_t exprNodeId) {
+    const SLAstNode* exprNode;
+    int32_t          baseNodeId;
+    uint32_t         baseStart;
+    uint32_t         baseEnd;
+    if (exprNodeId < 0 || (uint32_t)exprNodeId >= ast->len) {
+        return 0;
+    }
+    exprNode = &ast->nodes[exprNodeId];
+    if (exprNode->kind != SLAst_FIELD_EXPR) {
+        return 0;
+    }
+    if (!SLFmtSlicesEqual(
+            src, bindNode->dataStart, bindNode->dataEnd, exprNode->dataStart, exprNode->dataEnd))
+    {
+        return 0;
+    }
+    baseNodeId = SLFmtFirstChild(ast, exprNodeId);
+    if (!SLFmtExprIsPlainIdent(ast, baseNodeId, &baseStart, &baseEnd)) {
+        return 0;
+    }
+    return SLFmtSliceEqLiteral(src, baseStart, baseEnd, "context");
+}
+
+typedef int (*SLFmtExprRewriteRule)(const SLAst* ast, SLStrView src, int32_t* exprNodeId);
+
+static int SLFmtRewriteExprIdentity(const SLAst* ast, SLStrView src, int32_t* exprNodeId) {
+    (void)ast;
+    (void)src;
+    (void)exprNodeId;
+    return 0;
+}
+
+static int SLFmtRewriteExpr(const SLAst* ast, SLStrView src, int32_t* exprNodeId) {
+    static const SLFmtExprRewriteRule rules[] = {
+        SLFmtRewriteExprIdentity,
+    };
+    uint32_t i;
+    if (exprNodeId == NULL) {
+        return -1;
+    }
+    for (i = 0; i < (uint32_t)(sizeof(rules) / sizeof(rules[0])); i++) {
+        if (rules[i](ast, src, exprNodeId) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int SLFmtRewriteCallArgShorthand(const SLAst* ast, SLStrView src, int32_t nodeId) {
+    const SLAstNode* node;
+    SLAstNode*       mutNode;
+    int32_t          exprNode;
+    uint32_t         identStart;
+    uint32_t         identEnd;
+    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return -1;
+    }
+    node = &ast->nodes[nodeId];
+    if (node->kind != SLAst_CALL_ARG || node->dataEnd <= node->dataStart) {
+        return 0;
+    }
+    exprNode = SLFmtFirstChild(ast, nodeId);
+    if (exprNode < 0) {
+        return 0;
+    }
+    if (SLFmtRewriteExpr(ast, src, &exprNode) != 0) {
+        return -1;
+    }
+    if (!SLFmtExprIsPlainIdent(ast, exprNode, &identStart, &identEnd)) {
+        return 0;
+    }
+    if (!SLFmtSlicesEqual(src, node->dataStart, node->dataEnd, identStart, identEnd)) {
+        return 0;
+    }
+    mutNode = (SLAstNode*)&ast->nodes[nodeId];
+    mutNode->dataStart = 0;
+    mutNode->dataEnd = 0;
+    return 0;
+}
+
+static int SLFmtRewriteCompoundFieldShorthand(const SLAst* ast, SLStrView src, int32_t nodeId) {
+    const SLAstNode* node;
+    SLAstNode*       mutNode;
+    int32_t          exprNode;
+    uint32_t         identStart;
+    uint32_t         identEnd;
+    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return -1;
+    }
+    node = &ast->nodes[nodeId];
+    if (node->kind != SLAst_COMPOUND_FIELD
+        || (node->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) != 0
+        || node->dataEnd <= node->dataStart || node->dataEnd > src.len)
+    {
+        return 0;
+    }
+    if (SLFmtSliceHasChar(src, node->dataStart, node->dataEnd, '.')) {
+        return 0;
+    }
+    exprNode = SLFmtFirstChild(ast, nodeId);
+    if (exprNode < 0) {
+        return 0;
+    }
+    if (SLFmtRewriteExpr(ast, src, &exprNode) != 0) {
+        return -1;
+    }
+    if (!SLFmtExprIsPlainIdent(ast, exprNode, &identStart, &identEnd)) {
+        return 0;
+    }
+    if (!SLFmtSlicesEqual(src, node->dataStart, node->dataEnd, identStart, identEnd)) {
+        return 0;
+    }
+    mutNode = (SLAstNode*)&ast->nodes[nodeId];
+    mutNode->flags |= SLAstFlag_COMPOUND_FIELD_SHORTHAND;
+    return 0;
+}
+
+static int SLFmtRewriteContextBindShorthand(const SLAst* ast, SLStrView src, int32_t nodeId) {
+    const SLAstNode* node;
+    SLAstNode*       mutNode;
+    int32_t          exprNode;
+    int32_t          enclosingFn;
+    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return -1;
+    }
+    node = &ast->nodes[nodeId];
+    if (node->kind != SLAst_CONTEXT_BIND || node->dataEnd <= node->dataStart
+        || (node->flags & SLAstFlag_CONTEXT_BIND_SHORTHAND) != 0)
+    {
+        return 0;
+    }
+    exprNode = SLFmtFirstChild(ast, nodeId);
+    if (exprNode < 0) {
+        return 0;
+    }
+    if (SLFmtRewriteExpr(ast, src, &exprNode) != 0) {
+        return -1;
+    }
+    if (!SLFmtExprIsImplicitContextFieldForBind(ast, src, node, exprNode)) {
+        return 0;
+    }
+    enclosingFn = SLFmtFindEnclosingFnNode(ast, nodeId);
+    if (enclosingFn < 0 || !SLFmtFnHasImplicitContextLocal(ast, src, enclosingFn)
+        || SLFmtFnHasShadowingContextLocalBefore(ast, src, enclosingFn, node->start))
+    {
+        return 0;
+    }
+    mutNode = (SLAstNode*)&ast->nodes[nodeId];
+    mutNode->flags |= SLAstFlag_CONTEXT_BIND_SHORTHAND;
+    return 0;
+}
+
+static int SLFmtRewriteAst(const SLAst* ast, SLStrView src) {
+    uint32_t i;
+    if (ast == NULL || ast->nodes == NULL) {
+        return -1;
+    }
+    for (i = 0; i < ast->len; i++) {
+        int32_t nodeId = (int32_t)i;
+        if (SLFmtRewriteCallArgShorthand(ast, src, nodeId) != 0
+            || SLFmtRewriteCompoundFieldShorthand(ast, src, nodeId) != 0
+            || SLFmtRewriteContextBindShorthand(ast, src, nodeId) != 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int SLFmtIsTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
@@ -673,7 +997,7 @@ static int SLFmtEmitCompoundFieldWithAlign(SLFmtCtx* c, int32_t nodeId, uint32_t
         return -1;
     }
     exprNode = SLFmtFirstChild(c->ast, nodeId);
-    if ((n->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) != 0 && exprNode < 0) {
+    if ((n->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) != 0) {
         return SLFmtWriteSlice(c, n->dataStart, n->dataEnd);
     }
     keyLen = n->dataEnd - n->dataStart;
@@ -1043,7 +1367,7 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
             if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
                 return -1;
             }
-            if (ch >= 0) {
+            if ((n->flags & SLAstFlag_CONTEXT_BIND_SHORTHAND) == 0 && ch >= 0) {
                 if (SLFmtWriteCStr(c, ": ") != 0 || SLFmtEmitExpr(c, ch, 0) != 0) {
                     return -1;
                 }
@@ -3813,6 +4137,19 @@ int SLFormat(
 
     parseOptions.flags = SLParseFlag_COLLECT_FORMATTING;
     if (SLParse(arena, src, &parseOptions, &ast, &extras, diag) != 0) {
+        return -1;
+    }
+    if (SLFmtRewriteAst(&ast, src) != 0) {
+        if (diag != NULL) {
+            diag->code = SLDiag_ARENA_OOM;
+            diag->type = SLDiagTypeOfCode(SLDiag_ARENA_OOM);
+            diag->start = 0;
+            diag->end = 0;
+            diag->argStart = 0;
+            diag->argEnd = 0;
+            diag->detail = NULL;
+            diag->hintOverride = NULL;
+        }
         return -1;
     }
 

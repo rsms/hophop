@@ -98,7 +98,7 @@ fn run() i32 context struct {
 
 fn main() {
 	// `main` has no implicit context; provide required fields at the call site.
-	var total i32 = run() with { log: context.log }
+	var total i32 = run() with { log }
 	assert total == 94
 } // `context { ... }` declares required ambient capabilities for this call.
 // Field values can use inferred anonymous literals too.

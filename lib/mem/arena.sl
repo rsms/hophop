@@ -25,7 +25,7 @@ fn alloc_block(arena *ArenaAllocator, minSize uint, align uint) *ArenaBlock {
 		return 0 as *ArenaBlock
 	}
 
-	var payload_addr = arena.mem.impl(arena.mem, addr: 0, align: align, curSize: 0, newSizeInOut: &payload_size, flags: 0)
+	var payload_addr = arena.mem.impl(arena.mem, addr: 0, align, curSize: 0, newSizeInOut: &payload_size, flags: 0)
 	if payload_addr == 0 {
 		return 0 as *ArenaBlock
 	}
@@ -59,7 +59,7 @@ fn arena_alloc_impl(self *core.Allocator, addr uint, align uint, curSize uint, n
 		return 0
 	}
 
-	var block = alloc_block(arena, minSize: newSize, align: align)
+	var block = alloc_block(arena, minSize: newSize, align)
 	if block == 0 as *ArenaBlock {
 		return 0
 	}

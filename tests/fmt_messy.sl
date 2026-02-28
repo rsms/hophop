@@ -15,3 +15,12 @@ break
 }
 return a+b
 }
+
+fn shorthand_rewrite(y int) context Ctx{
+_=add(1,y:y)
+_=add(1,y:(y))
+_=Foo{x:1,y:y}
+_=Foo{x:1,y:(y)}
+_=add(1,2) with {mem:context.mem}
+_=add(1,2) with {mem:(context).mem}
+}
