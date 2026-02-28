@@ -128,7 +128,8 @@ EnumPayload     = "{" [ FieldDeclList ] "}" .
 FnDeclOrDef     = "fn" FnName "(" [ ParamList ] ")" [ FnResultClause ] [ ContextClause ] [ Block ] .
 FnName          = Ident | "sizeof" .
 ParamList       = ParamGroup { "," ParamGroup } .
-ParamGroup      = ( Ident | "_" ) { "," ( Ident | "_" ) } Type .
+ParamGroup      = ( Ident | "_" ) { "," ( Ident | "_" ) } Type
+                | ( Ident | "_" ) "..." Type .
 FnResultClause  = Type | "(" FnResultGroup { "," FnResultGroup } ")" .
 FnResultGroup   = Type | ( Ident { "," Ident } Type ) .
 ContextClause   = "context" Type .
@@ -147,7 +148,7 @@ VarArrayType    = "[" Type "." Ident "]" .
 FnType          = "fn" "(" [ FnTypeParamList ] ")" [ Type ] .
 TupleType       = "(" Type "," Type { "," Type } ")" .
 FnTypeParamList = FnTypeParam { "," FnTypeParam } .
-FnTypeParam     = Type | ( Ident { "," Ident } Type ) .
+FnTypeParam     = Type | ( Ident { "," Ident } Type ) | "..." Type .
 AnonStructType  = [ "struct" ] "{" [ AnonFieldDeclList ] "}" .
 AnonUnionType   = "union" "{" [ AnonFieldDeclList ] "}" .
 TypeName        = Ident { "." Ident } .
@@ -192,7 +193,9 @@ UnaryExpr       = ( ( "+" | "-" | "!" | "*" | "&" ) UnaryExpr ) | PostfixExpr .
 PostfixExpr     = PrimaryExpr { PostfixSuffix } .
 PostfixSuffix   = CallWithContextSuffix | IndexSuffix | SelectorSuffix | CastSuffix | UnwrapSuffix .
 CallWithContextSuffix = CallSuffix [ WithContextClause ] .
-CallSuffix      = "(" [ ExprList ] ")" .
+CallSuffix      = "(" [ CallArgList ] ")" .
+CallArgList     = CallArg { "," CallArg } .
+CallArg         = [ Ident ":" ] Expr [ "..." ] .
 ExprList        = Expr { "," Expr } .
 WithContextClause = "with" ( "context" | ContextOverlay ) .
 ContextOverlay  = "{" [ ContextBindList ] "}" .
@@ -260,6 +263,11 @@ fn f() {
 - [DECL-FN-003][Stable] `context` is not an overload dimension.
 - [DECL-FN-004][Stable] `sizeof` is accepted as a declaration name for builtin-signature compatibility, but `sizeof(...)` expression syntax is always the builtin form and is not shadowable by user functions.
 - [DECL-FN-005][Stable] Function result clause may be a tuple-style list. Named result groups (`(x, y T)`) provide names for readability only; result names are not local bindings.
+- [DECL-FN-006][Provisional] Variadic parameters use `name ...T` and are constrained as follows:
+  - at most one variadic parameter per signature
+  - variadic parameter MUST be the final parameter
+  - grouped-name form is invalid for variadic parameters (`a, b ...T` is invalid)
+- [DECL-FN-007][Provisional] For `fn f(...T)`-style declarations, the variadic parameter binding inside the body has slice type `[T]`.
 
 ### 4.2 Struct composition and enum member scope
 - [DECL-EMBED-001][Stable] `struct` may embed one base field (type-name-only) as first field.
@@ -300,6 +308,8 @@ fn f() {
 - [TYPE-CONSTR-006][Stable] Tuple types require at least two element types.
 - [TYPE-CONSTR-007][Provisional] In type positions, a top-level `const` name is valid when that constant const-evaluates to a `type` value.
 - [TYPE-CONSTR-008][Provisional] `const B = A` (with `A` a type value) is a non-distinct type alias; `B` resolves to the same type as `A`. Use `type B A` for a distinct named type.
+- [TYPE-CONSTR-009][Provisional] Function types may be variadic by marking the final parameter as `...T` (e.g. `fn(...i32) i32`).
+- [TYPE-CONSTR-010][Provisional] Variadic function types are distinct from non-variadic function types with trailing slice parameters.
 
 ### 5.1.1 Textual types (`str` and `rune`)
 - [TYPE-TEXT-001][Stable] `str` denotes textual byte sequences constrained to valid UTF-8.
@@ -437,6 +447,14 @@ fn f() {
   - alias-source peeling is recursive and additive (`cost(dst <- alias(src)) = cost(dst <- srcBase) + 1`)
   - optional-to-optional conversion recurses on base (`cost(?A <- ?B) = cost(A <- B)`)
   - all non-recursive assignable non-exact conversions default to cost `1` unless matched by a more specific cost rule above.
+- [EXPR-SUGAR-010][Provisional] For variadic signature `f(p1, ..., pn, v ...T)`, call shapes are:
+  - fixed-only: `f(a1, ..., an)` (empty variadic tail)
+  - explicit tail: `f(a1, ..., an, e1, ..., ek)` where each `ei` is assignable to `T`
+  - spread tail: `f(a1, ..., an, s...)` where `s` is assignable to `[T]`
+- [EXPR-SUGAR-011][Provisional] Spread marker `...` is valid only on the final call argument.
+- [EXPR-SUGAR-012][Provisional] In spread form, the spread argument MUST be unlabeled and the call MUST provide exactly one spread argument for the variadic tail.
+- [EXPR-SUGAR-013][Provisional] In explicit-tail form, variadic-tail arguments are positional only; explicit named arguments are not allowed in the variadic tail.
+- [EXPR-SUGAR-014][Provisional] Named arguments (when present) participate only in fixed-parameter mapping; variadic-tail mapping is positional.
 
 ### 6.3 Compound literals
 - [EXPR-COMPOUND-001][Stable] Compound literals are named-field only.
