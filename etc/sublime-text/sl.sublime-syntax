@@ -35,12 +35,28 @@ contexts:
           scope: comment.line.double-slash.slang
 
     strings:
+        - match: ''''
+          scope: punctuation.definition.character.begin.slang
+          push: rune
         - match: '"'
           scope: punctuation.definition.string.begin.slang
           push: interpreted-string
         - match: '`'
           scope: punctuation.definition.string.begin.slang
           push: raw-string
+
+    rune:
+        - meta_include_prototype: false
+        - meta_scope: constant.character.rune.slang
+        - match: '\\\r?\n'
+          scope: constant.character.escape.line-continuation.slang
+        - match: '\\(?:[abfnrtv\\''"]|[0-7]{3}|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'
+          scope: constant.character.escape.slang
+        - match: '\\.'
+          scope: invalid.illegal.escape.slang
+        - match: ''''
+          scope: punctuation.definition.character.end.slang
+          pop: true
 
     interpreted-string:
         - meta_include_prototype: false
@@ -135,6 +151,8 @@ contexts:
           scope: support.function.builtin.slang
 
     operators:
+        - match: '\.\.\.'
+          scope: keyword.operator.variadic.slang
         - match: '(==|!=|<=|>=|<<=|>>=|\+=|-=|\*=|/=|%=|&=|\|=|\^=|<<|>>|&&|\|\||=|\+|-|\*|/|%|&|\||\^|<|>|!)'
           scope: keyword.operator.slang
 
