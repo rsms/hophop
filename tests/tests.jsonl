@@ -436,6 +436,7 @@
 {"id":"formatter.block_comments.exempt_pretest","suite":"formatter","kind":"slc_fmt","input":"tests/block_comments.sl","expect_exit":0,"pretest_fmt_exempt_input":true}
 {"id":"formatter.messy.check_dirty","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_messy.sl","check":true,"expect_exit":1,"expect_stdout":"tests/fmt_check_dirty.stdout","pretest_fmt_exempt_input":true}
 {"id":"formatter.messy.rewrite","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_messy.sl","expect_exit":0,"verify_files":[{"path":"input.sl","expect":"tests/fmt_messy.expected.sl"}],"pretest_fmt_exempt_input":true}
+{"id":"formatter.align_index_assign.rewrite","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_align_index_assign.sl","expect_exit":0,"verify_files":[{"path":"input.sl","expect":"tests/fmt_align_index_assign.expected.sl"}],"pretest_fmt_exempt_input":true}
 {"id":"formatter.import_groups.check_dirty","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_import_groups.sl","check":true,"expect_exit":1,"expect_stdout":"tests/fmt_check_import_groups_dirty.stdout","pretest_fmt_exempt_input":true}
 {"id":"formatter.import_groups.rewrite","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_import_groups.sl","expect_exit":0,"verify_files":[{"path":"input.sl","expect":"tests/fmt_import_groups.expected.sl"}],"pretest_fmt_exempt_input":true}
 {"id":"formatter.dir.check_top_level_only","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_dir","check":true,"expect_exit":1,"expect_stdout":"tests/fmt_check_dir_top.stdout","pretest_fmt_exempt_paths":["top.sl"]}

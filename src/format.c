@@ -1896,7 +1896,12 @@ static int SLFmtIsInlineAnonAggregateType(SLFmtCtx* c, int32_t typeNodeId) {
 }
 
 static int SLFmtEmitAlignedVarOrConstGroup(
-    SLFmtCtx* c, int32_t firstNodeId, const char* kw, int32_t* outLast, int32_t* outNext) {
+    SLFmtCtx*   c,
+    int32_t     firstNodeId,
+    const char* kw,
+    int32_t*    outLast,
+    int32_t*    outNext,
+    uint32_t*   outMaxBeforeOpLen) {
     const SLAstKind     kind = c->ast->nodes[firstNodeId].kind;
     int32_t             cur = firstNodeId;
     int32_t             prev = -1;
@@ -2064,11 +2069,12 @@ static int SLFmtEmitAlignedVarOrConstGroup(
 
     *outLast = rows[count - 1u].nodeId;
     *outNext = cur;
+    *outMaxBeforeOpLen = maxBeforeOpLen;
     return 0;
 }
 
 static int SLFmtEmitAlignedAssignGroup(
-    SLFmtCtx* c, int32_t firstNodeId, int32_t* outLast, int32_t* outNext) {
+    SLFmtCtx* c, int32_t firstNodeId, int32_t* outLast, int32_t* outNext, uint32_t minLhsLen) {
     int32_t                cur = firstNodeId;
     int32_t                prev = -1;
     int32_t                prevLhs = -1;
@@ -2135,6 +2141,10 @@ static int SLFmtEmitAlignedAssignGroup(
         }
         rows[i].hasTrailingComment = (uint8_t)SLFmtHasUnusedTrailingCommentsForNodes(c, &cur, 1u);
         cur = SLFmtNextSibling(c->ast, cur);
+    }
+
+    if (minLhsLen > maxLhsLen) {
+        maxLhsLen = minLhsLen;
     }
 
     for (i = 0; i < count; i++) {
@@ -2445,8 +2455,10 @@ static int SLFmtEmitSwitchClauseGroup(
 }
 
 static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId) {
-    int32_t stmt;
-    int32_t prevEmitted = -1;
+    int32_t  stmt;
+    int32_t  prevEmitted = -1;
+    uint32_t carryAssignMinLhsLen = 0;
+    int      carryAssignMinLhsLenValid = 0;
     if (SLFmtWriteChar(c, '{') != 0) {
         return -1;
     }
@@ -2462,7 +2474,11 @@ static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId) {
             int32_t  lhsNode = -1;
             int32_t  rhsNode = -1;
             uint16_t op = 0;
+            uint32_t varLikeMaxBeforeOpLen = 0;
             if (prevEmitted >= 0) {
+                if (!SLFmtCanContinueAlignedGroup(c, prevEmitted, stmt)) {
+                    carryAssignMinLhsLenValid = 0;
+                }
                 if (SLFmtNewline(c) != 0) {
                     return -1;
                 }
@@ -2471,21 +2487,34 @@ static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId) {
                 }
             }
             if (c->ast->nodes[stmt].kind == SLAst_VAR && !SLFmtIsGroupedVarLike(c, stmt)) {
-                if (SLFmtEmitAlignedVarOrConstGroup(c, stmt, "var", &last, &next) != 0) {
+                if (SLFmtEmitAlignedVarOrConstGroup(
+                        c, stmt, "var", &last, &next, &varLikeMaxBeforeOpLen)
+                    != 0)
+                {
                     return -1;
                 }
+                carryAssignMinLhsLen = varLikeMaxBeforeOpLen;
+                carryAssignMinLhsLenValid = (varLikeMaxBeforeOpLen > 0u);
             } else if (c->ast->nodes[stmt].kind == SLAst_CONST && !SLFmtIsGroupedVarLike(c, stmt)) {
-                if (SLFmtEmitAlignedVarOrConstGroup(c, stmt, "const", &last, &next) != 0) {
+                if (SLFmtEmitAlignedVarOrConstGroup(
+                        c, stmt, "const", &last, &next, &varLikeMaxBeforeOpLen)
+                    != 0)
+                {
                     return -1;
                 }
+                carryAssignMinLhsLen = varLikeMaxBeforeOpLen;
+                carryAssignMinLhsLenValid = (varLikeMaxBeforeOpLen > 0u);
             } else if (SLFmtGetAssignStmtParts(c, stmt, &lhsNode, &rhsNode, &op)) {
-                if (SLFmtEmitAlignedAssignGroup(c, stmt, &last, &next) != 0) {
+                uint32_t minLhsLen = carryAssignMinLhsLenValid ? carryAssignMinLhsLen : 0u;
+                if (SLFmtEmitAlignedAssignGroup(c, stmt, &last, &next, minLhsLen) != 0) {
                     return -1;
                 }
+                carryAssignMinLhsLenValid = 0;
             } else {
                 if (SLFmtEmitStmt(c, stmt) != 0) {
                     return -1;
                 }
+                carryAssignMinLhsLenValid = 0;
                 last = stmt;
             }
             prevEmitted = last;
