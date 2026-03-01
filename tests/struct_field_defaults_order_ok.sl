@@ -1,7 +1,7 @@
 var g i32 = 0
 
 fn step(v i32) i32 {
-	g = g * 10 + v
+	g = g*10 + v
 	return v
 }
 

@@ -18,7 +18,7 @@ struct Packet {
 }
 
 fn main() {
-	var p              *Packet   = 0 as *Packet
+	var p              *Packet   = 0
 	var metadata       *Metadata = p.metadata
 	var sections       *Section  = p.sections
 	var metadataValue  *u8       = metadata.value

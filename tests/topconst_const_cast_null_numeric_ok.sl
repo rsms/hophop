@@ -1,6 +1,6 @@
-const I int = null as int
+const I int = null
 
-const F f64 = null as f64
+const F f64 = null
 
 fn main() {
 	assert I == 0

@@ -93,7 +93,7 @@ fn run() i32 context struct {
 	announce("overlay") with { log }
 
 	// `point_sum_ref` expects `&{...}`, so we pass a reference explicitly.
-	return ex.size.w * ex.size.h + point_sum(ex.pos) + point_sum_ref(&ex.pos) + choose(ex.value) + from_inferred
+	return ex.size.w*ex.size.h + point_sum(ex.pos) + point_sum_ref(&ex.pos) + choose(ex.value) + from_inferred
 }
 
 fn main() {

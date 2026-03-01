@@ -15,8 +15,8 @@ fn main() {
 	var c Counter
 	c.value = 21
 
-	var msg = "hi"
-	var ma  = 0 as *Allocator
+	var msg           = "hi"
+	var ma *Allocator = 0
 
 	assert c.doubled() == doubled(c)
 	assert c.add(7) == add(c, d: 7)

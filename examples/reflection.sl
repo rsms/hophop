@@ -44,7 +44,7 @@ fn main() {
 	assert !is_alias(Pair)
 	assert type_name(typeof(u32)) == "type"
 
-	var x i64    = 12 as i64
+	var x i64    = 12
 	var p I64Ptr = &x
 	assert *p == 12 as i64
 

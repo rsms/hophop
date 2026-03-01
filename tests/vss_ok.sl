@@ -6,7 +6,7 @@ struct Packet {
 }
 
 fn main() {
-	var p          *Packet = 0 as *Packet
+	var p          *Packet = 0
 	var payload    *u8     = p.payload
 	var payloadPtr &*u8    = &p.payload
 	payload = *payloadPtr

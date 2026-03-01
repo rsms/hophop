@@ -2,13 +2,13 @@ fn trunc(x f64) i32 {
 	return x as i32
 }
 
-const A i32 = 1 as i32
+const A i32 = 1
 
-const B f64 = 1 as f64
+const B f64 = 1
 
-const C i32 = 1.9 as i32
+const C i32 = 1.9
 
-const D bool = 0 as bool
+const D bool = 0
 
 const E i32 = trunc(3.9)
 

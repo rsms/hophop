@@ -1,5 +1,5 @@
 fn build(a i32, b i32, c i32) i32 {
-	return a * 100 + b * 10 + c
+	return a*100 + b*10 + c
 }
 
 fn main() {

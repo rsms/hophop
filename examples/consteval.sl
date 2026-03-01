@@ -4,7 +4,7 @@
 const BASE = 3
 
 fn width(n int) int {
-	return n * 4 + 1
+	return n*4 + 1
 }
 
 fn triangle(n int) int {
@@ -36,7 +36,7 @@ const KIND = classify(2)
 
 const I32_SIZE = sizeof(i32) as int
 
-const PI_INT int = 3.14159 as int
+const PI_INT int = 3.14159
 
 fn main() {
 	// Use literal lengths for now: named-const lengths are still a codegen gap.

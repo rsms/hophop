@@ -6,7 +6,7 @@
 var trace i32 = 0
 
 fn mark(v i32) i32 {
-	trace = trace * 10 + v
+	trace = trace*10 + v
 	return v
 }
 

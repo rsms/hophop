@@ -78,7 +78,7 @@ fn choose(a int, b int, flip bool) int {
 	return a + b
 }
 
-const WIDTH = expect_i(BASE * 4 + 1, want: 13)
+const WIDTH = expect_i(BASE*4 + 1, want: 13)
 
 const COUNT = expect_i(stride(WIDTH), want: 27)
 
@@ -116,7 +116,7 @@ const LOCAL_ELEM_SIZE = expect_i(local_elem_size(), want: INT_SIZE)
 
 const LOCAL_INFER_ELEM_SIZE = expect_i(local_infer_elem_size(), want: INT_SIZE)
 
-const ZERO_FROM_NULL int = null as int
+const ZERO_FROM_NULL int = null
 
 const ZERO_FROM_NULL_OK = expect_i(ZERO_FROM_NULL, want: 0)
 

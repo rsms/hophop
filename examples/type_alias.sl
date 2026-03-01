@@ -10,7 +10,7 @@ fn score(x int) int {
 }
 
 fn main() {
-	var v MyInt = 3 as MyInt
+	var v MyInt = 3
 
 	assert score(v) == 4
 	assert v.score() == 4

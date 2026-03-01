@@ -18,7 +18,7 @@ fn warn_if_small(value i64, span &reflect.Span) {
 const BUFFER_SIZE i64 = checked_buffer_size()
 
 fn checked_buffer_size() i64 {
-	const candidate i64 = 64 as i64
+	const candidate i64 = 64
 	warn_if_small(candidate, reflect.span_of(candidate))
 	return require_non_zero(candidate, reflect.span_of(BUFFER_SIZE))
 }
