@@ -36,7 +36,7 @@ const KIND = classify(2)
 
 const I32_SIZE = sizeof(i32) as int
 
-const PI_INT int = 3.14159
+const PI_INT int = 3.14159 as int
 
 fn main() {
 	// Use literal lengths for now: named-const lengths are still a codegen gap.

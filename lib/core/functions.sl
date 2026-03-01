@@ -11,11 +11,11 @@ fn cstr(s &str) &u8 {
 }
 
 fn concat(a &str, b &str) *str {
-	return 0
+	return null as *str
 }
 
 fn fmt() *str {
-	return 0
+	return null as *str
 }
 
 fn free() {}

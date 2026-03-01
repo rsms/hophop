@@ -6,7 +6,7 @@ struct Packet {
 }
 
 fn main() i32 {
-	var p *Packet = 0
-	p.payload = 0 as *u8
+	var p *Packet = null as *Packet
+	p.payload = null as *u8
 	return 0
 }

@@ -11,9 +11,9 @@ fn main() {
 	var p = &values[0]
 	var n Node
 	n.value = *p
-	n.next = 0 as *Node
+	n.next = null as *Node
 
-	if n.next == 0 as *Node {
+	if n.next == null as *Node {
 		assert n.value == 7
 	} else {
 		assert 0 == 1

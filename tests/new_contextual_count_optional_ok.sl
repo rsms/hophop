@@ -10,6 +10,6 @@ fn allocs(n uint) context Ctx {
 }
 
 fn main() {
-	var ma *Allocator = 0
+	var ma *Allocator = null as *Allocator
 	allocs(4) with { mem: ma }
 }

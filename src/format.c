@@ -268,9 +268,40 @@ static int SLFmtIsTypeNodeKindRaw(SLAstKind kind) {
         || kind == SLAst_TYPE_TUPLE;
 }
 
-static int SLFmtIsLiteralExprKind(SLAstKind kind) {
-    return kind == SLAst_INT || kind == SLAst_FLOAT || kind == SLAst_STRING || kind == SLAst_RUNE
-        || kind == SLAst_BOOL || kind == SLAst_NULL;
+static int SLFmtIsBuiltinIntegerTypeName(SLStrView src, uint32_t start, uint32_t end) {
+    return SLFmtSliceEqLiteral(src, start, end, "i8") || SLFmtSliceEqLiteral(src, start, end, "i16")
+        || SLFmtSliceEqLiteral(src, start, end, "i32")
+        || SLFmtSliceEqLiteral(src, start, end, "i64")
+        || SLFmtSliceEqLiteral(src, start, end, "int") || SLFmtSliceEqLiteral(src, start, end, "u8")
+        || SLFmtSliceEqLiteral(src, start, end, "u16")
+        || SLFmtSliceEqLiteral(src, start, end, "u32")
+        || SLFmtSliceEqLiteral(src, start, end, "u64")
+        || SLFmtSliceEqLiteral(src, start, end, "uint");
+}
+
+static int SLFmtIsBuiltinIntegerTypeNode(const SLAst* ast, SLStrView src, int32_t nodeId) {
+    const SLAstNode* n;
+    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return 0;
+    }
+    n = &ast->nodes[nodeId];
+    if (n->kind != SLAst_TYPE_NAME) {
+        return 0;
+    }
+    return SLFmtIsBuiltinIntegerTypeName(src, n->dataStart, n->dataEnd);
+}
+
+static int SLFmtCanElideLiteralCast(
+    const SLAst* ast, SLStrView src, int32_t exprNodeId, int32_t typeNodeId) {
+    if (exprNodeId < 0 || typeNodeId < 0 || (uint32_t)exprNodeId >= ast->len
+        || (uint32_t)typeNodeId >= ast->len)
+    {
+        return 0;
+    }
+    if (ast->nodes[exprNodeId].kind != SLAst_INT) {
+        return 0;
+    }
+    return SLFmtIsBuiltinIntegerTypeNode(ast, src, typeNodeId);
 }
 
 static int SLFmtBinaryOpSharesOperandType(uint16_t op) {
@@ -537,9 +568,7 @@ static int SLFmtCanDropRedundantLiteralCast(const SLAst* ast, SLStrView src, int
         return 0;
     }
     SLFmtGetCastParts(ast, castNodeId, &castExprNodeId, &castTypeNodeId);
-    if (castExprNodeId < 0 || castTypeNodeId < 0
-        || !SLFmtIsLiteralExprKind(ast->nodes[castExprNodeId].kind))
-    {
+    if (!SLFmtCanElideLiteralCast(ast, src, castExprNodeId, castTypeNodeId)) {
         return 0;
     }
     parentNodeId = SLFmtFindParentNode(ast, castNodeId);
@@ -599,6 +628,7 @@ static int SLFmtKeywordIsVar(const char* kw) {
 
 static void SLFmtRewriteVarTypeFromLiteralCast(
     const SLAst* ast,
+    SLStrView    src,
     const char*  kw,
     uint32_t     nameCount,
     int32_t*     ioTypeNodeId,
@@ -617,9 +647,7 @@ static void SLFmtRewriteVarTypeFromLiteralCast(
         return;
     }
     SLFmtGetCastParts(ast, initNodeId, &castExprNodeId, &castTypeNodeId);
-    if (castExprNodeId < 0 || castTypeNodeId < 0
-        || !SLFmtIsLiteralExprKind(ast->nodes[castExprNodeId].kind))
-    {
+    if (!SLFmtCanElideLiteralCast(ast, src, castExprNodeId, castTypeNodeId)) {
         return;
     }
     *ioTypeNodeId = castTypeNodeId;
@@ -2352,7 +2380,7 @@ static int SLFmtEmitAlignedVarOrConstGroup(
         } else if (typeNode >= 0) {
             initNode = SLFmtNextSibling(c->ast, typeNode);
         }
-        SLFmtRewriteVarTypeFromLiteralCast(c->ast, kw, 1u, &typeNode, &initNode);
+        SLFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, 1u, &typeNode, &initNode);
         rows[i].typeNode = typeNode;
         rows[i].initNode = initNode;
         rows[i].hasType = (uint8_t)(typeNode >= 0);
@@ -2969,7 +2997,7 @@ static int SLFmtEmitVarLike(SLFmtCtx* c, int32_t nodeId, const char* kw) {
         } else {
             init = afterNames;
         }
-        SLFmtRewriteVarTypeFromLiteralCast(c->ast, kw, nameCount, &type, &init);
+        SLFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, nameCount, &type, &init);
         if (SLFmtWriteCStr(c, kw) != 0 || SLFmtWriteChar(c, ' ') != 0) {
             return -1;
         }
@@ -3028,7 +3056,7 @@ static int SLFmtEmitVarLike(SLFmtCtx* c, int32_t nodeId, const char* kw) {
         } else if (type >= 0) {
             init = SLFmtNextSibling(c->ast, type);
         }
-        SLFmtRewriteVarTypeFromLiteralCast(c->ast, kw, 1u, &type, &init);
+        SLFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, 1u, &type, &init);
         if (SLFmtWriteCStr(c, kw) != 0 || SLFmtWriteChar(c, ' ') != 0
             || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
         {

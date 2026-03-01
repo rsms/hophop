@@ -9,7 +9,7 @@ fn a(x int) int {
 }
 
 fn main() {
-	var v MyInt = 3
+	var v MyInt = 3 as MyInt
 	assert v.a() == 4
 	assert a(v) == 4
 }

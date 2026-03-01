@@ -7,7 +7,7 @@ fn id(v UserIdAlias) UserIdAlias {
 }
 
 fn main() {
-	var a UserId      = 7
+	var a UserId      = 7 as UserId
 	var b UserIdAlias = id(a)
 	assert type_name(typeof(b)) == "UserId"
 	assert b == a

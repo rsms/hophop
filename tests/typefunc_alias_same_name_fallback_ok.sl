@@ -5,7 +5,7 @@ fn a(x int) int {
 }
 
 fn main() {
-	var v MyInt = 3
+	var v MyInt = 3 as MyInt
 	assert a(v) == 4
 	assert v.a() == 4
 }

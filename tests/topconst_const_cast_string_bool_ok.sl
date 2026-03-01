@@ -1,6 +1,6 @@
-const NONEMPTY bool = "x"
+const NONEMPTY bool = "x" as bool
 
-const EMPTY bool = ""
+const EMPTY bool = "" as bool
 
 fn main() {
 	assert NONEMPTY == true

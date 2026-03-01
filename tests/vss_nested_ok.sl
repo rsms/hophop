@@ -18,11 +18,11 @@ struct Packet {
 }
 
 fn main() {
-	var p              *Packet   = 0
+	var p              *Packet   = null as *Packet
 	var metadata       *Metadata = p.metadata
 	var sections       *Section  = p.sections
 	var metadataValue  *u8       = metadata.value
 	var sectionEntries *i64      = sections.entries
-	assert metadataValue == 0 as *u8
-	assert sectionEntries == 0 as *i64
+	assert metadataValue == null as *u8
+	assert sectionEntries == null as *i64
 }
