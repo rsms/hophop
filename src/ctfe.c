@@ -39,6 +39,12 @@ static void SLCTFEValueInvalid(SLCTFEValue* v) {
     v->typeTag = 0;
     v->s.bytes = NULL;
     v->s.len = 0;
+    v->span.fileBytes = NULL;
+    v->span.fileLen = 0;
+    v->span.startLine = 0;
+    v->span.startColumn = 0;
+    v->span.endLine = 0;
+    v->span.endColumn = 0;
 }
 
 static int SLCTFEPush(SLCTFERun* r, const SLCTFEValue* v) {
@@ -626,6 +632,12 @@ int SLCTFEEvalExpr(
                 v.typeTag = 0;
                 v.s.bytes = NULL;
                 v.s.len = 0;
+                v.span.fileBytes = NULL;
+                v.span.fileLen = 0;
+                v.span.startLine = 0;
+                v.span.startColumn = 0;
+                v.span.endLine = 0;
+                v.span.endColumn = 0;
                 if ((SLTokenKind)ins->tok == SLTok_RUNE) {
                     if (SLDecodeRuneLiteralValidate(
                             run.src.ptr, ins->start, ins->end, &rune, &runeErr)
@@ -654,6 +666,12 @@ int SLCTFEEvalExpr(
                 v.typeTag = 0;
                 v.s.bytes = NULL;
                 v.s.len = 0;
+                v.span.fileBytes = NULL;
+                v.span.fileLen = 0;
+                v.span.startLine = 0;
+                v.span.startColumn = 0;
+                v.span.endLine = 0;
+                v.span.endColumn = 0;
                 if (SLCTFEParseFloatLiteral(run.arena, run.src, ins->start, ins->end, &v.f64) != 0)
                 {
                     return 0;
@@ -676,6 +694,12 @@ int SLCTFEEvalExpr(
                 v.typeTag = 0;
                 v.s.bytes = NULL;
                 v.s.len = 0;
+                v.span.fileBytes = NULL;
+                v.span.fileLen = 0;
+                v.span.startLine = 0;
+                v.span.startColumn = 0;
+                v.span.endLine = 0;
+                v.span.endColumn = 0;
                 if (SLCTFEPush(&run, &v) != 0) {
                     return -1;
                 }
@@ -701,6 +725,12 @@ int SLCTFEEvalExpr(
                 v.typeTag = 0;
                 v.s.bytes = bytes;
                 v.s.len = len;
+                v.span.fileBytes = NULL;
+                v.span.fileLen = 0;
+                v.span.startLine = 0;
+                v.span.startColumn = 0;
+                v.span.endLine = 0;
+                v.span.endColumn = 0;
                 if (SLCTFEPush(&run, &v) != 0) {
                     return -1;
                 }
@@ -715,6 +745,12 @@ int SLCTFEEvalExpr(
                 v.typeTag = 0;
                 v.s.bytes = NULL;
                 v.s.len = 0;
+                v.span.fileBytes = NULL;
+                v.span.fileLen = 0;
+                v.span.startLine = 0;
+                v.span.startColumn = 0;
+                v.span.endLine = 0;
+                v.span.endColumn = 0;
                 if (SLCTFEPush(&run, &v) != 0) {
                     return -1;
                 }

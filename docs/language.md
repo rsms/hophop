@@ -587,6 +587,14 @@ fn f() {
 - [BI-REFLECT-006][Provisional] `ptr(t)` requires one `type` operand and returns `type` representing `*t`.
 - [BI-REFLECT-007][Provisional] `slice(t)` requires one `type` operand and returns `type` representing `[t]`.
 - [BI-REFLECT-008][Provisional] `array(t, n)` requires `type` + integer operands and returns `type` representing `[t n]`; `n` must be const-evaluable and in `0..UINT32_MAX` when materialized.
+- [BI-REFLECT-009][Provisional] `span_of(x)` and `reflect.span_of(x)` return `reflect.Span` for operand `x`.
+
+### 9.11 `compiler.error*` / `compiler.warn*`
+- [BI-CONSTEVAL-DIAG-001][Provisional] `compiler.error(message)` and `compiler.warn(message)` require one `str`-assignable argument.
+- [BI-CONSTEVAL-DIAG-002][Provisional] `compiler.error_at(span, message)` and `compiler.warn_at(span, message)` require `reflect.Span` + `str`-assignable arguments.
+- [BI-CONSTEVAL-DIAG-003][Provisional] Calls are valid only when evaluated by consteval; runtime-only usage is a type error.
+- [BI-CONSTEVAL-DIAG-004][Provisional] Message argument must be const-evaluable `&str`.
+- [BI-CONSTEVAL-DIAG-005][Provisional] `_at` forms require a valid `reflect.Span`.
 
 ## 10. Variable-Size Structs (VSS)
 
@@ -624,7 +632,7 @@ fn f() {
 - [PKG-IMPORT-010][Stable] Primary resolution base is loader root:
   - directory package mode: parent directory of entry package directory
   - single-file package mode: directory containing the entry `.sl` file
-- [PKG-IMPORT-011][Stable] For recognized library import paths (`core`, `mem`, `platform`, `std/*`, `platform/*`), resolver order is:
+- [PKG-IMPORT-011][Stable] For recognized library import paths (`core`, `reflect`, `compiler`, `mem`, `platform`, `std/*`, `platform/*`), resolver order is:
   1. try `<loader_root>/<importPath>` first
   2. if that path is not an existing directory, search `<ancestor>/lib/<importPath>` from importing package directory upward to filesystem root
   3. select the first match encountered in that upward walk (nearest ancestor)

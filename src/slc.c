@@ -1946,16 +1946,57 @@ static int ParseSource(
 
 static void WarnUnknownFeatureImports(const char* filename, const char* source, const SLAst* ast);
 
+typedef struct {
+    const char*                filename;
+    const char*                source;
+    int                        useLineColDiag;
+    const SLCombinedSourceMap* remapMap;
+    const char*                remapSource;
+} SLTypecheckDiagSinkCtx;
+
+static void TypecheckDiagSink(void* ctx, const SLDiag* diag) {
+    SLTypecheckDiagSinkCtx* sink = (SLTypecheckDiagSinkCtx*)ctx;
+    SLDiag                  remapped;
+    uint32_t                remappedFileIndex = 0;
+    const SLDiag*           toPrint = diag;
+    const char*             source;
+    if (sink == NULL || diag == NULL) {
+        return;
+    }
+    source = sink->source;
+    if (sink->remapMap != NULL && sink->remapSource != NULL) {
+        RemapCombinedDiag(sink->remapMap, diag, &remapped, &remappedFileIndex, sink->remapSource);
+        (void)remappedFileIndex;
+        toPrint = &remapped;
+        source = sink->remapSource;
+    }
+    (void)(sink->useLineColDiag
+               ? PrintSLDiagLineCol(sink->filename, source, toPrint, 0)
+               : PrintSLDiag(sink->filename, source, toPrint, 0));
+}
+
 static int CheckSourceEx(
     const char* filename, const char* source, uint32_t sourceLen, int useLineColDiag) {
-    void*    arenaMem;
-    SLArena  arena;
-    SLAst    ast;
-    SLDiag   diag = {};
-    uint32_t beforeTypecheckUsed;
-    uint32_t beforeTypecheckCap;
-    uint32_t afterTypecheckUsed;
-    uint32_t afterTypecheckCap;
+    void*                  arenaMem;
+    SLArena                arena;
+    SLAst                  ast;
+    SLDiag                 diag = {};
+    uint32_t               beforeTypecheckUsed;
+    uint32_t               beforeTypecheckCap;
+    uint32_t               afterTypecheckUsed;
+    uint32_t               afterTypecheckCap;
+    SLTypecheckDiagSinkCtx sinkCtx = {
+        .filename = filename,
+        .source = source,
+        .useLineColDiag = useLineColDiag,
+        .remapMap = NULL,
+        .remapSource = NULL,
+    };
+    SLTypeCheckOptions checkOptions = {
+        .ctx = &sinkCtx,
+        .onDiag = TypecheckDiagSink,
+        .flags = 0,
+    };
 
     if (ParseSourceEx(filename, source, sourceLen, &ast, &arenaMem, &arena, useLineColDiag) != 0) {
         return -1;
@@ -1965,7 +2006,7 @@ static int CheckSourceEx(
     beforeTypecheckUsed = ArenaBytesUsed(&arena);
     beforeTypecheckCap = ArenaBytesCapacity(&arena);
 
-    if (SLTypeCheck(&arena, &ast, (SLStrView){ source, sourceLen }, &diag) != 0) {
+    if (SLTypeCheckEx(&arena, &ast, (SLStrView){ source, sourceLen }, &checkOptions, &diag) != 0) {
         if (diag.code == SLDiag_ARENA_OOM) {
             uint32_t afterUsed = ArenaBytesUsed(&arena);
             uint32_t afterCap = ArenaBytesCapacity(&arena);
@@ -2017,16 +2058,28 @@ static int CheckSourceExWithSingleFileRemap(
     int                        useLineColDiag,
     const char*                remapSource,
     const SLCombinedSourceMap* remapMap) {
-    void*    arenaMem;
-    uint64_t arenaCap64;
-    size_t   arenaCap;
-    SLArena  arena;
-    SLAst    ast;
-    SLDiag   diag = {};
-    uint32_t beforeTypecheckUsed;
-    uint32_t beforeTypecheckCap;
-    uint32_t afterTypecheckUsed;
-    uint32_t afterTypecheckCap;
+    void*                  arenaMem;
+    uint64_t               arenaCap64;
+    size_t                 arenaCap;
+    SLArena                arena;
+    SLAst                  ast;
+    SLDiag                 diag = {};
+    uint32_t               beforeTypecheckUsed;
+    uint32_t               beforeTypecheckCap;
+    uint32_t               afterTypecheckUsed;
+    uint32_t               afterTypecheckCap;
+    SLTypecheckDiagSinkCtx sinkCtx = {
+        .filename = filename,
+        .source = source,
+        .useLineColDiag = useLineColDiag,
+        .remapMap = remapMap,
+        .remapSource = remapSource,
+    };
+    SLTypeCheckOptions checkOptions = {
+        .ctx = &sinkCtx,
+        .onDiag = TypecheckDiagSink,
+        .flags = 0,
+    };
 
     arenaCap64 = (uint64_t)(sourceLen + 128u) * (uint64_t)sizeof(SLAstNode) + 65536u;
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
@@ -2071,7 +2124,7 @@ static int CheckSourceExWithSingleFileRemap(
     beforeTypecheckUsed = ArenaBytesUsed(&arena);
     beforeTypecheckCap = ArenaBytesCapacity(&arena);
 
-    if (SLTypeCheck(&arena, &ast, (SLStrView){ source, sourceLen }, &diag) != 0) {
+    if (SLTypeCheckEx(&arena, &ast, (SLStrView){ source, sourceLen }, &checkOptions, &diag) != 0) {
         SLDiag   remappedDiag;
         uint32_t remappedFileIndex = 0;
         if (diag.code == SLDiag_ARENA_OOM) {
@@ -3561,8 +3614,8 @@ static char* _Nullable ResolveLibImportDirInRoot(const char* rootDir, const char
 
 static int IsLibImportPath(const char* importPath) {
     return StrEq(importPath, "core") || StrEq(importPath, "reflect") || StrEq(importPath, "mem")
-        || StrEq(importPath, "platform") || strncmp(importPath, "std/", 4u) == 0
-        || strncmp(importPath, "platform/", 9u) == 0;
+        || StrEq(importPath, "platform") || StrEq(importPath, "compiler")
+        || strncmp(importPath, "std/", 4u) == 0 || strncmp(importPath, "platform/", 9u) == 0;
 }
 
 static char* _Nullable ResolveLibImportDir(const char* startDir, const char* importPath) {

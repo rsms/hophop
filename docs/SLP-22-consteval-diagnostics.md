@@ -1,4 +1,4 @@
-# SLP-22 consteval diagnostics (draft)
+# SLP-22 consteval diagnostics
 
 ## Summary
 
@@ -7,7 +7,7 @@ SLP-22 allows const-evaluated SL code to emit compiler diagnostics intentionally
 This enables library-authored compile-time checks with precise messages, instead of relying only on
 generic typechecker failures.
 
-Draft surface:
+Surface:
 
 ```sl
 import "compiler"

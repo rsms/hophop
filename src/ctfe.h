@@ -10,6 +10,7 @@ typedef enum {
     SLCTFEValue_BOOL,
     SLCTFEValue_STRING,
     SLCTFEValue_TYPE,
+    SLCTFEValue_SPAN,
     SLCTFEValue_NULL,
 } SLCTFEValueKind;
 
@@ -19,12 +20,22 @@ typedef struct {
 } SLCTFEString;
 
 typedef struct {
+    const uint8_t* _Nullable fileBytes;
+    uint32_t fileLen;
+    uint32_t startLine;
+    uint32_t startColumn;
+    uint32_t endLine;
+    uint32_t endColumn;
+} SLCTFESpan;
+
+typedef struct {
     SLCTFEValueKind kind;
     int64_t         i64;
     double          f64;
     uint8_t         b;
     uint64_t        typeTag;
     SLCTFEString    s;
+    SLCTFESpan      span;
 } SLCTFEValue;
 
 typedef int (*SLCTFEResolveIdentFn)(

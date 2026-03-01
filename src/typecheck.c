@@ -120,10 +120,29 @@ typedef struct {
 } SLTCVariantNarrow;
 
 typedef struct {
+    void* _Nullable ctx;
+    SLDiagSinkFn _Nullable onDiag;
+} SLTCDiagSink;
+
+typedef struct {
+    uint32_t start;
+    uint32_t end;
+    const char* _Nullable message;
+} SLTCWarningDedup;
+
+typedef struct {
+    int32_t nodeId;
+    int32_t ownerFnIndex;
+    uint8_t executed;
+    uint8_t _reserved[3];
+} SLTCConstDiagUse;
+
+typedef struct {
     SLArena*     arena;
     const SLAst* ast;
     SLStrView    src;
     SLDiag*      diag;
+    SLTCDiagSink diagSink;
 
     SLTCType* types;
     uint32_t  typeLen;
@@ -173,9 +192,20 @@ typedef struct {
     int32_t typeRune;
     int32_t typeMemAllocator;
     int32_t typeUsize;
+    int32_t typeReflectSpan;
     int32_t typeUntypedInt;
     int32_t typeUntypedFloat;
     int32_t typeNull;
+
+    SLTCWarningDedup* warningDedup;
+    uint32_t          warningDedupLen;
+    uint32_t          warningDedupCap;
+
+    SLTCConstDiagUse* constDiagUses;
+    uint32_t          constDiagUseLen;
+    uint32_t          constDiagUseCap;
+    uint8_t*          constDiagFnInvoked;
+    uint32_t          constDiagFnInvokedCap;
 
     int32_t currentContextType;
     int     hasImplicitMainRootContext;
@@ -260,6 +290,180 @@ static int SLTCFailNode(SLTypeCheckCtx* c, int32_t nodeId, SLDiagCode code) {
         return SLTCFailSpan(c, code, 0, 0);
     }
     return SLTCFailSpan(c, code, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end);
+}
+
+static const char* _Nullable SLTCAllocCStringBytes(
+    SLTypeCheckCtx* c, const uint8_t* bytes, uint32_t len) {
+    char* s;
+    if (c == NULL) {
+        return NULL;
+    }
+    s = (char*)SLArenaAlloc(c->arena, len + 1u, 1u);
+    if (s == NULL) {
+        return NULL;
+    }
+    if (len > 0u && bytes != NULL) {
+        memcpy(s, bytes, len);
+    }
+    s[len] = '\0';
+    return s;
+}
+
+static int SLTCStrEqNullable(const char* _Nullable a, const char* _Nullable b) {
+    if (a == b) {
+        return 1;
+    }
+    if (a == NULL || b == NULL) {
+        return 0;
+    }
+    while (*a != '\0' && *b != '\0') {
+        if (*a != *b) {
+            return 0;
+        }
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
+
+static int SLTCEmitWarningDiag(SLTypeCheckCtx* c, const SLDiag* diag) {
+    uint32_t i;
+    if (c == NULL || diag == NULL || diag->type != SLDiagType_WARNING) {
+        return 0;
+    }
+    for (i = 0; i < c->warningDedupLen; i++) {
+        const SLTCWarningDedup* seen = &c->warningDedup[i];
+        if (seen->start == diag->start && seen->end == diag->end
+            && SLTCStrEqNullable(seen->message, diag->detail))
+        {
+            return 0;
+        }
+    }
+    if (c->warningDedupLen < c->warningDedupCap && c->warningDedup != NULL) {
+        c->warningDedup[c->warningDedupLen].start = diag->start;
+        c->warningDedup[c->warningDedupLen].end = diag->end;
+        c->warningDedup[c->warningDedupLen].message = diag->detail;
+        c->warningDedupLen++;
+    }
+    if (c->diagSink.onDiag != NULL) {
+        c->diagSink.onDiag(c->diagSink.ctx, diag);
+    }
+    return 0;
+}
+
+static int SLTCRecordConstDiagUse(SLTypeCheckCtx* c, int32_t nodeId) {
+    uint32_t i;
+    if (c == NULL || nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return -1;
+    }
+    for (i = 0; i < c->constDiagUseLen; i++) {
+        if (c->constDiagUses[i].nodeId == nodeId) {
+            return 0;
+        }
+    }
+    if (c->constDiagUseLen >= c->constDiagUseCap || c->constDiagUses == NULL) {
+        return SLTCFailNode(c, nodeId, SLDiag_ARENA_OOM);
+    }
+    c->constDiagUses[c->constDiagUseLen].nodeId = nodeId;
+    c->constDiagUses[c->constDiagUseLen].ownerFnIndex = c->currentFunctionIndex;
+    c->constDiagUses[c->constDiagUseLen].executed = 0;
+    c->constDiagUseLen++;
+    return 0;
+}
+
+static void SLTCMarkConstDiagUseExecuted(SLTypeCheckCtx* c, int32_t nodeId) {
+    uint32_t i;
+    if (c == NULL || nodeId < 0) {
+        return;
+    }
+    for (i = 0; i < c->constDiagUseLen; i++) {
+        if (c->constDiagUses[i].nodeId == nodeId) {
+            c->constDiagUses[i].executed = 1;
+            return;
+        }
+    }
+}
+
+static void SLTCMarkConstDiagFnInvoked(SLTypeCheckCtx* c, int32_t fnIndex) {
+    if (c == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->constDiagFnInvokedCap
+        || c->constDiagFnInvoked == NULL)
+    {
+        return;
+    }
+    c->constDiagFnInvoked[fnIndex] = 1;
+}
+
+static int SLTCValidateConstDiagUses(SLTypeCheckCtx* c) {
+    uint32_t i;
+    if (c == NULL) {
+        return -1;
+    }
+    for (i = 0; i < c->constDiagUseLen; i++) {
+        const SLTCConstDiagUse* use = &c->constDiagUses[i];
+        if (use->ownerFnIndex >= 0) {
+            if ((uint32_t)use->ownerFnIndex < c->constDiagFnInvokedCap
+                && c->constDiagFnInvoked != NULL && c->constDiagFnInvoked[use->ownerFnIndex])
+            {
+                continue;
+            }
+        } else if (use->executed) {
+            continue;
+        }
+        return SLTCFailNode(c, use->nodeId, SLDiag_CONSTEVAL_DIAG_NON_CONST_CONTEXT);
+    }
+    return 0;
+}
+
+static void SLTCOffsetToLineCol(
+    const char* src, uint32_t srcLen, uint32_t offset, uint32_t* outLine, uint32_t* outColumn) {
+    uint32_t i = 0;
+    uint32_t line = 1;
+    uint32_t col = 1;
+    if (src == NULL || outLine == NULL || outColumn == NULL) {
+        return;
+    }
+    if (offset > srcLen) {
+        offset = srcLen;
+    }
+    while (i < offset) {
+        if (src[i] == '\n') {
+            line++;
+            col = 1;
+        } else {
+            col++;
+        }
+        i++;
+    }
+    *outLine = line;
+    *outColumn = col;
+}
+
+static int SLTCLineColToOffset(
+    const char* src, uint32_t srcLen, uint32_t line, uint32_t column, uint32_t* outOffset) {
+    uint32_t i = 0;
+    uint32_t curLine = 1;
+    uint32_t curCol = 1;
+    if (src == NULL || outOffset == NULL || line == 0 || column == 0) {
+        return -1;
+    }
+    while (i < srcLen) {
+        if (curLine == line && curCol == column) {
+            *outOffset = i;
+            return 0;
+        }
+        if (src[i] == '\n') {
+            curLine++;
+            curCol = 1;
+        } else {
+            curCol++;
+        }
+        i++;
+    }
+    if (curLine == line && curCol == column) {
+        *outOffset = srcLen;
+        return 0;
+    }
+    return -1;
 }
 
 #define SLTC_DIAG_TEXT_CAP 128u
@@ -776,6 +980,7 @@ static int32_t SLTCInternPtrType(
     SLTypeCheckCtx* c, int32_t baseType, uint32_t errStart, uint32_t errEnd);
 static int32_t SLTCInternRefType(
     SLTypeCheckCtx* c, int32_t baseType, int isMutable, uint32_t errStart, uint32_t errEnd);
+static int32_t SLTCResolveAliasBaseType(SLTypeCheckCtx* c, int32_t typeId);
 
 static int32_t SLTCGetStrRefType(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
     if (c->typeStr < 0) {
@@ -836,6 +1041,7 @@ static int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     c->typeRune = -1;
     c->typeMemAllocator = -1;
     c->typeUsize = -1;
+    c->typeReflectSpan = -1;
     c->typeUntypedInt = -1;
     c->typeUntypedFloat = -1;
     c->typeNull = -1;
@@ -1146,6 +1352,110 @@ static int32_t SLTCFindReflectKindType(SLTypeCheckCtx* c) {
         }
     }
     return -1;
+}
+
+static int SLTCNameEqLiteralOrPkgBuiltin(
+    SLTypeCheckCtx* c, uint32_t start, uint32_t end, const char* name, const char* pkgPrefix) {
+    uint32_t i = 0;
+    uint32_t j = 0;
+    uint32_t prefixLen = 0;
+    uint32_t nameLen = 0;
+    if (SLNameEqLiteral(c->src, start, end, name)) {
+        return 1;
+    }
+    while (pkgPrefix[prefixLen] != '\0') {
+        prefixLen++;
+    }
+    while (name[nameLen] != '\0') {
+        nameLen++;
+    }
+    if (end < start || end - start != prefixLen + 2u + nameLen) {
+        return 0;
+    }
+    for (i = 0; i < prefixLen; i++) {
+        if (c->src.ptr[start + i] != pkgPrefix[i]) {
+            return 0;
+        }
+    }
+    if (c->src.ptr[start + prefixLen] != '_' || c->src.ptr[start + prefixLen + 1u] != '_') {
+        return 0;
+    }
+    for (j = 0; j < nameLen; j++) {
+        if (c->src.ptr[start + prefixLen + 2u + j] != name[j]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+typedef enum {
+    SLTCCompilerDiagOp_NONE = 0,
+    SLTCCompilerDiagOp_ERROR,
+    SLTCCompilerDiagOp_ERROR_AT,
+    SLTCCompilerDiagOp_WARN,
+    SLTCCompilerDiagOp_WARN_AT,
+} SLTCCompilerDiagOp;
+
+static SLTCCompilerDiagOp SLTCCompilerDiagOpFromName(
+    SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
+    if (SLTCNameEqLiteralOrPkgBuiltin(c, start, end, "error", "compiler")) {
+        return SLTCCompilerDiagOp_ERROR;
+    }
+    if (SLTCNameEqLiteralOrPkgBuiltin(c, start, end, "error_at", "compiler")) {
+        return SLTCCompilerDiagOp_ERROR_AT;
+    }
+    if (SLTCNameEqLiteralOrPkgBuiltin(c, start, end, "warn", "compiler")) {
+        return SLTCCompilerDiagOp_WARN;
+    }
+    if (SLTCNameEqLiteralOrPkgBuiltin(c, start, end, "warn_at", "compiler")) {
+        return SLTCCompilerDiagOp_WARN_AT;
+    }
+    return SLTCCompilerDiagOp_NONE;
+}
+
+static int SLTCIsSpanOfName(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
+    return SLTCNameEqLiteralOrPkgBuiltin(c, start, end, "span_of", "reflect");
+}
+
+static int32_t SLTCFindReflectSpanType(SLTypeCheckCtx* c) {
+    uint32_t i;
+    int32_t  direct = SLTCFindNamedTypeByLiteral(c, "reflect__Span");
+    if (direct >= 0) {
+        return direct;
+    }
+    for (i = 0; i < c->typeLen; i++) {
+        const SLTCType* t = &c->types[i];
+        if (t->kind != SLTCType_NAMED) {
+            continue;
+        }
+        if (!SLNameHasPrefix(c->src, t->nameStart, t->nameEnd, "reflect")
+            || !SLNameHasSuffix(c->src, t->nameStart, t->nameEnd, "__Span"))
+        {
+            continue;
+        }
+        if (t->declNode >= 0 && (uint32_t)t->declNode < c->ast->len
+            && c->ast->nodes[t->declNode].kind == SLAst_STRUCT)
+        {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static int SLTCTypeIsReflectSpan(SLTypeCheckCtx* c, int32_t typeId) {
+    int32_t spanType;
+    if (c == NULL || typeId < 0) {
+        return 0;
+    }
+    if (c->typeReflectSpan < 0) {
+        c->typeReflectSpan = SLTCFindReflectSpanType(c);
+    }
+    spanType = c->typeReflectSpan;
+    if (spanType < 0) {
+        return 0;
+    }
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    return typeId == spanType;
 }
 
 static int32_t SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
@@ -2000,6 +2310,12 @@ static int SLTCResolveConstIdent(
             outValue->typeTag = SLTCEncodeTypeTag(c, typeId);
             outValue->s.bytes = NULL;
             outValue->s.len = 0;
+            outValue->span.fileBytes = NULL;
+            outValue->span.fileLen = 0;
+            outValue->span.startLine = 0;
+            outValue->span.startColumn = 0;
+            outValue->span.endLine = 0;
+            outValue->span.endColumn = 0;
             *outIsConst = 1;
             return 0;
         }
@@ -2296,6 +2612,12 @@ static int SLTCConstEvalSizeOf(
     outValue->typeTag = 0;
     outValue->s.bytes = NULL;
     outValue->s.len = 0;
+    outValue->span.fileBytes = NULL;
+    outValue->span.fileLen = 0;
+    outValue->span.startLine = 0;
+    outValue->span.startColumn = 0;
+    outValue->span.endLine = 0;
+    outValue->span.endColumn = 0;
     *outIsConst = 1;
     return 0;
 }
@@ -2372,6 +2694,12 @@ static int SLTCConstEvalCast(
         outValue->typeTag = 0;
         outValue->s.bytes = NULL;
         outValue->s.len = 0;
+        outValue->span.fileBytes = NULL;
+        outValue->span.fileLen = 0;
+        outValue->span.startLine = 0;
+        outValue->span.startColumn = 0;
+        outValue->span.endLine = 0;
+        outValue->span.endColumn = 0;
         *outIsConst = 1;
         return 0;
     }
@@ -2397,6 +2725,12 @@ static int SLTCConstEvalCast(
         outValue->typeTag = 0;
         outValue->s.bytes = NULL;
         outValue->s.len = 0;
+        outValue->span.fileBytes = NULL;
+        outValue->span.fileLen = 0;
+        outValue->span.startLine = 0;
+        outValue->span.startColumn = 0;
+        outValue->span.endLine = 0;
+        outValue->span.endColumn = 0;
         *outIsConst = 1;
         return 0;
     }
@@ -2424,6 +2758,12 @@ static int SLTCConstEvalCast(
         outValue->typeTag = 0;
         outValue->s.bytes = NULL;
         outValue->s.len = 0;
+        outValue->span.fileBytes = NULL;
+        outValue->span.fileLen = 0;
+        outValue->span.startLine = 0;
+        outValue->span.startColumn = 0;
+        outValue->span.endLine = 0;
+        outValue->span.endColumn = 0;
         *outIsConst = 1;
         return 0;
     }
@@ -2482,6 +2822,12 @@ static int SLTCConstEvalTypeOf(
     outValue->typeTag = SLTCEncodeTypeTag(c, argType);
     outValue->s.bytes = NULL;
     outValue->s.len = 0;
+    outValue->span.fileBytes = NULL;
+    outValue->span.fileLen = 0;
+    outValue->span.startLine = 0;
+    outValue->span.startColumn = 0;
+    outValue->span.endLine = 0;
+    outValue->span.endColumn = 0;
     *outIsConst = 1;
     return 0;
 }
@@ -2613,8 +2959,472 @@ static int SLTCConstEvalTypeNameValue(
     outValue->typeTag = 0;
     outValue->s.bytes = (const uint8_t*)storage;
     outValue->s.len = b.len;
+    outValue->span.fileBytes = NULL;
+    outValue->span.fileLen = 0;
+    outValue->span.startLine = 0;
+    outValue->span.startColumn = 0;
+    outValue->span.endLine = 0;
+    outValue->span.endColumn = 0;
     *outIsConst = 1;
     return 0;
+}
+
+static void SLTCConstEvalSetNullValue(SLCTFEValue* outValue) {
+    if (outValue == NULL) {
+        return;
+    }
+    outValue->kind = SLCTFEValue_NULL;
+    outValue->i64 = 0;
+    outValue->f64 = 0.0;
+    outValue->b = 0;
+    outValue->typeTag = 0;
+    outValue->s.bytes = NULL;
+    outValue->s.len = 0;
+    outValue->span.fileBytes = NULL;
+    outValue->span.fileLen = 0;
+    outValue->span.startLine = 0;
+    outValue->span.startColumn = 0;
+    outValue->span.endLine = 0;
+    outValue->span.endColumn = 0;
+}
+
+static void SLTCConstEvalSetSpanFromOffsets(
+    SLTypeCheckCtx* c, uint32_t startOffset, uint32_t endOffset, SLCTFEValue* outValue) {
+    SLTCConstEvalSetNullValue(outValue);
+    outValue->kind = SLCTFEValue_SPAN;
+    outValue->span.fileBytes = (const uint8_t*)"";
+    outValue->span.fileLen = 0;
+    SLTCOffsetToLineCol(
+        c->src.ptr,
+        c->src.len,
+        startOffset,
+        &outValue->span.startLine,
+        &outValue->span.startColumn);
+    SLTCOffsetToLineCol(
+        c->src.ptr, c->src.len, endOffset, &outValue->span.endLine, &outValue->span.endColumn);
+}
+
+static int SLTCConstEvalSpanOfCall(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx*  c;
+    int32_t          calleeNode;
+    const SLAstNode* callee;
+    int32_t          operandNode = -1;
+    int32_t          nextNode = -1;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return -1;
+    }
+    calleeNode = SLAstFirstChild(c->ast, exprNode);
+    callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
+    if (callee == NULL) {
+        return 1;
+    }
+    if (callee->kind == SLAst_IDENT) {
+        if (!SLTCIsSpanOfName(c, callee->dataStart, callee->dataEnd)) {
+            return 1;
+        }
+        operandNode = SLAstNextSibling(c->ast, calleeNode);
+        nextNode = operandNode >= 0 ? SLAstNextSibling(c->ast, operandNode) : -1;
+        if (operandNode < 0 || nextNode >= 0) {
+            return 1;
+        }
+    } else if (callee->kind == SLAst_FIELD_EXPR) {
+        int32_t recvNode = SLAstFirstChild(c->ast, calleeNode);
+        if (recvNode < 0 || c->ast->nodes[recvNode].kind != SLAst_IDENT
+            || !SLNameEqLiteral(
+                c->src,
+                c->ast->nodes[recvNode].dataStart,
+                c->ast->nodes[recvNode].dataEnd,
+                "reflect")
+            || !SLTCIsSpanOfName(c, callee->dataStart, callee->dataEnd))
+        {
+            return 1;
+        }
+        operandNode = SLAstNextSibling(c->ast, calleeNode);
+        nextNode = operandNode >= 0 ? SLAstNextSibling(c->ast, operandNode) : -1;
+        if (operandNode < 0 || nextNode >= 0) {
+            return 1;
+        }
+    } else {
+        return 1;
+    }
+    if (c->ast->nodes[operandNode].kind == SLAst_CALL_ARG) {
+        int32_t inner = SLAstFirstChild(c->ast, operandNode);
+        if (inner < 0) {
+            return 1;
+        }
+        operandNode = inner;
+    }
+    if ((c->ast->nodes[operandNode].kind == SLAst_IDENT
+         || c->ast->nodes[operandNode].kind == SLAst_TYPE_NAME)
+        && SLNameHasPrefix(
+            c->src,
+            c->ast->nodes[operandNode].dataStart,
+            c->ast->nodes[operandNode].dataEnd,
+            "__sl_"))
+    {
+        SLTCConstSetReasonNode(
+            evalCtx, operandNode, "span_of operand cannot reference __sl_ names");
+        *outIsConst = 0;
+        return 0;
+    }
+    SLTCConstEvalSetSpanFromOffsets(
+        c, c->ast->nodes[operandNode].start, c->ast->nodes[operandNode].end, outValue);
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLTCConstEvalU32Arg(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outValue, int* outIsConst) {
+    SLCTFEValue v;
+    int         isConst = 0;
+    if (outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (SLTCEvalConstExprNode(evalCtx, exprNode, &v, &isConst) != 0) {
+        return -1;
+    }
+    if (!isConst || v.kind != SLCTFEValue_INT || v.i64 < 0 || v.i64 > (int64_t)UINT32_MAX) {
+        *outIsConst = 0;
+        return 0;
+    }
+    *outValue = (uint32_t)v.i64;
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLTCConstEvalPosCompound(
+    SLTCConstEvalCtx* evalCtx, int32_t nodeId, uint32_t* ioLine, uint32_t* ioColumn) {
+    SLTypeCheckCtx* c;
+    int32_t         fieldNode;
+    if (evalCtx == NULL || ioLine == NULL || ioColumn == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c != NULL && nodeId >= 0 && (uint32_t)nodeId < c->ast->len
+        && c->ast->nodes[nodeId].kind == SLAst_CALL_ARG)
+    {
+        int32_t inner = SLAstFirstChild(c->ast, nodeId);
+        if (inner >= 0) {
+            nodeId = inner;
+        }
+    }
+    if (c == NULL || nodeId < 0 || (uint32_t)nodeId >= c->ast->len
+        || c->ast->nodes[nodeId].kind != SLAst_COMPOUND_LIT)
+    {
+        return 1;
+    }
+    fieldNode = SLAstFirstChild(c->ast, nodeId);
+    if (fieldNode >= 0 && SLTCIsTypeNodeKind(c->ast->nodes[fieldNode].kind)) {
+        fieldNode = SLAstNextSibling(c->ast, fieldNode);
+    }
+    while (fieldNode >= 0) {
+        const SLAstNode* field = &c->ast->nodes[fieldNode];
+        int32_t          valueNode = SLAstFirstChild(c->ast, fieldNode);
+        uint32_t         v = 0;
+        int              isConst = 0;
+        if (field->kind != SLAst_COMPOUND_FIELD || valueNode < 0) {
+            return 1;
+        }
+        if (SLTCConstEvalU32Arg(evalCtx, valueNode, &v, &isConst) != 0) {
+            return -1;
+        }
+        if (!isConst) {
+            return 1;
+        }
+        if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "line")) {
+            *ioLine = v;
+        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "column")) {
+            *ioColumn = v;
+        } else {
+            return 1;
+        }
+        fieldNode = SLAstNextSibling(c->ast, fieldNode);
+    }
+    return 0;
+}
+
+/* Returns 1 if handled as span compound, 0 if not span-like, -1 on hard error. */
+static int SLTCConstEvalSpanCompound(
+    SLTCConstEvalCtx* evalCtx,
+    int32_t           exprNode,
+    int               forceSpan,
+    SLCTFEValue*      outValue,
+    int*              outIsConst) {
+    SLTypeCheckCtx* c;
+    int32_t         child;
+    int32_t         fieldNode;
+    int32_t         resolvedType = -1;
+    uint32_t        startLine = 0;
+    uint32_t        startColumn = 0;
+    uint32_t        endLine = 0;
+    uint32_t        endColumn = 0;
+    const uint8_t*  fileBytes = (const uint8_t*)"";
+    uint32_t        fileLen = 0;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len
+        || c->ast->nodes[exprNode].kind != SLAst_COMPOUND_LIT)
+    {
+        return 0;
+    }
+    child = SLAstFirstChild(c->ast, exprNode);
+    fieldNode = child;
+    if (child >= 0 && SLTCIsTypeNodeKind(c->ast->nodes[child].kind)) {
+        if (SLTCResolveTypeNode(c, child, &resolvedType) != 0) {
+            return -1;
+        }
+        if (!SLTCTypeIsReflectSpan(c, resolvedType)) {
+            return 0;
+        }
+        fieldNode = SLAstNextSibling(c->ast, child);
+    } else if (!forceSpan) {
+        return 0;
+    }
+
+    SLTCOffsetToLineCol(
+        c->src.ptr, c->src.len, c->ast->nodes[exprNode].start, &startLine, &startColumn);
+    SLTCOffsetToLineCol(c->src.ptr, c->src.len, c->ast->nodes[exprNode].end, &endLine, &endColumn);
+
+    while (fieldNode >= 0) {
+        const SLAstNode* field = &c->ast->nodes[fieldNode];
+        int32_t          valueNode = SLAstFirstChild(c->ast, fieldNode);
+        if (field->kind != SLAst_COMPOUND_FIELD || valueNode < 0) {
+            goto non_const;
+        }
+        if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "file")) {
+            SLCTFEValue fileValue;
+            int         fileIsConst = 0;
+            if (SLTCEvalConstExprNode(evalCtx, valueNode, &fileValue, &fileIsConst) != 0) {
+                return -1;
+            }
+            if (!fileIsConst || fileValue.kind != SLCTFEValue_STRING) {
+                goto non_const;
+            }
+            fileBytes = fileValue.s.bytes;
+            fileLen = fileValue.s.len;
+        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "start")) {
+            if (SLTCConstEvalPosCompound(evalCtx, valueNode, &startLine, &startColumn) != 0) {
+                goto non_const;
+            }
+        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "end")) {
+            if (SLTCConstEvalPosCompound(evalCtx, valueNode, &endLine, &endColumn) != 0) {
+                goto non_const;
+            }
+        } else {
+            goto non_const;
+        }
+        fieldNode = SLAstNextSibling(c->ast, fieldNode);
+    }
+
+    SLTCConstEvalSetNullValue(outValue);
+    outValue->kind = SLCTFEValue_SPAN;
+    outValue->span.fileBytes = fileBytes;
+    outValue->span.fileLen = fileLen;
+    outValue->span.startLine = startLine;
+    outValue->span.startColumn = startColumn;
+    outValue->span.endLine = endLine;
+    outValue->span.endColumn = endColumn;
+    *outIsConst = 1;
+    return 1;
+
+non_const:
+    SLTCConstSetReasonNode(evalCtx, exprNode, "reflect.Span literal is not const-evaluable");
+    SLTCConstEvalSetNullValue(outValue);
+    *outIsConst = 0;
+    return 1;
+}
+
+static int SLTCConstEvalSpanExpr(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFESpan* outSpan, int* outIsConst) {
+    SLTypeCheckCtx* c;
+    SLCTFEValue     v;
+    int             isConst = 0;
+    int             handled;
+    if (evalCtx == NULL || outSpan == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+    if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        *outIsConst = 0;
+        return 0;
+    }
+    if (c->ast->nodes[exprNode].kind == SLAst_CALL_ARG) {
+        int32_t inner = SLAstFirstChild(c->ast, exprNode);
+        if (inner < 0) {
+            *outIsConst = 0;
+            return 0;
+        }
+        exprNode = inner;
+    }
+    if (c->ast->nodes[exprNode].kind == SLAst_COMPOUND_LIT) {
+        handled = SLTCConstEvalSpanCompound(evalCtx, exprNode, 1, &v, &isConst);
+        if (handled < 0) {
+            return -1;
+        }
+        if (handled > 0) {
+            if (!isConst || v.kind != SLCTFEValue_SPAN) {
+                *outIsConst = 0;
+                return 0;
+            }
+            *outSpan = v.span;
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (SLTCEvalConstExprNode(evalCtx, exprNode, &v, &isConst) != 0) {
+        return -1;
+    }
+    if (!isConst || v.kind != SLCTFEValue_SPAN) {
+        *outIsConst = 0;
+        return 0;
+    }
+    *outSpan = v.span;
+    *outIsConst = 1;
+    return 0;
+}
+
+/* Returns 0 if handled, 1 if not a compiler diagnostic call, -1 on error */
+static int SLTCConstEvalCompilerDiagCall(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx*    c;
+    int32_t            calleeNode;
+    const SLAstNode*   callee;
+    SLTCCompilerDiagOp op = SLTCCompilerDiagOp_NONE;
+    int32_t            msgNode = -1;
+    int32_t            spanNode = -1;
+    int32_t            nextNode;
+    SLCTFEValue        msgValue;
+    int                msgIsConst = 0;
+    uint32_t           diagStart = 0;
+    uint32_t           diagEnd = 0;
+    const char*        detail;
+    SLDiag             emitted;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return -1;
+    }
+    calleeNode = SLAstFirstChild(c->ast, exprNode);
+    callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
+    if (callee == NULL) {
+        return 1;
+    }
+    if (callee->kind == SLAst_IDENT) {
+        op = SLTCCompilerDiagOpFromName(c, callee->dataStart, callee->dataEnd);
+    } else if (callee->kind == SLAst_FIELD_EXPR) {
+        int32_t recvNode = SLAstFirstChild(c->ast, calleeNode);
+        if (recvNode >= 0 && c->ast->nodes[recvNode].kind == SLAst_IDENT
+            && SLNameEqLiteral(
+                c->src,
+                c->ast->nodes[recvNode].dataStart,
+                c->ast->nodes[recvNode].dataEnd,
+                "compiler"))
+        {
+            op = SLTCCompilerDiagOpFromName(c, callee->dataStart, callee->dataEnd);
+        }
+    }
+    if (op == SLTCCompilerDiagOp_NONE) {
+        return 1;
+    }
+
+    if (op == SLTCCompilerDiagOp_ERROR || op == SLTCCompilerDiagOp_WARN) {
+        msgNode = SLAstNextSibling(c->ast, calleeNode);
+        nextNode = msgNode >= 0 ? SLAstNextSibling(c->ast, msgNode) : -1;
+        if (msgNode < 0 || nextNode >= 0) {
+            return 1;
+        }
+        diagStart = c->ast->nodes[exprNode].start;
+        diagEnd = c->ast->nodes[exprNode].end;
+    } else {
+        int        spanIsConst = 0;
+        SLCTFESpan span;
+        uint32_t   spanStartOffset = 0;
+        uint32_t   spanEndOffset = 0;
+        spanNode = SLAstNextSibling(c->ast, calleeNode);
+        msgNode = spanNode >= 0 ? SLAstNextSibling(c->ast, spanNode) : -1;
+        nextNode = msgNode >= 0 ? SLAstNextSibling(c->ast, msgNode) : -1;
+        if (spanNode < 0 || msgNode < 0 || nextNode >= 0) {
+            return 1;
+        }
+        if (SLTCConstEvalSpanExpr(evalCtx, spanNode, &span, &spanIsConst) != 0) {
+            return -1;
+        }
+        if (!spanIsConst || span.startLine == 0 || span.startColumn == 0 || span.endLine == 0
+            || span.endColumn == 0
+            || SLTCLineColToOffset(
+                   c->src.ptr, c->src.len, span.startLine, span.startColumn, &spanStartOffset)
+                   != 0
+            || SLTCLineColToOffset(
+                   c->src.ptr, c->src.len, span.endLine, span.endColumn, &spanEndOffset)
+                   != 0
+            || spanEndOffset < spanStartOffset)
+        {
+            return SLTCFailNode(c, spanNode, SLDiag_CONSTEVAL_DIAG_INVALID_SPAN);
+        }
+        diagStart = spanStartOffset;
+        diagEnd = spanEndOffset;
+    }
+    if (msgNode >= 0 && (uint32_t)msgNode < c->ast->len
+        && c->ast->nodes[msgNode].kind == SLAst_CALL_ARG)
+    {
+        int32_t inner = SLAstFirstChild(c->ast, msgNode);
+        if (inner >= 0) {
+            msgNode = inner;
+        }
+    }
+
+    if (SLTCEvalConstExprNode(evalCtx, msgNode, &msgValue, &msgIsConst) != 0) {
+        return -1;
+    }
+    if (!msgIsConst || msgValue.kind != SLCTFEValue_STRING) {
+        return SLTCFailNode(c, msgNode, SLDiag_CONSTEVAL_DIAG_MESSAGE_NOT_CONST_STRING);
+    }
+    detail = SLTCAllocCStringBytes(c, msgValue.s.bytes, msgValue.s.len);
+    if (detail == NULL) {
+        return SLTCFailNode(c, msgNode, SLDiag_ARENA_OOM);
+    }
+
+    emitted = (SLDiag){
+        .code = (op == SLTCCompilerDiagOp_WARN || op == SLTCCompilerDiagOp_WARN_AT)
+                  ? SLDiag_CONSTEVAL_DIAG_WARNING
+                  : SLDiag_CONSTEVAL_DIAG_ERROR,
+        .type = (op == SLTCCompilerDiagOp_WARN || op == SLTCCompilerDiagOp_WARN_AT)
+                  ? SLDiagType_WARNING
+                  : SLDiagType_ERROR,
+        .start = diagStart,
+        .end = diagEnd,
+        .argStart = 0,
+        .argEnd = 0,
+        .detail = detail,
+        .hintOverride = NULL,
+    };
+
+    SLTCMarkConstDiagUseExecuted(c, exprNode);
+    if (emitted.type == SLDiagType_WARNING) {
+        if (SLTCEmitWarningDiag(c, &emitted) != 0) {
+            return -1;
+        }
+        SLTCConstEvalSetNullValue(outValue);
+        *outIsConst = 1;
+        return 0;
+    }
+
+    if (c->diag != NULL) {
+        *c->diag = emitted;
+    }
+    return -1;
 }
 
 /* Returns 0 if handled, 1 if not a reflection call, -1 on error */
@@ -2737,6 +3547,12 @@ static int SLTCConstEvalTypeReflectionCall(
         outValue->typeTag = 0;
         outValue->s.bytes = NULL;
         outValue->s.len = 0;
+        outValue->span.fileBytes = NULL;
+        outValue->span.fileLen = 0;
+        outValue->span.startLine = 0;
+        outValue->span.startColumn = 0;
+        outValue->span.endLine = 0;
+        outValue->span.endColumn = 0;
         *outIsConst = 1;
         return 0;
     }
@@ -2748,6 +3564,12 @@ static int SLTCConstEvalTypeReflectionCall(
         outValue->typeTag = 0;
         outValue->s.bytes = NULL;
         outValue->s.len = 0;
+        outValue->span.fileBytes = NULL;
+        outValue->span.fileLen = 0;
+        outValue->span.startLine = 0;
+        outValue->span.startColumn = 0;
+        outValue->span.endLine = 0;
+        outValue->span.endColumn = 0;
         *outIsConst = 1;
         return 0;
     }
@@ -2789,6 +3611,12 @@ static int SLTCConstEvalTypeReflectionCall(
         outValue->typeTag = SLTCEncodeTypeTag(c, constructedTypeId);
         outValue->s.bytes = NULL;
         outValue->s.len = 0;
+        outValue->span.fileBytes = NULL;
+        outValue->span.fileLen = 0;
+        outValue->span.startLine = 0;
+        outValue->span.startColumn = 0;
+        outValue->span.endLine = 0;
+        outValue->span.endColumn = 0;
         *outIsConst = 1;
         return 0;
     }
@@ -2813,6 +3641,12 @@ static int SLTCConstEvalTypeReflectionCall(
     outValue->typeTag = SLTCEncodeTypeTag(c, reflectedTypeId);
     outValue->s.bytes = NULL;
     outValue->s.len = 0;
+    outValue->span.fileBytes = NULL;
+    outValue->span.fileLen = 0;
+    outValue->span.startLine = 0;
+    outValue->span.startColumn = 0;
+    outValue->span.endLine = 0;
+    outValue->span.endColumn = 0;
     *outIsConst = 1;
     return 0;
 }
@@ -2836,10 +3670,35 @@ static int SLTCEvalConstExprNode(
     if (kind == SLAst_SIZEOF) {
         return SLTCConstEvalSizeOf(evalCtx, exprNode, outValue, outIsConst);
     }
+    if (kind == SLAst_COMPOUND_LIT) {
+        int spanStatus = SLTCConstEvalSpanCompound(evalCtx, exprNode, 0, outValue, outIsConst);
+        if (spanStatus < 0) {
+            return -1;
+        }
+        if (spanStatus > 0) {
+            return 0;
+        }
+    }
     if (kind == SLAst_CALL) {
         int32_t          calleeNode = SLAstFirstChild(c->ast, exprNode);
         const SLAstNode* callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
+        int              compilerDiagStatus;
+        int              spanOfStatus;
         int              reflectStatus;
+        compilerDiagStatus = SLTCConstEvalCompilerDiagCall(evalCtx, exprNode, outValue, outIsConst);
+        if (compilerDiagStatus == 0) {
+            return 0;
+        }
+        if (compilerDiagStatus < 0) {
+            return -1;
+        }
+        spanOfStatus = SLTCConstEvalSpanOfCall(evalCtx, exprNode, outValue, outIsConst);
+        if (spanOfStatus == 0) {
+            return 0;
+        }
+        if (spanOfStatus < 0) {
+            return -1;
+        }
         if (callee != NULL && callee->kind == SLAst_IDENT
             && SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "typeof"))
         {
@@ -2909,6 +3768,12 @@ static int SLTCEvalConstExecInferValueTypeCb(
             *outTypeId = SLTCGetStrRefType(c, 0, 0);
             return *outTypeId >= 0 ? 0 : -1;
         case SLCTFEValue_TYPE: *outTypeId = c->typeType; return *outTypeId >= 0 ? 0 : -1;
+        case SLCTFEValue_SPAN:
+            if (c->typeReflectSpan < 0) {
+                c->typeReflectSpan = SLTCFindReflectSpanType(c);
+            }
+            *outTypeId = c->typeReflectSpan;
+            return *outTypeId >= 0 ? 0 : -1;
         case SLCTFEValue_NULL: *outTypeId = c->typeNull; return *outTypeId >= 0 ? 0 : -1;
         default:               return -1;
     }
@@ -2981,6 +3846,7 @@ static int SLTCResolveConstCall(
         *outIsConst = 0;
         return 0;
     }
+    SLTCMarkConstDiagFnInvoked(c, fnIndex);
 
     for (savedDepth = 0; savedDepth < evalCtx->fnDepth; savedDepth++) {
         if (evalCtx->fnStack[savedDepth] == fnIndex) {
@@ -8081,6 +8947,80 @@ static int SLTCTypeExpr_NEW(
     return SLTCTypeNewExpr(c, nodeId, outType);
 }
 
+static int SLTCTypeSpanOfCall(
+    SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* callee, int32_t* outType) {
+    int32_t argNode = SLAstNextSibling(c->ast, SLAstFirstChild(c->ast, nodeId));
+    int32_t argType;
+    int32_t nextArgNode;
+    if (argNode < 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+    }
+    if (SLTCTypeExpr(c, argNode, &argType) != 0) {
+        return -1;
+    }
+    (void)argType;
+    nextArgNode = SLAstNextSibling(c->ast, argNode);
+    if (nextArgNode >= 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+    }
+    if (c->typeReflectSpan < 0) {
+        c->typeReflectSpan = SLTCFindReflectSpanType(c);
+    }
+    if (c->typeReflectSpan < 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+    }
+    *outType = c->typeReflectSpan;
+    (void)callee;
+    return 0;
+}
+
+static int SLTCTypeCompilerDiagCall(
+    SLTypeCheckCtx*    c,
+    int32_t            nodeId,
+    const SLAstNode*   callee,
+    SLTCCompilerDiagOp op,
+    int32_t*           outType) {
+    int32_t arg1Node = SLAstNextSibling(c->ast, SLAstFirstChild(c->ast, nodeId));
+    int32_t arg2Node = arg1Node >= 0 ? SLAstNextSibling(c->ast, arg1Node) : -1;
+    int32_t arg3Node = arg2Node >= 0 ? SLAstNextSibling(c->ast, arg2Node) : -1;
+    int32_t msgNode;
+    int32_t msgType;
+    int32_t wantStrType;
+    if (op == SLTCCompilerDiagOp_ERROR || op == SLTCCompilerDiagOp_WARN) {
+        if (arg1Node < 0 || arg2Node >= 0) {
+            return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+        }
+        msgNode = arg1Node;
+    } else {
+        int32_t spanType;
+        if (arg1Node < 0 || arg2Node < 0 || arg3Node >= 0) {
+            return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+        }
+        if (SLTCTypeExpr(c, arg1Node, &spanType) != 0) {
+            return -1;
+        }
+        if (!SLTCTypeIsReflectSpan(c, spanType)) {
+            return SLTCFailNode(c, arg1Node, SLDiag_TYPE_MISMATCH);
+        }
+        msgNode = arg2Node;
+    }
+    if (SLTCTypeExpr(c, msgNode, &msgType) != 0) {
+        return -1;
+    }
+    wantStrType = SLTCGetStrRefType(c, callee->start, callee->end);
+    if (wantStrType < 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+    }
+    if (!SLTCCanAssign(c, wantStrType, msgType)) {
+        return SLTCFailNode(c, msgNode, SLDiag_TYPE_MISMATCH);
+    }
+    if (SLTCRecordConstDiagUse(c, nodeId) != 0) {
+        return -1;
+    }
+    *outType = c->typeVoid;
+    return 0;
+}
+
 static int SLTCTypeExpr_CALL(
     SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
     int32_t calleeNode = SLAstFirstChild(c->ast, nodeId);
@@ -8093,7 +9033,15 @@ static int SLTCTypeExpr_CALL(
         return SLTCFailNode(c, nodeId, SLDiag_COMPARISON_HOOK_IMPURE);
     }
     if (c->ast->nodes[calleeNode].kind == SLAst_IDENT) {
-        const SLAstNode* callee = &c->ast->nodes[calleeNode];
+        const SLAstNode*   callee = &c->ast->nodes[calleeNode];
+        SLTCCompilerDiagOp diagOp = SLTCCompilerDiagOpFromName(
+            c, callee->dataStart, callee->dataEnd);
+        if (diagOp != SLTCCompilerDiagOp_NONE) {
+            return SLTCTypeCompilerDiagCall(c, nodeId, callee, diagOp, outType);
+        }
+        if (SLTCIsSpanOfName(c, callee->dataStart, callee->dataEnd)) {
+            return SLTCTypeSpanOfCall(c, nodeId, callee, outType);
+        }
         if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "kind")) {
             int32_t argNode = SLAstNextSibling(c->ast, calleeNode);
             int32_t argType;
@@ -8646,6 +9594,23 @@ static int SLTCTypeExpr_CALL(
         int32_t          recvNode = SLAstFirstChild(c->ast, calleeNode);
         int32_t          recvType;
         int32_t          fieldType;
+        if (recvNode >= 0 && (uint32_t)recvNode < c->ast->len
+            && c->ast->nodes[recvNode].kind == SLAst_IDENT)
+        {
+            const SLAstNode* recv = &c->ast->nodes[recvNode];
+            if (SLNameEqLiteral(c->src, recv->dataStart, recv->dataEnd, "reflect")
+                && SLTCIsSpanOfName(c, callee->dataStart, callee->dataEnd))
+            {
+                return SLTCTypeSpanOfCall(c, nodeId, callee, outType);
+            }
+            if (SLNameEqLiteral(c->src, recv->dataStart, recv->dataEnd, "compiler")) {
+                SLTCCompilerDiagOp diagOp = SLTCCompilerDiagOpFromName(
+                    c, callee->dataStart, callee->dataEnd);
+                if (diagOp != SLTCCompilerDiagOp_NONE) {
+                    return SLTCTypeCompilerDiagCall(c, nodeId, callee, diagOp, outType);
+                }
+            }
+        }
         if (recvNode < 0) {
             return SLTCFailNode(c, nodeId, SLDiag_NOT_CALLABLE);
         }
@@ -10990,7 +11955,8 @@ static int SLTCBuildCheckedContext(
     SLArena*     arena,
     const SLAst* ast,
     SLStrView    src,
-    SLDiag*      diag,
+    const SLTypeCheckOptions* _Nullable options,
+    SLDiag* diag,
     SLTypeCheckCtx* _Nullable outCtx) {
     SLTypeCheckCtx c;
     uint32_t       capBase;
@@ -11011,6 +11977,8 @@ static int SLTCBuildCheckedContext(
     c.ast = ast;
     c.src = src;
     c.diag = diag;
+    c.diagSink.ctx = options != NULL ? options->ctx : NULL;
+    c.diagSink.onDiag = options != NULL ? options->onDiag : NULL;
 
     c.types = (SLTCType*)SLArenaAlloc(
         arena, sizeof(SLTCType) * capBase * 4u, (uint32_t)_Alignof(SLTCType));
@@ -11032,6 +12000,12 @@ static int SLTCBuildCheckedContext(
         arena, sizeof(SLTCLocal) * capBase * 4u, (uint32_t)_Alignof(SLTCLocal));
     c.variantNarrows = (SLTCVariantNarrow*)SLArenaAlloc(
         arena, sizeof(SLTCVariantNarrow) * capBase * 4u, (uint32_t)_Alignof(SLTCVariantNarrow));
+    c.warningDedup = (SLTCWarningDedup*)SLArenaAlloc(
+        arena, sizeof(SLTCWarningDedup) * capBase, (uint32_t)_Alignof(SLTCWarningDedup));
+    c.constDiagUses = (SLTCConstDiagUse*)SLArenaAlloc(
+        arena, sizeof(SLTCConstDiagUse) * capBase, (uint32_t)_Alignof(SLTCConstDiagUse));
+    c.constDiagFnInvoked = (uint8_t*)SLArenaAlloc(
+        arena, sizeof(uint8_t) * capBase, (uint32_t)_Alignof(uint8_t));
     c.constEvalValues = (SLCTFEValue*)SLArenaAlloc(
         arena, sizeof(SLCTFEValue) * ast->len, (uint32_t)_Alignof(SLCTFEValue));
     c.constEvalState = (uint8_t*)SLArenaAlloc(
@@ -11045,7 +12019,8 @@ static int SLTCBuildCheckedContext(
         || c.funcParamTypes == NULL || c.funcParamNameStarts == NULL || c.funcParamNameEnds == NULL
         || c.scratchParamTypes == NULL || c.locals == NULL || c.constEvalValues == NULL
         || c.constEvalState == NULL || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL
-        || c.variantNarrows == NULL)
+        || c.variantNarrows == NULL || c.warningDedup == NULL || c.constDiagUses == NULL
+        || c.constDiagFnInvoked == NULL)
     {
         SLTCSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
@@ -11066,6 +12041,11 @@ static int SLTCBuildCheckedContext(
     c.localCap = capBase * 4u;
     c.variantNarrowLen = 0;
     c.variantNarrowCap = capBase * 4u;
+    c.warningDedupLen = 0;
+    c.warningDedupCap = capBase;
+    c.constDiagUseLen = 0;
+    c.constDiagUseCap = capBase;
+    c.constDiagFnInvokedCap = capBase;
     c.currentContextType = -1;
     c.hasImplicitMainRootContext = 0;
     c.implicitMainContextType = -1;
@@ -11083,6 +12063,7 @@ static int SLTCBuildCheckedContext(
     if (ast->len > 0) {
         memset(c.constEvalState, 0, sizeof(uint8_t) * ast->len);
         memset(c.topVarLikeTypeState, 0, sizeof(uint8_t) * ast->len);
+        memset(c.constDiagFnInvoked, 0, sizeof(uint8_t) * c.constDiagFnInvokedCap);
         for (i = 0; i < ast->len; i++) {
             c.topVarLikeTypes[i] = -1;
             c.constEvalValues[i].kind = SLCTFEValue_INVALID;
@@ -11092,6 +12073,12 @@ static int SLTCBuildCheckedContext(
             c.constEvalValues[i].typeTag = 0;
             c.constEvalValues[i].s.bytes = NULL;
             c.constEvalValues[i].s.len = 0;
+            c.constEvalValues[i].span.fileBytes = NULL;
+            c.constEvalValues[i].span.fileLen = 0;
+            c.constEvalValues[i].span.startLine = 0;
+            c.constEvalValues[i].span.startColumn = 0;
+            c.constEvalValues[i].span.endLine = 0;
+            c.constEvalValues[i].span.endColumn = 0;
         }
     }
 
@@ -11173,6 +12160,9 @@ static int SLTCBuildCheckedContext(
     if (SLTCValidateTopLevelConstEvaluable(&c) != 0) {
         return -1;
     }
+    if (SLTCValidateConstDiagUses(&c) != 0) {
+        return -1;
+    }
 
     if (outCtx != NULL) {
         *outCtx = c;
@@ -11181,8 +12171,17 @@ static int SLTCBuildCheckedContext(
     return 0;
 }
 
+int SLTypeCheckEx(
+    SLArena*     arena,
+    const SLAst* ast,
+    SLStrView    src,
+    const SLTypeCheckOptions* _Nullable options,
+    SLDiag* diag) {
+    return SLTCBuildCheckedContext(arena, ast, src, options, diag, NULL);
+}
+
 int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
-    return SLTCBuildCheckedContext(arena, ast, src, diag, NULL);
+    return SLTypeCheckEx(arena, ast, src, NULL, diag);
 }
 
 int SLConstEvalSessionInit(
@@ -11219,7 +12218,7 @@ int SLConstEvalSessionInit(
             savedFlags[i] = ast->nodes[i].flags;
         }
     }
-    if (SLTCBuildCheckedContext(arena, ast, src, diag, &session->tc) != 0) {
+    if (SLTCBuildCheckedContext(arena, ast, src, NULL, diag, &session->tc) != 0) {
         if (savedFlags != NULL) {
             for (i = 0; i < ast->len; i++) {
                 ((SLAstNode*)&ast->nodes[i])->flags = savedFlags[i];

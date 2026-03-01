@@ -62,8 +62,17 @@ static int SLCTFEExecValueEq(const SLCTFEValue* a, const SLCTFEValue* b, int* ou
         case SLCTFEValue_BOOL:   *outEq = a->b == b->b; return 1;
         case SLCTFEValue_STRING: *outEq = SLCTFEExecStringEq(&a->s, &b->s); return 1;
         case SLCTFEValue_TYPE:   *outEq = a->typeTag == b->typeTag; return 1;
-        case SLCTFEValue_NULL:   *outEq = 1; return 1;
-        default:                 return 0;
+        case SLCTFEValue_SPAN:
+            *outEq =
+                a->span.startLine == b->span.startLine && a->span.startColumn == b->span.startColumn
+                && a->span.endLine == b->span.endLine && a->span.endColumn == b->span.endColumn
+                && a->span.fileLen == b->span.fileLen
+                && ((a->span.fileLen == 0)
+                    || (a->span.fileBytes != NULL && b->span.fileBytes != NULL
+                        && memcmp(a->span.fileBytes, b->span.fileBytes, a->span.fileLen) == 0));
+            return 1;
+        case SLCTFEValue_NULL: *outEq = 1; return 1;
+        default:               return 0;
     }
 }
 

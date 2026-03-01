@@ -253,6 +253,13 @@
 {"id":"check:tests/reflection_base_non_alias_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/reflection_base_non_alias_bad.sl","expect_stderr":"tests/reflection_base_non_alias_bad.stderr"}
 {"id":"check:tests/reflection_is_alias_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/reflection_is_alias_ok.sl"}
 {"id":"check:tests/reflection_type_name_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/reflection_type_name_ok.sl"}
+{"id":"check:tests/reflect_span_of_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/reflect_span_of_ok.sl"}
+{"id":"check:tests/consteval_diag_error_basic.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/consteval_diag_error_basic.sl","expect_stderr":"tests/consteval_diag_error_basic.stderr"}
+{"id":"check:tests/consteval_diag_warn_dedup.sl","suite":"spec.lex_parse_check","kind":"slc_ok_stderr","mode":"checkpkg","input":"tests/consteval_diag_warn_dedup.sl","expect_stderr":"tests/consteval_diag_warn_dedup.stderr"}
+{"id":"check:tests/consteval_diag_error_at_span_of.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/consteval_diag_error_at_span_of.sl","expect_stderr":"tests/consteval_diag_error_at_span_of.stderr"}
+{"id":"check:tests/consteval_diag_non_const_context_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/consteval_diag_non_const_context_bad.sl","expect_stderr":"tests/consteval_diag_non_const_context_bad.stderr"}
+{"id":"check:tests/consteval_diag_non_const_message_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/consteval_diag_non_const_message_bad.sl","expect_stderr":"tests/consteval_diag_non_const_message_bad.stderr"}
+{"id":"check:tests/consteval_diag_invalid_span_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/consteval_diag_invalid_span_bad.sl","expect_stderr":"tests/consteval_diag_invalid_span_bad.stderr"}
 {"id":"check:tests/type_const_alias_non_distinct_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/type_const_alias_non_distinct_ok.sl"}
 {"id":"check:tests/type_constructor_const_name_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/type_constructor_const_name_ok.sl"}
 {"id":"check:tests/type_constructor_builtins_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/type_constructor_builtins_ok.sl"}

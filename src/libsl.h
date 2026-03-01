@@ -142,6 +142,14 @@ typedef struct {
     const char* _Nullable hintOverride;
 } SLDiag;
 
+typedef void (*SLDiagSinkFn)(void* _Nullable ctx, const SLDiag* _Nonnull diag);
+
+typedef struct {
+    void* _Nullable ctx;
+    SLDiagSinkFn _Nullable onDiag;
+    uint32_t flags;
+} SLTypeCheckOptions;
+
 void        SLDiagClear(SLDiag* diag);
 const char* SLDiagId(SLDiagCode code);
 const char* SLDiagMessage(SLDiagCode code);
@@ -422,6 +430,12 @@ int SLFormat(
     const SLFormatOptions* _Nullable options,
     SLStrView* out,
     SLDiag*    diag);
+int SLTypeCheckEx(
+    SLArena*     arena,
+    const SLAst* ast,
+    SLStrView    src,
+    const SLTypeCheckOptions* _Nullable options,
+    SLDiag* diag);
 int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag);
 int SLAstDump(const SLAst* ast, SLStrView src, SLWriter* w, SLDiag* diag);
 

@@ -1,4 +1,4 @@
-# SLP-21 variadic function parameters (draft)
+# SLP-21 variadic function parameters
 
 ## Summary
 
@@ -142,7 +142,7 @@ Example:
 If named arguments are used, normal named-argument rules still apply to fixed parameters.
 Variadic tail arguments are positional.
 
-## Diagnostics (draft)
+## Diagnostics
 
 - `variadic_param_not_last`: variadic parameter must be last
 - `variadic_param_duplicate`: only one variadic parameter is allowed

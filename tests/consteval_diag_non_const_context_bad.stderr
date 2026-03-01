@@ -1,0 +1,1 @@
+tests/consteval_diag_non_const_context_bad.sl:4:1: SL2072: compiler diagnostic API call is not in a const-evaluated context

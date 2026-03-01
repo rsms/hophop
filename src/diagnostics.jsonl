@@ -92,6 +92,11 @@
 {"id": "SL2069", "name": "VARIADIC_SPREAD_NON_SLICE", "category": "semantic", "message": "spread argument must be assignable to the variadic slice type"}
 {"id": "SL2070", "name": "VARIADIC_SPREAD_NOT_LAST", "category": "semantic", "message": "spread argument must be the final argument"}
 {"id": "SL2071", "name": "VARIADIC_CALL_SHAPE_MISMATCH", "category": "semantic", "message": "invalid variadic argument shape"}
+{"id": "SL2072", "name": "CONSTEVAL_DIAG_NON_CONST_CONTEXT", "category": "semantic", "message": "compiler diagnostic API call is not in a const-evaluated context"}
+{"id": "SL2073", "name": "CONSTEVAL_DIAG_MESSAGE_NOT_CONST_STRING", "category": "semantic", "message": "diagnostic message must be a const-evaluable string"}
+{"id": "SL2074", "name": "CONSTEVAL_DIAG_INVALID_SPAN", "category": "semantic", "message": "diagnostic span is invalid"}
+{"id": "SL2075", "name": "CONSTEVAL_DIAG_ERROR", "category": "semantic", "message": "consteval error"}
+{"id": "SL2076", "name": "CONSTEVAL_DIAG_WARNING", "category": "semantic", "message": "consteval warning", "type": "warning"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}

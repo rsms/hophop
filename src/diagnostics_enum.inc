@@ -100,7 +100,14 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_VARIADIC_SPREAD_NON_SLICE, /* SL2069: spread argument must be assignable to the variadic
                                          slice type */
     SLDiag_VARIADIC_SPREAD_NOT_LAST,  /* SL2070: spread argument must be the final argument */
-    SLDiag_VARIADIC_CALL_SHAPE_MISMATCH, /* SL2071: invalid variadic argument shape */
-    SLDiag_CODEGEN_INTERNAL,             /* SL3001: internal codegen error */
-    SLDiag_ARENA_OOM,                    /* SL4001: arena out of memory */
-    SLDiag_UNKNOWN_FEATURE,              /* SL4002: unknown feature '{s}' */
+    SLDiag_VARIADIC_CALL_SHAPE_MISMATCH,     /* SL2071: invalid variadic argument shape */
+    SLDiag_CONSTEVAL_DIAG_NON_CONST_CONTEXT, /* SL2072: compiler diagnostic API call is not in a
+                                                const-evaluated context */
+    SLDiag_CONSTEVAL_DIAG_MESSAGE_NOT_CONST_STRING, /* SL2073: diagnostic message must be a
+                                                       const-evaluable string */
+    SLDiag_CONSTEVAL_DIAG_INVALID_SPAN,             /* SL2074: diagnostic span is invalid */
+    SLDiag_CONSTEVAL_DIAG_ERROR,                    /* SL2075: consteval error */
+    SLDiag_CONSTEVAL_DIAG_WARNING,                  /* SL2076: consteval warning */
+    SLDiag_CODEGEN_INTERNAL,                        /* SL3001: internal codegen error */
+    SLDiag_ARENA_OOM,                               /* SL4001: arena out of memory */
+    SLDiag_UNKNOWN_FEATURE,                         /* SL4002: unknown feature '{s}' */
