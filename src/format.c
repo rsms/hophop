@@ -510,6 +510,41 @@ static int SLFmtRewriteContextBindShorthand(const SLAst* ast, SLStrView src, int
     return 0;
 }
 
+static int SLFmtRewriteDropRedundantCastParenFlag(const SLAst* ast, int32_t nodeId) {
+    const SLAstNode* n;
+    SLAstNode*       mutNode;
+    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return -1;
+    }
+    n = &ast->nodes[nodeId];
+    if (n->kind != SLAst_CAST || (n->flags & SLAstFlag_PAREN) == 0) {
+        return 0;
+    }
+    mutNode = (SLAstNode*)&ast->nodes[nodeId];
+    mutNode->flags &= (uint16_t)~SLAstFlag_PAREN;
+    return 0;
+}
+
+static int SLFmtRewriteBinaryCastParens(const SLAst* ast, int32_t nodeId) {
+    int32_t lhs;
+    int32_t rhs;
+    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return -1;
+    }
+    if (ast->nodes[nodeId].kind != SLAst_BINARY) {
+        return 0;
+    }
+    lhs = SLFmtFirstChild(ast, nodeId);
+    rhs = lhs >= 0 ? SLFmtNextSibling(ast, lhs) : -1;
+    /* Cast is postfix and binds tighter than all infix binary operators. */
+    if (SLFmtRewriteDropRedundantCastParenFlag(ast, lhs) != 0
+        || SLFmtRewriteDropRedundantCastParenFlag(ast, rhs) != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
 static int SLFmtRewriteAst(const SLAst* ast, SLStrView src) {
     uint32_t i;
     if (ast == NULL || ast->nodes == NULL) {
@@ -519,7 +554,8 @@ static int SLFmtRewriteAst(const SLAst* ast, SLStrView src) {
         int32_t nodeId = (int32_t)i;
         if (SLFmtRewriteCallArgShorthand(ast, src, nodeId) != 0
             || SLFmtRewriteCompoundFieldShorthand(ast, src, nodeId) != 0
-            || SLFmtRewriteContextBindShorthand(ast, src, nodeId) != 0)
+            || SLFmtRewriteContextBindShorthand(ast, src, nodeId) != 0
+            || SLFmtRewriteBinaryCastParens(ast, nodeId) != 0)
         {
             return -1;
         }

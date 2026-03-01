@@ -2,7 +2,7 @@
 type MyInt int
 
 fn score(x MyInt) int {
-	return (x as int) + 1
+	return x as int + 1
 }
 
 fn score(x int) int {

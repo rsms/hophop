@@ -11,6 +11,6 @@ fn add(a IntType, b IntType) IntType {
 fn main() {
 	var x IntType = 40 as i64
 	var y IntType = 2 as i64
-	assert add(x, b: y) == (42 as i64)
+	assert add(x, b: y) == 42 as i64
 	assert type_name(typeof(x)) == "i64"
 }

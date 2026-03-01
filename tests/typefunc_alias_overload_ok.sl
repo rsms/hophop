@@ -1,7 +1,7 @@
 type MyInt int
 
 fn a(x MyInt) int {
-	return (x as int) + 1
+	return x as int + 1
 }
 
 fn a(x int) int {

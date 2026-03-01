@@ -25,15 +25,15 @@ fn read_ptr(p I64Ptr) i64 {
 fn main() {
 	var x i64    = 7 as i64
 	var p I64Ptr = &x
-	assert read_ptr(p) == (7 as i64)
+	assert read_ptr(p) == 7 as i64
 
 	var data [i64 2]
 	data[0] = 1 as i64
 	data[1] = 2 as i64
 	var sp I64SlicePtr = data[0:2]
-	assert (*sp)[1] == (2 as i64)
+	assert (*sp)[1] == 2 as i64
 
 	var bytes U8x4
 	bytes[0] = 9 as u8
-	assert bytes[0] == (9 as u8)
+	assert bytes[0] == 9 as u8
 }

@@ -65,4 +65,7 @@ input.sl:24:1: line content differs
 input.sl:25:1: internal whitespace differs
   current : "_=add(1,2) with {mem:(context).mem}"
   expected: "\t_ = add(1, 2) with { mem: (context).mem }"
-  issues: 22
+input.sl:26:1: line content differs
+  current : "_=y<(16 as i64)"
+  expected: "\t_ = y < 16 as i64"
+  issues: 23

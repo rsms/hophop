@@ -46,9 +46,9 @@ fn main() {
 
 	var x i64    = 12 as i64
 	var p I64Ptr = &x
-	assert *p == (12 as i64)
+	assert *p == 12 as i64
 
 	var bytes U8x4
 	bytes[0] = 3 as u8
-	assert bytes[0] == (3 as u8)
+	assert bytes[0] == 3 as u8
 }
