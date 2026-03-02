@@ -193,6 +193,7 @@ typedef struct {
     int32_t typeMemAllocator;
     int32_t typeUsize;
     int32_t typeReflectSpan;
+    int32_t typeFmtValue;
     int32_t typeUntypedInt;
     int32_t typeUntypedFloat;
     int32_t typeNull;
@@ -1042,6 +1043,7 @@ static int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     c->typeMemAllocator = -1;
     c->typeUsize = -1;
     c->typeReflectSpan = -1;
+    c->typeFmtValue = -1;
     c->typeUntypedInt = -1;
     c->typeUntypedFloat = -1;
     c->typeNull = -1;
@@ -1329,6 +1331,20 @@ static int32_t SLTCFindCoreNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suff
     return -1;
 }
 
+static int32_t SLTCFindNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix) {
+    uint32_t i;
+    for (i = 0; i < c->typeLen; i++) {
+        const SLTCType* t = &c->types[i];
+        if (t->kind != SLTCType_NAMED) {
+            continue;
+        }
+        if (SLNameHasSuffix(c->src, t->nameStart, t->nameEnd, suffix)) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
 static int32_t SLTCFindReflectKindType(SLTypeCheckCtx* c) {
     uint32_t i;
     int32_t  direct = SLTCFindNamedTypeByLiteral(c, "reflect__Kind");
@@ -1442,6 +1458,31 @@ static int32_t SLTCFindReflectSpanType(SLTypeCheckCtx* c) {
     return -1;
 }
 
+static int32_t SLTCFindFmtValueType(SLTypeCheckCtx* c) {
+    uint32_t i;
+    int32_t  direct = SLTCFindNamedTypeByLiteral(c, "core__FmtValue");
+    if (direct >= 0) {
+        return direct;
+    }
+    for (i = 0; i < c->typeLen; i++) {
+        const SLTCType* t = &c->types[i];
+        if (t->kind != SLTCType_NAMED) {
+            continue;
+        }
+        if (!SLNameHasPrefix(c->src, t->nameStart, t->nameEnd, "core")
+            || !SLNameHasSuffix(c->src, t->nameStart, t->nameEnd, "__FmtValue"))
+        {
+            continue;
+        }
+        if (t->declNode >= 0 && (uint32_t)t->declNode < c->ast->len
+            && c->ast->nodes[t->declNode].kind == SLAst_STRUCT)
+        {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
 static int SLTCTypeIsReflectSpan(SLTypeCheckCtx* c, int32_t typeId) {
     int32_t spanType;
     if (c == NULL || typeId < 0) {
@@ -1456,6 +1497,22 @@ static int SLTCTypeIsReflectSpan(SLTypeCheckCtx* c, int32_t typeId) {
     }
     typeId = SLTCResolveAliasBaseType(c, typeId);
     return typeId == spanType;
+}
+
+static int SLTCTypeIsFmtValue(SLTypeCheckCtx* c, int32_t typeId) {
+    int32_t valueType;
+    if (c == NULL || typeId < 0) {
+        return 0;
+    }
+    if (c->typeFmtValue < 0) {
+        c->typeFmtValue = SLTCFindFmtValueType(c);
+    }
+    valueType = c->typeFmtValue;
+    if (valueType < 0) {
+        return 0;
+    }
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    return typeId == valueType;
 }
 
 static int32_t SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
@@ -5256,6 +5313,9 @@ static int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
     if (dstType == srcType) {
         return 1;
     }
+    if (SLTCTypeIsFmtValue(c, dstType)) {
+        return SLTCTypeSupportsFmtReflectRec(c, srcType, 0u);
+    }
     if (dstType >= 0 && (uint32_t)dstType < c->typeLen && c->types[dstType].kind == SLTCType_ALIAS)
     {
         /* Alias types are nominal: only exact alias matches assign implicitly.
@@ -5486,6 +5546,10 @@ static int SLTCConversionCost(
     }
     if (dstType == srcType) {
         *outCost = 0;
+        return 0;
+    }
+    if (SLTCTypeIsFmtValue(c, dstType)) {
+        *outCost = 5;
         return 0;
     }
     if (srcType == c->typeUntypedInt || srcType == c->typeUntypedFloat) {
@@ -9300,18 +9364,15 @@ static int SLTCTypeExpr_CALL(
             *outType = strPtrType;
             return 0;
         }
-        if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "fmt")) {
-            int32_t fmtNode = SLAstNextSibling(c->ast, calleeNode);
-            int32_t argNode;
-            int32_t fmtType;
-            int32_t wantStrType;
-            int32_t strPtrType;
-            int32_t ctxMemType;
-            int32_t allocBaseType = SLTCFindMemAllocatorType(c);
-            int32_t allocParamType =
-                allocBaseType < 0
-                    ? -1
-                    : SLTCInternRefType(c, allocBaseType, 1, callee->start, callee->end);
+        if (SLTCNameEqLiteralOrPkgBuiltin(c, callee->dataStart, callee->dataEnd, "fmt", "core")) {
+            int32_t        outNode = SLAstNextSibling(c->ast, calleeNode);
+            int32_t        fmtNode = outNode >= 0 ? SLAstNextSibling(c->ast, outNode) : -1;
+            int32_t        argNode;
+            int32_t        outBufType;
+            int32_t        fmtType;
+            int32_t        wantStrType;
+            int32_t        strPtrType;
+            int32_t        u32Type;
             int32_t        argNodes[SLTC_MAX_CALL_ARGS];
             int32_t        argTypes[SLTC_MAX_CALL_ARGS];
             uint32_t       argCount = 0;
@@ -9319,17 +9380,18 @@ static int SLTCTypeExpr_CALL(
             const uint8_t* fmtBytes = NULL;
             uint32_t       fmtLen = 0;
             int            fmtIsConst = 0;
-            if (fmtNode < 0) {
+            if (outNode < 0 || fmtNode < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
             }
-            if (allocParamType < 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
-            }
-            if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "mem", &ctxMemType) != 0) {
+            if (SLTCTypeExpr(c, outNode, &outBufType) != 0) {
                 return -1;
             }
-            if (!SLTCCanAssign(c, allocParamType, ctxMemType)) {
-                return SLTCFailNode(c, nodeId, SLDiag_CONTEXT_TYPE_MISMATCH);
+            strPtrType = SLTCGetStrPtrType(c, callee->start, callee->end);
+            if (strPtrType < 0) {
+                return SLTCFailNode(c, calleeNode, SLDiag_UNKNOWN_TYPE);
+            }
+            if (!SLTCCanAssign(c, strPtrType, outBufType)) {
+                return SLTCFailNode(c, outNode, SLDiag_TYPE_MISMATCH);
             }
             if (SLTCTypeExpr(c, fmtNode, &fmtType) != 0) {
                 return -1;
@@ -9422,11 +9484,11 @@ static int SLTCTypeExpr_CALL(
                     }
                 }
             }
-            strPtrType = SLTCGetStrPtrType(c, callee->start, callee->end);
-            if (strPtrType < 0) {
-                return SLTCFailNode(c, calleeNode, SLDiag_UNKNOWN_TYPE);
+            u32Type = SLTCFindBuiltinByKind(c, SLBuiltin_U32);
+            if (u32Type < 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
             }
-            *outType = strPtrType;
+            *outType = u32Type;
             return 0;
         }
         if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "free")) {
@@ -12123,6 +12185,9 @@ static int SLTCBuildCheckedContext(
     }
     if (c.typeMemAllocator < 0) {
         c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "Allocator");
+    }
+    if (c.typeMemAllocator < 0) {
+        c.typeMemAllocator = SLTCFindNamedTypeBySuffix(&c, "__Allocator");
     }
     if (SLTCResolveAllTypeAliases(&c) != 0) {
         return -1;

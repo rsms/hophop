@@ -1,4 +1,4 @@
 fn main() {
 	var out *str = "                "
-	fmt(out, "{i}", "hello")
+	fmt(out, "{i}", 1 as i64, 2 as i64)
 }

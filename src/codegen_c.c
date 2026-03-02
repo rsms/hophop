@@ -1,6 +1,5 @@
 #include "codegen.h"
 #include "libsl-impl.h"
-#include "fmt_parse.h"
 
 SL_API_BEGIN
 
@@ -215,6 +214,7 @@ static int      BufAppendHexU64Literal(SLBuf* b, uint64_t value);
 static int      EmitExpr(SLCBackendC* c, int32_t nodeId);
 static int      InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
 static int      EmitStringLiteralRef(SLCBackendC* c, int32_t literalId, int writable);
+static int      TypeRefIsFmtValueType(const SLCBackendC* c, const SLTypeRef* t);
 
 static size_t StrLen(const char* s) {
     size_t n = 0;
@@ -4982,6 +4982,10 @@ static int TypeRefAssignableCost(
         *outCost = 0;
         return 0;
     }
+    if (TypeRefIsFmtValueType(c, dst)) {
+        *outCost = 5;
+        return 0;
+    }
     if (ExpandAliasSourceType(c, src, &expandedSrc)) {
         if (TypeRefAssignableCost(c, dst, &expandedSrc, &expandedCost) == 0) {
             if (expandedCost < 255u) {
@@ -5014,8 +5018,12 @@ static int TypeRefAssignableCost(
     if (dst->containerKind == SLTypeContainer_SLICE_RO
         || dst->containerKind == SLTypeContainer_SLICE_MUT)
     {
+        const char* srcBase = ResolveScalarAliasBaseName(c, src->baseName);
+        if (srcBase == NULL) {
+            srcBase = src->baseName;
+        }
         if (src->containerKind == SLTypeContainer_SCALAR && src->containerPtrDepth == 0
-            && src->ptrDepth > 0 && IsStrBaseName(src->baseName) && dst->baseName != NULL
+            && src->ptrDepth > 0 && IsStrBaseName(srcBase) && dst->baseName != NULL
             && StrEq(dst->baseName, "__sl_u8"))
         {
             if (dst->containerKind == SLTypeContainer_SLICE_MUT && src->readOnly) {
@@ -5371,6 +5379,14 @@ typedef struct {
     SLTypeRef argExpectedTypes[SLCCG_MAX_CALL_ARGS];
 } SLCCallBinding;
 
+static int EmitResolvedCall(
+    SLCBackendC*          c,
+    int32_t               callNode,
+    const char*           calleeName,
+    const SLFnSig*        sig,
+    const SLCCallBinding* binding,
+    int                   autoRefFirstArg);
+
 static int PrepareCallBinding(
     const SLCBackendC*    c,
     const SLFnSig*        sig,
@@ -5596,11 +5612,18 @@ static int ResolveCallTargetFromCandidates(
             } else if (argTypes[p].valid) {
                 argType = argTypes[p];
             } else {
-                if (InferExprTypeExpected(c, argNodes[p], &paramType, &argType) != 0
-                    || !argType.valid)
-                {
-                    viable = 0;
-                    break;
+                if (TypeRefIsFmtValueType(c, &paramType)) {
+                    if (InferExprType(c, argNodes[p], &argType) != 0 || !argType.valid) {
+                        viable = 0;
+                        break;
+                    }
+                } else {
+                    if (InferExprTypeExpected(c, argNodes[p], &paramType, &argType) != 0
+                        || !argType.valid)
+                    {
+                        viable = 0;
+                        break;
+                    }
                 }
             }
             if (TypeRefAssignableCost(c, &paramType, &argType, &cost) != 0) {
@@ -6336,11 +6359,26 @@ static int InferExprType_CALL(
         uint32_t       i;
         const SLFnSig* resolved = NULL;
         const char*    resolvedName = NULL;
+        int            status;
         if (CollectCallArgInfo(c, nodeId, callee, 0, -1, callArgs, argTypes, &argCount) == 0) {
             for (i = 0; i < argCount; i++) {
                 argNodes[i] = callArgs[i].exprNode;
             }
-            if (ResolveCallTarget(
+            status = ResolveCallTarget(
+                c,
+                cn->dataStart,
+                cn->dataEnd,
+                callArgs,
+                argNodes,
+                argTypes,
+                argCount,
+                0,
+                0,
+                NULL,
+                &resolved,
+                &resolvedName);
+            if (status == 2) {
+                status = ResolveCallTarget(
                     c,
                     cn->dataStart,
                     cn->dataEnd,
@@ -6349,13 +6387,12 @@ static int InferExprType_CALL(
                     argTypes,
                     argCount,
                     0,
-                    0,
+                    1,
                     NULL,
                     &resolved,
-                    &resolvedName)
-                    == 0
-                && resolved != NULL)
-            {
+                    &resolvedName);
+            }
+            if (status == 0 && resolved != NULL) {
                 (void)resolvedName;
                 *outType = resolved->returnType;
                 return 0;
@@ -7671,85 +7708,21 @@ static int TypeRefIsFmtStringLike(const SLCBackendC* c, const SLTypeRef* t) {
     return IsStrBaseName(base);
 }
 
-static int EvalConstStringExpr(
-    SLCBackendC* c, int32_t nodeId, const uint8_t** outBytes, uint32_t* outLen, int* outIsConst) {
-    const SLAstNode* node;
-    SLCTFEValue      value;
-    int              isConst = 0;
-    if (c == NULL || outBytes == NULL || outLen == NULL || outIsConst == NULL) {
-        return -1;
-    }
-    *outBytes = NULL;
-    *outLen = 0;
-    *outIsConst = 0;
-    if (nodeId < 0 || (uint32_t)nodeId >= c->ast.len) {
-        return -1;
-    }
-    node = &c->ast.nodes[nodeId];
-    while (node->kind == SLAst_CALL_ARG) {
-        nodeId = AstFirstChild(&c->ast, nodeId);
-        if (nodeId < 0 || (uint32_t)nodeId >= c->ast.len) {
-            return -1;
-        }
-        node = &c->ast.nodes[nodeId];
-    }
-    if (c->constEval == NULL) {
-        return 0;
-    }
-    if (SLConstEvalSessionEvalExpr(c->constEval, nodeId, &value, &isConst) != 0) {
-        return -1;
-    }
-    if (!isConst || value.kind != SLCTFEValue_STRING) {
-        return 0;
-    }
-    *outBytes = value.s.bytes;
-    *outLen = value.s.len;
-    *outIsConst = 1;
-    return 0;
-}
-
-static int DecodeFmtLiteralSpan(
-    SLCBackendC*   c,
-    const uint8_t* fmtBytes,
-    uint32_t       spanStart,
-    uint32_t       spanEnd,
-    uint8_t**      outBytes,
-    uint32_t*      outLen) {
-    uint8_t* bytes = NULL;
-    uint32_t len = 0;
-    uint32_t cap = 0;
-    uint32_t i = spanStart;
-    if (c == NULL || fmtBytes == NULL || outBytes == NULL || outLen == NULL || spanEnd < spanStart)
+static int TypeRefIsFmtValueType(const SLCBackendC* c, const SLTypeRef* t) {
+    const char* base;
+    if (t == NULL || !t->valid || t->containerKind != SLTypeContainer_SCALAR || t->ptrDepth != 0
+        || t->containerPtrDepth != 0 || t->baseName == NULL || t->isOptional)
     {
-        return -1;
+        return 0;
     }
-    while (i < spanEnd) {
-        uint8_t ch = fmtBytes[i];
-        if (ch == (uint8_t)'{' && i + 1u < spanEnd && fmtBytes[i + 1u] == (uint8_t)'{') {
-            ch = (uint8_t)'{';
-            i += 2u;
-        } else if (ch == (uint8_t)'}' && i + 1u < spanEnd && fmtBytes[i + 1u] == (uint8_t)'}') {
-            ch = (uint8_t)'}';
-            i += 2u;
-        } else {
-            i++;
-        }
-        if (EnsureCapArena(
-                &c->arena,
-                (void**)&bytes,
-                &cap,
-                len + 1u,
-                sizeof(uint8_t),
-                (uint32_t)_Alignof(uint8_t))
-            != 0)
-        {
-            return -1;
-        }
-        bytes[len++] = ch;
+    base = ResolveScalarAliasBaseName(c, t->baseName);
+    if (base == NULL) {
+        base = t->baseName;
     }
-    *outBytes = bytes;
-    *outLen = len;
-    return 0;
+    if (StrEq(base, "core__FmtValue")) {
+        return 1;
+    }
+    return StrHasPrefix(base, "core") && StrHasSuffix(base, "__FmtValue");
 }
 
 static int EmitFmtAppendLiteralBytes(
@@ -8160,222 +8133,62 @@ static int EmitFmtAppendReflectExpr(
     return EmitFmtAppendLiteralText(c, builderName, "<unsupported>", 13u);
 }
 
-static int EmitFmtCallExpr(SLCBackendC* c, int32_t calleeNode) {
-    int32_t        fmtNode = AstNextSibling(&c->ast, calleeNode);
-    int32_t        argNode;
-    int32_t        argNodes[SLCCG_MAX_CALL_ARGS];
-    SLTypeRef      argTypes[SLCCG_MAX_CALL_ARGS];
-    uint32_t       argCount = 0;
-    const uint8_t* fmtBytes = NULL;
-    uint32_t       fmtLen = 0;
-    int            fmtIsConst = 0;
-    uint32_t       i;
-    if (fmtNode < 0) {
+static int EmitExprCoerceFmtValue(
+    SLCBackendC* c, int32_t exprNode, const SLTypeRef* srcType, const SLTypeRef* dstType) {
+    uint32_t    tempId;
+    SLBuf       valueNameBuf = { 0 };
+    SLBuf       builderNameBuf = { 0 };
+    SLBuf       reprNameBuf = { 0 };
+    char*       valueName;
+    char*       builderName;
+    char*       reprName;
+    const char* kindExpr = "((__sl_u8)3u)";
+    if (c == NULL || srcType == NULL || dstType == NULL) {
         return -1;
     }
-    argNode = AstNextSibling(&c->ast, fmtNode);
-    while (argNode >= 0) {
-        if (argCount >= SLCCG_MAX_CALL_ARGS) {
-            return -1;
-        }
-        if (InferExprType(c, argNode, &argTypes[argCount]) != 0 || !argTypes[argCount].valid) {
-            return -1;
-        }
-        argNodes[argCount++] = argNode;
-        argNode = AstNextSibling(&c->ast, argNode);
-    }
-    if (EvalConstStringExpr(c, fmtNode, &fmtBytes, &fmtLen, &fmtIsConst) != 0) {
-        return -1;
-    }
-
-    if (BufAppendCStr(&c->out, "(__extension__({\n") != 0
-        || EmitFmtBuilderInitStmt(c, "__sl_fmt_b", -1) != 0)
+    tempId = FmtNextTempId(c);
+    valueNameBuf.arena = &c->arena;
+    builderNameBuf.arena = &c->arena;
+    reprNameBuf.arena = &c->arena;
+    if (BufAppendCStr(&valueNameBuf, "__sl_refv_v") != 0 || BufAppendU32(&valueNameBuf, tempId) != 0
+        || BufAppendCStr(&builderNameBuf, "__sl_refv_b") != 0
+        || BufAppendU32(&builderNameBuf, tempId) != 0
+        || BufAppendCStr(&reprNameBuf, "__sl_refv_r") != 0
+        || BufAppendU32(&reprNameBuf, tempId) != 0)
     {
         return -1;
     }
-    for (i = 0; i < argCount; i++) {
-        if (BufAppendCStr(&c->out, "    __auto_type __sl_fmt_arg") != 0
-            || BufAppendU32(&c->out, i) != 0 || BufAppendCStr(&c->out, " = ") != 0
-            || EmitExpr(c, argNodes[i]) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
-        {
-            return -1;
-        }
+    valueName = BufFinish(&valueNameBuf);
+    builderName = BufFinish(&builderNameBuf);
+    reprName = BufFinish(&reprNameBuf);
+    if (valueName == NULL || builderName == NULL || reprName == NULL) {
+        return -1;
     }
-
-    if (fmtIsConst) {
-        SLFmtToken      tokens[512];
-        uint32_t        tokenLen = 0;
-        SLFmtParseError parseErr = { 0 };
-        uint32_t        placeholderIndex = 0;
-        if (SLFmtParseBytes(
-                fmtBytes,
-                fmtLen,
-                tokens,
-                (uint32_t)(sizeof(tokens) / sizeof(tokens[0])),
-                &tokenLen,
-                &parseErr)
-            != 0)
-        {
-            return -1;
-        }
-        for (i = 0; i < tokenLen; i++) {
-            if (tokens[i].kind == SLFmtTok_LITERAL) {
-                uint8_t* litBytes = NULL;
-                uint32_t litLen = 0;
-                if (DecodeFmtLiteralSpan(
-                        c, fmtBytes, tokens[i].start, tokens[i].end, &litBytes, &litLen)
-                    != 0)
-                {
-                    return -1;
-                }
-                if (EmitFmtAppendLiteralBytes(c, "__sl_fmt_b", litBytes, litLen) != 0) {
-                    return -1;
-                }
-                continue;
-            }
-            if (placeholderIndex >= argCount) {
-                return -1;
-            }
-            if (tokens[i].kind == SLFmtTok_PLACEHOLDER_I) {
-                if (TypeRefIsSignedIntegerLike(c, &argTypes[placeholderIndex])) {
-                    if (BufAppendCStr(
-                            &c->out,
-                            "    __sl_fmt_builder_append_i64(&__sl_fmt_b, (__sl_i64)__sl_fmt_arg")
-                            != 0
-                        || BufAppendU32(&c->out, placeholderIndex) != 0
-                        || BufAppendCStr(&c->out, ");\n") != 0)
-                    {
-                        return -1;
-                    }
-                } else {
-                    if (BufAppendCStr(
-                            &c->out,
-                            "    __sl_fmt_builder_append_u64(&__sl_fmt_b, (__sl_u64)__sl_fmt_arg")
-                            != 0
-                        || BufAppendU32(&c->out, placeholderIndex) != 0
-                        || BufAppendCStr(&c->out, ");\n") != 0)
-                    {
-                        return -1;
-                    }
-                }
-            } else {
-                SLBuf expr = { 0 };
-                char* exprStr;
-                expr.arena = &c->arena;
-                if (BufAppendCStr(&expr, "__sl_fmt_arg") != 0
-                    || BufAppendU32(&expr, placeholderIndex) != 0)
-                {
-                    return -1;
-                }
-                exprStr = BufFinish(&expr);
-                if (exprStr == NULL
-                    || EmitFmtAppendReflectExpr(
-                           c, "__sl_fmt_b", exprStr, &argTypes[placeholderIndex], 0u)
-                           != 0)
-                {
-                    return -1;
-                }
-            }
-            placeholderIndex++;
-        }
-    } else {
-        if (BufAppendCStr(&c->out, "    __auto_type __sl_fmt_fmt = ") != 0
-            || EmitExpr(c, fmtNode) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
-        {
-            return -1;
-        }
-        for (i = 0; i < argCount; i++) {
-            SLBuf builderNameBuf = { 0 };
-            char* builderName;
-            if (BufAppendCStr(&c->out, "    __sl_fmt_builder __sl_fmt_argb") != 0
-                || BufAppendU32(&c->out, i) != 0
-                || BufAppendCStr(&c->out, ";\n    __sl_fmt_builder_init(&__sl_fmt_argb") != 0
-                || BufAppendU32(&c->out, i) != 0
-                || BufAppendCStr(&c->out, ", (__sl_Allocator*)(") != 0
-                || EmitNewAllocArgExpr(c, -1) != 0 || BufAppendCStr(&c->out, "));\n") != 0)
-            {
-                return -1;
-            }
-            builderNameBuf.arena = &c->arena;
-            if (BufAppendCStr(&builderNameBuf, "__sl_fmt_argb") != 0
-                || BufAppendU32(&builderNameBuf, i) != 0)
-            {
-                return -1;
-            }
-            builderName = BufFinish(&builderNameBuf);
-            if (builderName == NULL) {
-                return -1;
-            }
-            {
-                SLBuf expr = { 0 };
-                char* exprStr;
-                expr.arena = &c->arena;
-                if (BufAppendCStr(&expr, "__sl_fmt_arg") != 0 || BufAppendU32(&expr, i) != 0) {
-                    return -1;
-                }
-                exprStr = BufFinish(&expr);
-                if (exprStr == NULL
-                    || EmitFmtAppendReflectExpr(c, builderName, exprStr, &argTypes[i], 0u) != 0)
-                {
-                    return -1;
-                }
-            }
-            if (BufAppendCStr(&c->out, "    __sl_str* __sl_fmt_argstr") != 0
-                || BufAppendU32(&c->out, i) != 0
-                || BufAppendCStr(&c->out, " = __sl_fmt_builder_finish(&__sl_fmt_argb") != 0
-                || BufAppendU32(&c->out, i) != 0 || BufAppendCStr(&c->out, ");\n") != 0)
-            {
-                return -1;
-            }
-        }
-        if (argCount > 0) {
-            if (BufAppendCStr(&c->out, "    {\n        const __sl_str* __sl_fmt_args[] = {") != 0) {
-                return -1;
-            }
-            for (i = 0; i < argCount; i++) {
-                if (i > 0 && BufAppendCStr(&c->out, ", ") != 0) {
-                    return -1;
-                }
-                if (BufAppendCStr(&c->out, "__sl_fmt_argstr") != 0 || BufAppendU32(&c->out, i) != 0)
-                {
-                    return -1;
-                }
-            }
-            if (BufAppendCStr(
-                    &c->out,
-                    " };\n        __sl_fmt_apply_runtime(&__sl_fmt_b, __sl_fmt_fmt, "
-                    "__sl_fmt_args, ")
-                    != 0
-                || BufAppendU32(&c->out, argCount) != 0
-                || BufAppendCStr(&c->out, "u);\n    }\n") != 0)
-            {
-                return -1;
-            }
+    if (TypeRefIsIntegerLike(c, srcType)) {
+        if (TypeRefIsSignedIntegerLike(c, srcType)) {
+            kindExpr = "((__sl_u8)1u)";
         } else {
-            if (BufAppendCStr(
-                    &c->out, "    __sl_fmt_apply_runtime(&__sl_fmt_b, __sl_fmt_fmt, NULL, 0u);\n")
-                != 0)
-            {
-                return -1;
-            }
-        }
-        for (i = 0; i < argCount; i++) {
-            if (BufAppendCStr(&c->out, "    if (__sl_fmt_argstr") != 0
-                || BufAppendU32(&c->out, i) != 0
-                || BufAppendCStr(&c->out, " != NULL) {\n        __sl_free((__sl_Allocator*)(") != 0
-                || EmitNewAllocArgExpr(c, -1) != 0
-                || BufAppendCStr(&c->out, "), __sl_fmt_argstr") != 0
-                || BufAppendU32(&c->out, i) != 0
-                || BufAppendCStr(&c->out, ", __sl_str_sizeof(__sl_fmt_argstr") != 0
-                || BufAppendU32(&c->out, i) != 0
-                || BufAppendCStr(&c->out, "), _Alignof(__sl_u32));\n    }\n") != 0)
-            {
-                return -1;
-            }
+            kindExpr = "((__sl_u8)2u)";
         }
     }
 
-    if (BufAppendCStr(&c->out, "    __sl_fmt_builder_finish(&__sl_fmt_b);\n}))") != 0) {
+    if (BufAppendCStr(&c->out, "(__extension__({\n    __auto_type ") != 0
+        || BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, " = ") != 0
+        || EmitExpr(c, exprNode) != 0 || BufAppendCStr(&c->out, ";\n") != 0
+        || EmitFmtBuilderInitStmt(c, builderName, -1) != 0)
+    {
+        return -1;
+    }
+    if (EmitFmtAppendReflectExpr(c, builderName, valueName, srcType, 0u) != 0) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "    __sl_str* ") != 0 || BufAppendCStr(&c->out, reprName) != 0
+        || BufAppendCStr(&c->out, " = __sl_fmt_builder_finish(&") != 0
+        || BufAppendCStr(&c->out, builderName) != 0 || BufAppendCStr(&c->out, ");\n    ((") != 0
+        || EmitTypeNameWithDepth(c, dstType) != 0 || BufAppendCStr(&c->out, "){ .kind = ") != 0
+        || BufAppendCStr(&c->out, kindExpr) != 0 || BufAppendCStr(&c->out, ", .repr = ") != 0
+        || BufAppendCStr(&c->out, reprName) != 0 || BufAppendCStr(&c->out, " });\n}))") != 0)
+    {
         return -1;
     }
     return 0;
@@ -8781,6 +8594,13 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
         }
         return EmitStringLiteralRef(c, literalId, dstType->readOnly ? 0 : 1);
     }
+    if (TypeRefIsFmtValueType(c, dstType)) {
+        if (InferExprType(c, exprNode, &srcType) == 0 && srcType.valid
+            && !TypeRefIsFmtValueType(c, &srcType))
+        {
+            return EmitExprCoerceFmtValue(c, exprNode, &srcType, dstType);
+        }
+    }
     if (expr != NULL && expr->kind == SLAst_COMPOUND_LIT) {
         if (TypeRefIsPointerLike(dstType)) {
             SLTypeRef        targetType = *dstType;
@@ -8836,6 +8656,9 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
     if (InferExprType(c, exprNode, &srcType) != 0 || !srcType.valid) {
         return EmitExpr(c, exprNode);
     }
+    if (TypeRefIsFmtValueType(c, dstType) && !TypeRefIsFmtValueType(c, &srcType)) {
+        return EmitExprCoerceFmtValue(c, exprNode, &srcType, dstType);
+    }
     if (srcType.containerKind == SLTypeContainer_SCALAR
         && dstType->containerKind == SLTypeContainer_SCALAR && srcType.baseName != NULL
         && dstType->baseName != NULL)
@@ -8890,8 +8713,12 @@ static int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* ds
          || dstType->containerKind == SLTypeContainer_SLICE_MUT)
         && dstType->containerPtrDepth > 0 && SliceStructPtrDepth(dstType) == 0)
     {
+        const char* srcBase = ResolveScalarAliasBaseName(c, srcType.baseName);
+        if (srcBase == NULL) {
+            srcBase = srcType.baseName;
+        }
         if (srcType.containerKind == SLTypeContainer_SCALAR && srcType.containerPtrDepth == 0
-            && srcType.ptrDepth > 0 && IsStrBaseName(srcType.baseName) && dstType->baseName != NULL
+            && srcType.ptrDepth > 0 && IsStrBaseName(srcBase) && dstType->baseName != NULL
             && StrEq(dstType->baseName, "__sl_u8"))
         {
             if (dstType->containerKind == SLTypeContainer_SLICE_MUT && srcType.readOnly) {
@@ -10416,11 +10243,6 @@ static int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
         return EmitConcatCallExpr(c, child);
     }
     if (callee != NULL && callee->kind == SLAst_IDENT
-        && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "fmt"))
-    {
-        return EmitFmtCallExpr(c, child);
-    }
-    if (callee != NULL && callee->kind == SLAst_IDENT
         && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "free"))
     {
         int32_t arg1 = AstNextSibling(&c->ast, child);
@@ -10699,11 +10521,29 @@ static int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
         uint32_t       i;
         const SLFnSig* resolvedSig = NULL;
         const char*    resolvedName = NULL;
+        int            status;
         if (CollectCallArgInfo(c, nodeId, child, 0, -1, callArgs, argTypes, &argCount) == 0) {
             for (i = 0; i < argCount; i++) {
                 argNodes[i] = callArgs[i].exprNode;
             }
-            if (ResolveCallTarget(
+            status = ResolveCallTarget(
+                c,
+                callee->dataStart,
+                callee->dataEnd,
+                callArgs,
+                argNodes,
+                argTypes,
+                argCount,
+                0,
+                0,
+                &binding,
+                &resolvedSig,
+                &resolvedName);
+            if (status == 0 && resolvedName != NULL) {
+                return EmitResolvedCall(c, nodeId, resolvedName, resolvedSig, &binding, 0);
+            }
+            if (status == 2) {
+                status = ResolveCallTarget(
                     c,
                     callee->dataStart,
                     callee->dataEnd,
@@ -10712,14 +10552,13 @@ static int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                     argTypes,
                     argCount,
                     0,
-                    0,
+                    1,
                     &binding,
                     &resolvedSig,
-                    &resolvedName)
-                    == 0
-                && resolvedName != NULL)
-            {
-                return EmitResolvedCall(c, nodeId, resolvedName, resolvedSig, &binding, 0);
+                    &resolvedName);
+                if (status == 0 && resolvedName != NULL) {
+                    return EmitResolvedCall(c, nodeId, resolvedName, resolvedSig, &binding, 1);
+                }
             }
         }
     }
@@ -10753,8 +10592,11 @@ static int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                     argNodes[i] = callArgs[i].exprNode;
                 }
                 if (PrepareCallBinding(
-                        c, sig, callArgs, argNodes, argTypes, argCount, 0, 1, &binding)
-                    == 0)
+                        c, sig, callArgs, argNodes, argTypes, argCount, 0, 0, &binding)
+                        == 0
+                    || PrepareCallBinding(
+                           c, sig, callArgs, argNodes, argTypes, argCount, 0, 1, &binding)
+                           == 0)
                 {
                     return EmitResolvedCall(c, nodeId, sig->cName, sig, &binding, 0);
                 }
@@ -11284,6 +11126,9 @@ static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int i
         }
         if (initNode >= 0) {
             if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0) {
+                if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                    SetDiagNode(c, initNode, SLDiag_CODEGEN_INTERNAL);
+                }
                 return -1;
             }
         } else if (!isConst && BufAppendCStr(&c->out, " = {0}") != 0) {
@@ -11436,6 +11281,9 @@ static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int i
                     }
                     if (parts.typeNode >= 0) {
                         if (EmitExprCoerced(c, initNode, &type) != 0) {
+                            if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                                SetDiagNode(c, initNode, SLDiag_CODEGEN_INTERNAL);
+                            }
                             return -1;
                         }
                     } else if (EmitExpr(c, initNode) != 0) {
@@ -11460,6 +11308,9 @@ static int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int i
             if (initNode >= 0) {
                 if (BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, initNode, &type) != 0)
                 {
+                    if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                        SetDiagNode(c, initNode, SLDiag_CODEGEN_INTERNAL);
+                    }
                     return -1;
                 }
             } else if (!isConst && BufAppendCStr(&c->out, " = {0}") != 0) {
@@ -12039,6 +11890,9 @@ static int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             int32_t expr = AstFirstChild(&c->ast, nodeId);
             EmitIndent(c, depth);
             if (EmitExpr(c, expr) != 0 || BufAppendCStr(&c->out, ";\n") != 0) {
+                if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                    SetDiagNode(c, expr >= 0 ? expr : nodeId, SLDiag_CODEGEN_INTERNAL);
+                }
                 return -1;
             }
             return 0;

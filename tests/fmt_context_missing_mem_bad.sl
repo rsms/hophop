@@ -1,5 +1,4 @@
-struct Ctx {}
-
-fn render() context Ctx {
-	_ = fmt("{i}", 1 as i64)
+fn render() {
+	var out &str = "                "
+	fmt(out, "{i}", 1 as i64)
 }

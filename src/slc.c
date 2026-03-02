@@ -7157,7 +7157,7 @@ static int IsLinkedOutputUpToDate(
         return 0;
     }
     for (i = 0; i < artifactLen; i++) {
-        if (StrEq(artifacts[i].pkg->name, "core") || StrEq(artifacts[i].pkg->name, "platform")) {
+        if (StrEq(artifacts[i].pkg->name, "platform")) {
             continue;
         }
         if (GetFileMtimeNs(artifacts[i].oPath, &inputMtimeNs) != 0 || inputMtimeNs > outMtimeNs) {
@@ -7267,8 +7267,7 @@ static int CompileProgram(
     {
         uint32_t j;
         for (j = 0; j < artifactLen; j++) {
-            if (StrEq(artifacts[j].pkg->name, "core") || StrEq(artifacts[j].pkg->name, "platform"))
-            {
+            if (StrEq(artifacts[j].pkg->name, "platform")) {
                 continue;
             }
             ccLinkArgv[i++] = artifacts[j].oPath;
