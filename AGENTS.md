@@ -165,3 +165,5 @@ SL_API_BEGIN
 SL_API_END
 /* end of file*/
 ```
+
+If a source file passes beyond 8000 lines of code, refactor it into multiple logical pieces, for example `foo.c` -> `foo_config.c` + `foo_transform.c`. If `cloc` is available in PATH, you can use it like this `cloc --quiet --csv <file> | tail -n1 | cut -d, -f5` to get the number of lines of code excluding comments.
