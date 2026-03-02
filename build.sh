@@ -23,6 +23,7 @@ test=0    # run tests after successful build
 cc=clang  # compiler to use (also used for linking)
 release=0 # compatibility alias for debug=0
 toolchain=
+jobs=     # explicit number of -j or --jobs to use for running tests (defaults to CPU count)
 [ "$*" = "--help" ] && { echo "Usage: $0 [var[=value] ...]"; exit 0; };
 for a in "$@"; do
     case "$a" in
@@ -237,5 +238,7 @@ _v ninja "${ninja_args[@]}"
 # test
 
 [ $test = 1 ] || exit 0
-echo "python3 tools/test.py run --build-dir '$build_dir' --cc '$cc'"
-exec python3 tools/test.py run --build-dir "$build_dir" --cc "$cc"
+test_args=( run --build-dir "$build_dir" --cc "$cc" )
+[ -z "$jobs" ] || test_args+=( --jobs=$jobs )
+echo "python3 tools/test.py" "${test_args[@]}"
+exec python3 tools/test.py "${test_args[@]}"
