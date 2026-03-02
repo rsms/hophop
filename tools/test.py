@@ -230,7 +230,11 @@ def is_pretest_fmt_strict_target(path: str) -> bool:
     return False
 
 
-def run_pretest_fmt_check(ctx: RunContext, all_cases: List[TestCase]) -> tuple[bool, str]:
+def run_pretest_fmt_target(ctx: RunContext, path: str) -> tuple[str, subprocess.CompletedProcess[str]]:
+    return path, run_cmd([str(ctx.slc), "fmt", "--check", path])
+
+
+def run_pretest_fmt_check(ctx: RunContext, all_cases: List[TestCase], jobs: int) -> tuple[bool, str]:
     exempt_paths, config_errors = collect_pretest_fmt_exemptions(all_cases)
     if config_errors:
         return fail("pre-test formatter config errors:\n" + "\n".join(config_errors))
@@ -242,8 +246,20 @@ def run_pretest_fmt_check(ctx: RunContext, all_cases: List[TestCase]) -> tuple[b
     dirty_paths: Set[str] = set()
     command_errors: List[str] = []
 
+    results: Dict[str, subprocess.CompletedProcess[str]] = {}
+    worker_count = min(max(jobs, 1), len(targets))
+    if worker_count == 1:
+        for path in targets:
+            results[path] = run_cmd([str(ctx.slc), "fmt", "--check", path])
+    else:
+        with ThreadPoolExecutor(max_workers=worker_count) as ex:
+            futs = {ex.submit(run_pretest_fmt_target, ctx, path): path for path in targets}
+            for fut in as_completed(futs):
+                path, cp = fut.result()
+                results[path] = cp
+
     for path in targets:
-        cp = run_cmd([str(ctx.slc), "fmt", "--check", path])
+        cp = results[path]
         stdout_lines = [line.strip() for line in cp.stdout.splitlines() if line.strip()]
         is_strict_target = is_pretest_fmt_strict_target(path)
 
@@ -1118,12 +1134,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         sidecar_codegen=not args.no_sidecar_codegen,
     )
 
-    fmt_ok, fmt_detail = run_pretest_fmt_check(ctx, all_fixtures)
+    jobs = args.jobs if args.jobs and args.jobs > 0 else (os.cpu_count() or 1)
+
+    fmt_ok, fmt_detail = run_pretest_fmt_check(ctx, all_fixtures, jobs)
     if not fmt_ok:
         print(fmt_detail, file=sys.stderr)
         return 1
 
-    jobs = args.jobs if args.jobs and args.jobs > 0 else (os.cpu_count() or 1)
     temp_root = Path(tempfile.mkdtemp(prefix="slang-tests."))
 
     print(
