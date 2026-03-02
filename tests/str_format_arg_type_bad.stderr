@@ -1,0 +1,1 @@
+tests/str_format_arg_type_bad.sl:5:32: SL2064: format argument type mismatch

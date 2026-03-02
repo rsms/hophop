@@ -214,7 +214,7 @@ int IsBuiltinType(const char* s) {
     return StrEq(s, "bool") || StrEq(s, "str") || StrEq(s, "u8") || StrEq(s, "u16")
         || StrEq(s, "u32") || StrEq(s, "u64") || StrEq(s, "i8") || StrEq(s, "i16")
         || StrEq(s, "i32") || StrEq(s, "i64") || StrEq(s, "uint") || StrEq(s, "int")
-        || StrEq(s, "f32") || StrEq(s, "f64") || StrEq(s, "type");
+        || StrEq(s, "f32") || StrEq(s, "f64") || StrEq(s, "type") || StrEq(s, "anytype");
 }
 
 int IsIntegerCTypeName(const char* s) {
@@ -1608,12 +1608,12 @@ const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t e
     uint32_t                 i;
     static const char* const builtinSlNames[] = {
         "bool", "str", "u8",   "u16", "u32", "u64", "i8",   "i16",
-        "i32",  "i64", "uint", "int", "f32", "f64", "type",
+        "i32",  "i64", "uint", "int", "f32", "f64", "type", "anytype",
     };
     static const char* const builtinCNames[] = {
-        "__sl_bool", "__sl_str", "__sl_u8",  "__sl_u16", "__sl_u32",
-        "__sl_u64",  "__sl_i8",  "__sl_i16", "__sl_i32", "__sl_i64",
-        "__sl_uint", "__sl_int", "__sl_f32", "__sl_f64", "__sl_type",
+        "__sl_bool", "__sl_str", "__sl_u8",   "__sl_u16", "__sl_u32",  "__sl_u64",
+        "__sl_i8",   "__sl_i16", "__sl_i32",  "__sl_i64", "__sl_uint", "__sl_int",
+        "__sl_f32",  "__sl_f64", "__sl_type", "__sl_u8",
     };
 
     normalized = DupAndReplaceDots(c, c->unit->source, start, end);

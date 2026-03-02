@@ -1,0 +1,1 @@
+tests/str_format_arg_count_bad.sl:5:3: SL2063: format placeholder count does not match argument count

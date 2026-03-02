@@ -60,11 +60,19 @@ int SLFmtParseBytes(
             {
                 return -1;
             }
-            if (i + 2u < len && (bytes[i + 1u] == (uint8_t)'i' || bytes[i + 1u] == (uint8_t)'r')
+            if (i + 2u < len
+                && (bytes[i + 1u] == (uint8_t)'i' || bytes[i + 1u] == (uint8_t)'f'
+                    || bytes[i + 1u] == (uint8_t)'s' || bytes[i + 1u] == (uint8_t)'r')
                 && bytes[i + 2u] == (uint8_t)'}')
             {
-                SLFmtTokKind kind =
-                    bytes[i + 1u] == (uint8_t)'i' ? SLFmtTok_PLACEHOLDER_I : SLFmtTok_PLACEHOLDER_R;
+                SLFmtTokKind kind = SLFmtTok_PLACEHOLDER_R;
+                if (bytes[i + 1u] == (uint8_t)'i') {
+                    kind = SLFmtTok_PLACEHOLDER_I;
+                } else if (bytes[i + 1u] == (uint8_t)'f') {
+                    kind = SLFmtTok_PLACEHOLDER_F;
+                } else if (bytes[i + 1u] == (uint8_t)'s') {
+                    kind = SLFmtTok_PLACEHOLDER_S;
+                }
                 if (SLFmtPushToken(outTokens, tokenCap, &tokenLen, kind, i, i + 3u, outErr) != 0) {
                     return -1;
                 }

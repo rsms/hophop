@@ -5,6 +5,8 @@
 typedef enum {
     SLFmtTok_LITERAL = 0,
     SLFmtTok_PLACEHOLDER_I,
+    SLFmtTok_PLACEHOLDER_F,
+    SLFmtTok_PLACEHOLDER_S,
     SLFmtTok_PLACEHOLDER_R,
 } SLFmtTokKind;
 

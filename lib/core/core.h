@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #ifndef __has_builtin
@@ -383,6 +384,73 @@ static inline __sl_bool __sl_fmt_builder_append_i64(__sl_fmt_builder* b, __sl_i6
         mag = (__sl_u64)value;
     }
     return __sl_fmt_builder_append_u64(b, mag);
+}
+
+static inline void __sl_fmt_buf_append_bytes(
+    __sl_u8* dst, __sl_uint write_cap, __sl_uint* io_len, const __sl_u8* src, __sl_uint src_len) {
+    __sl_uint i;
+    __sl_uint len;
+    if (io_len == NULL) {
+        return;
+    }
+    len = *io_len;
+    if (src_len == 0u || src == NULL) {
+        return;
+    }
+    for (i = 0u; i < src_len; i++) {
+        if (len < write_cap && dst != NULL) {
+            dst[len] = src[i];
+        }
+        len++;
+    }
+    *io_len = len;
+}
+
+static inline void __sl_fmt_buf_append_u64(
+    __sl_u8* dst, __sl_uint write_cap, __sl_uint* io_len, __sl_u64 value) {
+    __sl_u8   tmp[32];
+    __sl_uint n = 0u;
+    if (value == 0u) {
+        static const __sl_u8 z[] = { '0' };
+        __sl_fmt_buf_append_bytes(dst, write_cap, io_len, z, 1u);
+        return;
+    }
+    while (value != 0u && n < (__sl_uint)sizeof(tmp)) {
+        tmp[n++] = (__sl_u8)('0' + (value % 10u));
+        value /= 10u;
+    }
+    while (n > 0u) {
+        __sl_uint i = n - 1u;
+        __sl_fmt_buf_append_bytes(dst, write_cap, io_len, &tmp[i], 1u);
+        n = i;
+    }
+}
+
+static inline void __sl_fmt_buf_append_i64(
+    __sl_u8* dst, __sl_uint write_cap, __sl_uint* io_len, __sl_i64 value) {
+    if (value < 0) {
+        static const __sl_u8 minus[] = { '-' };
+        __sl_u64             mag;
+        __sl_fmt_buf_append_bytes(dst, write_cap, io_len, minus, 1u);
+        mag = (__sl_u64)(-(value + 1)) + 1u;
+        __sl_fmt_buf_append_u64(dst, write_cap, io_len, mag);
+        return;
+    }
+    __sl_fmt_buf_append_u64(dst, write_cap, io_len, (__sl_u64)value);
+}
+
+static inline void __sl_fmt_buf_append_f64g(
+    __sl_u8* dst, __sl_uint write_cap, __sl_uint* io_len, __sl_f64 value) {
+    char buf[64];
+    int  n = snprintf(buf, sizeof(buf), "%g", (double)value);
+    if (n <= 0) {
+        return;
+    }
+    if ((__sl_uint)n >= (__sl_uint)sizeof(buf)) {
+        n = (int)sizeof(buf) - 1;
+    }
+    __sl_fmt_buf_append_bytes(
+        dst, write_cap, io_len, (const __sl_u8*)(const void*)buf, (__sl_uint)n);
 }
 
 static inline __sl_bool __sl_fmt_builder_append_escaped_str(

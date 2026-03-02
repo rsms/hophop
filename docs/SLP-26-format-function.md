@@ -19,8 +19,8 @@ Behavior:
 - writes formatted output bytes into `buf`
 - returns the number of bytes that would have been written if `buf` were infinitely large
 - matches libc `snprintf` return-count contract
-- `format` itself does not append a trailing NUL byte; C-string termination is handled by a
-  dedicated helper variant in this SLP
+- if `len(buf) > 0`, `format` writes at most `len(buf)-1` payload bytes and writes a trailing
+  NUL byte at the final position
 
 Scope for v1 placeholders:
 
@@ -61,8 +61,7 @@ Notes:
 
 - existing `core.fmt` remains available and unchanged
 - callers opt in by importing `core/str` symbol `format` explicitly
-- include a companion C-interop helper variant that applies NUL-termination when space remains in
-  `buf`
+- no separate companion helper is introduced in this SLP
 
 ## Formatting grammar (v1)
 
@@ -102,7 +101,8 @@ Let `cap = len(buf)`.
 - return value is total logical output byte length, including truncated bytes
 - truncation is not an error
 - if `cap == 0`, writes nothing and still returns total required length
-- no implicit trailing NUL byte is appended by `format`
+- if `len(buf) > 0`, `format` always writes a trailing NUL byte after payload bytes (or at index 0
+  when payload is empty/truncated)
 
 ### 4. Anytype usage
 
@@ -127,17 +127,12 @@ This is additive.
 
 ## Implementation notes
 
-Library implementation target:
+Reference implementation status:
 
-- pure SL implementation in `lib/core/str/format.sl`
-
-Expected dependencies:
-
-- SLP-24 `const` parameter enforcement
-- SLP-25 `...anytype` pack handling
-- compile-time type checks via reflection operations already present/proposed for `type` values
-
-No compiler special-case for function name `format` should be required.
+- API surface is provided by `lib/core/str/format.sl`.
+- Compile-time validation is implemented in typecheck for `core/str.format` calls.
+- C backend lowering emits direct bounded-buffer formatting code for `core/str.format`.
+- No `FmtValue` conversion is used by this API.
 
 ## Test plan
 
@@ -148,7 +143,7 @@ Add tests for:
    - mixed placeholders and escaped braces
    - truncation behavior: return count > written bytes
    - zero-capacity buffer behavior
-   - C-interop helper writes trailing NUL when `bytes_written < len(buf)`
+   - trailing NUL behavior in `format` itself when `len(buf) > 0`
 2. Negative:
    - invalid format token (`{x}`, unmatched brace)
    - placeholder/argument count mismatch
@@ -171,7 +166,8 @@ SLP-26 v1 does not add:
 1. `{s}` accepts values that can be implicitly converted to `&str`.
    - accepted: `&str`, `*str`
    - rejected unless explicitly cast: non-`str` families like `&[u8]`
-2. Include C-interop NUL-termination helper behavior in this SLP.
-   - keep `format` return-count contract unchanged
-   - helper behavior is a final conditional NUL write:
-     `if bytes_written < len(buf) { buf[bytes_written] = 0 }`
+2. Apply NUL-termination behavior directly in `format`.
+   - keep return-count contract unchanged (count excludes trailing NUL)
+   - behavior:
+     - if `len(buf) == 0`, no write
+     - if `len(buf) > 0`, reserve one byte for terminating `0`

@@ -2946,13 +2946,13 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
 
 static int IsBuiltinTypeName(const char* src, uint32_t start, uint32_t end) {
     return SliceEqCStr(src, start, end, "bool") || SliceEqCStr(src, start, end, "str")
-        || SliceEqCStr(src, start, end, "type") || SliceEqCStr(src, start, end, "u8")
-        || SliceEqCStr(src, start, end, "u16") || SliceEqCStr(src, start, end, "u32")
-        || SliceEqCStr(src, start, end, "u64") || SliceEqCStr(src, start, end, "i8")
-        || SliceEqCStr(src, start, end, "i16") || SliceEqCStr(src, start, end, "i32")
-        || SliceEqCStr(src, start, end, "i64") || SliceEqCStr(src, start, end, "uint")
-        || SliceEqCStr(src, start, end, "int") || SliceEqCStr(src, start, end, "f32")
-        || SliceEqCStr(src, start, end, "f64");
+        || SliceEqCStr(src, start, end, "type") || SliceEqCStr(src, start, end, "anytype")
+        || SliceEqCStr(src, start, end, "u8") || SliceEqCStr(src, start, end, "u16")
+        || SliceEqCStr(src, start, end, "u32") || SliceEqCStr(src, start, end, "u64")
+        || SliceEqCStr(src, start, end, "i8") || SliceEqCStr(src, start, end, "i16")
+        || SliceEqCStr(src, start, end, "i32") || SliceEqCStr(src, start, end, "i64")
+        || SliceEqCStr(src, start, end, "uint") || SliceEqCStr(src, start, end, "int")
+        || SliceEqCStr(src, start, end, "f32") || SliceEqCStr(src, start, end, "f64");
 }
 
 static int PackageHasExport(const SLPackage* pkg, const char* name) {
@@ -3615,6 +3615,8 @@ static char* _Nullable ResolveLibImportDirInRoot(const char* rootDir, const char
 static int IsLibImportPath(const char* importPath) {
     return StrEq(importPath, "core") || StrEq(importPath, "reflect") || StrEq(importPath, "mem")
         || StrEq(importPath, "platform") || StrEq(importPath, "compiler")
+        || strncmp(importPath, "core/", 5u) == 0 || strncmp(importPath, "reflect/", 8u) == 0
+        || strncmp(importPath, "mem/", 4u) == 0 || strncmp(importPath, "compiler/", 9u) == 0
         || strncmp(importPath, "std/", 4u) == 0 || strncmp(importPath, "platform/", 9u) == 0;
 }
 

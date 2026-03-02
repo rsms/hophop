@@ -3030,6 +3030,22 @@ int SLTCResolveCallByName(
     int32_t  candidates[SLTC_MAX_CALL_CANDIDATES];
     uint32_t candidateCount = 0;
     int      nameFound = 0;
+    uint32_t adjustedFirstPositionalArgIndex = firstPositionalArgIndex;
+
+    if (adjustedFirstPositionalArgIndex > argCount) {
+        adjustedFirstPositionalArgIndex = argCount;
+    }
+    while (adjustedFirstPositionalArgIndex < argCount) {
+        if (!(callArgs[adjustedFirstPositionalArgIndex].explicitNameEnd
+              > callArgs[adjustedFirstPositionalArgIndex].explicitNameStart))
+        {
+            break;
+        }
+        adjustedFirstPositionalArgIndex++;
+    }
+    if (adjustedFirstPositionalArgIndex >= argCount) {
+        adjustedFirstPositionalArgIndex = firstPositionalArgIndex;
+    }
 
     SLTCGatherCallCandidates(c, nameStart, nameEnd, candidates, &candidateCount, &nameFound);
     return SLTCResolveCallFromCandidates(
@@ -3039,7 +3055,7 @@ int SLTCResolveCallByName(
         nameFound,
         callArgs,
         argCount,
-        firstPositionalArgIndex,
+        adjustedFirstPositionalArgIndex,
         autoRefFirstArg,
         outFuncIndex,
         outMutRefTempArgNode);
@@ -3060,6 +3076,23 @@ int SLTCResolveCallByPkgMethod(
     int32_t  candidates[SLTC_MAX_CALL_CANDIDATES];
     uint32_t candidateCount = 0;
     int      nameFound = 0;
+    uint32_t adjustedFirstPositionalArgIndex = firstPositionalArgIndex;
+
+    if (adjustedFirstPositionalArgIndex > argCount) {
+        adjustedFirstPositionalArgIndex = argCount;
+    }
+    while (adjustedFirstPositionalArgIndex < argCount) {
+        if (!(callArgs[adjustedFirstPositionalArgIndex].explicitNameEnd
+              > callArgs[adjustedFirstPositionalArgIndex].explicitNameStart))
+        {
+            break;
+        }
+        adjustedFirstPositionalArgIndex++;
+    }
+    if (adjustedFirstPositionalArgIndex >= argCount) {
+        adjustedFirstPositionalArgIndex = firstPositionalArgIndex;
+    }
+
     SLTCGatherCallCandidatesByPkgMethod(
         c, pkgStart, pkgEnd, methodStart, methodEnd, candidates, &candidateCount, &nameFound);
     return SLTCResolveCallFromCandidates(
@@ -3069,7 +3102,7 @@ int SLTCResolveCallByPkgMethod(
         nameFound,
         callArgs,
         argCount,
-        firstPositionalArgIndex,
+        adjustedFirstPositionalArgIndex,
         autoRefFirstArg,
         outFuncIndex,
         outMutRefTempArgNode);

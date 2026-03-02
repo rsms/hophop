@@ -1749,17 +1749,23 @@ int EmitCBackend(
         return -1;
     }
     if (CollectDeclSets(&c) != 0) {
-        SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        if (diag != NULL && diag->code == SLDiag_NONE) {
+            SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        }
         FreeContext(&c);
         return -1;
     }
     if (CollectFnAndFieldInfo(&c) != 0) {
-        SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        if (diag != NULL && diag->code == SLDiag_NONE) {
+            SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        }
         FreeContext(&c);
         return -1;
     }
     if (CollectTypeAliasInfo(&c) != 0) {
-        SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        if (diag != NULL && diag->code == SLDiag_NONE) {
+            SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        }
         FreeContext(&c);
         return -1;
     }
@@ -1771,7 +1777,9 @@ int EmitCBackend(
         return -1;
     }
     if (CollectVarSizeTypesFromDeclSets(&c) != 0 || PropagateVarSizeTypes(&c) != 0) {
-        SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        if (diag != NULL && diag->code == SLDiag_NONE) {
+            SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        }
         FreeContext(&c);
         return -1;
     }
