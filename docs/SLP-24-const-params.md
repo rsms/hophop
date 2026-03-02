@@ -1,4 +1,4 @@
-# SLP-24 const function parameters (draft)
+# SLP-24 const function parameters (completed)
 
 ## Summary
 

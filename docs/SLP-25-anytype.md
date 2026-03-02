@@ -1,4 +1,4 @@
-# SLP-25 anytype parameters and variadic packs (draft)
+# SLP-25 anytype parameters and variadic packs (completed)
 
 ## Summary
 
