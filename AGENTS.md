@@ -147,3 +147,21 @@ Here are a few examples:
 - `slc genpkg:c <dir|file.sl> [out.h]` — generate C output via C11 backend
 - `slc compile <dir|file.sl> -o <exe>` — compile via C11 backend + system compiler
 - `slc run <dir|file.sl>` — run with evaluator (not C11 backend)
+
+## 7) Code guidelines
+
+### 7.1 C code in src/
+
+Each implementation (.c) file should begin with `#include "libsl-impl.h"` (or `#include "../libsl-impl.h"` if in a subdirectory.) This includes the public API header `libsl.h` as well as some implementation-only parts of libsl.
+
+Bracket every .h and .c file's content with `SL_API_BEGIN` and `SL_API_END`. They configure the compiler's nullability checks and sets the compiler to interpret `T*` as being `_Nonnull` by default.
+
+```c
+/* all includes before SL_API_BEGIN */
+#include "libsl-impl.h"
+#include "other_header.h"
+SL_API_BEGIN
+/* types, functions etc */
+SL_API_END
+/* end of file*/
+```
