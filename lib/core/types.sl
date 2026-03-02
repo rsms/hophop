@@ -1,6 +1,6 @@
 pub struct str {
-	len   u32
-	bytes [u8 .len]
+	ptr *u8
+	len uint
 }
 
 pub type rune u32

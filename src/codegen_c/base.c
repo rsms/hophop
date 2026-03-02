@@ -2890,27 +2890,26 @@ int ResolveCoreStrFieldBySlice(
     const SLCBackendC* c, uint32_t fieldStart, uint32_t fieldEnd, const SLFieldInfo** outField) {
     static int         inited = 0;
     static SLFieldInfo lenField;
-    static SLFieldInfo bytesField;
+    static SLFieldInfo ptrField;
     if (!inited) {
         memset(&lenField, 0, sizeof(lenField));
-        memset(&bytesField, 0, sizeof(bytesField));
+        memset(&ptrField, 0, sizeof(ptrField));
         lenField.ownerType = "core__str";
         lenField.fieldName = "len";
-        TypeRefSetScalar(&lenField.type, "__sl_u32");
+        TypeRefSetScalar(&lenField.type, "__sl_uint");
 
-        bytesField.ownerType = "core__str";
-        bytesField.fieldName = "bytes";
-        bytesField.isDependent = 1;
-        TypeRefSetScalar(&bytesField.type, "__sl_u8");
-        bytesField.type.ptrDepth = 1;
+        ptrField.ownerType = "core__str";
+        ptrField.fieldName = "ptr";
+        TypeRefSetScalar(&ptrField.type, "__sl_u8");
+        ptrField.type.ptrDepth = 1;
         inited = 1;
     }
     if (SliceEqName(c->unit->source, fieldStart, fieldEnd, "len")) {
         *outField = &lenField;
         return 0;
     }
-    if (SliceEqName(c->unit->source, fieldStart, fieldEnd, "bytes")) {
-        *outField = &bytesField;
+    if (SliceEqName(c->unit->source, fieldStart, fieldEnd, "ptr")) {
+        *outField = &ptrField;
         return 0;
     }
     return -1;

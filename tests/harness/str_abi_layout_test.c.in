@@ -1,0 +1,22 @@
+#include <stddef.h>
+
+#include "@HEADER@"
+
+typedef void (*expected_logger_handler_t)(__sl_Logger*, __sl_str*, __sl_LogLevel, __sl_LogFlags);
+
+_Static_assert(offsetof(__sl_str, ptr) == 0, "__sl_str.ptr must be first field");
+_Static_assert(sizeof(((__sl_str*)0)->ptr) == sizeof(__sl_u8*), "__sl_str.ptr must be __sl_u8*");
+_Static_assert(
+    sizeof(((__sl_str*)0)->len) == sizeof(__sl_uint), "__sl_str.len must be __sl_uint");
+_Static_assert(
+    offsetof(__sl_str, len) == sizeof(__sl_u8*),
+    "__sl_str.len offset must match pointer-sized fat pointer layout");
+_Static_assert(
+    _Generic(((__sl_Logger){0}).handler, expected_logger_handler_t: 1, default: 0),
+    "__sl_Logger.handler must use __sl_str* in ABI");
+_Static_assert(
+    _Generic(((__sl_Logger){0}).prefix, __sl_str*: 1, default: 0),
+    "__sl_Logger.prefix must be __sl_str* in ABI");
+_Static_assert(
+    _Generic(__sl_strlit("x"), const __sl_str*: 1, default: 0),
+    "__sl_strlit must produce const __sl_str*");

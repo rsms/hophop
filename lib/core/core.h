@@ -69,8 +69,8 @@ struct __sl_FmtValue {
 };
 
 struct __sl_str {
-    __sl_u32 len;
-    __sl_u8  bytes[];
+    __sl_u8*  ptr;
+    __sl_uint len;
 };
 
 typedef __sl_u32 __sl_rune;
@@ -133,11 +133,10 @@ struct __sl_PrintContext {
 // functions
 
 __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 line);
-#define __sl_strlit(strlit)             \
-    ((const __sl_str*)&(const struct {  \
-        __sl_u32 len;                   \
-        __sl_u8  bytes[sizeof(strlit)]; \
-    }){ .len = (__sl_u32)(sizeof(strlit) - 1u), .bytes = (strlit) })
+#define __sl_strlit(strlit)                                \
+    (&(const __sl_str){                                    \
+        .ptr = (__sl_u8*)(uintptr_t)(const void*)(strlit), \
+        .len = (__sl_uint)(sizeof(strlit) - 1u) })
 
 #define __sl_assert(expr)                                                    \
     do {                                                                     \
@@ -158,7 +157,7 @@ static inline __sl_uint __sl_len(const __sl_str* s) {
 }
 
 static inline const __sl_u8* __sl_cstr(const __sl_str* s) {
-    return s != NULL ? s->bytes : (const __sl_u8*)0;
+    return s != NULL ? s->ptr : (const __sl_u8*)0;
 }
 
 static inline __sl_uint __sl_align_up(__sl_uint x, __sl_uint a) {
@@ -166,7 +165,7 @@ static inline __sl_uint __sl_align_up(__sl_uint x, __sl_uint a) {
 }
 
 static inline __sl_uint __sl_str_sizeof(const __sl_str* s) {
-    return s != NULL ? (__sl_uint)(sizeof(__sl_u32) + (__sl_uint)s->len + 1u) : 0u;
+    return s != NULL ? (__sl_uint)(sizeof(__sl_str) + (__sl_uint)s->len + 1u) : 0u;
 }
 
 static inline __sl_bool __sl_mem_equal(const void* a, const void* b, __sl_uint n) {
@@ -270,18 +269,19 @@ static inline __sl_str* __sl_concat(__sl_Allocator* ma, const __sl_str* a, const
     __sl_uint lenA = a != NULL ? a->len : 0u;
     __sl_uint lenB = b != NULL ? b->len : 0u;
     __sl_uint outLen = lenA + lenB;
-    __sl_str* out = (__sl_str*)__sl_new(ma, sizeof(__sl_u32) + outLen + 1u, _Alignof(__sl_u32));
+    __sl_str* out = (__sl_str*)__sl_new(ma, sizeof(__sl_str) + outLen + 1u, _Alignof(__sl_str));
     if (out == NULL) {
         return NULL;
     }
-    out->len = (__sl_u32)outLen;
+    out->ptr = (__sl_u8*)(void*)(out + 1);
+    out->len = outLen;
     if (lenA > 0u && a != NULL) {
-        memcpy(out->bytes, a->bytes, lenA);
+        memcpy(out->ptr, a->ptr, lenA);
     }
     if (lenB > 0u && b != NULL) {
-        memcpy(out->bytes + lenA, b->bytes, lenB);
+        memcpy(out->ptr + lenA, b->ptr, lenB);
     }
-    out->bytes[outLen] = 0;
+    out->ptr[outLen] = 0;
     return out;
 }
 
@@ -351,7 +351,7 @@ static inline __sl_bool __sl_fmt_builder_append_str(__sl_fmt_builder* b, const _
         static const __sl_u8 nullText[] = { 'n', 'u', 'l', 'l' };
         return __sl_fmt_builder_append_bytes(b, nullText, (__sl_uint)sizeof(nullText));
     }
-    return __sl_fmt_builder_append_bytes(b, s->bytes, (__sl_uint)s->len);
+    return __sl_fmt_builder_append_bytes(b, s->ptr, (__sl_uint)s->len);
 }
 
 static inline __sl_bool __sl_fmt_builder_append_u64(__sl_fmt_builder* b, __sl_u64 value) {
@@ -466,7 +466,7 @@ static inline __sl_bool __sl_fmt_builder_append_escaped_str(
         }
     } else {
         while (i < (__sl_uint)s->len) {
-            __sl_u8 ch = s->bytes[i++];
+            __sl_u8 ch = s->ptr[i++];
             if (ch == (__sl_u8)'\\') {
                 static const __sl_u8 esc[] = { '\\', '\\' };
                 if (!__sl_fmt_builder_append_bytes(b, esc, (__sl_uint)sizeof(esc))) {
@@ -507,7 +507,7 @@ static inline __sl_str* __sl_fmt_builder_finish(__sl_fmt_builder* b) {
         return NULL;
     }
     len = b->len;
-    out = (__sl_str*)__sl_new(b->ma, sizeof(__sl_u32) + len + 1u, _Alignof(__sl_u32));
+    out = (__sl_str*)__sl_new(b->ma, sizeof(__sl_str) + len + 1u, _Alignof(__sl_str));
     if (out == NULL) {
         if (b->bytes != NULL) {
             __sl_free(b->ma, b->bytes, b->cap, _Alignof(__sl_u8));
@@ -517,11 +517,12 @@ static inline __sl_str* __sl_fmt_builder_finish(__sl_fmt_builder* b) {
         b->cap = 0;
         return NULL;
     }
-    out->len = (__sl_u32)len;
+    out->ptr = (__sl_u8*)(void*)(out + 1);
+    out->len = len;
     if (len > 0u && b->bytes != NULL) {
-        memcpy(out->bytes, b->bytes, len);
+        memcpy(out->ptr, b->bytes, len);
     }
-    out->bytes[len] = 0;
+    out->ptr[len] = 0;
     if (b->bytes != NULL) {
         __sl_free(b->ma, b->bytes, b->cap, _Alignof(__sl_u8));
     }

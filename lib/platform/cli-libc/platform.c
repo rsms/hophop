@@ -80,10 +80,10 @@ static void platform_log_handler(
 
     if (self != NULL && (flags & __sl_LoggerFlag_Prefix) && self->prefix != NULL &&
         self->prefix->len > 0) {
-        fprintf(out, "%.*s", (int)self->prefix->len, (const char*)self->prefix->bytes);
+        fprintf(out, "%.*s", (int)self->prefix->len, (const char*)self->prefix->ptr);
     }
     if (message != NULL) {
-        fprintf(out, "%.*s", (int)n, (const char*)message->bytes);
+        fprintf(out, "%.*s", (int)n, (const char*)message->ptr);
     }
     fputc('\n', out);
     fflush(out);
@@ -107,7 +107,7 @@ __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 li
         stderr,
         "panic: %.*s\n",
         (int)message_len,
-        message_len > 0 ? (const char*)msg->bytes : (const char*)empty);
+        message_len > 0 ? (const char*)msg->ptr : (const char*)empty);
     fflush(stderr);
     abort();
 }
@@ -125,7 +125,7 @@ static __sl_Context   gMainContext = {
             .handler = platform_log_handler,
             .min_level = __sl_LogLevel_Info,
             .flags = __sl_LoggerFlag_Level,
-            .prefix = NULL,
+            .prefix = (__sl_str*)0,
         },
 };
 

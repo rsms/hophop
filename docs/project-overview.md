@@ -75,11 +75,12 @@ SL uses only `x.y`. Codegen chooses `.` vs `->` based on the **typed** receiver:
 
 ### 2.4 Strings
 
-SL `str` is a pointer to a blob: **u32 length + bytes + nul** (Redis-like):
+SL `str` is a fat pointer value:
 
-* `"hi"` → `u32(2)` + `'h'` + `'i'` + `'\0'`.
+* `ptr *u8`
+* `len uint`
 
-The `str` value points at the `u32` length field.
+`ptr` points at byte storage (typically nul-terminated when created from literals/runtime helpers).
 
 Prelude provides:
 
@@ -682,11 +683,12 @@ typedef unsigned int  u32;
 typedef /*...*/       __sl_uint;
 typedef _Bool         bool;
 
-typedef const u8* str;
-
-typedef struct { u32 len; u8 bytes[1]; } sl_strhdr;
-static inline u32 len(str s) { return ((const sl_strhdr*)(const void*)s)->len; }
-static inline const u8* cstr(str s) { return ((const sl_strhdr*)(const void*)s)->bytes; }
+typedef struct {
+    u8*      ptr;
+    __sl_uint len;
+} str;
+static inline __sl_uint len(const str* s) { return s != 0 ? s->len : 0; }
+static inline const u8* cstr(const str* s) { return s != 0 ? s->ptr : (const u8*)0; }
 
 #ifndef SL_TRAP
     #if defined(__clang__) || defined(__GNUC__)
@@ -706,14 +708,14 @@ static inline const u8* cstr(str s) { return ((const sl_strhdr*)(const void*)s)-
 
 ### 4.4.3 String literal emission
 
-Maintain a string-literal pool and emit one static object per distinct literal:
+Maintain a string-literal pool and emit bytes + descriptor per distinct literal:
 
 ```c
-typedef struct { u32 len; u8 bytes[N+1]; } sl_lit_42_t;
-static const sl_lit_42_t sl_lit_42 = { N, { ... , 0 } };
+static const u8  sl_lit_42_bytes[N+1] = { ... , 0 };
+static const str sl_lit_42 = { (u8*)(const void*)sl_lit_42_bytes, N };
 ```
 
-Then SL `"foo"` expression emits as `(str)(const u8*)&sl_lit_42`.
+Then SL `"foo"` expression emits as `&sl_lit_42`.
 
 ### 4.4.4 Switch emission strategy
 

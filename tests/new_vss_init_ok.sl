@@ -19,7 +19,6 @@ fn main() {
 	assert packet.payloadLen == 3
 	assert packet.sampleLen == 2
 	assert packet.name.len == 4
-	assert packet.name.bytes[0] == 0
 	assert packet.payload[0] == 0
 	assert packet.samples[0] == 0
 
@@ -30,5 +29,4 @@ fn main() {
 
 	var string *str = new str{ len: 5 } with ma
 	assert string.len == 5
-	assert string.bytes[0] == 0
 }

@@ -24,7 +24,6 @@ fn main() {
 	assert packet.payloadLen == 3
 	assert packet.sampleLen == 2
 	assert packet.name.len == 4
-	assert packet.name.bytes[0] == 0
 	assert packet.payload[0] == 0
 	assert packet.samples[0] == 0
 

@@ -207,13 +207,13 @@ def parse_array_type_expr(type_expr: str) -> tuple[str, str] | None:
     return elem_expr, len_expr
 
 
-def split_ptr_ref_type(type_expr: str) -> tuple[str, int]:
-    depth = 0
+def split_ptr_ref_type(type_expr: str) -> tuple[str, str]:
+    ops: list[str] = []
     s = type_expr.strip()
     while s.startswith("*") or s.startswith("&"):
-        depth += 1
+        ops.append(s[0])
         s = s[1:].strip()
-    return s, depth
+    return s, "".join(ops)
 
 
 def map_base_type(base: str, known_types: set[str]) -> str:
@@ -231,9 +231,9 @@ def map_type_expr(type_expr: str, known_types: set[str]) -> str:
         die(f"function type cannot be used as a plain type expression: {type_expr!r}")
     if parse_array_type_expr(type_expr) is not None:
         die(f"array type cannot be used as a plain type expression: {type_expr!r}")
-    base, depth = split_ptr_ref_type(type_expr)
+    base, ops = split_ptr_ref_type(type_expr)
     c_base = map_base_type(base, known_types)
-    return c_base + ("*" * depth)
+    return c_base + ("*" * len(ops))
 
 
 def emit_params(params: list[tuple[str, str]], known_types: set[str]) -> str:
