@@ -23,8 +23,6 @@ fn main() {
 }
 ```
 
----
-
 ## Motivation
 
 Current defaults (`int`/`f64`/`rune`) work for many runtime cases but are less ergonomic for
@@ -35,8 +33,6 @@ Constant numeric types make intent explicit:
 - values stay in const-evaluable space by default
 - conversion to concrete runtime numeric storage happens at assignment/use boundaries
 
----
-
 ## Syntax
 
 Add built-in type names:
@@ -45,8 +41,6 @@ Add built-in type names:
 - `const_float`
 
 No declaration syntax changes are required.
-
----
 
 ## Semantic rules
 
@@ -64,11 +58,23 @@ Default literal types become:
 
 Out-of-range conversions are type errors.
 
+`const_int` is also implicitly convertible to floating-point destination types when the integer
+value fits in destination mantissa precision:
+
+- `f32`: up to 23 bits of integer precision
+- `f64`: up to 53 bits of integer precision
+
+If a `const_int` value exceeds destination integer precision, implicit conversion is a type error.
+Explicit casts remain available and may lose precision per cast semantics.
+
 ### 3. `const_float` conversion rules
 
 `const_float` is implicitly convertible to any floating-point destination type.
 
 When precision/range cannot be represented in destination type, conversion is a type error.
+
+`const_float` is not implicitly convertible to integer destination types.
+Integer conversion requires an explicit cast.
 
 ### 4. Inference concretization for mutable runtime storage
 
@@ -87,14 +93,24 @@ while const declarations preserve constant numeric behavior:
 Constant-only arithmetic expressions remain const-evaluable and produce constant numeric results
 (`const_int` / `const_float`) according to existing numeric operator rules.
 
----
+### 6. Position restrictions for `const_int` and `const_float`
+
+`const_int` and `const_float` are compile-time numeric types and are restricted to these explicit
+type positions:
+
+- function return types
+- function parameters only when the parameter is marked `const` (for example `fn f(const x const_int)`)
+- `const` declaration explicit types (local or top-level)
+- `as` cast targets (`x as const_float`)
+
+They are not valid as mutable runtime storage types (for example `var x const_int`).
 
 ## Diagnostics
 
 - keep numeric range diagnostics explicit for implicit `const_int` conversions
 - keep precision/range diagnostics explicit for implicit `const_float` conversions
-
----
+- add a targeted diagnostic when a parameter uses `const_int`/`const_float` without the `const`
+  parameter modifier
 
 ## Compatibility and migration
 
@@ -111,8 +127,6 @@ Potential impact areas:
 
 When ambiguity appears, use explicit casts at the call/assignment site.
 
----
-
 ## Implementation notes
 
 Typechecker:
@@ -126,8 +140,6 @@ Spec/docs:
 
 - add the two built-ins to built-in type lists
 - update literal typing and inference sections accordingly
-
----
 
 ## Test plan
 
@@ -145,8 +157,6 @@ Add/update tests for:
    - `var y = 1.0` -> `f64`
 4. Const declarations using numeric literals in mixed integer/float destination contexts
 
----
-
 ## Non-goals
 
 SLP-27 does not add:
@@ -155,12 +165,16 @@ SLP-27 does not add:
 - generic numeric constraint/trait systems
 - automatic replacement of explicit cast APIs
 
----
+## Resolved decisions
 
-## Open questions
-
-1. Should implicit `const_int -> float` conversion be allowed, or stay explicit-only?
-2. Should `const_float -> integer` ever be allowed implicitly when integral-valued, or remain
-   explicit-only?
-3. Should `const_int`/`const_float` be valid as explicit variable storage types (`var x const_int`),
-   or restricted to literal/default and const-eval domains?
+1. Implicit `const_int -> float` conversion is allowed with precision bounds.
+   - allowed when the integer value fits destination mantissa precision (`f32`: 23 bits, `f64`:
+     53 bits)
+   - otherwise implicit conversion is a compile-time type error
+   - explicit casts are still allowed and may lose precision
+2. `const_float -> integer` remains explicit-only.
+   - no implicit conversion, even for integral-valued constants
+   - callers must use an explicit cast
+3. `const_int`/`const_float` explicit type positions are restricted.
+   - allowed only in function returns, `const` parameters, `const` declarations, and `as` targets
+   - not allowed for mutable runtime storage types like `var x const_int`
