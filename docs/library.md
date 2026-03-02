@@ -74,7 +74,7 @@ For normal code, use `Allocator` (a nominal alias of `__sl_MemAllocator`).
 ### `len`
 
 ```sl
-fn len(x Seq) u32
+fn len(x Seq) uint
 ```
 
 `len` returns the logical length of a sequence.

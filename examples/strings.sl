@@ -1,7 +1,7 @@
 // string literals with built-ins like len, cstr, assert, and formatted assert
 fn main() {
-	var s     = "hello\n"
-	var l u32 = len(s)
+	var s      = "hello\n"
+	var l uint = len(s)
 
 	assert l > 0
 	assert l > 1, "len=%d", l

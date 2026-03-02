@@ -2507,14 +2507,14 @@ int EmitElementTypeName(SLCBackendC* c, const SLTypeRef* t, int asConst) {
 int EmitLenExprFromType(SLCBackendC* c, int32_t exprNode, const SLTypeRef* t) {
     if (TypeRefIsStr(t)) {
         if (t->ptrDepth > 0) {
-            if (BufAppendCStr(&c->out, "(__sl_u32)(((__sl_str*)(") != 0
+            if (BufAppendCStr(&c->out, "(__sl_uint)(((__sl_str*)(") != 0
                 || EmitExpr(c, exprNode) != 0 || BufAppendCStr(&c->out, "))->len)") != 0)
             {
                 return -1;
             }
             return 0;
         } else {
-            if (BufAppendCStr(&c->out, "(__sl_u32)((") != 0 || EmitExpr(c, exprNode) != 0
+            if (BufAppendCStr(&c->out, "(__sl_uint)((") != 0 || EmitExpr(c, exprNode) != 0
                 || BufAppendCStr(&c->out, ").len)") != 0)
             {
                 return -1;
@@ -2544,20 +2544,20 @@ int EmitLenExprFromType(SLCBackendC* c, int32_t exprNode, const SLTypeRef* t) {
             int stars = SliceStructPtrDepth(t);
             if (stars > 0) {
                 if (BufAppendCStr(&c->out, "((") != 0 || EmitExpr(c, exprNode) != 0
-                    || BufAppendCStr(&c->out, ") == 0 ? 0u : (__sl_u32)((") != 0
+                    || BufAppendCStr(&c->out, ") == 0 ? 0u : (__sl_uint)((") != 0
                     || EmitExpr(c, exprNode) != 0 || BufAppendCStr(&c->out, ")->len))") != 0)
                 {
                     return -1;
                 }
             } else {
-                if (BufAppendCStr(&c->out, "(__sl_u32)((") != 0 || EmitExpr(c, exprNode) != 0
+                if (BufAppendCStr(&c->out, "(__sl_uint)((") != 0 || EmitExpr(c, exprNode) != 0
                     || BufAppendCStr(&c->out, ").len)") != 0)
                 {
                     return -1;
                 }
             }
         } else {
-            if (BufAppendCStr(&c->out, "(__sl_u32)((") != 0 || EmitExpr(c, exprNode) != 0
+            if (BufAppendCStr(&c->out, "(__sl_uint)((") != 0 || EmitExpr(c, exprNode) != 0
                 || BufAppendCStr(&c->out, ").len)") != 0)
             {
                 return -1;

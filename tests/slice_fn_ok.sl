@@ -1,5 +1,5 @@
 fn sum(xs &[i32]) i32 {
-	var n u32 = len(xs)
+	var n uint = len(xs)
 	return xs[0] + n as i32
 }
 

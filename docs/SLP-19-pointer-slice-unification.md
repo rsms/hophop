@@ -130,7 +130,7 @@ Explicit helper APIs can be added later for singleton-as-slice conversion.
 - `*[T]`, `&[T]`
 - `*[T N]`, `&[T N]`
 
-Result type is `u32`.
+Result type is `uint`.
 
 Behavior:
 

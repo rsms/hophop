@@ -535,7 +535,7 @@ fn f() {
 
 ### 9.1 `len(x)`
 - [BI-LEN-001][Stable] Valid argument families: `str`, arrays, slices, pointers/references to arrays/slices.
-- [BI-LEN-002][Stable] Return type is `u32`.
+- [BI-LEN-002][Stable] Return type is `uint`.
 - [BI-LEN-003][Stable] Selector-call sugar `x.len()` is equivalent when no field `len` shadows it.
 
 ### 9.2 `cstr(s)`

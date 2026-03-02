@@ -2,7 +2,7 @@
 //
 // Intrinsic behavior/signature details are defined by the compiler.
 // See docs/library.md for the full call forms, especially for `new` and `sizeof`.
-fn len(x &str) u32 {
+fn len(x &str) uint {
 	return x.len()
 }
 
@@ -27,12 +27,12 @@ const CH_I u8 = 'i'
 
 const CH_R u8 = 'r'
 
-pub fn fmt(out *str, format &str, args ...FmtValue) u32 {
+pub fn fmt(out *str, format &str, args ...FmtValue) uint {
 	var outBytes *[u8] = out
-	var cap      u32   = len(out)
-	var i        u32   = 0
-	var ai       u32   = 0
-	var oi       u32   = 0
+	var cap      uint  = len(out)
+	var i        uint  = 0
+	var ai       uint  = 0
+	var oi       uint  = 0
 	var bs       &[u8] = format
 
 	for i < len(bs) {
@@ -88,7 +88,7 @@ pub fn fmt(out *str, format &str, args ...FmtValue) u32 {
 	return oi
 }
 
-fn __fmt_write_byte(out *[u8], cap u32, oi u32, ch u8) u32 {
+fn __fmt_write_byte(out *[u8], cap uint, oi uint, ch u8) uint {
 	if oi >= cap {
 		panic("fmt output buffer too small")
 		return 0
@@ -97,9 +97,9 @@ fn __fmt_write_byte(out *[u8], cap u32, oi u32, ch u8) u32 {
 	return oi + 1
 }
 
-fn __fmt_write_text(out *[u8], cap u32, oi u32, text &str) u32 {
+fn __fmt_write_text(out *[u8], cap uint, oi uint, text &str) uint {
 	var b &[u8] = text
-	for var i u32 = 0; i < len(b); i += 1 {
+	for var i uint = 0; i < len(b); i += 1 {
 		oi = __fmt_write_byte(out, cap, oi, ch: b[i])
 	}
 	return oi

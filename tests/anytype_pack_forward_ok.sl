@@ -1,8 +1,8 @@
-fn sink(args ...anytype) u32 {
+fn sink(args ...anytype) uint {
 	return len(args)
 }
 
-fn forward(args ...anytype) u32 {
+fn forward(args ...anytype) uint {
 	return sink(args...)
 }
 

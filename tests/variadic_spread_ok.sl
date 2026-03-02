@@ -1,6 +1,6 @@
 fn sum(nums ...i32) i32 {
 	var total i32 = 0
-	for var i u32 = 0; i < len(nums); i += 1 {
+	for var i uint = 0; i < len(nums); i += 1 {
 		total += nums[i]
 	}
 	return total

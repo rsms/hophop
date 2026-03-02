@@ -83,7 +83,7 @@ The `str` value points at the `u32` length field.
 
 Prelude provides:
 
-* `len(s str) u32` (length in bytes, excluding nul)
+* `len(s str) uint` (length in bytes, excluding nul)
 * `cstr(s str) *u8` (pointer to nul-terminated bytes)
 
 ### 2.5 Assert
