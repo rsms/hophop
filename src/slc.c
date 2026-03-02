@@ -3841,13 +3841,24 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
     for (i = 0; i < pkg->importLen; i++) {
         char* resolvedDir;
         resolvedDir = JoinPath(loader->rootDir, pkg->imports[i].path);
-        if (resolvedDir != NULL && IsLibImportPath(pkg->imports[i].path)
-            && !IsDirectoryPath(resolvedDir))
-        {
-            char* libResolved = ResolveLibImportDir(pkg->dirPath, pkg->imports[i].path);
-            if (libResolved != NULL) {
+        if (resolvedDir != NULL && !IsDirectoryPath(resolvedDir)) {
+            char* localResolved = JoinPath(pkg->dirPath, pkg->imports[i].path);
+            if (localResolved == NULL) {
                 free(resolvedDir);
-                resolvedDir = libResolved;
+                return ErrorSimple("out of memory");
+            }
+            if (IsDirectoryPath(localResolved)) {
+                free(resolvedDir);
+                resolvedDir = localResolved;
+            } else {
+                free(localResolved);
+                if (IsLibImportPath(pkg->imports[i].path)) {
+                    char* libResolved = ResolveLibImportDir(pkg->dirPath, pkg->imports[i].path);
+                    if (libResolved != NULL) {
+                        free(resolvedDir);
+                        resolvedDir = libResolved;
+                    }
+                }
             }
         }
         if (resolvedDir == NULL) {
@@ -4161,10 +4172,54 @@ static int CollectExprImportRewritesNode(
             }
             return 0;
         }
+        case SLAst_CALL:
+        case SLAst_CALL_WITH_CONTEXT: {
+            int32_t callee = ASTFirstChild(&file->ast, nodeId);
+            if (callee >= 0 && (uint32_t)callee < file->ast.len
+                && file->ast.nodes[callee].kind == SLAst_FIELD_EXPR)
+            {
+                int32_t            recv = ASTFirstChild(&file->ast, callee);
+                const SLAstNode*   fieldExpr = &file->ast.nodes[callee];
+                const SLImportRef* imp = NULL;
+                if (recv >= 0 && (uint32_t)recv < file->ast.len
+                    && file->ast.nodes[recv].kind == SLAst_IDENT)
+                {
+                    const SLAstNode* recvNode = &file->ast.nodes[recv];
+                    imp = FindImportByAliasSlice(
+                        pkg, file->source, recvNode->dataStart, recvNode->dataEnd);
+                }
+                if (imp == NULL) {
+                    int idx = FindImportSymbolBindingIndexBySlice(
+                        pkg, file->source, fieldExpr->dataStart, fieldExpr->dataEnd, 0);
+                    if (idx >= 0 && shadowCounts[(uint32_t)idx] == 0) {
+                        if (AddTextRewrite(
+                                rewrites,
+                                rewriteLen,
+                                rewriteCap,
+                                fieldExpr->dataStart,
+                                fieldExpr->dataEnd,
+                                pkg->importSymbols[(uint32_t)idx].qualifiedName)
+                            != 0)
+                        {
+                            return -1;
+                        }
+                    }
+                }
+            }
+            child = ASTFirstChild(&file->ast, nodeId);
+            while (child >= 0) {
+                if (CollectExprImportRewritesNode(
+                        pkg, file, child, shadowCounts, rewrites, rewriteLen, rewriteCap)
+                    != 0)
+                {
+                    return -1;
+                }
+                child = ASTNextSibling(&file->ast, child);
+            }
+            return 0;
+        }
         case SLAst_UNARY:
         case SLAst_BINARY:
-        case SLAst_CALL:
-        case SLAst_CALL_WITH_CONTEXT:
         case SLAst_CONTEXT_OVERLAY:
         case SLAst_CONTEXT_BIND:
         case SLAst_INDEX:
