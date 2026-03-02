@@ -18,7 +18,9 @@ Behavior:
 
 - writes formatted output bytes into `buf`
 - returns the number of bytes that would have been written if `buf` were infinitely large
-- matches libc `snprintf` return-count contract (without requiring NUL-termination semantics)
+- matches libc `snprintf` return-count contract
+- `format` itself does not append a trailing NUL byte; C-string termination is handled by a
+  dedicated helper variant in this SLP
 
 Scope for v1 placeholders:
 
@@ -59,6 +61,8 @@ Notes:
 
 - existing `core.fmt` remains available and unchanged
 - callers opt in by importing `core/str` symbol `format` explicitly
+- include a companion C-interop helper variant that applies NUL-termination when space remains in
+  `buf`
 
 ## Formatting grammar (v1)
 
@@ -144,6 +148,7 @@ Add tests for:
    - mixed placeholders and escaped braces
    - truncation behavior: return count > written bytes
    - zero-capacity buffer behavior
+   - C-interop helper writes trailing NUL when `bytes_written < len(buf)`
 2. Negative:
    - invalid format token (`{x}`, unmatched brace)
    - placeholder/argument count mismatch
@@ -161,9 +166,12 @@ SLP-26 v1 does not add:
 - locale-aware formatting
 - replacement/removal of existing `core.fmt`
 
-## Open questions
+## Resolved decisions
 
-1. Should `{s}` accept only `&str`-assignable arguments, or only exact `str`-family base types?
-   - Answer: values that can be implicitly converted to `&str`, i.e. `&str` and `*str`. Any other type, like `&[u8]` must be explicitly cast by the caller.
-2. Should a future revision add NUL-termination helper variant (for C interop) separately from this byte-count contract?
-   - Answer: Yes. Include in this work up front. Should really only be a final `if bytes_written < len(buf) { buf[bytes_written] = 0 }` to make this happen.
+1. `{s}` accepts values that can be implicitly converted to `&str`.
+   - accepted: `&str`, `*str`
+   - rejected unless explicitly cast: non-`str` families like `&[u8]`
+2. Include C-interop NUL-termination helper behavior in this SLP.
+   - keep `format` return-count contract unchanged
+   - helper behavior is a final conditional NUL write:
+     `if bytes_written < len(buf) { buf[bytes_written] = 0 }`
