@@ -1,4 +1,4 @@
-# SLP-23 const semantics (draft)
+# SLP-23 const semantics (completed)
 
 ## Summary
 
