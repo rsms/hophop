@@ -484,6 +484,9 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
             return SLTok_ASSERT;
         }
     } else if (len == 7) {
+        if (SLStrEq(s, len, "anytype")) {
+            return SLTok_ANYTYPE;
+        }
         if (SLStrEq(s, len, "context")) {
             return SLTok_CONTEXT;
         }
@@ -606,6 +609,7 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_AS:            return "AS";
         case SLTok_CONTEXT:       return "CONTEXT";
         case SLTok_WITH:          return "WITH";
+        case SLTok_ANYTYPE:       return "ANYTYPE";
         case SLTok_LPAREN:        return "LPAREN";
         case SLTok_RPAREN:        return "RPAREN";
         case SLTok_LBRACE:        return "LBRACE";

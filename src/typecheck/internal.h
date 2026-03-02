@@ -23,6 +23,8 @@ typedef enum {
     SLTCType_UNTYPED_FLOAT,
     SLTCType_FUNCTION,
     SLTCType_TUPLE,
+    SLTCType_PACK,
+    SLTCType_ANYTYPE,
     SLTCType_OPTIONAL,
     SLTCType_NULL,
 } SLTCTypeKind;
@@ -107,6 +109,9 @@ typedef struct {
 
 enum {
     SLTCFunctionFlag_VARIADIC = 1u << 0,
+    SLTCFunctionFlag_TEMPLATE = 1u << 1,
+    SLTCFunctionFlag_TEMPLATE_INSTANCE = 1u << 2,
+    SLTCFunctionFlag_TEMPLATE_HAS_ANYPACK = 1u << 3,
 };
 
 enum {
@@ -122,6 +127,7 @@ typedef struct {
 
 enum {
     SLTCLocalFlag_CONST = 1u << 0,
+    SLTCLocalFlag_ANYPACK = 1u << 1,
 };
 
 typedef struct {
@@ -211,6 +217,7 @@ typedef struct {
     int32_t typeUntypedInt;
     int32_t typeUntypedFloat;
     int32_t typeNull;
+    int32_t typeAnytype;
 
     SLTCWarningDedup* warningDedup;
     uint32_t          warningDedupLen;
@@ -229,6 +236,7 @@ typedef struct {
     int32_t currentFunctionIndex;
     int     currentFunctionIsCompareHook;
     int32_t activeTypeParamFnNode;
+    uint8_t allowAnytypeParamType;
 
     const int32_t* defaultFieldNodes;
     const int32_t* defaultFieldTypes;
@@ -641,6 +649,12 @@ int32_t SLTCInternTupleType(
     uint32_t        elemCount,
     uint32_t        errStart,
     uint32_t        errEnd);
+int32_t SLTCInternPackType(
+    SLTypeCheckCtx* c,
+    const int32_t*  elemTypes,
+    uint32_t        elemCount,
+    uint32_t        errStart,
+    uint32_t        errEnd);
 int      SLTCParseArrayLen(SLTypeCheckCtx* c, const SLAstNode* node, uint32_t* outLen);
 int      SLTCResolveIndexBaseInfo(SLTypeCheckCtx* c, int32_t baseType, SLTCIndexBaseInfo* out);
 int32_t  SLTCListItemAt(const SLAst* ast, int32_t listNode, uint32_t index);
@@ -840,6 +854,16 @@ int SLTCCheckConstParamArgs(
     const uint32_t*        paramNameEnds,
     const uint8_t*         paramFlags,
     uint32_t               paramCount,
+    SLTCCallMapError*      outError);
+int SLTCFunctionHasAnytypeParam(SLTypeCheckCtx* c, int32_t fnIndex);
+int SLTCInstantiateAnytypeFunctionForCall(
+    SLTypeCheckCtx*        c,
+    int32_t                fnIndex,
+    const SLTCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int32_t                autoRefFirstArgType,
+    int32_t*               outFuncIndex,
     SLTCCallMapError*      outError);
 int SLTCResolveComparisonHookArgCost(
     SLTypeCheckCtx* c, int32_t paramType, int32_t argType, uint8_t* outCost);

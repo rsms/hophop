@@ -248,6 +248,7 @@ static int SLPParseSwitchStmt(SLParser* p, int32_t* out);
 static int SLPIsTypeStart(SLTokenKind kind) {
     switch (kind) {
         case SLTok_IDENT:
+        case SLTok_ANYTYPE:
         case SLTok_TYPE:
         case SLTok_STRUCT:
         case SLTok_UNION:
@@ -299,7 +300,7 @@ static int SLPParseTypeName(SLParser* p, int32_t* out) {
     const SLToken* last;
     int32_t        n;
 
-    if (SLPAt(p, SLTok_IDENT) || SLPAt(p, SLTok_TYPE)) {
+    if (SLPAt(p, SLTok_IDENT) || SLPAt(p, SLTok_TYPE) || SLPAt(p, SLTok_ANYTYPE)) {
         p->pos++;
         first = SLPPrev(p);
     } else {

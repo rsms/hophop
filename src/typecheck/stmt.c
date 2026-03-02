@@ -695,6 +695,11 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
     if (nodeId < 0) {
         return 0;
     }
+    if ((fn->flags & SLTCFunctionFlag_TEMPLATE) != 0
+        && (fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
+    {
+        return 0;
+    }
 
     c->localLen = 0;
     c->currentFunctionIndex = funcIndex;
@@ -706,21 +711,34 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
     while (child >= 0) {
         const SLAstNode* n = &c->ast->nodes[child];
         if (n->kind == SLAst_PARAM) {
+            int32_t paramType;
+            int     addedLocal = 0;
             if (paramIndex >= fn->paramCount) {
                 return SLTCFailNode(c, child, SLDiag_ARITY_MISMATCH);
             }
+            paramType = c->funcParamTypes[fn->paramTypeStart + paramIndex];
             if (!SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")
                 && SLTCLocalAdd(
                        c,
                        n->dataStart,
                        n->dataEnd,
-                       c->funcParamTypes[fn->paramTypeStart + paramIndex],
+                       paramType,
                        (c->funcParamFlags[fn->paramTypeStart + paramIndex]
                         & SLTCFuncParamFlag_CONST)
                            != 0)
                        != 0)
             {
                 return -1;
+            }
+            if (!SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")) {
+                addedLocal = 1;
+            }
+            if (addedLocal && (n->flags & SLAstFlag_PARAM_VARIADIC) != 0
+                && (paramType == c->typeAnytype
+                    || ((uint32_t)paramType < c->typeLen
+                        && c->types[paramType].kind == SLTCType_PACK)))
+            {
+                c->locals[c->localLen - 1u].flags |= SLTCLocalFlag_ANYPACK;
             }
             paramIndex++;
         } else if (n->kind == SLAst_BLOCK) {

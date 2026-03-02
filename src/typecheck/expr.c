@@ -1987,6 +1987,16 @@ typed_call_from_callee_type: {
         if (SLTCTypeExprExpected(c, argExprNode, paramType, &argType) != 0) {
             return -1;
         }
+        if (fnIsVariadic && p == binding.spreadArgIndex
+            && binding.variadicParamType == c->typeAnytype)
+        {
+            int32_t spreadType = SLTCResolveAliasBaseType(c, argType);
+            if (spreadType < 0 || (uint32_t)spreadType >= c->typeLen
+                || c->types[spreadType].kind != SLTCType_PACK)
+            {
+                return SLTCFailNode(c, argExprNode, SLDiag_ANYTYPE_SPREAD_REQUIRES_PACK);
+            }
+        }
         if (SLTCIsMutableRefType(c, paramType) && SLTCExprIsCompoundTemporary(c, argExprNode)) {
             return SLTCFailNode(c, argExprNode, SLDiag_COMPOUND_MUT_REF_TEMPORARY);
         }
@@ -2164,12 +2174,45 @@ int SLTCTypeExpr_FIELD_EXPR(
 int SLTCTypeExpr_INDEX(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
     int32_t           baseNode = SLAstFirstChild(c->ast, nodeId);
     int32_t           baseType;
+    int32_t           resolvedBaseType;
     SLTCIndexBaseInfo info;
     if (baseNode < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
     }
     if (SLTCTypeExpr(c, baseNode, &baseType) != 0) {
         return -1;
+    }
+    resolvedBaseType = SLTCResolveAliasBaseType(c, baseType);
+    if (resolvedBaseType >= 0 && (uint32_t)resolvedBaseType < c->typeLen
+        && c->types[resolvedBaseType].kind == SLTCType_PACK)
+    {
+        int32_t idxNode = SLAstNextSibling(c->ast, baseNode);
+        int32_t idxType;
+        int64_t idxValue = 0;
+        int     idxIsConst = 0;
+        if ((n->flags & SLAstFlag_INDEX_SLICE) != 0) {
+            return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+        }
+        if (idxNode < 0 || SLAstNextSibling(c->ast, idxNode) >= 0) {
+            return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        }
+        if (SLTCTypeExpr(c, idxNode, &idxType) != 0) {
+            return -1;
+        }
+        if (!SLTCIsIntegerType(c, idxType)) {
+            return SLTCFailNode(c, idxNode, SLDiag_TYPE_MISMATCH);
+        }
+        if (SLTCConstIntExpr(c, idxNode, &idxValue, &idxIsConst) != 0) {
+            return SLTCFailNode(c, idxNode, SLDiag_TYPE_MISMATCH);
+        }
+        if (!idxIsConst) {
+            return SLTCFailNode(c, idxNode, SLDiag_ANYTYPE_PACK_INDEX_NOT_CONST);
+        }
+        if (idxValue < 0 || (uint64_t)idxValue >= c->types[resolvedBaseType].fieldCount) {
+            return SLTCFailNode(c, idxNode, SLDiag_ANYTYPE_PACK_INDEX_OOB);
+        }
+        *outType = c->funcParamTypes[c->types[resolvedBaseType].fieldStart + (uint32_t)idxValue];
+        return 0;
     }
     if (SLTCResolveIndexBaseInfo(c, baseType, &info) != 0 || !info.indexable || info.elemType < 0) {
         return SLTCFailNode(c, baseNode, SLDiag_TYPE_MISMATCH);

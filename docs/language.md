@@ -270,10 +270,13 @@ fn f() {
   - at most one variadic parameter per signature
   - variadic parameter MUST be the final parameter
   - grouped-name form is invalid for variadic parameters (`a, b ...T` is invalid)
-- [DECL-FN-007][Provisional] For `fn f(...T)`-style declarations, the variadic parameter binding inside the body has slice type `[T]`.
+- [DECL-FN-007][Provisional] For `fn f(...T)`-style declarations where `T != anytype`, the variadic parameter binding inside the body has slice type `[T]`.
 - [DECL-FN-008][Provisional] A parameter may be marked `const` (`const name T` or `const name ...T`).
 - [DECL-FN-009][Provisional] Grouped-name const parameter form is invalid (`const a, b T` is invalid); write separate const parameters.
 - [DECL-FN-010][Provisional] For each argument bound to a `const` parameter, the argument expression MUST be const-evaluable at the call site. For `const` variadic parameters, this applies to each variadic argument and to spread arguments.
+- [DECL-FN-011][Provisional] `anytype` is valid only in function parameter positions (function declarations and function-type parameter lists).
+- [DECL-FN-012][Provisional] Non-variadic `anytype` parameter slots bind independently to the static type of the corresponding call argument.
+- [DECL-FN-013][Provisional] Variadic `...anytype` binds a heterogeneous compile-time pack, not a homogeneous slice.
 
 ### 4.2 Struct composition and enum member scope
 - [DECL-EMBED-001][Stable] `struct` may embed one base field (type-name-only) as first field.
@@ -317,6 +320,8 @@ fn f() {
 - [TYPE-CONSTR-009][Provisional] Function types may be variadic by marking the final parameter as `...T` (e.g. `fn(...i32) i32`).
 - [TYPE-CONSTR-010][Provisional] Variadic function types are distinct from non-variadic function types with trailing slice parameters.
 - [TYPE-CONSTR-011][Provisional] Function types include parameter `const` markers in type identity; for example, `fn(i32)` and `fn(const i32)` are distinct.
+- [TYPE-CONSTR-012][Provisional] `anytype` participates in function type identity (for example, `fn(anytype)` is distinct from `fn(i32)`).
+- [TYPE-CONSTR-013][Provisional] Variadic function types ending in `...anytype` are distinct from variadic function types ending in concrete `...T`.
 
 ### 5.1.1 Textual types (`str` and `rune`)
 - [TYPE-TEXT-001][Stable] `str` denotes textual byte sequences constrained to valid UTF-8.
@@ -463,6 +468,9 @@ fn f() {
 - [EXPR-SUGAR-012][Provisional] In spread form, the spread argument MUST be unlabeled and the call MUST provide exactly one spread argument for the variadic tail.
 - [EXPR-SUGAR-013][Provisional] In explicit-tail form, variadic-tail arguments are positional only; explicit named arguments are not allowed in the variadic tail.
 - [EXPR-SUGAR-014][Provisional] Named arguments (when present) participate only in fixed-parameter mapping; variadic-tail mapping is positional.
+- [EXPR-SUGAR-015][Provisional] For variadic signature `f(...anytype)`, explicit-tail arguments form a heterogeneous pack with per-element static type preservation.
+- [EXPR-SUGAR-016][Provisional] For `...anytype` pack bindings, `len(args)` is valid and `args[i]` requires const-evaluable in-bounds integer index.
+- [EXPR-SUGAR-017][Provisional] Spread into `...anytype` requires an `anytype` pack value; slice/array spread into `...anytype` is invalid.
 
 ### 6.3 Compound literals
 - [EXPR-COMPOUND-001][Stable] Compound literals are named-field only.

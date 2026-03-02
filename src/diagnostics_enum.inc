@@ -114,6 +114,13 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
                                             argument */
     SLDiag_CONST_PARAM_SPREAD_NOT_CONST, /* SL2078: spread argument for const variadic parameter
                                             '{s}' must be const-evaluable */
+    SLDiag_ANYTYPE_INVALID_POSITION,     /* SL2079: anytype is only allowed in function parameter
+                                            positions */
+    SLDiag_ANYTYPE_PACK_INDEX_NOT_CONST, /* SL2080: anytype pack index must be a const-evaluable
+                                            integer */
+    SLDiag_ANYTYPE_PACK_INDEX_OOB,       /* SL2081: anytype pack index is out of bounds */
+    SLDiag_ANYTYPE_SPREAD_REQUIRES_PACK, /* SL2082: spread into ...anytype requires an anytype pack
+                                            value */
     SLDiag_CODEGEN_INTERNAL,             /* SL3001: internal codegen error */
     SLDiag_ARENA_OOM,                    /* SL4001: arena out of memory */
     SLDiag_UNKNOWN_FEATURE,              /* SL4002: unknown feature '{s}' */

@@ -386,6 +386,19 @@ void SLTCFormatTypeRec(SLTypeCheckCtx* c, int32_t typeId, SLTCTextBuf* b, uint32
             SLTCTextBufAppendChar(b, ')');
             return;
         }
+        case SLTCType_PACK: {
+            uint32_t i;
+            SLTCTextBufAppendCStr(b, "pack(");
+            for (i = 0; i < t->fieldCount; i++) {
+                if (i > 0) {
+                    SLTCTextBufAppendCStr(b, ", ");
+                }
+                SLTCFormatTypeRec(c, c->funcParamTypes[t->fieldStart + i], b, depth + 1u);
+            }
+            SLTCTextBufAppendChar(b, ')');
+            return;
+        }
+        case SLTCType_ANYTYPE:       SLTCTextBufAppendCStr(b, "anytype"); return;
         case SLTCType_UNTYPED_INT:   SLTCTextBufAppendCStr(b, "untyped_int"); return;
         case SLTCType_UNTYPED_FLOAT: SLTCTextBufAppendCStr(b, "untyped_float"); return;
         case SLTCType_NULL:          SLTCTextBufAppendCStr(b, "null"); return;
@@ -789,6 +802,7 @@ int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     c->typeUntypedInt = -1;
     c->typeUntypedFloat = -1;
     c->typeNull = -1;
+    c->typeAnytype = -1;
 
     c->typeVoid = SLTCAddBuiltinType(c, "void", SLBuiltin_VOID);
     c->typeBool = SLTCAddBuiltinType(c, "bool", SLBuiltin_BOOL);
@@ -833,6 +847,22 @@ int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     t.flags = SLTCTypeFlag_ALIAS_RESOLVED;
     c->typeRune = SLTCAddType(c, &t, 0, 0);
     if (c->typeRune < 0) {
+        return -1;
+    }
+
+    t.kind = SLTCType_ANYTYPE;
+    t.builtin = SLBuiltin_INVALID;
+    t.baseType = -1;
+    t.declNode = -1;
+    t.funcIndex = -1;
+    t.arrayLen = 0;
+    t.nameStart = 0;
+    t.nameEnd = 0;
+    t.fieldStart = 0;
+    t.fieldCount = 0;
+    t.flags = 0;
+    c->typeAnytype = SLTCAddType(c, &t, 0, 0);
+    if (c->typeAnytype < 0) {
         return -1;
     }
 
@@ -1684,6 +1714,56 @@ int32_t SLTCInternTupleType(
         return SLTCFailSpan(c, SLDiag_ARENA_OOM, errStart, errEnd);
     }
     t.kind = SLTCType_TUPLE;
+    t.builtin = SLBuiltin_INVALID;
+    t.baseType = -1;
+    t.declNode = -1;
+    t.funcIndex = -1;
+    t.arrayLen = 0;
+    t.nameStart = 0;
+    t.nameEnd = 0;
+    t.fieldStart = c->funcParamLen;
+    t.fieldCount = (uint16_t)elemCount;
+    t.flags = 0;
+    for (i = 0; i < elemCount; i++) {
+        c->funcParamTypes[c->funcParamLen] = elemTypes[i];
+        c->funcParamNameStarts[c->funcParamLen] = 0;
+        c->funcParamNameEnds[c->funcParamLen] = 0;
+        c->funcParamFlags[c->funcParamLen] = 0;
+        c->funcParamLen++;
+    }
+    return SLTCAddType(c, &t, errStart, errEnd);
+}
+
+int32_t SLTCInternPackType(
+    SLTypeCheckCtx* c,
+    const int32_t*  elemTypes,
+    uint32_t        elemCount,
+    uint32_t        errStart,
+    uint32_t        errEnd) {
+    uint32_t i;
+    uint32_t j;
+    SLTCType t;
+    for (i = 0; i < c->typeLen; i++) {
+        if (c->types[i].kind == SLTCType_PACK && c->types[i].fieldCount == elemCount) {
+            int same = 1;
+            for (j = 0; j < elemCount; j++) {
+                if (c->funcParamTypes[c->types[i].fieldStart + j] != elemTypes[j]) {
+                    same = 0;
+                    break;
+                }
+            }
+            if (same) {
+                return (int32_t)i;
+            }
+        }
+    }
+    if (elemCount > UINT16_MAX) {
+        return SLTCFailSpan(c, SLDiag_ARENA_OOM, errStart, errEnd);
+    }
+    if (c->funcParamLen + elemCount > c->funcParamCap) {
+        return SLTCFailSpan(c, SLDiag_ARENA_OOM, errStart, errEnd);
+    }
+    t.kind = SLTCType_PACK;
     t.builtin = SLBuiltin_INVALID;
     t.baseType = -1;
     t.declNode = -1;

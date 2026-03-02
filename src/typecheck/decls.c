@@ -433,18 +433,24 @@ int SLTCReadFunctionSig(
             if (paramCount >= c->scratchParamCap) {
                 return SLTCFailNode(c, child, SLDiag_ARENA_OOM);
             }
+            c->allowAnytypeParamType = 1;
             if (SLTCResolveTypeNode(c, typeNode, &typeId) != 0) {
+                c->allowAnytypeParamType = 0;
                 return -1;
             }
+            c->allowAnytypeParamType = 0;
             if (SLTCTypeContainsVarSizeByValue(c, typeId)) {
                 return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
             }
             if ((n->flags & SLAstFlag_PARAM_VARIADIC) != 0) {
-                int32_t sliceType = SLTCInternSliceType(c, typeId, 0, n->start, n->end);
-                if (sliceType < 0) {
-                    return -1;
+                int32_t sliceType;
+                if (typeId != c->typeAnytype) {
+                    sliceType = SLTCInternSliceType(c, typeId, 0, n->start, n->end);
+                    if (sliceType < 0) {
+                        return -1;
+                    }
+                    typeId = sliceType;
                 }
-                typeId = sliceType;
                 isVariadic = 1;
             }
             c->scratchParamTypes[paramCount++] = typeId;
@@ -498,6 +504,8 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
     int32_t          contextType;
     uint32_t         paramCount;
     int              isVariadic = 0;
+    int              hasAnytype = 0;
+    int              hasAnyPack = 0;
     int              hasBody;
     int32_t          savedActiveTypeParamFnNode = c->activeTypeParamFnNode;
 
@@ -525,6 +533,17 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
         return -1;
     }
     c->activeTypeParamFnNode = savedActiveTypeParamFnNode;
+    {
+        uint32_t p;
+        for (p = 0; p < paramCount; p++) {
+            if (c->scratchParamTypes[p] == c->typeAnytype) {
+                hasAnytype = 1;
+                if (isVariadic && p + 1u == paramCount) {
+                    hasAnyPack = 1;
+                }
+            }
+        }
+    }
     if (contextType >= 0 && SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "main")) {
         return SLTCFailSpan(c, SLDiag_UNEXPECTED_TOKEN, n->start, n->end);
     }
@@ -604,7 +623,16 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
         f->declNode = nodeId;
         f->defNode = hasBody ? nodeId : -1;
         f->funcTypeId = -1;
-        f->flags = (uint16_t)(isVariadic ? SLTCFunctionFlag_VARIADIC : 0u);
+        f->flags = 0;
+        if (isVariadic) {
+            f->flags |= SLTCFunctionFlag_VARIADIC;
+        }
+        if (hasAnytype) {
+            f->flags |= SLTCFunctionFlag_TEMPLATE;
+        }
+        if (hasAnyPack) {
+            f->flags |= SLTCFunctionFlag_TEMPLATE_HAS_ANYPACK;
+        }
         while (child >= 0) {
             const SLAstNode* ch = &c->ast->nodes[child];
             if (ch->kind == SLAst_PARAM) {

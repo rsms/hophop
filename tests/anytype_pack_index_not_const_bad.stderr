@@ -1,0 +1,1 @@
+tests/anytype_pack_index_not_const_bad.sl:3:11: SL2080: anytype pack index must be a const-evaluable integer
