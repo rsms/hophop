@@ -78,3 +78,8 @@ Implemented core includes:
 - [SLP-20-tagged-unions.md](SLP-20-tagged-unions.md)
 - [SLP-21-variadic-function-parameters.md](SLP-21-variadic-function-parameters.md)
 - [SLP-22-consteval-diagnostics.md](SLP-22-consteval-diagnostics.md)
+- [SLP-23-const-semantics.md](SLP-23-const-semantics.md)
+- [SLP-24-const-params.md](SLP-24-const-params.md)
+- [SLP-25-anytype.md](SLP-25-anytype.md)
+- [SLP-26-format-function.md](SLP-26-format-function.md)
+- [SLP-27-const-numeric-literals.md](SLP-27-const-numeric-literals.md)
