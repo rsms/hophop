@@ -40,6 +40,7 @@ typedef struct {
     SLTypeRef  returnType;
     SLTypeRef* paramTypes;
     char**     paramNames;
+    uint8_t*   paramFlags;
     uint32_t   paramLen;
     SLTypeRef  contextType;
     int        hasContext;
@@ -245,9 +246,14 @@ typedef struct {
     uint32_t  spreadArgIndex;
     int32_t   fixedMappedArgNodes[SLCCG_MAX_CALL_ARGS];
     int32_t   explicitTailNodes[SLCCG_MAX_CALL_ARGS];
+    int32_t   argParamIndices[SLCCG_MAX_CALL_ARGS];
     uint32_t  explicitTailCount;
     SLTypeRef argExpectedTypes[SLCCG_MAX_CALL_ARGS];
 } SLCCallBinding;
+
+enum {
+    SLCCGParamFlag_CONST = 1u << 0,
+};
 
 size_t StrLen(const char* s);
 
@@ -477,6 +483,7 @@ int AddFnSig(
     SLTypeRef    returnType,
     SLTypeRef*   paramTypes,
     char** _Nullable paramNames,
+    uint8_t* _Nullable paramFlags,
     uint32_t  paramLen,
     int       isVariadic,
     int       hasContext,

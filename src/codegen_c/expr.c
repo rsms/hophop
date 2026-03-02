@@ -761,6 +761,7 @@ int PrepareCallBinding(
     for (i = 0; i < SLCCG_MAX_CALL_ARGS; i++) {
         out->fixedMappedArgNodes[i] = -1;
         out->explicitTailNodes[i] = -1;
+        out->argParamIndices[i] = -1;
         TypeRefSetInvalid(&out->argExpectedTypes[i]);
     }
     if (argCount > SLCCG_MAX_CALL_ARGS || sig->paramLen > SLCCG_MAX_CALL_ARGS) {
@@ -853,6 +854,7 @@ int PrepareCallBinding(
         if (p == UINT32_MAX) {
             return -1;
         }
+        out->argParamIndices[i] = (int32_t)p;
         out->argExpectedTypes[i] = sig->paramTypes[p];
     }
 
@@ -862,6 +864,7 @@ int PrepareCallBinding(
 
     if (spreadArgIndex != UINT32_MAX) {
         out->fixedMappedArgNodes[fixedCount] = argNodes[spreadArgIndex];
+        out->argParamIndices[spreadArgIndex] = (int32_t)fixedCount;
         out->argExpectedTypes[spreadArgIndex] = sig->paramTypes[fixedCount];
         return 0;
     }
@@ -876,11 +879,44 @@ int PrepareCallBinding(
             if (callArgs[i].explicitNameEnd > callArgs[i].explicitNameStart) {
                 return -1;
             }
+            out->argParamIndices[i] = (int32_t)fixedCount;
             out->argExpectedTypes[i] = elemType;
             out->explicitTailNodes[out->explicitTailCount++] = argNodes[i];
         }
     }
     return 0;
+}
+
+static int ConstParamArgsViable(
+    SLCBackendC*          c,
+    const SLFnSig*        sig,
+    const int32_t*        argNodes,
+    uint32_t              argCount,
+    const SLCCallBinding* binding) {
+    uint32_t i;
+    if (c == NULL || sig == NULL || argNodes == NULL || binding == NULL || c->constEval == NULL
+        || sig->paramFlags == NULL)
+    {
+        return 1;
+    }
+    for (i = 0; i < argCount; i++) {
+        int32_t     p = binding->argParamIndices[i];
+        int         isConst = 0;
+        SLCTFEValue ignoredValue = { 0 };
+        if (p < 0 || (uint32_t)p >= sig->paramLen) {
+            continue;
+        }
+        if ((sig->paramFlags[p] & SLCCGParamFlag_CONST) == 0) {
+            continue;
+        }
+        if (SLConstEvalSessionEvalExpr(c->constEval, argNodes[i], &ignoredValue, &isConst) != 0) {
+            return 0;
+        }
+        if (!isConst) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
@@ -983,6 +1019,9 @@ int ResolveCallTargetFromCandidates(
             }
             costs[p] = cost;
             total += cost;
+        }
+        if (viable && !ConstParamArgsViable(c, sig, argNodes, argCount, &binding)) {
+            viable = 0;
         }
         if (!viable) {
             continue;

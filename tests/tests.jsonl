@@ -5,6 +5,8 @@
 {"id":"ast:tests/ast_types_new.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_types_new.sl","expect":"tests/ast_types_new.ast"}
 {"id":"ast:tests/ast_slice_expr.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_slice_expr.sl","expect":"tests/ast_slice_expr.ast"}
 {"id":"ast:tests/ast_param_runs.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_param_runs.sl","expect":"tests/ast_param_runs.ast"}
+{"id":"ast:tests/ast_const_params.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_const_params.sl","expect":"tests/ast_const_params.ast"}
+{"id":"ast:tests/ast_const_fn_type.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_const_fn_type.sl","expect":"tests/ast_const_fn_type.ast"}
 {"id":"ast:tests/ast_var_const_infer.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_var_const_infer.sl","expect":"tests/ast_var_const_infer.ast"}
 {"id":"ast:tests/ast_struct_field_group.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_struct_field_group.sl","expect":"tests/ast_struct_field_group.ast"}
 {"id":"ast:tests/ast_block_stmt_list_optional_trailing_semi.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_block_stmt_list_optional_trailing_semi.sl","expect":"tests/ast_block_stmt_list_optional_trailing_semi.ast"}
@@ -522,3 +524,12 @@
 {"id":"check:tests/variadic_spread_non_slice_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/variadic_spread_non_slice_bad.sl","expect_stderr":"tests/variadic_spread_non_slice_bad.stderr"}
 {"id":"check:tests/variadic_spread_not_last_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/variadic_spread_not_last_bad.sl","expect_stderr":"tests/variadic_spread_not_last_bad.stderr"}
 {"id":"check:tests/variadic_fn_type_distinct_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/variadic_fn_type_distinct_bad.sl","expect_stderr":"tests/variadic_fn_type_distinct_bad.stderr"}
+{"id":"check:tests/const_param_call_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_param_call_ok.sl"}
+{"id":"check:tests/const_param_overload_nonconst_only_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_param_overload_nonconst_only_ok.sl"}
+{"id":"check:tests/const_param_grouped_name_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/const_param_grouped_name_bad.sl","expect_stderr":"tests/const_param_grouped_name_bad.stderr"}
+{"id":"check:tests/const_param_call_nonconst_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/const_param_call_nonconst_bad.sl","expect_stderr":"tests/const_param_call_nonconst_bad.stderr"}
+{"id":"check:tests/const_param_variadic_nonconst_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/const_param_variadic_nonconst_bad.sl","expect_stderr":"tests/const_param_variadic_nonconst_bad.stderr"}
+{"id":"check:tests/const_param_variadic_spread_nonconst_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/const_param_variadic_spread_nonconst_bad.sl","expect_stderr":"tests/const_param_variadic_spread_nonconst_bad.stderr"}
+{"id":"check:tests/const_param_assign_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/const_param_assign_bad.sl","expect_stderr":"tests/const_param_assign_bad.stderr"}
+{"id":"check:tests/const_param_fn_type_distinct_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/const_param_fn_type_distinct_bad.sl","expect_stderr":"tests/const_param_fn_type_distinct_bad.stderr"}
+{"id":"check:tests/const_param_overload_const_ambiguous_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/const_param_overload_const_ambiguous_bad.sl","expect_stderr":"tests/const_param_overload_const_ambiguous_bad.stderr"}

@@ -17,27 +17,29 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_RUNE_CODEPOINT_COUNT, /* SL1015: rune literal must contain exactly one Unicode code point
                                   */
     SLDiag_INVALID_RUNE_ESCAPE,  /* SL1016: invalid rune escape sequence */
-    SLDiag_INVALID_RUNE_CODEPOINT,        /* SL1017: invalid Unicode code point in rune literal */
-    SLDiag_INVALID_UTF8_RUNE,             /* SL1018: rune literal must decode to valid UTF-8 */
-    SLDiag_DUPLICATE_SYMBOL,              /* SL2001: duplicate symbol */
-    SLDiag_UNKNOWN_SYMBOL,                /* SL2002: unknown symbol */
-    SLDiag_UNKNOWN_TYPE,                  /* SL2003: unknown type */
-    SLDiag_TYPE_MISMATCH,                 /* SL2004: type mismatch */
-    SLDiag_ARITY_MISMATCH,                /* SL2005: call arity mismatch */
-    SLDiag_NOT_CALLABLE,                  /* SL2006: expression is not callable */
-    SLDiag_RESERVED_NAME,                 /* SL2007: identifier '{s}' is reserved */
-    SLDiag_RESERVED_SL_PREFIX,            /* SL2008: identifier prefix '__sl_' is reserved */
-    SLDiag_EXPECTED_BOOL,                 /* SL2009: expected bool expression */
-    SLDiag_EMBEDDED_FIELD_NOT_FIRST,      /* SL2011: embedded field must be first in struct */
-    SLDiag_MULTIPLE_EMBEDDED_FIELDS,      /* SL2012: only one embedded field is allowed */
-    SLDiag_EMBEDDED_TYPE_NOT_STRUCT,      /* SL2013: embedded field type must be a struct */
-    SLDiag_EMBEDDED_CYCLE,                /* SL2014: embedded struct cycle detected */
-    SLDiag_NO_MATCHING_OVERLOAD,          /* SL2015: no matching overload */
-    SLDiag_AMBIGUOUS_CALL,                /* SL2016: ambiguous call */
-    SLDiag_IMPORT_INVALID_PATH,           /* SL2020: invalid import path ({s}) */
-    SLDiag_IMPORT_ALIAS_INFERENCE_FAILED, /* SL2021: cannot infer package identifier; use 'import
-                                             "{s}" as <name>' */
-    SLDiag_IMPORT_WILDCARD_NOT_SUPPORTED, /* SL2022: wildcard import is not supported */
+    SLDiag_INVALID_RUNE_CODEPOINT, /* SL1017: invalid Unicode code point in rune literal */
+    SLDiag_INVALID_UTF8_RUNE,      /* SL1018: rune literal must decode to valid UTF-8 */
+    SLDiag_CONST_PARAM_GROUPED_NAME_INVALID, /* SL1019: grouped-name form is invalid for const
+                                                parameter; rewrite as separate const parameters */
+    SLDiag_DUPLICATE_SYMBOL,                 /* SL2001: duplicate symbol */
+    SLDiag_UNKNOWN_SYMBOL,                   /* SL2002: unknown symbol */
+    SLDiag_UNKNOWN_TYPE,                     /* SL2003: unknown type */
+    SLDiag_TYPE_MISMATCH,                    /* SL2004: type mismatch */
+    SLDiag_ARITY_MISMATCH,                   /* SL2005: call arity mismatch */
+    SLDiag_NOT_CALLABLE,                     /* SL2006: expression is not callable */
+    SLDiag_RESERVED_NAME,                    /* SL2007: identifier '{s}' is reserved */
+    SLDiag_RESERVED_SL_PREFIX,               /* SL2008: identifier prefix '__sl_' is reserved */
+    SLDiag_EXPECTED_BOOL,                    /* SL2009: expected bool expression */
+    SLDiag_EMBEDDED_FIELD_NOT_FIRST,         /* SL2011: embedded field must be first in struct */
+    SLDiag_MULTIPLE_EMBEDDED_FIELDS,         /* SL2012: only one embedded field is allowed */
+    SLDiag_EMBEDDED_TYPE_NOT_STRUCT,         /* SL2013: embedded field type must be a struct */
+    SLDiag_EMBEDDED_CYCLE,                   /* SL2014: embedded struct cycle detected */
+    SLDiag_NO_MATCHING_OVERLOAD,             /* SL2015: no matching overload */
+    SLDiag_AMBIGUOUS_CALL,                   /* SL2016: ambiguous call */
+    SLDiag_IMPORT_INVALID_PATH,              /* SL2020: invalid import path ({s}) */
+    SLDiag_IMPORT_ALIAS_INFERENCE_FAILED,    /* SL2021: cannot infer package identifier; use 'import
+                                                "{s}" as <name>' */
+    SLDiag_IMPORT_WILDCARD_NOT_SUPPORTED,    /* SL2022: wildcard import is not supported */
     SLDiag_IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS, /* SL2023: import with symbol list cannot use as _
                                                    */
     SLDiag_IMPORT_SYMBOL_ALIAS_INVALID,  /* SL2024: import symbol alias '_' is not allowed */
@@ -108,6 +110,10 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_CONSTEVAL_DIAG_INVALID_SPAN,             /* SL2074: diagnostic span is invalid */
     SLDiag_CONSTEVAL_DIAG_ERROR,                    /* SL2075: consteval error */
     SLDiag_CONSTEVAL_DIAG_WARNING,                  /* SL2076: consteval warning */
-    SLDiag_CODEGEN_INTERNAL,                        /* SL3001: internal codegen error */
-    SLDiag_ARENA_OOM,                               /* SL4001: arena out of memory */
-    SLDiag_UNKNOWN_FEATURE,                         /* SL4002: unknown feature '{s}' */
+    SLDiag_CONST_PARAM_ARG_NOT_CONST,    /* SL2077: const parameter '{s}' requires a const-evaluable
+                                            argument */
+    SLDiag_CONST_PARAM_SPREAD_NOT_CONST, /* SL2078: spread argument for const variadic parameter
+                                            '{s}' must be const-evaluable */
+    SLDiag_CODEGEN_INTERNAL,             /* SL3001: internal codegen error */
+    SLDiag_ARENA_OOM,                    /* SL4001: arena out of memory */
+    SLDiag_UNKNOWN_FEATURE,              /* SL4002: unknown feature '{s}' */

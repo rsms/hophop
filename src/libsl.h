@@ -352,6 +352,7 @@ enum {
     SLAstFlag_CONTEXT_BIND_SHORTHAND = 0x0800u,
     SLAstFlag_PARAM_VARIADIC = 0x1000u,
     SLAstFlag_CALL_ARG_SPREAD = 0x2000u,
+    SLAstFlag_PARAM_CONST = 0x4000u,
 };
 
 typedef uint32_t SLFeatures;

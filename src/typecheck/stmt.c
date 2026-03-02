@@ -715,7 +715,9 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
                        n->dataStart,
                        n->dataEnd,
                        c->funcParamTypes[fn->paramTypeStart + paramIndex],
-                       0)
+                       (c->funcParamFlags[fn->paramTypeStart + paramIndex]
+                        & SLTCFuncParamFlag_CONST)
+                           != 0)
                        != 0)
             {
                 return -1;
@@ -855,8 +857,12 @@ int SLTCBuildCheckedContext(
         arena, sizeof(uint32_t) * capBase * 8u, (uint32_t)_Alignof(uint32_t));
     c.funcParamNameEnds = (uint32_t*)SLArenaAlloc(
         arena, sizeof(uint32_t) * capBase * 8u, (uint32_t)_Alignof(uint32_t));
+    c.funcParamFlags = (uint8_t*)SLArenaAlloc(
+        arena, sizeof(uint8_t) * capBase * 8u, (uint32_t)_Alignof(uint8_t));
     c.scratchParamTypes = (int32_t*)SLArenaAlloc(
         arena, sizeof(int32_t) * capBase, (uint32_t)_Alignof(int32_t));
+    c.scratchParamFlags = (uint8_t*)SLArenaAlloc(
+        arena, sizeof(uint8_t) * capBase, (uint32_t)_Alignof(uint8_t));
     c.locals = (SLTCLocal*)SLArenaAlloc(
         arena, sizeof(SLTCLocal) * capBase * 4u, (uint32_t)_Alignof(SLTCLocal));
     c.variantNarrows = (SLTCVariantNarrow*)SLArenaAlloc(
@@ -878,10 +884,10 @@ int SLTCBuildCheckedContext(
 
     if (c.types == NULL || c.fields == NULL || c.namedTypes == NULL || c.funcs == NULL
         || c.funcParamTypes == NULL || c.funcParamNameStarts == NULL || c.funcParamNameEnds == NULL
-        || c.scratchParamTypes == NULL || c.locals == NULL || c.constEvalValues == NULL
-        || c.constEvalState == NULL || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL
-        || c.variantNarrows == NULL || c.warningDedup == NULL || c.constDiagUses == NULL
-        || c.constDiagFnInvoked == NULL)
+        || c.funcParamFlags == NULL || c.scratchParamTypes == NULL || c.scratchParamFlags == NULL
+        || c.locals == NULL || c.constEvalValues == NULL || c.constEvalState == NULL
+        || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL || c.variantNarrows == NULL
+        || c.warningDedup == NULL || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL)
     {
         SLTCSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
@@ -921,6 +927,8 @@ int SLTCBuildCheckedContext(
     c.lastConstEvalReason = NULL;
     c.lastConstEvalReasonStart = 0;
     c.lastConstEvalReasonEnd = 0;
+    memset(c.funcParamFlags, 0, sizeof(uint8_t) * c.funcParamCap);
+    memset(c.scratchParamFlags, 0, sizeof(uint8_t) * c.scratchParamCap);
     if (ast->len > 0) {
         memset(c.constEvalState, 0, sizeof(uint8_t) * ast->len);
         memset(c.topVarLikeTypeState, 0, sizeof(uint8_t) * ast->len);

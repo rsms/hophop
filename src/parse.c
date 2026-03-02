@@ -408,7 +408,70 @@ static int SLPParseFnType(SLParser* p, int32_t* out) {
     if (!SLPAt(p, SLTok_RPAREN)) {
         for (;;) {
             int consumedGroup = 0;
-            if (SLPMatch(p, SLTok_ELLIPSIS)) {
+            int isConstParam = SLPMatch(p, SLTok_CONST);
+            if (isConstParam) {
+                uint32_t savedPos = p->pos;
+                uint32_t savedNodeLen = p->nodeLen;
+                SLDiag   savedDiag = { 0 };
+                int32_t  paramType = -1;
+                int      isVariadicParam = 0;
+                if (p->diag != NULL) {
+                    savedDiag = *p->diag;
+                }
+                if (SLPMatch(p, SLTok_ELLIPSIS)) {
+                    isVariadicParam = 1;
+                    if (sawVariadic) {
+                        return SLPFail(p, SLDiag_VARIADIC_PARAM_DUPLICATE);
+                    }
+                    if (SLPParseType(p, &paramType) != 0) {
+                        return -1;
+                    }
+                } else if (SLPAt(p, SLTok_IDENT)) {
+                    const SLToken* nameTok = NULL;
+                    if (SLPExpectDeclName(p, &nameTok, 0) != 0) {
+                        return -1;
+                    }
+                    if (SLPAt(p, SLTok_COMMA)) {
+                        p->pos = savedPos;
+                        p->nodeLen = savedNodeLen;
+                        if (p->diag != NULL) {
+                            *p->diag = savedDiag;
+                        }
+                    }
+                    if (paramType < 0 && SLPMatch(p, SLTok_ELLIPSIS)) {
+                        isVariadicParam = 1;
+                        if (sawVariadic) {
+                            return SLPFail(p, SLDiag_VARIADIC_PARAM_DUPLICATE);
+                        }
+                        if (SLPParseType(p, &paramType) != 0) {
+                            return -1;
+                        }
+                    } else if (paramType < 0 && SLPIsTypeStart(SLPPeek(p)->kind)) {
+                        if (SLPParseType(p, &paramType) != 0) {
+                            return -1;
+                        }
+                    } else if (paramType < 0) {
+                        p->pos = savedPos;
+                        p->nodeLen = savedNodeLen;
+                        if (p->diag != NULL) {
+                            *p->diag = savedDiag;
+                        }
+                    }
+                }
+                if (paramType < 0) {
+                    if (SLPParseType(p, &paramType) != 0) {
+                        return -1;
+                    }
+                }
+                if (isVariadicParam) {
+                    p->nodes[paramType].flags |= SLAstFlag_PARAM_VARIADIC;
+                    sawVariadic = 1;
+                }
+                p->nodes[paramType].flags |= SLAstFlag_PARAM_CONST;
+                if (SLPAddChild(p, fnTypeNode, paramType) != 0) {
+                    return -1;
+                }
+            } else if (SLPMatch(p, SLTok_ELLIPSIS)) {
                 int32_t paramType = -1;
                 if (sawVariadic) {
                     return SLPFail(p, SLDiag_VARIADIC_PARAM_DUPLICATE);
@@ -427,7 +490,7 @@ static int SLPParseFnType(SLParser* p, int32_t* out) {
             {
                 return -1;
             }
-            if (!consumedGroup) {
+            if (!consumedGroup && !isConstParam) {
                 int32_t paramType = -1;
                 if (SLPParseType(p, &paramType) != 0) {
                     return -1;
@@ -1669,6 +1732,7 @@ static int SLPParseParamGroup(SLParser* p, int32_t fnNode, int* outIsVariadic) {
     int32_t        lastParam = -1;
     int32_t        type = -1;
     int            isVariadic = 0;
+    int            isConstGroup = SLPMatch(p, SLTok_CONST);
     int            hasExistingVariadic = SLPFnHasVariadicParam(p, fnNode);
 
     for (;;) {
@@ -1693,6 +1757,9 @@ static int SLPParseParamGroup(SLParser* p, int32_t fnNode, int* outIsVariadic) {
 
         if (!SLPMatch(p, SLTok_COMMA)) {
             break;
+        }
+        if (isConstGroup) {
+            return SLPFail(p, SLDiag_CONST_PARAM_GROUPED_NAME_INVALID);
         }
         if (!SLPAt(p, SLTok_IDENT)) {
             return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
@@ -1745,6 +1812,9 @@ static int SLPParseParamGroup(SLParser* p, int32_t fnNode, int* outIsVariadic) {
             }
             if (isVariadic) {
                 p->nodes[param].flags |= SLAstFlag_PARAM_VARIADIC;
+            }
+            if (isConstGroup) {
+                p->nodes[param].flags |= SLAstFlag_PARAM_CONST;
             }
             p->nodes[param].end = p->nodes[typeNode].end;
             param = nextParam;

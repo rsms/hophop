@@ -25,6 +25,7 @@
 {"id": "SL1016", "name": "INVALID_RUNE_ESCAPE", "category": "syntactic", "message": "invalid rune escape sequence"}
 {"id": "SL1017", "name": "INVALID_RUNE_CODEPOINT", "category": "syntactic", "message": "invalid Unicode code point in rune literal"}
 {"id": "SL1018", "name": "INVALID_UTF8_RUNE", "category": "syntactic", "message": "rune literal must decode to valid UTF-8"}
+{"id": "SL1019", "name": "CONST_PARAM_GROUPED_NAME_INVALID", "category": "syntactic", "message": "grouped-name form is invalid for const parameter; rewrite as separate const parameters"}
 {"id": "SL2001", "name": "DUPLICATE_SYMBOL", "category": "semantic", "message": "duplicate symbol"}
 {"id": "SL2002", "name": "UNKNOWN_SYMBOL", "category": "semantic", "message": "unknown symbol"}
 {"id": "SL2003", "name": "UNKNOWN_TYPE", "category": "semantic", "message": "unknown type"}
@@ -97,6 +98,8 @@
 {"id": "SL2074", "name": "CONSTEVAL_DIAG_INVALID_SPAN", "category": "semantic", "message": "diagnostic span is invalid"}
 {"id": "SL2075", "name": "CONSTEVAL_DIAG_ERROR", "category": "semantic", "message": "consteval error"}
 {"id": "SL2076", "name": "CONSTEVAL_DIAG_WARNING", "category": "semantic", "message": "consteval warning", "type": "warning"}
+{"id": "SL2077", "name": "CONST_PARAM_ARG_NOT_CONST", "category": "semantic", "message": "const parameter '{s}' requires a const-evaluable argument"}
+{"id": "SL2078", "name": "CONST_PARAM_SPREAD_NOT_CONST", "category": "semantic", "message": "spread argument for const variadic parameter '{s}' must be const-evaluable"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}

@@ -128,7 +128,8 @@ EnumPayload     = "{" [ FieldDeclList ] "}" .
 FnDeclOrDef     = "fn" FnName "(" [ ParamList ] ")" [ FnResultClause ] [ ContextClause ] [ Block ] .
 FnName          = Ident | "sizeof" .
 ParamList       = ParamGroup { "," ParamGroup } .
-ParamGroup      = ( Ident | "_" ) { "," ( Ident | "_" ) } Type
+ParamGroup      = "const" ( ( Ident | "_" ) Type | ( Ident | "_" ) "..." Type )
+                | ( Ident | "_" ) { "," ( Ident | "_" ) } Type
                 | ( Ident | "_" ) "..." Type .
 FnResultClause  = Type | "(" FnResultGroup { "," FnResultGroup } ")" .
 FnResultGroup   = Type | ( Ident { "," Ident } Type ) .
@@ -148,7 +149,8 @@ VarArrayType    = "[" Type "." Ident "]" .
 FnType          = "fn" "(" [ FnTypeParamList ] ")" [ Type ] .
 TupleType       = "(" Type "," Type { "," Type } ")" .
 FnTypeParamList = FnTypeParam { "," FnTypeParam } .
-FnTypeParam     = Type | ( Ident { "," Ident } Type ) | "..." Type .
+FnTypeParam     = "const" ( Type | Ident Type | "..." Type )
+                | Type | ( Ident { "," Ident } Type ) | "..." Type .
 AnonStructType  = [ "struct" ] "{" [ AnonFieldDeclList ] "}" .
 AnonUnionType   = "union" "{" [ AnonFieldDeclList ] "}" .
 TypeName        = Ident { "." Ident } .
@@ -269,6 +271,9 @@ fn f() {
   - variadic parameter MUST be the final parameter
   - grouped-name form is invalid for variadic parameters (`a, b ...T` is invalid)
 - [DECL-FN-007][Provisional] For `fn f(...T)`-style declarations, the variadic parameter binding inside the body has slice type `[T]`.
+- [DECL-FN-008][Provisional] A parameter may be marked `const` (`const name T` or `const name ...T`).
+- [DECL-FN-009][Provisional] Grouped-name const parameter form is invalid (`const a, b T` is invalid); write separate const parameters.
+- [DECL-FN-010][Provisional] For each argument bound to a `const` parameter, the argument expression MUST be const-evaluable at the call site. For `const` variadic parameters, this applies to each variadic argument and to spread arguments.
 
 ### 4.2 Struct composition and enum member scope
 - [DECL-EMBED-001][Stable] `struct` may embed one base field (type-name-only) as first field.
@@ -311,6 +316,7 @@ fn f() {
 - [TYPE-CONSTR-008][Provisional] `const B = A` (with `A` a type value) is a non-distinct type alias; `B` resolves to the same type as `A`. Use `type B A` for a distinct named type.
 - [TYPE-CONSTR-009][Provisional] Function types may be variadic by marking the final parameter as `...T` (e.g. `fn(...i32) i32`).
 - [TYPE-CONSTR-010][Provisional] Variadic function types are distinct from non-variadic function types with trailing slice parameters.
+- [TYPE-CONSTR-011][Provisional] Function types include parameter `const` markers in type identity; for example, `fn(i32)` and `fn(const i32)` are distinct.
 
 ### 5.1.1 Textual types (`str` and `rune`)
 - [TYPE-TEXT-001][Stable] `str` denotes textual byte sequences constrained to valid UTF-8.

@@ -202,3 +202,5 @@ fn preserve_line_form() {
 		}
 	}
 }
+
+fn const_params(const n int, const xs ...int) fn(const int) int

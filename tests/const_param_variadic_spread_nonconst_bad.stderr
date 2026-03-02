@@ -1,0 +1,1 @@
+tests/const_param_variadic_spread_nonconst_bad.sl:6:13: SL2078: spread argument for const variadic parameter 'xs' must be const-evaluable

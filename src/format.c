@@ -1515,6 +1515,9 @@ static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId) {
                 if (!first && SLFmtWriteCStr(c, ", ") != 0) {
                     return -1;
                 }
+                if ((chn->flags & SLAstFlag_PARAM_CONST) != 0 && SLFmtWriteCStr(c, "const ") != 0) {
+                    return -1;
+                }
                 if ((chn->flags & SLAstFlag_PARAM_VARIADIC) != 0 && SLFmtWriteCStr(c, "...") != 0) {
                     return -1;
                 }
@@ -4505,7 +4508,9 @@ static int SLFmtEmitFnDecl(SLFmtCtx* c, int32_t nodeId) {
         }
         {
             int32_t ptype = SLFmtFirstChild(c->ast, child);
-            if (SLFmtWriteSlice(c, ch->dataStart, ch->dataEnd) != 0 || SLFmtWriteChar(c, ' ') != 0
+            if (((ch->flags & SLAstFlag_PARAM_CONST) != 0 && SLFmtWriteCStr(c, "const ") != 0)
+                || SLFmtWriteSlice(c, ch->dataStart, ch->dataEnd) != 0
+                || SLFmtWriteChar(c, ' ') != 0
                 || ((ch->flags & SLAstFlag_PARAM_VARIADIC) != 0 && SLFmtWriteCStr(c, "...") != 0)
                 || (ptype >= 0 && SLFmtEmitType(c, ptype) != 0))
             {

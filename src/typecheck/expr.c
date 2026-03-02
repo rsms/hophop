@@ -1901,6 +1901,7 @@ typed_call_from_callee_type: {
     SLTCCallArgInfo  callArgs[SLTC_MAX_CALL_ARGS];
     uint32_t         paramNameStarts[SLTC_MAX_CALL_ARGS];
     uint32_t         paramNameEnds[SLTC_MAX_CALL_ARGS];
+    uint8_t          paramFlags[SLTC_MAX_CALL_ARGS];
     uint32_t         callArgCount = 0;
     uint32_t         p;
     int              hasParamNames = 1;
@@ -1925,6 +1926,7 @@ typed_call_from_callee_type: {
     for (p = 0; p < fnParamCount; p++) {
         paramNameStarts[p] = c->funcParamNameStarts[fnParamStart + p];
         paramNameEnds[p] = c->funcParamNameEnds[fnParamStart + p];
+        paramFlags[p] = c->funcParamFlags[fnParamStart + p];
     }
     if (calleeType >= 0 && (uint32_t)calleeType < c->typeLen && c->types[calleeType].funcIndex >= 0
         && (uint32_t)c->types[calleeType].funcIndex < c->funcLen)
@@ -1937,6 +1939,7 @@ typed_call_from_callee_type: {
             for (p = 0; p < fnParamCount; p++) {
                 paramNameStarts[p] = c->funcParamNameStarts[fn->paramTypeStart + p];
                 paramNameEnds[p] = c->funcParamNameEnds[fn->paramTypeStart + p];
+                paramFlags[p] = c->funcParamFlags[fn->paramTypeStart + p];
             }
         }
     }
@@ -1997,6 +2000,32 @@ typed_call_from_callee_type: {
                         : SLDiag_VARIADIC_ARG_TYPE_MISMATCH);
             }
             return SLTCFailNode(c, argExprNode, SLDiag_TYPE_MISMATCH);
+        }
+    }
+    SLTCCallMapErrorClear(&mapError);
+    {
+        int constStatus = SLTCCheckConstParamArgs(
+            c,
+            callArgs,
+            callArgCount,
+            &binding,
+            paramNameStarts,
+            paramNameEnds,
+            paramFlags,
+            fnParamCount,
+            &mapError);
+        if (constStatus < 0) {
+            return -1;
+        }
+        if (constStatus != 0) {
+            SLTCSetDiagWithArg(
+                c->diag,
+                mapError.code,
+                mapError.start,
+                mapError.end,
+                mapError.argStart,
+                mapError.argEnd);
+            return -1;
         }
     }
     if (fnIndexForDependent >= 0 && binding.fixedCount > 0

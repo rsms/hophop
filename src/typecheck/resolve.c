@@ -489,6 +489,8 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         return SLTCFailNode(c, child, SLDiag_VARIADIC_PARAM_NOT_LAST);
                     }
                     c->scratchParamTypes[paramCount++] = paramType;
+                    c->scratchParamFlags[paramCount - 1u] =
+                        (ch->flags & SLAstFlag_PARAM_CONST) != 0 ? SLTCFuncParamFlag_CONST : 0u;
                 }
                 child = SLAstNextSibling(c->ast, child);
             }
@@ -497,6 +499,7 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     c,
                     returnType,
                     c->scratchParamTypes,
+                    c->scratchParamFlags,
                     paramCount,
                     isVariadic,
                     -1,
@@ -2052,6 +2055,7 @@ int SLTCPrepareCallBinding(
     outBinding->variadicElemType = -1;
     for (i = 0; i < SLTC_MAX_CALL_ARGS; i++) {
         outBinding->fixedMappedArgExprNodes[i] = -1;
+        outBinding->argParamIndices[i] = -1;
         outBinding->argExpectedTypes[i] = -1;
     }
     if (paramCount > SLTC_MAX_CALL_ARGS || argCount > SLTC_MAX_CALL_ARGS) {
@@ -2189,6 +2193,7 @@ int SLTCPrepareCallBinding(
         if (p == UINT32_MAX) {
             return 1;
         }
+        outBinding->argParamIndices[i] = (int32_t)p;
         outBinding->argExpectedTypes[i] = paramTypes[p];
     }
 
@@ -2197,6 +2202,7 @@ int SLTCPrepareCallBinding(
     }
 
     if (spreadArgIndex != UINT32_MAX) {
+        outBinding->argParamIndices[spreadArgIndex] = (int32_t)fixedCount;
         outBinding->argExpectedTypes[spreadArgIndex] = outBinding->variadicParamType;
         return 0;
     }
@@ -2212,9 +2218,78 @@ int SLTCPrepareCallBinding(
             }
             return 2;
         }
+        outBinding->argParamIndices[i] = (int32_t)fixedCount;
         outBinding->argExpectedTypes[i] = outBinding->variadicElemType;
     }
 
+    return 0;
+}
+
+int SLTCCheckConstParamArgs(
+    SLTypeCheckCtx*        c,
+    const SLTCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    const SLTCCallBinding* binding,
+    const uint32_t*        paramNameStarts,
+    const uint32_t*        paramNameEnds,
+    const uint8_t*         paramFlags,
+    uint32_t               paramCount,
+    SLTCCallMapError*      outError) {
+    uint32_t i;
+    if (outError != NULL) {
+        SLTCCallMapErrorClear(outError);
+    }
+    if (binding == NULL || paramFlags == NULL) {
+        return 0;
+    }
+    for (i = 0; i < argCount; i++) {
+        int32_t          p = binding->argParamIndices[i];
+        int              isConst = 0;
+        int              evalIsConst = 0;
+        SLCTFEValue      ignoredValue = { 0 };
+        SLTCConstEvalCtx evalCtx = {
+            .tc = c,
+            .execCtx = NULL,
+            .fnStack = { 0 },
+            .fnDepth = 0,
+            .nonConstReason = NULL,
+            .nonConstStart = 0,
+            .nonConstEnd = 0,
+        };
+        SLDiagCode code = SLDiag_CONST_PARAM_ARG_NOT_CONST;
+        if (p < 0 || (uint32_t)p >= paramCount) {
+            continue;
+        }
+        isConst = (paramFlags[p] & SLTCFuncParamFlag_CONST) != 0;
+        if (!isConst) {
+            continue;
+        }
+        if (binding->isVariadic && i == binding->spreadArgIndex
+            && (uint32_t)p == binding->fixedCount)
+        {
+            code = SLDiag_CONST_PARAM_SPREAD_NOT_CONST;
+        }
+        if (SLTCEvalConstExprNode(&evalCtx, callArgs[i].exprNode, &ignoredValue, &evalIsConst) != 0)
+        {
+            return -1;
+        }
+        if (evalIsConst) {
+            continue;
+        }
+        if (outError != NULL) {
+            outError->code = code;
+            outError->start = callArgs[i].start;
+            outError->end = callArgs[i].end;
+            if (paramNameEnds[p] > paramNameStarts[p]) {
+                outError->argStart = paramNameStarts[p];
+                outError->argEnd = paramNameEnds[p];
+            } else {
+                outError->argStart = callArgs[i].start;
+                outError->argEnd = callArgs[i].end;
+            }
+        }
+        return 1;
+    }
     return 0;
 }
 
@@ -2495,6 +2570,24 @@ int SLTCResolveCallFromCandidates(
             }
             curCosts[p] = cost;
             curTotal += cost;
+        }
+        if (viable) {
+            int constStatus = SLTCCheckConstParamArgs(
+                c,
+                callArgs,
+                argCount,
+                &binding,
+                &c->funcParamNameStarts[fn->paramTypeStart],
+                &c->funcParamNameEnds[fn->paramTypeStart],
+                &c->funcParamFlags[fn->paramTypeStart],
+                fn->paramCount,
+                &mapError);
+            if (constStatus < 0) {
+                return -1;
+            }
+            if (constStatus != 0) {
+                viable = 0;
+            }
         }
         if (!viable) {
             if (!hasMapError && mapError.code != 0) {

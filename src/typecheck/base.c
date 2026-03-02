@@ -1578,6 +1578,7 @@ int SLTCFunctionTypeMatchesSignature(
     const SLTCType* t,
     int32_t         returnType,
     const int32_t*  paramTypes,
+    const uint8_t*  paramFlags,
     uint32_t        paramCount,
     int             isVariadic) {
     uint32_t i;
@@ -1591,6 +1592,11 @@ int SLTCFunctionTypeMatchesSignature(
         if (c->funcParamTypes[t->fieldStart + i] != paramTypes[i]) {
             return 0;
         }
+        if ((c->funcParamFlags[t->fieldStart + i] & SLTCFuncParamFlag_CONST)
+            != ((paramFlags != NULL ? paramFlags[i] : 0u) & SLTCFuncParamFlag_CONST))
+        {
+            return 0;
+        }
     }
     return 1;
 }
@@ -1599,6 +1605,7 @@ int32_t SLTCInternFunctionType(
     SLTypeCheckCtx* c,
     int32_t         returnType,
     const int32_t*  paramTypes,
+    const uint8_t*  paramFlags,
     uint32_t        paramCount,
     int             isVariadic,
     int32_t         funcIndex,
@@ -1611,7 +1618,7 @@ int32_t SLTCInternFunctionType(
     }
     for (i = 0; i < c->typeLen; i++) {
         if (SLTCFunctionTypeMatchesSignature(
-                c, &c->types[i], returnType, paramTypes, paramCount, isVariadic))
+                c, &c->types[i], returnType, paramTypes, paramFlags, paramCount, isVariadic))
         {
             if (funcIndex >= 0 && c->types[i].funcIndex < 0) {
                 c->types[i].funcIndex = funcIndex;
@@ -1637,6 +1644,8 @@ int32_t SLTCInternFunctionType(
         c->funcParamTypes[c->funcParamLen++] = paramTypes[i];
         c->funcParamNameStarts[c->funcParamLen - 1u] = 0;
         c->funcParamNameEnds[c->funcParamLen - 1u] = 0;
+        c->funcParamFlags[c->funcParamLen - 1u] =
+            paramFlags != NULL ? (paramFlags[i] & SLTCFuncParamFlag_CONST) : 0u;
     }
     return SLTCAddType(c, &t, errStart, errEnd);
 }
@@ -1689,6 +1698,7 @@ int32_t SLTCInternTupleType(
         c->funcParamTypes[c->funcParamLen] = elemTypes[i];
         c->funcParamNameStarts[c->funcParamLen] = 0;
         c->funcParamNameEnds[c->funcParamLen] = 0;
+        c->funcParamFlags[c->funcParamLen] = 0;
         c->funcParamLen++;
     }
     return SLTCAddType(c, &t, errStart, errEnd);

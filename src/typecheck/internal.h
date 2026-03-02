@@ -109,6 +109,10 @@ enum {
     SLTCFunctionFlag_VARIADIC = 1u << 0,
 };
 
+enum {
+    SLTCFuncParamFlag_CONST = 1u << 0,
+};
+
 typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
@@ -171,10 +175,12 @@ typedef struct {
     int32_t*  funcParamTypes;
     uint32_t* funcParamNameStarts;
     uint32_t* funcParamNameEnds;
+    uint8_t*  funcParamFlags;
     uint32_t  funcParamLen;
     uint32_t  funcParamCap;
 
     int32_t* scratchParamTypes;
+    uint8_t* scratchParamFlags;
     uint32_t scratchParamCap;
 
     SLTCLocal* locals;
@@ -431,6 +437,7 @@ typedef struct {
     int32_t  variadicParamType;
     int32_t  variadicElemType;
     int32_t  fixedMappedArgExprNodes[SLTC_MAX_CALL_ARGS];
+    int32_t  argParamIndices[SLTC_MAX_CALL_ARGS];
     int32_t  argExpectedTypes[SLTC_MAX_CALL_ARGS];
 } SLTCCallBinding;
 
@@ -613,12 +620,14 @@ int SLTCFunctionTypeMatchesSignature(
     const SLTCType* t,
     int32_t         returnType,
     const int32_t*  paramTypes,
+    const uint8_t*  paramFlags,
     uint32_t        paramCount,
     int             isVariadic);
 int32_t SLTCInternFunctionType(
     SLTypeCheckCtx* c,
     int32_t         returnType,
     const int32_t*  paramTypes,
+    const uint8_t*  paramFlags,
     uint32_t        paramCount,
     int             isVariadic,
     int32_t         funcIndex,
@@ -821,6 +830,16 @@ int SLTCPrepareCallBinding(
     int                    allowNamedMapping,
     uint32_t               firstPositionalArgIndex,
     SLTCCallBinding*       outBinding,
+    SLTCCallMapError*      outError);
+int SLTCCheckConstParamArgs(
+    SLTypeCheckCtx*        c,
+    const SLTCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    const SLTCCallBinding* binding,
+    const uint32_t*        paramNameStarts,
+    const uint32_t*        paramNameEnds,
+    const uint8_t*         paramFlags,
+    uint32_t               paramCount,
     SLTCCallMapError*      outError);
 int SLTCResolveComparisonHookArgCost(
     SLTypeCheckCtx* c, int32_t paramType, int32_t argType, uint8_t* outCost);

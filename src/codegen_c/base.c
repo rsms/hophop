@@ -2291,6 +2291,7 @@ int AddFnSig(
     SLTypeRef    returnType,
     SLTypeRef*   paramTypes,
     char** _Nullable paramNames,
+    uint8_t* _Nullable paramFlags,
     uint32_t  paramLen,
     int       isVariadic,
     int       hasContext,
@@ -2317,6 +2318,13 @@ int AddFnSig(
         }
         for (p = 0; p < paramLen; p++) {
             if (!TypeRefEqual(&c->fnSigs[i].paramTypes[p], &paramTypes[p])) {
+                sameSig = 0;
+                break;
+            }
+            if ((((c->fnSigs[i].paramFlags != NULL) ? c->fnSigs[i].paramFlags[p] : 0u)
+                 & SLCCGParamFlag_CONST)
+                != (((paramFlags != NULL) ? paramFlags[p] : 0u) & SLCCGParamFlag_CONST))
+            {
                 sameSig = 0;
                 break;
             }
@@ -2397,6 +2405,7 @@ int AddFnSig(
     c->fnSigs[c->fnSigLen].returnType = returnType;
     c->fnSigs[c->fnSigLen].paramTypes = paramTypes;
     c->fnSigs[c->fnSigLen].paramNames = paramNames;
+    c->fnSigs[c->fnSigLen].paramFlags = paramFlags;
     c->fnSigs[c->fnSigLen].paramLen = paramLen;
     c->fnSigs[c->fnSigLen].hasContext = hasContext;
     c->fnSigs[c->fnSigLen].contextType = contextType;
@@ -3160,9 +3169,11 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
         SLTypeRef  returnType;
         SLTypeRef* paramTypes = NULL;
         char**     paramNames = NULL;
+        uint8_t*   paramFlags = NULL;
         uint32_t   paramLen = 0;
         uint32_t   paramTypeCap = 0;
         uint32_t   paramNameCap = 0;
+        uint32_t   paramFlagCap = 0;
         SLTypeRef  contextType;
         int        isVariadic = 0;
         int        hasContext = 0;
@@ -3217,6 +3228,17 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                     {
                         return -1;
                     }
+                    if (EnsureCapArena(
+                            &c->arena,
+                            (void**)&paramFlags,
+                            &paramFlagCap,
+                            need,
+                            sizeof(uint8_t),
+                            (uint32_t)_Alignof(uint8_t))
+                        != 0)
+                    {
+                        return -1;
+                    }
                 }
                 paramTypes[paramLen++] = paramType;
                 paramNames[paramLen - 1u] = DupSlice(
@@ -3224,6 +3246,10 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                 if (paramNames[paramLen - 1u] == NULL) {
                     return -1;
                 }
+                paramFlags[paramLen - 1u] =
+                    (uint8_t)(((ch->flags & SLAstFlag_PARAM_CONST) != 0)
+                                  ? SLCCGParamFlag_CONST
+                                  : 0u);
             } else if (
                 ch != NULL
                 && (ch->kind == SLAst_TYPE_NAME || ch->kind == SLAst_TYPE_PTR
@@ -3255,6 +3281,7 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
             returnType,
             paramTypes,
             paramNames,
+            paramFlags,
             paramLen,
             isVariadic,
             hasContext,

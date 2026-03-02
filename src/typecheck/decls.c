@@ -448,6 +448,8 @@ int SLTCReadFunctionSig(
                 isVariadic = 1;
             }
             c->scratchParamTypes[paramCount++] = typeId;
+            c->scratchParamFlags[paramCount - 1u] =
+                (n->flags & SLAstFlag_PARAM_CONST) != 0 ? SLTCFuncParamFlag_CONST : 0u;
         } else if (
             (n->kind == SLAst_TYPE_NAME || n->kind == SLAst_TYPE_PTR || n->kind == SLAst_TYPE_ARRAY
              || n->kind == SLAst_TYPE_REF || n->kind == SLAst_TYPE_MUTREF
@@ -565,6 +567,11 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
                 if (c->funcParamTypes[f->paramTypeStart + p] != c->scratchParamTypes[p]) {
                     break;
                 }
+                if ((c->funcParamFlags[f->paramTypeStart + p] & SLTCFuncParamFlag_CONST)
+                    != (c->scratchParamFlags[p] & SLTCFuncParamFlag_CONST))
+                {
+                    break;
+                }
             }
             if (p != paramCount) {
                 continue;
@@ -607,6 +614,8 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
                 c->funcParamTypes[c->funcParamLen] = c->scratchParamTypes[paramIndex];
                 c->funcParamNameStarts[c->funcParamLen] = ch->dataStart;
                 c->funcParamNameEnds[c->funcParamLen] = ch->dataEnd;
+                c->funcParamFlags[c->funcParamLen] =
+                    c->scratchParamFlags[paramIndex] & SLTCFuncParamFlag_CONST;
                 c->funcParamLen++;
                 paramIndex++;
             }
@@ -627,6 +636,7 @@ int SLTCFinalizeFunctionTypes(SLTypeCheckCtx* c) {
             c,
             c->funcs[i].returnType,
             &c->funcParamTypes[c->funcs[i].paramTypeStart],
+            &c->funcParamFlags[c->funcs[i].paramTypeStart],
             c->funcs[i].paramCount,
             (c->funcs[i].flags & SLTCFunctionFlag_VARIADIC) != 0,
             (int32_t)i,
