@@ -1,6 +1,6 @@
 fn pick(x i32) i32 {
 	{
-		const y = x + 1
+		var y = x + 1
 		if y > 4 {
 			return y
 		}

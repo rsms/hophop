@@ -10,7 +10,7 @@ fn expect_i(actual int, want int) int {
 }
 
 fn stride(x int) int {
-	const doubled = x * 2
+	var doubled = x * 2
 	return doubled + 1
 }
 

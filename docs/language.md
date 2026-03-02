@@ -250,6 +250,7 @@ fn f() {
 - [DECL-TOP-001][Stable] Top-level declaration kinds: `fn` declarations/definitions, `struct`, `union`, `enum`, `type`, `const`.
 - [DECL-TOP-002][Stable] Top-level `var` is invalid.
 - [DECL-TOP-003][Stable] `const` MUST have an initializer.
+- [DECL-CONST-001][Provisional] `const` initializers MUST be const-evaluable in all scopes (top-level and local).
 - [DECL-TOP-004][Stable] `pub` applies to a single following top-level declaration.
 - [DECL-HOLE-001][Stable] `_` MUST NOT name top-level symbols, struct/union fields, enum items, or type aliases.
 - [DECL-HOLE-002][Stable] Local discard declarations `var _ = expr` and `const _ = expr` are valid statement forms.
@@ -374,6 +375,7 @@ fn f() {
 - [EXPR-ASSIGN-001][Stable] Assignment LHS MUST be assignable (identifier/index/non-dependent field/dereference of writable location).
 - [EXPR-ASSIGN-002][Stable] Compound assignment requires assignable LHS and numeric LHS type.
 - [EXPR-ASSIGN-003][Stable] Multi-assignment (`lhs1, lhs2, ... = rhs1, rhs2, ...`) requires equal arity, except a single tuple-typed RHS may be decomposed positionally. RHS expressions are evaluated before stores; then stores apply left-to-right.
+- [EXPR-ASSIGN-004][Provisional] Assigning to a `const` binding is invalid.
 - [EXPR-CMP-001][Stable] Equality/ordering require coercion to a common comparable/ordered type, except optional-null equality special-case.
 - [EXPR-CAST-001][Stable] `as` is explicit cast syntax.
 - [EXPR-CAST-002][Stable] A cast expression is well-typed iff source expression typing succeeds and target type resolution succeeds; no additional cast-compatibility gate is applied by Core static semantics.
@@ -678,7 +680,7 @@ This section is non-core and documents current reference behavior.
 - [REF-IMPL-006][Provisional] Optional feature imports are recognized but optional syntax is not hard-gated on those imports.
 - [REF-IMPL-007][Provisional] Expression-switch lowering evaluates subject once and compares against case labels using a cached temporary, consistent with [STMT-SWITCH-007].
 - [REF-IMPL-008][Provisional] `assert(cond, fmt, args...)` currently ignores formatting arguments in panic payload construction.
-- [REF-IMPL-009][Provisional] Top-level `const` initializers are eagerly const-evaluated and rejected when non-const-evaluable.
+- [REF-IMPL-009][Provisional] `const` initializers are eagerly const-evaluated and rejected when non-const-evaluable (top-level and local).
 - [REF-IMPL-010][Provisional] Current const-eval supports:
   - const-evaluable function calls with local declarations, `if`, `for`, `switch`, `assert`, `defer`, `break`, `continue`
   - `sizeof(Type)` and `sizeof(expr)` (including identifiers resolved from const-eval local/param bindings)

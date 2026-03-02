@@ -1,6 +1,6 @@
 fn extent(x i32) i32 {
-	const base i32 = x + 1
-	const span     = base * 2
+	var base i32 = x + 1
+	var span     = base * 2
 	return span + 3
 }
 

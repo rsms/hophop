@@ -1,6 +1,6 @@
 fn choose(flag bool, a i32, b i32) i32 {
 	if flag {
-		const v = a + 1
+		var v = a + 1
 		return v
 	} else {
 		return b + 2

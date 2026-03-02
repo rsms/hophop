@@ -1,0 +1,1 @@
+tests/const_local_compound_assign_bad.sl:3:2: SL2004: type mismatch: assignment target is const
