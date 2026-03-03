@@ -375,6 +375,7 @@
 {"id":"integration.examples.strings.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/strings.sl"}
 {"id":"integration.examples.vss.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/vss.sl"}
 {"id":"unit.libsl.freestanding_compile","suite":"unit.libsl","kind":"libsl_freestanding"}
+{"id":"unit.libsl.core_h_freestanding_compile","suite":"unit.libsl","kind":"core_h_freestanding"}
 {"id":"unit.libsl.arena_grow_test","suite":"unit.libsl","kind":"arena_grow_test"}
 {"id":"ast:tests/ast_type_alias.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_type_alias.sl","expect":"tests/ast_type_alias.ast"}
 {"id":"check:tests/typefunc_overload_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/typefunc_overload_ok.sl"}

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "tests" / "tests.jsonl"
 ARENA_GROW_TEST_C_PATH = ROOT / "tests" / "harness" / "arena_grow_test.c"
+CORE_H_PATH = ROOT / "lib" / "core" / "core.h"
 TEST_ROOT_IGNORED_NAMES = {"tests.jsonl", "README.md", "harness", ".DS_Store"}
 TEST_ROOT_TRACKED_SUFFIXES = {".sl", ".stderr", ".ast", ".tokens"}
 PRETEST_FMT_ROOTS = ("examples", "lib", "tests")
@@ -821,6 +822,68 @@ def kind_libsl_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, str]
     return ok()
 
 
+def kind_core_h_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, str]:
+    if not CORE_H_PATH.exists():
+        return fail(f"missing header: {CORE_H_PATH}")
+
+    core_h_c = work_dir / "core_h.c"
+    core_h_c.write_text('#include "lib/core/core.h"\n')
+
+    host_args = [
+        ctx.cc,
+        "-std=c11",
+        "-ffreestanding",
+        "-nostdlib",
+        "-fno-builtin",
+        "-I",
+        str(ROOT),
+        "-Wall",
+        "-Wextra",
+        "-Wno-comment",
+        "-Werror",
+        "-c",
+        str(core_h_c),
+        "-o",
+        str(work_dir / "core_h.freestanding.o"),
+    ]
+    cp = run_cmd(host_args, cwd=work_dir)
+    if cp.returncode != 0:
+        return fail(
+            "core.h freestanding compile failed; did you accidentally include libc headers? "
+            "core is not permitted to use libc\n"
+            f"stderr:\n{cp.stderr}"
+        )
+
+    wasm_args = [
+        ctx.cc,
+        "-target",
+        "wasm32-unknown-unknown",
+        "-std=c11",
+        "-ffreestanding",
+        "-nostdlib",
+        "-fno-builtin",
+        "-I",
+        str(ROOT),
+        "-Wall",
+        "-Wextra",
+        "-Wno-comment",
+        "-Werror",
+        "-c",
+        str(core_h_c),
+        "-o",
+        str(work_dir / "core_h.wasm.o"),
+    ]
+    cp = run_cmd(wasm_args, cwd=work_dir)
+    if cp.returncode != 0:
+        return fail(
+            "core.h wasm freestanding compile failed; did you accidentally include libc headers? "
+            "core is not permitted to use libc\n"
+            f"stderr:\n{cp.stderr}"
+        )
+
+    return ok()
+
+
 def kind_arena_grow_test(ctx: RunContext, work_dir: Path) -> tuple[bool, str]:
     src_header = ctx.build_dir / "libsl.h"
     if not src_header.exists():
@@ -927,6 +990,8 @@ def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunRe
                 ok_main, detail = kind_genpkg_compile(ctx, c, work_dir)
             elif k == "libsl_freestanding":
                 ok_main, detail = kind_libsl_freestanding(ctx, work_dir)
+            elif k == "core_h_freestanding":
+                ok_main, detail = kind_core_h_freestanding(ctx, work_dir)
             elif k == "arena_grow_test":
                 ok_main, detail = kind_arena_grow_test(ctx, work_dir)
             else:
