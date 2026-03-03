@@ -104,6 +104,8 @@
 {"id": "SL2080", "name": "ANYTYPE_PACK_INDEX_NOT_CONST", "category": "semantic", "message": "anytype pack index must be a const-evaluable integer"}
 {"id": "SL2081", "name": "ANYTYPE_PACK_INDEX_OOB", "category": "semantic", "message": "anytype pack index is out of bounds"}
 {"id": "SL2082", "name": "ANYTYPE_SPREAD_REQUIRES_PACK", "category": "semantic", "message": "spread into ...anytype requires an anytype pack value"}
+{"id": "SL2083", "name": "CONST_NUMERIC_INVALID_POSITION", "category": "semantic", "message": "const_int and const_float are only allowed in const declarations, const parameters, function returns, and cast targets"}
+{"id": "SL2084", "name": "CONST_NUMERIC_PARAM_REQUIRES_CONST", "category": "semantic", "message": "parameter type const_int/const_float requires the 'const' modifier"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}

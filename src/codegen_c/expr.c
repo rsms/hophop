@@ -1550,26 +1550,88 @@ int InferExprTypeExpected(
     {
         SLTypeRef   srcType;
         const char* dstBase = ResolveScalarAliasBaseName(c, expectedType->baseName);
-        int64_t     value = 0;
-        int         isConst = 0;
-        if (dstBase != NULL && IsIntegerCTypeName(dstBase)
-            && InferExprType(c, nodeId, &srcType) == 0 && srcType.valid
-            && TypeRefIsRuneLike(c, &srcType))
+        if (dstBase == NULL) {
+            dstBase = expectedType->baseName;
+        }
+        if (dstBase != NULL && InferExprType(c, nodeId, &srcType) == 0 && srcType.valid
+            && srcType.containerKind == SLTypeContainer_SCALAR && srcType.ptrDepth == 0
+            && srcType.containerPtrDepth == 0 && !srcType.isOptional)
         {
-            if (EvalConstIntExpr(c, nodeId, &value, &isConst) != 0) {
-                TypeRefSetInvalid(outType);
-                return -1;
+            const char* srcBase = ResolveScalarAliasBaseName(c, srcType.baseName);
+            int64_t     intValue = 0;
+            double      floatValue = 0.0;
+            int         isConst = 0;
+            if (srcBase == NULL) {
+                srcBase = srcType.baseName;
             }
-            if (!isConst) {
-                *outType = srcType;
-                return 0;
+            if (IsIntegerCTypeName(dstBase)) {
+                if (srcBase != NULL && StrEq(srcBase, "__sl_int")) {
+                    if (EvalConstIntExpr(c, nodeId, &intValue, &isConst) != 0) {
+                        TypeRefSetInvalid(outType);
+                        return -1;
+                    }
+                    if (!isConst) {
+                        *outType = srcType;
+                        return 0;
+                    }
+                    if (!ConstIntFitsIntegerType(dstBase, intValue)) {
+                        SetDiagNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+                        return -1;
+                    }
+                    *outType = *expectedType;
+                    return 0;
+                }
+                if (TypeRefIsRuneLike(c, &srcType)) {
+                    if (EvalConstIntExpr(c, nodeId, &intValue, &isConst) != 0) {
+                        TypeRefSetInvalid(outType);
+                        return -1;
+                    }
+                    if (!isConst) {
+                        *outType = srcType;
+                        return 0;
+                    }
+                    if (!ConstIntFitsIntegerType(dstBase, intValue)) {
+                        SetDiagNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+                        return -1;
+                    }
+                    *outType = *expectedType;
+                    return 0;
+                }
             }
-            if (!ConstIntFitsIntegerType(dstBase, value)) {
-                SetDiagNode(c, nodeId, SLDiag_TYPE_MISMATCH);
-                return -1;
+            if (IsFloatCTypeName(dstBase)) {
+                if (srcBase != NULL && StrEq(srcBase, "__sl_int")) {
+                    if (EvalConstIntExpr(c, nodeId, &intValue, &isConst) != 0) {
+                        TypeRefSetInvalid(outType);
+                        return -1;
+                    }
+                    if (!isConst) {
+                        *outType = srcType;
+                        return 0;
+                    }
+                    if (!ConstIntFitsFloatType(dstBase, intValue)) {
+                        SetDiagNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+                        return -1;
+                    }
+                    *outType = *expectedType;
+                    return 0;
+                }
+                if (srcBase != NULL && StrEq(srcBase, "__sl_f64")) {
+                    if (EvalConstFloatExpr(c, nodeId, &floatValue, &isConst) != 0) {
+                        TypeRefSetInvalid(outType);
+                        return -1;
+                    }
+                    if (!isConst) {
+                        *outType = srcType;
+                        return 0;
+                    }
+                    if (!ConstFloatFitsFloatType(dstBase, floatValue)) {
+                        SetDiagNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+                        return -1;
+                    }
+                    *outType = *expectedType;
+                    return 0;
+                }
             }
-            *outType = *expectedType;
-            return 0;
         }
     }
 
@@ -2214,9 +2276,10 @@ int InferExprType_INT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLType
 }
 
 int InferExprType_RUNE(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType) {
+    (void)c;
     (void)nodeId;
     (void)n;
-    TypeRefSetScalar(outType, ResolveRuneTypeBaseName(c));
+    TypeRefSetScalar(outType, "__sl_int");
     return 0;
 }
 

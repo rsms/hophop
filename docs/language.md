@@ -277,6 +277,7 @@ fn f() {
 - [DECL-FN-011][Provisional] `anytype` is valid only in function parameter positions (function declarations and function-type parameter lists).
 - [DECL-FN-012][Provisional] Non-variadic `anytype` parameter slots bind independently to the static type of the corresponding call argument.
 - [DECL-FN-013][Provisional] Variadic `...anytype` binds a heterogeneous compile-time pack, not a homogeneous slice.
+- [DECL-FN-014][Provisional] Parameters typed as `const_int` or `const_float` MUST be declared with the `const` parameter modifier.
 
 ### 4.2 Struct composition and enum member scope
 - [DECL-EMBED-001][Stable] `struct` may embed one base field (type-name-only) as first field.
@@ -306,6 +307,7 @@ fn f() {
   - unsigned integers: `u8`, `u16`, `u32`, `u64`, `uint`
   - signed integers: `i8`, `i16`, `i32`, `i64`, `int`
   - floating point: `f32`, `f64`
+  - constant numeric: `const_int`, `const_float`
 - [TYPE-BUILTIN-003][Stable] `int` and `uint` are pointer-sized signed/unsigned integers for the target.
 - [TYPE-BUILTIN-004][Stable] `Allocator` is a source-level type provided by core library declarations (for example `core.Allocator` and implicit core imports), not a language builtin type.
 - [TYPE-BUILTIN-005][Stable] `rune` is a source-level alias type provided by core declarations and modeled as `type rune u32`.
@@ -322,6 +324,7 @@ fn f() {
 - [TYPE-CONSTR-011][Provisional] Function types include parameter `const` markers in type identity; for example, `fn(i32)` and `fn(const i32)` are distinct.
 - [TYPE-CONSTR-012][Provisional] `anytype` participates in function type identity (for example, `fn(anytype)` is distinct from `fn(i32)`).
 - [TYPE-CONSTR-013][Provisional] Variadic function types ending in `...anytype` are distinct from variadic function types ending in concrete `...T`.
+- [TYPE-CONSTR-014][Provisional] `const_int` and `const_float` type names are valid only in function return types, `const` parameter types, `const` declaration explicit types, and `as` cast targets.
 
 ### 5.1.1 Textual types (`str` and `rune`)
 - [TYPE-TEXT-001][Stable] `str` denotes textual byte sequences constrained to valid UTF-8.
@@ -329,7 +332,7 @@ fn f() {
 - [TYPE-TEXT-003][Stable] `str` operations are byte-oriented by default: `len(s)` reports byte length, not Unicode scalar-value count ([BI-LEN-001], [BI-LEN-002]).
 - [TYPE-TEXT-004][Stable] `str` is for textual data; arbitrary binary payloads SHOULD use `[u8]` families (`[u8 N]`, `*[u8]`, `&[u8]`) instead of `str`.
 - [TYPE-TEXT-005][Stable] `rune` denotes one Unicode scalar value and is modeled as core alias `type rune u32` ([TYPE-BUILTIN-005], [LEX-LIT-010], [LEX-LIT-012]).
-- [TYPE-TEXT-006][Stable] Rune literals infer type `rune`; implicit conversion from `rune` to integer destinations is limited to the in-range const-evaluated case ([TYPE-INFER-004], [TYPE-ASSIGN-008]).
+- [TYPE-TEXT-006][Stable] Rune literals infer type `const_int`; values typed as `rune` can still implicitly convert to integer destinations only in the in-range const-evaluated case ([TYPE-INFER-004], [TYPE-ASSIGN-008]).
 - [TYPE-TEXT-007][Stable] C interop over string bytes uses `cstr(s)`, which exposes `str` storage as `&u8` with the lifetime/termination guarantees in [BI-CSTR-001] through [BI-CSTR-005].
 
 ### 5.2 Mutability model
@@ -354,7 +357,7 @@ fn f() {
 
 ### 5.4 Assignability and coercion
 - [TYPE-ASSIGN-001][Stable] Assignment requires exact type match except explicit implicit-conversion rules.
-- [TYPE-ASSIGN-002][Stable] Untyped literals convert to compatible concrete numeric types.
+- [TYPE-ASSIGN-002][Stable] Constant numeric expressions (`const_int`, `const_float`) convert to compatible concrete numeric types subject to range/precision checks.
 - [TYPE-ASSIGN-003][Stable] `*T -> &T` is allowed; read-only to writable is not.
 - [TYPE-ASSIGN-004][Stable] Array/slice view conversions:
   - `[S N] -> &[S]`
@@ -367,13 +370,13 @@ fn f() {
 - [TYPE-ASSIGN-007][Stable] No implicit numeric widening between concrete numeric types.
 - [TYPE-ASSIGN-008][Stable] Rune expressions (`rune`) can implicitly convert to integer destinations only when const evaluation produces an in-range value.
 - [TYPE-ASSIGN-009][Stable] Any typed value is assignable to `_`.
-- [TYPE-ASSIGN-010][Stable] Assigning an untyped constant to `_` first applies implicit defaulting (`untyped_int -> int`, `untyped_float -> f64`, `untyped_bool -> bool`).
+- [TYPE-ASSIGN-010][Stable] Assigning a const-numeric value to `_` first applies implicit defaulting (`const_int -> int`, `const_float -> f64`, `untyped_bool -> bool`).
 
 ### 5.5 Inference and zero values
-- [TYPE-INFER-001][Stable] `var x = expr` and `const x = expr` infer from `expr` after concretization.
-- [TYPE-INFER-002][Stable] `untyped_int` defaults to `int`; `untyped_float` defaults to `f64`.
+- [TYPE-INFER-001][Stable] `var x = expr` infers from `expr` after concretization; `const x = expr` preserves const-numeric inference.
+- [TYPE-INFER-002][Stable] For `var` inference, `const_int` defaults to `int` and `const_float` defaults to `f64`.
 - [TYPE-INFER-003][Stable] Inference from `null` or no-value expressions is invalid.
-- [TYPE-INFER-004][Stable] Rune literals infer type `rune`.
+- [TYPE-INFER-004][Stable] Rune literals infer type `const_int`.
 - [TYPE-ZERO-001][Stable] `var x T` zero-initializes `x`.
 - [TYPE-ZERO-002][Stable] For enum types, `var x EnumType` is valid only when one variant has effective tag value `0`.
 - [TYPE-INFER-005][Stable] Grouped declarations infer and/or check per position (`var a, b = 1, 2`; `var a, b T = x, y`). Initializer arity must match declaration arity, except a single tuple-typed RHS may be decomposed positionally.
@@ -398,9 +401,9 @@ fn f() {
 ### 6.1 Comparable and ordered types
 - [EXPR-COMMON-001][Stable] Binary-operation common-type selection is:
   1. if `leftType == rightType`, use that type
-  2. if left is untyped and right is typed and `left` is assignable to right, use right
-  3. if right is untyped and left is typed and `right` is assignable to left, use left
-  4. if pair is (`untyped_int`, `untyped_float`) or reversed, use `untyped_float`
+  2. if left is const numeric and right is concrete typed and `left` is assignable to right, use right
+  3. if right is const numeric and left is concrete typed and `right` is assignable to left, use left
+  4. if pair is (`const_int`, `const_float`) or reversed, use `const_float`
   5. otherwise there is no common type
 - [EXPR-COMMON-002][Stable] Equality/ordering comparisons that are not handled by optional-null special case or comparison hooks MUST use [EXPR-COMMON-001].
 - [EXPR-CMPSET-001][Stable] Comparable types are:
@@ -454,7 +457,7 @@ fn f() {
   - `0`: exact type match
   - `1`: direct non-exact implicit conversion (for example alias peel step, mutability relaxation)
   - `2+`: embedded upcast conversions (`2 + ancestry_distance - 1`)
-  - `3`: untyped literal concretization conversion
+  - `3`: const-numeric concretization conversion
   - `4`: optional lift `T -> ?T`
 - [EXPR-SUGAR-009][Stable] Multi-step conversion-cost composition rules are:
   - alias-source peeling is recursive and additive (`cost(dst <- alias(src)) = cost(dst <- srcBase) + 1`)

@@ -938,6 +938,7 @@ int SLTCBuildCheckedContext(
     c.currentFunctionIndex = -1;
     c.currentFunctionIsCompareHook = 0;
     c.activeTypeParamFnNode = -1;
+    c.allowConstNumericTypeName = 0;
     c.defaultFieldNodes = NULL;
     c.defaultFieldTypes = NULL;
     c.defaultFieldCount = 0;

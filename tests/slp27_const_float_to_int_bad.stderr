@@ -1,0 +1,1 @@
+tests/slp27_const_float_to_int_bad.sl:2:14: SL2004: type mismatch: cannot use expression of type const_float as i32

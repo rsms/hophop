@@ -237,6 +237,7 @@ typedef struct {
     int     currentFunctionIsCompareHook;
     int32_t activeTypeParamFnNode;
     uint8_t allowAnytypeParamType;
+    uint8_t allowConstNumericTypeName;
 
     const int32_t* defaultFieldNodes;
     const int32_t* defaultFieldTypes;
@@ -742,6 +743,7 @@ int SLTCEvalTopLevelConstNode(
     SLCTFEValue*      outValue,
     int*              outIsConst);
 int SLTCConstIntExpr(SLTypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isConst);
+int SLTCConstFloatExpr(SLTypeCheckCtx* c, int32_t nodeId, double* out, int* isConst);
 int SLTCConstStringExpr(
     SLTypeCheckCtx* c, int32_t nodeId, const uint8_t** outBytes, uint32_t* outLen, int* outIsConst);
 void SLTCMarkRuntimeBoundsCheck(SLTypeCheckCtx* c, int32_t nodeId);
@@ -757,9 +759,13 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
 int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId);
 int SLTCCollectTypeDeclsFromNode(SLTypeCheckCtx* c, int32_t nodeId);
 int SLTCIsIntegerType(SLTypeCheckCtx* c, int32_t typeId);
+int SLTCIsConstNumericType(SLTypeCheckCtx* c, int32_t typeId);
 int SLTCTypeIsRuneLike(SLTypeCheckCtx* c, int32_t typeId);
 int SLTCConstIntFitsType(SLTypeCheckCtx* c, int64_t value, int32_t typeId);
+int SLTCConstIntFitsFloatType(SLTypeCheckCtx* c, int64_t value, int32_t typeId);
+int SLTCConstFloatFitsType(SLTypeCheckCtx* c, double value, int32_t typeId);
 int SLTCFailConstIntRange(SLTypeCheckCtx* c, int32_t nodeId, int64_t value, int32_t expectedType);
+int SLTCFailConstFloatRange(SLTypeCheckCtx* c, int32_t nodeId, int32_t expectedType);
 int SLTCIsFloatType(SLTypeCheckCtx* c, int32_t typeId);
 int SLTCIsNumericType(SLTypeCheckCtx* c, int32_t typeId);
 int SLTCIsBoolType(SLTypeCheckCtx* c, int32_t typeId);

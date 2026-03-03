@@ -1,0 +1,1 @@
+tests/slp27_const_numeric_param_requires_const_bad.sl:1:8: SL2084: parameter type const_int/const_float requires the 'const' modifier

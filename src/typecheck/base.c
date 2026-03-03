@@ -399,8 +399,8 @@ void SLTCFormatTypeRec(SLTypeCheckCtx* c, int32_t typeId, SLTCTextBuf* b, uint32
             return;
         }
         case SLTCType_ANYTYPE:       SLTCTextBufAppendCStr(b, "anytype"); return;
-        case SLTCType_UNTYPED_INT:   SLTCTextBufAppendCStr(b, "untyped_int"); return;
-        case SLTCType_UNTYPED_FLOAT: SLTCTextBufAppendCStr(b, "untyped_float"); return;
+        case SLTCType_UNTYPED_INT:   SLTCTextBufAppendCStr(b, "const_int"); return;
+        case SLTCType_UNTYPED_FLOAT: SLTCTextBufAppendCStr(b, "const_float"); return;
         case SLTCType_NULL:          SLTCTextBufAppendCStr(b, "null"); return;
         case SLTCType_FUNCTION:      SLTCTextBufAppendCStr(b, "fn(...)"); return;
         case SLTCType_ANON_STRUCT:   SLTCTextBufAppendCStr(b, "struct{...}"); return;
@@ -895,6 +895,12 @@ int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
 
 int32_t SLTCFindBuiltinType(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
     uint32_t i;
+    if (SLNameEqLiteral(c->src, start, end, "const_int")) {
+        return c->typeUntypedInt;
+    }
+    if (SLNameEqLiteral(c->src, start, end, "const_float")) {
+        return c->typeUntypedFloat;
+    }
     if (SLNameEqLiteral(c->src, start, end, "str")
         || SLNameEqLiteral(c->src, start, end, "core__str"))
     {

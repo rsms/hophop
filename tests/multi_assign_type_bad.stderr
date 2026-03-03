@@ -1,1 +1,1 @@
-tests/multi_assign_type_bad.sl:4:5: SL2004: type mismatch: cannot use 'y' of type untyped_int as bool
+tests/multi_assign_type_bad.sl:4:5: SL2004: type mismatch: cannot use 'y' of type const_int as bool

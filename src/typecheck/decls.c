@@ -434,11 +434,20 @@ int SLTCReadFunctionSig(
                 return SLTCFailNode(c, child, SLDiag_ARENA_OOM);
             }
             c->allowAnytypeParamType = 1;
+            c->allowConstNumericTypeName = 1;
             if (SLTCResolveTypeNode(c, typeNode, &typeId) != 0) {
                 c->allowAnytypeParamType = 0;
+                c->allowConstNumericTypeName = 0;
                 return -1;
             }
             c->allowAnytypeParamType = 0;
+            c->allowConstNumericTypeName = 0;
+            if ((typeId == c->typeUntypedInt || typeId == c->typeUntypedFloat)
+                && (n->flags & SLAstFlag_PARAM_CONST) == 0)
+            {
+                return SLTCFailSpan(
+                    c, SLDiag_CONST_NUMERIC_PARAM_REQUIRES_CONST, n->dataStart, n->dataEnd);
+            }
             if (SLTCTypeContainsVarSizeByValue(c, typeId)) {
                 return SLTCFailNode(c, typeNode, SLDiag_TYPE_MISMATCH);
             }
@@ -465,9 +474,12 @@ int SLTCReadFunctionSig(
              || n->kind == SLAst_TYPE_ANON_UNION || n->kind == SLAst_TYPE_TUPLE)
             && n->flags == 1)
         {
+            c->allowConstNumericTypeName = 1;
             if (SLTCResolveTypeNode(c, child, &returnType) != 0) {
+                c->allowConstNumericTypeName = 0;
                 return -1;
             }
+            c->allowConstNumericTypeName = 0;
             if (SLTCTypeContainsVarSizeByValue(c, returnType)) {
                 return SLTCFailNode(c, child, SLDiag_TYPE_MISMATCH);
             }
@@ -742,10 +754,13 @@ int SLTCTypeTopLevelVarLikeNode(
             c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return SLTCFailNode(c, nodeId, SLDiag_CONST_MISSING_INITIALIZER);
         }
+        c->allowConstNumericTypeName = c->ast->nodes[nodeId].kind == SLAst_CONST ? 1u : 0u;
         if (SLTCResolveTypeNode(c, parts.typeNode, &resolvedType) != 0) {
+            c->allowConstNumericTypeName = 0;
             c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return -1;
         }
+        c->allowConstNumericTypeName = 0;
         if (c->ast->nodes[nodeId].kind == SLAst_VAR && initNode < 0
             && !SLTCEnumTypeHasTagZero(c, resolvedType))
         {
@@ -777,9 +792,13 @@ int SLTCTypeTopLevelVarLikeNode(
             c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return SLTCFailNode(c, initNode, SLDiag_INFER_VOID_TYPE_UNKNOWN);
         }
-        if (SLTCConcretizeInferredType(c, initType, &resolvedType) != 0) {
-            c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
-            return -1;
+        if (c->ast->nodes[nodeId].kind == SLAst_CONST) {
+            resolvedType = initType;
+        } else {
+            if (SLTCConcretizeInferredType(c, initType, &resolvedType) != 0) {
+                c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
+                return -1;
+            }
         }
         if (SLTCTypeContainsVarSizeByValue(c, resolvedType)) {
             c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;

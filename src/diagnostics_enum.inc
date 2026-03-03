@@ -121,6 +121,11 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_ANYTYPE_PACK_INDEX_OOB,       /* SL2081: anytype pack index is out of bounds */
     SLDiag_ANYTYPE_SPREAD_REQUIRES_PACK, /* SL2082: spread into ...anytype requires an anytype pack
                                             value */
-    SLDiag_CODEGEN_INTERNAL,             /* SL3001: internal codegen error */
-    SLDiag_ARENA_OOM,                    /* SL4001: arena out of memory */
-    SLDiag_UNKNOWN_FEATURE,              /* SL4002: unknown feature '{s}' */
+    SLDiag_CONST_NUMERIC_INVALID_POSITION, /* SL2083: const_int and const_float are only allowed in
+                                              const declarations, const parameters, function
+                                              returns, and cast targets */
+    SLDiag_CONST_NUMERIC_PARAM_REQUIRES_CONST, /* SL2084: parameter type const_int/const_float
+                                                  requires the 'const' modifier */
+    SLDiag_CODEGEN_INTERNAL,                   /* SL3001: internal codegen error */
+    SLDiag_ARENA_OOM,                          /* SL4001: arena out of memory */
+    SLDiag_UNKNOWN_FEATURE,                    /* SL4002: unknown feature '{s}' */

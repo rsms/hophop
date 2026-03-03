@@ -214,7 +214,8 @@ int IsBuiltinType(const char* s) {
     return StrEq(s, "bool") || StrEq(s, "str") || StrEq(s, "u8") || StrEq(s, "u16")
         || StrEq(s, "u32") || StrEq(s, "u64") || StrEq(s, "i8") || StrEq(s, "i16")
         || StrEq(s, "i32") || StrEq(s, "i64") || StrEq(s, "uint") || StrEq(s, "int")
-        || StrEq(s, "f32") || StrEq(s, "f64") || StrEq(s, "type") || StrEq(s, "anytype");
+        || StrEq(s, "f32") || StrEq(s, "f64") || StrEq(s, "const_int") || StrEq(s, "const_float")
+        || StrEq(s, "type") || StrEq(s, "anytype");
 }
 
 int IsIntegerCTypeName(const char* s) {
@@ -448,6 +449,32 @@ int EvalConstIntExpr(SLCBackendC* c, int32_t nodeId, int64_t* outValue, int* out
     return SLConstEvalSessionEvalIntExpr(c->constEval, nodeId, outValue, outIsConst);
 }
 
+int EvalConstFloatExpr(SLCBackendC* c, int32_t nodeId, double* outValue, int* outIsConst) {
+    SLCTFEValue value = { 0 };
+    int         isConst = 0;
+    if (outIsConst == NULL || outValue == NULL) {
+        return -1;
+    }
+    *outIsConst = 0;
+    if (c->constEval == NULL) {
+        return 0;
+    }
+    if (SLConstEvalSessionEvalExpr(c->constEval, nodeId, &value, &isConst) != 0 || !isConst) {
+        return 0;
+    }
+    if (value.kind == SLCTFEValue_FLOAT) {
+        *outValue = value.f64;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (value.kind == SLCTFEValue_INT) {
+        *outValue = (double)value.i64;
+        *outIsConst = 1;
+        return 0;
+    }
+    return 0;
+}
+
 int ConstIntFitsIntegerType(const char* typeName, int64_t value) {
     if (typeName == NULL) {
         return 0;
@@ -477,6 +504,52 @@ int ConstIntFitsIntegerType(const char* typeName, int64_t value) {
         return 1;
     }
     return 0;
+}
+
+uint32_t ConstIntBitLen(uint64_t v) {
+    uint32_t bits = 0;
+    while (v != 0u) {
+        bits++;
+        v >>= 1u;
+    }
+    return bits;
+}
+
+int ConstIntFitsFloatType(const char* typeName, int64_t value) {
+    uint32_t precisionBits;
+    uint64_t magnitude;
+    if (typeName == NULL) {
+        return 0;
+    }
+    if (StrEq(typeName, "__sl_f32")) {
+        precisionBits = 23u;
+    } else if (StrEq(typeName, "__sl_f64")) {
+        precisionBits = 53u;
+    } else {
+        return 0;
+    }
+    if (value < 0) {
+        magnitude = (uint64_t)(-(value + 1)) + 1u;
+    } else {
+        magnitude = (uint64_t)value;
+    }
+    return ConstIntBitLen(magnitude) <= precisionBits;
+}
+
+int ConstFloatFitsFloatType(const char* typeName, double value) {
+    if (typeName == NULL) {
+        return 0;
+    }
+    if (StrEq(typeName, "__sl_f64")) {
+        return 1;
+    }
+    if (!StrEq(typeName, "__sl_f32")) {
+        return 0;
+    }
+    if (value != value) {
+        return 1;
+    }
+    return (double)(float)value == value;
 }
 
 int EmitConstEvaluatedScalar(
@@ -1091,11 +1164,19 @@ int ResolveTypeValueNameExprTypeRef(
         TypeRefSetScalar(outTypeRef, "__sl_int");
         return 1;
     }
+    if (SliceEq(c->unit->source, start, end, "const_int")) {
+        TypeRefSetScalar(outTypeRef, "__sl_int");
+        return 1;
+    }
     if (SliceEq(c->unit->source, start, end, "f32")) {
         TypeRefSetScalar(outTypeRef, "__sl_f32");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "f64")) {
+        TypeRefSetScalar(outTypeRef, "__sl_f64");
+        return 1;
+    }
+    if (SliceEq(c->unit->source, start, end, "const_float")) {
         TypeRefSetScalar(outTypeRef, "__sl_f64");
         return 1;
     }
@@ -1607,13 +1688,13 @@ const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t e
     char*                    normalized;
     uint32_t                 i;
     static const char* const builtinSlNames[] = {
-        "bool", "str", "u8",   "u16", "u32", "u64", "i8",   "i16",
-        "i32",  "i64", "uint", "int", "f32", "f64", "type", "anytype",
+        "bool", "str",  "u8",  "u16",       "u32", "u64", "i8",          "i16",  "i32",
+        "i64",  "uint", "int", "const_int", "f32", "f64", "const_float", "type", "anytype",
     };
     static const char* const builtinCNames[] = {
-        "__sl_bool", "__sl_str", "__sl_u8",   "__sl_u16", "__sl_u32",  "__sl_u64",
-        "__sl_i8",   "__sl_i16", "__sl_i32",  "__sl_i64", "__sl_uint", "__sl_int",
-        "__sl_f32",  "__sl_f64", "__sl_type", "__sl_u8",
+        "__sl_bool", "__sl_str", "__sl_u8",  "__sl_u16", "__sl_u32",  "__sl_u64",
+        "__sl_i8",   "__sl_i16", "__sl_i32", "__sl_i64", "__sl_uint", "__sl_int",
+        "__sl_int",  "__sl_f32", "__sl_f64", "__sl_f64", "__sl_type", "__sl_u8",
     };
 
     normalized = DupAndReplaceDots(c, c->unit->source, start, end);

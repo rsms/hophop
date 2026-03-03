@@ -628,6 +628,22 @@ int SLTCTypeExprExpected(
         if (SLTCTypeExpr(c, nodeId, &srcType) != 0) {
             return -1;
         }
+        if (srcType == c->typeUntypedInt) {
+            int64_t value = 0;
+            int     isConst = 0;
+            if (SLTCConstIntExpr(c, nodeId, &value, &isConst) != 0) {
+                return -1;
+            }
+            if (!isConst) {
+                *outType = srcType;
+                return 0;
+            }
+            if (!SLTCConstIntFitsType(c, value, expectedType)) {
+                return SLTCFailConstIntRange(c, nodeId, value, expectedType);
+            }
+            *outType = expectedType;
+            return 0;
+        }
         if (SLTCTypeIsRuneLike(c, srcType)) {
             int64_t value = 0;
             int     isConst = 0;
@@ -640,6 +656,47 @@ int SLTCTypeExprExpected(
             }
             if (!SLTCConstIntFitsType(c, value, expectedType)) {
                 return SLTCFailConstIntRange(c, nodeId, value, expectedType);
+            }
+            *outType = expectedType;
+            return 0;
+        }
+    }
+
+    if (expectedType >= 0 && (uint32_t)expectedType < c->typeLen
+        && SLTCIsFloatType(c, expectedType))
+    {
+        int32_t srcType;
+        if (SLTCTypeExpr(c, nodeId, &srcType) != 0) {
+            return -1;
+        }
+        if (srcType == c->typeUntypedInt) {
+            int64_t value = 0;
+            int     isConst = 0;
+            if (SLTCConstIntExpr(c, nodeId, &value, &isConst) != 0) {
+                return -1;
+            }
+            if (!isConst) {
+                *outType = srcType;
+                return 0;
+            }
+            if (!SLTCConstIntFitsFloatType(c, value, expectedType)) {
+                return SLTCFailConstFloatRange(c, nodeId, expectedType);
+            }
+            *outType = expectedType;
+            return 0;
+        }
+        if (srcType == c->typeUntypedFloat) {
+            double value = 0.0;
+            int    isConst = 0;
+            if (SLTCConstFloatExpr(c, nodeId, &value, &isConst) != 0) {
+                return -1;
+            }
+            if (!isConst) {
+                *outType = srcType;
+                return 0;
+            }
+            if (!SLTCConstFloatFitsType(c, value, expectedType)) {
+                return SLTCFailConstFloatRange(c, nodeId, expectedType);
             }
             *outType = expectedType;
             return 0;
@@ -890,11 +947,9 @@ int SLTCTypeExpr_STRING(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, i
 }
 
 int SLTCTypeExpr_RUNE(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
+    (void)nodeId;
     (void)n;
-    if (c->typeRune < 0) {
-        return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
-    }
-    *outType = c->typeRune;
+    *outType = c->typeUntypedInt;
     return 0;
 }
 
@@ -2279,9 +2334,12 @@ int SLTCTypeExpr_CAST(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
     if (SLTCTypeExpr(c, exprNode, &ignoredType) != 0) {
         return -1;
     }
+    c->allowConstNumericTypeName = 1;
     if (SLTCResolveTypeNode(c, typeNode, &targetType) != 0) {
+        c->allowConstNumericTypeName = 0;
         return -1;
     }
+    c->allowConstNumericTypeName = 0;
     *outType = targetType;
     return 0;
 }
@@ -2932,8 +2990,12 @@ int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
             if (initType == c->typeVoid) {
                 return SLTCFailNode(c, parts.initNode, SLDiag_INFER_VOID_TYPE_UNKNOWN);
             }
-            if (SLTCConcretizeInferredType(c, initType, &declType) != 0) {
-                return -1;
+            if (isConstBinding) {
+                declType = initType;
+            } else {
+                if (SLTCConcretizeInferredType(c, initType, &declType) != 0) {
+                    return -1;
+                }
             }
             if (SLTCTypeContainsVarSizeByValue(c, declType)) {
                 return SLTCFailNode(c, parts.initNode, SLDiag_TYPE_MISMATCH);
@@ -2941,9 +3003,12 @@ int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
             return SLTCLocalAdd(c, n->dataStart, n->dataEnd, declType, n->kind == SLAst_CONST);
         }
 
+        c->allowConstNumericTypeName = n->kind == SLAst_CONST ? 1u : 0u;
         if (SLTCResolveTypeNode(c, parts.typeNode, &declType) != 0) {
+            c->allowConstNumericTypeName = 0;
             return -1;
         }
+        c->allowConstNumericTypeName = 0;
         if (SLTCTypeContainsVarSizeByValue(c, declType)) {
             if (parts.initNode >= 0) {
                 int32_t initType;
@@ -2977,9 +3042,12 @@ int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
     }
 
     if (parts.typeNode >= 0) {
+        c->allowConstNumericTypeName = n->kind == SLAst_CONST ? 1u : 0u;
         if (SLTCResolveTypeNode(c, parts.typeNode, &declType) != 0) {
+            c->allowConstNumericTypeName = 0;
             return -1;
         }
+        c->allowConstNumericTypeName = 0;
         if (SLTCTypeContainsVarSizeByValue(c, declType)) {
             return SLTCFailNode(c, parts.typeNode, SLDiag_TYPE_MISMATCH);
         }
@@ -3079,8 +3147,12 @@ int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
                 if (initType == c->typeVoid) {
                     return SLTCFailNode(c, initNode, SLDiag_INFER_VOID_TYPE_UNKNOWN);
                 }
-                if (SLTCConcretizeInferredType(c, initType, &inferredType) != 0) {
-                    return -1;
+                if (isConstBinding) {
+                    inferredType = initType;
+                } else {
+                    if (SLTCConcretizeInferredType(c, initType, &inferredType) != 0) {
+                        return -1;
+                    }
                 }
                 if (SLTCTypeContainsVarSizeByValue(c, inferredType)) {
                     return SLTCFailNode(c, initNode, SLDiag_TYPE_MISMATCH);
@@ -3118,8 +3190,10 @@ int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
                 if (nameNode < 0) {
                     return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
                 }
-                if (SLTCConcretizeInferredType(c, inferredType, &inferredType) != 0) {
-                    return -1;
+                if (!isConstBinding) {
+                    if (SLTCConcretizeInferredType(c, inferredType, &inferredType) != 0) {
+                        return -1;
+                    }
                 }
                 if (SLTCTypeContainsVarSizeByValue(c, inferredType)) {
                     return SLTCFailNode(c, initNode, SLDiag_TYPE_MISMATCH);
@@ -3158,9 +3232,12 @@ int SLTCTypeTopLevelVarLikes(SLTypeCheckCtx* c, SLAstKind wantKind) {
                     if (wantKind == SLAst_CONST && initNode < 0) {
                         return SLTCFailNode(c, child, SLDiag_CONST_MISSING_INITIALIZER);
                     }
+                    c->allowConstNumericTypeName = wantKind == SLAst_CONST ? 1u : 0u;
                     if (SLTCResolveTypeNode(c, firstChild, &declType) != 0) {
+                        c->allowConstNumericTypeName = 0;
                         return -1;
                     }
+                    c->allowConstNumericTypeName = 0;
                     if (SLTCTypeContainsVarSizeByValue(c, declType)) {
                         return SLTCFailNode(c, firstChild, SLDiag_TYPE_MISMATCH);
                     }
@@ -3185,8 +3262,12 @@ int SLTCTypeTopLevelVarLikes(SLTypeCheckCtx* c, SLAstKind wantKind) {
                     if (initType == c->typeVoid) {
                         return SLTCFailNode(c, firstChild, SLDiag_INFER_VOID_TYPE_UNKNOWN);
                     }
-                    if (SLTCConcretizeInferredType(c, initType, &declType) != 0) {
-                        return -1;
+                    if (wantKind == SLAst_CONST) {
+                        declType = initType;
+                    } else {
+                        if (SLTCConcretizeInferredType(c, initType, &declType) != 0) {
+                            return -1;
+                        }
                     }
                     if (SLTCTypeContainsVarSizeByValue(c, declType)) {
                         return SLTCFailNode(c, firstChild, SLDiag_TYPE_MISMATCH);
@@ -3201,9 +3282,12 @@ int SLTCTypeTopLevelVarLikes(SLTypeCheckCtx* c, SLAstKind wantKind) {
                 if (wantKind == SLAst_CONST && parts.initNode < 0) {
                     return SLTCFailNode(c, child, SLDiag_CONST_MISSING_INITIALIZER);
                 }
+                c->allowConstNumericTypeName = wantKind == SLAst_CONST ? 1u : 0u;
                 if (SLTCResolveTypeNode(c, parts.typeNode, &declType) != 0) {
+                    c->allowConstNumericTypeName = 0;
                     return -1;
                 }
+                c->allowConstNumericTypeName = 0;
                 if (SLTCTypeContainsVarSizeByValue(c, declType)) {
                     return SLTCFailNode(c, parts.typeNode, SLDiag_TYPE_MISMATCH);
                 }

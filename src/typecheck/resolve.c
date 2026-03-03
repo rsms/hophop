@@ -204,6 +204,12 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
             }
             int32_t typeId = SLTCFindBuiltinType(c, n->dataStart, n->dataEnd);
             if (typeId >= 0) {
+                if ((typeId == c->typeUntypedInt || typeId == c->typeUntypedFloat)
+                    && !c->allowConstNumericTypeName)
+                {
+                    return SLTCFailSpan(
+                        c, SLDiag_CONST_NUMERIC_INVALID_POSITION, n->dataStart, n->dataEnd);
+                }
                 *outType = typeId;
                 return 0;
             }
@@ -464,9 +470,12 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     if (sawReturnType) {
                         return SLTCFailNode(c, child, SLDiag_EXPECTED_TYPE);
                     }
+                    c->allowConstNumericTypeName = 1;
                     if (SLTCResolveTypeNode(c, child, &returnType) != 0) {
+                        c->allowConstNumericTypeName = 0;
                         return -1;
                     }
+                    c->allowConstNumericTypeName = 0;
                     if (SLTCTypeContainsVarSizeByValue(c, returnType)) {
                         return SLTCFailNode(c, child, SLDiag_TYPE_MISMATCH);
                     }
@@ -477,11 +486,23 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         return SLTCFailNode(c, child, SLDiag_ARENA_OOM);
                     }
                     c->allowAnytypeParamType = 1;
+                    c->allowConstNumericTypeName = 1;
                     if (SLTCResolveTypeNode(c, child, &paramType) != 0) {
                         c->allowAnytypeParamType = 0;
+                        c->allowConstNumericTypeName = 0;
                         return -1;
                     }
                     c->allowAnytypeParamType = 0;
+                    c->allowConstNumericTypeName = 0;
+                    if ((paramType == c->typeUntypedInt || paramType == c->typeUntypedFloat)
+                        && (ch->flags & SLAstFlag_PARAM_CONST) == 0)
+                    {
+                        return SLTCFailSpan(
+                            c,
+                            SLDiag_CONST_NUMERIC_PARAM_REQUIRES_CONST,
+                            ch->dataStart,
+                            ch->dataEnd);
+                    }
                     if (SLTCTypeContainsVarSizeByValue(c, paramType)) {
                         return SLTCFailNode(c, child, SLDiag_TYPE_MISMATCH);
                     }
@@ -642,6 +663,10 @@ int SLTCIsIntegerType(SLTypeCheckCtx* c, int32_t typeId) {
         || b == SLBuiltin_USIZE || b == SLBuiltin_ISIZE;
 }
 
+int SLTCIsConstNumericType(SLTypeCheckCtx* c, int32_t typeId) {
+    return typeId == c->typeUntypedInt || typeId == c->typeUntypedFloat;
+}
+
 int SLTCTypeIsRuneLike(SLTypeCheckCtx* c, int32_t typeId) {
     uint32_t depth = 0;
     while (typeId >= 0 && (uint32_t)typeId < c->typeLen && depth++ <= c->typeLen) {
@@ -659,9 +684,21 @@ int SLTCTypeIsRuneLike(SLTypeCheckCtx* c, int32_t typeId) {
     return 0;
 }
 
+uint32_t SLTCU64BitLen(uint64_t v) {
+    uint32_t bits = 0;
+    while (v != 0u) {
+        v >>= 1u;
+        bits++;
+    }
+    return bits;
+}
+
 int SLTCConstIntFitsType(SLTypeCheckCtx* c, int64_t value, int32_t typeId) {
     SLBuiltinKind b;
     typeId = SLTCResolveAliasBaseType(c, typeId);
+    if (typeId == c->typeUntypedInt) {
+        return 1;
+    }
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != SLTCType_BUILTIN) {
         return 0;
     }
@@ -681,6 +718,57 @@ int SLTCConstIntFitsType(SLTypeCheckCtx* c, int64_t value, int32_t typeId) {
     }
 }
 
+int SLTCConstIntFitsFloatType(SLTypeCheckCtx* c, int64_t value, int32_t typeId) {
+    SLBuiltinKind b;
+    uint32_t      precisionBits;
+    uint64_t      magnitude;
+    uint32_t      bits;
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    if (typeId == c->typeUntypedFloat) {
+        return 1;
+    }
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != SLTCType_BUILTIN) {
+        return 0;
+    }
+    b = c->types[typeId].builtin;
+    if (b == SLBuiltin_F32) {
+        precisionBits = 23u;
+    } else if (b == SLBuiltin_F64) {
+        precisionBits = 53u;
+    } else {
+        return 0;
+    }
+    if (value < 0) {
+        magnitude = (uint64_t)(-(value + 1)) + 1u;
+    } else {
+        magnitude = (uint64_t)value;
+    }
+    bits = SLTCU64BitLen(magnitude);
+    return bits <= precisionBits;
+}
+
+int SLTCConstFloatFitsType(SLTypeCheckCtx* c, double value, int32_t typeId) {
+    SLBuiltinKind b;
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    if (typeId == c->typeUntypedFloat) {
+        return 1;
+    }
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != SLTCType_BUILTIN) {
+        return 0;
+    }
+    b = c->types[typeId].builtin;
+    if (b == SLBuiltin_F64) {
+        return 1;
+    }
+    if (b != SLBuiltin_F32) {
+        return 0;
+    }
+    if (value != value) {
+        return 1;
+    }
+    return (double)(float)value == value;
+}
+
 int SLTCFailConstIntRange(SLTypeCheckCtx* c, int32_t nodeId, int64_t value, int32_t expectedType) {
     char        dstTypeBuf[SLTC_DIAG_TEXT_CAP];
     char        detailBuf[256];
@@ -697,6 +785,25 @@ int SLTCFailConstIntRange(SLTypeCheckCtx* c, int32_t nodeId, int64_t value, int3
     SLTCTextBufAppendCStr(&detailText, "constant value 0x");
     SLTCTextBufAppendHexU64(&detailText, (uint64_t)value);
     SLTCTextBufAppendCStr(&detailText, " is out of range for ");
+    SLTCTextBufAppendCStr(&detailText, dstTypeBuf);
+    c->diag->detail = SLTCAllocDiagText(c, detailBuf);
+    return -1;
+}
+
+int SLTCFailConstFloatRange(SLTypeCheckCtx* c, int32_t nodeId, int32_t expectedType) {
+    char        dstTypeBuf[SLTC_DIAG_TEXT_CAP];
+    char        detailBuf[256];
+    SLTCTextBuf dstTypeText;
+    SLTCTextBuf detailText;
+    SLTCSetDiag(
+        c->diag, SLDiag_TYPE_MISMATCH, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end);
+    if (c->diag == NULL) {
+        return -1;
+    }
+    SLTCTextBufInit(&dstTypeText, dstTypeBuf, (uint32_t)sizeof(dstTypeBuf));
+    SLTCFormatTypeRec(c, expectedType, &dstTypeText, 0);
+    SLTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    SLTCTextBufAppendCStr(&detailText, "constant value is not representable for ");
     SLTCTextBufAppendCStr(&detailText, dstTypeBuf);
     c->diag->detail = SLTCAllocDiagText(c, detailBuf);
     return -1;

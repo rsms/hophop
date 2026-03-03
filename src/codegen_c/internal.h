@@ -331,8 +331,11 @@ void SetDiagNode(SLCBackendC* c, int32_t nodeId, SLDiagCode code);
 int BufAppendI64(SLBuf* b, int64_t value);
 
 int EvalConstIntExpr(SLCBackendC* c, int32_t nodeId, int64_t* outValue, int* outIsConst);
+int EvalConstFloatExpr(SLCBackendC* c, int32_t nodeId, double* outValue, int* outIsConst);
 
 int ConstIntFitsIntegerType(const char* typeName, int64_t value);
+int ConstIntFitsFloatType(const char* typeName, int64_t value);
+int ConstFloatFitsFloatType(const char* typeName, double value);
 
 int EmitConstEvaluatedScalar(
     SLCBackendC* c, const SLTypeRef* dstType, const SLCTFEValue* value, int* outEmitted);

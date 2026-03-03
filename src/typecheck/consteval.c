@@ -1496,10 +1496,18 @@ int SLTCEvalConstExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
 
 int SLTCEvalConstExecResolveTypeCb(void* ctx, int32_t typeNode, int32_t* outTypeId) {
     SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    uint8_t           savedAllowConstNumericTypeName;
     if (evalCtx == NULL || evalCtx->tc == NULL || outTypeId == NULL) {
         return -1;
     }
-    return SLTCResolveTypeNode(evalCtx->tc, typeNode, outTypeId);
+    savedAllowConstNumericTypeName = evalCtx->tc->allowConstNumericTypeName;
+    evalCtx->tc->allowConstNumericTypeName = 1;
+    if (SLTCResolveTypeNode(evalCtx->tc, typeNode, outTypeId) != 0) {
+        evalCtx->tc->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+        return -1;
+    }
+    evalCtx->tc->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+    return 0;
 }
 
 int SLTCEvalConstExecInferValueTypeCb(void* ctx, const SLCTFEValue* value, int32_t* outTypeId) {
@@ -1513,13 +1521,9 @@ int SLTCEvalConstExecInferValueTypeCb(void* ctx, const SLCTFEValue* value, int32
         return -1;
     }
     switch (value->kind) {
-        case SLCTFEValue_INT:
-            *outTypeId = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
-            return *outTypeId >= 0 ? 0 : -1;
-        case SLCTFEValue_FLOAT:
-            *outTypeId = SLTCFindBuiltinByKind(c, SLBuiltin_F64);
-            return *outTypeId >= 0 ? 0 : -1;
-        case SLCTFEValue_BOOL: *outTypeId = c->typeBool; return *outTypeId >= 0 ? 0 : -1;
+        case SLCTFEValue_INT:   *outTypeId = c->typeUntypedInt; return *outTypeId >= 0 ? 0 : -1;
+        case SLCTFEValue_FLOAT: *outTypeId = c->typeUntypedFloat; return *outTypeId >= 0 ? 0 : -1;
+        case SLCTFEValue_BOOL:  *outTypeId = c->typeBool; return *outTypeId >= 0 ? 0 : -1;
         case SLCTFEValue_STRING:
             *outTypeId = SLTCGetStrRefType(c, 0, 0);
             return *outTypeId >= 0 ? 0 : -1;
@@ -1667,9 +1671,13 @@ int SLTCResolveConstCall(
         if (n->kind == SLAst_PARAM) {
             int32_t paramTypeNode = SLAstFirstChild(c->ast, child);
             int32_t paramTypeId = -1;
+            uint8_t savedAllowConstNumericTypeName = c->allowConstNumericTypeName;
+            c->allowConstNumericTypeName = 1;
             if (paramTypeNode < 0 || SLTCResolveTypeNode(c, paramTypeNode, &paramTypeId) != 0) {
+                c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
                 return -1;
             }
+            c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
             paramBindings[paramCount].nameStart = n->dataStart;
             paramBindings[paramCount].nameEnd = n->dataEnd;
             paramBindings[paramCount].typeId = paramTypeId;
@@ -1839,6 +1847,44 @@ int SLTCConstIntExpr(SLTypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isCon
         return 0;
     }
     *isConst = 1;
+    return 0;
+}
+
+int SLTCConstFloatExpr(SLTypeCheckCtx* c, int32_t nodeId, double* out, int* isConst) {
+    SLTCConstEvalCtx evalCtx;
+    SLCTFEValue      value;
+    int              valueIsConst = 0;
+    *isConst = 0;
+    c->lastConstEvalReason = NULL;
+    c->lastConstEvalReasonStart = 0;
+    c->lastConstEvalReasonEnd = 0;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return -1;
+    }
+    memset(&evalCtx, 0, sizeof(evalCtx));
+    evalCtx.tc = c;
+    if (SLTCEvalConstExprNode(&evalCtx, nodeId, &value, &valueIsConst) != 0) {
+        return -1;
+    }
+    c->lastConstEvalReason = evalCtx.nonConstReason;
+    c->lastConstEvalReasonStart = evalCtx.nonConstStart;
+    c->lastConstEvalReasonEnd = evalCtx.nonConstEnd;
+    if (!valueIsConst) {
+        return 0;
+    }
+    if (value.kind == SLCTFEValue_FLOAT) {
+        *out = value.f64;
+        *isConst = 1;
+        return 0;
+    }
+    if (value.kind == SLCTFEValue_INT) {
+        *out = (double)value.i64;
+        *isConst = 1;
+        return 0;
+    }
+    c->lastConstEvalReason = "expression evaluated to a non-float value";
+    c->lastConstEvalReasonStart = c->ast->nodes[nodeId].start;
+    c->lastConstEvalReasonEnd = c->ast->nodes[nodeId].end;
     return 0;
 }
 
