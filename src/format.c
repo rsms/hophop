@@ -1141,6 +1141,31 @@ static int SLFmtEmitCommentText(SLFmtCtx* c, const SLComment* cm) {
     return SLFmtWriteSlice(c, cm->start, end);
 }
 
+static int SLFmtIsLeadingCommentForNode(const SLFmtCtx* c, const SLComment* cm, int32_t nodeId) {
+    const SLAstNode* node;
+    const SLAstNode* anchor;
+    if (c == NULL || cm == NULL || nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    if (cm->attachment != SLCommentAttachment_LEADING
+        && cm->attachment != SLCommentAttachment_FLOATING)
+    {
+        return 0;
+    }
+    if (cm->anchorNode == nodeId) {
+        return 1;
+    }
+    if (cm->anchorNode < 0 || (uint32_t)cm->anchorNode >= c->ast->len) {
+        return 0;
+    }
+    node = &c->ast->nodes[nodeId];
+    anchor = &c->ast->nodes[cm->anchorNode];
+    if (!(anchor->start >= node->start && anchor->end <= node->end)) {
+        return 0;
+    }
+    return cm->end <= node->start;
+}
+
 static int SLFmtEmitLeadingCommentsForNode(SLFmtCtx* c, int32_t nodeId) {
     uint32_t i;
     for (i = 0; i < c->commentLen; i++) {
@@ -1148,12 +1173,7 @@ static int SLFmtEmitLeadingCommentsForNode(SLFmtCtx* c, int32_t nodeId) {
         if (c->commentUsed[i]) {
             continue;
         }
-        if (cm->anchorNode != nodeId) {
-            continue;
-        }
-        if (cm->attachment != SLCommentAttachment_LEADING
-            && cm->attachment != SLCommentAttachment_FLOATING)
-        {
+        if (!SLFmtIsLeadingCommentForNode(c, cm, nodeId)) {
             continue;
         }
         if (!c->lineStart) {
@@ -1226,6 +1246,28 @@ static uint32_t SLFmtCountNewlinesInRange(SLStrView src, uint32_t start, uint32_
     return n;
 }
 
+static int SLFmtGapHasIntentionalBlankLine(SLStrView src, uint32_t start, uint32_t end) {
+    uint32_t i;
+    int      lineHasContent = 1;
+    if (end < start || end > src.len) {
+        return 0;
+    }
+    for (i = start; i < end; i++) {
+        char ch = src.ptr[i];
+        if (ch == '\n') {
+            if (!lineHasContent) {
+                return 1;
+            }
+            lineHasContent = 0;
+            continue;
+        }
+        if (ch != ' ' && ch != '\t' && ch != '\r') {
+            lineHasContent = 1;
+        }
+    }
+    return 0;
+}
+
 static int SLFmtNodeContainsAnchor(const SLAst* ast, int32_t nodeId, int32_t anchorNodeId) {
     const SLAstNode* n;
     const SLAstNode* a;
@@ -1257,12 +1299,7 @@ static int SLFmtHasUnusedLeadingCommentsForNode(const SLFmtCtx* c, int32_t nodeI
         if (c->commentUsed[i]) {
             continue;
         }
-        if (cm->anchorNode != nodeId) {
-            continue;
-        }
-        if (cm->attachment == SLCommentAttachment_LEADING
-            || cm->attachment == SLCommentAttachment_FLOATING)
-        {
+        if (SLFmtIsLeadingCommentForNode(c, cm, nodeId)) {
             return 1;
         }
     }
@@ -2117,19 +2154,26 @@ static int SLFmtMeasureExprLen(SLFmtCtx* c, int32_t nodeId, int forceParen, uint
 }
 
 static int SLFmtNeedsBlankLineBeforeNode(SLFmtCtx* c, int32_t prevNodeId, int32_t nextNodeId) {
-    uint32_t gapNl;
+    SLAstKind nextKind;
+    uint32_t  gapNl;
     if (prevNodeId < 0 || nextNodeId < 0) {
         return 0;
     }
+    nextKind = c->ast->nodes[nextNodeId].kind;
     gapNl = SLFmtCountNewlinesInRange(
         c->src, c->ast->nodes[prevNodeId].end, c->ast->nodes[nextNodeId].start);
     if (gapNl <= 1u) {
         return 0;
     }
-    if (SLFmtHasUnusedLeadingCommentsForNode(c, nextNodeId)
-        && !SLFmtIsStmtNodeKind(c->ast->nodes[nextNodeId].kind))
-    {
-        return 0;
+    if (SLFmtHasUnusedLeadingCommentsForNode(c, nextNodeId)) {
+        if (!SLFmtIsStmtNodeKind(nextKind)) {
+            return 0;
+        }
+        if (!SLFmtGapHasIntentionalBlankLine(
+                c->src, c->ast->nodes[prevNodeId].end, c->ast->nodes[nextNodeId].start))
+        {
+            return 0;
+        }
     }
     return 1;
 }
