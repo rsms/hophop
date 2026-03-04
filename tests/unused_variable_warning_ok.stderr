@@ -1,0 +1,1 @@
+tests/unused_variable_warning_ok.sl:2:6: SL2093: variable 'x' is unused

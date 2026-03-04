@@ -1,1 +1,2 @@
 tests/feature_unknown.sl:1:1: SL4002: unknown feature 'bogus'
+tests/feature_unknown.sl:3:4: SL2092: function 'nothing' is unused

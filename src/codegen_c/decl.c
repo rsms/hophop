@@ -893,6 +893,8 @@ int EmitFnDeclOrDef(
     SLTypeRef        fnContextLocalType;
     int              forceStatic = 0;
 
+    (void)isPrivate;
+
     TypeRefSetScalar(&fnReturnType, "void");
     TypeRefSetInvalid(&fnContextType);
     TypeRefSetInvalid(&fnSemanticContextType);
@@ -934,7 +936,7 @@ int EmitFnDeclOrDef(
     }
 
     EmitIndent(c, depth);
-    forceStatic = (isPrivate || (fnSig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0)
+    forceStatic = ((fnSig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0)
                && (emitBody || c->emitPrivateFnDeclStatic);
     if ((fnSig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0 && fnSig->tcFuncIndex == UINT32_MAX) {
         forceStatic = 0;
@@ -1546,6 +1548,22 @@ int EmitHeader(SLCBackendC* c) {
                 return -1;
             }
             break;
+        }
+    }
+
+    for (i = 0; i < c->topDeclLen; i++) {
+        int32_t          nodeId = c->topDecls[i].nodeId;
+        const SLAstNode* n = NodeAt(c, nodeId);
+        if (n == NULL || n->kind != SLAst_FN || !FnNodeHasBody(c, nodeId)
+            || IsExportedNode(c, nodeId))
+        {
+            continue;
+        }
+        if (!ShouldEmitDeclNode(c, nodeId)) {
+            continue;
+        }
+        if (EmitDeclNode(c, nodeId, 0, 1, 0, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
+            return -1;
         }
     }
 

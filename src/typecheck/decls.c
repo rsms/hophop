@@ -829,14 +829,28 @@ int32_t SLTCLocalFind(SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd) {
 
 int SLTCLocalAdd(
     SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int32_t typeId, int isConst) {
-    if (c->localLen >= c->localCap) {
+    uint32_t localIdx;
+    uint32_t useIdx;
+    if (c->localLen >= c->localCap || c->localUseLen >= c->localUseCap || c->localUses == NULL) {
         return SLTCFailSpan(c, SLDiag_ARENA_OOM, nameStart, nameEnd);
     }
-    c->locals[c->localLen].nameStart = nameStart;
-    c->locals[c->localLen].nameEnd = nameEnd;
-    c->locals[c->localLen].typeId = typeId;
-    c->locals[c->localLen].flags = isConst ? SLTCLocalFlag_CONST : 0;
+    localIdx = c->localLen;
+    useIdx = c->localUseLen;
+    c->locals[localIdx].nameStart = nameStart;
+    c->locals[localIdx].nameEnd = nameEnd;
+    c->locals[localIdx].typeId = typeId;
+    c->locals[localIdx].flags = isConst ? SLTCLocalFlag_CONST : 0;
+    c->locals[localIdx].useIndex = useIdx;
+    c->localUses[useIdx].nameStart = nameStart;
+    c->localUses[useIdx].nameEnd = nameEnd;
+    c->localUses[useIdx].ownerFnIndex = c->currentFunctionIndex;
+    c->localUses[useIdx].readCount = 0;
+    c->localUses[useIdx].writeCount = 0;
+    c->localUses[useIdx].kind = SLTCLocalUseKind_LOCAL;
+    c->localUses[useIdx].suppressWarning = 0;
+    c->localUses[useIdx]._reserved = 0;
     c->localLen++;
+    c->localUseLen++;
     return 0;
 }
 

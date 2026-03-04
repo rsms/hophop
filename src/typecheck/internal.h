@@ -123,12 +123,29 @@ typedef struct {
     uint32_t nameEnd;
     int32_t  typeId;
     uint16_t flags;
+    uint32_t useIndex;
 } SLTCLocal;
 
 enum {
     SLTCLocalFlag_CONST = 1u << 0,
     SLTCLocalFlag_ANYPACK = 1u << 1,
 };
+
+enum {
+    SLTCLocalUseKind_LOCAL = 0,
+    SLTCLocalUseKind_PARAM = 1,
+};
+
+typedef struct {
+    uint32_t nameStart;
+    uint32_t nameEnd;
+    int32_t  ownerFnIndex;
+    uint32_t readCount;
+    uint32_t writeCount;
+    uint8_t  kind;
+    uint8_t  suppressWarning;
+    uint16_t _reserved;
+} SLTCLocalUse;
 
 typedef struct {
     int32_t  localIdx;
@@ -179,6 +196,8 @@ typedef struct {
     SLTCFunction* funcs;
     uint32_t      funcLen;
     uint32_t      funcCap;
+    uint8_t*      funcUsed;
+    uint32_t      funcUsedCap;
 
     int32_t*  funcParamTypes;
     uint32_t* funcParamNameStarts;
@@ -191,9 +210,12 @@ typedef struct {
     uint8_t* scratchParamFlags;
     uint32_t scratchParamCap;
 
-    SLTCLocal* locals;
-    uint32_t   localLen;
-    uint32_t   localCap;
+    SLTCLocal*    locals;
+    uint32_t      localLen;
+    uint32_t      localCap;
+    SLTCLocalUse* localUses;
+    uint32_t      localUseLen;
+    uint32_t      localUseCap;
 
     SLTCVariantNarrow* variantNarrows;
     uint32_t           variantNarrowLen;
@@ -530,6 +552,13 @@ int  SLTCRecordConstDiagUse(SLTypeCheckCtx* c, int32_t nodeId);
 void SLTCMarkConstDiagUseExecuted(SLTypeCheckCtx* c, int32_t nodeId);
 void SLTCMarkConstDiagFnInvoked(SLTypeCheckCtx* c, int32_t fnIndex);
 int  SLTCValidateConstDiagUses(SLTypeCheckCtx* c);
+void SLTCMarkFunctionUsed(SLTypeCheckCtx* c, int32_t fnIndex);
+void SLTCMarkLocalRead(SLTypeCheckCtx* c, int32_t localIdx);
+void SLTCMarkLocalWrite(SLTypeCheckCtx* c, int32_t localIdx);
+void SLTCUnmarkLocalRead(SLTypeCheckCtx* c, int32_t localIdx);
+void SLTCSetLocalUsageKind(SLTypeCheckCtx* c, int32_t localIdx, uint8_t kind);
+void SLTCSetLocalUsageSuppress(SLTypeCheckCtx* c, int32_t localIdx, int suppress);
+int  SLTCEmitUnusedSymbolWarnings(SLTypeCheckCtx* c);
 void SLTCOffsetToLineCol(
     const char* src, uint32_t srcLen, uint32_t offset, uint32_t* outLine, uint32_t* outColumn);
 int SLTCLineColToOffset(
@@ -1086,6 +1115,7 @@ int SLTCTypeMultiAssignStmt(SLTypeCheckCtx* c, int32_t nodeId);
 int SLTCTypeStmt(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth);
 int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex);
+int SLTCMarkTemplateRootFunctionUses(SLTypeCheckCtx* c);
 int SLTCCollectFunctionDecls(SLTypeCheckCtx* c);
 int SLTCCollectTypeDecls(SLTypeCheckCtx* c);
 int SLTCBuildCheckedContext(

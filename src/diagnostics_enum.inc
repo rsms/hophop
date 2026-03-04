@@ -135,7 +135,12 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_FOR_IN_ITERATOR_AMBIGUOUS, /* SL2089: ambiguous __iterator overload for for-in source */
     SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD, /* SL2090: no matching advance overload for
                                                    requested for-in binding mode */
-    SLDiag_FOR_IN_ADVANCE_NON_BOOL, /* SL2091: for-in advance overload must return bool */
-    SLDiag_CODEGEN_INTERNAL,        /* SL3001: internal codegen error */
-    SLDiag_ARENA_OOM,               /* SL4001: arena out of memory */
-    SLDiag_UNKNOWN_FEATURE,         /* SL4002: unknown feature '{s}' */
+    SLDiag_FOR_IN_ADVANCE_NON_BOOL,     /* SL2091: for-in advance overload must return bool */
+    SLDiag_UNUSED_FUNCTION,             /* SL2092: function '{s}' is unused */
+    SLDiag_UNUSED_VARIABLE,             /* SL2093: variable '{s}' is unused */
+    SLDiag_UNUSED_VARIABLE_NEVER_READ,  /* SL2094: variable '{s}' is never read */
+    SLDiag_UNUSED_PARAMETER,            /* SL2095: parameter '{s}' is unused */
+    SLDiag_UNUSED_PARAMETER_NEVER_READ, /* SL2096: parameter '{s}' is never read */
+    SLDiag_CODEGEN_INTERNAL,            /* SL3001: internal codegen error */
+    SLDiag_ARENA_OOM,                   /* SL4001: arena out of memory */
+    SLDiag_UNKNOWN_FEATURE,             /* SL4002: unknown feature '{s}' */

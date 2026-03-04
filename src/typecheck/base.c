@@ -169,6 +169,153 @@ int SLTCValidateConstDiagUses(SLTypeCheckCtx* c) {
     return 0;
 }
 
+static SLTCLocalUse* _Nullable SLTCGetLocalUseByIndex(SLTypeCheckCtx* c, int32_t localIdx) {
+    uint32_t useIdx;
+    if (c == NULL || localIdx < 0 || (uint32_t)localIdx >= c->localLen || c->locals == NULL
+        || c->localUses == NULL)
+    {
+        return NULL;
+    }
+    useIdx = c->locals[localIdx].useIndex;
+    if (useIdx >= c->localUseLen) {
+        return NULL;
+    }
+    return &c->localUses[useIdx];
+}
+
+void SLTCMarkFunctionUsed(SLTypeCheckCtx* c, int32_t fnIndex) {
+    const SLTCFunction* fn;
+    uint32_t            i;
+    if (c == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->funcUsedCap || c->funcUsed == NULL) {
+        return;
+    }
+    c->funcUsed[fnIndex] = 1;
+    if ((uint32_t)fnIndex >= c->funcLen) {
+        return;
+    }
+    fn = &c->funcs[fnIndex];
+    if ((fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0) {
+        return;
+    }
+    for (i = 0; i < c->funcLen; i++) {
+        const SLTCFunction* cand = &c->funcs[i];
+        if (cand->declNode == fn->declNode
+            && (cand->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
+        {
+            c->funcUsed[i] = 1;
+        }
+    }
+}
+
+void SLTCMarkLocalRead(SLTypeCheckCtx* c, int32_t localIdx) {
+    SLTCLocalUse* use = SLTCGetLocalUseByIndex(c, localIdx);
+    if (use == NULL) {
+        return;
+    }
+    if (use->readCount < UINT32_MAX) {
+        use->readCount++;
+    }
+}
+
+void SLTCMarkLocalWrite(SLTypeCheckCtx* c, int32_t localIdx) {
+    SLTCLocalUse* use = SLTCGetLocalUseByIndex(c, localIdx);
+    if (use == NULL) {
+        return;
+    }
+    if (use->writeCount < UINT32_MAX) {
+        use->writeCount++;
+    }
+}
+
+void SLTCUnmarkLocalRead(SLTypeCheckCtx* c, int32_t localIdx) {
+    SLTCLocalUse* use = SLTCGetLocalUseByIndex(c, localIdx);
+    if (use == NULL || use->readCount == 0) {
+        return;
+    }
+    use->readCount--;
+}
+
+void SLTCSetLocalUsageKind(SLTypeCheckCtx* c, int32_t localIdx, uint8_t kind) {
+    SLTCLocalUse* use = SLTCGetLocalUseByIndex(c, localIdx);
+    if (use == NULL) {
+        return;
+    }
+    use->kind = kind;
+}
+
+void SLTCSetLocalUsageSuppress(SLTypeCheckCtx* c, int32_t localIdx, int suppress) {
+    SLTCLocalUse* use = SLTCGetLocalUseByIndex(c, localIdx);
+    if (use == NULL) {
+        return;
+    }
+    use->suppressWarning = suppress ? 1u : 0u;
+}
+
+int SLTCEmitUnusedSymbolWarnings(SLTypeCheckCtx* c) {
+    uint32_t i;
+    if (c == NULL) {
+        return -1;
+    }
+    for (i = 0; i < c->localUseLen; i++) {
+        const SLTCLocalUse* use = &c->localUses[i];
+        SLDiagCode          code;
+        SLDiag              warning;
+        if (use->ownerFnIndex < 0 || use->suppressWarning || use->readCount > 0) {
+            continue;
+        }
+        if (use->kind == SLTCLocalUseKind_PARAM) {
+            code =
+                use->writeCount > 0 ? SLDiag_UNUSED_PARAMETER_NEVER_READ : SLDiag_UNUSED_PARAMETER;
+        } else {
+            code = use->writeCount > 0 ? SLDiag_UNUSED_VARIABLE_NEVER_READ : SLDiag_UNUSED_VARIABLE;
+        }
+        warning = (SLDiag){ 0 };
+        SLTCSetDiagWithArg(
+            &warning, code, use->nameStart, use->nameEnd, use->nameStart, use->nameEnd);
+        warning.type = SLDiagType_WARNING;
+        if (SLTCEmitWarningDiag(c, &warning) != 0) {
+            return -1;
+        }
+    }
+    for (i = 0; i < c->funcLen; i++) {
+        const SLTCFunction* fn = &c->funcs[i];
+        int32_t             fnNode;
+        SLDiag              warning;
+        if (fn->defNode < 0) {
+            continue;
+        }
+        if ((fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) != 0) {
+            continue;
+        }
+        if (c->funcUsed != NULL && i < c->funcUsedCap && c->funcUsed[i]) {
+            continue;
+        }
+        if (SLTCIsMainFunction(c, fn)) {
+            continue;
+        }
+        fnNode = fn->defNode >= 0 ? fn->defNode : fn->declNode;
+        if (fnNode < 0 || (uint32_t)fnNode >= c->ast->len) {
+            continue;
+        }
+        if ((c->ast->nodes[fnNode].flags & SLAstFlag_PUB) != 0) {
+            continue;
+        }
+        warning = (SLDiag){ 0 };
+        SLTCSetDiagWithArg(
+            &warning,
+            SLDiag_UNUSED_FUNCTION,
+            fn->nameStart,
+            fn->nameEnd,
+            fn->nameStart,
+            fn->nameEnd);
+        warning.type = SLDiagType_WARNING;
+        if (SLTCEmitWarningDiag(c, &warning) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 void SLTCOffsetToLineCol(
     const char* src, uint32_t srcLen, uint32_t offset, uint32_t* outLine, uint32_t* outColumn) {
     uint32_t i = 0;

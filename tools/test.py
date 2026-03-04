@@ -25,6 +25,8 @@ TEST_ROOT_TRACKED_SUFFIXES = {".sl", ".stderr", ".ast", ".tokens"}
 PRETEST_FMT_ROOTS = ("examples", "lib", "tests")
 PRETEST_FMT_STRICT_ROOTS = ("examples", "lib")
 PRETEST_FMT_DEFAULT_EXCLUDES = {"tests/fmt_canonical.sl"}
+DIAGNOSTICS_JSON = ROOT / "src" / "diagnostics.jsonl"
+DIAG_ID_RE = re.compile(r"\bSL\d{4}\b")
 
 
 @dataclass
@@ -103,6 +105,40 @@ def abs_path(path: str) -> Path:
 
 def read_text(path: str) -> str:
     return abs_path(path).read_text()
+
+
+def load_warning_diag_ids(path: Path) -> Set[str]:
+    ids: Set[str] = set()
+    for line in path.read_text().splitlines():
+        s = line.strip()
+        if not s or s.startswith("//"):
+            continue
+        obj = json.loads(s)
+        if obj.get("type") == "warning":
+            diag_id = obj.get("id")
+            if isinstance(diag_id, str):
+                ids.add(diag_id)
+    return ids
+
+
+WARNING_DIAG_IDS = load_warning_diag_ids(DIAGNOSTICS_JSON)
+
+
+def strip_warning_diagnostics(stderr_text: str) -> str:
+    if not stderr_text:
+        return stderr_text
+    out: List[str] = []
+    skip_tip = False
+    for line in stderr_text.splitlines(keepends=True):
+        m = DIAG_ID_RE.search(line)
+        if m is not None and m.group(0) in WARNING_DIAG_IDS:
+            skip_tip = True
+            continue
+        if skip_tip and line.startswith("  tip:"):
+            continue
+        skip_tip = False
+        out.append(line)
+    return "".join(out)
 
 
 def run_cmd(args: List[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess[str]:
@@ -386,10 +422,11 @@ def maybe_check_codegen_sidecar(ctx: RunContext, case: Dict[str, Any]) -> tuple[
 
 def kind_slc_stdout_eq(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     cp = run_cmd(slc_args(ctx, str(case["mode"]), str(case["input"])))
+    stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"unexpected failure (exit {cp.returncode})\nstderr:\n{cp.stderr}")
-    if cp.stderr:
-        return fail(f"unexpected stderr:\n{cp.stderr}")
+    if stderr:
+        return fail(f"unexpected stderr:\n{stderr}")
     expected = read_text(str(case["expect"]))
     if cp.stdout != expected:
         diff = "".join(
@@ -406,27 +443,29 @@ def kind_slc_stdout_eq(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str
 
 def kind_slc_ok(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     cp = run_cmd(slc_args(ctx, str(case["mode"]), str(case["input"])))
+    stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"unexpected failure (exit {cp.returncode})\nstderr:\n{cp.stderr}")
     if cp.stdout:
         return fail(f"unexpected stdout:\n{cp.stdout}")
-    if cp.stderr:
-        return fail(f"unexpected stderr:\n{cp.stderr}")
+    if stderr:
+        return fail(f"unexpected stderr:\n{stderr}")
     return ok()
 
 
 def kind_slc_fail_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     cp = run_cmd(slc_args(ctx, str(case["mode"]), str(case["input"])))
+    stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode == 0:
         return fail("expected failure but command succeeded")
     if cp.stdout:
         return fail(f"unexpected stdout:\n{cp.stdout}")
     expected = read_text(str(case["expect_stderr"]))
-    if cp.stderr != expected:
+    if stderr != expected:
         diff = "".join(
             difflib.unified_diff(
                 expected.splitlines(True),
-                cp.stderr.splitlines(True),
+                stderr.splitlines(True),
                 fromfile=str(case["expect_stderr"]),
                 tofile="actual.stderr",
             )
@@ -551,12 +590,13 @@ def run_compile_with_cache(
 def kind_compile_only(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     exe = work_dir / "program"
     cp = run_compile(ctx, str(case["input"]), exe)
+    stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"compile failed (exit {cp.returncode})\nstderr:\n{cp.stderr}")
     if case.get("compile_stdout_empty", False) and cp.stdout:
         return fail(f"unexpected compile stdout:\n{cp.stdout}")
-    if case.get("compile_stderr_empty", False) and cp.stderr:
-        return fail(f"unexpected compile stderr:\n{cp.stderr}")
+    if case.get("compile_stderr_empty", False) and stderr:
+        return fail(f"unexpected compile stderr:\n{stderr}")
     if not exe.exists() or not os.access(exe, os.X_OK):
         return fail("compile output executable missing")
     return ok()
@@ -570,12 +610,13 @@ def kind_compile_cache_reuse(
     cache_pkg_dir = cache_dir / "v1" / "pkg"
 
     cp1 = run_compile_with_cache(ctx, str(case["input"]), exe, cache_dir)
+    stderr1 = strip_warning_diagnostics(cp1.stderr)
     if cp1.returncode != 0:
         return fail(f"compile failed (first run, exit {cp1.returncode})\nstderr:\n{cp1.stderr}")
     if case.get("compile_stdout_empty", False) and cp1.stdout:
         return fail(f"unexpected compile stdout:\n{cp1.stdout}")
-    if case.get("compile_stderr_empty", False) and cp1.stderr:
-        return fail(f"unexpected compile stderr:\n{cp1.stderr}")
+    if case.get("compile_stderr_empty", False) and stderr1:
+        return fail(f"unexpected compile stderr:\n{stderr1}")
     if not exe.exists() or not os.access(exe, os.X_OK):
         return fail("compile output executable missing on first run")
 
@@ -587,12 +628,13 @@ def kind_compile_cache_reuse(
     time.sleep(1.1)
 
     cp2 = run_compile_with_cache(ctx, str(case["input"]), exe, cache_dir)
+    stderr2 = strip_warning_diagnostics(cp2.stderr)
     if cp2.returncode != 0:
         return fail(f"compile failed (second run, exit {cp2.returncode})\nstderr:\n{cp2.stderr}")
     if case.get("compile_stdout_empty", False) and cp2.stdout:
         return fail(f"unexpected compile stdout:\n{cp2.stdout}")
-    if case.get("compile_stderr_empty", False) and cp2.stderr:
-        return fail(f"unexpected compile stderr:\n{cp2.stderr}")
+    if case.get("compile_stderr_empty", False) and stderr2:
+        return fail(f"unexpected compile stderr:\n{stderr2}")
     if not exe.exists() or not os.access(exe, os.X_OK):
         return fail("compile output executable missing on second run")
 
@@ -611,12 +653,13 @@ def kind_compile_cache_reuse(
 def kind_compile_and_run(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     exe = work_dir / "program"
     cp = run_compile(ctx, str(case["input"]), exe)
+    stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"compile failed (exit {cp.returncode})\nstderr:\n{cp.stderr}")
     if case.get("compile_stdout_empty", False) and cp.stdout:
         return fail(f"unexpected compile stdout:\n{cp.stdout}")
-    if case.get("compile_stderr_empty", False) and cp.stderr:
-        return fail(f"unexpected compile stderr:\n{cp.stderr}")
+    if case.get("compile_stderr_empty", False) and stderr:
+        return fail(f"unexpected compile stderr:\n{stderr}")
     if not exe.exists() or not os.access(exe, os.X_OK):
         return fail("compile output executable missing")
 
@@ -689,6 +732,7 @@ def kind_eval_run_expectation(ctx: RunContext, case: Dict[str, Any]) -> tuple[bo
 def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     platform = str(case["platform"]) if case.get("platform") is not None else None
     cp = run_slc_run_cmd(ctx, str(case["input"]), platform)
+    stderr = strip_warning_diagnostics(cp.stderr)
     expect_nonzero = bool(case.get("expect_nonzero", False))
     expect_exit = int(case.get("expect_exit", 0))
     if expect_nonzero:
@@ -699,11 +743,11 @@ def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
 
     if case.get("stdout_empty", True) and cp.stdout:
         return fail(f"unexpected stdout:\n{cp.stdout}")
-    if case.get("stderr_empty", True) and cp.stderr:
-        return fail(f"unexpected stderr:\n{cp.stderr}")
+    if case.get("stderr_empty", True) and stderr:
+        return fail(f"unexpected stderr:\n{stderr}")
     stderr_contains = case.get("stderr_contains")
-    if stderr_contains is not None and str(stderr_contains) not in cp.stderr:
-        return fail(f"stderr missing expected text {stderr_contains!r}\n{cp.stderr}")
+    if stderr_contains is not None and str(stderr_contains) not in stderr:
+        return fail(f"stderr missing expected text {stderr_contains!r}\n{stderr}")
 
     return ok()
 
@@ -742,20 +786,22 @@ def compile_harness(ctx: RunContext, work_dir: Path, header_path: Path, harness_
 def kind_genpkg_text_check(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     mode = str(case.get("mode", "genpkg:c"))
     cp = run_genpkg_mode(ctx, mode, str(case["input"]))
+    stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"{mode} failed (exit {cp.returncode})\nstderr:\n{cp.stderr}")
-    if case.get("stderr_empty", True) and cp.stderr:
-        return fail(f"unexpected stderr:\n{cp.stderr}")
+    if case.get("stderr_empty", True) and stderr:
+        return fail(f"unexpected stderr:\n{stderr}")
     return check_text_constraints(cp.stdout, case)
 
 
 def kind_genpkg_compile(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     mode = str(case.get("mode", "genpkg:c"))
     cp = run_genpkg_mode(ctx, mode, str(case["input"]))
+    stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"{mode} failed (exit {cp.returncode})\nstderr:\n{cp.stderr}")
-    if case.get("stderr_empty", True) and cp.stderr:
-        return fail(f"unexpected stderr:\n{cp.stderr}")
+    if case.get("stderr_empty", True) and stderr:
+        return fail(f"unexpected stderr:\n{stderr}")
 
     ok_text, detail = check_text_constraints(cp.stdout, case)
     if not ok_text:

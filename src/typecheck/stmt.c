@@ -2,6 +2,124 @@
 
 SL_API_BEGIN
 
+static int SLTCMarkTemplateRootUsesVisitNode(SLTypeCheckCtx* c, int32_t nodeId) {
+    const SLAstNode* n;
+    int32_t          child;
+    if (c == NULL || c->ast == NULL || nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[nodeId];
+    if (n->kind == SLAst_CALL) {
+        int32_t calleeNode = SLAstFirstChild(c->ast, nodeId);
+        if (calleeNode >= 0 && (uint32_t)calleeNode < c->ast->len) {
+            const SLAstNode* callee = &c->ast->nodes[calleeNode];
+            if (callee->kind == SLAst_IDENT) {
+                int32_t fnIndex = SLTCFindFunctionIndex(c, callee->dataStart, callee->dataEnd);
+                if (fnIndex >= 0) {
+                    SLTCMarkFunctionUsed(c, fnIndex);
+                }
+            }
+        }
+    }
+    child = SLAstFirstChild(c->ast, nodeId);
+    while (child >= 0) {
+        if (SLTCMarkTemplateRootUsesVisitNode(c, child) != 0) {
+            return -1;
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    return 0;
+}
+
+int SLTCMarkTemplateRootFunctionUses(SLTypeCheckCtx* c) {
+    uint32_t i;
+    if (c == NULL || c->ast == NULL) {
+        return -1;
+    }
+    for (i = 0; i < c->funcLen; i++) {
+        const SLTCFunction* fn = &c->funcs[i];
+        int32_t             child;
+        if ((fn->flags & SLTCFunctionFlag_TEMPLATE) == 0
+            || (fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) != 0 || fn->defNode < 0)
+        {
+            continue;
+        }
+        child = SLAstFirstChild(c->ast, fn->defNode);
+        while (child >= 0) {
+            if (c->ast->nodes[child].kind == SLAst_BLOCK) {
+                if (SLTCMarkTemplateRootUsesVisitNode(c, child) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            child = SLAstNextSibling(c->ast, child);
+        }
+    }
+    return 0;
+}
+
+static void SLTCMarkConstBlockLocalReadsRec(
+    SLTypeCheckCtx* c, int32_t nodeId, int skipDirectIdent) {
+    const SLAstNode* n;
+    int32_t          child;
+    if (c == NULL || c->ast == NULL || nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return;
+    }
+    n = &c->ast->nodes[nodeId];
+    if (!skipDirectIdent && n->kind == SLAst_IDENT) {
+        int32_t localIdx = SLTCLocalFind(c, n->dataStart, n->dataEnd);
+        if (localIdx >= 0) {
+            SLTCMarkLocalRead(c, localIdx);
+        }
+        return;
+    }
+    if (n->kind == SLAst_VAR || n->kind == SLAst_CONST) {
+        child = SLAstFirstChild(c->ast, nodeId);
+        if (child >= 0 && (uint32_t)child < c->ast->len
+            && c->ast->nodes[child].kind == SLAst_NAME_LIST)
+        {
+            child = SLAstNextSibling(c->ast, child);
+        }
+        while (child >= 0) {
+            SLTCMarkConstBlockLocalReadsRec(c, child, 0);
+            child = SLAstNextSibling(c->ast, child);
+        }
+        return;
+    }
+    if (n->kind == SLAst_BINARY && n->op == SLTok_ASSIGN) {
+        int32_t lhsNode = SLAstFirstChild(c->ast, nodeId);
+        int32_t rhsNode = lhsNode >= 0 ? SLAstNextSibling(c->ast, lhsNode) : -1;
+        if (lhsNode >= 0 && (uint32_t)lhsNode < c->ast->len
+            && c->ast->nodes[lhsNode].kind != SLAst_IDENT)
+        {
+            SLTCMarkConstBlockLocalReadsRec(c, lhsNode, 0);
+        }
+        if (rhsNode >= 0) {
+            SLTCMarkConstBlockLocalReadsRec(c, rhsNode, 0);
+        }
+        return;
+    }
+    child = SLAstFirstChild(c->ast, nodeId);
+    while (child >= 0) {
+        SLTCMarkConstBlockLocalReadsRec(c, child, 0);
+        child = SLAstNextSibling(c->ast, child);
+    }
+}
+
+static void SLTCMarkConstBlockLocalReads(SLTypeCheckCtx* c, int32_t blockNode) {
+    int32_t child;
+    if (c == NULL || c->ast == NULL || blockNode < 0 || (uint32_t)blockNode >= c->ast->len
+        || c->ast->nodes[blockNode].kind != SLAst_BLOCK)
+    {
+        return;
+    }
+    child = SLAstFirstChild(c->ast, blockNode);
+    while (child >= 0) {
+        SLTCMarkConstBlockLocalReadsRec(c, child, 0);
+        child = SLAstNextSibling(c->ast, child);
+    }
+}
+
 int SLTCBlockTerminates(SLTypeCheckCtx* c, int32_t blockNode) {
     int32_t child = SLAstFirstChild(c->ast, blockNode);
     int32_t last = -1;
@@ -399,6 +517,7 @@ static int SLTCTypeForInStmt(
         if (SLTCValidateCallContextRequirements(c, c->funcs[iterFn].contextType) != 0) {
             return -1;
         }
+        SLTCMarkFunctionUsed(c, iterFn);
         iterPtrType = SLTCInternPtrType(
             c, iterType, c->ast->nodes[sourceNode].start, c->ast->nodes[sourceNode].end);
         if (iterPtrType < 0) {
@@ -481,6 +600,7 @@ static int SLTCTypeForInStmt(
         if (SLTCValidateCallContextRequirements(c, c->funcs[advanceFn].contextType) != 0) {
             return -1;
         }
+        SLTCMarkFunctionUsed(c, advanceFn);
     }
 
     if (hasKey) {
@@ -491,6 +611,7 @@ static int SLTCTypeForInStmt(
         if (SLTCLocalAdd(c, keyName->dataStart, keyName->dataEnd, keyLocalType, 0) != 0) {
             return -1;
         }
+        SLTCMarkLocalWrite(c, (int32_t)c->localLen - 1);
     }
     if (!valueDiscard) {
         const SLAstNode* valueName = &c->ast->nodes[valueNode];
@@ -500,6 +621,7 @@ static int SLTCTypeForInStmt(
         if (SLTCLocalAdd(c, valueName->dataStart, valueName->dataEnd, valueLocalType, 0) != 0) {
             return -1;
         }
+        SLTCMarkLocalWrite(c, (int32_t)c->localLen - 1);
     }
 
     if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth + 1, switchDepth) != 0) {
@@ -930,6 +1052,14 @@ int SLTCTypeMultiAssignStmt(SLTypeCheckCtx* c, int32_t nodeId) {
             if (!SLTCCanAssign(c, lhsType, rhsType)) {
                 return SLTCFailTypeMismatchDetail(c, lhsNode, lhsNode, rhsType, lhsType);
             }
+            if (c->ast->nodes[lhsNode].kind == SLAst_IDENT) {
+                int32_t localIdx = SLTCLocalFind(
+                    c, c->ast->nodes[lhsNode].dataStart, c->ast->nodes[lhsNode].dataEnd);
+                if (localIdx >= 0) {
+                    SLTCMarkLocalWrite(c, localIdx);
+                    SLTCUnmarkLocalRead(c, localIdx);
+                }
+            }
         }
     }
     return 0;
@@ -947,6 +1077,7 @@ int SLTCTypeStmt(
             if (blockNode < 0 || c->ast->nodes[blockNode].kind != SLAst_BLOCK) {
                 return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
             }
+            SLTCMarkConstBlockLocalReads(c, blockNode);
             return 0;
         }
         case SLAst_MULTI_ASSIGN: return SLTCTypeMultiAssignStmt(c, nodeId);
@@ -1219,6 +1350,7 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
             }
             if (!SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")) {
                 addedLocal = 1;
+                SLTCSetLocalUsageKind(c, (int32_t)c->localLen - 1, SLTCLocalUseKind_PARAM);
             }
             if (addedLocal && (n->flags & SLAstFlag_PARAM_VARIADIC) != 0
                 && (paramType == c->typeAnytype
@@ -1279,6 +1411,7 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
             c->implicitMainContextType = savedImplicitMainContextType;
             return -1;
         }
+        SLTCSetLocalUsageSuppress(c, (int32_t)c->localLen - 1, 1);
         c->currentContextType = fn->contextType;
     } else if (SLTCIsMainFunction(c, fn)) {
         c->implicitMainContextType = SLTCResolveImplicitMainContextType(c);
@@ -1356,6 +1489,8 @@ int SLTCBuildCheckedContext(
         arena, sizeof(SLTCNamedType) * capBase, (uint32_t)_Alignof(SLTCNamedType));
     c.funcs = (SLTCFunction*)SLArenaAlloc(
         arena, sizeof(SLTCFunction) * capBase, (uint32_t)_Alignof(SLTCFunction));
+    c.funcUsed = (uint8_t*)SLArenaAlloc(
+        arena, sizeof(uint8_t) * capBase, (uint32_t)_Alignof(uint8_t));
     c.funcParamTypes = (int32_t*)SLArenaAlloc(
         arena, sizeof(int32_t) * capBase * 8u, (uint32_t)_Alignof(int32_t));
     c.funcParamNameStarts = (uint32_t*)SLArenaAlloc(
@@ -1370,6 +1505,8 @@ int SLTCBuildCheckedContext(
         arena, sizeof(uint8_t) * capBase, (uint32_t)_Alignof(uint8_t));
     c.locals = (SLTCLocal*)SLArenaAlloc(
         arena, sizeof(SLTCLocal) * capBase * 4u, (uint32_t)_Alignof(SLTCLocal));
+    c.localUses = (SLTCLocalUse*)SLArenaAlloc(
+        arena, sizeof(SLTCLocalUse) * capBase * 8u, (uint32_t)_Alignof(SLTCLocalUse));
     c.variantNarrows = (SLTCVariantNarrow*)SLArenaAlloc(
         arena, sizeof(SLTCVariantNarrow) * capBase * 4u, (uint32_t)_Alignof(SLTCVariantNarrow));
     c.warningDedup = (SLTCWarningDedup*)SLArenaAlloc(
@@ -1388,11 +1525,12 @@ int SLTCBuildCheckedContext(
         arena, sizeof(uint8_t) * ast->len, (uint32_t)_Alignof(uint8_t));
 
     if (c.types == NULL || c.fields == NULL || c.namedTypes == NULL || c.funcs == NULL
-        || c.funcParamTypes == NULL || c.funcParamNameStarts == NULL || c.funcParamNameEnds == NULL
-        || c.funcParamFlags == NULL || c.scratchParamTypes == NULL || c.scratchParamFlags == NULL
-        || c.locals == NULL || c.constEvalValues == NULL || c.constEvalState == NULL
-        || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL || c.variantNarrows == NULL
-        || c.warningDedup == NULL || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL)
+        || c.funcUsed == NULL || c.funcParamTypes == NULL || c.funcParamNameStarts == NULL
+        || c.funcParamNameEnds == NULL || c.funcParamFlags == NULL || c.scratchParamTypes == NULL
+        || c.scratchParamFlags == NULL || c.locals == NULL || c.localUses == NULL
+        || c.constEvalValues == NULL || c.constEvalState == NULL || c.topVarLikeTypes == NULL
+        || c.topVarLikeTypeState == NULL || c.variantNarrows == NULL || c.warningDedup == NULL
+        || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL)
     {
         SLTCSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
@@ -1406,11 +1544,14 @@ int SLTCBuildCheckedContext(
     c.namedTypeCap = capBase;
     c.funcLen = 0;
     c.funcCap = capBase;
+    c.funcUsedCap = capBase;
     c.funcParamLen = 0;
     c.funcParamCap = capBase * 8u;
     c.scratchParamCap = capBase;
     c.localLen = 0;
     c.localCap = capBase * 4u;
+    c.localUseLen = 0;
+    c.localUseCap = capBase * 8u;
     c.variantNarrowLen = 0;
     c.variantNarrowCap = capBase * 4u;
     c.warningDedupLen = 0;
@@ -1437,6 +1578,7 @@ int SLTCBuildCheckedContext(
     c.lastConstEvalReasonEnd = 0;
     memset(c.funcParamFlags, 0, sizeof(uint8_t) * c.funcParamCap);
     memset(c.scratchParamFlags, 0, sizeof(uint8_t) * c.scratchParamCap);
+    memset(c.funcUsed, 0, sizeof(uint8_t) * c.funcUsedCap);
     if (ast->len > 0) {
         memset(c.constEvalState, 0, sizeof(uint8_t) * ast->len);
         memset(c.topVarLikeTypeState, 0, sizeof(uint8_t) * ast->len);
@@ -1541,6 +1683,12 @@ int SLTCBuildCheckedContext(
         return -1;
     }
     if (SLTCValidateConstDiagUses(&c) != 0) {
+        return -1;
+    }
+    if (SLTCMarkTemplateRootFunctionUses(&c) != 0) {
+        return -1;
+    }
+    if (SLTCEmitUnusedSymbolWarnings(&c) != 0) {
         return -1;
     }
 

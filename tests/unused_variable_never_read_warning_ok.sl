@@ -1,0 +1,4 @@
+fn main() {
+	var x int = 1
+	x = 2
+}

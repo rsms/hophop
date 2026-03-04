@@ -377,22 +377,33 @@ static int NormalizeUnknownIdentifierSpan(
     const char* source, uint32_t inStart, uint32_t inEnd, uint32_t* outStart, uint32_t* outEnd) {
     uint32_t s = inStart;
     uint32_t e = inEnd;
+    uint32_t srcLen;
     if (source == NULL || outStart == NULL || outEnd == NULL || e <= s) {
         return 0;
     }
-    while (source[s] != '\0' && s < e && !IsIdentifierChar(source[s])) {
+    srcLen = (uint32_t)strlen(source);
+    if (s > srcLen) {
+        s = srcLen;
+    }
+    if (e > srcLen) {
+        e = srcLen;
+    }
+    if (e <= s) {
+        return 0;
+    }
+    while (s < e && s < srcLen && !IsIdentifierChar(source[s])) {
         s++;
     }
     while (e > s && !IsIdentifierChar(source[e - 1u])) {
         e--;
     }
-    if (e <= s || source[s] == '\0') {
+    if (e <= s || s >= srcLen) {
         return 0;
     }
     while (s > 0 && IsIdentifierChar(source[s - 1u])) {
         s--;
     }
-    while (source[e] != '\0' && IsIdentifierChar(source[e])) {
+    while (e < srcLen && IsIdentifierChar(source[e])) {
         e++;
     }
     if (e <= s || !IsIdentifierStartChar(source[s])) {
@@ -402,6 +413,63 @@ static int NormalizeUnknownIdentifierSpan(
     *outEnd = e;
     return 1;
 }
+
+static int NormalizeIdentifierTokenSpan(
+    const char* source, uint32_t inStart, uint32_t inEnd, uint32_t* outStart, uint32_t* outEnd) {
+    uint32_t s = inStart;
+    uint32_t e = inEnd;
+    uint32_t srcLen;
+    uint32_t anchor;
+    uint32_t tokenStart;
+    uint32_t tokenEnd;
+    if (source == NULL || outStart == NULL || outEnd == NULL || e <= s) {
+        return 0;
+    }
+    srcLen = (uint32_t)strlen(source);
+    if (s > srcLen) {
+        s = srcLen;
+    }
+    if (e > srcLen) {
+        e = srcLen;
+    }
+    if (e <= s) {
+        return 0;
+    }
+    while (e > s && !IsIdentifierChar(source[e - 1u])) {
+        e--;
+    }
+    if (e <= s) {
+        return 0;
+    }
+    anchor = e - 1u;
+    while (anchor > s && !IsIdentifierChar(source[anchor])) {
+        anchor--;
+    }
+    if (!IsIdentifierChar(source[anchor])) {
+        return 0;
+    }
+    tokenStart = anchor;
+    tokenEnd = anchor + 1u;
+    while (tokenStart > 0 && IsIdentifierChar(source[tokenStart - 1u])) {
+        tokenStart--;
+    }
+    while (tokenEnd < srcLen && IsIdentifierChar(source[tokenEnd])) {
+        tokenEnd++;
+    }
+    if (tokenEnd <= tokenStart || !IsIdentifierStartChar(source[tokenStart])) {
+        return 0;
+    }
+    *outStart = tokenStart;
+    *outEnd = tokenEnd;
+    return 1;
+}
+
+typedef struct {
+    uint8_t startMapped;
+    uint8_t endMapped;
+    uint8_t argStartMapped;
+    uint8_t argEndMapped;
+} SLRemapDiagStatus;
 
 static void DiagOffsetToLineCol(
     const char* source, uint32_t offset, uint32_t* outLine, uint32_t* outCol) {
@@ -712,20 +780,33 @@ static void RemapCombinedDiag(
     const SLDiag*              diagIn,
     SLDiag*                    diagOut,
     uint32_t*                  outFileIndex,
-    const char* _Nullable source) {
+    const char* _Nullable source,
+    SLRemapDiagStatus* _Nullable outStatus) {
     uint32_t fileIndexStart = 0;
     uint32_t fileIndexEnd = 0;
     int      startMapped;
     int      endMapped;
+    int      argStartMapped = 0;
+    int      argEndMapped = 0;
     *diagOut = *diagIn;
     if (outFileIndex != NULL) {
         *outFileIndex = 0;
+    }
+    if (outStatus != NULL) {
+        outStatus->startMapped = 0;
+        outStatus->endMapped = 0;
+        outStatus->argStartMapped = 0;
+        outStatus->argEndMapped = 0;
     }
     if (map == NULL || map->len == 0) {
         return;
     }
     startMapped = RemapCombinedOffset(map, diagIn->start, &diagOut->start, &fileIndexStart);
     endMapped = RemapCombinedOffset(map, diagIn->end, &diagOut->end, &fileIndexEnd);
+    if (outStatus != NULL) {
+        outStatus->startMapped = startMapped ? 1u : 0u;
+        outStatus->endMapped = endMapped ? 1u : 0u;
+    }
     if (startMapped && outFileIndex != NULL) {
         *outFileIndex = fileIndexStart;
     } else if (endMapped && outFileIndex != NULL) {
@@ -733,11 +814,28 @@ static void RemapCombinedDiag(
     }
     if (diagIn->argEnd > diagIn->argStart) {
         uint32_t argFileIndex = 0;
-        if (!RemapCombinedOffset(map, diagIn->argStart, &diagOut->argStart, &argFileIndex)) {
+        argStartMapped = RemapCombinedOffset(
+            map, diagIn->argStart, &diagOut->argStart, &argFileIndex);
+        argEndMapped = RemapCombinedOffset(map, diagIn->argEnd, &diagOut->argEnd, &argFileIndex);
+        if (outStatus != NULL) {
+            outStatus->argStartMapped = argStartMapped ? 1u : 0u;
+            outStatus->argEndMapped = argEndMapped ? 1u : 0u;
+        }
+        if (!argStartMapped) {
             diagOut->argStart = diagIn->argStart;
         }
-        if (!RemapCombinedOffset(map, diagIn->argEnd, &diagOut->argEnd, &argFileIndex)) {
+        if (!argEndMapped) {
             diagOut->argEnd = diagIn->argEnd;
+        }
+        if (source != NULL
+            && (diagOut->code == SLDiag_UNUSED_FUNCTION || diagOut->code == SLDiag_UNUSED_VARIABLE
+                || diagOut->code == SLDiag_UNUSED_VARIABLE_NEVER_READ
+                || diagOut->code == SLDiag_UNUSED_PARAMETER
+                || diagOut->code == SLDiag_UNUSED_PARAMETER_NEVER_READ)
+            && diagOut->argEnd > diagOut->argStart)
+        {
+            (void)NormalizeIdentifierTokenSpan(
+                source, diagOut->argStart, diagOut->argEnd, &diagOut->argStart, &diagOut->argEnd);
         }
     }
     if (source != NULL && diagOut->code == SLDiag_UNKNOWN_SYMBOL && diagOut->end > diagOut->start) {
@@ -1980,64 +2078,137 @@ static void WarnUnknownFeatureImports(const char* filename, const char* source, 
 typedef struct {
     const char*                filename;
     const char*                source;
+    uint32_t                   sourceLen;
     int                        useLineColDiag;
     const SLCombinedSourceMap* remapMap;
     const char*                remapSource;
-} SLTypecheckDiagSinkCtx;
+    int                        suppressUnusedWarnings;
+} SLCheckRunSpec;
 
-static void TypecheckDiagSink(void* ctx, const SLDiag* diag) {
-    SLTypecheckDiagSinkCtx* sink = (SLTypecheckDiagSinkCtx*)ctx;
-    SLDiag                  remapped;
-    uint32_t                remappedFileIndex = 0;
-    const SLDiag*           toPrint = diag;
-    const char*             source;
-    if (sink == NULL || diag == NULL) {
-        return;
-    }
-    source = sink->source;
-    if (sink->remapMap != NULL && sink->remapSource != NULL) {
-        RemapCombinedDiag(sink->remapMap, diag, &remapped, &remappedFileIndex, sink->remapSource);
-        (void)remappedFileIndex;
-        toPrint = &remapped;
-        source = sink->remapSource;
-    }
-    (void)(sink->useLineColDiag
-               ? PrintSLDiagLineCol(sink->filename, source, toPrint, 0)
-               : PrintSLDiag(sink->filename, source, toPrint, 0));
+static int IsUnusedWarningDiag(SLDiagCode code) {
+    return code == SLDiag_UNUSED_FUNCTION || code == SLDiag_UNUSED_VARIABLE
+        || code == SLDiag_UNUSED_VARIABLE_NEVER_READ || code == SLDiag_UNUSED_PARAMETER
+        || code == SLDiag_UNUSED_PARAMETER_NEVER_READ;
 }
 
-static int CheckSourceEx(
-    const char* filename, const char* source, uint32_t sourceLen, int useLineColDiag) {
-    void*                  arenaMem;
-    SLArena                arena;
-    SLAst                  ast;
-    SLDiag                 diag = {};
-    uint32_t               beforeTypecheckUsed;
-    uint32_t               beforeTypecheckCap;
-    uint32_t               afterTypecheckUsed;
-    uint32_t               afterTypecheckCap;
-    SLTypecheckDiagSinkCtx sinkCtx = {
-        .filename = filename,
-        .source = source,
-        .useLineColDiag = useLineColDiag,
-        .remapMap = NULL,
-        .remapSource = NULL,
-    };
+static int CheckRunHasRemap(const SLCheckRunSpec* spec) {
+    return spec != NULL && spec->remapMap != NULL && spec->remapSource != NULL;
+}
+
+static int EmitCheckDiag(
+    const SLCheckRunSpec* spec,
+    const SLDiag*         diag,
+    int                   includeHint,
+    int                   dropUnmappedUnusedWarnings) {
+    const char*       displaySource;
+    const SLDiag*     toPrint = diag;
+    SLDiag            remappedDiag;
+    SLRemapDiagStatus remapStatus = { 0 };
+    uint32_t          remappedFileIndex = 0;
+
+    if (spec == NULL || diag == NULL) {
+        return -1;
+    }
+    displaySource = spec->source;
+    if (CheckRunHasRemap(spec)) {
+        RemapCombinedDiag(
+            spec->remapMap,
+            diag,
+            &remappedDiag,
+            &remappedFileIndex,
+            spec->remapSource,
+            &remapStatus);
+        (void)remappedFileIndex;
+        if (dropUnmappedUnusedWarnings && IsUnusedWarningDiag(diag->code)
+            && !remapStatus.startMapped && !remapStatus.endMapped)
+        {
+            return 0;
+        }
+        toPrint = &remappedDiag;
+        displaySource = spec->remapSource;
+    }
+    return spec->useLineColDiag
+             ? PrintSLDiagLineCol(spec->filename, displaySource, toPrint, includeHint)
+             : PrintSLDiag(spec->filename, displaySource, toPrint, includeHint);
+}
+
+static void TypecheckDiagSink(void* ctx, const SLDiag* diag) {
+    SLCheckRunSpec* spec = (SLCheckRunSpec*)ctx;
+    if (spec == NULL || diag == NULL) {
+        return;
+    }
+    if (spec->suppressUnusedWarnings && IsUnusedWarningDiag(diag->code)) {
+        return;
+    }
+    (void)EmitCheckDiag(spec, diag, 0, 1);
+}
+
+static int CheckSourceWithSpec(const SLCheckRunSpec* spec) {
+    void*              arenaMem;
+    uint64_t           arenaCap64;
+    size_t             arenaCap;
+    SLArena            arena;
+    SLAst              ast;
+    SLDiag             diag = {};
+    uint32_t           beforeTypecheckUsed;
+    uint32_t           beforeTypecheckCap;
+    uint32_t           afterTypecheckUsed;
+    uint32_t           afterTypecheckCap;
     SLTypeCheckOptions checkOptions = {
-        .ctx = &sinkCtx,
+        .ctx = (void*)spec,
         .onDiag = TypecheckDiagSink,
         .flags = 0,
     };
 
-    if (ParseSourceEx(filename, source, sourceLen, &ast, &arenaMem, &arena, useLineColDiag) != 0) {
+    if (spec == NULL) {
+        return -1;
+    }
+    ast.nodes = NULL;
+    ast.len = 0;
+    ast.root = -1;
+    ast.features = 0;
+    arenaCap64 = (uint64_t)(spec->sourceLen + 128u) * (uint64_t)sizeof(SLAstNode) + 65536u;
+    if (arenaCap64 > (uint64_t)SIZE_MAX) {
+        fprintf(stderr, "arena too large\n");
+        return -1;
+    }
+    arenaCap = (size_t)arenaCap64;
+    arenaMem = malloc(arenaCap);
+    if (arenaMem == NULL) {
+        fprintf(stderr, "failed to allocate arena\n");
+        return -1;
+    }
+    SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    SLArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
+    if (SLParse(&arena, (SLStrView){ spec->source, spec->sourceLen }, NULL, &ast, NULL, &diag) != 0)
+    {
+        (void)EmitCheckDiag(spec, &diag, 0, 0);
+        SLArenaDispose(&arena);
+        free(arenaMem);
+        return -1;
+    }
+    if (CompactAstInArena(&arena, &ast) != 0) {
+        SLDiag oomDiag = { 0 };
+        oomDiag.code = SLDiag_ARENA_OOM;
+        oomDiag.type = SLDiagTypeOfCode(SLDiag_ARENA_OOM);
+        oomDiag.start = 0;
+        oomDiag.end = 0;
+        oomDiag.argStart = ArenaBytesUsed(&arena);
+        oomDiag.argEnd = ArenaBytesCapacity(&arena);
+        (void)EmitCheckDiag(spec, &oomDiag, 0, 0);
+        SLArenaDispose(&arena);
+        free(arenaMem);
         return -1;
     }
 
-    WarnUnknownFeatureImports(filename, source, &ast);
+    WarnUnknownFeatureImports(spec->filename, spec->source, &ast);
     beforeTypecheckUsed = ArenaBytesUsed(&arena);
     beforeTypecheckCap = ArenaBytesCapacity(&arena);
 
-    if (SLTypeCheckEx(&arena, &ast, (SLStrView){ source, sourceLen }, &checkOptions, &diag) != 0) {
+    if (SLTypeCheckEx(
+            &arena, &ast, (SLStrView){ spec->source, spec->sourceLen }, &checkOptions, &diag)
+        != 0)
+    {
         if (diag.code == SLDiag_ARENA_OOM) {
             uint32_t afterUsed = ArenaBytesUsed(&arena);
             uint32_t afterCap = ArenaBytesCapacity(&arena);
@@ -2052,10 +2223,7 @@ static int CheckSourceEx(
                 afterUsed,
                 afterCap);
         }
-        int diagStatus =
-            useLineColDiag
-                ? PrintSLDiagLineCol(filename, source, &diag, 1)
-                : PrintSLDiag(filename, source, &diag, 1);
+        int diagStatus = EmitCheckDiag(spec, &diag, 1, 0);
         SLArenaDispose(&arena);
         free(arenaMem);
         return diagStatus;
@@ -2082,132 +2250,46 @@ static int CheckSourceEx(
     return 0;
 }
 
+static int CheckSourceEx(
+    const char* filename,
+    const char* source,
+    uint32_t    sourceLen,
+    int         useLineColDiag,
+    int         suppressUnusedWarnings) {
+    SLCheckRunSpec spec = {
+        .filename = filename,
+        .source = source,
+        .sourceLen = sourceLen,
+        .useLineColDiag = useLineColDiag,
+        .remapMap = NULL,
+        .remapSource = NULL,
+        .suppressUnusedWarnings = suppressUnusedWarnings,
+    };
+    return CheckSourceWithSpec(&spec);
+}
+
 static int CheckSourceExWithSingleFileRemap(
     const char*                filename,
     const char*                source,
     uint32_t                   sourceLen,
     int                        useLineColDiag,
     const char*                remapSource,
-    const SLCombinedSourceMap* remapMap) {
-    void*                  arenaMem;
-    uint64_t               arenaCap64;
-    size_t                 arenaCap;
-    SLArena                arena;
-    SLAst                  ast;
-    SLDiag                 diag = {};
-    uint32_t               beforeTypecheckUsed;
-    uint32_t               beforeTypecheckCap;
-    uint32_t               afterTypecheckUsed;
-    uint32_t               afterTypecheckCap;
-    SLTypecheckDiagSinkCtx sinkCtx = {
+    const SLCombinedSourceMap* remapMap,
+    int                        suppressUnusedWarnings) {
+    SLCheckRunSpec spec = {
         .filename = filename,
         .source = source,
+        .sourceLen = sourceLen,
         .useLineColDiag = useLineColDiag,
         .remapMap = remapMap,
         .remapSource = remapSource,
+        .suppressUnusedWarnings = suppressUnusedWarnings,
     };
-    SLTypeCheckOptions checkOptions = {
-        .ctx = &sinkCtx,
-        .onDiag = TypecheckDiagSink,
-        .flags = 0,
-    };
-
-    arenaCap64 = (uint64_t)(sourceLen + 128u) * (uint64_t)sizeof(SLAstNode) + 65536u;
-    if (arenaCap64 > (uint64_t)SIZE_MAX) {
-        fprintf(stderr, "arena too large\n");
-        return -1;
-    }
-    arenaCap = (size_t)arenaCap64;
-    arenaMem = malloc(arenaCap);
-    if (arenaMem == NULL) {
-        fprintf(stderr, "failed to allocate arena\n");
-        return -1;
-    }
-    SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
-    SLArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
-    if (SLParse(&arena, (SLStrView){ source, sourceLen }, NULL, &ast, NULL, &diag) != 0) {
-        SLDiag   remappedDiag;
-        uint32_t remappedFileIndex = 0;
-        RemapCombinedDiag(remapMap, &diag, &remappedDiag, &remappedFileIndex, remapSource);
-        (void)remappedFileIndex;
-        (void)(useLineColDiag ? PrintSLDiagLineCol(filename, remapSource, &remappedDiag, 0)
-                              : PrintSLDiag(filename, remapSource, &remappedDiag, 0));
-        SLArenaDispose(&arena);
-        free(arenaMem);
-        return -1;
-    }
-    if (CompactAstInArena(&arena, &ast) != 0) {
-        SLDiag oomDiag = { 0 };
-        oomDiag.code = SLDiag_ARENA_OOM;
-        oomDiag.type = SLDiagTypeOfCode(SLDiag_ARENA_OOM);
-        oomDiag.start = 0;
-        oomDiag.end = 0;
-        oomDiag.argStart = ArenaBytesUsed(&arena);
-        oomDiag.argEnd = ArenaBytesCapacity(&arena);
-        (void)(useLineColDiag ? PrintSLDiagLineCol(filename, remapSource, &oomDiag, 0)
-                              : PrintSLDiag(filename, remapSource, &oomDiag, 0));
-        SLArenaDispose(&arena);
-        free(arenaMem);
-        return -1;
-    }
-
-    WarnUnknownFeatureImports(filename, source, &ast);
-    beforeTypecheckUsed = ArenaBytesUsed(&arena);
-    beforeTypecheckCap = ArenaBytesCapacity(&arena);
-
-    if (SLTypeCheckEx(&arena, &ast, (SLStrView){ source, sourceLen }, &checkOptions, &diag) != 0) {
-        SLDiag   remappedDiag;
-        uint32_t remappedFileIndex = 0;
-        if (diag.code == SLDiag_ARENA_OOM) {
-            uint32_t afterUsed = ArenaBytesUsed(&arena);
-            uint32_t afterCap = ArenaBytesCapacity(&arena);
-            diag.argStart = afterUsed;
-            diag.argEnd = afterCap;
-            fprintf(
-                stderr,
-                "  note: typecheck arena delta %u bytes (before: %u/%u, after: %u/%u)\n",
-                afterUsed >= beforeTypecheckUsed ? afterUsed - beforeTypecheckUsed : 0u,
-                beforeTypecheckUsed,
-                beforeTypecheckCap,
-                afterUsed,
-                afterCap);
-        }
-        RemapCombinedDiag(remapMap, &diag, &remappedDiag, &remappedFileIndex, remapSource);
-        (void)remappedFileIndex;
-        {
-            int diagStatus =
-                useLineColDiag
-                    ? PrintSLDiagLineCol(filename, remapSource, &remappedDiag, 1)
-                    : PrintSLDiag(filename, remapSource, &remappedDiag, 1);
-            SLArenaDispose(&arena);
-            free(arenaMem);
-            return diagStatus;
-        }
-    }
-
-    afterTypecheckUsed = ArenaBytesUsed(&arena);
-    afterTypecheckCap = ArenaBytesCapacity(&arena);
-    if (ArenaDebugEnabled()) {
-        fprintf(
-            stderr,
-            "arena debug: ast=%u nodes (%u bytes), before check=%u/%u, after check=%u/%u\n",
-            ast.len,
-            ast.len <= UINT32_MAX / (uint32_t)sizeof(SLAstNode)
-                ? ast.len * (uint32_t)sizeof(SLAstNode)
-                : UINT32_MAX,
-            beforeTypecheckUsed,
-            beforeTypecheckCap,
-            afterTypecheckUsed,
-            afterTypecheckCap);
-    }
-
-    SLArenaDispose(&arena);
-    free(arenaMem);
-    return 0;
+    return CheckSourceWithSpec(&spec);
 }
 
 static int CheckSource(const char* filename, const char* source, uint32_t sourceLen) {
-    return CheckSourceEx(filename, source, sourceLen, 0);
+    return CheckSourceEx(filename, source, sourceLen, 0, 0);
 }
 
 static int IsDeclKind(SLAstKind kind) {
@@ -5550,28 +5632,59 @@ static int AppendAliasedPubDecls(
     const SLPackage* sourcePkg,
     const char*      alias,
     const SLImportRef* _Nullable imports,
-    uint32_t importLen) {
+    uint32_t importLen,
+    int      includePrivateDecls) {
     SLIdentMap* maps = NULL;
+    uint32_t    mapLen = 0;
+    uint32_t    declLen = includePrivateDecls ? sourcePkg->declLen : 0u;
     uint32_t    j;
     int         rc = -1;
 
-    if (sourcePkg->pubDeclLen == 0) {
+    if (declLen == 0 && sourcePkg->pubDeclLen == 0) {
         return 0;
     }
-    maps = (SLIdentMap*)malloc(sizeof(SLIdentMap) * sourcePkg->pubDeclLen);
+    mapLen = declLen + sourcePkg->pubDeclLen;
+    maps = (SLIdentMap*)malloc(sizeof(SLIdentMap) * mapLen);
     if (maps == NULL) {
         return ErrorSimple("out of memory");
     }
-    for (j = 0; j < sourcePkg->pubDeclLen; j++) {
-        maps[j].name = sourcePkg->pubDecls[j].name;
+    for (j = 0; j < declLen; j++) {
+        maps[j].name = sourcePkg->decls[j].name;
         maps[j].replacement = NULL;
-        if (BuildPrefixedName(alias, sourcePkg->pubDecls[j].name, (char**)&maps[j].replacement)
+        if (BuildPrefixedName(alias, sourcePkg->decls[j].name, (char**)&maps[j].replacement) != 0) {
+            goto done;
+        }
+    }
+    for (j = 0; j < sourcePkg->pubDeclLen; j++) {
+        maps[declLen + j].name = sourcePkg->pubDecls[j].name;
+        maps[declLen + j].replacement = NULL;
+        if (BuildPrefixedName(
+                alias, sourcePkg->pubDecls[j].name, (char**)&maps[declLen + j].replacement)
             != 0)
         {
             goto done;
         }
     }
 
+    for (j = 0; j < declLen; j++) {
+        char* rewritten = NULL;
+        rc = RewriteText(
+            sourcePkg->decls[j].declText,
+            (uint32_t)strlen(sourcePkg->decls[j].declText),
+            imports,
+            importLen,
+            maps,
+            mapLen,
+            &rewritten);
+        if (rc != 0) {
+            goto done;
+        }
+        if (SBAppendCStr(b, rewritten) != 0 || SBAppendCStr(b, "\n") != 0) {
+            free(rewritten);
+            goto done;
+        }
+        free(rewritten);
+    }
     for (j = 0; j < sourcePkg->pubDeclLen; j++) {
         char* rewritten = NULL;
         rc = RewriteText(
@@ -5580,7 +5693,7 @@ static int AppendAliasedPubDecls(
             imports,
             importLen,
             maps,
-            sourcePkg->pubDeclLen,
+            mapLen,
             &rewritten);
         if (rc != 0) {
             goto done;
@@ -5598,7 +5711,7 @@ static int AppendAliasedPubDecls(
 
 done:
     if (maps != NULL) {
-        for (j = 0; j < sourcePkg->pubDeclLen; j++) {
+        for (j = 0; j < mapLen; j++) {
             free((void*)maps[j].replacement);
         }
     }
@@ -5646,6 +5759,19 @@ static int HasEmittedImportSurface(
     return 0;
 }
 
+static int PackageNeedsPrivateDeclSurface(const SLPackage* pkg) {
+    uint32_t i;
+    if (pkg->name != NULL && StrEq(pkg->name, "core")) {
+        return 0;
+    }
+    for (i = 0; i < pkg->pubDeclLen; i++) {
+        if (pkg->pubDecls[i].kind == SLAst_FN && pkg->pubDecls[i].hasBody) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int AppendImportedPackageSurface(
     SLStringBuilder*         b,
     const SLPackage*         dep,
@@ -5654,6 +5780,7 @@ static int AppendImportedPackageSurface(
     uint32_t*                emittedLen,
     uint32_t*                emittedCap) {
     uint32_t j;
+    int      includePrivateDecls;
     if (dep == NULL) {
         return ErrorSimple("internal error: unresolved import");
     }
@@ -5669,7 +5796,7 @@ static int AppendImportedPackageSurface(
             return ErrorSimple("internal error: unresolved import");
         }
         if (!HasEmittedImportSurface(*emitted, *emittedLen, subDep, dep->imports[j].alias)
-            && AppendAliasedPubDecls(b, subDep, dep->imports[j].alias, NULL, 0) != 0)
+            && AppendAliasedPubDecls(b, subDep, dep->imports[j].alias, NULL, 0, 0) != 0)
         {
             return -1;
         }
@@ -5682,7 +5809,10 @@ static int AppendImportedPackageSurface(
             (*emittedLen)++;
         }
     }
-    if (AppendAliasedPubDecls(b, dep, alias, dep->imports, dep->importLen) != 0) {
+    includePrivateDecls = PackageNeedsPrivateDeclSurface(dep);
+    if (AppendAliasedPubDecls(b, dep, alias, dep->imports, dep->importLen, includePrivateDecls)
+        != 0)
+    {
         return -1;
     }
     if (EnsureEmittedImportSurfaceCap(emitted, emittedCap, *emittedLen + 1u) != 0) {
@@ -5833,7 +5963,7 @@ static int BuildCombinedPackageSource(
     return 0;
 }
 
-static int CheckLoadedPackage(SLPackageLoader* loader, SLPackage* pkg) {
+static int CheckLoadedPackage(SLPackageLoader* loader, SLPackage* pkg, int suppressUnusedWarnings) {
     char*               source = NULL;
     uint32_t            sourceLen = 0;
     int                 lineColDiag = 0;
@@ -5868,9 +5998,12 @@ static int CheckLoadedPackage(SLPackageLoader* loader, SLPackage* pkg) {
                   checkSourceLen,
                   lineColDiag,
                   pkg->files[0].source,
-                  &sourceMap)
+                  &sourceMap,
+                  suppressUnusedWarnings)
                   != 0
-            : CheckSourceEx(checkPath, checkSource, checkSourceLen, lineColDiag) != 0)
+            : CheckSourceEx(
+                  checkPath, checkSource, checkSourceLen, lineColDiag, suppressUnusedWarnings)
+                  != 0)
     {
         CombinedSourceMapFree(&sourceMap);
         free(source);
@@ -6011,7 +6144,8 @@ static int LoadAndCheckPackage(
     }
 
     for (i = 0; i < loader.packageLen; i++) {
-        if (CheckLoadedPackage(&loader, &loader.packages[i]) != 0) {
+        int suppressUnusedWarnings = (&loader.packages[i] != entryPkg);
+        if (CheckLoadedPackage(&loader, &loader.packages[i], suppressUnusedWarnings) != 0) {
             free(canonical);
             FreeLoader(&loader);
             return -1;

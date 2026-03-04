@@ -113,6 +113,11 @@
 {"id": "SL2089", "name": "FOR_IN_ITERATOR_AMBIGUOUS", "category": "semantic", "message": "ambiguous __iterator overload for for-in source"}
 {"id": "SL2090", "name": "FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD", "category": "semantic", "message": "no matching advance overload for requested for-in binding mode"}
 {"id": "SL2091", "name": "FOR_IN_ADVANCE_NON_BOOL", "category": "semantic", "message": "for-in advance overload must return bool"}
+{"id": "SL2092", "name": "UNUSED_FUNCTION", "category": "semantic", "message": "function '{s}' is unused", "type": "warning"}
+{"id": "SL2093", "name": "UNUSED_VARIABLE", "category": "semantic", "message": "variable '{s}' is unused", "type": "warning", "hint": "rename variable to '_' to silence this warning"}
+{"id": "SL2094", "name": "UNUSED_VARIABLE_NEVER_READ", "category": "semantic", "message": "variable '{s}' is never read", "type": "warning", "hint": "rename variable to '_' to silence this warning"}
+{"id": "SL2095", "name": "UNUSED_PARAMETER", "category": "semantic", "message": "parameter '{s}' is unused", "type": "warning"}
+{"id": "SL2096", "name": "UNUSED_PARAMETER_NEVER_READ", "category": "semantic", "message": "parameter '{s}' is never read", "type": "warning"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}

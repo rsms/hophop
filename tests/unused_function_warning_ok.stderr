@@ -1,0 +1,1 @@
+tests/unused_function_warning_ok.sl:3:4: SL2092: function 'helper_unused' is unused

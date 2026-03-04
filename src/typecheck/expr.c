@@ -213,6 +213,7 @@ static int SLTCMatchAnyPackIndexExpr(
     {
         return 0;
     }
+    SLTCMarkLocalRead(c, localIdx);
     if (outPackType != NULL) {
         *outPackType = packType;
     }
@@ -259,6 +260,7 @@ int SLTCResolveIdentifierExprType(
     int32_t*        outType) {
     int32_t localIdx = SLTCLocalFind(c, nameStart, nameEnd);
     if (localIdx >= 0) {
+        SLTCMarkLocalRead(c, localIdx);
         *outType = c->locals[localIdx].typeId;
         return 0;
     }
@@ -281,6 +283,7 @@ int SLTCResolveIdentifierExprType(
     {
         int32_t fnIdx = SLTCFindFunctionIndex(c, nameStart, nameEnd);
         if (fnIdx >= 0) {
+            SLTCMarkFunctionUsed(c, fnIdx);
             *outType = c->funcs[fnIdx].funcTypeId;
             return 0;
         }
@@ -973,6 +976,7 @@ int SLTCTypeExpr_IDENT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, in
     {
         int32_t localIdx = SLTCLocalFind(c, n->dataStart, n->dataEnd);
         if (localIdx >= 0) {
+            SLTCMarkLocalRead(c, localIdx);
             *outType = c->locals[localIdx].typeId;
             return 0;
         }
@@ -1009,6 +1013,7 @@ int SLTCTypeExpr_IDENT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, in
     {
         int32_t fnIdx = SLTCFindFunctionIndex(c, n->dataStart, n->dataEnd);
         if (fnIdx >= 0) {
+            SLTCMarkFunctionUsed(c, fnIdx);
             *outType = c->funcs[fnIdx].funcTypeId;
             return 0;
         }
@@ -1735,6 +1740,7 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
                 if (SLTCValidateCallContextRequirements(c, c->funcs[resolvedFn].contextType) != 0) {
                     return -1;
                 }
+                SLTCMarkFunctionUsed(c, resolvedFn);
                 *outType =
                     dependentStatus == 1 ? dependentReturnType : c->funcs[resolvedFn].returnType;
                 return 0;
@@ -2046,6 +2052,7 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
                 if (SLTCValidateCallContextRequirements(c, c->funcs[resolvedFn].contextType) != 0) {
                     return -1;
                 }
+                SLTCMarkFunctionUsed(c, resolvedFn);
                 *outType =
                     dependentStatus == 1 ? dependentReturnType : c->funcs[resolvedFn].returnType;
                 return 0;
@@ -2687,6 +2694,16 @@ int SLTCTypeExpr_BINARY(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, i
         || op == SLTok_AND_ASSIGN || op == SLTok_OR_ASSIGN || op == SLTok_XOR_ASSIGN
         || op == SLTok_LSHIFT_ASSIGN || op == SLTok_RSHIFT_ASSIGN)
     {
+        if (c->ast->nodes[lhsNode].kind == SLAst_IDENT) {
+            int32_t localIdx = SLTCLocalFind(
+                c, c->ast->nodes[lhsNode].dataStart, c->ast->nodes[lhsNode].dataEnd);
+            if (localIdx >= 0) {
+                SLTCMarkLocalWrite(c, localIdx);
+                if (op == SLTok_ASSIGN) {
+                    SLTCUnmarkLocalRead(c, localIdx);
+                }
+            }
+        }
         if (!SLTCExprIsAssignable(c, lhsNode)) {
             return SLTCFailNode(c, lhsNode, SLDiag_TYPE_MISMATCH);
         }
@@ -2733,6 +2750,7 @@ int SLTCTypeExpr_BINARY(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, i
             rhsType,
             &hookFn);
         if (hookStatus == 0) {
+            SLTCMarkFunctionUsed(c, hookFn);
             *outType = c->typeBool;
             return 0;
         }

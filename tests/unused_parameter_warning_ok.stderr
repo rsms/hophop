@@ -1,0 +1,1 @@
+tests/unused_parameter_warning_ok.sl:1:14: SL2095: parameter 'x' is unused

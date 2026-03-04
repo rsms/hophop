@@ -1,0 +1,1 @@
+tests/unused_variable_never_read_warning_ok.sl:2:6: SL2094: variable 'x' is never read
