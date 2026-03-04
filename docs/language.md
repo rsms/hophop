@@ -52,7 +52,7 @@ See also:
 
 ### 2.3 Keywords
 - [LEX-KW-001][Stable] Keywords:
-  `import pub struct union enum fn var const type if else for switch case default break continue return defer assert sizeof true false as null new context with`.
+  `import pub struct union enum fn var const type if else for switch case default break continue return defer assert sizeof true false in as null new context with`.
 - [LEX-KW-002][Stable] `mut` is reserved legacy syntax and MUST be rejected in type positions.
 
 ### 2.4 Literals
@@ -164,9 +164,13 @@ Stmt            = Block | VarDeclStmt | LocalConstDecl | IfStmt | ForStmt | Swit
 VarDeclStmt     = "var" DeclNameList ( Type [ "=" ExprList ] | "=" ExprList ) .
 MultiAssignStmt = ExprList "=" ExprList .
 IfStmt          = "if" Expr Block [ "else" ( IfStmt | Block ) ] .
-ForStmt         = "for" ( Block | Expr Block | ForClause Block ) .
+ForStmt         = "for" ( Block | Expr Block | ForClause Block | ForInClause Block ) .
 ForClause       = [ ForInit ] ";" [ Expr ] ";" [ Expr ] .
 ForInit         = VarDeclStmt | Expr .
+ForInClause     = ForInValueBinding "in" Expr
+                | ForInKeyBinding "," ForInValueBinding "in" Expr .
+ForInKeyBinding = [ "&" ] Ident .
+ForInValueBinding = "_" | [ "&" | "*" ] Ident .
 SwitchStmt      = "switch" [ Expr ] "{" { CaseClause } [ DefaultClause ] "}" .
 CaseClause      = "case" CasePattern { "," CasePattern } Block .
 CasePattern     = Expr [ "as" Ident ] .
@@ -493,9 +497,18 @@ fn f() {
 ## 7. Statements and Control Flow
 
 - [STMT-IF-001][Stable] `if` condition MUST be bool.
-- [STMT-FOR-001][Stable] `for` forms: infinite block, condition form, and C-style `init; cond; post`.
+- [STMT-FOR-001][Stable] `for` forms: infinite block, condition form, C-style `init; cond; post`, and `for ... in` forms.
 - [STMT-FOR-002][Stable] `for` condition (if present) MUST be bool.
 - [STMT-FOR-003][Stable] Variables declared in `for` initializer are scoped to the entire loop (condition, post, and body) and are not visible after the loop.
+- [STMT-FOR-004][Provisional] `for ... in` source expression MUST support `len(x)` and indexing `x[i]`.
+- [STMT-FOR-005][Provisional] `for ... in` source expression is evaluated once before loop iteration.
+- [STMT-FOR-006][Provisional] In `for key, value in x`, the key for sequence sources is synthetic `uint` index; `&key` is invalid for synthetic keys.
+- [STMT-FOR-007][Provisional] Value binding modes in `for ... in`:
+  - `value`: by-value capture
+  - `&value`: reference capture
+  - `*value`: pointer capture (requires mutable element source)
+  - `_`: discard capture (no value binding introduced)
+- [STMT-FOR-008][Provisional] `for ... in` key/value bindings are body-scope locals.
 - [STMT-SWITCH-001][Stable] `switch` supports expression-switch and condition-switch.
 - [STMT-SWITCH-002][Stable] At most one `default` clause.
 - [STMT-SWITCH-003][Stable] No fallthrough.

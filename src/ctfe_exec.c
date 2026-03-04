@@ -1124,6 +1124,13 @@ static int SLCTFEExecEvalStmt(
         SLCTFEValue condValue;
         int         condIsConst = 0;
 
+        if ((s->flags & SLAstFlag_FOR_IN) != 0) {
+            SLCTFEExecSetReasonNode(
+                c, stmtNode, "for-in loop is not supported in const evaluation");
+            *outIsConst = 0;
+            return 0;
+        }
+
         while (child >= 0 && count < 4) {
             nodes[count++] = child;
             child = c->ast->nodes[child].nextSibling;

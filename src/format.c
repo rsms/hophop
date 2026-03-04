@@ -890,7 +890,7 @@ static int SLFmtRewriteDropRedundantCastParenFlag(const SLAst* ast, int32_t node
         return 0;
     }
     mutNode = (SLAstNode*)&ast->nodes[nodeId];
-    mutNode->flags &= (uint16_t)~SLAstFlag_PAREN;
+    mutNode->flags &= ~SLAstFlag_PAREN;
     return 0;
 }
 
@@ -3280,6 +3280,52 @@ static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId) {
             bodyNode = parts[partLen - 1u];
             if (SLFmtWriteCStr(c, "for") != 0) {
                 return -1;
+            }
+            if ((n->flags & SLAstFlag_FOR_IN) != 0) {
+                int     hasKey = (n->flags & SLAstFlag_FOR_IN_HAS_KEY) != 0;
+                int32_t keyNode = -1;
+                int32_t valueNode = -1;
+                int32_t sourceNode = -1;
+                if ((!hasKey && partLen != 3u) || (hasKey && partLen != 4u)) {
+                    return -1;
+                }
+                if (hasKey) {
+                    keyNode = parts[0];
+                    valueNode = parts[1];
+                    sourceNode = parts[2];
+                    if (SLFmtWriteChar(c, ' ') != 0) {
+                        return -1;
+                    }
+                    if ((n->flags & SLAstFlag_FOR_IN_KEY_REF) != 0 && SLFmtWriteChar(c, '&') != 0) {
+                        return -1;
+                    }
+                    if (SLFmtEmitExpr(c, keyNode, 0) != 0 || SLFmtWriteCStr(c, ", ") != 0) {
+                        return -1;
+                    }
+                } else {
+                    valueNode = parts[0];
+                    sourceNode = parts[1];
+                    if (SLFmtWriteChar(c, ' ') != 0) {
+                        return -1;
+                    }
+                }
+                if ((n->flags & SLAstFlag_FOR_IN_VALUE_DISCARD) == 0) {
+                    if ((n->flags & SLAstFlag_FOR_IN_VALUE_REF) != 0 && SLFmtWriteChar(c, '&') != 0)
+                    {
+                        return -1;
+                    }
+                    if ((n->flags & SLAstFlag_FOR_IN_VALUE_PTR) != 0 && SLFmtWriteChar(c, '*') != 0)
+                    {
+                        return -1;
+                    }
+                }
+                if (SLFmtEmitExpr(c, valueNode, 0) != 0 || SLFmtWriteCStr(c, " in ") != 0
+                    || SLFmtEmitExpr(c, sourceNode, 0) != 0 || SLFmtWriteChar(c, ' ') != 0
+                    || SLFmtEmitBlock(c, bodyNode) != 0)
+                {
+                    return -1;
+                }
+                return 0;
             }
             if (partLen == 1u && c->ast->nodes[bodyNode].kind == SLAst_BLOCK) {
                 if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitBlock(c, bodyNode) != 0) {

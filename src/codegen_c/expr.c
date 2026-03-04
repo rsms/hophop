@@ -2726,6 +2726,137 @@ int EmitElemPtrExpr(
     return BufAppendCStr(&c->out, "))");
 }
 
+static int EmitLenExprFromNameType(SLCBackendC* c, const char* name, const SLTypeRef* t) {
+    if (TypeRefIsStr(t)) {
+        if (t->ptrDepth > 0) {
+            if (BufAppendCStr(&c->out, "(__sl_uint)(((__sl_str*)(") != 0
+                || BufAppendCStr(&c->out, name) != 0 || BufAppendCStr(&c->out, "))->len)") != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+        if (BufAppendCStr(&c->out, "(__sl_uint)((") != 0 || BufAppendCStr(&c->out, name) != 0
+            || BufAppendCStr(&c->out, ").len)") != 0)
+        {
+            return -1;
+        }
+        return 0;
+    }
+    if (t->containerKind == SLTypeContainer_ARRAY && t->hasArrayLen) {
+        if (t->containerPtrDepth > 0) {
+            if (BufAppendCStr(&c->out, "((") != 0 || BufAppendCStr(&c->out, name) != 0
+                || BufAppendCStr(&c->out, ") == 0 ? 0u : ") != 0
+                || BufAppendU32(&c->out, t->arrayLen) != 0 || BufAppendChar(&c->out, ')') != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+        return BufAppendU32(&c->out, t->arrayLen);
+    }
+    if (t->containerKind == SLTypeContainer_SLICE_RO
+        || t->containerKind == SLTypeContainer_SLICE_MUT)
+    {
+        if (t->containerPtrDepth > 0) {
+            int stars = SliceStructPtrDepth(t);
+            if (stars > 0) {
+                if (BufAppendCStr(&c->out, "((") != 0 || BufAppendCStr(&c->out, name) != 0
+                    || BufAppendCStr(&c->out, ") == 0 ? 0u : (__sl_uint)((") != 0
+                    || BufAppendCStr(&c->out, name) != 0 || BufAppendCStr(&c->out, ")->len))") != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
+        }
+        if (BufAppendCStr(&c->out, "(__sl_uint)((") != 0 || BufAppendCStr(&c->out, name) != 0
+            || BufAppendCStr(&c->out, ").len)") != 0)
+        {
+            return -1;
+        }
+        return 0;
+    }
+    if (BufAppendCStr(&c->out, "__sl_len(") != 0 || BufAppendCStr(&c->out, name) != 0
+        || BufAppendChar(&c->out, ')') != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitForInElemExprFromNameType(
+    SLCBackendC* c, const char* name, const char* idxName, const SLTypeRef* baseType) {
+    if (baseType->containerKind == SLTypeContainer_ARRAY
+        || baseType->containerKind == SLTypeContainer_SLICE_RO
+        || baseType->containerKind == SLTypeContainer_SLICE_MUT)
+    {
+        int elemConst = !TypeRefContainerWritable(baseType);
+        if (BufAppendChar(&c->out, '(') != 0 || BufAppendChar(&c->out, '(') != 0
+            || EmitElementTypeName(c, baseType, elemConst) != 0
+            || BufAppendCStr(&c->out, "*)(") != 0)
+        {
+            return -1;
+        }
+        if (baseType->containerKind == SLTypeContainer_ARRAY) {
+            if (BufAppendCStr(&c->out, name) != 0) {
+                return -1;
+            }
+        } else if (baseType->containerPtrDepth > 0 && SliceStructPtrDepth(baseType) > 0) {
+            if (BufAppendChar(&c->out, '(') != 0 || BufAppendCStr(&c->out, name) != 0
+                || BufAppendCStr(&c->out, ")->ptr") != 0)
+            {
+                return -1;
+            }
+        } else {
+            if (BufAppendChar(&c->out, '(') != 0 || BufAppendCStr(&c->out, name) != 0
+                || BufAppendCStr(&c->out, ").ptr") != 0)
+            {
+                return -1;
+            }
+        }
+        if (BufAppendCStr(&c->out, "))") != 0 || BufAppendChar(&c->out, '[') != 0
+            || BufAppendCStr(&c->out, idxName) != 0 || BufAppendChar(&c->out, ']') != 0)
+        {
+            return -1;
+        }
+        return 0;
+    }
+    if (BufAppendCStr(&c->out, name) != 0 || BufAppendChar(&c->out, '[') != 0
+        || BufAppendCStr(&c->out, idxName) != 0 || BufAppendChar(&c->out, ']') != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int ResolveForInElemType(
+    const SLTypeRef* sourceType, SLTypeRef* outElemType, int* outMutable) {
+    SLTypeRef t = *sourceType;
+    if (!t.valid) {
+        return -1;
+    }
+    if (t.containerKind == SLTypeContainer_ARRAY || t.containerKind == SLTypeContainer_SLICE_RO
+        || t.containerKind == SLTypeContainer_SLICE_MUT)
+    {
+        *outMutable = TypeRefContainerWritable(&t);
+        t.containerKind = SLTypeContainer_SCALAR;
+        t.containerPtrDepth = 0;
+        t.hasArrayLen = 0;
+        t.arrayLen = 0;
+        t.readOnly = 0;
+        *outElemType = t;
+        return 0;
+    }
+    if (t.ptrDepth > 0) {
+        t.ptrDepth--;
+        *outMutable = 1;
+        *outElemType = t;
+        return 0;
+    }
+    return -1;
+}
+
 int EmitSliceExpr(SLCBackendC* c, int32_t nodeId) {
     const SLAstNode* n = NodeAt(c, nodeId);
     int32_t          baseNode = AstFirstChild(&c->ast, nodeId);
@@ -7420,6 +7551,7 @@ int EmitMultiAssignStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
 }
 
 int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
+    const SLAstNode* forNode = NodeAt(c, nodeId);
     int32_t          nodes[4];
     int              count = 0;
     int32_t          child = AstFirstChild(&c->ast, nodeId);
@@ -7435,6 +7567,180 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     }
     if (count <= 0) {
         return -1;
+    }
+
+    if (forNode != NULL && (forNode->flags & SLAstFlag_FOR_IN) != 0) {
+        int         hasKey = (forNode->flags & SLAstFlag_FOR_IN_HAS_KEY) != 0;
+        int         valueRef = (forNode->flags & SLAstFlag_FOR_IN_VALUE_REF) != 0;
+        int         valuePtr = (forNode->flags & SLAstFlag_FOR_IN_VALUE_PTR) != 0;
+        int         valueDiscard = (forNode->flags & SLAstFlag_FOR_IN_VALUE_DISCARD) != 0;
+        int32_t     keyNode = -1;
+        int32_t     valueNode = -1;
+        int32_t     sourceNode = -1;
+        int32_t     loopBodyNode = -1;
+        SLTypeRef   sourceType;
+        SLTypeRef   elemType;
+        SLTypeRef   valueLocalType;
+        SLTypeRef   keyType;
+        int         elemMutable = 0;
+        const char* seqTmpName = "__sl_forin_seq";
+        const char* idxTmpName = "__sl_forin_idx";
+        char*       valueName = NULL;
+        char*       keyName = NULL;
+        if ((!hasKey && count != 3) || (hasKey && count != 4)) {
+            return -1;
+        }
+        if (hasKey) {
+            keyNode = nodes[0];
+            valueNode = nodes[1];
+            sourceNode = nodes[2];
+            loopBodyNode = nodes[3];
+        } else {
+            valueNode = nodes[0];
+            sourceNode = nodes[1];
+            loopBodyNode = nodes[2];
+        }
+        if (loopBodyNode < 0 || NodeAt(c, loopBodyNode) == NULL
+            || NodeAt(c, loopBodyNode)->kind != SLAst_BLOCK)
+        {
+            return -1;
+        }
+        if (InferExprType(c, sourceNode, &sourceType) != 0 || !sourceType.valid) {
+            SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+            return -1;
+        }
+        if (ResolveForInElemType(&sourceType, &elemType, &elemMutable) != 0) {
+            SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+            return -1;
+        }
+        if (valuePtr && !elemMutable) {
+            SetDiagNode(c, valueNode, SLDiag_CODEGEN_INTERNAL);
+            return -1;
+        }
+        valueLocalType = elemType;
+        if (valueRef || valuePtr) {
+            if (valueLocalType.containerKind == SLTypeContainer_SCALAR) {
+                valueLocalType.ptrDepth++;
+            } else {
+                valueLocalType.containerPtrDepth++;
+            }
+            if (valuePtr) {
+                valueLocalType.readOnly = 0;
+            }
+        }
+        TypeRefSetScalar(&keyType, "__sl_uint");
+
+        EmitIndent(c, depth);
+        if (BufAppendCStr(&c->out, "{\n") != 0) {
+            return -1;
+        }
+        if (PushScope(c) != 0) {
+            return -1;
+        }
+
+        if (EnsureAnonTypeVisible(c, &sourceType, depth + 1u) != 0) {
+            PopScope(c);
+            return -1;
+        }
+        EmitIndent(c, depth + 1u);
+        if (EmitTypeRefWithName(c, &sourceType, seqTmpName) != 0
+            || BufAppendCStr(&c->out, " = ") != 0 || EmitExpr(c, sourceNode) != 0
+            || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            PopScope(c);
+            return -1;
+        }
+
+        EmitIndent(c, depth + 1u);
+        if (BufAppendCStr(&c->out, "for (__sl_uint ") != 0
+            || BufAppendCStr(&c->out, idxTmpName) != 0 || BufAppendCStr(&c->out, " = 0; ") != 0
+            || BufAppendCStr(&c->out, idxTmpName) != 0 || BufAppendCStr(&c->out, " < ") != 0
+            || EmitLenExprFromNameType(c, seqTmpName, &sourceType) != 0
+            || BufAppendCStr(&c->out, "; ") != 0 || BufAppendCStr(&c->out, idxTmpName) != 0
+            || BufAppendCStr(&c->out, " += 1) {\n") != 0)
+        {
+            PopScope(c);
+            return -1;
+        }
+
+        if (PushScope(c) != 0) {
+            PopScope(c);
+            return -1;
+        }
+
+        if (hasKey) {
+            const SLAstNode* keyNameNode = NodeAt(c, keyNode);
+            keyName = DupSlice(c, c->unit->source, keyNameNode->dataStart, keyNameNode->dataEnd);
+            if (keyName == NULL) {
+                PopScope(c);
+                PopScope(c);
+                return -1;
+            }
+            EmitIndent(c, depth + 2u);
+            if (EmitTypeRefWithName(c, &keyType, keyName) != 0 || BufAppendCStr(&c->out, " = ") != 0
+                || BufAppendCStr(&c->out, idxTmpName) != 0 || BufAppendCStr(&c->out, ";\n") != 0
+                || AddLocal(c, keyName, keyType) != 0)
+            {
+                PopScope(c);
+                PopScope(c);
+                return -1;
+            }
+        }
+
+        if (!valueDiscard) {
+            const SLAstNode* valueNameNode = NodeAt(c, valueNode);
+            valueName = DupSlice(
+                c, c->unit->source, valueNameNode->dataStart, valueNameNode->dataEnd);
+            if (valueName == NULL) {
+                PopScope(c);
+                PopScope(c);
+                return -1;
+            }
+            if (EnsureAnonTypeVisible(c, &valueLocalType, depth + 2u) != 0) {
+                PopScope(c);
+                PopScope(c);
+                return -1;
+            }
+            EmitIndent(c, depth + 2u);
+            if (EmitTypeRefWithName(c, &valueLocalType, valueName) != 0
+                || BufAppendCStr(&c->out, " = ") != 0)
+            {
+                PopScope(c);
+                PopScope(c);
+                return -1;
+            }
+            if (valueRef || valuePtr) {
+                if (BufAppendChar(&c->out, '&') != 0) {
+                    PopScope(c);
+                    PopScope(c);
+                    return -1;
+                }
+            }
+            if (EmitForInElemExprFromNameType(c, seqTmpName, idxTmpName, &sourceType) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0
+                || AddLocal(c, valueName, valueLocalType) != 0)
+            {
+                PopScope(c);
+                PopScope(c);
+                return -1;
+            }
+        }
+
+        if (EmitStmt(c, loopBodyNode, depth + 2u) != 0) {
+            PopScope(c);
+            PopScope(c);
+            return -1;
+        }
+
+        PopScope(c);
+        EmitIndent(c, depth + 1u);
+        if (BufAppendCStr(&c->out, "}\n") != 0) {
+            PopScope(c);
+            return -1;
+        }
+        PopScope(c);
+        EmitIndent(c, depth);
+        return BufAppendCStr(&c->out, "}\n");
     }
 
     body = nodes[count - 1];

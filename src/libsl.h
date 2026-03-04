@@ -191,6 +191,7 @@ typedef enum {
     SLTok_NEW,
     SLTok_TRUE,
     SLTok_FALSE,
+    SLTok_IN,
     SLTok_AS,
     SLTok_CONTEXT,
     SLTok_WITH,
@@ -326,15 +327,15 @@ typedef enum {
 } SLAstKind;
 
 typedef struct {
-    SLAstKind kind;
-    uint32_t  start;
-    uint32_t  end;
-    int32_t   firstChild;
-    int32_t   nextSibling;
-    uint32_t  dataStart;
-    uint32_t  dataEnd;
-    uint16_t  op;
-    uint16_t  flags;
+    uint32_t start;
+    uint32_t end;
+    int32_t  firstChild;
+    int32_t  nextSibling;
+    uint32_t dataStart;
+    uint32_t dataEnd;
+    uint16_t op;
+    uint16_t kind;
+    uint32_t flags;
 } SLAstNode;
 
 enum {
@@ -354,6 +355,12 @@ enum {
     SLAstFlag_PARAM_VARIADIC = 0x1000u,
     SLAstFlag_CALL_ARG_SPREAD = 0x2000u,
     SLAstFlag_PARAM_CONST = 0x4000u,
+    SLAstFlag_FOR_IN = 0x00010000u,
+    SLAstFlag_FOR_IN_HAS_KEY = 0x00020000u,
+    SLAstFlag_FOR_IN_KEY_REF = 0x00040000u,
+    SLAstFlag_FOR_IN_VALUE_REF = 0x00080000u,
+    SLAstFlag_FOR_IN_VALUE_PTR = 0x00100000u,
+    SLAstFlag_FOR_IN_VALUE_DISCARD = 0x00200000u,
 };
 
 typedef uint32_t SLFeatures;

@@ -72,13 +72,126 @@ int SLTCTypeBlock(
     return 0;
 }
 
+static int SLTCTypeForInStmt(
+    SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
+    const SLAstNode*  forNode = &c->ast->nodes[nodeId];
+    uint32_t          savedLocalLen = c->localLen;
+    int               hasKey = (forNode->flags & SLAstFlag_FOR_IN_HAS_KEY) != 0;
+    int               keyRef = (forNode->flags & SLAstFlag_FOR_IN_KEY_REF) != 0;
+    int               valueRef = (forNode->flags & SLAstFlag_FOR_IN_VALUE_REF) != 0;
+    int               valuePtr = (forNode->flags & SLAstFlag_FOR_IN_VALUE_PTR) != 0;
+    int               valueDiscard = (forNode->flags & SLAstFlag_FOR_IN_VALUE_DISCARD) != 0;
+    int32_t           nodes[4];
+    int               count = 0;
+    int32_t           child = SLAstFirstChild(c->ast, nodeId);
+    int32_t           keyNode = -1;
+    int32_t           valueNode = -1;
+    int32_t           sourceNode = -1;
+    int32_t           bodyNode = -1;
+    int32_t           sourceType = -1;
+    SLTCIndexBaseInfo sourceInfo;
+    int32_t           valueLocalType = -1;
+
+    while (child >= 0 && count < 4) {
+        nodes[count++] = child;
+        child = SLAstNextSibling(c->ast, child);
+    }
+    if (count == 0 || child >= 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+    }
+    if (valueRef && valuePtr) {
+        return SLTCFailNode(c, nodeId, SLDiag_FOR_IN_VALUE_BINDING_INVALID);
+    }
+    if (hasKey) {
+        if (count != 4) {
+            return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        }
+        keyNode = nodes[0];
+        valueNode = nodes[1];
+        sourceNode = nodes[2];
+        bodyNode = nodes[3];
+    } else {
+        if (count != 3) {
+            return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        }
+        valueNode = nodes[0];
+        sourceNode = nodes[1];
+        bodyNode = nodes[2];
+    }
+
+    if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != SLAst_BLOCK) {
+        return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
+    }
+    if (valueDiscard) {
+        const SLAstNode* valueIdent = &c->ast->nodes[valueNode];
+        if (valueIdent->kind != SLAst_IDENT
+            || !SLNameEqLiteral(c->src, valueIdent->dataStart, valueIdent->dataEnd, "_"))
+        {
+            return SLTCFailNode(c, valueNode, SLDiag_FOR_IN_VALUE_BINDING_INVALID);
+        }
+    }
+
+    if (SLTCTypeExpr(c, sourceNode, &sourceType) != 0) {
+        return -1;
+    }
+    if (!SLTCTypeSupportsLen(c, sourceType)) {
+        return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_INVALID_SOURCE);
+    }
+    if (SLTCResolveIndexBaseInfo(c, sourceType, &sourceInfo) != 0 || !sourceInfo.indexable
+        || sourceInfo.elemType < 0)
+    {
+        return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_INVALID_SOURCE);
+    }
+    if (keyRef) {
+        return SLTCFailNode(c, keyNode, SLDiag_FOR_IN_KEY_REF_INVALID);
+    }
+    if (valuePtr && !sourceInfo.sliceMutable) {
+        return SLTCFailNode(c, valueNode, SLDiag_FOR_IN_VALUE_BINDING_INVALID);
+    }
+
+    if (hasKey) {
+        const SLAstNode* keyName = &c->ast->nodes[keyNode];
+        if (SLTCLocalAdd(c, keyName->dataStart, keyName->dataEnd, c->typeUsize, 0) != 0) {
+            return -1;
+        }
+    }
+    if (!valueDiscard) {
+        const SLAstNode* valueName = &c->ast->nodes[valueNode];
+        valueLocalType = sourceInfo.elemType;
+        if (valuePtr) {
+            valueLocalType = SLTCInternPtrType(
+                c, sourceInfo.elemType, valueName->start, valueName->end);
+        } else if (valueRef) {
+            valueLocalType = SLTCInternRefType(
+                c, sourceInfo.elemType, 0, valueName->start, valueName->end);
+        }
+        if (valueLocalType < 0) {
+            return -1;
+        }
+        if (SLTCLocalAdd(c, valueName->dataStart, valueName->dataEnd, valueLocalType, 0) != 0) {
+            return -1;
+        }
+    }
+
+    if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth + 1, switchDepth) != 0) {
+        return -1;
+    }
+    c->localLen = savedLocalLen;
+    return 0;
+}
+
 int SLTCTypeForStmt(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
-    uint32_t savedLocalLen = c->localLen;
-    int32_t  child = SLAstFirstChild(c->ast, nodeId);
-    int32_t  nodes[4];
-    int      count = 0;
-    int      i;
+    const SLAstNode* forNode = &c->ast->nodes[nodeId];
+    uint32_t         savedLocalLen = c->localLen;
+    int32_t          child = SLAstFirstChild(c->ast, nodeId);
+    int32_t          nodes[4];
+    int              count = 0;
+    int              i;
+
+    if ((forNode->flags & SLAstFlag_FOR_IN) != 0) {
+        return SLTCTypeForInStmt(c, nodeId, returnType, loopDepth, switchDepth);
+    }
 
     while (child >= 0 && count < 4) {
         nodes[count++] = child;

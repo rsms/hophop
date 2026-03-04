@@ -1,0 +1,1 @@
+tests/slp29_for_in_key_ref_bad.sl:3:7: SL2086: for-in key cannot be captured by reference for synthetic sequence keys

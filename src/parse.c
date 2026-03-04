@@ -2057,6 +2057,146 @@ static int SLPParseIfStmt(SLParser* p, int32_t* out) {
     return 0;
 }
 
+static int SLPForStmtHeadHasInToken(SLParser* p) {
+    uint32_t i = p->pos;
+    while (i < p->tokLen) {
+        SLTokenKind k = p->tok[i].kind;
+        if (k == SLTok_IN) {
+            return 1;
+        }
+        if (k == SLTok_LBRACE || k == SLTok_SEMICOLON || k == SLTok_EOF) {
+            break;
+        }
+        i++;
+    }
+    return 0;
+}
+
+static int SLPNewIdentNodeFromToken(SLParser* p, const SLToken* tok, int32_t* out) {
+    int32_t n = SLPNewNode(p, SLAst_IDENT, tok->start, tok->end);
+    if (n < 0) {
+        return -1;
+    }
+    p->nodes[n].dataStart = tok->start;
+    p->nodes[n].dataEnd = tok->end;
+    *out = n;
+    return 0;
+}
+
+static int SLPParseForInKeyBinding(SLParser* p, int32_t* outIdent, uint32_t* outFlags) {
+    const SLToken* name = NULL;
+    int            keyRef = 0;
+    if (SLPMatch(p, SLTok_AND)) {
+        keyRef = 1;
+    }
+    if (SLPExpectDeclName(p, &name, 0) != 0) {
+        return -1;
+    }
+    if (SLPNewIdentNodeFromToken(p, name, outIdent) != 0) {
+        return -1;
+    }
+    if (keyRef) {
+        *outFlags |= SLAstFlag_FOR_IN_KEY_REF;
+    }
+    return 0;
+}
+
+static int SLPParseForInValueBinding(SLParser* p, int32_t* outIdent, uint32_t* outFlags) {
+    const SLToken* name = NULL;
+    int            byRef = 0;
+    int            byPtr = 0;
+    if (SLPMatch(p, SLTok_AND)) {
+        byRef = 1;
+    } else if (SLPMatch(p, SLTok_MUL)) {
+        byPtr = 1;
+    }
+    if (SLPExpectDeclName(p, &name, 1) != 0) {
+        return -1;
+    }
+    if (SLPIsHoleName(p, name)) {
+        if (byRef || byPtr) {
+            return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+        }
+        *outFlags |= SLAstFlag_FOR_IN_VALUE_DISCARD;
+    } else if (byRef) {
+        *outFlags |= SLAstFlag_FOR_IN_VALUE_REF;
+    } else if (byPtr) {
+        *outFlags |= SLAstFlag_FOR_IN_VALUE_PTR;
+    }
+    return SLPNewIdentNodeFromToken(p, name, outIdent);
+}
+
+static int SLPParseForInClause(
+    SLParser* p,
+    int32_t*  outKeyBinding,
+    int32_t*  outValueBinding,
+    int32_t*  outSourceExpr,
+    int32_t*  outBody,
+    uint32_t* outFlags) {
+    uint32_t savedPos = p->pos;
+    uint32_t savedNodeLen = p->nodeLen;
+    SLDiag   savedDiag = { 0 };
+    int32_t  keyBinding = -1;
+    int32_t  valueBinding = -1;
+    int32_t  sourceExpr = -1;
+    uint32_t forFlags = SLAstFlag_FOR_IN;
+    int32_t  body = -1;
+
+    if (p->diag != NULL) {
+        savedDiag = *p->diag;
+    }
+
+    if (SLPParseForInKeyBinding(p, &keyBinding, &forFlags) == 0 && SLPMatch(p, SLTok_COMMA)) {
+        forFlags |= SLAstFlag_FOR_IN_HAS_KEY;
+        if (SLPParseForInValueBinding(p, &valueBinding, &forFlags) != 0) {
+            return -1;
+        }
+        if (!SLPMatch(p, SLTok_IN)) {
+            return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+        }
+        if (SLPParseExpr(p, 1, &sourceExpr) != 0) {
+            return -1;
+        }
+        if (SLPParseBlock(p, &body) != 0) {
+            return -1;
+        }
+        *outKeyBinding = keyBinding;
+        *outValueBinding = valueBinding;
+        *outSourceExpr = sourceExpr;
+        *outBody = body;
+        *outFlags = forFlags;
+        return 0;
+    }
+
+    p->pos = savedPos;
+    p->nodeLen = savedNodeLen;
+    if (p->diag != NULL) {
+        *p->diag = savedDiag;
+    }
+
+    valueBinding = -1;
+    sourceExpr = -1;
+    forFlags = SLAstFlag_FOR_IN;
+    if (SLPParseForInValueBinding(p, &valueBinding, &forFlags) != 0) {
+        return -1;
+    }
+    if (!SLPMatch(p, SLTok_IN)) {
+        return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+    }
+    if (SLPParseExpr(p, 1, &sourceExpr) != 0) {
+        return -1;
+    }
+    if (SLPParseBlock(p, &body) != 0) {
+        return -1;
+    }
+    *outKeyBinding = -1;
+    *outValueBinding = valueBinding;
+    *outSourceExpr = sourceExpr;
+    *outBody = body;
+    *outFlags = forFlags;
+    return 0;
+}
+
 static int SLPParseForStmt(SLParser* p, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
     int32_t        n;
@@ -2064,6 +2204,11 @@ static int SLPParseForStmt(SLParser* p, int32_t* out) {
     int32_t        init = -1;
     int32_t        cond = -1;
     int32_t        post = -1;
+    int32_t        keyBinding = -1;
+    int32_t        valueBinding = -1;
+    int32_t        sourceExpr = -1;
+    uint32_t       forInFlags = 0;
+    int            isForIn = 0;
 
     p->pos++;
     n = SLPNewNode(p, SLAst_FOR, kw->start, kw->end);
@@ -2075,6 +2220,14 @@ static int SLPParseForStmt(SLParser* p, int32_t* out) {
         if (SLPParseBlock(p, &body) != 0) {
             return -1;
         }
+    } else if (SLPForStmtHeadHasInToken(p)) {
+        if (SLPParseForInClause(p, &keyBinding, &valueBinding, &sourceExpr, &body, &forInFlags)
+            != 0)
+        {
+            return -1;
+        }
+        isForIn = 1;
+        p->nodes[n].flags |= forInFlags;
     } else {
         if (SLPAt(p, SLTok_SEMICOLON)) {
             p->pos++;
@@ -2112,17 +2265,32 @@ static int SLPParseForStmt(SLParser* p, int32_t* out) {
         }
     }
 
-    if (init >= 0 && SLPAddChild(p, n, init) != 0) {
-        return -1;
-    }
-    if (cond >= 0 && SLPAddChild(p, n, cond) != 0) {
-        return -1;
-    }
-    if (post >= 0 && SLPAddChild(p, n, post) != 0) {
-        return -1;
-    }
-    if (SLPAddChild(p, n, body) != 0) {
-        return -1;
+    if (isForIn) {
+        if (keyBinding >= 0 && SLPAddChild(p, n, keyBinding) != 0) {
+            return -1;
+        }
+        if (valueBinding >= 0 && SLPAddChild(p, n, valueBinding) != 0) {
+            return -1;
+        }
+        if (sourceExpr >= 0 && SLPAddChild(p, n, sourceExpr) != 0) {
+            return -1;
+        }
+        if (SLPAddChild(p, n, body) != 0) {
+            return -1;
+        }
+    } else {
+        if (init >= 0 && SLPAddChild(p, n, init) != 0) {
+            return -1;
+        }
+        if (cond >= 0 && SLPAddChild(p, n, cond) != 0) {
+            return -1;
+        }
+        if (post >= 0 && SLPAddChild(p, n, post) != 0) {
+            return -1;
+        }
+        if (SLPAddChild(p, n, body) != 0) {
+            return -1;
+        }
     }
     p->nodes[n].end = p->nodes[body].end;
     *out = n;

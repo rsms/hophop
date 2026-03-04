@@ -69,6 +69,8 @@ Single-file mode is supported for package commands:
 
 - `if`, `for`, `switch`, `break`, `continue`: `examples/control_flow.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/control_flow.sl`
+- SLP-29 `for ... in` (value/ref/ptr capture, key+value, discard): `examples/for-in.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/for-in.sl`
 
 ## Imports
 

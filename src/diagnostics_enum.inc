@@ -126,6 +126,11 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
                                               returns, and cast targets */
     SLDiag_CONST_NUMERIC_PARAM_REQUIRES_CONST, /* SL2084: parameter type const_int/const_float
                                                   requires the 'const' modifier */
-    SLDiag_CODEGEN_INTERNAL,                   /* SL3001: internal codegen error */
-    SLDiag_ARENA_OOM,                          /* SL4001: arena out of memory */
-    SLDiag_UNKNOWN_FEATURE,                    /* SL4002: unknown feature '{s}' */
+    SLDiag_FOR_IN_INVALID_SOURCE,        /* SL2085: for-in source must support len(x) and x[i] */
+    SLDiag_FOR_IN_KEY_REF_INVALID,       /* SL2086: for-in key cannot be captured by reference for
+                                            synthetic sequence keys */
+    SLDiag_FOR_IN_VALUE_BINDING_INVALID, /* SL2087: invalid for-in value binding for source
+                                            mutability/capture mode */
+    SLDiag_CODEGEN_INTERNAL,             /* SL3001: internal codegen error */
+    SLDiag_ARENA_OOM,                    /* SL4001: arena out of memory */
+    SLDiag_UNKNOWN_FEATURE,              /* SL4002: unknown feature '{s}' */

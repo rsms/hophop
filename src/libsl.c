@@ -404,6 +404,9 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
         if (SLStrEq(s, len, "as")) {
             return SLTok_AS;
         }
+        if (SLStrEq(s, len, "in")) {
+            return SLTok_IN;
+        }
         if (SLStrEq(s, len, "fn")) {
             return SLTok_FN;
         }
@@ -606,6 +609,7 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_NEW:           return "NEW";
         case SLTok_TRUE:          return "TRUE";
         case SLTok_FALSE:         return "FALSE";
+        case SLTok_IN:            return "IN";
         case SLTok_AS:            return "AS";
         case SLTok_CONTEXT:       return "CONTEXT";
         case SLTok_WITH:          return "WITH";

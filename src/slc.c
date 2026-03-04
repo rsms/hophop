@@ -4560,13 +4560,100 @@ static int CollectStmtImportRewritesNode(
             return 0;
         }
         case SLAst_FOR: {
-            int32_t  parts[4];
-            uint32_t partCount = 0;
-            uint32_t mark = *shadowLen;
+            int32_t          parts[4];
+            uint32_t         partCount = 0;
+            uint32_t         mark = *shadowLen;
+            const SLAstNode* forNode = &file->ast.nodes[nodeId];
             child = ASTFirstChild(&file->ast, nodeId);
             while (child >= 0 && partCount < 4u) {
                 parts[partCount++] = child;
                 child = ASTNextSibling(&file->ast, child);
+            }
+            if ((forNode->flags & SLAstFlag_FOR_IN) != 0) {
+                int      hasKey = (forNode->flags & SLAstFlag_FOR_IN_HAS_KEY) != 0;
+                int32_t  keyNode = -1;
+                int32_t  valueNode = -1;
+                int32_t  sourceNode = -1;
+                int32_t  bodyNode = -1;
+                uint32_t bodyMark;
+                if ((!hasKey && partCount != 3u) || (hasKey && partCount != 4u)) {
+                    PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                    return 0;
+                }
+                if (hasKey) {
+                    keyNode = parts[0];
+                    valueNode = parts[1];
+                    sourceNode = parts[2];
+                    bodyNode = parts[3];
+                } else {
+                    valueNode = parts[0];
+                    sourceNode = parts[1];
+                    bodyNode = parts[2];
+                }
+                if (sourceNode >= 0
+                    && CollectExprImportRewritesNode(
+                           pkg, file, sourceNode, shadowCounts, rewrites, rewriteLen, rewriteCap)
+                           != 0)
+                {
+                    PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                    return -1;
+                }
+                bodyMark = *shadowLen;
+                if (hasKey && keyNode >= 0) {
+                    const SLAstNode* key = &file->ast.nodes[keyNode];
+                    if (PushShadowIfValueImportName(
+                            pkg,
+                            file,
+                            key->dataStart,
+                            key->dataEnd,
+                            shadowCounts,
+                            shadowStack,
+                            shadowLen,
+                            shadowCap)
+                        != 0)
+                    {
+                        PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                        return -1;
+                    }
+                }
+                if (valueNode >= 0 && (forNode->flags & SLAstFlag_FOR_IN_VALUE_DISCARD) == 0) {
+                    const SLAstNode* value = &file->ast.nodes[valueNode];
+                    if (PushShadowIfValueImportName(
+                            pkg,
+                            file,
+                            value->dataStart,
+                            value->dataEnd,
+                            shadowCounts,
+                            shadowStack,
+                            shadowLen,
+                            shadowCap)
+                        != 0)
+                    {
+                        PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                        return -1;
+                    }
+                }
+                if (bodyNode >= 0 && file->ast.nodes[bodyNode].kind == SLAst_BLOCK) {
+                    if (CollectBlockImportRewritesNode(
+                            pkg,
+                            file,
+                            bodyNode,
+                            shadowCounts,
+                            shadowStack,
+                            shadowLen,
+                            shadowCap,
+                            rewrites,
+                            rewriteLen,
+                            rewriteCap)
+                        != 0)
+                    {
+                        PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                        return -1;
+                    }
+                }
+                PopShadowToMark(shadowCounts, *shadowStack, shadowLen, bodyMark);
+                PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
+                return 0;
             }
             if (partCount > 0) {
                 uint32_t last = partCount - 1u;

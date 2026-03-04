@@ -22,7 +22,7 @@ int SLConstEvalSessionInit(
     SLConstEvalSession** outSession,
     SLDiag* _Nullable diag) {
     SLConstEvalSession* session;
-    uint16_t*           savedFlags = NULL;
+    uint32_t*           savedFlags = NULL;
     uint32_t            i;
     if (outSession == NULL) {
         return -1;
@@ -39,8 +39,8 @@ int SLConstEvalSessionInit(
         return -1;
     }
     if (ast->len > 0) {
-        savedFlags = (uint16_t*)SLArenaAlloc(
-            arena, (uint32_t)sizeof(uint16_t) * ast->len, (uint32_t)_Alignof(uint16_t));
+        savedFlags = (uint32_t*)SLArenaAlloc(
+            arena, (uint32_t)sizeof(uint32_t) * ast->len, (uint32_t)_Alignof(uint32_t));
         if (savedFlags == NULL) {
             SLTCSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
             return -1;
