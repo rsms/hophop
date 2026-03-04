@@ -9,6 +9,7 @@
 {"id":"ast:tests/ast_const_fn_type.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_const_fn_type.sl","expect":"tests/ast_const_fn_type.ast"}
 {"id":"ast:tests/ast_var_const_infer.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_var_const_infer.sl","expect":"tests/ast_var_const_infer.ast"}
 {"id":"ast:tests/ast_struct_field_group.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_struct_field_group.sl","expect":"tests/ast_struct_field_group.ast"}
+{"id":"ast:tests/ast_operator_precedence.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_operator_precedence.sl","expect":"tests/ast_operator_precedence.ast"}
 {"id":"ast:tests/ast_block_stmt_list_optional_trailing_semi.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_block_stmt_list_optional_trailing_semi.sl","expect":"tests/ast_block_stmt_list_optional_trailing_semi.ast"}
 {"id":"ast:tests/ast_block_stmt_list_missing_separator.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"ast","input":"tests/ast_block_stmt_list_missing_separator.sl","expect_stderr":"tests/ast_block_stmt_list_missing_separator.stderr"}
 {"id":"check:tests/order_independent.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/order_independent.sl"}

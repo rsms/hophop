@@ -216,22 +216,22 @@ static int SLBinPrec(SLTokenKind kind) {
     switch (kind) {
         case SLTok_LOGICAL_OR:  return 2;
         case SLTok_LOGICAL_AND: return 3;
-        case SLTok_OR:          return 4;
-        case SLTok_XOR:         return 5;
-        case SLTok_AND:         return 6;
         case SLTok_EQ:
-        case SLTok_NEQ:         return 7;
+        case SLTok_NEQ:
         case SLTok_LT:
         case SLTok_GT:
         case SLTok_LTE:
-        case SLTok_GTE:         return 8;
-        case SLTok_LSHIFT:
-        case SLTok_RSHIFT:      return 9;
+        case SLTok_GTE:         return 4;
+        case SLTok_OR:
+        case SLTok_XOR:
         case SLTok_ADD:
-        case SLTok_SUB:         return 10;
+        case SLTok_SUB:         return 5;
+        case SLTok_AND:
+        case SLTok_LSHIFT:
+        case SLTok_RSHIFT:
         case SLTok_MUL:
         case SLTok_DIV:
-        case SLTok_MOD:         return 11;
+        case SLTok_MOD:         return 6;
         default:                return 0;
     }
 }

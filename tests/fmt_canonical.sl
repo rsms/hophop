@@ -149,7 +149,7 @@ fn use_context(x int) int context AppContext {
 	sum = (sum * 2) + ((x - 1) / 3)
 	sum = sum*2 + ((x - 1) / 3)
 	sum = sum*2 + (x - 1)/3
-	sum = sum*2 << (x - 1)/3 // mixed precedence levels
+	sum = sum * 2 << (x - 1) / 3 // mixed precedence levels
 
 	sum = sizeof(int) + sizeof(sum)
 	sum = sum + (new [int len(arr)] with context.alloc) as int

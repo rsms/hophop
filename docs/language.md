@@ -388,7 +388,7 @@ fn f() {
 
 ## 6. Expressions and Operators
 
-- [EXPR-OP-001][Stable] Operator precedence is: postfix, unary, multiplicative, additive, shift, relational, equality, bit-and, bit-xor, bit-or, logical-and, logical-or, assignment.
+- [EXPR-OP-001][Stable] Operator precedence is: postfix, unary, multiplicative/shift/bit-and, additive/bit-or/bit-xor, relational/equality, logical-and, logical-or, assignment. This follows Go's operator precedence for shared binary operators; assignment remains SL-specific and lowest.
 - [EXPR-UNARY-001][Stable] Unary `+`/`-` require numeric operands; unary `!` requires bool.
 - [EXPR-UNARY-002][Stable] Unary `*` dereferences pointer/reference; unary `&` forms read-only references.
 - [EXPR-ASSIGN-001][Stable] Assignment LHS MUST be assignable (identifier/index/non-dependent field/dereference of writable location).
