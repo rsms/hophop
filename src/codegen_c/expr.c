@@ -3951,6 +3951,345 @@ static int ResolveForInElemType(
     return -1;
 }
 
+typedef enum {
+    SLCCGForInValueMode_VALUE = 0,
+    SLCCGForInValueMode_REF,
+    SLCCGForInValueMode_PTR,
+    SLCCGForInValueMode_ANY,
+} SLCCGForInValueMode;
+
+static int ForInOutLocalTypeFromParam(const SLTypeRef* paramType, SLTypeRef* outLocalType) {
+    SLTypeRef local = *paramType;
+    if (!local.valid) {
+        return -1;
+    }
+    if (local.containerKind == SLTypeContainer_SCALAR) {
+        if (local.ptrDepth <= 0) {
+            return -1;
+        }
+        local.ptrDepth--;
+    } else {
+        if (local.containerPtrDepth <= 0) {
+            return -1;
+        }
+        local.containerPtrDepth--;
+    }
+    *outLocalType = local;
+    return 0;
+}
+
+static int ForInTypeRefIsRef(const SLTypeRef* t) {
+    return t->valid && t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth > 0
+        && t->readOnly != 0;
+}
+
+static int ForInTypeRefIsPtr(const SLTypeRef* t) {
+    return t->valid && t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth > 0
+        && t->readOnly == 0;
+}
+
+static int ForInTypeRefIsBoolLike(const SLCBackendC* c, const SLTypeRef* t) {
+    const char* base;
+    if (t == NULL || !t->valid || t->containerKind != SLTypeContainer_SCALAR || t->ptrDepth != 0
+        || t->containerPtrDepth != 0 || t->baseName == NULL)
+    {
+        return 0;
+    }
+    base = ResolveScalarAliasBaseName(c, t->baseName);
+    if (base == NULL) {
+        base = t->baseName;
+    }
+    return StrEq(base, "__sl_bool");
+}
+
+static int32_t FindFnNodeIdByCName(const SLCBackendC* c, const char* cName) {
+    uint32_t i;
+    if (c == NULL || cName == NULL) {
+        return -1;
+    }
+    for (i = 0; i < c->fnNodeNameLen; i++) {
+        if (StrEq(c->fnNodeNames[i].cName, cName)) {
+            return c->fnNodeNames[i].nodeId;
+        }
+    }
+    return -1;
+}
+
+/* Returns param type node id, or -1 when unknown. */
+static int32_t FindFnParamTypeNodeByIndex(
+    const SLCBackendC* c, const SLFnSig* sig, uint32_t index) {
+    int32_t  fnNodeId;
+    int32_t  child;
+    uint32_t seen = 0;
+    if (c == NULL || sig == NULL || sig->cName == NULL) {
+        return -1;
+    }
+    fnNodeId = FindFnNodeIdByCName(c, sig->cName);
+    if (fnNodeId < 0) {
+        return -1;
+    }
+    child = AstFirstChild(&c->ast, fnNodeId);
+    while (child >= 0) {
+        const SLAstNode* ch = NodeAt(c, child);
+        if (ch != NULL && ch->kind == SLAst_PARAM) {
+            if (seen == index) {
+                return AstFirstChild(&c->ast, child);
+            }
+            seen++;
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    return -1;
+}
+
+/* Returns 1 match, 0 mismatch, -1 unknown (cannot inspect AST shape). */
+static int ForInKeyParamSyntaxMatches(
+    const SLCBackendC* c, const SLFnSig* sig, uint32_t paramIndex, int wantKeyRef) {
+    int32_t          typeNodeId = FindFnParamTypeNodeByIndex(c, sig, paramIndex);
+    const SLAstNode* typeNode;
+    int32_t          innerNodeId;
+    const SLAstNode* innerNode;
+    if (typeNodeId < 0) {
+        return -1;
+    }
+    typeNode = NodeAt(c, typeNodeId);
+    if (typeNode == NULL || typeNode->kind != SLAst_TYPE_PTR) {
+        return 0;
+    }
+    innerNodeId = AstFirstChild(&c->ast, typeNodeId);
+    if (innerNodeId < 0) {
+        return 0;
+    }
+    innerNode = NodeAt(c, innerNodeId);
+    if (innerNode == NULL) {
+        return 0;
+    }
+    if (wantKeyRef) {
+        return innerNode->kind == SLAst_TYPE_REF ? 1 : 0;
+    }
+    return (innerNode->kind == SLAst_TYPE_REF || innerNode->kind == SLAst_TYPE_MUTREF) ? 0 : 1;
+}
+
+/* Returns 1 match, 0 mismatch, -1 unknown (cannot inspect AST shape). */
+static int ForInValueParamSyntaxMatches(
+    const SLCBackendC* c, const SLFnSig* sig, uint32_t paramIndex, SLCCGForInValueMode valueMode) {
+    int32_t          typeNodeId = FindFnParamTypeNodeByIndex(c, sig, paramIndex);
+    const SLAstNode* typeNode;
+    int32_t          innerNodeId;
+    const SLAstNode* innerNode;
+    if (typeNodeId < 0) {
+        return -1;
+    }
+    typeNode = NodeAt(c, typeNodeId);
+    if (typeNode == NULL || typeNode->kind != SLAst_TYPE_PTR) {
+        return 0;
+    }
+    innerNodeId = AstFirstChild(&c->ast, typeNodeId);
+    if (innerNodeId < 0) {
+        return 0;
+    }
+    innerNode = NodeAt(c, innerNodeId);
+    if (innerNode == NULL) {
+        return 0;
+    }
+
+    if (valueMode == SLCCGForInValueMode_ANY) {
+        return 1;
+    }
+    if (valueMode == SLCCGForInValueMode_REF) {
+        return innerNode->kind == SLAst_TYPE_REF ? 1 : 0;
+    }
+    if (valueMode == SLCCGForInValueMode_PTR) {
+        return innerNode->kind == SLAst_TYPE_PTR ? 1 : 0;
+    }
+    /* by-value */
+    return (innerNode->kind == SLAst_TYPE_PTR || innerNode->kind == SLAst_TYPE_REF
+            || innerNode->kind == SLAst_TYPE_MUTREF)
+             ? 0
+             : 1;
+}
+
+/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
+static int ResolveForInIteratorSig(
+    SLCBackendC*     c,
+    const SLTypeRef* sourceType,
+    const SLFnSig**  outSig,
+    const char**     outCalleeName,
+    SLTypeRef*       outIterType) {
+    const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+    uint32_t       candidateLen = 0;
+    const SLFnSig* bestSig = NULL;
+    const char*    bestName = NULL;
+    uint8_t        bestCost = 0;
+    int            ambiguous = 0;
+    uint32_t       i;
+    candidateLen = FindFnSigCandidatesByName(
+        c, "__iterator", candidates, (uint32_t)(sizeof(candidates) / sizeof(candidates[0])));
+    if (candidateLen == 0) {
+        return 1;
+    }
+    if (candidateLen > (uint32_t)(sizeof(candidates) / sizeof(candidates[0]))) {
+        candidateLen = (uint32_t)(sizeof(candidates) / sizeof(candidates[0]));
+    }
+    for (i = 0; i < candidateLen; i++) {
+        const SLFnSig* sig = candidates[i];
+        uint8_t        cost = 0;
+        if (sig->isVariadic || sig->paramLen != 1
+            || TypeRefAssignableCost(c, &sig->paramTypes[0], sourceType, &cost) != 0)
+        {
+            continue;
+        }
+        if (bestSig == NULL) {
+            bestSig = sig;
+            bestName = sig->cName;
+            bestCost = cost;
+            ambiguous = 0;
+        } else if (cost < bestCost) {
+            bestSig = sig;
+            bestName = sig->cName;
+            bestCost = cost;
+            ambiguous = 0;
+        } else if (cost == bestCost && sig != bestSig) {
+            ambiguous = 1;
+        }
+    }
+    if (bestSig == NULL) {
+        return 2;
+    }
+    if (ambiguous) {
+        return 3;
+    }
+    *outSig = bestSig;
+    *outCalleeName = bestName;
+    *outIterType = bestSig->returnType;
+    return 0;
+}
+
+/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 non-bool */
+static int ResolveForInAdvanceSig(
+    SLCBackendC*        c,
+    const SLTypeRef*    iterPtrType,
+    int                 wantKey,
+    int                 wantValue,
+    int                 wantKeyRef,
+    SLCCGForInValueMode valueMode,
+    const SLFnSig**     outSig,
+    const char**        outCalleeName,
+    SLTypeRef*          outKeyLocalType,
+    SLTypeRef*          outValueLocalType) {
+    const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+    uint32_t       candidateLen = 0;
+    const SLFnSig* bestSig = NULL;
+    const char*    bestName = NULL;
+    uint8_t        bestCost = 0;
+    SLTypeRef      bestKeyLocalType;
+    SLTypeRef      bestValueLocalType;
+    int            haveBest = 0;
+    int            ambiguous = 0;
+    int            nonBool = 0;
+    uint32_t       i;
+    TypeRefSetInvalid(&bestKeyLocalType);
+    TypeRefSetInvalid(&bestValueLocalType);
+
+    candidateLen = FindFnSigCandidatesByName(
+        c, "advance", candidates, (uint32_t)(sizeof(candidates) / sizeof(candidates[0])));
+    if (candidateLen == 0) {
+        return 1;
+    }
+    if (candidateLen > (uint32_t)(sizeof(candidates) / sizeof(candidates[0]))) {
+        candidateLen = (uint32_t)(sizeof(candidates) / sizeof(candidates[0]));
+    }
+    for (i = 0; i < candidateLen; i++) {
+        const SLFnSig* sig = candidates[i];
+        int            pIndex = 1;
+        uint8_t        cost = 0;
+        SLTypeRef      keyLocalType;
+        SLTypeRef      valueLocalType;
+        TypeRefSetInvalid(&keyLocalType);
+        TypeRefSetInvalid(&valueLocalType);
+        if (sig->isVariadic
+            || sig->paramLen != (uint32_t)(1 + (wantKey ? 1 : 0) + (wantValue ? 1 : 0))
+            || TypeRefAssignableCost(c, &sig->paramTypes[0], iterPtrType, &cost) != 0)
+        {
+            continue;
+        }
+        if (wantKey) {
+            int keySyntaxMatch = ForInKeyParamSyntaxMatches(c, sig, (uint32_t)pIndex, wantKeyRef);
+            if (keySyntaxMatch == 0) {
+                continue;
+            }
+            if (ForInOutLocalTypeFromParam(&sig->paramTypes[pIndex], &keyLocalType) != 0) {
+                continue;
+            }
+            if (keySyntaxMatch < 0
+                && ((wantKeyRef && !ForInTypeRefIsRef(&keyLocalType))
+                    || (!wantKeyRef && ForInTypeRefIsRef(&keyLocalType))))
+            {
+                continue;
+            }
+            pIndex++;
+        }
+        if (wantValue) {
+            int valueSyntaxMatch = ForInValueParamSyntaxMatches(
+                c, sig, (uint32_t)pIndex, valueMode);
+            if (valueSyntaxMatch == 0) {
+                continue;
+            }
+            if (ForInOutLocalTypeFromParam(&sig->paramTypes[pIndex], &valueLocalType) != 0) {
+                continue;
+            }
+            if (valueSyntaxMatch < 0 && valueMode == SLCCGForInValueMode_REF
+                && !ForInTypeRefIsRef(&valueLocalType))
+            {
+                continue;
+            }
+            if (valueSyntaxMatch < 0 && valueMode == SLCCGForInValueMode_PTR
+                && !ForInTypeRefIsPtr(&valueLocalType))
+            {
+                continue;
+            }
+            if (valueSyntaxMatch < 0 && valueMode == SLCCGForInValueMode_VALUE
+                && (ForInTypeRefIsRef(&valueLocalType) || ForInTypeRefIsPtr(&valueLocalType)))
+            {
+                continue;
+            }
+        }
+        if (!ForInTypeRefIsBoolLike(c, &sig->returnType)) {
+            nonBool = 1;
+            continue;
+        }
+        if (!haveBest) {
+            bestSig = sig;
+            bestName = sig->cName;
+            bestCost = cost;
+            bestKeyLocalType = keyLocalType;
+            bestValueLocalType = valueLocalType;
+            haveBest = 1;
+            ambiguous = 0;
+        } else if (cost < bestCost) {
+            bestSig = sig;
+            bestName = sig->cName;
+            bestCost = cost;
+            bestKeyLocalType = keyLocalType;
+            bestValueLocalType = valueLocalType;
+            ambiguous = 0;
+        } else if (cost == bestCost && sig != bestSig) {
+            ambiguous = 1;
+        }
+    }
+    if (!haveBest) {
+        return nonBool ? 4 : 2;
+    }
+    if (ambiguous) {
+        return 3;
+    }
+    *outSig = bestSig;
+    *outCalleeName = bestName;
+    *outKeyLocalType = bestKeyLocalType;
+    *outValueLocalType = bestValueLocalType;
+    return 0;
+}
+
 int EmitSliceExpr(SLCBackendC* c, int32_t nodeId) {
     const SLAstNode* n = NodeAt(c, nodeId);
     int32_t          baseNode = AstFirstChild(&c->ast, nodeId);
@@ -8496,23 +8835,48 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     }
 
     if (forNode != NULL && (forNode->flags & SLAstFlag_FOR_IN) != 0) {
-        int         hasKey = (forNode->flags & SLAstFlag_FOR_IN_HAS_KEY) != 0;
-        int         valueRef = (forNode->flags & SLAstFlag_FOR_IN_VALUE_REF) != 0;
-        int         valuePtr = (forNode->flags & SLAstFlag_FOR_IN_VALUE_PTR) != 0;
-        int         valueDiscard = (forNode->flags & SLAstFlag_FOR_IN_VALUE_DISCARD) != 0;
-        int32_t     keyNode = -1;
-        int32_t     valueNode = -1;
-        int32_t     sourceNode = -1;
-        int32_t     loopBodyNode = -1;
-        SLTypeRef   sourceType;
-        SLTypeRef   elemType;
-        SLTypeRef   valueLocalType;
-        SLTypeRef   keyType;
-        int         elemMutable = 0;
-        const char* seqTmpName = "__sl_forin_seq";
-        const char* idxTmpName = "__sl_forin_idx";
-        char*       valueName = NULL;
-        char*       keyName = NULL;
+        int            hasKey = (forNode->flags & SLAstFlag_FOR_IN_HAS_KEY) != 0;
+        int            keyRef = (forNode->flags & SLAstFlag_FOR_IN_KEY_REF) != 0;
+        int            valueRef = (forNode->flags & SLAstFlag_FOR_IN_VALUE_REF) != 0;
+        int            valuePtr = (forNode->flags & SLAstFlag_FOR_IN_VALUE_PTR) != 0;
+        int            valueDiscard = (forNode->flags & SLAstFlag_FOR_IN_VALUE_DISCARD) != 0;
+        int32_t        keyNode = -1;
+        int32_t        valueNode = -1;
+        int32_t        sourceNode = -1;
+        int32_t        loopBodyNode = -1;
+        SLTypeRef      sourceType;
+        int            useSequencePath = 0;
+        SLTypeRef      elemType;
+        SLTypeRef      valueLocalType;
+        SLTypeRef      keyType;
+        SLTypeRef      iterType;
+        SLTypeRef      iterPtrType;
+        SLTypeRef      advanceKeyLocalType;
+        SLTypeRef      advanceValueLocalType;
+        const SLFnSig* iteratorSig = NULL;
+        const SLFnSig* advanceSig = NULL;
+        const char*    iteratorCallee = NULL;
+        const char*    advanceCallee = NULL;
+        int            advanceNeedsKey = 0;
+        int            advanceNeedsValue = 0;
+        int            synthValueTemp = 0;
+        int            elemMutable = 0;
+        const char*    seqTmpName = "__sl_forin_seq";
+        const char*    idxTmpName = "__sl_forin_idx";
+        const char*    sourceTmpName = "__sl_forin_src";
+        const char*    iterTmpName = "__sl_forin_it";
+        const char*    discardValueTmpName = "__sl_forin_value";
+        char*          valueName = NULL;
+        char*          keyName = NULL;
+        int            rc;
+
+        TypeRefSetInvalid(&elemType);
+        TypeRefSetInvalid(&valueLocalType);
+        TypeRefSetInvalid(&keyType);
+        TypeRefSetInvalid(&iterType);
+        TypeRefSetInvalid(&iterPtrType);
+        TypeRefSetInvalid(&advanceKeyLocalType);
+        TypeRefSetInvalid(&advanceValueLocalType);
         if ((!hasKey && count != 3) || (hasKey && count != 4)) {
             return -1;
         }
@@ -8535,26 +8899,140 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
             return -1;
         }
-        if (ResolveForInElemType(&sourceType, &elemType, &elemMutable) != 0) {
-            SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
-            return -1;
-        }
-        if (valuePtr && !elemMutable) {
-            SetDiagNode(c, valueNode, SLDiag_CODEGEN_INTERNAL);
-            return -1;
-        }
-        valueLocalType = elemType;
-        if (valueRef || valuePtr) {
-            if (valueLocalType.containerKind == SLTypeContainer_SCALAR) {
-                valueLocalType.ptrDepth++;
+        if (ResolveForInElemType(&sourceType, &elemType, &elemMutable) == 0) {
+            useSequencePath = 1;
+            if (valuePtr && !elemMutable) {
+                SetDiagNode(c, valueNode, SLDiag_FOR_IN_VALUE_BINDING_INVALID);
+                return -1;
+            }
+            valueLocalType = elemType;
+            if (valueRef || valuePtr) {
+                if (valueLocalType.containerKind == SLTypeContainer_SCALAR) {
+                    valueLocalType.ptrDepth++;
+                } else {
+                    valueLocalType.containerPtrDepth++;
+                }
+                if (valuePtr) {
+                    valueLocalType.readOnly = 0;
+                }
+            }
+            TypeRefSetScalar(&keyType, "__sl_uint");
+        } else {
+            SLCCGForInValueMode valueMode = SLCCGForInValueMode_VALUE;
+            rc = ResolveForInIteratorSig(c, &sourceType, &iteratorSig, &iteratorCallee, &iterType);
+            if (rc == 1 || rc == 2) {
+                SetDiagNode(c, sourceNode, SLDiag_FOR_IN_INVALID_SOURCE);
+                return -1;
+            }
+            if (rc == 3) {
+                SetDiagNode(c, sourceNode, SLDiag_FOR_IN_ITERATOR_AMBIGUOUS);
+                return -1;
+            }
+            if (rc != 0 || iteratorSig == NULL || iteratorCallee == NULL || !iterType.valid) {
+                SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+                return -1;
+            }
+            iterPtrType = iterType;
+            if (iterPtrType.containerKind == SLTypeContainer_SCALAR) {
+                iterPtrType.ptrDepth++;
             } else {
-                valueLocalType.containerPtrDepth++;
+                iterPtrType.containerPtrDepth++;
             }
-            if (valuePtr) {
-                valueLocalType.readOnly = 0;
+            if (valueRef) {
+                valueMode = SLCCGForInValueMode_REF;
+            } else if (valuePtr) {
+                valueMode = SLCCGForInValueMode_PTR;
             }
+            if (hasKey && valueDiscard) {
+                rc = ResolveForInAdvanceSig(
+                    c,
+                    &iterPtrType,
+                    1,
+                    0,
+                    keyRef,
+                    SLCCGForInValueMode_ANY,
+                    &advanceSig,
+                    &advanceCallee,
+                    &advanceKeyLocalType,
+                    &advanceValueLocalType);
+                if (rc == 2) {
+                    rc = ResolveForInAdvanceSig(
+                        c,
+                        &iterPtrType,
+                        1,
+                        1,
+                        keyRef,
+                        SLCCGForInValueMode_ANY,
+                        &advanceSig,
+                        &advanceCallee,
+                        &advanceKeyLocalType,
+                        &advanceValueLocalType);
+                    if (rc == 0) {
+                        synthValueTemp = 1;
+                    }
+                }
+            } else if (!hasKey && valueDiscard) {
+                rc = ResolveForInAdvanceSig(
+                    c,
+                    &iterPtrType,
+                    0,
+                    0,
+                    0,
+                    SLCCGForInValueMode_ANY,
+                    &advanceSig,
+                    &advanceCallee,
+                    &advanceKeyLocalType,
+                    &advanceValueLocalType);
+                if (rc == 2) {
+                    rc = ResolveForInAdvanceSig(
+                        c,
+                        &iterPtrType,
+                        0,
+                        1,
+                        0,
+                        SLCCGForInValueMode_ANY,
+                        &advanceSig,
+                        &advanceCallee,
+                        &advanceKeyLocalType,
+                        &advanceValueLocalType);
+                    if (rc == 0) {
+                        synthValueTemp = 1;
+                    }
+                }
+            } else {
+                rc = ResolveForInAdvanceSig(
+                    c,
+                    &iterPtrType,
+                    hasKey,
+                    1,
+                    keyRef,
+                    valueMode,
+                    &advanceSig,
+                    &advanceCallee,
+                    &advanceKeyLocalType,
+                    &advanceValueLocalType);
+            }
+            if (rc == 4) {
+                SetDiagNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NON_BOOL);
+                return -1;
+            }
+            if (rc == 1 || rc == 2 || rc == 3) {
+                SetDiagNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
+                return -1;
+            }
+            if (rc != 0 || advanceSig == NULL || advanceCallee == NULL) {
+                SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+                return -1;
+            }
+            if (hasKey) {
+                keyType = advanceKeyLocalType;
+            }
+            if (!valueDiscard || synthValueTemp) {
+                valueLocalType = advanceValueLocalType;
+            }
+            advanceNeedsKey = hasKey;
+            advanceNeedsValue = (!valueDiscard || synthValueTemp);
         }
-        TypeRefSetScalar(&keyType, "__sl_uint");
 
         EmitIndent(c, depth);
         if (BufAppendCStr(&c->out, "{\n") != 0) {
@@ -8569,7 +9047,7 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             return -1;
         }
         EmitIndent(c, depth + 1u);
-        if (EmitTypeRefWithName(c, &sourceType, seqTmpName) != 0
+        if (EmitTypeRefWithName(c, &sourceType, useSequencePath ? seqTmpName : sourceTmpName) != 0
             || BufAppendCStr(&c->out, " = ") != 0 || EmitExpr(c, sourceNode) != 0
             || BufAppendCStr(&c->out, ";\n") != 0)
         {
@@ -8577,96 +9055,221 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             return -1;
         }
 
-        EmitIndent(c, depth + 1u);
-        if (BufAppendCStr(&c->out, "for (__sl_uint ") != 0
-            || BufAppendCStr(&c->out, idxTmpName) != 0 || BufAppendCStr(&c->out, " = 0; ") != 0
-            || BufAppendCStr(&c->out, idxTmpName) != 0 || BufAppendCStr(&c->out, " < ") != 0
-            || EmitLenExprFromNameType(c, seqTmpName, &sourceType) != 0
-            || BufAppendCStr(&c->out, "; ") != 0 || BufAppendCStr(&c->out, idxTmpName) != 0
-            || BufAppendCStr(&c->out, " += 1) {\n") != 0)
-        {
-            PopScope(c);
-            return -1;
-        }
-
-        if (PushScope(c) != 0) {
-            PopScope(c);
-            return -1;
-        }
-
-        if (hasKey) {
-            const SLAstNode* keyNameNode = NodeAt(c, keyNode);
-            keyName = DupSlice(c, c->unit->source, keyNameNode->dataStart, keyNameNode->dataEnd);
-            if (keyName == NULL) {
-                PopScope(c);
-                PopScope(c);
-                return -1;
-            }
-            EmitIndent(c, depth + 2u);
-            if (EmitTypeRefWithName(c, &keyType, keyName) != 0 || BufAppendCStr(&c->out, " = ") != 0
-                || BufAppendCStr(&c->out, idxTmpName) != 0 || BufAppendCStr(&c->out, ";\n") != 0
-                || AddLocal(c, keyName, keyType) != 0)
+        if (useSequencePath) {
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "for (__sl_uint ") != 0
+                || BufAppendCStr(&c->out, idxTmpName) != 0 || BufAppendCStr(&c->out, " = 0; ") != 0
+                || BufAppendCStr(&c->out, idxTmpName) != 0 || BufAppendCStr(&c->out, " < ") != 0
+                || EmitLenExprFromNameType(c, seqTmpName, &sourceType) != 0
+                || BufAppendCStr(&c->out, "; ") != 0 || BufAppendCStr(&c->out, idxTmpName) != 0
+                || BufAppendCStr(&c->out, " += 1) {\n") != 0)
             {
                 PopScope(c);
-                PopScope(c);
                 return -1;
             }
-        }
 
-        if (!valueDiscard) {
-            const SLAstNode* valueNameNode = NodeAt(c, valueNode);
-            valueName = DupSlice(
-                c, c->unit->source, valueNameNode->dataStart, valueNameNode->dataEnd);
-            if (valueName == NULL) {
-                PopScope(c);
+            if (PushScope(c) != 0) {
                 PopScope(c);
                 return -1;
             }
-            if (EnsureAnonTypeVisible(c, &valueLocalType, depth + 2u) != 0) {
-                PopScope(c);
-                PopScope(c);
-                return -1;
-            }
-            EmitIndent(c, depth + 2u);
-            if (EmitTypeRefWithName(c, &valueLocalType, valueName) != 0
-                || BufAppendCStr(&c->out, " = ") != 0)
-            {
-                PopScope(c);
-                PopScope(c);
-                return -1;
-            }
-            if (valueRef || valuePtr) {
-                if (BufAppendChar(&c->out, '&') != 0) {
+
+            if (hasKey) {
+                const SLAstNode* keyNameNode = NodeAt(c, keyNode);
+                keyName = DupSlice(
+                    c, c->unit->source, keyNameNode->dataStart, keyNameNode->dataEnd);
+                if (keyName == NULL) {
+                    PopScope(c);
+                    PopScope(c);
+                    return -1;
+                }
+                EmitIndent(c, depth + 2u);
+                if (EmitTypeRefWithName(c, &keyType, keyName) != 0
+                    || BufAppendCStr(&c->out, " = ") != 0 || BufAppendCStr(&c->out, idxTmpName) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0 || AddLocal(c, keyName, keyType) != 0)
+                {
                     PopScope(c);
                     PopScope(c);
                     return -1;
                 }
             }
-            if (EmitForInElemExprFromNameType(c, seqTmpName, idxTmpName, &sourceType) != 0
-                || BufAppendCStr(&c->out, ";\n") != 0
-                || AddLocal(c, valueName, valueLocalType) != 0)
-            {
+
+            if (!valueDiscard) {
+                const SLAstNode* valueNameNode = NodeAt(c, valueNode);
+                valueName = DupSlice(
+                    c, c->unit->source, valueNameNode->dataStart, valueNameNode->dataEnd);
+                if (valueName == NULL) {
+                    PopScope(c);
+                    PopScope(c);
+                    return -1;
+                }
+                if (EnsureAnonTypeVisible(c, &valueLocalType, depth + 2u) != 0) {
+                    PopScope(c);
+                    PopScope(c);
+                    return -1;
+                }
+                EmitIndent(c, depth + 2u);
+                if (EmitTypeRefWithName(c, &valueLocalType, valueName) != 0
+                    || BufAppendCStr(&c->out, " = ") != 0)
+                {
+                    PopScope(c);
+                    PopScope(c);
+                    return -1;
+                }
+                if (valueRef || valuePtr) {
+                    if (BufAppendChar(&c->out, '&') != 0) {
+                        PopScope(c);
+                        PopScope(c);
+                        return -1;
+                    }
+                }
+                if (EmitForInElemExprFromNameType(c, seqTmpName, idxTmpName, &sourceType) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0
+                    || AddLocal(c, valueName, valueLocalType) != 0)
+                {
+                    PopScope(c);
+                    PopScope(c);
+                    return -1;
+                }
+            }
+
+            if (EmitStmt(c, loopBodyNode, depth + 2u) != 0) {
                 PopScope(c);
                 PopScope(c);
                 return -1;
             }
-        }
 
-        if (EmitStmt(c, loopBodyNode, depth + 2u) != 0) {
             PopScope(c);
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "}\n") != 0) {
+                PopScope(c);
+                return -1;
+            }
             PopScope(c);
-            return -1;
-        }
+            EmitIndent(c, depth);
+            return BufAppendCStr(&c->out, "}\n");
+        } else {
+            if (EnsureAnonTypeVisible(c, &iterType, depth + 1u) != 0) {
+                PopScope(c);
+                return -1;
+            }
+            EmitIndent(c, depth + 1u);
+            if (EmitTypeRefWithName(c, &iterType, iterTmpName) != 0
+                || BufAppendCStr(&c->out, " = ") != 0 || BufAppendCStr(&c->out, iteratorCallee) != 0
+                || BufAppendChar(&c->out, '(') != 0)
+            {
+                PopScope(c);
+                return -1;
+            }
+            if (iteratorSig->hasContext) {
+                if (EmitContextArgForSig(c, iteratorSig) != 0 || BufAppendCStr(&c->out, ", ") != 0)
+                {
+                    PopScope(c);
+                    return -1;
+                }
+            }
+            if (BufAppendCStr(&c->out, sourceTmpName) != 0 || BufAppendCStr(&c->out, ");\n") != 0) {
+                PopScope(c);
+                return -1;
+            }
 
-        PopScope(c);
-        EmitIndent(c, depth + 1u);
-        if (BufAppendCStr(&c->out, "}\n") != 0) {
+            if (hasKey) {
+                const SLAstNode* keyNameNode = NodeAt(c, keyNode);
+                keyName = DupSlice(
+                    c, c->unit->source, keyNameNode->dataStart, keyNameNode->dataEnd);
+                if (keyName == NULL || EnsureAnonTypeVisible(c, &keyType, depth + 1u) != 0) {
+                    PopScope(c);
+                    return -1;
+                }
+                EmitIndent(c, depth + 1u);
+                if (EmitTypeRefWithName(c, &keyType, keyName) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0 || AddLocal(c, keyName, keyType) != 0)
+                {
+                    PopScope(c);
+                    return -1;
+                }
+            }
+
+            if (!valueDiscard) {
+                const SLAstNode* valueNameNode = NodeAt(c, valueNode);
+                valueName = DupSlice(
+                    c, c->unit->source, valueNameNode->dataStart, valueNameNode->dataEnd);
+                if (valueName == NULL || EnsureAnonTypeVisible(c, &valueLocalType, depth + 1u) != 0)
+                {
+                    PopScope(c);
+                    return -1;
+                }
+                EmitIndent(c, depth + 1u);
+                if (EmitTypeRefWithName(c, &valueLocalType, valueName) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0
+                    || AddLocal(c, valueName, valueLocalType) != 0)
+                {
+                    PopScope(c);
+                    return -1;
+                }
+            } else if (synthValueTemp) {
+                if (EnsureAnonTypeVisible(c, &valueLocalType, depth + 1u) != 0) {
+                    PopScope(c);
+                    return -1;
+                }
+                EmitIndent(c, depth + 1u);
+                if (EmitTypeRefWithName(c, &valueLocalType, discardValueTmpName) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0)
+                {
+                    PopScope(c);
+                    return -1;
+                }
+            }
+
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "for (; ") != 0 || BufAppendCStr(&c->out, advanceCallee) != 0
+                || BufAppendChar(&c->out, '(') != 0)
+            {
+                PopScope(c);
+                return -1;
+            }
+            if (advanceSig->hasContext) {
+                if (EmitContextArgForSig(c, advanceSig) != 0 || BufAppendCStr(&c->out, ", ") != 0) {
+                    PopScope(c);
+                    return -1;
+                }
+            }
+            if (BufAppendChar(&c->out, '&') != 0 || BufAppendCStr(&c->out, iterTmpName) != 0) {
+                PopScope(c);
+                return -1;
+            }
+            if (advanceNeedsKey) {
+                if (BufAppendCStr(&c->out, ", &") != 0 || BufAppendCStr(&c->out, keyName) != 0) {
+                    PopScope(c);
+                    return -1;
+                }
+            }
+            if (advanceNeedsValue) {
+                if (BufAppendCStr(&c->out, ", &") != 0
+                    || BufAppendCStr(&c->out, valueDiscard ? discardValueTmpName : valueName) != 0)
+                {
+                    PopScope(c);
+                    return -1;
+                }
+            }
+            if (BufAppendCStr(&c->out, "); ) {\n") != 0) {
+                PopScope(c);
+                return -1;
+            }
+
+            if (EmitStmt(c, loopBodyNode, depth + 2u) != 0) {
+                PopScope(c);
+                return -1;
+            }
+
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "}\n") != 0) {
+                PopScope(c);
+                return -1;
+            }
             PopScope(c);
-            return -1;
+            EmitIndent(c, depth);
+            return BufAppendCStr(&c->out, "}\n");
         }
-        PopScope(c);
-        EmitIndent(c, depth);
-        return BufAppendCStr(&c->out, "}\n");
     }
 
     body = nodes[count - 1];

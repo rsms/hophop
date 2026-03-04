@@ -1,0 +1,1 @@
+tests/slp30_for_in_protocol_missing_mode_bad.sl:27:14: SL2090: no matching advance overload for requested for-in binding mode

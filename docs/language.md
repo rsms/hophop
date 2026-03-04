@@ -505,7 +505,9 @@ fn f() {
 - [STMT-FOR-001][Stable] `for` forms: infinite block, condition form, C-style `init; cond; post`, and `for ... in` forms.
 - [STMT-FOR-002][Stable] `for` condition (if present) MUST be bool.
 - [STMT-FOR-003][Stable] Variables declared in `for` initializer are scoped to the entire loop (condition, post, and body) and are not visible after the loop.
-- [STMT-FOR-004][Provisional] `for ... in` source expression MUST support `len(x)` and indexing `x[i]`.
+- [STMT-FOR-004][Provisional] `for ... in` source expression MUST be iterable by either:
+  - sequence path: supports `len(x)` and indexing `x[i]` (SLP-29), or
+  - iterator protocol path: provides `__iterator(x)` and a matching `advance` overload (SLP-30).
 - [STMT-FOR-005][Provisional] `for ... in` source expression is evaluated once before loop iteration.
 - [STMT-FOR-006][Provisional] In `for key, value in x`, the key for sequence sources is synthetic `uint` index; `&key` is invalid for synthetic keys.
 - [STMT-FOR-007][Provisional] Value binding modes in `for ... in`:
@@ -514,6 +516,12 @@ fn f() {
   - `*value`: pointer capture (requires mutable element source)
   - `_`: discard capture (no value binding introduced)
 - [STMT-FOR-008][Provisional] `for ... in` key/value bindings are body-scope locals.
+- [STMT-FOR-009][Provisional] Iterator-protocol binding-mode mapping:
+  - `for value in x` requires `advance(it *Iter, out *T) bool`
+  - `for &value in x` requires `advance(it *Iter, out *&T) bool`
+  - `for *value in x` requires `advance(it *Iter, out **T) bool`
+- [STMT-FOR-010][Provisional] Iterator types may implement only a subset of binding modes. Using an unsupported mode is a compile-time error.
+- [STMT-FOR-011][Provisional] For discard capture (`for _ in x`), iterator protocol uses `advance(it *Iter) bool` when available; otherwise compiler may synthesize a temporary and call a compatible out-parameter overload.
 - [STMT-SWITCH-001][Stable] `switch` supports expression-switch and condition-switch.
 - [STMT-SWITCH-002][Stable] At most one `default` clause.
 - [STMT-SWITCH-003][Stable] No fallthrough.

@@ -206,6 +206,9 @@
 {"id":"check:tests/slp29_for_in_key_ref_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/slp29_for_in_key_ref_bad.sl","expect_stderr":"tests/slp29_for_in_key_ref_bad.stderr"}
 {"id":"check:tests/slp29_for_in_value_ptr_immutable_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/slp29_for_in_value_ptr_immutable_bad.sl","expect_stderr":"tests/slp29_for_in_value_ptr_immutable_bad.stderr"}
 {"id":"check:tests/slp29_for_in_key_discard_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/slp29_for_in_key_discard_bad.sl","expect_stderr":"tests/slp29_for_in_key_discard_bad.stderr"}
+{"id":"check:tests/slp30_for_in_protocol_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/slp30_for_in_protocol_ok.sl"}
+{"id":"check:tests/slp30_for_in_protocol_missing_mode_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/slp30_for_in_protocol_missing_mode_bad.sl","expect_stderr":"tests/slp30_for_in_protocol_missing_mode_bad.stderr"}
+{"id":"check:tests/slp30_for_in_protocol_non_bool_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/slp30_for_in_protocol_non_bool_bad.sl","expect_stderr":"tests/slp30_for_in_protocol_non_bool_bad.stderr"}
 {"id":"checkpkg:tests/new_vss_init_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_vss_init_ok.sl"}
 {"id":"checkpkg:tests/new_nonvss_implicit_init_defaults_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_nonvss_implicit_init_defaults_ok.sl"}
 {"id":"check:tests/types_mut_bad_readonly_to_mutref_assign.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/types_mut_bad_readonly_to_mutref_assign.sl","expect_stderr":"tests/types_mut_bad_readonly_to_mutref_assign.stderr"}
@@ -330,6 +333,7 @@
 {"id":"integration.runtime.types_mut_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/types_mut_ok.sl"}
 {"id":"integration.runtime.slice_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slice_ok.sl"}
 {"id":"integration.runtime.slp29_for_in_runtime_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slp29_for_in_runtime_ok.sl"}
+{"id":"integration.runtime.slp30_for_in_protocol_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/slp30_for_in_protocol_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"integration.runtime.enum_member_namespace_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/enum_member_namespace_ok.sl"}
 {"id":"integration.runtime.var_infer_literal_defaults_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/var_infer_literal_defaults_ok.sl"}
 {"id":"integration.runtime.len_ptr_ref_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/len_ptr_ref_ok.sl"}
@@ -347,6 +351,7 @@
 {"id":"integration.examples.comparison.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/comparison.sl"}
 {"id":"integration.examples.control_flow.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/control_flow.sl"}
 {"id":"integration.examples.defer.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/defer.sl"}
+{"id":"integration.examples.iterators.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/iterators.sl"}
 {"id":"integration.examples.order_independent.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/order_independent.sl"}
 {"id":"integration.examples.pointers_arrays.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/pointers_arrays.sl"}
 {"id":"integration.examples.single_file.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/single_file.sl"}

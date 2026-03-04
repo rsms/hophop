@@ -1,0 +1,1 @@
+tests/slp30_for_in_protocol_non_bool_bad.sl:27:15: SL2091: for-in advance overload must return bool

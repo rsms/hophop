@@ -119,19 +119,23 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_ANYTYPE_PACK_INDEX_NOT_CONST, /* SL2080: anytype pack index must be a const-evaluable
                                             integer */
     SLDiag_ANYTYPE_PACK_INDEX_OOB,       /* SL2081: anytype pack index is out of bounds */
-    SLDiag_CONST_BLOCK_EVAL_FAILED,      /* SL2083: const block failed compile-time evaluation */
     SLDiag_ANYTYPE_SPREAD_REQUIRES_PACK, /* SL2082: spread into ...anytype requires an anytype pack
                                             value */
-    SLDiag_CONST_NUMERIC_INVALID_POSITION, /* SL2088: const_int and const_float are only allowed in
-                                              const declarations, const parameters, function
-                                              returns, and cast targets */
+    SLDiag_CONST_BLOCK_EVAL_FAILED,      /* SL2083: const block failed compile-time evaluation */
     SLDiag_CONST_NUMERIC_PARAM_REQUIRES_CONST, /* SL2084: parameter type const_int/const_float
                                                   requires the 'const' modifier */
-    SLDiag_FOR_IN_INVALID_SOURCE,        /* SL2085: for-in source must support len(x) and x[i] */
-    SLDiag_FOR_IN_KEY_REF_INVALID,       /* SL2086: for-in key cannot be captured by reference for
-                                            synthetic sequence keys */
-    SLDiag_FOR_IN_VALUE_BINDING_INVALID, /* SL2087: invalid for-in value binding for source
-                                            mutability/capture mode */
-    SLDiag_CODEGEN_INTERNAL,             /* SL3001: internal codegen error */
-    SLDiag_ARENA_OOM,                    /* SL4001: arena out of memory */
-    SLDiag_UNKNOWN_FEATURE,              /* SL4002: unknown feature '{s}' */
+    SLDiag_CONST_NUMERIC_INVALID_POSITION, /* SL2085: const_int and const_float are only allowed in
+                                              const declarations, const parameters, function
+                                              returns, and cast targets */
+    SLDiag_FOR_IN_INVALID_SOURCE,          /* SL2086: for-in source must support len(x) and x[i] */
+    SLDiag_FOR_IN_KEY_REF_INVALID,         /* SL2087: for-in key cannot be captured by reference for
+                                              synthetic sequence keys */
+    SLDiag_FOR_IN_VALUE_BINDING_INVALID,   /* SL2088: invalid for-in value binding for source
+                                              mutability/capture mode */
+    SLDiag_FOR_IN_ITERATOR_AMBIGUOUS, /* SL2089: ambiguous __iterator overload for for-in source */
+    SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD, /* SL2090: no matching advance overload for
+                                                   requested for-in binding mode */
+    SLDiag_FOR_IN_ADVANCE_NON_BOOL, /* SL2091: for-in advance overload must return bool */
+    SLDiag_CODEGEN_INTERNAL,        /* SL3001: internal codegen error */
+    SLDiag_ARENA_OOM,               /* SL4001: arena out of memory */
+    SLDiag_UNKNOWN_FEATURE,         /* SL4002: unknown feature '{s}' */

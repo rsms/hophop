@@ -72,6 +72,216 @@ int SLTCTypeBlock(
     return 0;
 }
 
+typedef enum {
+    SLTCForInValueMode_VALUE = 0,
+    SLTCForInValueMode_REF,
+    SLTCForInValueMode_PTR,
+    SLTCForInValueMode_ANY,
+} SLTCForInValueMode;
+
+static int SLTCForInKeyOutLocalType(
+    SLTypeCheckCtx* c, int32_t paramType, int wantRef, int32_t* outLocalType) {
+    const SLTCType* p;
+    int32_t         localType;
+    if (paramType < 0 || (uint32_t)paramType >= c->typeLen) {
+        return 0;
+    }
+    p = &c->types[paramType];
+    if (p->kind != SLTCType_PTR || p->baseType < 0) {
+        return 0;
+    }
+    localType = p->baseType;
+    if (localType < 0 || (uint32_t)localType >= c->typeLen) {
+        return 0;
+    }
+    if (wantRef) {
+        if (c->types[localType].kind != SLTCType_REF) {
+            return 0;
+        }
+    } else if (c->types[localType].kind == SLTCType_REF) {
+        return 0;
+    }
+    *outLocalType = localType;
+    return 1;
+}
+
+static int SLTCForInValueOutLocalType(
+    SLTypeCheckCtx* c, int32_t paramType, SLTCForInValueMode mode, int32_t* outLocalType) {
+    const SLTCType* p;
+    int32_t         localType;
+    if (paramType < 0 || (uint32_t)paramType >= c->typeLen) {
+        return 0;
+    }
+    p = &c->types[paramType];
+    if (p->kind != SLTCType_PTR || p->baseType < 0) {
+        return 0;
+    }
+    localType = p->baseType;
+    if (localType < 0 || (uint32_t)localType >= c->typeLen) {
+        return 0;
+    }
+    if (mode == SLTCForInValueMode_REF && c->types[localType].kind != SLTCType_REF) {
+        return 0;
+    }
+    if (mode == SLTCForInValueMode_PTR && c->types[localType].kind != SLTCType_PTR) {
+        return 0;
+    }
+    if (mode == SLTCForInValueMode_VALUE
+        && (c->types[localType].kind == SLTCType_REF || c->types[localType].kind == SLTCType_PTR))
+    {
+        return 0;
+    }
+    *outLocalType = localType;
+    return 1;
+}
+
+/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
+static int SLTCResolveForInIterator(
+    SLTypeCheckCtx* c, int32_t sourceType, int32_t* outFnIndex, int32_t* outIterType) {
+    int32_t bestFn = -1;
+    int32_t bestIterType = -1;
+    uint8_t bestCost = 0;
+    int     nameFound = 0;
+    int     ambiguous = 0;
+    int     i;
+    for (i = 0; i < (int)c->funcLen; i++) {
+        const SLTCFunction* fn = &c->funcs[i];
+        int32_t             paramType;
+        uint8_t             cost = 0;
+        if (!SLNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "__iterator")) {
+            continue;
+        }
+        nameFound = 1;
+        if ((fn->flags & SLTCFunctionFlag_VARIADIC) != 0
+            || ((fn->flags & SLTCFunctionFlag_TEMPLATE) != 0
+                && (fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
+            || fn->paramCount != 1 || fn->paramTypeStart >= c->funcParamLen)
+        {
+            continue;
+        }
+        paramType = c->funcParamTypes[fn->paramTypeStart];
+        if (SLTCConversionCost(c, paramType, sourceType, &cost) != 0) {
+            continue;
+        }
+        if (bestFn < 0) {
+            bestFn = i;
+            bestIterType = fn->returnType;
+            bestCost = cost;
+            ambiguous = 0;
+        } else if (cost < bestCost) {
+            bestFn = i;
+            bestIterType = fn->returnType;
+            bestCost = cost;
+            ambiguous = 0;
+        } else if (cost == bestCost && i != bestFn) {
+            ambiguous = 1;
+        }
+    }
+    if (!nameFound) {
+        return 1;
+    }
+    if (bestFn < 0) {
+        return 2;
+    }
+    if (ambiguous) {
+        return 3;
+    }
+    *outFnIndex = bestFn;
+    *outIterType = bestIterType;
+    return 0;
+}
+
+/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 non-bool */
+static int SLTCResolveForInAdvance(
+    SLTypeCheckCtx*    c,
+    int32_t            iterPtrType,
+    int                wantKey,
+    int                wantValue,
+    int                wantKeyRef,
+    SLTCForInValueMode valueMode,
+    int32_t*           outKeyType,
+    int32_t*           outValueType,
+    int32_t*           outFn) {
+    int32_t bestFn = -1;
+    uint8_t bestCost = 0;
+    int32_t bestKeyType = -1;
+    int32_t bestValueType = -1;
+    int     nameFound = 0;
+    int     nonBool = 0;
+    int     ambiguous = 0;
+    int     i;
+    for (i = 0; i < (int)c->funcLen; i++) {
+        const SLTCFunction* fn = &c->funcs[i];
+        int32_t             p0Type;
+        uint8_t             cost = 0;
+        int32_t             keyType = -1;
+        int32_t             valueType = -1;
+        int                 pIndex = 1;
+        if (!SLNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "advance")) {
+            continue;
+        }
+        nameFound = 1;
+        if ((fn->flags & SLTCFunctionFlag_VARIADIC) != 0
+            || ((fn->flags & SLTCFunctionFlag_TEMPLATE) != 0
+                && (fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
+            || fn->paramCount != (uint16_t)(1 + (wantKey ? 1 : 0) + (wantValue ? 1 : 0))
+            || fn->paramTypeStart >= c->funcParamLen
+            || fn->paramTypeStart + fn->paramCount > c->funcParamLen)
+        {
+            continue;
+        }
+        p0Type = c->funcParamTypes[fn->paramTypeStart];
+        if (SLTCConversionCost(c, p0Type, iterPtrType, &cost) != 0) {
+            continue;
+        }
+        if (wantKey) {
+            int32_t keyParamType = c->funcParamTypes[fn->paramTypeStart + (uint32_t)pIndex];
+            if (!SLTCForInKeyOutLocalType(c, keyParamType, wantKeyRef, &keyType)) {
+                continue;
+            }
+            pIndex++;
+        }
+        if (wantValue) {
+            int32_t valueParamType = c->funcParamTypes[fn->paramTypeStart + (uint32_t)pIndex];
+            if (!SLTCForInValueOutLocalType(c, valueParamType, valueMode, &valueType)) {
+                continue;
+            }
+        }
+        if (!SLTCIsBoolType(c, fn->returnType)) {
+            nonBool = 1;
+            continue;
+        }
+        if (bestFn < 0) {
+            bestFn = i;
+            bestCost = cost;
+            bestKeyType = keyType;
+            bestValueType = valueType;
+            ambiguous = 0;
+        } else if (cost < bestCost) {
+            bestFn = i;
+            bestCost = cost;
+            bestKeyType = keyType;
+            bestValueType = valueType;
+            ambiguous = 0;
+        } else if (cost == bestCost && i != bestFn) {
+            ambiguous = 1;
+        }
+    }
+    if (!nameFound) {
+        return 1;
+    }
+    if (bestFn < 0) {
+        return nonBool ? 4 : 2;
+    }
+    if (ambiguous) {
+        return 3;
+    }
+    *outFn = bestFn;
+    *outKeyType = bestKeyType;
+    *outValueType = bestValueType;
+    return 0;
+}
+
 static int SLTCTypeForInStmt(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
     const SLAstNode*  forNode = &c->ast->nodes[nodeId];
@@ -90,6 +300,8 @@ static int SLTCTypeForInStmt(
     int32_t           bodyNode = -1;
     int32_t           sourceType = -1;
     SLTCIndexBaseInfo sourceInfo;
+    int               useSequencePath = 0;
+    int32_t           keyLocalType = -1;
     int32_t           valueLocalType = -1;
 
     while (child >= 0 && count < 4) {
@@ -134,39 +346,156 @@ static int SLTCTypeForInStmt(
     if (SLTCTypeExpr(c, sourceNode, &sourceType) != 0) {
         return -1;
     }
-    if (!SLTCTypeSupportsLen(c, sourceType)) {
-        return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_INVALID_SOURCE);
-    }
-    if (SLTCResolveIndexBaseInfo(c, sourceType, &sourceInfo) != 0 || !sourceInfo.indexable
-        || sourceInfo.elemType < 0)
+    if (SLTCTypeSupportsLen(c, sourceType)
+        && SLTCResolveIndexBaseInfo(c, sourceType, &sourceInfo) == 0 && sourceInfo.indexable
+        && sourceInfo.elemType >= 0)
     {
-        return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_INVALID_SOURCE);
+        useSequencePath = 1;
     }
-    if (keyRef) {
-        return SLTCFailNode(c, keyNode, SLDiag_FOR_IN_KEY_REF_INVALID);
-    }
-    if (valuePtr && !sourceInfo.sliceMutable) {
-        return SLTCFailNode(c, valueNode, SLDiag_FOR_IN_VALUE_BINDING_INVALID);
+
+    if (useSequencePath) {
+        if (keyRef) {
+            return SLTCFailNode(c, keyNode, SLDiag_FOR_IN_KEY_REF_INVALID);
+        }
+        if (valuePtr && !sourceInfo.sliceMutable) {
+            return SLTCFailNode(c, valueNode, SLDiag_FOR_IN_VALUE_BINDING_INVALID);
+        }
+
+        if (hasKey) {
+            keyLocalType = c->typeUsize;
+        }
+        if (!valueDiscard) {
+            const SLAstNode* valueName = &c->ast->nodes[valueNode];
+            valueLocalType = sourceInfo.elemType;
+            if (valuePtr) {
+                valueLocalType = SLTCInternPtrType(
+                    c, sourceInfo.elemType, valueName->start, valueName->end);
+            } else if (valueRef) {
+                valueLocalType = SLTCInternRefType(
+                    c, sourceInfo.elemType, 0, valueName->start, valueName->end);
+            }
+            if (valueLocalType < 0) {
+                return -1;
+            }
+        }
+    } else {
+        int32_t            iterType = -1;
+        int32_t            iterPtrType = -1;
+        int32_t            iterFn = -1;
+        int32_t            advanceFn = -1;
+        SLTCForInValueMode mode = SLTCForInValueMode_VALUE;
+        int                rc;
+
+        rc = SLTCResolveForInIterator(c, sourceType, &iterFn, &iterType);
+        if (rc == 1 || rc == 2) {
+            return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_INVALID_SOURCE);
+        }
+        if (rc == 3) {
+            return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ITERATOR_AMBIGUOUS);
+        }
+        if (rc != 0) {
+            return -1;
+        }
+        if (SLTCValidateCallContextRequirements(c, c->funcs[iterFn].contextType) != 0) {
+            return -1;
+        }
+        iterPtrType = SLTCInternPtrType(
+            c, iterType, c->ast->nodes[sourceNode].start, c->ast->nodes[sourceNode].end);
+        if (iterPtrType < 0) {
+            return -1;
+        }
+
+        if (valueRef) {
+            mode = SLTCForInValueMode_REF;
+        } else if (valuePtr) {
+            mode = SLTCForInValueMode_PTR;
+        }
+
+        if (hasKey && valueDiscard) {
+            rc = SLTCResolveForInAdvance(
+                c,
+                iterPtrType,
+                1,
+                0,
+                keyRef,
+                SLTCForInValueMode_ANY,
+                &keyLocalType,
+                &valueLocalType,
+                &advanceFn);
+            if (rc == 2) {
+                rc = SLTCResolveForInAdvance(
+                    c,
+                    iterPtrType,
+                    1,
+                    1,
+                    keyRef,
+                    SLTCForInValueMode_ANY,
+                    &keyLocalType,
+                    &valueLocalType,
+                    &advanceFn);
+            }
+        } else if (!hasKey && valueDiscard) {
+            rc = SLTCResolveForInAdvance(
+                c,
+                iterPtrType,
+                0,
+                0,
+                0,
+                SLTCForInValueMode_ANY,
+                &keyLocalType,
+                &valueLocalType,
+                &advanceFn);
+            if (rc == 2) {
+                rc = SLTCResolveForInAdvance(
+                    c,
+                    iterPtrType,
+                    0,
+                    1,
+                    0,
+                    SLTCForInValueMode_ANY,
+                    &keyLocalType,
+                    &valueLocalType,
+                    &advanceFn);
+            }
+        } else {
+            rc = SLTCResolveForInAdvance(
+                c,
+                iterPtrType,
+                hasKey,
+                1,
+                keyRef,
+                mode,
+                &keyLocalType,
+                &valueLocalType,
+                &advanceFn);
+        }
+        if (rc == 4) {
+            return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NON_BOOL);
+        }
+        if (rc == 1 || rc == 2 || rc == 3) {
+            return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
+        }
+        if (rc != 0) {
+            return -1;
+        }
+        if (SLTCValidateCallContextRequirements(c, c->funcs[advanceFn].contextType) != 0) {
+            return -1;
+        }
     }
 
     if (hasKey) {
         const SLAstNode* keyName = &c->ast->nodes[keyNode];
-        if (SLTCLocalAdd(c, keyName->dataStart, keyName->dataEnd, c->typeUsize, 0) != 0) {
+        if (keyLocalType < 0) {
+            return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
+        }
+        if (SLTCLocalAdd(c, keyName->dataStart, keyName->dataEnd, keyLocalType, 0) != 0) {
             return -1;
         }
     }
     if (!valueDiscard) {
         const SLAstNode* valueName = &c->ast->nodes[valueNode];
-        valueLocalType = sourceInfo.elemType;
-        if (valuePtr) {
-            valueLocalType = SLTCInternPtrType(
-                c, sourceInfo.elemType, valueName->start, valueName->end);
-        } else if (valueRef) {
-            valueLocalType = SLTCInternRefType(
-                c, sourceInfo.elemType, 0, valueName->start, valueName->end);
-        }
         if (valueLocalType < 0) {
-            return -1;
+            return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
         }
         if (SLTCLocalAdd(c, valueName->dataStart, valueName->dataEnd, valueLocalType, 0) != 0) {
             return -1;

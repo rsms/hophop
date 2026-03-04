@@ -156,6 +156,28 @@ static inline __sl_uint __sl_align_up(__sl_uint x, __sl_uint a) {
     return (x + (a - 1u)) & ~(a - 1u);
 }
 
+static inline void* __sl_memcpy_bytes(void* dst, const void* src, __sl_uint n) {
+    __sl_u8*       d = (__sl_u8*)dst;
+    const __sl_u8* s = (const __sl_u8*)src;
+    __sl_uint      i;
+    for (i = 0u; i < n; i++) {
+        d[i] = s[i];
+    }
+    return dst;
+}
+
+static inline int __sl_memcmp_bytes(const void* a, const void* b, __sl_uint n) {
+    const __sl_u8* aa = (const __sl_u8*)a;
+    const __sl_u8* bb = (const __sl_u8*)b;
+    __sl_uint      i;
+    for (i = 0u; i < n; i++) {
+        if (aa[i] != bb[i]) {
+            return aa[i] < bb[i] ? -1 : 1;
+        }
+    }
+    return 0;
+}
+
 static inline __sl_uint __sl_str_sizeof(const __sl_str* s) {
     return s != NULL ? (__sl_uint)(sizeof(__sl_str) + (__sl_uint)s->len + 1u) : 0u;
 }

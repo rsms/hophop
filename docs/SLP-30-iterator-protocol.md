@@ -11,7 +11,8 @@ This SLP adds no new syntax. It defines a lowering contract based on two functio
 
 The protocol is designed to support:
 
-- immutable-reference binding (`for value in expr`)
+- by-value binding (`for value in expr`)
+- immutable-reference binding (`for &value in expr`)
 - mutable-pointer binding (`for *value in expr`)
 - optional key (`for key, value in expr`)
 
@@ -46,7 +47,7 @@ fn advance(it *<IterType>, keyOut **K, valueOut *&T) bool
 fn advance(it *<IterType>, keyOut **K, valueOut **T) bool
 ```
 
-Implementor may chose to implement these functions in anyway that makes `advance` callable as described above. For example, `anytype` could be leveraged for compile-time monomorphization:
+Implementors may choose to implement these functions in any way that makes `advance` callable as described above. For example, `anytype` can be used for compile-time monomorphization:
 
 ```sl
 fn advance(it *<IterType>, result ...anytype) bool
@@ -98,11 +99,6 @@ Partial support is valid: an iterator may provide only one or two of these overl
 
 If the loop requests a mode that the iterator does not implement, emit
 `for_in_advance_no_matching_overload` at compile time.
-Diagnostic must include:
-
-- requested loop binding mode (`T`, `&T`, or `*T`)
-- iterator type selected by `__iterator`
-- supported `advance` out-parameter forms for that iterator type
 
 ### 5. Value discard (`_`)
 
@@ -250,5 +246,4 @@ Add tests for:
 SLP-30 does not add:
 
 - new loop syntax
-- key/value protocol for `for key, value in ...` (deferred)
 - ordering guarantees beyond what iterator implementation defines
