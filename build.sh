@@ -55,13 +55,13 @@ if [ -f .git ]; then
 fi
 
 cli_sources=( src/slc.c src/platform_cli-eval.c )
-lib_sources=( $(find src -maxdepth 2 -name '*.c' -and -not -name 'slc.c' -and -not -name 'platform_cli-eval.c' | sort) )
+lib_sources=( $(find src -maxdepth 2 -name '*.c' -and -not -name 'slc.c' -and -not -name 'platform_cli-eval.c' | sort -V) )
 case " ${lib_sources[*]} " in
 *" $diag_c_out "*) ;;
 *) lib_sources+=( "$diag_c_out" ) ;;
 esac
-lib_headers=( $(find src -maxdepth 2 -name '*.h' | sort) )
-core_sl_sources=( $(find lib/core -maxdepth 1 -name '*.sl' | sort) )
+lib_headers=( $(find src -maxdepth 2 -name '*.h' | sort -V) )
+core_sl_sources=( $(find lib/core -maxdepth 1 -name '*.sl' | sort -V) )
 cli_output=slc
 lib_output=libsl.h
 toolchain=${toolchain:-/opt/homebrew/opt/llvm}
@@ -95,7 +95,7 @@ if [ $asan = 1 -o $ubsan = 1 ]; then
     if [ $asan = 1 ]; then
         x_flags+=( -fsanitize=address )
         if [ $debug = 1 ]; then
-            c_flags+=( -g -fno-omit-frame-pointer -fno-optimize-sibling-calls )
+            c_flags+=( -fno-omit-frame-pointer -fno-optimize-sibling-calls )
         else
             l_flags+=( -fsanitize-minimal-runtime )
         fi
