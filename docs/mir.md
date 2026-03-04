@@ -49,6 +49,7 @@ From `SLMirOp` in `src/mir.h`:
 - `SLMirOp_CALL`
 - `SLMirOp_UNARY`
 - `SLMirOp_BINARY`
+- `SLMirOp_INDEX` (element index; non-slice form)
 - `SLMirOp_RETURN`
 
 ## AST coverage and limits
@@ -64,6 +65,7 @@ From `SLMirOp` in `src/mir.h`:
   - bitwise: `&`, `|`, `^`, `<<`, `>>`
   - comparison: `==`, `!=`, `<`, `>`, `<=`, `>=`
   - logical: `&&`, `||`
+- indexing: `x[i]` element form (slice/range forms are unsupported in MIR and fall back)
 
 Notable unsupported cases include:
 

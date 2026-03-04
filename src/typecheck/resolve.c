@@ -2478,6 +2478,279 @@ int SLTCCheckConstParamArgs(
     return 0;
 }
 
+int SLTCCheckConstBlocksForCall(
+    SLTypeCheckCtx*        c,
+    int32_t                fnIndex,
+    const SLTCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    const SLTCCallBinding* binding,
+    SLTCCallMapError*      outError) {
+    const SLTCFunction* fn;
+    int32_t             fnNode;
+    int32_t             bodyNode = -1;
+    int32_t             child;
+    uint32_t            paramIndex = 0;
+    uint32_t            variadicPackParamNameStart = 0;
+    uint32_t            variadicPackParamNameEnd = 0;
+    int                 hasConstBlock = 0;
+    uint32_t            savedLocalLen;
+    uint32_t            savedVariantNarrowLen;
+    SLTCConstEvalCtx*   savedActiveConstEvalCtx;
+    SLCTFEExecBinding*  paramBindings = NULL;
+    uint32_t            paramBindingLen = 0;
+    SLCTFEExecEnv       paramFrame;
+    SLCTFEExecCtx       execCtx;
+    SLTCConstEvalCtx    evalCtx;
+    SLCTFEValue         retValue;
+    int                 didReturn = 0;
+    int                 isConst = 0;
+    int                 rc;
+
+    if (outError != NULL) {
+        SLTCCallMapErrorClear(outError);
+    }
+    if (c == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
+        return 0;
+    }
+    fn = &c->funcs[fnIndex];
+    fnNode = fn->defNode;
+    if (fnNode < 0 || (uint32_t)fnNode >= c->ast->len || c->ast->nodes[fnNode].kind != SLAst_FN) {
+        return 0;
+    }
+
+    child = SLAstFirstChild(c->ast, fnNode);
+    while (child >= 0) {
+        if (c->ast->nodes[child].kind == SLAst_BLOCK) {
+            bodyNode = child;
+            break;
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    if (bodyNode < 0) {
+        return 0;
+    }
+
+    child = SLAstFirstChild(c->ast, bodyNode);
+    while (child >= 0) {
+        if (c->ast->nodes[child].kind == SLAst_CONST_BLOCK) {
+            hasConstBlock = 1;
+            break;
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    if (!hasConstBlock) {
+        return 0;
+    }
+
+    savedLocalLen = c->localLen;
+    savedVariantNarrowLen = c->variantNarrowLen;
+    savedActiveConstEvalCtx = c->activeConstEvalCtx;
+
+    if (fn->paramCount > 0) {
+        paramBindings = (SLCTFEExecBinding*)SLArenaAlloc(
+            c->arena,
+            sizeof(SLCTFEExecBinding) * fn->paramCount,
+            (uint32_t)_Alignof(SLCTFEExecBinding));
+        if (paramBindings == NULL) {
+            c->localLen = savedLocalLen;
+            c->variantNarrowLen = savedVariantNarrowLen;
+            c->activeConstEvalCtx = savedActiveConstEvalCtx;
+            return SLTCFailNode(c, fnNode, SLDiag_ARENA_OOM);
+        }
+    }
+
+    child = SLAstFirstChild(c->ast, fnNode);
+    while (child >= 0) {
+        const SLAstNode* n = &c->ast->nodes[child];
+        if (n->kind == SLAst_PARAM) {
+            int32_t paramType;
+            int     isConstParam;
+            int     addedLocal = 0;
+            if (paramIndex >= fn->paramCount) {
+                c->localLen = savedLocalLen;
+                c->variantNarrowLen = savedVariantNarrowLen;
+                c->activeConstEvalCtx = savedActiveConstEvalCtx;
+                return 0;
+            }
+            paramType = c->funcParamTypes[fn->paramTypeStart + paramIndex];
+            isConstParam =
+                (c->funcParamFlags[fn->paramTypeStart + paramIndex] & SLTCFuncParamFlag_CONST) != 0;
+
+            if (!SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")
+                && SLTCLocalAdd(c, n->dataStart, n->dataEnd, paramType, isConstParam) != 0)
+            {
+                c->localLen = savedLocalLen;
+                c->variantNarrowLen = savedVariantNarrowLen;
+                c->activeConstEvalCtx = savedActiveConstEvalCtx;
+                return -1;
+            }
+            if (!SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")) {
+                addedLocal = 1;
+            }
+            if (addedLocal && (n->flags & SLAstFlag_PARAM_VARIADIC) != 0
+                && (paramType == c->typeAnytype
+                    || ((uint32_t)paramType < c->typeLen
+                        && c->types[paramType].kind == SLTCType_PACK)))
+            {
+                c->locals[c->localLen - 1u].flags |= SLTCLocalFlag_ANYPACK;
+                variadicPackParamNameStart = n->dataStart;
+                variadicPackParamNameEnd = n->dataEnd;
+            }
+
+            if (isConstParam && binding != NULL && paramBindings != NULL
+                && !SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_"))
+            {
+                int32_t          argIndex = -1;
+                SLCTFEValue      value;
+                int              evalIsConst = 0;
+                SLTCConstEvalCtx evalArgCtx = {
+                    .tc = c,
+                    .execCtx = NULL,
+                    .fnStack = { 0 },
+                    .fnDepth = 0,
+                    .nonConstReason = NULL,
+                    .nonConstStart = 0,
+                    .nonConstEnd = 0,
+                };
+                uint32_t i;
+                if (binding->isVariadic && paramIndex == binding->fixedCount) {
+                    if (binding->spreadArgIndex != UINT32_MAX) {
+                        argIndex = (int32_t)binding->spreadArgIndex;
+                    }
+                } else {
+                    for (i = 0; i < argCount; i++) {
+                        if (binding->argParamIndices[i] == (int32_t)paramIndex) {
+                            argIndex = (int32_t)i;
+                            break;
+                        }
+                    }
+                }
+                if (argIndex >= 0) {
+                    if (SLTCEvalConstExprNode(
+                            &evalArgCtx, callArgs[argIndex].exprNode, &value, &evalIsConst)
+                        != 0)
+                    {
+                        c->localLen = savedLocalLen;
+                        c->variantNarrowLen = savedVariantNarrowLen;
+                        c->activeConstEvalCtx = savedActiveConstEvalCtx;
+                        return -1;
+                    }
+                    if (!evalIsConst) {
+                        if (outError != NULL) {
+                            outError->code = SLDiag_CONST_BLOCK_EVAL_FAILED;
+                            outError->start = callArgs[argIndex].start;
+                            outError->end = callArgs[argIndex].end;
+                            outError->argStart = 0;
+                            outError->argEnd = 0;
+                        }
+                        c->localLen = savedLocalLen;
+                        c->variantNarrowLen = savedVariantNarrowLen;
+                        c->activeConstEvalCtx = savedActiveConstEvalCtx;
+                        return 1;
+                    }
+                    paramBindings[paramBindingLen].nameStart = n->dataStart;
+                    paramBindings[paramBindingLen].nameEnd = n->dataEnd;
+                    paramBindings[paramBindingLen].typeId = paramType;
+                    paramBindings[paramBindingLen].mutable = 0;
+                    paramBindings[paramBindingLen]._reserved[0] = 0;
+                    paramBindings[paramBindingLen]._reserved[1] = 0;
+                    paramBindings[paramBindingLen]._reserved[2] = 0;
+                    paramBindings[paramBindingLen].value = value;
+                    paramBindingLen++;
+                }
+            }
+            paramIndex++;
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    if (paramIndex != fn->paramCount) {
+        c->localLen = savedLocalLen;
+        c->variantNarrowLen = savedVariantNarrowLen;
+        c->activeConstEvalCtx = savedActiveConstEvalCtx;
+        return 0;
+    }
+
+    paramFrame.parent = NULL;
+    paramFrame.bindings = paramBindings;
+    paramFrame.bindingLen = paramBindingLen;
+    memset(&execCtx, 0, sizeof(execCtx));
+    execCtx.arena = c->arena;
+    execCtx.ast = c->ast;
+    execCtx.src = c->src;
+    execCtx.diag = c->diag;
+    execCtx.env = &paramFrame;
+    execCtx.evalExpr = SLTCEvalConstExecExprCb;
+    execCtx.evalExprCtx = &evalCtx;
+    execCtx.resolveType = SLTCEvalConstExecResolveTypeCb;
+    execCtx.resolveTypeCtx = &evalCtx;
+    execCtx.inferValueType = SLTCEvalConstExecInferValueTypeCb;
+    execCtx.inferValueTypeCtx = &evalCtx;
+    execCtx.pendingReturnExprNode = -1;
+    execCtx.forIterLimit = SLTC_CONST_FOR_MAX_ITERS;
+    memset(&evalCtx, 0, sizeof(evalCtx));
+    evalCtx.tc = c;
+    evalCtx.execCtx = &execCtx;
+    evalCtx.callArgs = callArgs;
+    evalCtx.callArgCount = argCount;
+    evalCtx.callBinding = binding;
+    evalCtx.callPackParamNameStart = variadicPackParamNameStart;
+    evalCtx.callPackParamNameEnd = variadicPackParamNameEnd;
+    c->activeConstEvalCtx = &evalCtx;
+
+    child = SLAstFirstChild(c->ast, bodyNode);
+    while (child >= 0) {
+        if (c->ast->nodes[child].kind == SLAst_CONST_BLOCK) {
+            int32_t blockNode = SLAstFirstChild(c->ast, child);
+            if (blockNode < 0 || c->ast->nodes[blockNode].kind != SLAst_BLOCK) {
+                if (outError != NULL) {
+                    outError->code = SLDiag_CONST_BLOCK_EVAL_FAILED;
+                    outError->start = argCount > 0 ? callArgs[0].start : c->ast->nodes[child].start;
+                    outError->end =
+                        argCount > 0 ? callArgs[argCount - 1u].end : c->ast->nodes[child].end;
+                    outError->argStart = 0;
+                    outError->argEnd = 0;
+                }
+                c->localLen = savedLocalLen;
+                c->variantNarrowLen = savedVariantNarrowLen;
+                c->activeConstEvalCtx = savedActiveConstEvalCtx;
+                return 1;
+            }
+            SLCTFEExecResetReason(&execCtx);
+            execCtx.pendingReturnExprNode = -1;
+            rc = SLCTFEExecEvalBlock(&execCtx, blockNode, &retValue, &didReturn, &isConst);
+            if (rc != 0) {
+                c->localLen = savedLocalLen;
+                c->variantNarrowLen = savedVariantNarrowLen;
+                c->activeConstEvalCtx = savedActiveConstEvalCtx;
+                return -1;
+            }
+            if (!isConst || didReturn) {
+                c->lastConstEvalReason = execCtx.nonConstReason;
+                c->lastConstEvalReasonStart = execCtx.nonConstStart;
+                c->lastConstEvalReasonEnd = execCtx.nonConstEnd;
+                if (outError != NULL) {
+                    outError->code = SLDiag_CONST_BLOCK_EVAL_FAILED;
+                    outError->start = argCount > 0 ? callArgs[0].start : c->ast->nodes[child].start;
+                    outError->end =
+                        argCount > 0 ? callArgs[argCount - 1u].end : c->ast->nodes[child].end;
+                    outError->argStart = 0;
+                    outError->argEnd = 0;
+                }
+                c->localLen = savedLocalLen;
+                c->variantNarrowLen = savedVariantNarrowLen;
+                c->activeConstEvalCtx = savedActiveConstEvalCtx;
+                return 1;
+            }
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+
+    c->localLen = savedLocalLen;
+    c->variantNarrowLen = savedVariantNarrowLen;
+    c->activeConstEvalCtx = savedActiveConstEvalCtx;
+    return 0;
+}
+
 int SLTCResolveComparisonHookArgCost(
     SLTypeCheckCtx* c, int32_t paramType, int32_t argType, uint8_t* outCost) {
     int32_t resolvedParam = SLTCResolveAliasBaseType(c, paramType);
@@ -3059,6 +3332,16 @@ int SLTCResolveCallFromCandidates(
                 viable = 0;
             }
         }
+        if (viable) {
+            int constBlockStatus = SLTCCheckConstBlocksForCall(
+                c, candidateFnIdx, callArgs, argCount, &binding, &mapError);
+            if (constBlockStatus < 0) {
+                return -1;
+            }
+            if (constBlockStatus != 0) {
+                viable = 0;
+            }
+        }
         if (!viable) {
             if (!hasMapError && mapError.code != 0) {
                 hasMapError = 1;
@@ -3102,6 +3385,9 @@ int SLTCResolveCallFromCandidates(
                 firstMapError.end,
                 firstMapError.argStart,
                 firstMapError.argEnd);
+            if (firstMapError.code == SLDiag_CONST_BLOCK_EVAL_FAILED) {
+                SLTCAttachConstEvalReason(c);
+            }
             return 6;
         }
         if (outMutRefTempArgNode != NULL && mutRefTempArgNode >= 0) {

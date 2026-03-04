@@ -37,16 +37,28 @@ typedef struct {
 typedef struct {
     char*      slName;
     char*      cName;
+    int32_t    nodeId;
+    uint32_t   tcFuncIndex;
     SLTypeRef  returnType;
     SLTypeRef* paramTypes;
     char**     paramNames;
     uint8_t*   paramFlags;
     uint32_t   paramLen;
-    SLTypeRef  contextType;
-    int        hasContext;
-    uint8_t    isVariadic;
-    uint8_t    _reserved[3];
+    uint32_t   packArgStart;
+    uint32_t   packArgCount;
+    char* _Nullable packParamName;
+    uint16_t  flags;
+    SLTypeRef contextType;
+    int       hasContext;
+    uint8_t   isVariadic;
+    uint8_t   _reserved[1];
 } SLFnSig;
+
+enum {
+    SLFnSigFlag_TEMPLATE_BASE = 1u << 0,
+    SLFnSigFlag_TEMPLATE_INSTANCE = 1u << 1,
+    SLFnSigFlag_EXPANDED_ANYPACK = 1u << 2,
+};
 
 typedef struct {
     char*      aliasName;
@@ -206,7 +218,11 @@ typedef struct {
     int       hasCurrentContext;
     int       currentFunctionIsMain;
     int32_t   activeCallWithNode;
-    uint32_t  fmtTempCounter;
+    const char* _Nullable activePackParamName;
+    char** _Nullable activePackElemNames;
+    SLTypeRef* _Nullable activePackElemTypes;
+    uint32_t activePackElemCount;
+    uint32_t fmtTempCounter;
     SLConstEvalSession* _Nullable constEval;
 } SLCBackendC;
 
@@ -253,6 +269,8 @@ typedef struct {
 
 enum {
     SLCCGParamFlag_CONST = 1u << 0,
+    SLCCGParamFlag_ANYTYPE = 1u << 1,
+    SLCCGParamFlag_ANYPACK = 1u << 2,
 };
 
 size_t StrLen(const char* s);
@@ -490,7 +508,12 @@ int AddFnSig(
     uint32_t  paramLen,
     int       isVariadic,
     int       hasContext,
-    SLTypeRef contextType);
+    SLTypeRef contextType,
+    uint16_t  sigFlags,
+    uint32_t  tcFuncIndex,
+    uint32_t  packArgStart,
+    uint32_t  packArgCount,
+    char* _Nullable packParamName);
 
 int AddFieldInfo(
     SLCBackendC* c,
@@ -541,6 +564,8 @@ uint32_t FindFnSigCandidatesByName(
 const char* _Nullable FindFnCNameByNodeId(const SLCBackendC* c, int32_t nodeId);
 
 const SLFnSig* _Nullable FindFnSigByNodeId(const SLCBackendC* c, int32_t nodeId);
+uint32_t FindFnSigCandidatesByNodeId(
+    const SLCBackendC* c, int32_t nodeId, const SLFnSig** out, uint32_t cap);
 
 const SLFieldInfo* _Nullable FindFieldInfo(
     const SLCBackendC* c, const char* ownerType, uint32_t fieldStart, uint32_t fieldEnd);
@@ -1174,7 +1199,13 @@ int FnNodeHasBody(const SLCBackendC* c, int32_t nodeId);
 
 int HasFunctionBodyForName(const SLCBackendC* c, int32_t nodeId);
 
-int EmitFnDeclOrDef(SLCBackendC* c, int32_t nodeId, uint32_t depth, int emitBody, int isPrivate);
+int EmitFnDeclOrDef(
+    SLCBackendC* c,
+    int32_t      nodeId,
+    uint32_t     depth,
+    int          emitBody,
+    int          isPrivate,
+    const SLFnSig* _Nullable forcedSig);
 
 int EmitConstDecl(
     SLCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate);

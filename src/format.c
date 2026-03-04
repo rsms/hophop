@@ -960,6 +960,7 @@ static int SLFmtIsStmtNodeKind(SLAstKind kind) {
         case SLAst_BLOCK:
         case SLAst_VAR:
         case SLAst_CONST:
+        case SLAst_CONST_BLOCK:
         case SLAst_IF:
         case SLAst_FOR:
         case SLAst_SWITCH:
@@ -3237,9 +3238,15 @@ static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId) {
     }
     n = &c->ast->nodes[nodeId];
     switch (n->kind) {
-        case SLAst_BLOCK:        return SLFmtEmitBlock(c, nodeId);
-        case SLAst_VAR:          return SLFmtEmitVarLike(c, nodeId, "var");
-        case SLAst_CONST:        return SLFmtEmitVarLike(c, nodeId, "const");
+        case SLAst_BLOCK: return SLFmtEmitBlock(c, nodeId);
+        case SLAst_VAR:   return SLFmtEmitVarLike(c, nodeId, "var");
+        case SLAst_CONST: return SLFmtEmitVarLike(c, nodeId, "const");
+        case SLAst_CONST_BLOCK:
+            ch = SLFmtFirstChild(c->ast, nodeId);
+            if (SLFmtWriteCStr(c, "const ") != 0) {
+                return -1;
+            }
+            return ch >= 0 ? SLFmtEmitBlock(c, ch) : 0;
         case SLAst_MULTI_ASSIGN: return SLFmtEmitMultiAssign(c, nodeId);
         case SLAst_IF:           {
             int32_t cond = SLFmtFirstChild(c->ast, nodeId);

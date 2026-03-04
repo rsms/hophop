@@ -144,12 +144,12 @@ fn fmt(format str, ...args) *str
 - For non-const format strings, validation is deferred to runtime parsing.
 
 
-### `core/str.format`
+### `str.format`
 
 Import:
 
 ```sl
-import "core/str" { format }
+import "str" { format }
 ```
 
 Signature:
@@ -160,11 +160,12 @@ fn format(buf *[u8], const format &str, args ...anytype) uint
 
 Behavior:
 
-- `core/str.format` is imported from package path `core/str`.
-- Signature: `fn format(buf *[u8], const format &str, args ...anytype) uint`.
+- `str.format` is imported from package path `str`.
 - Supported placeholders are `{i}`, `{f}`, `{s}` with escapes `{{` and `}}`.
-- Placeholder count must match variadic argument count.
-- Placeholder compatibility: `{i}` integer, `{f}` float, `{s}` `&str`-assignable.
+- Placeholder count must match argument count.
+- Placeholder compatibility: `{i}` integer, `{f}` float, `{s}` values assignable to `&str`.
+- Validation runs in pure-SL `const { ... }` logic at call site and fails during typecheck.
+- Current implementation supports up to 16 variadic arguments.
 - Return value is the payload byte count that would have been written without truncation.
 - If `len(buf) > 0`, implementation writes at most `len(buf)-1` payload bytes and writes a trailing NUL byte.
 

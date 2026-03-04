@@ -1,0 +1,1 @@
+tests/const_block_warn_at_pack_span_ok.sl:11:10: SL2076: consteval warning: pack warn

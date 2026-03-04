@@ -610,9 +610,16 @@ int SLTCTypeStmt(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
     const SLAstNode* n = &c->ast->nodes[nodeId];
     switch (n->kind) {
-        case SLAst_BLOCK:        return SLTCTypeBlock(c, nodeId, returnType, loopDepth, switchDepth);
+        case SLAst_BLOCK:       return SLTCTypeBlock(c, nodeId, returnType, loopDepth, switchDepth);
         case SLAst_VAR:
-        case SLAst_CONST:        return SLTCTypeVarLike(c, nodeId);
+        case SLAst_CONST:       return SLTCTypeVarLike(c, nodeId);
+        case SLAst_CONST_BLOCK: {
+            int32_t blockNode = SLAstFirstChild(c->ast, nodeId);
+            if (blockNode < 0 || c->ast->nodes[blockNode].kind != SLAst_BLOCK) {
+                return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
+            }
+            return 0;
+        }
         case SLAst_MULTI_ASSIGN: return SLTCTypeMultiAssignStmt(c, nodeId);
         case SLAst_EXPR_STMT:    {
             int32_t expr = SLAstFirstChild(c->ast, nodeId);
@@ -678,6 +685,9 @@ int SLTCTypeStmt(
             int32_t        thenNode;
             int32_t        elseNode;
             int32_t        condType;
+            int            canSpecializeByConstCond = 0;
+            int            condConstValue = 0;
+            int            condIsConst = 0;
             SLTCNullNarrow narrow;
             int            isEq;
             int            hasNarrow;
@@ -695,7 +705,42 @@ int SLTCTypeStmt(
                 return SLTCFailNode(c, cond, SLDiag_EXPECTED_BOOL);
             }
             elseNode = SLAstNextSibling(c->ast, thenNode);
+            canSpecializeByConstCond = c->activeConstEvalCtx != NULL;
+            if (!canSpecializeByConstCond && c->currentFunctionIndex >= 0
+                && (uint32_t)c->currentFunctionIndex < c->funcLen
+                && (c->funcs[c->currentFunctionIndex].flags & SLTCFunctionFlag_TEMPLATE_INSTANCE)
+                       != 0)
+            {
+                canSpecializeByConstCond = 1;
+            }
+            if (canSpecializeByConstCond) {
+                if (SLTCConstBoolExpr(c, cond, &condConstValue, &condIsConst) != 0) {
+                    return -1;
+                }
+            }
             hasNarrow = SLTCGetNullNarrow(c, cond, &isEq, &narrow);
+            if (condIsConst) {
+                int32_t branchNode = condConstValue ? thenNode : elseNode;
+                if (hasNarrow) {
+                    int32_t origType = c->locals[narrow.localIdx].typeId;
+                    int32_t trueType = isEq ? c->typeNull : narrow.innerType;
+                    int32_t falseType = isEq ? narrow.innerType : c->typeNull;
+                    c->locals[narrow.localIdx].typeId = condConstValue ? trueType : falseType;
+                    if (branchNode >= 0
+                        && SLTCTypeStmt(c, branchNode, returnType, loopDepth, switchDepth) != 0)
+                    {
+                        c->locals[narrow.localIdx].typeId = origType;
+                        return -1;
+                    }
+                    c->locals[narrow.localIdx].typeId = origType;
+                } else if (
+                    branchNode >= 0
+                    && SLTCTypeStmt(c, branchNode, returnType, loopDepth, switchDepth) != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
             if (hasNarrow) {
                 /*
                  * Apply branch narrowing:
@@ -1051,6 +1096,8 @@ int SLTCBuildCheckedContext(
     c.currentFunctionIndex = -1;
     c.currentFunctionIsCompareHook = 0;
     c.activeTypeParamFnNode = -1;
+    c.activeConstEvalCtx = NULL;
+    c.allowAnytypeParamType = 0;
     c.allowConstNumericTypeName = 0;
     c.defaultFieldNodes = NULL;
     c.defaultFieldTypes = NULL;

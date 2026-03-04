@@ -2504,8 +2504,27 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
     int32_t        block;
 
     switch (SLPPeek(p)->kind) {
-        case SLTok_VAR:    return SLPParseVarLikeStmt(p, SLAst_VAR, 1, 1, out);
-        case SLTok_CONST:  return SLPParseVarLikeStmt(p, SLAst_CONST, 1, 1, out);
+        case SLTok_VAR: return SLPParseVarLikeStmt(p, SLAst_VAR, 1, 1, out);
+        case SLTok_CONST:
+            kw = SLPPeek(p);
+            p->pos++;
+            if (SLPAt(p, SLTok_LBRACE)) {
+                n = SLPNewNode(p, SLAst_CONST_BLOCK, kw->start, kw->end);
+                if (n < 0) {
+                    return -1;
+                }
+                if (SLPParseBlock(p, &block) != 0) {
+                    return -1;
+                }
+                if (SLPAddChild(p, n, block) != 0) {
+                    return -1;
+                }
+                p->nodes[n].end = p->nodes[block].end;
+                *out = n;
+                return 0;
+            }
+            p->pos--;
+            return SLPParseVarLikeStmt(p, SLAst_CONST, 1, 1, out);
         case SLTok_IF:     return SLPParseIfStmt(p, out);
         case SLTok_FOR:    return SLPParseForStmt(p, out);
         case SLTok_SWITCH: return SLPParseSwitchStmt(p, out);
@@ -3281,6 +3300,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_BLOCK:             return "BLOCK";
         case SLAst_VAR:               return "VAR";
         case SLAst_CONST:             return "CONST";
+        case SLAst_CONST_BLOCK:       return "CONST_BLOCK";
         case SLAst_IF:                return "IF";
         case SLAst_FOR:               return "FOR";
         case SLAst_SWITCH:            return "SWITCH";

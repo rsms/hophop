@@ -137,6 +137,8 @@ typedef struct {
     uint32_t variantEnd;
 } SLTCVariantNarrow;
 
+typedef struct SLTCConstEvalCtx SLTCConstEvalCtx;
+
 typedef struct {
     void* _Nullable ctx;
     SLDiagSinkFn _Nullable onDiag;
@@ -229,15 +231,16 @@ typedef struct {
     uint8_t*          constDiagFnInvoked;
     uint32_t          constDiagFnInvokedCap;
 
-    int32_t currentContextType;
-    int     hasImplicitMainRootContext;
-    int32_t implicitMainContextType;
-    int32_t activeCallWithNode;
-    int32_t currentFunctionIndex;
-    int     currentFunctionIsCompareHook;
-    int32_t activeTypeParamFnNode;
-    uint8_t allowAnytypeParamType;
-    uint8_t allowConstNumericTypeName;
+    int32_t           currentContextType;
+    int               hasImplicitMainRootContext;
+    int32_t           implicitMainContextType;
+    int32_t           activeCallWithNode;
+    int32_t           currentFunctionIndex;
+    int               currentFunctionIsCompareHook;
+    int32_t           activeTypeParamFnNode;
+    SLTCConstEvalCtx* activeConstEvalCtx;
+    uint8_t           allowAnytypeParamType;
+    uint8_t           allowConstNumericTypeName;
 
     const int32_t* defaultFieldNodes;
     const int32_t* defaultFieldTypes;
@@ -313,6 +316,7 @@ typedef enum {
 
 int SLTCResolveAliasTypeId(SLTypeCheckCtx* c, int32_t typeId);
 int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
+int SLTCConstBoolExpr(SLTypeCheckCtx* c, int32_t nodeId, int* out, int* isConst);
 int SLTCConstIntExpr(SLTypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isConst);
 int SLTCResolveReflectedTypeValueExpr(SLTypeCheckCtx* c, int32_t exprNode, int32_t* outTypeId);
 
@@ -360,15 +364,20 @@ typedef struct {
 #define SLTC_CONST_CALL_MAX_DEPTH 64u
 #define SLTC_CONST_FOR_MAX_ITERS  100000u
 
-typedef struct {
+struct SLTCConstEvalCtx {
     SLTypeCheckCtx* tc;
     SLCTFEExecCtx*  execCtx;
     int32_t         fnStack[SLTC_CONST_CALL_MAX_DEPTH];
     uint32_t        fnDepth;
+    const void*     callArgs;
+    uint32_t        callArgCount;
+    const void*     callBinding;
+    uint32_t        callPackParamNameStart;
+    uint32_t        callPackParamNameEnd;
     const char*     nonConstReason;
     uint32_t        nonConstStart;
     uint32_t        nonConstEnd;
-} SLTCConstEvalCtx;
+};
 
 int SLTCEvalTopLevelConstNode(
     SLTypeCheckCtx*   c,
@@ -742,6 +751,7 @@ int SLTCEvalTopLevelConstNode(
     int32_t           nodeId,
     SLCTFEValue*      outValue,
     int*              outIsConst);
+int SLTCConstBoolExpr(SLTypeCheckCtx* c, int32_t nodeId, int* out, int* isConst);
 int SLTCConstIntExpr(SLTypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isConst);
 int SLTCConstFloatExpr(SLTypeCheckCtx* c, int32_t nodeId, double* out, int* isConst);
 int SLTCConstStringExpr(

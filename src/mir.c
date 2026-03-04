@@ -160,6 +160,23 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             }
             return SLMirEmitInst(b, SLMirOp_BINARY, (SLTokenKind)n->op, n->start, n->end);
         }
+        case SLAst_INDEX: {
+            int32_t baseNode = b->ast->nodes[nodeId].firstChild;
+            int32_t idxNode = baseNode >= 0 ? b->ast->nodes[baseNode].nextSibling : -1;
+            int32_t extraNode = idxNode >= 0 ? b->ast->nodes[idxNode].nextSibling : -1;
+            if ((n->flags & SLAstFlag_INDEX_SLICE) != 0) {
+                b->supported = 0;
+                return 0;
+            }
+            if (baseNode < 0 || idxNode < 0 || extraNode >= 0) {
+                SLMirSetDiag(b->diag, SLDiag_EXPECTED_EXPR, n->start, n->end);
+                return -1;
+            }
+            if (SLMirBuildExprNode(b, baseNode) != 0 || SLMirBuildExprNode(b, idxNode) != 0) {
+                return -1;
+            }
+            return SLMirEmitInst(b, SLMirOp_INDEX, SLTok_INVALID, n->start, n->end);
+        }
         default: b->supported = 0; return 0;
     }
 }

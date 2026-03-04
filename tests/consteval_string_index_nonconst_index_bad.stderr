@@ -1,0 +1,1 @@
+tests/consteval_string_index_nonconst_index_bad.sl:9:15: SL2083: const block failed compile-time evaluation: identifier is not a const value in this context

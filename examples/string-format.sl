@@ -1,10 +1,6 @@
-import "core/str" { format }
+import "str" { format }
 
-fn build_showcase_format() &str {
-	return "user={s}, score={i}, ratio={f}, braces={{ok}}"
-}
-
-const SHOWCASE_FORMAT &str = build_showcase_format()
+const SHOWCASE_FORMAT &str = "user={s}, score={i}, ratio={f}, braces={{ok}}"
 
 fn out_eq(out *[u8], n uint, want &str) bool {
 	if n != len(want) {

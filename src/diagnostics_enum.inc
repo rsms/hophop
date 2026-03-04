@@ -119,9 +119,10 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_ANYTYPE_PACK_INDEX_NOT_CONST, /* SL2080: anytype pack index must be a const-evaluable
                                             integer */
     SLDiag_ANYTYPE_PACK_INDEX_OOB,       /* SL2081: anytype pack index is out of bounds */
+    SLDiag_CONST_BLOCK_EVAL_FAILED,      /* SL2083: const block failed compile-time evaluation */
     SLDiag_ANYTYPE_SPREAD_REQUIRES_PACK, /* SL2082: spread into ...anytype requires an anytype pack
                                             value */
-    SLDiag_CONST_NUMERIC_INVALID_POSITION, /* SL2083: const_int and const_float are only allowed in
+    SLDiag_CONST_NUMERIC_INVALID_POSITION, /* SL2088: const_int and const_float are only allowed in
                                               const declarations, const parameters, function
                                               returns, and cast targets */
     SLDiag_CONST_NUMERIC_PARAM_REQUIRES_CONST, /* SL2084: parameter type const_int/const_float

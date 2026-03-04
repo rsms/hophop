@@ -861,14 +861,18 @@ int HasFunctionBodyForName(const SLCBackendC* c, int32_t nodeId) {
     return 0;
 }
 
-int EmitFnDeclOrDef(SLCBackendC* c, int32_t nodeId, uint32_t depth, int emitBody, int isPrivate) {
+int EmitFnDeclOrDef(
+    SLCBackendC* c,
+    int32_t      nodeId,
+    uint32_t     depth,
+    int          emitBody,
+    int          isPrivate,
+    const SLFnSig* _Nullable forcedSig) {
     const SLAstNode* n = NodeAt(c, nodeId);
-    const SLNameMap* map;
     const char*      fnCName;
     const SLFnSig*   fnSig;
     int32_t          child = AstFirstChild(&c->ast, nodeId);
     int32_t          bodyNode = -1;
-    int32_t          returnTypeNode = -1;
     int              firstParam = 1;
     int              isMainFn;
     int              hasFnContext;
@@ -878,11 +882,16 @@ int EmitFnDeclOrDef(SLCBackendC* c, int32_t nodeId, uint32_t depth, int emitBody
     SLTypeRef        savedContextType = c->currentContextType;
     int              savedHasContext = c->hasCurrentContext;
     int              savedCurrentFunctionIsMain = c->currentFunctionIsMain;
+    const char*      savedActivePackParamName = c->activePackParamName;
+    char**           savedActivePackElemNames = c->activePackElemNames;
+    SLTypeRef*       savedActivePackElemTypes = c->activePackElemTypes;
+    uint32_t         savedActivePackElemCount = c->activePackElemCount;
     SLTypeRef        fnReturnType;
     SLTypeRef        fnContextType;
     SLTypeRef        fnSemanticContextType;
     SLTypeRef        fnContextParamType;
     SLTypeRef        fnContextLocalType;
+    int              forceStatic = 0;
 
     TypeRefSetScalar(&fnReturnType, "void");
     TypeRefSetInvalid(&fnContextType);
@@ -893,17 +902,18 @@ int EmitFnDeclOrDef(SLCBackendC* c, int32_t nodeId, uint32_t depth, int emitBody
     if (n == NULL) {
         return -1;
     }
-    map = FindNameBySlice(c, n->dataStart, n->dataEnd);
-    fnCName = FindFnCNameByNodeId(c, nodeId);
-    if (fnCName == NULL && map != NULL) {
-        fnCName = map->cName;
-    }
-    if (fnCName == NULL) {
+    fnSig = forcedSig != NULL ? forcedSig : FindFnSigByNodeId(c, nodeId);
+    if (fnSig == NULL) {
         return -1;
     }
-    fnSig = FindFnSigByNodeId(c, nodeId);
+    if (!emitBody && (fnSig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0
+        && c->emitPrivateFnDeclStatic == 0)
+    {
+        return 0;
+    }
+    fnCName = fnSig->cName;
     isMainFn = IsMainFunctionNode(c, nodeId);
-    hasFnContext = fnSig != NULL && (fnSig->hasContext || isMainFn);
+    hasFnContext = fnSig->hasContext || isMainFn;
     if (hasFnContext) {
         if (isMainFn) {
             TypeRefSetScalar(&fnContextType, "__sl_Context");
@@ -924,39 +934,27 @@ int EmitFnDeclOrDef(SLCBackendC* c, int32_t nodeId, uint32_t depth, int emitBody
     }
 
     EmitIndent(c, depth);
-    if (isPrivate && (emitBody || c->emitPrivateFnDeclStatic)
-        && BufAppendCStr(&c->out, "static ") != 0)
-    {
-        return -1;
+    forceStatic = (isPrivate || (fnSig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0)
+               && (emitBody || c->emitPrivateFnDeclStatic);
+    if ((fnSig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0 && fnSig->tcFuncIndex == UINT32_MAX) {
+        forceStatic = 0;
+    }
+    if (forceStatic) {
+        if (BufAppendCStr(&c->out, "static ") != 0) {
+            return -1;
+        }
     }
 
     while (child >= 0) {
         const SLAstNode* ch = NodeAt(c, child);
-        if (ch != NULL
-            && (ch->kind == SLAst_TYPE_NAME || ch->kind == SLAst_TYPE_PTR
-                || ch->kind == SLAst_TYPE_REF || ch->kind == SLAst_TYPE_MUTREF
-                || ch->kind == SLAst_TYPE_ARRAY || ch->kind == SLAst_TYPE_VARRAY
-                || ch->kind == SLAst_TYPE_SLICE || ch->kind == SLAst_TYPE_MUTSLICE
-                || ch->kind == SLAst_TYPE_OPTIONAL || ch->kind == SLAst_TYPE_FN
-                || ch->kind == SLAst_TYPE_ANON_STRUCT || ch->kind == SLAst_TYPE_ANON_UNION
-                || ch->kind == SLAst_TYPE_TUPLE)
-            && ch->flags == 1)
-        {
-            returnTypeNode = child;
-        } else if (ch != NULL && ch->kind == SLAst_BLOCK) {
+        if (ch != NULL && ch->kind == SLAst_BLOCK) {
             bodyNode = child;
         }
         child = AstNextSibling(&c->ast, child);
     }
 
-    if (returnTypeNode >= 0) {
-        if (ParseTypeRef(c, returnTypeNode, &fnReturnType) != 0) {
-            return -1;
-        }
-        if (EmitTypeWithName(c, returnTypeNode, fnCName) != 0) {
-            return -1;
-        }
-    } else if (BufAppendCStr(&c->out, "void ") != 0 || BufAppendCStr(&c->out, fnCName) != 0) {
+    fnReturnType = fnSig->returnType;
+    if (EmitTypeRefWithName(c, &fnReturnType, fnCName) != 0) {
         return -1;
     }
 
@@ -977,44 +975,21 @@ int EmitFnDeclOrDef(SLCBackendC* c, int32_t nodeId, uint32_t depth, int emitBody
         firstParam = 0;
     }
 
-    child = AstFirstChild(&c->ast, nodeId);
     {
         uint32_t paramIndex = 0;
-        while (child >= 0) {
-            const SLAstNode* ch = NodeAt(c, child);
-            if (ch != NULL && ch->kind == SLAst_PARAM) {
-                int32_t typeNode = AstFirstChild(&c->ast, child);
-                char*   paramName = DupParamNameForEmit(c, ch, paramIndex);
-                if (paramName == NULL) {
-                    return -1;
-                }
-                if (!firstParam && BufAppendCStr(&c->out, ", ") != 0) {
-                    return -1;
-                }
-                if ((ch->flags & SLAstFlag_PARAM_VARIADIC) != 0) {
-                    SLTypeRef t;
-                    if (ParseTypeRef(c, typeNode, &t) != 0
-                        || t.containerKind != SLTypeContainer_SCALAR)
-                    {
-                        return -1;
-                    }
-                    t.containerKind = SLTypeContainer_SLICE_RO;
-                    t.containerPtrDepth = 0;
-                    t.hasArrayLen = 0;
-                    t.arrayLen = 0;
-                    t.readOnly = 1;
-                    if (EmitTypeRefWithName(c, &t, paramName) != 0) {
-                        return -1;
-                    }
-                } else {
-                    if (EmitTypeWithName(c, typeNode, paramName) != 0) {
-                        return -1;
-                    }
-                }
-                firstParam = 0;
-                paramIndex++;
+        for (paramIndex = 0; paramIndex < fnSig->paramLen; paramIndex++) {
+            const char* paramName =
+                (fnSig->paramNames != NULL && fnSig->paramNames[paramIndex] != NULL
+                 && fnSig->paramNames[paramIndex][0] != '\0')
+                    ? fnSig->paramNames[paramIndex]
+                    : "__sl_v";
+            if (!firstParam && BufAppendCStr(&c->out, ", ") != 0) {
+                return -1;
             }
-            child = AstNextSibling(&c->ast, child);
+            if (EmitTypeRefWithName(c, &fnSig->paramTypes[paramIndex], paramName) != 0) {
+                return -1;
+            }
+            firstParam = 0;
         }
     }
 
@@ -1038,38 +1013,30 @@ int EmitFnDeclOrDef(SLCBackendC* c, int32_t nodeId, uint32_t depth, int emitBody
             return -1;
         }
     }
-    child = AstFirstChild(&c->ast, nodeId);
     {
         uint32_t paramIndex = 0;
-        while (child >= 0) {
-            const SLAstNode* ch = NodeAt(c, child);
-            if (ch != NULL && ch->kind == SLAst_PARAM) {
-                int32_t   typeNode = AstFirstChild(&c->ast, child);
-                SLTypeRef t;
-                char*     paramName = DupParamNameForEmit(c, ch, paramIndex);
-                if (paramName == NULL) {
-                    return -1;
-                }
-                if (ParseTypeRef(c, typeNode, &t) != 0) {
-                    return -1;
-                }
-                if ((ch->flags & SLAstFlag_PARAM_VARIADIC) != 0) {
-                    if (t.containerKind != SLTypeContainer_SCALAR) {
-                        return -1;
-                    }
-                    t.containerKind = SLTypeContainer_SLICE_RO;
-                    t.containerPtrDepth = 0;
-                    t.hasArrayLen = 0;
-                    t.arrayLen = 0;
-                    t.readOnly = 1;
-                }
-                if (AddLocal(c, paramName, t) != 0) {
-                    return -1;
-                }
-                paramIndex++;
+        for (paramIndex = 0; paramIndex < fnSig->paramLen; paramIndex++) {
+            const char* paramName =
+                (fnSig->paramNames != NULL && fnSig->paramNames[paramIndex] != NULL
+                 && fnSig->paramNames[paramIndex][0] != '\0')
+                    ? fnSig->paramNames[paramIndex]
+                    : "__sl_v";
+            if (AddLocal(c, paramName, fnSig->paramTypes[paramIndex]) != 0) {
+                return -1;
             }
-            child = AstNextSibling(&c->ast, child);
         }
+    }
+    c->activePackParamName = NULL;
+    c->activePackElemNames = NULL;
+    c->activePackElemTypes = NULL;
+    c->activePackElemCount = 0;
+    if ((fnSig->flags & SLFnSigFlag_EXPANDED_ANYPACK) != 0 && fnSig->packParamName != NULL
+        && fnSig->packArgStart + fnSig->packArgCount <= fnSig->paramLen)
+    {
+        c->activePackParamName = fnSig->packParamName;
+        c->activePackElemNames = &fnSig->paramNames[fnSig->packArgStart];
+        c->activePackElemTypes = &fnSig->paramTypes[fnSig->packArgStart];
+        c->activePackElemCount = fnSig->packArgCount;
     }
 
     c->currentReturnType = fnReturnType;
@@ -1083,6 +1050,10 @@ int EmitFnDeclOrDef(SLCBackendC* c, int32_t nodeId, uint32_t depth, int emitBody
         c->currentContextType = savedContextType;
         c->hasCurrentContext = savedHasContext;
         c->currentFunctionIsMain = savedCurrentFunctionIsMain;
+        c->activePackParamName = savedActivePackParamName;
+        c->activePackElemNames = savedActivePackElemNames;
+        c->activePackElemTypes = savedActivePackElemTypes;
+        c->activePackElemCount = savedActivePackElemCount;
         return -1;
     }
     c->currentReturnType = savedReturnType;
@@ -1090,6 +1061,10 @@ int EmitFnDeclOrDef(SLCBackendC* c, int32_t nodeId, uint32_t depth, int emitBody
     c->currentContextType = savedContextType;
     c->hasCurrentContext = savedHasContext;
     c->currentFunctionIsMain = savedCurrentFunctionIsMain;
+    c->activePackParamName = savedActivePackParamName;
+    c->activePackElemNames = savedActivePackElemNames;
+    c->activePackElemTypes = savedActivePackElemTypes;
+    c->activePackElemCount = savedActivePackElemCount;
 
     PopScope(c);
     c->localLen = savedLocalLen;
@@ -1426,7 +1401,51 @@ int EmitDeclNode(
         case SLAst_ENUM:   return EmitEnumDecl(c, nodeId, depth);
         case SLAst_TYPE_ALIAS:
             return EmitTypeAliasDecl(c, nodeId, depth, declarationOnly, isPrivate);
-        case SLAst_FN:    return EmitFnDeclOrDef(c, nodeId, depth, emitBody, isPrivate);
+        case SLAst_FN: {
+            const SLFnSig* sigs[SLCCG_MAX_CALL_CANDIDATES];
+            uint32_t       nSigs = FindFnSigCandidatesByNodeId(
+                c, nodeId, sigs, (uint32_t)(sizeof(sigs) / sizeof(sigs[0])));
+            int      importedBeforeOwnOffset = 0;
+            uint32_t i;
+            int      emitted = 0;
+            if (c->options != NULL && c->options->emitNodeStartOffsetEnabled != 0
+                && n->start < c->options->emitNodeStartOffset)
+            {
+                importedBeforeOwnOffset = 1;
+            }
+            if (nSigs == 0) {
+                if (importedBeforeOwnOffset) {
+                    return 0;
+                }
+                if (EmitFnDeclOrDef(c, nodeId, depth, emitBody, isPrivate, NULL) != 0) {
+                    if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                        SetDiagNode(c, nodeId, SLDiag_CODEGEN_INTERNAL);
+                    }
+                    return -1;
+                }
+                return 0;
+            }
+            if (nSigs > (uint32_t)(sizeof(sigs) / sizeof(sigs[0]))) {
+                nSigs = (uint32_t)(sizeof(sigs) / sizeof(sigs[0]));
+            }
+            for (i = 0; i < nSigs; i++) {
+                if ((sigs[i]->flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0) {
+                    continue;
+                }
+                if (importedBeforeOwnOffset) {
+                    continue;
+                }
+                if (EmitFnDeclOrDef(c, nodeId, depth, emitBody, isPrivate, sigs[i]) != 0) {
+                    if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                        SetDiagNode(c, nodeId, SLDiag_CODEGEN_INTERNAL);
+                    }
+                    return -1;
+                }
+                emitted = 1;
+            }
+            (void)emitted;
+            return 0;
+        }
         case SLAst_VAR:   return EmitVarDecl(c, nodeId, depth, declarationOnly, isPrivate);
         case SLAst_CONST: return EmitConstDecl(c, nodeId, depth, declarationOnly, isPrivate);
         default:          return 0;
@@ -1571,6 +1590,25 @@ int EmitHeader(SLCBackendC* c) {
             return -1;
         }
     }
+    for (i = 0; i < c->fnSigLen; i++) {
+        const SLFnSig*   sig = &c->fnSigs[i];
+        const SLAstNode* fnNode;
+        if ((sig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) == 0) {
+            continue;
+        }
+        fnNode = NodeAt(c, sig->nodeId);
+        if (fnNode == NULL || fnNode->kind != SLAst_FN || !FnNodeHasBody(c, sig->nodeId)) {
+            continue;
+        }
+        if (EmitFnDeclOrDef(c, sig->nodeId, 0, 0, 1, sig) != 0 || BufAppendChar(&c->out, '\n') != 0)
+        {
+            if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                SetDiagNode(c, sig->nodeId, SLDiag_CODEGEN_INTERNAL);
+            }
+            c->emitPrivateFnDeclStatic = 0;
+            return -1;
+        }
+    }
     c->emitPrivateFnDeclStatic = 0;
 
     for (i = 0; i < c->topDeclLen; i++) {
@@ -1617,6 +1655,24 @@ int EmitHeader(SLCBackendC* c) {
             return -1;
         }
     }
+    for (i = 0; i < c->fnSigLen; i++) {
+        const SLFnSig*   sig = &c->fnSigs[i];
+        const SLAstNode* fnNode;
+        if ((sig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) == 0) {
+            continue;
+        }
+        fnNode = NodeAt(c, sig->nodeId);
+        if (fnNode == NULL || fnNode->kind != SLAst_FN || !FnNodeHasBody(c, sig->nodeId)) {
+            continue;
+        }
+        if (EmitFnDeclOrDef(c, sig->nodeId, 0, 1, 1, sig) != 0 || BufAppendChar(&c->out, '\n') != 0)
+        {
+            if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                SetDiagNode(c, sig->nodeId, SLDiag_CODEGEN_INTERNAL);
+            }
+            return -1;
+        }
+    }
 
     if (BufAppendCStr(&c->out, "#endif /* ") != 0 || BufAppendCStr(&c->out, impl) != 0
         || BufAppendCStr(&c->out, " */\n\n#endif /* ") != 0 || BufAppendCStr(&c->out, guard) != 0
@@ -1639,6 +1695,20 @@ int ShouldEmitDeclNode(const SLCBackendC* c, int32_t nodeId) {
     if (c->options != NULL && c->options->emitNodeStartOffsetEnabled != 0
         && n->start < c->options->emitNodeStartOffset)
     {
+        if (n->kind == SLAst_FN) {
+            const SLFnSig* sigs[SLCCG_MAX_CALL_CANDIDATES];
+            uint32_t       nSigs = FindFnSigCandidatesByNodeId(
+                c, nodeId, sigs, (uint32_t)(sizeof(sigs) / sizeof(sigs[0])));
+            uint32_t i;
+            if (nSigs > (uint32_t)(sizeof(sigs) / sizeof(sigs[0]))) {
+                nSigs = (uint32_t)(sizeof(sigs) / sizeof(sigs[0]));
+            }
+            for (i = 0; i < nSigs; i++) {
+                if ((sigs[i]->flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0) {
+                    return 1;
+                }
+            }
+        }
         return 0;
     }
     return 1;

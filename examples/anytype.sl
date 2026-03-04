@@ -1,0 +1,57 @@
+// anytype and ...anytype patterns:
+// - duck-typed field access
+// - type-directed specialization with typeof
+// - variadic anytype pack validation in const blocks
+struct CircleF32 {
+	x      f32
+	y      f32
+	radius f32
+}
+
+struct Particle {
+	x      f32
+	y      f32
+	radius f32
+}
+
+fn sum_circle_parts(circle anytype) f32 {
+	return circle.x + circle.y + circle.radius
+}
+
+fn score(x anytype) i64 {
+	if typeof(x) == i64 {
+		return x
+	}
+	if typeof(x) == typeof("" as &str) {
+		return len(x) as i64
+	}
+	return 0
+}
+
+fn require_int_str_bool(args ...anytype) {
+	const {
+		assert len(args) == 3
+		assert typeof(args[0]) == int
+		assert typeof(args[1]) == typeof("" as &str)
+		assert typeof(args[2]) == bool
+	}
+}
+
+fn first_int(args ...anytype) int {
+	require_int_str_bool(args...)
+	return args[0]
+}
+
+fn main() {
+	var c = CircleF32{ x: 1.0, y: 2.0, radius: 3.0 }
+	var p = Particle{ x: 4.0, y: 5.0, radius: 6.0 }
+
+	assert sum_circle_parts(c) == 6.0
+	assert sum_circle_parts(p) == 15.0
+
+	assert score(7 as i64) == 7 as i64
+	assert score("hello") == 5 as i64
+	assert score(true) == 0 as i64
+
+	assert first_int(42, "ok", true) == 42
+}

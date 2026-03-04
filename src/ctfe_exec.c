@@ -834,6 +834,33 @@ static int SLCTFEExecEvalStmt(
         return 0;
     }
 
+    if (s->kind == SLAst_CONST_BLOCK) {
+        int32_t              blockNode = s->firstChild;
+        int                  didReturn = 0;
+        int                  isConst = 0;
+        SLCTFEExecLoopAction loopAction = SLCTFEExecLoopAction_NONE;
+        if (blockNode < 0 || c->ast->nodes[blockNode].kind != SLAst_BLOCK) {
+            SLCTFEExecSetReasonNode(c, stmtNode, "const block is malformed for const evaluation");
+            *outIsConst = 0;
+            return 0;
+        }
+        if (SLCTFEExecEvalBlockImpl(c, blockNode, outValue, &didReturn, &isConst, &loopAction) != 0)
+        {
+            return -1;
+        }
+        if (!isConst) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (didReturn || loopAction != SLCTFEExecLoopAction_NONE) {
+            SLCTFEExecSetReasonNode(
+                c, stmtNode, "const block cannot alter control flow in const evaluation");
+            *outIsConst = 0;
+            return 0;
+        }
+        return 0;
+    }
+
     if (s->kind == SLAst_IF) {
         int32_t              condNode = s->firstChild;
         int32_t              thenNode = condNode >= 0 ? c->ast->nodes[condNode].nextSibling : -1;

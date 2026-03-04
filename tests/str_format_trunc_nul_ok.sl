@@ -1,4 +1,4 @@
-import "core/str" { format }
+import "str" { format }
 
 fn main() {
 	var out [u8 5]

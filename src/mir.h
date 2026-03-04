@@ -16,6 +16,7 @@ typedef enum {
     SLMirOp_CALL,
     SLMirOp_UNARY,
     SLMirOp_BINARY,
+    SLMirOp_INDEX,
     SLMirOp_RETURN,
 } SLMirOp;
 

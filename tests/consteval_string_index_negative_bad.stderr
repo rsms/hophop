@@ -1,0 +1,1 @@
+tests/consteval_string_index_negative_bad.sl:8:23: SL2083: const block failed compile-time evaluation: expression is not const-evaluable

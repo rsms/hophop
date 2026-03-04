@@ -1,4 +1,0 @@
-fn main() {
-	var out *str = "                "
-	fmt(out, "{i}", "hello")
-}

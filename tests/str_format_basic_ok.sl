@@ -1,4 +1,4 @@
-import "core/str" { format }
+import "str" { format }
 
 fn out_eq(out *[u8], n uint, want &str) bool {
 	if n != len(want) as uint {

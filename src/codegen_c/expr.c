@@ -10,6 +10,225 @@ int IsTypeNodeKind(SLAstKind kind) {
         || kind == SLAst_TYPE_TUPLE;
 }
 
+int IsActivePackIdent(const SLCBackendC* c, uint32_t start, uint32_t end) {
+    return c != NULL && c->activePackParamName != NULL
+        && SliceEqName(c->unit->source, start, end, c->activePackParamName);
+}
+
+int ResolveActivePackConstIndex(
+    SLCBackendC* c, int32_t idxNode, uint32_t* outIndex, const SLTypeRef** outElemType) {
+    int64_t value = 0;
+    int     isConst = 0;
+    if (c == NULL || outIndex == NULL || c->activePackElemCount == 0 || idxNode < 0) {
+        return -1;
+    }
+    if (EvalConstIntExpr(c, idxNode, &value, &isConst) != 0 || !isConst || value < 0
+        || (uint64_t)value >= (uint64_t)c->activePackElemCount)
+    {
+        return -1;
+    }
+    *outIndex = (uint32_t)value;
+    if (outElemType != NULL && c->activePackElemTypes != NULL) {
+        *outElemType = &c->activePackElemTypes[*outIndex];
+    }
+    return 0;
+}
+
+/* Returns 0 on success, 1 when exprNode is not an active-pack index expression, -1 on error. */
+int ResolveActivePackIndexExpr(
+    SLCBackendC* c,
+    int32_t      exprNode,
+    int32_t*     outIdxNode,
+    int*         outIsConst,
+    uint32_t*    outConstIndex) {
+    const SLAstNode* n;
+    int32_t          baseNode;
+    int32_t          idxNode;
+    int32_t          extraNode;
+    const SLAstNode* baseAst;
+    int64_t          idxValue = 0;
+    int              idxIsConst = 0;
+
+    if (c == NULL || outIdxNode == NULL || outIsConst == NULL || outConstIndex == NULL) {
+        return -1;
+    }
+    *outIdxNode = -1;
+    *outIsConst = 0;
+    *outConstIndex = 0;
+
+    n = NodeAt(c, exprNode);
+    if (n != NULL && n->kind == SLAst_CALL_ARG) {
+        exprNode = AstFirstChild(&c->ast, exprNode);
+        n = NodeAt(c, exprNode);
+    }
+    if (n == NULL || n->kind != SLAst_INDEX || (n->flags & SLAstFlag_INDEX_SLICE) != 0) {
+        return 1;
+    }
+    baseNode = AstFirstChild(&c->ast, exprNode);
+    idxNode = AstNextSibling(&c->ast, baseNode);
+    extraNode = idxNode >= 0 ? AstNextSibling(&c->ast, idxNode) : -1;
+    if (baseNode < 0 || idxNode < 0 || extraNode >= 0) {
+        return 1;
+    }
+    baseAst = NodeAt(c, baseNode);
+    if (baseAst == NULL || baseAst->kind != SLAst_IDENT
+        || !IsActivePackIdent(c, baseAst->dataStart, baseAst->dataEnd))
+    {
+        return 1;
+    }
+    if (EvalConstIntExpr(c, idxNode, &idxValue, &idxIsConst) != 0) {
+        return -1;
+    }
+    if (idxIsConst) {
+        if (idxValue < 0 || (uint64_t)idxValue >= (uint64_t)c->activePackElemCount) {
+            return -1;
+        }
+        *outIdxNode = idxNode;
+        *outIsConst = 1;
+        *outConstIndex = (uint32_t)idxValue;
+        return 0;
+    }
+    *outIdxNode = idxNode;
+    *outIsConst = 0;
+    return 0;
+}
+
+int EmitDynamicActivePackIndexCoerced(
+    SLCBackendC* c, int32_t idxNode, const SLTypeRef* _Nullable dstType) {
+    uint32_t tempId;
+    SLBuf    idxNameBuf = { 0 };
+    SLBuf    valueNameBuf = { 0 };
+    char*    idxName;
+    char*    valueName;
+    uint32_t i;
+    if (c == NULL || idxNode < 0 || dstType == NULL || !dstType->valid) {
+        return -1;
+    }
+    tempId = FmtNextTempId(c);
+    idxNameBuf.arena = &c->arena;
+    valueNameBuf.arena = &c->arena;
+    if (BufAppendCStr(&idxNameBuf, "__sl_pack_i") != 0 || BufAppendU32(&idxNameBuf, tempId) != 0
+        || BufAppendCStr(&valueNameBuf, "__sl_pack_v") != 0
+        || BufAppendU32(&valueNameBuf, tempId) != 0)
+    {
+        return -1;
+    }
+    idxName = BufFinish(&idxNameBuf);
+    valueName = BufFinish(&valueNameBuf);
+    if (idxName == NULL || valueName == NULL) {
+        return -1;
+    }
+
+    if (BufAppendCStr(&c->out, "(__extension__({ __sl_uint ") != 0
+        || BufAppendCStr(&c->out, idxName) != 0 || BufAppendCStr(&c->out, " = (__sl_uint)(") != 0
+        || EmitExpr(c, idxNode) != 0 || BufAppendCStr(&c->out, "); ") != 0)
+    {
+        return -1;
+    }
+    if (EmitTypeNameWithDepth(c, dstType) != 0 || BufAppendChar(&c->out, ' ') != 0
+        || BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, "; switch (") != 0
+        || BufAppendCStr(&c->out, idxName) != 0 || BufAppendCStr(&c->out, ") { ") != 0)
+    {
+        return -1;
+    }
+
+    for (i = 0; i < c->activePackElemCount; i++) {
+        uint8_t cost = 0;
+        if (c->activePackElemNames == NULL || c->activePackElemNames[i] == NULL) {
+            return -1;
+        }
+        if (TypeRefAssignableCost(c, dstType, &c->activePackElemTypes[i], &cost) == 0) {
+            if (BufAppendCStr(&c->out, "case ") != 0 || BufAppendU32(&c->out, i) != 0
+                || BufAppendCStr(&c->out, "u: ") != 0 || BufAppendCStr(&c->out, valueName) != 0
+                || BufAppendCStr(&c->out, " = ((") != 0 || EmitTypeNameWithDepth(c, dstType) != 0
+                || BufAppendCStr(&c->out, ")(") != 0
+                || BufAppendCStr(&c->out, c->activePackElemNames[i]) != 0
+                || BufAppendCStr(&c->out, ")); break; ") != 0)
+            {
+                return -1;
+            }
+        } else {
+            if (BufAppendCStr(&c->out, "case ") != 0 || BufAppendU32(&c->out, i) != 0
+                || BufAppendCStr(
+                       &c->out,
+                       "u: __sl_panic(__sl_strlit(\"anytype pack element type mismatch\"), "
+                       "__FILE__, __LINE__); __builtin_unreachable(); ")
+                       != 0)
+            {
+                return -1;
+            }
+        }
+    }
+    if (BufAppendCStr(
+            &c->out,
+            "default: __sl_panic(__sl_strlit(\"anytype pack index out of bounds\"), __FILE__, "
+            "__LINE__); __builtin_unreachable(); } ")
+            != 0
+        || BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, "; }))") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+int EmitDynamicActivePackTypeTag(SLCBackendC* c, int32_t idxNode) {
+    uint32_t tempId;
+    SLBuf    idxNameBuf = { 0 };
+    SLBuf    valueNameBuf = { 0 };
+    char*    idxName;
+    char*    valueName;
+    uint32_t i;
+    if (c == NULL || idxNode < 0) {
+        return -1;
+    }
+    tempId = FmtNextTempId(c);
+    idxNameBuf.arena = &c->arena;
+    valueNameBuf.arena = &c->arena;
+    if (BufAppendCStr(&idxNameBuf, "__sl_pack_ti") != 0 || BufAppendU32(&idxNameBuf, tempId) != 0
+        || BufAppendCStr(&valueNameBuf, "__sl_pack_tv") != 0
+        || BufAppendU32(&valueNameBuf, tempId) != 0)
+    {
+        return -1;
+    }
+    idxName = BufFinish(&idxNameBuf);
+    valueName = BufFinish(&valueNameBuf);
+    if (idxName == NULL || valueName == NULL) {
+        return -1;
+    }
+
+    if (BufAppendCStr(&c->out, "(__extension__({ __sl_uint ") != 0
+        || BufAppendCStr(&c->out, idxName) != 0 || BufAppendCStr(&c->out, " = (__sl_uint)(") != 0
+        || EmitExpr(c, idxNode) != 0 || BufAppendCStr(&c->out, "); __sl_type ") != 0
+        || BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, "; switch (") != 0
+        || BufAppendCStr(&c->out, idxName) != 0 || BufAppendCStr(&c->out, ") { ") != 0)
+    {
+        return -1;
+    }
+    for (i = 0; i < c->activePackElemCount; i++) {
+        if (c->activePackElemTypes == NULL) {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, "case ") != 0 || BufAppendU32(&c->out, i) != 0
+            || BufAppendCStr(&c->out, "u: ") != 0 || BufAppendCStr(&c->out, valueName) != 0
+            || BufAppendCStr(&c->out, " = ") != 0
+            || EmitTypeTagLiteralFromTypeRef(c, &c->activePackElemTypes[i]) != 0
+            || BufAppendCStr(&c->out, "; break; ") != 0)
+        {
+            return -1;
+        }
+    }
+    if (BufAppendCStr(
+            &c->out,
+            "default: __sl_panic(__sl_strlit(\"anytype pack index out of bounds\"), __FILE__, "
+            "__LINE__); __builtin_unreachable(); } ")
+            != 0
+        || BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, "; }))") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
 int DecodeNewExprNodes(
     SLCBackendC* c,
     int32_t      nodeId,
@@ -608,6 +827,7 @@ void GatherCallCandidatesBySlice(
     const SLFnSig* byName[SLCCG_MAX_CALL_CANDIDATES];
     uint32_t       candidateLen = 0;
     int            nameFound = 0;
+    int            hasTemplateInstance = 0;
     uint32_t       i, j;
 
     i = FindFnSigCandidatesBySlice(
@@ -618,6 +838,14 @@ void GatherCallCandidatesBySlice(
             i = (uint32_t)(sizeof(byName) / sizeof(byName[0]));
         }
         for (j = 0; j < i && candidateLen < SLCCG_MAX_CALL_CANDIDATES; j++) {
+            if ((byName[j]->flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0) {
+                hasTemplateInstance = 1;
+            }
+        }
+        for (j = 0; j < i && candidateLen < SLCCG_MAX_CALL_CANDIDATES; j++) {
+            if (hasTemplateInstance && (byName[j]->flags & SLFnSigFlag_TEMPLATE_BASE) != 0) {
+                continue;
+            }
             candidates[candidateLen++] = byName[j];
         }
     }
@@ -640,14 +868,28 @@ void GatherCallCandidatesByPkgMethod(
     const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
     uint32_t       candidateLen = 0;
     int            nameFound = 0;
+    int            hasTemplateInstance = 0;
     uint32_t       i;
     for (i = 0; i < c->fnSigLen && candidateLen < SLCCG_MAX_CALL_CANDIDATES; i++) {
         if (NameEqPkgPrefixedMethod(
                 c->fnSigs[i].slName, c->unit->source, pkgStart, pkgEnd, methodStart, methodEnd))
         {
+            if ((c->fnSigs[i].flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0) {
+                hasTemplateInstance = 1;
+            }
             candidates[candidateLen++] = &c->fnSigs[i];
             nameFound = 1;
         }
+    }
+    if (hasTemplateInstance) {
+        uint32_t out = 0;
+        for (i = 0; i < candidateLen; i++) {
+            if ((candidates[i]->flags & SLFnSigFlag_TEMPLATE_BASE) != 0) {
+                continue;
+            }
+            candidates[out++] = candidates[i];
+        }
+        candidateLen = out;
     }
     for (i = 0; i < candidateLen; i++) {
         outCandidates[i] = candidates[i];
@@ -1069,6 +1311,782 @@ int ResolveCallTargetFromCandidates(
     *outSig = bestSig;
     *outCalleeName = bestName;
     return 0;
+}
+
+/* Returns 0 on success (exactly one dynamic active-pack index arg found), 1 when none found,
+ * 2 when multiple dynamic active-pack index args are present, -1 on error. */
+int FindSingleDynamicActivePackCallArg(
+    SLCBackendC*   c,
+    const int32_t* argNodes,
+    uint32_t       argCount,
+    uint32_t*      outArgIndex,
+    int32_t*       outIdxNode) {
+    uint32_t i;
+    int      found = 0;
+    if (c == NULL || argNodes == NULL || outArgIndex == NULL || outIdxNode == NULL) {
+        return -1;
+    }
+    *outArgIndex = 0;
+    *outIdxNode = -1;
+    for (i = 0; i < argCount; i++) {
+        int32_t  idxNode = -1;
+        int      isConstIndex = 0;
+        uint32_t constIndex = 0;
+        int rc = ResolveActivePackIndexExpr(c, argNodes[i], &idxNode, &isConstIndex, &constIndex);
+        if (rc < 0) {
+            return -1;
+        }
+        if (rc == 0 && !isConstIndex) {
+            if (found) {
+                return 2;
+            }
+            found = 1;
+            *outArgIndex = i;
+            *outIdxNode = idxNode;
+        }
+    }
+    return found ? 0 : 1;
+}
+
+int MaterializeTemplateInstanceForDispatchCase(
+    SLCBackendC*          c,
+    const SLFnSig*        baseSig,
+    const SLCCallBinding* binding,
+    const SLTypeRef*      caseArgTypes,
+    uint32_t              argCount) {
+    SLTypeRef* paramTypes;
+    uint8_t*   paramFlags = NULL;
+    uint32_t   p;
+    uint32_t   tempId;
+    SLBuf      cNameBuf = { 0 };
+    char*      cName;
+    int        replaced = 0;
+    uint16_t   sigFlags;
+    if (c == NULL || baseSig == NULL || binding == NULL || caseArgTypes == NULL
+        || (baseSig->flags & SLFnSigFlag_TEMPLATE_BASE) == 0 || baseSig->paramLen == 0)
+    {
+        return 1;
+    }
+    paramTypes = (SLTypeRef*)SLArenaAlloc(
+        &c->arena, baseSig->paramLen * sizeof(SLTypeRef), (uint32_t)_Alignof(SLTypeRef));
+    if (paramTypes == NULL) {
+        return -1;
+    }
+    for (p = 0; p < baseSig->paramLen; p++) {
+        paramTypes[p] = baseSig->paramTypes[p];
+    }
+    if (baseSig->paramFlags != NULL) {
+        paramFlags = (uint8_t*)SLArenaAlloc(
+            &c->arena, baseSig->paramLen * sizeof(uint8_t), (uint32_t)_Alignof(uint8_t));
+        if (paramFlags == NULL) {
+            return -1;
+        }
+        for (p = 0; p < baseSig->paramLen; p++) {
+            paramFlags[p] = baseSig->paramFlags[p] & SLCCGParamFlag_CONST;
+        }
+    }
+    for (p = 0; p < argCount; p++) {
+        int32_t paramIndex = binding->argParamIndices[p];
+        if (paramIndex < 0 || (uint32_t)paramIndex >= baseSig->paramLen) {
+            continue;
+        }
+        if (baseSig->paramFlags != NULL
+            && (baseSig->paramFlags[paramIndex] & SLCCGParamFlag_ANYTYPE) != 0)
+        {
+            if (!caseArgTypes[p].valid) {
+                return 1;
+            }
+            paramTypes[paramIndex] = caseArgTypes[p];
+            replaced = 1;
+        }
+    }
+    if (!replaced) {
+        return 1;
+    }
+
+    tempId = FmtNextTempId(c);
+    cNameBuf.arena = &c->arena;
+    if (BufAppendCStr(&cNameBuf, baseSig->cName) != 0 || BufAppendCStr(&cNameBuf, "__ti_rt") != 0
+        || BufAppendU32(&cNameBuf, tempId) != 0)
+    {
+        return -1;
+    }
+    cName = BufFinish(&cNameBuf);
+    if (cName == NULL) {
+        return -1;
+    }
+
+    sigFlags =
+        (uint16_t)(SLFnSigFlag_TEMPLATE_INSTANCE | (baseSig->flags & SLFnSigFlag_EXPANDED_ANYPACK));
+    if (AddFnSig(
+            c,
+            baseSig->slName,
+            cName,
+            baseSig->nodeId,
+            baseSig->returnType,
+            paramTypes,
+            baseSig->paramNames,
+            paramFlags,
+            baseSig->paramLen,
+            baseSig->isVariadic,
+            baseSig->hasContext,
+            baseSig->contextType,
+            sigFlags,
+            UINT32_MAX,
+            baseSig->packArgStart,
+            baseSig->packArgCount,
+            baseSig->packParamName)
+        != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+int FindTemplateInstanceSigForDispatchCase(
+    const SLCBackendC* c,
+    const SLFnSig*     baseSig,
+    const SLTypeRef*   paramTypes,
+    const uint8_t*     paramFlags,
+    const SLFnSig**    outSig) {
+    uint32_t i;
+    if (c == NULL || baseSig == NULL || paramTypes == NULL || outSig == NULL) {
+        return -1;
+    }
+    for (i = 0; i < c->fnSigLen; i++) {
+        const SLFnSig* sig = &c->fnSigs[i];
+        uint32_t       p;
+        if (sig->nodeId != baseSig->nodeId || (sig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) == 0
+            || sig->paramLen != baseSig->paramLen || sig->isVariadic != baseSig->isVariadic
+            || sig->hasContext != baseSig->hasContext)
+        {
+            continue;
+        }
+        for (p = 0; p < sig->paramLen; p++) {
+            uint8_t sigPflags = sig->paramFlags != NULL ? sig->paramFlags[p] : 0u;
+            uint8_t wantPflags = paramFlags != NULL ? paramFlags[p] : 0u;
+            if (!TypeRefEqual(&sig->paramTypes[p], &paramTypes[p])
+                || (sigPflags & SLCCGParamFlag_CONST) != (wantPflags & SLCCGParamFlag_CONST))
+            {
+                break;
+            }
+        }
+        if (p == sig->paramLen) {
+            *outSig = sig;
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int EmitInlineStaticFnPrototypeForSig(SLCBackendC* c, const SLFnSig* sig) {
+    uint32_t p;
+    int      first = 1;
+    if (c == NULL || sig == NULL) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "extern ") != 0
+        || EmitTypeRefWithName(c, &sig->returnType, sig->cName) != 0
+        || BufAppendChar(&c->out, '(') != 0)
+    {
+        return -1;
+    }
+    if (sig->hasContext) {
+        SLTypeRef contextParamType = sig->contextType;
+        contextParamType.ptrDepth++;
+        if (EmitTypeRefWithName(c, &contextParamType, "__sl_ctx") != 0) {
+            return -1;
+        }
+        first = 0;
+    }
+    for (p = 0; p < sig->paramLen; p++) {
+        SLBuf nameBuf = { 0 };
+        char* name;
+        if (!first && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        nameBuf.arena = &c->arena;
+        if (BufAppendCStr(&nameBuf, "__sl_p") != 0 || BufAppendU32(&nameBuf, p) != 0) {
+            return -1;
+        }
+        name = BufFinish(&nameBuf);
+        if (name == NULL || EmitTypeRefWithName(c, &sig->paramTypes[p], name) != 0) {
+            return -1;
+        }
+        first = 0;
+    }
+    if (first && BufAppendCStr(&c->out, "void") != 0) {
+        return -1;
+    }
+    return BufAppendCStr(&c->out, "); ");
+}
+
+int EmitRuntimeAnytypeDispatchFromTemplateBase(
+    SLCBackendC*          c,
+    int32_t               callNode,
+    const SLFnSig*        baseSig,
+    const SLCCallBinding* baseBinding,
+    const int32_t*        argNodes,
+    const SLTypeRef*      argTypes,
+    uint32_t              argCount) {
+    uint32_t       dynamicArgIndex = 0;
+    int32_t        idxNode = -1;
+    SLCCallBinding caseBindings[SLCCG_MAX_CALL_ARGS];
+    const SLFnSig* caseSigs[SLCCG_MAX_CALL_ARGS];
+    const char*    caseNames[SLCCG_MAX_CALL_ARGS];
+    SLTypeRef      returnType;
+    int            returnsVoid = 0;
+    uint32_t       i;
+    uint32_t       tempId;
+    SLBuf          idxNameBuf = { 0 };
+    SLBuf          valueNameBuf = { 0 };
+    char*          idxName = NULL;
+    char*          valueName = NULL;
+    if (c == NULL || baseSig == NULL || baseBinding == NULL || argNodes == NULL || argTypes == NULL
+        || c->activePackElemCount == 0 || c->activePackElemCount > SLCCG_MAX_CALL_ARGS)
+    {
+        return 1;
+    }
+    if ((baseSig->flags & SLFnSigFlag_TEMPLATE_BASE) == 0) {
+        return 1;
+    }
+    if (FindSingleDynamicActivePackCallArg(c, argNodes, argCount, &dynamicArgIndex, &idxNode) != 0
+        || idxNode < 0 || dynamicArgIndex >= argCount)
+    {
+        return 1;
+    }
+
+    for (i = 0; i < c->activePackElemCount; i++) {
+        SLTypeRef      caseArgTypes[SLCCG_MAX_CALL_ARGS];
+        SLTypeRef*     caseParamTypes;
+        uint8_t*       caseParamFlags = NULL;
+        const SLFnSig* caseSig = NULL;
+        uint32_t       p;
+        int            replaced = 0;
+        for (p = 0; p < argCount; p++) {
+            caseArgTypes[p] = argTypes[p];
+        }
+        caseArgTypes[dynamicArgIndex] = c->activePackElemTypes[i];
+        caseBindings[i] = *baseBinding;
+
+        caseParamTypes = (SLTypeRef*)SLArenaAlloc(
+            &c->arena, baseSig->paramLen * sizeof(SLTypeRef), (uint32_t)_Alignof(SLTypeRef));
+        if (caseParamTypes == NULL) {
+            return -1;
+        }
+        for (p = 0; p < baseSig->paramLen; p++) {
+            caseParamTypes[p] = baseSig->paramTypes[p];
+        }
+        if (baseSig->paramFlags != NULL) {
+            caseParamFlags = (uint8_t*)SLArenaAlloc(
+                &c->arena, baseSig->paramLen * sizeof(uint8_t), (uint32_t)_Alignof(uint8_t));
+            if (caseParamFlags == NULL) {
+                return -1;
+            }
+            for (p = 0; p < baseSig->paramLen; p++) {
+                caseParamFlags[p] = baseSig->paramFlags[p] & SLCCGParamFlag_CONST;
+            }
+        }
+        for (p = 0; p < argCount; p++) {
+            int32_t paramIndex = caseBindings[i].argParamIndices[p];
+            if (paramIndex < 0 || (uint32_t)paramIndex >= baseSig->paramLen) {
+                continue;
+            }
+            if (baseSig->paramFlags != NULL
+                && (baseSig->paramFlags[paramIndex] & SLCCGParamFlag_ANYTYPE) != 0)
+            {
+                caseParamTypes[paramIndex] = caseArgTypes[p];
+                caseBindings[i].argExpectedTypes[p] = caseArgTypes[p];
+                replaced = 1;
+            }
+        }
+        if (!replaced) {
+            return 1;
+        }
+        if (MaterializeTemplateInstanceForDispatchCase(
+                c, baseSig, &caseBindings[i], caseArgTypes, argCount)
+            != 0)
+        {
+            return -1;
+        }
+        if (FindTemplateInstanceSigForDispatchCase(
+                c, baseSig, caseParamTypes, caseParamFlags, &caseSig)
+            != 0)
+        {
+            return -1;
+        }
+        caseSigs[i] = caseSig;
+        caseNames[i] = caseSig->cName;
+    }
+
+    returnType = caseSigs[0]->returnType;
+    for (i = 1; i < c->activePackElemCount; i++) {
+        if (!TypeRefEqual(&returnType, &caseSigs[i]->returnType)) {
+            return -1;
+        }
+    }
+    returnsVoid =
+        returnType.valid && returnType.containerKind == SLTypeContainer_SCALAR
+        && returnType.ptrDepth == 0 && returnType.containerPtrDepth == 0 && !returnType.isOptional
+        && returnType.baseName != NULL && StrEq(returnType.baseName, "void");
+
+    tempId = FmtNextTempId(c);
+    idxNameBuf.arena = &c->arena;
+    valueNameBuf.arena = &c->arena;
+    if (BufAppendCStr(&idxNameBuf, "__sl_pack_ci") != 0 || BufAppendU32(&idxNameBuf, tempId) != 0
+        || BufAppendCStr(&valueNameBuf, "__sl_pack_cr") != 0
+        || BufAppendU32(&valueNameBuf, tempId) != 0)
+    {
+        return -1;
+    }
+    idxName = BufFinish(&idxNameBuf);
+    valueName = BufFinish(&valueNameBuf);
+    if (idxName == NULL || valueName == NULL) {
+        return -1;
+    }
+
+    if (BufAppendCStr(&c->out, "(__extension__({ __sl_uint ") != 0
+        || BufAppendCStr(&c->out, idxName) != 0 || BufAppendCStr(&c->out, " = (__sl_uint)(") != 0
+        || EmitExpr(c, idxNode) != 0 || BufAppendCStr(&c->out, "); ") != 0)
+    {
+        return -1;
+    }
+    if (!returnsVoid) {
+        if (EmitTypeNameWithDepth(c, &returnType) != 0 || BufAppendChar(&c->out, ' ') != 0
+            || BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, "; ") != 0)
+        {
+            return -1;
+        }
+    }
+    if (BufAppendCStr(&c->out, "switch (") != 0 || BufAppendCStr(&c->out, idxName) != 0
+        || BufAppendCStr(&c->out, ") { ") != 0)
+    {
+        return -1;
+    }
+    for (i = 0; i < c->activePackElemCount; i++) {
+        if (BufAppendCStr(&c->out, "case ") != 0 || BufAppendU32(&c->out, i) != 0
+            || BufAppendCStr(&c->out, "u: ") != 0
+            || EmitInlineStaticFnPrototypeForSig(c, caseSigs[i]) != 0)
+        {
+            return -1;
+        }
+        if (!returnsVoid) {
+            if (BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, " = ") != 0) {
+                return -1;
+            }
+        }
+        if (EmitResolvedCall(c, callNode, caseNames[i], caseSigs[i], &caseBindings[i], 0) != 0
+            || BufAppendCStr(&c->out, "; break; ") != 0)
+        {
+            return -1;
+        }
+    }
+    if (BufAppendCStr(
+            &c->out,
+            "default: __sl_panic(__sl_strlit(\"anytype pack index out of bounds\"), __FILE__, "
+            "__LINE__); __builtin_unreachable(); } ")
+        != 0)
+    {
+        return -1;
+    }
+    if (!returnsVoid) {
+        if (BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, "; }))") != 0) {
+            return -1;
+        }
+    } else {
+        if (BufAppendCStr(&c->out, "}))") != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int EmitRuntimeAnytypeDispatchCallBySlice(
+    SLCBackendC*          c,
+    int32_t               callNode,
+    uint32_t              calleeStart,
+    uint32_t              calleeEnd,
+    const SLCCallArgInfo* callArgs,
+    const int32_t*        argNodes,
+    const SLTypeRef*      argTypes,
+    uint32_t              argCount,
+    uint32_t              firstPositionalArgIndex) {
+    uint32_t       dynamicArgIndex = 0;
+    int32_t        idxNode = -1;
+    SLCCallBinding caseBindings[SLCCG_MAX_CALL_ARGS];
+    const SLFnSig* caseSigs[SLCCG_MAX_CALL_ARGS];
+    const char*    caseNames[SLCCG_MAX_CALL_ARGS];
+    uint8_t        caseAutoRef[SLCCG_MAX_CALL_ARGS];
+    SLTypeRef      returnType;
+    int            returnsVoid = 0;
+    uint32_t       i;
+    uint32_t       tempId;
+    SLBuf          idxNameBuf = { 0 };
+    SLBuf          valueNameBuf = { 0 };
+    char*          idxName = NULL;
+    char*          valueName = NULL;
+
+    if (c == NULL || callArgs == NULL || argNodes == NULL || argTypes == NULL) {
+        return -1;
+    }
+    if (c->activePackElemCount == 0 || c->activePackElemCount > SLCCG_MAX_CALL_ARGS) {
+        return 1;
+    }
+    if (FindSingleDynamicActivePackCallArg(c, argNodes, argCount, &dynamicArgIndex, &idxNode) != 0
+        || idxNode < 0)
+    {
+        return 1;
+    }
+    if (dynamicArgIndex >= argCount) {
+        return -1;
+    }
+
+    for (i = 0; i < c->activePackElemCount; i++) {
+        SLTypeRef      caseArgTypes[SLCCG_MAX_CALL_ARGS];
+        const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+        uint32_t       candidateLen = 0;
+        int            nameFound = 0;
+        const SLFnSig* resolvedSig = NULL;
+        const char*    resolvedName = NULL;
+        int            status;
+        uint32_t       j;
+        for (j = 0; j < argCount; j++) {
+            caseArgTypes[j] = argTypes[j];
+        }
+        caseArgTypes[dynamicArgIndex] = c->activePackElemTypes[i];
+
+        GatherCallCandidatesBySlice(
+            c, calleeStart, calleeEnd, candidates, &candidateLen, &nameFound);
+        status = ResolveCallTargetFromCandidates(
+            c,
+            candidates,
+            candidateLen,
+            nameFound,
+            callArgs,
+            argNodes,
+            caseArgTypes,
+            argCount,
+            firstPositionalArgIndex,
+            0,
+            &caseBindings[i],
+            &resolvedSig,
+            &resolvedName);
+        if (status == 2) {
+            status = ResolveCallTargetFromCandidates(
+                c,
+                candidates,
+                candidateLen,
+                nameFound,
+                callArgs,
+                argNodes,
+                caseArgTypes,
+                argCount,
+                firstPositionalArgIndex,
+                1,
+                &caseBindings[i],
+                &resolvedSig,
+                &resolvedName);
+            caseAutoRef[i] = (status == 0) ? 1 : 0;
+        } else {
+            caseAutoRef[i] = 0;
+        }
+
+        if (status == 0 && resolvedSig != NULL) {
+            int32_t paramIndex = caseBindings[i].argParamIndices[dynamicArgIndex];
+            int     unresolvedAnytype = (resolvedSig->flags & SLFnSigFlag_TEMPLATE_BASE) != 0;
+            if (!unresolvedAnytype && paramIndex >= 0
+                && (uint32_t)paramIndex < resolvedSig->paramLen && resolvedSig->paramFlags != NULL
+                && (resolvedSig->paramFlags[paramIndex] & SLCCGParamFlag_ANYTYPE) != 0)
+            {
+                unresolvedAnytype = 1;
+            }
+            if (unresolvedAnytype) {
+                int matRc = MaterializeTemplateInstanceForDispatchCase(
+                    c, resolvedSig, &caseBindings[i], caseArgTypes, argCount);
+                if (matRc < 0) {
+                    return -1;
+                }
+                if (matRc == 0) {
+                    GatherCallCandidatesBySlice(
+                        c, calleeStart, calleeEnd, candidates, &candidateLen, &nameFound);
+                    status = ResolveCallTargetFromCandidates(
+                        c,
+                        candidates,
+                        candidateLen,
+                        nameFound,
+                        callArgs,
+                        argNodes,
+                        caseArgTypes,
+                        argCount,
+                        firstPositionalArgIndex,
+                        0,
+                        &caseBindings[i],
+                        &resolvedSig,
+                        &resolvedName);
+                    if (status == 2) {
+                        status = ResolveCallTargetFromCandidates(
+                            c,
+                            candidates,
+                            candidateLen,
+                            nameFound,
+                            callArgs,
+                            argNodes,
+                            caseArgTypes,
+                            argCount,
+                            firstPositionalArgIndex,
+                            1,
+                            &caseBindings[i],
+                            &resolvedSig,
+                            &resolvedName);
+                        caseAutoRef[i] = (status == 0) ? 1 : 0;
+                    } else {
+                        caseAutoRef[i] = 0;
+                    }
+                }
+            }
+        }
+
+        if (status != 0 || resolvedSig == NULL
+            || (resolvedSig->flags & SLFnSigFlag_TEMPLATE_BASE) != 0)
+        {
+            const SLFnSig* narrowed[SLCCG_MAX_CALL_CANDIDATES];
+            uint32_t       narrowedLen = 0;
+            uint32_t       k;
+            for (k = 0; k < candidateLen && narrowedLen < SLCCG_MAX_CALL_CANDIDATES; k++) {
+                SLCCallBinding candBinding;
+                int32_t        dynParamIndex;
+                if (PrepareCallBinding(
+                        c,
+                        candidates[k],
+                        callArgs,
+                        argNodes,
+                        caseArgTypes,
+                        argCount,
+                        firstPositionalArgIndex,
+                        1,
+                        &candBinding)
+                    != 0)
+                {
+                    continue;
+                }
+                dynParamIndex = candBinding.argParamIndices[dynamicArgIndex];
+                if (dynParamIndex < 0 || (uint32_t)dynParamIndex >= candidates[k]->paramLen
+                    || !TypeRefEqual(
+                        &candBinding.argExpectedTypes[dynamicArgIndex],
+                        &caseArgTypes[dynamicArgIndex]))
+                {
+                    continue;
+                }
+                narrowed[narrowedLen++] = candidates[k];
+            }
+            if (narrowedLen > 0) {
+                status = ResolveCallTargetFromCandidates(
+                    c,
+                    narrowed,
+                    narrowedLen,
+                    1,
+                    callArgs,
+                    argNodes,
+                    caseArgTypes,
+                    argCount,
+                    firstPositionalArgIndex,
+                    0,
+                    &caseBindings[i],
+                    &resolvedSig,
+                    &resolvedName);
+                if (status == 2) {
+                    status = ResolveCallTargetFromCandidates(
+                        c,
+                        narrowed,
+                        narrowedLen,
+                        1,
+                        callArgs,
+                        argNodes,
+                        caseArgTypes,
+                        argCount,
+                        firstPositionalArgIndex,
+                        1,
+                        &caseBindings[i],
+                        &resolvedSig,
+                        &resolvedName);
+                    caseAutoRef[i] = (status == 0) ? 1 : 0;
+                } else {
+                    caseAutoRef[i] = 0;
+                }
+            }
+        }
+
+        if (status != 0 || resolvedSig == NULL || resolvedName == NULL
+            || (resolvedSig->flags & SLFnSigFlag_TEMPLATE_BASE) != 0)
+        {
+            return 1;
+        }
+        caseSigs[i] = resolvedSig;
+        caseNames[i] = resolvedName;
+    }
+
+    returnType = caseSigs[0]->returnType;
+    for (i = 1; i < c->activePackElemCount; i++) {
+        if (!TypeRefEqual(&returnType, &caseSigs[i]->returnType)) {
+            return -1;
+        }
+    }
+    returnsVoid =
+        returnType.valid && returnType.containerKind == SLTypeContainer_SCALAR
+        && returnType.ptrDepth == 0 && returnType.containerPtrDepth == 0 && !returnType.isOptional
+        && returnType.baseName != NULL && StrEq(returnType.baseName, "void");
+
+    tempId = FmtNextTempId(c);
+    idxNameBuf.arena = &c->arena;
+    valueNameBuf.arena = &c->arena;
+    if (BufAppendCStr(&idxNameBuf, "__sl_pack_ci") != 0 || BufAppendU32(&idxNameBuf, tempId) != 0
+        || BufAppendCStr(&valueNameBuf, "__sl_pack_cr") != 0
+        || BufAppendU32(&valueNameBuf, tempId) != 0)
+    {
+        return -1;
+    }
+    idxName = BufFinish(&idxNameBuf);
+    valueName = BufFinish(&valueNameBuf);
+    if (idxName == NULL || valueName == NULL) {
+        return -1;
+    }
+
+    if (BufAppendCStr(&c->out, "(__extension__({ __sl_uint ") != 0
+        || BufAppendCStr(&c->out, idxName) != 0 || BufAppendCStr(&c->out, " = (__sl_uint)(") != 0
+        || EmitExpr(c, idxNode) != 0 || BufAppendCStr(&c->out, "); ") != 0)
+    {
+        return -1;
+    }
+    if (!returnsVoid) {
+        if (EmitTypeNameWithDepth(c, &returnType) != 0 || BufAppendChar(&c->out, ' ') != 0
+            || BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, "; ") != 0)
+        {
+            return -1;
+        }
+    }
+    if (BufAppendCStr(&c->out, "switch (") != 0 || BufAppendCStr(&c->out, idxName) != 0
+        || BufAppendCStr(&c->out, ") { ") != 0)
+    {
+        return -1;
+    }
+    for (i = 0; i < c->activePackElemCount; i++) {
+        if (BufAppendCStr(&c->out, "case ") != 0 || BufAppendU32(&c->out, i) != 0
+            || BufAppendCStr(&c->out, "u: ") != 0)
+        {
+            return -1;
+        }
+        if (!returnsVoid) {
+            if (BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, " = ") != 0) {
+                return -1;
+            }
+        }
+        if (EmitResolvedCall(
+                c, callNode, caseNames[i], caseSigs[i], &caseBindings[i], caseAutoRef[i])
+                != 0
+            || BufAppendCStr(&c->out, "; break; ") != 0)
+        {
+            return -1;
+        }
+    }
+    if (BufAppendCStr(
+            &c->out,
+            "default: __sl_panic(__sl_strlit(\"anytype pack index out of bounds\"), __FILE__, "
+            "__LINE__); __builtin_unreachable(); } ")
+        != 0)
+    {
+        return -1;
+    }
+    if (!returnsVoid) {
+        if (BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, "; }))") != 0) {
+            return -1;
+        }
+    } else {
+        if (BufAppendCStr(&c->out, "}))") != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int TryEmitRuntimeAnytypeDispatchCallBySlice(
+    SLCBackendC*          c,
+    int32_t               callNode,
+    uint32_t              calleeStart,
+    uint32_t              calleeEnd,
+    const SLCCallArgInfo* callArgs,
+    const int32_t*        argNodes,
+    const SLTypeRef*      argTypes,
+    uint32_t              argCount,
+    uint32_t              firstPositionalArgIndex,
+    int                   resolvedStatus,
+    const SLFnSig* _Nullable resolvedSig,
+    const SLCCallBinding* _Nullable resolvedBinding) {
+    uint32_t dynamicArgIndex = 0;
+    int32_t  idxNode = -1;
+    int      shouldDispatch = 0;
+    int      dispatchRc;
+
+    if (c == NULL || callArgs == NULL || argNodes == NULL || argTypes == NULL) {
+        return -1;
+    }
+    if (c->activePackElemCount == 0) {
+        return 1;
+    }
+    if (FindSingleDynamicActivePackCallArg(c, argNodes, argCount, &dynamicArgIndex, &idxNode) != 0
+        || idxNode < 0)
+    {
+        return 1;
+    }
+    if (resolvedStatus == 3) {
+        shouldDispatch = 1;
+    } else if (resolvedStatus == 0 && resolvedSig != NULL) {
+        int32_t paramIndex = -1;
+        if (resolvedBinding != NULL && dynamicArgIndex < argCount) {
+            paramIndex = resolvedBinding->argParamIndices[dynamicArgIndex];
+        }
+        shouldDispatch = (resolvedSig->flags & SLFnSigFlag_TEMPLATE_BASE) != 0;
+        if (!shouldDispatch && paramIndex >= 0 && (uint32_t)paramIndex < resolvedSig->paramLen
+            && resolvedSig->paramFlags != NULL
+            && (resolvedSig->paramFlags[paramIndex] & SLCCGParamFlag_ANYTYPE) != 0)
+        {
+            shouldDispatch = 1;
+        }
+    }
+    if (!shouldDispatch) {
+        return 1;
+    }
+
+    if (resolvedStatus == 0 && resolvedSig != NULL && resolvedBinding != NULL
+        && (resolvedSig->flags & SLFnSigFlag_TEMPLATE_BASE) != 0)
+    {
+        dispatchRc = EmitRuntimeAnytypeDispatchFromTemplateBase(
+            c, callNode, resolvedSig, resolvedBinding, argNodes, argTypes, argCount);
+        if (dispatchRc == 0) {
+            return 0;
+        }
+        if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+            SetDiagNode(c, callNode, SLDiag_CODEGEN_INTERNAL);
+        }
+        return -1;
+    }
+
+    dispatchRc = EmitRuntimeAnytypeDispatchCallBySlice(
+        c,
+        callNode,
+        calleeStart,
+        calleeEnd,
+        callArgs,
+        argNodes,
+        argTypes,
+        argCount,
+        firstPositionalArgIndex);
+    if (dispatchRc == 0) {
+        return 0;
+    }
+    if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+        SetDiagNode(c, callNode, SLDiag_CODEGEN_INTERNAL);
+    }
+    return -1;
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
@@ -1495,9 +2513,19 @@ int InferCompoundLiteralType(
 int InferExprTypeExpected(
     SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType, SLTypeRef* outType) {
     const SLAstNode* n = NodeAt(c, nodeId);
+    int32_t          idxNode = -1;
+    int              isConstIndex = 0;
+    uint32_t         constIndex = 0;
     if (n == NULL) {
         TypeRefSetInvalid(outType);
         return -1;
+    }
+    if (expectedType != NULL && expectedType->valid
+        && ResolveActivePackIndexExpr(c, nodeId, &idxNode, &isConstIndex, &constIndex) == 0
+        && !isConstIndex)
+    {
+        *outType = *expectedType;
+        return 0;
     }
 
     if (n->kind == SLAst_COMPOUND_LIT) {
@@ -1641,6 +2669,10 @@ int InferExprTypeExpected(
 int InferExprType_IDENT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType) {
     const SLLocal* local = FindLocalBySlice(c, n->dataStart, n->dataEnd);
     (void)nodeId;
+    if (IsActivePackIdent(c, n->dataStart, n->dataEnd)) {
+        TypeRefSetInvalid(outType);
+        return 0;
+    }
     if (local != NULL) {
         *outType = local->type;
         return 0;
@@ -1708,6 +2740,18 @@ int InferExprType_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTyp
     const SLAstNode* cn = NodeAt(c, callee);
     (void)n;
     if (cn != NULL && cn->kind == SLAst_IDENT) {
+        if (SliceEq(c->unit->source, cn->dataStart, cn->dataEnd, "len")) {
+            int32_t          argNode = AstNextSibling(&c->ast, callee);
+            int32_t          argExprNode = UnwrapCallArgExprNode(c, argNode);
+            int32_t          extraNode = argNode >= 0 ? AstNextSibling(&c->ast, argNode) : -1;
+            const SLAstNode* arg = NodeAt(c, argExprNode);
+            if (argExprNode >= 0 && extraNode < 0 && arg != NULL && arg->kind == SLAst_IDENT
+                && IsActivePackIdent(c, arg->dataStart, arg->dataEnd))
+            {
+                TypeRefSetScalar(outType, "__sl_uint");
+                return 0;
+            }
+        }
         if (SliceEq(c->unit->source, cn->dataStart, cn->dataEnd, "kind")) {
             int32_t argNode = AstNextSibling(&c->ast, callee);
             int32_t extraNode = argNode >= 0 ? AstNextSibling(&c->ast, argNode) : -1;
@@ -1775,9 +2819,18 @@ int InferExprType_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTyp
         if (SliceEq(c->unit->source, cn->dataStart, cn->dataEnd, "typeof")) {
             int32_t   argNode = AstNextSibling(&c->ast, callee);
             int32_t   extraNode = argNode >= 0 ? AstNextSibling(&c->ast, argNode) : -1;
+            int32_t   idxNode = -1;
+            int       isConstIndex = 0;
+            uint32_t  constIndex = 0;
             SLTypeRef argType;
             if (argNode < 0 || extraNode >= 0) {
                 TypeRefSetInvalid(outType);
+                return 0;
+            }
+            if (ResolveActivePackIndexExpr(c, argNode, &idxNode, &isConstIndex, &constIndex) == 0
+                && !isConstIndex)
+            {
+                TypeRefSetScalar(outType, "__sl_type");
                 return 0;
             }
             if (InferExprType(c, argNode, &argType) != 0 || !argType.valid) {
@@ -1880,6 +2933,33 @@ int InferExprType_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTyp
                 (void)resolvedName;
                 *outType = resolved->returnType;
                 return 0;
+            }
+            {
+                const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+                uint32_t       candidateLen = 0;
+                const SLFnSig* single = NULL;
+                GatherCallCandidatesBySlice(
+                    c, cn->dataStart, cn->dataEnd, candidates, &candidateLen, &status);
+                if (candidateLen > (uint32_t)(sizeof(candidates) / sizeof(candidates[0]))) {
+                    candidateLen = (uint32_t)(sizeof(candidates) / sizeof(candidates[0]));
+                }
+                for (i = 0; i < candidateLen; i++) {
+                    const SLFnSig* sig = candidates[i];
+                    if (sig == NULL || (sig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) == 0
+                        || sig->isVariadic != 0 || sig->paramLen != argCount)
+                    {
+                        continue;
+                    }
+                    if (single != NULL) {
+                        single = NULL;
+                        break;
+                    }
+                    single = sig;
+                }
+                if (single != NULL) {
+                    *outType = single->returnType;
+                    return 0;
+                }
             }
         }
     } else if (cn != NULL && cn->kind == SLAst_FIELD_EXPR) {
@@ -2189,7 +3269,21 @@ int InferExprType_FIELD_EXPR(
 }
 
 int InferExprType_INDEX(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType) {
-    int32_t base = AstFirstChild(&c->ast, nodeId);
+    int32_t          base = AstFirstChild(&c->ast, nodeId);
+    int32_t          idx = AstNextSibling(&c->ast, base);
+    const SLAstNode* baseNode = NodeAt(c, base);
+    if ((n->flags & SLAstFlag_INDEX_SLICE) == 0 && baseNode != NULL && baseNode->kind == SLAst_IDENT
+        && IsActivePackIdent(c, baseNode->dataStart, baseNode->dataEnd))
+    {
+        uint32_t         packIndex = 0;
+        const SLTypeRef* elemType = NULL;
+        if (ResolveActivePackConstIndex(c, idx, &packIndex, &elemType) == 0 && elemType != NULL) {
+            *outType = *elemType;
+            return 0;
+        }
+        TypeRefSetInvalid(outType);
+        return 0;
+    }
     if (InferExprType(c, base, outType) != 0) {
         return -1;
     }
@@ -3346,10 +4440,7 @@ int TypeRefIsFmtValueType(const SLCBackendC* c, const SLTypeRef* t) {
     if (base == NULL) {
         base = t->baseName;
     }
-    if (StrEq(base, "core__FmtValue")) {
-        return 1;
-    }
-    return StrHasPrefix(base, "core") && StrHasSuffix(base, "__FmtValue");
+    return StrHasSuffix(base, "__FmtValue");
 }
 
 int EmitFmtAppendLiteralBytes(
@@ -3414,124 +4505,6 @@ int EmitFmtAppendLiteralBytes(
         || BufAppendCStr(&c->out, "u);\n") != 0)
     {
         return -1;
-    }
-    return 0;
-}
-
-int EmitFormatBufAppendLiteralBytes(
-    SLCBackendC*   c,
-    const char*    dstBufName,
-    const char*    writeCapName,
-    const char*    ioLenName,
-    const uint8_t* bytes,
-    uint32_t       len) {
-    uint32_t i;
-    if (bytes == NULL || len == 0) {
-        return 0;
-    }
-    if (BufAppendCStr(&c->out, "    __sl_fmt_buf_append_bytes(") != 0
-        || BufAppendCStr(&c->out, dstBufName) != 0 || BufAppendCStr(&c->out, ", ") != 0
-        || BufAppendCStr(&c->out, writeCapName) != 0 || BufAppendCStr(&c->out, ", &") != 0
-        || BufAppendCStr(&c->out, ioLenName) != 0
-        || BufAppendCStr(&c->out, ", (const __sl_u8*)\"") != 0)
-    {
-        return -1;
-    }
-    for (i = 0; i < len; i++) {
-        uint8_t ch = bytes[i];
-        if (ch == (uint8_t)'\\') {
-            if (BufAppendCStr(&c->out, "\\\\") != 0) {
-                return -1;
-            }
-            continue;
-        }
-        if (ch == (uint8_t)'"') {
-            if (BufAppendCStr(&c->out, "\\\"") != 0) {
-                return -1;
-            }
-            continue;
-        }
-        if (ch == (uint8_t)'\n') {
-            if (BufAppendCStr(&c->out, "\\n") != 0) {
-                return -1;
-            }
-            continue;
-        }
-        if (ch == (uint8_t)'\r') {
-            if (BufAppendCStr(&c->out, "\\r") != 0) {
-                return -1;
-            }
-            continue;
-        }
-        if (ch == (uint8_t)'\t') {
-            if (BufAppendCStr(&c->out, "\\t") != 0) {
-                return -1;
-            }
-            continue;
-        }
-        if (ch >= 0x20u && ch <= 0x7eu) {
-            if (BufAppendChar(&c->out, (char)ch) != 0) {
-                return -1;
-            }
-            continue;
-        }
-        if (BufAppendChar(&c->out, '\\') != 0
-            || BufAppendChar(&c->out, (char)('0' + ((ch >> 6u) & 0x7u))) != 0
-            || BufAppendChar(&c->out, (char)('0' + ((ch >> 3u) & 0x7u))) != 0
-            || BufAppendChar(&c->out, (char)('0' + (ch & 0x7u))) != 0)
-        {
-            return -1;
-        }
-    }
-    if (BufAppendCStr(&c->out, "\", ") != 0 || BufAppendU32(&c->out, len) != 0
-        || BufAppendCStr(&c->out, "u);\n") != 0)
-    {
-        return -1;
-    }
-    return 0;
-}
-
-int EmitFormatBufAppendLiteralToken(
-    SLCBackendC*   c,
-    const char*    dstBufName,
-    const char*    writeCapName,
-    const char*    ioLenName,
-    const uint8_t* bytes,
-    uint32_t       len) {
-    uint32_t i = 0;
-    uint32_t start = 0;
-    if (bytes == NULL || len == 0u) {
-        return 0;
-    }
-    while (i < len) {
-        if (i + 1u < len
-            && ((bytes[i] == (uint8_t)'{' && bytes[i + 1u] == (uint8_t)'{')
-                || (bytes[i] == (uint8_t)'}' && bytes[i + 1u] == (uint8_t)'}')))
-        {
-            if (i > start
-                && EmitFormatBufAppendLiteralBytes(
-                       c, dstBufName, writeCapName, ioLenName, bytes + start, i - start)
-                       != 0)
-            {
-                return -1;
-            }
-            {
-                uint8_t ch = bytes[i];
-                if (EmitFormatBufAppendLiteralBytes(c, dstBufName, writeCapName, ioLenName, &ch, 1u)
-                    != 0)
-                {
-                    return -1;
-                }
-            }
-            i += 2u;
-            start = i;
-            continue;
-        }
-        i++;
-    }
-    if (len > start) {
-        return EmitFormatBufAppendLiteralBytes(
-            c, dstBufName, writeCapName, ioLenName, bytes + start, len - start);
     }
     return 0;
 }
@@ -3896,6 +4869,16 @@ int EmitFmtAppendReflectExpr(
         }
         return 0;
     }
+    if (TypeRefIsFloatLike(c, type)) {
+        if (BufAppendCStr(&c->out, "    __sl_fmt_builder_append_f64g(&") != 0
+            || BufAppendCStr(&c->out, builderName) != 0
+            || BufAppendCStr(&c->out, ", (__sl_f64)(") != 0 || BufAppendCStr(&c->out, expr) != 0
+            || BufAppendCStr(&c->out, "));\n") != 0)
+        {
+            return -1;
+        }
+        return 0;
+    }
     if (type->containerKind == SLTypeContainer_ARRAY && type->containerPtrDepth == 0) {
         return EmitFmtAppendReflectArray(c, builderName, expr, type, depth);
     }
@@ -3960,6 +4943,10 @@ int EmitExprCoerceFmtValue(
         } else {
             kindExpr = "((__sl_u8)2u)";
         }
+    } else if (TypeRefIsFloatLike(c, srcType)) {
+        kindExpr = "((__sl_u8)4u)";
+    } else if (TypeRefIsFmtStringLike(c, srcType)) {
+        kindExpr = "((__sl_u8)5u)";
     }
 
     if (BufAppendCStr(&c->out, "(__extension__({\n    __auto_type ") != 0
@@ -4498,8 +5485,16 @@ int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType) 
     SLTypeRef          srcType;
     const SLFieldInfo* embedPath[64];
     uint32_t           embedPathLen = 0;
+    int32_t            idxNode = -1;
+    int                isConstIndex = 0;
+    uint32_t           constIndex = 0;
     if (dstType == NULL || !dstType->valid) {
         return EmitExpr(c, exprNode);
+    }
+    if (ResolveActivePackIndexExpr(c, exprNode, &idxNode, &isConstIndex, &constIndex) == 0
+        && !isConstIndex)
+    {
+        return EmitDynamicActivePackIndexCoerced(c, idxNode, dstType);
     }
     if (expr != NULL && expr->kind == SLAst_NEW) {
         int requireNonNull = TypeRefIsPointerLike(dstType) && !dstType->isOptional;
@@ -4973,223 +5968,9 @@ int EmitResolvedCall(
     const SLCCallBinding* binding,
     int                   autoRefFirstArg) {
     uint32_t i;
-    int      isStrFormatCall = 0;
     (void)callNode;
     if (sig == NULL || binding == NULL) {
         return -1;
-    }
-    if ((StrEq(calleeName, "format") || StrEq(calleeName, "str__format")
-         || StrHasSuffix(calleeName, "__format"))
-        && sig->isVariadic && sig->paramLen >= 3
-        && sig->paramTypes[0].containerKind == SLTypeContainer_SLICE_MUT
-        && sig->paramTypes[0].containerPtrDepth > 0
-        && sig->paramTypes[1].containerKind == SLTypeContainer_SCALAR
-        && sig->paramTypes[1].containerPtrDepth == 0 && sig->paramTypes[1].ptrDepth > 0
-        && sig->paramTypes[1].baseName != NULL && IsStrBaseName(sig->paramTypes[1].baseName))
-    {
-        isStrFormatCall = 1;
-    }
-    if (isStrFormatCall) {
-        int32_t          outNode = binding->fixedMappedArgNodes[0];
-        int32_t          fmtNode = binding->fixedMappedArgNodes[1];
-        int32_t          argNodes[SLCCG_MAX_CALL_ARGS];
-        uint32_t         argCount = 0;
-        const uint8_t*   fmtBytes = NULL;
-        uint32_t         fmtLen = 0;
-        uint32_t         fmtStart = 0;
-        uint32_t         fmtEnd = 0;
-        const SLAstNode* fmtAstNode = NULL;
-        SLFmtToken       tokens[512];
-        uint32_t         tokenLen = 0;
-        uint32_t         placeholderCount = 0;
-        SLFmtParseError  parseErr = { 0 };
-        uint32_t         placeholderIndex = 0;
-        if (outNode < 0 || fmtNode < 0 || binding->spreadArgIndex != UINT32_MAX) {
-            return -1;
-        }
-        fmtAstNode = NodeAt(c, fmtNode);
-        if (fmtAstNode != NULL) {
-            fmtStart = fmtAstNode->start;
-            fmtEnd = fmtAstNode->end;
-        }
-        if (EvalConstStringExpr(c, fmtNode, &fmtBytes, &fmtLen, &fmtAstNode) != 0) {
-            if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
-                SetDiag(c->diag, SLDiag_CODEGEN_INTERNAL, fmtStart, fmtEnd);
-            }
-            return -1;
-        }
-        if (fmtAstNode != NULL) {
-            fmtStart = fmtAstNode->start;
-            fmtEnd = fmtAstNode->end;
-        }
-        if (SLFmtParseBytes(
-                fmtBytes,
-                fmtLen,
-                tokens,
-                (uint32_t)(sizeof(tokens) / sizeof(tokens[0])),
-                &tokenLen,
-                &parseErr)
-            != 0)
-        {
-            if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
-                SetDiag(c->diag, SLDiag_CODEGEN_INTERNAL, fmtStart, fmtEnd);
-            }
-            return -1;
-        }
-        for (i = 0; i < binding->explicitTailCount; i++) {
-            argNodes[argCount++] = binding->explicitTailNodes[i];
-        }
-        for (i = 0; i < tokenLen; i++) {
-            if (tokens[i].kind == SLFmtTok_PLACEHOLDER_I || tokens[i].kind == SLFmtTok_PLACEHOLDER_F
-                || tokens[i].kind == SLFmtTok_PLACEHOLDER_S)
-            {
-                placeholderCount++;
-            } else if (tokens[i].kind == SLFmtTok_PLACEHOLDER_R) {
-                if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
-                    SetDiag(c->diag, SLDiag_CODEGEN_INTERNAL, fmtStart, fmtEnd);
-                }
-                return -1;
-            }
-        }
-        if (placeholderCount != argCount) {
-            if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
-                SetDiag(c->diag, SLDiag_CODEGEN_INTERNAL, fmtStart, fmtEnd);
-            }
-            return -1;
-        }
-        if (BufAppendCStr(&c->out, "(__extension__({\n    __auto_type __sl_fmt_out = ") != 0
-            || EmitExprCoerced(c, outNode, &sig->paramTypes[0]) != 0
-            || BufAppendCStr(
-                   &c->out,
-                   ";\n"
-                   "    __sl_u8* __sl_fmt_buf = (__sl_u8*)(__sl_fmt_out.ptr);\n"
-                   "    __sl_uint __sl_fmt_cap = (__sl_uint)(__sl_fmt_out.len);\n"
-                   "    __sl_uint __sl_fmt_write_cap = __sl_fmt_cap > 0u ? (__sl_fmt_cap - 1u) : "
-                   "0u;\n"
-                   "    __sl_uint __sl_fmt_len = 0u;\n")
-                   != 0)
-        {
-            return -1;
-        }
-        for (i = 0; i < tokenLen; i++) {
-            const SLFmtToken* tok = &tokens[i];
-            if (tok->kind == SLFmtTok_LITERAL) {
-                if (tok->end > tok->start
-                    && EmitFormatBufAppendLiteralToken(
-                           c,
-                           "__sl_fmt_buf",
-                           "__sl_fmt_write_cap",
-                           "__sl_fmt_len",
-                           fmtBytes + tok->start,
-                           tok->end - tok->start)
-                           != 0)
-                {
-                    return -1;
-                }
-                continue;
-            }
-            if (tok->kind == SLFmtTok_PLACEHOLDER_I) {
-                SLTypeRef argType;
-                if (placeholderIndex >= argCount
-                    || InferExprType(c, argNodes[placeholderIndex], &argType) != 0
-                    || !argType.valid)
-                {
-                    return -1;
-                }
-                if (TypeRefIsSignedIntegerLike(c, &argType)) {
-                    if (BufAppendCStr(
-                            &c->out,
-                            "    __sl_fmt_buf_append_i64(__sl_fmt_buf, __sl_fmt_write_cap, "
-                            "&__sl_fmt_len, (__sl_i64)(")
-                            != 0
-                        || EmitExpr(c, argNodes[placeholderIndex]) != 0
-                        || BufAppendCStr(&c->out, "));\n") != 0)
-                    {
-                        return -1;
-                    }
-                } else {
-                    if (BufAppendCStr(
-                            &c->out,
-                            "    __sl_fmt_buf_append_u64(__sl_fmt_buf, __sl_fmt_write_cap, "
-                            "&__sl_fmt_len, (__sl_u64)(")
-                            != 0
-                        || EmitExpr(c, argNodes[placeholderIndex]) != 0
-                        || BufAppendCStr(&c->out, "));\n") != 0)
-                    {
-                        return -1;
-                    }
-                }
-                placeholderIndex++;
-                continue;
-            }
-            if (tok->kind == SLFmtTok_PLACEHOLDER_F) {
-                if (placeholderIndex >= argCount) {
-                    return -1;
-                }
-                if (BufAppendCStr(
-                        &c->out,
-                        "    __sl_fmt_buf_append_f64g(__sl_fmt_buf, __sl_fmt_write_cap, "
-                        "&__sl_fmt_len, (__sl_f64)(")
-                        != 0
-                    || EmitExpr(c, argNodes[placeholderIndex]) != 0
-                    || BufAppendCStr(&c->out, "));\n") != 0)
-                {
-                    return -1;
-                }
-                placeholderIndex++;
-                continue;
-            }
-            if (tok->kind == SLFmtTok_PLACEHOLDER_S) {
-                uint32_t tempId;
-                SLBuf    nameBuf = { 0 };
-                char*    name;
-                if (placeholderIndex >= argCount) {
-                    return -1;
-                }
-                tempId = FmtNextTempId(c);
-                nameBuf.arena = &c->arena;
-                if (BufAppendCStr(&nameBuf, "__sl_fmt_s") != 0
-                    || BufAppendU32(&nameBuf, tempId) != 0)
-                {
-                    return -1;
-                }
-                name = BufFinish(&nameBuf);
-                if (name == NULL) {
-                    return -1;
-                }
-                if (BufAppendCStr(&c->out, "    __auto_type ") != 0
-                    || BufAppendCStr(&c->out, name) != 0 || BufAppendCStr(&c->out, " = ") != 0
-                    || EmitExprCoerced(c, argNodes[placeholderIndex], &sig->paramTypes[1]) != 0
-                    || BufAppendCStr(
-                           &c->out,
-                           ";\n"
-                           "    __sl_fmt_buf_append_bytes(__sl_fmt_buf, __sl_fmt_write_cap, "
-                           "&__sl_fmt_len, __sl_cstr(")
-                           != 0
-                    || BufAppendCStr(&c->out, name) != 0
-                    || BufAppendCStr(&c->out, "), __sl_len(") != 0
-                    || BufAppendCStr(&c->out, name) != 0 || BufAppendCStr(&c->out, "));\n") != 0)
-                {
-                    return -1;
-                }
-                placeholderIndex++;
-                continue;
-            }
-        }
-        if (BufAppendCStr(
-                &c->out,
-                "    if (__sl_fmt_cap > 0u) {\n"
-                "        __sl_uint __sl_fmt_nul = "
-                "__sl_fmt_len < __sl_fmt_cap ? __sl_fmt_len : (__sl_fmt_cap - 1u);\n"
-                "        __sl_fmt_buf[__sl_fmt_nul] = (__sl_u8)0;\n"
-                "    }\n"
-                "    (__sl_uint)__sl_fmt_len;\n"
-                "}))")
-            != 0)
-        {
-            return -1;
-        }
-        return 0;
     }
     if (BufAppendCStr(&c->out, calleeName) != 0 || BufAppendChar(&c->out, '(') != 0) {
         return -1;
@@ -5210,6 +5991,9 @@ int EmitResolvedCall(
         if (!binding->isVariadic || i < binding->fixedCount) {
             argNode = binding->fixedMappedArgNodes[i];
             if (argNode < 0) {
+                if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                    SetDiagNode(c, callNode, SLDiag_CODEGEN_INTERNAL);
+                }
                 return -1;
             }
             if (autoRefFirstArg && i == 0) {
@@ -5218,9 +6002,15 @@ int EmitResolvedCall(
                     || BufAppendCStr(&c->out, ")(&(") != 0 || EmitExpr(c, argNode) != 0
                     || BufAppendCStr(&c->out, ")))") != 0)
                 {
+                    if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                        SetDiagNode(c, argNode, SLDiag_CODEGEN_INTERNAL);
+                    }
                     return -1;
                 }
             } else if (EmitExprCoerced(c, argNode, &sig->paramTypes[i]) != 0) {
+                if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                    SetDiagNode(c, argNode, SLDiag_CODEGEN_INTERNAL);
+                }
                 return -1;
             }
             continue;
@@ -5233,6 +6023,9 @@ int EmitResolvedCall(
         if (binding->spreadArgIndex != UINT32_MAX) {
             argNode = binding->fixedMappedArgNodes[i];
             if (argNode < 0 || EmitExprCoerced(c, argNode, &sig->paramTypes[i]) != 0) {
+                if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                    SetDiagNode(c, argNode >= 0 ? argNode : callNode, SLDiag_CODEGEN_INTERNAL);
+                }
                 return -1;
             }
             continue;
@@ -5274,6 +6067,9 @@ int EmitResolvedCall(
                     return -1;
                 }
                 if (EmitExprCoerced(c, binding->explicitTailNodes[j], &elemType) != 0) {
+                    if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                        SetDiagNode(c, binding->explicitTailNodes[j], SLDiag_CODEGEN_INTERNAL);
+                    }
                     return -1;
                 }
             }
@@ -6288,9 +7084,17 @@ int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
     {
         int32_t   arg = AstNextSibling(&c->ast, child);
         int32_t   extra = arg >= 0 ? AstNextSibling(&c->ast, arg) : -1;
+        int32_t   idxNode = -1;
+        int       isConstIndex = 0;
+        uint32_t  constIndex = 0;
         SLTypeRef argType;
         if (arg < 0 || extra >= 0) {
             return -1;
+        }
+        if (ResolveActivePackIndexExpr(c, arg, &idxNode, &isConstIndex, &constIndex) == 0
+            && !isConstIndex)
+        {
+            return EmitDynamicActivePackTypeTag(c, idxNode);
         }
         if (InferExprType(c, arg, &argType) != 0 || !argType.valid) {
             return -1;
@@ -6350,16 +7154,23 @@ int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
     if (callee != NULL && callee->kind == SLAst_IDENT
         && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "len"))
     {
-        int32_t   arg = AstNextSibling(&c->ast, child);
-        int32_t   extra = arg >= 0 ? AstNextSibling(&c->ast, arg) : -1;
-        SLTypeRef argType;
+        int32_t          arg = AstNextSibling(&c->ast, child);
+        int32_t          argExpr = UnwrapCallArgExprNode(c, arg);
+        int32_t          extra = arg >= 0 ? AstNextSibling(&c->ast, arg) : -1;
+        SLTypeRef        argType;
+        const SLAstNode* argNode = NodeAt(c, argExpr);
         if (arg < 0 || extra >= 0) {
             return -1;
         }
-        if (InferExprType(c, arg, &argType) != 0 || !argType.valid) {
+        if (argNode != NULL && argNode->kind == SLAst_IDENT
+            && IsActivePackIdent(c, argNode->dataStart, argNode->dataEnd))
+        {
+            return BufAppendU32(&c->out, c->activePackElemCount);
+        }
+        if (argExpr < 0 || InferExprType(c, argExpr, &argType) != 0 || !argType.valid) {
             return -1;
         }
-        return EmitLenExprFromType(c, arg, &argType);
+        return EmitLenExprFromType(c, argExpr, &argType);
     }
     if (callee != NULL && callee->kind == SLAst_IDENT
         && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "cstr"))
@@ -6678,6 +7489,27 @@ int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                 &binding,
                 &resolvedSig,
                 &resolvedName);
+            {
+                int dispatchRc = TryEmitRuntimeAnytypeDispatchCallBySlice(
+                    c,
+                    nodeId,
+                    callee->dataStart,
+                    callee->dataEnd,
+                    callArgs,
+                    argNodes,
+                    argTypes,
+                    argCount,
+                    0,
+                    status,
+                    resolvedSig,
+                    &binding);
+                if (dispatchRc == 0) {
+                    return 0;
+                }
+                if (dispatchRc < 0) {
+                    return -1;
+                }
+            }
             if (status == 0 && resolvedName != NULL) {
                 return EmitResolvedCall(c, nodeId, resolvedName, resolvedSig, &binding, 0);
             }
@@ -6695,8 +7527,65 @@ int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                     &binding,
                     &resolvedSig,
                     &resolvedName);
+                {
+                    int dispatchRc = TryEmitRuntimeAnytypeDispatchCallBySlice(
+                        c,
+                        nodeId,
+                        callee->dataStart,
+                        callee->dataEnd,
+                        callArgs,
+                        argNodes,
+                        argTypes,
+                        argCount,
+                        0,
+                        status,
+                        resolvedSig,
+                        &binding);
+                    if (dispatchRc == 0) {
+                        return 0;
+                    }
+                    if (dispatchRc < 0) {
+                        return -1;
+                    }
+                }
                 if (status == 0 && resolvedName != NULL) {
                     return EmitResolvedCall(c, nodeId, resolvedName, resolvedSig, &binding, 1);
+                }
+            }
+            {
+                const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+                uint32_t       candidateLen = 0;
+                const SLFnSig* single = NULL;
+                GatherCallCandidatesBySlice(
+                    c, callee->dataStart, callee->dataEnd, candidates, &candidateLen, &status);
+                if (candidateLen > (uint32_t)(sizeof(candidates) / sizeof(candidates[0]))) {
+                    candidateLen = (uint32_t)(sizeof(candidates) / sizeof(candidates[0]));
+                }
+                for (i = 0; i < candidateLen; i++) {
+                    const SLFnSig* sig = candidates[i];
+                    if (sig == NULL || (sig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) == 0
+                        || sig->isVariadic != 0 || sig->paramLen != argCount)
+                    {
+                        continue;
+                    }
+                    if (single != NULL) {
+                        single = NULL;
+                        break;
+                    }
+                    single = sig;
+                }
+                if (single != NULL) {
+                    memset(&binding, 0, sizeof(binding));
+                    binding.isVariadic = 0;
+                    binding.fixedCount = argCount;
+                    binding.fixedInputCount = argCount;
+                    binding.spreadArgIndex = UINT32_MAX;
+                    for (i = 0; i < argCount; i++) {
+                        binding.fixedMappedArgNodes[i] = argNodes[i];
+                        binding.argParamIndices[i] = (int32_t)i;
+                        binding.argExpectedTypes[i] = single->paramTypes[i];
+                    }
+                    return EmitResolvedCall(c, nodeId, single->cName, single, &binding, 0);
                 }
             }
         }
@@ -6780,13 +7669,29 @@ int EmitExpr_NEW(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
 }
 
 int EmitExpr_INDEX(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
-    int32_t base = AstFirstChild(&c->ast, nodeId);
-    int32_t idx = AstNextSibling(&c->ast, base);
+    int32_t          base = AstFirstChild(&c->ast, nodeId);
+    int32_t          idx = AstNextSibling(&c->ast, base);
+    const SLAstNode* baseNode = NodeAt(c, base);
     if ((n->flags & SLAstFlag_INDEX_SLICE) != 0) {
         return EmitSliceExpr(c, nodeId);
     }
     if (base < 0 || idx < 0) {
         return -1;
+    }
+    if (baseNode != NULL && baseNode->kind == SLAst_IDENT
+        && IsActivePackIdent(c, baseNode->dataStart, baseNode->dataEnd))
+    {
+        uint32_t packIndex = 0;
+        if (ResolveActivePackConstIndex(c, idx, &packIndex, NULL) != 0
+            || c->activePackElemNames == NULL || packIndex >= c->activePackElemCount
+            || c->activePackElemNames[packIndex] == NULL)
+        {
+            if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                SetDiagNode(c, idx >= 0 ? idx : nodeId, SLDiag_CODEGEN_INTERNAL);
+            }
+            return -1;
+        }
+        return BufAppendCStr(&c->out, c->activePackElemNames[packIndex]);
     }
     {
         SLTypeRef baseType;
@@ -6972,9 +7877,21 @@ int EmitExpr_FIELD_EXPR(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
 }
 
 int EmitExpr_CAST(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
-    int32_t expr = AstFirstChild(&c->ast, nodeId);
-    int32_t typeNode = AstNextSibling(&c->ast, expr);
+    int32_t  expr = AstFirstChild(&c->ast, nodeId);
+    int32_t  typeNode = AstNextSibling(&c->ast, expr);
+    int32_t  idxNode = -1;
+    int      isConstIndex = 0;
+    uint32_t constIndex = 0;
     (void)n;
+    if (ResolveActivePackIndexExpr(c, expr, &idxNode, &isConstIndex, &constIndex) == 0
+        && !isConstIndex)
+    {
+        SLTypeRef dstType;
+        if (ParseTypeRef(c, typeNode, &dstType) != 0 || !dstType.valid) {
+            return -1;
+        }
+        return EmitDynamicActivePackIndexCoerced(c, idxNode, &dstType);
+    }
     if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeForCast(c, typeNode) != 0
         || BufAppendCStr(&c->out, ")(") != 0 || EmitExpr(c, expr) != 0
         || BufAppendCStr(&c->out, "))") != 0)
@@ -7123,35 +8040,41 @@ int EmitExpr_TUPLE_EXPR(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
 
 int EmitExpr(SLCBackendC* c, int32_t nodeId) {
     const SLAstNode* n = NodeAt(c, nodeId);
+    int              rc;
     if (n == NULL) {
         return -1;
     }
 
     switch (n->kind) {
-        case SLAst_IDENT:             return EmitExpr_IDENT(c, nodeId, n);
-        case SLAst_INT:               return EmitExpr_INT(c, nodeId, n);
-        case SLAst_RUNE:              return EmitExpr_RUNE(c, nodeId, n);
-        case SLAst_FLOAT:             return EmitExpr_FLOAT(c, nodeId, n);
-        case SLAst_BOOL:              return EmitExpr_BOOL(c, nodeId, n);
-        case SLAst_COMPOUND_LIT:      return EmitExpr_COMPOUND_LIT(c, nodeId, n);
-        case SLAst_STRING:            return EmitExpr_STRING(c, nodeId, n);
-        case SLAst_UNARY:             return EmitExpr_UNARY(c, nodeId, n);
-        case SLAst_BINARY:            return EmitExpr_BINARY(c, nodeId, n);
-        case SLAst_CALL_WITH_CONTEXT: return EmitExpr_CALL_WITH_CONTEXT(c, nodeId, n);
-        case SLAst_CALL:              return EmitExpr_CALL(c, nodeId, n);
-        case SLAst_NEW:               return EmitExpr_NEW(c, nodeId, n);
-        case SLAst_INDEX:             return EmitExpr_INDEX(c, nodeId, n);
-        case SLAst_FIELD_EXPR:        return EmitExpr_FIELD_EXPR(c, nodeId, n);
-        case SLAst_CAST:              return EmitExpr_CAST(c, nodeId, n);
-        case SLAst_SIZEOF:            return EmitExpr_SIZEOF(c, nodeId, n);
-        case SLAst_NULL:              return EmitExpr_NULL(c, nodeId, n);
-        case SLAst_UNWRAP:            return EmitExpr_UNWRAP(c, nodeId, n);
-        case SLAst_TUPLE_EXPR:        return EmitExpr_TUPLE_EXPR(c, nodeId, n);
-        case SLAst_CALL_ARG:          return EmitExpr_CALL_ARG(c, nodeId, n);
+        case SLAst_IDENT:             rc = EmitExpr_IDENT(c, nodeId, n); break;
+        case SLAst_INT:               rc = EmitExpr_INT(c, nodeId, n); break;
+        case SLAst_RUNE:              rc = EmitExpr_RUNE(c, nodeId, n); break;
+        case SLAst_FLOAT:             rc = EmitExpr_FLOAT(c, nodeId, n); break;
+        case SLAst_BOOL:              rc = EmitExpr_BOOL(c, nodeId, n); break;
+        case SLAst_COMPOUND_LIT:      rc = EmitExpr_COMPOUND_LIT(c, nodeId, n); break;
+        case SLAst_STRING:            rc = EmitExpr_STRING(c, nodeId, n); break;
+        case SLAst_UNARY:             rc = EmitExpr_UNARY(c, nodeId, n); break;
+        case SLAst_BINARY:            rc = EmitExpr_BINARY(c, nodeId, n); break;
+        case SLAst_CALL_WITH_CONTEXT: rc = EmitExpr_CALL_WITH_CONTEXT(c, nodeId, n); break;
+        case SLAst_CALL:              rc = EmitExpr_CALL(c, nodeId, n); break;
+        case SLAst_NEW:               rc = EmitExpr_NEW(c, nodeId, n); break;
+        case SLAst_INDEX:             rc = EmitExpr_INDEX(c, nodeId, n); break;
+        case SLAst_FIELD_EXPR:        rc = EmitExpr_FIELD_EXPR(c, nodeId, n); break;
+        case SLAst_CAST:              rc = EmitExpr_CAST(c, nodeId, n); break;
+        case SLAst_SIZEOF:            rc = EmitExpr_SIZEOF(c, nodeId, n); break;
+        case SLAst_NULL:              rc = EmitExpr_NULL(c, nodeId, n); break;
+        case SLAst_UNWRAP:            rc = EmitExpr_UNWRAP(c, nodeId, n); break;
+        case SLAst_TUPLE_EXPR:        rc = EmitExpr_TUPLE_EXPR(c, nodeId, n); break;
+        case SLAst_CALL_ARG:          rc = EmitExpr_CALL_ARG(c, nodeId, n); break;
         default:
             /* Unsupported AST kind in expression context. */
-            return -1;
+            rc = -1;
+            break;
     }
+    if (rc != 0 && c->diag != NULL && c->diag->code == SLDiag_NONE) {
+        SetDiagNode(c, nodeId, SLDiag_CODEGEN_INTERNAL);
+    }
+    return rc;
 }
 
 int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth);
@@ -7190,6 +8113,9 @@ int EmitBlockImpl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int inlineOpen
     }
     while (child >= 0) {
         if (EmitStmt(c, child, depth + 1u) != 0) {
+            if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                SetDiagNode(c, child, SLDiag_CODEGEN_INTERNAL);
+            }
             PopDeferScope(c);
             PopScope(c);
             return -1;
@@ -8189,6 +9115,147 @@ int EmitAssertFormatArg(SLCBackendC* c, int32_t nodeId) {
     return 0;
 }
 
+int EvalConstIntForIf(SLCBackendC* c, int32_t nodeId, int64_t* outValue, int* outKnown) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    int64_t          v = 0;
+    int              isConst = 0;
+    if (outValue == NULL || outKnown == NULL) {
+        return -1;
+    }
+    *outKnown = 0;
+    if (n == NULL) {
+        return 0;
+    }
+    if (n->kind == SLAst_CALL) {
+        int32_t          callee = AstFirstChild(&c->ast, nodeId);
+        int32_t          arg = AstNextSibling(&c->ast, callee);
+        int32_t          argExpr = UnwrapCallArgExprNode(c, arg);
+        int32_t          extra = arg >= 0 ? AstNextSibling(&c->ast, arg) : -1;
+        const SLAstNode* calleeNode = NodeAt(c, callee);
+        const SLAstNode* argNode = NodeAt(c, argExpr);
+        if (calleeNode != NULL && calleeNode->kind == SLAst_IDENT && argNode != NULL
+            && argNode->kind == SLAst_IDENT
+            && SliceEq(c->unit->source, calleeNode->dataStart, calleeNode->dataEnd, "len")
+            && IsActivePackIdent(c, argNode->dataStart, argNode->dataEnd) && extra < 0)
+        {
+            *outValue = (int64_t)c->activePackElemCount;
+            *outKnown = 1;
+            return 0;
+        }
+    }
+    if (EvalConstIntExpr(c, nodeId, &v, &isConst) == 0 && isConst) {
+        *outValue = v;
+        *outKnown = 1;
+    }
+    return 0;
+}
+
+int EvalConstBoolForIf(SLCBackendC* c, int32_t nodeId, int* outKnown, int* outValue) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    if (outKnown == NULL || outValue == NULL) {
+        return -1;
+    }
+    *outKnown = 0;
+    *outValue = 0;
+    if (n == NULL) {
+        return 0;
+    }
+    if (n->kind == SLAst_BOOL) {
+        *outKnown = 1;
+        *outValue = SliceEq(c->unit->source, n->dataStart, n->dataEnd, "true") ? 1 : 0;
+        return 0;
+    }
+    if (n->kind == SLAst_UNARY && (SLTokenKind)n->op == SLTok_NOT) {
+        int32_t inner = AstFirstChild(&c->ast, nodeId);
+        int     known = 0;
+        int     value = 0;
+        if (EvalConstBoolForIf(c, inner, &known, &value) != 0) {
+            return -1;
+        }
+        if (known) {
+            *outKnown = 1;
+            *outValue = value ? 0 : 1;
+        }
+        return 0;
+    }
+    if (n->kind == SLAst_BINARY) {
+        int32_t lhs = AstFirstChild(&c->ast, nodeId);
+        int32_t rhs = AstNextSibling(&c->ast, lhs);
+        if ((SLTokenKind)n->op == SLTok_LOGICAL_AND || (SLTokenKind)n->op == SLTok_LOGICAL_OR) {
+            int lhsKnown = 0;
+            int lhsValue = 0;
+            int rhsKnown = 0;
+            int rhsValue = 0;
+            if (EvalConstBoolForIf(c, lhs, &lhsKnown, &lhsValue) != 0) {
+                return -1;
+            }
+            if ((SLTokenKind)n->op == SLTok_LOGICAL_AND && lhsKnown && !lhsValue) {
+                *outKnown = 1;
+                *outValue = 0;
+                return 0;
+            }
+            if ((SLTokenKind)n->op == SLTok_LOGICAL_OR && lhsKnown && lhsValue) {
+                *outKnown = 1;
+                *outValue = 1;
+                return 0;
+            }
+            if (EvalConstBoolForIf(c, rhs, &rhsKnown, &rhsValue) != 0) {
+                return -1;
+            }
+            if (lhsKnown && rhsKnown) {
+                *outKnown = 1;
+                *outValue = (SLTokenKind)n->op == SLTok_LOGICAL_AND
+                              ? (lhsValue && rhsValue)
+                              : (lhsValue || rhsValue);
+            }
+            return 0;
+        }
+        if ((SLTokenKind)n->op == SLTok_EQ || (SLTokenKind)n->op == SLTok_NEQ
+            || (SLTokenKind)n->op == SLTok_LT || (SLTokenKind)n->op == SLTok_LTE
+            || (SLTokenKind)n->op == SLTok_GT || (SLTokenKind)n->op == SLTok_GTE)
+        {
+            if ((SLTokenKind)n->op == SLTok_EQ || (SLTokenKind)n->op == SLTok_NEQ) {
+                SLTypeRef lhsType;
+                SLTypeRef rhsType;
+                int       lhsTypeKnown = ResolveReflectedTypeValueExprTypeRef(c, lhs, &lhsType);
+                int       rhsTypeKnown = ResolveReflectedTypeValueExprTypeRef(c, rhs, &rhsType);
+                if (lhsTypeKnown && rhsTypeKnown && lhsType.valid && rhsType.valid) {
+                    *outKnown = 1;
+                    *outValue = ((SLTokenKind)n->op == SLTok_EQ)
+                                  ? (TypeRefEqual(&lhsType, &rhsType) ? 1 : 0)
+                                  : (TypeRefEqual(&lhsType, &rhsType) ? 0 : 1);
+                    return 0;
+                }
+            }
+            int64_t lv = 0;
+            int64_t rv = 0;
+            int     lk = 0;
+            int     rk = 0;
+            if (EvalConstIntForIf(c, lhs, &lv, &lk) != 0
+                || EvalConstIntForIf(c, rhs, &rv, &rk) != 0)
+            {
+                return -1;
+            }
+            if (lk && rk) {
+                int v = 0;
+                switch ((SLTokenKind)n->op) {
+                    case SLTok_EQ:  v = (lv == rv); break;
+                    case SLTok_NEQ: v = (lv != rv); break;
+                    case SLTok_LT:  v = (lv < rv); break;
+                    case SLTok_LTE: v = (lv <= rv); break;
+                    case SLTok_GT:  v = (lv > rv); break;
+                    case SLTok_GTE: v = (lv >= rv); break;
+                    default:        v = 0; break;
+                }
+                *outKnown = 1;
+                *outValue = v;
+            }
+            return 0;
+        }
+    }
+    return 0;
+}
+
 int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -8199,6 +9266,7 @@ int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         case SLAst_BLOCK:        return EmitBlock(c, nodeId, depth);
         case SLAst_VAR:          return EmitVarLikeStmt(c, nodeId, depth, 0);
         case SLAst_CONST:        return EmitVarLikeStmt(c, nodeId, depth, 1);
+        case SLAst_CONST_BLOCK:  return 0;
         case SLAst_MULTI_ASSIGN: return EmitMultiAssignStmt(c, nodeId, depth);
         case SLAst_EXPR_STMT:    {
             int32_t expr = AstFirstChild(&c->ast, nodeId);
@@ -8312,16 +9380,55 @@ int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             int32_t          elseNode = AstNextSibling(&c->ast, thenNode);
             const SLAstNode* thenStmt = NodeAt(c, thenNode);
             const SLAstNode* elseStmt = NodeAt(c, elseNode);
+            int              condKnown = 0;
+            int              condValue = 0;
+            if (EvalConstBoolForIf(c, cond, &condKnown, &condValue) != 0) {
+                if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                    SetDiagNode(c, cond >= 0 ? cond : nodeId, SLDiag_CODEGEN_INTERNAL);
+                }
+                return -1;
+            }
+            if (condKnown) {
+                if (condValue) {
+                    if (EmitStmt(c, thenNode, depth) != 0) {
+                        if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                            SetDiagNode(
+                                c, thenNode >= 0 ? thenNode : nodeId, SLDiag_CODEGEN_INTERNAL);
+                        }
+                        return -1;
+                    }
+                    return 0;
+                }
+                if (elseNode >= 0) {
+                    if (EmitStmt(c, elseNode, depth) != 0) {
+                        if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                            SetDiagNode(c, elseNode, SLDiag_CODEGEN_INTERNAL);
+                        }
+                        return -1;
+                    }
+                    return 0;
+                }
+                return 0;
+            }
             EmitIndent(c, depth);
             if (BufAppendCStr(&c->out, "if (") != 0 || EmitExpr(c, cond) != 0) {
+                if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                    SetDiagNode(c, cond >= 0 ? cond : nodeId, SLDiag_CODEGEN_INTERNAL);
+                }
                 return -1;
             }
             if (thenStmt != NULL && thenStmt->kind == SLAst_BLOCK) {
                 if (BufAppendCStr(&c->out, ") ") != 0 || EmitBlockInline(c, thenNode, depth) != 0) {
+                    if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                        SetDiagNode(c, thenNode >= 0 ? thenNode : nodeId, SLDiag_CODEGEN_INTERNAL);
+                    }
                     return -1;
                 }
             } else {
                 if (BufAppendCStr(&c->out, ")\n") != 0 || EmitStmt(c, thenNode, depth) != 0) {
+                    if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                        SetDiagNode(c, thenNode >= 0 ? thenNode : nodeId, SLDiag_CODEGEN_INTERNAL);
+                    }
                     return -1;
                 }
             }
@@ -8331,11 +9438,17 @@ int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                     if (BufAppendCStr(&c->out, "else ") != 0
                         || EmitBlockInline(c, elseNode, depth) != 0)
                     {
+                        if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                            SetDiagNode(c, elseNode, SLDiag_CODEGEN_INTERNAL);
+                        }
                         return -1;
                     }
                 } else {
                     if (BufAppendCStr(&c->out, "else\n") != 0 || EmitStmt(c, elseNode, depth) != 0)
                     {
+                        if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                            SetDiagNode(c, elseNode, SLDiag_CODEGEN_INTERNAL);
+                        }
                         return -1;
                     }
                 }

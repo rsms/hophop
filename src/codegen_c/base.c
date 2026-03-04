@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "../typecheck/internal.h"
 
 SL_API_BEGIN
 size_t StrLen(const char* s) {
@@ -2376,7 +2377,12 @@ int AddFnSig(
     uint32_t  paramLen,
     int       isVariadic,
     int       hasContext,
-    SLTypeRef contextType) {
+    SLTypeRef contextType,
+    uint16_t  sigFlags,
+    uint32_t  tcFuncIndex,
+    uint32_t  packArgStart,
+    uint32_t  packArgCount,
+    char* _Nullable packParamName) {
     const char* cName = baseCName;
     uint32_t    i;
 
@@ -2402,9 +2408,8 @@ int AddFnSig(
                 sameSig = 0;
                 break;
             }
-            if ((((c->fnSigs[i].paramFlags != NULL) ? c->fnSigs[i].paramFlags[p] : 0u)
-                 & SLCCGParamFlag_CONST)
-                != (((paramFlags != NULL) ? paramFlags[p] : 0u) & SLCCGParamFlag_CONST))
+            if (((c->fnSigs[i].paramFlags != NULL) ? c->fnSigs[i].paramFlags[p] : 0u)
+                != ((paramFlags != NULL) ? paramFlags[p] : 0u))
             {
                 sameSig = 0;
                 break;
@@ -2483,17 +2488,21 @@ int AddFnSig(
     }
     c->fnSigs[c->fnSigLen].slName = (char*)slName;
     c->fnSigs[c->fnSigLen].cName = (char*)cName;
+    c->fnSigs[c->fnSigLen].nodeId = nodeId;
+    c->fnSigs[c->fnSigLen].tcFuncIndex = tcFuncIndex;
     c->fnSigs[c->fnSigLen].returnType = returnType;
     c->fnSigs[c->fnSigLen].paramTypes = paramTypes;
     c->fnSigs[c->fnSigLen].paramNames = paramNames;
     c->fnSigs[c->fnSigLen].paramFlags = paramFlags;
     c->fnSigs[c->fnSigLen].paramLen = paramLen;
+    c->fnSigs[c->fnSigLen].packArgStart = packArgStart;
+    c->fnSigs[c->fnSigLen].packArgCount = packArgCount;
+    c->fnSigs[c->fnSigLen].packParamName = packParamName;
+    c->fnSigs[c->fnSigLen].flags = sigFlags;
     c->fnSigs[c->fnSigLen].hasContext = hasContext;
     c->fnSigs[c->fnSigLen].contextType = contextType;
     c->fnSigs[c->fnSigLen].isVariadic = (uint8_t)(isVariadic ? 1 : 0);
     c->fnSigs[c->fnSigLen]._reserved[0] = 0;
-    c->fnSigs[c->fnSigLen]._reserved[1] = 0;
-    c->fnSigs[c->fnSigLen]._reserved[2] = 0;
     c->fnSigLen++;
 
     if (EnsureCapArena(
@@ -2900,17 +2909,45 @@ const char* _Nullable FindFnCNameByNodeId(const SLCBackendC* c, int32_t nodeId) 
 }
 
 const SLFnSig* _Nullable FindFnSigByNodeId(const SLCBackendC* c, int32_t nodeId) {
-    const char* cName = FindFnCNameByNodeId(c, nodeId);
-    uint32_t    i;
-    if (cName == NULL) {
-        return NULL;
-    }
+    uint32_t i;
     for (i = 0; i < c->fnSigLen; i++) {
-        if (StrEq(c->fnSigs[i].cName, cName)) {
+        if (c->fnSigs[i].nodeId == nodeId
+            && (c->fnSigs[i].flags & SLFnSigFlag_TEMPLATE_INSTANCE) == 0)
+        {
             return &c->fnSigs[i];
         }
     }
+    for (i = 0; i < c->fnSigLen; i++) {
+        if (c->fnSigs[i].nodeId == nodeId) {
+            return &c->fnSigs[i];
+        }
+    }
+    {
+        const char* cName = FindFnCNameByNodeId(c, nodeId);
+        if (cName != NULL) {
+            for (i = 0; i < c->fnSigLen; i++) {
+                if (StrEq(c->fnSigs[i].cName, cName)) {
+                    return &c->fnSigs[i];
+                }
+            }
+        }
+    }
     return NULL;
+}
+
+uint32_t FindFnSigCandidatesByNodeId(
+    const SLCBackendC* c, int32_t nodeId, const SLFnSig** out, uint32_t cap) {
+    uint32_t i;
+    uint32_t n = 0;
+    for (i = 0; i < c->fnSigLen; i++) {
+        if (c->fnSigs[i].nodeId == nodeId) {
+            if (n < cap) {
+                out[n] = &c->fnSigs[i];
+            }
+            n++;
+        }
+    }
+    return n;
 }
 
 const SLFieldInfo* _Nullable FindFieldInfo(
@@ -3257,15 +3294,25 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
         SLTypeRef  contextType;
         int        isVariadic = 0;
         int        hasContext = 0;
+        int        hasAnytypeParam = 0;
         TypeRefSetScalar(&returnType, "void");
         TypeRefSetInvalid(&contextType);
         while (child >= 0) {
             const SLAstNode* ch = NodeAt(c, child);
             if (ch != NULL && ch->kind == SLAst_PARAM) {
-                int32_t   typeNode = AstFirstChild(&c->ast, child);
-                SLTypeRef paramType;
+                int32_t          typeNode = AstFirstChild(&c->ast, child);
+                SLTypeRef        paramType;
+                int              isAnytypeParam = 0;
+                uint8_t          pflags = 0;
+                const SLAstNode* typeAst = NodeAt(c, typeNode);
                 if (ParseTypeRef(c, typeNode, &paramType) != 0) {
                     return -1;
+                }
+                if (typeAst != NULL && typeAst->kind == SLAst_TYPE_NAME
+                    && SliceEq(c->unit->source, typeAst->dataStart, typeAst->dataEnd, "anytype"))
+                {
+                    isAnytypeParam = 1;
+                    hasAnytypeParam = 1;
                 }
                 if ((ch->flags & SLAstFlag_PARAM_VARIADIC) != 0) {
                     if (isVariadic) {
@@ -3280,9 +3327,15 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                     paramType.arrayLen = 0;
                     paramType.readOnly = 1;
                     isVariadic = 1;
+                    if (isAnytypeParam) {
+                        pflags |= SLCCGParamFlag_ANYPACK;
+                    }
                 } else if (isVariadic) {
                     /* Variadic parameter must be the final parameter. */
                     return -1;
+                }
+                if (isAnytypeParam) {
+                    pflags |= SLCCGParamFlag_ANYTYPE;
                 }
                 if (paramLen >= paramTypeCap) {
                     uint32_t need = paramLen + 1u;
@@ -3326,10 +3379,10 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                 if (paramNames[paramLen - 1u] == NULL) {
                     return -1;
                 }
-                paramFlags[paramLen - 1u] =
-                    (uint8_t)(((ch->flags & SLAstFlag_PARAM_CONST) != 0)
-                                  ? SLCCGParamFlag_CONST
-                                  : 0u);
+                if ((ch->flags & SLAstFlag_PARAM_CONST) != 0) {
+                    pflags |= SLCCGParamFlag_CONST;
+                }
+                paramFlags[paramLen - 1u] = pflags;
             } else if (
                 ch != NULL
                 && (ch->kind == SLAst_TYPE_NAME || ch->kind == SLAst_TYPE_PTR
@@ -3365,7 +3418,12 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
             paramLen,
             isVariadic,
             hasContext,
-            contextType);
+            contextType,
+            hasAnytypeParam ? SLFnSigFlag_TEMPLATE_BASE : 0u,
+            UINT32_MAX,
+            0u,
+            0u,
+            NULL);
     }
 
     if (n->kind == SLAst_STRUCT || n->kind == SLAst_UNION) {
@@ -3424,6 +3482,257 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
     return 0;
 }
 
+char* _Nullable BuildTemplateInstanceCName(
+    SLCBackendC* c, const char* baseCName, uint32_t tcFuncIndex) {
+    SLBuf b = { 0 };
+    b.arena = &c->arena;
+    if (BufAppendCStr(&b, baseCName) != 0 || BufAppendCStr(&b, "__ti") != 0
+        || BufAppendU32(&b, tcFuncIndex) != 0)
+    {
+        return NULL;
+    }
+    return BufFinish(&b);
+}
+
+char* _Nullable DupParamNameFromSpanOrDefault(
+    SLCBackendC* c, uint32_t start, uint32_t end, uint32_t index) {
+    if (end > start) {
+        char* n = DupSlice(c, c->unit->source, start, end);
+        if (n != NULL && n[0] != '\0') {
+            return n;
+        }
+    }
+    {
+        SLBuf b = { 0 };
+        b.arena = &c->arena;
+        if (BufAppendCStr(&b, "__sl_p") != 0 || BufAppendU32(&b, index) != 0) {
+            return NULL;
+        }
+        return BufFinish(&b);
+    }
+}
+
+char* _Nullable BuildExpandedPackElemName(SLCBackendC* c, const char* packName, uint32_t index) {
+    SLBuf b = { 0 };
+    b.arena = &c->arena;
+    if (BufAppendCStr(&b, packName) != 0 || BufAppendCStr(&b, "__") != 0
+        || BufAppendU32(&b, index) != 0)
+    {
+        return NULL;
+    }
+    return BufFinish(&b);
+}
+
+int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
+    const SLTypeCheckCtx* tc;
+    uint32_t              i;
+    if (c == NULL || c->constEval == NULL) {
+        return 0;
+    }
+    tc = &c->constEval->tc;
+    for (i = 0; i < tc->funcLen; i++) {
+        const SLTCFunction* fn = &tc->funcs[i];
+        int32_t             nodeId;
+        const SLAstNode*    fnNode;
+        const SLNameMap*    map;
+        char*               cName;
+        SLTypeRef           returnType;
+        SLTypeRef           contextType;
+        SLTypeRef*          paramTypes = NULL;
+        char**              paramNames = NULL;
+        uint8_t*            paramFlags = NULL;
+        uint32_t            paramLen = 0;
+        uint32_t            paramTypeCap = 0;
+        uint32_t            paramNameCap = 0;
+        uint32_t            paramFlagCap = 0;
+        uint32_t            packArgStart = 0;
+        uint32_t            packArgCount = 0;
+        char*               packParamName = NULL;
+        int                 isVariadic = (fn->flags & SLTCFunctionFlag_VARIADIC) != 0;
+        int                 hasContext = fn->contextType >= 0;
+        uint32_t            p;
+
+        if ((fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0) {
+            continue;
+        }
+        nodeId = fn->defNode >= 0 ? fn->defNode : fn->declNode;
+        fnNode = NodeAt(c, nodeId);
+        if (fnNode == NULL || fnNode->kind != SLAst_FN) {
+            return -1;
+        }
+        map = FindNameBySlice(c, fnNode->dataStart, fnNode->dataEnd);
+        if (map == NULL) {
+            return -1;
+        }
+        if (ParseTypeRefFromConstEvalTypeId(c, fn->returnType, &returnType) != 0) {
+            continue;
+        }
+        if (hasContext) {
+            if (ParseTypeRefFromConstEvalTypeId(c, fn->contextType, &contextType) != 0) {
+                continue;
+            }
+        } else {
+            TypeRefSetInvalid(&contextType);
+        }
+        cName = BuildTemplateInstanceCName(c, map->cName, i);
+        if (cName == NULL) {
+            return -1;
+        }
+
+        for (p = 0; p < fn->paramCount; p++) {
+            int32_t  typeId = tc->funcParamTypes[fn->paramTypeStart + p];
+            uint8_t  pflags = 0;
+            uint32_t nameStart = tc->funcParamNameStarts[fn->paramTypeStart + p];
+            uint32_t nameEnd = tc->funcParamNameEnds[fn->paramTypeStart + p];
+            if ((tc->funcParamFlags[fn->paramTypeStart + p] & SLTCFuncParamFlag_CONST) != 0) {
+                pflags |= SLCCGParamFlag_CONST;
+            }
+            if (isVariadic && p + 1u == fn->paramCount && typeId >= 0
+                && (uint32_t)typeId < tc->typeLen && tc->types[typeId].kind == SLTCType_PACK)
+            {
+                const SLTCType* packType = &tc->types[typeId];
+                uint32_t        k;
+                isVariadic = 0;
+                packArgStart = paramLen;
+                packArgCount = packType->fieldCount;
+                packParamName = DupParamNameFromSpanOrDefault(c, nameStart, nameEnd, p);
+                if (packParamName == NULL) {
+                    return -1;
+                }
+                for (k = 0; k < packType->fieldCount; k++) {
+                    int32_t   elemTypeId = tc->funcParamTypes[packType->fieldStart + k];
+                    SLTypeRef paramType;
+                    char*     elemName;
+                    if (ParseTypeRefFromConstEvalTypeId(c, elemTypeId, &paramType) != 0) {
+                        break;
+                    }
+                    elemName = BuildExpandedPackElemName(c, packParamName, k);
+                    if (elemName == NULL) {
+                        return -1;
+                    }
+                    if (paramLen >= paramTypeCap || paramLen >= paramNameCap
+                        || paramLen >= paramFlagCap)
+                    {
+                        uint32_t need = paramLen + 1u;
+                        if (EnsureCapArena(
+                                &c->arena,
+                                (void**)&paramTypes,
+                                &paramTypeCap,
+                                need,
+                                sizeof(SLTypeRef),
+                                (uint32_t)_Alignof(SLTypeRef))
+                                != 0
+                            || EnsureCapArena(
+                                   &c->arena,
+                                   (void**)&paramNames,
+                                   &paramNameCap,
+                                   need,
+                                   sizeof(char*),
+                                   (uint32_t)_Alignof(char*))
+                                   != 0
+                            || EnsureCapArena(
+                                   &c->arena,
+                                   (void**)&paramFlags,
+                                   &paramFlagCap,
+                                   need,
+                                   sizeof(uint8_t),
+                                   (uint32_t)_Alignof(uint8_t))
+                                   != 0)
+                        {
+                            return -1;
+                        }
+                    }
+                    paramTypes[paramLen] = paramType;
+                    paramNames[paramLen] = elemName;
+                    paramFlags[paramLen] = pflags;
+                    paramLen++;
+                }
+                if (k != packType->fieldCount) {
+                    continue;
+                }
+                continue;
+            }
+
+            {
+                SLTypeRef paramType;
+                char*     paramName;
+                if (ParseTypeRefFromConstEvalTypeId(c, typeId, &paramType) != 0) {
+                    paramLen = 0;
+                    break;
+                }
+                paramName = DupParamNameFromSpanOrDefault(c, nameStart, nameEnd, p);
+                if (paramName == NULL) {
+                    return -1;
+                }
+                if (paramLen >= paramTypeCap || paramLen >= paramNameCap
+                    || paramLen >= paramFlagCap)
+                {
+                    uint32_t need = paramLen + 1u;
+                    if (EnsureCapArena(
+                            &c->arena,
+                            (void**)&paramTypes,
+                            &paramTypeCap,
+                            need,
+                            sizeof(SLTypeRef),
+                            (uint32_t)_Alignof(SLTypeRef))
+                            != 0
+                        || EnsureCapArena(
+                               &c->arena,
+                               (void**)&paramNames,
+                               &paramNameCap,
+                               need,
+                               sizeof(char*),
+                               (uint32_t)_Alignof(char*))
+                               != 0
+                        || EnsureCapArena(
+                               &c->arena,
+                               (void**)&paramFlags,
+                               &paramFlagCap,
+                               need,
+                               sizeof(uint8_t),
+                               (uint32_t)_Alignof(uint8_t))
+                               != 0)
+                    {
+                        return -1;
+                    }
+                }
+                paramTypes[paramLen] = paramType;
+                paramNames[paramLen] = paramName;
+                paramFlags[paramLen] = pflags;
+                paramLen++;
+            }
+        }
+        if (paramLen == 0 && fn->paramCount > 0) {
+            continue;
+        }
+
+        if (AddFnSig(
+                c,
+                map->name,
+                cName,
+                nodeId,
+                returnType,
+                paramTypes,
+                paramNames,
+                paramFlags,
+                paramLen,
+                isVariadic,
+                hasContext,
+                contextType,
+                (uint16_t)(SLFnSigFlag_TEMPLATE_INSTANCE
+                           | (packParamName != NULL ? SLFnSigFlag_EXPANDED_ANYPACK : 0u)),
+                i,
+                packArgStart,
+                packArgCount,
+                packParamName)
+            != 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int CollectFnAndFieldInfo(SLCBackendC* c) {
     uint32_t i;
     for (i = 0; i < c->pubDeclLen; i++) {
@@ -3435,6 +3744,9 @@ int CollectFnAndFieldInfo(SLCBackendC* c) {
         if (CollectFnAndFieldInfoFromNode(c, c->topDecls[i].nodeId) != 0) {
             return -1;
         }
+    }
+    if (CollectTemplateInstanceFnSigs(c) != 0) {
+        return -1;
     }
     return 0;
 }

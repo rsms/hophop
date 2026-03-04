@@ -431,8 +431,33 @@ static int PrintSLDiagEx(
     const char* msg = SLDiagMessage(diag->code);
     uint8_t     argCount = SLDiagArgCount(diag->code);
     const char* diagId = DiagIdOrFallback(diag->code);
+    uint32_t    sourceLen = source != NULL ? (uint32_t)strlen(source) : 0u;
+    uint32_t    spanStart = diag->start;
+    uint32_t    spanEnd = diag->end;
+    uint32_t    argStart = diag->argStart;
+    uint32_t    argEnd = diag->argEnd;
     uint32_t    locA = diag->start;
     uint32_t    locB = diag->end;
+    if (source != NULL) {
+        if (spanStart > sourceLen) {
+            spanStart = sourceLen;
+        }
+        if (spanEnd > sourceLen) {
+            spanEnd = sourceLen;
+        }
+        if (spanEnd < spanStart) {
+            spanEnd = spanStart;
+        }
+        if (argStart > sourceLen) {
+            argStart = sourceLen;
+        }
+        if (argEnd > sourceLen) {
+            argEnd = sourceLen;
+        }
+        if (argEnd < argStart) {
+            argEnd = argStart;
+        }
+    }
     if (useLineCol && source != NULL) {
         DiagOffsetToLineCol(source, diag->start, &locA, &locB);
     }
@@ -440,9 +465,9 @@ static int PrintSLDiagEx(
     fprintf(stderr, "%s:%u:%u: %s: ", DisplayPath(filename), locA, locB, diagId);
 
     if (useIdentifierWording && diag->code == SLDiag_UNKNOWN_SYMBOL && source != NULL
-        && diag->end > diag->start)
+        && spanEnd > spanStart)
     {
-        char* ident = DupSlice(source, diag->start, diag->end);
+        char* ident = DupSlice(source, spanStart, spanEnd);
         if (ident != NULL) {
             fprintf(stderr, "unknown identifier '%s'", ident);
             free(ident);
@@ -453,8 +478,8 @@ static int PrintSLDiagEx(
         fputs(msg, stderr);
     } else if (argCount == 1) {
         char* arg = NULL;
-        if (source != NULL && diag->argEnd > diag->argStart) {
-            arg = DupSlice(source, diag->argStart, diag->argEnd);
+        if (source != NULL && argEnd > argStart) {
+            arg = DupSlice(source, argStart, argEnd);
         } else {
             arg = DupCStr("");
         }
@@ -1882,7 +1907,13 @@ static int ParseSourceEx(
     outAst->len = 0;
     outAst->root = -1;
 
-    arenaCap64 = (uint64_t)(sourceLen + 128u) * (uint64_t)sizeof(SLAstNode) + 65536u;
+    {
+        uint64_t arenaNodeCap = (uint64_t)sourceLen + 128u;
+        if (outArena == NULL) {
+            arenaNodeCap *= 3u;
+        }
+        arenaCap64 = arenaNodeCap * (uint64_t)sizeof(SLAstNode) + 65536u;
+    }
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
         fprintf(stderr, "arena too large\n");
         return -1;
@@ -2204,6 +2235,28 @@ static int FnNodeHasBody(const SLAst* ast, int32_t nodeId) {
     return 0;
 }
 
+static int FnNodeHasAnytypeParam(const SLParsedFile* file, int32_t nodeId) {
+    int32_t child = ASTFirstChild(&file->ast, nodeId);
+    while (child >= 0) {
+        const SLAstNode* n = &file->ast.nodes[child];
+        if (n->kind == SLAst_PARAM) {
+            int32_t          typeNode = ASTFirstChild(&file->ast, child);
+            const SLAstNode* t =
+                (typeNode >= 0 && (uint32_t)typeNode < file->ast.len)
+                    ? &file->ast.nodes[typeNode]
+                    : NULL;
+            if (t != NULL && t->kind == SLAst_TYPE_NAME && t->dataEnd > t->dataStart
+                && (size_t)(t->dataEnd - t->dataStart) == strlen("anytype")
+                && memcmp(file->source + t->dataStart, "anytype", strlen("anytype")) == 0)
+            {
+                return 1;
+            }
+        }
+        child = ASTNextSibling(&file->ast, child);
+    }
+    return 0;
+}
+
 static char* _Nullable DefaultImportAlias(const char* importPath) {
     const char* slash = strrchr(importPath, '/');
     const char* name = importPath;
@@ -2500,7 +2553,9 @@ static char* _Nullable DupPubDeclText(const SLParsedFile* file, int32_t nodeId) 
         }
     }
 
-    if (n->kind == SLAst_FN && FnNodeHasBody(&file->ast, nodeId)) {
+    if (n->kind == SLAst_FN && FnNodeHasBody(&file->ast, nodeId)
+        && !FnNodeHasAnytypeParam(file, nodeId))
+    {
         int32_t body = ASTFirstChild(&file->ast, nodeId);
         while (body >= 0) {
             if (file->ast.nodes[body].kind == SLAst_BLOCK) {
@@ -3615,9 +3670,10 @@ static char* _Nullable ResolveLibImportDirInRoot(const char* rootDir, const char
 static int IsLibImportPath(const char* importPath) {
     return StrEq(importPath, "core") || StrEq(importPath, "reflect") || StrEq(importPath, "mem")
         || StrEq(importPath, "platform") || StrEq(importPath, "compiler")
-        || strncmp(importPath, "core/", 5u) == 0 || strncmp(importPath, "reflect/", 8u) == 0
-        || strncmp(importPath, "mem/", 4u) == 0 || strncmp(importPath, "compiler/", 9u) == 0
-        || strncmp(importPath, "std/", 4u) == 0 || strncmp(importPath, "platform/", 9u) == 0;
+        || StrEq(importPath, "str") || strncmp(importPath, "core/", 5u) == 0
+        || strncmp(importPath, "reflect/", 8u) == 0 || strncmp(importPath, "mem/", 4u) == 0
+        || strncmp(importPath, "compiler/", 9u) == 0 || strncmp(importPath, "std/", 4u) == 0
+        || strncmp(importPath, "platform/", 9u) == 0 || strncmp(importPath, "str/", 4u) == 0;
 }
 
 static char* _Nullable ResolveLibImportDir(const char* startDir, const char* importPath) {

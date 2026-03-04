@@ -1,11 +1,11 @@
-# SLP-26 core/str.format function (draft)
+# SLP-26 str.format function (completed)
 
 ## Summary
 
-SLP-26 adds a new formatting API in `lib/core/str/format.sl` that users import explicitly:
+SLP-26 adds a new formatting API in `lib/str/format.sl` that users import explicitly:
 
 ```sl
-import "core/str" { format }
+import "str" { format }
 ```
 
 Signature:
@@ -43,12 +43,12 @@ using SLP-24 (`const` parameters) and SLP-25 (`anytype` variadics).
 
 Location:
 
-- `lib/core/str/format.sl`
+- `lib/str/format.sl`
 
 Import style:
 
 ```sl
-import "core/str" { format }
+import "str" { format }
 ```
 
 Function:
@@ -60,7 +60,7 @@ fn format(buf *[u8], const format &str, args ...anytype) uint
 Notes:
 
 - existing `core.fmt` remains available and unchanged
-- callers opt in by importing `core/str` symbol `format` explicitly
+- callers opt in by importing `str` symbol `format` explicitly
 - no separate companion helper is introduced in this SLP
 
 ## Formatting grammar (v1)
@@ -76,15 +76,13 @@ All other brace forms are invalid format strings. (More forms will be added in f
 
 ## Semantic rules
 
-### 1. Compile-time format validation
+### 1. Format validation timing
 
 `format` parameter is `const` (SLP-24), so the format string must be const-evaluable at call site.
 
-The format string is parsed and validated at compile time:
-
-- invalid token/brace forms are compile-time errors
-- placeholder count must match argument count
-- placeholder type compatibility is checked against each bound `anytype` argument
+Implementation validates placeholders/count/type at compile time in pure SL using `const { ... }`
+logic (enabled by SLP-28 primitives). Invalid format shape/count/type fails during typecheck at
+the call site.
 
 ### 2. Placeholder type compatibility
 
@@ -106,8 +104,10 @@ Let `cap = len(buf)`.
 
 ### 4. Anytype usage
 
-`args ...anytype` is heterogeneous and processed via compile-time type dispatch for each
-placeholder/argument pair.
+`args ...anytype` is heterogeneous.
+
+Current implementation is pure SL and uses explicit index-specialized dispatch.
+Current v1 implementation limit is 16 variadic arguments.
 
 ## Diagnostics
 
@@ -123,16 +123,18 @@ Recommended new diagnostics (names illustrative):
 This is additive.
 
 - no behavior changes to existing `core.fmt`
-- users can migrate selectively by importing `core/str` symbol `format`
+- users can migrate selectively by importing `str` symbol `format`
 
 ## Implementation notes
 
 Reference implementation status:
 
-- API surface is provided by `lib/core/str/format.sl`.
-- Compile-time validation is implemented in typecheck for `core/str.format` calls.
-- C backend lowering emits direct bounded-buffer formatting code for `core/str.format`.
-- No `FmtValue` conversion is used by this API.
+- API surface is provided by `lib/str/format.sl`.
+- Implementation is pure SL (no format-specific typecheck hooks, no format-specific C backend
+  lowering).
+- Public signature is `fn format(buf *[u8], const format &str, args ...anytype) uint`.
+- Placeholder validation is call-site compile-time (`const { ... }`), not runtime panic-based.
+- Runtime logic handles only formatting/writing after validation.
 
 ## Test plan
 

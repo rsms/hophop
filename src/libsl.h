@@ -286,6 +286,7 @@ typedef enum {
     SLAst_BLOCK,
     SLAst_VAR,
     SLAst_CONST,
+    SLAst_CONST_BLOCK,
     SLAst_IF,
     SLAst_FOR,
     SLAst_SWITCH,

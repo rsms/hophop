@@ -83,3 +83,4 @@ Implemented core includes:
 - [SLP-25-anytype.md](SLP-25-anytype.md)
 - [SLP-26-format-function.md](SLP-26-format-function.md)
 - [SLP-27-const-numeric-literals.md](SLP-27-const-numeric-literals.md)
+- [SLP-28-call-site-compile-time-validation.md](SLP-28-call-site-compile-time-validation.md)

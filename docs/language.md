@@ -159,7 +159,7 @@ Block           = "{" [ StmtList ] "}" .
 StmtList        = Stmt { ";" Stmt } [ ";" ] .
 Stmt            = Block | VarDeclStmt | LocalConstDecl | IfStmt | ForStmt | SwitchStmt
                 | ReturnStmt | BreakStmt | ContinueStmt | DeferStmt | AssertStmt
-                | MultiAssignStmt | ExprStmt .
+                | ConstBlockStmt | MultiAssignStmt | ExprStmt .
 
 VarDeclStmt     = "var" DeclNameList ( Type [ "=" ExprList ] | "=" ExprList ) .
 MultiAssignStmt = ExprList "=" ExprList .
@@ -180,6 +180,7 @@ BreakStmt       = "break" .
 ContinueStmt    = "continue" .
 DeferStmt       = "defer" ( Block | Stmt ) .
 AssertStmt      = "assert" Expr [ "," Expr { "," Expr } ] .
+ConstBlockStmt  = "const" Block .
 ExprStmt        = Expr .
 
 Expr            = AssignExpr .
@@ -476,8 +477,11 @@ fn f() {
 - [EXPR-SUGAR-013][Provisional] In explicit-tail form, variadic-tail arguments are positional only; explicit named arguments are not allowed in the variadic tail.
 - [EXPR-SUGAR-014][Provisional] Named arguments (when present) participate only in fixed-parameter mapping; variadic-tail mapping is positional.
 - [EXPR-SUGAR-015][Provisional] For variadic signature `f(...anytype)`, explicit-tail arguments form a heterogeneous pack with per-element static type preservation.
-- [EXPR-SUGAR-016][Provisional] For `...anytype` pack bindings, `len(args)` is valid and `args[i]` requires const-evaluable in-bounds integer index.
+- [EXPR-SUGAR-016][Provisional] For `...anytype` pack bindings, `len(args)` is valid.
+  - `args[i]` with const-evaluable in-bounds integer index yields the indexed element type.
+  - `args[i]` with non-const index is allowed in expected-type contexts (e.g. cast/coercion, typed call arguments, typed assignment) and in `typeof(args[i])`; these lower to runtime per-element dispatch over the instantiated pack.
 - [EXPR-SUGAR-017][Provisional] Spread into `...anytype` requires an `anytype` pack value; slice/array spread into `...anytype` is invalid.
+- [EXPR-SUGAR-018][Provisional] In const-evaluated execution paths, element indexing `x[i]` over const-evaluable string/slice-like values produces a const byte value when `i` is const-evaluable and in bounds.
 
 ### 6.3 Compound literals
 - [EXPR-COMPOUND-001][Stable] Compound literals are named-field only.
@@ -497,6 +501,7 @@ fn f() {
 ## 7. Statements and Control Flow
 
 - [STMT-IF-001][Stable] `if` condition MUST be bool.
+- [STMT-IF-002][Provisional] In const-evaluated statement contexts and template-instance function bodies, if-condition expressions that are const-evaluable booleans specialize branch checking: only the taken branch is required to typecheck.
 - [STMT-FOR-001][Stable] `for` forms: infinite block, condition form, C-style `init; cond; post`, and `for ... in` forms.
 - [STMT-FOR-002][Stable] `for` condition (if present) MUST be bool.
 - [STMT-FOR-003][Stable] Variables declared in `for` initializer are scoped to the entire loop (condition, post, and body) and are not visible after the loop.
@@ -514,6 +519,8 @@ fn f() {
 - [STMT-SWITCH-003][Stable] No fallthrough.
 - [STMT-SWITCH-004][Stable] Expression-switch case labels must be assignable to subject type; condition-switch labels must be bool.
 - [STMT-SWITCH-005][Stable] Case labels are tested left-to-right and first matching case body executes.
+- [STMT-CONST-001][Provisional] `const { ... }` executes its block in compile-time evaluation context at call sites.
+- [STMT-CONST-002][Provisional] `const { ... }` failure to evaluate at compile time is a compile-time error.
 - [STMT-SWITCH-006][Stable] Duplicate case labels are not required to be diagnosed statically.
 - [STMT-SWITCH-007][Stable] Expression-switch semantics are defined as if subject expression is evaluated once before case-label matching.
 - [STMT-SWITCH-008][Stable] For finite-domain subjects (`bool`, `enum`), switches MUST be exhaustive unless a `default` clause is present.

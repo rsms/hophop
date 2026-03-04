@@ -1251,19 +1251,23 @@ int SLTCTypeIsReflectSpan(SLTypeCheckCtx* c, int32_t typeId) {
 }
 
 int SLTCTypeIsFmtValue(SLTypeCheckCtx* c, int32_t typeId) {
-    int32_t valueType;
+    const SLTCType* t;
     if (c == NULL || typeId < 0) {
         return 0;
     }
-    if (c->typeFmtValue < 0) {
-        c->typeFmtValue = SLTCFindFmtValueType(c);
-    }
-    valueType = c->typeFmtValue;
-    if (valueType < 0) {
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return 0;
     }
-    typeId = SLTCResolveAliasBaseType(c, typeId);
-    return typeId == valueType;
+    t = &c->types[typeId];
+    if (t->kind != SLTCType_NAMED) {
+        return 0;
+    }
+    if (!SLNameHasSuffix(c->src, t->nameStart, t->nameEnd, "__FmtValue")) {
+        return 0;
+    }
+    return t->declNode >= 0 && (uint32_t)t->declNode < c->ast->len
+        && c->ast->nodes[t->declNode].kind == SLAst_STRUCT;
 }
 
 int32_t SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {

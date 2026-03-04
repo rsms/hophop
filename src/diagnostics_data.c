@@ -424,13 +424,18 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
                                         NULL,
                                         SLDiagType_ERROR,
                                         0 },
+    [SLDiag_CONST_BLOCK_EVAL_FAILED] = { "SL2083",
+                                         "const block failed compile-time evaluation",
+                                         NULL,
+                                         SLDiagType_ERROR,
+                                         0 },
     [SLDiag_ANYTYPE_SPREAD_REQUIRES_PACK] = { "SL2082",
                                               "spread into ...anytype requires an anytype pack "
                                               "value",
                                               NULL,
                                               SLDiagType_ERROR,
                                               0 },
-    [SLDiag_CONST_NUMERIC_INVALID_POSITION] = { "SL2083",
+    [SLDiag_CONST_NUMERIC_INVALID_POSITION] = { "SL2088",
                                                 "const_int and const_float are only allowed in "
                                                 "const declarations, const parameters, function "
                                                 "returns, and cast targets",
