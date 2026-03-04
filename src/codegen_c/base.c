@@ -1061,7 +1061,7 @@ int NameHasPrefixSuffix(const char* name, const char* prefix, const char* suffix
 }
 
 int ResolveMainSemanticContextType(SLCBackendC* c, SLTypeRef* outType) {
-    const SLNameMap* map = FindNameByCString(c, "core__Context");
+    const SLNameMap* map = FindNameByCString(c, "builtin__Context");
     uint32_t         i;
     if (map != NULL && IsTypeDeclKind(map->kind)) {
         TypeRefSetScalar(outType, map->cName);
@@ -1069,7 +1069,7 @@ int ResolveMainSemanticContextType(SLCBackendC* c, SLTypeRef* outType) {
     }
     for (i = 0; i < c->nameLen; i++) {
         if (IsTypeDeclKind(c->names[i].kind)
-            && NameHasPrefixSuffix(c->names[i].name, "core", "__Context"))
+            && NameHasPrefixSuffix(c->names[i].name, "builtin", "__Context"))
         {
             TypeRefSetScalar(outType, c->names[i].cName);
             return 0;
@@ -1085,14 +1085,14 @@ int ResolveMainSemanticContextType(SLCBackendC* c, SLTypeRef* outType) {
 }
 
 const char* ResolveRuneTypeBaseName(SLCBackendC* c) {
-    const SLNameMap* map = FindNameByCString(c, "core__rune");
+    const SLNameMap* map = FindNameByCString(c, "builtin__rune");
     uint32_t         i;
     if (map != NULL && IsTypeDeclKind(map->kind)) {
         return map->cName;
     }
     for (i = 0; i < c->nameLen; i++) {
         if (IsTypeDeclKind(c->names[i].kind)
-            && NameHasPrefixSuffix(c->names[i].name, "core", "__rune"))
+            && NameHasPrefixSuffix(c->names[i].name, "builtin", "__rune"))
         {
             return c->names[i].cName;
         }
@@ -1516,7 +1516,7 @@ const char* TypeRefDisplayBaseName(const SLCBackendC* c, const char* baseName) {
     if (StrEq(baseName, "__sl_bool")) {
         return "bool";
     }
-    if (StrEq(baseName, "__sl_str") || StrEq(baseName, "core__str")) {
+    if (StrEq(baseName, "__sl_str") || StrEq(baseName, "builtin__str")) {
         return "str";
     }
     if (StrEq(baseName, "__sl_u8")) {
@@ -1721,11 +1721,11 @@ const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t e
 }
 
 void NormalizeCoreRuntimeTypeName(SLTypeRef* outType) {
-    if (outType->baseName != NULL && StrEq(outType->baseName, "core__str")) {
+    if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__str")) {
         outType->baseName = "__sl_str";
-    } else if (outType->baseName != NULL && StrEq(outType->baseName, "core__Allocator")) {
+    } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Allocator")) {
         outType->baseName = "__sl_Allocator";
-    } else if (outType->baseName != NULL && StrEq(outType->baseName, "core__Logger")) {
+    } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Logger")) {
         outType->baseName = "__sl_Logger";
     }
 }
@@ -2996,10 +2996,10 @@ const char* _Nullable CanonicalFieldOwnerType(
         return NULL;
     }
     if (StrEq(canonical, "__sl_Allocator")) {
-        return "core__Allocator";
+        return "builtin__Allocator";
     }
     if (StrEq(canonical, "__sl_Logger")) {
-        return "core__Logger";
+        return "builtin__Logger";
     }
     return canonical;
 }
@@ -3012,11 +3012,11 @@ int ResolveCoreStrFieldBySlice(
     if (!inited) {
         memset(&lenField, 0, sizeof(lenField));
         memset(&ptrField, 0, sizeof(ptrField));
-        lenField.ownerType = "core__str";
+        lenField.ownerType = "builtin__str";
         lenField.fieldName = "len";
         TypeRefSetScalar(&lenField.type, "__sl_uint");
 
-        ptrField.ownerType = "core__str";
+        ptrField.ownerType = "builtin__str";
         ptrField.fieldName = "ptr";
         TypeRefSetScalar(&ptrField.type, "__sl_u8");
         ptrField.type.ptrDepth = 1;
@@ -4792,7 +4792,7 @@ int TypeRefAssignableCost(
     SLCBackendC* c, const SLTypeRef* dst, const SLTypeRef* src, uint8_t* outCost);
 
 void SetPreferredAllocatorPtrType(SLTypeRef* outType) {
-    TypeRefSetScalar(outType, "core__Allocator");
+    TypeRefSetScalar(outType, "builtin__Allocator");
     outType->ptrDepth = 1;
 }
 

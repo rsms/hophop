@@ -51,7 +51,7 @@ Properties:
 
 ### `rune`
 
-`rune` is a core alias type:
+`rune` is a builtin alias type:
 
 ```sl
 type rune u32

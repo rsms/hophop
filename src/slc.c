@@ -3750,9 +3750,9 @@ static char* _Nullable ResolveLibImportDirInRoot(const char* rootDir, const char
 }
 
 static int IsLibImportPath(const char* importPath) {
-    return StrEq(importPath, "core") || StrEq(importPath, "reflect") || StrEq(importPath, "mem")
+    return StrEq(importPath, "builtin") || StrEq(importPath, "reflect") || StrEq(importPath, "mem")
         || StrEq(importPath, "platform") || StrEq(importPath, "compiler")
-        || StrEq(importPath, "str") || strncmp(importPath, "core/", 5u) == 0
+        || StrEq(importPath, "str") || strncmp(importPath, "builtin/", 8u) == 0
         || strncmp(importPath, "reflect/", 8u) == 0 || strncmp(importPath, "mem/", 4u) == 0
         || strncmp(importPath, "compiler/", 9u) == 0 || strncmp(importPath, "std/", 4u) == 0
         || strncmp(importPath, "platform/", 9u) == 0 || strncmp(importPath, "str/", 4u) == 0;
@@ -3799,14 +3799,14 @@ static int FindImportIndexByPath(const SLPackage* pkg, const char* importPath) {
     return -1;
 }
 
-static int IsCorePackage(const SLPackage* pkg) {
+static int IsBuiltinPackage(const SLPackage* pkg) {
     const char* base;
     if (pkg == NULL || pkg->dirPath == NULL) {
         return 0;
     }
     base = strrchr(pkg->dirPath, '/');
     base = base != NULL ? base + 1 : pkg->dirPath;
-    return StrEq(base, "core");
+    return StrEq(base, "builtin");
 }
 
 static int IsReflectPackage(const SLPackage* pkg) {
@@ -3819,18 +3819,18 @@ static int IsReflectPackage(const SLPackage* pkg) {
     return StrEq(base, "reflect");
 }
 
-static int EnsureImplicitCoreImport(SLPackage* pkg) {
+static int EnsureImplicitBuiltinImport(SLPackage* pkg) {
     char*    alias = NULL;
     char*    importPath = NULL;
     uint32_t importIndex = 0;
-    if (IsCorePackage(pkg)) {
+    if (IsBuiltinPackage(pkg)) {
         return 0;
     }
-    if (FindImportIndexByPath(pkg, "core") >= 0) {
+    if (FindImportIndexByPath(pkg, "builtin") >= 0) {
         return 0;
     }
-    alias = MakeUniqueImportAlias(pkg, "core");
-    importPath = DupCStr("core");
+    alias = MakeUniqueImportAlias(pkg, "builtin");
+    importPath = DupCStr("builtin");
     if (alias == NULL || importPath == NULL) {
         free(alias);
         free(importPath);
@@ -3848,7 +3848,7 @@ static int EnsureImplicitReflectImport(SLPackage* pkg) {
     char*    alias = NULL;
     char*    importPath = NULL;
     uint32_t importIndex = 0;
-    if (IsCorePackage(pkg) || IsReflectPackage(pkg)) {
+    if (IsBuiltinPackage(pkg) || IsReflectPackage(pkg)) {
         return 0;
     }
     if (FindImportIndexByPath(pkg, "reflect") >= 0) {
@@ -3869,16 +3869,16 @@ static int EnsureImplicitReflectImport(SLPackage* pkg) {
     return 0;
 }
 
-static int EnsureImplicitCoreImportSymbols(SLPackage* pkg) {
-    int coreImportIndex = FindImportIndexByPath(pkg, "core");
-    if (coreImportIndex < 0) {
+static int EnsureImplicitBuiltinImportSymbols(SLPackage* pkg) {
+    int builtinImportIndex = FindImportIndexByPath(pkg, "builtin");
+    if (builtinImportIndex < 0) {
         return 0;
     }
     {
-        const SLPackage* dep = pkg->imports[(uint32_t)coreImportIndex].target;
+        const SLPackage* dep = pkg->imports[(uint32_t)builtinImportIndex].target;
         uint32_t         i;
         if (dep == NULL) {
-            return ErrorSimple("internal error: unresolved core import");
+            return ErrorSimple("internal error: unresolved builtin import");
         }
         for (i = 0; i < dep->pubDeclLen; i++) {
             uint32_t j;
@@ -3890,7 +3890,7 @@ static int EnsureImplicitCoreImportSymbols(SLPackage* pkg) {
             }
             for (j = 0; j < pkg->importSymbolLen; j++) {
                 const SLImportSymbolRef* sym = &pkg->importSymbols[j];
-                if (sym->importIndex == (uint32_t)coreImportIndex
+                if (sym->importIndex == (uint32_t)builtinImportIndex
                     && StrEq(sym->sourceName, dep->pubDecls[i].name)
                     && StrEq(sym->localName, dep->pubDecls[i].name))
                 {
@@ -3907,7 +3907,7 @@ static int EnsureImplicitCoreImportSymbols(SLPackage* pkg) {
                     return ErrorSimple("out of memory");
                 }
                 if (AddImportSymbolRef(
-                        pkg, (uint32_t)coreImportIndex, sourceName, localName, 0, 0, 0)
+                        pkg, (uint32_t)builtinImportIndex, sourceName, localName, 0, 0, 0)
                     != 0)
                 {
                     free(sourceName);
@@ -3970,7 +3970,7 @@ static int LoadSelectedPlatformTargetPackage(
 
 static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage* pkg) {
     uint32_t i;
-    if (EnsureImplicitCoreImport(pkg) != 0) {
+    if (EnsureImplicitBuiltinImport(pkg) != 0) {
         return -1;
     }
     if (EnsureImplicitReflectImport(pkg) != 0) {
@@ -4016,7 +4016,7 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
         free(resolvedDir);
     }
 
-    if (EnsureImplicitCoreImportSymbols(pkg) != 0) {
+    if (EnsureImplicitBuiltinImportSymbols(pkg) != 0) {
         return -1;
     }
     if (ValidateAndFinalizeImportSymbols(pkg) != 0) {
@@ -5761,7 +5761,7 @@ static int HasEmittedImportSurface(
 
 static int PackageNeedsPrivateDeclSurface(const SLPackage* pkg) {
     uint32_t i;
-    if (pkg->name != NULL && StrEq(pkg->name, "core")) {
+    if (pkg->name != NULL && StrEq(pkg->name, "builtin")) {
         return 0;
     }
     for (i = 0; i < pkg->pubDeclLen; i++) {
@@ -7354,7 +7354,7 @@ static int BuildCachedWrapperObject(
         goto fail;
     }
 
-    if (SBAppendCStr(&wrapperBuilder, "#include <core/core.h>\n\nvoid ") != 0
+    if (SBAppendCStr(&wrapperBuilder, "#include <builtin/builtin.h>\n\nvoid ") != 0
         || SBAppendCStr(&wrapperBuilder, wrapperLinkPrefix) != 0
         || SBAppendCStr(&wrapperBuilder, "__main(__sl_Context *context);\n\n") != 0
         || SBAppendCStr(&wrapperBuilder, "int sl_main(__sl_Context *context) { ") != 0

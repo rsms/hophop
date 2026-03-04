@@ -30,7 +30,7 @@ Scope for v1 placeholders:
 
 More complex formatting (for example structs) is deferred to a future version.
 
-This proposal intentionally leaves existing `core.fmt` unchanged.
+This proposal intentionally leaves existing `builtin.fmt` unchanged.
 
 ## Motivation
 
@@ -59,7 +59,7 @@ fn format(buf *[u8], const format &str, args ...anytype) uint
 
 Notes:
 
-- existing `core.fmt` remains available and unchanged
+- existing `builtin.fmt` remains available and unchanged
 - callers opt in by importing `str` symbol `format` explicitly
 - no separate companion helper is introduced in this SLP
 
@@ -122,7 +122,7 @@ Recommended new diagnostics (names illustrative):
 
 This is additive.
 
-- no behavior changes to existing `core.fmt`
+- no behavior changes to existing `builtin.fmt`
 - users can migrate selectively by importing `str` symbol `format`
 
 ## Implementation notes
@@ -152,7 +152,7 @@ Add tests for:
    - type mismatch per placeholder kind
    - non-const format argument
 3. Compatibility:
-   - existing `core.fmt` tests continue to pass unchanged
+   - existing `builtin.fmt` tests continue to pass unchanged
 
 ## Non-goals
 
@@ -161,7 +161,7 @@ SLP-26 v1 does not add:
 - struct/union/enum reflective formatting
 - width/precision/alignment flags
 - locale-aware formatting
-- replacement/removal of existing `core.fmt`
+- replacement/removal of existing `builtin.fmt`
 
 ## Resolved decisions
 

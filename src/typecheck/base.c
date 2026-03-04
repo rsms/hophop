@@ -1049,12 +1049,12 @@ int32_t SLTCFindBuiltinType(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
         return c->typeUntypedFloat;
     }
     if (SLNameEqLiteral(c->src, start, end, "str")
-        || SLNameEqLiteral(c->src, start, end, "core__str"))
+        || SLNameEqLiteral(c->src, start, end, "builtin__str"))
     {
         return c->typeStr;
     }
     if ((SLNameEqLiteral(c->src, start, end, "rune")
-         || SLNameEqLiteral(c->src, start, end, "core__rune"))
+         || SLNameEqLiteral(c->src, start, end, "builtin__rune"))
         && c->typeRune >= 0)
     {
         return c->typeRune;
@@ -1222,14 +1222,14 @@ int32_t SLTCFindNamedTypeByLiteral(SLTypeCheckCtx* c, const char* name) {
     return -1;
 }
 
-int32_t SLTCFindCoreNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix) {
+int32_t SLTCFindBuiltinNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix) {
     uint32_t i;
     for (i = 0; i < c->typeLen; i++) {
         const SLTCType* t = &c->types[i];
         if (t->kind != SLTCType_NAMED) {
             continue;
         }
-        if (SLNameHasPrefix(c->src, t->nameStart, t->nameEnd, "core")
+        if (SLNameHasPrefix(c->src, t->nameStart, t->nameEnd, "builtin")
             && SLNameHasSuffix(c->src, t->nameStart, t->nameEnd, suffix))
         {
             return (int32_t)i;
@@ -1358,7 +1358,7 @@ int32_t SLTCFindReflectSpanType(SLTypeCheckCtx* c) {
 
 int32_t SLTCFindFmtValueType(SLTypeCheckCtx* c) {
     uint32_t i;
-    int32_t  direct = SLTCFindNamedTypeByLiteral(c, "core__FmtValue");
+    int32_t  direct = SLTCFindNamedTypeByLiteral(c, "builtin__FmtValue");
     if (direct >= 0) {
         return direct;
     }
@@ -1367,7 +1367,7 @@ int32_t SLTCFindFmtValueType(SLTypeCheckCtx* c) {
         if (t->kind != SLTCType_NAMED) {
             continue;
         }
-        if (!SLNameHasPrefix(c->src, t->nameStart, t->nameEnd, "core")
+        if (!SLNameHasPrefix(c->src, t->nameStart, t->nameEnd, "builtin")
             || !SLNameHasSuffix(c->src, t->nameStart, t->nameEnd, "__FmtValue"))
         {
             continue;

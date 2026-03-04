@@ -314,8 +314,8 @@ fn f() {
   - floating point: `f32`, `f64`
   - constant numeric: `const_int`, `const_float`
 - [TYPE-BUILTIN-003][Stable] `int` and `uint` are pointer-sized signed/unsigned integers for the target.
-- [TYPE-BUILTIN-004][Stable] `Allocator` is a source-level type provided by core library declarations (for example `core.Allocator` and implicit core imports), not a language builtin type.
-- [TYPE-BUILTIN-005][Stable] `rune` is a source-level alias type provided by core declarations and modeled as `type rune u32`.
+- [TYPE-BUILTIN-004][Stable] `Allocator` is a source-level type provided by builtin library declarations (for example `builtin.Allocator` and implicit builtin imports), not a language builtin type.
+- [TYPE-BUILTIN-005][Stable] `rune` is a source-level alias type provided by builtin declarations and modeled as `type rune u32`.
 - [TYPE-CONSTR-001][Stable] Constructed types: pointers `*T`, references `&T`, arrays `[T N]`, slices `[T]`, dependent arrays `[T .n]`, optionals `?T`, function types, tuple types `(T1, T2, ...)`, anonymous aggregates.
 - [TYPE-CONSTR-002][Stable] `[T]` is unsized and MUST NOT be used by value.
 - [TYPE-CONSTR-003][Stable] Function type return type defaults to no-value when omitted.
@@ -336,7 +336,7 @@ fn f() {
 - [TYPE-TEXT-002][Stable] String literals MUST decode to valid UTF-8 and therefore produce well-formed `str` data ([LEX-LIT-003], [LEX-LIT-009]).
 - [TYPE-TEXT-003][Stable] `str` operations are byte-oriented by default: `len(s)` reports byte length, not Unicode scalar-value count ([BI-LEN-001], [BI-LEN-002]).
 - [TYPE-TEXT-004][Stable] `str` is for textual data; arbitrary binary payloads SHOULD use `[u8]` families (`[u8 N]`, `*[u8]`, `&[u8]`) instead of `str`.
-- [TYPE-TEXT-005][Stable] `rune` denotes one Unicode scalar value and is modeled as core alias `type rune u32` ([TYPE-BUILTIN-005], [LEX-LIT-010], [LEX-LIT-012]).
+- [TYPE-TEXT-005][Stable] `rune` denotes one Unicode scalar value and is modeled as builtin alias `type rune u32` ([TYPE-BUILTIN-005], [LEX-LIT-010], [LEX-LIT-012]).
 - [TYPE-TEXT-006][Stable] Rune literals infer type `const_int`; values typed as `rune` can still implicitly convert to integer destinations only in the in-range const-evaluated case ([TYPE-INFER-004], [TYPE-ASSIGN-008]).
 - [TYPE-TEXT-007][Stable] C interop over string bytes uses `cstr(s)`, which exposes `str` storage as `&u8` with the lifetime/termination guarantees in [BI-CSTR-001] through [BI-CSTR-005].
 
@@ -679,7 +679,7 @@ fn f() {
 - [PKG-IMPORT-010][Stable] Primary resolution base is loader root:
   - directory package mode: parent directory of entry package directory
   - single-file package mode: directory containing the entry `.sl` file
-- [PKG-IMPORT-011][Stable] For recognized library import paths (`core`, `reflect`, `compiler`, `mem`, `platform`, `std/*`, `platform/*`), resolver order is:
+- [PKG-IMPORT-011][Stable] For recognized library import paths (`builtin`, `reflect`, `compiler`, `mem`, `platform`, `std/*`, `platform/*`), resolver order is:
   1. try `<loader_root>/<importPath>` first
   2. if that path is not an existing directory, search `<ancestor>/lib/<importPath>` from importing package directory upward to filesystem root
   3. select the first match encountered in that upward walk (nearest ancestor)
@@ -718,8 +718,8 @@ This section is non-core and documents current reference behavior.
 - [REF-IMPL-003][Provisional] `new` lowering uses allocator helpers and may inject implicit unwrap depending on destination optionality.
 - [REF-IMPL-004][Provisional] Non-constant index/slice bounds checks are analyzed statically; runtime checks are not universally emitted.
 - [REF-IMPL-005][Provisional] Implicit main context type resolution order:
-  1. named `core__Context`
-  2. named type matching `core*__Context`
+  1. named `builtin__Context`
+  2. named type matching `builtin*__Context`
   3. named `Context`
   4. fallback synthesized fields `mem` and `log`
 - [REF-IMPL-006][Provisional] Optional feature imports are recognized but optional syntax is not hard-gated on those imports.

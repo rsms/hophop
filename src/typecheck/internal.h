@@ -608,7 +608,7 @@ int      SLTCDecodeTypeTag(SLTypeCheckCtx* c, uint64_t typeTag, int32_t* outType
 int32_t  SLTCResolveTypeValueName(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t  SLTCFindNamedTypeIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t  SLTCFindNamedTypeByLiteral(SLTypeCheckCtx* c, const char* name);
-int32_t  SLTCFindCoreNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix);
+int32_t  SLTCFindBuiltinNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix);
 int32_t  SLTCFindNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix);
 int32_t  SLTCFindReflectKindType(SLTypeCheckCtx* c);
 int      SLTCNameEqLiteralOrPkgBuiltin(

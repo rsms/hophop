@@ -1613,9 +1613,9 @@ int SLTCBuildCheckedContext(
         return -1;
     }
     {
-        int32_t namedStrType = SLTCFindNamedTypeByLiteral(&c, "core__str");
+        int32_t namedStrType = SLTCFindNamedTypeByLiteral(&c, "builtin__str");
         if (namedStrType < 0) {
-            namedStrType = SLTCFindCoreNamedTypeBySuffix(&c, "__str");
+            namedStrType = SLTCFindBuiltinNamedTypeBySuffix(&c, "__str");
         }
         if (namedStrType < 0) {
             namedStrType = SLTCFindNamedTypeByLiteral(&c, "str");
@@ -1625,9 +1625,9 @@ int SLTCBuildCheckedContext(
         }
     }
     {
-        int32_t namedRuneType = SLTCFindNamedTypeByLiteral(&c, "core__rune");
+        int32_t namedRuneType = SLTCFindNamedTypeByLiteral(&c, "builtin__rune");
         if (namedRuneType < 0) {
-            namedRuneType = SLTCFindCoreNamedTypeBySuffix(&c, "__rune");
+            namedRuneType = SLTCFindBuiltinNamedTypeBySuffix(&c, "__rune");
         }
         if (namedRuneType < 0) {
             namedRuneType = SLTCFindNamedTypeByLiteral(&c, "rune");
@@ -1636,9 +1636,9 @@ int SLTCBuildCheckedContext(
             c.typeRune = namedRuneType;
         }
     }
-    c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "core__Allocator");
+    c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "builtin__Allocator");
     if (c.typeMemAllocator < 0) {
-        c.typeMemAllocator = SLTCFindCoreNamedTypeBySuffix(&c, "__Allocator");
+        c.typeMemAllocator = SLTCFindBuiltinNamedTypeBySuffix(&c, "__Allocator");
     }
     if (c.typeMemAllocator < 0) {
         c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "Allocator");

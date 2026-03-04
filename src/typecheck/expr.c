@@ -1459,7 +1459,8 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             *outType = strPtrType;
             return 0;
         }
-        if (SLTCNameEqLiteralOrPkgBuiltin(c, callee->dataStart, callee->dataEnd, "fmt", "core")) {
+        if (SLTCNameEqLiteralOrPkgBuiltin(c, callee->dataStart, callee->dataEnd, "fmt", "builtin"))
+        {
             int32_t        outNode = SLAstNextSibling(c->ast, calleeNode);
             int32_t        fmtNode = outNode >= 0 ? SLAstNextSibling(c->ast, outNode) : -1;
             int32_t        argNode;

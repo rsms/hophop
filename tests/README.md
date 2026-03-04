@@ -39,7 +39,7 @@ Common optional fields:
 - `genpkg_text_check`
 - `genpkg_compile`
 - `libsl_freestanding`
-- `core_h_freestanding`
+- `builtin_h_freestanding`
 - `arena_grow_test`
 
 Kind-specific fields:

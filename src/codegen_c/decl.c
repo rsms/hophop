@@ -1455,7 +1455,7 @@ int EmitDeclNode(
 }
 
 int EmitPrelude(SLCBackendC* c) {
-    return BufAppendCStr(&c->out, "#include <core/core.h>\n");
+    return BufAppendCStr(&c->out, "#include <builtin/builtin.h>\n");
 }
 
 char* _Nullable BuildDefaultMacro(SLCBackendC* c, const char* pkgName, const char* suffix) {

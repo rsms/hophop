@@ -1704,7 +1704,7 @@ int SLTCIsMainFunction(SLTypeCheckCtx* c, const SLTCFunction* fn) {
 
 int32_t SLTCResolveImplicitMainContextType(SLTypeCheckCtx* c) {
     uint32_t i;
-    int32_t  typeId = SLTCFindNamedTypeByLiteral(c, "core__Context");
+    int32_t  typeId = SLTCFindNamedTypeByLiteral(c, "builtin__Context");
     if (typeId >= 0) {
         return typeId;
     }
@@ -1713,7 +1713,7 @@ int32_t SLTCResolveImplicitMainContextType(SLTypeCheckCtx* c) {
         if (t->kind != SLTCType_NAMED) {
             continue;
         }
-        if (SLNameHasPrefix(c->src, t->nameStart, t->nameEnd, "core")
+        if (SLNameHasPrefix(c->src, t->nameStart, t->nameEnd, "builtin")
             && SLNameHasSuffix(c->src, t->nameStart, t->nameEnd, "__Context"))
         {
             return (int32_t)i;
@@ -1757,7 +1757,7 @@ int SLTCCurrentContextFieldType(
             return 0;
         }
         if (SLNameEqLiteral(c->src, fieldStart, fieldEnd, "log")) {
-            int32_t t = SLTCFindNamedTypeByLiteral(c, "core__Logger");
+            int32_t t = SLTCFindNamedTypeByLiteral(c, "builtin__Logger");
             if (t < 0) {
                 t = SLTCFindNamedTypeByLiteral(c, "Logger");
             }
@@ -1852,7 +1852,7 @@ int SLTCCurrentContextFieldTypeByLiteral(
         if (fieldName[0] == 'l' && fieldName[1] == 'o' && fieldName[2] == 'g'
             && fieldName[3] == '\0')
         {
-            int32_t t = SLTCFindNamedTypeByLiteral(c, "core__Logger");
+            int32_t t = SLTCFindNamedTypeByLiteral(c, "builtin__Logger");
             if (t < 0) {
                 t = SLTCFindNamedTypeByLiteral(c, "Logger");
             }

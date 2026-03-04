@@ -68,7 +68,7 @@ fn panic_example(msg str) {
 ```
 
 The `platform` package exposes a thin SL API that delegates to `sl_platform_call`. Core
-library packages (`slang/core/gpa`, etc.) import `platform` rather than reaching for
+library packages (`slang/builtin/gpa`, etc.) import `platform` rather than reaching for
 libc directly. Application code rarely imports `platform` directly; instead it uses
 higher-level libraries.
 
@@ -264,14 +264,14 @@ int64_t sl_platform_call(uint64_t op,
 
 ---
 
-## `slang/core/gpa`
+## `slang/builtin/gpa`
 
-The general-purpose allocator package (`slang/core/gpa`) wraps `SLPlatformOp_MEM_ALLOC`,
+The general-purpose allocator package (`slang/builtin/gpa`) wraps `SLPlatformOp_MEM_ALLOC`,
 `SLPlatformOp_MEM_RESIZE`, and `SLPlatformOp_MEM_FREE` to provide a `MemAllocator`-compatible
-interface. Application code that needs dynamic allocation imports `slang/core/gpa`:
+interface. Application code that needs dynamic allocation imports `slang/builtin/gpa`:
 
 ```sl
-import "slang/core/gpa"
+import "slang/builtin/gpa"
 
 fn example(n uint) {
     var ma mut&MemAllocator = gpa.allocator()
@@ -283,7 +283,7 @@ fn example(n uint) {
 The `gpa` package is implemented as a thin SL wrapper that calls `platform.alloc` /
 `platform.resize` / `platform.free`.
 
-> **Deferred:** `slang/core/gpa` implementation is a follow-up to this SLP. For now the
+> **Deferred:** `slang/builtin/gpa` implementation is a follow-up to this SLP. For now the
 > `MemAllocator` type and `new` builtin remain as they are.
 
 ---
@@ -338,7 +338,7 @@ backed by a platform registry directory.
 
 1. Should `sl_thread` be mandatory or optional (weak symbol)?
 2. Should `SLPlatformOp_CONSOLE_LOG` pass an `sl_strhdr*` instead of a raw C string?
-3. Should `slang/core/gpa` be auto-imported for packages that use `new` without an explicit
+3. Should `slang/builtin/gpa` be auto-imported for packages that use `new` without an explicit
    `MemAllocator`?
 4. Interaction with WASM: `sl_platform_call` maps naturally to a host import table; what
    is the right WASM calling convention for the opcode args?

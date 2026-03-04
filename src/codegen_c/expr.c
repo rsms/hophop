@@ -3666,7 +3666,7 @@ int EmitExpr(SLCBackendC* c, int32_t nodeId);
 int EmitAssertFormatArg(SLCBackendC* c, int32_t nodeId);
 
 int IsStrBaseName(const char* _Nullable s) {
-    return s != NULL && (StrEq(s, "__sl_str") || StrEq(s, "core__str"));
+    return s != NULL && (StrEq(s, "__sl_str") || StrEq(s, "builtin__str"));
 }
 
 int TypeRefIsStr(const SLTypeRef* t) {
