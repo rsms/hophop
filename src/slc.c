@@ -3804,6 +3804,28 @@ static int IsDirectoryPath(const char* path) {
     return S_ISDIR(st.st_mode);
 }
 
+static int DirectoryHasSLFiles(const char* dirPath) {
+    DIR*           dir = opendir(dirPath);
+    struct dirent* ent;
+    if (dir == NULL) {
+        return 0;
+    }
+    while ((ent = readdir(dir)) != NULL) {
+        const char* name = ent->d_name;
+        size_t      len;
+        if (name[0] == '.') {
+            continue;
+        }
+        len = strlen(name);
+        if (len >= 3 && strcmp(name + len - 3, ".sl") == 0) {
+            closedir(dir);
+            return 1;
+        }
+    }
+    closedir(dir);
+    return 0;
+}
+
 static char* _Nullable ResolveLibImportDirInRoot(const char* rootDir, const char* importPath) {
     char* libDir = JoinPath(rootDir, "lib");
     char* candidate;
@@ -3815,7 +3837,7 @@ static char* _Nullable ResolveLibImportDirInRoot(const char* rootDir, const char
     if (candidate == NULL) {
         return NULL;
     }
-    if (IsDirectoryPath(candidate)) {
+    if (IsDirectoryPath(candidate) && DirectoryHasSLFiles(candidate)) {
         return candidate;
     }
     free(candidate);
@@ -3858,6 +3880,21 @@ static char* _Nullable ResolveLibImportDir(const char* startDir, const char* imp
     }
     free(dir);
     return NULL;
+}
+
+static char* _Nullable ResolveLibImportDirFromExe(const char* importPath) {
+    char* exeDir = NULL;
+    char* resolved = NULL;
+    if (!IsLibImportPath(importPath)) {
+        return NULL;
+    }
+    exeDir = GetExeDir();
+    if (exeDir == NULL) {
+        return NULL;
+    }
+    resolved = ResolveLibImportDir(exeDir, importPath);
+    free(exeDir);
+    return resolved;
 }
 
 static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SLPackage** outPkg);
@@ -4018,6 +4055,9 @@ static int LoadSelectedPlatformTargetPackage(
     resolvedDir = JoinPath(loader->rootDir, importPath);
     if (resolvedDir != NULL && !IsDirectoryPath(resolvedDir)) {
         char* libResolved = ResolveLibImportDir(startDir, importPath);
+        if (libResolved == NULL) {
+            libResolved = ResolveLibImportDirFromExe(importPath);
+        }
         if (libResolved != NULL) {
             free(resolvedDir);
             resolvedDir = libResolved;
@@ -4065,6 +4105,9 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
                 free(localResolved);
                 if (IsLibImportPath(pkg->imports[i].path)) {
                     char* libResolved = ResolveLibImportDir(pkg->dirPath, pkg->imports[i].path);
+                    if (libResolved == NULL) {
+                        libResolved = ResolveLibImportDirFromExe(pkg->imports[i].path);
+                    }
                     if (libResolved != NULL) {
                         free(resolvedDir);
                         resolvedDir = libResolved;

@@ -263,6 +263,7 @@ typedef struct {
     int               currentFunctionIsCompareHook;
     int32_t           activeTypeParamFnNode;
     SLTCConstEvalCtx* activeConstEvalCtx;
+    uint8_t           compilerDiagPathProven;
     uint8_t           allowAnytypeParamType;
     uint8_t           allowConstNumericTypeName;
 

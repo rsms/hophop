@@ -898,8 +898,14 @@ static int SLTCTypeForInStmt(
         SLTCMarkLocalWrite(c, (int32_t)c->localLen - 1);
     }
 
-    if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth + 1, switchDepth) != 0) {
-        return -1;
+    {
+        uint8_t savedDiagPath = c->compilerDiagPathProven;
+        c->compilerDiagPathProven = 0;
+        if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth + 1, switchDepth) != 0) {
+            c->compilerDiagPathProven = savedDiagPath;
+            return -1;
+        }
+        c->compilerDiagPathProven = savedDiagPath;
     }
     c->localLen = savedLocalLen;
     return 0;
@@ -951,8 +957,14 @@ int SLTCTypeForStmt(
         return SLTCFailNode(c, nodes[count - 1], SLDiag_UNEXPECTED_TOKEN);
     }
 
-    if (SLTCTypeBlock(c, nodes[count - 1], returnType, loopDepth + 1, switchDepth) != 0) {
-        return -1;
+    {
+        uint8_t savedDiagPath = c->compilerDiagPathProven;
+        c->compilerDiagPathProven = 0;
+        if (SLTCTypeBlock(c, nodes[count - 1], returnType, loopDepth + 1, switchDepth) != 0) {
+            c->compilerDiagPathProven = savedDiagPath;
+            return -1;
+        }
+        c->compilerDiagPathProven = savedDiagPath;
     }
 
     c->localLen = savedLocalLen;
@@ -1182,10 +1194,16 @@ int SLTCTypeSwitchStmt(
                     return -1;
                 }
             }
-            if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth, switchDepth + 1) != 0) {
-                c->localLen = savedLocalLen;
-                c->variantNarrowLen = savedVariantNarrowLen;
-                return -1;
+            {
+                uint8_t savedDiagPath = c->compilerDiagPathProven;
+                c->compilerDiagPathProven = 0;
+                if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth, switchDepth + 1) != 0) {
+                    c->compilerDiagPathProven = savedDiagPath;
+                    c->localLen = savedLocalLen;
+                    c->variantNarrowLen = savedVariantNarrowLen;
+                    return -1;
+                }
+                c->compilerDiagPathProven = savedDiagPath;
             }
             c->localLen = savedLocalLen;
             c->variantNarrowLen = savedVariantNarrowLen;
@@ -1195,8 +1213,14 @@ int SLTCTypeSwitchStmt(
             if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != SLAst_BLOCK) {
                 return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
             }
-            if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth, switchDepth + 1) != 0) {
-                return -1;
+            {
+                uint8_t savedDiagPath = c->compilerDiagPathProven;
+                c->compilerDiagPathProven = 0;
+                if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth, switchDepth + 1) != 0) {
+                    c->compilerDiagPathProven = savedDiagPath;
+                    return -1;
+                }
+                c->compilerDiagPathProven = savedDiagPath;
             }
         } else {
             return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
@@ -1435,6 +1459,11 @@ int SLTCTypeStmt(
             int            canSpecializeByConstCond = 0;
             int            condConstValue = 0;
             int            condIsConst = 0;
+            int            diagCondConstValue = 0;
+            int            diagCondIsConst = 0;
+            uint8_t        savedDiagPath = c->compilerDiagPathProven;
+            uint8_t        thenDiagPath = 0;
+            uint8_t        elseDiagPath = 0;
             SLTCNullNarrow narrow;
             int            thenIsSome = 0;
             int            hasNarrow;
@@ -1454,6 +1483,13 @@ int SLTCTypeStmt(
             if (!SLTCIsBoolType(c, condType) && !condIsOptional) {
                 return SLTCFailNode(c, cond, SLDiag_EXPECTED_BOOL);
             }
+            if (SLTCConstBoolExpr(c, cond, &diagCondConstValue, &diagCondIsConst) != 0) {
+                return -1;
+            }
+            if (diagCondIsConst) {
+                thenDiagPath = diagCondConstValue ? savedDiagPath : 0;
+                elseDiagPath = diagCondConstValue ? 0 : savedDiagPath;
+            }
             elseNode = SLAstNextSibling(c->ast, thenNode);
             canSpecializeByConstCond = c->activeConstEvalCtx != NULL;
             if (!canSpecializeByConstCond && c->currentFunctionIndex >= 0
@@ -1463,14 +1499,15 @@ int SLTCTypeStmt(
             {
                 canSpecializeByConstCond = 1;
             }
-            if (canSpecializeByConstCond && (SLTCIsBoolType(c, condType) || condIsOptional)) {
-                if (SLTCConstBoolExpr(c, cond, &condConstValue, &condIsConst) != 0) {
-                    return -1;
-                }
+            if (canSpecializeByConstCond) {
+                condConstValue = diagCondConstValue;
+                condIsConst = diagCondIsConst;
             }
             hasNarrow = SLTCGetOptionalCondNarrow(c, cond, &thenIsSome, &narrow);
             if (condIsConst) {
                 int32_t branchNode = condConstValue ? thenNode : elseNode;
+                uint8_t branchDiagPath = condConstValue ? thenDiagPath : elseDiagPath;
+                c->compilerDiagPathProven = branchDiagPath;
                 if (hasNarrow) {
                     int32_t origType = c->locals[narrow.localIdx].typeId;
                     int32_t trueType = thenIsSome ? narrow.innerType : c->typeNull;
@@ -1480,6 +1517,7 @@ int SLTCTypeStmt(
                         && SLTCTypeStmt(c, branchNode, returnType, loopDepth, switchDepth) != 0)
                     {
                         c->locals[narrow.localIdx].typeId = origType;
+                        c->compilerDiagPathProven = savedDiagPath;
                         return -1;
                     }
                     c->locals[narrow.localIdx].typeId = origType;
@@ -1487,8 +1525,10 @@ int SLTCTypeStmt(
                     branchNode >= 0
                     && SLTCTypeStmt(c, branchNode, returnType, loopDepth, switchDepth) != 0)
                 {
+                    c->compilerDiagPathProven = savedDiagPath;
                     return -1;
                 }
+                c->compilerDiagPathProven = savedDiagPath;
                 return 0;
             }
             if (hasNarrow) {
@@ -1501,28 +1541,37 @@ int SLTCTypeStmt(
                 int32_t trueType = thenIsSome ? narrow.innerType : c->typeNull;
                 int32_t falseType = thenIsSome ? c->typeNull : narrow.innerType;
                 c->locals[narrow.localIdx].typeId = trueType;
+                c->compilerDiagPathProven = thenDiagPath;
                 if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
                     c->locals[narrow.localIdx].typeId = origType;
+                    c->compilerDiagPathProven = savedDiagPath;
                     return -1;
                 }
                 c->locals[narrow.localIdx].typeId = falseType;
+                c->compilerDiagPathProven = elseDiagPath;
                 if (elseNode >= 0
                     && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
                 {
                     c->locals[narrow.localIdx].typeId = origType;
+                    c->compilerDiagPathProven = savedDiagPath;
                     return -1;
                 }
                 c->locals[narrow.localIdx].typeId = origType;
             } else {
+                c->compilerDiagPathProven = thenDiagPath;
                 if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
+                    c->compilerDiagPathProven = savedDiagPath;
                     return -1;
                 }
+                c->compilerDiagPathProven = elseDiagPath;
                 if (elseNode >= 0
                     && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
                 {
+                    c->compilerDiagPathProven = savedDiagPath;
                     return -1;
                 }
             }
+            c->compilerDiagPathProven = savedDiagPath;
             return 0;
         }
         case SLAst_FOR:    return SLTCTypeForStmt(c, nodeId, returnType, loopDepth, switchDepth);
@@ -1858,6 +1907,7 @@ int SLTCBuildCheckedContext(
     c.currentFunctionIsCompareHook = 0;
     c.activeTypeParamFnNode = -1;
     c.activeConstEvalCtx = NULL;
+    c.compilerDiagPathProven = 1;
     c.allowAnytypeParamType = 0;
     c.allowConstNumericTypeName = 0;
     c.defaultFieldNodes = NULL;

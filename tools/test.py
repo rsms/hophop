@@ -567,6 +567,25 @@ def kind_slc_ok(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     return ok()
 
 
+def kind_slc_ok_tmp(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
+    source_path = abs_path(str(case["input"]))
+    temp_dir = Path(tempfile.mkdtemp(prefix="slc-ok-tmp-"))
+    temp_input = temp_dir / source_path.name
+    try:
+        shutil.copyfile(source_path, temp_input)
+        cp = run_cmd(slc_args(ctx, str(case["mode"]), str(temp_input)))
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    stderr = strip_warning_diagnostics(cp.stderr)
+    if cp.returncode != 0:
+        return fail(f"unexpected failure (exit {cp.returncode})\nstderr:\n{cp.stderr}")
+    if cp.stdout:
+        return fail(f"unexpected stdout:\n{cp.stdout}")
+    if stderr:
+        return fail(f"unexpected stderr:\n{stderr}")
+    return ok()
+
+
 def kind_slc_fail_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     cp = run_cmd(slc_args(ctx, str(case["mode"]), str(case["input"])))
     stderr = strip_warning_diagnostics(cp.stderr)
@@ -1128,6 +1147,8 @@ def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunRe
                 ok_main, detail = kind_slc_stdout_eq(ctx, c)
             elif k == "slc_ok":
                 ok_main, detail = kind_slc_ok(ctx, c)
+            elif k == "slc_ok_tmp":
+                ok_main, detail = kind_slc_ok_tmp(ctx, c)
             elif k == "slc_fail_stderr":
                 ok_main, detail = kind_slc_fail_stderr(ctx, c)
             elif k == "slc_ok_stderr":

@@ -1134,6 +1134,82 @@ int SLTCTypeSpanOfCall(
     return 0;
 }
 
+static int SLTCTypeEmitCompilerDiagCall(
+    SLTypeCheckCtx* c, int32_t nodeId, int32_t spanNode, int32_t msgNode, SLTCCompilerDiagOp op) {
+    SLTCConstEvalCtx evalCtx;
+    SLCTFEValue      msgValue;
+    int              msgIsConst = 0;
+    uint32_t         diagStart = c->ast->nodes[nodeId].start;
+    uint32_t         diagEnd = c->ast->nodes[nodeId].end;
+    const char*      detail;
+    SLDiag           emitted;
+    int32_t          msgExprNode = msgNode;
+    memset(&evalCtx, 0, sizeof(evalCtx));
+    evalCtx.tc = c;
+    if (msgNode >= 0 && (uint32_t)msgNode < c->ast->len
+        && c->ast->nodes[msgNode].kind == SLAst_CALL_ARG)
+    {
+        int32_t inner = SLAstFirstChild(c->ast, msgNode);
+        if (inner >= 0) {
+            msgExprNode = inner;
+        }
+    }
+    if (op == SLTCCompilerDiagOp_ERROR_AT || op == SLTCCompilerDiagOp_WARN_AT) {
+        int        spanIsConst = 0;
+        SLCTFESpan span;
+        uint32_t   spanStartOffset = 0;
+        uint32_t   spanEndOffset = 0;
+        if (SLTCConstEvalSpanExpr(&evalCtx, spanNode, &span, &spanIsConst) != 0) {
+            return -1;
+        }
+        if (!spanIsConst || span.startLine == 0 || span.startColumn == 0 || span.endLine == 0
+            || span.endColumn == 0
+            || SLTCLineColToOffset(
+                   c->src.ptr, c->src.len, span.startLine, span.startColumn, &spanStartOffset)
+                   != 0
+            || SLTCLineColToOffset(
+                   c->src.ptr, c->src.len, span.endLine, span.endColumn, &spanEndOffset)
+                   != 0
+            || spanEndOffset < spanStartOffset)
+        {
+            return SLTCFailNode(c, spanNode, SLDiag_CONSTEVAL_DIAG_INVALID_SPAN);
+        }
+        diagStart = spanStartOffset;
+        diagEnd = spanEndOffset;
+    }
+    if (SLTCEvalConstExprNode(&evalCtx, msgExprNode, &msgValue, &msgIsConst) != 0) {
+        return -1;
+    }
+    if (!msgIsConst || msgValue.kind != SLCTFEValue_STRING) {
+        return SLTCFailNode(c, msgNode, SLDiag_CONSTEVAL_DIAG_MESSAGE_NOT_CONST_STRING);
+    }
+    detail = SLTCAllocCStringBytes(c, msgValue.s.bytes, msgValue.s.len);
+    if (detail == NULL) {
+        return SLTCFailNode(c, msgNode, SLDiag_ARENA_OOM);
+    }
+    emitted = (SLDiag){
+        .code = (op == SLTCCompilerDiagOp_WARN || op == SLTCCompilerDiagOp_WARN_AT)
+                  ? SLDiag_CONSTEVAL_DIAG_WARNING
+                  : SLDiag_CONSTEVAL_DIAG_ERROR,
+        .type = (op == SLTCCompilerDiagOp_WARN || op == SLTCCompilerDiagOp_WARN_AT)
+                  ? SLDiagType_WARNING
+                  : SLDiagType_ERROR,
+        .start = diagStart,
+        .end = diagEnd,
+        .argStart = 0,
+        .argEnd = 0,
+        .detail = detail,
+        .hintOverride = NULL,
+    };
+    if (emitted.type == SLDiagType_WARNING) {
+        return SLTCEmitWarningDiag(c, &emitted);
+    }
+    if (c->diag != NULL) {
+        *c->diag = emitted;
+    }
+    return -1;
+}
+
 int SLTCTypeCompilerDiagCall(
     SLTypeCheckCtx*    c,
     int32_t            nodeId,
@@ -1143,6 +1219,7 @@ int SLTCTypeCompilerDiagCall(
     int32_t arg1Node = SLAstNextSibling(c->ast, SLAstFirstChild(c->ast, nodeId));
     int32_t arg2Node = arg1Node >= 0 ? SLAstNextSibling(c->ast, arg1Node) : -1;
     int32_t arg3Node = arg2Node >= 0 ? SLAstNextSibling(c->ast, arg2Node) : -1;
+    int32_t spanNode = -1;
     int32_t msgNode;
     int32_t msgType;
     int32_t wantStrType;
@@ -1156,6 +1233,7 @@ int SLTCTypeCompilerDiagCall(
         if (arg1Node < 0 || arg2Node < 0 || arg3Node >= 0) {
             return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
         }
+        spanNode = arg1Node;
         if (SLTCTypeExpr(c, arg1Node, &spanType) != 0) {
             return -1;
         }
@@ -1174,8 +1252,10 @@ int SLTCTypeCompilerDiagCall(
     if (!SLTCCanAssign(c, wantStrType, msgType)) {
         return SLTCFailNode(c, msgNode, SLDiag_TYPE_MISMATCH);
     }
-    if (SLTCRecordConstDiagUse(c, nodeId) != 0) {
-        return -1;
+    if (c->activeConstEvalCtx == NULL && c->compilerDiagPathProven != 0) {
+        if (SLTCTypeEmitCompilerDiagCall(c, nodeId, spanNode, msgNode, op) != 0) {
+            return -1;
+        }
     }
     *outType = c->typeVoid;
     return 0;

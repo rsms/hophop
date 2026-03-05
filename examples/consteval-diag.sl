@@ -3,19 +3,15 @@ import "compiler"
 import "reflect"
 
 fn require_non_zero(const value i64, const span reflect.Span) i64 {
-	const {
-		if value == 0 as i64 {
-			compiler.error_at(span, "value must be non-zero")
-		}
+	if value == 0 {
+		compiler.error_at(span, "value must be non-zero")
 	}
 	return value
 }
 
 fn warn_if_small(const value i64, const span reflect.Span) {
-	const {
-		if value < 16 as i64 {
-			compiler.warn_at(span, "value is unusually small")
-		}
+	if value < 16 {
+		compiler.warn_at(span, "value is unusually small")
 	}
 }
 

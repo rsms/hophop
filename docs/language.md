@@ -643,9 +643,9 @@ fn f() {
 ### 9.11 `compiler.error*` / `compiler.warn*`
 - [BI-CONSTEVAL-DIAG-001][Provisional] `compiler.error(message)` and `compiler.warn(message)` require one `str`-assignable argument.
 - [BI-CONSTEVAL-DIAG-002][Provisional] `compiler.error_at(span, message)` and `compiler.warn_at(span, message)` require `reflect.Span` + `str`-assignable arguments.
-- [BI-CONSTEVAL-DIAG-003][Provisional] Calls are valid only when evaluated by consteval; runtime-only usage is a type error.
-- [BI-CONSTEVAL-DIAG-004][Provisional] Message argument must be const-evaluable `&str`.
-- [BI-CONSTEVAL-DIAG-005][Provisional] `_at` forms require a valid `reflect.Span`.
+- [BI-CONSTEVAL-DIAG-003][Provisional] Calls are valid in ordinary code and in consteval.
+- [BI-CONSTEVAL-DIAG-004][Provisional] Outside consteval, diagnostics are emitted only on compile-time-proven execution paths.
+- [BI-CONSTEVAL-DIAG-005][Provisional] For emitted diagnostics, message must be const-evaluable `&str`; `_at` forms also require a valid const-evaluable `reflect.Span`.
 
 ## 10. Variable-Size Structs (VSS)
 
@@ -685,8 +685,8 @@ fn f() {
   - single-file package mode: directory containing the entry `.sl` file
 - [PKG-IMPORT-011][Stable] For recognized library import paths (`builtin`, `reflect`, `compiler`, `mem`, `platform`, `std/*`, `platform/*`), resolver order is:
   1. try `<loader_root>/<importPath>` first
-  2. if that path is not an existing directory, search `<ancestor>/lib/<importPath>` from importing package directory upward to filesystem root
-  3. select the first match encountered in that upward walk (nearest ancestor)
+  2. if that path is not an existing directory, search `<ancestor>/lib/<importPath>` from importing package directory upward to filesystem root and select the nearest match
+  3. if still unresolved, search `<ancestor>/lib/<importPath>` from `dirname(executable_path)` upward to filesystem root and select the nearest match
 - [PKG-IMPORT-012][Stable] [PKG-IMPORT-011] is deterministic; there is no additional tie-break stage.
 
 ### 11.3 Exports and API closure

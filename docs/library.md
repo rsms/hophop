@@ -289,14 +289,15 @@ Exact signatures and typing rules are draft and defined in `docs/SLP-18-reflecti
 
 ## Compiler Diagnostics Package (Provisional)
 
-`compiler` provides consteval diagnostics hooks:
+`compiler` provides compiler diagnostics hooks:
 
 - `compiler.error(message &str)`
 - `compiler.error_at(span reflect.Span, message &str)`
 - `compiler.warn(message &str)`
 - `compiler.warn_at(span reflect.Span, message &str)`
 
-These calls are valid only in const-evaluated execution paths.
+In consteval, these calls emit diagnostics during const evaluation. In ordinary code, they emit
+diagnostics only on compile-time-proven execution paths.
 
 ## C Interop Mapping
 
