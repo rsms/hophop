@@ -3989,6 +3989,30 @@ static int EmitLenExprFromNameType(SLCBackendC* c, const char* name, const SLTyp
 
 static int EmitForInElemExprFromNameType(
     SLCBackendC* c, const char* name, const char* idxName, const SLTypeRef* baseType) {
+    if (TypeRefIsStr(baseType)) {
+        if (BufAppendCStr(&c->out, "((const __sl_u8*)(") != 0) {
+            return -1;
+        }
+        if (baseType->ptrDepth > 0) {
+            if (BufAppendCStr(&c->out, "((__sl_str*)(") != 0 || BufAppendCStr(&c->out, name) != 0
+                || BufAppendCStr(&c->out, "))->ptr") != 0)
+            {
+                return -1;
+            }
+        } else {
+            if (BufAppendChar(&c->out, '(') != 0 || BufAppendCStr(&c->out, name) != 0
+                || BufAppendCStr(&c->out, ").ptr") != 0)
+            {
+                return -1;
+            }
+        }
+        if (BufAppendCStr(&c->out, "))") != 0 || BufAppendChar(&c->out, '[') != 0
+            || BufAppendCStr(&c->out, idxName) != 0 || BufAppendChar(&c->out, ']') != 0)
+        {
+            return -1;
+        }
+        return 0;
+    }
     if (baseType->containerKind == SLTypeContainer_ARRAY
         || baseType->containerKind == SLTypeContainer_SLICE_RO
         || baseType->containerKind == SLTypeContainer_SLICE_MUT)

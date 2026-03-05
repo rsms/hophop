@@ -320,6 +320,7 @@
 {"id":"check:tests/str_format_trunc_nul_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/str_format_trunc_nul_ok.sl"}
 {"id":"check:tests/str_format_nonconst_args_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/str_format_nonconst_args_ok.sl"}
 {"id":"check:tests/str_index_infer_u8_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/str_index_infer_u8_ok.sl"}
+{"id":"check:tests/str_for_in_u8_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/str_for_in_u8_ok.sl"}
 {"id":"check:tests/str_format_invalid_placeholder_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"checkpkg","input":"tests/str_format_invalid_placeholder_bad.sl"}
 {"id":"check:tests/str_format_arg_count_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"checkpkg","input":"tests/str_format_arg_count_bad.sl"}
 {"id":"check:tests/str_format_arg_type_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"checkpkg","input":"tests/str_format_arg_type_bad.sl"}
@@ -337,6 +338,7 @@
 {"id":"integration.runtime.str_format_trunc_nul_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/str_format_trunc_nul_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"integration.runtime.str_format_nonconst_args_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/str_format_nonconst_args_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"integration.runtime.str_index_infer_u8_runtime_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/str_index_infer_u8_runtime_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"pass"}
+{"id":"integration.runtime.str_for_in_u8_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/str_for_in_u8_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"integration.runtime.imports_default.cache_reuse","suite":"integration.runtime","kind":"compile_cache_reuse","input":"examples/imports-default/app/main.sl","compile_stdout_empty":true,"compile_stderr_empty":true}
 {"id":"integration.runtime.main_i32_bad.slc_run","suite":"integration.runtime","kind":"slc_run","input":"tests/main_i32_bad.sl","expect_nonzero":true,"stdout_empty":true,"stderr_empty":false,"stderr_contains":"entrypoint must have signature: fn main()"}
 {"id":"integration.runtime.new_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/new_ok.sl"}

@@ -1,14 +1,13 @@
-fn fmt_write_byte(buf *[u8], payloadCap, oi uint, ch u8) uint {
+fn fmt_write_byte(buf *[u8], payloadCap, oi uint, byte u8) uint {
 	if oi < payloadCap {
-		buf[oi] = ch
+		buf[oi] = byte
 	}
 	return oi + 1
 }
 
 fn fmt_write_text(buf *[u8], payloadCap, oi uint, text &str) uint {
-	var b = text
-	for var i uint = 0; i < len(b); i += 1 {
-		oi = fmt_write_byte(buf, payloadCap, oi, ch: b[i])
+	for byte in text {
+		oi = fmt_write_byte(buf, payloadCap, oi, byte)
 	}
 	return oi
 }
@@ -16,7 +15,7 @@ fn fmt_write_text(buf *[u8], payloadCap, oi uint, text &str) uint {
 fn fmt_write_u64(buf *[u8], payloadCap, oi uint, x u64) uint {
 	var v = x
 	if v == 0 {
-		return fmt_write_byte(buf, payloadCap, oi, ch: '0')
+		return fmt_write_byte(buf, payloadCap, oi, byte: '0')
 	}
 
 	var digits [u8 32]
@@ -29,14 +28,14 @@ fn fmt_write_u64(buf *[u8], payloadCap, oi uint, x u64) uint {
 	}
 	for n > 0 {
 		n -= 1
-		oi = fmt_write_byte(buf, payloadCap, oi, ch: digits[n])
+		oi = fmt_write_byte(buf, payloadCap, oi, byte: digits[n])
 	}
 	return oi
 }
 
 fn fmt_write_i64(buf *[u8], payloadCap, oi uint, x i64) uint {
 	if x < 0 {
-		oi = fmt_write_byte(buf, payloadCap, oi, ch: '-')
+		oi = fmt_write_byte(buf, payloadCap, oi, byte: '-')
 		if x == -9223372036854775808 {
 			return fmt_write_u64(buf, payloadCap, oi, x: 9223372036854775808 as u64)
 		}
@@ -48,7 +47,7 @@ fn fmt_write_i64(buf *[u8], payloadCap, oi uint, x i64) uint {
 fn fmt_write_f64(buf *[u8], payloadCap, oi uint, x f64) uint {
 	var v = x
 	if v < 0 {
-		oi = fmt_write_byte(buf, payloadCap, oi, ch: '-')
+		oi = fmt_write_byte(buf, payloadCap, oi, byte: '-')
 		v = -v
 	}
 
@@ -80,9 +79,9 @@ fn fmt_write_f64(buf *[u8], payloadCap, oi uint, x f64) uint {
 		return oi
 	}
 
-	oi = fmt_write_byte(buf, payloadCap, oi, ch: '.')
-	for var i uint = 0; i < n; i += 1 {
-		oi = fmt_write_byte(buf, payloadCap, oi, ch: digits[i])
+	oi = fmt_write_byte(buf, payloadCap, oi, byte: '.')
+	for byte in digits[:n] {
+		oi = fmt_write_byte(buf, payloadCap, oi, byte)
 	}
 	return oi
 }
@@ -125,14 +124,13 @@ fn fmt_write_s_any(buf *[u8], payloadCap, oi uint, v anytype) uint {
 pub fn format(buf *[u8], const fmt &str, args ...anytype) uint {
 	const {
 		var bs &[u8] = fmt
-		var i  uint  = 0
 		var ai uint  = 0
 
-		for i < len(bs) {
-			var ch u8 = bs[i]
-			if ch == '{' {
+		for var i uint = 0; i < len(bs); i += 1 {
+			var byte u8 = bs[i]
+			if byte == '{' {
 				if i + 1 < len(bs) && bs[i + 1] == '{' {
-					i += 2
+					i += 1
 					continue
 				}
 				if i + 2 < len(bs) && bs[i + 2] == '}' {
@@ -157,21 +155,19 @@ pub fn format(buf *[u8], const fmt &str, args ...anytype) uint {
 					}
 
 					ai += 1
-					i += 3
-					continue
-				}
-				assert false
-			}
-
-			if ch == '}' {
-				if i + 1 < len(bs) && bs[i + 1] == '}' {
 					i += 2
 					continue
 				}
 				assert false
 			}
 
-			i += 1
+			if byte == '}' {
+				if i + 1 < len(bs) && bs[i + 1] == '}' {
+					i += 1
+					continue
+				}
+				assert false
+			}
 		}
 
 		assert ai == len(args)
@@ -184,13 +180,12 @@ pub fn format(buf *[u8], const fmt &str, args ...anytype) uint {
 	}
 
 	var bs &[u8] = fmt
-	var i  uint  = 0
 	var ai uint  = 0
 	var oi uint  = 0
 
-	for i < len(bs) {
-		var ch = bs[i]
-		if ch == '{' {
+	for var i uint = 0; i < len(bs); i += 1 {
+		var byte = bs[i]
+		if byte == '{' {
 			i += 1
 			if i >= len(bs) {
 				panic("invalid format string")
@@ -199,8 +194,7 @@ pub fn format(buf *[u8], const fmt &str, args ...anytype) uint {
 
 			var c1 = bs[i]
 			if c1 == '{' {
-				oi = fmt_write_byte(buf, payloadCap, oi, ch: '{')
-				i += 1
+				oi = fmt_write_byte(buf, payloadCap, oi, byte: '{')
 				continue
 			}
 
@@ -245,14 +239,12 @@ pub fn format(buf *[u8], const fmt &str, args ...anytype) uint {
 				return 0
 			}
 			ai += 1
-			i += 1
 			continue
 		}
 
-		if ch == '}' {
-			i += 1
-			if i < len(bs) && bs[i] == '}' {
-				oi = fmt_write_byte(buf, payloadCap, oi, ch: '}')
+		if byte == '}' {
+			if i + 1 < len(bs) && bs[i + 1] == '}' {
+				oi = fmt_write_byte(buf, payloadCap, oi, byte: '}')
 				i += 1
 				continue
 			}
@@ -260,8 +252,7 @@ pub fn format(buf *[u8], const fmt &str, args ...anytype) uint {
 			return 0
 		}
 
-		oi = fmt_write_byte(buf, payloadCap, oi, ch)
-		i += 1
+		oi = fmt_write_byte(buf, payloadCap, oi, byte)
 	}
 
 	if cap > 0 {
