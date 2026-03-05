@@ -29,10 +29,21 @@ contexts:
         - include: identifiers
 
     comments:
-        - match: '///(?!/).*$'
-          scope: comment.line.documentation.slang
         - match: '//.*$'
           scope: comment.line.double-slash.slang
+        - include: block-comments
+
+    block-comments:
+        - match: /\*
+          scope: punctuation.definition.comment.slang
+          push:
+            - meta_scope: comment.block.slang
+            - match: \*/
+              scope: punctuation.definition.comment.slang
+              pop: true
+            - include: block-comments
+        - match: \*/
+          scope: invalid.illegal.stray-comment-end.slang
 
     strings:
         - match: ''''
