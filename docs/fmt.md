@@ -134,6 +134,13 @@ This is why `fmt_canonical` can legitimately contain both:
 - Multi-statement blocks remain blocks.
 - Grouping/alignment follows ordinary statement grouping behavior where relevant.
 
+## Return simplification
+
+- Redundant parentheses around return values are removed:
+  - `return (expr)` -> `return expr`
+- Parenthesized tuple returns normalize to expression-list form:
+  - `return (a, b, c)` -> `return a, b, c`
+
 ## Expression operator spacing
 
 Most binary operators render with spaces, but there is an intentional compatibility quirk:

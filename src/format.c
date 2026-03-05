@@ -932,6 +932,32 @@ static int SLFmtRewriteRedundantLiteralCast(const SLAst* ast, SLStrView src, int
     return 0;
 }
 
+static int SLFmtRewriteReturnParens(const SLAst* ast, int32_t nodeId) {
+    int32_t          exprNodeId;
+    const SLAstNode* exprNode;
+    SLAstNode*       mutExprNode;
+    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return -1;
+    }
+    if (ast->nodes[nodeId].kind != SLAst_RETURN) {
+        return 0;
+    }
+    exprNodeId = SLFmtFirstChild(ast, nodeId);
+    if (exprNodeId < 0 || (uint32_t)exprNodeId >= ast->len) {
+        return 0;
+    }
+    exprNode = &ast->nodes[exprNodeId];
+    mutExprNode = (SLAstNode*)exprNode;
+    if ((exprNode->flags & SLAstFlag_PAREN) != 0) {
+        mutExprNode->flags &= ~SLAstFlag_PAREN;
+        exprNode = mutExprNode;
+    }
+    if (exprNode->kind == SLAst_TUPLE_EXPR && (exprNode->flags & SLAstFlag_PAREN) == 0) {
+        mutExprNode->kind = SLAst_EXPR_LIST;
+    }
+    return 0;
+}
+
 static int SLFmtRewriteAst(const SLAst* ast, SLStrView src) {
     uint32_t i;
     if (ast == NULL || ast->nodes == NULL) {
@@ -943,7 +969,8 @@ static int SLFmtRewriteAst(const SLAst* ast, SLStrView src) {
             || SLFmtRewriteCompoundFieldShorthand(ast, src, nodeId) != 0
             || SLFmtRewriteContextBindShorthand(ast, src, nodeId) != 0
             || SLFmtRewriteRedundantLiteralCast(ast, src, nodeId) != 0
-            || SLFmtRewriteBinaryCastParens(ast, nodeId) != 0)
+            || SLFmtRewriteBinaryCastParens(ast, nodeId) != 0
+            || SLFmtRewriteReturnParens(ast, nodeId) != 0)
         {
             return -1;
         }
@@ -1440,6 +1467,7 @@ static int SLFmtEmitExpr(SLFmtCtx* c, int32_t nodeId, int forceParen);
 static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId);
+static int SLFmtEmitExprList(SLFmtCtx* c, int32_t listNodeId);
 
 static int SLFmtEmitCompoundFieldWithAlign(SLFmtCtx* c, int32_t nodeId, uint32_t maxKeyLen) {
     const SLAstNode* n;
@@ -1616,6 +1644,30 @@ static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId) {
         }
         default: return SLFmtWriteSlice(c, n->start, n->end);
     }
+}
+
+static int SLFmtEmitExprList(SLFmtCtx* c, int32_t listNodeId) {
+    uint32_t i;
+    uint32_t exprCount;
+    if (listNodeId < 0 || (uint32_t)listNodeId >= c->ast->len
+        || c->ast->nodes[listNodeId].kind != SLAst_EXPR_LIST)
+    {
+        return -1;
+    }
+    exprCount = SLFmtListCount(c->ast, listNodeId);
+    for (i = 0; i < exprCount; i++) {
+        int32_t exprNode = SLFmtListItemAt(c->ast, listNodeId, i);
+        if (exprNode < 0) {
+            return -1;
+        }
+        if (i > 0 && SLFmtWriteCStr(c, ", ") != 0) {
+            return -1;
+        }
+        if (SLFmtEmitExpr(c, exprNode, 0) != 0) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 static int SLFmtExprNeedsParensForBinaryChild(
@@ -3074,19 +3126,8 @@ static int SLFmtEmitVarLike(SLFmtCtx* c, int32_t nodeId, const char* kw) {
                 return -1;
             }
             if (c->ast->nodes[init].kind == SLAst_EXPR_LIST) {
-                uint32_t i2;
-                uint32_t exprCount = SLFmtListCount(c->ast, init);
-                for (i2 = 0; i2 < exprCount; i2++) {
-                    int32_t exprNode = SLFmtListItemAt(c->ast, init, i2);
-                    if (exprNode < 0) {
-                        return -1;
-                    }
-                    if (i2 > 0 && SLFmtWriteCStr(c, ", ") != 0) {
-                        return -1;
-                    }
-                    if (SLFmtEmitExpr(c, exprNode, 0) != 0) {
-                        return -1;
-                    }
+                if (SLFmtEmitExprList(c, init) != 0) {
+                    return -1;
                 }
             } else if (SLFmtEmitExpr(c, init, 0) != 0) {
                 return -1;
@@ -3129,14 +3170,12 @@ static int SLFmtEmitMultiAssign(SLFmtCtx* c, int32_t nodeId) {
     int32_t  rhsList = lhsList >= 0 ? SLFmtNextSibling(c->ast, lhsList) : -1;
     uint32_t i;
     uint32_t lhsCount;
-    uint32_t rhsCount;
     if (lhsList < 0 || rhsList < 0 || c->ast->nodes[lhsList].kind != SLAst_EXPR_LIST
         || c->ast->nodes[rhsList].kind != SLAst_EXPR_LIST)
     {
         return -1;
     }
     lhsCount = SLFmtListCount(c->ast, lhsList);
-    rhsCount = SLFmtListCount(c->ast, rhsList);
     for (i = 0; i < lhsCount; i++) {
         int32_t lhsNode = SLFmtListItemAt(c->ast, lhsList, i);
         if (lhsNode < 0) {
@@ -3152,17 +3191,8 @@ static int SLFmtEmitMultiAssign(SLFmtCtx* c, int32_t nodeId) {
     if (SLFmtWriteCStr(c, " = ") != 0) {
         return -1;
     }
-    for (i = 0; i < rhsCount; i++) {
-        int32_t rhsNode = SLFmtListItemAt(c->ast, rhsList, i);
-        if (rhsNode < 0) {
-            return -1;
-        }
-        if (i > 0 && SLFmtWriteCStr(c, ", ") != 0) {
-            return -1;
-        }
-        if (SLFmtEmitExpr(c, rhsNode, 0) != 0) {
-            return -1;
-        }
+    if (SLFmtEmitExprList(c, rhsList) != 0) {
+        return -1;
     }
     return 0;
 }
@@ -3448,7 +3478,14 @@ static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId) {
                 return -1;
             }
             if (ch >= 0) {
-                if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitExpr(c, ch, 0) != 0) {
+                if (SLFmtWriteChar(c, ' ') != 0) {
+                    return -1;
+                }
+                if (c->ast->nodes[ch].kind == SLAst_EXPR_LIST) {
+                    if (SLFmtEmitExprList(c, ch) != 0) {
+                        return -1;
+                    }
+                } else if (SLFmtEmitExpr(c, ch, 0) != 0) {
                     return -1;
                 }
             }

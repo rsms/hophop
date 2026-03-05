@@ -76,6 +76,14 @@ fn add(a int, b int) int {
 	return a + b
 }
 
+fn return_scalar_example(x int) int {
+	return x
+}
+
+fn return_tuple_example(a int, b int, c int) (int, int, int) {
+	return a, b, c
+}
+
 fn shorthand_examples(y int) {
 	_ = add(1, y)
 	_ = add(1, y: (y))
