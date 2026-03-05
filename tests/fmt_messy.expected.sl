@@ -7,7 +7,7 @@ struct Foo {
 	y int = 2
 }
 
-fn add(a int, b int) int {
+fn add(a, b int) int {
 	for var i int = 0; i < 10; i += 1 {
 		if i % 2 == 0 {
 			continue

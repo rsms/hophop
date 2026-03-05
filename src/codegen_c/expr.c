@@ -2,6 +2,9 @@
 #include "../fmt_parse.h"
 
 SL_API_BEGIN
+
+static int TypeRefIsStringByteSequence(const SLTypeRef* t);
+
 int IsTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
@@ -2745,12 +2748,23 @@ int InferExprType_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTyp
             int32_t          argExprNode = UnwrapCallArgExprNode(c, argNode);
             int32_t          extraNode = argNode >= 0 ? AstNextSibling(&c->ast, argNode) : -1;
             const SLAstNode* arg = NodeAt(c, argExprNode);
+            SLTypeRef        argType;
+            if (argNode < 0 || extraNode >= 0 || argExprNode < 0) {
+                TypeRefSetInvalid(outType);
+                return 0;
+            }
             if (argExprNode >= 0 && extraNode < 0 && arg != NULL && arg->kind == SLAst_IDENT
                 && IsActivePackIdent(c, arg->dataStart, arg->dataEnd))
             {
                 TypeRefSetScalar(outType, "__sl_uint");
                 return 0;
             }
+            if (InferExprType(c, argExprNode, &argType) != 0 || !argType.valid) {
+                TypeRefSetInvalid(outType);
+                return 0;
+            }
+            TypeRefSetScalar(outType, "__sl_uint");
+            return 0;
         }
         if (SliceEq(c->unit->source, cn->dataStart, cn->dataEnd, "kind")) {
             int32_t argNode = AstNextSibling(&c->ast, callee);
@@ -3292,6 +3306,10 @@ int InferExprType_INDEX(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTy
             TypeRefSetInvalid(outType);
             return 0;
         }
+        if (TypeRefIsStringByteSequence(outType)) {
+            TypeRefSetInvalid(outType);
+            return 0;
+        }
         if (outType->containerKind == SLTypeContainer_ARRAY) {
             outType->containerKind =
                 outType->readOnly ? SLTypeContainer_SLICE_RO : SLTypeContainer_SLICE_MUT;
@@ -3311,6 +3329,10 @@ int InferExprType_INDEX(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTy
         return 0;
     }
     if (!outType->valid) {
+        return 0;
+    }
+    if (TypeRefIsStringByteSequence(outType)) {
+        TypeRefSetScalar(outType, "__sl_u8");
         return 0;
     }
     if (outType->containerKind == SLTypeContainer_ARRAY
@@ -3753,6 +3775,10 @@ int IsStrBaseName(const char* _Nullable s) {
 
 int TypeRefIsStr(const SLTypeRef* t) {
     return t->valid && t->containerKind == SLTypeContainer_SCALAR && IsStrBaseName(t->baseName);
+}
+
+static int TypeRefIsStringByteSequence(const SLTypeRef* t) {
+    return TypeRefIsStr(t) && t->containerPtrDepth == 0 && t->ptrDepth <= 1;
 }
 
 int TypeRefContainerWritable(const SLTypeRef* t) {
@@ -8555,6 +8581,34 @@ int EmitExpr_INDEX(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
         SLTypeRef baseType;
         if (InferExprType(c, base, &baseType) != 0 || !baseType.valid) {
             return -1;
+        }
+        if (TypeRefIsStringByteSequence(&baseType)) {
+            int writable = baseType.ptrDepth > 0 && !baseType.readOnly;
+            if (BufAppendCStr(&c->out, "((") != 0
+                || BufAppendCStr(&c->out, writable ? "__sl_u8*" : "const __sl_u8*") != 0
+                || BufAppendCStr(&c->out, ")(") != 0)
+            {
+                return -1;
+            }
+            if (baseType.ptrDepth > 0) {
+                if (BufAppendCStr(&c->out, "((__sl_str*)(") != 0 || EmitExpr(c, base) != 0
+                    || BufAppendCStr(&c->out, "))->ptr") != 0)
+                {
+                    return -1;
+                }
+            } else {
+                if (BufAppendChar(&c->out, '(') != 0 || EmitExpr(c, base) != 0
+                    || BufAppendCStr(&c->out, ").ptr") != 0)
+                {
+                    return -1;
+                }
+            }
+            if (BufAppendCStr(&c->out, "))") != 0 || BufAppendChar(&c->out, '[') != 0
+                || EmitExpr(c, idx) != 0 || BufAppendChar(&c->out, ']') != 0)
+            {
+                return -1;
+            }
+            return 0;
         }
         if (baseType.containerKind == SLTypeContainer_ARRAY
             || baseType.containerKind == SLTypeContainer_SLICE_RO

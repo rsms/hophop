@@ -4,7 +4,7 @@ fn id_type(T type) type {
 
 const IntType = id_type(i64)
 
-fn add(a IntType, b IntType) IntType {
+fn add(a, b IntType) IntType {
 	return a + b
 }
 

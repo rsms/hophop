@@ -1,4 +1,4 @@
-fn example3(a int, b int, c uint) int {
+fn example3(a, b int, c uint) int {
 	return a + b + c as int
 }
 

@@ -4630,25 +4630,67 @@ static int SLFmtEmitFnDecl(SLFmtCtx* c, int32_t nodeId) {
     child = SLFmtFirstChild(c->ast, nodeId);
     while (child >= 0) {
         const SLAstNode* ch = &c->ast->nodes[child];
+        int32_t          runFirst = child;
+        int32_t          runLast = child;
+        int32_t          runType = -1;
+        uint16_t         runFlags;
+        int32_t          nextAfterRun;
+        int              firstNameInRun = 1;
         if (ch->kind != SLAst_PARAM) {
             break;
+        }
+        runType = SLFmtFirstChild(c->ast, child);
+        runFlags = (uint16_t)(ch->flags & (SLAstFlag_PARAM_CONST | SLAstFlag_PARAM_VARIADIC));
+        nextAfterRun = SLFmtNextSibling(c->ast, child);
+        while (nextAfterRun >= 0) {
+            const SLAstNode* nextParam = &c->ast->nodes[nextAfterRun];
+            int32_t          nextType;
+            uint16_t         nextFlags;
+            if (nextParam->kind != SLAst_PARAM) {
+                break;
+            }
+            nextType = SLFmtFirstChild(c->ast, nextAfterRun);
+            nextFlags =
+                (uint16_t)(nextParam->flags & (SLAstFlag_PARAM_CONST | SLAstFlag_PARAM_VARIADIC));
+            if (nextFlags != runFlags
+                || !SLFmtTypeNodesEqualBySource(c->ast, c->src, runType, nextType))
+            {
+                break;
+            }
+            runLast = nextAfterRun;
+            nextAfterRun = SLFmtNextSibling(c->ast, nextAfterRun);
         }
         if (!firstParam && SLFmtWriteCStr(c, ", ") != 0) {
             return -1;
         }
-        {
-            int32_t ptype = SLFmtFirstChild(c->ast, child);
-            if (((ch->flags & SLAstFlag_PARAM_CONST) != 0 && SLFmtWriteCStr(c, "const ") != 0)
-                || SLFmtWriteSlice(c, ch->dataStart, ch->dataEnd) != 0
-                || SLFmtWriteChar(c, ' ') != 0
-                || ((ch->flags & SLAstFlag_PARAM_VARIADIC) != 0 && SLFmtWriteCStr(c, "...") != 0)
-                || (ptype >= 0 && SLFmtEmitType(c, ptype) != 0))
-            {
+        if ((runFlags & SLAstFlag_PARAM_CONST) != 0 && SLFmtWriteCStr(c, "const ") != 0) {
+            return -1;
+        }
+        while (runFirst >= 0) {
+            const SLAstNode* p = &c->ast->nodes[runFirst];
+            if (!firstNameInRun && SLFmtWriteCStr(c, ", ") != 0) {
                 return -1;
             }
+            if (SLFmtWriteSlice(c, p->dataStart, p->dataEnd) != 0) {
+                return -1;
+            }
+            firstNameInRun = 0;
+            if (runFirst == runLast) {
+                break;
+            }
+            runFirst = SLFmtNextSibling(c->ast, runFirst);
+        }
+        if (SLFmtWriteChar(c, ' ') != 0) {
+            return -1;
+        }
+        if ((runFlags & SLAstFlag_PARAM_VARIADIC) != 0 && SLFmtWriteCStr(c, "...") != 0) {
+            return -1;
+        }
+        if (runType >= 0 && SLFmtEmitType(c, runType) != 0) {
+            return -1;
         }
         firstParam = 0;
-        child = SLFmtNextSibling(c->ast, child);
+        child = nextAfterRun;
     }
 
     if (SLFmtWriteChar(c, ')') != 0) {

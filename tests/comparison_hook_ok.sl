@@ -4,11 +4,11 @@ struct Disc {
 	radius f32
 }
 
-fn __equal(a &Disc, b &Disc) bool {
+fn __equal(a, b &Disc) bool {
 	return a.x == b.x && a.y == b.y
 }
 
-fn __order(a &Disc, b &Disc) int {
+fn __order(a, b &Disc) int {
 	if a.radius < b.radius {
 		return -1
 	}

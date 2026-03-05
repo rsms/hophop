@@ -15,7 +15,7 @@ pub struct ArenaAllocator {
 	block_size uint
 }
 
-fn alloc_block(arena *ArenaAllocator, minSize uint, align uint) *ArenaBlock {
+fn alloc_block(arena *ArenaAllocator, minSize, align uint) *ArenaBlock {
 	var payload_size = arena.block_size
 	if payload_size < minSize {
 		payload_size = minSize
@@ -40,7 +40,7 @@ fn alloc_block(arena *ArenaAllocator, minSize uint, align uint) *ArenaBlock {
 	return block
 }
 
-fn arena_alloc_impl(self *builtin.Allocator, addr uint, align uint, curSize uint, newSizeInOut *uint, flags u32) uint {
+fn arena_alloc_impl(self *builtin.Allocator, addr, align, curSize uint, newSizeInOut *uint, flags u32) uint {
 	var arena = self as *ArenaAllocator
 	if newSizeInOut == null as *uint {
 		return 0

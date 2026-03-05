@@ -10,7 +10,7 @@ fn cstr(s &str) &u8 {
 	return s.cstr()
 }
 
-fn concat(a &str, b &str) *str {
+fn concat(a, b &str) *str {
 	return null as *str
 }
 

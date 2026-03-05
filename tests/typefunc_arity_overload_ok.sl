@@ -2,7 +2,7 @@ fn m(a int) int {
 	return a + 10
 }
 
-fn m(a int, b int) int {
+fn m(a, b int) int {
 	return a + b
 }
 

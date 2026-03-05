@@ -17,8 +17,16 @@ typedef enum {
     SLMirOp_UNARY,
     SLMirOp_BINARY,
     SLMirOp_INDEX,
+    SLMirOp_CAST,
     SLMirOp_RETURN,
 } SLMirOp;
+
+typedef enum {
+    SLMirCastTarget_INVALID = 0,
+    SLMirCastTarget_INT = 1,
+    SLMirCastTarget_FLOAT = 2,
+    SLMirCastTarget_BOOL = 3,
+} SLMirCastTarget;
 
 typedef struct {
     SLMirOp  op;
@@ -36,7 +44,8 @@ typedef struct {
 int SLMirBuildExpr(
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,
-    int32_t nodeId,
+    SLStrView src,
+    int32_t   nodeId,
     SLMirChunk* _Nonnull outChunk,
     int* _Nonnull outSupported,
     SLDiag* _Nullable diag);

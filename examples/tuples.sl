@@ -3,7 +3,7 @@ fn time_of_day() (uint, uint, uint) {
 	return 14, 25, 30
 }
 
-fn shift_xy(x int, y int, dx int, dy int) (int, int) {
+fn shift_xy(x, y, dx, dy int) (int, int) {
 	return x + dx, y + dy
 }
 

@@ -17,9 +17,9 @@ input.sl:5:1: line content differs
 input.sl:6:1: line should be inserted
   current : ""
   expected: "\ty int = 2"
-input.sl:8:1: line content differs
+input.sl:8:1: internal whitespace differs
   current : "fn add(a,b int) int {"
-  expected: "fn add(a int, b int) int {"
+  expected: "fn add(a, b int) int {"
 input.sl:9:1: internal whitespace differs
   current : "for var i int =0; i < 10; i += 1 {"
   expected: "\tfor var i int = 0; i < 10; i += 1 {"

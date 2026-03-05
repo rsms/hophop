@@ -1960,6 +1960,7 @@ int SLTCParseArrayLen(SLTypeCheckCtx* c, const SLAstNode* node, uint32_t* outLen
 
 int SLTCResolveIndexBaseInfo(SLTypeCheckCtx* c, int32_t baseType, SLTCIndexBaseInfo* out) {
     const SLTCType* t;
+    int32_t         resolvedBaseType;
     out->elemType = -1;
     out->indexable = 0;
     out->sliceable = 0;
@@ -1969,6 +1970,16 @@ int SLTCResolveIndexBaseInfo(SLTypeCheckCtx* c, int32_t baseType, SLTCIndexBaseI
 
     if (baseType < 0 || (uint32_t)baseType >= c->typeLen) {
         return -1;
+    }
+    resolvedBaseType = SLTCResolveAliasBaseType(c, baseType);
+    if (resolvedBaseType == c->typeStr) {
+        int32_t u8Type = SLTCFindBuiltinByKind(c, SLBuiltin_U8);
+        if (u8Type < 0) {
+            return -1;
+        }
+        out->elemType = u8Type;
+        out->indexable = 1;
+        return 0;
     }
     t = &c->types[baseType];
     switch (t->kind) {
@@ -1988,8 +1999,19 @@ int SLTCResolveIndexBaseInfo(SLTypeCheckCtx* c, int32_t baseType, SLTCIndexBaseI
             return 0;
         case SLTCType_PTR: {
             int32_t pointee = t->baseType;
+            int32_t resolvedPointee;
             if (pointee < 0 || (uint32_t)pointee >= c->typeLen) {
                 return -1;
+            }
+            resolvedPointee = SLTCResolveAliasBaseType(c, pointee);
+            if (resolvedPointee == c->typeStr) {
+                int32_t u8Type = SLTCFindBuiltinByKind(c, SLBuiltin_U8);
+                if (u8Type < 0) {
+                    return -1;
+                }
+                out->elemType = u8Type;
+                out->indexable = 1;
+                return 0;
             }
             if (c->types[pointee].kind == SLTCType_ARRAY) {
                 out->elemType = c->types[pointee].baseType;
@@ -2014,8 +2036,20 @@ int SLTCResolveIndexBaseInfo(SLTypeCheckCtx* c, int32_t baseType, SLTCIndexBaseI
         }
         case SLTCType_REF: {
             int32_t refBase = t->baseType;
+            int32_t resolvedRefBase;
             if (refBase < 0 || (uint32_t)refBase >= c->typeLen) {
                 return -1;
+            }
+            resolvedRefBase = SLTCResolveAliasBaseType(c, refBase);
+            if (resolvedRefBase == c->typeStr) {
+                int32_t u8Type = SLTCFindBuiltinByKind(c, SLBuiltin_U8);
+                if (u8Type < 0) {
+                    return -1;
+                }
+                out->elemType = u8Type;
+                out->indexable = 1;
+                out->sliceMutable = SLTCTypeIsMutable(t);
+                return 0;
             }
             if (c->types[refBase].kind == SLTCType_ARRAY) {
                 out->elemType = c->types[refBase].baseType;

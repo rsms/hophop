@@ -5,6 +5,7 @@ SL_API_BEGIN
 
 typedef struct {
     const SLAst* ast;
+    SLStrView    src;
     SLMirInst*   v;
     uint32_t     len;
     uint32_t     cap;
@@ -68,6 +69,46 @@ static int SLMirEmitInst(
     b->v[b->len].end = end;
     b->len++;
     return 0;
+}
+
+static int SLMirTypeNameEqCStr(SLMirBuilder* b, const SLAstNode* n, const char* s) {
+    uint32_t len = 0;
+    if (b == NULL || n == NULL || s == NULL || n->dataEnd < n->dataStart || b->src.ptr == NULL) {
+        return 0;
+    }
+    while (s[len] != '\0') {
+        len++;
+    }
+    if (len != n->dataEnd - n->dataStart || n->dataEnd > b->src.len) {
+        return 0;
+    }
+    return memcmp(b->src.ptr + n->dataStart, s, len) == 0;
+}
+
+static SLMirCastTarget SLMirClassifyCastTarget(SLMirBuilder* b, int32_t typeNode) {
+    const SLAstNode* n;
+    if (typeNode < 0 || (uint32_t)typeNode >= b->ast->len) {
+        return SLMirCastTarget_INVALID;
+    }
+    n = &b->ast->nodes[typeNode];
+    if (n->kind != SLAst_TYPE_NAME) {
+        return SLMirCastTarget_INVALID;
+    }
+    if (SLMirTypeNameEqCStr(b, n, "bool")) {
+        return SLMirCastTarget_BOOL;
+    }
+    if (SLMirTypeNameEqCStr(b, n, "f32") || SLMirTypeNameEqCStr(b, n, "f64")) {
+        return SLMirCastTarget_FLOAT;
+    }
+    if (SLMirTypeNameEqCStr(b, n, "u8") || SLMirTypeNameEqCStr(b, n, "u16")
+        || SLMirTypeNameEqCStr(b, n, "u32") || SLMirTypeNameEqCStr(b, n, "u64")
+        || SLMirTypeNameEqCStr(b, n, "uint") || SLMirTypeNameEqCStr(b, n, "i8")
+        || SLMirTypeNameEqCStr(b, n, "i16") || SLMirTypeNameEqCStr(b, n, "i32")
+        || SLMirTypeNameEqCStr(b, n, "i64") || SLMirTypeNameEqCStr(b, n, "int"))
+    {
+        return SLMirCastTarget_INT;
+    }
+    return SLMirCastTarget_INVALID;
 }
 
 static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
@@ -177,6 +218,25 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             }
             return SLMirEmitInst(b, SLMirOp_INDEX, SLTok_INVALID, n->start, n->end);
         }
+        case SLAst_CAST: {
+            int32_t         valueNode = b->ast->nodes[nodeId].firstChild;
+            int32_t         typeNode = valueNode >= 0 ? b->ast->nodes[valueNode].nextSibling : -1;
+            int32_t         extraNode = typeNode >= 0 ? b->ast->nodes[typeNode].nextSibling : -1;
+            SLMirCastTarget target = SLMirCastTarget_INVALID;
+            if (valueNode < 0 || typeNode < 0 || extraNode >= 0) {
+                SLMirSetDiag(b->diag, SLDiag_EXPECTED_EXPR, n->start, n->end);
+                return -1;
+            }
+            target = SLMirClassifyCastTarget(b, typeNode);
+            if (target == SLMirCastTarget_INVALID) {
+                b->supported = 0;
+                return 0;
+            }
+            if (SLMirBuildExprNode(b, valueNode) != 0) {
+                return -1;
+            }
+            return SLMirEmitInst(b, SLMirOp_CAST, (SLTokenKind)target, n->start, n->end);
+        }
         default: b->supported = 0; return 0;
     }
 }
@@ -184,6 +244,7 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
 int SLMirBuildExpr(
     SLArena*     arena,
     const SLAst* ast,
+    SLStrView    src,
     int32_t      nodeId,
     SLMirChunk*  outChunk,
     int*         outSupported,
@@ -214,6 +275,7 @@ int SLMirBuildExpr(
     }
 
     b.ast = ast;
+    b.src = src;
     b.len = 0;
     b.cap = cap;
     b.supported = 1;

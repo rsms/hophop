@@ -72,7 +72,7 @@ struct Example {
 
 fn metrics(value int) int
 
-fn add(a int, b int) int {
+fn add(a, b int) int {
 	return a + b
 }
 
@@ -80,7 +80,7 @@ fn return_scalar_example(x int) int {
 	return x
 }
 
-fn return_tuple_example(a int, b int, c int) (int, int, int) {
+fn return_tuple_example(a, b, c int) (int, int, int) {
 	return a, b, c
 }
 

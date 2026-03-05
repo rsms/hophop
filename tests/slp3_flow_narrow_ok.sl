@@ -51,7 +51,7 @@ pub fn null_body(x ?*i32) ?*i32 {
 }
 
 // 7. Multiple guards in sequence — each one further narrows.
-pub fn multi_guard(x ?*i32, y ?*i32) i32 {
+pub fn multi_guard(x, y ?*i32) i32 {
 	if x == null {
 		return 0
 	}

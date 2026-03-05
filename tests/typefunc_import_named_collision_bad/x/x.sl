@@ -1,3 +1,3 @@
-pub fn collision(x int, y int) int {
+pub fn collision(x, y int) int {
 	return x + y
 }

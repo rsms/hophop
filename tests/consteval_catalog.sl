@@ -4,7 +4,7 @@
 // This file is intended for `slc check` coverage.
 const BASE = 3
 
-fn expect_i(actual int, want int) int {
+fn expect_i(actual, want int) int {
 	assert actual == want
 	return actual
 }
@@ -68,7 +68,7 @@ fn local_infer_elem_size() int {
 	return sizeof(x) as int
 }
 
-fn choose(a int, b int, flip bool) int {
+fn choose(a, b int, flip bool) int {
 	if flip {
 		return a
 	}

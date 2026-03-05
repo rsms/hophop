@@ -628,6 +628,71 @@ static int SLCTFEEvalBinary(
     return 0;
 }
 
+static int SLCTFEEvalCast(SLMirCastTarget target, const SLCTFEValue* in, SLCTFEValue* out) {
+    SLCTFEValueInvalid(out);
+    switch (target) {
+        case SLMirCastTarget_INT: {
+            int64_t asInt = 0;
+            if (in->kind == SLCTFEValue_INT) {
+                asInt = in->i64;
+            } else if (in->kind == SLCTFEValue_BOOL) {
+                asInt = in->b ? 1 : 0;
+            } else if (in->kind == SLCTFEValue_FLOAT) {
+                if (in->f64 != in->f64 || in->f64 > (double)INT64_MAX
+                    || in->f64 < (double)INT64_MIN)
+                {
+                    return 0;
+                }
+                asInt = (int64_t)in->f64;
+            } else if (in->kind == SLCTFEValue_NULL) {
+                asInt = 0;
+            } else {
+                return 0;
+            }
+            out->kind = SLCTFEValue_INT;
+            out->i64 = asInt;
+            return 1;
+        }
+        case SLMirCastTarget_FLOAT: {
+            double asFloat = 0.0;
+            if (in->kind == SLCTFEValue_FLOAT) {
+                asFloat = in->f64;
+            } else if (in->kind == SLCTFEValue_INT) {
+                asFloat = (double)in->i64;
+            } else if (in->kind == SLCTFEValue_BOOL) {
+                asFloat = in->b ? 1.0 : 0.0;
+            } else if (in->kind == SLCTFEValue_NULL) {
+                asFloat = 0.0;
+            } else {
+                return 0;
+            }
+            out->kind = SLCTFEValue_FLOAT;
+            out->f64 = asFloat;
+            return 1;
+        }
+        case SLMirCastTarget_BOOL: {
+            uint8_t asBool = 0;
+            if (in->kind == SLCTFEValue_BOOL) {
+                asBool = in->b ? 1u : 0u;
+            } else if (in->kind == SLCTFEValue_INT) {
+                asBool = in->i64 != 0 ? 1u : 0u;
+            } else if (in->kind == SLCTFEValue_FLOAT) {
+                asBool = in->f64 != 0.0 ? 1u : 0u;
+            } else if (in->kind == SLCTFEValue_STRING) {
+                asBool = 1u;
+            } else if (in->kind == SLCTFEValue_NULL) {
+                asBool = 0u;
+            } else {
+                return 0;
+            }
+            out->kind = SLCTFEValue_BOOL;
+            out->b = asBool;
+            return 1;
+        }
+        default: return 0;
+    }
+}
+
 int SLCTFEEvalExpr(
     SLArena*     arena,
     const SLAst* ast,
@@ -654,7 +719,7 @@ int SLCTFEEvalExpr(
     SLCTFEValueInvalid(outValue);
     *outIsConst = 0;
 
-    if (SLMirBuildExpr(arena, ast, nodeId, &chunk, &supported, diag) != 0) {
+    if (SLMirBuildExpr(arena, ast, src, nodeId, &chunk, &supported, diag) != 0) {
         return -1;
     }
     if (!supported) {
@@ -939,6 +1004,20 @@ int SLCTFEEvalExpr(
                 out.span.startColumn = 0;
                 out.span.endLine = 0;
                 out.span.endColumn = 0;
+                if (SLCTFEPush(&run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_CAST: {
+                SLCTFEValue in;
+                SLCTFEValue out;
+                if (SLCTFEPop(&run, &in) != 0) {
+                    return 0;
+                }
+                if (!SLCTFEEvalCast((SLMirCastTarget)ins->tok, &in, &out)) {
+                    return 0;
+                }
                 if (SLCTFEPush(&run, &out) != 0) {
                     return -1;
                 }

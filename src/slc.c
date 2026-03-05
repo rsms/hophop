@@ -2174,6 +2174,7 @@ static int EmitCheckDiag(
     int                   includeHint,
     int                   dropUnmappedUnusedWarnings) {
     const char*       displaySource;
+    const char*       displayFilename;
     const SLDiag*     toPrint = diag;
     SLDiag            remappedDiag;
     SLRemapDiagStatus remapStatus = { 0 };
@@ -2183,6 +2184,7 @@ static int EmitCheckDiag(
         return -1;
     }
     displaySource = spec->source;
+    displayFilename = spec->filename;
     if (CheckRunHasRemap(spec)) {
         RemapCombinedDiag(
             spec->remapMap,
@@ -2197,12 +2199,18 @@ static int EmitCheckDiag(
         {
             return 0;
         }
-        toPrint = &remappedDiag;
-        displaySource = spec->remapSource;
+        if (remapStatus.startMapped) {
+            toPrint = &remappedDiag;
+            displaySource = spec->remapSource;
+        } else {
+            toPrint = diag;
+            displaySource = spec->source;
+            displayFilename = "<combined>";
+        }
     }
     return spec->useLineColDiag
-             ? PrintSLDiagLineCol(spec->filename, displaySource, toPrint, includeHint)
-             : PrintSLDiag(spec->filename, displaySource, toPrint, includeHint);
+             ? PrintSLDiagLineCol(displayFilename, displaySource, toPrint, includeHint)
+             : PrintSLDiag(displayFilename, displaySource, toPrint, includeHint);
 }
 
 static void TypecheckDiagSink(void* ctx, const SLDiag* diag) {

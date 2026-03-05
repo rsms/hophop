@@ -1,3 +1,3 @@
-pub fn collision(x int, y int) bool {
+pub fn collision(x, y int) bool {
 	return x == y
 }

@@ -1,4 +1,4 @@
-fn choose(flag bool, a i32, b i32) i32 {
+fn choose(flag bool, a, b i32) i32 {
 	if flag {
 		var v = a + 1
 		return v

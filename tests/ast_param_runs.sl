@@ -1,3 +1,3 @@
-fn resize(oldSize uint, newSize uint, align uint, size uint) uint
+fn resize(oldSize, newSize, align, size uint) uint
 
-fn rotate(v *Vec3, x f32, y f32, z f32)
+fn rotate(v *Vec3, x, y, z f32)
