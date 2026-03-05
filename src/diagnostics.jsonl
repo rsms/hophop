@@ -107,7 +107,7 @@
 {"id": "SL2083", "name": "CONST_BLOCK_EVAL_FAILED", "category": "semantic", "message": "const block failed compile-time evaluation"}
 {"id": "SL2084", "name": "CONST_NUMERIC_PARAM_REQUIRES_CONST", "category": "semantic", "message": "parameter type const_int/const_float requires the 'const' modifier"}
 {"id": "SL2085", "name": "CONST_NUMERIC_INVALID_POSITION", "category": "semantic", "message": "const_int and const_float are only allowed in const declarations, const parameters, function returns, and cast targets"}
-{"id": "SL2086", "name": "FOR_IN_INVALID_SOURCE", "category": "semantic", "message": "for-in source must support sequence iteration or iterator protocol hooks"}
+{"id": "SL2086", "name": "FOR_IN_INVALID_SOURCE", "category": "semantic", "message": "for-in source must support sequence iteration or iterator protocol"}
 {"id": "SL2087", "name": "FOR_IN_KEY_REF_INVALID", "category": "semantic", "message": "for-in key cannot be captured by reference for synthetic sequence keys"}
 {"id": "SL2088", "name": "FOR_IN_VALUE_BINDING_INVALID", "category": "semantic", "message": "invalid for-in value binding for source mutability/capture mode"}
 {"id": "SL2089", "name": "FOR_IN_ITERATOR_AMBIGUOUS", "category": "semantic", "message": "ambiguous __iterator overload for for-in source"}

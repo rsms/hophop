@@ -128,7 +128,7 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
                                               const declarations, const parameters, function
                                               returns, and cast targets */
     SLDiag_FOR_IN_INVALID_SOURCE,        /* SL2086: for-in source must support sequence iteration or
-                                            iterator protocol hooks */
+                                            iterator protocol */
     SLDiag_FOR_IN_KEY_REF_INVALID,       /* SL2087: for-in key cannot be captured by reference for
                                             synthetic sequence keys */
     SLDiag_FOR_IN_VALUE_BINDING_INVALID, /* SL2088: invalid for-in value binding for source

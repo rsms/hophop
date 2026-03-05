@@ -450,7 +450,7 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
                                                 0 },
     [SLDiag_FOR_IN_INVALID_SOURCE] = { "SL2086",
                                        "for-in source must support sequence iteration or iterator "
-                                       "protocol hooks",
+                                       "protocol",
                                        NULL,
                                        SLDiagType_ERROR,
                                        0 },
