@@ -411,8 +411,10 @@ const SLAstNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId);
 int GetDeclNameSpan(const SLCBackendC* c, int32_t nodeId, uint32_t* outStart, uint32_t* outEnd);
 
 int AddName(SLCBackendC* c, uint32_t nameStart, uint32_t nameEnd, SLAstKind kind, int isExported);
+int BuildTypeDeclFlatName(SLCBackendC* c, int32_t nodeId, char** outName);
 
 const SLNameMap* _Nullable FindNameBySlice(const SLCBackendC* c, uint32_t start, uint32_t end);
+const SLNameMap* _Nullable FindTypeDeclMapByNode(SLCBackendC* c, int32_t nodeId);
 
 const SLNameMap* _Nullable FindNameByCString(const SLCBackendC* c, const char* name);
 

@@ -1,0 +1,1 @@
+tests/nested_type_disallowed_fn_bad.sl:2:5: SL1004: unexpected token

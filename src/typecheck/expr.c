@@ -2408,8 +2408,9 @@ int SLTCTypeExpr_FIELD_EXPR(
         return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_SYMBOL);
     }
     recv = &c->ast->nodes[recvNode];
-    if (recv->kind == SLAst_IDENT && SLTCLocalFind(c, recv->dataStart, recv->dataEnd) < 0
-        && SLTCFindFunctionIndex(c, recv->dataStart, recv->dataEnd) < 0
+    if (((recv->kind == SLAst_IDENT && SLTCLocalFind(c, recv->dataStart, recv->dataEnd) < 0
+          && SLTCFindFunctionIndex(c, recv->dataStart, recv->dataEnd) < 0)
+         || recv->kind == SLAst_FIELD_EXPR)
         && SLTCResolveEnumMemberType(c, recvNode, n->dataStart, n->dataEnd, &fieldType))
     {
         *outType = fieldType;

@@ -1906,6 +1906,7 @@ int SLTCBuildCheckedContext(
     c.currentFunctionIndex = -1;
     c.currentFunctionIsCompareHook = 0;
     c.activeTypeParamFnNode = -1;
+    c.currentTypeOwnerTypeId = -1;
     c.activeConstEvalCtx = NULL;
     c.compilerDiagPathProven = 1;
     c.allowAnytypeParamType = 0;

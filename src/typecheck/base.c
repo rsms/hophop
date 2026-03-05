@@ -1184,28 +1184,100 @@ int SLTCDecodeTypeTag(SLTypeCheckCtx* c, uint64_t typeTag, int32_t* outTypeId) {
     return 0;
 }
 
-int32_t SLTCResolveTypeValueName(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
-    int32_t builtinType = SLTCFindBuiltinType(c, start, end);
-    int32_t namedTypeIndex;
-    if (builtinType >= 0) {
-        return builtinType;
-    }
-    namedTypeIndex = SLTCFindNamedTypeIndex(c, start, end);
-    if (namedTypeIndex >= 0) {
-        return c->namedTypes[namedTypeIndex].typeId;
+static int32_t SLTCFindNamedTypeIndexByTypeId(SLTypeCheckCtx* c, int32_t typeId) {
+    uint32_t i;
+    for (i = 0; i < c->namedTypeLen; i++) {
+        if (c->namedTypes[i].typeId == typeId) {
+            return (int32_t)i;
+        }
     }
     return -1;
 }
 
-int32_t SLTCFindNamedTypeIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
+static int32_t SLTCParentOwnerTypeId(SLTypeCheckCtx* c, int32_t typeId) {
+    int32_t idx = SLTCFindNamedTypeIndexByTypeId(c, typeId);
+    if (idx < 0) {
+        return -1;
+    }
+    return c->namedTypes[(uint32_t)idx].ownerTypeId;
+}
+
+int32_t SLTCFindNamedTypeIndexOwned(
+    SLTypeCheckCtx* c, int32_t ownerTypeId, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = 0; i < c->namedTypeLen; i++) {
-        if (SLNameEqSlice(c->src, c->namedTypes[i].nameStart, c->namedTypes[i].nameEnd, start, end))
+        if (c->namedTypes[i].ownerTypeId == ownerTypeId
+            && SLNameEqSlice(
+                c->src, c->namedTypes[i].nameStart, c->namedTypes[i].nameEnd, start, end))
         {
             return (int32_t)i;
         }
     }
     return -1;
+}
+
+static int32_t SLTCFindNamedTypeIndexInOwnerScope(
+    SLTypeCheckCtx* c, int32_t ownerTypeId, uint32_t start, uint32_t end) {
+    int32_t owner = ownerTypeId;
+    while (owner >= 0) {
+        int32_t idx = SLTCFindNamedTypeIndexOwned(c, owner, start, end);
+        if (idx >= 0) {
+            return idx;
+        }
+        owner = SLTCParentOwnerTypeId(c, owner);
+    }
+    return SLTCFindNamedTypeIndexOwned(c, -1, start, end);
+}
+
+int32_t SLTCResolveTypeNamePath(
+    SLTypeCheckCtx* c, uint32_t start, uint32_t end, int32_t ownerTypeId) {
+    uint32_t segStart = start;
+    uint32_t pos = start;
+    int32_t  currentTypeId = -1;
+    if (end <= start) {
+        return -1;
+    }
+    while (pos <= end) {
+        if (pos == end || c->src.ptr[pos] == '.') {
+            uint32_t segEnd = pos;
+            int32_t  idx;
+            if (segEnd <= segStart) {
+                return -1;
+            }
+            if (currentTypeId < 0) {
+                idx = SLTCFindNamedTypeIndexInOwnerScope(c, ownerTypeId, segStart, segEnd);
+            } else {
+                idx = SLTCFindNamedTypeIndexOwned(c, currentTypeId, segStart, segEnd);
+            }
+            if (idx < 0) {
+                return -1;
+            }
+            currentTypeId = c->namedTypes[(uint32_t)idx].typeId;
+            segStart = pos + 1u;
+        }
+        if (pos == end) {
+            break;
+        }
+        pos++;
+    }
+    return currentTypeId;
+}
+
+int32_t SLTCResolveTypeValueName(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
+    int32_t builtinType = SLTCFindBuiltinType(c, start, end);
+    int32_t typeId;
+    if (builtinType >= 0) {
+        return builtinType;
+    }
+    typeId = SLTCResolveTypeNamePath(c, start, end, c->currentTypeOwnerTypeId);
+    if (typeId >= 0) {
+        return typeId;
+    }
+    return -1;
+}
+
+int32_t SLTCFindNamedTypeIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
+    return SLTCFindNamedTypeIndexOwned(c, -1, start, end);
 }
 
 int32_t SLTCFindNamedTypeByLiteral(SLTypeCheckCtx* c, const char* name) {
@@ -1514,36 +1586,65 @@ int SLTCResolveReceiverPkgPrefix(
     return 0;
 }
 
+static int SLTCResolveTypePathExprTypeForEnumMember(
+    SLTypeCheckCtx* c, int32_t exprNode, int32_t ownerTypeId, int32_t* outTypeId) {
+    const SLAstNode* n;
+    if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[exprNode];
+    if (n->kind == SLAst_IDENT) {
+        int32_t typeId;
+        if (SLTCLocalFind(c, n->dataStart, n->dataEnd) >= 0
+            || SLTCFindFunctionIndex(c, n->dataStart, n->dataEnd) >= 0)
+        {
+            return 0;
+        }
+        typeId = SLTCResolveTypeNamePath(c, n->dataStart, n->dataEnd, ownerTypeId);
+        if (typeId < 0) {
+            return 0;
+        }
+        *outTypeId = typeId;
+        return 1;
+    }
+    if (n->kind == SLAst_FIELD_EXPR) {
+        int32_t recvExpr = SLAstFirstChild(c->ast, exprNode);
+        int32_t recvTypeId;
+        int32_t idx;
+        if (recvExpr < 0
+            || !SLTCResolveTypePathExprTypeForEnumMember(c, recvExpr, ownerTypeId, &recvTypeId))
+        {
+            return 0;
+        }
+        idx = SLTCFindNamedTypeIndexOwned(c, recvTypeId, n->dataStart, n->dataEnd);
+        if (idx < 0) {
+            return 0;
+        }
+        *outTypeId = c->namedTypes[(uint32_t)idx].typeId;
+        return 1;
+    }
+    return 0;
+}
+
 int SLTCResolveEnumMemberType(
     SLTypeCheckCtx* c,
     int32_t         recvNode,
     uint32_t        memberStart,
     uint32_t        memberEnd,
     int32_t*        outType) {
-    const SLAstNode* recv;
-    int32_t          namedIndex;
-    int32_t          enumTypeId;
-    int32_t          enumFieldType;
-    int32_t          declNode;
+    int32_t enumTypeId;
+    int32_t enumFieldType;
 
     if (recvNode < 0 || (uint32_t)recvNode >= c->ast->len) {
         return 0;
     }
-    recv = &c->ast->nodes[recvNode];
-    if (recv->kind != SLAst_IDENT) {
-        return 0;
-    }
-
-    namedIndex = SLTCFindNamedTypeIndex(c, recv->dataStart, recv->dataEnd);
-    if (namedIndex < 0) {
-        return 0;
-    }
-
-    enumTypeId = c->namedTypes[(uint32_t)namedIndex].typeId;
-    declNode = c->namedTypes[(uint32_t)namedIndex].declNode;
-    if (declNode < 0 || (uint32_t)declNode >= c->ast->len
-        || c->ast->nodes[declNode].kind != SLAst_ENUM)
+    if (!SLTCResolveTypePathExprTypeForEnumMember(
+            c, recvNode, c->currentTypeOwnerTypeId, &enumTypeId))
     {
+        return 0;
+    }
+    enumTypeId = SLTCResolveAliasBaseType(c, enumTypeId);
+    if (!SLTCIsNamedDeclKind(c, enumTypeId, SLAst_ENUM)) {
         return 0;
     }
 

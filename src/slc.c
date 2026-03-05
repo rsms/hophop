@@ -3230,6 +3230,16 @@ static int PackageHasImportedTypeSymbolSlice(
     return 0;
 }
 
+static uint32_t FindSliceDot(const char* src, uint32_t start, uint32_t end) {
+    uint32_t i;
+    for (i = start; i < end; i++) {
+        if (src[i] == '.') {
+            return i;
+        }
+    }
+    return end;
+}
+
 static const SLImportRef* _Nullable FindImportByAliasSlice(
     const SLPackage* pkg, const char* src, uint32_t aliasStart, uint32_t aliasEnd);
 
@@ -3242,34 +3252,37 @@ static int ValidatePubTypeNode(
     n = &file->ast.nodes[typeNodeId];
     switch (n->kind) {
         case SLAst_TYPE_NAME: {
-            uint32_t i;
-            uint32_t dotPos = 0;
-            int      hasDot = 0;
-            for (i = n->dataStart; i < n->dataEnd; i++) {
-                if (file->source[i] == '.') {
-                    dotPos = i;
-                    hasDot = 1;
-                    break;
-                }
-            }
-            if (hasDot) {
+            uint32_t dotPos = FindSliceDot(file->source, n->dataStart, n->dataEnd);
+            if (dotPos < n->dataEnd) {
                 const SLImportRef* imp = FindImportByAliasSlice(
                     pkg, file->source, n->dataStart, dotPos);
                 if (imp == NULL) {
+                    if (PackageHasExportedTypeSlice(pkg, file->source, n->dataStart, dotPos)
+                        || PackageHasImportedTypeSymbolSlice(
+                            pkg, file->source, n->dataStart, dotPos))
+                    {
+                        return 0;
+                    }
                     return Errorf(
                         file->path,
                         file->source,
                         n->start,
                         n->end,
-                        "public API %s references unknown import alias",
+                        "public API %s references non-exported type",
                         contextMsg);
                 }
                 if (imp->target == NULL) {
                     return 0;
                 }
-                if (PackageHasExportedTypeSlice(imp->target, file->source, dotPos + 1u, n->dataEnd))
                 {
-                    return 0;
+                    uint32_t memberRootStart = dotPos + 1u;
+                    uint32_t memberRootEnd = FindSliceDot(
+                        file->source, memberRootStart, n->dataEnd);
+                    if (PackageHasExportedTypeSlice(
+                            imp->target, file->source, memberRootStart, memberRootEnd))
+                    {
+                        return 0;
+                    }
                 }
                 return Errorf(
                     file->path,
@@ -3484,22 +3497,26 @@ static int ValidateSelectorsNode(const SLPackage* pkg, const SLParsedFile* file,
     n = &file->ast.nodes[nodeId];
 
     if (n->kind == SLAst_TYPE_NAME) {
-        uint32_t i;
-        for (i = n->dataStart; i < n->dataEnd; i++) {
-            if (file->source[i] == '.') {
-                const SLImportRef* imp = FindImportByAliasSlice(pkg, file->source, n->dataStart, i);
-                if (imp == NULL) {
-                    if (PackageHasEnumDeclBySlice(pkg, file->source, n->dataStart, i)) {
-                        break;
-                    }
+        uint32_t dot = FindSliceDot(file->source, n->dataStart, n->dataEnd);
+        if (dot < n->dataEnd) {
+            const SLImportRef* imp = FindImportByAliasSlice(pkg, file->source, n->dataStart, dot);
+            if (imp == NULL) {
+                if (!PackageHasEnumDeclBySlice(pkg, file->source, n->dataStart, dot)
+                    && !PackageHasExportedTypeSlice(pkg, file->source, n->dataStart, dot)
+                    && !PackageHasImportedTypeSymbolSlice(pkg, file->source, n->dataStart, dot))
+                {
                     return Errorf(
                         file->path, file->source, n->start, n->end, "unknown import alias");
                 }
-                if (!PackageHasExportSlice(imp->target, file->source, i + 1u, n->dataEnd)) {
+            } else {
+                uint32_t memberRootStart = dot + 1u;
+                uint32_t memberRootEnd = FindSliceDot(file->source, memberRootStart, n->dataEnd);
+                if (!PackageHasExportSlice(
+                        imp->target, file->source, memberRootStart, memberRootEnd))
+                {
                     return Errorf(
                         file->path, file->source, n->start, n->end, "unknown imported symbol");
                 }
-                break;
             }
         }
     } else if (n->kind == SLAst_FIELD_EXPR) {
@@ -4363,15 +4380,8 @@ static int CollectTypeNameImportRewritesNode(
     }
     n = &file->ast.nodes[nodeId];
     if (n->kind == SLAst_TYPE_NAME) {
-        uint32_t i;
-        int      hasDot = 0;
-        for (i = n->dataStart; i < n->dataEnd; i++) {
-            if (file->source[i] == '.') {
-                hasDot = 1;
-                break;
-            }
-        }
-        if (!hasDot) {
+        uint32_t dot = FindSliceDot(file->source, n->dataStart, n->dataEnd);
+        if (dot >= n->dataEnd) {
             int idx = FindImportSymbolBindingIndexBySlice(
                 pkg, file->source, n->dataStart, n->dataEnd, 1);
             if (idx >= 0) {
@@ -4381,6 +4391,21 @@ static int CollectTypeNameImportRewritesNode(
                         rewriteCap,
                         n->dataStart,
                         n->dataEnd,
+                        pkg->importSymbols[(uint32_t)idx].qualifiedName)
+                    != 0)
+                {
+                    return -1;
+                }
+            }
+        } else {
+            int idx = FindImportSymbolBindingIndexBySlice(pkg, file->source, n->dataStart, dot, 1);
+            if (idx >= 0) {
+                if (AddTextRewrite(
+                        rewrites,
+                        rewriteLen,
+                        rewriteCap,
+                        n->dataStart,
+                        dot,
                         pkg->importSymbols[(uint32_t)idx].qualifiedName)
                     != 0)
                 {
@@ -4489,6 +4514,7 @@ static int CollectExprImportRewritesNode(
         case SLAst_SIZEOF:
         case SLAst_NEW:
         case SLAst_UNWRAP:
+        case SLAst_CALL_ARG:
             child = ASTFirstChild(&file->ast, nodeId);
             while (child >= 0) {
                 if (CollectExprImportRewritesNode(

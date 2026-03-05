@@ -1466,6 +1466,7 @@ static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitExpr(SLFmtCtx* c, int32_t nodeId, int forceParen);
 static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId);
+static int SLFmtEmitDecl(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId);
 static int SLFmtEmitExprList(SLFmtCtx* c, int32_t listNodeId);
 
@@ -4430,6 +4431,11 @@ static int SLFmtEmitAlignedEnumGroup(
     return 0;
 }
 
+static int SLFmtIsNestedTypeDeclNodeKind(SLAstKind kind) {
+    return kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
+        || kind == SLAst_TYPE_ALIAS;
+}
+
 static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId) {
     int32_t child = firstFieldNodeId;
     int32_t prevEmitted = -1;
@@ -4442,11 +4448,10 @@ static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId) {
     }
     c->indent++;
     while (child >= 0) {
-        if (c->ast->nodes[child].kind != SLAst_FIELD) {
+        SLAstKind kind = c->ast->nodes[child].kind;
+        if (kind != SLAst_FIELD && !SLFmtIsNestedTypeDeclNodeKind(kind)) {
             break;
         }
-        int32_t next = SLFmtNextSibling(c->ast, child);
-        int32_t last = child;
         if (prevEmitted >= 0) {
             if (SLFmtNewline(c) != 0) {
                 return -1;
@@ -4455,17 +4460,27 @@ static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId) {
                 return -1;
             }
         }
-        if ((c->ast->nodes[child].flags & SLAstFlag_FIELD_EMBEDDED) != 0) {
-            if (SLFmtEmitLeadingCommentsForNode(c, child) != 0
-                || SLFmtEmitSimpleFieldDecl(c, child) != 0)
-            {
+        if (kind == SLAst_FIELD) {
+            int32_t next = SLFmtNextSibling(c->ast, child);
+            int32_t last = child;
+            if ((c->ast->nodes[child].flags & SLAstFlag_FIELD_EMBEDDED) != 0) {
+                if (SLFmtEmitLeadingCommentsForNode(c, child) != 0
+                    || SLFmtEmitSimpleFieldDecl(c, child) != 0)
+                {
+                    return -1;
+                }
+            } else if (SLFmtEmitAlignedFieldGroup(c, child, &last, &next) != 0) {
                 return -1;
             }
-        } else if (SLFmtEmitAlignedFieldGroup(c, child, &last, &next) != 0) {
+            prevEmitted = last;
+            child = next;
+            continue;
+        }
+        if (SLFmtEmitDecl(c, child) != 0) {
             return -1;
         }
-        prevEmitted = last;
-        child = next;
+        prevEmitted = child;
+        child = SLFmtNextSibling(c->ast, child);
     }
     c->indent--;
     if (SLFmtNewline(c) != 0) {

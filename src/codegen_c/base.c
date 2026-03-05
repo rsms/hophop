@@ -734,6 +734,41 @@ char* _Nullable DupAndReplaceDots(SLCBackendC* c, const char* src, uint32_t star
     return out;
 }
 
+static char* _Nullable DupAndReplaceDotsDouble(
+    SLCBackendC* c, const char* src, uint32_t start, uint32_t end) {
+    char*    out;
+    uint32_t i;
+    uint32_t len;
+    uint32_t dotCount = 0;
+    if (end < start) {
+        return NULL;
+    }
+    len = end - start;
+    for (i = 0; i < len; i++) {
+        if (src[start + i] == '.') {
+            dotCount++;
+        }
+    }
+    out = (char*)SLArenaAlloc(&c->arena, len + dotCount + 1u, (uint32_t)_Alignof(char));
+    if (out == NULL) {
+        return NULL;
+    }
+    {
+        uint32_t j = 0;
+        for (i = 0; i < len; i++) {
+            char ch = src[start + i];
+            if (ch == '.') {
+                out[j++] = '_';
+                out[j++] = '_';
+            } else {
+                out[j++] = ch;
+            }
+        }
+        out[j] = '\0';
+    }
+    return out;
+}
+
 char* _Nullable DupCStr(SLCBackendC* c, const char* s) {
     size_t n = StrLen(s);
     char*  out;
@@ -1035,16 +1070,17 @@ int GetDeclNameSpan(const SLCBackendC* c, int32_t nodeId, uint32_t* outStart, ui
     return 0;
 }
 
-int AddName(SLCBackendC* c, uint32_t nameStart, uint32_t nameEnd, SLAstKind kind, int isExported) {
+static int AddNameLiteral(
+    SLCBackendC* c, const char* name, SLAstKind kind, int isExported, int forcePkgPrefix) {
     uint32_t i;
-    char*    name;
+    char*    nameDup;
     char*    cName;
     SLBuf    tmp = { 0 };
 
     tmp.arena = &c->arena;
 
     for (i = 0; i < c->nameLen; i++) {
-        if (SliceEqName(c->unit->source, nameStart, nameEnd, c->names[i].name)) {
+        if (StrEq(c->names[i].name, name)) {
             if (isExported) {
                 c->names[i].isExported = 1;
             }
@@ -1052,16 +1088,16 @@ int AddName(SLCBackendC* c, uint32_t nameStart, uint32_t nameEnd, SLAstKind kind
         }
     }
 
-    name = DupSlice(c, c->unit->source, nameStart, nameEnd);
-    if (name == NULL) {
+    nameDup = DupCStr(c, name);
+    if (nameDup == NULL) {
         return -1;
     }
 
-    if (HasDoubleUnderscore(name)) {
-        cName = DupCStr(c, name);
+    if (!forcePkgPrefix && HasDoubleUnderscore(nameDup)) {
+        cName = DupCStr(c, nameDup);
     } else {
         if (BufAppendCStr(&tmp, c->unit->packageName) != 0 || BufAppendCStr(&tmp, "__") != 0
-            || BufAppendCStr(&tmp, name) != 0)
+            || BufAppendCStr(&tmp, nameDup) != 0)
         {
             return -1;
         }
@@ -1082,12 +1118,20 @@ int AddName(SLCBackendC* c, uint32_t nameStart, uint32_t nameEnd, SLAstKind kind
     {
         return -1;
     }
-    c->names[c->nameLen].name = name;
+    c->names[c->nameLen].name = nameDup;
     c->names[c->nameLen].cName = cName;
     c->names[c->nameLen].kind = kind;
     c->names[c->nameLen].isExported = isExported;
     c->nameLen++;
     return 0;
+}
+
+int AddName(SLCBackendC* c, uint32_t nameStart, uint32_t nameEnd, SLAstKind kind, int isExported) {
+    char* name = DupSlice(c, c->unit->source, nameStart, nameEnd);
+    if (name == NULL) {
+        return -1;
+    }
+    return AddNameLiteral(c, name, kind, isExported, 0);
 }
 
 const SLNameMap* _Nullable FindNameBySlice(const SLCBackendC* c, uint32_t start, uint32_t end) {
@@ -1108,6 +1152,142 @@ const SLNameMap* _Nullable FindNameByCString(const SLCBackendC* c, const char* n
         }
     }
     return NULL;
+}
+
+static int32_t FindParentNodeId(const SLAst* ast, int32_t childNodeId) {
+    uint32_t i;
+    if (ast == NULL || childNodeId < 0 || (uint32_t)childNodeId >= ast->len) {
+        return -1;
+    }
+    for (i = 0; i < ast->len; i++) {
+        int32_t child = ast->nodes[i].firstChild;
+        while (child >= 0) {
+            if (child == childNodeId) {
+                return (int32_t)i;
+            }
+            child = ast->nodes[child].nextSibling;
+        }
+    }
+    return -1;
+}
+
+int BuildTypeDeclFlatName(SLCBackendC* c, int32_t nodeId, char** outName) {
+    int32_t          chain[64];
+    uint32_t         chainLen = 0;
+    int32_t          cur = nodeId;
+    SLBuf            b = { 0 };
+    uint32_t         i;
+    const SLAstNode* n = NodeAt(c, nodeId);
+    if (outName == NULL || n == NULL || !IsTypeDeclKind(n->kind)) {
+        return -1;
+    }
+    while (cur >= 0) {
+        const SLAstNode* cn = NodeAt(c, cur);
+        int32_t          parent;
+        if (cn == NULL || !IsTypeDeclKind(cn->kind)) {
+            break;
+        }
+        if (chainLen >= (uint32_t)(sizeof(chain) / sizeof(chain[0]))) {
+            return -1;
+        }
+        chain[chainLen++] = cur;
+        parent = FindParentNodeId(&c->ast, cur);
+        while (parent >= 0) {
+            const SLAstNode* pn = NodeAt(c, parent);
+            if (pn != NULL && IsTypeDeclKind(pn->kind)) {
+                break;
+            }
+            parent = FindParentNodeId(&c->ast, parent);
+        }
+        cur = parent;
+    }
+    b.arena = &c->arena;
+    for (i = chainLen; i > 0; i--) {
+        const SLAstNode* cn = NodeAt(c, chain[i - 1u]);
+        if (cn == NULL) {
+            return -1;
+        }
+        if (i != chainLen && BufAppendCStr(&b, "__") != 0) {
+            return -1;
+        }
+        if (BufAppendSlice(&b, c->unit->source, cn->dataStart, cn->dataEnd) != 0) {
+            return -1;
+        }
+    }
+    *outName = BufFinish(&b);
+    return *outName == NULL ? -1 : 0;
+}
+
+const SLNameMap* _Nullable FindTypeDeclMapByNode(SLCBackendC* c, int32_t nodeId) {
+    char* flat = NULL;
+    if (BuildTypeDeclFlatName(c, nodeId, &flat) != 0) {
+        return NULL;
+    }
+    return FindNameByCString(c, flat);
+}
+
+static int SliceContainsDot(const char* src, uint32_t start, uint32_t end) {
+    uint32_t i;
+    for (i = start; i < end; i++) {
+        if (src[i] == '.') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int32_t FindEnclosingTypeDeclNode(const SLCBackendC* c, int32_t nodeId) {
+    int32_t parent = FindParentNodeId(&c->ast, nodeId);
+    while (parent >= 0) {
+        const SLAstNode* pn = NodeAt(c, parent);
+        if (pn != NULL && IsTypeDeclKind(pn->kind)) {
+            return parent;
+        }
+        parent = FindParentNodeId(&c->ast, parent);
+    }
+    return -1;
+}
+
+static const char* _Nullable ResolveTypeNameInScope(
+    SLCBackendC* c, int32_t typeRefNodeId, uint32_t start, uint32_t end) {
+    const char*      resolved = ResolveTypeName(c, start, end);
+    const SLNameMap* map;
+    int32_t          ownerNodeId;
+    if (resolved == NULL) {
+        return NULL;
+    }
+    if (SliceContainsDot(c->unit->source, start, end)) {
+        return resolved;
+    }
+    map = FindNameByCName(c, resolved);
+    if (map != NULL && IsTypeDeclKind(map->kind)) {
+        return resolved;
+    }
+    ownerNodeId = FindEnclosingTypeDeclNode(c, typeRefNodeId);
+    while (ownerNodeId >= 0) {
+        char* ownerFlat = NULL;
+        SLBuf b = { 0 };
+        char* candidate;
+        if (BuildTypeDeclFlatName(c, ownerNodeId, &ownerFlat) != 0 || ownerFlat == NULL) {
+            return NULL;
+        }
+        b.arena = &c->arena;
+        if (BufAppendCStr(&b, ownerFlat) != 0 || BufAppendCStr(&b, "__") != 0
+            || BufAppendSlice(&b, c->unit->source, start, end) != 0)
+        {
+            return NULL;
+        }
+        candidate = BufFinish(&b);
+        if (candidate == NULL) {
+            return NULL;
+        }
+        map = FindNameByCString(c, candidate);
+        if (map != NULL && IsTypeDeclKind(map->kind)) {
+            return map->cName;
+        }
+        ownerNodeId = FindEnclosingTypeDeclNode(c, ownerNodeId);
+    }
+    return resolved;
 }
 
 int NameHasPrefixSuffix(const char* name, const char* prefix, const char* suffix) {
@@ -1184,6 +1364,7 @@ const SLNameMap* _Nullable FindNameByCName(const SLCBackendC* c, const char* cNa
 int ResolveTypeValueNameExprTypeRef(
     SLCBackendC* c, uint32_t start, uint32_t end, SLTypeRef* outTypeRef) {
     const SLNameMap* map;
+    const char*      resolvedTypeName;
     if (SliceEq(c->unit->source, start, end, "bool")) {
         TypeRefSetScalar(outTypeRef, "__sl_bool");
         return 1;
@@ -1256,6 +1437,14 @@ int ResolveTypeValueNameExprTypeRef(
     if (map != NULL && IsTypeDeclKind(map->kind)) {
         TypeRefSetScalar(outTypeRef, map->cName);
         return 1;
+    }
+    resolvedTypeName = ResolveTypeName(c, start, end);
+    if (resolvedTypeName != NULL) {
+        map = FindNameByCName(c, resolvedTypeName);
+        if (map != NULL && IsTypeDeclKind(map->kind)) {
+            TypeRefSetScalar(outTypeRef, map->cName);
+            return 1;
+        }
     }
     TypeRefSetInvalid(outTypeRef);
     return 0;
@@ -1754,6 +1943,9 @@ int TypeRefIsRuneLike(const SLCBackendC* c, const SLTypeRef* typeRef) {
 const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t end) {
     const SLNameMap*         mapped;
     char*                    normalized;
+    char*                    normalizedDouble = NULL;
+    uint32_t                 pos;
+    int                      hasDot = 0;
     uint32_t                 i;
     static const char* const builtinSlNames[] = {
         "bool", "str",  "u8",  "u16",       "u32", "u64", "i8",          "i16",  "i32",
@@ -1782,6 +1974,23 @@ const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t e
     mapped = FindNameByCString(c, normalized);
     if (mapped != NULL && IsTypeDeclKind(mapped->kind)) {
         return mapped->cName;
+    }
+
+    for (pos = start; pos < end; pos++) {
+        if (c->unit->source[pos] == '.') {
+            hasDot = 1;
+            break;
+        }
+    }
+    if (hasDot) {
+        normalizedDouble = DupAndReplaceDotsDouble(c, c->unit->source, start, end);
+        if (normalizedDouble == NULL) {
+            return NULL;
+        }
+        mapped = FindNameByCString(c, normalizedDouble);
+        if (mapped != NULL && IsTypeDeclKind(mapped->kind)) {
+            return mapped->cName;
+        }
     }
 
     return normalized;
@@ -1976,48 +2185,89 @@ int AddNodeRef(SLCBackendC* c, SLNodeRef** arr, uint32_t* len, uint32_t* cap, in
     return 0;
 }
 
+static int IsNodeImportedSurface(const SLCBackendC* c, int32_t nodeId) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    if (n == NULL || c->options == NULL || c->options->emitNodeStartOffsetEnabled == 0) {
+        return 0;
+    }
+    return n->start < c->options->emitNodeStartOffset;
+}
+
+static int CollectDeclSetsFromNode(
+    SLCBackendC* c, int32_t nodeId, int isNested, int inheritedExported) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    uint32_t         start;
+    uint32_t         end;
+    int              isExported;
+    if (n == NULL || !IsDeclKind(n->kind)) {
+        return 0;
+    }
+    isExported = isNested ? inheritedExported : IsPubDeclNode(n);
+    if (AddNodeRef(c, &c->topDecls, &c->topDeclLen, &c->topDeclCap, nodeId) != 0) {
+        return -1;
+    }
+    if (isExported) {
+        if (AddNodeRef(c, &c->pubDecls, &c->pubDeclLen, &c->pubDeclCap, nodeId) != 0) {
+            return -1;
+        }
+    }
+    if ((n->kind == SLAst_VAR || n->kind == SLAst_CONST)
+        && NodeAt(c, AstFirstChild(&c->ast, nodeId)) != NULL
+        && NodeAt(c, AstFirstChild(&c->ast, nodeId))->kind == SLAst_NAME_LIST)
+    {
+        int32_t  nameList = AstFirstChild(&c->ast, nodeId);
+        uint32_t i;
+        uint32_t nameCount = ListCount(&c->ast, nameList);
+        for (i = 0; i < nameCount; i++) {
+            int32_t          nameNode = ListItemAt(&c->ast, nameList, i);
+            const SLAstNode* name = NodeAt(c, nameNode);
+            if (name == NULL) {
+                return -1;
+            }
+            if (AddName(c, name->dataStart, name->dataEnd, n->kind, isExported) != 0) {
+                return -1;
+            }
+        }
+    } else if (IsTypeDeclKind(n->kind)) {
+        if (isNested) {
+            char* flatName = NULL;
+            int   forcePkgPrefix = IsNodeImportedSurface(c, nodeId) ? 0 : 1;
+            if (BuildTypeDeclFlatName(c, nodeId, &flatName) != 0
+                || AddNameLiteral(c, flatName, n->kind, isExported, forcePkgPrefix) != 0)
+            {
+                return -1;
+            }
+        } else if (GetDeclNameSpan(c, nodeId, &start, &end) == 0) {
+            if (AddName(c, start, end, n->kind, isExported) != 0) {
+                return -1;
+            }
+        }
+    } else if (GetDeclNameSpan(c, nodeId, &start, &end) == 0) {
+        if (AddName(c, start, end, n->kind, isExported) != 0) {
+            return -1;
+        }
+    }
+
+    if (n->kind == SLAst_STRUCT || n->kind == SLAst_UNION) {
+        int32_t child = AstFirstChild(&c->ast, nodeId);
+        while (child >= 0) {
+            const SLAstNode* ch = NodeAt(c, child);
+            if (ch != NULL && IsTypeDeclKind(ch->kind)
+                && CollectDeclSetsFromNode(c, child, 1, isExported) != 0)
+            {
+                return -1;
+            }
+            child = AstNextSibling(&c->ast, child);
+        }
+    }
+    return 0;
+}
+
 int CollectDeclSets(SLCBackendC* c) {
     int32_t child = AstFirstChild(&c->ast, c->ast.root);
     while (child >= 0) {
-        const SLAstNode* n = NodeAt(c, child);
-        uint32_t         start;
-        uint32_t         end;
-        int              isExported;
-        if (n == NULL) {
+        if (CollectDeclSetsFromNode(c, child, 0, 0) != 0) {
             return -1;
-        }
-        if (IsDeclKind(n->kind)) {
-            isExported = IsPubDeclNode(n);
-            if (AddNodeRef(c, &c->topDecls, &c->topDeclLen, &c->topDeclCap, child) != 0) {
-                return -1;
-            }
-            if (isExported) {
-                if (AddNodeRef(c, &c->pubDecls, &c->pubDeclLen, &c->pubDeclCap, child) != 0) {
-                    return -1;
-                }
-            }
-            if ((n->kind == SLAst_VAR || n->kind == SLAst_CONST)
-                && NodeAt(c, AstFirstChild(&c->ast, child)) != NULL
-                && NodeAt(c, AstFirstChild(&c->ast, child))->kind == SLAst_NAME_LIST)
-            {
-                int32_t  nameList = AstFirstChild(&c->ast, child);
-                uint32_t i;
-                uint32_t nameCount = ListCount(&c->ast, nameList);
-                for (i = 0; i < nameCount; i++) {
-                    int32_t          nameNode = ListItemAt(&c->ast, nameList, i);
-                    const SLAstNode* name = NodeAt(c, nameNode);
-                    if (name == NULL) {
-                        return -1;
-                    }
-                    if (AddName(c, name->dataStart, name->dataEnd, n->kind, isExported) != 0) {
-                        return -1;
-                    }
-                }
-            } else if (GetDeclNameSpan(c, child, &start, &end) == 0) {
-                if (AddName(c, start, end, n->kind, isExported) != 0) {
-                    return -1;
-                }
-            }
         }
         child = AstNextSibling(&c->ast, child);
     }
@@ -2155,13 +2405,34 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             }
             {
                 char* normalized = DupAndReplaceDots(c, c->unit->source, n->dataStart, n->dataEnd);
-                const char* name = ResolveTypeName(c, n->dataStart, n->dataEnd);
+                char* normalizedDouble = NULL;
+                const char* name = ResolveTypeNameInScope(c, nodeId, n->dataStart, n->dataEnd);
                 if (normalized == NULL) {
                     SetDiagNode(c, nodeId, SLDiag_ARENA_OOM);
                     return -1;
                 }
                 if (!IsBuiltinType(normalized)) {
-                    const SLNameMap* map = FindNameByCString(c, normalized);
+                    const SLNameMap* map = FindNameByCName(c, name);
+                    if (map == NULL || !IsTypeDeclKind(map->kind)) {
+                        map = FindNameByCString(c, normalized);
+                    }
+                    int      hasDot = 0;
+                    uint32_t p;
+                    for (p = n->dataStart; p < n->dataEnd; p++) {
+                        if (c->unit->source[p] == '.') {
+                            hasDot = 1;
+                            break;
+                        }
+                    }
+                    if ((map == NULL || !IsTypeDeclKind(map->kind)) && hasDot) {
+                        normalizedDouble = DupAndReplaceDotsDouble(
+                            c, c->unit->source, n->dataStart, n->dataEnd);
+                        if (normalizedDouble == NULL) {
+                            SetDiagNode(c, nodeId, SLDiag_ARENA_OOM);
+                            return -1;
+                        }
+                        map = FindNameByCString(c, normalizedDouble);
+                    }
                     if (map == NULL || !IsTypeDeclKind(map->kind)) {
                         SetDiag(c->diag, SLDiag_UNKNOWN_TYPE, n->dataStart, n->dataEnd);
                         return -1;
@@ -3349,7 +3620,11 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
     {
         return 0;
     }
-    mapName = FindNameBySlice(c, nameStart, nameEnd);
+    if (IsTypeDeclKind(n->kind)) {
+        mapName = FindTypeDeclMapByNode(c, nodeId);
+    } else {
+        mapName = FindNameBySlice(c, nameStart, nameEnd);
+    }
     if (mapName == NULL) {
         return 0;
     }
@@ -3835,7 +4110,7 @@ int CollectTypeAliasInfo(SLCBackendC* c) {
         if (n == NULL || n->kind != SLAst_TYPE_ALIAS) {
             continue;
         }
-        map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        map = FindTypeDeclMapByNode(c, nodeId);
         if (map == NULL) {
             return -1;
         }
@@ -3929,7 +4204,7 @@ int CollectVarSizeTypesFromDeclSets(SLCBackendC* c) {
         if (n == NULL || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION)) {
             continue;
         }
-        map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        map = FindTypeDeclMapByNode(c, nodeId);
         if (map == NULL) {
             continue;
         }
@@ -3944,7 +4219,7 @@ int CollectVarSizeTypesFromDeclSets(SLCBackendC* c) {
         if (n == NULL || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION)) {
             continue;
         }
-        map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        map = FindTypeDeclMapByNode(c, nodeId);
         if (map == NULL) {
             continue;
         }
@@ -4174,23 +4449,24 @@ const SLLocal* _Nullable FindLocalBySlice(const SLCBackendC* c, uint32_t start, 
     return NULL;
 }
 
+int FindEnumDeclNodeByCName(const SLCBackendC* c, const char* enumCName, int32_t* outNodeId);
+
 int FindEnumDeclNodeBySlice(
     const SLCBackendC* c, uint32_t start, uint32_t end, int32_t* outNodeId) {
-    uint32_t i;
+    const char*      enumCName;
+    const SLNameMap* map;
     if (outNodeId == NULL) {
         return -1;
     }
-    for (i = 0; i < c->topDeclLen; i++) {
-        int32_t          nodeId = c->topDecls[i].nodeId;
-        const SLAstNode* n = NodeAt(c, nodeId);
-        if (n != NULL && n->kind == SLAst_ENUM
-            && SliceSpanEq(c->unit->source, n->dataStart, n->dataEnd, start, end))
-        {
-            *outNodeId = nodeId;
-            return 0;
-        }
+    enumCName = ResolveTypeName((SLCBackendC*)c, start, end);
+    if (enumCName == NULL) {
+        return -1;
     }
-    return -1;
+    map = FindNameByCName(c, enumCName);
+    if (map == NULL || map->kind != SLAst_ENUM) {
+        return -1;
+    }
+    return FindEnumDeclNodeByCName(c, enumCName, outNodeId);
 }
 
 int EnumDeclHasMemberBySlice(
@@ -4227,6 +4503,69 @@ int EnumDeclHasMemberBySlice(
 
 int EnumDeclHasPayload(const SLCBackendC* c, int32_t enumNodeId);
 
+static int ResolveTypePathSpanByExpr(
+    const SLCBackendC* c, int32_t exprNode, uint32_t* outStart, uint32_t* outEnd) {
+    const SLAstNode* n = NodeAt(c, exprNode);
+    if (n == NULL) {
+        return 0;
+    }
+    if (n->kind == SLAst_IDENT) {
+        *outStart = n->dataStart;
+        *outEnd = n->dataEnd;
+        return 1;
+    }
+    if (n->kind == SLAst_FIELD_EXPR) {
+        int32_t recvNode = AstFirstChild(&c->ast, exprNode);
+        if (ResolveTypePathSpanByExpr(c, recvNode, outStart, outEnd)) {
+            *outEnd = n->dataEnd;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ResolveEnumTypeByPathExpr(
+    const SLCBackendC* c,
+    int32_t            exprNode,
+    const SLNameMap**  outEnumMap,
+    int32_t*           outEnumDeclNode) {
+    int32_t          rootNodeId = exprNode;
+    const SLAstNode* root = NodeAt(c, rootNodeId);
+    uint32_t         pathStart = 0;
+    uint32_t         pathEnd = 0;
+    const char*      enumCName;
+    const SLNameMap* map;
+    if (outEnumMap == NULL || outEnumDeclNode == NULL) {
+        return -1;
+    }
+    while (root != NULL && root->kind == SLAst_FIELD_EXPR) {
+        rootNodeId = AstFirstChild(&c->ast, rootNodeId);
+        root = NodeAt(c, rootNodeId);
+    }
+    if (root == NULL || root->kind != SLAst_IDENT) {
+        return 0;
+    }
+    if (FindLocalBySlice(c, root->dataStart, root->dataEnd) != NULL) {
+        return 0;
+    }
+    if (!ResolveTypePathSpanByExpr(c, exprNode, &pathStart, &pathEnd)) {
+        return 0;
+    }
+    enumCName = ResolveTypeName((SLCBackendC*)c, pathStart, pathEnd);
+    if (enumCName == NULL) {
+        return -1;
+    }
+    map = FindNameByCName(c, enumCName);
+    if (map == NULL || map->kind != SLAst_ENUM) {
+        return 0;
+    }
+    if (FindEnumDeclNodeByCName(c, enumCName, outEnumDeclNode) != 0) {
+        return -1;
+    }
+    *outEnumMap = map;
+    return 1;
+}
+
 int ResolveEnumSelectorByFieldExpr(
     const SLCBackendC* c,
     int32_t            fieldExprNode,
@@ -4237,8 +4576,6 @@ int ResolveEnumSelectorByFieldExpr(
     uint32_t* _Nullable outVariantEnd) {
     const SLAstNode* n = NodeAt(c, fieldExprNode);
     int32_t          recvNode;
-    const SLAstNode* recv;
-    const SLLocal*   local;
     const SLNameMap* map;
     int32_t          enumDeclNode;
 
@@ -4261,20 +4598,11 @@ int ResolveEnumSelectorByFieldExpr(
         return 0;
     }
     recvNode = AstFirstChild(&c->ast, fieldExprNode);
-    recv = NodeAt(c, recvNode);
-    if (recv == NULL || recv->kind != SLAst_IDENT) {
-        return 0;
-    }
-    local = FindLocalBySlice(c, recv->dataStart, recv->dataEnd);
-    if (local != NULL) {
-        return 0;
-    }
-    map = FindNameBySlice(c, recv->dataStart, recv->dataEnd);
-    if (map == NULL || map->kind != SLAst_ENUM) {
-        return 0;
-    }
-    if (FindEnumDeclNodeBySlice(c, recv->dataStart, recv->dataEnd, &enumDeclNode) != 0) {
-        return 0;
+    {
+        int rc = ResolveEnumTypeByPathExpr(c, recvNode, &map, &enumDeclNode);
+        if (rc <= 0) {
+            return rc;
+        }
     }
     if (!EnumDeclHasMemberBySlice(c, enumDeclNode, n->dataStart, n->dataEnd)) {
         return 0;
@@ -4351,7 +4679,7 @@ int FindEnumDeclNodeByCName(const SLCBackendC* c, const char* enumCName, int32_t
         if (n == NULL || n->kind != SLAst_ENUM) {
             continue;
         }
-        map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        map = FindTypeDeclMapByNode((SLCBackendC*)c, nodeId);
         if (map != NULL && StrEq(map->cName, enumCName)) {
             *outNodeId = nodeId;
             return 0;
@@ -4442,6 +4770,7 @@ int ResolveEnumVariantTypeNameNode(
     uint32_t*          outVariantEnd) {
     const SLAstNode* typeNameNode = NodeAt(c, typeNode);
     uint32_t         dotPos;
+    const char*      enumCName;
     const SLNameMap* enumMap;
     int32_t          enumDeclNode;
     if (typeNameNode == NULL || typeNameNode->kind != SLAst_TYPE_NAME) {
@@ -4459,11 +4788,15 @@ int ResolveEnumVariantTypeNameNode(
     {
         return 0;
     }
-    enumMap = FindNameBySlice(c, typeNameNode->dataStart, dotPos);
+    enumCName = ResolveTypeName((SLCBackendC*)c, typeNameNode->dataStart, dotPos);
+    if (enumCName == NULL) {
+        return -1;
+    }
+    enumMap = FindNameByCName(c, enumCName);
     if (enumMap == NULL || enumMap->kind != SLAst_ENUM) {
         return 0;
     }
-    if (FindEnumDeclNodeBySlice(c, typeNameNode->dataStart, dotPos, &enumDeclNode) != 0) {
+    if (FindEnumDeclNodeByCName(c, enumCName, &enumDeclNode) != 0) {
         return -1;
     }
     if (!EnumDeclHasMemberBySlice(c, enumDeclNode, dotPos + 1u, typeNameNode->dataEnd)) {

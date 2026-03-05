@@ -625,3 +625,14 @@
 {"id":"check:tests/unused_variable_never_read_warning_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok_stderr","mode":"check","input":"tests/unused_variable_never_read_warning_ok.sl","expect_stderr":"tests/unused_variable_never_read_warning_ok.stderr"}
 {"id":"check:tests/unused_parameter_warning_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok_stderr","mode":"check","input":"tests/unused_parameter_warning_ok.sl","expect_stderr":"tests/unused_parameter_warning_ok.stderr"}
 {"id":"check:tests/unused_parameter_never_read_warning_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok_stderr","mode":"check","input":"tests/unused_parameter_never_read_warning_ok.sl","expect_stderr":"tests/unused_parameter_never_read_warning_ok.stderr"}
+{"id":"check:tests/nested_types_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/nested_types_ok.sl"}
+{"id":"checkpkg:tests/nested_type_import_alias/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/nested_type_import_alias/app"}
+{"id":"checkpkg:tests/nested_type_import_named/app","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/nested_type_import_named/app"}
+{"id":"check:tests/nested_type_member_name_conflict_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/nested_type_member_name_conflict_bad.sl","expect_stderr":"tests/nested_type_member_name_conflict_bad.stderr"}
+{"id":"check:tests/nested_type_disallowed_fn_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/nested_type_disallowed_fn_bad.sl","expect_stderr":"tests/nested_type_disallowed_fn_bad.stderr"}
+{"id":"check:tests/nested_type_disallowed_const_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/nested_type_disallowed_const_bad.sl","expect_stderr":"tests/nested_type_disallowed_const_bad.stderr"}
+{"id":"check:tests/nested_type_unknown_member_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/nested_type_unknown_member_bad.sl","expect_stderr":"tests/nested_type_unknown_member_bad.stderr"}
+{"id":"integration.codegen.nested_types_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/nested_types_ok.sl","contains":["tests__Collection__Value","tests__Collection__Item","tests__Collection__Tag"]}
+{"id":"integration.runtime.nested_types_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/nested_types_ok.sl"}
+{"id":"integration.runtime.nested_type_import_alias.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/nested_type_import_alias/app"}
+{"id":"integration.runtime.nested_type_import_named.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/nested_type_import_named/app"}

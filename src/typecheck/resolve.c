@@ -234,9 +234,10 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                 return 0;
             }
             {
-                int32_t namedIndex = SLTCFindNamedTypeIndex(c, n->dataStart, n->dataEnd);
-                if (namedIndex >= 0) {
-                    *outType = c->namedTypes[namedIndex].typeId;
+                int32_t resolvedType = SLTCResolveTypeNamePath(
+                    c, n->dataStart, n->dataEnd, c->currentTypeOwnerTypeId);
+                if (resolvedType >= 0) {
+                    *outType = resolvedType;
                     if (*outType >= 0 && (uint32_t)*outType < c->typeLen
                         && c->types[*outType].kind == SLTCType_ALIAS
                         && SLTCResolveAliasTypeId(c, *outType) != 0)
@@ -612,7 +613,7 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     }
 }
 
-int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId) {
+int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, int32_t* outTypeId) {
     const SLAstNode* node = &c->ast->nodes[nodeId];
     SLTCType         t;
     int32_t          typeId;
@@ -622,7 +623,7 @@ int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId) {
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
     }
 
-    if (SLTCFindNamedTypeIndex(c, node->dataStart, node->dataEnd) >= 0) {
+    if (SLTCFindNamedTypeIndexOwned(c, ownerTypeId, node->dataStart, node->dataEnd) >= 0) {
         return SLTCFailSpan(c, SLDiag_DUPLICATE_SYMBOL, node->dataStart, node->dataEnd);
     }
 
@@ -651,27 +652,55 @@ int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId) {
     c->namedTypes[idx].nameEnd = node->dataEnd;
     c->namedTypes[idx].typeId = typeId;
     c->namedTypes[idx].declNode = nodeId;
+    c->namedTypes[idx].ownerTypeId = ownerTypeId;
+    if (outTypeId != NULL) {
+        *outTypeId = typeId;
+    }
     return 0;
 }
 
-int SLTCCollectTypeDeclsFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
+static int SLTCIsNamedTypeDeclKind(SLAstKind kind) {
+    return kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
+        || kind == SLAst_TYPE_ALIAS;
+}
+
+static int SLTCCollectTypeDeclsFromNodeWithOwner(
+    SLTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId) {
     SLAstKind kind = c->ast->nodes[nodeId].kind;
     if (kind == SLAst_PUB) {
         int32_t ch = SLAstFirstChild(c->ast, nodeId);
         while (ch >= 0) {
-            if (SLTCCollectTypeDeclsFromNode(c, ch) != 0) {
+            if (SLTCCollectTypeDeclsFromNodeWithOwner(c, ch, ownerTypeId) != 0) {
                 return -1;
             }
             ch = SLAstNextSibling(c->ast, ch);
         }
         return 0;
     }
-    if (kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
-        || kind == SLAst_TYPE_ALIAS)
-    {
-        return SLTCAddNamedType(c, nodeId);
+    if (SLTCIsNamedTypeDeclKind(kind)) {
+        int32_t declaredTypeId = -1;
+        if (SLTCAddNamedType(c, nodeId, ownerTypeId, &declaredTypeId) != 0) {
+            return -1;
+        }
+        if (kind == SLAst_STRUCT || kind == SLAst_UNION) {
+            int32_t child = SLAstFirstChild(c->ast, nodeId);
+            while (child >= 0) {
+                SLAstKind childKind = c->ast->nodes[child].kind;
+                if (SLTCIsNamedTypeDeclKind(childKind)
+                    && SLTCCollectTypeDeclsFromNodeWithOwner(c, child, declaredTypeId) != 0)
+                {
+                    return -1;
+                }
+                child = SLAstNextSibling(c->ast, child);
+            }
+        }
+        return 0;
     }
     return 0;
+}
+
+int SLTCCollectTypeDeclsFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
+    return SLTCCollectTypeDeclsFromNodeWithOwner(c, nodeId, -1);
 }
 
 int SLTCIsIntegerType(SLTypeCheckCtx* c, int32_t typeId) {

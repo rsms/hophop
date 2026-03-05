@@ -92,6 +92,7 @@ typedef struct {
     uint32_t nameEnd;
     int32_t  typeId;
     int32_t  declNode;
+    int32_t  ownerTypeId;
 } SLTCNamedType;
 
 typedef struct {
@@ -262,6 +263,7 @@ typedef struct {
     int32_t           currentFunctionIndex;
     int               currentFunctionIsCompareHook;
     int32_t           activeTypeParamFnNode;
+    int32_t           currentTypeOwnerTypeId;
     SLTCConstEvalCtx* activeConstEvalCtx;
     uint8_t           compilerDiagPathProven;
     uint8_t           allowAnytypeParamType;
@@ -610,12 +612,16 @@ uint64_t SLTCEncodeTypeTag(SLTypeCheckCtx* c, int32_t typeId);
 int      SLTCDecodeTypeTag(SLTypeCheckCtx* c, uint64_t typeTag, int32_t* outTypeId);
 int32_t  SLTCResolveTypeValueName(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t  SLTCFindNamedTypeIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
-int32_t  SLTCFindNamedTypeByLiteral(SLTypeCheckCtx* c, const char* name);
-int32_t  SLTCFindBuiltinNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix);
-int32_t  SLTCFindNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix);
-int32_t  SLTCFindReflectKindType(SLTypeCheckCtx* c);
-int      SLTCNameEqLiteralOrPkgBuiltin(
-         SLTypeCheckCtx* c, uint32_t start, uint32_t end, const char* name, const char* pkgPrefix);
+int32_t  SLTCFindNamedTypeIndexOwned(
+     SLTypeCheckCtx* c, int32_t ownerTypeId, uint32_t start, uint32_t end);
+int32_t SLTCResolveTypeNamePath(
+    SLTypeCheckCtx* c, uint32_t start, uint32_t end, int32_t ownerTypeId);
+int32_t SLTCFindNamedTypeByLiteral(SLTypeCheckCtx* c, const char* name);
+int32_t SLTCFindBuiltinNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix);
+int32_t SLTCFindNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix);
+int32_t SLTCFindReflectKindType(SLTypeCheckCtx* c);
+int     SLTCNameEqLiteralOrPkgBuiltin(
+        SLTypeCheckCtx* c, uint32_t start, uint32_t end, const char* name, const char* pkgPrefix);
 SLTCCompilerDiagOp SLTCCompilerDiagOpFromName(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int                SLTCIsSpanOfName(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t            SLTCFindReflectSpanType(SLTypeCheckCtx* c);
@@ -798,7 +804,7 @@ int     SLTCFnNodeHasTypeParamName(
 int SLTCResolveActiveTypeParamType(
     SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int32_t* outType);
 int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
-int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId);
+int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, int32_t* outTypeId);
 int SLTCCollectTypeDeclsFromNode(SLTypeCheckCtx* c, int32_t nodeId);
 int SLTCIsIntegerType(SLTypeCheckCtx* c, int32_t typeId);
 int SLTCIsConstNumericType(SLTypeCheckCtx* c, int32_t typeId);

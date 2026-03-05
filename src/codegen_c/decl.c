@@ -1,6 +1,17 @@
 #include "internal.h"
 
 SL_API_BEGIN
+static const SLNameMap* _Nullable FindDeclMap(SLCBackendC* c, int32_t nodeId) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    if (n == NULL) {
+        return NULL;
+    }
+    if (IsTypeDeclKind(n->kind)) {
+        return FindTypeDeclMapByNode(c, nodeId);
+    }
+    return FindNameBySlice(c, n->dataStart, n->dataEnd);
+}
+
 int IsMainFunctionNode(const SLCBackendC* c, int32_t nodeId) {
     const SLAstNode* n = NodeAt(c, nodeId);
     return n != NULL && n->kind == SLAst_FN
@@ -13,7 +24,7 @@ int IsExplicitlyExportedNode(const SLCBackendC* c, int32_t nodeId) {
     if (n == NULL) {
         return 0;
     }
-    map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+    map = FindDeclMap((SLCBackendC*)c, nodeId);
     return map != NULL && map->kind == n->kind && map->isExported;
 }
 
@@ -30,13 +41,12 @@ int IsExportedTypeNode(const SLCBackendC* c, int32_t nodeId) {
     if (n == NULL || !IsTypeDeclKind(n->kind)) {
         return 0;
     }
-    map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+    map = FindDeclMap((SLCBackendC*)c, nodeId);
     return map != NULL && IsTypeDeclKind(map->kind) && map->isExported;
 }
 
 int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+    const SLNameMap* map = FindDeclMap(c, nodeId);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
     int              hasPayload = EnumDeclHasPayload(c, nodeId);
     int              first = 1;
@@ -254,8 +264,7 @@ int NodeHasDirectDependentFields(SLCBackendC* c, int32_t nodeId) {
 }
 
 int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+    const SLNameMap* map = FindDeclMap(c, nodeId);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
     int              emittedHelper = 0;
 
@@ -521,8 +530,7 @@ int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
 }
 
 int EmitStructOrUnionDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int isUnion) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+    const SLNameMap* map = FindDeclMap(c, nodeId);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
 
     if (!isUnion && NodeHasDirectDependentFields(c, nodeId)) {
@@ -577,7 +585,7 @@ int EmitForwardTypeDecls(SLCBackendC* c) {
         if (!ShouldEmitDeclNode(c, nodeId)) {
             continue;
         }
-        map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        map = FindDeclMap(c, nodeId);
         if (map == NULL) {
             continue;
         }
@@ -638,7 +646,7 @@ int EmitForwardTypeDecls(SLCBackendC* c) {
         if (!ShouldEmitDeclNode(c, nodeId)) {
             continue;
         }
-        map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+        map = FindDeclMap(c, nodeId);
         if (map == NULL) {
             continue;
         }
@@ -1368,8 +1376,7 @@ int EmitVarDecl(
 
 int EmitTypeAliasDecl(
     SLCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    const SLNameMap* map = FindNameBySlice(c, n->dataStart, n->dataEnd);
+    const SLNameMap* map = FindDeclMap(c, nodeId);
     int32_t          targetNode = AstFirstChild(&c->ast, nodeId);
     (void)declarationOnly;
     (void)isPrivate;

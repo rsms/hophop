@@ -205,6 +205,12 @@ int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
                 fieldTypesForDefaults[currentFieldOrdinal] = typeId;
             }
 
+            if (kind == SLAst_STRUCT || kind == SLAst_UNION) {
+                if (SLTCFindNamedTypeIndexOwned(c, nt->typeId, n->dataStart, n->dataEnd) >= 0) {
+                    return SLTCFailSpan(c, SLDiag_DUPLICATE_SYMBOL, n->dataStart, n->dataEnd);
+                }
+            }
+
             for (i = 0; i < fieldCount; i++) {
                 if (SLNameEqSlice(
                         c->src,
@@ -295,9 +301,13 @@ int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
 int SLTCResolveAllNamedTypeFields(SLTypeCheckCtx* c) {
     uint32_t i;
     for (i = 0; i < c->namedTypeLen; i++) {
+        int32_t savedOwnerTypeId = c->currentTypeOwnerTypeId;
+        c->currentTypeOwnerTypeId = c->namedTypes[i].typeId;
         if (SLTCResolveNamedTypeFields(c, i) != 0) {
+            c->currentTypeOwnerTypeId = savedOwnerTypeId;
             return -1;
         }
+        c->currentTypeOwnerTypeId = savedOwnerTypeId;
     }
     return 0;
 }
@@ -306,11 +316,15 @@ int SLTCResolveAllTypeAliases(SLTypeCheckCtx* c) {
     uint32_t i;
     for (i = 0; i < c->namedTypeLen; i++) {
         int32_t typeId = c->namedTypes[i].typeId;
+        int32_t savedOwnerTypeId = c->currentTypeOwnerTypeId;
+        c->currentTypeOwnerTypeId = c->namedTypes[i].ownerTypeId;
         if (typeId >= 0 && (uint32_t)typeId < c->typeLen && c->types[typeId].kind == SLTCType_ALIAS
             && SLTCResolveAliasTypeId(c, typeId) != 0)
         {
+            c->currentTypeOwnerTypeId = savedOwnerTypeId;
             return -1;
         }
+        c->currentTypeOwnerTypeId = savedOwnerTypeId;
     }
     return 0;
 }
@@ -1042,6 +1056,38 @@ int SLTCCasePatternParts(
     return 0;
 }
 
+static int SLTCResolveTypePathExprType(
+    SLTypeCheckCtx* c, int32_t exprNode, int32_t ownerTypeId, int32_t* outTypeId) {
+    const SLAstNode* n;
+    if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[exprNode];
+    if (n->kind == SLAst_IDENT) {
+        int32_t typeId = SLTCResolveTypeNamePath(c, n->dataStart, n->dataEnd, ownerTypeId);
+        if (typeId < 0) {
+            return 0;
+        }
+        *outTypeId = typeId;
+        return 1;
+    }
+    if (n->kind == SLAst_FIELD_EXPR) {
+        int32_t recvNode = SLAstFirstChild(c->ast, exprNode);
+        int32_t recvTypeId;
+        int32_t childIdx;
+        if (recvNode < 0 || !SLTCResolveTypePathExprType(c, recvNode, ownerTypeId, &recvTypeId)) {
+            return 0;
+        }
+        childIdx = SLTCFindNamedTypeIndexOwned(c, recvTypeId, n->dataStart, n->dataEnd);
+        if (childIdx < 0) {
+            return 0;
+        }
+        *outTypeId = c->namedTypes[(uint32_t)childIdx].typeId;
+        return 1;
+    }
+    return 0;
+}
+
 int SLTCDecodeVariantPatternExpr(
     SLTypeCheckCtx* c,
     int32_t         exprNode,
@@ -1050,10 +1096,8 @@ int SLTCDecodeVariantPatternExpr(
     uint32_t*       outVariantEnd) {
     const SLAstNode* n;
     int32_t          recvNode;
-    const SLAstNode* recv;
-    int32_t          namedIndex;
     int32_t          enumTypeId;
-    int32_t          declNode;
+    int32_t          recvTypeId;
     int32_t          ignoredType;
     n = &c->ast->nodes[exprNode];
     if (n->kind != SLAst_FIELD_EXPR) {
@@ -1063,19 +1107,11 @@ int SLTCDecodeVariantPatternExpr(
     if (recvNode < 0) {
         return 0;
     }
-    recv = &c->ast->nodes[recvNode];
-    if (recv->kind != SLAst_IDENT) {
+    if (!SLTCResolveTypePathExprType(c, recvNode, c->currentTypeOwnerTypeId, &recvTypeId)) {
         return 0;
     }
-    namedIndex = SLTCFindNamedTypeIndex(c, recv->dataStart, recv->dataEnd);
-    if (namedIndex < 0) {
-        return 0;
-    }
-    enumTypeId = c->namedTypes[(uint32_t)namedIndex].typeId;
-    declNode = c->namedTypes[(uint32_t)namedIndex].declNode;
-    if (declNode < 0 || (uint32_t)declNode >= c->ast->len
-        || c->ast->nodes[declNode].kind != SLAst_ENUM)
-    {
+    enumTypeId = SLTCResolveAliasBaseType(c, recvTypeId);
+    if (!SLTCIsNamedDeclKind(c, enumTypeId, SLAst_ENUM)) {
         return 0;
     }
     if (SLTCFieldLookup(c, enumTypeId, n->dataStart, n->dataEnd, &ignoredType, NULL) != 0) {
@@ -1110,11 +1146,12 @@ int SLTCResolveEnumVariantTypeName(
     if (dot <= n->dataStart || c->src.ptr[dot] != '.' || dot + 1u >= n->dataEnd) {
         return 0;
     }
-    namedIdx = SLTCFindNamedTypeIndex(c, n->dataStart, dot);
-    if (namedIdx < 0) {
+    (void)namedIdx;
+    enumTypeId = SLTCResolveTypeNamePath(c, n->dataStart, dot, c->currentTypeOwnerTypeId);
+    if (enumTypeId < 0) {
         return 0;
     }
-    enumTypeId = c->namedTypes[(uint32_t)namedIdx].typeId;
+    enumTypeId = SLTCResolveAliasBaseType(c, enumTypeId);
     if (!SLTCIsNamedDeclKind(c, enumTypeId, SLAst_ENUM)) {
         return 0;
     }
