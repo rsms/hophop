@@ -1,1 +1,1 @@
-tests/slp29_for_in_source_bad.sl:3:11: SL2086: for-in source must support sequence iteration or iterator protocol hooks
+tests/slp29_for_in_source_bad.sl:3:11: SL2086: for-in source must support sequence iteration or iterator protocol

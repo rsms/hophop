@@ -65,6 +65,7 @@
 {"id":"check:tests/feature_optional_escape_import_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/feature_optional_escape_import_ok.sl"}
 {"id":"check:tests/feature_optional_raw_import_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/feature_optional_raw_import_ok.sl"}
 {"id":"check:tests/optional_value_if_eval_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/optional_value_if_eval_ok.sl"}
+{"id":"check:tests/optional_tuple_return_expr_list_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/optional_tuple_return_expr_list_ok.sl"}
 {"id":"check:tests/string_literals_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/string_literals_ok.sl"}
 {"id":"check:tests/rune_literals_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/rune_literals_ok.sl"}
 {"id":"check:tests/slp3_null_unwrap.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/slp3_null_unwrap.sl"}
@@ -286,6 +287,7 @@
 {"id":"integration.runtime.run_eval_top_var_unsupported.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/run_eval_top_var_unsupported.sl","platform":"cli-eval","expect_nonzero":true,"stdout_empty":true,"stderr_empty":false,"stderr_contains":"SL4003: evaluator backend: identifier is not available in evaluator backend"}
 {"id":"integration.runtime.optional_value_if_eval_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/optional_value_if_eval_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"pass"}
 {"id":"integration.runtime.optional_value_if_eval_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/optional_value_if_eval_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
+{"id":"integration.runtime.optional_tuple_return_expr_list_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/optional_tuple_return_expr_list_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"check:tests/consteval_catalog.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/consteval_catalog.sl"}
 {"id":"check:tests/reflection_typeof_type_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/reflection_typeof_type_ok.sl"}
 {"id":"check:tests/reflection_typeof_bad_arity.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/reflection_typeof_bad_arity.sl","expect_stderr":"tests/reflection_typeof_bad_arity.stderr"}

@@ -1,6 +1,7 @@
 // Iterator protocol for `for ... in`
 // - protocol hooks: `__iterator(source)` + `next_value(it *Iter) ?T`
 // - supports by-value (`value`) and by-reference (`&value`) bindings
+// - keyed loops can use `next_key` and/or `next_key_and_value`
 // - can model finite and infinite iterables
 // ---------- linked-list example ----------
 struct ListEntry {
@@ -85,6 +86,87 @@ fn next_value(it *CounterIterator) ?i32 {
 	return cur
 }
 
+// ---------- keyed table example ----------
+struct KVEntry {
+	key   &str
+	value i32
+}
+
+struct KVTable {
+	entries *[KVEntry]
+}
+
+struct KVIterator {
+	entries *[KVEntry]
+	index   uint
+}
+
+fn __iterator(table *KVTable) KVIterator {
+	return { entries: table.entries }
+}
+
+fn next_value(it *KVIterator) ?i32 {
+	if it.index >= len(it.entries) {
+		return null
+	}
+	var value = it.entries[it.index].value
+	it.index += 1
+	return value
+}
+
+fn next_key(it *KVIterator) ?&str {
+	if it.index >= len(it.entries) {
+		return null
+	}
+	var key = it.entries[it.index].key
+	it.index += 1
+	return key
+}
+
+fn next_key_and_value(it *KVIterator) ?(&str, *i32) {
+	if it.index >= len(it.entries) {
+		return null
+	}
+	var entry = &it.entries[it.index]
+	it.index += 1
+	return entry.key, &entry.value
+}
+
+fn sum_key_lengths(table *KVTable) uint {
+	var sum uint
+	for key, _ in table {
+		sum += len(key)
+	}
+	return sum
+}
+
+fn sum_table_values(table *KVTable) i32 {
+	var sum i32
+	for key, value in table {
+		if len(key) == 0 {
+			assert false
+		}
+		sum += value
+	}
+	return sum
+}
+
+fn bump_two_char_keys(table *KVTable) {
+	for key, &value in table {
+		if len(key) == 2 {
+			*value += 100
+		}
+	}
+}
+
+fn sum_table_values_from_next_value(table *KVTable) i32 {
+	var sum i32
+	for value in table {
+		sum += value
+	}
+	return sum
+}
+
 fn main() {
 	// SLP-29 sequence iteration still works.
 	var a [i32 4]
@@ -118,4 +200,19 @@ fn main() {
 		first_five_sum += n
 	}
 	assert first_five_sum == 15
+
+	// Keyed iteration with next_key and next_key_and_value.
+	var entries [KVEntry 3]
+	entries[0] = KVEntry{ key: "aa", value: 2 }
+	entries[1] = KVEntry{ key: "bbb", value: 3 }
+	entries[2] = KVEntry{ key: "c", value: 4 }
+	var table = KVTable{ entries: entries[:] }
+
+	assert sum_key_lengths(&table) == 6
+	assert sum_table_values(&table) == 9
+	bump_two_char_keys(&table)
+	assert entries[0].value == 102
+	assert entries[1].value == 3
+	assert entries[2].value == 4
+	assert sum_table_values_from_next_value(&table) == 109
 }

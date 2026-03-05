@@ -10734,21 +10734,54 @@ int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             if (expr >= 0) {
                 if (NodeAt(c, expr) != NULL && NodeAt(c, expr)->kind == SLAst_EXPR_LIST) {
                     const SLAnonTypeInfo* tupleInfo = NULL;
+                    SLTypeRef             tupleType;
+                    SLTypeRef             payloadType;
+                    SLTypeRef             optionalStorageType;
+                    int                   wrapOptionalTuple = 0;
                     uint32_t              i;
                     int32_t               itemNode;
-                    if (!c->hasCurrentReturnType
-                        || !TypeRefTupleInfo(c, &c->currentReturnType, &tupleInfo))
-                    {
+                    TypeRefSetInvalid(&tupleType);
+                    TypeRefSetInvalid(&payloadType);
+                    TypeRefSetInvalid(&optionalStorageType);
+                    if (!c->hasCurrentReturnType) {
                         return -1;
+                    }
+                    tupleType = c->currentReturnType;
+                    if (!TypeRefTupleInfo(c, &tupleType, &tupleInfo)) {
+                        if (!TypeRefOptionalPayloadTypeExpr(&c->currentReturnType, &payloadType)
+                            || !TypeRefTupleInfo(c, &payloadType, &tupleInfo))
+                        {
+                            return -1;
+                        }
+                        tupleType = payloadType;
+                        wrapOptionalTuple = 1;
                     }
                     if (ListCount(&c->ast, expr) != tupleInfo->fieldCount) {
                         return -1;
                     }
-                    if (BufAppendCStr(&c->out, " ((") != 0
-                        || EmitTypeNameWithDepth(c, &c->currentReturnType) != 0
-                        || BufAppendCStr(&c->out, "){") != 0)
-                    {
-                        return -1;
+                    if (wrapOptionalTuple) {
+                        if (!TypeRefIsTaggedOptional(&c->currentReturnType)
+                            || TypeRefLowerForStorage(
+                                   c, &c->currentReturnType, &optionalStorageType)
+                                   != 0)
+                        {
+                            return -1;
+                        }
+                        if (BufAppendCStr(&c->out, " ((") != 0
+                            || EmitTypeNameWithDepth(c, &optionalStorageType) != 0
+                            || BufAppendCStr(&c->out, "){ .__sl_tag = 1u, .__sl_value = ((") != 0
+                            || EmitTypeNameWithDepth(c, &tupleType) != 0
+                            || BufAppendCStr(&c->out, "){") != 0)
+                        {
+                            return -1;
+                        }
+                    } else {
+                        if (BufAppendCStr(&c->out, " ((") != 0
+                            || EmitTypeNameWithDepth(c, &tupleType) != 0
+                            || BufAppendCStr(&c->out, "){") != 0)
+                        {
+                            return -1;
+                        }
                     }
                     itemNode = AstFirstChild(&c->ast, expr);
                     for (i = 0; i < tupleInfo->fieldCount; i++) {
@@ -10768,8 +10801,17 @@ int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                         }
                         itemNode = AstNextSibling(&c->ast, itemNode);
                     }
-                    if (itemNode >= 0 || BufAppendCStr(&c->out, "})") != 0) {
+                    if (itemNode >= 0) {
                         return -1;
+                    }
+                    if (wrapOptionalTuple) {
+                        if (BufAppendCStr(&c->out, "}) })") != 0) {
+                            return -1;
+                        }
+                    } else {
+                        if (BufAppendCStr(&c->out, "})") != 0) {
+                            return -1;
+                        }
                     }
                 } else {
                     if (BufAppendChar(&c->out, ' ') != 0

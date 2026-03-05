@@ -1374,14 +1374,25 @@ int SLTCTypeStmt(
             }
             if (c->ast->nodes[expr].kind == SLAst_EXPR_LIST) {
                 const SLTCType* rt;
+                const SLTCType* payload = NULL;
                 uint32_t        wantCount;
                 uint32_t        i;
                 if (returnType < 0 || (uint32_t)returnType >= c->typeLen) {
                     return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
                 }
                 rt = &c->types[returnType];
-                if (rt->kind != SLTCType_TUPLE) {
+                if (rt->kind == SLTCType_OPTIONAL && rt->baseType >= 0
+                    && (uint32_t)rt->baseType < c->typeLen)
+                {
+                    payload = &c->types[rt->baseType];
+                }
+                if (rt->kind != SLTCType_TUPLE
+                    && !(payload != NULL && payload->kind == SLTCType_TUPLE))
+                {
                     return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                }
+                if (payload != NULL && payload->kind == SLTCType_TUPLE) {
+                    rt = payload;
                 }
                 wantCount = rt->fieldCount;
                 if (SLTCListCount(c->ast, expr) != wantCount) {

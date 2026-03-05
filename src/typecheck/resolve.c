@@ -479,11 +479,21 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
             uint32_t paramCount = 0;
             int      isVariadic = 0;
             int      sawReturnType = 0;
+            int32_t  savedParamTypes[SLTC_MAX_CALL_ARGS];
+            uint8_t  savedParamFlags[SLTC_MAX_CALL_ARGS];
             while (child >= 0) {
                 const SLAstNode* ch = &c->ast->nodes[child];
                 if (ch->flags == 1) {
+                    uint32_t i;
                     if (sawReturnType) {
                         return SLTCFailNode(c, child, SLDiag_EXPECTED_TYPE);
+                    }
+                    if (paramCount > SLTC_MAX_CALL_ARGS) {
+                        return SLTCFailNode(c, child, SLDiag_ARENA_OOM);
+                    }
+                    for (i = 0; i < paramCount; i++) {
+                        savedParamTypes[i] = c->scratchParamTypes[i];
+                        savedParamFlags[i] = c->scratchParamFlags[i];
                     }
                     c->allowConstNumericTypeName = 1;
                     if (SLTCResolveTypeNode(c, child, &returnType) != 0) {
@@ -491,6 +501,10 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         return -1;
                     }
                     c->allowConstNumericTypeName = 0;
+                    for (i = 0; i < paramCount; i++) {
+                        c->scratchParamTypes[i] = savedParamTypes[i];
+                        c->scratchParamFlags[i] = savedParamFlags[i];
+                    }
                     if (SLTCTypeContainsVarSizeByValue(c, returnType)) {
                         return SLTCFailNode(c, child, SLDiag_TYPE_MISMATCH);
                     }
