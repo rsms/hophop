@@ -880,7 +880,7 @@ static int SLTCTypeForInStmt(
             SLTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
             return err;
         }
-        if (SLTCLocalAdd(c, keyName->dataStart, keyName->dataEnd, keyLocalType, 0) != 0) {
+        if (SLTCLocalAdd(c, keyName->dataStart, keyName->dataEnd, keyLocalType, 0, -1) != 0) {
             return -1;
         }
         SLTCMarkLocalWrite(c, (int32_t)c->localLen - 1);
@@ -892,7 +892,7 @@ static int SLTCTypeForInStmt(
             SLTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
             return err;
         }
-        if (SLTCLocalAdd(c, valueName->dataStart, valueName->dataEnd, valueLocalType, 0) != 0) {
+        if (SLTCLocalAdd(c, valueName->dataStart, valueName->dataEnd, valueLocalType, 0, -1) != 0) {
             return -1;
         }
         SLTCMarkLocalWrite(c, (int32_t)c->localLen - 1);
@@ -1123,7 +1123,8 @@ int SLTCTypeSwitchStmt(
                                 c->ast->nodes[aliasNode].dataStart,
                                 c->ast->nodes[aliasNode].dataEnd,
                                 subjectType,
-                                0)
+                                0,
+                                -1)
                             != 0)
                         {
                             c->localLen = savedLocalLen;
@@ -1621,7 +1622,8 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
                        paramType,
                        (c->funcParamFlags[fn->paramTypeStart + paramIndex]
                         & SLTCFuncParamFlag_CONST)
-                           != 0)
+                           != 0,
+                       -1)
                        != 0)
             {
                 return -1;
@@ -1679,7 +1681,7 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
             fnChild = SLAstNextSibling(c->ast, fnChild);
         }
         if (contextNameEnd <= contextNameStart
-            || SLTCLocalAdd(c, contextNameStart, contextNameEnd, contextLocalType, 0) != 0)
+            || SLTCLocalAdd(c, contextNameStart, contextNameEnd, contextLocalType, 0, -1) != 0)
         {
             c->currentFunctionIndex = savedFunctionIndex;
             c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;

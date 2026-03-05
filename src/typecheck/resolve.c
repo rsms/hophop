@@ -2,6 +2,26 @@
 
 SL_API_BEGIN
 
+static void SLTCInitConstEvalCtxFromParent(
+    SLTypeCheckCtx* c, const SLTCConstEvalCtx* _Nullable parent, SLTCConstEvalCtx* outCtx) {
+    if (outCtx == NULL) {
+        return;
+    }
+    memset(outCtx, 0, sizeof(*outCtx));
+    outCtx->tc = c;
+    if (parent == NULL) {
+        return;
+    }
+    outCtx->execCtx = parent->execCtx;
+    outCtx->callArgs = parent->callArgs;
+    outCtx->callArgCount = parent->callArgCount;
+    outCtx->callBinding = parent->callBinding;
+    outCtx->callPackParamNameStart = parent->callPackParamNameStart;
+    outCtx->callPackParamNameEnd = parent->callPackParamNameEnd;
+    outCtx->fnDepth = parent->fnDepth;
+    memcpy(outCtx->fnStack, parent->fnStack, sizeof(outCtx->fnStack));
+}
+
 int SLTCResolveAnonAggregateTypeNode(
     SLTypeCheckCtx* c, int32_t nodeId, int isUnion, int32_t* outType) {
     int32_t          fieldNode = SLAstFirstChild(c->ast, nodeId);
@@ -2424,16 +2444,9 @@ int SLTCCheckConstParamArgs(
         int              isConst = 0;
         int              evalIsConst = 0;
         SLCTFEValue      ignoredValue = { 0 };
-        SLTCConstEvalCtx evalCtx = {
-            .tc = c,
-            .execCtx = NULL,
-            .fnStack = { 0 },
-            .fnDepth = 0,
-            .nonConstReason = NULL,
-            .nonConstStart = 0,
-            .nonConstEnd = 0,
-        };
-        SLDiagCode code = SLDiag_CONST_PARAM_ARG_NOT_CONST;
+        SLTCConstEvalCtx evalCtx;
+        SLDiagCode       code = SLDiag_CONST_PARAM_ARG_NOT_CONST;
+        SLTCInitConstEvalCtxFromParent(c, c != NULL ? c->activeConstEvalCtx : NULL, &evalCtx);
         if (p < 0 || (uint32_t)p >= paramCount) {
             continue;
         }
@@ -2486,6 +2499,7 @@ int SLTCCheckConstBlocksForCall(
     uint32_t            variadicPackParamNameEnd = 0;
     int                 hasConstBlock = 0;
     uint32_t            savedLocalLen;
+    uint32_t            savedLocalUseLen;
     uint32_t            savedVariantNarrowLen;
     SLTCConstEvalCtx*   savedActiveConstEvalCtx;
     SLCTFEExecBinding*  paramBindings = NULL;
@@ -2535,6 +2549,7 @@ int SLTCCheckConstBlocksForCall(
     }
 
     savedLocalLen = c->localLen;
+    savedLocalUseLen = c->localUseLen;
     savedVariantNarrowLen = c->variantNarrowLen;
     savedActiveConstEvalCtx = c->activeConstEvalCtx;
 
@@ -2545,6 +2560,7 @@ int SLTCCheckConstBlocksForCall(
             (uint32_t)_Alignof(SLCTFEExecBinding));
         if (paramBindings == NULL) {
             c->localLen = savedLocalLen;
+            c->localUseLen = savedLocalUseLen;
             c->variantNarrowLen = savedVariantNarrowLen;
             c->activeConstEvalCtx = savedActiveConstEvalCtx;
             return SLTCFailNode(c, fnNode, SLDiag_ARENA_OOM);
@@ -2560,6 +2576,7 @@ int SLTCCheckConstBlocksForCall(
             int     addedLocal = 0;
             if (paramIndex >= fn->paramCount) {
                 c->localLen = savedLocalLen;
+                c->localUseLen = savedLocalUseLen;
                 c->variantNarrowLen = savedVariantNarrowLen;
                 c->activeConstEvalCtx = savedActiveConstEvalCtx;
                 return 0;
@@ -2569,9 +2586,10 @@ int SLTCCheckConstBlocksForCall(
                 (c->funcParamFlags[fn->paramTypeStart + paramIndex] & SLTCFuncParamFlag_CONST) != 0;
 
             if (!SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")
-                && SLTCLocalAdd(c, n->dataStart, n->dataEnd, paramType, isConstParam) != 0)
+                && SLTCLocalAdd(c, n->dataStart, n->dataEnd, paramType, isConstParam, -1) != 0)
             {
                 c->localLen = savedLocalLen;
+                c->localUseLen = savedLocalUseLen;
                 c->variantNarrowLen = savedVariantNarrowLen;
                 c->activeConstEvalCtx = savedActiveConstEvalCtx;
                 return -1;
@@ -2595,16 +2613,9 @@ int SLTCCheckConstBlocksForCall(
                 int32_t          argIndex = -1;
                 SLCTFEValue      value;
                 int              evalIsConst = 0;
-                SLTCConstEvalCtx evalArgCtx = {
-                    .tc = c,
-                    .execCtx = NULL,
-                    .fnStack = { 0 },
-                    .fnDepth = 0,
-                    .nonConstReason = NULL,
-                    .nonConstStart = 0,
-                    .nonConstEnd = 0,
-                };
-                uint32_t i;
+                SLTCConstEvalCtx evalArgCtx;
+                uint32_t         i;
+                SLTCInitConstEvalCtxFromParent(c, savedActiveConstEvalCtx, &evalArgCtx);
                 if (binding->isVariadic && paramIndex == binding->fixedCount) {
                     if (binding->spreadArgIndex != UINT32_MAX) {
                         argIndex = (int32_t)binding->spreadArgIndex;
@@ -2623,6 +2634,7 @@ int SLTCCheckConstBlocksForCall(
                         != 0)
                     {
                         c->localLen = savedLocalLen;
+                        c->localUseLen = savedLocalUseLen;
                         c->variantNarrowLen = savedVariantNarrowLen;
                         c->activeConstEvalCtx = savedActiveConstEvalCtx;
                         return -1;
@@ -2636,6 +2648,7 @@ int SLTCCheckConstBlocksForCall(
                             outError->argEnd = 0;
                         }
                         c->localLen = savedLocalLen;
+                        c->localUseLen = savedLocalUseLen;
                         c->variantNarrowLen = savedVariantNarrowLen;
                         c->activeConstEvalCtx = savedActiveConstEvalCtx;
                         return 1;
@@ -2657,6 +2670,7 @@ int SLTCCheckConstBlocksForCall(
     }
     if (paramIndex != fn->paramCount) {
         c->localLen = savedLocalLen;
+        c->localUseLen = savedLocalUseLen;
         c->variantNarrowLen = savedVariantNarrowLen;
         c->activeConstEvalCtx = savedActiveConstEvalCtx;
         return 0;
@@ -2703,6 +2717,7 @@ int SLTCCheckConstBlocksForCall(
                     outError->argEnd = 0;
                 }
                 c->localLen = savedLocalLen;
+                c->localUseLen = savedLocalUseLen;
                 c->variantNarrowLen = savedVariantNarrowLen;
                 c->activeConstEvalCtx = savedActiveConstEvalCtx;
                 return 1;
@@ -2712,6 +2727,7 @@ int SLTCCheckConstBlocksForCall(
             rc = SLCTFEExecEvalBlock(&execCtx, blockNode, &retValue, &didReturn, &isConst);
             if (rc != 0) {
                 c->localLen = savedLocalLen;
+                c->localUseLen = savedLocalUseLen;
                 c->variantNarrowLen = savedVariantNarrowLen;
                 c->activeConstEvalCtx = savedActiveConstEvalCtx;
                 return -1;
@@ -2729,6 +2745,7 @@ int SLTCCheckConstBlocksForCall(
                     outError->argEnd = 0;
                 }
                 c->localLen = savedLocalLen;
+                c->localUseLen = savedLocalUseLen;
                 c->variantNarrowLen = savedVariantNarrowLen;
                 c->activeConstEvalCtx = savedActiveConstEvalCtx;
                 return 1;
@@ -2738,6 +2755,7 @@ int SLTCCheckConstBlocksForCall(
     }
 
     c->localLen = savedLocalLen;
+    c->localUseLen = savedLocalUseLen;
     c->variantNarrowLen = savedVariantNarrowLen;
     c->activeConstEvalCtx = savedActiveConstEvalCtx;
     return 0;

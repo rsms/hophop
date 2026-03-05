@@ -122,7 +122,9 @@ typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
     int32_t  typeId;
+    int32_t  initExprNode;
     uint16_t flags;
+    uint16_t _reserved;
     uint32_t useIndex;
 } SLTCLocal;
 
@@ -991,7 +993,12 @@ int SLTCTypeTopLevelVarLikeNode(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t nameIndex, int32_t* outType);
 int32_t SLTCLocalFind(SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd);
 int     SLTCLocalAdd(
-        SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int32_t typeId, int isConst);
+        SLTypeCheckCtx* c,
+        uint32_t        nameStart,
+        uint32_t        nameEnd,
+        int32_t         typeId,
+        int             isConst,
+        int32_t         initExprNode);
 int SLTCVariantNarrowPush(
     SLTypeCheckCtx* c,
     int32_t         localIdx,

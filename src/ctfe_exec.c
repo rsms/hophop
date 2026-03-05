@@ -966,6 +966,9 @@ static int SLCTFEExecEvalStmt(
         int                  didReturn = 0;
         int                  isConst = 0;
         SLCTFEExecLoopAction loopAction = SLCTFEExecLoopAction_NONE;
+        if (c->skipConstBlocks) {
+            return 0;
+        }
         if (blockNode < 0 || c->ast->nodes[blockNode].kind != SLAst_BLOCK) {
             SLCTFEExecSetReasonNode(c, stmtNode, "const block is malformed for const evaluation");
             *outIsConst = 0;

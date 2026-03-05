@@ -1,4 +1,3 @@
-// consteval diagnostics from pure SL code
 import "compiler"
 import "reflect"
 
@@ -27,8 +26,6 @@ fn checked_buffer_size() i64 {
 	return require_non_zero(candidate, span: reflect.span_of(BUFFER_SIZE))
 }
 
-// Uncomment to see a compile-time error anchored to BAD_BUFFER_SIZE.
-// const BAD_BUFFER_SIZE i64 = require_non_zero(0 as i64, span: reflect.span_of(BAD_BUFFER_SIZE))
 fn main() {
-	assert BUFFER_SIZE == 64
+	assert BUFFER_SIZE == 64 as i64
 }

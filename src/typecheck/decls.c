@@ -828,7 +828,12 @@ int32_t SLTCLocalFind(SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd) {
 }
 
 int SLTCLocalAdd(
-    SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int32_t typeId, int isConst) {
+    SLTypeCheckCtx* c,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    int32_t         typeId,
+    int             isConst,
+    int32_t         initExprNode) {
     uint32_t localIdx;
     uint32_t useIdx;
     if (c->localLen >= c->localCap || c->localUseLen >= c->localUseCap || c->localUses == NULL) {
@@ -839,7 +844,9 @@ int SLTCLocalAdd(
     c->locals[localIdx].nameStart = nameStart;
     c->locals[localIdx].nameEnd = nameEnd;
     c->locals[localIdx].typeId = typeId;
+    c->locals[localIdx].initExprNode = initExprNode;
     c->locals[localIdx].flags = isConst ? SLTCLocalFlag_CONST : 0;
+    c->locals[localIdx]._reserved = 0;
     c->locals[localIdx].useIndex = useIdx;
     c->localUses[useIdx].nameStart = nameStart;
     c->localUses[useIdx].nameEnd = nameEnd;

@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "tests" / "tests.jsonl"
+EXAMPLES_ROOT = ROOT / "examples"
 ARENA_GROW_TEST_C_PATH = ROOT / "tests" / "harness" / "arena_grow_test.c"
 BUILTIN_H_PATH = ROOT / "lib" / "builtin" / "builtin.h"
 TEST_ROOT_IGNORED_NAMES = {"tests.jsonl", "README.md", "harness", ".DS_Store"}
@@ -27,6 +28,14 @@ PRETEST_FMT_STRICT_ROOTS = ("examples", "lib")
 PRETEST_FMT_DEFAULT_EXCLUDES = {"tests/fmt_canonical.sl"}
 DIAGNOSTICS_JSON = ROOT / "src" / "diagnostics.jsonl"
 DIAG_ID_RE = re.compile(r"\bSL\d{4}\b")
+MAIN_FN_RE = re.compile(r"(?m)^\s*fn\s+main\s*\(")
+EXAMPLE_COMPILE_SKIP: Set[str] = {
+    # Known C backend gaps (tracked outside test discovery wiring).
+    "examples/anytype.sl",
+    "examples/string-format.sl",
+    "examples/string-literal.sl",
+    "examples/tuples.sl",
+}
 
 
 @dataclass
@@ -154,6 +163,111 @@ def run_cmd(args: List[str], cwd: Optional[Path] = None) -> subprocess.Completed
 
 def normalize_rel_path(path: str) -> str:
     return Path(path).as_posix().rstrip("/")
+
+
+def case_signature(data: Dict[str, Any]) -> tuple[str, str, str]:
+    kind = str(data.get("kind", ""))
+    mode = str(data.get("mode", ""))
+    input_path = str(data.get("input", ""))
+    return kind, mode, normalize_rel_path(input_path)
+
+
+def has_main_function(path: Path) -> bool:
+    if path.is_file():
+        return MAIN_FN_RE.search(path.read_text()) is not None
+    if path.is_dir():
+        for source_path in sorted(path.rglob("*.sl")):
+            if source_path.is_file() and MAIN_FN_RE.search(source_path.read_text()) is not None:
+                return True
+    return False
+
+
+def discover_example_targets() -> tuple[List[str], List[str]]:
+    files: List[str] = []
+    package_dirs: Set[str] = set()
+
+    if not EXAMPLES_ROOT.exists():
+        return files, []
+
+    for path in sorted(EXAMPLES_ROOT.glob("*.sl")):
+        if path.is_file():
+            files.append(path.relative_to(ROOT).as_posix())
+
+    for path in sorted(EXAMPLES_ROOT.rglob("*.sl")):
+        if not path.is_file():
+            continue
+        parent = path.parent
+        if parent == EXAMPLES_ROOT:
+            continue
+        package_dirs.add(parent.relative_to(ROOT).as_posix())
+
+    return files, sorted(package_dirs)
+
+
+def build_auto_example_cases(manifest_cases: List[TestCase]) -> List[TestCase]:
+    files, package_dirs = discover_example_targets()
+    existing_ids: Set[str] = {case.id for case in manifest_cases}
+    existing_signatures: Set[tuple[str, str, str]] = {
+        case_signature(case.data) for case in manifest_cases
+    }
+    generated: List[TestCase] = []
+    next_index = len(manifest_cases)
+
+    def append_case(data: Dict[str, Any]) -> None:
+        nonlocal next_index
+        sig = case_signature(data)
+        case_id = str(data["id"])
+        if case_id in existing_ids or sig in existing_signatures:
+            return
+        existing_ids.add(case_id)
+        existing_signatures.add(sig)
+        generated.append(TestCase(index=next_index, data=data))
+        next_index += 1
+
+    for rel in files:
+        slug = sanitize_name(rel)
+        append_case(
+            {
+                "id": f"auto.examples.checkpkg.file.{slug}",
+                "suite": "integration.examples.auto.checkpkg",
+                "kind": "slc_ok",
+                "mode": "checkpkg",
+                "input": rel,
+            }
+        )
+        if rel not in EXAMPLE_COMPILE_SKIP:
+            append_case(
+                {
+                    "id": f"auto.examples.compile.file.{slug}",
+                    "suite": "integration.examples.auto.compile",
+                    "kind": "compile_only",
+                    "input": rel,
+                }
+            )
+
+    for rel in package_dirs:
+        abs_pkg = abs_path(rel)
+        slug = sanitize_name(rel)
+        append_case(
+            {
+                "id": f"auto.examples.checkpkg.pkg.{slug}",
+                "suite": "integration.examples.auto.checkpkg",
+                "kind": "slc_ok",
+                "mode": "checkpkg",
+                "input": rel,
+            }
+        )
+        if has_main_function(abs_pkg):
+            append_case(
+                {
+                    "id": f"auto.examples.compile.pkg.{slug}",
+                    "suite": "integration.examples.auto.compile",
+                    "kind": "compile_only",
+                    "input": rel,
+                }
+            )
+
+    return generated
 
 
 def collect_pretest_fmt_exemptions(cases: List[TestCase]) -> Tuple[Set[str], List[str]]:
@@ -1083,6 +1197,7 @@ def load_cases(manifest: Path) -> List[TestCase]:
             ids.add(case_id)
             cases.append(TestCase(index=len(cases), data=data))
 
+    cases.extend(build_auto_example_cases(cases))
     return cases
 
 

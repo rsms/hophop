@@ -5,8 +5,8 @@
 // - len/cstr builtins and receiver sugar
 // - concat allocation and free with allocator/context
 struct AppContext {
-	mem     *Allocator
-	console i32
+	mem *Allocator
+	log Logger
 }
 
 fn run() context AppContext {
@@ -45,5 +45,5 @@ fn run() context AppContext {
 }
 
 fn main() {
-	run() with { mem, console: 0 }
+	run() with { mem, log }
 }

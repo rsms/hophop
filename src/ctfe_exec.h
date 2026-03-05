@@ -65,6 +65,8 @@ typedef struct {
 
     int32_t  pendingReturnExprNode;
     uint32_t forIterLimit;
+    uint8_t  skipConstBlocks;
+    uint8_t  _reserved[3];
 } SLCTFEExecCtx;
 
 void SLCTFEExecResetReason(SLCTFEExecCtx* _Nonnull c);

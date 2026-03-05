@@ -4,6 +4,8 @@ SL_API_BEGIN
 
 static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outCallArgIndex);
+static int SLTCConstEvalDirectCall(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
 static int SLTCConstEvalSetOptionalNoneValue(
     SLTypeCheckCtx* c, int32_t optionalTypeId, SLCTFEValue* outValue);
 static int SLTCConstEvalSetOptionalSomeValue(
@@ -44,6 +46,397 @@ void SLTCAttachConstEvalReason(SLTypeCheckCtx* c) {
     c->diag->detail = SLTCAllocDiagText(c, c->lastConstEvalReason);
 }
 
+static void SLTCConstEvalValueInvalid(SLCTFEValue* v) {
+    if (v == NULL) {
+        return;
+    }
+    v->kind = SLCTFEValue_INVALID;
+    v->i64 = 0;
+    v->f64 = 0.0;
+    v->b = 0;
+    v->typeTag = 0;
+    v->s.bytes = NULL;
+    v->s.len = 0;
+    v->span.fileBytes = NULL;
+    v->span.fileLen = 0;
+    v->span.startLine = 0;
+    v->span.startColumn = 0;
+    v->span.endLine = 0;
+    v->span.endColumn = 0;
+}
+
+static int SLTCConstEvalValueToF64(const SLCTFEValue* value, double* out) {
+    if (value == NULL || out == NULL) {
+        return 0;
+    }
+    if (value->kind == SLCTFEValue_INT) {
+        *out = (double)value->i64;
+        return 1;
+    }
+    if (value->kind == SLCTFEValue_FLOAT) {
+        *out = value->f64;
+        return 1;
+    }
+    return 0;
+}
+
+static int SLTCConstEvalStringEq(const SLCTFEString* a, const SLCTFEString* b) {
+    if (a == NULL || b == NULL) {
+        return 0;
+    }
+    if (a->len != b->len) {
+        return 0;
+    }
+    if (a->len == 0) {
+        return 1;
+    }
+    return memcmp(a->bytes, b->bytes, a->len) == 0;
+}
+
+static int SLTCConstEvalStringConcat(
+    SLTypeCheckCtx* c, const SLCTFEString* a, const SLCTFEString* b, SLCTFEString* out) {
+    uint64_t totalLen64;
+    uint32_t totalLen;
+    uint8_t* bytes;
+    if (c == NULL || a == NULL || b == NULL || out == NULL) {
+        return -1;
+    }
+    totalLen64 = (uint64_t)a->len + (uint64_t)b->len;
+    if (totalLen64 > UINT32_MAX) {
+        return 0;
+    }
+    totalLen = (uint32_t)totalLen64;
+    if (totalLen == 0) {
+        out->bytes = NULL;
+        out->len = 0;
+        return 1;
+    }
+    bytes = (uint8_t*)SLArenaAlloc(c->arena, totalLen, (uint32_t)_Alignof(uint8_t));
+    if (bytes == NULL) {
+        return -1;
+    }
+    if (a->len > 0) {
+        memcpy(bytes, a->bytes, a->len);
+    }
+    if (b->len > 0) {
+        memcpy(bytes + a->len, b->bytes, b->len);
+    }
+    out->bytes = bytes;
+    out->len = totalLen;
+    return 1;
+}
+
+static int SLTCConstEvalAddI64(int64_t a, int64_t b, int64_t* out) {
+#if __has_builtin(__builtin_add_overflow)
+    return __builtin_add_overflow(a, b, out) ? -1 : 0;
+#else
+    if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b)) {
+        return -1;
+    }
+    *out = a + b;
+    return 0;
+#endif
+}
+
+static int SLTCConstEvalSubI64(int64_t a, int64_t b, int64_t* out) {
+#if __has_builtin(__builtin_sub_overflow)
+    return __builtin_sub_overflow(a, b, out) ? -1 : 0;
+#else
+    if ((b > 0 && a < INT64_MIN + b) || (b < 0 && a > INT64_MAX + b)) {
+        return -1;
+    }
+    *out = a - b;
+    return 0;
+#endif
+}
+
+static int SLTCConstEvalMulI64(int64_t a, int64_t b, int64_t* out) {
+#if __has_builtin(__builtin_mul_overflow)
+    return __builtin_mul_overflow(a, b, out) ? -1 : 0;
+#else
+    if (a == 0 || b == 0) {
+        *out = 0;
+        return 0;
+    }
+    if ((a == -1 && b == INT64_MIN) || (b == -1 && a == INT64_MIN)) {
+        return -1;
+    }
+    if (a > 0) {
+        if (b > 0) {
+            if (a > INT64_MAX / b) {
+                return -1;
+            }
+        } else if (b < INT64_MIN / a) {
+            return -1;
+        }
+    } else if (b > 0) {
+        if (a < INT64_MIN / b) {
+            return -1;
+        }
+    } else if (a != 0 && b < INT64_MAX / a) {
+        return -1;
+    }
+    *out = a * b;
+    return 0;
+#endif
+}
+
+static int SLTCConstEvalApplyUnary(
+    SLTokenKind op, const SLCTFEValue* inValue, SLCTFEValue* outValue) {
+    SLTCConstEvalValueInvalid(outValue);
+    if (inValue == NULL) {
+        return 0;
+    }
+    if (op == SLTok_ADD && inValue->kind == SLCTFEValue_INT) {
+        *outValue = *inValue;
+        return 1;
+    }
+    if (op == SLTok_ADD && inValue->kind == SLCTFEValue_FLOAT) {
+        *outValue = *inValue;
+        return 1;
+    }
+    if (op == SLTok_SUB && inValue->kind == SLCTFEValue_INT) {
+        if (inValue->i64 == INT64_MIN) {
+            return 0;
+        }
+        outValue->kind = SLCTFEValue_INT;
+        outValue->i64 = -inValue->i64;
+        return 1;
+    }
+    if (op == SLTok_SUB && inValue->kind == SLCTFEValue_FLOAT) {
+        outValue->kind = SLCTFEValue_FLOAT;
+        outValue->f64 = -inValue->f64;
+        return 1;
+    }
+    if (op == SLTok_NOT && inValue->kind == SLCTFEValue_BOOL) {
+        outValue->kind = SLCTFEValue_BOOL;
+        outValue->b = inValue->b ? 0u : 1u;
+        return 1;
+    }
+    return 0;
+}
+
+static int SLTCConstEvalApplyBinary(
+    SLTypeCheckCtx*    c,
+    SLTokenKind        op,
+    const SLCTFEValue* lhs,
+    const SLCTFEValue* rhs,
+    SLCTFEValue*       outValue) {
+    int64_t i;
+    double  lhsF64;
+    double  rhsF64;
+    SLTCConstEvalValueInvalid(outValue);
+    if (c == NULL || lhs == NULL || rhs == NULL) {
+        return 0;
+    }
+
+    if (lhs->kind == SLCTFEValue_INT && rhs->kind == SLCTFEValue_INT) {
+        switch (op) {
+            case SLTok_ADD:
+                if (SLTCConstEvalAddI64(lhs->i64, rhs->i64, &i) != 0) {
+                    return 0;
+                }
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = i;
+                return 1;
+            case SLTok_SUB:
+                if (SLTCConstEvalSubI64(lhs->i64, rhs->i64, &i) != 0) {
+                    return 0;
+                }
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = i;
+                return 1;
+            case SLTok_MUL:
+                if (SLTCConstEvalMulI64(lhs->i64, rhs->i64, &i) != 0) {
+                    return 0;
+                }
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = i;
+                return 1;
+            case SLTok_DIV:
+                if (rhs->i64 == 0 || (lhs->i64 == INT64_MIN && rhs->i64 == -1)) {
+                    return 0;
+                }
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = lhs->i64 / rhs->i64;
+                return 1;
+            case SLTok_MOD:
+                if (rhs->i64 == 0 || (lhs->i64 == INT64_MIN && rhs->i64 == -1)) {
+                    return 0;
+                }
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = lhs->i64 % rhs->i64;
+                return 1;
+            case SLTok_AND:
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = lhs->i64 & rhs->i64;
+                return 1;
+            case SLTok_OR:
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = lhs->i64 | rhs->i64;
+                return 1;
+            case SLTok_XOR:
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = lhs->i64 ^ rhs->i64;
+                return 1;
+            case SLTok_LSHIFT:
+                if (rhs->i64 < 0 || rhs->i64 > 63 || lhs->i64 < 0) {
+                    return 0;
+                }
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = (int64_t)((uint64_t)lhs->i64 << (uint32_t)rhs->i64);
+                return 1;
+            case SLTok_RSHIFT:
+                if (rhs->i64 < 0 || rhs->i64 > 63 || lhs->i64 < 0) {
+                    return 0;
+                }
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = (int64_t)((uint64_t)lhs->i64 >> (uint32_t)rhs->i64);
+                return 1;
+            case SLTok_EQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->i64 == rhs->i64;
+                return 1;
+            case SLTok_NEQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->i64 != rhs->i64;
+                return 1;
+            case SLTok_LT:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->i64 < rhs->i64;
+                return 1;
+            case SLTok_GT:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->i64 > rhs->i64;
+                return 1;
+            case SLTok_LTE:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->i64 <= rhs->i64;
+                return 1;
+            case SLTok_GTE:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->i64 >= rhs->i64;
+                return 1;
+            default: return 0;
+        }
+    }
+
+    if (lhs->kind == SLCTFEValue_BOOL && rhs->kind == SLCTFEValue_BOOL) {
+        switch (op) {
+            case SLTok_LOGICAL_AND:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->b && rhs->b;
+                return 1;
+            case SLTok_LOGICAL_OR:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->b || rhs->b;
+                return 1;
+            case SLTok_EQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->b == rhs->b;
+                return 1;
+            case SLTok_NEQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->b != rhs->b;
+                return 1;
+            default: return 0;
+        }
+    }
+
+    if (lhs->kind == SLCTFEValue_STRING && rhs->kind == SLCTFEValue_STRING) {
+        switch (op) {
+            case SLTok_ADD:
+                outValue->kind = SLCTFEValue_STRING;
+                return SLTCConstEvalStringConcat(c, &lhs->s, &rhs->s, &outValue->s);
+            case SLTok_EQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = SLTCConstEvalStringEq(&lhs->s, &rhs->s);
+                return 1;
+            case SLTok_NEQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = !SLTCConstEvalStringEq(&lhs->s, &rhs->s);
+                return 1;
+            default: return 0;
+        }
+    }
+
+    if (lhs->kind == SLCTFEValue_TYPE && rhs->kind == SLCTFEValue_TYPE) {
+        switch (op) {
+            case SLTok_EQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->typeTag == rhs->typeTag;
+                return 1;
+            case SLTok_NEQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhs->typeTag != rhs->typeTag;
+                return 1;
+            default: return 0;
+        }
+    }
+
+    if (SLTCConstEvalValueToF64(lhs, &lhsF64) && SLTCConstEvalValueToF64(rhs, &rhsF64)) {
+        switch (op) {
+            case SLTok_ADD:
+                outValue->kind = SLCTFEValue_FLOAT;
+                outValue->f64 = lhsF64 + rhsF64;
+                return 1;
+            case SLTok_SUB:
+                outValue->kind = SLCTFEValue_FLOAT;
+                outValue->f64 = lhsF64 - rhsF64;
+                return 1;
+            case SLTok_MUL:
+                outValue->kind = SLCTFEValue_FLOAT;
+                outValue->f64 = lhsF64 * rhsF64;
+                return 1;
+            case SLTok_DIV:
+                outValue->kind = SLCTFEValue_FLOAT;
+                outValue->f64 = lhsF64 / rhsF64;
+                return 1;
+            case SLTok_EQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhsF64 == rhsF64;
+                return 1;
+            case SLTok_NEQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhsF64 != rhsF64;
+                return 1;
+            case SLTok_LT:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhsF64 < rhsF64;
+                return 1;
+            case SLTok_GT:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhsF64 > rhsF64;
+                return 1;
+            case SLTok_LTE:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhsF64 <= rhsF64;
+                return 1;
+            case SLTok_GTE:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = lhsF64 >= rhsF64;
+                return 1;
+            default: return 0;
+        }
+    }
+
+    if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_NULL) {
+        switch (op) {
+            case SLTok_EQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = 1;
+                return 1;
+            case SLTok_NEQ:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = 0;
+                return 1;
+            default: return 0;
+        }
+    }
+
+    return 0;
+}
+
 int SLTCResolveConstIdent(
     void*        ctx,
     uint32_t     nameStart,
@@ -72,8 +465,9 @@ int SLTCResolveConstIdent(
     {
         int32_t localIdx = SLTCLocalFind(c, nameStart, nameEnd);
         if (localIdx >= 0) {
-            int32_t localType = c->locals[localIdx].typeId;
-            int32_t resolvedLocalType = SLTCResolveAliasBaseType(c, localType);
+            SLTCLocal* local = &c->locals[localIdx];
+            int32_t    localType = local->typeId;
+            int32_t    resolvedLocalType = SLTCResolveAliasBaseType(c, localType);
             if (resolvedLocalType >= 0 && (uint32_t)resolvedLocalType < c->typeLen
                 && c->types[resolvedLocalType].kind == SLTCType_PACK)
             {
@@ -91,6 +485,25 @@ int SLTCResolveConstIdent(
                 outValue->span.endLine = 0;
                 outValue->span.endColumn = 0;
                 *outIsConst = 1;
+                return 0;
+            }
+            if ((local->flags & SLTCLocalFlag_CONST) != 0 && local->initExprNode != -1) {
+                int32_t initExprNode = local->initExprNode;
+                int     evalIsConst = 0;
+                int     rc;
+                if (initExprNode == -2) {
+                    SLTCConstSetReason(
+                        evalCtx, nameStart, nameEnd, "const local initializer is recursive");
+                    *outIsConst = 0;
+                    return 0;
+                }
+                local->initExprNode = -2;
+                rc = SLTCEvalConstExprNode(evalCtx, initExprNode, outValue, &evalIsConst);
+                local->initExprNode = initExprNode;
+                if (rc != 0) {
+                    return -1;
+                }
+                *outIsConst = evalIsConst;
                 return 0;
             }
         }
@@ -1964,6 +2377,63 @@ int SLTCEvalConstExprNode(
                 }
             }
         }
+        {
+            int32_t     lhsNode = SLAstFirstChild(c->ast, exprNode);
+            int32_t     rhsNode = lhsNode >= 0 ? SLAstNextSibling(c->ast, lhsNode) : -1;
+            int32_t     extraNode = rhsNode >= 0 ? SLAstNextSibling(c->ast, rhsNode) : -1;
+            SLCTFEValue lhsValue;
+            SLCTFEValue rhsValue;
+            int         lhsIsConst = 0;
+            int         rhsIsConst = 0;
+            if (lhsNode < 0 || rhsNode < 0 || extraNode >= 0) {
+                return -1;
+            }
+            if (SLTCEvalConstExprNode(evalCtx, lhsNode, &lhsValue, &lhsIsConst) != 0) {
+                return -1;
+            }
+            if (!lhsIsConst) {
+                *outIsConst = 0;
+                return 0;
+            }
+            if (SLTCEvalConstExprNode(evalCtx, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+                return -1;
+            }
+            if (!rhsIsConst) {
+                *outIsConst = 0;
+                return 0;
+            }
+            if (!SLTCConstEvalApplyBinary(c, (SLTokenKind)n->op, &lhsValue, &rhsValue, outValue)) {
+                SLTCConstSetReasonNode(evalCtx, exprNode, "expression is not const-evaluable");
+                *outIsConst = 0;
+                return 0;
+            }
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (kind == SLAst_UNARY) {
+        const SLAstNode* n = &c->ast->nodes[exprNode];
+        int32_t          operandNode = SLAstFirstChild(c->ast, exprNode);
+        int32_t          extraNode = operandNode >= 0 ? SLAstNextSibling(c->ast, operandNode) : -1;
+        SLCTFEValue      operandValue;
+        int              operandIsConst = 0;
+        if (operandNode < 0 || extraNode >= 0) {
+            return -1;
+        }
+        if (SLTCEvalConstExprNode(evalCtx, operandNode, &operandValue, &operandIsConst) != 0) {
+            return -1;
+        }
+        if (!operandIsConst) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (!SLTCConstEvalApplyUnary((SLTokenKind)n->op, &operandValue, outValue)) {
+            SLTCConstSetReasonNode(evalCtx, exprNode, "expression is not const-evaluable");
+            *outIsConst = 0;
+            return 0;
+        }
+        *outIsConst = 1;
+        return 0;
     }
     if (kind == SLAst_SIZEOF) {
         return SLTCConstEvalSizeOf(evalCtx, exprNode, outValue, outIsConst);
@@ -1990,6 +2460,7 @@ int SLTCEvalConstExprNode(
         int32_t          calleeNode = SLAstFirstChild(c->ast, exprNode);
         const SLAstNode* callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
         int              compilerDiagStatus;
+        int              directCallStatus;
         int              lenStatus;
         int              spanOfStatus;
         int              reflectStatus;
@@ -2024,6 +2495,13 @@ int SLTCEvalConstExprNode(
             return 0;
         }
         if (reflectStatus < 0) {
+            return -1;
+        }
+        directCallStatus = SLTCConstEvalDirectCall(evalCtx, exprNode, outValue, outIsConst);
+        if (directCallStatus == 0) {
+            return 0;
+        }
+        if (directCallStatus < 0) {
             return -1;
         }
     }
@@ -2422,16 +2900,28 @@ int SLTCResolveConstCall(
     if (rc != 0) {
         return -1;
     }
-    if (!isConst || !didReturn) {
+    if (!isConst) {
         if (execCtx.nonConstReason != NULL) {
             evalCtx->nonConstReason = execCtx.nonConstReason;
             evalCtx->nonConstStart = execCtx.nonConstStart;
             evalCtx->nonConstEnd = execCtx.nonConstEnd;
         }
-        if (!didReturn) {
-            SLTCConstSetReasonNode(
-                evalCtx, bodyNode, "const-evaluable function must produce a const return value");
+        *outIsConst = 0;
+        return 0;
+    }
+    if (!didReturn) {
+        if (c->funcs[fnIndex].returnType == c->typeVoid) {
+            SLTCConstEvalSetNullValue(outValue);
+            *outIsConst = 1;
+            return 0;
         }
+        if (execCtx.nonConstReason != NULL) {
+            evalCtx->nonConstReason = execCtx.nonConstReason;
+            evalCtx->nonConstStart = execCtx.nonConstStart;
+            evalCtx->nonConstEnd = execCtx.nonConstEnd;
+        }
+        SLTCConstSetReasonNode(
+            evalCtx, bodyNode, "const-evaluable function must produce a const return value");
         *outIsConst = 0;
         return 0;
     }
@@ -2476,6 +2966,76 @@ int SLTCResolveConstCall(
     *outValue = retValue;
     *outIsConst = 1;
     return 0;
+}
+
+static int SLTCConstEvalDirectCall(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx*  c;
+    int32_t          calleeNode;
+    const SLAstNode* callee;
+    int32_t          argNode;
+    uint32_t         argCount = 0;
+    uint32_t         argIndex = 0;
+    SLCTFEValue*     argValues = NULL;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return -1;
+    }
+    calleeNode = SLAstFirstChild(c->ast, exprNode);
+    callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
+    if (callee == NULL || callee->kind != SLAst_IDENT) {
+        return 1;
+    }
+
+    argNode = SLAstNextSibling(c->ast, calleeNode);
+    while (argNode >= 0) {
+        argCount++;
+        argNode = SLAstNextSibling(c->ast, argNode);
+    }
+    if (argCount > 0) {
+        argValues = (SLCTFEValue*)SLArenaAlloc(
+            c->arena, sizeof(SLCTFEValue) * argCount, (uint32_t)_Alignof(SLCTFEValue));
+        if (argValues == NULL) {
+            return SLTCFailNode(c, exprNode, SLDiag_ARENA_OOM);
+        }
+    }
+
+    argNode = SLAstNextSibling(c->ast, calleeNode);
+    while (argNode >= 0) {
+        int32_t exprArgNode = argNode;
+        int     argIsConst = 0;
+        if (argIndex >= argCount) {
+            return -1;
+        }
+        if (c->ast->nodes[argNode].kind == SLAst_CALL_ARG) {
+            exprArgNode = SLAstFirstChild(c->ast, argNode);
+            if (exprArgNode < 0) {
+                return -1;
+            }
+        }
+        if (SLTCEvalConstExprNode(evalCtx, exprArgNode, &argValues[argIndex], &argIsConst) != 0) {
+            return -1;
+        }
+        if (!argIsConst) {
+            *outIsConst = 0;
+            return 0;
+        }
+        argIndex++;
+        argNode = SLAstNextSibling(c->ast, argNode);
+    }
+
+    return SLTCResolveConstCall(
+        evalCtx,
+        callee->dataStart,
+        callee->dataEnd,
+        argValues,
+        argCount,
+        outValue,
+        outIsConst,
+        c->diag);
 }
 
 int SLTCEvalTopLevelConstNodeAt(

@@ -363,7 +363,7 @@ int InferVarLikeDeclType(SLCBackendC* c, int32_t initNode, SLTypeRef* outType) {
         return -1;
     }
     if (outType->containerKind == SLTypeContainer_SCALAR && outType->containerPtrDepth == 0
-        && outType->ptrDepth == 0 && outType->baseName != NULL
+        && outType->ptrDepth == 0 && !outType->isOptional && outType->baseName != NULL
         && StrEq(outType->baseName, "__sl_i32"))
     {
         outType->baseName = "__sl_int";
@@ -3450,6 +3450,86 @@ int InferExprType_CALL_ARG(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, S
     return InferExprType(c, inner, outType);
 }
 
+int InferExprType_BINARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType) {
+    int32_t     lhsNode = AstFirstChild(&c->ast, nodeId);
+    int32_t     rhsNode = lhsNode >= 0 ? AstNextSibling(&c->ast, lhsNode) : -1;
+    SLTypeRef   lhsType;
+    SLTypeRef   rhsType;
+    const char* lhsBase;
+    const char* rhsBase;
+    SLTokenKind op = (SLTokenKind)n->op;
+    TypeRefSetInvalid(outType);
+    if (lhsNode < 0 || rhsNode < 0) {
+        return 0;
+    }
+    if (InferExprType(c, lhsNode, &lhsType) != 0 || InferExprType(c, rhsNode, &rhsType) != 0) {
+        return -1;
+    }
+    if (op == SLTok_ASSIGN || op == SLTok_ADD_ASSIGN || op == SLTok_SUB_ASSIGN
+        || op == SLTok_MUL_ASSIGN || op == SLTok_DIV_ASSIGN || op == SLTok_MOD_ASSIGN
+        || op == SLTok_AND_ASSIGN || op == SLTok_OR_ASSIGN || op == SLTok_XOR_ASSIGN
+        || op == SLTok_LSHIFT_ASSIGN || op == SLTok_RSHIFT_ASSIGN)
+    {
+        *outType = lhsType;
+        return 0;
+    }
+    if (op == SLTok_EQ || op == SLTok_NEQ || op == SLTok_LT || op == SLTok_GT || op == SLTok_LTE
+        || op == SLTok_GTE || op == SLTok_LOGICAL_AND || op == SLTok_LOGICAL_OR)
+    {
+        TypeRefSetScalar(outType, "__sl_bool");
+        return 0;
+    }
+    if (!lhsType.valid) {
+        *outType = rhsType;
+        return 0;
+    }
+    if (!rhsType.valid) {
+        *outType = lhsType;
+        return 0;
+    }
+    lhsBase = ResolveScalarAliasBaseName(c, lhsType.baseName);
+    rhsBase = ResolveScalarAliasBaseName(c, rhsType.baseName);
+    if (lhsBase == NULL) {
+        lhsBase = lhsType.baseName;
+    }
+    if (rhsBase == NULL) {
+        rhsBase = rhsType.baseName;
+    }
+    if (lhsType.containerKind == SLTypeContainer_SCALAR
+        && rhsType.containerKind == SLTypeContainer_SCALAR && lhsType.ptrDepth == 0
+        && lhsType.containerPtrDepth == 0 && !lhsType.isOptional && rhsType.ptrDepth == 0
+        && rhsType.containerPtrDepth == 0 && !rhsType.isOptional && lhsBase != NULL
+        && rhsBase != NULL)
+    {
+        if (StrEq(lhsBase, "__sl_f64") || StrEq(rhsBase, "__sl_f64")) {
+            TypeRefSetScalar(outType, "__sl_f64");
+            return 0;
+        }
+        if (StrEq(lhsBase, "__sl_f32") || StrEq(rhsBase, "__sl_f32")) {
+            TypeRefSetScalar(outType, "__sl_f32");
+            return 0;
+        }
+        if (StrEq(lhsBase, "__sl_int") && !StrEq(rhsBase, "__sl_int")) {
+            *outType = rhsType;
+            return 0;
+        }
+        if (StrEq(lhsBase, "__sl_uint") && !StrEq(rhsBase, "__sl_uint")) {
+            *outType = rhsType;
+            return 0;
+        }
+        if (StrEq(rhsBase, "__sl_int") && !StrEq(lhsBase, "__sl_int")) {
+            *outType = lhsType;
+            return 0;
+        }
+        if (StrEq(rhsBase, "__sl_uint") && !StrEq(lhsBase, "__sl_uint")) {
+            *outType = lhsType;
+            return 0;
+        }
+    }
+    *outType = lhsType;
+    return 0;
+}
+
 int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -3475,6 +3555,7 @@ int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
         case SLAst_FLOAT:             return InferExprType_FLOAT(c, nodeId, n, outType);
         case SLAst_NULL:              return InferExprType_NULL(c, nodeId, n, outType);
         case SLAst_UNWRAP:            return InferExprType_UNWRAP(c, nodeId, n, outType);
+        case SLAst_BINARY:            return InferExprType_BINARY(c, nodeId, n, outType);
         case SLAst_TUPLE_EXPR:        return InferExprType_TUPLE_EXPR(c, nodeId, n, outType);
         case SLAst_CALL_ARG:          return InferExprType_CALL_ARG(c, nodeId, n, outType);
         default:                      TypeRefSetInvalid(outType); return 0;
@@ -4675,17 +4756,43 @@ static int EmitTaggedOptionalConvertFromOptional(
         return EmitExpr(c, exprNode);
     }
     if (BufAppendCStr(&c->out, "(__extension__({ __auto_type __sl_opt = ") != 0
-        || EmitExpr(c, exprNode) != 0 || BufAppendCStr(&c->out, "; ") != 0)
+        || EmitExpr(c, exprNode) != 0 || BufAppendCStr(&c->out, "; __auto_type __sl_out = ((") != 0
+        || EmitTypeNameWithDepth(c, &dstStorage) != 0
+        || BufAppendCStr(&c->out, "){ .__sl_tag = 0u }); if (__sl_opt.__sl_tag != 0u) { ") != 0
+        || BufAppendCStr(&c->out, "__sl_out.__sl_tag = 1u; __sl_out.__sl_value = ((") != 0
+        || EmitTypeNameWithDepth(c, &dstPayload) != 0
+        || BufAppendCStr(&c->out, ")(__sl_opt.__sl_value)); } __sl_out; }))") != 0)
     {
         return -1;
     }
-    if (BufAppendCStr(&c->out, "__sl_opt.__sl_tag != 0u ? ((") != 0
-        || EmitTypeNameWithDepth(c, &dstStorage) != 0
-        || BufAppendCStr(&c->out, "){ .__sl_tag = 1u, .__sl_value = ((") != 0
-        || EmitTypeNameWithDepth(c, &dstPayload) != 0
-        || BufAppendCStr(&c->out, ")(__sl_opt.__sl_value)) }) : ((") != 0
-        || EmitTypeNameWithDepth(c, &dstStorage) != 0
-        || BufAppendCStr(&c->out, "){ .__sl_tag = 0u }); }))") != 0)
+    return 0;
+}
+
+static int EmitTaggedOptionalCompareWithValue(
+    SLCBackendC*     c,
+    int32_t          optionalExprNode,
+    const SLTypeRef* optionalType,
+    int32_t          valueExprNode,
+    int              wantEq) {
+    SLTypeRef payloadType;
+    if (c == NULL || optionalType == NULL || !TypeRefIsTaggedOptional(optionalType)
+        || !TypeRefOptionalPayloadTypeExpr(optionalType, &payloadType))
+    {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "(__extension__({ __auto_type __sl_opt = ") != 0
+        || EmitExprCoerced(c, optionalExprNode, optionalType) != 0
+        || BufAppendCStr(&c->out, "; __sl_opt.__sl_tag ") != 0)
+    {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, wantEq ? "!= 0u && " : "== 0u || ") != 0) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "(__sl_opt.__sl_value ") != 0
+        || BufAppendCStr(&c->out, wantEq ? "== " : "!= ") != 0 || BufAppendChar(&c->out, '(') != 0
+        || EmitExprCoerced(c, valueExprNode, &payloadType) != 0
+        || BufAppendCStr(&c->out, ")); }))") != 0)
     {
         return -1;
     }
@@ -6275,6 +6382,9 @@ int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType) 
         return EmitTaggedOptionalNoneLiteral(c, dstType);
     }
     if (InferExprType(c, exprNode, &srcType) != 0 || !srcType.valid) {
+        if (dstType->isOptional && TypeRefIsTaggedOptional(dstType)) {
+            return EmitTaggedOptionalSomeLiteral(c, exprNode, dstType);
+        }
         return EmitExpr(c, exprNode);
     }
     if (TypeRefIsFmtValueType(c, dstType) && !TypeRefIsFmtValueType(c, &srcType)) {
@@ -7375,6 +7485,16 @@ int EmitExpr_BINARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                 return -1;
             }
             return EmitOptionalIsSomeExpr(c, rhs, &rhsType, 0);
+        }
+        if (isEqOp && lhsType.valid && lhsType.isOptional && rhsType.valid && !rhsType.isOptional
+            && !rhsNull && TypeRefIsTaggedOptional(&lhsType))
+        {
+            return EmitTaggedOptionalCompareWithValue(c, lhs, &lhsType, rhs, op == SLTok_EQ);
+        }
+        if (isEqOp && rhsType.valid && rhsType.isOptional && lhsType.valid && !lhsType.isOptional
+            && !lhsNull && TypeRefIsTaggedOptional(&rhsType))
+        {
+            return EmitTaggedOptionalCompareWithValue(c, rhs, &rhsType, lhs, op == SLTok_EQ);
         }
 
         {

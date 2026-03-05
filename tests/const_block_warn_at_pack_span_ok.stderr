@@ -1,2 +1,1 @@
 tests/const_block_warn_at_pack_span_ok.sl:14:10: SL2076: consteval warning: pack warn
-tests/const_block_warn_at_pack_span_ok.sl:4:9: SL2093: variable 'args' is unused

@@ -121,3 +121,4 @@
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}
+{"id": "SL4003", "name": "EVAL_BACKEND_UNSUPPORTED", "category": "compiler", "message": "evaluator backend: {s}"}

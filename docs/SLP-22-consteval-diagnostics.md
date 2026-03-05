@@ -67,9 +67,9 @@ pub fn span_of(operand &anything) Span
 
 ```sl
 pub fn error(message &str)
-pub fn error_at(span &reflect.Span, message &str)
+pub fn error_at(span reflect.Span, message &str)
 pub fn warn(message &str)
-pub fn warn_at(span &reflect.Span, message &str)
+pub fn warn_at(span reflect.Span, message &str)
 ```
 
 - `message` must be const-evaluable `&str`
@@ -145,7 +145,7 @@ fn require(cond bool, msg &str) {
 ```sl
 import "compiler"
 
-fn require_int(arg_span &reflect.Span, is_int bool) {
+fn require_int(arg_span reflect.Span, is_int bool) {
     if !is_int {
         compiler.error_at(arg_span, "expected integer argument")
     }

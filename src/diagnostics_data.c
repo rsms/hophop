@@ -506,6 +506,11 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
     [SLDiag_CODEGEN_INTERNAL] = { "SL3001", "internal codegen error", NULL, SLDiagType_ERROR, 0 },
     [SLDiag_ARENA_OOM] = { "SL4001", "arena out of memory", NULL, SLDiagType_ERROR, 0 },
     [SLDiag_UNKNOWN_FEATURE] = { "SL4002", "unknown feature '%s'", NULL, SLDiagType_WARNING, 1 },
+    [SLDiag_EVAL_BACKEND_UNSUPPORTED] = { "SL4003",
+                                          "evaluator backend: %s",
+                                          NULL,
+                                          SLDiagType_ERROR,
+                                          1 },
 };
 
 const char* SLDiagId(SLDiagCode code) {

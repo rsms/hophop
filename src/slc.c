@@ -831,7 +831,9 @@ static void RemapCombinedDiag(
             && (diagOut->code == SLDiag_UNUSED_FUNCTION || diagOut->code == SLDiag_UNUSED_VARIABLE
                 || diagOut->code == SLDiag_UNUSED_VARIABLE_NEVER_READ
                 || diagOut->code == SLDiag_UNUSED_PARAMETER
-                || diagOut->code == SLDiag_UNUSED_PARAMETER_NEVER_READ)
+                || diagOut->code == SLDiag_UNUSED_PARAMETER_NEVER_READ
+                || diagOut->code == SLDiag_CONST_PARAM_ARG_NOT_CONST
+                || diagOut->code == SLDiag_CONST_PARAM_SPREAD_NOT_CONST)
             && diagOut->argEnd > diagOut->argStart)
         {
             (void)NormalizeIdentifierTokenSpan(
@@ -7642,6 +7644,24 @@ typedef struct {
     uint8_t             _reserved[2];
 } SLEvalFunction;
 
+enum {
+    SLEvalTopConstState_UNSEEN = 0,
+    SLEvalTopConstState_VISITING = 1,
+    SLEvalTopConstState_READY = 2,
+    SLEvalTopConstState_FAILED = 3,
+};
+
+typedef struct {
+    const SLParsedFile* file;
+    int32_t             nodeId;
+    int32_t             initExprNode;
+    uint32_t            nameStart;
+    uint32_t            nameEnd;
+    uint8_t             state;
+    uint8_t             _reserved[3];
+    SLCTFEValue         value;
+} SLEvalTopConst;
+
 typedef struct {
     SLArena* _Nonnull arena;
     const SLPackage*    entryPkg;
@@ -7650,6 +7670,9 @@ typedef struct {
     SLEvalFunction*     funcs;
     uint32_t            funcLen;
     uint32_t            funcCap;
+    SLEvalTopConst*     topConsts;
+    uint32_t            topConstLen;
+    uint32_t            topConstCap;
     uint32_t            callDepth;
     uint32_t            callStack[SL_EVAL_CALL_MAX_DEPTH];
     int                 exitCalled;
@@ -7669,6 +7692,41 @@ static void SLEvalValueSetNull(SLCTFEValue* value) {
     value->s.len = 0;
 }
 
+static void SLEvalValueSetSpan(
+    const SLParsedFile* file, uint32_t start, uint32_t end, SLCTFEValue* value) {
+    uint32_t startLine = 0;
+    uint32_t startCol = 0;
+    uint32_t endLine = 0;
+    uint32_t endCol = 0;
+    if (file == NULL || value == NULL) {
+        return;
+    }
+    DiagOffsetToLineCol(file->source, start, &startLine, &startCol);
+    DiagOffsetToLineCol(file->source, end, &endLine, &endCol);
+    value->kind = SLCTFEValue_SPAN;
+    value->i64 = 0;
+    value->f64 = 0.0;
+    value->b = 0;
+    value->typeTag = 0;
+    value->s.bytes = NULL;
+    value->s.len = 0;
+    value->span.fileBytes = (const uint8_t*)file->source;
+    value->span.fileLen = file->sourceLen;
+    value->span.startLine = startLine;
+    value->span.startColumn = startCol;
+    value->span.endLine = endLine;
+    value->span.endColumn = endCol;
+}
+
+static int ErrorEvalUnsupported(
+    const char* file, const char* _Nullable source, uint32_t start, uint32_t end, const char* msg) {
+    const char* detail = msg;
+    if (detail == NULL || detail[0] == '\0') {
+        detail = "operation is not supported by evaluator backend";
+    }
+    return ErrorDiagf(file, source, start, end, SLDiag_EVAL_BACKEND_UNSUPPORTED, detail);
+}
+
 static int SLEvalProgramAppendFunction(SLEvalProgram* p, const SLEvalFunction* fn) {
     SLEvalFunction* newFuncs;
     uint32_t        newCap;
@@ -7686,6 +7744,147 @@ static int SLEvalProgramAppendFunction(SLEvalProgram* p, const SLEvalFunction* f
     }
     p->funcs[p->funcLen++] = *fn;
     return 0;
+}
+
+static int SLEvalProgramAppendTopConst(SLEvalProgram* p, const SLEvalTopConst* topConst) {
+    SLEvalTopConst* newConsts;
+    uint32_t        newCap;
+    if (p == NULL || topConst == NULL) {
+        return -1;
+    }
+    if (p->topConstLen >= p->topConstCap) {
+        newCap = p->topConstCap < 8u ? 8u : p->topConstCap * 2u;
+        newConsts = (SLEvalTopConst*)realloc(p->topConsts, sizeof(SLEvalTopConst) * newCap);
+        if (newConsts == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        p->topConsts = newConsts;
+        p->topConstCap = newCap;
+    }
+    p->topConsts[p->topConstLen++] = *topConst;
+    return 0;
+}
+
+static int32_t SLEvalVarLikeInitExprNodeAt(
+    const SLParsedFile* file, int32_t varLikeNodeId, int32_t nameIndex) {
+    int32_t firstChild;
+    int32_t initNode;
+    if (file == NULL || nameIndex < 0) {
+        return -1;
+    }
+    firstChild = ASTFirstChild(&file->ast, varLikeNodeId);
+    if (firstChild < 0 || (uint32_t)firstChild >= file->ast.len) {
+        return -1;
+    }
+    initNode = VarLikeInitNode(file, varLikeNodeId);
+    if (initNode < 0 || (uint32_t)initNode >= file->ast.len) {
+        return -1;
+    }
+    if (file->ast.nodes[firstChild].kind != SLAst_NAME_LIST) {
+        return nameIndex == 0 ? initNode : -1;
+    }
+    if (file->ast.nodes[initNode].kind != SLAst_EXPR_LIST) {
+        return -1;
+    }
+    {
+        uint32_t nameCount = AstListCount(&file->ast, firstChild);
+        uint32_t initCount = AstListCount(&file->ast, initNode);
+        if ((uint32_t)nameIndex >= nameCount) {
+            return -1;
+        }
+        if (initCount == nameCount) {
+            return AstListItemAt(&file->ast, initNode, (uint32_t)nameIndex);
+        }
+        if (initCount != 1u) {
+            return -1;
+        }
+        {
+            int32_t onlyInit = AstListItemAt(&file->ast, initNode, 0);
+            if (onlyInit < 0 || (uint32_t)onlyInit >= file->ast.len
+                || file->ast.nodes[onlyInit].kind != SLAst_TUPLE_EXPR)
+            {
+                return -1;
+            }
+            return AstListItemAt(&file->ast, onlyInit, (uint32_t)nameIndex);
+        }
+    }
+}
+
+static int SLEvalCollectTopConsts(SLEvalProgram* p) {
+    uint32_t fileIndex;
+    if (p == NULL || p->entryPkg == NULL) {
+        return -1;
+    }
+    for (fileIndex = 0; fileIndex < p->entryPkg->fileLen; fileIndex++) {
+        const SLParsedFile* file = &p->entryPkg->files[fileIndex];
+        const SLAst*        ast = &file->ast;
+        int32_t             nodeId = ASTFirstChild(ast, ast->root);
+        while (nodeId >= 0) {
+            const SLAstNode* n = &ast->nodes[nodeId];
+            if (n->kind == SLAst_CONST) {
+                int32_t firstChild = ASTFirstChild(ast, nodeId);
+                if (firstChild >= 0 && ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
+                    uint32_t i;
+                    uint32_t nameCount = AstListCount(ast, firstChild);
+                    for (i = 0; i < nameCount; i++) {
+                        int32_t          nameNode = AstListItemAt(ast, firstChild, i);
+                        const SLAstNode* name = nameNode >= 0 ? &ast->nodes[nameNode] : NULL;
+                        SLEvalTopConst   topConst;
+                        if (name == NULL) {
+                            continue;
+                        }
+                        memset(&topConst, 0, sizeof(topConst));
+                        topConst.file = file;
+                        topConst.nodeId = nodeId;
+                        topConst.initExprNode = SLEvalVarLikeInitExprNodeAt(
+                            file, nodeId, (int32_t)i);
+                        topConst.nameStart = name->dataStart;
+                        topConst.nameEnd = name->dataEnd;
+                        topConst.state = SLEvalTopConstState_UNSEEN;
+                        if (SLEvalProgramAppendTopConst(p, &topConst) != 0) {
+                            return -1;
+                        }
+                    }
+                } else {
+                    SLEvalTopConst topConst;
+                    memset(&topConst, 0, sizeof(topConst));
+                    topConst.file = file;
+                    topConst.nodeId = nodeId;
+                    topConst.initExprNode = SLEvalVarLikeInitExprNodeAt(file, nodeId, 0);
+                    topConst.nameStart = n->dataStart;
+                    topConst.nameEnd = n->dataEnd;
+                    topConst.state = SLEvalTopConstState_UNSEEN;
+                    if (SLEvalProgramAppendTopConst(p, &topConst) != 0) {
+                        return -1;
+                    }
+                }
+            }
+            nodeId = ASTNextSibling(ast, nodeId);
+        }
+    }
+    return 0;
+}
+
+static int32_t SLEvalFindTopConstBySlice(
+    const SLEvalProgram* p, const SLParsedFile* callerFile, uint32_t nameStart, uint32_t nameEnd) {
+    uint32_t i;
+    if (p == NULL || callerFile == NULL || nameEnd < nameStart || nameEnd > callerFile->sourceLen) {
+        return -1;
+    }
+    for (i = 0; i < p->topConstLen; i++) {
+        const SLEvalTopConst* topConst = &p->topConsts[i];
+        if (SliceEqSlice(
+                callerFile->source,
+                nameStart,
+                nameEnd,
+                topConst->file->source,
+                topConst->nameStart,
+                topConst->nameEnd))
+        {
+            return (int32_t)i;
+        }
+    }
+    return -1;
 }
 
 static int SLEvalCollectFunctions(SLEvalProgram* p) {
@@ -7717,12 +7916,12 @@ static int SLEvalCollectFunctions(SLEvalProgram* p) {
                         hasReturnType = 1;
                     } else if (ch->kind == SLAst_BLOCK) {
                         if (bodyNode >= 0) {
-                            return Errorf(
+                            return ErrorEvalUnsupported(
                                 file->path,
                                 file->source,
                                 ch->start,
                                 ch->end,
-                                "evaluator backend does not support function body shape");
+                                "function body shape is not supported by evaluator backend");
                         }
                         bodyNode = child;
                     }
@@ -7786,6 +7985,24 @@ static int32_t SLEvalFindFunctionBySlice(
 }
 
 static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
+static int SLEvalResolveIdent(
+    void*        ctx,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    SLDiag* _Nullable diag);
+static int SLEvalResolveCall(
+    void*              ctx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag);
+static int SLEvalEvalTopConst(
+    SLEvalProgram* p, uint32_t topConstIndex, SLCTFEValue* outValue, int* outIsConst);
 
 static int SLEvalInvokeFunction(
     SLEvalProgram*     p,
@@ -7814,7 +8031,7 @@ static int SLEvalInvokeFunction(
     fn = &p->funcs[fnIndex];
     ast = &fn->file->ast;
     if (argCount != fn->paramCount) {
-        return Errorf(
+        return ErrorEvalUnsupported(
             fn->file->path,
             fn->file->source,
             ast->nodes[fn->fnNode].start,
@@ -7859,6 +8076,7 @@ static int SLEvalInvokeFunction(
     execCtx.evalExprCtx = p;
     execCtx.pendingReturnExprNode = -1;
     execCtx.forIterLimit = SLCTFE_EXEC_DEFAULT_FOR_LIMIT;
+    execCtx.skipConstBlocks = 1u;
     SLCTFEExecResetReason(&execCtx);
 
     savedFile = p->currentFile;
@@ -7887,12 +8105,89 @@ static int SLEvalInvokeFunction(
             errStart = ast->nodes[fn->fnNode].start;
             errEnd = ast->nodes[fn->fnNode].end;
         }
-        return Errorf(
-            fn->file->path, fn->file->source, errStart, errEnd, "evaluator backend: %s", reason);
+        return ErrorEvalUnsupported(fn->file->path, fn->file->source, errStart, errEnd, reason);
     }
     if (!*outDidReturn) {
         SLEvalValueSetNull(outValue);
     }
+    return 0;
+}
+
+static int SLEvalEvalTopConst(
+    SLEvalProgram* p, uint32_t topConstIndex, SLCTFEValue* outValue, int* outIsConst) {
+    SLEvalTopConst*     topConst;
+    const SLParsedFile* savedFile;
+    SLCTFEExecCtx*      savedExecCtx;
+    SLCTFEExecCtx       constExecCtx;
+    SLCTFEValue         value;
+    int                 isConst = 0;
+    int                 rc;
+    if (p == NULL || outValue == NULL || outIsConst == NULL || topConstIndex >= p->topConstLen) {
+        return -1;
+    }
+    topConst = &p->topConsts[topConstIndex];
+    if (topConst->state == SLEvalTopConstState_READY) {
+        *outValue = topConst->value;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (topConst->state == SLEvalTopConstState_VISITING
+        || topConst->state == SLEvalTopConstState_FAILED)
+    {
+        *outIsConst = 0;
+        return 0;
+    }
+    if (topConst->initExprNode < 0) {
+        topConst->state = SLEvalTopConstState_FAILED;
+        *outIsConst = 0;
+        return 0;
+    }
+
+    topConst->state = SLEvalTopConstState_VISITING;
+    memset(&constExecCtx, 0, sizeof(constExecCtx));
+    constExecCtx.arena = p->arena;
+    constExecCtx.ast = &topConst->file->ast;
+    constExecCtx.src.ptr = topConst->file->source;
+    constExecCtx.src.len = topConst->file->sourceLen;
+    constExecCtx.evalExpr = SLEvalExecExprCb;
+    constExecCtx.evalExprCtx = p;
+    constExecCtx.pendingReturnExprNode = -1;
+    constExecCtx.forIterLimit = SLCTFE_EXEC_DEFAULT_FOR_LIMIT;
+    constExecCtx.skipConstBlocks = 1u;
+    SLCTFEExecResetReason(&constExecCtx);
+
+    savedFile = p->currentFile;
+    savedExecCtx = p->currentExecCtx;
+    p->currentFile = topConst->file;
+    p->currentExecCtx = &constExecCtx;
+    rc = SLCTFEEvalExpr(
+        p->arena,
+        &topConst->file->ast,
+        (SLStrView){ topConst->file->source, topConst->file->sourceLen },
+        topConst->initExprNode,
+        SLEvalResolveIdent,
+        SLEvalResolveCall,
+        p,
+        &value,
+        &isConst,
+        NULL);
+    p->currentExecCtx = savedExecCtx;
+    p->currentFile = savedFile;
+
+    if (rc != 0) {
+        topConst->state = SLEvalTopConstState_FAILED;
+        return -1;
+    }
+    if (!isConst) {
+        topConst->state = SLEvalTopConstState_FAILED;
+        *outIsConst = 0;
+        return 0;
+    }
+
+    topConst->value = value;
+    topConst->state = SLEvalTopConstState_READY;
+    *outValue = value;
+    *outIsConst = 1;
     return 0;
 }
 
@@ -7913,6 +8208,26 @@ static int SLEvalResolveIdent(
     if (SLCTFEExecEnvLookup(p->currentExecCtx, nameStart, nameEnd, outValue)) {
         *outIsConst = 1;
         return 0;
+    }
+    {
+        int32_t topConstIndex = SLEvalFindTopConstBySlice(p, p->currentFile, nameStart, nameEnd);
+        if (topConstIndex >= 0) {
+            int isConst = 0;
+            if (SLEvalEvalTopConst(p, (uint32_t)topConstIndex, outValue, &isConst) != 0) {
+                return -1;
+            }
+            if (isConst) {
+                *outIsConst = 1;
+                return 0;
+            }
+            SLCTFEExecSetReason(
+                p->currentExecCtx,
+                nameStart,
+                nameEnd,
+                "top-level const is not available in evaluator backend");
+            *outIsConst = 0;
+            return 0;
+        }
     }
     SLCTFEExecSetReason(
         p->currentExecCtx, nameStart, nameEnd, "identifier is not available in evaluator backend");
@@ -8033,10 +8348,51 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
 
     if (n->kind == SLAst_CALL) {
         int32_t calleeNode = n->firstChild;
+        if (calleeNode < 0 || (uint32_t)calleeNode >= ast->len) {
+            if (p->currentExecCtx != NULL) {
+                SLCTFEExecSetReasonNode(
+                    p->currentExecCtx, exprNode, "call expression is malformed");
+            }
+            *outIsConst = 0;
+            return 0;
+        }
         if (calleeNode >= 0 && ast->nodes[calleeNode].kind == SLAst_FIELD_EXPR) {
             const SLAstNode* callee = &ast->nodes[calleeNode];
             int32_t          baseNode = callee->firstChild;
             int32_t          argNode = ast->nodes[calleeNode].nextSibling;
+            if (baseNode >= 0 && argNode >= 0 && ast->nodes[argNode].nextSibling < 0
+                && ast->nodes[baseNode].kind == SLAst_IDENT
+                && SliceEqCStr(
+                    p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of")
+                && SliceEqCStr(
+                    p->currentFile->source,
+                    ast->nodes[baseNode].dataStart,
+                    ast->nodes[baseNode].dataEnd,
+                    "reflect"))
+            {
+                int32_t operandNode = argNode;
+                if (ast->nodes[operandNode].kind == SLAst_CALL_ARG) {
+                    operandNode = ast->nodes[operandNode].firstChild;
+                }
+                if (operandNode < 0 || (uint32_t)operandNode >= ast->len) {
+                    if (p->currentExecCtx != NULL) {
+                        SLCTFEExecSetReason(
+                            p->currentExecCtx,
+                            ast->nodes[argNode].start,
+                            ast->nodes[argNode].end,
+                            "reflect.span_of argument is malformed");
+                    }
+                    *outIsConst = 0;
+                    return 0;
+                }
+                SLEvalValueSetSpan(
+                    p->currentFile,
+                    ast->nodes[operandNode].start,
+                    ast->nodes[operandNode].end,
+                    outValue);
+                *outIsConst = 1;
+                return 0;
+            }
             if (baseNode >= 0 && argNode >= 0 && ast->nodes[argNode].nextSibling < 0
                 && ast->nodes[baseNode].kind == SLAst_IDENT
                 && SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "exit")
@@ -8069,6 +8425,83 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 *outIsConst = 1;
                 return 0;
             }
+            if (p->currentExecCtx != NULL) {
+                SLCTFEExecSetReasonNode(
+                    p->currentExecCtx,
+                    exprNode,
+                    "qualified call target is not supported by evaluator backend");
+            }
+            *outIsConst = 0;
+            return 0;
+        }
+        if (ast->nodes[calleeNode].kind == SLAst_IDENT) {
+            int32_t      argNode = ast->nodes[calleeNode].nextSibling;
+            uint32_t     argCount = 0;
+            SLCTFEValue* args = NULL;
+            uint32_t     i = 0;
+            while (argNode >= 0) {
+                if (argCount == UINT32_MAX) {
+                    return ErrorSimple("too many call arguments for evaluator backend");
+                }
+                argCount++;
+                argNode = ast->nodes[argNode].nextSibling;
+            }
+            if (argCount > 0) {
+                args = (SLCTFEValue*)SLArenaAlloc(
+                    p->arena, sizeof(SLCTFEValue) * argCount, (uint32_t)_Alignof(SLCTFEValue));
+                if (args == NULL) {
+                    return ErrorSimple("out of memory");
+                }
+            }
+            argNode = ast->nodes[calleeNode].nextSibling;
+            while (argNode >= 0) {
+                SLCTFEValue argValue;
+                int         argIsConst = 0;
+                int32_t     argExprNode = argNode;
+                if (ast->nodes[argNode].kind == SLAst_CALL_ARG) {
+                    argExprNode = ast->nodes[argNode].firstChild;
+                }
+                if (argExprNode < 0 || (uint32_t)argExprNode >= ast->len) {
+                    if (p->currentExecCtx != NULL) {
+                        SLCTFEExecSetReason(
+                            p->currentExecCtx,
+                            ast->nodes[argNode].start,
+                            ast->nodes[argNode].end,
+                            "call argument is malformed");
+                    }
+                    *outIsConst = 0;
+                    return 0;
+                }
+                if (SLEvalExecExprCb(p, argExprNode, &argValue, &argIsConst) != 0) {
+                    return -1;
+                }
+                if (!argIsConst) {
+                    *outIsConst = 0;
+                    return 0;
+                }
+                args[i++] = argValue;
+                argNode = ast->nodes[argNode].nextSibling;
+            }
+            if (SLEvalResolveCall(
+                    p,
+                    ast->nodes[calleeNode].dataStart,
+                    ast->nodes[calleeNode].dataEnd,
+                    args,
+                    argCount,
+                    outValue,
+                    outIsConst,
+                    NULL)
+                != 0)
+            {
+                return -1;
+            }
+            if (!*outIsConst && p->currentExecCtx != NULL
+                && p->currentExecCtx->nonConstReason == NULL)
+            {
+                SLCTFEExecSetReasonNode(
+                    p->currentExecCtx, exprNode, "call is not supported by evaluator backend");
+            }
+            return 0;
         }
     }
 
@@ -8087,7 +8520,12 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         if (diag.code != SLDiag_NONE) {
             PrintSLDiag(p->currentFile->path, p->currentFile->source, &diag, 1);
         } else {
-            ErrorSimple("evaluator backend failed to evaluate expression");
+            ErrorEvalUnsupported(
+                p->currentFile->path,
+                p->currentFile->source,
+                ast->nodes[exprNode].start,
+                ast->nodes[exprNode].end,
+                "failed to evaluate expression");
         }
         return -1;
     }
@@ -8128,6 +8566,9 @@ static int RunProgramEval(const char* entryPath, const char* _Nullable platformT
     if (SLEvalCollectFunctions(&program) != 0) {
         goto end;
     }
+    if (SLEvalCollectTopConsts(&program) != 0) {
+        goto end;
+    }
     for (i = 0; i < program.funcLen; i++) {
         SLEvalFunction* fn = &program.funcs[i];
         if (fn->paramCount == 0
@@ -8146,7 +8587,7 @@ static int RunProgramEval(const char* entryPath, const char* _Nullable platformT
     }
     mainFn = &program.funcs[mainIndex];
     if (mainFn->hasContextClause) {
-        rc = Errorf(
+        rc = ErrorEvalUnsupported(
             mainFn->file->path,
             mainFn->file->source,
             mainFn->file->ast.nodes[mainFn->fnNode].start,
@@ -8163,6 +8604,7 @@ static int RunProgramEval(const char* entryPath, const char* _Nullable platformT
 
 end:
     free(program.funcs);
+    free(program.topConsts);
     SLArenaDispose(&arena);
     FreeLoader(&loader);
     return rc;

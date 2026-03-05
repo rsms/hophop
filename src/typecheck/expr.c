@@ -3000,7 +3000,13 @@ int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
             if (SLTCTypeContainsVarSizeByValue(c, declType)) {
                 return SLTCFailNode(c, parts.initNode, SLDiag_TYPE_MISMATCH);
             }
-            return SLTCLocalAdd(c, n->dataStart, n->dataEnd, declType, n->kind == SLAst_CONST);
+            return SLTCLocalAdd(
+                c,
+                n->dataStart,
+                n->dataEnd,
+                declType,
+                n->kind == SLAst_CONST,
+                n->kind == SLAst_CONST ? parts.initNode : -1);
         }
 
         c->allowConstNumericTypeName = n->kind == SLAst_CONST ? 1u : 0u;
@@ -3038,7 +3044,13 @@ int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
             }
         }
 
-        return SLTCLocalAdd(c, n->dataStart, n->dataEnd, declType, n->kind == SLAst_CONST);
+        return SLTCLocalAdd(
+            c,
+            n->dataStart,
+            n->dataEnd,
+            declType,
+            n->kind == SLAst_CONST,
+            n->kind == SLAst_CONST ? parts.initNode : -1);
     }
 
     if (parts.typeNode >= 0) {
@@ -3114,7 +3126,8 @@ int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
             }
             name = &c->ast->nodes[nameNode];
             if (!SLNameEqLiteral(c->src, name->dataStart, name->dataEnd, "_")
-                && SLTCLocalAdd(c, name->dataStart, name->dataEnd, declType, n->kind == SLAst_CONST)
+                && SLTCLocalAdd(
+                       c, name->dataStart, name->dataEnd, declType, n->kind == SLAst_CONST, -1)
                        != 0)
             {
                 return -1;
@@ -3160,7 +3173,12 @@ int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
                 name = &c->ast->nodes[nameNode];
                 if (!SLNameEqLiteral(c->src, name->dataStart, name->dataEnd, "_")
                     && SLTCLocalAdd(
-                           c, name->dataStart, name->dataEnd, inferredType, n->kind == SLAst_CONST)
+                           c,
+                           name->dataStart,
+                           name->dataEnd,
+                           inferredType,
+                           n->kind == SLAst_CONST,
+                           n->kind == SLAst_CONST ? initNode : -1)
                            != 0)
                 {
                     return -1;
@@ -3201,7 +3219,12 @@ int SLTCTypeVarLike(SLTypeCheckCtx* c, int32_t nodeId) {
                 name = &c->ast->nodes[nameNode];
                 if (!SLNameEqLiteral(c->src, name->dataStart, name->dataEnd, "_")
                     && SLTCLocalAdd(
-                           c, name->dataStart, name->dataEnd, inferredType, n->kind == SLAst_CONST)
+                           c,
+                           name->dataStart,
+                           name->dataEnd,
+                           inferredType,
+                           n->kind == SLAst_CONST,
+                           -1)
                            != 0)
                 {
                     return -1;
