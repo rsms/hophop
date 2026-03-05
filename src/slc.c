@@ -464,6 +464,69 @@ static int NormalizeIdentifierTokenSpan(
     return 1;
 }
 
+static int NormalizeIdentifierAdjacentSpan(
+    const char* source, uint32_t inStart, uint32_t inEnd, uint32_t* outStart, uint32_t* outEnd) {
+    uint32_t s = inStart;
+    uint32_t e = inEnd;
+    uint32_t srcLen;
+    uint32_t anchor = UINT32_MAX;
+    uint32_t tokenStart;
+    uint32_t tokenEnd;
+    uint32_t i;
+    if (source == NULL || outStart == NULL || outEnd == NULL) {
+        return 0;
+    }
+    srcLen = (uint32_t)strlen(source);
+    if (s > srcLen) {
+        s = srcLen;
+    }
+    if (e > srcLen) {
+        e = srcLen;
+    }
+    if (e < s) {
+        e = s;
+    }
+    for (i = s; i < srcLen; i++) {
+        if (IsIdentifierChar(source[i])) {
+            anchor = i;
+            break;
+        }
+        if (source[i] == '\n') {
+            break;
+        }
+    }
+    if (anchor == UINT32_MAX && s > 0) {
+        i = s;
+        while (i > 0) {
+            i--;
+            if (IsIdentifierChar(source[i])) {
+                anchor = i;
+                break;
+            }
+            if (source[i] == '\n') {
+                break;
+            }
+        }
+    }
+    if (anchor == UINT32_MAX) {
+        return 0;
+    }
+    tokenStart = anchor;
+    tokenEnd = anchor + 1u;
+    while (tokenStart > 0 && IsIdentifierChar(source[tokenStart - 1u])) {
+        tokenStart--;
+    }
+    while (tokenEnd < srcLen && IsIdentifierChar(source[tokenEnd])) {
+        tokenEnd++;
+    }
+    if (tokenEnd <= tokenStart || !IsIdentifierStartChar(source[tokenStart])) {
+        return 0;
+    }
+    *outStart = tokenStart;
+    *outEnd = tokenEnd;
+    return 1;
+}
+
 typedef struct {
     uint8_t startMapped;
     uint8_t endMapped;
@@ -836,8 +899,16 @@ static void RemapCombinedDiag(
                 || diagOut->code == SLDiag_CONST_PARAM_SPREAD_NOT_CONST)
             && diagOut->argEnd > diagOut->argStart)
         {
-            (void)NormalizeIdentifierTokenSpan(
+            int normalized = NormalizeIdentifierTokenSpan(
                 source, diagOut->argStart, diagOut->argEnd, &diagOut->argStart, &diagOut->argEnd);
+            if (!normalized && diagOut->code == SLDiag_UNUSED_FUNCTION) {
+                (void)NormalizeIdentifierAdjacentSpan(
+                    source,
+                    diagOut->argStart,
+                    diagOut->argEnd,
+                    &diagOut->argStart,
+                    &diagOut->argEnd);
+            }
         }
     }
     if (source != NULL && diagOut->code == SLDiag_UNKNOWN_SYMBOL && diagOut->end > diagOut->start) {
