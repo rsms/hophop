@@ -1,0 +1,32 @@
+struct Counter {
+	start i32
+	done  bool
+}
+
+struct CounterIterator {
+	next i32
+	done bool
+}
+
+fn __iterator(counter &Counter) CounterIterator {
+	return { next: counter.start, done: counter.done }
+}
+
+fn next_value(it *CounterIterator) ?i32 {
+	if it.done {
+		return null
+	}
+	it.done = true
+	return it.next
+}
+
+fn first(counter Counter) i32 {
+	for n in counter {
+		return n
+	}
+	return 0
+}
+
+fn main() {
+	assert first(Counter{ start: 9 }) == 9
+}

@@ -1,4 +1,4 @@
-// SLP-29: for-in loops (value, ref, ptr, key+value, and discard)
+// SLP-29: for-in loops (value, &, key+value, and discard)
 fn main() {
 	var a [i32 4]
 	a[0] = 1
@@ -6,9 +6,9 @@ fn main() {
 	a[2] = 3
 	a[3] = 4
 
-	// Pointer capture over a mutable slice updates elements in place.
+	// & capture over a mutable slice updates elements in place.
 	var s *[i32] = a[:]
-	for *item in s {
+	for &item in s {
 		*item *= 2
 	}
 
@@ -20,7 +20,7 @@ fn main() {
 		sum += item
 	}
 
-	// Ref capture (bind item as &i32).
+	// & capture from immutable source (bind item as &i32).
 	var sum_ref i32
 	for &item in ro {
 		sum_ref += *item

@@ -446,11 +446,6 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
             if (SLTCResolveTypeNode(c, child, &baseType) != 0) {
                 return -1;
             }
-            /* Restrict ?T to pointer/reference families (plain value types deferred). */
-            if (c->types[baseType].kind != SLTCType_PTR && c->types[baseType].kind != SLTCType_REF)
-            {
-                return SLTCFailNode(c, child, SLDiag_EXPECTED_TYPE);
-            }
             optType = SLTCInternOptionalType(c, baseType, n->start, n->end);
             if (optType < 0) {
                 return -1;
@@ -1402,11 +1397,8 @@ int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
         if (src->kind == SLTCType_NULL) {
             return 1;
         }
-        /* T can be assigned to T? (implicit lift) */
-        if (srcType == dst->baseType
-            || (src->kind == SLTCType_NAMED
-                && SLTCIsTypeDerivedFromEmbedded(c, srcType, dst->baseType)))
-        {
+        /* T can be assigned to ?T (implicit lift through base assignability) */
+        if (src->kind != SLTCType_OPTIONAL && SLTCCanAssign(c, dst->baseType, srcType)) {
             return 1;
         }
         /* ?T can be assigned to ?T (also handles mutable sub-type coercions) */

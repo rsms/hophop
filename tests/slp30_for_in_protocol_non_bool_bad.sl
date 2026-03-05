@@ -14,9 +14,8 @@ fn __iterator(box &Box) BoxIterator {
 	return { next: box.next }
 }
 
-fn advance(it *BoxIterator, out *&Node) uint {
+fn next_value(it *BoxIterator) uint {
 	if it.next != null {
-		*out = it.next!
 		it.next = null
 		return 1
 	}

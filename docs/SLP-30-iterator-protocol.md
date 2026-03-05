@@ -4,29 +4,24 @@
 
 SLP-30 extends `for ... in` (SLP-29) with a protocol for user-defined iterable types.
 
-This SLP adds no new syntax. It defines a lowering contract based on two functions:
+This revision uses:
 
 - `__iterator(source) -> Iter`
-- `advance(it *Iter, <out>) bool` where `out` is a value pointer and optionally a key pointer.
+- `next_value(it *Iter) -> ?(&T|*T)`
+- `next_key(it *Iter) -> ?(&K|*K)` (optional, keyed discard preference)
+- `next_key_and_value(it *Iter) -> ?*(K, V)` (optional, keyed/value fallback)
 
-The protocol is designed to support:
-
-- by-value binding (`for value in expr`)
-- immutable-reference binding (`for &value in expr`)
-- mutable-pointer binding (`for *value in expr`)
-- optional key (`for key, value in expr`)
-
+There is no `advance(..., out) bool` in this revision.
 
 ## Motivation
 
 SLP-29 covers sequence-like types (`len` + `[]`) but leaves user-defined/infinite iteration out of scope.
 
-This SLP adds a minimal protocol that:
+The protocol in this revision keeps lowering simple while preserving explicit ownership semantics:
 
-- is pure library-level convention (no parser changes)
-- maps to straightforward `for` lowering
-- supports finite and infinite iterables
-- preserves backend optimization opportunities through explicit state and out-params
+- `for value in source` copies from `*next_value(...)`
+- `for &value in source` binds to `next_value(...)` directly
+- keyed loops on custom iterators are supported through `next_key` / `next_key_and_value`
 
 ## Protocol surface
 
@@ -34,32 +29,21 @@ For source expression `src`, an iterable protocol implementation consists of:
 
 ```sl
 fn __iterator(src <SourceType>) <IterType>
+fn next_value(it *<IterType>) ?*T
+fn next_value(it *<IterType>) ?&T
+fn next_key(it *<IterType>) ?*K
+fn next_key(it *<IterType>) ?&K
+fn next_key_and_value(it *<IterType>) ?*(K, V)
 ```
 
-and one or more `advance` functions:
-
-```sl
-fn advance(it *<IterType>, valueOut *&T) bool   // immutable reference binding
-fn advance(it *<IterType>, valueOut **T) bool   // mutable pointer binding
-fn advance(it *<IterType>, keyOut *&K, valueOut *&T) bool
-fn advance(it *<IterType>, keyOut *&K, valueOut **T) bool
-fn advance(it *<IterType>, keyOut **K, valueOut *&T) bool
-fn advance(it *<IterType>, keyOut **K, valueOut **T) bool
-```
-
-Implementors may choose to implement these functions in any way that makes `advance` callable as described above. For example, `anytype` can be used for compile-time monomorphization:
-
-```sl
-fn advance(it *<IterType>, result ...anytype) bool
-```
+`<SourceType>` may be by-value (`T`), immutable-reference (`&T`), or pointer (`*T`), using normal overload matching.
 
 Rules:
 
 - `__iterator` initializes iterator state.
-- `advance` writes the next item into `out`, updates iterator state, and returns:
-  - `true` when an item was produced
-  - `false` when iteration is exhausted
-- Iterator types may implement only a subset of binding modes (`*&T`, `**T`).
+- `next_*` hooks update iterator state and return:
+  - `null` when iteration is exhausted
+  - non-null pointer/ref payload when a value is produced
 
 ## Semantic rules
 
@@ -67,53 +51,49 @@ Rules:
 
 Given `for ... in EXPR`:
 
-1. If type of `EXPR` is a built-in sequence type (for example `&str` or `*[i64]`), use SLP-29 sequence lowering.
-2. If `__iterator(typeof(EXPR))` is available, attempt protocol lowering. Stop on error.
-2. [PLANNED FOR THE FUTURE, NOT PART OF SLP-30] If `len(typeof(EXPR))` and `__get_element(typeof(EXPR), uint)` are available, use SLP-29 sequence lowering.
-3. If none applies, emit `for_in_invalid_source`.
+1. If `EXPR` is built-in sequence-iterable, use SLP-29 sequence lowering.
+2. Otherwise resolve `__iterator(EXPR)` with standard conversion-cost overload matching.
+3. If not found and source is assignable, retry with autoref source type.
+4. For iterator path, resolve hooks by loop form:
+   - `for value in EXPR` / `for &value in EXPR` / `for _ in EXPR`:
+     - prefer `next_value(*Iter)`
+     - fallback to `next_key_and_value(*Iter)` (pair element 1)
+   - `for key, value in EXPR` / `for key, &value in EXPR`:
+     - use `next_key_and_value(*Iter)` (pair elements 0 and 1)
+   - `for key, _ in EXPR`:
+     - prefer `next_key(*Iter)`
+     - fallback to `next_key_and_value(*Iter)` (pair element 0)
+5. If none applies, emit `for_in_invalid_source`.
 
 ### 2. Single evaluation of source expression
 
-`EXPR` is evaluated exactly once before loop entry and stored in an implementation temporary used by
-`__iterator`.
+`EXPR` is evaluated exactly once before loop entry and stored in an implementation temporary.
 
-### 3. Iterator state lifetime
+### 3. Binding-mode mapping
 
-Iterator state is a local variable scoped to the lowered loop.
+- `for value in EXPR`:
+  - prefers `next_value(it *Iter) ?(&T|*T)`
+  - fallback: `next_key_and_value(it *Iter) ?*(K, V)` (bind from `V`)
+  - loop local has type `T` from dereferencing payload
+- `for &value in EXPR`:
+  - prefers `next_value(it *Iter) ?(&T|*T)`
+  - fallback: `next_key_and_value(it *Iter) ?*(K, V)` (bind from `V`)
+  - loop local has payload type (`&T` or `*T`)
+- `for _ in EXPR`:
+  - same hook resolution as value-binding forms
+  - payload is discarded
+- `for key, value in EXPR` / `for key, &value in EXPR`:
+  - requires `next_key_and_value(it *Iter) ?*(K, V)`
+  - key local type is `K`
+  - value local type uses value-binding mode conversion from `V`
+- `for key, _ in EXPR`:
+  - prefers `next_key(it *Iter) ?(&K|*K)`
+  - fallback: `next_key_and_value(it *Iter) ?*(K, V)`
+  - key local type is `K`
 
-### 4. Binding-mode to `advance` signature mapping
+### 4. Control flow
 
-For each loop form:
-
-- `for value in EXPR { ... }`
-  - requires `advance(*Iter, *T) bool`
-  - local binding is `var value T`
-- `for &value in EXPR { ... }`
-  - requires `advance(*Iter, *&T) bool`
-  - local binding is `var value &T`
-- `for *value in EXPR { ... }`
-  - requires `advance(*Iter, **T) bool`
-  - local binding is `var value *T`
-
-Partial support is valid: an iterator may provide only one or two of these overload families.
-
-If the loop requests a mode that the iterator does not implement, emit
-`for_in_advance_no_matching_overload` at compile time.
-
-### 5. Value discard (`_`)
-
-For `for _ in EXPR { ... }`:
-
-- if `advance(*Iter) bool` exists, it is used
-- otherwise, compiler may synthesize a temporary and call any available two-argument `advance`
-  overload
-
-If no valid `advance` form exists, emit `for_in_advance_no_matching_overload`.
-
-### 6. Control flow
-
-`break`, `continue`, and `defer` behavior is unchanged because lowering targets ordinary `for`
-loops.
+`break`, `continue`, and `defer` behavior is unchanged because lowering targets ordinary `for` loops.
 
 ## Canonical example
 
@@ -122,7 +102,7 @@ struct List {
     head ?*ListEntry
 }
 struct ListEntry {
-    value int
+    value i32
     next  ?*ListEntry
 }
 struct MutListIterator {
@@ -135,115 +115,53 @@ struct ListIterator {
 fn __iterator(list *List) MutListIterator { return { next: list.head } }
 fn __iterator(list &List) ListIterator { return { next: list.head } }
 
-fn advance(it *MutListIterator, result **ListEntry) bool {
-    if it.next != null {
-        *result = it.next!
-        it.next = it.next.next
-        return true
+fn next_value(it *MutListIterator) ?*ListEntry {
+    var cur = it.next
+    if cur != null {
+        it.next = cur.next
     }
-    return false
+    return cur
 }
-fn advance(it *ListIterator, result *&ListEntry) bool {
-    if it.next != null {
-        *result = it.next!
-        it.next = it.next.next
-        return true
+
+fn next_value(it *ListIterator) ?&ListEntry {
+    var cur = it.next
+    if cur != null {
+        it.next = cur.next
     }
-    return false
-}
-fn advance(it *ListIterator, result *ListEntry) bool {
-    if it.next != null {
-        *result = *(it.next!)
-        it.next = it.next.next
-        return true
-    }
-    return false
+    return cur
 }
 ```
-
-## Canonical lowering
-
-```sl
-fn modify(list *List) {
-    {
-        var entry *ListEntry
-        for var __sl_tmp1 MutListIterator = list.__iterator(); __sl_tmp1.advance(&entry); {
-            entry.value *= 100
-        }
-    }
-}
-fn read_only_ref(list &List) {
-    {
-        var entry &ListEntry
-        for var __sl_tmp1 ListIterator = list.__iterator(); __sl_tmp1.advance(&entry); {
-            assert entry.value >= 100
-        }
-    }
-}
-fn read_only(list &List) {
-    {
-        var entry ListEntry
-        for var __sl_tmp1 ListIterator = list.__iterator(); __sl_tmp1.advance(&entry); {
-            assert entry.value >= 100
-        }
-    }
-}
-```
-
-## Optional helper pattern
-
-To reduce duplicated iterator logic, implementations may use `anytype` helper functions and keep
-public `advance` overloads as thin wrappers. This is non-normative and not required by the
-protocol.
 
 ## Diagnostics
 
-Recommended new diagnostics:
+Recommended diagnostics:
 
-- `for_in_invalid_source`: source is neither sequence-iterable (SLP-29) nor protocol-iterable
+- `for_in_invalid_source`: source is neither sequence-iterable nor protocol-iterable
 - `for_in_iterator_ambiguous`: `__iterator(EXPR)` overload resolution is ambiguous
-- `for_in_advance_no_matching_overload`: requested binding mode is unsupported; include requested
-  mode and available `advance` out-parameter forms for the selected iterator type
-- `for_in_advance_non_bool`: selected `advance` does not return `bool`
+- `for_in_advance_no_matching_overload`: no compatible `next_*` overloads for the requested loop form
+- `for_in_advance_non_bool`: selected `next_*` hook does not return optional pointer/ref payload
 
 ## Compatibility
 
-This is additive.
+This revision is intentionally breaking versus previous SLP-30 drafts:
 
-- Existing SLP-29 sequence lowering remains unchanged and preferred.
-- Existing code without iterator protocol methods is unaffected.
-
-## Implementation notes
-
-- parser: no changes
-- typechecker:
-  - keep existing SLP-29 fast path first
-  - otherwise resolve `__iterator(EXPR)` and selected `advance` overload by binding mode
-  - synthesize typed loop-local binding from `advance` out-parameter
-- lowering/codegen:
-  - emit straightforward `for init; cond; post` form where condition is `advance(...)`
-  - ensure `EXPR` is evaluated once
+- removed `*value` for `for ... in`
+- replaced `advance(..., out) bool` with `next_value(it *Iter) ?(&T|*T)`
 
 ## Test plan
 
 Add tests for:
 
 1. Positive:
-   - protocol iteration with `for value`, `for &value`, `for *value`
-   - finite and infinite iterator shapes (with explicit `break` for infinite)
+   - protocol iteration with `for value`, `for &value`, `for _`
+   - keyed protocol iteration with `for key, value`, `for key, &value`, `for key, _`
+   - fallback precedence (`next_value` over `next_key_and_value`, `next_key` over `next_key_and_value`)
    - source expression evaluated once
 2. Negative:
    - missing `__iterator`
-   - missing required `advance` overload for selected binding mode
-   - non-`bool` `advance` return
-   - ambiguous `__iterator`/`advance` resolution
+   - missing required hook for each loop form
+   - non-compatible `next_*` return type
+   - ambiguous `__iterator` / `next_*` resolution
 3. Interaction:
    - `continue`/`break`/`defer` behavior matches equivalent lowered `for`
-   - sequence types still use SLP-29 lowering path
-
-## Non-goals
-
-SLP-30 does not add:
-
-- new loop syntax
-- ordering guarantees beyond what iterator implementation defines
+   - sequence types still use SLP-29 path

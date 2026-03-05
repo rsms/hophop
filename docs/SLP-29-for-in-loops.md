@@ -35,13 +35,12 @@ ForStmt         = "for" ( Block | Expr Block | ForClause Block | ForInClause Blo
 ForInClause     = ForInValueBinding "in" Expr
                 | ForInKeyBinding "," ForInValueBinding "in" Expr .
 ForInKeyBinding = [ "&" ] Ident .
-ForInValueBinding = "_" | [ "&" | "*" ] Ident .
+ForInValueBinding = "_" | [ "&" ] Ident .
 ```
 
 Notes:
 
 - `_` is only valid in value position.
-- `*` prefix is only valid in value position.
 
 ## Semantic rules
 
@@ -84,9 +83,9 @@ Given current element expression `<elem>`:
 - `for value in expr { body }`
   lowers with `var value = <elem>`.
 - `for &value in expr { body }`
-  lowers with `var value = &<elem>`.
-- `for *value in expr { body }`
-  lowers with `var value *typeof(<elem>) = &<elem>`.
+  lowers with `var value = &<elem>` and has `&<elem>` type:
+  - mutable source element -> `*T`
+  - immutable source element -> `&T`
 - `for _ in expr { body }`
   introduces no value binding and behaves as `for ... { body }` with only loop progression.
 
@@ -229,7 +228,7 @@ Add tests for:
 1. Positive:
    - value-only iteration
    - key+value iteration
-   - `&value` and `*value` captures
+   - `&value` captures from mutable and immutable sources
    - `_` value discard in form 1 and form 2
 2. Negative:
    - non-iterable source expression

@@ -5,7 +5,7 @@ fn main() {
 	a[2] = 3
 
 	var s *[i32] = a[:]
-	for *item in s {
+	for &item in s {
 		*item += 10
 	}
 

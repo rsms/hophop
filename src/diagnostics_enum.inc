@@ -127,15 +127,16 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_CONST_NUMERIC_INVALID_POSITION, /* SL2085: const_int and const_float are only allowed in
                                               const declarations, const parameters, function
                                               returns, and cast targets */
-    SLDiag_FOR_IN_INVALID_SOURCE,          /* SL2086: for-in source must support len(x) and x[i] */
-    SLDiag_FOR_IN_KEY_REF_INVALID,         /* SL2087: for-in key cannot be captured by reference for
-                                              synthetic sequence keys */
-    SLDiag_FOR_IN_VALUE_BINDING_INVALID,   /* SL2088: invalid for-in value binding for source
-                                              mutability/capture mode */
+    SLDiag_FOR_IN_INVALID_SOURCE,        /* SL2086: for-in source must support sequence iteration or
+                                            iterator protocol hooks */
+    SLDiag_FOR_IN_KEY_REF_INVALID,       /* SL2087: for-in key cannot be captured by reference for
+                                            synthetic sequence keys */
+    SLDiag_FOR_IN_VALUE_BINDING_INVALID, /* SL2088: invalid for-in value binding for source
+                                            mutability/capture mode */
     SLDiag_FOR_IN_ITERATOR_AMBIGUOUS, /* SL2089: ambiguous __iterator overload for for-in source */
-    SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD, /* SL2090: no matching advance overload for
-                                                   requested for-in binding mode */
-    SLDiag_FOR_IN_ADVANCE_NON_BOOL,     /* SL2091: for-in advance overload must return bool */
+    SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD, /* SL2090: no compatible next_value overload for
+                                                   this for-in loop form */
+    SLDiag_FOR_IN_ADVANCE_NON_BOOL,     /* SL2091: for-in next_value overload must return ?T */
     SLDiag_UNUSED_FUNCTION,             /* SL2092: function '{s}' is unused */
     SLDiag_UNUSED_VARIABLE,             /* SL2093: variable '{s}' is unused */
     SLDiag_UNUSED_VARIABLE_NEVER_READ,  /* SL2094: variable '{s}' is never read */

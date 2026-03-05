@@ -9,7 +9,7 @@ This glossary defines terms used normatively in [`docs/language.md`](./language.
 - `Lvalue`: Expression denoting storage location.
 - `Assignable expression`: Expression valid on assignment LHS (identifier, valid index, non-dependent field selection, writable dereference).
 - `Writable`: Location that permits mutation (`*T` dereference, writable slice-view element path, writable aggregate field path).
-- `Optional`: Type `?T` representing nullable pointer/reference-family values.
+- `Optional`: Type `?T` representing an optionally-present `T` value.
 - `Context keyword expression`: The reserved `context` primary-expression operand that resolves to the ambient context value when one exists.
 - `Unwrap`: Postfix `!` operation turning `?T` into `T`, trapping on null at runtime.
 - `Concretization`: Replacement of untyped literal type with default concrete type during inference.

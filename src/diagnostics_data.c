@@ -449,7 +449,8 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
                                                 SLDiagType_ERROR,
                                                 0 },
     [SLDiag_FOR_IN_INVALID_SOURCE] = { "SL2086",
-                                       "for-in source must support len(x) and x[i]",
+                                       "for-in source must support sequence iteration or iterator "
+                                       "protocol hooks",
                                        NULL,
                                        SLDiagType_ERROR,
                                        0 },
@@ -471,13 +472,13 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
                                            SLDiagType_ERROR,
                                            0 },
     [SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD] = { "SL2090",
-                                                     "no matching advance overload for requested "
-                                                     "for-in binding mode",
+                                                     "no compatible next_value overload for this "
+                                                     "for-in loop form",
                                                      NULL,
                                                      SLDiagType_ERROR,
                                                      0 },
     [SLDiag_FOR_IN_ADVANCE_NON_BOOL] = { "SL2091",
-                                         "for-in advance overload must return bool",
+                                         "for-in next_value overload must return ?T",
                                          NULL,
                                          SLDiagType_ERROR,
                                          0 },

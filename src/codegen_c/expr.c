@@ -3663,6 +3663,7 @@ int EmitStringLiteralPool(SLCBackendC* c) {
 }
 
 int EmitExpr(SLCBackendC* c, int32_t nodeId);
+int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType);
 int EmitAssertFormatArg(SLCBackendC* c, int32_t nodeId);
 
 int IsStrBaseName(const char* _Nullable s) {
@@ -3930,6 +3931,11 @@ static int ResolveForInElemType(
     if (!t.valid) {
         return -1;
     }
+    if (TypeRefIsStr(&t)) {
+        TypeRefSetScalar(outElemType, "__sl_u8");
+        *outMutable = 0;
+        return 0;
+    }
     if (t.containerKind == SLTypeContainer_ARRAY || t.containerKind == SLTypeContainer_SLICE_RO
         || t.containerKind == SLTypeContainer_SLICE_MUT)
     {
@@ -3942,41 +3948,14 @@ static int ResolveForInElemType(
         *outElemType = t;
         return 0;
     }
-    if (t.ptrDepth > 0) {
-        t.ptrDepth--;
-        *outMutable = 1;
-        *outElemType = t;
-        return 0;
-    }
     return -1;
 }
 
 typedef enum {
     SLCCGForInValueMode_VALUE = 0,
     SLCCGForInValueMode_REF,
-    SLCCGForInValueMode_PTR,
     SLCCGForInValueMode_ANY,
 } SLCCGForInValueMode;
-
-static int ForInOutLocalTypeFromParam(const SLTypeRef* paramType, SLTypeRef* outLocalType) {
-    SLTypeRef local = *paramType;
-    if (!local.valid) {
-        return -1;
-    }
-    if (local.containerKind == SLTypeContainer_SCALAR) {
-        if (local.ptrDepth <= 0) {
-            return -1;
-        }
-        local.ptrDepth--;
-    } else {
-        if (local.containerPtrDepth <= 0) {
-            return -1;
-        }
-        local.containerPtrDepth--;
-    }
-    *outLocalType = local;
-    return 0;
-}
 
 static int ForInTypeRefIsRef(const SLTypeRef* t) {
     return t->valid && t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth > 0
@@ -3988,129 +3967,116 @@ static int ForInTypeRefIsPtr(const SLTypeRef* t) {
         && t->readOnly == 0;
 }
 
-static int ForInTypeRefIsBoolLike(const SLCBackendC* c, const SLTypeRef* t) {
-    const char* base;
-    if (t == NULL || !t->valid || t->containerKind != SLTypeContainer_SCALAR || t->ptrDepth != 0
-        || t->containerPtrDepth != 0 || t->baseName == NULL)
-    {
-        return 0;
-    }
-    base = ResolveScalarAliasBaseName(c, t->baseName);
-    if (base == NULL) {
-        base = t->baseName;
-    }
-    return StrEq(base, "__sl_bool");
-}
-
-static int32_t FindFnNodeIdByCName(const SLCBackendC* c, const char* cName) {
-    uint32_t i;
-    if (c == NULL || cName == NULL) {
+static int ForInTypeRefDerefOne(const SLTypeRef* t, SLTypeRef* out) {
+    SLTypeRef v = *t;
+    if (!v.valid) {
         return -1;
     }
-    for (i = 0; i < c->fnNodeNameLen; i++) {
-        if (StrEq(c->fnNodeNames[i].cName, cName)) {
-            return c->fnNodeNames[i].nodeId;
+    if (v.containerKind == SLTypeContainer_SCALAR) {
+        if (v.ptrDepth <= 0) {
+            return -1;
         }
-    }
-    return -1;
-}
-
-/* Returns param type node id, or -1 when unknown. */
-static int32_t FindFnParamTypeNodeByIndex(
-    const SLCBackendC* c, const SLFnSig* sig, uint32_t index) {
-    int32_t  fnNodeId;
-    int32_t  child;
-    uint32_t seen = 0;
-    if (c == NULL || sig == NULL || sig->cName == NULL) {
-        return -1;
-    }
-    fnNodeId = FindFnNodeIdByCName(c, sig->cName);
-    if (fnNodeId < 0) {
-        return -1;
-    }
-    child = AstFirstChild(&c->ast, fnNodeId);
-    while (child >= 0) {
-        const SLAstNode* ch = NodeAt(c, child);
-        if (ch != NULL && ch->kind == SLAst_PARAM) {
-            if (seen == index) {
-                return AstFirstChild(&c->ast, child);
-            }
-            seen++;
+        v.ptrDepth--;
+        if (v.ptrDepth == 0) {
+            v.readOnly = 0;
         }
-        child = AstNextSibling(&c->ast, child);
+    } else {
+        if (v.containerPtrDepth <= 0) {
+            return -1;
+        }
+        v.containerPtrDepth--;
     }
-    return -1;
+    *out = v;
+    return 0;
 }
 
-/* Returns 1 match, 0 mismatch, -1 unknown (cannot inspect AST shape). */
-static int ForInKeyParamSyntaxMatches(
-    const SLCBackendC* c, const SLFnSig* sig, uint32_t paramIndex, int wantKeyRef) {
-    int32_t          typeNodeId = FindFnParamTypeNodeByIndex(c, sig, paramIndex);
-    const SLAstNode* typeNode;
-    int32_t          innerNodeId;
-    const SLAstNode* innerNode;
-    if (typeNodeId < 0) {
-        return -1;
-    }
-    typeNode = NodeAt(c, typeNodeId);
-    if (typeNode == NULL || typeNode->kind != SLAst_TYPE_PTR) {
+static int ForInPayloadTypeFromOptional(const SLTypeRef* returnType, SLTypeRef* outPayloadType) {
+    SLTypeRef payload = *returnType;
+    if (!payload.valid || !payload.isOptional) {
         return 0;
     }
-    innerNodeId = AstFirstChild(&c->ast, typeNodeId);
-    if (innerNodeId < 0) {
-        return 0;
-    }
-    innerNode = NodeAt(c, innerNodeId);
-    if (innerNode == NULL) {
-        return 0;
-    }
-    if (wantKeyRef) {
-        return innerNode->kind == SLAst_TYPE_REF ? 1 : 0;
-    }
-    return (innerNode->kind == SLAst_TYPE_REF || innerNode->kind == SLAst_TYPE_MUTREF) ? 0 : 1;
+    payload.isOptional = 0;
+    *outPayloadType = payload;
+    return 1;
 }
 
-/* Returns 1 match, 0 mismatch, -1 unknown (cannot inspect AST shape). */
-static int ForInValueParamSyntaxMatches(
-    const SLCBackendC* c, const SLFnSig* sig, uint32_t paramIndex, SLCCGForInValueMode valueMode) {
-    int32_t          typeNodeId = FindFnParamTypeNodeByIndex(c, sig, paramIndex);
-    const SLAstNode* typeNode;
-    int32_t          innerNodeId;
-    const SLAstNode* innerNode;
-    if (typeNodeId < 0) {
-        return -1;
-    }
-    typeNode = NodeAt(c, typeNodeId);
-    if (typeNode == NULL || typeNode->kind != SLAst_TYPE_PTR) {
+static int ForInValueLocalTypeFromPayload(
+    const SLTypeRef* payloadType, SLCCGForInValueMode valueMode, SLTypeRef* outLocalType) {
+    if (valueMode == SLCCGForInValueMode_REF) {
+        if (!ForInTypeRefIsRef(payloadType) && !ForInTypeRefIsPtr(payloadType)) {
+            return -1;
+        }
+        *outLocalType = *payloadType;
         return 0;
     }
-    innerNodeId = AstFirstChild(&c->ast, typeNodeId);
-    if (innerNodeId < 0) {
+    if (valueMode == SLCCGForInValueMode_VALUE) {
+        if (ForInTypeRefIsRef(payloadType) || ForInTypeRefIsPtr(payloadType)) {
+            return ForInTypeRefDerefOne(payloadType, outLocalType);
+        }
+        *outLocalType = *payloadType;
         return 0;
     }
-    innerNode = NodeAt(c, innerNodeId);
-    if (innerNode == NULL) {
-        return 0;
-    }
-
     if (valueMode == SLCCGForInValueMode_ANY) {
-        return 1;
+        *outLocalType = *payloadType;
+        return 0;
+    }
+    return -1;
+}
+
+static int ForInValueLocalTypeFromDirect(
+    const SLTypeRef* valueType, SLCCGForInValueMode valueMode, SLTypeRef* outLocalType) {
+    if (!valueType->valid) {
+        return -1;
+    }
+    if (valueMode == SLCCGForInValueMode_ANY) {
+        *outLocalType = *valueType;
+        return 0;
     }
     if (valueMode == SLCCGForInValueMode_REF) {
-        return innerNode->kind == SLAst_TYPE_REF ? 1 : 0;
+        if (!ForInTypeRefIsRef(valueType) && !ForInTypeRefIsPtr(valueType)) {
+            return -1;
+        }
+        *outLocalType = *valueType;
+        return 0;
     }
-    if (valueMode == SLCCGForInValueMode_PTR) {
-        return innerNode->kind == SLAst_TYPE_PTR ? 1 : 0;
+    if (valueMode == SLCCGForInValueMode_VALUE) {
+        if (ForInTypeRefIsRef(valueType) || ForInTypeRefIsPtr(valueType)) {
+            return ForInTypeRefDerefOne(valueType, outLocalType);
+        }
+        *outLocalType = *valueType;
+        return 0;
     }
-    /* by-value */
-    return (innerNode->kind == SLAst_TYPE_PTR || innerNode->kind == SLAst_TYPE_REF
-            || innerNode->kind == SLAst_TYPE_MUTREF)
-             ? 0
-             : 1;
+    return -1;
+}
+
+static int ForInTuple2FieldTypesFromPayload(
+    const SLCBackendC* c,
+    const SLTypeRef*   payloadType,
+    SLTypeRef*         outKeyType,
+    SLTypeRef*         outValueType) {
+    SLTypeRef             pairType = *payloadType;
+    SLTypeRef             expandedPairType;
+    const SLAnonTypeInfo* tupleInfo = NULL;
+    if (ForInTypeRefIsRef(payloadType) || ForInTypeRefIsPtr(payloadType)) {
+        if (ForInTypeRefDerefOne(payloadType, &pairType) != 0) {
+            return -1;
+        }
+    }
+    if (ExpandAliasSourceType(c, &pairType, &expandedPairType)) {
+        pairType = expandedPairType;
+    }
+    if (!TypeRefTupleInfo(c, &pairType, &tupleInfo) || tupleInfo == NULL
+        || tupleInfo->fieldCount != 2u)
+    {
+        return -1;
+    }
+    *outKeyType = c->fieldInfos[tupleInfo->fieldStart].type;
+    *outValueType = c->fieldInfos[tupleInfo->fieldStart + 1u].type;
+    return 0;
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
-static int ResolveForInIteratorSig(
+static int ResolveForInIteratorSigFromType(
     SLCBackendC*     c,
     const SLTypeRef* sourceType,
     const SLFnSig**  outSig,
@@ -4165,34 +4131,56 @@ static int ResolveForInIteratorSig(
     return 0;
 }
 
-/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 non-bool */
-static int ResolveForInAdvanceSig(
+/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
+static int ResolveForInIteratorSig(
+    SLCBackendC*     c,
+    const SLTypeRef* sourceType,
+    const SLFnSig**  outSig,
+    const char**     outCalleeName,
+    SLTypeRef*       outIterType,
+    int*             outAutoRefSource) {
+    int       rc;
+    SLTypeRef autoRefType;
+    *outAutoRefSource = 0;
+    rc = ResolveForInIteratorSigFromType(c, sourceType, outSig, outCalleeName, outIterType);
+    if (rc != 2) {
+        return rc;
+    }
+    autoRefType = *sourceType;
+    if (autoRefType.containerKind == SLTypeContainer_SCALAR) {
+        autoRefType.ptrDepth++;
+    } else {
+        autoRefType.containerPtrDepth++;
+    }
+    rc = ResolveForInIteratorSigFromType(c, &autoRefType, outSig, outCalleeName, outIterType);
+    if (rc == 0) {
+        *outAutoRefSource = 1;
+    }
+    return rc;
+}
+
+/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 bad return type */
+static int ResolveForInNextValueSig(
     SLCBackendC*        c,
     const SLTypeRef*    iterPtrType,
-    int                 wantKey,
-    int                 wantValue,
-    int                 wantKeyRef,
     SLCCGForInValueMode valueMode,
     const SLFnSig**     outSig,
     const char**        outCalleeName,
-    SLTypeRef*          outKeyLocalType,
     SLTypeRef*          outValueLocalType) {
     const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
     uint32_t       candidateLen = 0;
     const SLFnSig* bestSig = NULL;
     const char*    bestName = NULL;
     uint8_t        bestCost = 0;
-    SLTypeRef      bestKeyLocalType;
     SLTypeRef      bestValueLocalType;
     int            haveBest = 0;
     int            ambiguous = 0;
-    int            nonBool = 0;
+    int            badReturnType = 0;
     uint32_t       i;
-    TypeRefSetInvalid(&bestKeyLocalType);
     TypeRefSetInvalid(&bestValueLocalType);
 
     candidateLen = FindFnSigCandidatesByName(
-        c, "advance", candidates, (uint32_t)(sizeof(candidates) / sizeof(candidates[0])));
+        c, "next_value", candidates, (uint32_t)(sizeof(candidates) / sizeof(candidates[0])));
     if (candidateLen == 0) {
         return 1;
     }
@@ -4201,68 +4189,27 @@ static int ResolveForInAdvanceSig(
     }
     for (i = 0; i < candidateLen; i++) {
         const SLFnSig* sig = candidates[i];
-        int            pIndex = 1;
         uint8_t        cost = 0;
-        SLTypeRef      keyLocalType;
+        SLTypeRef      payloadType;
         SLTypeRef      valueLocalType;
-        TypeRefSetInvalid(&keyLocalType);
+        TypeRefSetInvalid(&payloadType);
         TypeRefSetInvalid(&valueLocalType);
-        if (sig->isVariadic
-            || sig->paramLen != (uint32_t)(1 + (wantKey ? 1 : 0) + (wantValue ? 1 : 0))
+        if (sig->isVariadic || sig->paramLen != 1
             || TypeRefAssignableCost(c, &sig->paramTypes[0], iterPtrType, &cost) != 0)
         {
             continue;
         }
-        if (wantKey) {
-            int keySyntaxMatch = ForInKeyParamSyntaxMatches(c, sig, (uint32_t)pIndex, wantKeyRef);
-            if (keySyntaxMatch == 0) {
-                continue;
-            }
-            if (ForInOutLocalTypeFromParam(&sig->paramTypes[pIndex], &keyLocalType) != 0) {
-                continue;
-            }
-            if (keySyntaxMatch < 0
-                && ((wantKeyRef && !ForInTypeRefIsRef(&keyLocalType))
-                    || (!wantKeyRef && ForInTypeRefIsRef(&keyLocalType))))
-            {
-                continue;
-            }
-            pIndex++;
-        }
-        if (wantValue) {
-            int valueSyntaxMatch = ForInValueParamSyntaxMatches(
-                c, sig, (uint32_t)pIndex, valueMode);
-            if (valueSyntaxMatch == 0) {
-                continue;
-            }
-            if (ForInOutLocalTypeFromParam(&sig->paramTypes[pIndex], &valueLocalType) != 0) {
-                continue;
-            }
-            if (valueSyntaxMatch < 0 && valueMode == SLCCGForInValueMode_REF
-                && !ForInTypeRefIsRef(&valueLocalType))
-            {
-                continue;
-            }
-            if (valueSyntaxMatch < 0 && valueMode == SLCCGForInValueMode_PTR
-                && !ForInTypeRefIsPtr(&valueLocalType))
-            {
-                continue;
-            }
-            if (valueSyntaxMatch < 0 && valueMode == SLCCGForInValueMode_VALUE
-                && (ForInTypeRefIsRef(&valueLocalType) || ForInTypeRefIsPtr(&valueLocalType)))
-            {
-                continue;
-            }
-        }
-        if (!ForInTypeRefIsBoolLike(c, &sig->returnType)) {
-            nonBool = 1;
+        if (!ForInPayloadTypeFromOptional(&sig->returnType, &payloadType)
+            || (valueMode != SLCCGForInValueMode_ANY
+                && ForInValueLocalTypeFromPayload(&payloadType, valueMode, &valueLocalType) != 0))
+        {
+            badReturnType = 1;
             continue;
         }
         if (!haveBest) {
             bestSig = sig;
             bestName = sig->cName;
             bestCost = cost;
-            bestKeyLocalType = keyLocalType;
             bestValueLocalType = valueLocalType;
             haveBest = 1;
             ambiguous = 0;
@@ -4270,7 +4217,6 @@ static int ResolveForInAdvanceSig(
             bestSig = sig;
             bestName = sig->cName;
             bestCost = cost;
-            bestKeyLocalType = keyLocalType;
             bestValueLocalType = valueLocalType;
             ambiguous = 0;
         } else if (cost == bestCost && sig != bestSig) {
@@ -4278,7 +4224,177 @@ static int ResolveForInAdvanceSig(
         }
     }
     if (!haveBest) {
-        return nonBool ? 4 : 2;
+        return badReturnType ? 4 : 2;
+    }
+    if (ambiguous) {
+        return 3;
+    }
+    *outSig = bestSig;
+    *outCalleeName = bestName;
+    *outValueLocalType = bestValueLocalType;
+    return 0;
+}
+
+/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 bad return type */
+static int ResolveForInNextKeySig(
+    SLCBackendC*     c,
+    const SLTypeRef* iterPtrType,
+    const SLFnSig**  outSig,
+    const char**     outCalleeName,
+    SLTypeRef*       outKeyLocalType,
+    SLTypeRef*       outKeyOptionalType) {
+    const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+    uint32_t       candidateLen = 0;
+    const SLFnSig* bestSig = NULL;
+    const char*    bestName = NULL;
+    uint8_t        bestCost = 0;
+    SLTypeRef      bestKeyLocalType;
+    SLTypeRef      bestKeyOptionalType;
+    int            haveBest = 0;
+    int            ambiguous = 0;
+    int            badReturnType = 0;
+    uint32_t       i;
+    TypeRefSetInvalid(&bestKeyLocalType);
+    TypeRefSetInvalid(&bestKeyOptionalType);
+
+    candidateLen = FindFnSigCandidatesByName(
+        c, "next_key", candidates, (uint32_t)(sizeof(candidates) / sizeof(candidates[0])));
+    if (candidateLen == 0) {
+        return 1;
+    }
+    if (candidateLen > (uint32_t)(sizeof(candidates) / sizeof(candidates[0]))) {
+        candidateLen = (uint32_t)(sizeof(candidates) / sizeof(candidates[0]));
+    }
+    for (i = 0; i < candidateLen; i++) {
+        const SLFnSig* sig = candidates[i];
+        uint8_t        cost = 0;
+        SLTypeRef      payloadType;
+        if (sig->isVariadic || sig->paramLen != 1
+            || TypeRefAssignableCost(c, &sig->paramTypes[0], iterPtrType, &cost) != 0)
+        {
+            continue;
+        }
+        if (!ForInPayloadTypeFromOptional(&sig->returnType, &payloadType)) {
+            badReturnType = 1;
+            continue;
+        }
+        if (!haveBest) {
+            bestSig = sig;
+            bestName = sig->cName;
+            bestCost = cost;
+            bestKeyLocalType = payloadType;
+            bestKeyOptionalType = sig->returnType;
+            haveBest = 1;
+            ambiguous = 0;
+        } else if (cost < bestCost) {
+            bestSig = sig;
+            bestName = sig->cName;
+            bestCost = cost;
+            bestKeyLocalType = payloadType;
+            bestKeyOptionalType = sig->returnType;
+            ambiguous = 0;
+        } else if (cost == bestCost && sig != bestSig) {
+            ambiguous = 1;
+        }
+    }
+    if (!haveBest) {
+        return badReturnType ? 4 : 2;
+    }
+    if (ambiguous) {
+        return 3;
+    }
+    *outSig = bestSig;
+    *outCalleeName = bestName;
+    *outKeyLocalType = bestKeyLocalType;
+    *outKeyOptionalType = bestKeyOptionalType;
+    return 0;
+}
+
+/* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 bad return type */
+static int ResolveForInNextKeyAndValueSig(
+    SLCBackendC*        c,
+    const SLTypeRef*    iterPtrType,
+    SLCCGForInValueMode valueMode,
+    const SLFnSig**     outSig,
+    const char**        outCalleeName,
+    SLTypeRef*          outKeyLocalType,
+    SLTypeRef*          outValueLocalType,
+    SLTypeRef*          outPairOptionalType) {
+    const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+    uint32_t       candidateLen = 0;
+    const SLFnSig* bestSig = NULL;
+    const char*    bestName = NULL;
+    uint8_t        bestCost = 0;
+    SLTypeRef      bestKeyLocalType;
+    SLTypeRef      bestValueLocalType;
+    SLTypeRef      bestPairOptionalType;
+    int            haveBest = 0;
+    int            ambiguous = 0;
+    int            badReturnType = 0;
+    uint32_t       i;
+    TypeRefSetInvalid(&bestKeyLocalType);
+    TypeRefSetInvalid(&bestValueLocalType);
+    TypeRefSetInvalid(&bestPairOptionalType);
+
+    candidateLen = FindFnSigCandidatesByName(
+        c,
+        "next_key_and_value",
+        candidates,
+        (uint32_t)(sizeof(candidates) / sizeof(candidates[0])));
+    if (candidateLen == 0) {
+        return 1;
+    }
+    if (candidateLen > (uint32_t)(sizeof(candidates) / sizeof(candidates[0]))) {
+        candidateLen = (uint32_t)(sizeof(candidates) / sizeof(candidates[0]));
+    }
+    for (i = 0; i < candidateLen; i++) {
+        const SLFnSig* sig = candidates[i];
+        uint8_t        cost = 0;
+        SLTypeRef      payloadType;
+        SLTypeRef      keyFieldType;
+        SLTypeRef      valueFieldType;
+        SLTypeRef      valueLocalType;
+        TypeRefSetInvalid(&payloadType);
+        TypeRefSetInvalid(&keyFieldType);
+        TypeRefSetInvalid(&valueFieldType);
+        TypeRefSetInvalid(&valueLocalType);
+        if (sig->isVariadic || sig->paramLen != 1
+            || TypeRefAssignableCost(c, &sig->paramTypes[0], iterPtrType, &cost) != 0)
+        {
+            continue;
+        }
+        if (!ForInPayloadTypeFromOptional(&sig->returnType, &payloadType)
+            || ForInTuple2FieldTypesFromPayload(c, &payloadType, &keyFieldType, &valueFieldType)
+                   != 0
+            || (valueMode != SLCCGForInValueMode_ANY
+                && ForInValueLocalTypeFromDirect(&valueFieldType, valueMode, &valueLocalType) != 0))
+        {
+            badReturnType = 1;
+            continue;
+        }
+        if (!haveBest) {
+            bestSig = sig;
+            bestName = sig->cName;
+            bestCost = cost;
+            bestKeyLocalType = keyFieldType;
+            bestValueLocalType = valueLocalType;
+            bestPairOptionalType = sig->returnType;
+            haveBest = 1;
+            ambiguous = 0;
+        } else if (cost < bestCost) {
+            bestSig = sig;
+            bestName = sig->cName;
+            bestCost = cost;
+            bestKeyLocalType = keyFieldType;
+            bestValueLocalType = valueLocalType;
+            bestPairOptionalType = sig->returnType;
+            ambiguous = 0;
+        } else if (cost == bestCost && sig != bestSig) {
+            ambiguous = 1;
+        }
+    }
+    if (!haveBest) {
+        return badReturnType ? 4 : 2;
     }
     if (ambiguous) {
         return 3;
@@ -4287,6 +4403,7 @@ static int ResolveForInAdvanceSig(
     *outCalleeName = bestName;
     *outKeyLocalType = bestKeyLocalType;
     *outValueLocalType = bestValueLocalType;
+    *outPairOptionalType = bestPairOptionalType;
     return 0;
 }
 
@@ -4378,6 +4495,199 @@ int TypeRefIsPointerLike(const SLTypeRef* t) {
         || t->containerKind == SLTypeContainer_SLICE_MUT)
     {
         return t->ptrDepth > 0 || t->containerPtrDepth > 0;
+    }
+    return 0;
+}
+
+static int TypeRefOptionalPayloadTypeExpr(const SLTypeRef* optionalType, SLTypeRef* outPayload) {
+    if (optionalType == NULL || outPayload == NULL || !optionalType->valid
+        || !optionalType->isOptional)
+    {
+        return 0;
+    }
+    *outPayload = *optionalType;
+    outPayload->isOptional = 0;
+    return 1;
+}
+
+static int TypeRefOptionalPayloadUsesNullSentinelExpr(const SLTypeRef* payload) {
+    if (payload == NULL || !payload->valid) {
+        return 0;
+    }
+    if (TypeRefIsPointerLike(payload)) {
+        return 1;
+    }
+    return (payload->containerKind == SLTypeContainer_SLICE_RO
+            || payload->containerKind == SLTypeContainer_SLICE_MUT)
+        && payload->ptrDepth == 0 && payload->containerPtrDepth == 0;
+}
+
+static int EmitOptionalIsSomeFromNameType(
+    SLCBackendC* c, const char* name, const SLTypeRef* optionalType) {
+    SLTypeRef payloadType;
+    if (c == NULL || name == NULL || optionalType == NULL
+        || !TypeRefOptionalPayloadTypeExpr(optionalType, &payloadType))
+    {
+        return -1;
+    }
+    if (TypeRefOptionalPayloadUsesNullSentinelExpr(&payloadType)) {
+        if ((payloadType.containerKind == SLTypeContainer_SLICE_RO
+             || payloadType.containerKind == SLTypeContainer_SLICE_MUT)
+            && SliceStructPtrDepth(&payloadType) == 0)
+        {
+            if (BufAppendChar(&c->out, '(') != 0 || BufAppendCStr(&c->out, name) != 0
+                || BufAppendCStr(&c->out, ".ptr != NULL)") != 0)
+            {
+                return -1;
+            }
+        } else {
+            if (BufAppendChar(&c->out, '(') != 0 || BufAppendCStr(&c->out, name) != 0
+                || BufAppendCStr(&c->out, " != NULL)") != 0)
+            {
+                return -1;
+            }
+        }
+        return 0;
+    }
+    if (BufAppendChar(&c->out, '(') != 0 || BufAppendCStr(&c->out, name) != 0
+        || BufAppendCStr(&c->out, ".__sl_tag != 0u)") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitOptionalIsSomeExpr(
+    SLCBackendC* c, int32_t exprNode, const SLTypeRef* optionalType, int useCoercedExpr) {
+    SLTypeRef payloadType;
+    if (c == NULL || optionalType == NULL
+        || !TypeRefOptionalPayloadTypeExpr(optionalType, &payloadType))
+    {
+        return -1;
+    }
+    if (TypeRefOptionalPayloadUsesNullSentinelExpr(&payloadType)) {
+        if ((payloadType.containerKind == SLTypeContainer_SLICE_RO
+             || payloadType.containerKind == SLTypeContainer_SLICE_MUT)
+            && SliceStructPtrDepth(&payloadType) == 0)
+        {
+            if (BufAppendCStr(&c->out, "(__extension__({ __auto_type __sl_opt = ") != 0) {
+                return -1;
+            }
+            if (useCoercedExpr) {
+                if (EmitExprCoerced(c, exprNode, optionalType) != 0) {
+                    return -1;
+                }
+            } else if (EmitExpr(c, exprNode) != 0) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, "; __sl_opt.ptr != NULL; }))") != 0) {
+                return -1;
+            }
+        } else {
+            if (BufAppendChar(&c->out, '(') != 0) {
+                return -1;
+            }
+            if (useCoercedExpr) {
+                if (EmitExprCoerced(c, exprNode, optionalType) != 0) {
+                    return -1;
+                }
+            } else if (EmitExpr(c, exprNode) != 0) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, " != NULL)") != 0) {
+                return -1;
+            }
+        }
+        return 0;
+    }
+    if (BufAppendCStr(&c->out, "(__extension__({ __auto_type __sl_opt = ") != 0) {
+        return -1;
+    }
+    if (useCoercedExpr) {
+        if (EmitExprCoerced(c, exprNode, optionalType) != 0) {
+            return -1;
+        }
+    } else if (EmitExpr(c, exprNode) != 0) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "; __sl_opt.__sl_tag != 0u; }))") != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitTaggedOptionalNoneLiteral(SLCBackendC* c, const SLTypeRef* optionalType) {
+    SLTypeRef storageType;
+    if (c == NULL || optionalType == NULL || !TypeRefIsTaggedOptional(optionalType)) {
+        return -1;
+    }
+    if (TypeRefLowerForStorage(c, optionalType, &storageType) != 0) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, &storageType) != 0
+        || BufAppendCStr(&c->out, "){ .__sl_tag = 0u })") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitTaggedOptionalSomeLiteral(
+    SLCBackendC* c, int32_t exprNode, const SLTypeRef* optionalType) {
+    SLTypeRef payloadType;
+    SLTypeRef storageType;
+    if (c == NULL || optionalType == NULL
+        || !TypeRefOptionalPayloadTypeExpr(optionalType, &payloadType)
+        || !TypeRefIsTaggedOptional(optionalType))
+    {
+        return -1;
+    }
+    if (TypeRefLowerForStorage(c, optionalType, &storageType) != 0) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, &storageType) != 0
+        || BufAppendCStr(&c->out, "){ .__sl_tag = 1u, .__sl_value = ") != 0)
+    {
+        return -1;
+    }
+    if (EmitExprCoerced(c, exprNode, &payloadType) != 0 || BufAppendCStr(&c->out, " })") != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitTaggedOptionalConvertFromOptional(
+    SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType, const SLTypeRef* srcType) {
+    SLTypeRef dstPayload;
+    SLTypeRef srcPayload;
+    SLTypeRef dstStorage;
+    if (c == NULL || dstType == NULL || srcType == NULL || !TypeRefIsTaggedOptional(dstType)
+        || !TypeRefIsTaggedOptional(srcType)
+        || !TypeRefOptionalPayloadTypeExpr(dstType, &dstPayload)
+        || !TypeRefOptionalPayloadTypeExpr(srcType, &srcPayload))
+    {
+        return -1;
+    }
+    if (TypeRefLowerForStorage(c, dstType, &dstStorage) != 0) {
+        return -1;
+    }
+    if (TypeRefEqual(&dstPayload, &srcPayload)) {
+        return EmitExpr(c, exprNode);
+    }
+    if (BufAppendCStr(&c->out, "(__extension__({ __auto_type __sl_opt = ") != 0
+        || EmitExpr(c, exprNode) != 0 || BufAppendCStr(&c->out, "; ") != 0)
+    {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "__sl_opt.__sl_tag != 0u ? ((") != 0
+        || EmitTypeNameWithDepth(c, &dstStorage) != 0
+        || BufAppendCStr(&c->out, "){ .__sl_tag = 1u, .__sl_value = ((") != 0
+        || EmitTypeNameWithDepth(c, &dstPayload) != 0
+        || BufAppendCStr(&c->out, ")(__sl_opt.__sl_value)) }) : ((") != 0
+        || EmitTypeNameWithDepth(c, &dstStorage) != 0
+        || BufAppendCStr(&c->out, "){ .__sl_tag = 0u }); }))") != 0)
+    {
+        return -1;
     }
     return 0;
 }
@@ -5230,7 +5540,53 @@ int EmitFmtAppendReflectExpr(
     if (TypeRefIsNamedDeclKind(c, type, SLAst_STRUCT) || TypeRefTupleInfo(c, type, NULL)) {
         return EmitFmtAppendReflectStruct(c, builderName, expr, type, depth);
     }
-    if (TypeRefIsPointerLike(type) || type->isOptional) {
+    if (type->isOptional) {
+        SLTypeRef payloadType;
+        if (!TypeRefOptionalPayloadTypeExpr(type, &payloadType)) {
+            return -1;
+        }
+        if (!TypeRefOptionalPayloadUsesNullSentinelExpr(&payloadType)) {
+            if (BufAppendCStr(&c->out, "    __sl_fmt_builder_append_str(&") != 0
+                || BufAppendCStr(&c->out, builderName) != 0 || BufAppendCStr(&c->out, ", ((") != 0
+                || BufAppendCStr(&c->out, expr) != 0
+                || BufAppendCStr(
+                       &c->out,
+                       ").__sl_tag == 0u) ? __sl_strlit(\"null\") : "
+                       "__sl_strlit(\"<some>\"));\n")
+                       != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+        if ((payloadType.containerKind == SLTypeContainer_SLICE_RO
+             || payloadType.containerKind == SLTypeContainer_SLICE_MUT)
+            && SliceStructPtrDepth(&payloadType) == 0)
+        {
+            if (BufAppendCStr(&c->out, "    __sl_fmt_builder_append_str(&") != 0
+                || BufAppendCStr(&c->out, builderName) != 0 || BufAppendCStr(&c->out, ", ((") != 0
+                || BufAppendCStr(&c->out, expr) != 0
+                || BufAppendCStr(
+                       &c->out,
+                       ").ptr == NULL) ? __sl_strlit(\"null\") : __sl_strlit(\"<ptr>\"));\n")
+                       != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+        if (BufAppendCStr(&c->out, "    __sl_fmt_builder_append_str(&") != 0
+            || BufAppendCStr(&c->out, builderName) != 0 || BufAppendCStr(&c->out, ", ((") != 0
+            || BufAppendCStr(&c->out, expr) != 0
+            || BufAppendCStr(
+                   &c->out, ") == 0) ? __sl_strlit(\"null\") : __sl_strlit(\"<ptr>\"));\n")
+                   != 0)
+        {
+            return -1;
+        }
+        return 0;
+    }
+    if (TypeRefIsPointerLike(type)) {
         if (BufAppendCStr(&c->out, "    __sl_fmt_builder_append_str(&") != 0
             || BufAppendCStr(&c->out, builderName) != 0 || BufAppendCStr(&c->out, ", ((") != 0
             || BufAppendCStr(&c->out, expr) != 0
@@ -5913,11 +6269,25 @@ int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType) 
             return 0;
         }
     }
+    if (dstType->isOptional && expr != NULL && expr->kind == SLAst_NULL
+        && TypeRefIsTaggedOptional(dstType))
+    {
+        return EmitTaggedOptionalNoneLiteral(c, dstType);
+    }
     if (InferExprType(c, exprNode, &srcType) != 0 || !srcType.valid) {
         return EmitExpr(c, exprNode);
     }
     if (TypeRefIsFmtValueType(c, dstType) && !TypeRefIsFmtValueType(c, &srcType)) {
         return EmitExprCoerceFmtValue(c, exprNode, &srcType, dstType);
+    }
+    if (dstType->isOptional && TypeRefIsTaggedOptional(dstType)) {
+        if (srcType.isOptional) {
+            if (TypeRefIsTaggedOptional(&srcType)) {
+                return EmitTaggedOptionalConvertFromOptional(c, exprNode, dstType, &srcType);
+            }
+            return EmitExpr(c, exprNode);
+        }
+        return EmitTaggedOptionalSomeLiteral(c, exprNode, dstType);
     }
     if (srcType.containerKind == SLTypeContainer_SCALAR
         && dstType->containerKind == SLTypeContainer_SCALAR && srcType.baseName != NULL
@@ -6780,10 +7150,27 @@ int EmitCompoundLiteral(SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullab
 }
 
 int EmitExpr_IDENT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
-    int32_t topVarLikeNode = -1;
+    const SLLocal* local = NULL;
+    int32_t        topVarLikeNode = -1;
     (void)nodeId;
-    if (FindLocalBySlice(c, n->dataStart, n->dataEnd) != NULL
-        || FindFnSigBySlice(c, n->dataStart, n->dataEnd) != NULL
+    local = FindLocalBySlice(c, n->dataStart, n->dataEnd);
+    if (local != NULL) {
+        int32_t localIdx = FindLocalIndexBySlice(c, n->dataStart, n->dataEnd);
+        if (c->hasActiveOptionalNarrow && localIdx >= 0
+            && localIdx == c->activeOptionalNarrowLocalIdx
+            && TypeRefIsTaggedOptional(&c->activeOptionalNarrowStorageType))
+        {
+            if (BufAppendChar(&c->out, '(') != 0
+                || AppendMappedIdentifier(c, n->dataStart, n->dataEnd) != 0
+                || BufAppendCStr(&c->out, ".__sl_value)") != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+        return AppendMappedIdentifier(c, n->dataStart, n->dataEnd);
+    }
+    if (FindFnSigBySlice(c, n->dataStart, n->dataEnd) != NULL
         || FindTopLevelVarLikeNodeBySlice(c, n->dataStart, n->dataEnd, &topVarLikeNode) == 0)
     {
         return AppendMappedIdentifier(c, n->dataStart, n->dataEnd);
@@ -6976,6 +7363,18 @@ int EmitExpr_BINARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
         }
         if ((!lhsType.valid && !lhsNull) || (!rhsType.valid && !rhsNull)) {
             goto emit_raw_binary;
+        }
+        if (isEqOp && lhsType.valid && lhsType.isOptional && rhsNull) {
+            if (op == SLTok_EQ && BufAppendChar(&c->out, '!') != 0) {
+                return -1;
+            }
+            return EmitOptionalIsSomeExpr(c, lhs, &lhsType, 0);
+        }
+        if (isEqOp && rhsType.valid && rhsType.isOptional && lhsNull) {
+            if (op == SLTok_EQ && BufAppendChar(&c->out, '!') != 0) {
+                return -1;
+            }
+            return EmitOptionalIsSomeExpr(c, rhs, &rhsType, 0);
         }
 
         {
@@ -8317,10 +8716,28 @@ int EmitExpr_NULL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
 }
 
 int EmitExpr_UNWRAP(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
-    int32_t inner = AstFirstChild(&c->ast, nodeId);
+    int32_t   inner = AstFirstChild(&c->ast, nodeId);
+    SLTypeRef innerType;
     (void)n;
     if (inner < 0) {
         return -1;
+    }
+    if (InferExprType(c, inner, &innerType) != 0 || !innerType.valid || !innerType.isOptional) {
+        return -1;
+    }
+    if (TypeRefIsTaggedOptional(&innerType)) {
+        if (BufAppendCStr(&c->out, "(__extension__({ __auto_type __sl_opt = ") != 0
+            || EmitExpr(c, inner) != 0
+            || BufAppendCStr(
+                   &c->out,
+                   "; if (__sl_opt.__sl_tag == 0u) { "
+                   "__sl_panic(__sl_strlit(\"unwrap: null value\"), __FILE__, __LINE__); } "
+                   "__sl_opt.__sl_value; }))")
+                   != 0)
+        {
+            return -1;
+        }
+        return 0;
     }
     if (BufAppendCStr(&c->out, "__sl_unwrap(") != 0 || EmitExpr(c, inner) != 0
         || BufAppendChar(&c->out, ')') != 0)
@@ -8838,7 +9255,6 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         int            hasKey = (forNode->flags & SLAstFlag_FOR_IN_HAS_KEY) != 0;
         int            keyRef = (forNode->flags & SLAstFlag_FOR_IN_KEY_REF) != 0;
         int            valueRef = (forNode->flags & SLAstFlag_FOR_IN_VALUE_REF) != 0;
-        int            valuePtr = (forNode->flags & SLAstFlag_FOR_IN_VALUE_PTR) != 0;
         int            valueDiscard = (forNode->flags & SLAstFlag_FOR_IN_VALUE_DISCARD) != 0;
         int32_t        keyNode = -1;
         int32_t        valueNode = -1;
@@ -8851,21 +9267,37 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         SLTypeRef      keyType;
         SLTypeRef      iterType;
         SLTypeRef      iterPtrType;
-        SLTypeRef      advanceKeyLocalType;
-        SLTypeRef      advanceValueLocalType;
+        SLTypeRef      nextValueLocalType;
+        SLTypeRef      nextValueOptionalType;
+        SLTypeRef      nextKeyLocalType;
+        SLTypeRef      nextKeyOptionalType;
+        SLTypeRef      nextPairKeyLocalType;
+        SLTypeRef      nextPairValueLocalType;
+        SLTypeRef      nextPairOptionalType;
         const SLFnSig* iteratorSig = NULL;
-        const SLFnSig* advanceSig = NULL;
+        const SLFnSig* nextValueSig = NULL;
+        const SLFnSig* nextKeySig = NULL;
+        const SLFnSig* nextPairSig = NULL;
         const char*    iteratorCallee = NULL;
-        const char*    advanceCallee = NULL;
-        int            advanceNeedsKey = 0;
-        int            advanceNeedsValue = 0;
-        int            synthValueTemp = 0;
+        int            iteratorAutoRefSource = 0;
+        const char*    nextValueCallee = NULL;
+        const char*    nextKeyCallee = NULL;
+        const char*    nextPairCallee = NULL;
+        int            useNextPair = 0;
+        int            useNextKey = 0;
+        int            pairValueNeedsDeref = 0;
+        int            nextValuePayloadIsIndirect = 0;
+        int            nextValueOptionalTagged = 0;
+        int            pairPayloadIsIndirect = 0;
+        int            pairOptionalTagged = 0;
+        const char*    pairKeyFieldName = NULL;
+        const char*    pairValueFieldName = NULL;
         int            elemMutable = 0;
         const char*    seqTmpName = "__sl_forin_seq";
         const char*    idxTmpName = "__sl_forin_idx";
         const char*    sourceTmpName = "__sl_forin_src";
         const char*    iterTmpName = "__sl_forin_it";
-        const char*    discardValueTmpName = "__sl_forin_value";
+        const char*    nextTmpName = "__sl_forin_next";
         char*          valueName = NULL;
         char*          keyName = NULL;
         int            rc;
@@ -8875,8 +9307,13 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         TypeRefSetInvalid(&keyType);
         TypeRefSetInvalid(&iterType);
         TypeRefSetInvalid(&iterPtrType);
-        TypeRefSetInvalid(&advanceKeyLocalType);
-        TypeRefSetInvalid(&advanceValueLocalType);
+        TypeRefSetInvalid(&nextValueLocalType);
+        TypeRefSetInvalid(&nextValueOptionalType);
+        TypeRefSetInvalid(&nextKeyLocalType);
+        TypeRefSetInvalid(&nextKeyOptionalType);
+        TypeRefSetInvalid(&nextPairKeyLocalType);
+        TypeRefSetInvalid(&nextPairValueLocalType);
+        TypeRefSetInvalid(&nextPairOptionalType);
         if ((!hasKey && count != 3) || (hasKey && count != 4)) {
             return -1;
         }
@@ -8901,25 +9338,25 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         }
         if (ResolveForInElemType(&sourceType, &elemType, &elemMutable) == 0) {
             useSequencePath = 1;
-            if (valuePtr && !elemMutable) {
-                SetDiagNode(c, valueNode, SLDiag_FOR_IN_VALUE_BINDING_INVALID);
-                return -1;
-            }
             valueLocalType = elemType;
-            if (valueRef || valuePtr) {
+            if (valueRef) {
                 if (valueLocalType.containerKind == SLTypeContainer_SCALAR) {
                     valueLocalType.ptrDepth++;
                 } else {
                     valueLocalType.containerPtrDepth++;
                 }
-                if (valuePtr) {
-                    valueLocalType.readOnly = 0;
-                }
+                valueLocalType.readOnly = elemMutable ? 0 : 1;
             }
             TypeRefSetScalar(&keyType, "__sl_uint");
         } else {
-            SLCCGForInValueMode valueMode = SLCCGForInValueMode_VALUE;
-            rc = ResolveForInIteratorSig(c, &sourceType, &iteratorSig, &iteratorCallee, &iterType);
+            SLCCGForInValueMode   valueMode = SLCCGForInValueMode_VALUE;
+            SLTypeRef             payloadType;
+            SLTypeRef             pairPayloadType;
+            SLTypeRef             pairType;
+            SLTypeRef             expandedPairType;
+            const SLAnonTypeInfo* pairTupleInfo = NULL;
+            rc = ResolveForInIteratorSig(
+                c, &sourceType, &iteratorSig, &iteratorCallee, &iterType, &iteratorAutoRefSource);
             if (rc == 1 || rc == 2) {
                 SetDiagNode(c, sourceNode, SLDiag_FOR_IN_INVALID_SOURCE);
                 return -1;
@@ -8938,100 +9375,187 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             } else {
                 iterPtrType.containerPtrDepth++;
             }
+            if (keyRef) {
+                SetDiagNode(c, keyNode, SLDiag_FOR_IN_KEY_REF_INVALID);
+                return -1;
+            }
             if (valueRef) {
                 valueMode = SLCCGForInValueMode_REF;
-            } else if (valuePtr) {
-                valueMode = SLCCGForInValueMode_PTR;
             }
             if (hasKey && valueDiscard) {
-                rc = ResolveForInAdvanceSig(
+                rc = ResolveForInNextKeySig(
                     c,
                     &iterPtrType,
-                    1,
-                    0,
-                    keyRef,
-                    SLCCGForInValueMode_ANY,
-                    &advanceSig,
-                    &advanceCallee,
-                    &advanceKeyLocalType,
-                    &advanceValueLocalType);
-                if (rc == 2) {
-                    rc = ResolveForInAdvanceSig(
+                    &nextKeySig,
+                    &nextKeyCallee,
+                    &nextKeyLocalType,
+                    &nextKeyOptionalType);
+                if (rc == 1 || rc == 2) {
+                    rc = ResolveForInNextKeyAndValueSig(
                         c,
                         &iterPtrType,
-                        1,
-                        1,
-                        keyRef,
                         SLCCGForInValueMode_ANY,
-                        &advanceSig,
-                        &advanceCallee,
-                        &advanceKeyLocalType,
-                        &advanceValueLocalType);
+                        &nextPairSig,
+                        &nextPairCallee,
+                        &nextPairKeyLocalType,
+                        &nextPairValueLocalType,
+                        &nextPairOptionalType);
                     if (rc == 0) {
-                        synthValueTemp = 1;
+                        useNextPair = 1;
                     }
                 }
-            } else if (!hasKey && valueDiscard) {
-                rc = ResolveForInAdvanceSig(
+                if (rc == 4) {
+                    SetDiagNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NON_BOOL);
+                    return -1;
+                }
+                if (rc == 1 || rc == 2 || rc == 3) {
+                    SetDiagNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
+                    return -1;
+                }
+                if (!useNextPair) {
+                    if (nextKeySig == NULL || nextKeyCallee == NULL || !nextKeyLocalType.valid
+                        || !nextKeyOptionalType.valid)
+                    {
+                        SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+                        return -1;
+                    }
+                    useNextKey = 1;
+                    keyType = nextKeyLocalType;
+                    nextValueOptionalType = nextKeyOptionalType;
+                    nextValueSig = nextKeySig;
+                    nextValueCallee = nextKeyCallee;
+                }
+            } else if (hasKey) {
+                rc = ResolveForInNextKeyAndValueSig(
                     c,
                     &iterPtrType,
-                    0,
-                    0,
-                    0,
-                    SLCCGForInValueMode_ANY,
-                    &advanceSig,
-                    &advanceCallee,
-                    &advanceKeyLocalType,
-                    &advanceValueLocalType);
-                if (rc == 2) {
-                    rc = ResolveForInAdvanceSig(
-                        c,
-                        &iterPtrType,
-                        0,
-                        1,
-                        0,
-                        SLCCGForInValueMode_ANY,
-                        &advanceSig,
-                        &advanceCallee,
-                        &advanceKeyLocalType,
-                        &advanceValueLocalType);
-                    if (rc == 0) {
-                        synthValueTemp = 1;
-                    }
+                    valueDiscard ? SLCCGForInValueMode_ANY : valueMode,
+                    &nextPairSig,
+                    &nextPairCallee,
+                    &nextPairKeyLocalType,
+                    &nextPairValueLocalType,
+                    &nextPairOptionalType);
+                if (rc == 4) {
+                    SetDiagNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NON_BOOL);
+                    return -1;
                 }
+                if (rc == 1 || rc == 2 || rc == 3) {
+                    SetDiagNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
+                    return -1;
+                }
+                if (rc != 0 || nextPairSig == NULL || nextPairCallee == NULL
+                    || !nextPairOptionalType.valid)
+                {
+                    SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+                    return -1;
+                }
+                useNextPair = 1;
             } else {
-                rc = ResolveForInAdvanceSig(
+                rc = ResolveForInNextValueSig(
                     c,
                     &iterPtrType,
-                    hasKey,
-                    1,
-                    keyRef,
-                    valueMode,
-                    &advanceSig,
-                    &advanceCallee,
-                    &advanceKeyLocalType,
-                    &advanceValueLocalType);
+                    valueDiscard ? SLCCGForInValueMode_ANY : valueMode,
+                    &nextValueSig,
+                    &nextValueCallee,
+                    &nextValueLocalType);
+                if (rc == 1 || rc == 2) {
+                    rc = ResolveForInNextKeyAndValueSig(
+                        c,
+                        &iterPtrType,
+                        valueDiscard ? SLCCGForInValueMode_ANY : valueMode,
+                        &nextPairSig,
+                        &nextPairCallee,
+                        &nextPairKeyLocalType,
+                        &nextPairValueLocalType,
+                        &nextPairOptionalType);
+                    if (rc == 0) {
+                        useNextPair = 1;
+                    }
+                }
+                if (rc == 4) {
+                    SetDiagNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NON_BOOL);
+                    return -1;
+                }
+                if (rc == 1 || rc == 2 || rc == 3) {
+                    SetDiagNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
+                    return -1;
+                }
+                if (!useNextPair) {
+                    if (nextValueSig == NULL || nextValueCallee == NULL
+                        || !nextValueSig->returnType.valid)
+                    {
+                        SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+                        return -1;
+                    }
+                    nextValueOptionalType = nextValueSig->returnType;
+                    if (!valueDiscard) {
+                        valueLocalType = nextValueLocalType;
+                    }
+                }
             }
-            if (rc == 4) {
-                SetDiagNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NON_BOOL);
-                return -1;
+
+            if (useNextPair) {
+                if (nextPairSig == NULL || nextPairCallee == NULL || !nextPairOptionalType.valid) {
+                    SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+                    return -1;
+                }
+                nextValueOptionalType = nextPairOptionalType;
+                nextValueSig = nextPairSig;
+                nextValueCallee = nextPairCallee;
+                if (!ForInPayloadTypeFromOptional(&nextPairSig->returnType, &pairPayloadType)) {
+                    SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+                    return -1;
+                }
+                pairPayloadIsIndirect =
+                    ForInTypeRefIsRef(&pairPayloadType) || ForInTypeRefIsPtr(&pairPayloadType);
+                pairOptionalTagged = TypeRefIsTaggedOptional(&nextValueOptionalType);
+                pairType = pairPayloadType;
+                if ((ForInTypeRefIsRef(&pairType) || ForInTypeRefIsPtr(&pairType))
+                    && ForInTypeRefDerefOne(&pairType, &pairType) != 0)
+                {
+                    SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+                    return -1;
+                }
+                if (ExpandAliasSourceType(c, &pairType, &expandedPairType)) {
+                    pairType = expandedPairType;
+                }
+                if (!TypeRefTupleInfo(c, &pairType, &pairTupleInfo) || pairTupleInfo == NULL
+                    || pairTupleInfo->fieldCount != 2u)
+                {
+                    SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+                    return -1;
+                }
+                pairKeyFieldName = c->fieldInfos[pairTupleInfo->fieldStart].fieldName;
+                pairValueFieldName = c->fieldInfos[pairTupleInfo->fieldStart + 1u].fieldName;
+                if (pairKeyFieldName == NULL || pairValueFieldName == NULL) {
+                    SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+                    return -1;
+                }
+                keyType = nextPairKeyLocalType;
+                if (!valueDiscard) {
+                    valueLocalType = nextPairValueLocalType;
+                    {
+                        SLTypeRef pairValueFieldType =
+                            c->fieldInfos[pairTupleInfo->fieldStart + 1u].type;
+                        pairValueNeedsDeref =
+                            (!valueRef
+                             && (ForInTypeRefIsRef(&pairValueFieldType)
+                                 || ForInTypeRefIsPtr(&pairValueFieldType)));
+                    }
+                }
+            } else if (!useNextKey) {
+                if (!ForInPayloadTypeFromOptional(&nextValueSig->returnType, &payloadType)) {
+                    SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
+                    return -1;
+                }
+                nextValueOptionalType = nextValueSig->returnType;
+                nextValuePayloadIsIndirect =
+                    ForInTypeRefIsRef(&payloadType) || ForInTypeRefIsPtr(&payloadType);
+                nextValueOptionalTagged = TypeRefIsTaggedOptional(&nextValueOptionalType);
+                if (!valueDiscard) {
+                    valueLocalType = nextValueLocalType;
+                }
             }
-            if (rc == 1 || rc == 2 || rc == 3) {
-                SetDiagNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
-                return -1;
-            }
-            if (rc != 0 || advanceSig == NULL || advanceCallee == NULL) {
-                SetDiagNode(c, sourceNode, SLDiag_CODEGEN_INTERNAL);
-                return -1;
-            }
-            if (hasKey) {
-                keyType = advanceKeyLocalType;
-            }
-            if (!valueDiscard || synthValueTemp) {
-                valueLocalType = advanceValueLocalType;
-            }
-            advanceNeedsKey = hasKey;
-            advanceNeedsValue = (!valueDiscard || synthValueTemp);
         }
 
         EmitIndent(c, depth);
@@ -9115,7 +9639,7 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                     PopScope(c);
                     return -1;
                 }
-                if (valueRef || valuePtr) {
+                if (valueRef) {
                     if (BufAppendChar(&c->out, '&') != 0) {
                         PopScope(c);
                         PopScope(c);
@@ -9167,9 +9691,23 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                     return -1;
                 }
             }
-            if (BufAppendCStr(&c->out, sourceTmpName) != 0 || BufAppendCStr(&c->out, ");\n") != 0) {
-                PopScope(c);
-                return -1;
+            if (!iteratorAutoRefSource) {
+                if (BufAppendCStr(&c->out, sourceTmpName) != 0
+                    || BufAppendCStr(&c->out, ");\n") != 0)
+                {
+                    PopScope(c);
+                    return -1;
+                }
+            } else {
+                if (BufAppendCStr(&c->out, "((") != 0
+                    || EmitTypeNameWithDepth(c, &iteratorSig->paramTypes[0]) != 0
+                    || BufAppendCStr(&c->out, ")(&") != 0
+                    || BufAppendCStr(&c->out, sourceTmpName) != 0
+                    || BufAppendCStr(&c->out, ")));\n") != 0)
+                {
+                    PopScope(c);
+                    return -1;
+                }
             }
 
             if (hasKey) {
@@ -9206,29 +9744,31 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                     PopScope(c);
                     return -1;
                 }
-            } else if (synthValueTemp) {
-                if (EnsureAnonTypeVisible(c, &valueLocalType, depth + 1u) != 0) {
-                    PopScope(c);
-                    return -1;
-                }
-                EmitIndent(c, depth + 1u);
-                if (EmitTypeRefWithName(c, &valueLocalType, discardValueTmpName) != 0
-                    || BufAppendCStr(&c->out, ";\n") != 0)
-                {
-                    PopScope(c);
-                    return -1;
-                }
             }
 
+            if (EnsureAnonTypeVisible(c, &nextValueOptionalType, depth + 1u) != 0) {
+                PopScope(c);
+                return -1;
+            }
             EmitIndent(c, depth + 1u);
-            if (BufAppendCStr(&c->out, "for (; ") != 0 || BufAppendCStr(&c->out, advanceCallee) != 0
-                || BufAppendChar(&c->out, '(') != 0)
+            if (EmitTypeRefWithName(c, &nextValueOptionalType, nextTmpName) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
             {
                 PopScope(c);
                 return -1;
             }
-            if (advanceSig->hasContext) {
-                if (EmitContextArgForSig(c, advanceSig) != 0 || BufAppendCStr(&c->out, ", ") != 0) {
+
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, "for (; ((") != 0 || BufAppendCStr(&c->out, nextTmpName) != 0
+                || BufAppendCStr(&c->out, " = ") != 0
+                || BufAppendCStr(&c->out, nextValueCallee) != 0 || BufAppendChar(&c->out, '(') != 0)
+            {
+                PopScope(c);
+                return -1;
+            }
+            if (nextValueSig->hasContext) {
+                if (EmitContextArgForSig(c, nextValueSig) != 0 || BufAppendCStr(&c->out, ", ") != 0)
+                {
                     PopScope(c);
                     return -1;
                 }
@@ -9237,23 +9777,119 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                 PopScope(c);
                 return -1;
             }
-            if (advanceNeedsKey) {
-                if (BufAppendCStr(&c->out, ", &") != 0 || BufAppendCStr(&c->out, keyName) != 0) {
-                    PopScope(c);
-                    return -1;
-                }
-            }
-            if (advanceNeedsValue) {
-                if (BufAppendCStr(&c->out, ", &") != 0
-                    || BufAppendCStr(&c->out, valueDiscard ? discardValueTmpName : valueName) != 0)
-                {
-                    PopScope(c);
-                    return -1;
-                }
-            }
-            if (BufAppendCStr(&c->out, "); ) {\n") != 0) {
+            if (BufAppendCStr(&c->out, ")), ") != 0
+                || EmitOptionalIsSomeFromNameType(c, nextTmpName, &nextValueOptionalType) != 0
+                || BufAppendCStr(&c->out, "); ) {\n") != 0)
+            {
                 PopScope(c);
                 return -1;
+            }
+
+            if (hasKey) {
+                EmitIndent(c, depth + 2u);
+                if (BufAppendCStr(&c->out, keyName) != 0 || BufAppendCStr(&c->out, " = ") != 0) {
+                    PopScope(c);
+                    return -1;
+                }
+                if (useNextPair) {
+                    if (pairOptionalTagged) {
+                        if (BufAppendCStr(&c->out, nextTmpName) != 0
+                            || BufAppendCStr(&c->out, ".__sl_value.") != 0
+                            || BufAppendCStr(&c->out, pairKeyFieldName) != 0)
+                        {
+                            PopScope(c);
+                            return -1;
+                        }
+                    } else if (pairPayloadIsIndirect) {
+                        if (BufAppendCStr(&c->out, nextTmpName) != 0
+                            || BufAppendCStr(&c->out, "->") != 0
+                            || BufAppendCStr(&c->out, pairKeyFieldName) != 0)
+                        {
+                            PopScope(c);
+                            return -1;
+                        }
+                    } else {
+                        if (BufAppendCStr(&c->out, nextTmpName) != 0
+                            || BufAppendCStr(&c->out, ".") != 0
+                            || BufAppendCStr(&c->out, pairKeyFieldName) != 0)
+                        {
+                            PopScope(c);
+                            return -1;
+                        }
+                    }
+                } else {
+                    if (BufAppendCStr(&c->out, nextTmpName) != 0) {
+                        PopScope(c);
+                        return -1;
+                    }
+                }
+                if (BufAppendCStr(&c->out, ";\n") != 0) {
+                    PopScope(c);
+                    return -1;
+                }
+            }
+
+            if (!valueDiscard) {
+                EmitIndent(c, depth + 2u);
+                if (BufAppendCStr(&c->out, valueName) != 0 || BufAppendCStr(&c->out, " = ") != 0) {
+                    PopScope(c);
+                    return -1;
+                }
+                if (useNextPair) {
+                    if (pairValueNeedsDeref && BufAppendChar(&c->out, '*') != 0) {
+                        PopScope(c);
+                        return -1;
+                    }
+                    if (pairOptionalTagged) {
+                        if (BufAppendCStr(&c->out, nextTmpName) != 0
+                            || BufAppendCStr(&c->out, ".__sl_value.") != 0
+                            || BufAppendCStr(&c->out, pairValueFieldName) != 0
+                            || BufAppendCStr(&c->out, ";\n") != 0)
+                        {
+                            PopScope(c);
+                            return -1;
+                        }
+                    } else if (pairPayloadIsIndirect) {
+                        if (BufAppendCStr(&c->out, nextTmpName) != 0
+                            || BufAppendCStr(&c->out, "->") != 0
+                            || BufAppendCStr(&c->out, pairValueFieldName) != 0
+                            || BufAppendCStr(&c->out, ";\n") != 0)
+                        {
+                            PopScope(c);
+                            return -1;
+                        }
+                    } else {
+                        if (BufAppendCStr(&c->out, nextTmpName) != 0
+                            || BufAppendCStr(&c->out, ".") != 0
+                            || BufAppendCStr(&c->out, pairValueFieldName) != 0
+                            || BufAppendCStr(&c->out, ";\n") != 0)
+                        {
+                            PopScope(c);
+                            return -1;
+                        }
+                    }
+                } else {
+                    if (!valueRef && nextValuePayloadIsIndirect && BufAppendChar(&c->out, '*') != 0)
+                    {
+                        PopScope(c);
+                        return -1;
+                    }
+                    if (nextValueOptionalTagged && !nextValuePayloadIsIndirect) {
+                        if (BufAppendCStr(&c->out, nextTmpName) != 0
+                            || BufAppendCStr(&c->out, ".__sl_value;\n") != 0)
+                        {
+                            PopScope(c);
+                            return -1;
+                        }
+                    } else {
+                        if (BufAppendCStr(&c->out, nextTmpName) != 0
+                            || BufAppendCStr(&c->out, ";\n") != 0)
+                        {
+                            PopScope(c);
+                            return -1;
+                        }
+                    }
+                }
             }
 
             if (EmitStmt(c, loopBodyNode, depth + 2u) != 0) {
@@ -9859,6 +10495,90 @@ int EvalConstBoolForIf(SLCBackendC* c, int32_t nodeId, int* outKnown, int* outVa
     return 0;
 }
 
+static int ResolveOptionalCondNarrow(
+    SLCBackendC* c,
+    int32_t      condNode,
+    int32_t*     outLocalIdx,
+    SLTypeRef*   outInnerType,
+    int*         outThenIsSome) {
+    const SLAstNode* n;
+    if (c == NULL || outLocalIdx == NULL || outInnerType == NULL || outThenIsSome == NULL) {
+        return 0;
+    }
+    if (condNode < 0 || (uint32_t)condNode >= c->ast.len) {
+        return 0;
+    }
+    n = NodeAt(c, condNode);
+    if (n == NULL) {
+        return 0;
+    }
+    if (n->kind == SLAst_UNARY && (SLTokenKind)n->op == SLTok_NOT) {
+        int32_t innerNode = AstFirstChild(&c->ast, condNode);
+        if (!ResolveOptionalCondNarrow(c, innerNode, outLocalIdx, outInnerType, outThenIsSome)) {
+            return 0;
+        }
+        *outThenIsSome = !*outThenIsSome;
+        return 1;
+    }
+    if (n->kind == SLAst_IDENT) {
+        int32_t        localIdx = FindLocalIndexBySlice(c, n->dataStart, n->dataEnd);
+        const SLLocal* local;
+        if (localIdx < 0 || (uint32_t)localIdx >= c->localLen) {
+            return 0;
+        }
+        local = &c->locals[localIdx];
+        if (!local->type.valid || !local->type.isOptional) {
+            return 0;
+        }
+        *outLocalIdx = localIdx;
+        *outInnerType = local->type;
+        outInnerType->isOptional = 0;
+        *outThenIsSome = 1;
+        return 1;
+    }
+    if (n->kind == SLAst_BINARY
+        && ((SLTokenKind)n->op == SLTok_EQ || (SLTokenKind)n->op == SLTok_NEQ))
+    {
+        int32_t lhsNode = AstFirstChild(&c->ast, condNode);
+        int32_t rhsNode = AstNextSibling(&c->ast, lhsNode);
+        int32_t identNode = -1;
+        if (lhsNode < 0 || rhsNode < 0) {
+            return 0;
+        }
+        if (NodeAt(c, lhsNode) != NULL && NodeAt(c, lhsNode)->kind == SLAst_IDENT
+            && NodeAt(c, rhsNode) != NULL && NodeAt(c, rhsNode)->kind == SLAst_NULL)
+        {
+            identNode = lhsNode;
+        } else if (
+            NodeAt(c, rhsNode) != NULL && NodeAt(c, rhsNode)->kind == SLAst_IDENT
+            && NodeAt(c, lhsNode) != NULL && NodeAt(c, lhsNode)->kind == SLAst_NULL)
+        {
+            identNode = rhsNode;
+        } else {
+            return 0;
+        }
+        {
+            const SLAstNode* id = NodeAt(c, identNode);
+            int32_t          localIdx =
+                id != NULL ? FindLocalIndexBySlice(c, id->dataStart, id->dataEnd) : -1;
+            const SLLocal* local;
+            if (localIdx < 0 || (uint32_t)localIdx >= c->localLen) {
+                return 0;
+            }
+            local = &c->locals[localIdx];
+            if (!local->type.valid || !local->type.isOptional) {
+                return 0;
+            }
+            *outLocalIdx = localIdx;
+            *outInnerType = local->type;
+            outInnerType->isOptional = 0;
+            *outThenIsSome = ((SLTokenKind)n->op == SLTok_NEQ) ? 1 : 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -9983,45 +10703,149 @@ int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             int32_t          elseNode = AstNextSibling(&c->ast, thenNode);
             const SLAstNode* thenStmt = NodeAt(c, thenNode);
             const SLAstNode* elseStmt = NodeAt(c, elseNode);
+            SLTypeRef        condType;
+            SLTypeRef        narrowInnerType;
+            SLTypeRef        savedLocalType;
+            int              haveCondType = 0;
             int              condKnown = 0;
             int              condValue = 0;
+            int              hasOptionalNarrow = 0;
+            int              narrowThenIsSome = 0;
+            int32_t          narrowLocalIdx = -1;
+            int32_t          savedActiveOptionalNarrowLocalIdx = -1;
+            uint8_t          savedHasActiveOptionalNarrow = 0;
+            SLTypeRef        savedActiveOptionalNarrowStorageType;
             if (EvalConstBoolForIf(c, cond, &condKnown, &condValue) != 0) {
                 if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
                     SetDiagNode(c, cond >= 0 ? cond : nodeId, SLDiag_CODEGEN_INTERNAL);
                 }
                 return -1;
             }
+            hasOptionalNarrow = ResolveOptionalCondNarrow(
+                c, cond, &narrowLocalIdx, &narrowInnerType, &narrowThenIsSome);
             if (condKnown) {
                 if (condValue) {
+                    if (hasOptionalNarrow && narrowThenIsSome && narrowLocalIdx >= 0
+                        && (uint32_t)narrowLocalIdx < c->localLen)
+                    {
+                        savedLocalType = c->locals[narrowLocalIdx].type;
+                        c->locals[narrowLocalIdx].type = narrowInnerType;
+                        savedHasActiveOptionalNarrow = c->hasActiveOptionalNarrow;
+                        savedActiveOptionalNarrowLocalIdx = c->activeOptionalNarrowLocalIdx;
+                        savedActiveOptionalNarrowStorageType = c->activeOptionalNarrowStorageType;
+                        c->hasActiveOptionalNarrow = 1;
+                        c->activeOptionalNarrowLocalIdx = narrowLocalIdx;
+                        c->activeOptionalNarrowStorageType = savedLocalType;
+                    }
                     if (EmitStmt(c, thenNode, depth) != 0) {
+                        if (hasOptionalNarrow && narrowThenIsSome && narrowLocalIdx >= 0
+                            && (uint32_t)narrowLocalIdx < c->localLen)
+                        {
+                            c->locals[narrowLocalIdx].type = savedLocalType;
+                            c->hasActiveOptionalNarrow = savedHasActiveOptionalNarrow;
+                            c->activeOptionalNarrowLocalIdx = savedActiveOptionalNarrowLocalIdx;
+                            c->activeOptionalNarrowStorageType =
+                                savedActiveOptionalNarrowStorageType;
+                        }
                         if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
                             SetDiagNode(
                                 c, thenNode >= 0 ? thenNode : nodeId, SLDiag_CODEGEN_INTERNAL);
                         }
                         return -1;
                     }
+                    if (hasOptionalNarrow && narrowThenIsSome && narrowLocalIdx >= 0
+                        && (uint32_t)narrowLocalIdx < c->localLen)
+                    {
+                        c->locals[narrowLocalIdx].type = savedLocalType;
+                        c->hasActiveOptionalNarrow = savedHasActiveOptionalNarrow;
+                        c->activeOptionalNarrowLocalIdx = savedActiveOptionalNarrowLocalIdx;
+                        c->activeOptionalNarrowStorageType = savedActiveOptionalNarrowStorageType;
+                    }
                     return 0;
                 }
                 if (elseNode >= 0) {
+                    if (hasOptionalNarrow && !narrowThenIsSome && narrowLocalIdx >= 0
+                        && (uint32_t)narrowLocalIdx < c->localLen)
+                    {
+                        savedLocalType = c->locals[narrowLocalIdx].type;
+                        c->locals[narrowLocalIdx].type = narrowInnerType;
+                        savedHasActiveOptionalNarrow = c->hasActiveOptionalNarrow;
+                        savedActiveOptionalNarrowLocalIdx = c->activeOptionalNarrowLocalIdx;
+                        savedActiveOptionalNarrowStorageType = c->activeOptionalNarrowStorageType;
+                        c->hasActiveOptionalNarrow = 1;
+                        c->activeOptionalNarrowLocalIdx = narrowLocalIdx;
+                        c->activeOptionalNarrowStorageType = savedLocalType;
+                    }
                     if (EmitStmt(c, elseNode, depth) != 0) {
+                        if (hasOptionalNarrow && !narrowThenIsSome && narrowLocalIdx >= 0
+                            && (uint32_t)narrowLocalIdx < c->localLen)
+                        {
+                            c->locals[narrowLocalIdx].type = savedLocalType;
+                            c->hasActiveOptionalNarrow = savedHasActiveOptionalNarrow;
+                            c->activeOptionalNarrowLocalIdx = savedActiveOptionalNarrowLocalIdx;
+                            c->activeOptionalNarrowStorageType =
+                                savedActiveOptionalNarrowStorageType;
+                        }
                         if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
                             SetDiagNode(c, elseNode, SLDiag_CODEGEN_INTERNAL);
                         }
                         return -1;
                     }
+                    if (hasOptionalNarrow && !narrowThenIsSome && narrowLocalIdx >= 0
+                        && (uint32_t)narrowLocalIdx < c->localLen)
+                    {
+                        c->locals[narrowLocalIdx].type = savedLocalType;
+                        c->hasActiveOptionalNarrow = savedHasActiveOptionalNarrow;
+                        c->activeOptionalNarrowLocalIdx = savedActiveOptionalNarrowLocalIdx;
+                        c->activeOptionalNarrowStorageType = savedActiveOptionalNarrowStorageType;
+                    }
                     return 0;
                 }
                 return 0;
             }
+            haveCondType = (InferExprType(c, cond, &condType) == 0 && condType.valid);
             EmitIndent(c, depth);
-            if (BufAppendCStr(&c->out, "if (") != 0 || EmitExpr(c, cond) != 0) {
+            if (BufAppendCStr(&c->out, "if (") != 0) {
                 if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
                     SetDiagNode(c, cond >= 0 ? cond : nodeId, SLDiag_CODEGEN_INTERNAL);
                 }
                 return -1;
             }
+            if (haveCondType && condType.isOptional) {
+                if (EmitOptionalIsSomeExpr(c, cond, &condType, 1) != 0) {
+                    if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                        SetDiagNode(c, cond >= 0 ? cond : nodeId, SLDiag_CODEGEN_INTERNAL);
+                    }
+                    return -1;
+                }
+            } else if (EmitExpr(c, cond) != 0) {
+                if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+                    SetDiagNode(c, cond >= 0 ? cond : nodeId, SLDiag_CODEGEN_INTERNAL);
+                }
+                return -1;
+            }
+            if (hasOptionalNarrow && narrowThenIsSome && narrowLocalIdx >= 0
+                && (uint32_t)narrowLocalIdx < c->localLen)
+            {
+                savedLocalType = c->locals[narrowLocalIdx].type;
+                c->locals[narrowLocalIdx].type = narrowInnerType;
+                savedHasActiveOptionalNarrow = c->hasActiveOptionalNarrow;
+                savedActiveOptionalNarrowLocalIdx = c->activeOptionalNarrowLocalIdx;
+                savedActiveOptionalNarrowStorageType = c->activeOptionalNarrowStorageType;
+                c->hasActiveOptionalNarrow = 1;
+                c->activeOptionalNarrowLocalIdx = narrowLocalIdx;
+                c->activeOptionalNarrowStorageType = savedLocalType;
+            }
             if (thenStmt != NULL && thenStmt->kind == SLAst_BLOCK) {
                 if (BufAppendCStr(&c->out, ") ") != 0 || EmitBlockInline(c, thenNode, depth) != 0) {
+                    if (hasOptionalNarrow && narrowThenIsSome && narrowLocalIdx >= 0
+                        && (uint32_t)narrowLocalIdx < c->localLen)
+                    {
+                        c->locals[narrowLocalIdx].type = savedLocalType;
+                        c->hasActiveOptionalNarrow = savedHasActiveOptionalNarrow;
+                        c->activeOptionalNarrowLocalIdx = savedActiveOptionalNarrowLocalIdx;
+                        c->activeOptionalNarrowStorageType = savedActiveOptionalNarrowStorageType;
+                    }
                     if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
                         SetDiagNode(c, thenNode >= 0 ? thenNode : nodeId, SLDiag_CODEGEN_INTERNAL);
                     }
@@ -10029,18 +10853,55 @@ int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                 }
             } else {
                 if (BufAppendCStr(&c->out, ")\n") != 0 || EmitStmt(c, thenNode, depth) != 0) {
+                    if (hasOptionalNarrow && narrowThenIsSome && narrowLocalIdx >= 0
+                        && (uint32_t)narrowLocalIdx < c->localLen)
+                    {
+                        c->locals[narrowLocalIdx].type = savedLocalType;
+                        c->hasActiveOptionalNarrow = savedHasActiveOptionalNarrow;
+                        c->activeOptionalNarrowLocalIdx = savedActiveOptionalNarrowLocalIdx;
+                        c->activeOptionalNarrowStorageType = savedActiveOptionalNarrowStorageType;
+                    }
                     if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
                         SetDiagNode(c, thenNode >= 0 ? thenNode : nodeId, SLDiag_CODEGEN_INTERNAL);
                     }
                     return -1;
                 }
             }
+            if (hasOptionalNarrow && narrowThenIsSome && narrowLocalIdx >= 0
+                && (uint32_t)narrowLocalIdx < c->localLen)
+            {
+                c->locals[narrowLocalIdx].type = savedLocalType;
+                c->hasActiveOptionalNarrow = savedHasActiveOptionalNarrow;
+                c->activeOptionalNarrowLocalIdx = savedActiveOptionalNarrowLocalIdx;
+                c->activeOptionalNarrowStorageType = savedActiveOptionalNarrowStorageType;
+            }
             if (elseNode >= 0) {
+                if (hasOptionalNarrow && !narrowThenIsSome && narrowLocalIdx >= 0
+                    && (uint32_t)narrowLocalIdx < c->localLen)
+                {
+                    savedLocalType = c->locals[narrowLocalIdx].type;
+                    c->locals[narrowLocalIdx].type = narrowInnerType;
+                    savedHasActiveOptionalNarrow = c->hasActiveOptionalNarrow;
+                    savedActiveOptionalNarrowLocalIdx = c->activeOptionalNarrowLocalIdx;
+                    savedActiveOptionalNarrowStorageType = c->activeOptionalNarrowStorageType;
+                    c->hasActiveOptionalNarrow = 1;
+                    c->activeOptionalNarrowLocalIdx = narrowLocalIdx;
+                    c->activeOptionalNarrowStorageType = savedLocalType;
+                }
                 EmitIndent(c, depth);
                 if (elseStmt != NULL && elseStmt->kind == SLAst_BLOCK) {
                     if (BufAppendCStr(&c->out, "else ") != 0
                         || EmitBlockInline(c, elseNode, depth) != 0)
                     {
+                        if (hasOptionalNarrow && !narrowThenIsSome && narrowLocalIdx >= 0
+                            && (uint32_t)narrowLocalIdx < c->localLen)
+                        {
+                            c->locals[narrowLocalIdx].type = savedLocalType;
+                            c->hasActiveOptionalNarrow = savedHasActiveOptionalNarrow;
+                            c->activeOptionalNarrowLocalIdx = savedActiveOptionalNarrowLocalIdx;
+                            c->activeOptionalNarrowStorageType =
+                                savedActiveOptionalNarrowStorageType;
+                        }
                         if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
                             SetDiagNode(c, elseNode, SLDiag_CODEGEN_INTERNAL);
                         }
@@ -10049,11 +10910,28 @@ int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                 } else {
                     if (BufAppendCStr(&c->out, "else\n") != 0 || EmitStmt(c, elseNode, depth) != 0)
                     {
+                        if (hasOptionalNarrow && !narrowThenIsSome && narrowLocalIdx >= 0
+                            && (uint32_t)narrowLocalIdx < c->localLen)
+                        {
+                            c->locals[narrowLocalIdx].type = savedLocalType;
+                            c->hasActiveOptionalNarrow = savedHasActiveOptionalNarrow;
+                            c->activeOptionalNarrowLocalIdx = savedActiveOptionalNarrowLocalIdx;
+                            c->activeOptionalNarrowStorageType =
+                                savedActiveOptionalNarrowStorageType;
+                        }
                         if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
                             SetDiagNode(c, elseNode, SLDiag_CODEGEN_INTERNAL);
                         }
                         return -1;
                     }
+                }
+                if (hasOptionalNarrow && !narrowThenIsSome && narrowLocalIdx >= 0
+                    && (uint32_t)narrowLocalIdx < c->localLen)
+                {
+                    c->locals[narrowLocalIdx].type = savedLocalType;
+                    c->hasActiveOptionalNarrow = savedHasActiveOptionalNarrow;
+                    c->activeOptionalNarrowLocalIdx = savedActiveOptionalNarrowLocalIdx;
+                    c->activeOptionalNarrowStorageType = savedActiveOptionalNarrowStorageType;
                 }
             }
             return 0;

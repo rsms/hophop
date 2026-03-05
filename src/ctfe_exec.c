@@ -49,6 +49,23 @@ static int SLCTFEExecStringEq(const SLCTFEString* a, const SLCTFEString* b) {
     return memcmp(a->bytes, b->bytes, a->len) == 0;
 }
 
+static int SLCTFEExecOptionalPayload(const SLCTFEValue* opt, const SLCTFEValue** outPayload) {
+    if (outPayload != NULL) {
+        *outPayload = NULL;
+    }
+    if (opt == NULL || opt->kind != SLCTFEValue_OPTIONAL || outPayload == NULL) {
+        return 0;
+    }
+    if (opt->b == 0u) {
+        return 1;
+    }
+    if (opt->s.bytes == NULL) {
+        return 0;
+    }
+    *outPayload = (const SLCTFEValue*)opt->s.bytes;
+    return 1;
+}
+
 static int SLCTFEExecValueEq(const SLCTFEValue* a, const SLCTFEValue* b, int* outEq) {
     if (a == NULL || b == NULL || outEq == NULL) {
         return 0;
@@ -71,8 +88,20 @@ static int SLCTFEExecValueEq(const SLCTFEValue* a, const SLCTFEValue* b, int* ou
                     || (a->span.fileBytes != NULL && b->span.fileBytes != NULL
                         && memcmp(a->span.fileBytes, b->span.fileBytes, a->span.fileLen) == 0));
             return 1;
-        case SLCTFEValue_NULL: *outEq = 1; return 1;
-        default:               return 0;
+        case SLCTFEValue_NULL:     *outEq = 1; return 1;
+        case SLCTFEValue_OPTIONAL: {
+            const SLCTFEValue* pa = NULL;
+            const SLCTFEValue* pb = NULL;
+            if (!SLCTFEExecOptionalPayload(a, &pa) || !SLCTFEExecOptionalPayload(b, &pb)) {
+                return 0;
+            }
+            if (a->b == 0u || b->b == 0u) {
+                *outEq = a->b == b->b;
+                return 1;
+            }
+            return SLCTFEExecValueEq(pa, pb, outEq);
+        }
+        default: return 0;
     }
 }
 
@@ -285,6 +314,93 @@ static int SLCTFEExecValueToF64(const SLCTFEValue* value, double* out) {
     return 0;
 }
 
+static int SLCTFEExecTypeIsOptional(
+    SLCTFEExecCtx* c, int32_t typeId, int32_t* outPayloadTypeId, int* outIsOptional) {
+    if (outIsOptional == NULL) {
+        return -1;
+    }
+    *outIsOptional = 0;
+    if (outPayloadTypeId != NULL) {
+        *outPayloadTypeId = -1;
+    }
+    if (c == NULL || c->isOptionalType == NULL) {
+        return 0;
+    }
+    return c->isOptionalType(c->isOptionalTypeCtx, typeId, outPayloadTypeId, outIsOptional);
+}
+
+static int SLCTFEExecWrapValueForOptionalType(
+    SLCTFEExecCtx* c, int32_t optionalTypeId, const SLCTFEValue* inValue, SLCTFEValue* outValue) {
+    SLCTFEValue* payloadCopy;
+    int32_t      payloadTypeId = -1;
+    int          isOptional = 0;
+    if (c == NULL || inValue == NULL || outValue == NULL) {
+        return -1;
+    }
+    if (SLCTFEExecTypeIsOptional(c, optionalTypeId, &payloadTypeId, &isOptional) != 0) {
+        return -1;
+    }
+    if (!isOptional) {
+        *outValue = *inValue;
+        return 0;
+    }
+    if (inValue->kind == SLCTFEValue_OPTIONAL) {
+        if (inValue->typeTag > 0 && inValue->typeTag <= (uint64_t)INT32_MAX
+            && (int32_t)inValue->typeTag == optionalTypeId)
+        {
+            *outValue = *inValue;
+            return 0;
+        }
+        if (inValue->b == 0u) {
+            *outValue = *inValue;
+            outValue->kind = SLCTFEValue_OPTIONAL;
+            outValue->b = 0u;
+            outValue->typeTag = (uint64_t)(uint32_t)optionalTypeId;
+            outValue->s.bytes = NULL;
+            outValue->s.len = 0;
+            return 0;
+        }
+        if (inValue->s.bytes == NULL) {
+            return -1;
+        }
+        payloadCopy = (SLCTFEValue*)SLArenaAlloc(
+            c->arena, sizeof(SLCTFEValue), (uint32_t)_Alignof(SLCTFEValue));
+        if (payloadCopy == NULL) {
+            return -1;
+        }
+        *payloadCopy = *(const SLCTFEValue*)inValue->s.bytes;
+        *outValue = *inValue;
+        outValue->kind = SLCTFEValue_OPTIONAL;
+        outValue->b = 1u;
+        outValue->typeTag = (uint64_t)(uint32_t)optionalTypeId;
+        outValue->s.bytes = (const uint8_t*)payloadCopy;
+        outValue->s.len = 0;
+        return 0;
+    }
+    if (inValue->kind == SLCTFEValue_NULL) {
+        *outValue = *inValue;
+        outValue->kind = SLCTFEValue_OPTIONAL;
+        outValue->b = 0u;
+        outValue->typeTag = (uint64_t)(uint32_t)optionalTypeId;
+        outValue->s.bytes = NULL;
+        outValue->s.len = 0;
+        return 0;
+    }
+    payloadCopy = (SLCTFEValue*)SLArenaAlloc(
+        c->arena, sizeof(SLCTFEValue), (uint32_t)_Alignof(SLCTFEValue));
+    if (payloadCopy == NULL) {
+        return -1;
+    }
+    *payloadCopy = *inValue;
+    *outValue = *inValue;
+    outValue->kind = SLCTFEValue_OPTIONAL;
+    outValue->b = 1u;
+    outValue->typeTag = (uint64_t)(uint32_t)optionalTypeId;
+    outValue->s.bytes = (const uint8_t*)payloadCopy;
+    outValue->s.len = 0;
+    return 0;
+}
+
 static int SLCTFEExecEvalExpr(
     SLCTFEExecCtx* c, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
     int rc;
@@ -350,8 +466,12 @@ static int SLCTFEExecEvalAssignExpr(
     }
 
     if ((SLTokenKind)n->op == SLTok_ASSIGN) {
-        b->value = rhsValue;
-        *outValue = rhsValue;
+        SLCTFEValue wrappedValue;
+        if (SLCTFEExecWrapValueForOptionalType(c, b->typeId, &rhsValue, &wrappedValue) != 0) {
+            return -1;
+        }
+        b->value = wrappedValue;
+        *outValue = wrappedValue;
         *outIsConst = 1;
         return 0;
     }
@@ -795,6 +915,13 @@ static int SLCTFEExecEvalStmt(
                 return -1;
             }
         }
+        if (declTypeId >= 0) {
+            SLCTFEValue wrappedValue;
+            if (SLCTFEExecWrapValueForOptionalType(c, declTypeId, &v, &wrappedValue) != 0) {
+                return -1;
+            }
+            v = wrappedValue;
+        }
         frame->bindings[frame->bindingLen].nameStart = s->dataStart;
         frame->bindings[frame->bindingLen].nameEnd = s->dataEnd;
         frame->bindings[frame->bindingLen].typeId = declTypeId;
@@ -868,6 +995,7 @@ static int SLCTFEExecEvalStmt(
         int32_t              branchNode = -1;
         SLCTFEValue          condValue;
         int                  condIsConst = 0;
+        int                  condTruth = 0;
         int                  didReturn = 0;
         int                  isConst = 0;
         SLCTFEExecLoopAction loopAction = SLCTFEExecLoopAction_NONE;
@@ -880,12 +1008,30 @@ static int SLCTFEExecEvalStmt(
         if (SLCTFEExecEvalExpr(c, condNode, &condValue, &condIsConst) != 0) {
             return -1;
         }
-        if (!condIsConst || condValue.kind != SLCTFEValue_BOOL) {
-            SLCTFEExecSetReasonNode(c, condNode, "if condition must be a const bool expression");
+        if (!condIsConst) {
+            SLCTFEExecSetReasonNode(c, condNode, "if condition must be const-evaluable");
             *outIsConst = 0;
             return 0;
         }
-        branchNode = condValue.b ? thenNode : elseNode;
+        if (condValue.kind == SLCTFEValue_BOOL) {
+            condTruth = condValue.b ? 1 : 0;
+        } else if (condValue.kind == SLCTFEValue_OPTIONAL) {
+            condTruth = condValue.b != 0u;
+        } else {
+            int32_t condTypeId = -1;
+            int32_t payloadTypeId = -1;
+            int     isOptionalType = 0;
+            if (c->inferExprType != NULL
+                && c->inferExprType(c->inferExprTypeCtx, condNode, &condTypeId) == 0
+                && SLCTFEExecTypeIsOptional(c, condTypeId, &payloadTypeId, &isOptionalType) == 0
+                && isOptionalType)
+            {
+                condTruth = condValue.kind != SLCTFEValue_NULL;
+            } else {
+                condTruth = condValue.kind != SLCTFEValue_NULL;
+            }
+        }
+        branchNode = condTruth ? thenNode : elseNode;
         if (branchNode < 0) {
             return 0;
         }
@@ -1254,15 +1400,25 @@ static int SLCTFEExecEvalStmt(
         for (iter = 0; iter < iterLimit; iter++) {
             SLCTFEExecLoopAction bodyAction = SLCTFEExecLoopAction_NONE;
             if (condNode >= 0) {
+                int condTruth = 0;
                 if (SLCTFEExecEvalExpr(c, condNode, &condValue, &condIsConst) != 0) {
                     goto for_error;
                 }
-                if (!condIsConst || condValue.kind != SLCTFEValue_BOOL) {
+                if (!condIsConst) {
                     SLCTFEExecSetReasonNode(
                         c, condNode, "for-loop condition must be a const bool expression");
                     goto for_nonconst;
                 }
-                if (!condValue.b) {
+                if (condValue.kind == SLCTFEValue_BOOL) {
+                    condTruth = condValue.b ? 1 : 0;
+                } else if (condValue.kind == SLCTFEValue_OPTIONAL) {
+                    condTruth = condValue.b != 0u;
+                } else {
+                    SLCTFEExecSetReasonNode(
+                        c, condNode, "for-loop condition must be a const bool expression");
+                    goto for_nonconst;
+                }
+                if (!condTruth) {
                     if (hasLoopEnv) {
                         c->env = savedEnv;
                     }

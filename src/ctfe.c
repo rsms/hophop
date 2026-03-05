@@ -201,6 +201,60 @@ static int SLCTFEStringEq(const SLCTFEString* a, const SLCTFEString* b) {
     return memcmp(a->bytes, b->bytes, a->len) == 0;
 }
 
+static int SLCTFEOptionalPayload(const SLCTFEValue* opt, const SLCTFEValue** outPayload) {
+    if (outPayload != NULL) {
+        *outPayload = NULL;
+    }
+    if (opt == NULL || opt->kind != SLCTFEValue_OPTIONAL || outPayload == NULL) {
+        return 0;
+    }
+    if (opt->b == 0u) {
+        return 1;
+    }
+    if (opt->s.bytes == NULL) {
+        return 0;
+    }
+    *outPayload = (const SLCTFEValue*)opt->s.bytes;
+    return 1;
+}
+
+static int SLCTFEValueEqRec(const SLCTFEValue* a, const SLCTFEValue* b, uint32_t depth) {
+    const SLCTFEValue* aPayload = NULL;
+    const SLCTFEValue* bPayload = NULL;
+    if (a == NULL || b == NULL || a->kind != b->kind || depth > 32u) {
+        return 0;
+    }
+    switch (a->kind) {
+        case SLCTFEValue_INT:    return a->i64 == b->i64;
+        case SLCTFEValue_FLOAT:  return a->f64 == b->f64;
+        case SLCTFEValue_BOOL:   return a->b == b->b;
+        case SLCTFEValue_STRING: return SLCTFEStringEq(&a->s, &b->s);
+        case SLCTFEValue_TYPE:   return a->typeTag == b->typeTag;
+        case SLCTFEValue_SPAN:
+            if (a->span.startLine != b->span.startLine || a->span.startColumn != b->span.startColumn
+                || a->span.endLine != b->span.endLine || a->span.endColumn != b->span.endColumn
+                || a->span.fileLen != b->span.fileLen)
+            {
+                return 0;
+            }
+            if (a->span.fileLen == 0) {
+                return 1;
+            }
+            return a->span.fileBytes != NULL && b->span.fileBytes != NULL
+                && memcmp(a->span.fileBytes, b->span.fileBytes, a->span.fileLen) == 0;
+        case SLCTFEValue_NULL: return 1;
+        case SLCTFEValue_OPTIONAL:
+            if (!SLCTFEOptionalPayload(a, &aPayload) || !SLCTFEOptionalPayload(b, &bPayload)) {
+                return 0;
+            }
+            if (a->b == 0u || b->b == 0u) {
+                return a->b == b->b;
+            }
+            return SLCTFEValueEqRec(aPayload, bPayload, depth + 1u);
+        default: return 0;
+    }
+}
+
 static int SLCTFEStringConcat(
     SLCTFERun* r, const SLCTFEString* a, const SLCTFEString* b, SLCTFEString* out) {
     uint64_t total64 = (uint64_t)a->len + (uint64_t)b->len;
@@ -551,17 +605,23 @@ static int SLCTFEEvalBinary(
         }
     }
 
-    if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_NULL) {
-        switch (op) {
-            case SLTok_EQ:
-                out->kind = SLCTFEValue_BOOL;
-                out->b = 1;
-                return 1;
-            case SLTok_NEQ:
-                out->kind = SLCTFEValue_BOOL;
-                out->b = 0;
-                return 1;
-            default: return 0;
+    if (op == SLTok_EQ || op == SLTok_NEQ) {
+        int eq = 0;
+        if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_NULL) {
+            eq = 1;
+        } else if (lhs->kind == SLCTFEValue_OPTIONAL && rhs->kind == SLCTFEValue_NULL) {
+            eq = lhs->b == 0u;
+        } else if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_OPTIONAL) {
+            eq = rhs->b == 0u;
+        } else if (lhs->kind == SLCTFEValue_OPTIONAL && rhs->kind == SLCTFEValue_OPTIONAL) {
+            eq = SLCTFEValueEqRec(lhs, rhs, 0);
+        }
+        if (lhs->kind == SLCTFEValue_NULL || rhs->kind == SLCTFEValue_NULL
+            || (lhs->kind == SLCTFEValue_OPTIONAL && rhs->kind == SLCTFEValue_OPTIONAL))
+        {
+            out->kind = SLCTFEValue_BOOL;
+            out->b = (op == SLTok_EQ) ? (eq ? 1u : 0u) : (eq ? 0u : 1u);
+            return 1;
         }
     }
 

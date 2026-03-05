@@ -1103,6 +1103,8 @@ int SLTCTypeTopLevelVars(SLTypeCheckCtx* c);
 int SLTCCheckTopLevelConstInitializers(SLTypeCheckCtx* c);
 int SLTCValidateTopLevelConstEvaluable(SLTypeCheckCtx* c);
 int SLTCGetNullNarrow(SLTypeCheckCtx* c, int32_t condNode, int* outIsEq, SLTCNullNarrow* out);
+int SLTCGetOptionalCondNarrow(
+    SLTypeCheckCtx* c, int32_t condNode, int* outThenIsSome, SLTCNullNarrow* out);
 int SLTCBlockTerminates(SLTypeCheckCtx* c, int32_t blockNode);
 int SLTCTypeBlock(
     SLTypeCheckCtx* c, int32_t blockNode, int32_t returnType, int loopDepth, int switchDepth);

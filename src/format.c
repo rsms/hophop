@@ -3365,10 +3365,6 @@ static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId) {
                     {
                         return -1;
                     }
-                    if ((n->flags & SLAstFlag_FOR_IN_VALUE_PTR) != 0 && SLFmtWriteChar(c, '*') != 0)
-                    {
-                        return -1;
-                    }
                 }
                 if (SLFmtEmitExpr(c, valueNode, 0) != 0 || SLFmtWriteCStr(c, " in ") != 0
                     || SLFmtEmitExpr(c, sourceNode, 0) != 0 || SLFmtWriteChar(c, ' ') != 0

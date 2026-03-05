@@ -2104,24 +2104,19 @@ static int SLPParseForInKeyBinding(SLParser* p, int32_t* outIdent, uint32_t* out
 static int SLPParseForInValueBinding(SLParser* p, int32_t* outIdent, uint32_t* outFlags) {
     const SLToken* name = NULL;
     int            byRef = 0;
-    int            byPtr = 0;
     if (SLPMatch(p, SLTok_AND)) {
         byRef = 1;
-    } else if (SLPMatch(p, SLTok_MUL)) {
-        byPtr = 1;
     }
     if (SLPExpectDeclName(p, &name, 1) != 0) {
         return -1;
     }
     if (SLPIsHoleName(p, name)) {
-        if (byRef || byPtr) {
+        if (byRef) {
             return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
         }
         *outFlags |= SLAstFlag_FOR_IN_VALUE_DISCARD;
     } else if (byRef) {
         *outFlags |= SLAstFlag_FOR_IN_VALUE_REF;
-    } else if (byPtr) {
-        *outFlags |= SLAstFlag_FOR_IN_VALUE_PTR;
     }
     return SLPNewIdentNodeFromToken(p, name, outIdent);
 }

@@ -3558,4 +3558,54 @@ int SLTCGetNullNarrow(SLTypeCheckCtx* c, int32_t condNode, int* outIsEq, SLTCNul
     return 1;
 }
 
+int SLTCGetOptionalCondNarrow(
+    SLTypeCheckCtx* c, int32_t condNode, int* outThenIsSome, SLTCNullNarrow* out) {
+    const SLAstNode* n;
+    int32_t          localIdx;
+    int32_t          typeId;
+    int              isEq = 0;
+    if (c == NULL || outThenIsSome == NULL || out == NULL || condNode < 0
+        || (uint32_t)condNode >= c->ast->len)
+    {
+        return 0;
+    }
+    n = &c->ast->nodes[condNode];
+
+    if (n->kind == SLAst_UNARY && (SLTokenKind)n->op == SLTok_NOT) {
+        int32_t inner = SLAstFirstChild(c->ast, condNode);
+        if (inner < 0) {
+            return 0;
+        }
+        if (!SLTCGetOptionalCondNarrow(c, inner, outThenIsSome, out)) {
+            return 0;
+        }
+        *outThenIsSome = !*outThenIsSome;
+        return 1;
+    }
+
+    if (n->kind == SLAst_IDENT) {
+        localIdx = SLTCLocalFind(c, n->dataStart, n->dataEnd);
+        if (localIdx < 0) {
+            return 0;
+        }
+        typeId = c->locals[localIdx].typeId;
+        if (typeId < 0 || (uint32_t)typeId >= c->typeLen
+            || c->types[typeId].kind != SLTCType_OPTIONAL)
+        {
+            return 0;
+        }
+        out->localIdx = localIdx;
+        out->innerType = c->types[typeId].baseType;
+        *outThenIsSome = 1;
+        return 1;
+    }
+
+    if (SLTCGetNullNarrow(c, condNode, &isEq, out)) {
+        *outThenIsSome = isEq ? 0 : 1;
+        return 1;
+    }
+
+    return 0;
+}
+
 SL_API_END

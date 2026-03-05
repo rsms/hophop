@@ -1,1 +1,1 @@
-tests/slp29_for_in_value_ptr_immutable_bad.sl:4:7: SL2088: invalid for-in value binding for source mutability/capture mode
+tests/slp29_for_in_value_ptr_immutable_bad.sl:4:6: SL1004: unexpected token

@@ -32,6 +32,15 @@ typedef int (*SLCTFEExecResolveTypeFn)(
 typedef int (*SLCTFEExecInferValueTypeFn)(
     void* _Nullable ctx, const SLCTFEValue* _Nonnull value, int32_t* _Nonnull outTypeId);
 
+typedef int (*SLCTFEExecInferExprTypeFn)(
+    void* _Nullable ctx, int32_t exprNode, int32_t* _Nonnull outTypeId);
+
+typedef int (*SLCTFEExecIsOptionalTypeFn)(
+    void* _Nullable ctx,
+    int32_t typeId,
+    int32_t* _Nullable outPayloadTypeId,
+    int* _Nonnull outIsOptional);
+
 typedef struct {
     SLArena* _Nonnull arena;
     const SLAst* _Nonnull ast;
@@ -45,6 +54,10 @@ typedef struct {
     void* _Nullable resolveTypeCtx;
     SLCTFEExecInferValueTypeFn _Nullable inferValueType;
     void* _Nullable inferValueTypeCtx;
+    SLCTFEExecInferExprTypeFn _Nullable inferExprType;
+    void* _Nullable inferExprTypeCtx;
+    SLCTFEExecIsOptionalTypeFn _Nullable isOptionalType;
+    void* _Nullable isOptionalTypeCtx;
 
     const char* _Nullable nonConstReason;
     uint32_t nonConstStart;

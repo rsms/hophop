@@ -179,6 +179,10 @@ typedef struct {
     SLVariantNarrow* variantNarrows;
     uint32_t         variantNarrowLen;
     uint32_t         variantNarrowCap;
+    int32_t          activeOptionalNarrowLocalIdx;
+    uint8_t          hasActiveOptionalNarrow;
+    uint8_t          _reserved_optional_narrow[3];
+    SLTypeRef        activeOptionalNarrowStorageType;
 
     SLFnNodeName* fnNodeNames;
     uint32_t      fnNodeNameLen;
@@ -953,6 +957,9 @@ int EmitElemPtrExpr(
 int EmitSliceExpr(SLCBackendC* c, int32_t nodeId);
 
 int TypeRefIsPointerLike(const SLTypeRef* t);
+int TypeRefIsPointerBackedOptional(const SLTypeRef* t);
+int TypeRefIsTaggedOptional(const SLTypeRef* t);
+int TypeRefLowerForStorage(SLCBackendC* c, const SLTypeRef* type, SLTypeRef* outType);
 
 int TypeRefIsOwnedRuntimeArrayStruct(const SLTypeRef* t);
 

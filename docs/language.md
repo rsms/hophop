@@ -170,7 +170,7 @@ ForInit         = VarDeclStmt | Expr .
 ForInClause     = ForInValueBinding "in" Expr
                 | ForInKeyBinding "," ForInValueBinding "in" Expr .
 ForInKeyBinding = [ "&" ] Ident .
-ForInValueBinding = "_" | [ "&" | "*" ] Ident .
+ForInValueBinding = "_" | [ "&" ] Ident .
 SwitchStmt      = "switch" [ Expr ] "{" { CaseClause } [ DefaultClause ] "}" .
 CaseClause      = "case" CasePattern { "," CasePattern } Block .
 CasePattern     = Expr [ "as" Ident ] .
@@ -349,11 +349,12 @@ fn f() {
 - [TYPE-MUT-004][Stable] There is no source syntax for `mut` references or slices.
 
 ### 5.3 Optional types
-- [TYPE-OPT-001][Stable] `?T` currently accepts only pointer/reference families (`*...` / `&...`, including array/slice forms).
+- [TYPE-OPT-001][Stable] `?T` accepts any well-formed `T`.
 - [TYPE-OPT-002][Stable] `null` is assignable only to optional types.
 - [TYPE-OPT-003][Stable] Implicit lift `T -> ?T` is allowed.
 - [TYPE-OPT-004][Stable] `?T -> T` is not implicit; unwrap or narrowing is required.
-- [TYPE-OPT-005][Stable] Flow narrowing for optionals is restricted to direct null checks on local identifiers (including parameters):
+- [TYPE-OPT-005][Stable] Flow narrowing for optionals is supported for local identifiers (including parameters):
+  - `if x { ... }` narrows `x` to `T` in `then`, `null` in `else`
   - `x == null`, `x != null`, `null == x`, `null != x`
   - `if x == null { ... } else { ... }` narrows `x` to `null` in `then`, `T` in `else`
   - `if x != null { ... } else { ... }` narrows `x` to `T` in `then`, `null` in `else`
@@ -500,28 +501,31 @@ fn f() {
 
 ## 7. Statements and Control Flow
 
-- [STMT-IF-001][Stable] `if` condition MUST be bool.
+- [STMT-IF-001][Stable] `if` condition MUST be bool or optional.
 - [STMT-IF-002][Provisional] In const-evaluated statement contexts and template-instance function bodies, if-condition expressions that are const-evaluable booleans specialize branch checking: only the taken branch is required to typecheck.
 - [STMT-FOR-001][Stable] `for` forms: infinite block, condition form, C-style `init; cond; post`, and `for ... in` forms.
 - [STMT-FOR-002][Stable] `for` condition (if present) MUST be bool.
 - [STMT-FOR-003][Stable] Variables declared in `for` initializer are scoped to the entire loop (condition, post, and body) and are not visible after the loop.
 - [STMT-FOR-004][Provisional] `for ... in` source expression MUST be iterable by either:
   - sequence path: supports `len(x)` and indexing `x[i]` (SLP-29), or
-  - iterator protocol path: provides `__iterator(x)` and a matching `advance` overload (SLP-30).
+  - iterator protocol path: provides `__iterator(x)` and matching `next_*` overloads for the loop form (SLP-30).
 - [STMT-FOR-005][Provisional] `for ... in` source expression is evaluated once before loop iteration.
 - [STMT-FOR-006][Provisional] In `for key, value in x`, the key for sequence sources is synthetic `uint` index; `&key` is invalid for synthetic keys.
 - [STMT-FOR-007][Provisional] Value binding modes in `for ... in`:
   - `value`: by-value capture
-  - `&value`: reference capture
-  - `*value`: pointer capture (requires mutable element source)
+  - `&value`: by-reference capture with `&x[i]` semantics (mutable source -> `*T`, immutable source -> `&T`)
   - `_`: discard capture (no value binding introduced)
 - [STMT-FOR-008][Provisional] `for ... in` key/value bindings are body-scope locals.
 - [STMT-FOR-009][Provisional] Iterator-protocol binding-mode mapping:
-  - `for value in x` requires `advance(it *Iter, out *T) bool`
-  - `for &value in x` requires `advance(it *Iter, out *&T) bool`
-  - `for *value in x` requires `advance(it *Iter, out **T) bool`
+  - `for value in x` prefers `next_value(it *Iter) ?(&T|*T)`; if unavailable, uses `next_key_and_value(it *Iter) ?*Pair` and binds from pair element 1 by value.
+  - `for &value in x` prefers `next_value(it *Iter) ?(&T|*T)`; if unavailable, uses `next_key_and_value(it *Iter) ?*Pair` and binds from pair element 1 by reference.
+  - `for key, value in x` requires `next_key_and_value(it *Iter) ?*Pair` and binds key from pair element 0 and value from pair element 1.
+  - `for key, _ in x` prefers `next_key(it *Iter) ?(&K|*K)`; if unavailable, uses `next_key_and_value(it *Iter) ?*Pair` and binds key from pair element 0.
 - [STMT-FOR-010][Provisional] Iterator types may implement only a subset of binding modes. Using an unsupported mode is a compile-time error.
-- [STMT-FOR-011][Provisional] For discard capture (`for _ in x`), iterator protocol uses `advance(it *Iter) bool` when available; otherwise compiler may synthesize a temporary and call a compatible out-parameter overload.
+- [STMT-FOR-011][Provisional] For discard capture (`for _ in x`), iterator protocol uses the value-binding path and discards produced values.
+- [STMT-FOR-012][Provisional] Iterator-protocol `__iterator` overload resolution follows regular type-function first-argument matching:
+  - first attempt with source expression type `typeof(x)`
+  - if no overload matches and source expression is assignable, retry with autoref first argument
 - [STMT-SWITCH-001][Stable] `switch` supports expression-switch and condition-switch.
 - [STMT-SWITCH-002][Stable] At most one `default` clause.
 - [STMT-SWITCH-003][Stable] No fallthrough.

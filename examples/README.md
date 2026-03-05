@@ -74,9 +74,11 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/slc check examples/control_flow.sl`
 - SLP-29 `for ... in` (value/ref/ptr capture, key+value, discard): `examples/for-in.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/for-in.sl`
-- SLP-30 iterator protocol (`__iterator` + `advance`) for user-defined and infinite iterables:
+- SLP-30 iterator protocol (`__iterator` + `next_value`) for user-defined and infinite iterables:
   `examples/iterators.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/iterators.sl`
+- Optionals (`?T`, `if optional`, `null`, unwrap `!`): `examples/optional.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/optional.sl`
 
 ## Imports
 

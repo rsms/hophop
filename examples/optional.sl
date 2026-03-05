@@ -1,0 +1,67 @@
+// Optionals can wrap both value types and pointer/reference types.
+// `if opt` checks whether the optional is non-empty.
+// `opt!` unwraps and panics if empty.
+struct Entry {
+	value i32
+	next  ?*Entry
+}
+
+fn maybe_double_if_even(v i32) ?i32 {
+	if v % 2 == 0 {
+		return v * 2
+	}
+	return null
+}
+
+fn sum_even_doubles(a &[i32]) i32 {
+	var sum i32
+	for n in a {
+		var doubled = maybe_double_if_even(n)
+		if doubled {
+			sum += doubled
+		}
+	}
+	return sum
+}
+
+fn head_value(list ?*Entry) ?i32 {
+	if list == null {
+		return null
+	}
+	return list.value
+}
+
+fn must_value(v ?i32) i32 {
+	return v!
+}
+
+fn main() {
+	var a ?i32 = null
+	assert a == null
+	if a {
+		assert false
+	}
+
+	a = 7
+	assert a != null
+	if a {
+		assert a == 7
+	} else {
+		assert false
+	}
+	assert must_value(a) == 7
+
+	var values [i32 6]
+	values[0] = 1
+	values[1] = 2
+	values[2] = 3
+	values[3] = 4
+	values[4] = 5
+	values[5] = 6
+	assert sum_even_doubles(values[:]) == 24
+
+	var e2 = Entry{ value: 20 }
+	var e1 = Entry{ value: 10, next: &e2 }
+	assert head_value(&e1) == 10
+	assert head_value(null as *Entry) == null
+}

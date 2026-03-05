@@ -1,15 +1,11 @@
-// SLP-30: user-defined iterator protocol for `for ... in`
-// - protocol hooks: `__iterator(source)` + `advance(it *Iter, out *T) bool`
-// - supports by-value (`value`), ref (`&value`), and ptr (`*value`) bindings
+// Iterator protocol for `for ... in`
+// - protocol hooks: `__iterator(source)` + `next_value(it *Iter) ?T`
+// - supports by-value (`value`) and by-reference (`&value`) bindings
 // - can model finite and infinite iterables
 // ---------- linked-list example ----------
 struct ListEntry {
 	value i32
 	next  ?*ListEntry
-}
-
-struct MutList {
-	head ?*ListEntry
 }
 
 struct List {
@@ -21,45 +17,53 @@ struct MutListIterator {
 }
 
 struct ListIterator {
-	next ?*ListEntry
+	next ?&ListEntry
 }
 
-fn __iterator(list MutList) MutListIterator {
+fn __iterator(list *List) MutListIterator {
 	return { next: list.head }
 }
 
-fn __iterator(list List) ListIterator {
+fn __iterator(list &List) ListIterator {
 	return { next: list.head }
 }
 
-fn advance(it *MutListIterator, out **ListEntry) bool {
-	if it.next != null {
-		var cur = it.next!
-		*out = cur
+fn next_value(it *MutListIterator) ?*ListEntry {
+	var cur = it.next
+	if cur != null {
 		it.next = cur.next
-		return true
 	}
-	return false
+	return cur
 }
 
-fn advance(it *ListIterator, out *&ListEntry) bool {
-	if it.next != null {
-		var cur = it.next!
-		*out = cur
+fn next_value(it *ListIterator) ?&ListEntry {
+	var cur = it.next
+	if cur != null {
 		it.next = cur.next
-		return true
 	}
-	return false
+	return cur
 }
 
-fn advance(it *ListIterator, out *ListEntry) bool {
-	if it.next != null {
-		var cur = it.next!
-		*out = *cur
-		it.next = cur.next
-		return true
+fn modify(list *List) {
+	for &entry in list {
+		entry.value *= 10
 	}
-	return false
+}
+
+fn sum_ref(list &List) i32 {
+	var acc i32
+	for &entry in list {
+		acc += entry.value
+	}
+	return acc
+}
+
+fn sum_value(list &List) i32 {
+	var acc i32
+	for entry in list {
+		acc += entry.value
+	}
+	return acc
 }
 
 // ---------- infinite counter example ----------
@@ -75,10 +79,10 @@ fn __iterator(counter Counter) CounterIterator {
 	return { next: counter.start }
 }
 
-fn advance(it *CounterIterator, out *i32) bool {
-	*out = it.next
+fn next_value(it *CounterIterator) ?i32 {
+	var cur = it.next
 	it.next += 1
-	return true
+	return cur
 }
 
 fn main() {
@@ -100,24 +104,10 @@ fn main() {
 	var e2 = ListEntry{ value: 2, next: &e3 }
 	var e1 = ListEntry{ value: 1, next: &e2 }
 
-	var mut_list = MutList{ head: &e1 }
-	for *entry in mut_list {
-		entry.value *= 10
-	}
-
-	var list = List{ head: mut_list.head }
-
-	var sum_ref i32
-	for &entry in list {
-		sum_ref += entry.value
-	}
-	assert sum_ref == 60
-
-	var sum_value i32
-	for entry in list {
-		sum_value += entry.value
-	}
-	assert sum_value == 60
+	var list = List{ head: &e1 }
+	modify(&list)
+	assert sum_ref(&list) == 60
+	assert sum_value(&list) == 60
 
 	// Infinite iterator with explicit break.
 	var first_five_sum i32

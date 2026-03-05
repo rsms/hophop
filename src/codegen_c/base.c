@@ -326,6 +326,73 @@ void TypeRefSetScalar(SLTypeRef* t, const char* baseName) {
     t->isOptional = 0;
 }
 
+int EnsureAnonTypeByFields(
+    SLCBackendC*     c,
+    int              isUnion,
+    const char**     fieldNames,
+    const SLTypeRef* fieldTypes,
+    uint32_t         fieldCount,
+    const char**     outCName);
+
+static int TypeRefOptionalPayloadType(const SLTypeRef* optionalType, SLTypeRef* outPayload) {
+    if (optionalType == NULL || outPayload == NULL || !optionalType->valid
+        || !optionalType->isOptional)
+    {
+        return 0;
+    }
+    *outPayload = *optionalType;
+    outPayload->isOptional = 0;
+    return 1;
+}
+
+static int TypeRefOptionalPayloadUsesNullSentinel(const SLTypeRef* payload) {
+    if (payload == NULL || !payload->valid) {
+        return 0;
+    }
+    if (TypeRefIsPointerLike(payload)) {
+        return 1;
+    }
+    return (payload->containerKind == SLTypeContainer_SLICE_RO
+            || payload->containerKind == SLTypeContainer_SLICE_MUT)
+        && payload->ptrDepth == 0 && payload->containerPtrDepth == 0;
+}
+
+int TypeRefIsPointerBackedOptional(const SLTypeRef* t) {
+    SLTypeRef payload;
+    return TypeRefOptionalPayloadType(t, &payload)
+        && TypeRefOptionalPayloadUsesNullSentinel(&payload);
+}
+
+int TypeRefIsTaggedOptional(const SLTypeRef* t) {
+    SLTypeRef payload;
+    return TypeRefOptionalPayloadType(t, &payload)
+        && !TypeRefOptionalPayloadUsesNullSentinel(&payload);
+}
+
+int TypeRefLowerForStorage(SLCBackendC* c, const SLTypeRef* type, SLTypeRef* outType) {
+    static const char* fieldNames[2] = { "__sl_tag", "__sl_value" };
+    SLTypeRef          fieldTypes[2];
+    SLTypeRef          payload;
+    const char*        anonName = NULL;
+    if (c == NULL || type == NULL || outType == NULL) {
+        return -1;
+    }
+    *outType = *type;
+    if (!TypeRefIsTaggedOptional(type)) {
+        return 0;
+    }
+    payload = *type;
+    payload.isOptional = 0;
+    TypeRefSetScalar(&fieldTypes[0], "__sl_u8");
+    fieldTypes[1] = payload;
+    if (EnsureAnonTypeByFields(c, 0, fieldNames, fieldTypes, 2, &anonName) != 0 || anonName == NULL)
+    {
+        return -1;
+    }
+    TypeRefSetScalar(outType, anonName);
+    return 0;
+}
+
 const char* ResolveScalarAliasBaseName(const SLCBackendC* c, const char* typeName);
 
 void CanonicalizeTypeRefBaseName(const SLCBackendC* c, SLTypeRef* t) {
@@ -2269,6 +2336,12 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 return -1;
             }
             outType->isOptional = 1;
+            {
+                SLTypeRef lowered;
+                if (TypeRefLowerForStorage(c, outType, &lowered) != 0) {
+                    return -1;
+                }
+            }
             return 0;
         }
         case SLAst_TYPE_FN: {
@@ -4506,42 +4579,49 @@ int AppendMappedIdentifier(SLCBackendC* c, uint32_t start, uint32_t end) {
 }
 
 int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
-    int         i;
-    const char* base = NULL;
-    int         stars = 0;
-    int         inlineAnon = 0;
-    int         inlineAnonIsUnion = 0;
-    if (!type->valid) {
+    int              i;
+    const char*      base = NULL;
+    int              stars = 0;
+    int              inlineAnon = 0;
+    int              inlineAnonIsUnion = 0;
+    SLTypeRef        lowered;
+    const SLTypeRef* t = type;
+    if (type == NULL) {
+        return -1;
+    }
+    if (TypeRefLowerForStorage(c, type, &lowered) != 0) {
+        return -1;
+    }
+    t = &lowered;
+    if (!t->valid) {
         return BufAppendCStr(&c->out, "void");
     }
-    if (type->containerKind == SLTypeContainer_SLICE_RO
-        || type->containerKind == SLTypeContainer_SLICE_MUT)
+    if (t->containerKind == SLTypeContainer_SLICE_RO
+        || t->containerKind == SLTypeContainer_SLICE_MUT)
     {
-        if (type->containerPtrDepth > 0) {
+        if (t->containerPtrDepth > 0) {
             /* *[T] / &[T] lower to slice structs (ptr+len) */
-            base = type->containerKind == SLTypeContainer_SLICE_MUT
-                     ? "__sl_slice_mut"
-                     : "__sl_slice_ro";
-            stars = SliceStructPtrDepth(type);
+            base =
+                t->containerKind == SLTypeContainer_SLICE_MUT ? "__sl_slice_mut" : "__sl_slice_ro";
+            stars = SliceStructPtrDepth(t);
         } else {
-            base = type->containerKind == SLTypeContainer_SLICE_MUT
-                     ? "__sl_slice_mut"
-                     : "__sl_slice_ro";
+            base =
+                t->containerKind == SLTypeContainer_SLICE_MUT ? "__sl_slice_mut" : "__sl_slice_ro";
             stars = 0;
         }
     } else {
-        if (type->baseName == NULL) {
+        if (t->baseName == NULL) {
             return BufAppendCStr(&c->out, "void");
         }
-        base = type->baseName;
+        base = t->baseName;
         if (StrHasPrefix(base, "__sl_anon_") && !IsAnonTypeNameVisible(c, base)) {
             const SLAnonTypeInfo* info = FindAnonTypeByCName(c, base);
             inlineAnon = 1;
             inlineAnonIsUnion = info != NULL ? info->isUnion : (base[10] == 'u');
         }
-        stars = type->ptrDepth;
-        if (type->containerKind == SLTypeContainer_ARRAY && type->containerPtrDepth > 0) {
-            stars += type->containerPtrDepth;
+        stars = t->ptrDepth;
+        if (t->containerKind == SLTypeContainer_ARRAY && t->containerPtrDepth > 0) {
+            stars += t->containerPtrDepth;
         }
     }
     if (inlineAnon) {
@@ -4576,19 +4656,28 @@ int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
 }
 
 int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) {
-    SLTypeRef t;
-    int       i;
-    int       stars;
+    SLTypeRef        t;
+    SLTypeRef        lowered;
+    const SLTypeRef* src = &t;
+    int              i;
+    int              stars;
+    int              pointerBackedOptional = 0;
     if (ParseTypeRef(c, typeNode, &t) != 0 || !t.valid) {
         return -1;
     }
-    if (t.containerKind == SLTypeContainer_SLICE_RO || t.containerKind == SLTypeContainer_SLICE_MUT)
+    pointerBackedOptional = TypeRefIsPointerBackedOptional(&t);
+    if (TypeRefLowerForStorage(c, &t, &lowered) != 0) {
+        return -1;
+    }
+    src = &lowered;
+    if (src->containerKind == SLTypeContainer_SLICE_RO
+        || src->containerKind == SLTypeContainer_SLICE_MUT)
     {
-        if (t.containerPtrDepth > 0) {
-            int stars = SliceStructPtrDepth(&t);
+        if (src->containerPtrDepth > 0) {
+            int stars = SliceStructPtrDepth(src);
             if (BufAppendCStr(
                     &c->out,
-                    t.containerKind == SLTypeContainer_SLICE_MUT
+                    src->containerKind == SLTypeContainer_SLICE_MUT
                         ? "__sl_slice_mut"
                         : "__sl_slice_ro")
                     != 0
@@ -4605,7 +4694,9 @@ int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) {
         }
         if (BufAppendCStr(
                 &c->out,
-                t.containerKind == SLTypeContainer_SLICE_MUT ? "__sl_slice_mut" : "__sl_slice_ro")
+                src->containerKind == SLTypeContainer_SLICE_MUT
+                    ? "__sl_slice_mut"
+                    : "__sl_slice_ro")
                 != 0
             || BufAppendChar(&c->out, ' ') != 0)
         {
@@ -4613,34 +4704,31 @@ int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) {
         }
         return BufAppendCStr(&c->out, name);
     }
-    if (t.baseName == NULL) {
+    if (src->baseName == NULL) {
         return -1;
     }
-    if (BufAppendCStr(&c->out, t.baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
+    if (BufAppendCStr(&c->out, src->baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
         return -1;
     }
-    stars = t.ptrDepth;
-    if (t.containerKind == SLTypeContainer_ARRAY && t.containerPtrDepth > 0) {
-        stars += t.containerPtrDepth;
+    stars = src->ptrDepth;
+    if (src->containerKind == SLTypeContainer_ARRAY && src->containerPtrDepth > 0) {
+        stars += src->containerPtrDepth;
     }
     for (i = 0; i < stars; i++) {
         if (BufAppendChar(&c->out, '*') != 0) {
             return -1;
         }
     }
-    {
-        const SLAstNode* tn = NodeAt(c, typeNode);
-        if (tn != NULL && tn->kind == SLAst_TYPE_OPTIONAL) {
-            if (BufAppendCStr(&c->out, "/* optional */ ") != 0) {
-                return -1;
-            }
-        }
+    if (pointerBackedOptional && BufAppendCStr(&c->out, "/* optional */ ") != 0) {
+        return -1;
     }
     if (BufAppendCStr(&c->out, name) != 0) {
         return -1;
     }
-    if (t.containerKind == SLTypeContainer_ARRAY && t.containerPtrDepth == 0 && t.hasArrayLen) {
-        if (BufAppendChar(&c->out, '[') != 0 || BufAppendU32(&c->out, t.arrayLen) != 0
+    if (src->containerKind == SLTypeContainer_ARRAY && src->containerPtrDepth == 0
+        && src->hasArrayLen)
+    {
+        if (BufAppendChar(&c->out, '[') != 0 || BufAppendU32(&c->out, src->arrayLen) != 0
             || BufAppendChar(&c->out, ']') != 0)
         {
             return -1;
@@ -4681,19 +4769,30 @@ int EmitAnonInlineTypeWithName(
 }
 
 int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
-    int stars;
-    int i;
-    if (!t->valid) {
+    int              stars;
+    int              i;
+    SLTypeRef        lowered;
+    const SLTypeRef* src = t;
+    int              pointerBackedOptional = 0;
+    if (t == NULL) {
         return -1;
     }
-    if (t->containerKind == SLTypeContainer_SLICE_RO
-        || t->containerKind == SLTypeContainer_SLICE_MUT)
+    pointerBackedOptional = TypeRefIsPointerBackedOptional(t);
+    if (TypeRefLowerForStorage(c, t, &lowered) != 0) {
+        return -1;
+    }
+    src = &lowered;
+    if (!src->valid) {
+        return -1;
+    }
+    if (src->containerKind == SLTypeContainer_SLICE_RO
+        || src->containerKind == SLTypeContainer_SLICE_MUT)
     {
-        if (t->containerPtrDepth > 0) {
-            int stars = SliceStructPtrDepth(t);
+        if (src->containerPtrDepth > 0) {
+            int stars = SliceStructPtrDepth(src);
             if (BufAppendCStr(
                     &c->out,
-                    t->containerKind == SLTypeContainer_SLICE_MUT
+                    src->containerKind == SLTypeContainer_SLICE_MUT
                         ? "__sl_slice_mut"
                         : "__sl_slice_ro")
                     != 0
@@ -4710,7 +4809,9 @@ int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
         }
         if (BufAppendCStr(
                 &c->out,
-                t->containerKind == SLTypeContainer_SLICE_MUT ? "__sl_slice_mut" : "__sl_slice_ro")
+                src->containerKind == SLTypeContainer_SLICE_MUT
+                    ? "__sl_slice_mut"
+                    : "__sl_slice_ro")
                 != 0
             || BufAppendChar(&c->out, ' ') != 0)
         {
@@ -4718,45 +4819,47 @@ int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
         }
         return BufAppendCStr(&c->out, name);
     }
-    if (t->baseName == NULL) {
+    if (src->baseName == NULL) {
         return -1;
     }
-    if (t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth == 0 && t->containerPtrDepth == 0
-        && !t->isOptional)
+    if (src->containerKind == SLTypeContainer_SCALAR && src->ptrDepth == 0
+        && src->containerPtrDepth == 0 && !src->isOptional)
     {
-        const SLAnonTypeInfo* info = FindAnonTypeByCName(c, t->baseName);
+        const SLAnonTypeInfo* info = FindAnonTypeByCName(c, src->baseName);
         if (info != NULL && (info->flags & SLAnonTypeFlag_EMITTED_GLOBAL) == 0
             && !IsLocalAnonTypedefVisible(c, info->cName))
         {
             return EmitAnonInlineTypeWithName(c, info->cName, info->isUnion, name);
         }
-        if (info == NULL && StrHasPrefix(t->baseName, "__sl_anon_")
-            && !IsAnonTypeNameVisible(c, t->baseName))
+        if (info == NULL && StrHasPrefix(src->baseName, "__sl_anon_")
+            && !IsAnonTypeNameVisible(c, src->baseName))
         {
-            int isUnion = t->baseName[10] == 'u';
-            return EmitAnonInlineTypeWithName(c, t->baseName, isUnion, name);
+            int isUnion = src->baseName[10] == 'u';
+            return EmitAnonInlineTypeWithName(c, src->baseName, isUnion, name);
         }
     }
-    if (BufAppendCStr(&c->out, t->baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
+    if (BufAppendCStr(&c->out, src->baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
         return -1;
     }
-    stars = t->ptrDepth;
-    if (t->containerKind == SLTypeContainer_ARRAY && t->containerPtrDepth > 0) {
-        stars += t->containerPtrDepth;
+    stars = src->ptrDepth;
+    if (src->containerKind == SLTypeContainer_ARRAY && src->containerPtrDepth > 0) {
+        stars += src->containerPtrDepth;
     }
     for (i = 0; i < stars; i++) {
         if (BufAppendChar(&c->out, '*') != 0) {
             return -1;
         }
     }
-    if (t->isOptional && BufAppendCStr(&c->out, "/* optional */ ") != 0) {
+    if (pointerBackedOptional && BufAppendCStr(&c->out, "/* optional */ ") != 0) {
         return -1;
     }
     if (BufAppendCStr(&c->out, name) != 0) {
         return -1;
     }
-    if (t->containerKind == SLTypeContainer_ARRAY && t->containerPtrDepth == 0 && t->hasArrayLen) {
-        if (BufAppendChar(&c->out, '[') != 0 || BufAppendU32(&c->out, t->arrayLen) != 0
+    if (src->containerKind == SLTypeContainer_ARRAY && src->containerPtrDepth == 0
+        && src->hasArrayLen)
+    {
+        if (BufAppendChar(&c->out, '[') != 0 || BufAppendU32(&c->out, src->arrayLen) != 0
             || BufAppendChar(&c->out, ']') != 0)
         {
             return -1;

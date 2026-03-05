@@ -107,12 +107,12 @@
 {"id": "SL2083", "name": "CONST_BLOCK_EVAL_FAILED", "category": "semantic", "message": "const block failed compile-time evaluation"}
 {"id": "SL2084", "name": "CONST_NUMERIC_PARAM_REQUIRES_CONST", "category": "semantic", "message": "parameter type const_int/const_float requires the 'const' modifier"}
 {"id": "SL2085", "name": "CONST_NUMERIC_INVALID_POSITION", "category": "semantic", "message": "const_int and const_float are only allowed in const declarations, const parameters, function returns, and cast targets"}
-{"id": "SL2086", "name": "FOR_IN_INVALID_SOURCE", "category": "semantic", "message": "for-in source must support len(x) and x[i]"}
+{"id": "SL2086", "name": "FOR_IN_INVALID_SOURCE", "category": "semantic", "message": "for-in source must support sequence iteration or iterator protocol hooks"}
 {"id": "SL2087", "name": "FOR_IN_KEY_REF_INVALID", "category": "semantic", "message": "for-in key cannot be captured by reference for synthetic sequence keys"}
 {"id": "SL2088", "name": "FOR_IN_VALUE_BINDING_INVALID", "category": "semantic", "message": "invalid for-in value binding for source mutability/capture mode"}
 {"id": "SL2089", "name": "FOR_IN_ITERATOR_AMBIGUOUS", "category": "semantic", "message": "ambiguous __iterator overload for for-in source"}
-{"id": "SL2090", "name": "FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD", "category": "semantic", "message": "no matching advance overload for requested for-in binding mode"}
-{"id": "SL2091", "name": "FOR_IN_ADVANCE_NON_BOOL", "category": "semantic", "message": "for-in advance overload must return bool"}
+{"id": "SL2090", "name": "FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD", "category": "semantic", "message": "no compatible next_value overload for this for-in loop form"}
+{"id": "SL2091", "name": "FOR_IN_ADVANCE_NON_BOOL", "category": "semantic", "message": "for-in next_value overload must return ?T"}
 {"id": "SL2092", "name": "UNUSED_FUNCTION", "category": "semantic", "message": "function '{s}' is unused", "type": "warning"}
 {"id": "SL2093", "name": "UNUSED_VARIABLE", "category": "semantic", "message": "variable '{s}' is unused", "type": "warning", "hint": "rename variable to '_' to silence this warning"}
 {"id": "SL2094", "name": "UNUSED_VARIABLE_NEVER_READ", "category": "semantic", "message": "variable '{s}' is never read", "type": "warning", "hint": "rename variable to '_' to silence this warning"}
