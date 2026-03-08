@@ -77,21 +77,19 @@ typedef enum {
 } __sl_LogLevel;
 
 typedef enum {
-    __sl_LoggerFlag_Level = 1 << 0,
-    __sl_LoggerFlag_Date = 1 << 1,
-    __sl_LoggerFlag_Time = 1 << 2,
-    __sl_LoggerFlag_ShortFile = 1 << 3,
-    __sl_LoggerFlag_LongFile = 1 << 4,
-    __sl_LoggerFlag_Line = 1 << 5,
-    __sl_LoggerFlag_Function = 1 << 6,
-    __sl_LoggerFlag_Thread = 1 << 7,
-    __sl_LoggerFlag_Styling = 1 << 8,
-    __sl_LoggerFlag_Prefix = 1 << 9,
-} __sl_LoggerFlag;
+    __sl_LogFlag_Level = 1 << 0,
+    __sl_LogFlag_Date = 1 << 1,
+    __sl_LogFlag_Time = 1 << 2,
+    __sl_LogFlag_ShortFile = 1 << 3,
+    __sl_LogFlag_LongFile = 1 << 4,
+    __sl_LogFlag_Line = 1 << 5,
+    __sl_LogFlag_Function = 1 << 6,
+    __sl_LogFlag_Thread = 1 << 7,
+    __sl_LogFlag_Styling = 1 << 8,
+    __sl_LogFlag_Prefix = 1 << 9,
+} __sl_LogFlag;
 
-typedef __sl_u32 __sl_LoggerFlags;
-
-typedef __sl_LoggerFlags __sl_LogFlags;
+typedef __sl_u32 __sl_LogFlags;
 
 struct __sl_Logger {
     void (*handler)(__sl_Logger* arg0, __sl_str* arg1, __sl_LogLevel arg2, __sl_LogFlags arg3);

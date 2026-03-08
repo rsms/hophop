@@ -14,7 +14,7 @@ pub enum LogLevel i32 {
 	Fatal   = 40
 }
 
-pub enum LoggerFlag u32 {
+pub enum LogFlag u32 {
 	Level     = 1 << 0
 	Date      = 1 << 1
 	Time      = 1 << 2
@@ -27,9 +27,7 @@ pub enum LoggerFlag u32 {
 	Prefix    = 1 << 9
 }
 
-pub type LoggerFlags u32
-
-pub type LogFlags LoggerFlags
+pub type LogFlags u32
 
 pub struct Logger {
 	handler   fn(&Logger, &str, LogLevel, LogFlags)

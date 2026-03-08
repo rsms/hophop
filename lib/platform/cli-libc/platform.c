@@ -78,7 +78,7 @@ static void platform_log_handler(
         return;
     }
 
-    if (self != NULL && (flags & __sl_LoggerFlag_Prefix) && self->prefix != NULL &&
+    if (self != NULL && (flags & __sl_LogFlag_Prefix) && self->prefix != NULL &&
         self->prefix->len > 0) {
         fprintf(out, "%.*s", (int)self->prefix->len, (const char*)self->prefix->ptr);
     }
@@ -124,7 +124,7 @@ static __sl_Context   gMainContext = {
         {
             .handler = platform_log_handler,
             .min_level = __sl_LogLevel_Info,
-            .flags = __sl_LoggerFlag_Level,
+            .flags = __sl_LogFlag_Level,
             .prefix = (__sl_str*)0,
         },
 };

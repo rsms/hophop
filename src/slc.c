@@ -3306,8 +3306,10 @@ static int ValidatePubTypeNode(
                 file->source,
                 n->start,
                 n->end,
-                "public API %s references non-exported type",
-                contextMsg);
+                "public API %s references non-exported type '%.*s'",
+                contextMsg,
+                (int)(n->dataEnd - n->dataStart),
+                file->source + n->dataStart);
         }
         case SLAst_TYPE_PTR:
         case SLAst_TYPE_REF:
