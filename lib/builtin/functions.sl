@@ -14,10 +14,6 @@ fn copy(dst *[anytype], src &[anytype]) uint {
 	return 0
 }
 
-fn concat(a, b &str) *str {
-	return null as *str
-}
-
 fn free() {}
 
 fn panic(message &str) {}

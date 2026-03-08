@@ -6611,6 +6611,30 @@ static int ResolvePlatformPath(
     return 0;
 }
 
+static int ResolveBuiltinPath(
+    const char* libDir, char** outBuiltinPath, char** outBuiltinHeaderPath) {
+    char* builtinDir = NULL;
+    char* builtinPath = NULL;
+    char* builtinHeaderPath = NULL;
+    *outBuiltinPath = NULL;
+    *outBuiltinHeaderPath = NULL;
+    builtinDir = JoinPath(libDir, "builtin");
+    if (builtinDir == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    builtinPath = JoinPath(builtinDir, "builtin.c");
+    builtinHeaderPath = JoinPath(builtinDir, "builtin.h");
+    free(builtinDir);
+    if (builtinPath == NULL || builtinHeaderPath == NULL) {
+        free(builtinPath);
+        free(builtinHeaderPath);
+        return ErrorSimple("out of memory");
+    }
+    *outBuiltinPath = builtinPath;
+    *outBuiltinHeaderPath = builtinHeaderPath;
+    return 0;
+}
+
 static int ResolveCacheRoot(
     const SLPackageLoader* loader, const char* _Nullable cacheDirArg, char** outCacheRoot) {
     char* cacheRoot;
@@ -7446,6 +7470,100 @@ fail:
     return -1;
 }
 
+static int BuildCachedBuiltinObject(
+    const SLPackageLoader* loader,
+    const char* _Nullable cacheDirArg,
+    const char* libDir,
+    const char* builtinPath,
+    const char* builtinHeaderPath,
+    const char* toolchainSignature,
+    char**      outBuiltinObjPath) {
+    char*       cacheRoot = NULL;
+    char*       cacheV1Dir = NULL;
+    char*       cacheBuiltinDir = NULL;
+    char*       cacheBuiltinTargetDir = NULL;
+    char*       builtinObjPath = NULL;
+    char*       builtinSigPath = NULL;
+    uint64_t    srcMtimeNs = 0;
+    uint64_t    headerMtimeNs = 0;
+    uint64_t    objMtimeNs = 0;
+    const char* ccArgv[12];
+    int         isUpToDate = 0;
+
+    *outBuiltinObjPath = NULL;
+    if (ResolveCacheRoot(loader, cacheDirArg, &cacheRoot) != 0) {
+        return -1;
+    }
+    cacheV1Dir = JoinPath(cacheRoot, "v1");
+    cacheBuiltinDir = cacheV1Dir != NULL ? JoinPath(cacheV1Dir, "builtin") : NULL;
+    cacheBuiltinTargetDir =
+        cacheBuiltinDir != NULL ? JoinPath(cacheBuiltinDir, loader->platformTarget) : NULL;
+    builtinObjPath =
+        cacheBuiltinTargetDir != NULL ? JoinPath(cacheBuiltinTargetDir, "builtin.o") : NULL;
+    builtinSigPath =
+        cacheBuiltinTargetDir != NULL ? JoinPath(cacheBuiltinTargetDir, "toolchain.sig") : NULL;
+    if (cacheV1Dir == NULL || cacheBuiltinDir == NULL || cacheBuiltinTargetDir == NULL
+        || builtinObjPath == NULL || builtinSigPath == NULL)
+    {
+        ErrorSimple("out of memory");
+        goto fail;
+    }
+    if (EnsureDirRecursive(cacheBuiltinTargetDir) != 0) {
+        ErrorSimple("failed to create cache directory");
+        goto fail;
+    }
+
+    if (ToolchainSignatureMatches(builtinSigPath, toolchainSignature)
+        && GetFileMtimeNs(builtinPath, &srcMtimeNs) == 0
+        && GetFileMtimeNs(builtinHeaderPath, &headerMtimeNs) == 0
+        && GetFileMtimeNs(builtinObjPath, &objMtimeNs) == 0 && srcMtimeNs <= objMtimeNs
+        && headerMtimeNs <= objMtimeNs)
+    {
+        isUpToDate = 1;
+    }
+
+    if (!isUpToDate) {
+        ccArgv[0] = "cc";
+        ccArgv[1] = "-std=c11";
+        ccArgv[2] = "-g";
+        ccArgv[3] = "-w";
+        ccArgv[4] = "-isystem";
+        ccArgv[5] = libDir;
+        ccArgv[6] = "-c";
+        ccArgv[7] = builtinPath;
+        ccArgv[8] = "-o";
+        ccArgv[9] = builtinObjPath;
+        ccArgv[10] = NULL;
+        if (RunCommand(ccArgv) != 0) {
+            ErrorSimple("C compilation failed");
+            goto fail;
+        }
+        if (WriteOutput(builtinSigPath, toolchainSignature, (uint32_t)strlen(toolchainSignature))
+            != 0)
+        {
+            ErrorSimple("failed to write cache toolchain signature");
+            goto fail;
+        }
+    }
+
+    free(builtinSigPath);
+    free(cacheBuiltinTargetDir);
+    free(cacheBuiltinDir);
+    free(cacheV1Dir);
+    free(cacheRoot);
+    *outBuiltinObjPath = builtinObjPath;
+    return 0;
+
+fail:
+    free(builtinObjPath);
+    free(builtinSigPath);
+    free(cacheBuiltinTargetDir);
+    free(cacheBuiltinDir);
+    free(cacheV1Dir);
+    free(cacheRoot);
+    return -1;
+}
+
 static int BuildCachedWrapperObject(
     const SLPackageLoader* loader,
     const char* _Nullable cacheDirArg,
@@ -7623,6 +7741,7 @@ fail:
 static int IsLinkedOutputUpToDate(
     const char*              outExe,
     const char*              wrapperObjPath,
+    const char*              builtinObjPath,
     const char*              platformObjPath,
     const SLPackageArtifact* artifacts,
     uint32_t                 artifactLen) {
@@ -7637,6 +7756,9 @@ static int IsLinkedOutputUpToDate(
     outMtimeNs = StatMtimeNs(&outSt);
 
     if (GetFileMtimeNs(wrapperObjPath, &inputMtimeNs) != 0 || inputMtimeNs > outMtimeNs) {
+        return 0;
+    }
+    if (GetFileMtimeNs(builtinObjPath, &inputMtimeNs) != 0 || inputMtimeNs > outMtimeNs) {
         return 0;
     }
     if (GetFileMtimeNs(platformObjPath, &inputMtimeNs) != 0 || inputMtimeNs > outMtimeNs) {
@@ -7670,7 +7792,10 @@ static int CompileProgram(
     int                loaderReady = 0;
     char*              libDir = NULL;
     char*              platformPath = NULL;
+    char*              builtinPath = NULL;
+    char*              builtinHeaderPath = NULL;
     char*              platformObjPath = NULL;
+    char*              builtinObjPath = NULL;
     char*              wrapperObjPath = NULL;
     char*              toolchainSignature = NULL;
     SLPackageArtifact* artifacts = NULL;
@@ -7700,12 +7825,27 @@ static int CompileProgram(
     if (ResolvePlatformPath(libDir, loader.platformTarget, &platformPath) != 0) {
         goto end;
     }
+    if (ResolveBuiltinPath(libDir, &builtinPath, &builtinHeaderPath) != 0) {
+        goto end;
+    }
     if (BuildToolchainSignature(&loader, libDir, &toolchainSignature) != 0) {
         ErrorSimple("out of memory");
         goto end;
     }
     if (BuildCachedPlatformObject(
             &loader, cacheDirArg, libDir, platformPath, toolchainSignature, &platformObjPath)
+        != 0)
+    {
+        goto end;
+    }
+    if (BuildCachedBuiltinObject(
+            &loader,
+            cacheDirArg,
+            libDir,
+            builtinPath,
+            builtinHeaderPath,
+            toolchainSignature,
+            &builtinObjPath)
         != 0)
     {
         goto end;
@@ -7730,12 +7870,14 @@ static int CompileProgram(
         goto end;
     }
 
-    if (IsLinkedOutputUpToDate(outExe, wrapperObjPath, platformObjPath, artifacts, artifactLen)) {
+    if (IsLinkedOutputUpToDate(
+            outExe, wrapperObjPath, builtinObjPath, platformObjPath, artifacts, artifactLen))
+    {
         rc = 0;
         goto end;
     }
 
-    ccLinkArgv = (const char**)calloc((size_t)artifactLen + 11u, sizeof(char*));
+    ccLinkArgv = (const char**)calloc((size_t)artifactLen + 12u, sizeof(char*));
     if (ccLinkArgv == NULL) {
         ErrorSimple("out of memory");
         goto end;
@@ -7759,6 +7901,7 @@ static int CompileProgram(
             ccLinkArgv[i++] = artifacts[j].oPath;
         }
     }
+    ccLinkArgv[i++] = builtinObjPath;
     ccLinkArgv[i++] = platformObjPath;
     ccLinkArgv[i] = NULL;
     if (RunCommand(ccLinkArgv) != 0) {
@@ -7771,8 +7914,11 @@ static int CompileProgram(
 end:
     free(ccLinkArgv);
     free(wrapperObjPath);
+    free(builtinObjPath);
     free(toolchainSignature);
     free(platformObjPath);
+    free(builtinHeaderPath);
+    free(builtinPath);
     free(platformPath);
     free(libDir);
     FreePackageArtifacts(artifacts, artifactLen);
@@ -7791,7 +7937,8 @@ typedef struct {
     uint32_t            paramCount;
     uint8_t             hasReturnType;
     uint8_t             hasContextClause;
-    uint8_t             _reserved[2];
+    uint8_t             isBuiltinPackageFn;
+    uint8_t             _reserved[1];
 } SLEvalFunction;
 
 enum {
@@ -7840,6 +7987,47 @@ static void SLEvalValueSetNull(SLCTFEValue* value) {
     value->typeTag = 0;
     value->s.bytes = NULL;
     value->s.len = 0;
+}
+
+static int SLEvalValueConcatStrings(
+    SLArena* arena, const SLCTFEValue* a, const SLCTFEValue* b, SLCTFEValue* outValue) {
+    uint64_t totalLen64;
+    uint32_t totalLen;
+    uint8_t* bytes;
+    if (arena == NULL || a == NULL || b == NULL || outValue == NULL) {
+        return -1;
+    }
+    if (a->kind != SLCTFEValue_STRING || b->kind != SLCTFEValue_STRING) {
+        return 0;
+    }
+    totalLen64 = (uint64_t)a->s.len + (uint64_t)b->s.len;
+    if (totalLen64 > UINT32_MAX) {
+        return 0;
+    }
+    totalLen = (uint32_t)totalLen64;
+    outValue->kind = SLCTFEValue_STRING;
+    outValue->i64 = 0;
+    outValue->f64 = 0.0;
+    outValue->b = 0;
+    outValue->typeTag = 0;
+    if (totalLen == 0) {
+        outValue->s.bytes = NULL;
+        outValue->s.len = 0;
+        return 1;
+    }
+    bytes = (uint8_t*)SLArenaAlloc(arena, totalLen, (uint32_t)_Alignof(uint8_t));
+    if (bytes == NULL) {
+        return -1;
+    }
+    if (a->s.len > 0 && a->s.bytes != NULL) {
+        memcpy(bytes, a->s.bytes, a->s.len);
+    }
+    if (b->s.len > 0 && b->s.bytes != NULL) {
+        memcpy(bytes + a->s.len, b->s.bytes, b->s.len);
+    }
+    outValue->s.bytes = bytes;
+    outValue->s.len = totalLen;
+    return 1;
 }
 
 static void SLEvalValueSetSpan(
@@ -8037,13 +8225,14 @@ static int32_t SLEvalFindTopConstBySlice(
     return -1;
 }
 
-static int SLEvalCollectFunctions(SLEvalProgram* p) {
+static int SLEvalCollectFunctionsFromPackage(
+    SLEvalProgram* p, const SLPackage* pkg, uint8_t isBuiltinPackageFn) {
     uint32_t fileIndex;
-    if (p == NULL || p->entryPkg == NULL) {
+    if (p == NULL || pkg == NULL) {
         return -1;
     }
-    for (fileIndex = 0; fileIndex < p->entryPkg->fileLen; fileIndex++) {
-        const SLParsedFile* file = &p->entryPkg->files[fileIndex];
+    for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+        const SLParsedFile* file = &pkg->files[fileIndex];
         const SLAst*        ast = &file->ast;
         int32_t             nodeId = ASTFirstChild(ast, ast->root);
         while (nodeId >= 0) {
@@ -8087,8 +8276,8 @@ static int SLEvalCollectFunctions(SLEvalProgram* p) {
                     fn.paramCount = paramCount;
                     fn.hasReturnType = hasReturnType;
                     fn.hasContextClause = hasContextClause;
+                    fn.isBuiltinPackageFn = isBuiltinPackageFn;
                     fn._reserved[0] = 0;
-                    fn._reserved[1] = 0;
                     if (SLEvalProgramAppendFunction(p, &fn) != 0) {
                         return -1;
                     }
@@ -8098,6 +8287,13 @@ static int SLEvalCollectFunctions(SLEvalProgram* p) {
         }
     }
     return 0;
+}
+
+static int SLEvalCollectFunctions(SLEvalProgram* p) {
+    if (p == NULL || p->entryPkg == NULL) {
+        return -1;
+    }
+    return SLEvalCollectFunctionsFromPackage(p, p->entryPkg, 0);
 }
 
 static int32_t SLEvalFindFunctionBySlice(
@@ -8187,6 +8383,34 @@ static int SLEvalInvokeFunction(
             ast->nodes[fn->fnNode].start,
             ast->nodes[fn->fnNode].end,
             "evaluator backend call arity mismatch");
+    }
+
+    if (fn->isBuiltinPackageFn
+        && SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, "concat"))
+    {
+        int concatRc;
+        if (argCount != 2) {
+            return ErrorEvalUnsupported(
+                fn->file->path,
+                fn->file->source,
+                ast->nodes[fn->fnNode].start,
+                ast->nodes[fn->fnNode].end,
+                "evaluator backend call arity mismatch");
+        }
+        concatRc = SLEvalValueConcatStrings(p->arena, &args[0], &args[1], outValue);
+        if (concatRc < 0) {
+            return -1;
+        }
+        if (concatRc == 0) {
+            return ErrorEvalUnsupported(
+                fn->file->path,
+                fn->file->source,
+                ast->nodes[fn->fnNode].start,
+                ast->nodes[fn->fnNode].end,
+                "concat arguments are not available in evaluator backend");
+        }
+        *outDidReturn = 1;
+        return 0;
     }
 
     if (argCount > 0) {
@@ -8406,6 +8630,17 @@ static int SLEvalResolveCall(
         return -1;
     }
 
+    if (argCount == 2 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "concat")) {
+        int concatRc = SLEvalValueConcatStrings(p->arena, &args[0], &args[1], outValue);
+        if (concatRc < 0) {
+            return -1;
+        }
+        if (concatRc > 0) {
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+
     fnIndex = SLEvalFindFunctionBySlice(p, p->currentFile, nameStart, nameEnd, argCount);
     if (fnIndex == -2) {
         SLCTFEExecSetReason(
@@ -8423,7 +8658,11 @@ static int SLEvalResolveCall(
         return 0;
     }
     fn = &p->funcs[fnIndex];
-    if (fn->hasContextClause) {
+    if (fn->hasContextClause
+        && !(
+            fn->isBuiltinPackageFn
+            && SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, "concat")))
+    {
         SLCTFEExecSetReason(
             p->currentExecCtx,
             nameStart,

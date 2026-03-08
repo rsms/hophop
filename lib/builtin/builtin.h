@@ -154,99 +154,35 @@ static inline __sl_uint __sl_align_up(__sl_uint x, __sl_uint a) {
     return (x + (a - 1u)) & ~(a - 1u);
 }
 
-static inline void* __sl_memcpy_bytes(void* dst, const void* src, __sl_uint n) {
-    __sl_u8*       d = (__sl_u8*)dst;
-    const __sl_u8* s = (const __sl_u8*)src;
-    __sl_uint      i;
-    for (i = 0u; i < n; i++) {
-        d[i] = s[i];
-    }
-    return dst;
-}
-
-static inline int __sl_memcmp_bytes(const void* a, const void* b, __sl_uint n) {
-    const __sl_u8* aa = (const __sl_u8*)a;
-    const __sl_u8* bb = (const __sl_u8*)b;
-    __sl_uint      i;
-    for (i = 0u; i < n; i++) {
-        if (aa[i] != bb[i]) {
-            return aa[i] < bb[i] ? -1 : 1;
-        }
-    }
-    return 0;
-}
-
 static inline __sl_uint __sl_str_sizeof(const __sl_str* s) {
     return s != NULL ? (__sl_uint)(sizeof(__sl_str) + (__sl_uint)s->len + 1u) : 0u;
 }
 
-static inline int __sl_memcmp(const void* a, const void* b, __sl_uint n) {
-    const __sl_u8* aa = (const __sl_u8*)a;
-    const __sl_u8* bb = (const __sl_u8*)b;
-    __sl_uint      i = 0;
-    for (; i < n; i++) {
-        if (aa[i] < bb[i]) {
-            return -1;
-        }
-        if (aa[i] > bb[i]) {
-            return 1;
-        }
-    }
-    return 0;
-}
+int  __sl_memcmp(const void* a, const void* b, __sl_uint n);
+void __sl_memcpy(void* dst, const void* src, __sl_uint n);
+void __sl_memmove(void* dst, const void* src, __sl_uint n);
 
-static inline void __sl_memcpy(void* dst, const void* src, __sl_uint n) {
-    __sl_u8*       d = (__sl_u8*)dst;
-    const __sl_u8* s = (const __sl_u8*)src;
-    __sl_uint      i = 0;
-    for (; i < n; i++) {
-        d[i] = s[i];
-    }
-}
+// use compiler intrinsics when available
+#if __has_builtin(__builtin_memcpy)
+    #define __sl_memcpy __builtin_memcpy
+#endif
+#if __has_builtin(__builtin_memmove)
+    #define __sl_memmove __builtin_memmove
+#endif
+#if __has_builtin(__builtin_memcmp)
+    #define __sl_memcmp __builtin_memcmp
+#endif
+// #define memset  __builtin_memset
+// #define memset  __builtin_memset_inline
 
-static inline void __sl_memmove(void* dst, const void* src, __sl_uint n) {
-    __sl_u8*       d = (__sl_u8*)dst;
-    const __sl_u8* s = (const __sl_u8*)src;
-    __sl_uint      i;
-    if (dst == src || n == 0u) {
-        return;
-    }
-    if (d < s || d >= s + n) {
-        for (i = 0u; i < n; i++) {
-            d[i] = s[i];
-        }
-        return;
-    }
-    for (i = n; i > 0u; i--) {
-        d[i - 1u] = s[i - 1u];
-    }
-}
-
-static inline __sl_uint __sl_copy(
-    void* dst, __sl_uint dst_len, const void* src, __sl_uint src_len, __sl_uint elem_size) {
-    __sl_uint n = dst_len < src_len ? dst_len : src_len;
-    __sl_uint bytes = n * elem_size;
-    if (n == 0u || elem_size == 0u || dst == src) {
-        return n;
-    }
-    if (dst == NULL || src == NULL) {
-        return 0u;
-    }
-    __sl_memmove(dst, src, bytes);
-    return n;
-}
+__sl_uint __sl_copy(
+    void* dst, __sl_uint dst_len, const void* src, __sl_uint src_len, __sl_uint elem_size);
 
 static inline __sl_bool __sl_mem_equal(const void* a, const void* b, __sl_uint n) {
     return n == 0u || __sl_memcmp(a, b, n) == 0;
 }
 
-static inline __sl_int __sl_mem_order(
-    const void* a, __sl_uint a_len, const void* b, __sl_uint b_len) {
-    __sl_uint n = a_len < b_len ? a_len : b_len;
-    int       cmp = n > 0u ? __sl_memcmp(a, b, n) : 0;
-    return cmp != 0 ? (__sl_int)((cmp > 0) - (cmp < 0))
-                    : (__sl_int)((a_len > b_len) - (a_len < b_len));
-}
+__sl_int __sl_mem_order(const void* a, __sl_uint a_len, const void* b, __sl_uint b_len);
 
 static inline __sl_bool __sl_str_equal(const __sl_str* a, const __sl_str* b) {
     __sl_uint a_len = __sl_len(a);
@@ -331,24 +267,4 @@ static inline __sl_slice_mut __sl_new_array_slice_mut(
     __sl_Allocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
     void* p = __sl_new_array(ma, elemSize, elemAlign, count);
     return (__sl_slice_mut){ .ptr = p, .len = p != NULL ? count : 0u };
-}
-
-static inline __sl_str* __sl_concat(__sl_Allocator* ma, const __sl_str* a, const __sl_str* b) {
-    __sl_uint lenA = a != NULL ? a->len : 0u;
-    __sl_uint lenB = b != NULL ? b->len : 0u;
-    __sl_uint outLen = lenA + lenB;
-    __sl_str* out = (__sl_str*)__sl_new(ma, sizeof(__sl_str) + outLen + 1u, _Alignof(__sl_str));
-    if (out == NULL) {
-        return NULL;
-    }
-    out->ptr = (__sl_u8*)(void*)(out + 1);
-    out->len = outLen;
-    if (lenA > 0u && a != NULL) {
-        __sl_memcpy(out->ptr, a->ptr, lenA);
-    }
-    if (lenB > 0u && b != NULL) {
-        __sl_memcpy(out->ptr + lenA, b->ptr, lenB);
-    }
-    out->ptr[outLen] = 0;
-    return out;
 }

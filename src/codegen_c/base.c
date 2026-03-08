@@ -3171,6 +3171,9 @@ int EnsureAnonTypeByFields(
         uint32_t fieldStart = c->fieldInfoLen;
         cNameBuf.arena = &c->arena;
         if (BufAppendCStr(&cNameBuf, "__sl_anon_") != 0
+            || (c->unit != NULL && c->unit->packageName != NULL
+                && (BufAppendCStr(&cNameBuf, c->unit->packageName) != 0
+                    || BufAppendChar(&cNameBuf, '_') != 0))
             || BufAppendChar(&cNameBuf, isUnion ? 'u' : 's') != 0
             || BufAppendChar(&cNameBuf, '_') != 0 || BufAppendU32(&cNameBuf, c->anonTypeLen) != 0)
         {

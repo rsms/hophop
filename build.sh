@@ -199,10 +199,11 @@ build ${diag_outputs[*]}: diaggen $diag_json $diag_tool
 build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | tools/amalgamate.sh tools/amalgamate.py ${git_index} ${diag_outputs[*]}
 build \$builddir/lib/builtin/builtin_abi.stamp: builtinabigen ${builtin_sl_sources[@]} lib/platform/platform.sl tools/gen_builtin_abi.py
 build \$builddir/lib/builtin/builtin.h: copy lib/builtin/builtin.h | \$builddir/lib/builtin/builtin_abi.stamp
+build \$builddir/lib/builtin/builtin.c: copy lib/builtin/builtin.c
 build \$builddir/lib/platform/cli-libc/platform.c: copy lib/platform/cli-libc/platform.c
 build \$builddir/slc: link ${objfiles[*]}
 
-default \$builddir/libsl.h \$builddir/lib/builtin/builtin.h \$builddir/lib/platform/cli-libc/platform.c \$builddir/slc
+default \$builddir/libsl.h \$builddir/lib/builtin/builtin.h \$builddir/lib/builtin/builtin.c \$builddir/lib/platform/cli-libc/platform.c \$builddir/slc
 _END
 
 if [ ! -f build.ninja ]; then

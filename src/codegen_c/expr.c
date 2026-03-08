@@ -5284,16 +5284,70 @@ int EmitCopyCallExpr(SLCBackendC* c, int32_t calleeNode) {
 }
 
 int EmitConcatCallExpr(SLCBackendC* c, int32_t calleeNode) {
-    int32_t aNode = AstNextSibling(&c->ast, calleeNode);
-    int32_t bNode = aNode >= 0 ? AstNextSibling(&c->ast, aNode) : -1;
-    int32_t extra = bNode >= 0 ? AstNextSibling(&c->ast, bNode) : -1;
+    int32_t  aNode = AstNextSibling(&c->ast, calleeNode);
+    int32_t  bNode = aNode >= 0 ? AstNextSibling(&c->ast, aNode) : -1;
+    int32_t  extra = bNode >= 0 ? AstNextSibling(&c->ast, bNode) : -1;
+    uint32_t tempId;
     if (aNode < 0 || bNode < 0 || extra >= 0) {
         return -1;
     }
-    if (BufAppendCStr(&c->out, "__sl_concat((__sl_Allocator*)(") != 0
-        || EmitNewAllocArgExpr(c, -1) != 0 || BufAppendCStr(&c->out, "), ") != 0
-        || EmitExpr(c, aNode) != 0 || BufAppendCStr(&c->out, ", ") != 0 || EmitExpr(c, bNode) != 0
-        || BufAppendChar(&c->out, ')') != 0)
+    c->fmtTempCounter++;
+    if (c->fmtTempCounter == 0) {
+        c->fmtTempCounter = 1;
+    }
+    tempId = c->fmtTempCounter;
+    if (BufAppendCStr(&c->out, "({ __sl_str* sl_concat_out_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, "; __sl_str* sl_concat_a_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " = ") != 0
+        || EmitExpr(c, aNode) != 0 || BufAppendCStr(&c->out, "; __sl_str* sl_concat_b_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " = ") != 0
+        || EmitExpr(c, bNode) != 0 || BufAppendCStr(&c->out, "; __sl_uint sl_concat_lenA_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " = __sl_len(") != 0
+        || BufAppendCStr(&c->out, "sl_concat_a_") != 0 || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, "); __sl_uint sl_concat_lenB_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " = __sl_len(") != 0
+        || BufAppendCStr(&c->out, "sl_concat_b_") != 0 || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, "); __sl_uint sl_concat_outLen_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " = sl_concat_lenA_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " + sl_concat_lenB_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, "; sl_concat_out_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, " = (__sl_str*)__sl_new((__sl_Allocator*)(") != 0
+        || EmitNewAllocArgExpr(c, -1) != 0
+        || BufAppendCStr(&c->out, "), sizeof(__sl_str) + sl_concat_outLen_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, " + 1u, _Alignof(__sl_str)); if (sl_concat_out_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, " != NULL) { sl_concat_out_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, "->ptr = (__sl_u8*)(void*)(sl_concat_out_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, " + 1); sl_concat_out_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, "->len = sl_concat_outLen_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, "; if (sl_concat_lenA_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, " > 0u) { __sl_memcpy(") != 0
+        || BufAppendCStr(&c->out, "sl_concat_out_") != 0 || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, "->ptr, __sl_cstr(sl_concat_a_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, "), sl_concat_lenA_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, "); } if (sl_concat_lenB_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, " > 0u) { __sl_memcpy(") != 0
+        || BufAppendCStr(&c->out, "sl_concat_out_") != 0 || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, "->ptr + sl_concat_lenA_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, ", __sl_cstr(sl_concat_b_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, "), sl_concat_lenB_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, "); } sl_concat_out_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, "->ptr[sl_concat_outLen_") != 0
+        || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, "] = 0; } sl_concat_out_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, "; })") != 0)
     {
         return -1;
     }
