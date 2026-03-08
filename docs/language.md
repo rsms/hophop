@@ -580,7 +580,17 @@ fn f() {
 - [BI-CSTR-004][Stable] Returned pointer references the source string byte storage and remains valid while that storage remains valid.
 - [BI-CSTR-005][Stable] For non-null string values the returned byte sequence is NUL-terminated.
 
-### 9.3 `new`
+### 9.3 `copy(dst, src)`
+- [BI-COPY-001][Stable] `copy(dst, src)` copies `min(len(dst), len(src))` elements from `src` into `dst`.
+- [BI-COPY-002][Stable] Source and destination ranges may overlap; semantics are equivalent to elementwise `memmove` over copied bytes.
+- [BI-COPY-003][Stable] Return type is `uint`, and equals the number of elements copied.
+- [BI-COPY-004][Stable] `dst` MUST be writable sequence-like and `src` MUST be readable sequence-like.
+- [BI-COPY-005][Stable] String interoperability:
+  - `copy(*str, &str)` is valid.
+  - `copy(*[u8], &str)` is valid.
+  - `copy(*str, &[u8])` is invalid unless `src` is explicitly cast to `&str`.
+
+### 9.4 `new`
 - [BI-NEW-001][Stable] Forms:
   - `new T`
   - `new T{...}`
@@ -595,27 +605,27 @@ fn f() {
 - [BI-NEW-005A][Stable] `new [T 0]` has type `*[T]` (runtime-length slice pointer form).
 - [BI-NEW-006][Provisional] In `Reference-slc`, codegen may insert implicit null-trap unwrap when coercing `new` into non-optional pointer destinations.
 
-### 9.4 `concat(a, b)` and `free(...)`
+### 9.5 `concat(a, b)` and `free(...)`
 - [BI-CONCAT-001][Stable] `concat(a, b)` requires both args `str`-assignable and context `mem`; returns `*str`.
 - [BI-FREE-001][Stable] `free(value)` uses context allocator; `free(alloc, value)` uses explicit allocator.
 - [BI-FREE-002][Stable] Method sugar `alloc.free(value)` is supported.
 
-### 9.5 `panic(msg)`
+### 9.6 `panic(msg)`
 - [BI-PANIC-001][Stable] Argument MUST be `str`-assignable.
 - [BI-PANIC-002][Stable] Returns no value.
 
-### 9.6 `sizeof`
+### 9.7 `sizeof`
 - [BI-SIZEOF-001][Stable] `sizeof(Type)` and `sizeof(expr)` forms are supported.
 - [BI-SIZEOF-002][Stable] Result type is `uint`.
 - [BI-SIZEOF-003][Stable] Unsized and variable-size-by-value type operands are invalid in `sizeof(Type)`.
 
-### 9.7 `print(msg)`
+### 9.8 `print(msg)`
 - [BI-PRINT-001][Stable] Argument MUST be `str`-assignable.
 - [BI-PRINT-002][Stable] Effective context MUST provide field `log`.
 - [BI-PRINT-003][Stable] Core type checking imposes no additional static shape/type requirement on `log` beyond field presence.
 - [BI-PRINT-004][Provisional] `Reference-slc` currently validates `log` field presence at typecheck time and may rely on backend coercion at codegen time for concrete logger compatibility.
 
-### 9.8 `fmt(format, args...)`
+### 9.9 `fmt(format, args...)`
 - [BI-FMT-001][Provisional] `fmt` requires at least one argument; the first argument MUST be `str`-assignable.
 - [BI-FMT-002][Provisional] `fmt` requires effective context field `mem` compatible with `*Allocator`.
 - [BI-FMT-003][Provisional] `fmt` returns `*str`.
@@ -623,13 +633,13 @@ fn f() {
 - [BI-FMT-005][Provisional] `{{` and `}}` represent literal braces.
 - [BI-FMT-006][Provisional] If format is const-evaluable, placeholder count and argument compatibility are checked at typecheck time.
 
-### 9.9 `typeof(x)`
+### 9.10 `typeof(x)`
 - [BI-TYPEOF-001][Provisional] `typeof(x)` requires exactly one argument.
 - [BI-TYPEOF-002][Provisional] `typeof(x)` returns a value of builtin metatype `type`.
 - [BI-TYPEOF-003][Provisional] The returned type value represents the static type of `x`.
 - [BI-TYPEOF-004][Provisional] For type-name operands, `typeof(T)` is `type` (because type names are value expressions whose type is `type`).
 
-### 9.10 `kind(...)` and `base(...)`
+### 9.11 `kind(...)` and `base(...)`
 - [BI-REFLECT-001][Provisional] `kind(t)` and `t.kind()` require one `type` operand and return `reflect.Kind` (fallback `u8` when `reflect.Kind` is unavailable).
 - [BI-REFLECT-002][Provisional] `base(t)` and `t.base()` require one `type` operand and return `type`.
 - [BI-REFLECT-003][Provisional] `base(...)` is valid only for alias type values; non-alias operands are a type error.
@@ -640,7 +650,7 @@ fn f() {
 - [BI-REFLECT-008][Provisional] `array(t, n)` requires `type` + integer operands and returns `type` representing `[t n]`; `n` must be const-evaluable and in `0..UINT32_MAX` when materialized.
 - [BI-REFLECT-009][Provisional] `span_of(x)` and `reflect.span_of(x)` return `reflect.Span` for operand `x`.
 
-### 9.11 `compiler.error*` / `compiler.warn*`
+### 9.12 `compiler.error*` / `compiler.warn*`
 - [BI-CONSTEVAL-DIAG-001][Provisional] `compiler.error(message)` and `compiler.warn(message)` require one `str`-assignable argument.
 - [BI-CONSTEVAL-DIAG-002][Provisional] `compiler.error_at(span, message)` and `compiler.warn_at(span, message)` require `reflect.Span` + `str`-assignable arguments.
 - [BI-CONSTEVAL-DIAG-003][Provisional] Calls are valid in ordinary code and in consteval.

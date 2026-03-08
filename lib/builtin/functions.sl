@@ -10,6 +10,10 @@ fn cstr(s &str) &u8 {
 	return s.cstr()
 }
 
+fn copy(dst *[anytype], src &[anytype]) uint {
+	return 0
+}
+
 fn concat(a, b &str) *str {
 	return null as *str
 }

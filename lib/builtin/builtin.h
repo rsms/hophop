@@ -206,6 +206,38 @@ static inline void __sl_memcpy(void* dst, const void* src, __sl_uint n) {
     }
 }
 
+static inline void __sl_memmove(void* dst, const void* src, __sl_uint n) {
+    __sl_u8*       d = (__sl_u8*)dst;
+    const __sl_u8* s = (const __sl_u8*)src;
+    __sl_uint      i;
+    if (dst == src || n == 0u) {
+        return;
+    }
+    if (d < s || d >= s + n) {
+        for (i = 0u; i < n; i++) {
+            d[i] = s[i];
+        }
+        return;
+    }
+    for (i = n; i > 0u; i--) {
+        d[i - 1u] = s[i - 1u];
+    }
+}
+
+static inline __sl_uint __sl_copy(
+    void* dst, __sl_uint dst_len, const void* src, __sl_uint src_len, __sl_uint elem_size) {
+    __sl_uint n = dst_len < src_len ? dst_len : src_len;
+    __sl_uint bytes = n * elem_size;
+    if (n == 0u || elem_size == 0u || dst == src) {
+        return n;
+    }
+    if (dst == NULL || src == NULL) {
+        return 0u;
+    }
+    __sl_memmove(dst, src, bytes);
+    return n;
+}
+
 static inline __sl_bool __sl_mem_equal(const void* a, const void* b, __sl_uint n) {
     return n == 0u || __sl_memcmp(a, b, n) == 0;
 }

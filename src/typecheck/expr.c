@@ -1261,6 +1261,78 @@ int SLTCTypeCompilerDiagCall(
     return 0;
 }
 
+typedef struct {
+    int32_t elemType;
+    int     isString;
+    int     writable;
+} SLTCCopySeqInfo;
+
+static int SLTCResolveCopySeqInfo(SLTypeCheckCtx* c, int32_t typeId, SLTCCopySeqInfo* out) {
+    int32_t         resolvedType;
+    const SLTCType* t;
+    int32_t         u8Type;
+    if (c == NULL || out == NULL) {
+        return -1;
+    }
+    out->elemType = -1;
+    out->isString = 0;
+    out->writable = 0;
+    u8Type = SLTCFindBuiltinByKind(c, SLBuiltin_U8);
+    if (u8Type < 0) {
+        return -1;
+    }
+    resolvedType = SLTCResolveAliasBaseType(c, typeId);
+    if (resolvedType < 0 || (uint32_t)resolvedType >= c->typeLen) {
+        return 1;
+    }
+    if (resolvedType == c->typeStr) {
+        out->elemType = u8Type;
+        out->isString = 1;
+        return 0;
+    }
+    t = &c->types[resolvedType];
+    if (t->kind == SLTCType_ARRAY) {
+        out->elemType = t->baseType;
+        out->writable = 1;
+        return 0;
+    }
+    if (t->kind == SLTCType_SLICE) {
+        out->elemType = t->baseType;
+        out->writable = SLTCTypeIsMutable(t);
+        return 0;
+    }
+    if (t->kind == SLTCType_PTR || t->kind == SLTCType_REF) {
+        int32_t         baseType = t->baseType;
+        int32_t         resolvedBaseType;
+        const SLTCType* base;
+        if (baseType < 0 || (uint32_t)baseType >= c->typeLen) {
+            return 1;
+        }
+        resolvedBaseType = SLTCResolveAliasBaseType(c, baseType);
+        if (resolvedBaseType < 0 || (uint32_t)resolvedBaseType >= c->typeLen) {
+            return 1;
+        }
+        if (resolvedBaseType == c->typeStr) {
+            out->elemType = u8Type;
+            out->isString = 1;
+            out->writable = t->kind == SLTCType_PTR;
+            return 0;
+        }
+        base = &c->types[resolvedBaseType];
+        if (base->kind == SLTCType_ARRAY) {
+            out->elemType = base->baseType;
+            out->writable = t->kind == SLTCType_PTR;
+            return 0;
+        }
+        if (base->kind == SLTCType_SLICE) {
+            out->elemType = base->baseType;
+            out->writable = t->kind == SLTCType_PTR && SLTCTypeIsMutable(base);
+            return 0;
+        }
+    }
+    return 1;
+}
+
 int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
     int32_t calleeNode = SLAstFirstChild(c->ast, nodeId);
     int32_t calleeType;
@@ -1453,6 +1525,55 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             nextArgNode = SLAstNextSibling(c->ast, strArgNode);
             if (nextArgNode >= 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+            }
+            uintType = SLTCFindBuiltinByKind(c, SLBuiltin_USIZE);
+            if (uintType < 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+            }
+            *outType = uintType;
+            return 0;
+        }
+        if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "copy")) {
+            int32_t         dstNode = SLAstNextSibling(c->ast, calleeNode);
+            int32_t         srcNode = dstNode >= 0 ? SLAstNextSibling(c->ast, dstNode) : -1;
+            int32_t         extraNode = srcNode >= 0 ? SLAstNextSibling(c->ast, srcNode) : -1;
+            int32_t         dstType;
+            int32_t         srcType;
+            int32_t         dstElemResolved;
+            int32_t         u8Type;
+            int32_t         uintType;
+            SLTCCopySeqInfo dstInfo;
+            SLTCCopySeqInfo srcInfo;
+            if (dstNode < 0 || srcNode < 0 || extraNode >= 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+            }
+            if (SLTCTypeExpr(c, dstNode, &dstType) != 0 || SLTCTypeExpr(c, srcNode, &srcType) != 0)
+            {
+                return -1;
+            }
+            if (SLTCResolveCopySeqInfo(c, dstType, &dstInfo) != 0 || !dstInfo.writable
+                || dstInfo.elemType < 0)
+            {
+                return SLTCFailNode(c, dstNode, SLDiag_TYPE_MISMATCH);
+            }
+            if (SLTCResolveCopySeqInfo(c, srcType, &srcInfo) != 0 || srcInfo.elemType < 0) {
+                return SLTCFailNode(c, srcNode, SLDiag_TYPE_MISMATCH);
+            }
+            if (dstInfo.isString) {
+                if (!srcInfo.isString) {
+                    return SLTCFailNode(c, srcNode, SLDiag_TYPE_MISMATCH);
+                }
+            } else if (srcInfo.isString) {
+                u8Type = SLTCFindBuiltinByKind(c, SLBuiltin_U8);
+                if (u8Type < 0) {
+                    return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+                }
+                dstElemResolved = SLTCResolveAliasBaseType(c, dstInfo.elemType);
+                if (dstElemResolved < 0 || dstElemResolved != u8Type) {
+                    return SLTCFailNode(c, srcNode, SLDiag_TYPE_MISMATCH);
+                }
+            } else if (!SLTCCanAssign(c, dstInfo.elemType, srcInfo.elemType)) {
+                return SLTCFailNode(c, srcNode, SLDiag_TYPE_MISMATCH);
             }
             uintType = SLTCFindBuiltinByKind(c, SLBuiltin_USIZE);
             if (uintType < 0) {

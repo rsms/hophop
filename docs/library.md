@@ -89,6 +89,21 @@ fn cstr(s str) *u8
 
 `cstr` returns a read-only reference to null-terminated UTF-8 bytes suitable for C APIs.
 
+### `copy`
+
+```sl
+fn copy(dst *[anytype], src &[anytype]) uint
+```
+
+`copy` copies elements from `src` into `dst` and returns the number of copied elements.
+
+- Copy count is `min(len(dst), len(src))`.
+- Source and destination ranges may overlap (memmove semantics).
+- String interoperability:
+  - `copy(*str, &str)` is allowed.
+  - `copy(*[u8], &str)` is allowed.
+  - `copy(*str, &[u8])` requires an explicit cast of `src` to `&str`.
+
 
 ### `new`
 

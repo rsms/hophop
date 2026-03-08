@@ -638,3 +638,8 @@
 {"id":"integration.runtime.nested_types_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/nested_types_ok.sl"}
 {"id":"integration.runtime.nested_type_import_alias.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/nested_type_import_alias/app"}
 {"id":"integration.runtime.nested_type_import_named.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/nested_type_import_named/app"}
+{"id":"check:tests/copy_builtin_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/copy_builtin_ok.sl"}
+{"id":"check:tests/copy_str_from_u8_slice_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"check","input":"tests/copy_str_from_u8_slice_bad.sl"}
+{"id":"check:tests/copy_str_from_u8_slice_cast_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/copy_str_from_u8_slice_cast_ok.sl"}
+{"id":"integration.codegen.copy_builtin_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/copy_builtin_ok.sl","contains":["__sl_copy("]}
+{"id":"integration.runtime.copy_builtin_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/copy_builtin_ok.sl","expect_exit":0}
