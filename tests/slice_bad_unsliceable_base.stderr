@@ -1,0 +1,1 @@
+tests/slice_bad_unsliceable_base.sl:3:17: SL2004: type mismatch: cannot slice expression of type *i32

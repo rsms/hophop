@@ -2066,6 +2066,7 @@ int SLTCResolveIndexBaseInfo(SLTypeCheckCtx* c, int32_t baseType, SLTCIndexBaseI
     out->indexable = 0;
     out->sliceable = 0;
     out->sliceMutable = 0;
+    out->isStringLike = 0;
     out->hasKnownLen = 0;
     out->knownLen = 0;
 
@@ -2080,6 +2081,8 @@ int SLTCResolveIndexBaseInfo(SLTypeCheckCtx* c, int32_t baseType, SLTCIndexBaseI
         }
         out->elemType = u8Type;
         out->indexable = 1;
+        out->sliceable = 1;
+        out->isStringLike = 1;
         return 0;
     }
     t = &c->types[baseType];
@@ -2112,6 +2115,9 @@ int SLTCResolveIndexBaseInfo(SLTypeCheckCtx* c, int32_t baseType, SLTCIndexBaseI
                 }
                 out->elemType = u8Type;
                 out->indexable = 1;
+                out->sliceable = 1;
+                out->sliceMutable = 1;
+                out->isStringLike = 1;
                 return 0;
             }
             if (c->types[pointee].kind == SLTCType_ARRAY) {
@@ -2149,7 +2155,9 @@ int SLTCResolveIndexBaseInfo(SLTypeCheckCtx* c, int32_t baseType, SLTCIndexBaseI
                 }
                 out->elemType = u8Type;
                 out->indexable = 1;
+                out->sliceable = 1;
                 out->sliceMutable = SLTCTypeIsMutable(t);
+                out->isStringLike = 1;
                 return 0;
             }
             if (c->types[refBase].kind == SLTCType_ARRAY) {

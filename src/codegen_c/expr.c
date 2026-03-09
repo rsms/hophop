@@ -3307,7 +3307,8 @@ int InferExprType_INDEX(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTy
             return 0;
         }
         if (TypeRefIsStringByteSequence(outType)) {
-            TypeRefSetInvalid(outType);
+            outType->hasArrayLen = 0;
+            outType->arrayLen = 0;
             return 0;
         }
         if (outType->containerKind == SLTypeContainer_ARRAY) {
@@ -3887,6 +3888,30 @@ int EmitLenExprFromType(SLCBackendC* c, int32_t exprNode, const SLTypeRef* t) {
 int EmitElemPtrExpr(
     SLCBackendC* c, int32_t baseNode, const SLTypeRef* baseType, int wantWritableElem) {
     int elemConst = !wantWritableElem;
+    if (TypeRefIsStr(baseType)) {
+        const char* ptrType = elemConst ? "const __sl_u8*" : "__sl_u8*";
+        if (BufAppendCStr(&c->out, "((") != 0 || BufAppendCStr(&c->out, ptrType) != 0
+            || BufAppendCStr(&c->out, ")(") != 0)
+        {
+            return -1;
+        }
+        if (baseType->ptrDepth > 0) {
+            if (BufAppendCStr(&c->out, "((") != 0 || EmitExpr(c, baseNode) != 0
+                || BufAppendCStr(&c->out, ") == 0 ? (const void*)0 : (const void*)(((__sl_str*)(")
+                       != 0
+                || EmitExpr(c, baseNode) != 0 || BufAppendCStr(&c->out, "))->ptr))") != 0)
+            {
+                return -1;
+            }
+        } else {
+            if (BufAppendCStr(&c->out, "(const void*)((") != 0 || EmitExpr(c, baseNode) != 0
+                || BufAppendCStr(&c->out, ").ptr)") != 0)
+            {
+                return -1;
+            }
+        }
+        return BufAppendCStr(&c->out, "))");
+    }
     if (BufAppendCStr(&c->out, "((") != 0 || EmitElementTypeName(c, baseType, elemConst) != 0
         || BufAppendCStr(&c->out, "*)(") != 0)
     {
@@ -4564,6 +4589,51 @@ int EmitSliceExpr(SLCBackendC* c, int32_t nodeId) {
         return -1;
     }
     outMut = TypeRefContainerWritable(&baseType);
+    if (TypeRefIsStringByteSequence(&baseType)) {
+        outMut = baseType.ptrDepth > 0 && !baseType.readOnly;
+        if (baseType.ptrDepth > 0) {
+            if (BufAppendCStr(&c->out, "(&(__sl_str){ .ptr = ") != 0) {
+                return -1;
+            }
+        } else {
+            if (BufAppendCStr(&c->out, "((__sl_str){ .ptr = ") != 0) {
+                return -1;
+            }
+        }
+        if (EmitElemPtrExpr(c, baseNode, &baseType, outMut) != 0
+            || BufAppendCStr(&c->out, " + (__sl_uint)(") != 0)
+        {
+            return -1;
+        }
+        if (startNode >= 0) {
+            if (EmitExpr(c, startNode) != 0) {
+                return -1;
+            }
+        } else if (BufAppendChar(&c->out, '0') != 0) {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, "), .len = (__sl_uint)(") != 0) {
+            return -1;
+        }
+        if (endNode >= 0) {
+            if (EmitExpr(c, endNode) != 0) {
+                return -1;
+            }
+        } else if (EmitLenExprFromType(c, baseNode, &baseType) != 0) {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, ") - (") != 0) {
+            return -1;
+        }
+        if (startNode >= 0) {
+            if (EmitExpr(c, startNode) != 0) {
+                return -1;
+            }
+        } else if (BufAppendChar(&c->out, '0') != 0) {
+            return -1;
+        }
+        return BufAppendCStr(&c->out, ") })");
+    }
     if (BufAppendCStr(&c->out, "((") != 0
         || BufAppendCStr(&c->out, outMut ? "__sl_slice_mut" : "__sl_slice_ro") != 0
         || BufAppendCStr(&c->out, "){ ") != 0)
@@ -5235,6 +5305,9 @@ int EmitCopyCallExpr(SLCBackendC* c, int32_t calleeNode) {
     if (InferExprType(c, dstExpr, &dstType) != 0 || !dstType.valid
         || InferExprType(c, srcExpr, &srcType) != 0 || !srcType.valid)
     {
+        if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+            SetDiagNode(c, dstExpr >= 0 ? dstExpr : calleeNode, SLDiag_CODEGEN_INTERNAL);
+        }
         return -1;
     }
     tempId = FmtNextTempId(c);
@@ -5253,10 +5326,28 @@ int EmitCopyCallExpr(SLCBackendC* c, int32_t calleeNode) {
     }
 
     if (BufAppendCStr(&c->out, "(__extension__({ __auto_type ") != 0
-        || BufAppendCStr(&c->out, dstName) != 0 || BufAppendCStr(&c->out, " = ") != 0
-        || EmitExpr(c, dstNode) != 0 || BufAppendCStr(&c->out, "; __auto_type ") != 0
-        || BufAppendCStr(&c->out, srcName) != 0 || BufAppendCStr(&c->out, " = ") != 0
-        || EmitExpr(c, srcNode) != 0 || BufAppendCStr(&c->out, "; __sl_copy((void*)(") != 0
+        || BufAppendCStr(&c->out, dstName) != 0 || BufAppendCStr(&c->out, " = ") != 0)
+    {
+        return -1;
+    }
+    if (EmitExpr(c, dstNode) != 0) {
+        if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+            SetDiagNode(c, dstExpr, SLDiag_CODEGEN_INTERNAL);
+        }
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "; __auto_type ") != 0 || BufAppendCStr(&c->out, srcName) != 0
+        || BufAppendCStr(&c->out, " = ") != 0)
+    {
+        return -1;
+    }
+    if (EmitExpr(c, srcNode) != 0) {
+        if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+            SetDiagNode(c, srcExpr, SLDiag_CODEGEN_INTERNAL);
+        }
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "; __sl_copy((void*)(") != 0
         || EmitElemPtrExprFromNameType(c, dstName, &dstType, 1) != 0
         || BufAppendCStr(&c->out, "), (") != 0 || EmitLenExprFromNameType(c, dstName, &dstType) != 0
         || BufAppendCStr(&c->out, "), (const void*)(") != 0
@@ -5264,6 +5355,9 @@ int EmitCopyCallExpr(SLCBackendC* c, int32_t calleeNode) {
         || BufAppendCStr(&c->out, "), (") != 0 || EmitLenExprFromNameType(c, srcName, &srcType) != 0
         || BufAppendCStr(&c->out, "), ") != 0)
     {
+        if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
+            SetDiagNode(c, dstExpr, SLDiag_CODEGEN_INTERNAL);
+        }
         return -1;
     }
     if (TypeRefIsStr(&dstType)) {

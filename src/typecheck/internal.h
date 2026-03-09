@@ -361,6 +361,7 @@ typedef struct {
     int      indexable;
     int      sliceable;
     int      sliceMutable;
+    int      isStringLike;
     int      hasKnownLen;
     uint32_t knownLen;
 } SLTCIndexBaseInfo;

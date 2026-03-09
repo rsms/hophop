@@ -483,6 +483,10 @@ fn f() {
   - `args[i]` with non-const index is allowed in expected-type contexts (e.g. cast/coercion, typed call arguments, typed assignment) and in `typeof(args[i])`; these lower to runtime per-element dispatch over the instantiated pack.
 - [EXPR-SUGAR-017][Provisional] Spread into `...anytype` requires an `anytype` pack value; slice/array spread into `...anytype` is invalid.
 - [EXPR-SUGAR-018][Provisional] In const-evaluated execution paths, element indexing `x[i]` over const-evaluable string/slice-like values produces a const byte value when `i` is const-evaluable and in bounds.
+- [EXPR-SUGAR-019][Provisional] Slice-range expressions over string-like values preserve string shape:
+  - `str[a:b]` -> `str`
+  - `(*str)[a:b]` -> `*str`
+  - `(&str)[a:b]` -> `&str`
 
 ### 6.3 Compound literals
 - [EXPR-COMPOUND-001][Stable] Compound literals are named-field only.

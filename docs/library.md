@@ -99,6 +99,10 @@ fn copy(dst *[anytype], src &[anytype]) uint
 
 - Copy count is `min(len(dst), len(src))`.
 - Source and destination ranges may overlap (memmove semantics).
+- String slices preserve their string shape:
+  - `str[a:b]` has type `str`
+  - `(*str)[a:b]` has type `*str`
+  - `(&str)[a:b]` has type `&str`
 - String interoperability:
   - `copy(*str, &str)` is allowed.
   - `copy(*[u8], &str)` is allowed.

@@ -16,6 +16,7 @@
 {"id":"check:tests/switch_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/switch_ok.sl"}
 {"id":"check:tests/slice_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/slice_ok.sl"}
 {"id":"check:tests/slice_fn_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/slice_fn_ok.sl"}
+{"id":"checkpkg:tests/str_slice_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/str_slice_ok.sl"}
 {"id":"check:tests/types_mut_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/types_mut_ok.sl"}
 {"id":"checkpkg:tests/len_ptr_ref_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/len_ptr_ref_ok.sl"}
 {"id":"check:tests/len_null_ptr_ref_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/len_null_ptr_ref_ok.sl"}
@@ -141,6 +142,7 @@
 {"id":"check:tests/switch_bad_condition_type.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/switch_bad_condition_type.sl","expect_stderr":"tests/switch_bad_condition_type.stderr"}
 {"id":"check:tests/switch_bad_default_dup.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/switch_bad_default_dup.sl","expect_stderr":"tests/switch_bad_default_dup.stderr"}
 {"id":"check:tests/slice_bad_index_oob.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/slice_bad_index_oob.sl","expect_stderr":"tests/slice_bad_index_oob.stderr"}
+{"id":"check:tests/slice_bad_unsliceable_base.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/slice_bad_unsliceable_base.sl","expect_stderr":"tests/slice_bad_unsliceable_base.stderr"}
 {"id":"check:tests/slice_bad_range_oob.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/slice_bad_range_oob.sl","expect_stderr":"tests/slice_bad_range_oob.stderr"}
 {"id":"check:tests/slice_bad_range_order.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/slice_bad_range_order.sl","expect_stderr":"tests/slice_bad_range_order.stderr"}
 {"id":"check:tests/slice_bad_negative_index.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/slice_bad_negative_index.sl","expect_stderr":"tests/slice_bad_negative_index.stderr"}
@@ -361,6 +363,7 @@
 {"id":"integration.runtime.ptr_embedded_upcast_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/ptr_embedded_upcast_ok.sl","expect_exit":0,"eval_expect":"fail"}
 {"id":"integration.runtime.types_mut_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/types_mut_ok.sl"}
 {"id":"integration.runtime.slice_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slice_ok.sl"}
+{"id":"integration.runtime.str_slice_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/str_slice_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"integration.runtime.slp29_for_in_runtime_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slp29_for_in_runtime_ok.sl"}
 {"id":"integration.runtime.slp30_for_in_protocol_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/slp30_for_in_protocol_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"integration.runtime.slp30_for_in_protocol_iter_autoref_value_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/slp30_for_in_protocol_iter_autoref_value_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}

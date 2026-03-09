@@ -1267,6 +1267,53 @@ typedef struct {
     int     writable;
 } SLTCCopySeqInfo;
 
+static int32_t SLTCGetStringSliceExprType(
+    SLTypeCheckCtx* c, int32_t baseType, uint32_t start, uint32_t end) {
+    int32_t         resolvedType;
+    const SLTCType* t;
+    int32_t         resolvedBaseType;
+    if (c == NULL) {
+        return -1;
+    }
+    resolvedType = SLTCResolveAliasBaseType(c, baseType);
+    if (resolvedType < 0 || (uint32_t)resolvedType >= c->typeLen) {
+        return -1;
+    }
+    if (resolvedType == c->typeStr) {
+        return c->typeStr;
+    }
+    t = &c->types[resolvedType];
+    if (t->kind != SLTCType_PTR && t->kind != SLTCType_REF) {
+        return -1;
+    }
+    resolvedBaseType = SLTCResolveAliasBaseType(c, t->baseType);
+    if (resolvedBaseType != c->typeStr) {
+        return -1;
+    }
+    if (t->kind == SLTCType_PTR) {
+        return SLTCGetStrPtrType(c, start, end);
+    }
+    return SLTCGetStrRefType(c, start, end);
+}
+
+static int SLTCFailUnsliceableExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t baseType) {
+    char        typeBuf[128];
+    char        detailBuf[160];
+    SLTCTextBuf typeText;
+    SLTCTextBuf detailText;
+    int         rc = SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+    if (rc != -1 || c == NULL || c->diag == NULL) {
+        return rc;
+    }
+    SLTCTextBufInit(&typeText, typeBuf, (uint32_t)sizeof(typeBuf));
+    SLTCFormatTypeRec(c, baseType, &typeText, 0);
+    SLTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    SLTCTextBufAppendCStr(&detailText, "cannot slice expression of type ");
+    SLTCTextBufAppendCStr(&detailText, typeBuf);
+    c->diag->detail = SLTCAllocDiagText(c, detailBuf);
+    return rc;
+}
+
 static int SLTCResolveCopySeqInfo(SLTypeCheckCtx* c, int32_t typeId, SLTCCopySeqInfo* out) {
     int32_t         resolvedType;
     const SLTCType* t;
@@ -2686,7 +2733,7 @@ int SLTCTypeExpr_INDEX(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, in
         int     endIsConst = 0;
 
         if (!info.sliceable) {
-            return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+            return SLTCFailUnsliceableExpr(c, nodeId, baseType);
         }
 
         if (hasStart) {
@@ -2750,17 +2797,24 @@ int SLTCTypeExpr_INDEX(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, in
             SLTCMarkRuntimeBoundsCheck(c, nodeId);
         }
 
-        sliceType = SLTCInternSliceType(c, info.elemType, info.sliceMutable, n->start, n->end);
-        if (sliceType < 0) {
-            return -1;
-        }
-        if (info.sliceMutable) {
-            *outType = SLTCInternPtrType(c, sliceType, n->start, n->end);
+        if (info.isStringLike) {
+            *outType = SLTCGetStringSliceExprType(c, baseType, n->start, n->end);
+            if (*outType < 0) {
+                return -1;
+            }
         } else {
-            *outType = SLTCInternRefType(c, sliceType, 0, n->start, n->end);
-        }
-        if (*outType < 0) {
-            return -1;
+            sliceType = SLTCInternSliceType(c, info.elemType, info.sliceMutable, n->start, n->end);
+            if (sliceType < 0) {
+                return -1;
+            }
+            if (info.sliceMutable) {
+                *outType = SLTCInternPtrType(c, sliceType, n->start, n->end);
+            } else {
+                *outType = SLTCInternRefType(c, sliceType, 0, n->start, n->end);
+            }
+            if (*outType < 0) {
+                return -1;
+            }
         }
         return 0;
     }

@@ -1,12 +1,10 @@
 fn concat(a, b &str) *str context { mem *Allocator } {
-	var lenA   uint  = len(a)
-	var lenB   uint  = len(b)
-	var outLen uint  = lenA + lenB
-	var out    *str  = new str{ len: outLen }
-	var bytes  *[u8] = out
+	var lenA uint = len(a)
+	var lenB uint = len(b)
+	var out  *str = new str{ len: lenA + lenB }
 
 	copy(out, a)
-	copy(bytes[lenA:], b)
-	out.ptr[outLen] = 0
+	copy(out[lenA:], b)
+	out.ptr[len(out)] = 0
 	return out
 }
