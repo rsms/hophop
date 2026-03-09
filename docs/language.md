@@ -482,13 +482,13 @@ fn f() {
   - `args[i]` with const-evaluable in-bounds integer index yields the indexed element type.
   - `args[i]` with non-const index is allowed in expected-type contexts (e.g. cast/coercion, typed call arguments, typed assignment) and in `typeof(args[i])`; these lower to runtime per-element dispatch over the instantiated pack.
 - [EXPR-SUGAR-017][Provisional] Spread into `...anytype` requires an `anytype` pack value; slice/array spread into `...anytype` is invalid.
-- [EXPR-SUGAR-018][Provisional] In const-evaluated execution paths, element indexing `x[i]` over const-evaluable string/slice-like values produces a const byte value when `i` is const-evaluable and in bounds.
-- [EXPR-SUGAR-019][Provisional] Slice-range expressions over string-like values preserve string shape:
-  - `str[a:b]` -> `str`
-  - `(*str)[a:b]` -> `*str`
-  - `(&str)[a:b]` -> `&str`
 
-### 6.3 Compound literals
+### 6.3 Indexing and slicing
+- [EXPR-INDEX-001][Provisional] In const-evaluated execution paths, element indexing `x[i]` over const-evaluable string/slice-like values produces a const byte value when `i` is const-evaluable and in bounds.
+- [EXPR-SLICE-001][Provisional] Slice-range expressions over sequence-like values preserve the source sequence family and mutability/view shape rather than converting through a different container kind.
+  - examples: `*[T][a:b] -> *[T]`, `&[T][a:b] -> &[T]`, `(*str)[a:b] -> *str`, `(&str)[a:b] -> &str`
+
+### 6.4 Compound literals
 - [EXPR-COMPOUND-001][Stable] Compound literals are named-field only.
 - [EXPR-COMPOUND-002][Stable] Field names may be dotted (`a.b.c: ...`).
 - [EXPR-COMPOUND-003][Stable] Inferred `{ ... }` without explicit type requires expected aggregate type context or anonymous-struct inference.
