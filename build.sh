@@ -24,6 +24,7 @@ cc=clang  # compiler to use (also used for linking)
 release=0 # compatibility alias for debug=0
 toolchain=
 jobs=     # explicit number of -j or --jobs to use for running tests (defaults to CPU count)
+c_backend=1 # build C backend support into slc
 [ "$*" = "--help" ] && { echo "Usage: $0 [var[=value] ...]"; exit 0; };
 for a in "$@"; do
     case "$a" in
@@ -55,11 +56,29 @@ if [ -f .git ]; then
 fi
 
 cli_sources=( src/slc.c src/platform_cli-eval.c )
-lib_sources=( $(find src -maxdepth 2 -name '*.c' -and -not -name 'slc.c' -and -not -name 'platform_cli-eval.c' | sort -V) )
+if [ $c_backend = 1 ]; then
+    lib_sources=(
+        $(find src -maxdepth 2 -name '*.c' -and -not -name 'slc.c' -and -not -name 'platform_cli-eval.c' | sort -V)
+    )
+else
+    lib_sources=(
+        $(find src -maxdepth 2 -name '*.c' \
+            -and -not -path 'src/codegen_c/*' \
+            -and -not -name 'slc.c' \
+            -and -not -name 'platform_cli-eval.c' | sort -V)
+    )
+fi
 case " ${lib_sources[*]} " in
 *" $diag_c_out "*) ;;
 *) lib_sources+=( "$diag_c_out" ) ;;
 esac
+libsl_sources=()
+for srcfile in "${lib_sources[@]}"; do
+    if [ $c_backend = 0 ] && [ "$srcfile" = "src/codegen.c" ]; then
+        continue
+    fi
+    libsl_sources+=( "$srcfile" )
+done
 lib_headers=( $(find src -maxdepth 2 -name '*.h' | sort -V) )
 builtin_sl_sources=( $(find lib/builtin -maxdepth 1 -name '*.sl' | sort -V) )
 cli_output=slc
@@ -85,6 +104,7 @@ c_flags=(
     -Werror=return-type \
     -Werror=switch \
     -Werror=enum-conversion \
+    -DSL_WITH_C_BACKEND=$c_backend \
     $(_if_release -O2 -DNDEBUG -flto=thin) \
 )
 l_flags=()
@@ -112,8 +132,10 @@ cat <<- _END >&2
 mode, arch, sys = $mode, $arch, $sys
 toolchain, cc   = $toolchain, $cc
 build_dir       = $build_dir
+c_backend       = $c_backend
 cli_sources     = ${cli_sources[@]:-}
 lib_sources     = ${lib_sources[@]:-}
+libsl_sources   = ${libsl_sources[@]:-}
 c_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${c_flags[@]:-}")
 l_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${l_flags[@]:-}")
 _END
@@ -196,7 +218,7 @@ git_index=$(git rev-parse --git-dir || true)
 
 cat << _END >> $NF
 build ${diag_outputs[*]}: diaggen $diag_json $diag_tool
-build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${lib_sources[@]} | tools/amalgamate.sh tools/amalgamate.py ${git_index} ${diag_outputs[*]}
+build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${libsl_sources[@]} | tools/amalgamate.sh tools/amalgamate.py ${git_index} ${diag_outputs[*]}
 build \$builddir/lib/builtin/builtin_abi.stamp: builtinabigen ${builtin_sl_sources[@]} lib/platform/platform.sl tools/gen_builtin_abi.py
 build \$builddir/lib/builtin/builtin.h: copy lib/builtin/builtin.h | \$builddir/lib/builtin/builtin_abi.stamp
 build \$builddir/lib/builtin/builtin.c: copy lib/builtin/builtin.c
@@ -241,5 +263,6 @@ _v ninja "${ninja_args[@]}"
 [ $test = 1 ] || exit 0
 test_args=( run --build-dir "$build_dir" --cc "$cc" )
 [ -z "$jobs" ] || test_args+=( --jobs=$jobs )
+[ $c_backend = 1 ] || test_args+=( --eval-only )
 echo "python3 tools/test.py" "${test_args[@]}"
 exec python3 tools/test.py "${test_args[@]}"

@@ -2,7 +2,8 @@
 
 A small language with a C11 backend via `slc`.
 
-Build with `./build.sh` (you'll need `clang` in `PATH`)
+Build with `./build.sh` (you'll need `clang` in `PATH`).
+For an evaluator-only binary without the C backend, use `./build.sh c_backend=0`.
 
 Documentation home: `docs/index.md`
 
@@ -18,6 +19,9 @@ Run `_build/macos-aarch64-debug/slc --help` (or `_build/macos-aarch64-debug/slc`
 - Native compilation (`compile`) through the C11 backend.
 - Compile-and-run (`run`) for quick iteration.
 - `--platform` and `--cache-dir` options for target/runtime selection and build cache control.
+
+In `c_backend=0` builds, `slc` still supports parse/check/fmt plus `run --platform cli-eval`,
+but rejects C-backend commands such as `compile` and `genpkg`.
 
 ## Example
 

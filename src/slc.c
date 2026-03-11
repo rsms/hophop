@@ -21,6 +21,10 @@
 
 SL_API_BEGIN
 
+#ifndef SL_WITH_C_BACKEND
+    #define SL_WITH_C_BACKEND 1
+#endif
+
 typedef struct {
     char*    path;
     char*    source;
@@ -6451,6 +6455,18 @@ static void PrintVersion(void) {
     fprintf(stdout, "SL compiler version %d (%s)\n", SL_VERSION, SL_SOURCE_HASH);
 }
 
+static int HasCBackendBuild(void) {
+#if SL_WITH_C_BACKEND
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+static int ErrorCBackendDisabled(void) {
+    return ErrorSimple("this slc build was compiled without the C backend");
+}
+
 static int GeneratePackage(
     const char* entryPath,
     const char* backendName,
@@ -6489,6 +6505,9 @@ static int GeneratePackage(
     if (backend == NULL) {
         free(source);
         FreeLoader(&loader);
+        if (!HasCBackendBuild()) {
+            return ErrorCBackendDisabled();
+        }
         return ErrorSimple("unknown backend: %s", backendName);
     }
 
@@ -7805,6 +7824,10 @@ static int CompileProgram(
     uint32_t           i;
     int                rc = -1;
 
+    if (!HasCBackendBuild()) {
+        return ErrorCBackendDisabled();
+    }
+
     if (LoadAndCheckPackage(entryPath, platformTarget, &loader, &entryPkg) != 0) {
         goto end;
     }
@@ -9040,6 +9063,9 @@ static int RunProgram(
     if (IsEvalPlatformTarget(platformTarget)) {
         return RunProgramEval(entryPath, platformTarget);
     }
+    if (!HasCBackendBuild()) {
+        return ErrorCBackendDisabled();
+    }
     return RunProgramC(entryPath, platformTarget, cacheDirArg);
 }
 
@@ -9138,6 +9164,9 @@ int main(int argc, char* argv[]) {
         return 2;
     }
     if (genpkgMode == 1) {
+        if (!HasCBackendBuild()) {
+            return ErrorCBackendDisabled();
+        }
         return GeneratePackage(filename, backendName, outFilename, platformTarget, cacheDirArg) == 0
                  ? 0
                  : 1;

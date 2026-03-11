@@ -1131,6 +1131,35 @@ def expand_execution_cases(fixtures: List[TestCase]) -> List[ExecutionCase]:
     return cases
 
 
+def mode_uses_c_backend(mode: Any) -> bool:
+    if not isinstance(mode, str):
+        return False
+    return mode == "genpkg" or mode.startswith("genpkg:")
+
+
+def execution_case_supported_in_eval_only(case: ExecutionCase) -> bool:
+    fixture = case.fixture
+    kind = fixture.kind
+    data = fixture.data
+
+    if case.variant == "cli-eval":
+        return True
+
+    if kind in (
+        "compile_only",
+        "compile_cache_reuse",
+        "compile_and_run",
+        "genpkg_text_check",
+        "genpkg_compile",
+    ):
+        return False
+
+    if kind == "slc_run":
+        return data.get("platform") == "cli-eval"
+
+    return not mode_uses_c_backend(data.get("mode"))
+
+
 def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunResult:
     start = time.time()
     work_dir = temp_root / f"{case.index:04d}-{sanitize_name(case.id)}"
@@ -1366,6 +1395,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("no tests selected")
         return 0
     cases = expand_execution_cases(fixtures)
+    if args.eval_only:
+        cases = [case for case in cases if execution_case_supported_in_eval_only(case)]
 
     build_dir = abs_path(args.build_dir)
     slc = build_dir / "slc"
@@ -1378,7 +1409,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         slc=slc,
         cc=args.cc,
         update=args.update,
-        sidecar_codegen=not args.no_sidecar_codegen,
+        sidecar_codegen=not args.no_sidecar_codegen and not args.eval_only,
     )
 
     jobs = args.jobs if args.jobs and args.jobs > 0 else (os.cpu_count() or 1)
@@ -1455,6 +1486,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     sp.add_argument("--jobs", type=int, default=0)
     sp.add_argument("--update", action="store_true", help="update *.expected.c sidecars")
     sp.add_argument("--no-sidecar-codegen", action="store_true")
+    sp.add_argument("--eval-only", action="store_true", help="skip C-backend-only executions")
     sp.add_argument("--keep-temp", action="store_true")
     sp.set_defaults(func=cmd_run)
 
