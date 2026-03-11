@@ -220,9 +220,15 @@ enum {
     SLEvalTypeCode_ANYTYPE,
 };
 
-static int  ASTNextSibling(const SLAst* ast, int32_t nodeId);
-static void SLEvalValueSetRuntimeTypeCode(SLCTFEValue* value, int32_t typeCode);
-static int  SLEvalValueGetRuntimeTypeCode(const SLCTFEValue* value, int32_t* outTypeCode);
+typedef struct SLEvalProgram SLEvalProgram;
+
+static int     ASTNextSibling(const SLAst* ast, int32_t nodeId);
+static void    SLEvalValueSetRuntimeTypeCode(SLCTFEValue* value, int32_t typeCode);
+static int     SLEvalValueGetRuntimeTypeCode(const SLCTFEValue* value, int32_t* outTypeCode);
+static int32_t SLEvalFindTopConstBySlice(
+    const SLEvalProgram* p, const SLParsedFile* file, uint32_t nameStart, uint32_t nameEnd);
+static int SLEvalEvalTopConst(
+    SLEvalProgram* p, uint32_t topConstIndex, SLCTFEValue* outValue, int* outIsConst);
 
 static int SLEvalBuiltinTypeSize(
     const char* source, uint32_t nameStart, uint32_t nameEnd, uint64_t* outSize) {
@@ -662,14 +668,47 @@ typedef struct {
     SLEvalAggregate* _Nullable payload;
 } SLEvalTaggedEnum;
 
+typedef struct SLEvalReflectedType SLEvalReflectedType;
+struct SLEvalReflectedType {
+    uint8_t             kind;
+    uint8_t             namedKind;
+    uint16_t            _reserved;
+    const SLParsedFile* file;
+    int32_t             nodeId;
+    uint32_t            arrayLen;
+    SLCTFEValue         elemType;
+};
+
 #define SL_EVAL_PACKAGE_REF_TAG_FLAG  (UINT64_C(1) << 63)
 #define SL_EVAL_NULL_FIXED_LEN_TAG    (UINT64_C(1) << 62)
 #define SL_EVAL_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 61)
 #define SL_EVAL_TAGGED_ENUM_TAG_FLAG  (UINT64_C(1) << 60)
 #define SL_EVAL_SIMPLE_TYPE_TAG_FLAG  (UINT64_C(1) << 59)
+#define SL_EVAL_REFLECT_TYPE_TAG_FLAG (UINT64_C(1) << 58)
 #define SL_EVAL_RUNTIME_TYPE_MAGIC    0x534c4556u
 
-typedef struct {
+enum {
+    SLEvalReflectType_NAMED = 1,
+    SLEvalReflectType_PTR = 2,
+    SLEvalReflectType_SLICE = 3,
+    SLEvalReflectType_ARRAY = 4,
+};
+
+enum {
+    SLEvalTypeKind_PRIMITIVE = 1,
+    SLEvalTypeKind_ALIAS = 2,
+    SLEvalTypeKind_STRUCT = 3,
+    SLEvalTypeKind_UNION = 4,
+    SLEvalTypeKind_ENUM = 5,
+    SLEvalTypeKind_POINTER = 6,
+    SLEvalTypeKind_REFERENCE = 7,
+    SLEvalTypeKind_SLICE = 8,
+    SLEvalTypeKind_ARRAY = 9,
+    SLEvalTypeKind_OPTIONAL = 10,
+    SLEvalTypeKind_FUNCTION = 11,
+};
+
+struct SLEvalProgram {
     SLArena* _Nonnull arena;
     const SLPackageLoader* loader;
     const SLPackage*       entryPkg;
@@ -690,7 +729,7 @@ typedef struct {
     const SLEvalContext*   currentContext;
     int                    exitCalled;
     int                    exitCode;
-} SLEvalProgram;
+};
 
 static void SLEvalValueSetNull(SLCTFEValue* value) {
     if (value == NULL) {
@@ -766,6 +805,61 @@ static int SLEvalValueGetSimpleTypeCode(const SLCTFEValue* value, int32_t* outTy
     }
     *outTypeCode = (int32_t)(uint32_t)(value->typeTag & ~SL_EVAL_SIMPLE_TYPE_TAG_FLAG);
     return 1;
+}
+
+static uint64_t SLEvalHashMix64(uint64_t x) {
+    x ^= x >> 21;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    return x;
+}
+
+static uint64_t SLEvalReflectTypeTagBody(const SLEvalReflectedType* rt) {
+    uint64_t tag = 0;
+    if (rt == NULL) {
+        return 0;
+    }
+    tag = ((uint64_t)rt->kind << 52) ^ ((uint64_t)rt->namedKind << 44);
+    if (rt->kind == SLEvalReflectType_NAMED) {
+        tag ^= SLEvalHashMix64((uint64_t)(uintptr_t)rt->file);
+        tag ^= SLEvalHashMix64((uint64_t)(uint32_t)(rt->nodeId + 1));
+    } else {
+        tag ^= SLEvalHashMix64(rt->elemType.typeTag);
+        tag ^= SLEvalHashMix64((uint64_t)rt->arrayLen);
+    }
+    return tag
+         & ~(SL_EVAL_PACKAGE_REF_TAG_FLAG | SL_EVAL_NULL_FIXED_LEN_TAG
+             | SL_EVAL_FUNCTION_REF_TAG_FLAG | SL_EVAL_TAGGED_ENUM_TAG_FLAG
+             | SL_EVAL_SIMPLE_TYPE_TAG_FLAG | SL_EVAL_REFLECT_TYPE_TAG_FLAG);
+}
+
+static void SLEvalValueSetReflectedTypeValue(SLCTFEValue* value, SLEvalReflectedType* rt) {
+    if (value == NULL || rt == NULL) {
+        return;
+    }
+    value->kind = SLCTFEValue_TYPE;
+    value->i64 = 0;
+    value->f64 = 0.0;
+    value->b = 0;
+    value->typeTag = SL_EVAL_REFLECT_TYPE_TAG_FLAG | SLEvalReflectTypeTagBody(rt);
+    value->s.bytes = (const uint8_t*)rt;
+    value->s.len = 0;
+    value->span.fileBytes = NULL;
+    value->span.fileLen = 0;
+    value->span.startLine = 0;
+    value->span.startColumn = 0;
+    value->span.endLine = 0;
+    value->span.endColumn = 0;
+}
+
+static SLEvalReflectedType* _Nullable SLEvalValueAsReflectedType(const SLCTFEValue* value) {
+    if (value == NULL || value->kind != SLCTFEValue_TYPE
+        || (value->typeTag & SL_EVAL_REFLECT_TYPE_TAG_FLAG) == 0 || value->s.bytes == NULL)
+    {
+        return NULL;
+    }
+    return (SLEvalReflectedType*)value->s.bytes;
 }
 
 static void SLEvalValueSetPackageRef(SLCTFEValue* value, uint32_t pkgIndex) {
@@ -960,6 +1054,202 @@ static const SLPackage* _Nullable SLEvalFindPackageByFile(
         }
     }
     return NULL;
+}
+
+static void SLEvalValueSetStringSlice(
+    SLCTFEValue* value, const char* source, uint32_t start, uint32_t end) {
+    if (value == NULL) {
+        return;
+    }
+    value->kind = SLCTFEValue_STRING;
+    value->i64 = 0;
+    value->f64 = 0.0;
+    value->b = 0;
+    value->typeTag = 0;
+    value->s.bytes = source != NULL ? (const uint8_t*)(source + start) : NULL;
+    value->s.len = end >= start ? end - start : 0;
+}
+
+static int32_t SLEvalResolveNamedTypeDeclInPackage(
+    const SLPackage*     pkg,
+    const SLParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    const SLParsedFile** outFile,
+    uint8_t*             outNamedKind) {
+    uint32_t fileIndex;
+    if (outFile != NULL) {
+        *outFile = NULL;
+    }
+    if (outNamedKind != NULL) {
+        *outNamedKind = 0;
+    }
+    if (pkg == NULL || callerFile == NULL) {
+        return -1;
+    }
+    for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+        const SLParsedFile* pkgFile = &pkg->files[fileIndex];
+        int32_t             nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
+        while (nodeId >= 0) {
+            const SLAstNode* n = &pkgFile->ast.nodes[nodeId];
+            uint8_t          namedKind = 0;
+            if (n->kind == SLAst_TYPE_ALIAS) {
+                namedKind = SLEvalTypeKind_ALIAS;
+            } else if (n->kind == SLAst_STRUCT) {
+                namedKind = SLEvalTypeKind_STRUCT;
+            } else if (n->kind == SLAst_UNION) {
+                namedKind = SLEvalTypeKind_UNION;
+            } else if (n->kind == SLAst_ENUM) {
+                namedKind = SLEvalTypeKind_ENUM;
+            }
+            if (namedKind != 0
+                && SliceEqSlice(
+                    callerFile->source,
+                    nameStart,
+                    nameEnd,
+                    pkgFile->source,
+                    n->dataStart,
+                    n->dataEnd))
+            {
+                if (outFile != NULL) {
+                    *outFile = pkgFile;
+                }
+                if (outNamedKind != NULL) {
+                    *outNamedKind = namedKind;
+                }
+                return nodeId;
+            }
+            nodeId = ASTNextSibling(&pkgFile->ast, nodeId);
+        }
+    }
+    return -1;
+}
+
+static int SLEvalResolveTypePackageAndName(
+    const SLEvalProgram* p,
+    const SLParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    const SLPackage**    outPkg,
+    uint32_t*            outLookupStart,
+    uint32_t*            outLookupEnd) {
+    const SLPackage* currentPkg;
+    uint32_t         dot = nameStart;
+    if (outPkg != NULL) {
+        *outPkg = NULL;
+    }
+    if (outLookupStart != NULL) {
+        *outLookupStart = nameStart;
+    }
+    if (outLookupEnd != NULL) {
+        *outLookupEnd = nameEnd;
+    }
+    if (p == NULL || callerFile == NULL) {
+        return 0;
+    }
+    currentPkg = SLEvalFindPackageByFile(p, callerFile);
+    while (dot < nameEnd) {
+        if (callerFile->source[dot] == '.') {
+            break;
+        }
+        dot++;
+    }
+    if (dot < nameEnd && currentPkg != NULL) {
+        uint32_t i;
+        for (i = 0; i < currentPkg->importLen; i++) {
+            const SLImportRef* imp = &currentPkg->imports[i];
+            if (imp->bindName == NULL || imp->target == NULL) {
+                continue;
+            }
+            if (strlen(imp->bindName) == (size_t)(dot - nameStart)
+                && memcmp(imp->bindName, callerFile->source + nameStart, (size_t)(dot - nameStart))
+                       == 0)
+            {
+                if (outPkg != NULL) {
+                    *outPkg = imp->target;
+                }
+                if (outLookupStart != NULL) {
+                    *outLookupStart = dot + 1u;
+                }
+                return 1;
+            }
+        }
+    }
+    if (outPkg != NULL) {
+        *outPkg = currentPkg;
+    }
+    return currentPkg != NULL;
+}
+
+static int SLEvalMakeNamedTypeValue(
+    SLEvalProgram*      p,
+    const SLParsedFile* declFile,
+    int32_t             declNode,
+    uint8_t             namedKind,
+    SLCTFEValue*        outValue) {
+    SLEvalReflectedType* rt;
+    if (p == NULL || declFile == NULL || outValue == NULL || declNode < 0) {
+        return 0;
+    }
+    rt = (SLEvalReflectedType*)SLArenaAlloc(
+        p->arena, sizeof(SLEvalReflectedType), (uint32_t)_Alignof(SLEvalReflectedType));
+    if (rt == NULL) {
+        return -1;
+    }
+    memset(rt, 0, sizeof(*rt));
+    rt->kind = SLEvalReflectType_NAMED;
+    rt->namedKind = namedKind;
+    rt->file = declFile;
+    rt->nodeId = declNode;
+    SLEvalValueSetReflectedTypeValue(outValue, rt);
+    return 1;
+}
+
+static int SLEvalResolveTypeValueName(
+    SLEvalProgram*      p,
+    const SLParsedFile* callerFile,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    SLCTFEValue*        outValue) {
+    const SLPackage*    targetPkg = NULL;
+    const SLParsedFile* declFile = NULL;
+    uint32_t            lookupStart = nameStart;
+    uint32_t            lookupEnd = nameEnd;
+    uint8_t             namedKind = 0;
+    int32_t             typeCode = SLEvalTypeCode_INVALID;
+    int32_t             declNode = -1;
+    uint32_t            pkgIndex;
+    if (p == NULL || callerFile == NULL || outValue == NULL) {
+        return 0;
+    }
+    if (SLEvalBuiltinTypeCode(callerFile->source, nameStart, nameEnd, &typeCode)) {
+        SLEvalValueSetSimpleTypeValue(outValue, typeCode);
+        return 1;
+    }
+    if (SLEvalResolveTypePackageAndName(
+            p, callerFile, nameStart, nameEnd, &targetPkg, &lookupStart, &lookupEnd))
+    {
+        declNode = SLEvalResolveNamedTypeDeclInPackage(
+            targetPkg, callerFile, lookupStart, lookupEnd, &declFile, &namedKind);
+        if (declNode >= 0 && declFile != NULL) {
+            return SLEvalMakeNamedTypeValue(p, declFile, declNode, namedKind, outValue);
+        }
+    }
+    if (p->loader == NULL) {
+        return 0;
+    }
+    for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
+        const SLPackage* pkg = &p->loader->packages[pkgIndex];
+        if (pkg == targetPkg) {
+            continue;
+        }
+        declNode = SLEvalResolveNamedTypeDeclInPackage(
+            pkg, callerFile, lookupStart, lookupEnd, &declFile, &namedKind);
+        if (declNode >= 0 && declFile != NULL) {
+            return SLEvalMakeNamedTypeValue(p, declFile, declNode, namedKind, outValue);
+        }
+    }
+    return 0;
 }
 
 static uint64_t SLEvalMakeAggregateTag(const SLParsedFile* file, int32_t nodeId) {
@@ -2058,6 +2348,272 @@ static int SLEvalZeroInitAggregateValue(
     return 0;
 }
 
+static int SLEvalTypeValueFromTypeNode(
+    SLEvalProgram* p, const SLParsedFile* file, int32_t typeNode, SLCTFEValue* outValue) {
+    const SLAstNode*     n;
+    int32_t              childNode;
+    SLEvalReflectedType* rt;
+    uint32_t             arrayLen = 0;
+    if (p == NULL || file == NULL || outValue == NULL || typeNode < 0
+        || (uint32_t)typeNode >= file->ast.len)
+    {
+        return 0;
+    }
+    n = &file->ast.nodes[typeNode];
+    if (n->kind == SLAst_TYPE_NAME) {
+        return SLEvalResolveTypeValueName(p, file, n->dataStart, n->dataEnd, outValue);
+    }
+    if (n->kind != SLAst_TYPE_PTR && n->kind != SLAst_TYPE_REF && n->kind != SLAst_TYPE_ARRAY) {
+        return 0;
+    }
+    childNode = ASTFirstChild(&file->ast, typeNode);
+    if (childNode < 0 || !SLEvalTypeValueFromTypeNode(p, file, childNode, outValue)) {
+        return 0;
+    }
+    rt = (SLEvalReflectedType*)SLArenaAlloc(
+        p->arena, sizeof(SLEvalReflectedType), (uint32_t)_Alignof(SLEvalReflectedType));
+    if (rt == NULL) {
+        return -1;
+    }
+    memset(rt, 0, sizeof(*rt));
+    if (n->kind == SLAst_TYPE_PTR) {
+        rt->kind = SLEvalReflectType_PTR;
+        rt->namedKind = SLEvalTypeKind_POINTER;
+    } else if (n->kind == SLAst_TYPE_REF) {
+        rt->kind = SLEvalReflectType_PTR;
+        rt->namedKind = SLEvalTypeKind_REFERENCE;
+    } else {
+        if (!SLEvalParseUintSlice(file->source, n->dataStart, n->dataEnd, &arrayLen)) {
+            return 0;
+        }
+        rt->kind = SLEvalReflectType_ARRAY;
+        rt->namedKind = SLEvalTypeKind_ARRAY;
+        rt->arrayLen = arrayLen;
+    }
+    rt->elemType = *outValue;
+    SLEvalValueSetReflectedTypeValue(outValue, rt);
+    return 1;
+}
+
+static int SLEvalZeroInitTypeValue(
+    const SLEvalProgram* p, const SLCTFEValue* typeValue, SLCTFEValue* outValue, int* outIsConst) {
+    int32_t              typeCode = SLEvalTypeCode_INVALID;
+    SLEvalReflectedType* rt;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || typeValue == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (SLEvalValueGetSimpleTypeCode(typeValue, &typeCode)) {
+        switch (typeCode) {
+            case SLEvalTypeCode_BOOL:
+                outValue->kind = SLCTFEValue_BOOL;
+                outValue->b = 0;
+                outValue->i64 = 0;
+                outValue->f64 = 0.0;
+                outValue->typeTag = 0;
+                outValue->s.bytes = NULL;
+                outValue->s.len = 0;
+                *outIsConst = 1;
+                return 0;
+            case SLEvalTypeCode_F32:
+            case SLEvalTypeCode_F64:
+                outValue->kind = SLCTFEValue_FLOAT;
+                outValue->b = 0;
+                outValue->i64 = 0;
+                outValue->f64 = 0.0;
+                outValue->typeTag = 0;
+                outValue->s.bytes = NULL;
+                outValue->s.len = 0;
+                *outIsConst = 1;
+                return 0;
+            case SLEvalTypeCode_STR_REF:
+            case SLEvalTypeCode_STR_PTR:
+                outValue->kind = SLCTFEValue_STRING;
+                outValue->b = 0;
+                outValue->i64 = 0;
+                outValue->f64 = 0.0;
+                outValue->typeTag = 0;
+                outValue->s.bytes = NULL;
+                outValue->s.len = 0;
+                *outIsConst = 1;
+                return 0;
+            case SLEvalTypeCode_U8:
+            case SLEvalTypeCode_U16:
+            case SLEvalTypeCode_U32:
+            case SLEvalTypeCode_U64:
+            case SLEvalTypeCode_UINT:
+            case SLEvalTypeCode_I8:
+            case SLEvalTypeCode_I16:
+            case SLEvalTypeCode_I32:
+            case SLEvalTypeCode_I64:
+            case SLEvalTypeCode_INT:
+                SLEvalValueSetInt(outValue, 0);
+                *outIsConst = 1;
+                return 0;
+            default: return 0;
+        }
+    }
+    rt = SLEvalValueAsReflectedType(typeValue);
+    if (rt == NULL) {
+        return 0;
+    }
+    if (rt->kind == SLEvalReflectType_NAMED) {
+        const SLAstNode* declNode = NULL;
+        if (rt->file == NULL || rt->nodeId < 0 || (uint32_t)rt->nodeId >= rt->file->ast.len) {
+            return 0;
+        }
+        declNode = &rt->file->ast.nodes[rt->nodeId];
+        if (rt->namedKind == SLEvalTypeKind_ALIAS) {
+            int32_t     baseTypeNode = ASTFirstChild(&rt->file->ast, rt->nodeId);
+            SLCTFEValue baseTypeValue;
+            if (baseTypeNode < 0
+                || !SLEvalTypeValueFromTypeNode(
+                    (SLEvalProgram*)p, rt->file, baseTypeNode, &baseTypeValue))
+            {
+                return 0;
+            }
+            if (SLEvalZeroInitTypeValue(p, &baseTypeValue, outValue, outIsConst) != 0) {
+                return -1;
+            }
+            if (*outIsConst) {
+                outValue->typeTag = SLEvalMakeAliasTag(rt->file, rt->nodeId);
+            }
+            return 0;
+        }
+        if (rt->namedKind == SLEvalTypeKind_STRUCT || rt->namedKind == SLEvalTypeKind_UNION) {
+            return SLEvalZeroInitAggregateValue(p, rt->file, rt->nodeId, outValue, outIsConst);
+        }
+        if (rt->namedKind == SLEvalTypeKind_ENUM && declNode != NULL) {
+            int32_t  variantNode = ASTFirstChild(&rt->file->ast, rt->nodeId);
+            uint32_t tagIndex = 0;
+            while (variantNode >= 0) {
+                if (rt->file->ast.nodes[variantNode].kind == SLAst_FIELD) {
+                    SLEvalValueSetTaggedEnum(
+                        (SLEvalProgram*)p,
+                        outValue,
+                        rt->file,
+                        rt->nodeId,
+                        rt->file->ast.nodes[variantNode].dataStart,
+                        rt->file->ast.nodes[variantNode].dataEnd,
+                        tagIndex,
+                        NULL);
+                    *outIsConst = 1;
+                    return 0;
+                }
+                if (rt->file->ast.nodes[variantNode].kind == SLAst_FIELD) {
+                    tagIndex++;
+                }
+                variantNode = ASTNextSibling(&rt->file->ast, variantNode);
+            }
+        }
+        return 0;
+    }
+    if (rt->kind == SLEvalReflectType_PTR) {
+        SLEvalValueSetNull(outValue);
+        *outIsConst = 1;
+        return 0;
+    }
+    if (rt->kind == SLEvalReflectType_ARRAY) {
+        uint32_t     i;
+        SLEvalArray* array = (SLEvalArray*)SLArenaAlloc(
+            p->arena, sizeof(SLEvalArray), (uint32_t)_Alignof(SLEvalArray));
+        if (array == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        memset(array, 0, sizeof(*array));
+        array->file = rt->file;
+        array->typeNode = rt->nodeId;
+        array->len = rt->arrayLen;
+        if (rt->arrayLen > 0) {
+            array->elems = (SLCTFEValue*)SLArenaAlloc(
+                p->arena, sizeof(SLCTFEValue) * rt->arrayLen, (uint32_t)_Alignof(SLCTFEValue));
+            if (array->elems == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            memset(array->elems, 0, sizeof(SLCTFEValue) * rt->arrayLen);
+            for (i = 0; i < rt->arrayLen; i++) {
+                int elemIsConst = 0;
+                if (SLEvalZeroInitTypeValue(p, &rt->elemType, &array->elems[i], &elemIsConst) != 0)
+                {
+                    return -1;
+                }
+                if (!elemIsConst) {
+                    return 0;
+                }
+            }
+        }
+        SLEvalValueSetArray(outValue, rt->file, rt->nodeId, array);
+        *outIsConst = 1;
+        return 0;
+    }
+    return 0;
+}
+
+static int SLEvalTypeKindOfValue(const SLCTFEValue* typeValue, int32_t* outKind) {
+    int32_t              typeCode = SLEvalTypeCode_INVALID;
+    SLEvalReflectedType* rt;
+    if (outKind != NULL) {
+        *outKind = 0;
+    }
+    if (typeValue == NULL || outKind == NULL || typeValue->kind != SLCTFEValue_TYPE) {
+        return 0;
+    }
+    if (SLEvalValueGetSimpleTypeCode(typeValue, &typeCode)) {
+        *outKind = SLEvalTypeKind_PRIMITIVE;
+        return 1;
+    }
+    rt = SLEvalValueAsReflectedType(typeValue);
+    if (rt == NULL) {
+        return 0;
+    }
+    *outKind = (int32_t)rt->namedKind;
+    return 1;
+}
+
+static int SLEvalTypeNameOfValue(SLCTFEValue* typeValue, SLCTFEValue* outValue) {
+    int32_t              typeCode = SLEvalTypeCode_INVALID;
+    SLEvalReflectedType* rt;
+    if (typeValue == NULL || outValue == NULL || typeValue->kind != SLCTFEValue_TYPE) {
+        return 0;
+    }
+    if (SLEvalValueGetSimpleTypeCode(typeValue, &typeCode)) {
+        switch (typeCode) {
+            case SLEvalTypeCode_BOOL: SLEvalValueSetStringSlice(outValue, "bool", 0, 4); return 1;
+            case SLEvalTypeCode_U8:   SLEvalValueSetStringSlice(outValue, "u8", 0, 2); return 1;
+            case SLEvalTypeCode_U16:  SLEvalValueSetStringSlice(outValue, "u16", 0, 3); return 1;
+            case SLEvalTypeCode_U32:  SLEvalValueSetStringSlice(outValue, "u32", 0, 3); return 1;
+            case SLEvalTypeCode_U64:  SLEvalValueSetStringSlice(outValue, "u64", 0, 3); return 1;
+            case SLEvalTypeCode_UINT: SLEvalValueSetStringSlice(outValue, "uint", 0, 4); return 1;
+            case SLEvalTypeCode_I8:   SLEvalValueSetStringSlice(outValue, "i8", 0, 2); return 1;
+            case SLEvalTypeCode_I16:  SLEvalValueSetStringSlice(outValue, "i16", 0, 3); return 1;
+            case SLEvalTypeCode_I32:  SLEvalValueSetStringSlice(outValue, "i32", 0, 3); return 1;
+            case SLEvalTypeCode_I64:  SLEvalValueSetStringSlice(outValue, "i64", 0, 3); return 1;
+            case SLEvalTypeCode_INT:  SLEvalValueSetStringSlice(outValue, "int", 0, 3); return 1;
+            case SLEvalTypeCode_F32:  SLEvalValueSetStringSlice(outValue, "f32", 0, 3); return 1;
+            case SLEvalTypeCode_F64:  SLEvalValueSetStringSlice(outValue, "f64", 0, 3); return 1;
+            case SLEvalTypeCode_TYPE: SLEvalValueSetStringSlice(outValue, "type", 0, 4); return 1;
+            case SLEvalTypeCode_ANYTYPE:
+                SLEvalValueSetStringSlice(outValue, "anytype", 0, 7);
+                return 1;
+            default: return 0;
+        }
+    }
+    rt = SLEvalValueAsReflectedType(typeValue);
+    if (rt == NULL || rt->kind != SLEvalReflectType_NAMED || rt->file == NULL || rt->nodeId < 0
+        || (uint32_t)rt->nodeId >= rt->file->ast.len)
+    {
+        return 0;
+    }
+    SLEvalValueSetStringSlice(
+        outValue,
+        rt->file->source,
+        rt->file->ast.nodes[rt->nodeId].dataStart,
+        rt->file->ast.nodes[rt->nodeId].dataEnd);
+    return 1;
+}
+
 static int SLEvalZeroInitTypeNode(
     const SLEvalProgram* p,
     const SLParsedFile*  file,
@@ -2140,6 +2696,26 @@ static int SLEvalZeroInitTypeNode(
             if (aggregateNode >= 0 && aggregateFile != NULL) {
                 return SLEvalZeroInitAggregateValue(
                     p, aggregateFile, aggregateNode, outValue, outIsConst);
+            }
+            {
+                SLCTFEValue typeValue;
+                int32_t     topConstIndex = SLEvalFindTopConstBySlice(
+                    p, file, typeNameNode->dataStart, typeNameNode->dataEnd);
+                if (topConstIndex >= 0) {
+                    int typeIsConst = 0;
+                    if (SLEvalEvalTopConst(
+                            (SLEvalProgram*)p, (uint32_t)topConstIndex, &typeValue, &typeIsConst)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (typeIsConst && typeValue.kind == SLCTFEValue_TYPE) {
+                        return SLEvalZeroInitTypeValue(p, &typeValue, outValue, outIsConst);
+                    }
+                }
+                if (SLEvalTypeValueFromTypeNode((SLEvalProgram*)p, file, typeNode, &typeValue)) {
+                    return SLEvalZeroInitTypeValue(p, &typeValue, outValue, outIsConst);
+                }
             }
             return 0;
         case SLAst_TYPE_PTR:
@@ -5431,6 +6007,10 @@ static int SLEvalResolveIdent(
             *outIsConst = 1;
             return 0;
         }
+        if (SLEvalResolveTypeValueName(p, p->currentFile, nameStart, nameEnd, outValue) > 0) {
+            *outIsConst = 1;
+            return 0;
+        }
     }
     {
         const SLPackage* currentPkg = SLEvalFindPackageByFile(p, p->currentFile);
@@ -5542,6 +6122,87 @@ static int SLEvalResolveCall(
         return -1;
     }
 
+    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "kind")) {
+        int32_t kind = 0;
+        if (SLEvalTypeKindOfValue(&args[0], &kind)) {
+            SLEvalValueSetInt(outValue, kind);
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "is_alias")) {
+        int32_t kind = 0;
+        if (SLEvalTypeKindOfValue(&args[0], &kind)) {
+            outValue->kind = SLCTFEValue_BOOL;
+            outValue->i64 = 0;
+            outValue->f64 = 0.0;
+            outValue->b = kind == SLEvalTypeKind_ALIAS ? 1u : 0u;
+            outValue->typeTag = 0;
+            outValue->s.bytes = NULL;
+            outValue->s.len = 0;
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "type_name")) {
+        if (SLEvalTypeNameOfValue((SLCTFEValue*)&args[0], outValue)) {
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "base")) {
+        SLEvalReflectedType* rt = SLEvalValueAsReflectedType(&args[0]);
+        if (rt != NULL && rt->kind == SLEvalReflectType_NAMED
+            && rt->namedKind == SLEvalTypeKind_ALIAS && rt->file != NULL && rt->nodeId >= 0
+            && (uint32_t)rt->nodeId < rt->file->ast.len)
+        {
+            int32_t baseTypeNode = ASTFirstChild(&rt->file->ast, rt->nodeId);
+            if (baseTypeNode >= 0
+                && SLEvalTypeValueFromTypeNode(p, rt->file, baseTypeNode, outValue) > 0)
+            {
+                *outIsConst = 1;
+                return 0;
+            }
+        }
+    }
+    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "ptr")) {
+        SLEvalReflectedType* rt;
+        if (args[0].kind == SLCTFEValue_TYPE) {
+            rt = (SLEvalReflectedType*)SLArenaAlloc(
+                p->arena, sizeof(SLEvalReflectedType), (uint32_t)_Alignof(SLEvalReflectedType));
+            if (rt == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            memset(rt, 0, sizeof(*rt));
+            rt->kind = SLEvalReflectType_PTR;
+            rt->namedKind = SLEvalTypeKind_POINTER;
+            rt->elemType = args[0];
+            SLEvalValueSetReflectedTypeValue(outValue, rt);
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (argCount == 2 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "array")) {
+        int64_t              arrayLen = 0;
+        SLEvalReflectedType* rt;
+        if (args[0].kind == SLCTFEValue_TYPE && SLCTFEValueToInt64(&args[1], &arrayLen) == 0
+            && arrayLen >= 0 && arrayLen <= (int64_t)UINT32_MAX)
+        {
+            rt = (SLEvalReflectedType*)SLArenaAlloc(
+                p->arena, sizeof(SLEvalReflectedType), (uint32_t)_Alignof(SLEvalReflectedType));
+            if (rt == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            memset(rt, 0, sizeof(*rt));
+            rt->kind = SLEvalReflectType_ARRAY;
+            rt->namedKind = SLEvalTypeKind_ARRAY;
+            rt->arrayLen = (uint32_t)arrayLen;
+            rt->elemType = args[0];
+            SLEvalValueSetReflectedTypeValue(outValue, rt);
+            *outIsConst = 1;
+            return 0;
+        }
+    }
     if (argCount == 2 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "concat")) {
         int concatRc = SLEvalValueConcatStrings(p->arena, &args[0], &args[1], outValue);
         if (concatRc < 0) {
