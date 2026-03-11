@@ -102,8 +102,9 @@ Important behavior:
 Interpreter details:
 
 - Literal values are decoded from source slices (`start`/`end`) at execution time.
-- `LOAD_IDENT` is resolved by callback (`SLCTFEResolveIdentFn`).
-- `CALL` is resolved by callback (`SLCTFEResolveCallFn`) with popped arguments in source order.
+- `SLCTFEEvalExpr` now adapts its CTFE callbacks into `SLMirExecEnv`.
+- `LOAD_IDENT` is resolved by `SLMirResolveIdentFn`.
+- `CALL` is resolved by `SLMirResolveCallFn` with popped arguments in source order.
 - `RETURN` expects exactly one stack value; then sets `*outIsConst = 1`.
 
 Return behavior:
@@ -125,7 +126,8 @@ So today:
 
 - MIR is the expression evaluator backend.
 - `ctfe_exec` is still the statement/control-flow evaluator backend.
-- `mir_exec` is now the dedicated MIR execution module that future runtime MIR work should extend instead of growing `ctfe.c`.
+- `mir_exec` is now the dedicated MIR execution module that future runtime MIR work should extend instead of growing `ctfe.c` or `evaluator.c`.
+- The `SLMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
 
 ## Notes from `consteval` branch
 

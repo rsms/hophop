@@ -6,19 +6,15 @@
 SL_API_BEGIN
 
 typedef struct {
-    const SLMirInst*     ip;
-    uint32_t             len;
-    uint32_t             pc;
-    SLCTFEValue*         stack;
-    uint32_t             stackLen;
-    uint32_t             stackCap;
-    SLArena*             arena;
-    SLStrView            src;
-    SLCTFEResolveIdentFn resolveIdent;
-    SLCTFEResolveCallFn  resolveCall;
-    void* _Nullable resolveCtx;
-    SLDiag* _Nullable diag;
-} SLCTFERun;
+    const SLMirInst* ip;
+    uint32_t         len;
+    uint32_t         pc;
+    SLMirExecValue*  stack;
+    uint32_t         stackLen;
+    uint32_t         stackCap;
+    SLArena*         arena;
+    SLMirExecEnv     env;
+} SLMirExecRun;
 
 static void SLCTFESetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
@@ -48,16 +44,16 @@ static void SLCTFEValueInvalid(SLCTFEValue* v) {
     v->span.endColumn = 0;
 }
 
-static int SLCTFEPush(SLCTFERun* r, const SLCTFEValue* v) {
+static int SLCTFEPush(SLMirExecRun* r, const SLMirExecValue* v) {
     if (r->stackLen >= r->stackCap) {
-        SLCTFESetDiag(r->diag, SLDiag_ARENA_OOM, 0, 0);
+        SLCTFESetDiag(r->env.diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
     }
     r->stack[r->stackLen++] = *v;
     return 0;
 }
 
-static int SLCTFEPop(SLCTFERun* r, SLCTFEValue* out) {
+static int SLCTFEPop(SLMirExecRun* r, SLMirExecValue* out) {
     if (r->stackLen == 0) {
         return -1;
     }
@@ -257,7 +253,7 @@ static int SLCTFEValueEqRec(const SLCTFEValue* a, const SLCTFEValue* b, uint32_t
 }
 
 static int SLCTFEStringConcat(
-    SLCTFERun* r, const SLCTFEString* a, const SLCTFEString* b, SLCTFEString* out) {
+    SLMirExecRun* r, const SLCTFEString* a, const SLCTFEString* b, SLCTFEString* out) {
     uint64_t total64 = (uint64_t)a->len + (uint64_t)b->len;
     uint32_t totalLen;
     uint8_t* dst;
@@ -272,7 +268,7 @@ static int SLCTFEStringConcat(
     }
     dst = (uint8_t*)SLArenaAlloc(r->arena, totalLen, (uint32_t)_Alignof(uint8_t));
     if (dst == NULL) {
-        SLCTFESetDiag(r->diag, SLDiag_ARENA_OOM, 0, 0);
+        SLCTFESetDiag(r->env.diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
     }
     if (a->len > 0) {
@@ -406,7 +402,7 @@ static int SLCTFEMulI64(int64_t a, int64_t b, int64_t* out) {
 }
 
 static int SLCTFEEvalBinary(
-    SLCTFERun*         r,
+    SLMirExecRun*      r,
     SLTokenKind        op,
     const SLCTFEValue* lhs,
     const SLCTFEValue* rhs,
@@ -695,22 +691,20 @@ static int SLCTFEEvalCast(SLMirCastTarget target, const SLCTFEValue* in, SLCTFEV
 }
 
 int SLMirEvalChunk(
-    SLArena*   arena,
+    SLArena* _Nonnull arena,
     SLMirChunk chunk,
-    SLStrView  src,
-    SLCTFEResolveIdentFn _Nullable resolveIdent,
-    SLCTFEResolveCallFn _Nullable resolveCall,
-    void* _Nullable resolveCtx,
-    SLCTFEValue* outValue,
-    int*         outIsConst,
-    SLDiag* _Nullable diag) {
-    SLCTFERun run;
+    const SLMirExecEnv* _Nullable env,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst) {
+    SLMirExecRun run;
 
-    if (diag != NULL) {
-        *diag = (SLDiag){ 0 };
+    if (env != NULL && env->diag != NULL) {
+        *env->diag = (SLDiag){ 0 };
     }
     if (arena == NULL || outValue == NULL || outIsConst == NULL) {
-        SLCTFESetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        if (env != NULL) {
+            SLCTFESetDiag(env->diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        }
         return -1;
     }
 
@@ -722,18 +716,20 @@ int SLMirEvalChunk(
     run.len = chunk.len;
     run.pc = 0;
     run.stackCap = chunk.len + 1u;
-    run.stack = (SLCTFEValue*)SLArenaAlloc(
-        arena, sizeof(SLCTFEValue) * run.stackCap, (uint32_t)_Alignof(SLCTFEValue));
+    run.stack = (SLMirExecValue*)SLArenaAlloc(
+        arena, sizeof(SLMirExecValue) * run.stackCap, (uint32_t)_Alignof(SLMirExecValue));
     if (run.stack == NULL) {
-        SLCTFESetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        if (env != NULL) {
+            SLCTFESetDiag(env->diag, SLDiag_ARENA_OOM, 0, 0);
+        }
         return -1;
     }
     run.arena = arena;
-    run.src = src;
-    run.resolveIdent = resolveIdent;
-    run.resolveCall = resolveCall;
-    run.resolveCtx = resolveCtx;
-    run.diag = diag;
+    if (env != NULL) {
+        run.env = *env;
+    } else {
+        memset(&run.env, 0, sizeof(run.env));
+    }
 
     while (run.pc < run.len) {
         const SLMirInst* ins = &run.ip[run.pc++];
@@ -756,16 +752,19 @@ int SLMirEvalChunk(
                 v.span.endColumn = 0;
                 if ((SLTokenKind)ins->tok == SLTok_RUNE) {
                     if (SLDecodeRuneLiteralValidate(
-                            run.src.ptr, ins->start, ins->end, &rune, &runeErr)
+                            run.env.src.ptr, ins->start, ins->end, &rune, &runeErr)
                         != 0)
                     {
                         SLCTFESetDiag(
-                            diag, SLRuneLitErrDiagCode(runeErr.kind), runeErr.start, runeErr.end);
+                            run.env.diag,
+                            SLRuneLitErrDiagCode(runeErr.kind),
+                            runeErr.start,
+                            runeErr.end);
                         return -1;
                     }
                     v.i64 = (int64_t)rune;
                 } else {
-                    if (SLCTFEParseIntLiteral(run.src, ins->start, ins->end, &v.i64) != 0) {
+                    if (SLCTFEParseIntLiteral(run.env.src, ins->start, ins->end, &v.i64) != 0) {
                         return 0;
                     }
                 }
@@ -788,7 +787,8 @@ int SLMirEvalChunk(
                 v.span.startColumn = 0;
                 v.span.endLine = 0;
                 v.span.endColumn = 0;
-                if (SLCTFEParseFloatLiteral(run.arena, run.src, ins->start, ins->end, &v.f64) != 0)
+                if (SLCTFEParseFloatLiteral(run.arena, run.env.src, ins->start, ins->end, &v.f64)
+                    != 0)
                 {
                     return 0;
                 }
@@ -800,7 +800,7 @@ int SLMirEvalChunk(
             case SLMirOp_PUSH_BOOL: {
                 SLCTFEValue v;
                 uint8_t     b = 0;
-                if (SLCTFEParseBoolLiteral(run.src, ins->start, ins->end, &b) != 0) {
+                if (SLCTFEParseBoolLiteral(run.env.src, ins->start, ins->end, &b) != 0) {
                     return 0;
                 }
                 v.kind = SLCTFEValue_BOOL;
@@ -827,11 +827,14 @@ int SLMirEvalChunk(
                 uint8_t*       bytes = NULL;
                 uint32_t       len = 0;
                 if (SLDecodeStringLiteralArena(
-                        run.arena, run.src.ptr, ins->start, ins->end, &bytes, &len, &litErr)
+                        run.arena, run.env.src.ptr, ins->start, ins->end, &bytes, &len, &litErr)
                     != 0)
                 {
                     SLCTFESetDiag(
-                        diag, SLStringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
+                        run.env.diag,
+                        SLStringLitErrDiagCode(litErr.kind),
+                        litErr.start,
+                        litErr.end);
                     return -1;
                 }
                 v.kind = SLCTFEValue_STRING;
@@ -875,11 +878,12 @@ int SLMirEvalChunk(
             case SLMirOp_LOAD_IDENT: {
                 SLCTFEValue v;
                 int         idIsConst = 0;
-                if (run.resolveIdent == NULL) {
+                if (run.env.resolveIdent == NULL) {
                     return 0;
                 }
                 SLCTFEValueInvalid(&v);
-                if (run.resolveIdent(run.resolveCtx, ins->start, ins->end, &v, &idIsConst, run.diag)
+                if (run.env.resolveIdent(
+                        run.env.resolveCtx, ins->start, ins->end, &v, &idIsConst, run.env.diag)
                     != 0)
                 {
                     return -1;
@@ -898,7 +902,7 @@ int SLMirEvalChunk(
                 int          callIsConst = 0;
                 uint32_t     argCount = (uint32_t)ins->tok;
                 uint32_t     i;
-                if (run.resolveCall == NULL) {
+                if (run.env.resolveCall == NULL) {
                     return 0;
                 }
                 if (argCount > run.stackLen) {
@@ -908,7 +912,7 @@ int SLMirEvalChunk(
                     args = (SLCTFEValue*)SLArenaAlloc(
                         run.arena, sizeof(SLCTFEValue) * argCount, (uint32_t)_Alignof(SLCTFEValue));
                     if (args == NULL) {
-                        SLCTFESetDiag(diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                        SLCTFESetDiag(run.env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
                         return -1;
                     }
                 }
@@ -918,15 +922,15 @@ int SLMirEvalChunk(
                     }
                 }
                 SLCTFEValueInvalid(&v);
-                if (run.resolveCall(
-                        run.resolveCtx,
+                if (run.env.resolveCall(
+                        run.env.resolveCtx,
                         ins->start,
                         ins->end,
                         args,
                         argCount,
                         &v,
                         &callIsConst,
-                        run.diag)
+                        run.env.diag)
                     != 0)
                 {
                     return -1;

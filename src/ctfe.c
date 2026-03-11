@@ -16,8 +16,9 @@ int SLCTFEEvalExpr(
     SLCTFEValue* outValue,
     int*         outIsConst,
     SLDiag* _Nullable diag) {
-    SLMirChunk chunk;
-    int        supported = 0;
+    SLMirChunk   chunk;
+    int          supported = 0;
+    SLMirExecEnv env = { 0 };
 
     if (diag != NULL) {
         *diag = (SLDiag){ 0 };
@@ -41,8 +42,12 @@ int SLCTFEEvalExpr(
     if (!supported) {
         return 0;
     }
-    return SLMirEvalChunk(
-        arena, chunk, src, resolveIdent, resolveCall, resolveCtx, outValue, outIsConst, diag);
+    env.src = src;
+    env.resolveIdent = resolveIdent;
+    env.resolveCall = resolveCall;
+    env.resolveCtx = resolveCtx;
+    env.diag = diag;
+    return SLMirEvalChunk(arena, chunk, &env, outValue, outIsConst);
 }
 
 int SLCTFEValueToInt64(const SLCTFEValue* value, int64_t* out) {
