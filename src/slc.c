@@ -8013,6 +8013,19 @@ static void SLEvalValueSetNull(SLCTFEValue* value) {
     value->s.len = 0;
 }
 
+static void SLEvalValueSetInt(SLCTFEValue* value, int64_t n) {
+    if (value == NULL) {
+        return;
+    }
+    value->kind = SLCTFEValue_INT;
+    value->i64 = n;
+    value->f64 = 0.0;
+    value->b = 0;
+    value->typeTag = 0;
+    value->s.bytes = NULL;
+    value->s.len = 0;
+}
+
 static int SLEvalValueConcatStrings(
     SLArena* arena, const SLCTFEValue* a, const SLCTFEValue* b, SLCTFEValue* outValue) {
     uint64_t totalLen64;
@@ -8676,6 +8689,20 @@ static int SLEvalResolveCall(
             return 0;
         }
     }
+    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "len")) {
+        if (args[0].kind == SLCTFEValue_STRING) {
+            SLEvalValueSetInt(outValue, (int64_t)args[0].s.len);
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "cstr")) {
+        if (args[0].kind == SLCTFEValue_STRING) {
+            *outValue = args[0];
+            *outIsConst = 1;
+            return 0;
+        }
+    }
 
     fnIndex = SLEvalFindFunctionBySlice(p, p->currentFile, nameStart, nameEnd, argCount);
     if (fnIndex == -2) {
@@ -8849,6 +8876,106 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 SLEvalValueSetNull(outValue);
                 *outIsConst = 1;
                 return 0;
+            }
+            if (baseNode >= 0) {
+                uint32_t     extraArgCount = 0;
+                uint32_t     i = 0;
+                SLCTFEValue* args = NULL;
+                SLCTFEValue  baseValue;
+                int          baseIsConst = 0;
+                int32_t      scanNode = argNode;
+                if (SLEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0) {
+                    return -1;
+                }
+                if (baseIsConst) {
+                    while (scanNode >= 0) {
+                        if (extraArgCount == UINT32_MAX - 1u) {
+                            return ErrorSimple("too many call arguments for evaluator backend");
+                        }
+                        extraArgCount++;
+                        scanNode = ast->nodes[scanNode].nextSibling;
+                    }
+                    args = (SLCTFEValue*)SLArenaAlloc(
+                        p->arena,
+                        sizeof(SLCTFEValue) * (extraArgCount + 1u),
+                        (uint32_t)_Alignof(SLCTFEValue));
+                    if (args == NULL) {
+                        return ErrorSimple("out of memory");
+                    }
+                    args[0] = baseValue;
+                    scanNode = argNode;
+                    while (scanNode >= 0) {
+                        SLCTFEValue extraArgValue;
+                        int         extraArgIsConst = 0;
+                        int32_t     argExprNode = scanNode;
+                        if (ast->nodes[scanNode].kind == SLAst_CALL_ARG) {
+                            argExprNode = ast->nodes[scanNode].firstChild;
+                        }
+                        if (argExprNode < 0 || (uint32_t)argExprNode >= ast->len) {
+                            if (p->currentExecCtx != NULL) {
+                                SLCTFEExecSetReason(
+                                    p->currentExecCtx,
+                                    ast->nodes[scanNode].start,
+                                    ast->nodes[scanNode].end,
+                                    "call argument is malformed");
+                            }
+                            *outIsConst = 0;
+                            return 0;
+                        }
+                        if (SLEvalExecExprCb(p, argExprNode, &extraArgValue, &extraArgIsConst) != 0)
+                        {
+                            return -1;
+                        }
+                        if (!extraArgIsConst) {
+                            *outIsConst = 0;
+                            return 0;
+                        }
+                        args[++i] = extraArgValue;
+                        scanNode = ast->nodes[scanNode].nextSibling;
+                    }
+
+                    if (extraArgCount == 0
+                        && SliceEqCStr(
+                            p->currentFile->source, callee->dataStart, callee->dataEnd, "len")
+                        && baseValue.kind == SLCTFEValue_STRING)
+                    {
+                        SLEvalValueSetInt(outValue, (int64_t)baseValue.s.len);
+                        *outIsConst = 1;
+                        return 0;
+                    }
+                    if (extraArgCount == 0
+                        && SliceEqCStr(
+                            p->currentFile->source, callee->dataStart, callee->dataEnd, "cstr")
+                        && baseValue.kind == SLCTFEValue_STRING)
+                    {
+                        *outValue = baseValue;
+                        *outIsConst = 1;
+                        return 0;
+                    }
+
+                    if (SLEvalResolveCall(
+                            p,
+                            callee->dataStart,
+                            callee->dataEnd,
+                            args,
+                            extraArgCount + 1u,
+                            outValue,
+                            outIsConst,
+                            NULL)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (!*outIsConst && p->currentExecCtx != NULL
+                        && p->currentExecCtx->nonConstReason == NULL)
+                    {
+                        SLCTFEExecSetReasonNode(
+                            p->currentExecCtx,
+                            exprNode,
+                            "qualified call target is not supported by evaluator backend");
+                    }
+                    return 0;
+                }
             }
             if (p->currentExecCtx != NULL) {
                 SLCTFEExecSetReasonNode(
