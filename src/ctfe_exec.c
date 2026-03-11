@@ -1799,6 +1799,8 @@ static int SLCTFEExecEvalStmt(
             if (sourceTarget->kind == SLCTFEValue_STRING || sourceTarget->kind == SLCTFEValue_ARRAY)
             {
                 iterLen = sourceTarget->s.len;
+            } else if (c->forInIter != NULL) {
+                iterLen = c->forIterLimit;
             } else {
                 SLCTFEExecSetReasonNode(
                     c, sourceNode, "for-in loop source is not supported in const evaluation");
@@ -1810,7 +1812,42 @@ static int SLCTFEExecEvalStmt(
                 SLCTFEExecBinding    iterBindings[2];
                 uint32_t             iterBindingLen = 0;
                 SLCTFEExecLoopAction bodyAction = SLCTFEExecLoopAction_NONE;
+                SLCTFEValue          protocolKeyValue;
+                SLCTFEValue          protocolValue;
+                int                  protocolHasItem = 1;
+                int                  protocolKeyIsConst = 1;
+                int                  protocolValueIsConst = 1;
+                int                  haveProtocolItem = 0;
                 memset(iterBindings, 0, sizeof(iterBindings));
+
+                if (c->forInIter != NULL && sourceTarget->kind != SLCTFEValue_STRING
+                    && sourceTarget->kind != SLCTFEValue_ARRAY)
+                {
+                    if (c->forInIter(
+                            c->forInIterCtx,
+                            c,
+                            sourceNode,
+                            sourceTarget,
+                            iter,
+                            hasKey,
+                            keyRef,
+                            valueRef,
+                            valueDiscard,
+                            &protocolHasItem,
+                            &protocolKeyValue,
+                            &protocolKeyIsConst,
+                            &protocolValue,
+                            &protocolValueIsConst)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (!protocolHasItem) {
+                        *outIsConst = 1;
+                        return 0;
+                    }
+                    haveProtocolItem = 1;
+                }
 
                 if (hasKey
                     && (keyNode < 0 || (uint32_t)keyNode >= c->ast->len
@@ -1826,18 +1863,28 @@ static int SLCTFEExecEvalStmt(
                         c->ast->nodes[keyNode].dataEnd == c->ast->nodes[keyNode].dataStart + 1u
                         && c->src.ptr[c->ast->nodes[keyNode].dataStart] == '_'))
                 {
+                    SLCTFEValue keyValue;
+                    if (haveProtocolItem) {
+                        keyValue = protocolKeyValue;
+                        if (!protocolKeyIsConst) {
+                            *outIsConst = 0;
+                            return 0;
+                        }
+                    } else {
+                        keyValue.kind = SLCTFEValue_INT;
+                        keyValue.i64 = (int64_t)iter;
+                        keyValue.f64 = 0.0;
+                        keyValue.b = 0;
+                        keyValue.typeTag = 0;
+                        keyValue.s.bytes = NULL;
+                        keyValue.s.len = 0;
+                    }
                     iterBindings[iterBindingLen].nameStart = c->ast->nodes[keyNode].dataStart;
                     iterBindings[iterBindingLen].nameEnd = c->ast->nodes[keyNode].dataEnd;
                     iterBindings[iterBindingLen].typeId = -1;
                     iterBindings[iterBindingLen].typeNode = -1;
                     iterBindings[iterBindingLen].mutable = 0;
-                    iterBindings[iterBindingLen].value.kind = SLCTFEValue_INT;
-                    iterBindings[iterBindingLen].value.i64 = (int64_t)iter;
-                    iterBindings[iterBindingLen].value.f64 = 0.0;
-                    iterBindings[iterBindingLen].value.b = 0;
-                    iterBindings[iterBindingLen].value.typeTag = 0;
-                    iterBindings[iterBindingLen].value.s.bytes = NULL;
-                    iterBindings[iterBindingLen].value.s.len = 0;
+                    iterBindings[iterBindingLen].value = keyValue;
                     iterBindingLen++;
                 }
                 if (!valueDiscard) {
@@ -1851,7 +1898,10 @@ static int SLCTFEExecEvalStmt(
                         *outIsConst = 0;
                         return 0;
                     }
-                    if (c->forInIndex != NULL) {
+                    if (haveProtocolItem) {
+                        iterValue = protocolValue;
+                        iterValueIsConst = protocolValueIsConst;
+                    } else if (c->forInIndex != NULL) {
                         if (c->forInIndex(
                                 c->forInIndexCtx,
                                 c,

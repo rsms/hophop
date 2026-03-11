@@ -88,6 +88,22 @@ typedef int (*SLCTFEExecForInIndexFn)(
     SLCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
+typedef int (*SLCTFEExecForInIterFn)(
+    void* _Nullable ctx,
+    SLCTFEExecCtx* _Nonnull execCtx,
+    int32_t sourceNode,
+    const SLCTFEValue* _Nonnull sourceValue,
+    uint32_t index,
+    int      hasKey,
+    int      keyRef,
+    int      valueRef,
+    int      valueDiscard,
+    int* _Nonnull outHasItem,
+    SLCTFEValue* _Nonnull outKey,
+    int* _Nonnull outKeyIsConst,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outValueIsConst);
+
 struct SLCTFEExecCtx {
     SLArena* _Nonnull arena;
     const SLAst* _Nonnull ast;
@@ -117,6 +133,8 @@ struct SLCTFEExecCtx {
     void* _Nullable matchPatternCtx;
     SLCTFEExecForInIndexFn _Nullable forInIndex;
     void* _Nullable forInIndexCtx;
+    SLCTFEExecForInIterFn _Nullable forInIter;
+    void* _Nullable forInIterCtx;
 
     const char* _Nullable nonConstReason;
     uint32_t nonConstStart;
