@@ -79,6 +79,15 @@ typedef int (*SLCTFEExecMatchPatternFn)(
     int32_t labelExprNode,
     int* _Nonnull outMatched);
 
+typedef int (*SLCTFEExecForInIndexFn)(
+    void* _Nullable ctx,
+    SLCTFEExecCtx* _Nonnull execCtx,
+    const SLCTFEValue* _Nonnull sourceValue,
+    uint32_t index,
+    int      byRef,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
+
 struct SLCTFEExecCtx {
     SLArena* _Nonnull arena;
     const SLAst* _Nonnull ast;
@@ -106,6 +115,8 @@ struct SLCTFEExecCtx {
     void* _Nullable assignValueExprCtx;
     SLCTFEExecMatchPatternFn _Nullable matchPattern;
     void* _Nullable matchPatternCtx;
+    SLCTFEExecForInIndexFn _Nullable forInIndex;
+    void* _Nullable forInIndexCtx;
 
     const char* _Nullable nonConstReason;
     uint32_t nonConstStart;

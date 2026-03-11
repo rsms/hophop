@@ -1646,9 +1646,200 @@ static int SLCTFEExecEvalStmt(
         int         condIsConst = 0;
 
         if ((s->flags & SLAstFlag_FOR_IN) != 0) {
-            SLCTFEExecSetReasonNode(
-                c, stmtNode, "for-in loop is not supported in const evaluation");
-            *outIsConst = 0;
+            int                hasKey = (s->flags & SLAstFlag_FOR_IN_HAS_KEY) != 0;
+            int                keyRef = (s->flags & SLAstFlag_FOR_IN_KEY_REF) != 0;
+            int                valueRef = (s->flags & SLAstFlag_FOR_IN_VALUE_REF) != 0;
+            int                valueDiscard = (s->flags & SLAstFlag_FOR_IN_VALUE_DISCARD) != 0;
+            int32_t            keyNode = -1;
+            int32_t            valueNode = -1;
+            int32_t            sourceNode = -1;
+            SLCTFEValue        sourceValue;
+            const SLCTFEValue* sourceTarget = &sourceValue;
+            int                sourceIsConst = 0;
+            uint32_t           iterLen = 0;
+
+            while (child >= 0 && count < 4) {
+                nodes[count++] = child;
+                child = c->ast->nodes[child].nextSibling;
+            }
+            if ((!hasKey && count != 3) || (hasKey && count != 4) || child >= 0) {
+                SLCTFEExecSetReasonNode(
+                    c, stmtNode, "for-in loop form is not supported in const evaluation");
+                *outIsConst = 0;
+                return 0;
+            }
+
+            if (hasKey) {
+                keyNode = nodes[0];
+                valueNode = nodes[1];
+                sourceNode = nodes[2];
+                bodyNode = nodes[3];
+            } else {
+                valueNode = nodes[0];
+                sourceNode = nodes[1];
+                bodyNode = nodes[2];
+            }
+            if (keyRef) {
+                SLCTFEExecSetReasonNode(
+                    c, stmtNode, "for-in key reference is not supported in const evaluation");
+                *outIsConst = 0;
+                return 0;
+            }
+            if (bodyNode < 0 || (uint32_t)bodyNode >= c->ast->len
+                || c->ast->nodes[bodyNode].kind != SLAst_BLOCK)
+            {
+                SLCTFEExecSetReasonNode(
+                    c, stmtNode, "for-in loop body must be a block in const evaluation");
+                *outIsConst = 0;
+                return 0;
+            }
+            if (sourceNode < 0 || (uint32_t)sourceNode >= c->ast->len) {
+                SLCTFEExecSetReasonNode(
+                    c, stmtNode, "for-in loop source is malformed in const evaluation");
+                *outIsConst = 0;
+                return 0;
+            }
+            if (SLCTFEExecEvalExpr(c, sourceNode, &sourceValue, &sourceIsConst) != 0) {
+                return -1;
+            }
+            if (!sourceIsConst) {
+                *outIsConst = 0;
+                return 0;
+            }
+            if (sourceValue.kind == SLCTFEValue_REFERENCE && sourceValue.s.bytes != NULL) {
+                sourceTarget = (const SLCTFEValue*)sourceValue.s.bytes;
+            }
+            if (sourceTarget->kind == SLCTFEValue_STRING || sourceTarget->kind == SLCTFEValue_ARRAY)
+            {
+                iterLen = sourceTarget->s.len;
+            } else {
+                SLCTFEExecSetReasonNode(
+                    c, sourceNode, "for-in loop source is not supported in const evaluation");
+                *outIsConst = 0;
+                return 0;
+            }
+
+            for (iter = 0; iter < iterLen; iter++) {
+                SLCTFEExecBinding    iterBindings[2];
+                uint32_t             iterBindingLen = 0;
+                SLCTFEExecLoopAction bodyAction = SLCTFEExecLoopAction_NONE;
+                memset(iterBindings, 0, sizeof(iterBindings));
+
+                if (hasKey
+                    && (keyNode < 0 || (uint32_t)keyNode >= c->ast->len
+                        || c->ast->nodes[keyNode].kind != SLAst_IDENT))
+                {
+                    SLCTFEExecSetReasonNode(
+                        c, stmtNode, "for-in key binding is malformed in const evaluation");
+                    *outIsConst = 0;
+                    return 0;
+                }
+                if (hasKey && keyNode >= 0
+                    && !(
+                        c->ast->nodes[keyNode].dataEnd == c->ast->nodes[keyNode].dataStart + 1u
+                        && c->src.ptr[c->ast->nodes[keyNode].dataStart] == '_'))
+                {
+                    iterBindings[iterBindingLen].nameStart = c->ast->nodes[keyNode].dataStart;
+                    iterBindings[iterBindingLen].nameEnd = c->ast->nodes[keyNode].dataEnd;
+                    iterBindings[iterBindingLen].typeId = -1;
+                    iterBindings[iterBindingLen].typeNode = -1;
+                    iterBindings[iterBindingLen].mutable = 0;
+                    iterBindings[iterBindingLen].value.kind = SLCTFEValue_INT;
+                    iterBindings[iterBindingLen].value.i64 = (int64_t)iter;
+                    iterBindings[iterBindingLen].value.f64 = 0.0;
+                    iterBindings[iterBindingLen].value.b = 0;
+                    iterBindings[iterBindingLen].value.typeTag = 0;
+                    iterBindings[iterBindingLen].value.s.bytes = NULL;
+                    iterBindings[iterBindingLen].value.s.len = 0;
+                    iterBindingLen++;
+                }
+                if (!valueDiscard) {
+                    SLCTFEValue iterValue;
+                    int         iterValueIsConst = 0;
+                    if (valueNode < 0 || (uint32_t)valueNode >= c->ast->len
+                        || c->ast->nodes[valueNode].kind != SLAst_IDENT)
+                    {
+                        SLCTFEExecSetReasonNode(
+                            c, stmtNode, "for-in value binding is malformed in const evaluation");
+                        *outIsConst = 0;
+                        return 0;
+                    }
+                    if (c->forInIndex != NULL) {
+                        if (c->forInIndex(
+                                c->forInIndexCtx,
+                                c,
+                                sourceTarget,
+                                iter,
+                                valueRef,
+                                &iterValue,
+                                &iterValueIsConst)
+                            != 0)
+                        {
+                            return -1;
+                        }
+                    } else if (!valueRef && sourceTarget->kind == SLCTFEValue_STRING) {
+                        iterValue.kind = SLCTFEValue_INT;
+                        iterValue.i64 = (int64_t)sourceTarget->s.bytes[iter];
+                        iterValue.f64 = 0.0;
+                        iterValue.b = 0;
+                        iterValue.typeTag = 0;
+                        iterValue.s.bytes = NULL;
+                        iterValue.s.len = 0;
+                        iterValueIsConst = 1;
+                    } else {
+                        SLCTFEExecSetReasonNode(
+                            c,
+                            sourceNode,
+                            "for-in loop source is not supported in const evaluation");
+                        *outIsConst = 0;
+                        return 0;
+                    }
+                    if (!iterValueIsConst) {
+                        *outIsConst = 0;
+                        return 0;
+                    }
+                    if (!(c->ast->nodes[valueNode].dataEnd
+                              == c->ast->nodes[valueNode].dataStart + 1u
+                          && c->src.ptr[c->ast->nodes[valueNode].dataStart] == '_'))
+                    {
+                        iterBindings[iterBindingLen].nameStart = c->ast->nodes[valueNode].dataStart;
+                        iterBindings[iterBindingLen].nameEnd = c->ast->nodes[valueNode].dataEnd;
+                        iterBindings[iterBindingLen].typeId = -1;
+                        iterBindings[iterBindingLen].typeNode = -1;
+                        iterBindings[iterBindingLen].mutable = 0;
+                        iterBindings[iterBindingLen].value = iterValue;
+                        iterBindingLen++;
+                    }
+                }
+
+                if (SLCTFEExecEvalBlockImpl(
+                        c,
+                        bodyNode,
+                        iterBindings,
+                        iterBindingLen,
+                        outValue,
+                        &didReturn,
+                        &isConst,
+                        &bodyAction)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!isConst) {
+                    *outIsConst = 0;
+                    return 0;
+                }
+                if (didReturn) {
+                    *outDidReturn = 1;
+                    *outIsConst = 1;
+                    return 0;
+                }
+                if (bodyAction == SLCTFEExecLoopAction_BREAK) {
+                    *outIsConst = 1;
+                    return 0;
+                }
+            }
+            *outIsConst = 1;
             return 0;
         }
 
