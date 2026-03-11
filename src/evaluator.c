@@ -1055,6 +1055,23 @@ static const SLCTFEValue* SLEvalValueTargetOrSelf(const SLCTFEValue* value) {
     return target != NULL ? target : value;
 }
 
+static int SLEvalOptionalPayload(const SLCTFEValue* value, const SLCTFEValue** outPayload) {
+    if (outPayload != NULL) {
+        *outPayload = NULL;
+    }
+    if (value == NULL || value->kind != SLCTFEValue_OPTIONAL || outPayload == NULL) {
+        return 0;
+    }
+    if (value->b == 0u) {
+        return 1;
+    }
+    if (value->s.bytes == NULL) {
+        return 0;
+    }
+    *outPayload = (const SLCTFEValue*)value->s.bytes;
+    return 1;
+}
+
 static int SLEvalForInIndexCb(
     void*              ctx,
     SLCTFEExecCtx*     execCtx,
@@ -2100,6 +2117,10 @@ static int SLEvalZeroInitTypeNode(
             if (SLEvalResolveNullCastTypeTag(file, typeNode, &nullTag)) {
                 outValue->typeTag = nullTag;
             }
+            *outIsConst = 1;
+            return 0;
+        case SLAst_TYPE_OPTIONAL:
+            SLEvalValueSetNull(outValue);
             *outIsConst = 1;
             return 0;
         case SLAst_TYPE_ARRAY: {
@@ -6012,6 +6033,38 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             *outIsConst = 1;
             return 0;
         }
+    }
+
+    if (n->kind == SLAst_UNWRAP) {
+        int32_t            childNode = n->firstChild;
+        SLCTFEValue        childValue;
+        const SLCTFEValue* payload = NULL;
+        int                childIsConst = 0;
+        if (childNode < 0 || (uint32_t)childNode >= ast->len) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (SLEvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
+            return -1;
+        }
+        if (!childIsConst) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (!SLEvalOptionalPayload(&childValue, &payload)) {
+            if (childValue.kind == SLCTFEValue_NULL) {
+                return ErrorSimple("unwrap of empty optional in evaluator backend");
+            }
+            *outValue = childValue;
+            *outIsConst = 1;
+            return 0;
+        }
+        if (childValue.b == 0u || payload == NULL) {
+            return ErrorSimple("unwrap of empty optional in evaluator backend");
+        }
+        *outValue = *payload;
+        *outIsConst = 1;
+        return 0;
     }
 
     if (n->kind == SLAst_UNARY) {
