@@ -1864,9 +1864,8 @@ static int SLEvalAssignExprCb(
     expr = &ast->nodes[exprNode];
     lhsNode = expr->firstChild;
     rhsNode = lhsNode >= 0 ? ast->nodes[lhsNode].nextSibling : -1;
-    if (expr->kind != SLAst_BINARY || (SLTokenKind)expr->op != SLTok_ASSIGN || lhsNode < 0
-        || rhsNode < 0 || ast->nodes[rhsNode].nextSibling >= 0
-        || ast->nodes[lhsNode].kind != SLAst_FIELD_EXPR)
+    if (expr->kind != SLAst_BINARY || lhsNode < 0 || rhsNode < 0
+        || ast->nodes[rhsNode].nextSibling >= 0 || ast->nodes[lhsNode].kind != SLAst_FIELD_EXPR)
     {
         *outIsConst = 0;
         return 0;
@@ -1929,6 +1928,35 @@ static int SLEvalAssignExprCb(
                 pathLen--;
                 fieldNode = &ast->nodes[pathNodes[pathLen]];
                 if (pathLen == 0) {
+                    if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+                        SLCTFEValue curValue;
+                        SLTokenKind binaryOp = SLTok_INVALID;
+                        int         handled = 0;
+                        if (!SLEvalAggregateGetFieldValue(
+                                agg,
+                                p->currentFile->source,
+                                fieldNode->dataStart,
+                                fieldNode->dataEnd,
+                                &curValue))
+                        {
+                            *outIsConst = 0;
+                            return 0;
+                        }
+                        switch ((SLTokenKind)expr->op) {
+                            case SLTok_ADD_ASSIGN: binaryOp = SLTok_ADD; break;
+                            case SLTok_SUB_ASSIGN: binaryOp = SLTok_SUB; break;
+                            case SLTok_MUL_ASSIGN: binaryOp = SLTok_MUL; break;
+                            case SLTok_DIV_ASSIGN: binaryOp = SLTok_DIV; break;
+                            case SLTok_MOD_ASSIGN: binaryOp = SLTok_MOD; break;
+                            default:               *outIsConst = 0; return 0;
+                        }
+                        handled = SLEvalEvalBinary(
+                            binaryOp, &curValue, &rhsValue, &rhsValue, outIsConst);
+                        if (handled <= 0 || !*outIsConst) {
+                            *outIsConst = 0;
+                            return handled < 0 ? -1 : 0;
+                        }
+                    }
                     if (SLEvalAggregateSetFieldValue(
                             agg,
                             p->currentFile->source,
@@ -2473,6 +2501,28 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             && SLEvalAggregateGetFieldValue(
                 agg, p->currentFile->source, n->dataStart, n->dataEnd, outValue))
         {
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+
+    if (n->kind == SLAst_UNARY && (SLTokenKind)n->op == SLTok_AND) {
+        int32_t     childNode = n->firstChild;
+        SLCTFEValue childValue;
+        int         childIsConst = 0;
+        if (childNode < 0 || (uint32_t)childNode >= ast->len) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (SLEvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
+            return -1;
+        }
+        if (!childIsConst) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (childValue.kind == SLCTFEValue_AGGREGATE || childValue.kind == SLCTFEValue_NULL) {
+            *outValue = childValue;
             *outIsConst = 1;
             return 0;
         }
