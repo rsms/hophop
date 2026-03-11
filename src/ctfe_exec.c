@@ -118,6 +118,7 @@ static int SLCTFEExecIsTypeNodeKind(SLAstKind kind) {
         case SLAst_TYPE_MUTSLICE:
         case SLAst_TYPE_OPTIONAL:
         case SLAst_TYPE_FN:
+        case SLAst_TYPE_TUPLE:
         case SLAst_TYPE_ANON_STRUCT:
         case SLAst_TYPE_ANON_UNION:  return 1;
         default:                     return 0;
@@ -746,6 +747,24 @@ static int SLCTFEExecRunDeferredStmts(
     return 0;
 }
 
+static int SLCTFEExecTupleElementAt(
+    SLCTFEExecCtx*     c,
+    const SLCTFEValue* tupleValue,
+    uint32_t           index,
+    SLCTFEValue*       outValue,
+    int*               outIsConst) {
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (c == NULL || tupleValue == NULL || outValue == NULL || outIsConst == NULL
+        || tupleValue->kind != SLCTFEValue_ARRAY || c->forInIndex == NULL
+        || index >= tupleValue->s.len)
+    {
+        return 0;
+    }
+    return c->forInIndex(c->forInIndexCtx, c, tupleValue, index, 0, outValue, outIsConst) == 0;
+}
+
 int SLCTFEExecEvalBlock(
     SLCTFEExecCtx* c,
     int32_t        blockNode,
@@ -1056,6 +1075,7 @@ static int SLCTFEExecEvalStmt(
             int32_t     exprListNode = initNode;
             SLCTFEValue values[256];
             int         valueIsConst[256];
+            int         expandedTuple = 0;
             int32_t     nameNode;
             if (nameCount == 0 || nameCount > 256u || frame->bindingLen + nameCount > bindingCap) {
                 SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
@@ -1088,28 +1108,63 @@ static int SLCTFEExecEvalStmt(
                 }
                 initCount = SLCTFEExecBlockStmtCount(c->ast, exprListNode);
                 if (initCount != nameCount) {
-                    SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
-                    *outIsConst = 0;
-                    return 0;
+                    if (initCount == 1u) {
+                        int32_t     expr = SLCTFEExecListItemAt(c->ast, exprListNode, 0);
+                        SLCTFEValue tupleValue;
+                        int         tupleIsConst = 0;
+                        if (expr < 0
+                            || SLCTFEExecEvalExpr(c, expr, &tupleValue, &tupleIsConst) != 0)
+                        {
+                            return expr < 0 ? 0 : -1;
+                        }
+                        if (!tupleIsConst || tupleValue.kind != SLCTFEValue_ARRAY
+                            || tupleValue.s.len != nameCount)
+                        {
+                            SLCTFEExecSetReasonNode(
+                                c, stmtNode, "declaration is not const-evaluable");
+                            *outIsConst = 0;
+                            return 0;
+                        }
+                        for (i = 0; i < nameCount; i++) {
+                            valueIsConst[i] = 0;
+                            if (!SLCTFEExecTupleElementAt(
+                                    c, &tupleValue, i, &values[i], &valueIsConst[i]))
+                            {
+                                *outIsConst = 0;
+                                return 0;
+                            }
+                            if (!valueIsConst[i]) {
+                                *outIsConst = 0;
+                                return 0;
+                            }
+                        }
+                        expandedTuple = 1;
+                    } else {
+                        SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
+                        *outIsConst = 0;
+                        return 0;
+                    }
                 }
-                for (i = 0; i < initCount; i++) {
-                    int32_t expr = SLCTFEExecListItemAt(c->ast, exprListNode, i);
-                    valueIsConst[i] = 0;
-                    if (expr < 0) {
-                        *outIsConst = 0;
-                        return 0;
-                    }
-                    if ((bindingTypeNode >= 0
-                             ? SLCTFEExecEvalExprForType(
-                                   c, expr, bindingTypeNode, &values[i], &valueIsConst[i])
-                             : SLCTFEExecEvalExpr(c, expr, &values[i], &valueIsConst[i]))
-                        != 0)
-                    {
-                        return -1;
-                    }
-                    if (!valueIsConst[i]) {
-                        *outIsConst = 0;
-                        return 0;
+                if (!expandedTuple) {
+                    for (i = 0; i < initCount; i++) {
+                        int32_t expr = SLCTFEExecListItemAt(c->ast, exprListNode, i);
+                        valueIsConst[i] = 0;
+                        if (expr < 0) {
+                            *outIsConst = 0;
+                            return 0;
+                        }
+                        if ((bindingTypeNode >= 0
+                                 ? SLCTFEExecEvalExprForType(
+                                       c, expr, bindingTypeNode, &values[i], &valueIsConst[i])
+                                 : SLCTFEExecEvalExpr(c, expr, &values[i], &valueIsConst[i]))
+                            != 0)
+                        {
+                            return -1;
+                        }
+                        if (!valueIsConst[i]) {
+                            *outIsConst = 0;
+                            return 0;
+                        }
                     }
                 }
             }
@@ -1150,21 +1205,53 @@ static int SLCTFEExecEvalStmt(
         }
         lhsCount = SLCTFEExecBlockStmtCount(c->ast, lhsList);
         rhsCount = SLCTFEExecBlockStmtCount(c->ast, rhsList);
-        if (lhsCount == 0 || lhsCount > 256u || rhsCount != lhsCount) {
+        if (lhsCount == 0 || lhsCount > 256u) {
             SLCTFEExecSetReasonNode(c, stmtNode, "multi-assign is not const-evaluable");
             *outIsConst = 0;
             return 0;
         }
-        for (i = 0; i < rhsCount; i++) {
-            int32_t rhsExpr = SLCTFEExecListItemAt(c->ast, rhsList, i);
-            int     rhsIsConst = 0;
-            if (rhsExpr < 0 || SLCTFEExecEvalExpr(c, rhsExpr, &rhsValues[i], &rhsIsConst) != 0) {
-                return -1;
+        if (rhsCount == lhsCount) {
+            for (i = 0; i < rhsCount; i++) {
+                int32_t rhsExpr = SLCTFEExecListItemAt(c->ast, rhsList, i);
+                int     rhsIsConst = 0;
+                if (rhsExpr < 0 || SLCTFEExecEvalExpr(c, rhsExpr, &rhsValues[i], &rhsIsConst) != 0)
+                {
+                    return -1;
+                }
+                if (!rhsIsConst) {
+                    *outIsConst = 0;
+                    return 0;
+                }
             }
-            if (!rhsIsConst) {
+        } else if (rhsCount == 1u) {
+            int32_t     rhsExpr = SLCTFEExecListItemAt(c->ast, rhsList, 0);
+            SLCTFEValue tupleValue;
+            int         tupleIsConst = 0;
+            if (rhsExpr < 0 || SLCTFEExecEvalExpr(c, rhsExpr, &tupleValue, &tupleIsConst) != 0) {
+                return rhsExpr < 0 ? 0 : -1;
+            }
+            if (!tupleIsConst || tupleValue.kind != SLCTFEValue_ARRAY
+                || tupleValue.s.len != lhsCount)
+            {
+                SLCTFEExecSetReasonNode(c, stmtNode, "multi-assign is not const-evaluable");
                 *outIsConst = 0;
                 return 0;
             }
+            for (i = 0; i < lhsCount; i++) {
+                int elemIsConst = 0;
+                if (!SLCTFEExecTupleElementAt(c, &tupleValue, i, &rhsValues[i], &elemIsConst)) {
+                    *outIsConst = 0;
+                    return 0;
+                }
+                if (!elemIsConst) {
+                    *outIsConst = 0;
+                    return 0;
+                }
+            }
+        } else {
+            SLCTFEExecSetReasonNode(c, stmtNode, "multi-assign is not const-evaluable");
+            *outIsConst = 0;
+            return 0;
         }
         for (i = 0; i < lhsCount; i++) {
             int32_t lhsExpr = SLCTFEExecListItemAt(c->ast, lhsList, i);

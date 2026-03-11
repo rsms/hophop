@@ -1050,6 +1050,38 @@ static SLEvalArray* _Nullable SLEvalAllocArrayView(
     return array;
 }
 
+static int SLEvalAllocTupleValue(
+    SLEvalProgram*      p,
+    const SLParsedFile* file,
+    int32_t             typeNode,
+    const SLCTFEValue*  elems,
+    uint32_t            len,
+    SLCTFEValue*        outValue,
+    int*                outIsConst) {
+    SLEvalArray* array;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || file == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    array = SLEvalAllocArrayView(p, file, typeNode, -1, NULL, len);
+    if (array == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    if (len > 0) {
+        array->elems = (SLCTFEValue*)SLArenaAlloc(
+            p->arena, sizeof(SLCTFEValue) * len, (uint32_t)_Alignof(SLCTFEValue));
+        if (array->elems == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        memcpy(array->elems, elems, sizeof(SLCTFEValue) * len);
+    }
+    SLEvalValueSetArray(outValue, file, typeNode, array);
+    *outIsConst = 1;
+    return 0;
+}
+
 static const SLCTFEValue* SLEvalValueTargetOrSelf(const SLCTFEValue* value) {
     const SLCTFEValue* target = SLEvalValueReferenceTarget(value);
     return target != NULL ? target : value;
@@ -4416,6 +4448,37 @@ static int SLEvalExecExprWithTypeNode(
             return 0;
         }
     }
+    if (typeFile != NULL && typeNode >= 0 && (uint32_t)typeNode < typeFile->ast.len
+        && typeFile->ast.nodes[typeNode].kind == SLAst_TYPE_TUPLE
+        && ast->nodes[exprNode].kind == SLAst_TUPLE_EXPR)
+    {
+        SLCTFEValue elems[256];
+        uint32_t    elemCount = AstListCount(ast, exprNode);
+        uint32_t    i;
+        if (elemCount == 0 || elemCount > 256u
+            || AstListCount(&typeFile->ast, typeNode) != elemCount)
+        {
+            *outIsConst = 0;
+            return 0;
+        }
+        for (i = 0; i < elemCount; i++) {
+            int32_t valueNode = AstListItemAt(ast, exprNode, i);
+            int32_t elemTypeNode = AstListItemAt(&typeFile->ast, typeNode, i);
+            int     elemIsConst = 0;
+            if (valueNode < 0 || elemTypeNode < 0
+                || SLEvalExecExprWithTypeNode(
+                       p, valueNode, typeFile, elemTypeNode, &elems[i], &elemIsConst)
+                       != 0)
+            {
+                return valueNode < 0 || elemTypeNode < 0 ? 0 : -1;
+            }
+            if (!elemIsConst) {
+                *outIsConst = 0;
+                return 0;
+            }
+        }
+        return SLEvalAllocTupleValue(p, typeFile, typeNode, elems, elemCount, outValue, outIsConst);
+    }
     if (ast->nodes[exprNode].kind == SLAst_COMPOUND_LIT) {
         return SLEvalEvalCompoundLiteral(
             p,
@@ -4543,6 +4606,23 @@ static int SLEvalAssignExprCb(
         return 0;
     }
     if (ast->nodes[lhsNode].kind == SLAst_IDENT) {
+        if (SliceEqCStr(
+                p->currentFile->source,
+                ast->nodes[lhsNode].dataStart,
+                ast->nodes[lhsNode].dataEnd,
+                "_"))
+        {
+            if (SLEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+                return -1;
+            }
+            if (!rhsIsConst) {
+                *outIsConst = 0;
+                return 0;
+            }
+            *outValue = rhsValue;
+            *outIsConst = 1;
+            return 0;
+        }
         int32_t topVarIndex = SLEvalFindTopVarBySlice(
             p, p->currentFile, ast->nodes[lhsNode].dataStart, ast->nodes[lhsNode].dataEnd);
         if (topVarIndex >= 0) {
@@ -4815,6 +4895,16 @@ static int SLEvalAssignValueExprCb(
         return 0;
     }
     if (ast->nodes[lhsExprNode].kind == SLAst_IDENT) {
+        if (SliceEqCStr(
+                p->currentFile->source,
+                ast->nodes[lhsExprNode].dataStart,
+                ast->nodes[lhsExprNode].dataEnd,
+                "_"))
+        {
+            *outValue = *inValue;
+            *outIsConst = 1;
+            return 0;
+        }
         int32_t topVarIndex = SLEvalFindTopVarBySlice(
             p, p->currentFile, ast->nodes[lhsExprNode].dataStart, ast->nodes[lhsExprNode].dataEnd);
         if (topVarIndex >= 0) {
@@ -6065,6 +6155,29 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         *outValue = *payload;
         *outIsConst = 1;
         return 0;
+    }
+
+    if (n->kind == SLAst_TUPLE_EXPR || n->kind == SLAst_EXPR_LIST) {
+        SLCTFEValue elems[256];
+        uint32_t    elemCount = AstListCount(ast, exprNode);
+        uint32_t    i;
+        if (elemCount == 0 || elemCount > 256u) {
+            *outIsConst = 0;
+            return 0;
+        }
+        for (i = 0; i < elemCount; i++) {
+            int32_t itemNode = AstListItemAt(ast, exprNode, i);
+            int     elemIsConst = 0;
+            if (itemNode < 0 || SLEvalExecExprCb(p, itemNode, &elems[i], &elemIsConst) != 0) {
+                return itemNode < 0 ? 0 : -1;
+            }
+            if (!elemIsConst) {
+                *outIsConst = 0;
+                return 0;
+            }
+        }
+        return SLEvalAllocTupleValue(
+            p, p->currentFile, exprNode, elems, elemCount, outValue, outIsConst);
     }
 
     if (n->kind == SLAst_UNARY) {
