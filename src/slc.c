@@ -8813,6 +8813,20 @@ static int SLEvalResolveCall(
             return 0;
         }
     }
+    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "print")) {
+        if (args[0].kind == SLCTFEValue_STRING) {
+            if (args[0].s.len > 0 && args[0].s.bytes != NULL) {
+                if (fwrite(args[0].s.bytes, 1, args[0].s.len, stdout) != args[0].s.len) {
+                    return ErrorSimple("failed to write print output");
+                }
+            }
+            fputc('\n', stdout);
+            fflush(stdout);
+            SLEvalValueSetNull(outValue);
+            *outIsConst = 1;
+            return 0;
+        }
+    }
     if (argCount > 0) {
         uint32_t pkgIndex = 0;
         if (SLEvalValueIsPackageRef(&args[0], &pkgIndex)) {
