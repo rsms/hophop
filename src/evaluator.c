@@ -176,6 +176,124 @@ static int IsFnReturnTypeNodeKind(SLAstKind kind) {
         || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_TUPLE;
 }
 
+static int ParseSliceU64(const char* s, uint32_t start, uint32_t end, uint64_t* outValue) {
+    uint64_t v = 0;
+    uint32_t i;
+    if (outValue != NULL) {
+        *outValue = 0;
+    }
+    if (s == NULL || outValue == NULL || end <= start) {
+        return 0;
+    }
+    for (i = start; i < end; i++) {
+        unsigned char ch = (unsigned char)s[i];
+        if (ch < '0' || ch > '9') {
+            return 0;
+        }
+        if (v > (UINT64_MAX - (uint64_t)(ch - '0')) / 10u) {
+            return 0;
+        }
+        v = v * 10u + (uint64_t)(ch - '0');
+    }
+    *outValue = v;
+    return 1;
+}
+
+static int SLEvalBuiltinTypeSize(
+    const char* source, uint32_t nameStart, uint32_t nameEnd, uint64_t* outSize) {
+    if (outSize != NULL) {
+        *outSize = 0;
+    }
+    if (source == NULL || outSize == NULL) {
+        return 0;
+    }
+    if (SliceEqCStr(source, nameStart, nameEnd, "bool")
+        || SliceEqCStr(source, nameStart, nameEnd, "u8")
+        || SliceEqCStr(source, nameStart, nameEnd, "i8"))
+    {
+        *outSize = 1u;
+        return 1;
+    }
+    if (SliceEqCStr(source, nameStart, nameEnd, "u16")
+        || SliceEqCStr(source, nameStart, nameEnd, "i16"))
+    {
+        *outSize = 2u;
+        return 1;
+    }
+    if (SliceEqCStr(source, nameStart, nameEnd, "u32")
+        || SliceEqCStr(source, nameStart, nameEnd, "i32")
+        || SliceEqCStr(source, nameStart, nameEnd, "f32"))
+    {
+        *outSize = 4u;
+        return 1;
+    }
+    if (SliceEqCStr(source, nameStart, nameEnd, "u64")
+        || SliceEqCStr(source, nameStart, nameEnd, "i64")
+        || SliceEqCStr(source, nameStart, nameEnd, "f64")
+        || SliceEqCStr(source, nameStart, nameEnd, "type"))
+    {
+        *outSize = 8u;
+        return 1;
+    }
+    if (SliceEqCStr(source, nameStart, nameEnd, "usize")
+        || SliceEqCStr(source, nameStart, nameEnd, "isize")
+        || SliceEqCStr(source, nameStart, nameEnd, "uint")
+        || SliceEqCStr(source, nameStart, nameEnd, "int"))
+    {
+        *outSize = (uint64_t)sizeof(void*);
+        return 1;
+    }
+    if (SliceEqCStr(source, nameStart, nameEnd, "str")) {
+        *outSize = (uint64_t)(sizeof(void*) * 2u);
+        return 1;
+    }
+    return 0;
+}
+
+static int SLEvalTypeNodeSize(
+    const SLParsedFile* file, int32_t typeNode, uint64_t* outSize, uint32_t depth) {
+    const SLAstNode* n;
+    if (outSize != NULL) {
+        *outSize = 0;
+    }
+    if (file == NULL || outSize == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len
+        || depth > file->ast.len)
+    {
+        return 0;
+    }
+    n = &file->ast.nodes[typeNode];
+    switch (n->kind) {
+        case SLAst_TYPE_NAME:
+            return SLEvalBuiltinTypeSize(file->source, n->dataStart, n->dataEnd, outSize);
+        case SLAst_TYPE_PTR:
+        case SLAst_TYPE_REF:
+        case SLAst_TYPE_MUTREF:
+        case SLAst_TYPE_FN:       *outSize = (uint64_t)sizeof(void*); return 1;
+        case SLAst_TYPE_SLICE:
+        case SLAst_TYPE_MUTSLICE: *outSize = (uint64_t)(sizeof(void*) * 2u); return 1;
+        case SLAst_TYPE_OPTIONAL: {
+            int32_t child = file->ast.nodes[typeNode].firstChild;
+            return child >= 0 ? SLEvalTypeNodeSize(file, child, outSize, depth + 1u) : 0;
+        }
+        case SLAst_TYPE_ARRAY: {
+            int32_t  elemTypeNode = file->ast.nodes[typeNode].firstChild;
+            uint64_t elemSize = 0;
+            uint64_t count = 0;
+            if (elemTypeNode < 0 || !SLEvalTypeNodeSize(file, elemTypeNode, &elemSize, depth + 1u)
+                || !ParseSliceU64(file->source, n->dataStart, n->dataEnd, &count))
+            {
+                return 0;
+            }
+            if (count > 0 && elemSize > UINT64_MAX / count) {
+                return 0;
+            }
+            *outSize = elemSize * count;
+            return 1;
+        }
+        default: return 0;
+    }
+}
+
 static int ASTFirstChild(const SLAst* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
@@ -4988,6 +5106,50 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         rc = SLEvalExecExprCb(p, callNode, outValue, outIsConst);
         p->currentContext = savedContext;
         return rc;
+    }
+
+    if (n->kind == SLAst_SIZEOF) {
+        int32_t     childNode = n->firstChild;
+        uint64_t    sizeBytes = 0;
+        SLCTFEValue childValue;
+        int         childIsConst = 0;
+        if (childNode < 0 || (uint32_t)childNode >= ast->len) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (n->flags == 1u) {
+            if (!SLEvalTypeNodeSize(p->currentFile, childNode, &sizeBytes, 0)) {
+                *outIsConst = 0;
+                return 0;
+            }
+        } else {
+            if (SLEvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
+                return -1;
+            }
+            if (!childIsConst) {
+                *outIsConst = 0;
+                return 0;
+            }
+            if (childValue.kind == SLCTFEValue_BOOL) {
+                sizeBytes = 1u;
+            } else if (childValue.kind == SLCTFEValue_INT || childValue.kind == SLCTFEValue_FLOAT) {
+                sizeBytes = 8u;
+            } else if (childValue.kind == SLCTFEValue_STRING) {
+                sizeBytes = (uint64_t)(sizeof(void*) * 2u);
+            } else if (childValue.kind == SLCTFEValue_ARRAY) {
+                sizeBytes = (uint64_t)childValue.s.len * 8u;
+            } else if (
+                childValue.kind == SLCTFEValue_REFERENCE || childValue.kind == SLCTFEValue_NULL)
+            {
+                sizeBytes = (uint64_t)sizeof(void*);
+            } else {
+                *outIsConst = 0;
+                return 0;
+            }
+        }
+        SLEvalValueSetInt(outValue, (int64_t)sizeBytes);
+        *outIsConst = 1;
+        return 0;
     }
 
     if (n->kind == SLAst_INDEX && (n->flags & SLAstFlag_INDEX_SLICE) != 0u) {

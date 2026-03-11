@@ -1062,35 +1062,55 @@ static int SLCTFEExecEvalStmt(
                 *outIsConst = 0;
                 return 0;
             }
-            if (exprListNode < 0 || c->ast->nodes[exprListNode].kind != SLAst_EXPR_LIST) {
-                SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
-                *outIsConst = 0;
-                return 0;
-            }
-            initCount = SLCTFEExecBlockStmtCount(c->ast, exprListNode);
-            if (initCount != nameCount) {
-                SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
-                *outIsConst = 0;
-                return 0;
-            }
-            for (i = 0; i < initCount; i++) {
-                int32_t expr = SLCTFEExecListItemAt(c->ast, exprListNode, i);
-                valueIsConst[i] = 0;
-                if (expr < 0) {
+            if (exprListNode < 0) {
+                if (bindingTypeNode < 0 || c->zeroInit == NULL) {
+                    *outIsConst = 0;
+                    SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
+                    return 0;
+                }
+                for (i = 0; i < nameCount; i++) {
+                    valueIsConst[i] = 0;
+                    if (c->zeroInit(c->zeroInitCtx, bindingTypeNode, &values[i], &valueIsConst[i])
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (!valueIsConst[i]) {
+                        *outIsConst = 0;
+                        return 0;
+                    }
+                }
+            } else {
+                if (c->ast->nodes[exprListNode].kind != SLAst_EXPR_LIST) {
+                    SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
                     *outIsConst = 0;
                     return 0;
                 }
-                if ((bindingTypeNode >= 0
-                         ? SLCTFEExecEvalExprForType(
-                               c, expr, bindingTypeNode, &values[i], &valueIsConst[i])
-                         : SLCTFEExecEvalExpr(c, expr, &values[i], &valueIsConst[i]))
-                    != 0)
-                {
-                    return -1;
-                }
-                if (!valueIsConst[i]) {
+                initCount = SLCTFEExecBlockStmtCount(c->ast, exprListNode);
+                if (initCount != nameCount) {
+                    SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
                     *outIsConst = 0;
                     return 0;
+                }
+                for (i = 0; i < initCount; i++) {
+                    int32_t expr = SLCTFEExecListItemAt(c->ast, exprListNode, i);
+                    valueIsConst[i] = 0;
+                    if (expr < 0) {
+                        *outIsConst = 0;
+                        return 0;
+                    }
+                    if ((bindingTypeNode >= 0
+                             ? SLCTFEExecEvalExprForType(
+                                   c, expr, bindingTypeNode, &values[i], &valueIsConst[i])
+                             : SLCTFEExecEvalExpr(c, expr, &values[i], &valueIsConst[i]))
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (!valueIsConst[i]) {
+                        *outIsConst = 0;
+                        return 0;
+                    }
                 }
             }
             for (i = 0; i < nameCount; i++) {
