@@ -8054,6 +8054,15 @@ static int SLEvalValueIsPackageRef(const SLCTFEValue* value, uint32_t* outPkgInd
     return 1;
 }
 
+static uint64_t SLEvalMakeAliasTag(const SLParsedFile* file, int32_t nodeId) {
+    uint64_t tag = 0;
+    if (file != NULL) {
+        tag = (uint64_t)(uintptr_t)file;
+    }
+    tag ^= (uint64_t)(uint32_t)(nodeId + 1) << 1;
+    return tag & ~SL_EVAL_PACKAGE_REF_TAG_FLAG;
+}
+
 static const SLPackage* _Nullable SLEvalFindPackageByFile(
     const SLEvalProgram* p, const SLParsedFile* file) {
     uint32_t pkgIndex;
@@ -8073,7 +8082,11 @@ static const SLPackage* _Nullable SLEvalFindPackageByFile(
 }
 
 static int SLEvalResolveSimpleAliasCastTarget(
-    const SLEvalProgram* p, const SLParsedFile* file, int32_t typeNode, char* outTargetKind) {
+    const SLEvalProgram* p,
+    const SLParsedFile*  file,
+    int32_t              typeNode,
+    char*                outTargetKind,
+    uint64_t* _Nullable outAliasTag) {
     const SLPackage* currentPkg;
     const SLAstNode* typeNameNode;
     uint32_t         fileIndex;
@@ -8081,6 +8094,9 @@ static int SLEvalResolveSimpleAliasCastTarget(
         return 0;
     }
     *outTargetKind = '\0';
+    if (outAliasTag != NULL) {
+        *outAliasTag = 0;
+    }
     if (p == NULL || file == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len) {
         return 0;
     }
@@ -8119,6 +8135,9 @@ static int SLEvalResolveSimpleAliasCastTarget(
                         pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "bool"))
                 {
                     *outTargetKind = 'b';
+                    if (outAliasTag != NULL) {
+                        *outAliasTag = SLEvalMakeAliasTag(pkgFile, nodeId);
+                    }
                     return 1;
                 }
                 if (SliceEqCStr(pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "f32")
@@ -8126,6 +8145,18 @@ static int SLEvalResolveSimpleAliasCastTarget(
                         pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "f64"))
                 {
                     *outTargetKind = 'f';
+                    if (outAliasTag != NULL) {
+                        *outAliasTag = SLEvalMakeAliasTag(pkgFile, nodeId);
+                    }
+                    return 1;
+                }
+                if (SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "string"))
+                {
+                    *outTargetKind = 's';
+                    if (outAliasTag != NULL) {
+                        *outAliasTag = SLEvalMakeAliasTag(pkgFile, nodeId);
+                    }
                     return 1;
                 }
                 if (SliceEqCStr(pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "u8")
@@ -8149,6 +8180,9 @@ static int SLEvalResolveSimpleAliasCastTarget(
                         pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "int"))
                 {
                     *outTargetKind = 'i';
+                    if (outAliasTag != NULL) {
+                        *outAliasTag = SLEvalMakeAliasTag(pkgFile, nodeId);
+                    }
                     return 1;
                 }
                 return 0;
@@ -8550,6 +8584,215 @@ static int32_t SLEvalFindFunctionBySliceInPackage(
     return found;
 }
 
+static int SLEvalValueSimpleKind(
+    const SLCTFEValue* value, char* outKind, uint64_t* _Nullable outAliasTag) {
+    if (outKind == NULL) {
+        return 0;
+    }
+    *outKind = '\0';
+    if (outAliasTag != NULL) {
+        *outAliasTag = 0;
+    }
+    if (value == NULL) {
+        return 0;
+    }
+    switch (value->kind) {
+        case SLCTFEValue_INT:    *outKind = 'i'; break;
+        case SLCTFEValue_FLOAT:  *outKind = 'f'; break;
+        case SLCTFEValue_BOOL:   *outKind = 'b'; break;
+        case SLCTFEValue_STRING: *outKind = 's'; break;
+        default:                 return 0;
+    }
+    if (outAliasTag != NULL) {
+        *outAliasTag = value->typeTag;
+    }
+    return 1;
+}
+
+static int32_t SLEvalFunctionParamTypeNodeAt(const SLEvalFunction* fn, uint32_t paramIndex) {
+    const SLAst* ast;
+    int32_t      child;
+    uint32_t     i = 0;
+    if (fn == NULL || fn->file == NULL) {
+        return -1;
+    }
+    ast = &fn->file->ast;
+    if (fn->fnNode < 0 || (uint32_t)fn->fnNode >= ast->len) {
+        return -1;
+    }
+    child = ASTFirstChild(ast, fn->fnNode);
+    while (child >= 0) {
+        const SLAstNode* n = &ast->nodes[child];
+        if (n->kind == SLAst_PARAM) {
+            if (i == paramIndex) {
+                return ASTFirstChild(ast, child);
+            }
+            i++;
+        }
+        child = ASTNextSibling(ast, child);
+    }
+    return -1;
+}
+
+static int SLEvalClassifySimpleTypeNode(
+    const SLEvalProgram* p,
+    const SLParsedFile*  file,
+    int32_t              typeNode,
+    char*                outKind,
+    uint64_t* _Nullable outAliasTag) {
+    const SLAstNode* n;
+    char             aliasKind = '\0';
+    uint64_t         aliasTag = 0;
+    if (outKind == NULL) {
+        return 0;
+    }
+    *outKind = '\0';
+    if (outAliasTag != NULL) {
+        *outAliasTag = 0;
+    }
+    if (p == NULL || file == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len) {
+        return 0;
+    }
+    n = &file->ast.nodes[typeNode];
+    if (n->kind != SLAst_TYPE_NAME) {
+        return 0;
+    }
+    if (SLEvalResolveSimpleAliasCastTarget(p, file, typeNode, &aliasKind, &aliasTag)) {
+        *outKind = aliasKind;
+        if (outAliasTag != NULL) {
+            *outAliasTag = aliasTag;
+        }
+        return 1;
+    }
+    if (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "bool")) {
+        *outKind = 'b';
+        return 1;
+    }
+    if (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "f32")
+        || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "f64"))
+    {
+        *outKind = 'f';
+        return 1;
+    }
+    if (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "string")) {
+        *outKind = 's';
+        return 1;
+    }
+    if (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "u8")
+        || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "u16")
+        || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "u32")
+        || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "u64")
+        || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "uint")
+        || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "i8")
+        || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "i16")
+        || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "i32")
+        || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "i64")
+        || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "int"))
+    {
+        *outKind = 'i';
+        return 1;
+    }
+    return 0;
+}
+
+static int SLEvalScoreFunctionCandidate(
+    const SLEvalProgram*  p,
+    const SLEvalFunction* fn,
+    const SLCTFEValue*    args,
+    uint32_t              argCount,
+    int*                  outScore) {
+    uint32_t i;
+    int      score = 0;
+    if (outScore == NULL) {
+        return 0;
+    }
+    *outScore = 0;
+    if (p == NULL || fn == NULL || args == NULL || fn->paramCount != argCount) {
+        return 0;
+    }
+    for (i = 0; i < argCount; i++) {
+        char     argKind = '\0';
+        char     paramKind = '\0';
+        uint64_t argAliasTag = 0;
+        uint64_t paramAliasTag = 0;
+        int32_t  paramTypeNode = SLEvalFunctionParamTypeNodeAt(fn, i);
+        if (paramTypeNode < 0 || !SLEvalValueSimpleKind(&args[i], &argKind, &argAliasTag)
+            || !SLEvalClassifySimpleTypeNode(p, fn->file, paramTypeNode, &paramKind, &paramAliasTag)
+            || argKind != paramKind)
+        {
+            return 0;
+        }
+        if (paramAliasTag != 0) {
+            if (argAliasTag != paramAliasTag) {
+                return 0;
+            }
+            score += 4;
+        } else if (argAliasTag != 0) {
+            score += 1;
+        } else {
+            score += 2;
+        }
+    }
+    *outScore = score;
+    return 1;
+}
+
+static int32_t SLEvalResolveFunctionBySlice(
+    const SLEvalProgram* p,
+    const SLPackage* _Nullable targetPkg,
+    const SLParsedFile* callerFile,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    const SLCTFEValue* _Nullable args,
+    uint32_t argCount) {
+    uint32_t i;
+    int32_t  found = -1;
+    int32_t  best = -1;
+    int      bestScore = -1;
+    int      ambiguous = 0;
+    if (p == NULL || callerFile == NULL || nameEnd < nameStart || nameEnd > callerFile->sourceLen) {
+        return -1;
+    }
+    for (i = 0; i < p->funcLen; i++) {
+        const SLEvalFunction* fn = &p->funcs[i];
+        int                   score = 0;
+        if (fn->paramCount != argCount) {
+            continue;
+        }
+        if (targetPkg != NULL && fn->pkg != targetPkg) {
+            continue;
+        }
+        if (!SliceEqSlice(
+                callerFile->source,
+                nameStart,
+                nameEnd,
+                fn->file->source,
+                fn->nameStart,
+                fn->nameEnd))
+        {
+            continue;
+        }
+        if (found < 0) {
+            found = (int32_t)i;
+        } else {
+            found = -2;
+        }
+        if (args != NULL && SLEvalScoreFunctionCandidate(p, fn, args, argCount, &score)) {
+            if (score > bestScore) {
+                best = (int32_t)i;
+                bestScore = score;
+                ambiguous = 0;
+            } else if (score == bestScore) {
+                ambiguous = 1;
+            }
+        }
+    }
+    if (best >= 0) {
+        return ambiguous ? -2 : best;
+    }
+    return found;
+}
+
 static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
 static int SLEvalResolveIdent(
     void*        ctx,
@@ -8922,8 +9165,8 @@ static int SLEvalResolveCall(
                 return -1;
             }
             targetPkg = &p->loader->packages[pkgIndex];
-            fnIndex = SLEvalFindFunctionBySliceInPackage(
-                p, targetPkg, p->currentFile, nameStart, nameEnd, argCount - 1u);
+            fnIndex = SLEvalResolveFunctionBySlice(
+                p, targetPkg, p->currentFile, nameStart, nameEnd, args + 1, argCount - 1u);
             if (fnIndex == -2) {
                 SLCTFEExecSetReason(
                     p->currentExecCtx,
@@ -8945,7 +9188,8 @@ static int SLEvalResolveCall(
     }
 
     if (fnIndex < 0) {
-        fnIndex = SLEvalFindFunctionBySlice(p, p->currentFile, nameStart, nameEnd, argCount);
+        fnIndex = SLEvalResolveFunctionBySlice(
+            p, NULL, p->currentFile, nameStart, nameEnd, args, argCount);
     }
     if (fnIndex == -2) {
         SLCTFEExecSetReason(
@@ -9299,12 +9543,14 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         }
     }
     if (n->kind == SLAst_CAST) {
-        int32_t valueNode = n->firstChild;
-        int32_t typeNode = valueNode >= 0 ? ast->nodes[valueNode].nextSibling : -1;
-        int32_t extraNode = typeNode >= 0 ? ast->nodes[typeNode].nextSibling : -1;
-        char    aliasTargetKind = '\0';
+        int32_t  valueNode = n->firstChild;
+        int32_t  typeNode = valueNode >= 0 ? ast->nodes[valueNode].nextSibling : -1;
+        int32_t  extraNode = typeNode >= 0 ? ast->nodes[typeNode].nextSibling : -1;
+        char     aliasTargetKind = '\0';
+        uint64_t aliasTag = 0;
         if (valueNode >= 0 && typeNode >= 0 && extraNode < 0
-            && SLEvalResolveSimpleAliasCastTarget(p, p->currentFile, typeNode, &aliasTargetKind))
+            && SLEvalResolveSimpleAliasCastTarget(
+                p, p->currentFile, typeNode, &aliasTargetKind, &aliasTag))
         {
             SLCTFEValue inValue;
             int         inIsConst = 0;
@@ -9317,16 +9563,25 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             }
             if (aliasTargetKind == 'i' && inValue.kind == SLCTFEValue_INT) {
                 *outValue = inValue;
+                outValue->typeTag = aliasTag;
                 *outIsConst = 1;
                 return 0;
             }
             if (aliasTargetKind == 'f' && inValue.kind == SLCTFEValue_FLOAT) {
                 *outValue = inValue;
+                outValue->typeTag = aliasTag;
                 *outIsConst = 1;
                 return 0;
             }
             if (aliasTargetKind == 'b' && inValue.kind == SLCTFEValue_BOOL) {
                 *outValue = inValue;
+                outValue->typeTag = aliasTag;
+                *outIsConst = 1;
+                return 0;
+            }
+            if (aliasTargetKind == 's' && inValue.kind == SLCTFEValue_STRING) {
+                *outValue = inValue;
+                outValue->typeTag = aliasTag;
                 *outIsConst = 1;
                 return 0;
             }
