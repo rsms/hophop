@@ -1863,6 +1863,26 @@ static int SLEvalFindEnumVariant(
     return 0;
 }
 
+static int SLEvalEnumHasPayloadVariants(const SLParsedFile* enumFile, int32_t enumNode) {
+    int32_t child;
+    if (enumFile == NULL || enumNode < 0 || (uint32_t)enumNode >= enumFile->ast.len) {
+        return 0;
+    }
+    child = ASTFirstChild(&enumFile->ast, enumNode);
+    while (child >= 0) {
+        if (enumFile->ast.nodes[child].kind == SLAst_FIELD) {
+            int32_t valueNode = ASTFirstChild(&enumFile->ast, child);
+            if (valueNode >= 0 && (uint32_t)valueNode < enumFile->ast.len
+                && enumFile->ast.nodes[valueNode].kind == SLAst_FIELD)
+            {
+                return 1;
+            }
+        }
+        child = ASTNextSibling(&enumFile->ast, child);
+    }
+    return 0;
+}
+
 static int SLEvalZeroInitTypeNode(
     const SLEvalProgram* p,
     const SLParsedFile*  file,
@@ -6594,7 +6614,9 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 {
                     const SLAstNode* variantField = &enumFile->ast.nodes[variantNode];
                     int32_t          valueNode = ASTFirstChild(&enumFile->ast, variantNode);
-                    if (valueNode >= 0 && enumFile->ast.nodes[valueNode].kind != SLAst_FIELD) {
+                    if (valueNode >= 0 && enumFile->ast.nodes[valueNode].kind != SLAst_FIELD
+                        && !SLEvalEnumHasPayloadVariants(enumFile, enumNode))
+                    {
                         SLCTFEValue enumValue;
                         int         enumIsConst = 0;
                         if (SLEvalExecExprInFileWithType(
