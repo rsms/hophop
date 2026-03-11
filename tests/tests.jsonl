@@ -391,7 +391,7 @@
 {"id":"integration.examples.pointers_arrays.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/pointers_arrays.sl"}
 {"id":"integration.examples.single_file.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/single_file.sl"}
 {"id":"integration.examples.allocator.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/allocator.sl"}
-{"id":"integration.examples.arena_allocator.compile_and_run","suite":"integration.examples","kind":"compile_and_run","input":"examples/arena_allocator.sl","eval_expect":"fail"}
+{"id":"integration.examples.arena_allocator.compile_and_run","suite":"integration.examples","kind":"compile_and_run","input":"examples/arena_allocator.sl","eval_expect":"pass"}
 {"id":"integration.examples.context.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/context.sl"}
 {"id":"integration.examples.slp2_refs_slices.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/slp2_refs_slices.sl"}
 {"id":"integration.examples.struct_composition.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/struct_composition.sl"}
@@ -523,7 +523,7 @@
 {"id":"coverage.cli_eval.examples.packages_app.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/packages/app","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.aggregates.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/aggregates.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.allocator.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/allocator.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
-{"id":"coverage.cli_eval.examples.arena_allocator.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/arena_allocator.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"fail"}
+{"id":"coverage.cli_eval.examples.arena_allocator.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/arena_allocator.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.basic.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/basic.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.casts.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/casts.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.comparison.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/comparison.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"fail"}
@@ -535,7 +535,7 @@
 {"id":"coverage.cli_eval.examples.order_independent.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/order_independent.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.pointers_arrays.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/pointers_arrays.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.single_file.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/single_file.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
-{"id":"coverage.cli_eval.examples.slp2_refs_slices.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/slp2_refs_slices.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"fail"}
+{"id":"coverage.cli_eval.examples.slp2_refs_slices.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/slp2_refs_slices.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.strings.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/strings.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.struct_field_defaults.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/struct-field-defaults.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.struct_composition.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/struct_composition.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}

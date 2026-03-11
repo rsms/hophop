@@ -586,6 +586,31 @@ static SLEvalArray* _Nullable SLEvalValueAsArray(const SLCTFEValue* value) {
     return (SLEvalArray*)value->s.bytes;
 }
 
+static SLEvalArray* _Nullable SLEvalAllocArrayView(
+    SLEvalProgram*      p,
+    const SLParsedFile* file,
+    int32_t             typeNode,
+    int32_t             elemTypeNode,
+    SLCTFEValue*        elems,
+    uint32_t            len) {
+    SLEvalArray* array;
+    if (p == NULL) {
+        return NULL;
+    }
+    array = (SLEvalArray*)SLArenaAlloc(
+        p->arena, sizeof(SLEvalArray), (uint32_t)_Alignof(SLEvalArray));
+    if (array == NULL) {
+        return NULL;
+    }
+    memset(array, 0, sizeof(*array));
+    array->file = file;
+    array->typeNode = typeNode;
+    array->elemTypeNode = elemTypeNode;
+    array->elems = elems;
+    array->len = len;
+    return array;
+}
+
 static const SLCTFEValue* SLEvalValueTargetOrSelf(const SLCTFEValue* value) {
     const SLCTFEValue* target = SLEvalValueReferenceTarget(value);
     return target != NULL ? target : value;
@@ -713,6 +738,8 @@ static int32_t SLEvalFindNamedAggregateDeclInPackage(
     int32_t              typeNode,
     const SLParsedFile** outFile) {
     const SLAstNode* typeNameNode;
+    uint32_t         lookupStart;
+    uint32_t         lookupEnd;
     uint32_t         fileIndex;
     if (outFile != NULL) {
         *outFile = NULL;
@@ -726,6 +753,16 @@ static int32_t SLEvalFindNamedAggregateDeclInPackage(
     if (typeNameNode->kind != SLAst_TYPE_NAME) {
         return -1;
     }
+    lookupStart = typeNameNode->dataStart;
+    lookupEnd = typeNameNode->dataEnd;
+    {
+        uint32_t i;
+        for (i = lookupStart; i < lookupEnd; i++) {
+            if (callerFile->source[i] == '.') {
+                lookupStart = i + 1u;
+            }
+        }
+    }
     for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
         const SLParsedFile* pkgFile = &pkg->files[fileIndex];
         int32_t             nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
@@ -734,8 +771,8 @@ static int32_t SLEvalFindNamedAggregateDeclInPackage(
             if ((n->kind == SLAst_STRUCT || n->kind == SLAst_UNION)
                 && SliceEqSlice(
                     callerFile->source,
-                    typeNameNode->dataStart,
-                    typeNameNode->dataEnd,
+                    lookupStart,
+                    lookupEnd,
                     pkgFile->source,
                     n->dataStart,
                     n->dataEnd))
@@ -746,6 +783,43 @@ static int32_t SLEvalFindNamedAggregateDeclInPackage(
                 return nodeId;
             }
             nodeId = ASTNextSibling(&pkgFile->ast, nodeId);
+        }
+    }
+    return -1;
+}
+
+static int32_t SLEvalFindNamedAggregateDecl(
+    const SLEvalProgram* p,
+    const SLParsedFile*  callerFile,
+    int32_t              typeNode,
+    const SLParsedFile** outFile) {
+    const SLPackage* currentPkg;
+    uint32_t         pkgIndex;
+    int32_t          nodeId;
+    if (outFile != NULL) {
+        *outFile = NULL;
+    }
+    if (p == NULL || callerFile == NULL) {
+        return -1;
+    }
+    currentPkg = SLEvalFindPackageByFile(p, callerFile);
+    if (currentPkg != NULL) {
+        nodeId = SLEvalFindNamedAggregateDeclInPackage(currentPkg, callerFile, typeNode, outFile);
+        if (nodeId >= 0) {
+            return nodeId;
+        }
+    }
+    if (p->loader == NULL) {
+        return -1;
+    }
+    for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
+        const SLPackage* pkg = &p->loader->packages[pkgIndex];
+        if (pkg == currentPkg) {
+            continue;
+        }
+        nodeId = SLEvalFindNamedAggregateDeclInPackage(pkg, callerFile, typeNode, outFile);
+        if (nodeId >= 0) {
+            return nodeId;
         }
     }
     return -1;
@@ -1108,8 +1182,7 @@ static int SLEvalZeroInitTypeNode(
             if (currentPkg == NULL) {
                 return 0;
             }
-            aggregateNode = SLEvalFindNamedAggregateDeclInPackage(
-                currentPkg, file, typeNode, &aggregateFile);
+            aggregateNode = SLEvalFindNamedAggregateDecl(p, file, typeNode, &aggregateFile);
             if (aggregateNode >= 0 && aggregateFile != NULL) {
                 return SLEvalZeroInitAggregateValue(
                     p, aggregateFile, aggregateNode, outValue, outIsConst);
@@ -2211,8 +2284,7 @@ static int SLEvalStructEmbeddedBase(
         if (fieldNode->kind == SLAst_FIELD && (fieldNode->flags & SLAstFlag_FIELD_EMBEDDED) != 0) {
             int32_t             typeNode = ASTFirstChild(&structFile->ast, child);
             const SLParsedFile* baseFile = NULL;
-            int32_t             baseNode = SLEvalFindNamedAggregateDeclInPackage(
-                pkg, structFile, typeNode, &baseFile);
+            int32_t baseNode = SLEvalFindNamedAggregateDecl(p, structFile, typeNode, &baseFile);
             if (baseNode >= 0 && baseFile != NULL) {
                 if (outBaseFile != NULL) {
                     *outBaseFile = baseFile;
@@ -2567,7 +2639,6 @@ static int SLEvalResolveAggregateTypeNode(
     int32_t              typeNode,
     const SLParsedFile** outDeclFile,
     int32_t*             outDeclNode) {
-    const SLPackage*    pkg;
     const SLAstNode*    n;
     const SLParsedFile* declFile = NULL;
     int32_t             declNode = -1;
@@ -2591,11 +2662,7 @@ static int SLEvalResolveAggregateTypeNode(
     if (n->kind != SLAst_TYPE_NAME) {
         return 0;
     }
-    pkg = SLEvalFindPackageByFile(p, typeFile);
-    if (pkg == NULL) {
-        return 0;
-    }
-    declNode = SLEvalFindNamedAggregateDeclInPackage(pkg, typeFile, typeNode, &declFile);
+    declNode = SLEvalFindNamedAggregateDecl(p, typeFile, typeNode, &declFile);
     if (declNode < 0 || declFile == NULL) {
         return 0;
     }
@@ -3954,6 +4021,90 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         rc = SLEvalExecExprCb(p, callNode, outValue, outIsConst);
         p->currentContext = savedContext;
         return rc;
+    }
+
+    if (n->kind == SLAst_INDEX && (n->flags & SLAstFlag_INDEX_SLICE) != 0u) {
+        int32_t            baseNode = n->firstChild;
+        int32_t            extraNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
+        SLCTFEValue        baseValue;
+        const SLCTFEValue* targetValue;
+        SLEvalArray*       array;
+        SLEvalArray*       view;
+        SLCTFEValue        startValue;
+        SLCTFEValue        endValue;
+        int                baseIsConst = 0;
+        int                startIsConst = 0;
+        int                endIsConst = 0;
+        int64_t            start = 0;
+        int64_t            end = -1;
+        uint32_t           startIndex;
+        uint32_t           endIndex;
+        if (baseNode < 0 || (uint32_t)baseNode >= ast->len) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (SLEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0) {
+            return -1;
+        }
+        if (!baseIsConst) {
+            *outIsConst = 0;
+            return 0;
+        }
+        targetValue = SLEvalValueTargetOrSelf(&baseValue);
+        array = SLEvalValueAsArray(targetValue);
+        if (array == NULL) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if ((n->flags & SLAstFlag_INDEX_HAS_START) != 0u) {
+            if (extraNode < 0 || (uint32_t)extraNode >= ast->len
+                || SLEvalExecExprCb(p, extraNode, &startValue, &startIsConst) != 0)
+            {
+                return extraNode < 0 ? 0 : -1;
+            }
+            if (!startIsConst || SLCTFEValueToInt64(&startValue, &start) != 0 || start < 0) {
+                *outIsConst = 0;
+                return 0;
+            }
+            extraNode = ast->nodes[extraNode].nextSibling;
+        }
+        if ((n->flags & SLAstFlag_INDEX_HAS_END) != 0u) {
+            if (extraNode < 0 || (uint32_t)extraNode >= ast->len
+                || SLEvalExecExprCb(p, extraNode, &endValue, &endIsConst) != 0)
+            {
+                return extraNode < 0 ? 0 : -1;
+            }
+            if (!endIsConst || SLCTFEValueToInt64(&endValue, &end) != 0 || end < 0) {
+                *outIsConst = 0;
+                return 0;
+            }
+            extraNode = ast->nodes[extraNode].nextSibling;
+        }
+        if (extraNode >= 0) {
+            *outIsConst = 0;
+            return 0;
+        }
+        startIndex = (uint32_t)start;
+        endIndex = end >= 0 ? (uint32_t)end : array->len;
+        if (startIndex > endIndex || endIndex > array->len) {
+            *outIsConst = 0;
+            return 0;
+        }
+        view = SLEvalAllocArrayView(
+            p,
+            targetValue->kind == SLCTFEValue_ARRAY ? array->file : p->currentFile,
+            exprNode,
+            array->elemTypeNode,
+            array->elems + startIndex,
+            endIndex - startIndex);
+        if (view == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        {
+            SLCTFEValue viewValue;
+            SLEvalValueSetArray(&viewValue, p->currentFile, exprNode, view);
+            return SLEvalAllocReferencedValue(p, &viewValue, outValue, outIsConst);
+        }
     }
 
     if (n->kind == SLAst_INDEX && (n->flags & 0x7u) == 0u) {
