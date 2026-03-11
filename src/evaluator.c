@@ -304,8 +304,9 @@ typedef struct {
     uint32_t              fieldLen;
 } SLEvalAggregate;
 
-#define SL_EVAL_PACKAGE_REF_TAG_FLAG (UINT64_C(1) << 63)
-#define SL_EVAL_NULL_FIXED_LEN_TAG   (UINT64_C(1) << 62)
+#define SL_EVAL_PACKAGE_REF_TAG_FLAG  (UINT64_C(1) << 63)
+#define SL_EVAL_NULL_FIXED_LEN_TAG    (UINT64_C(1) << 62)
+#define SL_EVAL_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 61)
 
 typedef struct {
     SLArena* _Nonnull arena;
@@ -364,6 +365,19 @@ static void SLEvalValueSetPackageRef(SLCTFEValue* value, uint32_t pkgIndex) {
     value->s.len = 0;
 }
 
+static void SLEvalValueSetFunctionRef(SLCTFEValue* value, uint32_t fnIndex) {
+    if (value == NULL) {
+        return;
+    }
+    value->kind = SLCTFEValue_TYPE;
+    value->i64 = 0;
+    value->f64 = 0.0;
+    value->b = 0;
+    value->typeTag = SL_EVAL_FUNCTION_REF_TAG_FLAG | (uint64_t)fnIndex;
+    value->s.bytes = NULL;
+    value->s.len = 0;
+}
+
 static int SLEvalValueIsPackageRef(const SLCTFEValue* value, uint32_t* outPkgIndex) {
     if (value == NULL || value->kind != SLCTFEValue_TYPE
         || (value->typeTag & SL_EVAL_PACKAGE_REF_TAG_FLAG) == 0)
@@ -372,6 +386,18 @@ static int SLEvalValueIsPackageRef(const SLCTFEValue* value, uint32_t* outPkgInd
     }
     if (outPkgIndex != NULL) {
         *outPkgIndex = (uint32_t)(value->typeTag & ~SL_EVAL_PACKAGE_REF_TAG_FLAG);
+    }
+    return 1;
+}
+
+static int SLEvalValueIsFunctionRef(const SLCTFEValue* value, uint32_t* _Nullable outFnIndex) {
+    if (value == NULL || value->kind != SLCTFEValue_TYPE
+        || (value->typeTag & SL_EVAL_FUNCTION_REF_TAG_FLAG) == 0)
+    {
+        return 0;
+    }
+    if (outFnIndex != NULL) {
+        *outFnIndex = (uint32_t)(value->typeTag & ~SL_EVAL_FUNCTION_REF_TAG_FLAG);
     }
     return 1;
 }
@@ -824,6 +850,10 @@ static int SLEvalZeroInitTypeNode(
             if (SLEvalResolveNullCastTypeTag(file, typeNode, &nullTag)) {
                 outValue->typeTag = nullTag;
             }
+            *outIsConst = 1;
+            return 0;
+        case SLAst_TYPE_FN:
+            SLEvalValueSetNull(outValue);
             *outIsConst = 1;
             return 0;
         default: return 0;
@@ -1641,6 +1671,33 @@ static int32_t SLEvalResolveFunctionBySlice(
     return found;
 }
 
+static int32_t SLEvalFindAnyFunctionBySlice(
+    const SLEvalProgram* p, const SLParsedFile* callerFile, uint32_t nameStart, uint32_t nameEnd) {
+    uint32_t i;
+    int32_t  found = -1;
+    if (p == NULL || callerFile == NULL || nameEnd < nameStart || nameEnd > callerFile->sourceLen) {
+        return -1;
+    }
+    for (i = 0; i < p->funcLen; i++) {
+        const SLEvalFunction* fn = &p->funcs[i];
+        if (!SliceEqSlice(
+                callerFile->source,
+                nameStart,
+                nameEnd,
+                fn->file->source,
+                fn->nameStart,
+                fn->nameEnd))
+        {
+            continue;
+        }
+        if (found >= 0) {
+            return -2;
+        }
+        found = (int32_t)i;
+    }
+    return found;
+}
+
 static int SLEvalExprContainsFieldExpr(const SLAst* ast, int32_t nodeId) {
     int32_t child;
     if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
@@ -2137,6 +2194,39 @@ static int SLEvalInvokeFunction(
     return 0;
 }
 
+static int SLEvalInvokeFunctionRef(
+    SLEvalProgram*     p,
+    const SLCTFEValue* calleeValue,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst) {
+    uint32_t              fnIndex = 0;
+    int                   didReturn = 0;
+    const SLEvalFunction* fn;
+    if (p == NULL || calleeValue == NULL || outValue == NULL || outIsConst == NULL
+        || !SLEvalValueIsFunctionRef(calleeValue, &fnIndex) || fnIndex >= p->funcLen)
+    {
+        return 0;
+    }
+    fn = &p->funcs[fnIndex];
+    if (fn->isBuiltinPackageFn) {
+        return 0;
+    }
+    if (SLEvalInvokeFunction(p, (int32_t)fnIndex, args, argCount, outValue, &didReturn) != 0) {
+        return -1;
+    }
+    if (!didReturn) {
+        if (fn->hasReturnType) {
+            *outIsConst = 0;
+            return 1;
+        }
+        SLEvalValueSetNull(outValue);
+    }
+    *outIsConst = 1;
+    return 1;
+}
+
 static int SLEvalEvalTopConst(
     SLEvalProgram* p, uint32_t topConstIndex, SLCTFEValue* outValue, int* outIsConst) {
     SLEvalTopConst*     topConst;
@@ -2279,6 +2369,23 @@ static int SLEvalResolveIdent(
                 nameStart,
                 nameEnd,
                 "top-level const is not available in evaluator backend");
+            *outIsConst = 0;
+            return 0;
+        }
+    }
+    {
+        int32_t fnIndex = SLEvalFindAnyFunctionBySlice(p, p->currentFile, nameStart, nameEnd);
+        if (fnIndex >= 0) {
+            SLEvalValueSetFunctionRef(outValue, (uint32_t)fnIndex);
+            *outIsConst = 1;
+            return 0;
+        }
+        if (fnIndex == -2) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx,
+                nameStart,
+                nameEnd,
+                "function value is ambiguous in evaluator backend");
             *outIsConst = 0;
             return 0;
         }
@@ -2599,6 +2706,56 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             const SLAstNode* callee = &ast->nodes[calleeNode];
             int32_t          baseNode = callee->firstChild;
             int32_t          argNode = ast->nodes[calleeNode].nextSibling;
+            SLCTFEValue      calleeValue;
+            int              calleeIsConst = 0;
+            if (SLEvalExecExprCb(p, calleeNode, &calleeValue, &calleeIsConst) != 0) {
+                return -1;
+            }
+            if (calleeIsConst && SLEvalValueIsFunctionRef(&calleeValue, NULL)) {
+                uint32_t     argCount = 0;
+                uint32_t     i = 0;
+                int32_t      scanNode = argNode;
+                SLCTFEValue* args = NULL;
+                while (scanNode >= 0) {
+                    argCount++;
+                    scanNode = ast->nodes[scanNode].nextSibling;
+                }
+                if (argCount > 0) {
+                    args = (SLCTFEValue*)SLArenaAlloc(
+                        p->arena, sizeof(SLCTFEValue) * argCount, (uint32_t)_Alignof(SLCTFEValue));
+                    if (args == NULL) {
+                        return ErrorSimple("out of memory");
+                    }
+                }
+                scanNode = argNode;
+                while (scanNode >= 0) {
+                    SLCTFEValue argValue;
+                    int         argIsConst = 0;
+                    int32_t     argExprNode = scanNode;
+                    if (ast->nodes[scanNode].kind == SLAst_CALL_ARG) {
+                        argExprNode = ast->nodes[scanNode].firstChild;
+                    }
+                    if (SLEvalExecExprCb(p, argExprNode, &argValue, &argIsConst) != 0) {
+                        return -1;
+                    }
+                    if (!argIsConst) {
+                        *outIsConst = 0;
+                        return 0;
+                    }
+                    args[i++] = argValue;
+                    scanNode = ast->nodes[scanNode].nextSibling;
+                }
+                {
+                    int invoked = SLEvalInvokeFunctionRef(
+                        p, &calleeValue, args, argCount, outValue, outIsConst);
+                    if (invoked < 0) {
+                        return -1;
+                    }
+                    if (invoked > 0) {
+                        return 0;
+                    }
+                }
+            }
             if (baseNode >= 0 && argNode >= 0 && ast->nodes[argNode].nextSibling < 0
                 && ast->nodes[baseNode].kind == SLAst_IDENT
                 && SliceEqCStr(
@@ -2778,6 +2935,8 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             uint32_t     argCount = 0;
             SLCTFEValue* args = NULL;
             uint32_t     i = 0;
+            SLCTFEValue  calleeValue;
+            int          calleeIsConst = 0;
             while (argNode >= 0) {
                 if (argCount == UINT32_MAX) {
                     return ErrorSimple("too many call arguments for evaluator backend");
@@ -2820,6 +2979,19 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 }
                 args[i++] = argValue;
                 argNode = ast->nodes[argNode].nextSibling;
+            }
+            if (SLEvalExecExprCb(p, calleeNode, &calleeValue, &calleeIsConst) != 0) {
+                return -1;
+            }
+            if (calleeIsConst && SLEvalValueIsFunctionRef(&calleeValue, NULL)) {
+                int invoked = SLEvalInvokeFunctionRef(
+                    p, &calleeValue, args, argCount, outValue, outIsConst);
+                if (invoked < 0) {
+                    return -1;
+                }
+                if (invoked > 0) {
+                    return 0;
+                }
             }
             if (SLEvalResolveCall(
                     p,
