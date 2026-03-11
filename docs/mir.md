@@ -1,16 +1,18 @@
 # MIR in SL
 
-This document describes the MIR (Mid-level Intermediate Representation) implementation in this repository (`src/mir.c`, `src/mir.h`), how it is used today, and where it might evolve.
+This document describes the MIR (Mid-level Intermediate Representation) implementation in this repository (`src/mir.c`, `src/mir.h`, `src/mir_exec.c`), how it is used today, and where it is being extended.
 
 ## What MIR is
 
 MIR is a small, internal, expression-level IR used by compile-time evaluation.
 
 - Builder: `src/mir.c` builds MIR from AST expression nodes (`SLMirBuildExpr`).
+- Program builder: `src/mir.c` now also exposes `SLMirProgramBuilder` helpers for assembling backend-facing MIR programs incrementally.
 - IR shape: `src/mir.h` defines a compact stack-machine instruction format.
-- Interpreter: `src/ctfe.c` executes MIR (`SLCTFEEvalExpr`).
+- Interpreter core: `src/mir_exec.c` executes MIR chunks.
+- CTFE wrapper: `src/ctfe.c` builds expression MIR and delegates execution to `src/mir_exec.c`.
 
-MIR is not currently used as a general optimization IR or as the main lowering IR for runtime code generation.
+MIR is not yet the main lowering IR for runtime execution, but the repo now carries the beginning of a backend-facing MIR program model in `src/mir.h`. The extra function/program/metadata structs and runtime-oriented opcodes are scaffolding for that migration; current builders/executors still only use the expression subset.
 
 ## Current role in the compiler
 
@@ -95,7 +97,7 @@ Important behavior:
 
 1. Builds MIR via `SLMirBuildExpr`.
 2. If unsupported, returns `0` with `*outIsConst = 0`.
-3. Otherwise interprets MIR using a value stack.
+3. Otherwise delegates to `SLMirEvalChunk(...)` in `src/mir_exec.c`.
 
 Interpreter details:
 
@@ -122,7 +124,8 @@ Const-eval in the typechecker is layered:
 So today:
 
 - MIR is the expression evaluator backend.
-- `ctfe_exec` is the statement/control-flow evaluator backend.
+- `ctfe_exec` is still the statement/control-flow evaluator backend.
+- `mir_exec` is now the dedicated MIR execution module that future runtime MIR work should extend instead of growing `ctfe.c`.
 
 ## Notes from `consteval` branch
 
@@ -140,11 +143,13 @@ Implication: MIR is still expression-stack IR, but ongoing consteval work may re
 
 MIR could evolve from a const-expression helper IR into a backend-facing IR layer.
 
-Potential directions:
+Current architectural direction:
 
-- Add control-flow and locals to support full-function bytecode interpretation.
-- Use MIR as a common lower layer for multiple codegen targets (for example C backend plus non-C backends such as Wasm/native).
-- Use MIR as a canonical lowering stage for optimization passes before target-specific emission.
+- keep MIR stack-based
+- add a full `SLMirProgram` model with functions, const pool, field/type metadata, and symbol tables
+- move runtime evaluator execution onto MIR instead of AST/callback execution
+- use the same MIR executor substrate for consteval and runtime modes
+- keep host-backed operations explicit instead of burying them in evaluator AST special cases
 
 Likely requirements for that evolution:
 

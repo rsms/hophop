@@ -13,6 +13,226 @@ typedef struct {
     SLDiag*      diag;
 } SLMirBuilder;
 
+static void* _Nullable SLMirArenaGrowArray(
+    SLArena* arena, void* _Nullable oldMem, size_t elemSize, uint32_t oldCap, uint32_t newCap) {
+    void* newMem;
+    if (arena == NULL || elemSize == 0 || newCap < oldCap) {
+        return NULL;
+    }
+    newMem = SLArenaAlloc(arena, (uint32_t)(elemSize * newCap), (uint32_t)_Alignof(uint64_t));
+    if (newMem == NULL) {
+        return NULL;
+    }
+    if (oldMem != NULL && oldCap > 0) {
+        memcpy(newMem, oldMem, elemSize * oldCap);
+    }
+    return newMem;
+}
+
+static int SLMirProgramBuilderEnsureCap(
+    SLArena*  arena,
+    void**    mem,
+    uint32_t  elemSize,
+    uint32_t  needLen,
+    uint32_t* cap,
+    uint32_t  align) {
+    uint32_t newCap;
+    void*    newMem;
+    (void)align;
+    if (arena == NULL || mem == NULL || cap == NULL || elemSize == 0) {
+        return -1;
+    }
+    if (needLen <= *cap) {
+        return 0;
+    }
+    newCap = *cap == 0 ? 8u : *cap;
+    while (newCap < needLen) {
+        if (newCap > UINT32_MAX / 2u) {
+            newCap = needLen;
+            break;
+        }
+        newCap *= 2u;
+    }
+    newMem = SLMirArenaGrowArray(arena, *mem, elemSize, *cap, newCap);
+    if (newMem == NULL) {
+        return -1;
+    }
+    *mem = newMem;
+    *cap = newCap;
+    return 0;
+}
+
+void SLMirProgramBuilderInit(SLMirProgramBuilder* b, SLArena* arena) {
+    if (b == NULL) {
+        return;
+    }
+    memset(b, 0, sizeof(*b));
+    b->arena = arena;
+    b->openFunc = UINT32_MAX;
+}
+
+static int SLMirProgramBuilderAppendElem(
+    SLArena*    arena,
+    void**      mem,
+    const void* value,
+    uint32_t    elemSize,
+    uint32_t*   len,
+    uint32_t*   cap,
+    uint32_t* _Nullable outIndex) {
+    uint8_t* dst;
+    if (arena == NULL || mem == NULL || value == NULL || len == NULL || cap == NULL) {
+        return -1;
+    }
+    if (SLMirProgramBuilderEnsureCap(arena, mem, elemSize, *len + 1u, cap, 1u) != 0) {
+        return -1;
+    }
+    dst = (uint8_t*)(*mem) + (size_t)(*len) * elemSize;
+    memcpy(dst, value, elemSize);
+    if (outIndex != NULL) {
+        *outIndex = *len;
+    }
+    (*len)++;
+    return 0;
+}
+
+int SLMirProgramBuilderAddConst(
+    SLMirProgramBuilder* b, const SLMirConst* value, uint32_t* _Nullable outIndex) {
+    if (b == NULL) {
+        return -1;
+    }
+    return SLMirProgramBuilderAppendElem(
+        b->arena,
+        (void**)&b->consts,
+        value,
+        (uint32_t)sizeof(*value),
+        &b->constLen,
+        &b->constCap,
+        outIndex);
+}
+
+int SLMirProgramBuilderAddField(
+    SLMirProgramBuilder* b, const SLMirField* value, uint32_t* _Nullable outIndex) {
+    if (b == NULL) {
+        return -1;
+    }
+    return SLMirProgramBuilderAppendElem(
+        b->arena,
+        (void**)&b->fields,
+        value,
+        (uint32_t)sizeof(*value),
+        &b->fieldLen,
+        &b->fieldCap,
+        outIndex);
+}
+
+int SLMirProgramBuilderAddType(
+    SLMirProgramBuilder* b, const SLMirTypeRef* value, uint32_t* _Nullable outIndex) {
+    if (b == NULL) {
+        return -1;
+    }
+    return SLMirProgramBuilderAppendElem(
+        b->arena,
+        (void**)&b->types,
+        value,
+        (uint32_t)sizeof(*value),
+        &b->typeLen,
+        &b->typeCap,
+        outIndex);
+}
+
+int SLMirProgramBuilderAddSymbol(
+    SLMirProgramBuilder* b, const SLMirSymbolRef* value, uint32_t* _Nullable outIndex) {
+    if (b == NULL) {
+        return -1;
+    }
+    return SLMirProgramBuilderAppendElem(
+        b->arena,
+        (void**)&b->symbols,
+        value,
+        (uint32_t)sizeof(*value),
+        &b->symbolLen,
+        &b->symbolCap,
+        outIndex);
+}
+
+int SLMirProgramBuilderBeginFunction(
+    SLMirProgramBuilder* b, const SLMirFunction* value, uint32_t* _Nullable outIndex) {
+    SLMirFunction fn;
+    uint32_t      index = 0;
+    if (b == NULL || value == NULL || b->hasOpenFunc) {
+        return -1;
+    }
+    fn = *value;
+    fn.instStart = b->instLen;
+    fn.instLen = 0;
+    if (SLMirProgramBuilderAppendElem(
+            b->arena,
+            (void**)&b->funcs,
+            &fn,
+            (uint32_t)sizeof(fn),
+            &b->funcLen,
+            &b->funcCap,
+            &index)
+        != 0)
+    {
+        return -1;
+    }
+    b->openFunc = index;
+    b->hasOpenFunc = 1u;
+    if (outIndex != NULL) {
+        *outIndex = index;
+    }
+    return 0;
+}
+
+int SLMirProgramBuilderAppendInst(SLMirProgramBuilder* b, const SLMirInst* value) {
+    if (b == NULL || value == NULL || !b->hasOpenFunc) {
+        return -1;
+    }
+    if (SLMirProgramBuilderAppendElem(
+            b->arena,
+            (void**)&b->insts,
+            value,
+            (uint32_t)sizeof(*value),
+            &b->instLen,
+            &b->instCap,
+            NULL)
+        != 0)
+    {
+        return -1;
+    }
+    b->funcs[b->openFunc].instLen = b->instLen - b->funcs[b->openFunc].instStart;
+    return 0;
+}
+
+int SLMirProgramBuilderEndFunction(SLMirProgramBuilder* b) {
+    if (b == NULL || !b->hasOpenFunc) {
+        return -1;
+    }
+    b->funcs[b->openFunc].instLen = b->instLen - b->funcs[b->openFunc].instStart;
+    b->openFunc = UINT32_MAX;
+    b->hasOpenFunc = 0u;
+    return 0;
+}
+
+void SLMirProgramBuilderFinish(const SLMirProgramBuilder* b, SLMirProgram* outProgram) {
+    if (b == NULL || outProgram == NULL) {
+        return;
+    }
+    outProgram->insts = b->insts;
+    outProgram->instLen = b->instLen;
+    outProgram->consts = b->consts;
+    outProgram->constLen = b->constLen;
+    outProgram->funcs = b->funcs;
+    outProgram->funcLen = b->funcLen;
+    outProgram->fields = b->fields;
+    outProgram->fieldLen = b->fieldLen;
+    outProgram->types = b->types;
+    outProgram->typeLen = b->typeLen;
+    outProgram->symbols = b->symbols;
+    outProgram->symbolLen = b->symbolLen;
+}
+
 static void SLMirSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;

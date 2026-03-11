@@ -18,7 +18,38 @@ typedef enum {
     SLMirOp_BINARY,
     SLMirOp_INDEX,
     SLMirOp_CAST,
+    SLMirOp_LOCAL_ZERO,
+    SLMirOp_LOCAL_LOAD,
+    SLMirOp_LOCAL_STORE,
+    SLMirOp_LOCAL_ADDR,
+    SLMirOp_JUMP,
+    SLMirOp_JUMP_IF_FALSE,
+    SLMirOp_CALL_FN,
+    SLMirOp_CALL_HOST,
+    SLMirOp_CALL_INDIRECT,
+    SLMirOp_DEREF_LOAD,
+    SLMirOp_DEREF_STORE,
+    SLMirOp_ADDR_OF,
+    SLMirOp_AGG_ZERO,
+    SLMirOp_AGG_GET,
+    SLMirOp_AGG_SET,
+    SLMirOp_AGG_ADDR,
+    SLMirOp_ARRAY_ZERO,
+    SLMirOp_ARRAY_GET,
+    SLMirOp_ARRAY_SET,
+    SLMirOp_ARRAY_ADDR,
+    SLMirOp_TUPLE_MAKE,
+    SLMirOp_SLICE_MAKE,
+    SLMirOp_OPTIONAL_WRAP,
+    SLMirOp_OPTIONAL_UNWRAP,
+    SLMirOp_TAGGED_MAKE,
+    SLMirOp_TAGGED_TAG,
+    SLMirOp_TAGGED_PAYLOAD,
+    SLMirOp_ALLOC_NEW,
+    SLMirOp_CTX_GET,
+    SLMirOp_CTX_SET,
     SLMirOp_RETURN,
+    SLMirOp_RETURN_VOID,
 } SLMirOp;
 
 typedef enum {
@@ -41,6 +72,95 @@ typedef struct {
     uint32_t         len;
 } SLMirChunk;
 
+typedef enum {
+    SLMirConst_INVALID = 0,
+    SLMirConst_INT,
+    SLMirConst_FLOAT,
+    SLMirConst_BOOL,
+    SLMirConst_STRING,
+    SLMirConst_NULL,
+    SLMirConst_TYPE,
+    SLMirConst_FUNCTION,
+    SLMirConst_HOST,
+} SLMirConstKind;
+
+typedef struct {
+    SLMirConstKind kind;
+    uint32_t       aux;
+    uint64_t       bits;
+    SLStrView      bytes;
+} SLMirConst;
+
+typedef struct {
+    uint32_t instStart;
+    uint32_t instLen;
+    uint32_t localCount;
+    uint32_t paramCount;
+    uint32_t tempCount;
+    uint32_t typeRef;
+    uint32_t nameStart;
+    uint32_t nameEnd;
+} SLMirFunction;
+
+typedef struct {
+    uint32_t nameStart;
+    uint32_t nameEnd;
+    uint32_t ownerTypeRef;
+    uint32_t typeRef;
+} SLMirField;
+
+typedef struct {
+    uint32_t astNode;
+    uint32_t flags;
+} SLMirTypeRef;
+
+typedef struct {
+    uint32_t nameStart;
+    uint32_t nameEnd;
+    uint32_t kind;
+    uint32_t target;
+} SLMirSymbolRef;
+
+typedef struct {
+    const SLMirInst*      insts;
+    uint32_t              instLen;
+    const SLMirConst*     consts;
+    uint32_t              constLen;
+    const SLMirFunction*  funcs;
+    uint32_t              funcLen;
+    const SLMirField*     fields;
+    uint32_t              fieldLen;
+    const SLMirTypeRef*   types;
+    uint32_t              typeLen;
+    const SLMirSymbolRef* symbols;
+    uint32_t              symbolLen;
+} SLMirProgram;
+
+typedef struct {
+    SLArena*        arena;
+    SLMirInst*      insts;
+    uint32_t        instLen;
+    uint32_t        instCap;
+    SLMirConst*     consts;
+    uint32_t        constLen;
+    uint32_t        constCap;
+    SLMirFunction*  funcs;
+    uint32_t        funcLen;
+    uint32_t        funcCap;
+    SLMirField*     fields;
+    uint32_t        fieldLen;
+    uint32_t        fieldCap;
+    SLMirTypeRef*   types;
+    uint32_t        typeLen;
+    uint32_t        typeCap;
+    SLMirSymbolRef* symbols;
+    uint32_t        symbolLen;
+    uint32_t        symbolCap;
+    uint32_t        openFunc;
+    uint8_t         hasOpenFunc;
+    uint8_t         _reserved[3];
+} SLMirProgramBuilder;
+
 int SLMirBuildExpr(
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,
@@ -49,5 +169,31 @@ int SLMirBuildExpr(
     SLMirChunk* _Nonnull outChunk,
     int* _Nonnull outSupported,
     SLDiag* _Nullable diag);
+
+void SLMirProgramBuilderInit(SLMirProgramBuilder* _Nonnull b, SLArena* _Nonnull arena);
+int  SLMirProgramBuilderAddConst(
+     SLMirProgramBuilder* _Nonnull b,
+     const SLMirConst* _Nonnull value,
+     uint32_t* _Nullable outIndex);
+int SLMirProgramBuilderAddField(
+    SLMirProgramBuilder* _Nonnull b,
+    const SLMirField* _Nonnull value,
+    uint32_t* _Nullable outIndex);
+int SLMirProgramBuilderAddType(
+    SLMirProgramBuilder* _Nonnull b,
+    const SLMirTypeRef* _Nonnull value,
+    uint32_t* _Nullable outIndex);
+int SLMirProgramBuilderAddSymbol(
+    SLMirProgramBuilder* _Nonnull b,
+    const SLMirSymbolRef* _Nonnull value,
+    uint32_t* _Nullable outIndex);
+int SLMirProgramBuilderBeginFunction(
+    SLMirProgramBuilder* _Nonnull b,
+    const SLMirFunction* _Nonnull value,
+    uint32_t* _Nullable outIndex);
+int SLMirProgramBuilderAppendInst(SLMirProgramBuilder* _Nonnull b, const SLMirInst* _Nonnull value);
+int SLMirProgramBuilderEndFunction(SLMirProgramBuilder* _Nonnull b);
+void SLMirProgramBuilderFinish(
+    const SLMirProgramBuilder* _Nonnull b, SLMirProgram* _Nonnull outProgram);
 
 SL_API_END
