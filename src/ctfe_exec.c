@@ -415,6 +415,22 @@ static int SLCTFEExecEvalExpr(
     return rc;
 }
 
+static int SLCTFEExecEvalExprForType(
+    SLCTFEExecCtx* c, int32_t exprNode, int32_t typeNode, SLCTFEValue* outValue, int* outIsConst) {
+    int rc;
+    if (c == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (typeNode >= 0 && c->evalExprForType != NULL) {
+        rc = c->evalExprForType(c->evalExprForTypeCtx, exprNode, typeNode, outValue, outIsConst);
+        if (rc == 0 && !*outIsConst) {
+            SLCTFEExecSetReasonNode(c, exprNode, "expression is not const-evaluable");
+        }
+        return rc;
+    }
+    return SLCTFEExecEvalExpr(c, exprNode, outValue, outIsConst);
+}
+
 static int SLCTFEExecEvalAssignExpr(
     SLCTFEExecCtx* c, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
     const SLAstNode*   n;
@@ -454,14 +470,27 @@ static int SLCTFEExecEvalAssignExpr(
     }
 
     b = SLCTFEExecEnvFindBinding(c, lhs->dataStart, lhs->dataEnd);
-    if (b == NULL || !b->mutable) {
+    if (b == NULL) {
+        if (c->assignExpr != NULL) {
+            return c->assignExpr(c->assignExprCtx, c, exprNode, outValue, outIsConst);
+        }
+        SLCTFEExecSetReasonNode(
+            c, lhsNode, "assignment target is not mutable during const evaluation");
+        *outIsConst = 0;
+        return 0;
+    }
+    if (!b->mutable) {
         SLCTFEExecSetReasonNode(
             c, lhsNode, "assignment target is not mutable during const evaluation");
         *outIsConst = 0;
         return 0;
     }
 
-    if (SLCTFEExecEvalExpr(c, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+    if ((SLTokenKind)n->op == SLTok_ASSIGN && b->typeNode >= 0) {
+        if (SLCTFEExecEvalExprForType(c, rhsNode, b->typeNode, &rhsValue, &rhsIsConst) != 0) {
+            return -1;
+        }
+    } else if (SLCTFEExecEvalExpr(c, rhsNode, &rhsValue, &rhsIsConst) != 0) {
         return -1;
     }
     if (!rhsIsConst) {
@@ -917,7 +946,11 @@ static int SLCTFEExecEvalStmt(
                 *outIsConst = 0;
                 return 0;
             }
-        } else if (SLCTFEExecEvalExpr(c, initNode, &v, &isConst) != 0) {
+        } else if (
+            declTypeNode >= 0 && SLCTFEExecIsTypeNodeKind(c->ast->nodes[declTypeNode].kind)
+                ? SLCTFEExecEvalExprForType(c, initNode, declTypeNode, &v, &isConst) != 0
+                : SLCTFEExecEvalExpr(c, initNode, &v, &isConst) != 0)
+        {
             return -1;
         }
         if (!isConst) {
@@ -939,6 +972,10 @@ static int SLCTFEExecEvalStmt(
         frame->bindings[frame->bindingLen].nameStart = s->dataStart;
         frame->bindings[frame->bindingLen].nameEnd = s->dataEnd;
         frame->bindings[frame->bindingLen].typeId = declTypeId;
+        frame->bindings[frame->bindingLen].typeNode =
+            declTypeNode >= 0 && SLCTFEExecIsTypeNodeKind(c->ast->nodes[declTypeNode].kind)
+                ? declTypeNode
+                : -1;
         frame->bindings[frame->bindingLen].mutable = s->kind == SLAst_VAR;
         frame->bindings[frame->bindingLen]._reserved[0] = 0;
         frame->bindings[frame->bindingLen]._reserved[1] = 0;

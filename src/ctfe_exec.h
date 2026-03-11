@@ -9,6 +9,7 @@ typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
     int32_t  typeId;
+    int32_t  typeNode;
     uint8_t mutable;
     uint8_t     _reserved[3];
     SLCTFEValue value;
@@ -23,6 +24,13 @@ typedef struct SLCTFEExecEnv {
 typedef int (*SLCTFEExecEvalExprFn)(
     void* _Nullable ctx,
     int32_t exprNode,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
+
+typedef int (*SLCTFEExecEvalExprForTypeFn)(
+    void* _Nullable ctx,
+    int32_t exprNode,
+    int32_t typeNode,
     SLCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
@@ -65,6 +73,8 @@ struct SLCTFEExecCtx {
     SLCTFEExecEnv* _Nullable env;
     SLCTFEExecEvalExprFn _Nonnull evalExpr;
     void* _Nullable evalExprCtx;
+    SLCTFEExecEvalExprForTypeFn _Nullable evalExprForType;
+    void* _Nullable evalExprForTypeCtx;
     SLCTFEExecResolveTypeFn _Nullable resolveType;
     void* _Nullable resolveTypeCtx;
     SLCTFEExecInferValueTypeFn _Nullable inferValueType;
