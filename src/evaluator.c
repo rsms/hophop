@@ -290,6 +290,7 @@ typedef struct {
 } SLEvalTopConst;
 
 #define SL_EVAL_PACKAGE_REF_TAG_FLAG (UINT64_C(1) << 63)
+#define SL_EVAL_NULL_FIXED_LEN_TAG   (UINT64_C(1) << 62)
 
 typedef struct {
     SLArena* _Nonnull arena;
@@ -367,6 +368,76 @@ static uint64_t SLEvalMakeAliasTag(const SLParsedFile* file, int32_t nodeId) {
     }
     tag ^= (uint64_t)(uint32_t)(nodeId + 1) << 1;
     return tag & ~SL_EVAL_PACKAGE_REF_TAG_FLAG;
+}
+
+static uint64_t SLEvalMakeNullFixedLenTag(uint32_t len) {
+    return SL_EVAL_NULL_FIXED_LEN_TAG | (uint64_t)len;
+}
+
+static int SLEvalValueGetNullFixedLen(const SLCTFEValue* value, uint32_t* outLen) {
+    if (value == NULL || value->kind != SLCTFEValue_NULL
+        || (value->typeTag & SL_EVAL_NULL_FIXED_LEN_TAG) == 0)
+    {
+        return 0;
+    }
+    if (outLen != NULL) {
+        *outLen = (uint32_t)(value->typeTag & ~SL_EVAL_NULL_FIXED_LEN_TAG);
+    }
+    return 1;
+}
+
+static int SLEvalParseUintSlice(
+    const char* source, uint32_t start, uint32_t end, uint32_t* _Nullable outValue) {
+    uint64_t value = 0;
+    uint32_t i;
+    if (source == NULL || end <= start) {
+        return 0;
+    }
+    for (i = start; i < end; i++) {
+        unsigned char ch = (unsigned char)source[i];
+        if (ch < (unsigned char)'0' || ch > (unsigned char)'9') {
+            return 0;
+        }
+        value = value * 10u + (uint64_t)(ch - (unsigned char)'0');
+        if (value > UINT32_MAX) {
+            return 0;
+        }
+    }
+    if (outValue != NULL) {
+        *outValue = (uint32_t)value;
+    }
+    return 1;
+}
+
+static int SLEvalResolveNullCastTypeTag(
+    const SLParsedFile* file, int32_t typeNode, uint64_t* _Nullable outTypeTag) {
+    const SLAstNode* n;
+    int32_t          childNode;
+    uint32_t         fixedLen = 0;
+    if (outTypeTag != NULL) {
+        *outTypeTag = 0;
+    }
+    if (file == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len) {
+        return 0;
+    }
+    n = &file->ast.nodes[typeNode];
+    if (n->kind != SLAst_TYPE_PTR && n->kind != SLAst_TYPE_REF && n->kind != SLAst_TYPE_MUTREF) {
+        return 0;
+    }
+    childNode = n->firstChild;
+    if (childNode >= 0 && (uint32_t)childNode < file->ast.len
+        && file->ast.nodes[childNode].kind == SLAst_TYPE_ARRAY
+        && SLEvalParseUintSlice(
+            file->source,
+            file->ast.nodes[childNode].dataStart,
+            file->ast.nodes[childNode].dataEnd,
+            &fixedLen))
+    {
+        if (outTypeTag != NULL) {
+            *outTypeTag = SLEvalMakeNullFixedLenTag(fixedLen);
+        }
+    }
+    return 1;
 }
 
 static const SLPackage* _Nullable SLEvalFindPackageByFile(
@@ -1441,6 +1512,11 @@ static int SLEvalResolveCall(
             *outIsConst = 1;
             return 0;
         }
+        if (args[0].kind == SLCTFEValue_NULL) {
+            SLEvalValueSetInt(outValue, 0);
+            *outIsConst = 1;
+            return 0;
+        }
     }
     if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "cstr")) {
         if (args[0].kind == SLCTFEValue_STRING) {
@@ -1888,6 +1964,26 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             if (aliasTargetKind == 's' && inValue.kind == SLCTFEValue_STRING) {
                 *outValue = inValue;
                 outValue->typeTag = aliasTag;
+                *outIsConst = 1;
+                return 0;
+            }
+        }
+        if (valueNode >= 0 && typeNode >= 0 && extraNode < 0) {
+            SLCTFEValue inValue;
+            int         inIsConst = 0;
+            uint64_t    nullTypeTag = 0;
+            if (SLEvalExecExprCb(p, valueNode, &inValue, &inIsConst) != 0) {
+                return -1;
+            }
+            if (!inIsConst) {
+                *outIsConst = 0;
+                return 0;
+            }
+            if (inValue.kind == SLCTFEValue_NULL
+                && SLEvalResolveNullCastTypeTag(p->currentFile, typeNode, &nullTypeTag))
+            {
+                *outValue = inValue;
+                outValue->typeTag = nullTypeTag;
                 *outIsConst = 1;
                 return 0;
             }

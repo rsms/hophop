@@ -371,7 +371,7 @@
 {"id":"integration.runtime.enum_member_namespace_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/enum_member_namespace_ok.sl"}
 {"id":"integration.runtime.var_infer_literal_defaults_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/var_infer_literal_defaults_ok.sl"}
 {"id":"integration.runtime.len_ptr_ref_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/len_ptr_ref_ok.sl"}
-{"id":"integration.runtime.len_null_ptr_ref_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/len_null_ptr_ref_ok.sl","expect_exit":0,"eval_expect":"fail"}
+{"id":"integration.runtime.len_null_ptr_ref_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/len_null_ptr_ref_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"integration.runtime.len_infer_from_len_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/len_infer_from_len_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"fail"}
 {"id":"integration.runtime.null_as_ptr_cast_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/null_as_ptr_cast_ok.sl"}
 {"id":"integration.runtime.slice_fn_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slice_fn_ok.sl"}
