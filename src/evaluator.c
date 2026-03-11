@@ -4479,6 +4479,20 @@ static int SLEvalZeroInitCb(void* ctx, int32_t typeNode, SLCTFEValue* outValue, 
     return SLEvalZeroInitTypeNode(p, p->currentFile, typeNode, outValue, outIsConst);
 }
 
+static int SLEvalBinaryOpForAssignToken(SLTokenKind assignOp, SLTokenKind* outBinaryOp) {
+    if (outBinaryOp == NULL) {
+        return 0;
+    }
+    switch (assignOp) {
+        case SLTok_ADD_ASSIGN: *outBinaryOp = SLTok_ADD; return 1;
+        case SLTok_SUB_ASSIGN: *outBinaryOp = SLTok_SUB; return 1;
+        case SLTok_MUL_ASSIGN: *outBinaryOp = SLTok_MUL; return 1;
+        case SLTok_DIV_ASSIGN: *outBinaryOp = SLTok_DIV; return 1;
+        case SLTok_MOD_ASSIGN: *outBinaryOp = SLTok_MOD; return 1;
+        default:               *outBinaryOp = SLTok_INVALID; return 0;
+    }
+}
+
 static int SLEvalAssignExprCb(
     void* ctx, SLCTFEExecCtx* execCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
     SLEvalProgram*   p = (SLEvalProgram*)ctx;
@@ -4541,6 +4555,7 @@ static int SLEvalAssignExprCb(
         SLCTFEValue  baseValue;
         SLCTFEValue  indexValue;
         SLEvalArray* array;
+        SLTokenKind  binaryOp = SLTok_INVALID;
         int          baseIsConst = 0;
         int          indexIsConst = 0;
         int64_t      index = 0;
@@ -4569,6 +4584,19 @@ static int SLEvalAssignExprCb(
             *outIsConst = 0;
             return 0;
         }
+        if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+            int handled;
+            if (!SLEvalBinaryOpForAssignToken((SLTokenKind)expr->op, &binaryOp)) {
+                *outIsConst = 0;
+                return 0;
+            }
+            handled = SLEvalEvalBinary(
+                p, binaryOp, &array->elems[(uint32_t)index], &rhsValue, &rhsValue, outIsConst);
+            if (handled <= 0 || !*outIsConst) {
+                *outIsConst = 0;
+                return handled < 0 ? -1 : 0;
+            }
+        }
         array->elems[(uint32_t)index] = rhsValue;
         *outValue = rhsValue;
         *outIsConst = 1;
@@ -4579,6 +4607,7 @@ static int SLEvalAssignExprCb(
         int32_t      refNode = ast->nodes[lhsNode].firstChild;
         SLCTFEValue  refValue;
         SLCTFEValue* target;
+        SLTokenKind  binaryOp = SLTok_INVALID;
         int          refIsConst = 0;
         if (SLEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
             return -1;
@@ -4598,6 +4627,18 @@ static int SLEvalAssignExprCb(
         if (target == NULL) {
             *outIsConst = 0;
             return 0;
+        }
+        if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+            int handled;
+            if (!SLEvalBinaryOpForAssignToken((SLTokenKind)expr->op, &binaryOp)) {
+                *outIsConst = 0;
+                return 0;
+            }
+            handled = SLEvalEvalBinary(p, binaryOp, target, &rhsValue, &rhsValue, outIsConst);
+            if (handled <= 0 || !*outIsConst) {
+                *outIsConst = 0;
+                return handled < 0 ? -1 : 0;
+            }
         }
         *target = rhsValue;
         *outValue = rhsValue;
@@ -4683,13 +4724,9 @@ static int SLEvalAssignExprCb(
                             *outIsConst = 0;
                             return 0;
                         }
-                        switch ((SLTokenKind)expr->op) {
-                            case SLTok_ADD_ASSIGN: binaryOp = SLTok_ADD; break;
-                            case SLTok_SUB_ASSIGN: binaryOp = SLTok_SUB; break;
-                            case SLTok_MUL_ASSIGN: binaryOp = SLTok_MUL; break;
-                            case SLTok_DIV_ASSIGN: binaryOp = SLTok_DIV; break;
-                            case SLTok_MOD_ASSIGN: binaryOp = SLTok_MOD; break;
-                            default:               *outIsConst = 0; return 0;
+                        if (!SLEvalBinaryOpForAssignToken((SLTokenKind)expr->op, &binaryOp)) {
+                            *outIsConst = 0;
+                            return 0;
                         }
                         handled = SLEvalEvalBinary(
                             p, binaryOp, &curValue, &rhsValue, &rhsValue, outIsConst);

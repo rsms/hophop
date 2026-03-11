@@ -365,7 +365,7 @@
 {"id":"integration.runtime.types_mut_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/types_mut_ok.sl"}
 {"id":"integration.runtime.slice_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slice_ok.sl"}
 {"id":"integration.runtime.str_slice_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/str_slice_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
-{"id":"integration.runtime.slp29_for_in_runtime_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slp29_for_in_runtime_ok.sl"}
+{"id":"integration.runtime.slp29_for_in_runtime_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/slp29_for_in_runtime_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"pass"}
 {"id":"integration.runtime.slp30_for_in_protocol_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/slp30_for_in_protocol_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"integration.runtime.slp30_for_in_protocol_iter_autoref_value_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/slp30_for_in_protocol_iter_autoref_value_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"integration.runtime.enum_member_namespace_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/enum_member_namespace_ok.sl"}
@@ -533,6 +533,7 @@
 {"id":"coverage.cli_eval.examples.context.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/context.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.control_flow.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/control_flow.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.defer.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/defer.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
+{"id":"coverage.cli_eval.examples.for_in.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/for-in.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.function_groups.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/function_groups.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.multi_assign.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/multi-assign.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.order_independent.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/order_independent.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
