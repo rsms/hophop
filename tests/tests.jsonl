@@ -421,9 +421,9 @@
 {"id":"integration.runtime.typefunc_arity_overload_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/typefunc_arity_overload_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"integration.runtime.typefunc_builtin_len_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/typefunc_builtin_len_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"integration.runtime.typefunc_alias_overload_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/typefunc_alias_overload_ok.sl","expect_exit":0,"eval_expect":"fail"}
-{"id":"integration.runtime.typefunc_alias_fallback_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/typefunc_alias_fallback_ok.sl","expect_exit":0,"eval_expect":"fail"}
+{"id":"integration.runtime.typefunc_alias_fallback_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/typefunc_alias_fallback_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"integration.runtime.typefunc_alias_same_name_overload_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/typefunc_alias_same_name_overload_ok.sl","expect_exit":0,"eval_expect":"fail"}
-{"id":"integration.runtime.typefunc_alias_same_name_fallback_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/typefunc_alias_same_name_fallback_ok.sl","expect_exit":0,"eval_expect":"fail"}
+{"id":"integration.runtime.typefunc_alias_same_name_fallback_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/typefunc_alias_same_name_fallback_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"integration.runtime.typefunc_selector_autoref_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/typefunc_selector_autoref_ok.sl","expect_exit":0,"eval_expect":"fail"}
 {"id":"ast:tests/ast_fn_type.sl","suite":"spec.lex_parse_check","kind":"slc_stdout_eq","mode":"ast","input":"tests/ast_fn_type.sl","expect":"tests/ast_fn_type.ast"}
 {"id":"check:tests/fntype_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/fntype_ok.sl"}

@@ -8072,6 +8072,93 @@ static const SLPackage* _Nullable SLEvalFindPackageByFile(
     return NULL;
 }
 
+static int SLEvalResolveSimpleAliasCastTarget(
+    const SLEvalProgram* p, const SLParsedFile* file, int32_t typeNode, char* outTargetKind) {
+    const SLPackage* currentPkg;
+    const SLAstNode* typeNameNode;
+    uint32_t         fileIndex;
+    if (outTargetKind == NULL) {
+        return 0;
+    }
+    *outTargetKind = '\0';
+    if (p == NULL || file == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len) {
+        return 0;
+    }
+    typeNameNode = &file->ast.nodes[typeNode];
+    if (typeNameNode->kind != SLAst_TYPE_NAME) {
+        return 0;
+    }
+    currentPkg = SLEvalFindPackageByFile(p, file);
+    if (currentPkg == NULL) {
+        return 0;
+    }
+    for (fileIndex = 0; fileIndex < currentPkg->fileLen; fileIndex++) {
+        const SLParsedFile* pkgFile = &currentPkg->files[fileIndex];
+        int32_t             nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
+        while (nodeId >= 0) {
+            const SLAstNode* aliasNode = &pkgFile->ast.nodes[nodeId];
+            if (aliasNode->kind == SLAst_TYPE_ALIAS
+                && SliceEqSlice(
+                    file->source,
+                    typeNameNode->dataStart,
+                    typeNameNode->dataEnd,
+                    pkgFile->source,
+                    aliasNode->dataStart,
+                    aliasNode->dataEnd))
+            {
+                int32_t          targetNodeId = aliasNode->firstChild;
+                const SLAstNode* targetNode;
+                if (targetNodeId < 0 || (uint32_t)targetNodeId >= pkgFile->ast.len) {
+                    return 0;
+                }
+                targetNode = &pkgFile->ast.nodes[targetNodeId];
+                if (targetNode->kind != SLAst_TYPE_NAME) {
+                    return 0;
+                }
+                if (SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "bool"))
+                {
+                    *outTargetKind = 'b';
+                    return 1;
+                }
+                if (SliceEqCStr(pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "f32")
+                    || SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "f64"))
+                {
+                    *outTargetKind = 'f';
+                    return 1;
+                }
+                if (SliceEqCStr(pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "u8")
+                    || SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "u16")
+                    || SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "u32")
+                    || SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "u64")
+                    || SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "uint")
+                    || SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "i8")
+                    || SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "i16")
+                    || SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "i32")
+                    || SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "i64")
+                    || SliceEqCStr(
+                        pkgFile->source, targetNode->dataStart, targetNode->dataEnd, "int"))
+                {
+                    *outTargetKind = 'i';
+                    return 1;
+                }
+                return 0;
+            }
+            nodeId = ASTNextSibling(&pkgFile->ast, nodeId);
+        }
+    }
+    return 0;
+}
+
 static int SLEvalValueConcatStrings(
     SLArena* arena, const SLCTFEValue* a, const SLCTFEValue* b, SLCTFEValue* outValue) {
     uint64_t totalLen64;
@@ -9209,6 +9296,40 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                     p->currentExecCtx, exprNode, "call is not supported by evaluator backend");
             }
             return 0;
+        }
+    }
+    if (n->kind == SLAst_CAST) {
+        int32_t valueNode = n->firstChild;
+        int32_t typeNode = valueNode >= 0 ? ast->nodes[valueNode].nextSibling : -1;
+        int32_t extraNode = typeNode >= 0 ? ast->nodes[typeNode].nextSibling : -1;
+        char    aliasTargetKind = '\0';
+        if (valueNode >= 0 && typeNode >= 0 && extraNode < 0
+            && SLEvalResolveSimpleAliasCastTarget(p, p->currentFile, typeNode, &aliasTargetKind))
+        {
+            SLCTFEValue inValue;
+            int         inIsConst = 0;
+            if (SLEvalExecExprCb(p, valueNode, &inValue, &inIsConst) != 0) {
+                return -1;
+            }
+            if (!inIsConst) {
+                *outIsConst = 0;
+                return 0;
+            }
+            if (aliasTargetKind == 'i' && inValue.kind == SLCTFEValue_INT) {
+                *outValue = inValue;
+                *outIsConst = 1;
+                return 0;
+            }
+            if (aliasTargetKind == 'f' && inValue.kind == SLCTFEValue_FLOAT) {
+                *outValue = inValue;
+                *outIsConst = 1;
+                return 0;
+            }
+            if (aliasTargetKind == 'b' && inValue.kind == SLCTFEValue_BOOL) {
+                *outValue = inValue;
+                *outIsConst = 1;
+                return 0;
+            }
         }
     }
 
