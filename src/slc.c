@@ -7984,19 +7984,20 @@ typedef struct {
 
 typedef struct {
     SLArena* _Nonnull arena;
-    const SLPackage*    entryPkg;
-    const SLParsedFile* currentFile;
-    SLCTFEExecCtx*      currentExecCtx;
-    SLEvalFunction*     funcs;
-    uint32_t            funcLen;
-    uint32_t            funcCap;
-    SLEvalTopConst*     topConsts;
-    uint32_t            topConstLen;
-    uint32_t            topConstCap;
-    uint32_t            callDepth;
-    uint32_t            callStack[SL_EVAL_CALL_MAX_DEPTH];
-    int                 exitCalled;
-    int                 exitCode;
+    const SLPackageLoader* loader;
+    const SLPackage*       entryPkg;
+    const SLParsedFile*    currentFile;
+    SLCTFEExecCtx*         currentExecCtx;
+    SLEvalFunction*        funcs;
+    uint32_t               funcLen;
+    uint32_t               funcCap;
+    SLEvalTopConst*        topConsts;
+    uint32_t               topConstLen;
+    uint32_t               topConstCap;
+    uint32_t               callDepth;
+    uint32_t               callStack[SL_EVAL_CALL_MAX_DEPTH];
+    int                    exitCalled;
+    int                    exitCode;
 } SLEvalProgram;
 
 static void SLEvalValueSetNull(SLCTFEValue* value) {
@@ -8172,55 +8173,59 @@ static int32_t SLEvalVarLikeInitExprNodeAt(
 }
 
 static int SLEvalCollectTopConsts(SLEvalProgram* p) {
-    uint32_t fileIndex;
-    if (p == NULL || p->entryPkg == NULL) {
+    uint32_t pkgIndex;
+    if (p == NULL || p->loader == NULL) {
         return -1;
     }
-    for (fileIndex = 0; fileIndex < p->entryPkg->fileLen; fileIndex++) {
-        const SLParsedFile* file = &p->entryPkg->files[fileIndex];
-        const SLAst*        ast = &file->ast;
-        int32_t             nodeId = ASTFirstChild(ast, ast->root);
-        while (nodeId >= 0) {
-            const SLAstNode* n = &ast->nodes[nodeId];
-            if (n->kind == SLAst_CONST) {
-                int32_t firstChild = ASTFirstChild(ast, nodeId);
-                if (firstChild >= 0 && ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
-                    uint32_t i;
-                    uint32_t nameCount = AstListCount(ast, firstChild);
-                    for (i = 0; i < nameCount; i++) {
-                        int32_t          nameNode = AstListItemAt(ast, firstChild, i);
-                        const SLAstNode* name = nameNode >= 0 ? &ast->nodes[nameNode] : NULL;
-                        SLEvalTopConst   topConst;
-                        if (name == NULL) {
-                            continue;
+    for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
+        const SLPackage* pkg = &p->loader->packages[pkgIndex];
+        uint32_t         fileIndex;
+        for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+            const SLParsedFile* file = &pkg->files[fileIndex];
+            const SLAst*        ast = &file->ast;
+            int32_t             nodeId = ASTFirstChild(ast, ast->root);
+            while (nodeId >= 0) {
+                const SLAstNode* n = &ast->nodes[nodeId];
+                if (n->kind == SLAst_CONST) {
+                    int32_t firstChild = ASTFirstChild(ast, nodeId);
+                    if (firstChild >= 0 && ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
+                        uint32_t i;
+                        uint32_t nameCount = AstListCount(ast, firstChild);
+                        for (i = 0; i < nameCount; i++) {
+                            int32_t          nameNode = AstListItemAt(ast, firstChild, i);
+                            const SLAstNode* name = nameNode >= 0 ? &ast->nodes[nameNode] : NULL;
+                            SLEvalTopConst   topConst;
+                            if (name == NULL) {
+                                continue;
+                            }
+                            memset(&topConst, 0, sizeof(topConst));
+                            topConst.file = file;
+                            topConst.nodeId = nodeId;
+                            topConst.initExprNode = SLEvalVarLikeInitExprNodeAt(
+                                file, nodeId, (int32_t)i);
+                            topConst.nameStart = name->dataStart;
+                            topConst.nameEnd = name->dataEnd;
+                            topConst.state = SLEvalTopConstState_UNSEEN;
+                            if (SLEvalProgramAppendTopConst(p, &topConst) != 0) {
+                                return -1;
+                            }
                         }
+                    } else {
+                        SLEvalTopConst topConst;
                         memset(&topConst, 0, sizeof(topConst));
                         topConst.file = file;
                         topConst.nodeId = nodeId;
-                        topConst.initExprNode = SLEvalVarLikeInitExprNodeAt(
-                            file, nodeId, (int32_t)i);
-                        topConst.nameStart = name->dataStart;
-                        topConst.nameEnd = name->dataEnd;
+                        topConst.initExprNode = SLEvalVarLikeInitExprNodeAt(file, nodeId, 0);
+                        topConst.nameStart = n->dataStart;
+                        topConst.nameEnd = n->dataEnd;
                         topConst.state = SLEvalTopConstState_UNSEEN;
                         if (SLEvalProgramAppendTopConst(p, &topConst) != 0) {
                             return -1;
                         }
                     }
-                } else {
-                    SLEvalTopConst topConst;
-                    memset(&topConst, 0, sizeof(topConst));
-                    topConst.file = file;
-                    topConst.nodeId = nodeId;
-                    topConst.initExprNode = SLEvalVarLikeInitExprNodeAt(file, nodeId, 0);
-                    topConst.nameStart = n->dataStart;
-                    topConst.nameEnd = n->dataEnd;
-                    topConst.state = SLEvalTopConstState_UNSEEN;
-                    if (SLEvalProgramAppendTopConst(p, &topConst) != 0) {
-                        return -1;
-                    }
                 }
+                nodeId = ASTNextSibling(ast, nodeId);
             }
-            nodeId = ASTNextSibling(ast, nodeId);
         }
     }
     return 0;
@@ -8313,10 +8318,18 @@ static int SLEvalCollectFunctionsFromPackage(
 }
 
 static int SLEvalCollectFunctions(SLEvalProgram* p) {
-    if (p == NULL || p->entryPkg == NULL) {
+    uint32_t pkgIndex;
+    if (p == NULL || p->loader == NULL) {
         return -1;
     }
-    return SLEvalCollectFunctionsFromPackage(p, p->entryPkg, 0);
+    for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
+        const SLPackage* pkg = &p->loader->packages[pkgIndex];
+        uint8_t          isBuiltinPackageFn = StrEq(pkg->name, "builtin") ? 1u : 0u;
+        if (SLEvalCollectFunctionsFromPackage(p, pkg, isBuiltinPackageFn) != 0) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 static int32_t SLEvalFindFunctionBySlice(
@@ -8974,6 +8987,7 @@ static int RunProgramEval(const char* entryPath, const char* _Nullable platformT
     SLArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
     memset(&program, 0, sizeof(program));
     program.arena = &arena;
+    program.loader = &loader;
     program.entryPkg = entryPkg;
     if (SLEvalCollectFunctions(&program) != 0) {
         goto end;
