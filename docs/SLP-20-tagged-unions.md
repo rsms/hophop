@@ -1,4 +1,4 @@
-# SLP-20 tagged unions via enum payload variants (draft)
+# SLP-20 tagged unions via enum payload variants (completed)
 
 ## Summary
 

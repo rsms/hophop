@@ -1,4 +1,4 @@
-# SLP-27 constant numeric literal types (draft)
+# SLP-27 constant numeric literal types (completed)
 
 ## Summary
 

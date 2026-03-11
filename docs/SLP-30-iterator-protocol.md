@@ -1,4 +1,4 @@
-# SLP-30 iterator protocol for `for ... in` user types (draft)
+# SLP-30 iterator protocol for `for ... in` user types (completed)
 
 ## Summary
 

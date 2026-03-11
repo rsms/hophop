@@ -1,4 +1,4 @@
-# SLP-18 reflection (draft)
+# SLP-18 reflection (completed)
 
 ## Summary
 
@@ -165,7 +165,7 @@ This does not add conditional imports; package selection remains a build-time co
 
 ---
 
-## Diagnostics (draft)
+## Diagnostics
 
 - `reflect_invalid_operand`: operand is not reflectable in this form
 - `reflect_op_not_supported`: operation not valid for this type kind

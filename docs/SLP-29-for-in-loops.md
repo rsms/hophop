@@ -1,4 +1,4 @@
-# SLP-29 `for ... in` loops (draft)
+# SLP-29 `for ... in` loops (completed)
 
 ## Summary
 
