@@ -72,6 +72,13 @@ typedef int (*SLCTFEExecAssignValueExprFn)(
     SLCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
+typedef int (*SLCTFEExecMatchPatternFn)(
+    void* _Nullable ctx,
+    SLCTFEExecCtx* _Nonnull execCtx,
+    const SLCTFEValue* _Nonnull subjectValue,
+    int32_t labelExprNode,
+    int* _Nonnull outMatched);
+
 struct SLCTFEExecCtx {
     SLArena* _Nonnull arena;
     const SLAst* _Nonnull ast;
@@ -97,6 +104,8 @@ struct SLCTFEExecCtx {
     void* _Nullable assignExprCtx;
     SLCTFEExecAssignValueExprFn _Nullable assignValueExpr;
     void* _Nullable assignValueExprCtx;
+    SLCTFEExecMatchPatternFn _Nullable matchPattern;
+    void* _Nullable matchPatternCtx;
 
     const char* _Nullable nonConstReason;
     uint32_t nonConstStart;

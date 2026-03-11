@@ -503,8 +503,8 @@
 {"id":"integration.codegen.comparison_hook_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/comparison_hook_ok.sl","contains":["__equal(","__order("]}
 {"id":"integration.codegen.hole_param_codegen_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/hole_param_codegen_ok.sl","contains":["tests__example(__sl_int a, __sl_int _, __sl_int c)"]}
 {"id":"integration.codegen.anytype_pack_index_runtime_anytype_call_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/anytype_pack_index_runtime_anytype_call_ok.sl","contains":["switch (__sl_pack_ci","tests__score__ti"]}
-{"id":"integration.runtime.comparison_runtime_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/comparison_runtime_ok.sl","expect_exit":0,"eval_expect":"fail"}
-{"id":"integration.runtime.comparison_hook_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/comparison_hook_ok.sl","expect_exit":0,"eval_expect":"fail"}
+{"id":"integration.runtime.comparison_runtime_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/comparison_runtime_ok.sl","expect_exit":0,"eval_expect":"pass"}
+{"id":"integration.runtime.comparison_hook_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/comparison_hook_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"formatter.canonical.check_clean","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_canonical.sl","check":true,"expect_exit":0,"expect_stdout":"tests/fmt_check_clean.stdout"}
 {"id":"formatter.block_comments.exempt_pretest","suite":"formatter","kind":"slc_fmt","input":"tests/block_comments.sl","expect_exit":0,"pretest_fmt_exempt_input":true}
 {"id":"formatter.messy.check_dirty","suite":"formatter","kind":"slc_fmt","input":"tests/fmt_messy.sl","check":true,"expect_exit":1,"expect_stdout":"tests/fmt_check_dirty.stdout","pretest_fmt_exempt_input":true}
@@ -526,7 +526,7 @@
 {"id":"coverage.cli_eval.examples.arena_allocator.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/arena_allocator.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.basic.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/basic.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.casts.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/casts.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
-{"id":"coverage.cli_eval.examples.comparison.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/comparison.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"fail"}
+{"id":"coverage.cli_eval.examples.comparison.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/comparison.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.compound_literals.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/compound-literals.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.context.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/context.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.control_flow.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/control_flow.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
@@ -568,9 +568,9 @@
 {"id":"check:tests/switch_nonexhaustive_enum_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/switch_nonexhaustive_enum_bad.sl","expect_stderr":"tests/switch_nonexhaustive_enum_bad.stderr"}
 {"id":"check:tests/switch_nonexhaustive_enum_multi_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/switch_nonexhaustive_enum_multi_bad.sl","expect_stderr":"tests/switch_nonexhaustive_enum_multi_bad.stderr"}
 {"id":"check:tests/tagged_enum_zero_init_no_zero_tag_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/tagged_enum_zero_init_no_zero_tag_bad.sl","expect_stderr":"tests/tagged_enum_zero_init_no_zero_tag_bad.stderr"}
-{"id":"integration.runtime.tagged_enum_switch_narrow_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/tagged_enum_switch_narrow_ok.sl","expect_exit":0,"eval_expect":"fail"}
-{"id":"integration.runtime.tagged_enum_compare_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/tagged_enum_compare_ok.sl","expect_exit":0,"eval_expect":"fail"}
-{"id":"integration.runtime.tagged_enum_subject_alias_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/tagged_enum_subject_alias_ok.sl","expect_exit":0,"eval_expect":"fail"}
+{"id":"integration.runtime.tagged_enum_switch_narrow_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/tagged_enum_switch_narrow_ok.sl","expect_exit":0,"eval_expect":"pass"}
+{"id":"integration.runtime.tagged_enum_compare_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/tagged_enum_compare_ok.sl","expect_exit":0,"eval_expect":"pass"}
+{"id":"integration.runtime.tagged_enum_subject_alias_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/tagged_enum_subject_alias_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"check:tests/variadic_basic_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/variadic_basic_ok.sl"}
 {"id":"integration.runtime.variadic_basic_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/variadic_basic_ok.sl","expect_exit":0}
 {"id":"check:tests/variadic_spread_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/variadic_spread_ok.sl"}

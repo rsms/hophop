@@ -332,9 +332,19 @@ typedef struct {
     SLCTFEValue log;
 } SLEvalContext;
 
+typedef struct {
+    const SLParsedFile* file;
+    int32_t             enumNode;
+    uint32_t            variantNameStart;
+    uint32_t            variantNameEnd;
+    uint32_t            tagIndex;
+    SLEvalAggregate* _Nullable payload;
+} SLEvalTaggedEnum;
+
 #define SL_EVAL_PACKAGE_REF_TAG_FLAG  (UINT64_C(1) << 63)
 #define SL_EVAL_NULL_FIXED_LEN_TAG    (UINT64_C(1) << 62)
 #define SL_EVAL_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 61)
+#define SL_EVAL_TAGGED_ENUM_TAG_FLAG  (UINT64_C(1) << 60)
 
 typedef struct {
     SLArena* _Nonnull arena;
@@ -433,6 +443,53 @@ static int SLEvalValueIsFunctionRef(const SLCTFEValue* value, uint32_t* _Nullabl
         *outFnIndex = (uint32_t)(value->typeTag & ~SL_EVAL_FUNCTION_REF_TAG_FLAG);
     }
     return 1;
+}
+
+static void SLEvalValueSetTaggedEnum(
+    SLEvalProgram*      p,
+    SLCTFEValue*        value,
+    const SLParsedFile* file,
+    int32_t             enumNode,
+    uint32_t            variantNameStart,
+    uint32_t            variantNameEnd,
+    uint32_t            tagIndex,
+    SLEvalAggregate* _Nullable payload) {
+    SLEvalTaggedEnum* tagged;
+    if (p == NULL || value == NULL || file == NULL) {
+        return;
+    }
+    tagged = (SLEvalTaggedEnum*)SLArenaAlloc(
+        p->arena, sizeof(SLEvalTaggedEnum), (uint32_t)_Alignof(SLEvalTaggedEnum));
+    if (tagged == NULL) {
+        SLEvalValueSetNull(value);
+        return;
+    }
+    memset(tagged, 0, sizeof(*tagged));
+    tagged->file = file;
+    tagged->enumNode = enumNode;
+    tagged->variantNameStart = variantNameStart;
+    tagged->variantNameEnd = variantNameEnd;
+    tagged->tagIndex = tagIndex;
+    tagged->payload = payload;
+    value->kind = SLCTFEValue_TYPE;
+    value->i64 = 0;
+    value->f64 = 0.0;
+    value->b = 0;
+    value->typeTag = SL_EVAL_TAGGED_ENUM_TAG_FLAG
+                   | (((uint64_t)(uintptr_t)file) & ~SL_EVAL_TAGGED_ENUM_TAG_FLAG);
+    value->typeTag ^= (uint64_t)(uint32_t)(enumNode + 1) << 3;
+    value->typeTag ^= (uint64_t)tagIndex;
+    value->s.bytes = (const uint8_t*)tagged;
+    value->s.len = 0;
+}
+
+static SLEvalTaggedEnum* _Nullable SLEvalValueAsTaggedEnum(const SLCTFEValue* value) {
+    if (value == NULL || value->kind != SLCTFEValue_TYPE
+        || (value->typeTag & SL_EVAL_TAGGED_ENUM_TAG_FLAG) == 0 || value->s.bytes == NULL)
+    {
+        return NULL;
+    }
+    return (SLEvalTaggedEnum*)value->s.bytes;
 }
 
 static uint64_t SLEvalMakeAliasTag(const SLParsedFile* file, int32_t nodeId) {
@@ -863,6 +920,96 @@ static int32_t SLEvalFindNamedEnumDeclInPackage(
     return -1;
 }
 
+static int32_t SLEvalFindNamedEnumDecl(
+    const SLEvalProgram* p,
+    const SLParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    const SLParsedFile** outFile) {
+    const SLPackage* currentPkg;
+    uint32_t         pkgIndex;
+    int32_t          nodeId;
+    if (outFile != NULL) {
+        *outFile = NULL;
+    }
+    if (p == NULL || callerFile == NULL) {
+        return -1;
+    }
+    currentPkg = SLEvalFindPackageByFile(p, callerFile);
+    if (currentPkg != NULL) {
+        nodeId = SLEvalFindNamedEnumDeclInPackage(
+            currentPkg, callerFile, nameStart, nameEnd, outFile);
+        if (nodeId >= 0) {
+            return nodeId;
+        }
+    }
+    if (p->loader == NULL) {
+        return -1;
+    }
+    for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
+        const SLPackage* pkg = &p->loader->packages[pkgIndex];
+        if (pkg == currentPkg) {
+            continue;
+        }
+        nodeId = SLEvalFindNamedEnumDeclInPackage(pkg, callerFile, nameStart, nameEnd, outFile);
+        if (nodeId >= 0) {
+            return nodeId;
+        }
+    }
+    return -1;
+}
+
+static int SLEvalFindEnumVariant(
+    const SLParsedFile* enumFile,
+    int32_t             enumNode,
+    const char*         source,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    int32_t*            outVariantNode,
+    uint32_t*           outTagIndex) {
+    int32_t  child;
+    uint32_t tagIndex = 0;
+    if (outVariantNode != NULL) {
+        *outVariantNode = -1;
+    }
+    if (outTagIndex != NULL) {
+        *outTagIndex = 0;
+    }
+    if (enumFile == NULL || source == NULL || enumNode < 0
+        || (uint32_t)enumNode >= enumFile->ast.len)
+    {
+        return 0;
+    }
+    child = ASTFirstChild(&enumFile->ast, enumNode);
+    if (child >= 0 && enumFile->ast.nodes[child].kind != SLAst_FIELD) {
+        child = ASTNextSibling(&enumFile->ast, child);
+    }
+    while (child >= 0) {
+        const SLAstNode* fieldNode = &enumFile->ast.nodes[child];
+        if (fieldNode->kind == SLAst_FIELD) {
+            if (SliceEqSlice(
+                    source,
+                    nameStart,
+                    nameEnd,
+                    enumFile->source,
+                    fieldNode->dataStart,
+                    fieldNode->dataEnd))
+            {
+                if (outVariantNode != NULL) {
+                    *outVariantNode = child;
+                }
+                if (outTagIndex != NULL) {
+                    *outTagIndex = tagIndex;
+                }
+                return 1;
+            }
+            tagIndex++;
+        }
+        child = ASTNextSibling(&enumFile->ast, child);
+    }
+    return 0;
+}
+
 static int SLEvalZeroInitTypeNode(
     const SLEvalProgram* p,
     const SLParsedFile*  file,
@@ -901,6 +1048,12 @@ static int SLEvalAssignValueExprCb(
     const SLCTFEValue* inValue,
     SLCTFEValue*       outValue,
     int*               outIsConst);
+static int SLEvalMatchPatternCb(
+    void*              ctx,
+    SLCTFEExecCtx*     execCtx,
+    const SLCTFEValue* subjectValue,
+    int32_t            labelExprNode,
+    int*               outMatched);
 static int SLEvalZeroInitCb(void* ctx, int32_t typeNode, SLCTFEValue* outValue, int* outIsConst);
 static int SLEvalResolveIdent(
     void*        ctx,
@@ -920,6 +1073,14 @@ static int SLEvalResolveCall(
     SLDiag* _Nullable diag);
 static int SLEvalEvalTopVar(
     SLEvalProgram* p, uint32_t topVarIndex, SLCTFEValue* outValue, int* outIsConst);
+static int SLEvalInvokeFunction(
+    SLEvalProgram*       p,
+    int32_t              fnIndex,
+    const SLCTFEValue*   args,
+    uint32_t             argCount,
+    const SLEvalContext* callContext,
+    SLCTFEValue*         outValue,
+    int*                 outDidReturn);
 
 static int32_t SLEvalAggregateLookupFieldIndex(
     const SLEvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd) {
@@ -1149,6 +1310,108 @@ static int SLEvalFinalizeAggregateVarArrays(SLEvalProgram* p, SLEvalAggregate* a
         SLEvalValueSetArray(&field->value, agg->file, field->typeNode, array);
     }
     return 1;
+}
+
+static int SLEvalBuildTaggedEnumPayload(
+    SLEvalProgram*      p,
+    const SLParsedFile* enumFile,
+    int32_t             variantNode,
+    int32_t             compoundLitNode,
+    SLCTFEValue*        outValue,
+    int*                outIsConst) {
+    uint32_t         fieldCount = 0;
+    uint32_t         fieldIndex = 0;
+    int32_t          child;
+    SLEvalAggregate* agg;
+    int32_t          fieldNode;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || enumFile == NULL || outValue == NULL || outIsConst == NULL || variantNode < 0
+        || (uint32_t)variantNode >= enumFile->ast.len)
+    {
+        return -1;
+    }
+    child = ASTFirstChild(&enumFile->ast, variantNode);
+    while (child >= 0) {
+        if (enumFile->ast.nodes[child].kind == SLAst_FIELD) {
+            fieldCount++;
+        }
+        child = ASTNextSibling(&enumFile->ast, child);
+    }
+    agg = (SLEvalAggregate*)SLArenaAlloc(
+        p->arena, sizeof(SLEvalAggregate), (uint32_t)_Alignof(SLEvalAggregate));
+    if (agg == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    memset(agg, 0, sizeof(*agg));
+    agg->file = enumFile;
+    agg->nodeId = variantNode;
+    agg->fieldLen = fieldCount;
+    if (fieldCount > 0) {
+        agg->fields = (SLEvalAggregateField*)SLArenaAlloc(
+            p->arena,
+            sizeof(SLEvalAggregateField) * fieldCount,
+            (uint32_t)_Alignof(SLEvalAggregateField));
+        if (agg->fields == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        memset(agg->fields, 0, sizeof(SLEvalAggregateField) * fieldCount);
+    }
+    child = ASTFirstChild(&enumFile->ast, variantNode);
+    while (child >= 0) {
+        const SLAstNode* variantField = &enumFile->ast.nodes[child];
+        if (variantField->kind == SLAst_FIELD) {
+            int32_t               fieldTypeNode = ASTFirstChild(&enumFile->ast, child);
+            int                   fieldIsConst = 0;
+            SLEvalAggregateField* field = &agg->fields[fieldIndex++];
+            field->nameStart = variantField->dataStart;
+            field->nameEnd = variantField->dataEnd;
+            field->typeNode = fieldTypeNode;
+            if (SLEvalZeroInitTypeNode(p, enumFile, fieldTypeNode, &field->value, &fieldIsConst)
+                != 0)
+            {
+                return -1;
+            }
+            if (!fieldIsConst) {
+                return 0;
+            }
+        }
+        child = ASTNextSibling(&enumFile->ast, child);
+    }
+    fieldNode = ASTFirstChild(&p->currentFile->ast, compoundLitNode);
+    if (fieldNode >= 0 && IsFnReturnTypeNodeKind(p->currentFile->ast.nodes[fieldNode].kind)) {
+        fieldNode = ASTNextSibling(&p->currentFile->ast, fieldNode);
+    }
+    while (fieldNode >= 0) {
+        const SLAstNode* compoundField = &p->currentFile->ast.nodes[fieldNode];
+        int32_t          valueNode = ASTFirstChild(&p->currentFile->ast, fieldNode);
+        SLCTFEValue      fieldValue;
+        int              fieldIsConst = 0;
+        if (compoundField->kind != SLAst_COMPOUND_FIELD || valueNode < 0) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (SLEvalExecExprCb(p, valueNode, &fieldValue, &fieldIsConst) != 0) {
+            return -1;
+        }
+        if (!fieldIsConst
+            || !SLEvalAggregateSetFieldValue(
+                agg,
+                p->currentFile->source,
+                compoundField->dataStart,
+                compoundField->dataEnd,
+                &fieldValue,
+                NULL))
+        {
+            *outIsConst = 0;
+            return 0;
+        }
+        fieldNode = ASTNextSibling(&p->currentFile->ast, fieldNode);
+    }
+    SLEvalValueSetAggregate(outValue, enumFile, variantNode, agg);
+    *outIsConst = 1;
+    return 0;
 }
 
 static int SLEvalZeroInitAggregateValue(
@@ -2675,14 +2938,395 @@ static int SLEvalEvalUnary(
     }
 }
 
+static int SLEvalLexCompareStrings(const SLCTFEValue* lhs, const SLCTFEValue* rhs, int* outCmp) {
+    uint32_t minLen;
+    int      cmp = 0;
+    if (lhs == NULL || rhs == NULL || outCmp == NULL) {
+        return -1;
+    }
+    minLen = lhs->s.len < rhs->s.len ? lhs->s.len : rhs->s.len;
+    if (minLen > 0 && lhs->s.bytes != NULL && rhs->s.bytes != NULL) {
+        cmp = memcmp(lhs->s.bytes, rhs->s.bytes, minLen);
+    }
+    if (cmp == 0) {
+        if (lhs->s.len < rhs->s.len) {
+            cmp = -1;
+        } else if (lhs->s.len > rhs->s.len) {
+            cmp = 1;
+        }
+    }
+    *outCmp = cmp < 0 ? -1 : (cmp > 0 ? 1 : 0);
+    return 0;
+}
+
+static int32_t SLEvalResolveFunctionByLiteralArgs(
+    const SLEvalProgram* p, const char* name, const SLCTFEValue* args, uint32_t argCount) {
+    uint32_t i;
+    int32_t  best = -1;
+    int      bestScore = -1;
+    int      ambiguous = 0;
+    if (p == NULL || name == NULL) {
+        return -1;
+    }
+    for (i = 0; i < p->funcLen; i++) {
+        const SLEvalFunction* fn = &p->funcs[i];
+        int                   score = 0;
+        if (fn->paramCount != argCount) {
+            continue;
+        }
+        if (!SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, name)) {
+            continue;
+        }
+        if (args != NULL && SLEvalScoreFunctionCandidate(p, fn, args, argCount, &score)) {
+            if (score > bestScore) {
+                best = (int32_t)i;
+                bestScore = score;
+                ambiguous = 0;
+            } else if (score == bestScore) {
+                ambiguous = 1;
+            }
+        } else if (args == NULL && best < 0) {
+            best = (int32_t)i;
+        }
+    }
+    return ambiguous ? -2 : best;
+}
+
+static int SLEvalCompareValues(
+    SLEvalProgram* p, const SLCTFEValue* lhs, const SLCTFEValue* rhs, int* outCmp, int* outHandled);
+
+static int SLEvalTaggedEnumPayloadEqual(
+    SLEvalProgram* p, const SLEvalTaggedEnum* lhs, const SLEvalTaggedEnum* rhs, int* outEqual) {
+    if (outEqual != NULL) {
+        *outEqual = 0;
+    }
+    if (lhs == NULL || rhs == NULL || outEqual == NULL) {
+        return -1;
+    }
+    if (lhs->tagIndex != rhs->tagIndex) {
+        *outEqual = 0;
+        return 0;
+    }
+    if (lhs->payload == NULL || rhs->payload == NULL) {
+        *outEqual = lhs->payload == rhs->payload;
+        return 0;
+    }
+    if (lhs->payload->fieldLen != rhs->payload->fieldLen) {
+        *outEqual = 0;
+        return 0;
+    }
+    {
+        uint32_t i;
+        for (i = 0; i < lhs->payload->fieldLen; i++) {
+            int cmp = 0;
+            int handled = 0;
+            if (SLEvalCompareValues(
+                    p,
+                    &lhs->payload->fields[i].value,
+                    &rhs->payload->fields[i].value,
+                    &cmp,
+                    &handled)
+                != 0)
+            {
+                return -1;
+            }
+            if (!handled || cmp != 0) {
+                *outEqual = 0;
+                return 0;
+            }
+        }
+    }
+    *outEqual = 1;
+    return 0;
+}
+
+static int SLEvalCompareValues(
+    SLEvalProgram*     p,
+    const SLCTFEValue* lhs,
+    const SLCTFEValue* rhs,
+    int*               outCmp,
+    int*               outHandled) {
+    const SLCTFEValue* lhsValue = SLEvalValueTargetOrSelf(lhs);
+    const SLCTFEValue* rhsValue = SLEvalValueTargetOrSelf(rhs);
+    if (outCmp != NULL) {
+        *outCmp = 0;
+    }
+    if (outHandled != NULL) {
+        *outHandled = 0;
+    }
+    if (lhs == NULL || rhs == NULL || outCmp == NULL || outHandled == NULL) {
+        return -1;
+    }
+    if (lhs->kind == SLCTFEValue_REFERENCE && rhs->kind == SLCTFEValue_REFERENCE) {
+        uintptr_t la = (uintptr_t)lhs->s.bytes;
+        uintptr_t ra = (uintptr_t)rhs->s.bytes;
+        *outCmp = la < ra ? -1 : (la > ra ? 1 : 0);
+        *outHandled = 1;
+        return 0;
+    }
+    if (lhsValue->kind == SLCTFEValue_INT && rhsValue->kind == SLCTFEValue_INT) {
+        *outCmp = lhsValue->i64 < rhsValue->i64 ? -1 : (lhsValue->i64 > rhsValue->i64 ? 1 : 0);
+        *outHandled = 1;
+        return 0;
+    }
+    if (lhsValue->kind == SLCTFEValue_FLOAT && rhsValue->kind == SLCTFEValue_FLOAT) {
+        *outCmp = lhsValue->f64 < rhsValue->f64 ? -1 : (lhsValue->f64 > rhsValue->f64 ? 1 : 0);
+        *outHandled = 1;
+        return 0;
+    }
+    if (lhsValue->kind == SLCTFEValue_BOOL && rhsValue->kind == SLCTFEValue_BOOL) {
+        *outCmp = lhsValue->b < rhsValue->b ? -1 : (lhsValue->b > rhsValue->b ? 1 : 0);
+        *outHandled = 1;
+        return 0;
+    }
+    if (lhsValue->kind == SLCTFEValue_STRING && rhsValue->kind == SLCTFEValue_STRING) {
+        if (SLEvalLexCompareStrings(lhsValue, rhsValue, outCmp) != 0) {
+            return -1;
+        }
+        *outHandled = 1;
+        return 0;
+    }
+    {
+        SLEvalTaggedEnum* lhsTagged = SLEvalValueAsTaggedEnum(lhsValue);
+        SLEvalTaggedEnum* rhsTagged = SLEvalValueAsTaggedEnum(rhsValue);
+        if (lhsTagged != NULL && rhsTagged != NULL && lhsTagged->file == rhsTagged->file
+            && lhsTagged->enumNode == rhsTagged->enumNode)
+        {
+            int equal = 0;
+            if (SLEvalTaggedEnumPayloadEqual(p, lhsTagged, rhsTagged, &equal) != 0) {
+                return -1;
+            }
+            *outCmp = equal ? 0 : 1;
+            *outHandled = 1;
+            return 0;
+        }
+    }
+    {
+        SLEvalArray* lhsArray = SLEvalValueAsArray(lhsValue);
+        SLEvalArray* rhsArray = SLEvalValueAsArray(rhsValue);
+        if (lhsArray != NULL && rhsArray != NULL) {
+            uint32_t i;
+            if (lhsArray->len != rhsArray->len) {
+                *outCmp = lhsArray->len < rhsArray->len ? -1 : 1;
+                *outHandled = 1;
+                return 0;
+            }
+            for (i = 0; i < lhsArray->len; i++) {
+                int cmp = 0;
+                int handled = 0;
+                if (SLEvalCompareValues(p, &lhsArray->elems[i], &rhsArray->elems[i], &cmp, &handled)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!handled || cmp != 0) {
+                    *outCmp = cmp != 0 ? cmp : 1;
+                    *outHandled = 1;
+                    return 0;
+                }
+            }
+            *outCmp = 0;
+            *outHandled = 1;
+            return 0;
+        }
+    }
+    {
+        SLEvalAggregate* lhsAgg = SLEvalValueAsAggregate(lhsValue);
+        SLEvalAggregate* rhsAgg = SLEvalValueAsAggregate(rhsValue);
+        if (lhsAgg != NULL && rhsAgg != NULL) {
+            SLCTFEValue args[2];
+            args[0] = *lhsValue;
+            args[1] = *rhsValue;
+            {
+                int32_t hookIndex = SLEvalResolveFunctionByLiteralArgs(p, "__order", args, 2);
+                if (hookIndex >= 0) {
+                    SLCTFEValue hookValue;
+                    int         didReturn = 0;
+                    int64_t     order = 0;
+                    if (SLEvalInvokeFunction(
+                            p, hookIndex, args, 2, p->currentContext, &hookValue, &didReturn)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (didReturn && SLCTFEValueToInt64(&hookValue, &order) == 0) {
+                        *outCmp = order < 0 ? -1 : (order > 0 ? 1 : 0);
+                        *outHandled = 1;
+                        return 0;
+                    }
+                }
+            }
+            {
+                int32_t hookIndex = SLEvalResolveFunctionByLiteralArgs(p, "__equal", args, 2);
+                if (hookIndex >= 0) {
+                    SLCTFEValue hookValue;
+                    int         didReturn = 0;
+                    if (SLEvalInvokeFunction(
+                            p, hookIndex, args, 2, p->currentContext, &hookValue, &didReturn)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (didReturn && hookValue.kind == SLCTFEValue_BOOL) {
+                        *outCmp = hookValue.b ? 0 : 1;
+                        *outHandled = 1;
+                        return 0;
+                    }
+                }
+            }
+            {
+                uint32_t i;
+                if (lhsAgg->fieldLen != rhsAgg->fieldLen) {
+                    *outCmp = lhsAgg->fieldLen < rhsAgg->fieldLen ? -1 : 1;
+                    *outHandled = 1;
+                    return 0;
+                }
+                for (i = 0; i < lhsAgg->fieldLen; i++) {
+                    int cmp = 0;
+                    int handled = 0;
+                    if (SLEvalCompareValues(
+                            p, &lhsAgg->fields[i].value, &rhsAgg->fields[i].value, &cmp, &handled)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (!handled || cmp != 0) {
+                        *outCmp = cmp != 0 ? cmp : 1;
+                        *outHandled = 1;
+                        return 0;
+                    }
+                }
+                *outCmp = 0;
+                *outHandled = 1;
+                return 0;
+            }
+        }
+    }
+    return 0;
+}
+
 static int SLEvalEvalBinary(
+    SLEvalProgram*     p,
     SLTokenKind        op,
     const SLCTFEValue* lhs,
     const SLCTFEValue* rhs,
     SLCTFEValue*       outValue,
     int*               outIsConst) {
+    int cmp = 0;
+    int handled = 0;
     if (lhs == NULL || rhs == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
+    }
+    if ((op == SLTok_EQ || op == SLTok_NEQ || op == SLTok_LT || op == SLTok_LTE || op == SLTok_GT
+         || op == SLTok_GTE))
+    {
+        SLEvalAggregate* lhsAgg = SLEvalValueAsAggregate(SLEvalValueTargetOrSelf(lhs));
+        SLEvalAggregate* rhsAgg = SLEvalValueAsAggregate(SLEvalValueTargetOrSelf(rhs));
+        if (p != NULL && lhsAgg != NULL && rhsAgg != NULL) {
+            SLCTFEValue args[2];
+            int32_t     hookIndex = -1;
+            SLCTFEValue hookValue;
+            int         didReturn = 0;
+            args[0] = *SLEvalValueTargetOrSelf(lhs);
+            args[1] = *SLEvalValueTargetOrSelf(rhs);
+            if (op == SLTok_EQ || op == SLTok_NEQ) {
+                hookIndex = SLEvalResolveFunctionByLiteralArgs(p, "__equal", args, 2);
+                if (hookIndex >= 0) {
+                    if (SLEvalInvokeFunction(
+                            p, hookIndex, args, 2, p->currentContext, &hookValue, &didReturn)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (didReturn && hookValue.kind == SLCTFEValue_BOOL) {
+                        outValue->kind = SLCTFEValue_BOOL;
+                        outValue->i64 = 0;
+                        outValue->f64 = 0.0;
+                        outValue->typeTag = 0;
+                        outValue->s.bytes = NULL;
+                        outValue->s.len = 0;
+                        outValue->b = op == SLTok_EQ ? hookValue.b : (uint8_t)!hookValue.b;
+                        *outIsConst = 1;
+                        return 1;
+                    }
+                }
+            } else {
+                hookIndex = SLEvalResolveFunctionByLiteralArgs(p, "__order", args, 2);
+                if (hookIndex >= 0) {
+                    int64_t order = 0;
+                    if (SLEvalInvokeFunction(
+                            p, hookIndex, args, 2, p->currentContext, &hookValue, &didReturn)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (didReturn && SLCTFEValueToInt64(&hookValue, &order) == 0) {
+                        outValue->kind = SLCTFEValue_BOOL;
+                        outValue->i64 = 0;
+                        outValue->f64 = 0.0;
+                        outValue->typeTag = 0;
+                        outValue->s.bytes = NULL;
+                        outValue->s.len = 0;
+                        outValue->b =
+                            op == SLTok_LT    ? order < 0
+                            : op == SLTok_LTE ? order <= 0
+                            : op == SLTok_GT
+                                ? order > 0
+                                : order >= 0;
+                        *outIsConst = 1;
+                        return 1;
+                    }
+                }
+            }
+        }
+    }
+    if (op == SLTok_EQ || op == SLTok_NEQ || op == SLTok_LT || op == SLTok_LTE || op == SLTok_GT
+        || op == SLTok_GTE)
+    {
+        SLEvalTaggedEnum* lhsTagged = SLEvalValueAsTaggedEnum(SLEvalValueTargetOrSelf(lhs));
+        SLEvalTaggedEnum* rhsTagged = SLEvalValueAsTaggedEnum(SLEvalValueTargetOrSelf(rhs));
+        if ((op == SLTok_LT || op == SLTok_LTE || op == SLTok_GT || op == SLTok_GTE)
+            && lhsTagged != NULL && rhsTagged != NULL && lhsTagged->file == rhsTagged->file
+            && lhsTagged->enumNode == rhsTagged->enumNode)
+        {
+            outValue->kind = SLCTFEValue_BOOL;
+            outValue->i64 = 0;
+            outValue->f64 = 0.0;
+            outValue->typeTag = 0;
+            outValue->s.bytes = NULL;
+            outValue->s.len = 0;
+            switch (op) {
+                case SLTok_LT:  outValue->b = lhsTagged->tagIndex < rhsTagged->tagIndex; break;
+                case SLTok_LTE: outValue->b = lhsTagged->tagIndex <= rhsTagged->tagIndex; break;
+                case SLTok_GT:  outValue->b = lhsTagged->tagIndex > rhsTagged->tagIndex; break;
+                case SLTok_GTE: outValue->b = lhsTagged->tagIndex >= rhsTagged->tagIndex; break;
+                default:        outValue->b = 0; break;
+            }
+            *outIsConst = 1;
+            return 1;
+        }
+        if (SLEvalCompareValues(p, lhs, rhs, &cmp, &handled) != 0) {
+            return -1;
+        }
+        if (handled) {
+            outValue->kind = SLCTFEValue_BOOL;
+            outValue->i64 = 0;
+            outValue->f64 = 0.0;
+            outValue->typeTag = 0;
+            outValue->s.bytes = NULL;
+            outValue->s.len = 0;
+            switch (op) {
+                case SLTok_EQ:  outValue->b = cmp == 0; break;
+                case SLTok_NEQ: outValue->b = cmp != 0; break;
+                case SLTok_LT:  outValue->b = cmp < 0; break;
+                case SLTok_LTE: outValue->b = cmp <= 0; break;
+                case SLTok_GT:  outValue->b = cmp > 0; break;
+                case SLTok_GTE: outValue->b = cmp >= 0; break;
+                default:        break;
+            }
+            *outIsConst = 1;
+            return 1;
+        }
     }
     if (lhs->kind == SLCTFEValue_INT && rhs->kind == SLCTFEValue_INT) {
         switch (op) {
@@ -2701,28 +3345,6 @@ static int SLEvalEvalBinary(
                 }
                 SLEvalValueSetInt(outValue, lhs->i64 % rhs->i64);
                 break;
-            case SLTok_EQ:
-            case SLTok_NEQ:
-            case SLTok_LT:
-            case SLTok_LTE:
-            case SLTok_GT:
-            case SLTok_GTE:
-                outValue->kind = SLCTFEValue_BOOL;
-                outValue->i64 = 0;
-                outValue->f64 = 0.0;
-                outValue->typeTag = 0;
-                outValue->s.bytes = NULL;
-                outValue->s.len = 0;
-                switch (op) {
-                    case SLTok_EQ:  outValue->b = lhs->i64 == rhs->i64; break;
-                    case SLTok_NEQ: outValue->b = lhs->i64 != rhs->i64; break;
-                    case SLTok_LT:  outValue->b = lhs->i64 < rhs->i64; break;
-                    case SLTok_LTE: outValue->b = lhs->i64 <= rhs->i64; break;
-                    case SLTok_GT:  outValue->b = lhs->i64 > rhs->i64; break;
-                    case SLTok_GTE: outValue->b = lhs->i64 >= rhs->i64; break;
-                    default:        break;
-                }
-                break;
             default: return 0;
         }
         *outIsConst = 1;
@@ -2730,21 +3352,17 @@ static int SLEvalEvalBinary(
     }
     if (lhs->kind == SLCTFEValue_BOOL && rhs->kind == SLCTFEValue_BOOL) {
         switch (op) {
-            case SLTok_EQ:
-            case SLTok_NEQ:
             case SLTok_AND:
             case SLTok_OR:
+            case SLTok_LOGICAL_AND:
+            case SLTok_LOGICAL_OR:
                 outValue->kind = SLCTFEValue_BOOL;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
                 outValue->typeTag = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
-                if (op == SLTok_EQ) {
-                    outValue->b = lhs->b == rhs->b;
-                } else if (op == SLTok_NEQ) {
-                    outValue->b = lhs->b != rhs->b;
-                } else if (op == SLTok_AND) {
+                if (op == SLTok_AND || op == SLTok_LOGICAL_AND) {
                     outValue->b = lhs->b && rhs->b;
                 } else {
                     outValue->b = lhs->b || rhs->b;
@@ -2754,23 +3372,28 @@ static int SLEvalEvalBinary(
             default: return 0;
         }
     }
-    if (lhs->kind == SLCTFEValue_STRING && rhs->kind == SLCTFEValue_STRING) {
-        if (op == SLTok_EQ || op == SLTok_NEQ) {
-            int eq = lhs->s.len == rhs->s.len
-                  && (lhs->s.len == 0
-                      || (lhs->s.bytes != NULL && rhs->s.bytes != NULL
-                          && memcmp(lhs->s.bytes, rhs->s.bytes, lhs->s.len) == 0));
-            outValue->kind = SLCTFEValue_BOOL;
-            outValue->i64 = 0;
-            outValue->f64 = 0.0;
-            outValue->b = (op == SLTok_EQ) ? (uint8_t)eq : (uint8_t)!eq;
-            outValue->typeTag = 0;
-            outValue->s.bytes = NULL;
-            outValue->s.len = 0;
-            *outIsConst = 1;
-            return 1;
+    if (lhs->kind == SLCTFEValue_FLOAT && rhs->kind == SLCTFEValue_FLOAT) {
+        switch (op) {
+            case SLTok_ADD:
+            case SLTok_SUB:
+            case SLTok_MUL:
+            case SLTok_DIV:
+                outValue->kind = SLCTFEValue_FLOAT;
+                outValue->i64 = 0;
+                outValue->f64 =
+                    op == SLTok_ADD   ? lhs->f64 + rhs->f64
+                    : op == SLTok_SUB ? lhs->f64 - rhs->f64
+                    : op == SLTok_MUL
+                        ? lhs->f64 * rhs->f64
+                        : lhs->f64 / rhs->f64;
+                outValue->b = 0;
+                outValue->typeTag = 0;
+                outValue->s.bytes = NULL;
+                outValue->s.len = 0;
+                *outIsConst = 1;
+                return 1;
+            default: return 0;
         }
-        return 0;
     }
     if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_NULL) {
         if (op == SLTok_EQ || op == SLTok_NEQ) {
@@ -2869,6 +3492,8 @@ static int SLEvalExecExprInFileWithType(
     tempExecCtx.assignExprCtx = p;
     tempExecCtx.assignValueExpr = SLEvalAssignValueExprCb;
     tempExecCtx.assignValueExprCtx = p;
+    tempExecCtx.matchPattern = SLEvalMatchPatternCb;
+    tempExecCtx.matchPatternCtx = p;
     tempExecCtx.pendingReturnExprNode = -1;
     if (tempExecCtx.forIterLimit == 0) {
         tempExecCtx.forIterLimit = SLCTFE_EXEC_DEFAULT_FOR_LIMIT;
@@ -2935,6 +3560,60 @@ static int SLEvalEvalCompoundLiteral(
         targetTypeFile = litFile;
         targetTypeNode = child;
         fieldNode = ASTNextSibling(ast, child);
+    }
+    if (targetTypeFile != NULL && targetTypeNode >= 0
+        && (uint32_t)targetTypeNode < targetTypeFile->ast.len
+        && targetTypeFile->ast.nodes[targetTypeNode].kind == SLAst_TYPE_NAME)
+    {
+        const SLAstNode* typeNode = &targetTypeFile->ast.nodes[targetTypeNode];
+        uint32_t         dot = typeNode->dataStart;
+        while (dot < typeNode->dataEnd && targetTypeFile->source[dot] != '.') {
+            dot++;
+        }
+        if (dot < typeNode->dataEnd) {
+            const SLParsedFile* enumFile = NULL;
+            int32_t             enumNode = SLEvalFindNamedEnumDecl(
+                p, targetTypeFile, typeNode->dataStart, dot, &enumFile);
+            int32_t  variantNode = -1;
+            uint32_t tagIndex = 0;
+            if (enumNode >= 0 && enumFile != NULL
+                && SLEvalFindEnumVariant(
+                    enumFile,
+                    enumNode,
+                    targetTypeFile->source,
+                    dot + 1u,
+                    typeNode->dataEnd,
+                    &variantNode,
+                    &tagIndex))
+            {
+                const SLAstNode* variantField = &enumFile->ast.nodes[variantNode];
+                SLCTFEValue      payloadValue;
+                int              payloadIsConst = 0;
+                SLEvalAggregate* payload = NULL;
+                if (SLEvalBuildTaggedEnumPayload(
+                        p, enumFile, variantNode, exprNode, &payloadValue, &payloadIsConst)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!payloadIsConst) {
+                    *outIsConst = 0;
+                    return 0;
+                }
+                payload = SLEvalValueAsAggregate(&payloadValue);
+                SLEvalValueSetTaggedEnum(
+                    p,
+                    outValue,
+                    enumFile,
+                    enumNode,
+                    variantField->dataStart,
+                    variantField->dataEnd,
+                    tagIndex,
+                    payload);
+                *outIsConst = 1;
+                return 0;
+            }
+        }
     }
     if (targetTypeFile != NULL && targetTypeNode >= 0
         && (uint32_t)targetTypeNode < targetTypeFile->ast.len
@@ -3457,7 +4136,7 @@ static int SLEvalAssignExprCb(
                             default:               *outIsConst = 0; return 0;
                         }
                         handled = SLEvalEvalBinary(
-                            binaryOp, &curValue, &rhsValue, &rhsValue, outIsConst);
+                            p, binaryOp, &curValue, &rhsValue, &rhsValue, outIsConst);
                         if (handled <= 0 || !*outIsConst) {
                             *outIsConst = 0;
                             return handled < 0 ? -1 : 0;
@@ -3573,6 +4252,61 @@ static int SLEvalAssignValueExprCb(
     return 0;
 }
 
+static int SLEvalMatchPatternCb(
+    void*              ctx,
+    SLCTFEExecCtx*     execCtx,
+    const SLCTFEValue* subjectValue,
+    int32_t            labelExprNode,
+    int*               outMatched) {
+    SLEvalProgram*      p = (SLEvalProgram*)ctx;
+    SLEvalTaggedEnum*   tagged;
+    const SLAstNode*    labelNode;
+    const SLParsedFile* enumFile = NULL;
+    int32_t             enumNode = -1;
+    int32_t             variantNode = -1;
+    uint32_t            tagIndex = 0;
+    (void)execCtx;
+    if (outMatched != NULL) {
+        *outMatched = 0;
+    }
+    if (p == NULL || p->currentFile == NULL || subjectValue == NULL || outMatched == NULL
+        || labelExprNode < 0 || (uint32_t)labelExprNode >= p->currentFile->ast.len)
+    {
+        return -1;
+    }
+    tagged = SLEvalValueAsTaggedEnum(SLEvalValueTargetOrSelf(subjectValue));
+    if (tagged == NULL) {
+        return 0;
+    }
+    labelNode = &p->currentFile->ast.nodes[labelExprNode];
+    if (labelNode->kind != SLAst_FIELD_EXPR || labelNode->firstChild < 0
+        || p->currentFile->ast.nodes[labelNode->firstChild].kind != SLAst_IDENT)
+    {
+        return 0;
+    }
+    enumNode = SLEvalFindNamedEnumDecl(
+        p,
+        p->currentFile,
+        p->currentFile->ast.nodes[labelNode->firstChild].dataStart,
+        p->currentFile->ast.nodes[labelNode->firstChild].dataEnd,
+        &enumFile);
+    if (enumNode < 0 || enumFile == NULL
+        || !SLEvalFindEnumVariant(
+            enumFile,
+            enumNode,
+            p->currentFile->source,
+            labelNode->dataStart,
+            labelNode->dataEnd,
+            &variantNode,
+            &tagIndex))
+    {
+        return 0;
+    }
+    *outMatched =
+        tagged->file == enumFile && tagged->enumNode == enumNode && tagged->tagIndex == tagIndex;
+    return 1;
+}
+
 static int SLEvalInvokeFunction(
     SLEvalProgram*       p,
     int32_t              fnIndex,
@@ -3683,6 +4417,8 @@ static int SLEvalInvokeFunction(
     execCtx.assignExprCtx = p;
     execCtx.assignValueExpr = SLEvalAssignValueExprCb;
     execCtx.assignValueExprCtx = p;
+    execCtx.matchPattern = SLEvalMatchPatternCb;
+    execCtx.matchPatternCtx = p;
     execCtx.pendingReturnExprNode = -1;
     execCtx.forIterLimit = SLCTFE_EXEC_DEFAULT_FOR_LIMIT;
     execCtx.skipConstBlocks = 1u;
@@ -3802,6 +4538,8 @@ static int SLEvalEvalTopVar(
     execCtx.assignExprCtx = p;
     execCtx.assignValueExpr = SLEvalAssignValueExprCb;
     execCtx.assignValueExprCtx = p;
+    execCtx.matchPattern = SLEvalMatchPatternCb;
+    execCtx.matchPatternCtx = p;
     execCtx.pendingReturnExprNode = -1;
     execCtx.forIterLimit = SLCTFE_EXEC_DEFAULT_FOR_LIMIT;
     execCtx.skipConstBlocks = 1u;
@@ -3885,6 +4623,8 @@ static int SLEvalEvalTopConst(
     constExecCtx.assignExprCtx = p;
     constExecCtx.assignValueExpr = SLEvalAssignValueExprCb;
     constExecCtx.assignValueExprCtx = p;
+    constExecCtx.matchPattern = SLEvalMatchPatternCb;
+    constExecCtx.matchPatternCtx = p;
     constExecCtx.pendingReturnExprNode = -1;
     constExecCtx.forIterLimit = SLCTFE_EXEC_DEFAULT_FOR_LIMIT;
     constExecCtx.skipConstBlocks = 1u;
@@ -4388,37 +5128,31 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 *outIsConst = 1;
                 return 0;
             }
-            const SLPackage*    currentPkg = SLEvalFindPackageByFile(p, p->currentFile);
             const SLParsedFile* enumFile = NULL;
             int32_t             enumNode = -1;
-            if (currentPkg != NULL) {
-                enumNode = SLEvalFindNamedEnumDeclInPackage(
-                    currentPkg,
-                    p->currentFile,
-                    ast->nodes[baseNode].dataStart,
-                    ast->nodes[baseNode].dataEnd,
-                    &enumFile);
-            }
+            enumNode = SLEvalFindNamedEnumDecl(
+                p,
+                p->currentFile,
+                ast->nodes[baseNode].dataStart,
+                ast->nodes[baseNode].dataEnd,
+                &enumFile);
             if (enumNode >= 0 && enumFile != NULL) {
-                int32_t child = ASTFirstChild(&enumFile->ast, enumNode);
-                while (child >= 0) {
-                    const SLAstNode* fieldNode = &enumFile->ast.nodes[child];
-                    if (fieldNode->kind == SLAst_FIELD
-                        && SliceEqSlice(
-                            p->currentFile->source,
-                            n->dataStart,
-                            n->dataEnd,
-                            enumFile->source,
-                            fieldNode->dataStart,
-                            fieldNode->dataEnd))
-                    {
-                        int32_t     valueNode = ASTFirstChild(&enumFile->ast, child);
+                int32_t  variantNode = -1;
+                uint32_t tagIndex = 0;
+                if (SLEvalFindEnumVariant(
+                        enumFile,
+                        enumNode,
+                        p->currentFile->source,
+                        n->dataStart,
+                        n->dataEnd,
+                        &variantNode,
+                        &tagIndex))
+                {
+                    const SLAstNode* variantField = &enumFile->ast.nodes[variantNode];
+                    int32_t          valueNode = ASTFirstChild(&enumFile->ast, variantNode);
+                    if (valueNode >= 0 && enumFile->ast.nodes[valueNode].kind != SLAst_FIELD) {
                         SLCTFEValue enumValue;
                         int         enumIsConst = 0;
-                        if (valueNode < 0) {
-                            *outIsConst = 0;
-                            return 0;
-                        }
                         if (SLEvalExecExprInFileWithType(
                                 p,
                                 enumFile,
@@ -4440,7 +5174,17 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                         *outIsConst = 1;
                         return 0;
                     }
-                    child = ASTNextSibling(&enumFile->ast, child);
+                    SLEvalValueSetTaggedEnum(
+                        p,
+                        outValue,
+                        enumFile,
+                        enumNode,
+                        variantField->dataStart,
+                        variantField->dataEnd,
+                        tagIndex,
+                        NULL);
+                    *outIsConst = 1;
+                    return 0;
                 }
             }
         }
@@ -4453,6 +5197,7 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         }
         {
             const SLCTFEValue* targetValue = SLEvalValueTargetOrSelf(&baseValue);
+            SLEvalTaggedEnum*  tagged = SLEvalValueAsTaggedEnum(targetValue);
             if (SliceEqCStr(p->currentFile->source, n->dataStart, n->dataEnd, "len")
                 && (targetValue->kind == SLCTFEValue_STRING
                     || targetValue->kind == SLCTFEValue_ARRAY
@@ -4466,6 +5211,13 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 && targetValue->kind == SLCTFEValue_STRING)
             {
                 *outValue = *targetValue;
+                *outIsConst = 1;
+                return 0;
+            }
+            if (tagged != NULL && tagged->payload != NULL
+                && SLEvalAggregateGetFieldValue(
+                    tagged->payload, p->currentFile->source, n->dataStart, n->dataEnd, outValue))
+            {
                 *outIsConst = 1;
                 return 0;
             }
@@ -4487,6 +5239,20 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         int32_t     childNode = n->firstChild;
         SLCTFEValue childValue;
         int         childIsConst = 0;
+        if (childNode >= 0 && (uint32_t)childNode < ast->len
+            && ast->nodes[childNode].kind == SLAst_IDENT)
+        {
+            SLCTFEExecBinding* binding = SLEvalFindBinding(
+                p->currentExecCtx,
+                p->currentFile,
+                ast->nodes[childNode].dataStart,
+                ast->nodes[childNode].dataEnd);
+            if (binding != NULL) {
+                SLEvalValueSetReference(outValue, &binding->value);
+                *outIsConst = 1;
+                return 0;
+            }
+        }
         if (childNode >= 0 && (uint32_t)childNode < ast->len
             && ast->nodes[childNode].kind == SLAst_INDEX
             && (ast->nodes[childNode].flags & 0x7u) == 0u)
@@ -4612,7 +5378,8 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             *outIsConst = 0;
             return 0;
         }
-        handled = SLEvalEvalBinary((SLTokenKind)n->op, &lhsValue, &rhsValue, outValue, outIsConst);
+        handled = SLEvalEvalBinary(
+            p, (SLTokenKind)n->op, &lhsValue, &rhsValue, outValue, outIsConst);
         if (handled < 0) {
             return -1;
         }

@@ -689,8 +689,10 @@ typedef enum SLCTFEExecLoopAction {
 } SLCTFEExecLoopAction;
 
 static int SLCTFEExecEvalBlockImpl(
-    SLCTFEExecCtx*        c,
-    int32_t               blockNode,
+    SLCTFEExecCtx* c,
+    int32_t        blockNode,
+    const SLCTFEExecBinding* _Nullable preBindings,
+    uint32_t              preBindingLen,
     SLCTFEValue*          outValue,
     int*                  outDidReturn,
     int*                  outIsConst,
@@ -751,7 +753,9 @@ int SLCTFEExecEvalBlock(
     int*           outDidReturn,
     int*           outIsConst) {
     SLCTFEExecLoopAction loopAction = SLCTFEExecLoopAction_NONE;
-    if (SLCTFEExecEvalBlockImpl(c, blockNode, outValue, outDidReturn, outIsConst, &loopAction) != 0)
+    if (SLCTFEExecEvalBlockImpl(
+            c, blockNode, NULL, 0, outValue, outDidReturn, outIsConst, &loopAction)
+        != 0)
     {
         return -1;
     }
@@ -765,8 +769,10 @@ int SLCTFEExecEvalBlock(
 }
 
 static int SLCTFEExecEvalBlockImpl(
-    SLCTFEExecCtx*        c,
-    int32_t               blockNode,
+    SLCTFEExecCtx* c,
+    int32_t        blockNode,
+    const SLCTFEExecBinding* _Nullable preBindings,
+    uint32_t              preBindingLen,
     SLCTFEValue*          outValue,
     int*                  outDidReturn,
     int*                  outIsConst,
@@ -778,6 +784,7 @@ static int SLCTFEExecEvalBlockImpl(
     uint32_t             bindingCap;
     uint32_t             deferredStmtLen = 0;
     int32_t              stmt;
+    int32_t              savedPendingReturnExprNode;
     int                  didReturn = 0;
     int                  isConst = 1;
     int                  runDefersIsConst = 1;
@@ -802,6 +809,10 @@ static int SLCTFEExecEvalBlockImpl(
     if (bindingCap == UINT32_MAX) {
         return -1;
     }
+    if (preBindingLen > UINT32_MAX - bindingCap) {
+        return -1;
+    }
+    bindingCap += preBindingLen;
     if (bindingCap > 0) {
         bindings = (SLCTFEExecBinding*)SLArenaAlloc(
             c->arena,
@@ -818,10 +829,20 @@ static int SLCTFEExecEvalBlockImpl(
     }
 
     savedEnv = c->env;
+    savedPendingReturnExprNode = c->pendingReturnExprNode;
     frame.parent = savedEnv;
     frame.bindings = bindings;
     frame.bindingLen = 0;
+    if (preBindingLen > 0) {
+        if (bindings == NULL || preBindings == NULL) {
+            c->env = savedEnv;
+            return -1;
+        }
+        memcpy(bindings, preBindings, sizeof(SLCTFEExecBinding) * preBindingLen);
+        frame.bindingLen = preBindingLen;
+    }
     c->env = &frame;
+    c->pendingReturnExprNode = -1;
 
     stmt = c->ast->nodes[blockNode].firstChild;
     while (stmt >= 0) {
@@ -848,6 +869,7 @@ static int SLCTFEExecEvalBlockImpl(
         rc = SLCTFEExecEvalStmt(
             c, &frame, bindingCap, stmt, outValue, &didReturn, &isConst, &loopAction);
         if (rc != 0) {
+            c->pendingReturnExprNode = savedPendingReturnExprNode;
             c->env = savedEnv;
             return -1;
         }
@@ -868,6 +890,7 @@ static int SLCTFEExecEvalBlockImpl(
                 &runDefersIsConst)
             != 0)
         {
+            c->pendingReturnExprNode = savedPendingReturnExprNode;
             c->env = savedEnv;
             return -1;
         }
@@ -883,16 +906,18 @@ static int SLCTFEExecEvalBlockImpl(
         const char* prevReason = c->nonConstReason;
         uint32_t    prevReasonStart = c->nonConstStart;
         uint32_t    prevReasonEnd = c->nonConstEnd;
-        if (c->pendingReturnExprNode < 0 || (uint32_t)c->pendingReturnExprNode >= c->ast->len) {
-            SLCTFEExecSetReasonNode(
-                c, blockNode, "return expression is not available for const evaluation");
-            didReturn = 0;
-            loopAction = SLCTFEExecLoopAction_NONE;
-            isConst = 0;
-        } else if (SLCTFEExecEvalExpr(c, c->pendingReturnExprNode, &retValue, &retIsConst) != 0) {
+        if (c->pendingReturnExprNode >= 0 && (uint32_t)c->pendingReturnExprNode >= c->ast->len) {
+            c->pendingReturnExprNode = savedPendingReturnExprNode;
             c->env = savedEnv;
             return -1;
-        } else if (!retIsConst) {
+        } else if (
+            c->pendingReturnExprNode >= 0
+            && SLCTFEExecEvalExpr(c, c->pendingReturnExprNode, &retValue, &retIsConst) != 0)
+        {
+            c->pendingReturnExprNode = savedPendingReturnExprNode;
+            c->env = savedEnv;
+            return -1;
+        } else if (c->pendingReturnExprNode >= 0 && !retIsConst) {
             if (outValue->kind != SLCTFEValue_INVALID && c->nonConstReason != NULL
                 && SLCTFEExecStrEq(
                     c->nonConstReason, "identifier is not a const value in this context"))
@@ -907,11 +932,12 @@ static int SLCTFEExecEvalBlockImpl(
                 loopAction = SLCTFEExecLoopAction_NONE;
                 isConst = 0;
             }
-        } else {
+        } else if (c->pendingReturnExprNode >= 0) {
             *outValue = retValue;
         }
     }
 
+    c->pendingReturnExprNode = didReturn ? -1 : savedPendingReturnExprNode;
     c->env = savedEnv;
     *outDidReturn = isConst ? didReturn : 0;
     *outIsConst = isConst;
@@ -1167,7 +1193,9 @@ static int SLCTFEExecEvalStmt(
         int                  didReturn = 0;
         int                  isConst = 0;
         SLCTFEExecLoopAction loopAction = SLCTFEExecLoopAction_NONE;
-        if (SLCTFEExecEvalBlockImpl(c, stmtNode, outValue, &didReturn, &isConst, &loopAction) != 0)
+        if (SLCTFEExecEvalBlockImpl(
+                c, stmtNode, NULL, 0, outValue, &didReturn, &isConst, &loopAction)
+            != 0)
         {
             return -1;
         }
@@ -1190,7 +1218,9 @@ static int SLCTFEExecEvalStmt(
             *outIsConst = 0;
             return 0;
         }
-        if (SLCTFEExecEvalBlockImpl(c, blockNode, outValue, &didReturn, &isConst, &loopAction) != 0)
+        if (SLCTFEExecEvalBlockImpl(
+                c, blockNode, NULL, 0, outValue, &didReturn, &isConst, &loopAction)
+            != 0)
         {
             return -1;
         }
@@ -1255,7 +1285,8 @@ static int SLCTFEExecEvalStmt(
             return 0;
         }
         if (c->ast->nodes[branchNode].kind == SLAst_BLOCK) {
-            if (SLCTFEExecEvalBlockImpl(c, branchNode, outValue, &didReturn, &isConst, &loopAction)
+            if (SLCTFEExecEvalBlockImpl(
+                    c, branchNode, NULL, 0, outValue, &didReturn, &isConst, &loopAction)
                 != 0)
             {
                 return -1;
@@ -1368,6 +1399,7 @@ static int SLCTFEExecEvalStmt(
                 int32_t caseChild = clause->firstChild;
                 int32_t bodyNode = -1;
                 int     matched = 0;
+                int32_t matchedPatternNode = -1;
 
                 while (caseChild >= 0) {
                     int32_t next;
@@ -1393,25 +1425,64 @@ static int SLCTFEExecEvalStmt(
                         SLCTFEValue labelValue;
                         int         labelIsConst = 0;
                         int         labelMatch = 0;
-                        if (SLCTFEExecEvalExpr(c, labelExprNode, &labelValue, &labelIsConst) != 0) {
-                            return -1;
-                        }
-                        if (!labelIsConst) {
-                            SLCTFEExecSetReasonNode(
-                                c, labelExprNode, "switch case label must be const-evaluable");
-                            *outIsConst = 0;
-                            return 0;
-                        }
-                        if (!SLCTFEExecValueEq(&subjectValue, &labelValue, &labelMatch)) {
-                            SLCTFEExecSetReasonNode(
-                                c,
-                                labelExprNode,
-                                "switch case label is not comparable to const-evaluated subject");
-                            *outIsConst = 0;
-                            return 0;
+                        if (c->matchPattern != NULL) {
+                            int handled = c->matchPattern(
+                                c->matchPatternCtx, c, &subjectValue, labelExprNode, &labelMatch);
+                            if (handled < 0) {
+                                return -1;
+                            }
+                            if (handled == 0) {
+                                if (SLCTFEExecEvalExpr(c, labelExprNode, &labelValue, &labelIsConst)
+                                    != 0)
+                                {
+                                    return -1;
+                                }
+                                if (!labelIsConst) {
+                                    SLCTFEExecSetReasonNode(
+                                        c,
+                                        labelExprNode,
+                                        "switch case label must be const-evaluable");
+                                    *outIsConst = 0;
+                                    return 0;
+                                }
+                                if (!SLCTFEExecValueEq(&subjectValue, &labelValue, &labelMatch)) {
+                                    SLCTFEExecSetReasonNode(
+                                        c,
+                                        labelExprNode,
+                                        "switch case label is not comparable to const-evaluated "
+                                        "subject");
+                                    *outIsConst = 0;
+                                    return 0;
+                                }
+                            }
+                        } else {
+                            if (SLCTFEExecEvalExpr(c, labelExprNode, &labelValue, &labelIsConst)
+                                != 0)
+                            {
+                                return -1;
+                            }
+                            if (!labelIsConst) {
+                                SLCTFEExecSetReasonNode(
+                                    c, labelExprNode, "switch case label must be const-evaluable");
+                                *outIsConst = 0;
+                                return 0;
+                            }
+                            if (!SLCTFEExecValueEq(&subjectValue, &labelValue, &labelMatch)) {
+                                SLCTFEExecSetReasonNode(
+                                    c,
+                                    labelExprNode,
+                                    "switch case label is not comparable to const-evaluated "
+                                    "subject");
+                                *outIsConst = 0;
+                                return 0;
+                            }
                         }
                         if (labelMatch) {
                             matched = 1;
+                            matchedPatternNode =
+                                c->ast->nodes[caseChild].kind == SLAst_CASE_PATTERN
+                                    ? caseChild
+                                    : -1;
                         }
                     } else {
                         SLCTFEValue condValue;
@@ -1442,8 +1513,46 @@ static int SLCTFEExecEvalStmt(
                     return 0;
                 }
                 if (matched) {
-                    if (SLCTFEExecEvalBlockImpl(
-                            c, bodyNode, outValue, outDidReturn, outIsConst, &bodyAction)
+                    if (matchedPatternNode >= 0) {
+                        int32_t aliasNode =
+                            c->ast->nodes[c->ast->nodes[matchedPatternNode].firstChild].nextSibling;
+                        if (aliasNode >= 0 && c->ast->nodes[aliasNode].kind == SLAst_IDENT) {
+                            SLCTFEExecBinding aliasBinding;
+                            memset(&aliasBinding, 0, sizeof(aliasBinding));
+                            aliasBinding.nameStart = c->ast->nodes[aliasNode].dataStart;
+                            aliasBinding.nameEnd = c->ast->nodes[aliasNode].dataEnd;
+                            aliasBinding.mutable = 1u;
+                            aliasBinding.value = subjectValue;
+                            if (SLCTFEExecEvalBlockImpl(
+                                    c,
+                                    bodyNode,
+                                    &aliasBinding,
+                                    1,
+                                    outValue,
+                                    outDidReturn,
+                                    outIsConst,
+                                    &bodyAction)
+                                != 0)
+                            {
+                                return -1;
+                            }
+                        } else if (
+                            SLCTFEExecEvalBlockImpl(
+                                c,
+                                bodyNode,
+                                NULL,
+                                0,
+                                outValue,
+                                outDidReturn,
+                                outIsConst,
+                                &bodyAction)
+                            != 0)
+                        {
+                            return -1;
+                        }
+                    } else if (
+                        SLCTFEExecEvalBlockImpl(
+                            c, bodyNode, NULL, 0, outValue, outDidReturn, outIsConst, &bodyAction)
                         != 0)
                     {
                         return -1;
@@ -1478,7 +1587,7 @@ static int SLCTFEExecEvalStmt(
 
         if (defaultBodyNode >= 0) {
             if (SLCTFEExecEvalBlockImpl(
-                    c, defaultBodyNode, outValue, outDidReturn, outIsConst, &bodyAction)
+                    c, defaultBodyNode, NULL, 0, outValue, outDidReturn, outIsConst, &bodyAction)
                 != 0)
             {
                 return -1;
@@ -1645,7 +1754,8 @@ static int SLCTFEExecEvalStmt(
                     return 0;
                 }
             }
-            if (SLCTFEExecEvalBlockImpl(c, bodyNode, outValue, &didReturn, &isConst, &bodyAction)
+            if (SLCTFEExecEvalBlockImpl(
+                    c, bodyNode, NULL, 0, outValue, &didReturn, &isConst, &bodyAction)
                 != 0)
             {
                 goto for_error;
