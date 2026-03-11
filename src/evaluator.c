@@ -587,12 +587,12 @@ static SLEvalArray* _Nullable SLEvalValueAsArray(const SLCTFEValue* value) {
 }
 
 static SLEvalArray* _Nullable SLEvalAllocArrayView(
-    SLEvalProgram*      p,
-    const SLParsedFile* file,
-    int32_t             typeNode,
-    int32_t             elemTypeNode,
-    SLCTFEValue*        elems,
-    uint32_t            len) {
+    const SLEvalProgram* p,
+    const SLParsedFile*  file,
+    int32_t              typeNode,
+    int32_t              elemTypeNode,
+    SLCTFEValue* _Nullable elems,
+    uint32_t len) {
     SLEvalArray* array;
     if (p == NULL) {
         return NULL;
@@ -1024,6 +1024,133 @@ static int SLEvalAggregateSetFieldValue(
     return 0;
 }
 
+static SLEvalAggregateField* _Nullable SLEvalAggregateFindDirectField(
+    SLEvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd) {
+    uint32_t i;
+    if (agg == NULL || source == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < agg->fieldLen; i++) {
+        SLEvalAggregateField* field = &agg->fields[i];
+        if (SliceEqSlice(
+                source, nameStart, nameEnd, agg->file->source, field->nameStart, field->nameEnd))
+        {
+            return field;
+        }
+    }
+    return NULL;
+}
+
+static int SLEvalValueSetFieldPath(
+    SLCTFEValue*       value,
+    const char*        source,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* inValue) {
+    uint32_t i;
+    if (value == NULL || source == NULL || inValue == NULL) {
+        return 0;
+    }
+    for (i = nameStart; i < nameEnd; i++) {
+        if (source[i] == '.') {
+            SLCTFEValue*          childValue = NULL;
+            SLEvalAggregateField* field;
+            SLEvalAggregate*      agg = SLEvalValueAsAggregate(value);
+            if (agg == NULL) {
+                agg = SLEvalValueAsAggregate(SLEvalValueTargetOrSelf(value));
+            }
+            if (agg == NULL) {
+                return 0;
+            }
+            field = SLEvalAggregateFindDirectField(agg, source, nameStart, i);
+            if (field == NULL) {
+                return 0;
+            }
+            childValue = &field->value;
+            return SLEvalValueSetFieldPath(childValue, source, i + 1u, nameEnd, inValue);
+        }
+    }
+    if (value->kind == SLCTFEValue_STRING) {
+        if (SliceEqCStr(source, nameStart, nameEnd, "len") && inValue->kind == SLCTFEValue_INT
+            && inValue->i64 >= 0)
+        {
+            value->s.len = (uint32_t)inValue->i64;
+            return 1;
+        }
+        return 0;
+    }
+    {
+        SLEvalAggregate* agg = SLEvalValueAsAggregate(value);
+        if (agg == NULL) {
+            agg = SLEvalValueAsAggregate(SLEvalValueTargetOrSelf(value));
+        }
+        if (agg != NULL) {
+            return SLEvalAggregateSetFieldValue(agg, source, nameStart, nameEnd, inValue, NULL);
+        }
+    }
+    return 0;
+}
+
+static int SLEvalFinalizeAggregateVarArrays(SLEvalProgram* p, SLEvalAggregate* agg) {
+    uint32_t i;
+    if (p == NULL || agg == NULL) {
+        return -1;
+    }
+    for (i = 0; i < agg->fieldLen; i++) {
+        SLEvalAggregateField* field = &agg->fields[i];
+        const SLAstNode*      typeNode;
+        SLCTFEValue           lenValue;
+        int64_t               len = 0;
+        SLEvalArray*          array;
+        uint32_t              j;
+        if (field->typeNode < 0 || (uint32_t)field->typeNode >= agg->file->ast.len) {
+            continue;
+        }
+        typeNode = &agg->file->ast.nodes[field->typeNode];
+        if (typeNode->kind != SLAst_TYPE_VARRAY) {
+            continue;
+        }
+        if (!SLEvalAggregateGetFieldValue(
+                agg, agg->file->source, typeNode->dataStart, typeNode->dataEnd, &lenValue)
+            || SLCTFEValueToInt64(&lenValue, &len) != 0 || len < 0)
+        {
+            return 0;
+        }
+        array = SLEvalAllocArrayView(
+            p,
+            agg->file,
+            field->typeNode,
+            ASTFirstChild(&agg->file->ast, field->typeNode),
+            NULL,
+            (uint32_t)len);
+        if (array == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        if (array->len > 0) {
+            array->elems = (SLCTFEValue*)SLArenaAlloc(
+                p->arena, sizeof(SLCTFEValue) * array->len, (uint32_t)_Alignof(SLCTFEValue));
+            if (array->elems == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            memset(array->elems, 0, sizeof(SLCTFEValue) * array->len);
+            for (j = 0; j < array->len; j++) {
+                int elemIsConst = 0;
+                if (SLEvalZeroInitTypeNode(
+                        p, agg->file, array->elemTypeNode, &array->elems[j], &elemIsConst)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!elemIsConst) {
+                    return 0;
+                }
+            }
+        }
+        SLEvalValueSetArray(&field->value, agg->file, field->typeNode, array);
+    }
+    return 1;
+}
+
 static int SLEvalZeroInitAggregateValue(
     const SLEvalProgram* p,
     const SLParsedFile*  declFile,
@@ -1151,7 +1278,8 @@ static int SLEvalZeroInitTypeNode(
                 *outIsConst = 1;
                 return 0;
             }
-            if (SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "string"))
+            if (SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "string")
+                || SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "str"))
             {
                 outValue->kind = SLCTFEValue_STRING;
                 outValue->i64 = 0;
@@ -1238,6 +1366,16 @@ static int SLEvalZeroInitTypeNode(
                         return 0;
                     }
                 }
+            }
+            SLEvalValueSetArray(outValue, file, typeNode, array);
+            *outIsConst = 1;
+            return 0;
+        }
+        case SLAst_TYPE_VARRAY: {
+            int32_t      elemTypeNode = ASTFirstChild(&file->ast, typeNode);
+            SLEvalArray* array = SLEvalAllocArrayView(p, file, typeNode, elemTypeNode, NULL, 0);
+            if (array == NULL) {
+                return ErrorSimple("out of memory");
             }
             SLEvalValueSetArray(outValue, file, typeNode, array);
             *outIsConst = 1;
@@ -2616,6 +2754,24 @@ static int SLEvalEvalBinary(
             default: return 0;
         }
     }
+    if (lhs->kind == SLCTFEValue_STRING && rhs->kind == SLCTFEValue_STRING) {
+        if (op == SLTok_EQ || op == SLTok_NEQ) {
+            int eq = lhs->s.len == rhs->s.len
+                  && (lhs->s.len == 0
+                      || (lhs->s.bytes != NULL && rhs->s.bytes != NULL
+                          && memcmp(lhs->s.bytes, rhs->s.bytes, lhs->s.len) == 0));
+            outValue->kind = SLCTFEValue_BOOL;
+            outValue->i64 = 0;
+            outValue->f64 = 0.0;
+            outValue->b = (op == SLTok_EQ) ? (uint8_t)eq : (uint8_t)!eq;
+            outValue->typeTag = 0;
+            outValue->s.bytes = NULL;
+            outValue->s.len = 0;
+            *outIsConst = 1;
+            return 1;
+        }
+        return 0;
+    }
     if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_NULL) {
         if (op == SLTok_EQ || op == SLTok_NEQ) {
             outValue->kind = SLCTFEValue_BOOL;
@@ -2760,6 +2916,7 @@ static int SLEvalEvalCompoundLiteral(
     SLCTFEExecBinding*  fieldBindings = NULL;
     SLCTFEExecEnv       fieldFrame;
     uint32_t            i;
+    int                 rc = 0;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
@@ -2778,6 +2935,60 @@ static int SLEvalEvalCompoundLiteral(
         targetTypeFile = litFile;
         targetTypeNode = child;
         fieldNode = ASTNextSibling(ast, child);
+    }
+    if (targetTypeFile != NULL && targetTypeNode >= 0
+        && (uint32_t)targetTypeNode < targetTypeFile->ast.len
+        && targetTypeFile->ast.nodes[targetTypeNode].kind == SLAst_TYPE_NAME
+        && (SliceEqCStr(
+                targetTypeFile->source,
+                targetTypeFile->ast.nodes[targetTypeNode].dataStart,
+                targetTypeFile->ast.nodes[targetTypeNode].dataEnd,
+                "str")
+            || SliceEqCStr(
+                targetTypeFile->source,
+                targetTypeFile->ast.nodes[targetTypeNode].dataStart,
+                targetTypeFile->ast.nodes[targetTypeNode].dataEnd,
+                "string")))
+    {
+        SLCTFEValue stringValue;
+        int         stringIsConst = 0;
+        if (SLEvalZeroInitTypeNode(p, targetTypeFile, targetTypeNode, &stringValue, &stringIsConst)
+            != 0)
+        {
+            return -1;
+        }
+        if (!stringIsConst) {
+            *outIsConst = 0;
+            return 0;
+        }
+        while (fieldNode >= 0) {
+            const SLAstNode* fieldAst = &ast->nodes[fieldNode];
+            int32_t          valueNode = ASTFirstChild(ast, fieldNode);
+            SLCTFEValue      fieldValue;
+            int              fieldIsConst = 0;
+            if (fieldAst->kind != SLAst_COMPOUND_FIELD || valueNode < 0) {
+                *outIsConst = 0;
+                return 0;
+            }
+            if (SLEvalExecExprCb(p, valueNode, &fieldValue, &fieldIsConst) != 0) {
+                return -1;
+            }
+            if (!fieldIsConst
+                || !SLEvalValueSetFieldPath(
+                    &stringValue,
+                    litFile->source,
+                    fieldAst->dataStart,
+                    fieldAst->dataEnd,
+                    &fieldValue))
+            {
+                *outIsConst = 0;
+                return 0;
+            }
+            fieldNode = ASTNextSibling(ast, fieldNode);
+        }
+        *outValue = stringValue;
+        *outIsConst = 1;
+        return 0;
     }
     if (!SLEvalResolveAggregateTypeNode(
             p,
@@ -2831,11 +3042,7 @@ static int SLEvalEvalCompoundLiteral(
         }
         fieldIndex = SLEvalAggregateLookupFieldIndex(
             agg, litFile->source, fieldAst->dataStart, fieldAst->dataEnd);
-        if (fieldIndex < 0) {
-            *outIsConst = 0;
-            return 0;
-        }
-        if (valueNode >= 0) {
+        if (valueNode >= 0 && fieldIndex >= 0) {
             if (SLEvalExecExprWithTypeNode(
                     p,
                     valueNode,
@@ -2854,6 +3061,10 @@ static int SLEvalEvalCompoundLiteral(
             {
                 return -1;
             }
+        } else if (valueNode >= 0) {
+            if (SLEvalExecExprCb(p, valueNode, &fieldValue, &fieldIsConst) != 0) {
+                return -1;
+            }
         } else {
             *outIsConst = 0;
             return 0;
@@ -2862,8 +3073,19 @@ static int SLEvalEvalCompoundLiteral(
             *outIsConst = 0;
             return 0;
         }
-        explicitSet[fieldIndex] = 1u;
-        explicitValues[fieldIndex] = fieldValue;
+        if (fieldIndex >= 0) {
+            explicitSet[fieldIndex] = 1u;
+            explicitValues[fieldIndex] = fieldValue;
+        } else if (!SLEvalValueSetFieldPath(
+                       &aggregateValue,
+                       litFile->source,
+                       fieldAst->dataStart,
+                       fieldAst->dataEnd,
+                       &fieldValue))
+        {
+            *outIsConst = 0;
+            return 0;
+        }
         fieldNode = ASTNextSibling(ast, fieldNode);
     }
 
@@ -2905,6 +3127,11 @@ static int SLEvalEvalCompoundLiteral(
             fieldBindings[fieldFrame.bindingLen].value = field->value;
             fieldFrame.bindingLen++;
         }
+    }
+    rc = SLEvalFinalizeAggregateVarArrays(p, agg);
+    if (rc != 1) {
+        *outIsConst = 0;
+        return rc < 0 ? -1 : 0;
     }
     *outValue = aggregateValue;
     *outIsConst = 1;
