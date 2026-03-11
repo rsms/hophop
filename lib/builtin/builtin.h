@@ -143,11 +143,11 @@ __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 li
     } while (0)
 
 static inline __sl_uint __sl_len(const __sl_str* s) {
-    return s != NULL ? s->len : 0u;
+    return s->len;
 }
 
 static inline const __sl_u8* __sl_cstr(const __sl_str* s) {
-    return s != NULL ? s->ptr : (const __sl_u8*)0;
+    return s->ptr;
 }
 
 static inline __sl_uint __sl_align_up(__sl_uint x, __sl_uint a) {
@@ -155,7 +155,7 @@ static inline __sl_uint __sl_align_up(__sl_uint x, __sl_uint a) {
 }
 
 static inline __sl_uint __sl_str_sizeof(const __sl_str* s) {
-    return s != NULL ? (__sl_uint)(sizeof(__sl_str) + (__sl_uint)s->len + 1u) : 0u;
+    return (__sl_uint)(sizeof(__sl_str) + (__sl_uint)s->len + 1u);
 }
 
 int  __sl_memcmp(const void* a, const void* b, __sl_uint n);
