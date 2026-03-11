@@ -146,6 +146,23 @@ static int32_t SLCTFEExecVarLikeInitExprNode(const SLAst* ast, int32_t nodeId) {
     return firstChild;
 }
 
+static int32_t SLCTFEExecListItemAt(const SLAst* ast, int32_t listNode, uint32_t index) {
+    uint32_t i = 0;
+    int32_t  child;
+    if (ast == NULL || listNode < 0 || (uint32_t)listNode >= ast->len) {
+        return -1;
+    }
+    child = ast->nodes[listNode].firstChild;
+    while (child >= 0) {
+        if (i == index) {
+            return child;
+        }
+        i++;
+        child = ast->nodes[child].nextSibling;
+    }
+    return -1;
+}
+
 void SLCTFEExecResetReason(SLCTFEExecCtx* c) {
     c->nonConstReason = NULL;
     c->nonConstStart = 0;
@@ -631,6 +648,23 @@ static int SLCTFEExecEvalExprSideEffect(SLCTFEExecCtx* c, int32_t exprNode, int*
     return SLCTFEExecEvalExpr(c, exprNode, &v, outIsConst);
 }
 
+static int SLCTFEExecAssignValueExpr(
+    SLCTFEExecCtx*     c,
+    int32_t            lhsExprNode,
+    const SLCTFEValue* inValue,
+    SLCTFEValue*       outValue,
+    int*               outIsConst) {
+    if (c == NULL || inValue == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (c->assignValueExpr != NULL) {
+        return c->assignValueExpr(
+            c->assignValueExprCtx, c, lhsExprNode, inValue, outValue, outIsConst);
+    }
+    *outIsConst = 0;
+    return 0;
+}
+
 static uint32_t SLCTFEExecBlockStmtCount(const SLAst* ast, int32_t blockNode) {
     uint32_t count = 0;
     int32_t  stmt;
@@ -914,74 +948,205 @@ static int SLCTFEExecEvalStmt(
     *outLoopAction = SLCTFEExecLoopAction_NONE;
 
     if (s->kind == SLAst_CONST || s->kind == SLAst_VAR) {
-        int32_t     initNode = SLCTFEExecVarLikeInitExprNode(c->ast, stmtNode);
-        int32_t     declTypeNode = c->ast->nodes[stmtNode].firstChild;
-        int32_t     declTypeId = -1;
-        SLCTFEValue v;
-        int         isConst = 0;
-        if (declTypeNode >= 0 && c->ast->nodes[declTypeNode].kind == SLAst_NAME_LIST) {
+        int32_t firstChild = c->ast->nodes[stmtNode].firstChild;
+        int32_t initNode = SLCTFEExecVarLikeInitExprNode(c->ast, stmtNode);
+        int32_t declTypeNode = firstChild;
+        int     hasNameList = firstChild >= 0 && c->ast->nodes[firstChild].kind == SLAst_NAME_LIST;
+        int32_t declTypeId = -1;
+        int32_t bindingTypeNode = -1;
+        if (hasNameList) {
+            declTypeNode = c->ast->nodes[firstChild].nextSibling;
+        }
+        if (frame->bindings == NULL) {
             SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
             *outIsConst = 0;
             return 0;
         }
-        if (frame->bindingLen >= bindingCap || frame->bindings == NULL) {
-            SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
-            *outIsConst = 0;
-            return 0;
-        }
-        if (declTypeNode >= 0 && SLCTFEExecIsTypeNodeKind(c->ast->nodes[declTypeNode].kind)
-            && c->resolveType != NULL)
-        {
-            if (c->resolveType(c->resolveTypeCtx, declTypeNode, &declTypeId) != 0) {
+        if (declTypeNode >= 0 && SLCTFEExecIsTypeNodeKind(c->ast->nodes[declTypeNode].kind)) {
+            bindingTypeNode = declTypeNode;
+            if (c->resolveType != NULL
+                && c->resolveType(c->resolveTypeCtx, declTypeNode, &declTypeId) != 0)
+            {
                 return -1;
             }
         }
-        if (initNode < 0) {
-            if (declTypeNode >= 0 && c->zeroInit != NULL) {
-                if (c->zeroInit(c->zeroInitCtx, declTypeNode, &v, &isConst) != 0) {
-                    return -1;
-                }
-            } else {
+        if (!hasNameList) {
+            SLCTFEValue v;
+            int         isConst = 0;
+            if (frame->bindingLen >= bindingCap) {
                 SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
                 *outIsConst = 0;
                 return 0;
             }
-        } else if (
-            declTypeNode >= 0 && SLCTFEExecIsTypeNodeKind(c->ast->nodes[declTypeNode].kind)
-                ? SLCTFEExecEvalExprForType(c, initNode, declTypeNode, &v, &isConst) != 0
-                : SLCTFEExecEvalExpr(c, initNode, &v, &isConst) != 0)
-        {
-            return -1;
+            if (initNode < 0) {
+                if (bindingTypeNode >= 0 && c->zeroInit != NULL) {
+                    if (c->zeroInit(c->zeroInitCtx, bindingTypeNode, &v, &isConst) != 0) {
+                        return -1;
+                    }
+                } else {
+                    SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
+                    *outIsConst = 0;
+                    return 0;
+                }
+            } else if (
+                bindingTypeNode >= 0
+                    ? SLCTFEExecEvalExprForType(c, initNode, bindingTypeNode, &v, &isConst) != 0
+                    : SLCTFEExecEvalExpr(c, initNode, &v, &isConst) != 0)
+            {
+                return -1;
+            }
+            if (!isConst) {
+                *outIsConst = 0;
+                return 0;
+            }
+            if (declTypeId < 0 && c->inferValueType != NULL) {
+                if (c->inferValueType(c->inferValueTypeCtx, &v, &declTypeId) != 0) {
+                    return -1;
+                }
+            }
+            if (declTypeId >= 0) {
+                SLCTFEValue wrappedValue;
+                if (SLCTFEExecWrapValueForOptionalType(c, declTypeId, &v, &wrappedValue) != 0) {
+                    return -1;
+                }
+                v = wrappedValue;
+            }
+            frame->bindings[frame->bindingLen].nameStart = s->dataStart;
+            frame->bindings[frame->bindingLen].nameEnd = s->dataEnd;
+            frame->bindings[frame->bindingLen].typeId = declTypeId;
+            frame->bindings[frame->bindingLen].typeNode = bindingTypeNode;
+            frame->bindings[frame->bindingLen].mutable = s->kind == SLAst_VAR;
+            frame->bindings[frame->bindingLen]._reserved[0] = 0;
+            frame->bindings[frame->bindingLen]._reserved[1] = 0;
+            frame->bindings[frame->bindingLen]._reserved[2] = 0;
+            frame->bindings[frame->bindingLen].value = v;
+            frame->bindingLen++;
+            return 0;
         }
-        if (!isConst) {
+        {
+            uint32_t    nameCount = SLCTFEExecBlockStmtCount(c->ast, firstChild);
+            uint32_t    initCount = 0;
+            uint32_t    i;
+            int32_t     exprListNode = initNode;
+            SLCTFEValue values[256];
+            int         valueIsConst[256];
+            int32_t     nameNode;
+            if (nameCount == 0 || nameCount > 256u || frame->bindingLen + nameCount > bindingCap) {
+                SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
+                *outIsConst = 0;
+                return 0;
+            }
+            if (exprListNode < 0 || c->ast->nodes[exprListNode].kind != SLAst_EXPR_LIST) {
+                SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
+                *outIsConst = 0;
+                return 0;
+            }
+            initCount = SLCTFEExecBlockStmtCount(c->ast, exprListNode);
+            if (initCount != nameCount) {
+                SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
+                *outIsConst = 0;
+                return 0;
+            }
+            for (i = 0; i < initCount; i++) {
+                int32_t expr = SLCTFEExecListItemAt(c->ast, exprListNode, i);
+                valueIsConst[i] = 0;
+                if (expr < 0) {
+                    *outIsConst = 0;
+                    return 0;
+                }
+                if ((bindingTypeNode >= 0
+                         ? SLCTFEExecEvalExprForType(
+                               c, expr, bindingTypeNode, &values[i], &valueIsConst[i])
+                         : SLCTFEExecEvalExpr(c, expr, &values[i], &valueIsConst[i]))
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!valueIsConst[i]) {
+                    *outIsConst = 0;
+                    return 0;
+                }
+            }
+            for (i = 0; i < nameCount; i++) {
+                nameNode = SLCTFEExecListItemAt(c->ast, firstChild, i);
+                if (nameNode < 0 || c->ast->nodes[nameNode].kind != SLAst_IDENT) {
+                    *outIsConst = 0;
+                    return 0;
+                }
+                frame->bindings[frame->bindingLen].nameStart = c->ast->nodes[nameNode].dataStart;
+                frame->bindings[frame->bindingLen].nameEnd = c->ast->nodes[nameNode].dataEnd;
+                frame->bindings[frame->bindingLen].typeId = declTypeId;
+                frame->bindings[frame->bindingLen].typeNode = bindingTypeNode;
+                frame->bindings[frame->bindingLen].mutable = s->kind == SLAst_VAR;
+                frame->bindings[frame->bindingLen]._reserved[0] = 0;
+                frame->bindings[frame->bindingLen]._reserved[1] = 0;
+                frame->bindings[frame->bindingLen]._reserved[2] = 0;
+                frame->bindings[frame->bindingLen].value = values[i];
+                frame->bindingLen++;
+            }
+            return 0;
+        }
+    }
+
+    if (s->kind == SLAst_MULTI_ASSIGN) {
+        int32_t     lhsList = s->firstChild;
+        int32_t     rhsList = lhsList >= 0 ? c->ast->nodes[lhsList].nextSibling : -1;
+        uint32_t    lhsCount;
+        uint32_t    rhsCount;
+        SLCTFEValue rhsValues[256];
+        uint32_t    i;
+        if (lhsList < 0 || rhsList < 0 || c->ast->nodes[lhsList].kind != SLAst_EXPR_LIST
+            || c->ast->nodes[rhsList].kind != SLAst_EXPR_LIST)
+        {
+            SLCTFEExecSetReasonNode(c, stmtNode, "multi-assign is malformed for const evaluation");
             *outIsConst = 0;
             return 0;
         }
-        if (declTypeId < 0 && c->inferValueType != NULL) {
-            if (c->inferValueType(c->inferValueTypeCtx, &v, &declTypeId) != 0) {
+        lhsCount = SLCTFEExecBlockStmtCount(c->ast, lhsList);
+        rhsCount = SLCTFEExecBlockStmtCount(c->ast, rhsList);
+        if (lhsCount == 0 || lhsCount > 256u || rhsCount != lhsCount) {
+            SLCTFEExecSetReasonNode(c, stmtNode, "multi-assign is not const-evaluable");
+            *outIsConst = 0;
+            return 0;
+        }
+        for (i = 0; i < rhsCount; i++) {
+            int32_t rhsExpr = SLCTFEExecListItemAt(c->ast, rhsList, i);
+            int     rhsIsConst = 0;
+            if (rhsExpr < 0 || SLCTFEExecEvalExpr(c, rhsExpr, &rhsValues[i], &rhsIsConst) != 0) {
                 return -1;
             }
+            if (!rhsIsConst) {
+                *outIsConst = 0;
+                return 0;
+            }
         }
-        if (declTypeId >= 0) {
-            SLCTFEValue wrappedValue;
-            if (SLCTFEExecWrapValueForOptionalType(c, declTypeId, &v, &wrappedValue) != 0) {
+        for (i = 0; i < lhsCount; i++) {
+            int32_t lhsExpr = SLCTFEExecListItemAt(c->ast, lhsList, i);
+            if (lhsExpr < 0) {
+                *outIsConst = 0;
+                return 0;
+            }
+            if (c->ast->nodes[lhsExpr].kind == SLAst_IDENT) {
+                SLCTFEExecBinding* b = SLCTFEExecEnvFindBinding(
+                    c, c->ast->nodes[lhsExpr].dataStart, c->ast->nodes[lhsExpr].dataEnd);
+                if (b != NULL) {
+                    if (!b->mutable) {
+                        SLCTFEExecSetReasonNode(
+                            c, lhsExpr, "assignment target is not mutable during const evaluation");
+                        *outIsConst = 0;
+                        return 0;
+                    }
+                    b->value = rhsValues[i];
+                    continue;
+                }
+            }
+            if (SLCTFEExecAssignValueExpr(c, lhsExpr, &rhsValues[i], outValue, outIsConst) != 0) {
                 return -1;
             }
-            v = wrappedValue;
+            if (!*outIsConst) {
+                return 0;
+            }
         }
-        frame->bindings[frame->bindingLen].nameStart = s->dataStart;
-        frame->bindings[frame->bindingLen].nameEnd = s->dataEnd;
-        frame->bindings[frame->bindingLen].typeId = declTypeId;
-        frame->bindings[frame->bindingLen].typeNode =
-            declTypeNode >= 0 && SLCTFEExecIsTypeNodeKind(c->ast->nodes[declTypeNode].kind)
-                ? declTypeNode
-                : -1;
-        frame->bindings[frame->bindingLen].mutable = s->kind == SLAst_VAR;
-        frame->bindings[frame->bindingLen]._reserved[0] = 0;
-        frame->bindings[frame->bindingLen]._reserved[1] = 0;
-        frame->bindings[frame->bindingLen]._reserved[2] = 0;
-        frame->bindings[frame->bindingLen].value = v;
-        frame->bindingLen++;
         return 0;
     }
 

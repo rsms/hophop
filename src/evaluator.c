@@ -661,6 +661,13 @@ static int SLEvalExecExprWithTypeNode(
 static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
 static int SLEvalAssignExprCb(
     void* ctx, SLCTFEExecCtx* execCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
+static int SLEvalAssignValueExprCb(
+    void*              ctx,
+    SLCTFEExecCtx*     execCtx,
+    int32_t            lhsExprNode,
+    const SLCTFEValue* inValue,
+    SLCTFEValue*       outValue,
+    int*               outIsConst);
 static int SLEvalZeroInitCb(void* ctx, int32_t typeNode, SLCTFEValue* outValue, int* outIsConst);
 static int SLEvalResolveIdent(
     void*        ctx,
@@ -2214,6 +2221,8 @@ static int SLEvalExecExprInFileWithType(
     tempExecCtx.zeroInitCtx = p;
     tempExecCtx.assignExpr = SLEvalAssignExprCb;
     tempExecCtx.assignExprCtx = p;
+    tempExecCtx.assignValueExpr = SLEvalAssignValueExprCb;
+    tempExecCtx.assignValueExprCtx = p;
     tempExecCtx.pendingReturnExprNode = -1;
     if (tempExecCtx.forIterLimit == 0) {
         tempExecCtx.forIterLimit = SLCTFE_EXEC_DEFAULT_FOR_LIMIT;
@@ -2767,6 +2776,74 @@ static int SLEvalAssignExprCb(
     return 0;
 }
 
+static int SLEvalAssignValueExprCb(
+    void*              ctx,
+    SLCTFEExecCtx*     execCtx,
+    int32_t            lhsExprNode,
+    const SLCTFEValue* inValue,
+    SLCTFEValue*       outValue,
+    int*               outIsConst) {
+    SLEvalProgram* p = (SLEvalProgram*)ctx;
+    const SLAst*   ast;
+    if (p == NULL || p->currentFile == NULL || execCtx == NULL || inValue == NULL
+        || outValue == NULL || outIsConst == NULL)
+    {
+        return -1;
+    }
+    ast = &p->currentFile->ast;
+    if (lhsExprNode < 0 || (uint32_t)lhsExprNode >= ast->len) {
+        *outIsConst = 0;
+        return 0;
+    }
+    if (ast->nodes[lhsExprNode].kind == SLAst_IDENT) {
+        int32_t topVarIndex = SLEvalFindTopVarBySlice(
+            p, p->currentFile, ast->nodes[lhsExprNode].dataStart, ast->nodes[lhsExprNode].dataEnd);
+        if (topVarIndex >= 0) {
+            SLEvalTopVar* topVar = &p->topVars[(uint32_t)topVarIndex];
+            topVar->value = *inValue;
+            topVar->state = SLEvalTopConstState_READY;
+            *outValue = *inValue;
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (ast->nodes[lhsExprNode].kind == SLAst_INDEX && (ast->nodes[lhsExprNode].flags & 0x7u) == 0u)
+    {
+        int32_t      baseNode = ast->nodes[lhsExprNode].firstChild;
+        int32_t      indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
+        SLCTFEValue  baseValue;
+        SLCTFEValue  indexValue;
+        SLEvalArray* array;
+        int          baseIsConst = 0;
+        int          indexIsConst = 0;
+        int64_t      index = 0;
+        if (baseNode < 0 || indexNode < 0 || ast->nodes[indexNode].nextSibling >= 0) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (SLEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
+            || SLEvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
+        {
+            return -1;
+        }
+        if (!baseIsConst || !indexIsConst || SLCTFEValueToInt64(&indexValue, &index) != 0) {
+            *outIsConst = 0;
+            return 0;
+        }
+        array = SLEvalValueAsArray(&baseValue);
+        if (array == NULL || index < 0 || (uint64_t)index >= (uint64_t)array->len) {
+            *outIsConst = 0;
+            return 0;
+        }
+        array->elems[(uint32_t)index] = *inValue;
+        *outValue = *inValue;
+        *outIsConst = 1;
+        return 0;
+    }
+    *outIsConst = 0;
+    return 0;
+}
+
 static int SLEvalInvokeFunction(
     SLEvalProgram*     p,
     int32_t            fnIndex,
@@ -2873,6 +2950,8 @@ static int SLEvalInvokeFunction(
     execCtx.zeroInitCtx = p;
     execCtx.assignExpr = SLEvalAssignExprCb;
     execCtx.assignExprCtx = p;
+    execCtx.assignValueExpr = SLEvalAssignValueExprCb;
+    execCtx.assignValueExprCtx = p;
     execCtx.pendingReturnExprNode = -1;
     execCtx.forIterLimit = SLCTFE_EXEC_DEFAULT_FOR_LIMIT;
     execCtx.skipConstBlocks = 1u;
@@ -2984,6 +3063,8 @@ static int SLEvalEvalTopVar(
     execCtx.zeroInitCtx = p;
     execCtx.assignExpr = SLEvalAssignExprCb;
     execCtx.assignExprCtx = p;
+    execCtx.assignValueExpr = SLEvalAssignValueExprCb;
+    execCtx.assignValueExprCtx = p;
     execCtx.pendingReturnExprNode = -1;
     execCtx.forIterLimit = SLCTFE_EXEC_DEFAULT_FOR_LIMIT;
     execCtx.skipConstBlocks = 1u;
@@ -3065,6 +3146,8 @@ static int SLEvalEvalTopConst(
     constExecCtx.zeroInitCtx = p;
     constExecCtx.assignExpr = SLEvalAssignExprCb;
     constExecCtx.assignExprCtx = p;
+    constExecCtx.assignValueExpr = SLEvalAssignValueExprCb;
+    constExecCtx.assignValueExprCtx = p;
     constExecCtx.pendingReturnExprNode = -1;
     constExecCtx.forIterLimit = SLCTFE_EXEC_DEFAULT_FOR_LIMIT;
     constExecCtx.skipConstBlocks = 1u;
@@ -3549,7 +3632,7 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         }
     }
 
-    if (n->kind == SLAst_UNARY && SLEvalExprContainsFieldExpr(ast, exprNode)) {
+    if (n->kind == SLAst_UNARY) {
         int32_t     childNode = n->firstChild;
         SLCTFEValue childValue;
         int         childIsConst = 0;
@@ -3574,9 +3657,7 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         }
     }
 
-    if (n->kind == SLAst_BINARY && (SLTokenKind)n->op != SLTok_ASSIGN
-        && SLEvalExprContainsFieldExpr(ast, exprNode))
-    {
+    if (n->kind == SLAst_BINARY && (SLTokenKind)n->op != SLTok_ASSIGN) {
         int32_t     lhsNode = n->firstChild;
         int32_t     rhsNode = lhsNode >= 0 ? ast->nodes[lhsNode].nextSibling : -1;
         SLCTFEValue lhsValue;
