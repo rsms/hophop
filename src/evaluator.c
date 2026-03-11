@@ -5951,17 +5951,7 @@ static int SLEvalEvalTopConst(
     savedExecCtx = p->currentExecCtx;
     p->currentFile = topConst->file;
     p->currentExecCtx = &constExecCtx;
-    rc = SLCTFEEvalExpr(
-        p->arena,
-        &topConst->file->ast,
-        (SLStrView){ topConst->file->source, topConst->file->sourceLen },
-        topConst->initExprNode,
-        SLEvalResolveIdent,
-        SLEvalResolveCall,
-        p,
-        &value,
-        &isConst,
-        NULL);
+    rc = SLEvalExecExprCb(p, topConst->initExprNode, &value, &isConst);
     p->currentExecCtx = savedExecCtx;
     p->currentFile = savedFile;
 
