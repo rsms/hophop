@@ -55,15 +55,16 @@ if [ -f .git ]; then
     git_index_dep=$(git rev-parse --git-path index 2>/dev/null || echo .git/index)
 fi
 
-cli_sources=( src/slc.c src/platform_cli-eval.c )
+cli_sources=( src/evaluator.c src/slc.c src/platform_cli-eval.c )
 if [ $c_backend = 1 ]; then
     lib_sources=(
-        $(find src -maxdepth 2 -name '*.c' -and -not -name 'slc.c' -and -not -name 'platform_cli-eval.c' | sort -V)
+        $(find src -maxdepth 2 -name '*.c' -and -not -name 'evaluator.c' -and -not -name 'slc.c' -and -not -name 'platform_cli-eval.c' | sort -V)
     )
 else
     lib_sources=(
         $(find src -maxdepth 2 -name '*.c' \
             -and -not -path 'src/codegen_c/*' \
+            -and -not -name 'evaluator.c' \
             -and -not -name 'slc.c' \
             -and -not -name 'platform_cli-eval.c' | sort -V)
     )
