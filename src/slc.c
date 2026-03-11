@@ -7952,6 +7952,7 @@ end:
 }
 
 typedef struct {
+    const SLPackage*    pkg;
     const SLParsedFile* file;
     int32_t             fnNode;
     int32_t             bodyNode;
@@ -7981,6 +7982,8 @@ typedef struct {
     uint8_t             _reserved[3];
     SLCTFEValue         value;
 } SLEvalTopConst;
+
+#define SL_EVAL_PACKAGE_REF_TAG_FLAG (UINT64_C(1) << 63)
 
 typedef struct {
     SLArena* _Nonnull arena;
@@ -8024,6 +8027,49 @@ static void SLEvalValueSetInt(SLCTFEValue* value, int64_t n) {
     value->typeTag = 0;
     value->s.bytes = NULL;
     value->s.len = 0;
+}
+
+static void SLEvalValueSetPackageRef(SLCTFEValue* value, uint32_t pkgIndex) {
+    if (value == NULL) {
+        return;
+    }
+    value->kind = SLCTFEValue_TYPE;
+    value->i64 = 0;
+    value->f64 = 0.0;
+    value->b = 0;
+    value->typeTag = SL_EVAL_PACKAGE_REF_TAG_FLAG | (uint64_t)pkgIndex;
+    value->s.bytes = NULL;
+    value->s.len = 0;
+}
+
+static int SLEvalValueIsPackageRef(const SLCTFEValue* value, uint32_t* outPkgIndex) {
+    if (value == NULL || value->kind != SLCTFEValue_TYPE
+        || (value->typeTag & SL_EVAL_PACKAGE_REF_TAG_FLAG) == 0)
+    {
+        return 0;
+    }
+    if (outPkgIndex != NULL) {
+        *outPkgIndex = (uint32_t)(value->typeTag & ~SL_EVAL_PACKAGE_REF_TAG_FLAG);
+    }
+    return 1;
+}
+
+static const SLPackage* _Nullable SLEvalFindPackageByFile(
+    const SLEvalProgram* p, const SLParsedFile* file) {
+    uint32_t pkgIndex;
+    if (p == NULL || p->loader == NULL || file == NULL) {
+        return NULL;
+    }
+    for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
+        const SLPackage* pkg = &p->loader->packages[pkgIndex];
+        uint32_t         fileIndex;
+        for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+            if (&pkg->files[fileIndex] == file) {
+                return pkg;
+            }
+        }
+    }
+    return NULL;
 }
 
 static int SLEvalValueConcatStrings(
@@ -8310,6 +8356,7 @@ static int SLEvalCollectFunctionsFromPackage(
 
                 if (bodyNode >= 0) {
                     fn.file = file;
+                    fn.pkg = pkg;
                     fn.fnNode = nodeId;
                     fn.bodyNode = bodyNode;
                     fn.nameStart = n->dataStart;
@@ -8359,6 +8406,43 @@ static int32_t SLEvalFindFunctionBySlice(
     for (i = 0; i < p->funcLen; i++) {
         const SLEvalFunction* fn = &p->funcs[i];
         if (fn->paramCount != argCount) {
+            continue;
+        }
+        if (!SliceEqSlice(
+                callerFile->source,
+                nameStart,
+                nameEnd,
+                fn->file->source,
+                fn->nameStart,
+                fn->nameEnd))
+        {
+            continue;
+        }
+        if (found >= 0) {
+            return -2;
+        }
+        found = (int32_t)i;
+    }
+    return found;
+}
+
+static int32_t SLEvalFindFunctionBySliceInPackage(
+    const SLEvalProgram* p,
+    const SLPackage*     pkg,
+    const SLParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    uint32_t             argCount) {
+    uint32_t i;
+    int32_t  found = -1;
+    if (p == NULL || pkg == NULL || callerFile == NULL || nameEnd < nameStart
+        || nameEnd > callerFile->sourceLen)
+    {
+        return -1;
+    }
+    for (i = 0; i < p->funcLen; i++) {
+        const SLEvalFunction* fn = &p->funcs[i];
+        if (fn->pkg != pkg || fn->paramCount != argCount) {
             continue;
         }
         if (!SliceEqSlice(
@@ -8633,6 +8717,32 @@ static int SLEvalResolveIdent(
         return 0;
     }
     {
+        const SLPackage* currentPkg = SLEvalFindPackageByFile(p, p->currentFile);
+        if (currentPkg != NULL) {
+            uint32_t i;
+            for (i = 0; i < currentPkg->importLen; i++) {
+                const SLImportRef* imp = &currentPkg->imports[i];
+                if (imp->bindName == NULL || imp->target == NULL) {
+                    continue;
+                }
+                if (strlen(imp->bindName) == (size_t)(nameEnd - nameStart)
+                    && memcmp(
+                           imp->bindName,
+                           p->currentFile->source + nameStart,
+                           (size_t)(nameEnd - nameStart))
+                           == 0)
+                {
+                    int pkgIndex = FindPackageIndex(p->loader, imp->target);
+                    if (pkgIndex >= 0) {
+                        SLEvalValueSetPackageRef(outValue, (uint32_t)pkgIndex);
+                        *outIsConst = 1;
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
+    {
         int32_t topConstIndex = SLEvalFindTopConstBySlice(p, p->currentFile, nameStart, nameEnd);
         if (topConstIndex >= 0) {
             int isConst = 0;
@@ -8703,8 +8813,39 @@ static int SLEvalResolveCall(
             return 0;
         }
     }
+    if (argCount > 0) {
+        uint32_t pkgIndex = 0;
+        if (SLEvalValueIsPackageRef(&args[0], &pkgIndex)) {
+            const SLPackage* targetPkg = NULL;
+            if (p->loader == NULL || pkgIndex >= p->loader->packageLen) {
+                return -1;
+            }
+            targetPkg = &p->loader->packages[pkgIndex];
+            fnIndex = SLEvalFindFunctionBySliceInPackage(
+                p, targetPkg, p->currentFile, nameStart, nameEnd, argCount - 1u);
+            if (fnIndex == -2) {
+                SLCTFEExecSetReason(
+                    p->currentExecCtx,
+                    nameStart,
+                    nameEnd,
+                    "call target is ambiguous in evaluator backend");
+                *outIsConst = 0;
+                return 0;
+            }
+            if (fnIndex >= 0) {
+                args++;
+                argCount--;
+            }
+        } else {
+            fnIndex = -1;
+        }
+    } else {
+        fnIndex = -1;
+    }
 
-    fnIndex = SLEvalFindFunctionBySlice(p, p->currentFile, nameStart, nameEnd, argCount);
+    if (fnIndex < 0) {
+        fnIndex = SLEvalFindFunctionBySlice(p, p->currentFile, nameStart, nameEnd, argCount);
+    }
     if (fnIndex == -2) {
         SLCTFEExecSetReason(
             p->currentExecCtx, nameStart, nameEnd, "call target is ambiguous in evaluator backend");
