@@ -392,7 +392,8 @@ int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                                     return -1;
                                 }
                                 if (IsStrBaseName(wVarSizeBaseName)) {
-                                    if (BufAppendCStr(&c->out, "__sl_str_sizeof((__sl_str*)&p->")
+                                    if (BufAppendCStr(
+                                            &c->out, "__sl_packed_str_size((__sl_str*)&p->")
                                             != 0
                                         || BufAppendSlice(
                                                &c->out, c->unit->source, wf->dataStart, wf->dataEnd)
@@ -483,7 +484,7 @@ int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                             return -1;
                         }
                         if (IsStrBaseName(wVarSizeBaseName)) {
-                            if (BufAppendCStr(&c->out, "__sl_str_sizeof((__sl_str*)&p->") != 0
+                            if (BufAppendCStr(&c->out, "__sl_packed_str_size((__sl_str*)&p->") != 0
                                 || BufAppendSlice(
                                        &c->out, c->unit->source, wf->dataStart, wf->dataEnd)
                                        != 0

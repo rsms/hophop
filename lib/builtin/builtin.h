@@ -154,7 +154,7 @@ static inline __sl_uint __sl_align_up(__sl_uint x, __sl_uint a) {
     return (x + (a - 1u)) & ~(a - 1u);
 }
 
-static inline __sl_uint __sl_str_sizeof(const __sl_str* s) {
+static inline __sl_uint __sl_packed_str_size(const __sl_str* s) {
     return (__sl_uint)(sizeof(__sl_str) + (__sl_uint)s->len + 1u);
 }
 

@@ -6144,7 +6144,7 @@ int EmitFreeCallExpr(SLCBackendC* c, int32_t allocArgNode, int32_t valueNode) {
         if (pointeeType.ptrDepth == 0 && pointeeType.containerKind == SLTypeContainer_SCALAR
             && IsStrBaseName(pointeeType.baseName))
         {
-            if (BufAppendCStr(&c->out, "__sl_str_sizeof((__sl_str*)(") != 0
+            if (BufAppendCStr(&c->out, "__sl_packed_str_size((__sl_str*)(") != 0
                 || EmitExpr(c, valueNode) != 0
                 || BufAppendCStr(&c->out, ")), _Alignof(__sl_str))") != 0)
             {
@@ -6443,7 +6443,7 @@ int EmitNewExpr(
             return -1;
         }
         if (IsStrBaseName(varSizeBaseName)) {
-            if (BufAppendCStr(&c->out, "__sl_str_sizeof((__sl_str*)&__sl_init)") != 0) {
+            if (BufAppendCStr(&c->out, "__sl_packed_str_size((__sl_str*)&__sl_init)") != 0) {
                 return -1;
             }
         } else if (
@@ -6554,7 +6554,8 @@ int EmitNewExpr(
                                 return -1;
                             }
                             if (IsStrBaseName(wVarSizeBaseName)) {
-                                if (BufAppendCStr(&c->out, "__sl_str_sizeof((__sl_str*)&__sl_p->")
+                                if (BufAppendCStr(
+                                        &c->out, "__sl_packed_str_size((__sl_str*)&__sl_p->")
                                         != 0
                                     || BufAppendSlice(
                                            &c->out, c->unit->source, df->dataStart, df->dataEnd)
