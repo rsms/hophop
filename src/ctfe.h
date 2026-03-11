@@ -14,6 +14,8 @@ typedef enum {
     SLCTFEValue_NULL,
     SLCTFEValue_OPTIONAL,
     SLCTFEValue_AGGREGATE,
+    SLCTFEValue_ARRAY,
+    SLCTFEValue_REFERENCE,
 } SLCTFEValueKind;
 
 typedef struct {

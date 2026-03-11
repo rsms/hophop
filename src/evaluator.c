@@ -318,6 +318,14 @@ typedef struct {
     uint32_t              fieldLen;
 } SLEvalAggregate;
 
+typedef struct {
+    const SLParsedFile* file;
+    int32_t             typeNode;
+    int32_t             elemTypeNode;
+    SLCTFEValue*        elems;
+    uint32_t            len;
+} SLEvalArray;
+
 #define SL_EVAL_PACKAGE_REF_TAG_FLAG  (UINT64_C(1) << 63)
 #define SL_EVAL_NULL_FIXED_LEN_TAG    (UINT64_C(1) << 62)
 #define SL_EVAL_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 61)
@@ -544,6 +552,47 @@ static SLEvalAggregate* _Nullable SLEvalValueAsAggregate(const SLCTFEValue* valu
         return NULL;
     }
     return (SLEvalAggregate*)value->s.bytes;
+}
+
+static void SLEvalValueSetArray(
+    SLCTFEValue* value, const SLParsedFile* file, int32_t typeNode, SLEvalArray* array) {
+    if (value == NULL) {
+        return;
+    }
+    value->kind = SLCTFEValue_ARRAY;
+    value->i64 = 0;
+    value->f64 = 0.0;
+    value->b = 0;
+    value->typeTag = SLEvalMakeAggregateTag(file, typeNode);
+    value->s.bytes = (const uint8_t*)array;
+    value->s.len = array != NULL ? array->len : 0;
+}
+
+static SLEvalArray* _Nullable SLEvalValueAsArray(const SLCTFEValue* value) {
+    if (value == NULL || value->kind != SLCTFEValue_ARRAY || value->s.bytes == NULL) {
+        return NULL;
+    }
+    return (SLEvalArray*)value->s.bytes;
+}
+
+static void SLEvalValueSetReference(SLCTFEValue* value, SLCTFEValue* target) {
+    if (value == NULL) {
+        return;
+    }
+    value->kind = SLCTFEValue_REFERENCE;
+    value->i64 = 0;
+    value->f64 = 0.0;
+    value->b = 0;
+    value->typeTag = 0;
+    value->s.bytes = (const uint8_t*)target;
+    value->s.len = 0;
+}
+
+static SLCTFEValue* _Nullable SLEvalValueReferenceTarget(const SLCTFEValue* value) {
+    if (value == NULL || value->kind != SLCTFEValue_REFERENCE || value->s.bytes == NULL) {
+        return NULL;
+    }
+    return (SLCTFEValue*)value->s.bytes;
 }
 
 static int32_t SLEvalFindNamedAggregateDeclInPackage(
@@ -909,6 +958,52 @@ static int SLEvalZeroInitTypeNode(
             }
             *outIsConst = 1;
             return 0;
+        case SLAst_TYPE_ARRAY: {
+            const SLAstNode* arrayTypeNode = &file->ast.nodes[typeNode];
+            int32_t          elemTypeNode = ASTFirstChild(&file->ast, typeNode);
+            uint32_t         len = 0;
+            uint32_t         i;
+            SLEvalArray*     array;
+            if (elemTypeNode < 0
+                || !SLEvalParseUintSlice(
+                    file->source, arrayTypeNode->dataStart, arrayTypeNode->dataEnd, &len))
+            {
+                return 0;
+            }
+            array = (SLEvalArray*)SLArenaAlloc(
+                p->arena, sizeof(SLEvalArray), (uint32_t)_Alignof(SLEvalArray));
+            if (array == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            memset(array, 0, sizeof(*array));
+            array->file = file;
+            array->typeNode = typeNode;
+            array->elemTypeNode = elemTypeNode;
+            array->len = len;
+            if (len > 0) {
+                array->elems = (SLCTFEValue*)SLArenaAlloc(
+                    p->arena, sizeof(SLCTFEValue) * len, (uint32_t)_Alignof(SLCTFEValue));
+                if (array->elems == NULL) {
+                    return ErrorSimple("out of memory");
+                }
+                memset(array->elems, 0, sizeof(SLCTFEValue) * len);
+                for (i = 0; i < len; i++) {
+                    int elemIsConst = 0;
+                    if (SLEvalZeroInitTypeNode(
+                            p, file, elemTypeNode, &array->elems[i], &elemIsConst)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (!elemIsConst) {
+                        return 0;
+                    }
+                }
+            }
+            SLEvalValueSetArray(outValue, file, typeNode, array);
+            *outIsConst = 1;
+            return 0;
+        }
         case SLAst_TYPE_FN:
             SLEvalValueSetNull(outValue);
             *outIsConst = 1;
@@ -2019,6 +2114,20 @@ static int SLEvalEvalBinary(
             default: return 0;
         }
     }
+    if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_NULL) {
+        if (op == SLTok_EQ || op == SLTok_NEQ) {
+            outValue->kind = SLCTFEValue_BOOL;
+            outValue->i64 = 0;
+            outValue->f64 = 0.0;
+            outValue->b = op == SLTok_EQ ? 1u : 0u;
+            outValue->typeTag = 0;
+            outValue->s.bytes = NULL;
+            outValue->s.len = 0;
+            *outIsConst = 1;
+            return 1;
+        }
+        return 0;
+    }
     return 0;
 }
 
@@ -2461,6 +2570,72 @@ static int SLEvalAssignExprCb(
                 return 0;
             }
         }
+    }
+    if (ast->nodes[lhsNode].kind == SLAst_INDEX && (ast->nodes[lhsNode].flags & 0x7u) == 0u) {
+        int32_t      baseNode = ast->nodes[lhsNode].firstChild;
+        int32_t      indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
+        SLCTFEValue  baseValue;
+        SLCTFEValue  indexValue;
+        SLEvalArray* array;
+        int          baseIsConst = 0;
+        int          indexIsConst = 0;
+        int64_t      index = 0;
+        if (SLEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+            return -1;
+        }
+        if (!rhsIsConst || baseNode < 0 || indexNode < 0 || ast->nodes[indexNode].nextSibling >= 0)
+        {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (SLEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
+            || SLEvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
+        {
+            return -1;
+        }
+        if (!baseIsConst || !indexIsConst || SLCTFEValueToInt64(&indexValue, &index) != 0) {
+            *outIsConst = 0;
+            return 0;
+        }
+        array = SLEvalValueAsArray(&baseValue);
+        if (array == NULL || index < 0 || (uint64_t)index >= (uint64_t)array->len) {
+            *outIsConst = 0;
+            return 0;
+        }
+        array->elems[(uint32_t)index] = rhsValue;
+        *outValue = rhsValue;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (ast->nodes[lhsNode].kind == SLAst_UNARY && (SLTokenKind)ast->nodes[lhsNode].op == SLTok_MUL)
+    {
+        int32_t      refNode = ast->nodes[lhsNode].firstChild;
+        SLCTFEValue  refValue;
+        SLCTFEValue* target;
+        int          refIsConst = 0;
+        if (SLEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+            return -1;
+        }
+        if (!rhsIsConst || refNode < 0) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (SLEvalExecExprCb(p, refNode, &refValue, &refIsConst) != 0) {
+            return -1;
+        }
+        if (!refIsConst) {
+            *outIsConst = 0;
+            return 0;
+        }
+        target = SLEvalValueReferenceTarget(&refValue);
+        if (target == NULL) {
+            *outIsConst = 0;
+            return 0;
+        }
+        *target = rhsValue;
+        *outValue = rhsValue;
+        *outIsConst = 1;
+        return 0;
     }
     if (ast->nodes[lhsNode].kind != SLAst_FIELD_EXPR) {
         *outIsConst = 0;
@@ -3074,6 +3249,11 @@ static int SLEvalResolveCall(
             *outIsConst = 1;
             return 0;
         }
+        if (args[0].kind == SLCTFEValue_ARRAY) {
+            SLEvalValueSetInt(outValue, (int64_t)args[0].s.len);
+            *outIsConst = 1;
+            return 0;
+        }
         if (args[0].kind == SLCTFEValue_NULL) {
             SLEvalValueSetInt(outValue, 0);
             *outIsConst = 1;
@@ -3233,6 +3413,36 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             p, exprNode, p->currentFile, p->currentFile, -1, outValue, outIsConst);
     }
 
+    if (n->kind == SLAst_INDEX && (n->flags & 0x7u) == 0u) {
+        int32_t      baseNode = n->firstChild;
+        int32_t      indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
+        SLCTFEValue  baseValue;
+        SLCTFEValue  indexValue;
+        SLEvalArray* array;
+        int          baseIsConst = 0;
+        int          indexIsConst = 0;
+        int64_t      index = 0;
+        if (baseNode < 0 || indexNode < 0 || ast->nodes[indexNode].nextSibling >= 0) {
+            goto index_fallback;
+        }
+        if (SLEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
+            || SLEvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
+        {
+            return -1;
+        }
+        if (!baseIsConst || !indexIsConst || SLCTFEValueToInt64(&indexValue, &index) != 0) {
+            goto index_fallback;
+        }
+        array = SLEvalValueAsArray(&baseValue);
+        if (array == NULL || index < 0 || (uint64_t)index >= (uint64_t)array->len) {
+            goto index_fallback;
+        }
+        *outValue = array->elems[(uint32_t)index];
+        *outIsConst = 1;
+        return 0;
+    index_fallback:;
+    }
+
     if (n->kind == SLAst_FIELD_EXPR) {
         int32_t          baseNode = n->firstChild;
         SLCTFEValue      baseValue;
@@ -3263,6 +3473,38 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         int32_t     childNode = n->firstChild;
         SLCTFEValue childValue;
         int         childIsConst = 0;
+        if (childNode >= 0 && (uint32_t)childNode < ast->len
+            && ast->nodes[childNode].kind == SLAst_INDEX
+            && (ast->nodes[childNode].flags & 0x7u) == 0u)
+        {
+            int32_t      baseNode = ast->nodes[childNode].firstChild;
+            int32_t      indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
+            SLCTFEValue  baseValue;
+            SLCTFEValue  indexValue;
+            SLEvalArray* array;
+            int          baseIsConst = 0;
+            int          indexIsConst = 0;
+            int64_t      index = 0;
+            if (baseNode < 0 || indexNode < 0 || ast->nodes[indexNode].nextSibling >= 0) {
+                goto unary_addr_fallback;
+            }
+            if (SLEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
+                || SLEvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
+            {
+                return -1;
+            }
+            if (!baseIsConst || !indexIsConst || SLCTFEValueToInt64(&indexValue, &index) != 0) {
+                goto unary_addr_fallback;
+            }
+            array = SLEvalValueAsArray(&baseValue);
+            if (array == NULL || index < 0 || (uint64_t)index >= (uint64_t)array->len) {
+                goto unary_addr_fallback;
+            }
+            SLEvalValueSetReference(outValue, &array->elems[(uint32_t)index]);
+            *outIsConst = 1;
+            return 0;
+        unary_addr_fallback:;
+        }
         if (childNode < 0 || (uint32_t)childNode >= ast->len) {
             *outIsConst = 0;
             return 0;
@@ -3274,8 +3516,34 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             *outIsConst = 0;
             return 0;
         }
-        if (childValue.kind == SLCTFEValue_AGGREGATE || childValue.kind == SLCTFEValue_NULL) {
+        if (childValue.kind == SLCTFEValue_AGGREGATE || childValue.kind == SLCTFEValue_NULL
+            || childValue.kind == SLCTFEValue_ARRAY)
+        {
             *outValue = childValue;
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+
+    if (n->kind == SLAst_UNARY && (SLTokenKind)n->op == SLTok_MUL) {
+        int32_t      childNode = n->firstChild;
+        SLCTFEValue  childValue;
+        SLCTFEValue* target;
+        int          childIsConst = 0;
+        if (childNode < 0 || (uint32_t)childNode >= ast->len) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (SLEvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
+            return -1;
+        }
+        if (!childIsConst) {
+            *outIsConst = 0;
+            return 0;
+        }
+        target = SLEvalValueReferenceTarget(&childValue);
+        if (target != NULL) {
+            *outValue = *target;
             *outIsConst = 1;
             return 0;
         }
@@ -3527,7 +3795,8 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                     if (extraArgCount == 0
                         && SliceEqCStr(
                             p->currentFile->source, callee->dataStart, callee->dataEnd, "len")
-                        && baseValue.kind == SLCTFEValue_STRING)
+                        && (baseValue.kind == SLCTFEValue_STRING
+                            || baseValue.kind == SLCTFEValue_ARRAY))
                     {
                         SLEvalValueSetInt(outValue, (int64_t)baseValue.s.len);
                         *outIsConst = 1;
