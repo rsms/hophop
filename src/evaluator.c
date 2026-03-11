@@ -173,7 +173,8 @@ static int IsFnReturnTypeNodeKind(SLAstKind kind) {
     return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
         || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
         || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
-        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_TUPLE;
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_TUPLE || kind == SLAst_TYPE_ANON_STRUCT
+        || kind == SLAst_TYPE_ANON_UNION;
 }
 
 static int ParseSliceU64(const char* s, uint32_t start, uint32_t end, uint64_t* outValue) {
@@ -2401,7 +2402,10 @@ static int SLEvalZeroInitAggregateValue(
         return -1;
     }
     aggregateDecl = &declFile->ast.nodes[declNode];
-    if (aggregateDecl->kind != SLAst_STRUCT && aggregateDecl->kind != SLAst_UNION) {
+    if (aggregateDecl->kind != SLAst_STRUCT && aggregateDecl->kind != SLAst_UNION
+        && aggregateDecl->kind != SLAst_TYPE_ANON_STRUCT
+        && aggregateDecl->kind != SLAst_TYPE_ANON_UNION)
+    {
         return 0;
     }
     child = ASTFirstChild(&declFile->ast, declNode);
@@ -2901,6 +2905,9 @@ static int SLEvalZeroInitTypeNode(
             *outIsConst = 1;
             return 0;
         }
+        case SLAst_TYPE_ANON_STRUCT:
+        case SLAst_TYPE_ANON_UNION:
+            return SLEvalZeroInitAggregateValue(p, file, typeNode, outValue, outIsConst);
         case SLAst_TYPE_FN:
             SLEvalValueSetNull(outValue);
             *outIsConst = 1;
@@ -4735,6 +4742,15 @@ static int SLEvalResolveAggregateTypeNode(
         }
         n = &typeFile->ast.nodes[typeNode];
     }
+    if (n->kind == SLAst_TYPE_ANON_STRUCT || n->kind == SLAst_TYPE_ANON_UNION) {
+        if (outDeclFile != NULL) {
+            *outDeclFile = typeFile;
+        }
+        if (outDeclNode != NULL) {
+            *outDeclNode = typeNode;
+        }
+        return 1;
+    }
     if (n->kind != SLAst_TYPE_NAME) {
         return 0;
     }
@@ -4975,7 +4991,59 @@ static int SLEvalEvalCompoundLiteral(
             &declFile,
             &declNode))
     {
-        *outIsConst = 0;
+        uint32_t inferredFieldCount = 0;
+        int32_t  scanNode = fieldNode;
+        while (scanNode >= 0) {
+            if (ast->nodes[scanNode].kind != SLAst_COMPOUND_FIELD) {
+                *outIsConst = 0;
+                return 0;
+            }
+            inferredFieldCount++;
+            scanNode = ASTNextSibling(ast, scanNode);
+        }
+        if (inferredFieldCount == 0) {
+            *outIsConst = 0;
+            return 0;
+        }
+        agg = (SLEvalAggregate*)SLArenaAlloc(
+            p->arena, sizeof(SLEvalAggregate), (uint32_t)_Alignof(SLEvalAggregate));
+        if (agg == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        memset(agg, 0, sizeof(*agg));
+        agg->file = litFile;
+        agg->nodeId = exprNode;
+        agg->fieldLen = inferredFieldCount;
+        agg->fields = (SLEvalAggregateField*)SLArenaAlloc(
+            p->arena,
+            sizeof(SLEvalAggregateField) * inferredFieldCount,
+            (uint32_t)_Alignof(SLEvalAggregateField));
+        if (agg->fields == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        memset(agg->fields, 0, sizeof(SLEvalAggregateField) * inferredFieldCount);
+        scanNode = fieldNode;
+        for (i = 0; i < inferredFieldCount; i++) {
+            const SLAstNode* fieldAst = &ast->nodes[scanNode];
+            int32_t          valueNode = ASTFirstChild(ast, scanNode);
+            int              fieldIsConst = 0;
+            if (valueNode < 0
+                || SLEvalExecExprCb(p, valueNode, &agg->fields[i].value, &fieldIsConst) != 0)
+            {
+                return valueNode < 0 ? 0 : -1;
+            }
+            if (!fieldIsConst) {
+                *outIsConst = 0;
+                return 0;
+            }
+            agg->fields[i].nameStart = fieldAst->dataStart;
+            agg->fields[i].nameEnd = fieldAst->dataEnd;
+            agg->fields[i].typeNode = -1;
+            agg->fields[i].defaultExprNode = -1;
+            scanNode = ASTNextSibling(ast, scanNode);
+        }
+        SLEvalValueSetAggregate(outValue, litFile, exprNode, agg);
+        *outIsConst = 1;
         return 0;
     }
     if (SLEvalZeroInitAggregateValue(p, declFile, declNode, &aggregateValue, &aggregateIsConst)
