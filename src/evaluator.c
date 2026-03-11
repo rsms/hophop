@@ -639,6 +639,44 @@ static int32_t SLEvalFindNamedAggregateDeclInPackage(
     return -1;
 }
 
+static int32_t SLEvalFindNamedEnumDeclInPackage(
+    const SLPackage*     pkg,
+    const SLParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    const SLParsedFile** outFile) {
+    uint32_t fileIndex;
+    if (outFile != NULL) {
+        *outFile = NULL;
+    }
+    if (pkg == NULL || callerFile == NULL) {
+        return -1;
+    }
+    for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+        const SLParsedFile* pkgFile = &pkg->files[fileIndex];
+        int32_t             nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
+        while (nodeId >= 0) {
+            const SLAstNode* n = &pkgFile->ast.nodes[nodeId];
+            if (n->kind == SLAst_ENUM
+                && SliceEqSlice(
+                    callerFile->source,
+                    nameStart,
+                    nameEnd,
+                    pkgFile->source,
+                    n->dataStart,
+                    n->dataEnd))
+            {
+                if (outFile != NULL) {
+                    *outFile = pkgFile;
+                }
+                return nodeId;
+            }
+            nodeId = ASTNextSibling(&pkgFile->ast, nodeId);
+        }
+    }
+    return -1;
+}
+
 static int SLEvalZeroInitTypeNode(
     const SLEvalProgram* p,
     const SLParsedFile*  file,
@@ -3534,6 +3572,63 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         if (baseNode < 0 || (uint32_t)baseNode >= ast->len) {
             *outIsConst = 0;
             return 0;
+        }
+        if (ast->nodes[baseNode].kind == SLAst_IDENT) {
+            const SLPackage*    currentPkg = SLEvalFindPackageByFile(p, p->currentFile);
+            const SLParsedFile* enumFile = NULL;
+            int32_t             enumNode = -1;
+            if (currentPkg != NULL) {
+                enumNode = SLEvalFindNamedEnumDeclInPackage(
+                    currentPkg,
+                    p->currentFile,
+                    ast->nodes[baseNode].dataStart,
+                    ast->nodes[baseNode].dataEnd,
+                    &enumFile);
+            }
+            if (enumNode >= 0 && enumFile != NULL) {
+                int32_t child = ASTFirstChild(&enumFile->ast, enumNode);
+                while (child >= 0) {
+                    const SLAstNode* fieldNode = &enumFile->ast.nodes[child];
+                    if (fieldNode->kind == SLAst_FIELD
+                        && SliceEqSlice(
+                            p->currentFile->source,
+                            n->dataStart,
+                            n->dataEnd,
+                            enumFile->source,
+                            fieldNode->dataStart,
+                            fieldNode->dataEnd))
+                    {
+                        int32_t     valueNode = ASTFirstChild(&enumFile->ast, child);
+                        SLCTFEValue enumValue;
+                        int         enumIsConst = 0;
+                        if (valueNode < 0) {
+                            *outIsConst = 0;
+                            return 0;
+                        }
+                        if (SLEvalExecExprInFileWithType(
+                                p,
+                                enumFile,
+                                p->currentExecCtx != NULL ? p->currentExecCtx->env : NULL,
+                                valueNode,
+                                enumFile,
+                                -1,
+                                &enumValue,
+                                &enumIsConst)
+                            != 0)
+                        {
+                            return -1;
+                        }
+                        if (!enumIsConst) {
+                            *outIsConst = 0;
+                            return 0;
+                        }
+                        *outValue = enumValue;
+                        *outIsConst = 1;
+                        return 0;
+                    }
+                    child = ASTNextSibling(&enumFile->ast, child);
+                }
+            }
         }
         if (SLEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0) {
             return -1;
