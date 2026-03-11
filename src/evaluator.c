@@ -381,6 +381,100 @@ static int SLEvalTypeCodeFromTypeNode(
     return 0;
 }
 
+static int SLEvalIsU8ElementTypeNode(const SLParsedFile* file, int32_t typeNode) {
+    if (file == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len) {
+        return 0;
+    }
+    return file->ast.nodes[typeNode].kind == SLAst_TYPE_NAME
+        && SliceEqCStr(
+               file->source,
+               file->ast.nodes[typeNode].dataStart,
+               file->ast.nodes[typeNode].dataEnd,
+               "u8");
+}
+
+static int SLEvalStringViewTypeCodeFromTypeNode(
+    const SLParsedFile* file, int32_t typeNode, int32_t* outTypeCode) {
+    const SLAstNode* n;
+    int32_t          childNode;
+    if (outTypeCode != NULL) {
+        *outTypeCode = SLEvalTypeCode_INVALID;
+    }
+    if (file == NULL || outTypeCode == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len)
+    {
+        return 0;
+    }
+    if (SLEvalTypeCodeFromTypeNode(file, typeNode, outTypeCode)) {
+        return *outTypeCode == SLEvalTypeCode_STR_REF || *outTypeCode == SLEvalTypeCode_STR_PTR;
+    }
+    n = &file->ast.nodes[typeNode];
+    if ((n->kind != SLAst_TYPE_PTR && n->kind != SLAst_TYPE_REF) || n->firstChild < 0
+        || (uint32_t)n->firstChild >= file->ast.len)
+    {
+        return 0;
+    }
+    childNode = n->firstChild;
+    if ((file->ast.nodes[childNode].kind == SLAst_TYPE_VARRAY
+         || file->ast.nodes[childNode].kind == SLAst_TYPE_ARRAY)
+        && file->ast.nodes[childNode].firstChild >= 0
+        && SLEvalIsU8ElementTypeNode(file, file->ast.nodes[childNode].firstChild))
+    {
+        *outTypeCode = n->kind == SLAst_TYPE_REF ? SLEvalTypeCode_STR_REF : SLEvalTypeCode_STR_PTR;
+        return 1;
+    }
+    return 0;
+}
+
+static int SLEvalCloneStringValue(
+    SLArena* arena, const SLCTFEValue* inValue, SLCTFEValue* outValue, int32_t typeCode) {
+    uint8_t* copyBytes = NULL;
+    if (arena == NULL || inValue == NULL || outValue == NULL || inValue->kind != SLCTFEValue_STRING)
+    {
+        return 0;
+    }
+    *outValue = *inValue;
+    if (inValue->s.len > 0) {
+        copyBytes = (uint8_t*)SLArenaAlloc(arena, inValue->s.len, (uint32_t)_Alignof(uint8_t));
+        if (copyBytes == NULL) {
+            return -1;
+        }
+        memcpy(copyBytes, inValue->s.bytes, inValue->s.len);
+        outValue->s.bytes = copyBytes;
+    }
+    SLEvalValueSetRuntimeTypeCode(outValue, typeCode);
+    return 1;
+}
+
+static int SLEvalAdaptStringValueForType(
+    SLArena*            arena,
+    const SLParsedFile* typeFile,
+    int32_t             typeNode,
+    const SLCTFEValue*  inValue,
+    SLCTFEValue*        outValue) {
+    int32_t targetTypeCode = SLEvalTypeCode_INVALID;
+    int32_t currentTypeCode = SLEvalTypeCode_INVALID;
+    if (arena == NULL || typeFile == NULL || inValue == NULL || outValue == NULL
+        || inValue->kind != SLCTFEValue_STRING)
+    {
+        return 0;
+    }
+    if (!SLEvalStringViewTypeCodeFromTypeNode(typeFile, typeNode, &targetTypeCode)) {
+        return 0;
+    }
+    if (targetTypeCode == SLEvalTypeCode_STR_PTR) {
+        if (SLEvalValueGetRuntimeTypeCode(inValue, &currentTypeCode)
+            && currentTypeCode == SLEvalTypeCode_STR_PTR)
+        {
+            *outValue = *inValue;
+            return 1;
+        }
+        return SLEvalCloneStringValue(arena, inValue, outValue, targetTypeCode);
+    }
+    *outValue = *inValue;
+    SLEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+    return 1;
+}
+
 static int SLEvalTypeCodeFromValue(const SLCTFEValue* value, int32_t* outTypeCode) {
     if (outTypeCode != NULL) {
         *outTypeCode = SLEvalTypeCode_INVALID;
@@ -5088,7 +5182,15 @@ static int SLEvalExecExprWithTypeNode(
     if (ast->nodes[exprNode].kind == SLAst_NEW) {
         return SLEvalEvalNewExpr(p, exprNode, outValue, outIsConst);
     }
-    return SLEvalExecExprCb(p, exprNode, outValue, outIsConst);
+    if (SLEvalExecExprCb(p, exprNode, outValue, outIsConst) != 0) {
+        return -1;
+    }
+    if (*outIsConst && typeFile != NULL && typeNode >= 0
+        && SLEvalAdaptStringValueForType(p->arena, typeFile, typeNode, outValue, outValue) < 0)
+    {
+        return -1;
+    }
+    return 0;
 }
 
 static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
@@ -5277,26 +5379,47 @@ static int SLEvalAssignExprCb(
         if (array == NULL) {
             array = SLEvalValueAsArray(SLEvalValueTargetOrSelf(&baseValue));
         }
-        if (array == NULL || index < 0 || (uint64_t)index >= (uint64_t)array->len) {
-            *outIsConst = 0;
+        if (array != NULL && index >= 0 && (uint64_t)index < (uint64_t)array->len) {
+            if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+                int handled;
+                if (!SLEvalBinaryOpForAssignToken((SLTokenKind)expr->op, &binaryOp)) {
+                    *outIsConst = 0;
+                    return 0;
+                }
+                handled = SLEvalEvalBinary(
+                    p, binaryOp, &array->elems[(uint32_t)index], &rhsValue, &rhsValue, outIsConst);
+                if (handled <= 0 || !*outIsConst) {
+                    *outIsConst = 0;
+                    return handled < 0 ? -1 : 0;
+                }
+            }
+            array->elems[(uint32_t)index] = rhsValue;
+            *outValue = rhsValue;
+            *outIsConst = 1;
             return 0;
         }
-        if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
-            int handled;
-            if (!SLEvalBinaryOpForAssignToken((SLTokenKind)expr->op, &binaryOp)) {
-                *outIsConst = 0;
+        {
+            SLCTFEValue* targetValue = SLEvalValueReferenceTarget(&baseValue);
+            int32_t      baseTypeCode = SLEvalTypeCode_INVALID;
+            int64_t      byteValue = 0;
+            if (targetValue == NULL) {
+                targetValue = (SLCTFEValue*)SLEvalValueTargetOrSelf(&baseValue);
+            }
+            if (targetValue != NULL && targetValue->kind == SLCTFEValue_STRING
+                && SLEvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
+                && baseTypeCode == SLEvalTypeCode_STR_PTR && index >= 0
+                && (uint64_t)index < (uint64_t)targetValue->s.len
+                && SLCTFEValueToInt64(&rhsValue, &byteValue) == 0 && byteValue >= 0
+                && byteValue <= 255)
+            {
+                ((uint8_t*)targetValue->s.bytes)[(uint32_t)index] = (uint8_t)byteValue;
+                SLEvalValueSetInt(outValue, byteValue);
+                SLEvalValueSetRuntimeTypeCode(outValue, SLEvalTypeCode_U8);
+                *outIsConst = 1;
                 return 0;
             }
-            handled = SLEvalEvalBinary(
-                p, binaryOp, &array->elems[(uint32_t)index], &rhsValue, &rhsValue, outIsConst);
-            if (handled <= 0 || !*outIsConst) {
-                *outIsConst = 0;
-                return handled < 0 ? -1 : 0;
-            }
         }
-        array->elems[(uint32_t)index] = rhsValue;
-        *outValue = rhsValue;
-        *outIsConst = 1;
+        *outIsConst = 0;
         return 0;
     }
     if (ast->nodes[lhsNode].kind == SLAst_UNARY && (SLTokenKind)ast->nodes[lhsNode].op == SLTok_MUL)
@@ -5539,13 +5662,34 @@ static int SLEvalAssignValueExprCb(
         if (array == NULL) {
             array = SLEvalValueAsArray(SLEvalValueTargetOrSelf(&baseValue));
         }
-        if (array == NULL || index < 0 || (uint64_t)index >= (uint64_t)array->len) {
-            *outIsConst = 0;
+        if (array != NULL && index >= 0 && (uint64_t)index < (uint64_t)array->len) {
+            array->elems[(uint32_t)index] = *inValue;
+            *outValue = *inValue;
+            *outIsConst = 1;
             return 0;
         }
-        array->elems[(uint32_t)index] = *inValue;
-        *outValue = *inValue;
-        *outIsConst = 1;
+        {
+            SLCTFEValue* targetValue = SLEvalValueReferenceTarget(&baseValue);
+            int32_t      baseTypeCode = SLEvalTypeCode_INVALID;
+            int64_t      byteValue = 0;
+            if (targetValue == NULL) {
+                targetValue = (SLCTFEValue*)SLEvalValueTargetOrSelf(&baseValue);
+            }
+            if (targetValue != NULL && targetValue->kind == SLCTFEValue_STRING
+                && SLEvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
+                && baseTypeCode == SLEvalTypeCode_STR_PTR && index >= 0
+                && (uint64_t)index < (uint64_t)targetValue->s.len
+                && SLCTFEValueToInt64(inValue, &byteValue) == 0 && byteValue >= 0
+                && byteValue <= 255)
+            {
+                ((uint8_t*)targetValue->s.bytes)[(uint32_t)index] = (uint8_t)byteValue;
+                SLEvalValueSetInt(outValue, byteValue);
+                SLEvalValueSetRuntimeTypeCode(outValue, SLEvalTypeCode_U8);
+                *outIsConst = 1;
+                return 0;
+            }
+        }
+        *outIsConst = 0;
         return 0;
     }
     *outIsConst = 0;
@@ -6263,6 +6407,13 @@ static int SLEvalResolveCall(
             return 0;
         }
     }
+    if ((argCount == 1 || argCount == 2)
+        && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "free"))
+    {
+        SLEvalValueSetNull(outValue);
+        *outIsConst = 1;
+        return 0;
+    }
     if (argCount > 0) {
         uint32_t pkgIndex = 0;
         if (SLEvalValueIsPackageRef(&args[0], &pkgIndex)) {
@@ -6562,12 +6713,25 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         if (array == NULL) {
             array = SLEvalValueAsArray(SLEvalValueTargetOrSelf(&baseValue));
         }
-        if (array == NULL || index < 0 || (uint64_t)index >= (uint64_t)array->len) {
+        if (array != NULL && index >= 0 && (uint64_t)index < (uint64_t)array->len) {
+            *outValue = array->elems[(uint32_t)index];
+            *outIsConst = 1;
+            return 0;
+        }
+        {
+            const SLCTFEValue* targetValue = SLEvalValueTargetOrSelf(&baseValue);
+            if (targetValue->kind == SLCTFEValue_STRING && index >= 0
+                && (uint64_t)index < (uint64_t)targetValue->s.len)
+            {
+                SLEvalValueSetInt(outValue, (int64_t)targetValue->s.bytes[(uint32_t)index]);
+                SLEvalValueSetRuntimeTypeCode(outValue, SLEvalTypeCode_U8);
+                *outIsConst = 1;
+                return 0;
+            }
+        }
+        if (index < 0) {
             goto index_fallback;
         }
-        *outValue = array->elems[(uint32_t)index];
-        *outIsConst = 1;
-        return 0;
     index_fallback:;
     }
 
