@@ -41,7 +41,22 @@ typedef int (*SLCTFEExecIsOptionalTypeFn)(
     int32_t* _Nullable outPayloadTypeId,
     int* _Nonnull outIsOptional);
 
-typedef struct {
+typedef struct SLCTFEExecCtx SLCTFEExecCtx;
+
+typedef int (*SLCTFEExecZeroInitFn)(
+    void* _Nullable ctx,
+    int32_t typeNode,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
+
+typedef int (*SLCTFEExecAssignExprFn)(
+    void* _Nullable ctx,
+    SLCTFEExecCtx* _Nonnull execCtx,
+    int32_t exprNode,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
+
+struct SLCTFEExecCtx {
     SLArena* _Nonnull arena;
     const SLAst* _Nonnull ast;
     SLStrView src;
@@ -58,6 +73,10 @@ typedef struct {
     void* _Nullable inferExprTypeCtx;
     SLCTFEExecIsOptionalTypeFn _Nullable isOptionalType;
     void* _Nullable isOptionalTypeCtx;
+    SLCTFEExecZeroInitFn _Nullable zeroInit;
+    void* _Nullable zeroInitCtx;
+    SLCTFEExecAssignExprFn _Nullable assignExpr;
+    void* _Nullable assignExprCtx;
 
     const char* _Nullable nonConstReason;
     uint32_t nonConstStart;
@@ -67,7 +86,7 @@ typedef struct {
     uint32_t forIterLimit;
     uint8_t  skipConstBlocks;
     uint8_t  _reserved[3];
-} SLCTFEExecCtx;
+};
 
 void SLCTFEExecResetReason(SLCTFEExecCtx* _Nonnull c);
 void SLCTFEExecSetReason(

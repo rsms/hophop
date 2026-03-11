@@ -88,8 +88,9 @@ static int SLCTFEExecValueEq(const SLCTFEValue* a, const SLCTFEValue* b, int* ou
                     || (a->span.fileBytes != NULL && b->span.fileBytes != NULL
                         && memcmp(a->span.fileBytes, b->span.fileBytes, a->span.fileLen) == 0));
             return 1;
-        case SLCTFEValue_NULL:     *outEq = 1; return 1;
-        case SLCTFEValue_OPTIONAL: {
+        case SLCTFEValue_NULL:      *outEq = 1; return 1;
+        case SLCTFEValue_AGGREGATE: return 0;
+        case SLCTFEValue_OPTIONAL:  {
             const SLCTFEValue* pa = NULL;
             const SLCTFEValue* pb = NULL;
             if (!SLCTFEExecOptionalPayload(a, &pa) || !SLCTFEExecOptionalPayload(b, &pb)) {
@@ -445,6 +446,9 @@ static int SLCTFEExecEvalAssignExpr(
     }
     lhs = &c->ast->nodes[lhsNode];
     if (lhs->kind != SLAst_IDENT) {
+        if (c->assignExpr != NULL) {
+            return c->assignExpr(c->assignExprCtx, c, exprNode, outValue, outIsConst);
+        }
         *outIsConst = 0;
         return 0;
     }
@@ -891,7 +895,7 @@ static int SLCTFEExecEvalStmt(
             *outIsConst = 0;
             return 0;
         }
-        if (initNode < 0 || frame->bindingLen >= bindingCap || frame->bindings == NULL) {
+        if (frame->bindingLen >= bindingCap || frame->bindings == NULL) {
             SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
             *outIsConst = 0;
             return 0;
@@ -903,7 +907,17 @@ static int SLCTFEExecEvalStmt(
                 return -1;
             }
         }
-        if (SLCTFEExecEvalExpr(c, initNode, &v, &isConst) != 0) {
+        if (initNode < 0) {
+            if (declTypeNode >= 0 && c->zeroInit != NULL) {
+                if (c->zeroInit(c->zeroInitCtx, declTypeNode, &v, &isConst) != 0) {
+                    return -1;
+                }
+            } else {
+                SLCTFEExecSetReasonNode(c, stmtNode, "declaration is not const-evaluable");
+                *outIsConst = 0;
+                return 0;
+            }
+        } else if (SLCTFEExecEvalExpr(c, initNode, &v, &isConst) != 0) {
             return -1;
         }
         if (!isConst) {
