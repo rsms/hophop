@@ -224,6 +224,7 @@ So today:
   - successful `assert` statements
   - conservative block-scoped `defer`, including reverse-order execution and return-path replay before a MIR `return`
   - simple non-`for in` `for` loops, plus `break` and `continue`
+  - conservative sequence-path `for in` over strings and array-backed values, with key/value or value-only identifier bindings and discard
   - conservative `switch` lowering for plain subject/condition switches with case labels, `default`, switch-local `break`, and subject-pattern alias bindings
   - `return`
   - nested blocks

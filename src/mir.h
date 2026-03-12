@@ -18,6 +18,7 @@ typedef enum {
     SLMirOp_UNARY,
     SLMirOp_BINARY,
     SLMirOp_INDEX,
+    SLMirOp_SEQ_LEN,
     SLMirOp_CAST,
     SLMirOp_LOCAL_ZERO,
     SLMirOp_LOCAL_LOAD,

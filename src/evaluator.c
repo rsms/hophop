@@ -6374,6 +6374,32 @@ static int SLEvalMirIndexAddr(
     return 0;
 }
 
+static int SLEvalMirSequenceLen(
+    void*              ctx,
+    const SLCTFEValue* base,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram*     p = (SLEvalProgram*)ctx;
+    const SLCTFEValue* baseValue;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || base == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    baseValue = SLEvalValueTargetOrSelf(base);
+    if (baseValue->kind != SLCTFEValue_STRING && baseValue->kind != SLCTFEValue_ARRAY
+        && baseValue->kind != SLCTFEValue_NULL)
+    {
+        return 0;
+    }
+    SLEvalValueSetInt(outValue, (int64_t)baseValue->s.len);
+    *outIsConst = 1;
+    return 0;
+}
+
 static int SLEvalMirAggGetField(
     void*              ctx,
     const SLCTFEValue* base,
@@ -6592,6 +6618,8 @@ static void SLEvalMirInitExecEnv(
     env->indexValueCtx = p;
     env->indexAddr = SLEvalMirIndexAddr;
     env->indexAddrCtx = p;
+    env->sequenceLen = SLEvalMirSequenceLen;
+    env->sequenceLenCtx = p;
     env->aggGetField = SLEvalMirAggGetField;
     env->aggGetFieldCtx = p;
     env->aggAddrField = SLEvalMirAggAddrField;

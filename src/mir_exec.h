@@ -58,6 +58,12 @@ typedef int (*SLMirIndexAddrFn)(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef int (*SLMirSequenceLenFn)(
+    void* _Nullable ctx,
+    const SLMirExecValue* _Nonnull base,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 typedef int (*SLMirAggGetFieldFn)(
     void* _Nullable ctx,
     const SLMirExecValue* _Nonnull base,
@@ -95,6 +101,8 @@ typedef struct {
     void* _Nullable indexValueCtx;
     SLMirIndexAddrFn _Nullable indexAddr;
     void* _Nullable indexAddrCtx;
+    SLMirSequenceLenFn _Nullable sequenceLen;
+    void* _Nullable sequenceLenCtx;
     SLMirAggGetFieldFn _Nullable aggGetField;
     void* _Nullable aggGetFieldCtx;
     SLMirAggAddrFieldFn _Nullable aggAddrField;

@@ -881,6 +881,52 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_SEQ_LEN: {
+                SLCTFEValue base;
+                SLCTFEValue out;
+                int         lenIsConst = 0;
+                if (SLCTFEPop(run, &base) != 0) {
+                    return 0;
+                }
+                if (base.kind == SLCTFEValue_STRING || base.kind == SLCTFEValue_ARRAY
+                    || base.kind == SLCTFEValue_NULL)
+                {
+                    out.kind = SLCTFEValue_INT;
+                    out.i64 = (int64_t)base.s.len;
+                    out.f64 = 0.0;
+                    out.b = 0;
+                    out.typeTag = 0;
+                    out.s.bytes = NULL;
+                    out.s.len = 0;
+                    out.span.fileBytes = NULL;
+                    out.span.fileLen = 0;
+                    out.span.startLine = 0;
+                    out.span.startColumn = 0;
+                    out.span.endLine = 0;
+                    out.span.endColumn = 0;
+                    if (SLCTFEPush(run, &out) != 0) {
+                        return -1;
+                    }
+                    break;
+                }
+                if (run->env.sequenceLen == NULL) {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&out);
+                if (run->env.sequenceLen(
+                        run->env.sequenceLenCtx, &base, &out, &lenIsConst, run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!lenIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_ARRAY_ADDR: {
                 SLCTFEValue base;
                 SLCTFEValue idx;
