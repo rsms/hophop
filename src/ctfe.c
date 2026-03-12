@@ -1,6 +1,7 @@
 #include "libsl-impl.h"
 #include "ctfe.h"
 #include "mir.h"
+#include "mir_lower.h"
 #include "mir_exec.h"
 
 SL_API_BEGIN
@@ -16,7 +17,7 @@ int SLCTFEEvalExpr(
     SLCTFEValue* outValue,
     int*         outIsConst,
     SLDiag* _Nullable diag) {
-    SLMirChunk   chunk;
+    SLMirProgram program = { 0 };
     int          supported = 0;
     SLMirExecEnv env = { 0 };
 
@@ -36,7 +37,7 @@ int SLCTFEEvalExpr(
     }
 
     *outIsConst = 0;
-    if (SLMirBuildExpr(arena, ast, src, nodeId, &chunk, &supported, diag) != 0) {
+    if (SLMirLowerExprAsFunction(arena, ast, src, nodeId, &program, &supported, diag) != 0) {
         return -1;
     }
     if (!supported) {
@@ -47,7 +48,7 @@ int SLCTFEEvalExpr(
     env.resolveCall = resolveCall;
     env.resolveCtx = resolveCtx;
     env.diag = diag;
-    return SLMirEvalChunk(arena, chunk, &env, outValue, outIsConst);
+    return SLMirEvalFunction(arena, &program, 0, NULL, 0, &env, outValue, outIsConst);
 }
 
 int SLCTFEValueToInt64(const SLCTFEValue* value, int64_t* out) {

@@ -49,5 +49,14 @@ int SLMirEvalChunk(
     const SLMirExecEnv* _Nullable env,
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
+int SLMirEvalFunction(
+    SLArena* _Nonnull arena,
+    const SLMirProgram* _Nonnull program,
+    uint32_t functionIndex,
+    const SLMirExecValue* _Nullable args,
+    uint32_t argCount,
+    const SLMirExecEnv* _Nullable env,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
 
 SL_API_END

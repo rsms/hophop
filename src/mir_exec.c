@@ -16,6 +16,51 @@ typedef struct {
     SLMirExecEnv     env;
 } SLMirExecRun;
 
+static void SLCTFESetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end);
+static void SLCTFEValueInvalid(SLCTFEValue* v);
+
+static int SLMirInitRun(
+    SLMirExecRun* _Nonnull run,
+    SLArena* _Nonnull arena,
+    SLMirChunk chunk,
+    const SLMirExecEnv* _Nullable env,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst) {
+    if (env != NULL && env->diag != NULL) {
+        *env->diag = (SLDiag){ 0 };
+    }
+    if (run == NULL || arena == NULL || outValue == NULL || outIsConst == NULL) {
+        if (env != NULL) {
+            SLCTFESetDiag(env->diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        }
+        return -1;
+    }
+
+    SLCTFEValueInvalid(outValue);
+    *outIsConst = 0;
+
+    memset(run, 0, sizeof(*run));
+    run->ip = chunk.v;
+    run->len = chunk.len;
+    run->pc = 0;
+    run->stackCap = chunk.len + 1u;
+    run->stack = (SLMirExecValue*)SLArenaAlloc(
+        arena, sizeof(SLMirExecValue) * run->stackCap, (uint32_t)_Alignof(SLMirExecValue));
+    if (run->stack == NULL) {
+        if (env != NULL) {
+            SLCTFESetDiag(env->diag, SLDiag_ARENA_OOM, 0, 0);
+        }
+        return -1;
+    }
+    run->arena = arena;
+    if (env != NULL) {
+        run->env = *env;
+    } else {
+        memset(&run->env, 0, sizeof(run->env));
+    }
+    return 0;
+}
+
 static void SLCTFESetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
@@ -697,38 +742,8 @@ int SLMirEvalChunk(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
     SLMirExecRun run;
-
-    if (env != NULL && env->diag != NULL) {
-        *env->diag = (SLDiag){ 0 };
-    }
-    if (arena == NULL || outValue == NULL || outIsConst == NULL) {
-        if (env != NULL) {
-            SLCTFESetDiag(env->diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
-        }
+    if (SLMirInitRun(&run, arena, chunk, env, outValue, outIsConst) != 0) {
         return -1;
-    }
-
-    SLCTFEValueInvalid(outValue);
-    *outIsConst = 0;
-
-    memset(&run, 0, sizeof(run));
-    run.ip = chunk.v;
-    run.len = chunk.len;
-    run.pc = 0;
-    run.stackCap = chunk.len + 1u;
-    run.stack = (SLMirExecValue*)SLArenaAlloc(
-        arena, sizeof(SLMirExecValue) * run.stackCap, (uint32_t)_Alignof(SLMirExecValue));
-    if (run.stack == NULL) {
-        if (env != NULL) {
-            SLCTFESetDiag(env->diag, SLDiag_ARENA_OOM, 0, 0);
-        }
-        return -1;
-    }
-    run.arena = arena;
-    if (env != NULL) {
-        run.env = *env;
-    } else {
-        memset(&run.env, 0, sizeof(run.env));
     }
 
     while (run.pc < run.len) {
@@ -1030,5 +1045,41 @@ int SLMirEvalChunk(
     }
 
     return 0;
+}
+
+int SLMirEvalFunction(
+    SLArena* _Nonnull arena,
+    const SLMirProgram* _Nonnull program,
+    uint32_t functionIndex,
+    const SLMirExecValue* _Nullable args,
+    uint32_t argCount,
+    const SLMirExecEnv* _Nullable env,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst) {
+    const SLMirFunction* fn;
+    SLMirChunk           chunk;
+    (void)args;
+    if (program == NULL || functionIndex >= program->funcLen) {
+        if (env != NULL) {
+            SLCTFESetDiag(env->diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        }
+        return -1;
+    }
+    fn = &program->funcs[functionIndex];
+    if (fn->instStart > program->instLen || fn->instLen > program->instLen - fn->instStart) {
+        if (env != NULL) {
+            SLCTFESetDiag(env->diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        }
+        return -1;
+    }
+    if (argCount != fn->paramCount) {
+        return 0;
+    }
+    if (argCount != 0u) {
+        return 0;
+    }
+    chunk.v = program->insts + fn->instStart;
+    chunk.len = fn->instLen;
+    return SLMirEvalChunk(arena, chunk, env, outValue, outIsConst);
 }
 SL_API_END

@@ -1,16 +1,18 @@
 # MIR in SL
 
-This document describes the MIR (Mid-level Intermediate Representation) implementation in this repository (`src/mir.c`, `src/mir.h`, `src/mir_exec.c`), how it is used today, and where it is being extended.
+This document describes the MIR (Mid-level Intermediate Representation) implementation in this repository (`src/mir.c`, `src/mir.h`, `src/mir_lower.c`, `src/mir_exec.c`), how it is used today, and where it is being extended.
 
 ## What MIR is
 
 MIR is a small, internal, expression-level IR used by compile-time evaluation.
 
 - Builder: `src/mir.c` builds MIR from AST expression nodes (`SLMirBuildExpr`).
+- Lowering wrapper: `src/mir_lower.c` currently lowers one expression into a one-function `SLMirProgram`.
 - Program builder: `src/mir.c` now also exposes `SLMirProgramBuilder` helpers for assembling backend-facing MIR programs incrementally.
 - IR shape: `src/mir.h` defines a compact stack-machine instruction format.
 - Interpreter core: `src/mir_exec.c` executes MIR chunks.
-- CTFE wrapper: `src/ctfe.c` builds expression MIR and delegates execution to `src/mir_exec.c`.
+- Function executor: `src/mir_exec.c` now also exposes `SLMirEvalFunction(...)` over `SLMirProgram`.
+- CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
 
 MIR is not yet the main lowering IR for runtime execution, but the repo now carries the beginning of a backend-facing MIR program model in `src/mir.h`. The extra function/program/metadata structs and runtime-oriented opcodes are scaffolding for that migration; current builders/executors still only use the expression subset.
 
@@ -95,9 +97,9 @@ Important behavior:
 
 `SLCTFEEvalExpr(...)`:
 
-1. Builds MIR via `SLMirBuildExpr`.
+1. Lowers the expression through `SLMirLowerExprAsFunction(...)`.
 2. If unsupported, returns `0` with `*outIsConst = 0`.
-3. Otherwise delegates to `SLMirEvalChunk(...)` in `src/mir_exec.c`.
+3. Otherwise delegates to `SLMirEvalFunction(...)` in `src/mir_exec.c`.
 
 Interpreter details:
 
@@ -127,7 +129,9 @@ So today:
 - MIR is the expression evaluator backend.
 - `ctfe_exec` is still the statement/control-flow evaluator backend.
 - `mir_exec` is now the dedicated MIR execution module that future runtime MIR work should extend instead of growing `ctfe.c` or `evaluator.c`.
+- `mir_lower` is now the dedicated MIR lowering boundary for expression-to-program lowering, and should grow into checked-program/function lowering instead of adding more MIR assembly logic to `ctfe.c`.
 - The `SLMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
+- The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.
 
 ## Notes from `consteval` branch
 
@@ -166,8 +170,9 @@ Minimum checklist:
 
 1. Update opcode/type definitions in `src/mir.h`.
 2. Update builder logic in `src/mir.c`.
-3. Update interpreter behavior in `src/ctfe.c`.
-4. Update const-eval integration paths in `src/typecheck.c` and any caller-specific resolvers.
-5. Add tests that cover both:
+3. Update lowering behavior in `src/mir_lower.c` if the program/function boundary changes.
+4. Update interpreter behavior in `src/mir_exec.c` and integration in `src/ctfe.c`.
+5. Update const-eval integration paths in `src/typecheck.c` and any caller-specific resolvers.
+6. Add tests that cover both:
    - supported paths (`outSupported = 1`, `outIsConst = 1`)
    - fallback paths (`outSupported = 0` or `outIsConst = 0`) without hard errors.
