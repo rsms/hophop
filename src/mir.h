@@ -136,6 +136,19 @@ typedef struct {
 } SLMirTypeRef;
 
 typedef enum {
+    SLMirHost_INVALID = 0,
+    SLMirHost_GENERIC,
+} SLMirHostKind;
+
+typedef struct {
+    uint32_t      nameStart;
+    uint32_t      nameEnd;
+    SLMirHostKind kind;
+    uint32_t      flags;
+    uint32_t      target;
+} SLMirHostRef;
+
+typedef enum {
     SLMirSymbol_INVALID = 0,
     SLMirSymbol_IDENT,
     SLMirSymbol_CALL,
@@ -170,6 +183,8 @@ typedef struct {
     uint32_t              fieldLen;
     const SLMirTypeRef*   types;
     uint32_t              typeLen;
+    const SLMirHostRef*   hosts;
+    uint32_t              hostLen;
     const SLMirSymbolRef* symbols;
     uint32_t              symbolLen;
 } SLMirProgram;
@@ -197,6 +212,9 @@ typedef struct {
     SLMirTypeRef*   types;
     uint32_t        typeLen;
     uint32_t        typeCap;
+    SLMirHostRef*   hosts;
+    uint32_t        hostLen;
+    uint32_t        hostCap;
     SLMirSymbolRef* symbols;
     uint32_t        symbolLen;
     uint32_t        symbolCap;
@@ -232,6 +250,10 @@ int SLMirProgramBuilderAddField(
 int SLMirProgramBuilderAddType(
     SLMirProgramBuilder* _Nonnull b,
     const SLMirTypeRef* _Nonnull value,
+    uint32_t* _Nullable outIndex);
+int SLMirProgramBuilderAddHost(
+    SLMirProgramBuilder* _Nonnull b,
+    const SLMirHostRef* _Nonnull value,
     uint32_t* _Nullable outIndex);
 int SLMirProgramBuilderAddSymbol(
     SLMirProgramBuilder* _Nonnull b,

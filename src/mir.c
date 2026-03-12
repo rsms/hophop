@@ -192,6 +192,21 @@ int SLMirProgramBuilderAddType(
         outIndex);
 }
 
+int SLMirProgramBuilderAddHost(
+    SLMirProgramBuilder* b, const SLMirHostRef* value, uint32_t* _Nullable outIndex) {
+    if (b == NULL) {
+        return -1;
+    }
+    return SLMirProgramBuilderAppendElem(
+        b->arena,
+        (void**)&b->hosts,
+        value,
+        (uint32_t)sizeof(*value),
+        &b->hostLen,
+        &b->hostCap,
+        outIndex);
+}
+
 int SLMirProgramBuilderAddSymbol(
     SLMirProgramBuilder* b, const SLMirSymbolRef* value, uint32_t* _Nullable outIndex) {
     if (b == NULL) {
@@ -287,6 +302,8 @@ void SLMirProgramBuilderFinish(const SLMirProgramBuilder* b, SLMirProgram* outPr
     outProgram->fieldLen = b->fieldLen;
     outProgram->types = b->types;
     outProgram->typeLen = b->typeLen;
+    outProgram->hosts = b->hosts;
+    outProgram->hostLen = b->hostLen;
     outProgram->symbols = b->symbols;
     outProgram->symbolLen = b->symbolLen;
 }
@@ -346,6 +363,12 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
                     break;
                 case SLMirOp_CAST:
                     if (program->typeLen != 0 && ins->aux >= program->typeLen) {
+                        SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
+                        return -1;
+                    }
+                    break;
+                case SLMirOp_CALL_HOST:
+                    if (program->hostLen != 0 && ins->aux >= program->hostLen) {
                         SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
                         return -1;
                     }

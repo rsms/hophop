@@ -123,6 +123,15 @@ static const SLMirLocal* SLMirGetLocalMeta(const SLMirExecRun* run, uint32_t slo
     return &run->program->locals[run->function->localStart + slot];
 }
 
+static uint32_t SLMirResolveHostId(const SLMirExecRun* run, const SLMirInst* ins) {
+    if (run == NULL || ins == NULL || run->program == NULL || run->program->hostLen == 0
+        || ins->aux >= run->program->hostLen)
+    {
+        return ins != NULL ? ins->aux : 0;
+    }
+    return run->program->hosts[ins->aux].target;
+}
+
 static int SLMirEvalFunctionInternal(
     SLArena* _Nonnull arena,
     const SLMirProgram* _Nonnull program,
@@ -542,7 +551,13 @@ static int SLMirRunLoop(
                 }
                 SLCTFEValueInvalid(&v);
                 if (run->env.hostCall(
-                        run->env.hostCtx, ins->aux, args, argCount, &v, &callOk, run->env.diag)
+                        run->env.hostCtx,
+                        SLMirResolveHostId(run, ins),
+                        args,
+                        argCount,
+                        &v,
+                        &callOk,
+                        run->env.diag)
                     != 0)
                 {
                     return -1;
