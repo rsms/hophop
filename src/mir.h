@@ -7,6 +7,7 @@ SL_API_BEGIN
 
 typedef enum {
     SLMirOp_INVALID = 0,
+    SLMirOp_PUSH_CONST,
     SLMirOp_PUSH_INT,
     SLMirOp_PUSH_FLOAT,
     SLMirOp_PUSH_BOOL,
@@ -63,6 +64,7 @@ typedef struct {
     SLMirOp  op;
     uint16_t tok;
     uint16_t _reserved;
+    uint32_t aux;
     uint32_t start;
     uint32_t end;
 } SLMirInst;

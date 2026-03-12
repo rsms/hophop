@@ -13,6 +13,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Interpreter core: `src/mir_exec.c` executes MIR chunks.
 - Function executor: `src/mir_exec.c` now also exposes `SLMirEvalFunction(...)` over `SLMirProgram`.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
+- Lowered function programs can now rewrite literal pushes into `SLMirConst` entries plus `SLMirOp_PUSH_CONST`, so function execution is less dependent on source-slice decoding.
 
 MIR is not yet the main lowering IR for runtime execution, but the repo now carries the beginning of a backend-facing MIR program model in `src/mir.h`. The extra function/program/metadata structs and runtime-oriented opcodes are scaffolding for that migration; current builders/executors still only use the expression subset.
 
@@ -40,6 +41,8 @@ MIR is a postfix (stack-based) instruction stream.
 
 The builder emits children before parent operators, so the stream is directly executable by a stack machine.
 
+For backend-facing `SLMirProgram` lowering, instructions also have a 32-bit `aux` operand slot. It is currently used by `SLMirOp_PUSH_CONST` to reference entries in the program constant pool.
+
 ## Opcode set (current)
 
 From `SLMirOp` in `src/mir.h`:
@@ -49,6 +52,7 @@ From `SLMirOp` in `src/mir.h`:
 - `SLMirOp_PUSH_BOOL`
 - `SLMirOp_PUSH_STRING`
 - `SLMirOp_PUSH_NULL`
+- `SLMirOp_PUSH_CONST`
 - `SLMirOp_LOAD_IDENT`
 - `SLMirOp_CALL`
 - `SLMirOp_UNARY`
@@ -103,7 +107,8 @@ Important behavior:
 
 Interpreter details:
 
-- Literal values are decoded from source slices (`start`/`end`) at execution time.
+- Raw expression chunks still decode literal values from source slices (`start`/`end`) at execution time.
+- Lowered function programs may instead materialize those literals in `program.consts[]` and execute them via `SLMirOp_PUSH_CONST`.
 - `SLCTFEEvalExpr` now adapts its CTFE callbacks into `SLMirExecEnv`.
 - `LOAD_IDENT` is resolved by `SLMirResolveIdentFn`.
 - `CALL` is resolved by `SLMirResolveCallFn` with popped arguments in source order.
@@ -132,6 +137,7 @@ So today:
 - `mir_lower` is now the dedicated MIR lowering boundary for expression-to-program lowering, and should grow into checked-program/function lowering instead of adding more MIR assembly logic to `ctfe.c`.
 - The `SLMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
 - The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.
+- The constant-pool rewrite is the first step away from MIR depending on parser source text at execution time, which is important for a future Wasm backend or any serialized MIR consumer.
 
 ## Notes from `consteval` branch
 

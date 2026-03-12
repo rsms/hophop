@@ -6,23 +6,39 @@
 SL_API_BEGIN
 
 typedef struct {
-    const SLMirInst* ip;
-    uint32_t         len;
-    uint32_t         pc;
-    SLMirExecValue*  stack;
-    uint32_t         stackLen;
-    uint32_t         stackCap;
-    SLArena*         arena;
-    SLMirExecEnv     env;
+    const SLMirInst*    ip;
+    uint32_t            len;
+    uint32_t            pc;
+    SLMirExecValue*     stack;
+    uint32_t            stackLen;
+    uint32_t            stackCap;
+    SLArena*            arena;
+    const SLMirProgram* program;
+    SLMirExecEnv        env;
 } SLMirExecRun;
 
 static void SLCTFESetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end);
 static void SLCTFEValueInvalid(SLCTFEValue* v);
+static int  SLCTFEPush(SLMirExecRun* r, const SLMirExecValue* v);
+static int  SLCTFEPop(SLMirExecRun* r, SLMirExecValue* out);
+static int  SLCTFEParseIntLiteral(SLStrView src, uint32_t start, uint32_t end, int64_t* out);
+static int  SLCTFEParseFloatLiteral(
+     SLArena* arena, SLStrView src, uint32_t start, uint32_t end, double* out);
+static int SLCTFEParseBoolLiteral(SLStrView src, uint32_t start, uint32_t end, uint8_t* out);
+static int SLCTFEEvalUnary(SLTokenKind op, const SLCTFEValue* in, SLCTFEValue* out);
+static int SLCTFEEvalBinary(
+    SLMirExecRun*      r,
+    SLTokenKind        op,
+    const SLCTFEValue* lhs,
+    const SLCTFEValue* rhs,
+    SLCTFEValue*       out);
+static int SLCTFEEvalCast(SLMirCastTarget target, const SLCTFEValue* in, SLCTFEValue* out);
 
 static int SLMirInitRun(
     SLMirExecRun* _Nonnull run,
     SLArena* _Nonnull arena,
     SLMirChunk chunk,
+    const SLMirProgram* _Nullable program,
     const SLMirExecEnv* _Nullable env,
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
@@ -53,10 +69,358 @@ static int SLMirInitRun(
         return -1;
     }
     run->arena = arena;
+    run->program = program;
     if (env != NULL) {
         run->env = *env;
     } else {
         memset(&run->env, 0, sizeof(run->env));
+    }
+    return 0;
+}
+
+static int SLMirConstToValue(const SLMirConst* _Nonnull in, SLMirExecValue* _Nonnull out) {
+    double f64 = 0.0;
+    if (in == NULL || out == NULL) {
+        return 0;
+    }
+    SLCTFEValueInvalid(out);
+    switch (in->kind) {
+        case SLMirConst_INT:
+            out->kind = SLCTFEValue_INT;
+            out->i64 = (int64_t)in->bits;
+            return 1;
+        case SLMirConst_FLOAT:
+            out->kind = SLCTFEValue_FLOAT;
+            memcpy(&f64, &in->bits, sizeof(f64));
+            out->f64 = f64;
+            return 1;
+        case SLMirConst_BOOL:
+            out->kind = SLCTFEValue_BOOL;
+            out->b = in->bits != 0;
+            return 1;
+        case SLMirConst_STRING:
+            out->kind = SLCTFEValue_STRING;
+            out->s.bytes = (const uint8_t*)in->bytes.ptr;
+            out->s.len = in->bytes.len;
+            return 1;
+        case SLMirConst_NULL: out->kind = SLCTFEValue_NULL; return 1;
+        default:              return 0;
+    }
+}
+
+static int SLMirRunLoop(
+    SLMirExecRun* _Nonnull run, SLMirExecValue* _Nonnull outValue, int* _Nonnull outIsConst) {
+    while (run->pc < run->len) {
+        const SLMirInst* ins = &run->ip[run->pc++];
+        switch (ins->op) {
+            case SLMirOp_PUSH_CONST: {
+                SLMirExecValue v;
+                if (run->program == NULL || ins->aux >= run->program->constLen) {
+                    return 0;
+                }
+                if (!SLMirConstToValue(&run->program->consts[ins->aux], &v)) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_PUSH_INT: {
+                SLCTFEValue  v;
+                uint32_t     rune = 0;
+                SLRuneLitErr runeErr = { 0 };
+                v.kind = SLCTFEValue_INT;
+                v.f64 = 0.0;
+                v.b = 0;
+                v.typeTag = 0;
+                v.s.bytes = NULL;
+                v.s.len = 0;
+                v.span.fileBytes = NULL;
+                v.span.fileLen = 0;
+                v.span.startLine = 0;
+                v.span.startColumn = 0;
+                v.span.endLine = 0;
+                v.span.endColumn = 0;
+                if ((SLTokenKind)ins->tok == SLTok_RUNE) {
+                    if (SLDecodeRuneLiteralValidate(
+                            run->env.src.ptr, ins->start, ins->end, &rune, &runeErr)
+                        != 0)
+                    {
+                        SLCTFESetDiag(
+                            run->env.diag,
+                            SLRuneLitErrDiagCode(runeErr.kind),
+                            runeErr.start,
+                            runeErr.end);
+                        return -1;
+                    }
+                    v.i64 = (int64_t)rune;
+                } else {
+                    if (SLCTFEParseIntLiteral(run->env.src, ins->start, ins->end, &v.i64) != 0) {
+                        return 0;
+                    }
+                }
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_PUSH_FLOAT: {
+                SLCTFEValue v;
+                v.kind = SLCTFEValue_FLOAT;
+                v.i64 = 0;
+                v.b = 0;
+                v.typeTag = 0;
+                v.s.bytes = NULL;
+                v.s.len = 0;
+                v.span.fileBytes = NULL;
+                v.span.fileLen = 0;
+                v.span.startLine = 0;
+                v.span.startColumn = 0;
+                v.span.endLine = 0;
+                v.span.endColumn = 0;
+                if (SLCTFEParseFloatLiteral(run->arena, run->env.src, ins->start, ins->end, &v.f64)
+                    != 0)
+                {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_PUSH_BOOL: {
+                SLCTFEValue v;
+                uint8_t     b = 0;
+                if (SLCTFEParseBoolLiteral(run->env.src, ins->start, ins->end, &b) != 0) {
+                    return 0;
+                }
+                v.kind = SLCTFEValue_BOOL;
+                v.i64 = 0;
+                v.f64 = 0.0;
+                v.b = b;
+                v.typeTag = 0;
+                v.s.bytes = NULL;
+                v.s.len = 0;
+                v.span.fileBytes = NULL;
+                v.span.fileLen = 0;
+                v.span.startLine = 0;
+                v.span.startColumn = 0;
+                v.span.endLine = 0;
+                v.span.endColumn = 0;
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_PUSH_STRING: {
+                SLCTFEValue    v;
+                SLStringLitErr litErr = { 0 };
+                uint8_t*       bytes = NULL;
+                uint32_t       len = 0;
+                if (SLDecodeStringLiteralArena(
+                        run->arena, run->env.src.ptr, ins->start, ins->end, &bytes, &len, &litErr)
+                    != 0)
+                {
+                    SLCTFESetDiag(
+                        run->env.diag,
+                        SLStringLitErrDiagCode(litErr.kind),
+                        litErr.start,
+                        litErr.end);
+                    return -1;
+                }
+                v.kind = SLCTFEValue_STRING;
+                v.i64 = 0;
+                v.f64 = 0.0;
+                v.b = 0;
+                v.typeTag = 0;
+                v.s.bytes = bytes;
+                v.s.len = len;
+                v.span.fileBytes = NULL;
+                v.span.fileLen = 0;
+                v.span.startLine = 0;
+                v.span.startColumn = 0;
+                v.span.endLine = 0;
+                v.span.endColumn = 0;
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_PUSH_NULL: {
+                SLCTFEValue v;
+                v.kind = SLCTFEValue_NULL;
+                v.i64 = 0;
+                v.f64 = 0.0;
+                v.b = 0;
+                v.typeTag = 0;
+                v.s.bytes = NULL;
+                v.s.len = 0;
+                v.span.fileBytes = NULL;
+                v.span.fileLen = 0;
+                v.span.startLine = 0;
+                v.span.startColumn = 0;
+                v.span.endLine = 0;
+                v.span.endColumn = 0;
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_LOAD_IDENT: {
+                SLCTFEValue v;
+                int         idIsConst = 0;
+                if (run->env.resolveIdent == NULL) {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&v);
+                if (run->env.resolveIdent(
+                        run->env.resolveCtx, ins->start, ins->end, &v, &idIsConst, run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!idIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_CALL: {
+                SLCTFEValue* args = NULL;
+                SLCTFEValue  v;
+                int          callIsConst = 0;
+                uint32_t     argCount = (uint32_t)ins->tok;
+                uint32_t     i;
+                if (run->env.resolveCall == NULL) {
+                    return 0;
+                }
+                if (argCount > run->stackLen) {
+                    return 0;
+                }
+                if (argCount > 0) {
+                    args = (SLCTFEValue*)SLArenaAlloc(
+                        run->arena,
+                        sizeof(SLCTFEValue) * argCount,
+                        (uint32_t)_Alignof(SLCTFEValue));
+                    if (args == NULL) {
+                        SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                        return -1;
+                    }
+                }
+                for (i = argCount; i > 0; i--) {
+                    if (SLCTFEPop(run, &args[i - 1]) != 0) {
+                        return 0;
+                    }
+                }
+                SLCTFEValueInvalid(&v);
+                if (run->env.resolveCall(
+                        run->env.resolveCtx,
+                        ins->start,
+                        ins->end,
+                        args,
+                        argCount,
+                        &v,
+                        &callIsConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!callIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_UNARY: {
+                SLCTFEValue in;
+                SLCTFEValue out;
+                if (SLCTFEPop(run, &in) != 0) {
+                    return 0;
+                }
+                if (!SLCTFEEvalUnary((SLTokenKind)ins->tok, &in, &out)) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_BINARY: {
+                SLCTFEValue lhs;
+                SLCTFEValue rhs;
+                SLCTFEValue out;
+                if (SLCTFEPop(run, &rhs) != 0 || SLCTFEPop(run, &lhs) != 0) {
+                    return 0;
+                }
+                if (!SLCTFEEvalBinary(run, (SLTokenKind)ins->tok, &lhs, &rhs, &out)) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_INDEX: {
+                SLCTFEValue base;
+                SLCTFEValue idx;
+                SLCTFEValue out;
+                int64_t     idxInt = 0;
+                if (SLCTFEPop(run, &idx) != 0 || SLCTFEPop(run, &base) != 0) {
+                    return 0;
+                }
+                if (base.kind != SLCTFEValue_STRING || SLCTFEValueToInt64(&idx, &idxInt) != 0) {
+                    return 0;
+                }
+                if (idxInt < 0 || (uint64_t)idxInt >= (uint64_t)base.s.len) {
+                    return 0;
+                }
+                out.kind = SLCTFEValue_INT;
+                out.i64 = (int64_t)base.s.bytes[(uint32_t)idxInt];
+                out.f64 = 0.0;
+                out.b = 0;
+                out.typeTag = 0;
+                out.s.bytes = NULL;
+                out.s.len = 0;
+                out.span.fileBytes = NULL;
+                out.span.fileLen = 0;
+                out.span.startLine = 0;
+                out.span.startColumn = 0;
+                out.span.endLine = 0;
+                out.span.endColumn = 0;
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_CAST: {
+                SLCTFEValue in;
+                SLCTFEValue out;
+                if (SLCTFEPop(run, &in) != 0) {
+                    return 0;
+                }
+                if (!SLCTFEEvalCast((SLMirCastTarget)ins->tok, &in, &out)) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_RETURN:
+                if (run->stackLen != 1) {
+                    return 0;
+                }
+                *outValue = run->stack[0];
+                *outIsConst = 1;
+                return 0;
+            default: return 0;
+        }
     }
     return 0;
 }
@@ -742,309 +1106,10 @@ int SLMirEvalChunk(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
     SLMirExecRun run;
-    if (SLMirInitRun(&run, arena, chunk, env, outValue, outIsConst) != 0) {
+    if (SLMirInitRun(&run, arena, chunk, NULL, env, outValue, outIsConst) != 0) {
         return -1;
     }
-
-    while (run.pc < run.len) {
-        const SLMirInst* ins = &run.ip[run.pc++];
-        switch (ins->op) {
-            case SLMirOp_PUSH_INT: {
-                SLCTFEValue  v;
-                uint32_t     rune = 0;
-                SLRuneLitErr runeErr = { 0 };
-                v.kind = SLCTFEValue_INT;
-                v.f64 = 0.0;
-                v.b = 0;
-                v.typeTag = 0;
-                v.s.bytes = NULL;
-                v.s.len = 0;
-                v.span.fileBytes = NULL;
-                v.span.fileLen = 0;
-                v.span.startLine = 0;
-                v.span.startColumn = 0;
-                v.span.endLine = 0;
-                v.span.endColumn = 0;
-                if ((SLTokenKind)ins->tok == SLTok_RUNE) {
-                    if (SLDecodeRuneLiteralValidate(
-                            run.env.src.ptr, ins->start, ins->end, &rune, &runeErr)
-                        != 0)
-                    {
-                        SLCTFESetDiag(
-                            run.env.diag,
-                            SLRuneLitErrDiagCode(runeErr.kind),
-                            runeErr.start,
-                            runeErr.end);
-                        return -1;
-                    }
-                    v.i64 = (int64_t)rune;
-                } else {
-                    if (SLCTFEParseIntLiteral(run.env.src, ins->start, ins->end, &v.i64) != 0) {
-                        return 0;
-                    }
-                }
-                if (SLCTFEPush(&run, &v) != 0) {
-                    return -1;
-                }
-                break;
-            }
-            case SLMirOp_PUSH_FLOAT: {
-                SLCTFEValue v;
-                v.kind = SLCTFEValue_FLOAT;
-                v.i64 = 0;
-                v.b = 0;
-                v.typeTag = 0;
-                v.s.bytes = NULL;
-                v.s.len = 0;
-                v.span.fileBytes = NULL;
-                v.span.fileLen = 0;
-                v.span.startLine = 0;
-                v.span.startColumn = 0;
-                v.span.endLine = 0;
-                v.span.endColumn = 0;
-                if (SLCTFEParseFloatLiteral(run.arena, run.env.src, ins->start, ins->end, &v.f64)
-                    != 0)
-                {
-                    return 0;
-                }
-                if (SLCTFEPush(&run, &v) != 0) {
-                    return -1;
-                }
-                break;
-            }
-            case SLMirOp_PUSH_BOOL: {
-                SLCTFEValue v;
-                uint8_t     b = 0;
-                if (SLCTFEParseBoolLiteral(run.env.src, ins->start, ins->end, &b) != 0) {
-                    return 0;
-                }
-                v.kind = SLCTFEValue_BOOL;
-                v.i64 = 0;
-                v.f64 = 0.0;
-                v.b = b;
-                v.typeTag = 0;
-                v.s.bytes = NULL;
-                v.s.len = 0;
-                v.span.fileBytes = NULL;
-                v.span.fileLen = 0;
-                v.span.startLine = 0;
-                v.span.startColumn = 0;
-                v.span.endLine = 0;
-                v.span.endColumn = 0;
-                if (SLCTFEPush(&run, &v) != 0) {
-                    return -1;
-                }
-                break;
-            }
-            case SLMirOp_PUSH_STRING: {
-                SLCTFEValue    v;
-                SLStringLitErr litErr = { 0 };
-                uint8_t*       bytes = NULL;
-                uint32_t       len = 0;
-                if (SLDecodeStringLiteralArena(
-                        run.arena, run.env.src.ptr, ins->start, ins->end, &bytes, &len, &litErr)
-                    != 0)
-                {
-                    SLCTFESetDiag(
-                        run.env.diag,
-                        SLStringLitErrDiagCode(litErr.kind),
-                        litErr.start,
-                        litErr.end);
-                    return -1;
-                }
-                v.kind = SLCTFEValue_STRING;
-                v.i64 = 0;
-                v.f64 = 0.0;
-                v.b = 0;
-                v.typeTag = 0;
-                v.s.bytes = bytes;
-                v.s.len = len;
-                v.span.fileBytes = NULL;
-                v.span.fileLen = 0;
-                v.span.startLine = 0;
-                v.span.startColumn = 0;
-                v.span.endLine = 0;
-                v.span.endColumn = 0;
-                if (SLCTFEPush(&run, &v) != 0) {
-                    return -1;
-                }
-                break;
-            }
-            case SLMirOp_PUSH_NULL: {
-                SLCTFEValue v;
-                v.kind = SLCTFEValue_NULL;
-                v.i64 = 0;
-                v.f64 = 0.0;
-                v.b = 0;
-                v.typeTag = 0;
-                v.s.bytes = NULL;
-                v.s.len = 0;
-                v.span.fileBytes = NULL;
-                v.span.fileLen = 0;
-                v.span.startLine = 0;
-                v.span.startColumn = 0;
-                v.span.endLine = 0;
-                v.span.endColumn = 0;
-                if (SLCTFEPush(&run, &v) != 0) {
-                    return -1;
-                }
-                break;
-            }
-            case SLMirOp_LOAD_IDENT: {
-                SLCTFEValue v;
-                int         idIsConst = 0;
-                if (run.env.resolveIdent == NULL) {
-                    return 0;
-                }
-                SLCTFEValueInvalid(&v);
-                if (run.env.resolveIdent(
-                        run.env.resolveCtx, ins->start, ins->end, &v, &idIsConst, run.env.diag)
-                    != 0)
-                {
-                    return -1;
-                }
-                if (!idIsConst) {
-                    return 0;
-                }
-                if (SLCTFEPush(&run, &v) != 0) {
-                    return -1;
-                }
-                break;
-            }
-            case SLMirOp_CALL: {
-                SLCTFEValue* args = NULL;
-                SLCTFEValue  v;
-                int          callIsConst = 0;
-                uint32_t     argCount = (uint32_t)ins->tok;
-                uint32_t     i;
-                if (run.env.resolveCall == NULL) {
-                    return 0;
-                }
-                if (argCount > run.stackLen) {
-                    return 0;
-                }
-                if (argCount > 0) {
-                    args = (SLCTFEValue*)SLArenaAlloc(
-                        run.arena, sizeof(SLCTFEValue) * argCount, (uint32_t)_Alignof(SLCTFEValue));
-                    if (args == NULL) {
-                        SLCTFESetDiag(run.env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
-                        return -1;
-                    }
-                }
-                for (i = argCount; i > 0; i--) {
-                    if (SLCTFEPop(&run, &args[i - 1]) != 0) {
-                        return 0;
-                    }
-                }
-                SLCTFEValueInvalid(&v);
-                if (run.env.resolveCall(
-                        run.env.resolveCtx,
-                        ins->start,
-                        ins->end,
-                        args,
-                        argCount,
-                        &v,
-                        &callIsConst,
-                        run.env.diag)
-                    != 0)
-                {
-                    return -1;
-                }
-                if (!callIsConst) {
-                    return 0;
-                }
-                if (SLCTFEPush(&run, &v) != 0) {
-                    return -1;
-                }
-                break;
-            }
-            case SLMirOp_UNARY: {
-                SLCTFEValue in;
-                SLCTFEValue out;
-                if (SLCTFEPop(&run, &in) != 0) {
-                    return 0;
-                }
-                if (!SLCTFEEvalUnary((SLTokenKind)ins->tok, &in, &out)) {
-                    return 0;
-                }
-                if (SLCTFEPush(&run, &out) != 0) {
-                    return -1;
-                }
-                break;
-            }
-            case SLMirOp_BINARY: {
-                SLCTFEValue lhs;
-                SLCTFEValue rhs;
-                SLCTFEValue out;
-                if (SLCTFEPop(&run, &rhs) != 0 || SLCTFEPop(&run, &lhs) != 0) {
-                    return 0;
-                }
-                if (!SLCTFEEvalBinary(&run, (SLTokenKind)ins->tok, &lhs, &rhs, &out)) {
-                    return 0;
-                }
-                if (SLCTFEPush(&run, &out) != 0) {
-                    return -1;
-                }
-                break;
-            }
-            case SLMirOp_INDEX: {
-                SLCTFEValue base;
-                SLCTFEValue idx;
-                SLCTFEValue out;
-                int64_t     idxInt = 0;
-                if (SLCTFEPop(&run, &idx) != 0 || SLCTFEPop(&run, &base) != 0) {
-                    return 0;
-                }
-                if (base.kind != SLCTFEValue_STRING || SLCTFEValueToInt64(&idx, &idxInt) != 0) {
-                    return 0;
-                }
-                if (idxInt < 0 || (uint64_t)idxInt >= (uint64_t)base.s.len) {
-                    return 0;
-                }
-                out.kind = SLCTFEValue_INT;
-                out.i64 = (int64_t)base.s.bytes[(uint32_t)idxInt];
-                out.f64 = 0.0;
-                out.b = 0;
-                out.typeTag = 0;
-                out.s.bytes = NULL;
-                out.s.len = 0;
-                out.span.fileBytes = NULL;
-                out.span.fileLen = 0;
-                out.span.startLine = 0;
-                out.span.startColumn = 0;
-                out.span.endLine = 0;
-                out.span.endColumn = 0;
-                if (SLCTFEPush(&run, &out) != 0) {
-                    return -1;
-                }
-                break;
-            }
-            case SLMirOp_CAST: {
-                SLCTFEValue in;
-                SLCTFEValue out;
-                if (SLCTFEPop(&run, &in) != 0) {
-                    return 0;
-                }
-                if (!SLCTFEEvalCast((SLMirCastTarget)ins->tok, &in, &out)) {
-                    return 0;
-                }
-                if (SLCTFEPush(&run, &out) != 0) {
-                    return -1;
-                }
-                break;
-            }
-            case SLMirOp_RETURN:
-                if (run.stackLen != 1) {
-                    return 0;
-                }
-                *outValue = run.stack[0];
-                *outIsConst = 1;
-                return 0;
-            default: return 0;
-        }
-    }
-
-    return 0;
+    return SLMirRunLoop(&run, outValue, outIsConst);
 }
 
 int SLMirEvalFunction(
@@ -1058,6 +1123,7 @@ int SLMirEvalFunction(
     int* _Nonnull outIsConst) {
     const SLMirFunction* fn;
     SLMirChunk           chunk;
+    SLMirExecRun         run;
     (void)args;
     if (program == NULL || functionIndex >= program->funcLen) {
         if (env != NULL) {
@@ -1080,6 +1146,9 @@ int SLMirEvalFunction(
     }
     chunk.v = program->insts + fn->instStart;
     chunk.len = fn->instLen;
-    return SLMirEvalChunk(arena, chunk, env, outValue, outIsConst);
+    if (SLMirInitRun(&run, arena, chunk, program, env, outValue, outIsConst) != 0) {
+        return -1;
+    }
+    return SLMirRunLoop(&run, outValue, outIsConst);
 }
 SL_API_END

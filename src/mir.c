@@ -285,6 +285,7 @@ static int SLMirEmitInst(
     b->v[b->len].op = op;
     b->v[b->len].tok = (uint16_t)tok;
     b->v[b->len]._reserved = 0;
+    b->v[b->len].aux = 0;
     b->v[b->len].start = start;
     b->v[b->len].end = end;
     b->len++;
