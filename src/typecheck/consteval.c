@@ -1,4 +1,6 @@
 #include "internal.h"
+#include "../mir_exec.h"
+#include "../mir_lower_stmt.h"
 
 SL_API_BEGIN
 
@@ -2610,6 +2612,65 @@ int SLTCEvalConstExecIsOptionalTypeCb(
     return 0;
 }
 
+static int SLTCTryMirConstCall(
+    SLTCConstEvalCtx*  evalCtx,
+    int32_t            fnNode,
+    int32_t            bodyNode,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outDidReturn,
+    int*               outIsConst,
+    int*               outSupported) {
+    SLTypeCheckCtx* c;
+    SLMirProgram    program = { 0 };
+    SLMirExecEnv    env = { 0 };
+    int             supported = 0;
+    int             mirIsConst = 0;
+    if (outDidReturn != NULL) {
+        *outDidReturn = 0;
+    }
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outSupported != NULL) {
+        *outSupported = 0;
+    }
+    if (evalCtx == NULL || outValue == NULL || outDidReturn == NULL || outIsConst == NULL
+        || outSupported == NULL)
+    {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+    if (SLMirLowerSimpleFunction(
+            c->arena, c->ast, c->src, fnNode, bodyNode, &program, &supported, c->diag)
+        != 0)
+    {
+        return -1;
+    }
+    if (!supported) {
+        return 0;
+    }
+    env.src = c->src;
+    env.resolveIdent = SLTCResolveConstIdent;
+    env.resolveCall = SLTCResolveConstCall;
+    env.resolveCtx = evalCtx;
+    env.diag = c->diag;
+    if (SLMirEvalFunction(c->arena, &program, 0, args, argCount, &env, outValue, &mirIsConst) != 0)
+    {
+        return -1;
+    }
+    *outSupported = 1;
+    *outIsConst = mirIsConst;
+    if (mirIsConst) {
+        *outDidReturn = outValue->kind != SLCTFEValue_INVALID;
+    }
+    return 0;
+}
+
 int32_t SLTCFindConstCallableFunction(
     SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, uint32_t argCount) {
     uint32_t i;
@@ -2656,6 +2717,7 @@ int SLTCResolveConstCall(
     SLCTFEValue        retValue;
     int                didReturn = 0;
     int                isConst = 0;
+    int                mirSupported = 0;
     int                rc;
 
     (void)diag;
@@ -2893,6 +2955,32 @@ int SLTCResolveConstCall(
     SLCTFEExecResetReason(&execCtx);
     evalCtx->execCtx = &execCtx;
     evalCtx->fnStack[evalCtx->fnDepth++] = fnIndex;
+
+    rc = SLTCTryMirConstCall(
+        evalCtx, fnNode, bodyNode, args, argCount, &retValue, &didReturn, &isConst, &mirSupported);
+    if (rc != 0) {
+        evalCtx->fnDepth = savedDepth;
+        evalCtx->execCtx = savedExecCtx;
+        return -1;
+    }
+    if (mirSupported && isConst) {
+        evalCtx->fnDepth = savedDepth;
+        evalCtx->execCtx = savedExecCtx;
+        if (!didReturn) {
+            if (c->funcs[fnIndex].returnType == c->typeVoid) {
+                SLTCConstEvalSetNullValue(outValue);
+                *outIsConst = 1;
+                return 0;
+            }
+            SLTCConstSetReasonNode(
+                evalCtx, bodyNode, "const-evaluable function must produce a const return value");
+            *outIsConst = 0;
+            return 0;
+        }
+        *outValue = retValue;
+        *outIsConst = 1;
+        return 0;
+    }
 
     rc = SLCTFEExecEvalBlock(&execCtx, bodyNode, &retValue, &didReturn, &isConst);
     evalCtx->fnDepth = savedDepth;
