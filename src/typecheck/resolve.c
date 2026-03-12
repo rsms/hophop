@@ -34,7 +34,8 @@ static int SLTCTryMirConstBlock(
     if (c == NULL) {
         return -1;
     }
-    if (SLMirLowerSimpleFunction(c->arena, c->ast, c->src, -1, blockNode, &program, &supported, c->diag)
+    if (SLMirLowerSimpleFunction(
+            c->arena, c->ast, c->src, -1, blockNode, &program, &supported, c->diag)
         != 0)
     {
         return -1;
@@ -46,6 +47,10 @@ static int SLTCTryMirConstBlock(
     env.resolveIdent = SLTCResolveConstIdent;
     env.resolveCall = SLTCResolveConstCall;
     env.resolveCtx = evalCtx;
+    env.zeroInitLocal = SLTCMirConstZeroInitLocal;
+    env.zeroInitCtx = evalCtx;
+    env.coerceValueForType = SLTCMirConstCoerceValueForType;
+    env.coerceValueCtx = evalCtx;
     env.diag = c->diag;
     if (SLMirEvalFunction(c->arena, &program, 0, NULL, 0, &env, outValue, &mirIsConst) != 0) {
         return -1;
@@ -2833,7 +2838,8 @@ int SLTCCheckConstBlocksForCall(
             }
             if (mirSupported && isConst) {
                 if (didReturn) {
-                    SLTCConstSetReasonNode(&evalCtx, blockNode, "const block must not return a value");
+                    SLTCConstSetReasonNode(
+                        &evalCtx, blockNode, "const block must not return a value");
                     c->lastConstEvalReason = c->activeConstEvalCtx->nonConstReason;
                     c->lastConstEvalReasonStart = c->activeConstEvalCtx->nonConstStart;
                     c->lastConstEvalReasonEnd = c->activeConstEvalCtx->nonConstEnd;
@@ -2855,6 +2861,9 @@ int SLTCCheckConstBlocksForCall(
                 child = SLAstNextSibling(c->ast, child);
                 continue;
             }
+            evalCtx.nonConstReason = NULL;
+            evalCtx.nonConstStart = 0;
+            evalCtx.nonConstEnd = 0;
             SLCTFEExecResetReason(&execCtx);
             execCtx.pendingReturnExprNode = -1;
             rc = SLCTFEExecEvalBlock(&execCtx, blockNode, &retValue, &didReturn, &isConst);

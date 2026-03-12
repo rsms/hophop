@@ -2612,6 +2612,199 @@ int SLTCEvalConstExecIsOptionalTypeCb(
     return 0;
 }
 
+static int SLTCMirConstResolveTypeRefTypeId(
+    SLTCConstEvalCtx* evalCtx, const SLMirTypeRef* typeRef, int32_t* outTypeId) {
+    SLTypeCheckCtx* c;
+    if (outTypeId != NULL) {
+        *outTypeId = -1;
+    }
+    if (evalCtx == NULL || typeRef == NULL || outTypeId == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || typeRef->astNode > INT32_MAX || typeRef->astNode >= c->ast->len) {
+        return -1;
+    }
+    return SLTCResolveTypeNode(c, (int32_t)typeRef->astNode, outTypeId);
+}
+
+int SLTCMirConstZeroInitLocal(
+    void* _Nullable ctx,
+    const SLMirTypeRef* typeRef,
+    SLCTFEValue*        outValue,
+    int*                outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*   c;
+    int32_t           typeId = -1;
+    int32_t           baseTypeId;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue != NULL) {
+        SLTCConstEvalValueInvalid(outValue);
+    }
+    if (evalCtx == NULL || typeRef == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || SLTCMirConstResolveTypeRefTypeId(evalCtx, typeRef, &typeId) != 0) {
+        return -1;
+    }
+    baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+    if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen) {
+        return 0;
+    }
+    if (SLTCIsIntegerType(c, baseTypeId)) {
+        outValue->kind = SLCTFEValue_INT;
+        outValue->i64 = 0;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (SLTCIsFloatType(c, baseTypeId)) {
+        outValue->kind = SLCTFEValue_FLOAT;
+        outValue->f64 = 0.0;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (SLTCIsBoolType(c, baseTypeId)) {
+        outValue->kind = SLCTFEValue_BOOL;
+        outValue->b = 0u;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (SLTCIsStringLikeType(c, baseTypeId)) {
+        outValue->kind = SLCTFEValue_STRING;
+        outValue->s.bytes = NULL;
+        outValue->s.len = 0;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (c->types[baseTypeId].kind == SLTCType_OPTIONAL) {
+        if (SLTCConstEvalSetOptionalNoneValue(c, baseTypeId, outValue) != 0) {
+            return -1;
+        }
+        *outIsConst = 1;
+        return 0;
+    }
+    if (c->types[baseTypeId].kind == SLTCType_PTR || c->types[baseTypeId].kind == SLTCType_REF
+        || c->types[baseTypeId].kind == SLTCType_FUNCTION
+        || c->types[baseTypeId].kind == SLTCType_NULL)
+    {
+        SLTCConstEvalSetNullValue(outValue);
+        *outIsConst = 1;
+        return 0;
+    }
+    return 0;
+}
+
+int SLTCMirConstCoerceValueForType(
+    void* _Nullable ctx,
+    const SLMirTypeRef* typeRef,
+    SLCTFEValue*        inOutValue,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*   c;
+    int32_t           typeId = -1;
+    int32_t           baseTypeId;
+    (void)diag;
+    if (evalCtx == NULL || typeRef == NULL || inOutValue == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || SLTCMirConstResolveTypeRefTypeId(evalCtx, typeRef, &typeId) != 0) {
+        return -1;
+    }
+    baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+    if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen) {
+        return 0;
+    }
+    if (c->types[baseTypeId].kind == SLTCType_OPTIONAL) {
+        SLCTFEValue wrapped;
+        if (inOutValue->kind == SLCTFEValue_OPTIONAL) {
+            if (inOutValue->typeTag > 0 && inOutValue->typeTag <= (uint64_t)INT32_MAX
+                && (uint32_t)inOutValue->typeTag < c->typeLen
+                && (int32_t)inOutValue->typeTag == baseTypeId)
+            {
+                return 0;
+            }
+            if (inOutValue->b == 0u) {
+                if (SLTCConstEvalSetOptionalNoneValue(c, baseTypeId, &wrapped) != 0) {
+                    return -1;
+                }
+            } else if (inOutValue->s.bytes == NULL) {
+                return 0;
+            } else if (
+                SLTCConstEvalSetOptionalSomeValue(
+                    c, baseTypeId, (const SLCTFEValue*)inOutValue->s.bytes, &wrapped)
+                != 0)
+            {
+                return -1;
+            }
+            *inOutValue = wrapped;
+            return 0;
+        }
+        if (inOutValue->kind == SLCTFEValue_NULL) {
+            if (SLTCConstEvalSetOptionalNoneValue(c, baseTypeId, &wrapped) != 0) {
+                return -1;
+            }
+            *inOutValue = wrapped;
+            return 0;
+        }
+        if (SLTCConstEvalSetOptionalSomeValue(c, baseTypeId, inOutValue, &wrapped) != 0) {
+            return -1;
+        }
+        *inOutValue = wrapped;
+        return 0;
+    }
+    if (SLTCIsIntegerType(c, baseTypeId)) {
+        if (inOutValue->kind == SLCTFEValue_BOOL) {
+            inOutValue->kind = SLCTFEValue_INT;
+            inOutValue->i64 = inOutValue->b ? 1 : 0;
+        } else if (inOutValue->kind == SLCTFEValue_FLOAT) {
+            inOutValue->kind = SLCTFEValue_INT;
+            inOutValue->i64 = (int64_t)inOutValue->f64;
+            inOutValue->f64 = 0.0;
+        } else if (inOutValue->kind == SLCTFEValue_NULL) {
+            inOutValue->kind = SLCTFEValue_INT;
+            inOutValue->i64 = 0;
+        }
+        return 0;
+    }
+    if (SLTCIsFloatType(c, baseTypeId)) {
+        if (inOutValue->kind == SLCTFEValue_INT) {
+            inOutValue->kind = SLCTFEValue_FLOAT;
+            inOutValue->f64 = (double)inOutValue->i64;
+            inOutValue->i64 = 0;
+        } else if (inOutValue->kind == SLCTFEValue_BOOL) {
+            inOutValue->kind = SLCTFEValue_FLOAT;
+            inOutValue->f64 = inOutValue->b ? 1.0 : 0.0;
+            inOutValue->i64 = 0;
+        } else if (inOutValue->kind == SLCTFEValue_NULL) {
+            inOutValue->kind = SLCTFEValue_FLOAT;
+            inOutValue->f64 = 0.0;
+        }
+        return 0;
+    }
+    if (SLTCIsBoolType(c, baseTypeId)) {
+        if (inOutValue->kind == SLCTFEValue_INT) {
+            inOutValue->kind = SLCTFEValue_BOOL;
+            inOutValue->b = inOutValue->i64 != 0 ? 1u : 0u;
+            inOutValue->i64 = 0;
+        } else if (inOutValue->kind == SLCTFEValue_FLOAT) {
+            inOutValue->kind = SLCTFEValue_BOOL;
+            inOutValue->b = inOutValue->f64 != 0.0 ? 1u : 0u;
+            inOutValue->f64 = 0.0;
+        } else if (inOutValue->kind == SLCTFEValue_NULL) {
+            inOutValue->kind = SLCTFEValue_BOOL;
+            inOutValue->b = 0u;
+        }
+        return 0;
+    }
+    return 0;
+}
+
 static int SLTCTryMirConstCall(
     SLTCConstEvalCtx*  evalCtx,
     int32_t            fnNode,
@@ -2658,6 +2851,10 @@ static int SLTCTryMirConstCall(
     env.resolveIdent = SLTCResolveConstIdent;
     env.resolveCall = SLTCResolveConstCall;
     env.resolveCtx = evalCtx;
+    env.zeroInitLocal = SLTCMirConstZeroInitLocal;
+    env.zeroInitCtx = evalCtx;
+    env.coerceValueForType = SLTCMirConstCoerceValueForType;
+    env.coerceValueCtx = evalCtx;
     env.diag = c->diag;
     if (SLMirEvalFunction(c->arena, &program, 0, args, argCount, &env, outValue, &mirIsConst) != 0)
     {
@@ -2981,6 +3178,9 @@ int SLTCResolveConstCall(
         *outIsConst = 1;
         return 0;
     }
+    evalCtx->nonConstReason = NULL;
+    evalCtx->nonConstStart = 0;
+    evalCtx->nonConstEnd = 0;
 
     rc = SLCTFEExecEvalBlock(&execCtx, bodyNode, &retValue, &didReturn, &isConst);
     evalCtx->fnDepth = savedDepth;

@@ -5,6 +5,7 @@
 #include "../ctfe.h"
 #include "../ctfe_exec.h"
 #include "../fmt_parse.h"
+#include "../mir.h"
 
 SL_API_BEGIN
 
@@ -766,6 +767,17 @@ int SLTCEvalConstExprNode(
 int SLTCEvalConstExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
 int SLTCEvalConstExecResolveTypeCb(void* ctx, int32_t typeNode, int32_t* outTypeId);
 int SLTCEvalConstExecInferValueTypeCb(void* ctx, const SLCTFEValue* value, int32_t* outTypeId);
+int SLTCMirConstZeroInitLocal(
+    void* _Nullable ctx,
+    const SLMirTypeRef* _Nonnull typeRef,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstCoerceValueForType(
+    void* _Nullable ctx,
+    const SLMirTypeRef* _Nonnull typeRef,
+    SLCTFEValue* _Nonnull inOutValue,
+    SLDiag* _Nullable diag);
 int32_t SLTCFindConstCallableFunction(
     SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, uint32_t argCount);
 int SLTCResolveConstCall(
