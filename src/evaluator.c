@@ -1547,6 +1547,7 @@ static int SLEvalCoerceValueToTypeNode(
     const SLAstNode*   type;
     const SLCTFEValue* sourceValue;
     SLEvalAggregate*   sourceAgg;
+    const SLCTFEValue* optionalPayload = NULL;
     uint32_t           i;
     if (p == NULL || typeFile == NULL || typeNode < 0 || inOutValue == NULL
         || (uint32_t)typeNode >= typeFile->ast.len)
@@ -1555,6 +1556,15 @@ static int SLEvalCoerceValueToTypeNode(
     }
     type = &typeFile->ast.nodes[typeNode];
     sourceValue = SLEvalValueTargetOrSelf(inOutValue);
+    if (type->kind != SLAst_TYPE_OPTIONAL && sourceValue->kind == SLCTFEValue_OPTIONAL
+        && SLEvalOptionalPayload(sourceValue, &optionalPayload))
+    {
+        if (sourceValue->b == 0u || optionalPayload == NULL) {
+            return 0;
+        }
+        *inOutValue = *optionalPayload;
+        sourceValue = inOutValue;
+    }
     sourceAgg = SLEvalValueAsAggregate(sourceValue);
     if ((type->kind == SLAst_TYPE_NAME || type->kind == SLAst_TYPE_ANON_STRUCT
          || type->kind == SLAst_TYPE_ANON_UNION)
