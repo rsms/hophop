@@ -713,6 +713,82 @@ static int SLMirStmtLowerIf(SLMirStmtLower* c, int32_t ifNode) {
     return 0;
 }
 
+static int SLMirStmtLowerStoreToLValueFromStack(
+    SLMirStmtLower* c, int32_t lhsNode, uint32_t start, uint32_t end) {
+    uint32_t slot = 0;
+    int      mutable = 0;
+    if (lhsNode < 0 || (uint32_t)lhsNode >= c->ast->len) {
+        c->supported = 0;
+        return 0;
+    }
+    if (c->ast->nodes[lhsNode].kind == SLAst_IDENT
+        && SLMirStmtLowerFindLocal(
+            c, c->ast->nodes[lhsNode].dataStart, c->ast->nodes[lhsNode].dataEnd, &slot, &mutable))
+    {
+        if (!mutable) {
+            c->supported = 0;
+            return 0;
+        }
+        return SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_STORE, 0, slot, start, end, NULL);
+    }
+    if (c->ast->nodes[lhsNode].kind == SLAst_UNARY
+        && (SLTokenKind)c->ast->nodes[lhsNode].op == SLTok_MUL)
+    {
+        int32_t derefBase = c->ast->nodes[lhsNode].firstChild;
+        if (derefBase >= 0 && (uint32_t)derefBase < c->ast->len
+            && SLMirStmtLowerIsReplayableExpr(c, derefBase))
+        {
+            if (SLMirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            return SLMirStmtLowerAppendInst(c, SLMirOp_DEREF_STORE, 0, 0, start, end, NULL);
+        }
+    }
+    if (c->ast->nodes[lhsNode].kind == SLAst_INDEX && (c->ast->nodes[lhsNode].flags & 0x7u) == 0u) {
+        int32_t baseNode = c->ast->nodes[lhsNode].firstChild;
+        int32_t indexNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
+        if (baseNode < 0 || indexNode < 0 || c->ast->nodes[indexNode].nextSibling >= 0) {
+            c->supported = 0;
+            return 0;
+        }
+        if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        if (SLMirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        if (SLMirStmtLowerAppendInst(c, SLMirOp_ARRAY_ADDR, 0, 0, start, end, NULL) != 0) {
+            return -1;
+        }
+        return SLMirStmtLowerAppendInst(c, SLMirOp_DEREF_STORE, 0, 0, start, end, NULL);
+    }
+    if (c->ast->nodes[lhsNode].kind == SLAst_FIELD_EXPR) {
+        int32_t baseNode = c->ast->nodes[lhsNode].firstChild;
+        if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
+            c->supported = 0;
+            return 0;
+        }
+        if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        if (SLMirStmtLowerAppendInst(
+                c,
+                SLMirOp_AGG_ADDR,
+                0,
+                0,
+                c->ast->nodes[lhsNode].dataStart,
+                c->ast->nodes[lhsNode].dataEnd,
+                NULL)
+            != 0)
+        {
+            return -1;
+        }
+        return SLMirStmtLowerAppendInst(c, SLMirOp_DEREF_STORE, 0, 0, start, end, NULL);
+    }
+    c->supported = 0;
+    return 0;
+}
+
 static int SLMirStmtLowerExprNodeAsStmt(
     SLMirStmtLower* c, int32_t exprNode, uint32_t start, uint32_t end) {
     if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
@@ -1154,6 +1230,62 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                 return c->supported ? -1 : 0;
             }
             return SLMirStmtLowerAppendInst(c, SLMirOp_ASSERT, 0, 0, s->start, s->end, NULL);
+        }
+        case SLAst_MULTI_ASSIGN: {
+            int32_t  lhsList = s->firstChild;
+            int32_t  rhsList = lhsList >= 0 ? c->ast->nodes[lhsList].nextSibling : -1;
+            uint32_t lhsCount;
+            uint32_t rhsCount;
+            uint32_t i;
+            uint32_t tempSlots[256];
+            if (lhsList < 0 || rhsList < 0 || c->ast->nodes[lhsList].kind != SLAst_EXPR_LIST
+                || c->ast->nodes[rhsList].kind != SLAst_EXPR_LIST)
+            {
+                c->supported = 0;
+                return 0;
+            }
+            lhsCount = SLMirStmtLowerAstListCount(c->ast, lhsList);
+            rhsCount = SLMirStmtLowerAstListCount(c->ast, rhsList);
+            if (lhsCount == 0u || lhsCount > 256u || rhsCount != lhsCount) {
+                c->supported = 0;
+                return 0;
+            }
+            for (i = 0; i < rhsCount; i++) {
+                int32_t rhsExpr = SLMirStmtLowerAstListItemAt(c->ast, rhsList, i);
+                if (rhsExpr < 0
+                    || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &tempSlots[i]) != 0)
+                {
+                    return rhsExpr < 0 ? 0 : -1;
+                }
+                if (SLMirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
+                    return c->supported ? -1 : 0;
+                }
+                if (SLMirStmtLowerAppendInst(
+                        c, SLMirOp_LOCAL_STORE, 0, tempSlots[i], s->start, s->end, NULL)
+                    != 0)
+                {
+                    return -1;
+                }
+            }
+            for (i = 0; i < lhsCount; i++) {
+                int32_t lhsExpr = SLMirStmtLowerAstListItemAt(c->ast, lhsList, i);
+                if (lhsExpr < 0) {
+                    c->supported = 0;
+                    return 0;
+                }
+                if (SLMirStmtLowerAppendInst(
+                        c, SLMirOp_LOCAL_LOAD, 0, tempSlots[i], s->start, s->end, NULL)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (SLMirStmtLowerStoreToLValueFromStack(c, lhsExpr, s->start, s->end) != 0
+                    || !c->supported)
+                {
+                    return c->supported ? -1 : 0;
+                }
+            }
+            return 0;
         }
         case SLAst_EXPR_STMT: return SLMirStmtLowerExprStmt(c, stmtNode);
         case SLAst_VAR:
