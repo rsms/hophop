@@ -14,6 +14,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Interpreter core: `src/mir_exec.c` executes MIR chunks.
 - Function executor: `src/mir_exec.c` now also exposes `SLMirEvalFunction(...)` over `SLMirProgram`.
 - `mir_exec` now also has a real `CALL_FN` execution path for same-program MIR calls, in the currently supported simple arg-less case.
+- `mir_exec` now also has local-slot frame storage for MIR functions, with parameter binding into the first `paramCount` local slots and execution support for `LOCAL_LOAD` / `LOCAL_STORE`.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
 - Lowered function programs can now rewrite literal pushes into `SLMirConst` entries plus `SLMirOp_PUSH_CONST`, so function execution is less dependent on source-slice decoding.
 - Lowered function programs can also rewrite `LOAD_IDENT` and direct `CALL` sites to `SLMirSymbolRef` table entries, so name metadata lives in the MIR program instead of only in instruction spans.
@@ -63,6 +64,8 @@ From `SLMirOp` in `src/mir.h`:
 - `SLMirOp_LOAD_IDENT`
 - `SLMirOp_CALL`
 - `SLMirOp_CALL_FN`
+- `SLMirOp_LOCAL_LOAD`
+- `SLMirOp_LOCAL_STORE`
 - `SLMirOp_UNARY`
 - `SLMirOp_BINARY`
 - `SLMirOp_INDEX` (element index; non-slice form)
@@ -122,6 +125,9 @@ Interpreter details:
 - `LOAD_IDENT` is resolved by `SLMirResolveIdentFn`.
 - `CALL` is resolved by `SLMirResolveCallFn` with popped arguments in source order.
 - `CALL_FN` now executes same-program MIR functions through the function executor. Today that path is intentionally narrow and only supports the current arg-less/simple case until local slots and parameter binding move into MIR.
+- `CALL_FN` now supports passing arguments into same-program MIR functions, with those arguments bound to the first `paramCount` local slots.
+- `LOCAL_LOAD` and `LOCAL_STORE` execute against per-frame local storage.
+- `LOCAL_ZERO` is still intentionally not executed yet because MIR does not carry enough typed zero-value information for that operation to be correct.
 - When lowered symbol metadata exists, `mir_exec` resolves identifier/call names through `program.symbols[]` before falling back to instruction spans.
 - For direct call symbols, `program.symbols[]` now also carries lightweight call-shape flags that future backends can use when deciding between plain calls, method-style lowering, or host shims.
 - When lowered type metadata exists, `CAST` retains both its current scalar cast opcode token and an explicit type-table reference for backend consumers.
@@ -151,6 +157,7 @@ So today:
 - The `SLMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
 - The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.
 - The initial `CALL_FN` support means that boundary is no longer just an entry point; MIR function-to-function execution has started to exist, even though full frame/locals/param semantics are still ahead.
+- Local-slot execution is the next step in that direction: MIR functions can now carry state in frame slots, but typed zero-init, address-taking, and richer lvalue semantics are still ahead.
 - The constant-pool rewrite is the first step away from MIR depending on parser source text at execution time, which is important for a future Wasm backend or any serialized MIR consumer.
 - The symbol-table rewrite does the same for simple name resolution metadata: a backend can inspect imports/calls/idents from MIR program tables instead of reverse-engineering them from parser offsets.
 - That symbol metadata now also preserves one small but useful execution detail: whether a lowered direct call came from selector syntax and already includes the receiver as argument `0`.

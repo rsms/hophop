@@ -12,6 +12,8 @@ typedef struct {
     SLMirExecValue*     stack;
     uint32_t            stackLen;
     uint32_t            stackCap;
+    SLMirExecValue*     locals;
+    uint32_t            localCount;
     SLArena*            arena;
     const SLMirProgram* program;
     SLMirExecEnv        env;
@@ -39,6 +41,9 @@ static int SLMirInitRun(
     SLArena* _Nonnull arena,
     SLMirChunk chunk,
     const SLMirProgram* _Nullable program,
+    uint32_t localCount,
+    const SLMirExecValue* _Nullable args,
+    uint32_t argCount,
     const SLMirExecEnv* _Nullable env,
     int clearDiag,
     SLMirExecValue* _Nonnull outValue,
@@ -60,7 +65,7 @@ static int SLMirInitRun(
     run->ip = chunk.v;
     run->len = chunk.len;
     run->pc = 0;
-    run->stackCap = chunk.len + 1u;
+    run->stackCap = chunk.len + argCount + 1u;
     run->stack = (SLMirExecValue*)SLArenaAlloc(
         arena, sizeof(SLMirExecValue) * run->stackCap, (uint32_t)_Alignof(SLMirExecValue));
     if (run->stack == NULL) {
@@ -71,6 +76,29 @@ static int SLMirInitRun(
     }
     run->arena = arena;
     run->program = program;
+    run->localCount = localCount;
+    if (localCount != 0u) {
+        uint32_t i;
+        run->locals = (SLMirExecValue*)SLArenaAlloc(
+            arena, sizeof(SLMirExecValue) * localCount, (uint32_t)_Alignof(SLMirExecValue));
+        if (run->locals == NULL) {
+            if (env != NULL) {
+                SLCTFESetDiag(env->diag, SLDiag_ARENA_OOM, 0, 0);
+            }
+            return -1;
+        }
+        for (i = 0; i < localCount; i++) {
+            SLCTFEValueInvalid(&run->locals[i]);
+        }
+        if (argCount > localCount) {
+            return 0;
+        }
+        for (i = 0; i < argCount; i++) {
+            run->locals[i] = args[i];
+        }
+    } else if (argCount != 0u) {
+        return 0;
+    }
     if (env != NULL) {
         run->env = *env;
     } else {
@@ -300,6 +328,25 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_LOCAL_LOAD:
+                if (ins->aux >= run->localCount) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &run->locals[ins->aux]) != 0) {
+                    return -1;
+                }
+                break;
+            case SLMirOp_LOCAL_STORE: {
+                SLMirExecValue v;
+                if (ins->aux >= run->localCount) {
+                    return 0;
+                }
+                if (SLCTFEPop(run, &v) != 0) {
+                    return 0;
+                }
+                run->locals[ins->aux] = v;
+                break;
+            }
             case SLMirOp_LOAD_IDENT: {
                 SLCTFEValue v;
                 int         idIsConst = 0;
@@ -377,17 +424,43 @@ static int SLMirRunLoop(
                 break;
             }
             case SLMirOp_CALL_FN: {
-                SLMirExecValue v;
-                int            callOk = 0;
-                uint32_t       argCount = (uint32_t)ins->tok;
+                SLMirExecValue  v;
+                SLMirExecValue* args = NULL;
+                int             callOk = 0;
+                uint32_t        argCount = (uint32_t)ins->tok;
+                uint32_t        i;
                 if (run->program == NULL || ins->aux >= run->program->funcLen) {
                     return 0;
                 }
-                if (argCount != 0u) {
+                if (argCount > run->stackLen) {
                     return 0;
                 }
+                if (argCount != 0u) {
+                    args = (SLMirExecValue*)SLArenaAlloc(
+                        run->arena,
+                        sizeof(SLMirExecValue) * argCount,
+                        (uint32_t)_Alignof(SLMirExecValue));
+                    if (args == NULL) {
+                        SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                        return -1;
+                    }
+                }
+                for (i = argCount; i > 0; i--) {
+                    if (SLCTFEPop(run, &args[i - 1]) != 0) {
+                        return 0;
+                    }
+                }
                 if (SLMirEvalFunctionInternal(
-                        run->arena, run->program, ins->aux, NULL, 0u, &run->env, 0, 0, &v, &callOk)
+                        run->arena,
+                        run->program,
+                        ins->aux,
+                        args,
+                        argCount,
+                        &run->env,
+                        0,
+                        0,
+                        &v,
+                        &callOk)
                     != 0)
                 {
                     return -1;
@@ -1169,7 +1242,7 @@ int SLMirEvalChunk(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
     SLMirExecRun run;
-    if (SLMirInitRun(&run, arena, chunk, NULL, env, 1, outValue, outIsConst) != 0) {
+    if (SLMirInitRun(&run, arena, chunk, NULL, 0u, NULL, 0u, env, 1, outValue, outIsConst) != 0) {
         return -1;
     }
     return SLMirRunLoop(&run, outValue, outIsConst);
@@ -1209,12 +1282,25 @@ static int SLMirEvalFunctionInternal(
     if (argCount != fn->paramCount) {
         return 0;
     }
-    if (argCount != 0u) {
+    if (fn->localCount < fn->paramCount) {
         return 0;
     }
     chunk.v = program->insts + fn->instStart;
     chunk.len = fn->instLen;
-    if (SLMirInitRun(&run, arena, chunk, program, env, clearDiag, outValue, outIsConst) != 0) {
+    if (SLMirInitRun(
+            &run,
+            arena,
+            chunk,
+            program,
+            fn->localCount,
+            args,
+            argCount,
+            env,
+            clearDiag,
+            outValue,
+            outIsConst)
+        != 0)
+    {
         return -1;
     }
     return SLMirRunLoop(&run, outValue, outIsConst);

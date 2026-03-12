@@ -251,6 +251,10 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
             SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, fn->nameStart, fn->nameEnd);
             return -1;
         }
+        if (fn->localCount < fn->paramCount) {
+            SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, fn->nameStart, fn->nameEnd);
+            return -1;
+        }
         for (instIndex = 0; instIndex < fn->instLen; instIndex++) {
             const SLMirInst* ins = &program->insts[fn->instStart + instIndex];
             switch (ins->op) {
@@ -269,6 +273,15 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
                     break;
                 case SLMirOp_CAST:
                     if (program->typeLen != 0 && ins->aux >= program->typeLen) {
+                        SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
+                        return -1;
+                    }
+                    break;
+                case SLMirOp_LOCAL_ZERO:
+                case SLMirOp_LOCAL_LOAD:
+                case SLMirOp_LOCAL_STORE:
+                case SLMirOp_LOCAL_ADDR:
+                    if (ins->aux >= fn->localCount) {
                         SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
                         return -1;
                     }
