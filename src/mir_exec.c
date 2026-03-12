@@ -108,6 +108,26 @@ static int SLMirConstToValue(const SLMirConst* _Nonnull in, SLMirExecValue* _Non
     }
 }
 
+static void SLMirResolveSymbolName(
+    const SLMirExecRun* _Nonnull run,
+    const SLMirInst* _Nonnull ins,
+    SLMirSymbolKind expectedKind,
+    uint32_t* _Nonnull outStart,
+    uint32_t* _Nonnull outEnd) {
+    *outStart = ins->start;
+    *outEnd = ins->end;
+    if (run == NULL || ins == NULL || outStart == NULL || outEnd == NULL || run->program == NULL
+        || ins->aux >= run->program->symbolLen)
+    {
+        return;
+    }
+    if (run->program->symbols[ins->aux].kind != expectedKind) {
+        return;
+    }
+    *outStart = run->program->symbols[ins->aux].nameStart;
+    *outEnd = run->program->symbols[ins->aux].nameEnd;
+}
+
 static int SLMirRunLoop(
     SLMirExecRun* _Nonnull run, SLMirExecValue* _Nonnull outValue, int* _Nonnull outIsConst) {
     while (run->pc < run->len) {
@@ -270,12 +290,15 @@ static int SLMirRunLoop(
             case SLMirOp_LOAD_IDENT: {
                 SLCTFEValue v;
                 int         idIsConst = 0;
+                uint32_t    nameStart = ins->start;
+                uint32_t    nameEnd = ins->end;
                 if (run->env.resolveIdent == NULL) {
                     return 0;
                 }
+                SLMirResolveSymbolName(run, ins, SLMirSymbol_IDENT, &nameStart, &nameEnd);
                 SLCTFEValueInvalid(&v);
                 if (run->env.resolveIdent(
-                        run->env.resolveCtx, ins->start, ins->end, &v, &idIsConst, run->env.diag)
+                        run->env.resolveCtx, nameStart, nameEnd, &v, &idIsConst, run->env.diag)
                     != 0)
                 {
                     return -1;
@@ -294,9 +317,12 @@ static int SLMirRunLoop(
                 int          callIsConst = 0;
                 uint32_t     argCount = (uint32_t)ins->tok;
                 uint32_t     i;
+                uint32_t     nameStart = ins->start;
+                uint32_t     nameEnd = ins->end;
                 if (run->env.resolveCall == NULL) {
                     return 0;
                 }
+                SLMirResolveSymbolName(run, ins, SLMirSymbol_CALL, &nameStart, &nameEnd);
                 if (argCount > run->stackLen) {
                     return 0;
                 }
@@ -318,8 +344,8 @@ static int SLMirRunLoop(
                 SLCTFEValueInvalid(&v);
                 if (run->env.resolveCall(
                         run->env.resolveCtx,
-                        ins->start,
-                        ins->end,
+                        nameStart,
+                        nameEnd,
                         args,
                         argCount,
                         &v,

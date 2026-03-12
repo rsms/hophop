@@ -116,11 +116,18 @@ typedef struct {
     uint32_t flags;
 } SLMirTypeRef;
 
+typedef enum {
+    SLMirSymbol_INVALID = 0,
+    SLMirSymbol_IDENT,
+    SLMirSymbol_CALL,
+    SLMirSymbol_HOST,
+} SLMirSymbolKind;
+
 typedef struct {
-    uint32_t nameStart;
-    uint32_t nameEnd;
-    uint32_t kind;
-    uint32_t target;
+    uint32_t        nameStart;
+    uint32_t        nameEnd;
+    SLMirSymbolKind kind;
+    uint32_t        target;
 } SLMirSymbolRef;
 
 typedef struct {

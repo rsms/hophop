@@ -214,6 +214,62 @@ static int SLMirLowerRewriteConstInst(
     return 1;
 }
 
+static int SLMirLowerInternSymbol(
+    SLMirProgramBuilder* _Nonnull builder,
+    SLMirSymbolKind kind,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    uint32_t        target,
+    uint32_t* _Nonnull outIndex,
+    SLDiag* _Nullable diag) {
+    uint32_t       i;
+    SLMirSymbolRef symbol;
+    if (builder == NULL || outIndex == NULL) {
+        return -1;
+    }
+    for (i = 0; i < builder->symbolLen; i++) {
+        const SLMirSymbolRef* existing = &builder->symbols[i];
+        if (existing->kind == kind && existing->nameStart == nameStart
+            && existing->nameEnd == nameEnd && existing->target == target)
+        {
+            *outIndex = i;
+            return 0;
+        }
+    }
+    symbol.kind = kind;
+    symbol.nameStart = nameStart;
+    symbol.nameEnd = nameEnd;
+    symbol.target = target;
+    if (SLMirProgramBuilderAddSymbol(builder, &symbol, outIndex) != 0) {
+        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, nameStart, nameEnd);
+        return -1;
+    }
+    return 0;
+}
+
+static int SLMirLowerRewriteSymbolInst(
+    SLMirProgramBuilder* _Nonnull builder,
+    const SLMirInst* _Nonnull in,
+    SLMirInst* _Nonnull out,
+    SLDiag* _Nullable diag) {
+    SLMirSymbolKind kind = SLMirSymbol_INVALID;
+    uint32_t        symbolIndex = 0;
+    memcpy(out, in, sizeof(*out));
+    switch (in->op) {
+        case SLMirOp_LOAD_IDENT: kind = SLMirSymbol_IDENT; break;
+        case SLMirOp_CALL:       kind = SLMirSymbol_CALL; break;
+        default:                 return 0;
+    }
+    if (SLMirLowerInternSymbol(
+            builder, kind, in->start, in->end, (uint32_t)in->tok, &symbolIndex, diag)
+        != 0)
+    {
+        return -1;
+    }
+    out->aux = symbolIndex;
+    return 1;
+}
+
 int SLMirLowerExprAsFunction(
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,
@@ -280,6 +336,10 @@ int SLMirLowerExprAsFunction(
         }
         if (rewriteStatus == 0) {
             memcpy(&loweredInst, &chunk.v[i], sizeof(loweredInst));
+            rewriteStatus = SLMirLowerRewriteSymbolInst(&builder, &chunk.v[i], &loweredInst, diag);
+            if (rewriteStatus < 0) {
+                return -1;
+            }
         }
         if (SLMirProgramBuilderAppendInst(&builder, &loweredInst) != 0) {
             if (diag != NULL) {
