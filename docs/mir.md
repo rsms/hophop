@@ -17,6 +17,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - `mir_exec` now also has a real `CALL_FN` execution path for same-program MIR calls, with the current local-slot and parameter-binding semantics.
 - `mir_exec` now also has local-slot frame storage for MIR functions, with parameter binding into the first `paramCount` local slots and execution support for `LOCAL_LOAD` / `LOCAL_STORE`.
 - `mir_exec` now also supports local address-taking and simple reference dereference through `LOCAL_ADDR`, `DEREF_LOAD`, and `DEREF_STORE`.
+- `mir_exec` now also has a backend-neutral index hook in `SLMirExecEnv`, which the evaluator uses for array/slice-style indexing without baking evaluator-private storage types into MIR execution.
 - `mir_exec` now also executes basic control-flow ops: `JUMP`, `JUMP_IF_FALSE`, and `RETURN_VOID`.
 - `mir_exec` now also executes `CALL_HOST` through the explicit `SLMirExecEnv.hostCall` bridge.
 - `mir_exec` now also materializes `SLMirConst_FUNCTION` and executes `CALL_INDIRECT` for same-program function references.
@@ -96,7 +97,7 @@ From `SLMirOp` in `src/mir.h`:
 - `SLMirOp_DEREF_STORE`
 - `SLMirOp_UNARY`
 - `SLMirOp_BINARY`
-- `SLMirOp_INDEX` (element index; non-slice form)
+- `SLMirOp_INDEX` (element index; non-slice form; strings handled directly, backend-specific containers can go through the index hook)
 - `SLMirOp_RETURN`
 - `SLMirOp_RETURN_VOID`
 
@@ -153,6 +154,7 @@ Interpreter details:
 - `SLMirEvalFunction(...)` validates the MIR program shape before execution.
 - `LOAD_IDENT` is resolved by `SLMirResolveIdentFn`.
 - `CALL` is resolved by `SLMirResolveCallFn` with popped arguments in source order.
+- `INDEX` handles strings directly in `mir_exec` and can delegate other container indexing to `SLMirExecEnv.indexValue(...)`.
 - `CALL_FN` now executes same-program MIR functions through the function executor. Today that path is intentionally narrow and only supports the current arg-less/simple case until local slots and parameter binding move into MIR.
 - `CALL_FN` now supports passing arguments into same-program MIR functions, with those arguments bound to the first `paramCount` local slots.
 - When `SLMirCallArgFlag_RECEIVER_ARG0` is set on lowered `CALL_FN` or `CALL_HOST`, execution drops argument `0` before invoking the resolved target.

@@ -2185,6 +2185,13 @@ static int SLEvalMirZeroInitLocal(
     SLDiag* _Nullable diag);
 static int SLEvalMirCoerceValueForType(
     void* ctx, const SLMirTypeRef* typeRef, SLCTFEValue* inOutValue, SLDiag* _Nullable diag);
+static int SLEvalMirIndexValue(
+    void*              ctx,
+    const SLCTFEValue* base,
+    const SLCTFEValue* index,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag);
 static int SLEvalMirHostCall(
     void*              ctx,
     uint32_t           hostId,
@@ -6258,6 +6265,40 @@ static int SLEvalMirCoerceValueForType(
     return SLEvalCoerceValueToTypeNode(p, p->currentFile, (int32_t)typeRef->astNode, inOutValue);
 }
 
+static int SLEvalMirIndexValue(
+    void*              ctx,
+    const SLCTFEValue* base,
+    const SLCTFEValue* index,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram*     p = (SLEvalProgram*)ctx;
+    const SLCTFEValue* baseValue;
+    SLEvalArray*       array;
+    int64_t            indexInt = 0;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || base == NULL || index == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    baseValue = SLEvalValueTargetOrSelf(base);
+    if (SLCTFEValueToInt64(index, &indexInt) != 0 || indexInt < 0) {
+        return 0;
+    }
+    array = SLEvalValueAsArray(baseValue);
+    if (array == NULL) {
+        return 0;
+    }
+    if ((uint64_t)indexInt >= (uint64_t)array->len) {
+        return 0;
+    }
+    *outValue = array->elems[(uint32_t)indexInt];
+    *outIsConst = 1;
+    return 0;
+}
+
 static int SLEvalMirHostCall(
     void*              ctx,
     uint32_t           hostId,
@@ -6355,6 +6396,8 @@ static int SLEvalTryMirEvalTopInit(
     env.zeroInitCtx = p;
     env.coerceValueForType = SLEvalMirCoerceValueForType;
     env.coerceValueCtx = p;
+    env.indexValue = SLEvalMirIndexValue;
+    env.indexValueCtx = p;
     env.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
     if (SLMirEvalFunction(p->arena, &program, 0, NULL, 0, &env, outValue, outIsConst) != 0) {
         return -1;

@@ -823,28 +823,45 @@ static int SLMirRunLoop(
                 SLCTFEValue idx;
                 SLCTFEValue out;
                 int64_t     idxInt = 0;
+                int         indexIsConst = 0;
                 if (SLCTFEPop(run, &idx) != 0 || SLCTFEPop(run, &base) != 0) {
                     return 0;
                 }
-                if (base.kind != SLCTFEValue_STRING || SLCTFEValueToInt64(&idx, &idxInt) != 0) {
+                if (base.kind == SLCTFEValue_STRING && SLCTFEValueToInt64(&idx, &idxInt) == 0) {
+                    if (idxInt < 0 || (uint64_t)idxInt >= (uint64_t)base.s.len) {
+                        return 0;
+                    }
+                    out.kind = SLCTFEValue_INT;
+                    out.i64 = (int64_t)base.s.bytes[(uint32_t)idxInt];
+                    out.f64 = 0.0;
+                    out.b = 0;
+                    out.typeTag = 0;
+                    out.s.bytes = NULL;
+                    out.s.len = 0;
+                    out.span.fileBytes = NULL;
+                    out.span.fileLen = 0;
+                    out.span.startLine = 0;
+                    out.span.startColumn = 0;
+                    out.span.endLine = 0;
+                    out.span.endColumn = 0;
+                    if (SLCTFEPush(run, &out) != 0) {
+                        return -1;
+                    }
+                    break;
+                }
+                if (run->env.indexValue == NULL) {
                     return 0;
                 }
-                if (idxInt < 0 || (uint64_t)idxInt >= (uint64_t)base.s.len) {
+                SLCTFEValueInvalid(&out);
+                if (run->env.indexValue(
+                        run->env.indexValueCtx, &base, &idx, &out, &indexIsConst, run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!indexIsConst) {
                     return 0;
                 }
-                out.kind = SLCTFEValue_INT;
-                out.i64 = (int64_t)base.s.bytes[(uint32_t)idxInt];
-                out.f64 = 0.0;
-                out.b = 0;
-                out.typeTag = 0;
-                out.s.bytes = NULL;
-                out.s.len = 0;
-                out.span.fileBytes = NULL;
-                out.span.fileLen = 0;
-                out.span.startLine = 0;
-                out.span.startColumn = 0;
-                out.span.endLine = 0;
-                out.span.endColumn = 0;
                 if (SLCTFEPush(run, &out) != 0) {
                     return -1;
                 }
