@@ -28,6 +28,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Lowered `CAST` instructions now also intern their target types into `program.types[]`, so type-directed backends do not need to recover cast metadata from parser ASTs later.
 - MIR programs now also have an explicit `program.hosts[]` table for hostcall metadata, so `CALL_HOST` does not have to treat instruction `aux` as evaluator-private state forever.
 - The evaluator now uses that host table for one real runtime case: plain builtin `print(...)` calls lowered through the simple MIR path are rewritten to `CALL_HOST`.
+- The evaluator-side direct-call rewrite now also covers conservative imported package selector calls, such as `math.Add(...)`, when the import alias and callee resolve unambiguously by arity.
 - `mir_lower` now exposes the same instruction-materialization path to `mir_lower_stmt`, so statement-lowered runtime MIR also uses the same const/symbol/type tables instead of appending raw expression instructions.
 - MIR programs now also carry explicit source entries and per-function `sourceRef` metadata, so execution and future backends do not need to assume one global source/file for the whole program.
 - MIR programs now also carry explicit local metadata in `program.locals[]`, sliced per function by `localStart` / `localCount`.
@@ -196,6 +197,7 @@ So today:
   - typed single-name declarations without initializer, lowered as `LOCAL_ZERO`
   - local `&name`, `*name`, and `*name = value` forms where `name` is a MIR local
   - plain builtin `print(...)` rewritten to `CALL_HOST`
+  - conservative imported package calls like `pkg.F(...)`, lowered to `CALL_FN` when the target is unambiguous and non-variadic
   - simple local assignment and compound assignment
   - expression statements
   - `if` / `else`

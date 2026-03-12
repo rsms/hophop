@@ -6738,7 +6738,102 @@ static int SLEvalMirResolveDirectCallTarget(
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+    if (symbol->kind != SLMirSymbol_CALL) {
+        return 0;
+    }
+    if (symbol->flags == SLMirSymbolFlag_CALL_RECEIVER_ARG0) {
+        const SLAst*     ast = &callerFn->file->ast;
+        const SLPackage* targetPkg = NULL;
+        int32_t          resolvedFnIndex = -1;
+        int              found = 0;
+        int              ambiguous = 0;
+        int32_t          stack[256];
+        uint32_t         stackLen = 0;
+        if (callerFn->bodyNode < 0 || (uint32_t)callerFn->bodyNode >= ast->len) {
+            return 0;
+        }
+        stack[stackLen++] = callerFn->bodyNode;
+        while (stackLen > 0) {
+            int32_t          nodeId = stack[--stackLen];
+            const SLAstNode* node = &ast->nodes[nodeId];
+            int32_t          child;
+            if (node->kind == SLAst_CALL) {
+                int32_t calleeNode = node->firstChild;
+                int32_t baseNode = calleeNode >= 0 ? ast->nodes[calleeNode].firstChild : -1;
+                if (calleeNode >= 0 && (uint32_t)calleeNode < ast->len
+                    && ast->nodes[calleeNode].kind == SLAst_FIELD_EXPR && baseNode >= 0
+                    && (uint32_t)baseNode < ast->len && ast->nodes[baseNode].kind == SLAst_IDENT
+                    && ast->nodes[calleeNode].dataStart == symbol->nameStart
+                    && ast->nodes[calleeNode].dataEnd == symbol->nameEnd
+                    && AstListCount(ast, nodeId) + 1u == (uint32_t)ins->tok)
+                {
+                    const SLPackage* currentPkg = callerFn->pkg;
+                    uint32_t         i;
+                    targetPkg = NULL;
+                    if (currentPkg != NULL) {
+                        for (i = 0; i < currentPkg->importLen; i++) {
+                            const SLImportRef* imp = &currentPkg->imports[i];
+                            if (imp->bindName == NULL || imp->target == NULL) {
+                                continue;
+                            }
+                            if (strlen(imp->bindName)
+                                    == (size_t)(ast->nodes[baseNode].dataEnd
+                                                - ast->nodes[baseNode].dataStart)
+                                && memcmp(
+                                       imp->bindName,
+                                       callerFn->file->source + ast->nodes[baseNode].dataStart,
+                                       (size_t)(ast->nodes[baseNode].dataEnd
+                                                - ast->nodes[baseNode].dataStart))
+                                       == 0)
+                            {
+                                targetPkg = imp->target;
+                                break;
+                            }
+                        }
+                    }
+                    if (targetPkg != NULL) {
+                        int32_t fnIndex = SLEvalResolveFunctionBySlice(
+                            c->p,
+                            targetPkg,
+                            callerFn->file,
+                            symbol->nameStart,
+                            symbol->nameEnd,
+                            NULL,
+                            (uint32_t)ins->tok - 1u);
+                        if (fnIndex == -2) {
+                            return 0;
+                        }
+                        if (fnIndex >= 0 && (uint32_t)fnIndex < c->p->funcLen
+                            && !c->p->funcs[(uint32_t)fnIndex].isBuiltinPackageFn
+                            && !c->p->funcs[(uint32_t)fnIndex].isVariadic)
+                        {
+                            if (!found) {
+                                resolvedFnIndex = fnIndex;
+                                found = 1;
+                            } else if (resolvedFnIndex != fnIndex) {
+                                ambiguous = 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            child = node->firstChild;
+            while (child >= 0) {
+                if (stackLen >= (uint32_t)(sizeof(stack) / sizeof(stack[0]))) {
+                    return 0;
+                }
+                stack[stackLen++] = child;
+                child = ast->nodes[child].nextSibling;
+            }
+        }
+        if (!found || ambiguous || resolvedFnIndex < 0 || resolvedFnIndex == callerFnIndex) {
+            return 0;
+        }
+        *outEvalFnIndex = (uint32_t)resolvedFnIndex;
+        return 1;
+    }
+    if (symbol->flags != 0u) {
         return 0;
     }
     targetFnIndex = SLEvalResolveFunctionBySlice(
