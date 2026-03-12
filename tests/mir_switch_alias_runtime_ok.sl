@@ -1,0 +1,28 @@
+import "platform"
+
+enum Token u8 {
+	End
+	Int{
+		value i32
+	}
+	Pair{
+		left  i32
+		right i32
+	}
+}
+
+fn measure(t Token) i32 {
+	switch t {
+		case Token.End       { return 0 }
+		case Token.Int as n  { return n.value }
+		case Token.Pair as p { return p.left + p.right }
+	}
+}
+
+fn main() {
+	var a Token = Token.Int{ value: 7 }
+	var b Token = Token.Pair{ left: 2 }
+	if !(measure(a) == 7 && measure(b) == 2) {
+		platform.exit(1)
+	}
+}

@@ -223,7 +223,7 @@ So today:
   - `if` / `else`
   - successful `assert` statements
   - simple non-`for in` `for` loops, plus `break` and `continue`
-  - conservative `switch` lowering for plain subject/condition switches with case labels, `default`, and switch-local `break`
+  - conservative `switch` lowering for plain subject/condition switches with case labels, `default`, switch-local `break`, and subject-pattern alias bindings
   - `return`
   - nested blocks
 - The evaluator now tries that MIR function-body path before falling back to `ctfe_exec`, which keeps runtime behavior stable while the MIR subset grows.

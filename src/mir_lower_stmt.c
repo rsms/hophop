@@ -1098,6 +1098,7 @@ static int SLMirStmtLowerSwitch(SLMirStmtLower* c, int32_t stmtNode) {
         if (clause->kind == SLAst_CASE) {
             int32_t  caseChild = clause->firstChild;
             int32_t  bodyNode = -1;
+            int32_t  aliasNode = -1;
             uint32_t pendingFalseJump = UINT32_MAX;
             uint32_t bodyJumps[64];
             uint32_t bodyJumpLen = 0;
@@ -1116,7 +1117,12 @@ static int SLMirStmtLowerSwitch(SLMirStmtLower* c, int32_t stmtNode) {
                 }
                 if (c->ast->nodes[caseChild].kind == SLAst_CASE_PATTERN) {
                     labelExprNode = c->ast->nodes[caseChild].firstChild;
-                    if (labelExprNode < 0 || c->ast->nodes[labelExprNode].nextSibling >= 0) {
+                    aliasNode = labelExprNode >= 0 ? c->ast->nodes[labelExprNode].nextSibling : -1;
+                    if (labelExprNode < 0
+                        || (aliasNode >= 0 && c->ast->nodes[aliasNode].nextSibling >= 0)
+                        || (!hasSubject && aliasNode >= 0)
+                        || (aliasNode >= 0 && c->ast->nodes[aliasNode].kind != SLAst_IDENT))
+                    {
                         c->supported = 0;
                         c->localLen = scopeMark;
                         c->controlLen--;
@@ -1196,10 +1202,42 @@ static int SLMirStmtLowerSwitch(SLMirStmtLower* c, int32_t stmtNode) {
                     c->builder.insts[bodyJumps[i]].aux = bodyPc;
                 }
             }
+            if (aliasNode >= 0) {
+                uint32_t aliasSlot = UINT32_MAX;
+                if (SLMirStmtLowerPushLocal(
+                        c,
+                        c->ast->nodes[aliasNode].dataStart,
+                        c->ast->nodes[aliasNode].dataEnd,
+                        1,
+                        0,
+                        0,
+                        -1,
+                        &aliasSlot)
+                    != 0)
+                {
+                    c->localLen = scopeMark;
+                    c->controlLen--;
+                    return -1;
+                }
+                if (SLMirStmtLowerAppendInst(
+                        c, SLMirOp_LOCAL_LOAD, 0, subjectSlot, clause->start, clause->end, NULL)
+                        != 0
+                    || SLMirStmtLowerAppendInst(
+                           c, SLMirOp_LOCAL_STORE, 0, aliasSlot, clause->start, clause->end, NULL)
+                           != 0)
+                {
+                    c->localLen = scopeMark;
+                    c->controlLen--;
+                    return -1;
+                }
+            }
             if (SLMirStmtLowerBlock(c, bodyNode) != 0 || !c->supported) {
                 c->localLen = scopeMark;
                 c->controlLen--;
                 return c->supported ? -1 : 0;
+            }
+            if (aliasNode >= 0) {
+                c->localLen--;
             }
             {
                 uint32_t endJump = UINT32_MAX;
