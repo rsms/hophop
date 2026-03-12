@@ -9,6 +9,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Builder: `src/mir.c` builds MIR from AST expression nodes (`SLMirBuildExpr`).
 - Lowering wrapper: `src/mir_lower.c` currently lowers one expression into a one-function `SLMirProgram`.
 - Program builder: `src/mir.c` now also exposes `SLMirProgramBuilder` helpers for assembling backend-facing MIR programs incrementally.
+- Program validation: `src/mir.c` also exposes `SLMirValidateProgram(...)` for backend-facing sanity checks on function ranges and table references.
 - IR shape: `src/mir.h` defines a compact stack-machine instruction format.
 - Interpreter core: `src/mir_exec.c` executes MIR chunks.
 - Function executor: `src/mir_exec.c` now also exposes `SLMirEvalFunction(...)` over `SLMirProgram`.
@@ -114,6 +115,7 @@ Interpreter details:
 - Raw expression chunks still decode literal values from source slices (`start`/`end`) at execution time.
 - Lowered function programs may instead materialize those literals in `program.consts[]` and execute them via `SLMirOp_PUSH_CONST`.
 - `SLCTFEEvalExpr` now adapts its CTFE callbacks into `SLMirExecEnv`.
+- `SLMirEvalFunction(...)` validates the MIR program shape before execution.
 - `LOAD_IDENT` is resolved by `SLMirResolveIdentFn`.
 - `CALL` is resolved by `SLMirResolveCallFn` with popped arguments in source order.
 - When lowered symbol metadata exists, `mir_exec` resolves identifier/call names through `program.symbols[]` before falling back to instruction spans.
@@ -146,6 +148,7 @@ So today:
 - The constant-pool rewrite is the first step away from MIR depending on parser source text at execution time, which is important for a future Wasm backend or any serialized MIR consumer.
 - The symbol-table rewrite does the same for simple name resolution metadata: a backend can inspect imports/calls/idents from MIR program tables instead of reverse-engineering them from parser offsets.
 - The type-table rewrite does the same for cast targets: a backend can inspect cast target metadata from MIR tables instead of reconstructing it from AST shape at codegen time.
+- `SLMirValidateProgram(...)` makes those table contracts explicit, which is useful before adding more backends that will consume MIR directly instead of relying on evaluator fallbacks.
 
 ## Notes from `consteval` branch
 

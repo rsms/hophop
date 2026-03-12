@@ -13,6 +13,8 @@ typedef struct {
     SLDiag*      diag;
 } SLMirBuilder;
 
+static void SLMirSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end);
+
 static void* _Nullable SLMirArenaGrowArray(
     SLArena* arena, void* _Nullable oldMem, size_t elemSize, uint32_t oldCap, uint32_t newCap) {
     void* newMem;
@@ -231,6 +233,57 @@ void SLMirProgramBuilderFinish(const SLMirProgramBuilder* b, SLMirProgram* outPr
     outProgram->typeLen = b->typeLen;
     outProgram->symbols = b->symbols;
     outProgram->symbolLen = b->symbolLen;
+}
+
+int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
+    uint32_t funcIndex;
+    if (diag != NULL) {
+        *diag = (SLDiag){ 0 };
+    }
+    if (program == NULL) {
+        SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        return -1;
+    }
+    for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
+        const SLMirFunction* fn = &program->funcs[funcIndex];
+        uint32_t             instIndex;
+        if (fn->instStart > program->instLen || fn->instLen > program->instLen - fn->instStart) {
+            SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, fn->nameStart, fn->nameEnd);
+            return -1;
+        }
+        for (instIndex = 0; instIndex < fn->instLen; instIndex++) {
+            const SLMirInst* ins = &program->insts[fn->instStart + instIndex];
+            switch (ins->op) {
+                case SLMirOp_PUSH_CONST:
+                    if (ins->aux >= program->constLen) {
+                        SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
+                        return -1;
+                    }
+                    break;
+                case SLMirOp_LOAD_IDENT:
+                case SLMirOp_CALL:
+                    if (program->symbolLen != 0 && ins->aux >= program->symbolLen) {
+                        SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
+                        return -1;
+                    }
+                    break;
+                case SLMirOp_CAST:
+                    if (program->typeLen != 0 && ins->aux >= program->typeLen) {
+                        SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
+                        return -1;
+                    }
+                    break;
+                case SLMirOp_CALL_FN:
+                    if (ins->aux >= program->funcLen) {
+                        SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
+                        return -1;
+                    }
+                    break;
+                default: break;
+            }
+        }
+    }
+    return 0;
 }
 
 static void SLMirSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {

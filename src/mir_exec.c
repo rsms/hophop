@@ -1157,6 +1157,9 @@ int SLMirEvalFunction(
         }
         return -1;
     }
+    if (SLMirValidateProgram(program, env != NULL ? env->diag : NULL) != 0) {
+        return -1;
+    }
     fn = &program->funcs[functionIndex];
     if (fn->instStart > program->instLen || fn->instLen > program->instLen - fn->instStart) {
         if (env != NULL) {

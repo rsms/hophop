@@ -204,5 +204,6 @@ int SLMirProgramBuilderAppendInst(SLMirProgramBuilder* _Nonnull b, const SLMirIn
 int SLMirProgramBuilderEndFunction(SLMirProgramBuilder* _Nonnull b);
 void SLMirProgramBuilderFinish(
     const SLMirProgramBuilder* _Nonnull b, SLMirProgram* _Nonnull outProgram);
+int SLMirValidateProgram(const SLMirProgram* _Nonnull program, SLDiag* _Nullable diag);
 
 SL_API_END
