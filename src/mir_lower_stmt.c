@@ -468,13 +468,14 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
     }
 }
 
-int SLMirLowerSimpleFunction(
+int SLMirLowerAppendSimpleFunction(
+    SLMirProgramBuilder* _Nonnull builder,
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,
     SLStrView src,
     int32_t   fnNode,
     int32_t   bodyNode,
-    SLMirProgram* _Nonnull outProgram,
+    uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
     SLDiag* _Nullable diag) {
     SLMirStmtLower c;
@@ -483,11 +484,13 @@ int SLMirLowerSimpleFunction(
     if (diag != NULL) {
         *diag = (SLDiag){ 0 };
     }
-    if (outProgram == NULL || outSupported == NULL || arena == NULL || ast == NULL) {
+    if (builder == NULL || outFunctionIndex == NULL || outSupported == NULL || arena == NULL
+        || ast == NULL)
+    {
         SLMirLowerStmtSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
         return -1;
     }
-    *outProgram = (SLMirProgram){ 0 };
+    *outFunctionIndex = UINT32_MAX;
     *outSupported = 0;
     if (bodyNode < 0 || (uint32_t)bodyNode >= ast->len || ast->nodes[bodyNode].kind != SLAst_BLOCK)
     {
@@ -499,7 +502,7 @@ int SLMirLowerSimpleFunction(
     c.src = src;
     c.supported = 1;
     c.diag = diag;
-    SLMirProgramBuilderInit(&c.builder, arena);
+    c.builder = *builder;
 
     fn.nameStart = fnNode >= 0 && (uint32_t)fnNode < ast->len ? ast->nodes[fnNode].dataStart : 0;
     fn.nameEnd = fnNode >= 0 && (uint32_t)fnNode < ast->len ? ast->nodes[fnNode].dataEnd : 0;
@@ -548,8 +551,42 @@ int SLMirLowerSimpleFunction(
         SLMirLowerStmtSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
         return -1;
     }
-    SLMirProgramBuilderFinish(&c.builder, outProgram);
+    *builder = c.builder;
+    *outFunctionIndex = c.functionIndex;
     *outSupported = 1;
+    return 0;
+}
+
+int SLMirLowerSimpleFunction(
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
+    SLMirProgram* _Nonnull outProgram,
+    int* _Nonnull outSupported,
+    SLDiag* _Nullable diag) {
+    SLMirProgramBuilder builder;
+    uint32_t            functionIndex = UINT32_MAX;
+    if (diag != NULL) {
+        *diag = (SLDiag){ 0 };
+    }
+    if (outProgram == NULL || outSupported == NULL || arena == NULL || ast == NULL) {
+        SLMirLowerStmtSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        return -1;
+    }
+    *outProgram = (SLMirProgram){ 0 };
+    SLMirProgramBuilderInit(&builder, arena);
+    if (SLMirLowerAppendSimpleFunction(
+            &builder, arena, ast, src, fnNode, bodyNode, &functionIndex, outSupported, diag)
+        != 0)
+    {
+        return -1;
+    }
+    if (!*outSupported) {
+        return 0;
+    }
+    SLMirProgramBuilderFinish(&builder, outProgram);
     return 0;
 }
 

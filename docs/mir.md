@@ -182,6 +182,8 @@ So today:
   - `return`
   - nested blocks
 - The evaluator now tries that MIR function-body path before falling back to `ctfe_exec`, which keeps runtime behavior stable while the MIR subset grows.
+- That evaluator-side MIR path now also lowers unambiguous same-file plain direct calls into same-program `CALL_FN` edges, while leaving recursive, variadic, selector-style, ambiguous, builtin-package, and cross-file calls on the older callback path.
+- Cross-file direct-call lowering is still intentionally deferred because `mir_exec` currently runs with one active source view and one evaluator file context per MIR invocation. A future broader package/program lowering step should give MIR functions explicit source/file identity so multi-file programs become first-class backend input.
 - The `SLMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
 - The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.
 - The initial `CALL_FN` support means that boundary is no longer just an entry point; MIR function-to-function execution has started to exist, even though full frame/locals/param semantics are still ahead.

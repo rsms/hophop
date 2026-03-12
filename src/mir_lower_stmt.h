@@ -12,5 +12,15 @@ int SLMirLowerSimpleFunction(
     SLMirProgram* _Nonnull outProgram,
     int* _Nonnull outSupported,
     SLDiag* _Nullable diag);
+int SLMirLowerAppendSimpleFunction(
+    SLMirProgramBuilder* _Nonnull builder,
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
+    uint32_t* _Nonnull outFunctionIndex,
+    int* _Nonnull outSupported,
+    SLDiag* _Nullable diag);
 
 SL_API_END
