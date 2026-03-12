@@ -17,27 +17,38 @@ typedef struct {
     uint32_t breakJumpStart;
     uint32_t continueJumpStart;
     uint32_t continueTargetPc;
+    uint32_t blockDepth;
     uint8_t  hasContinue;
     uint8_t  _reserved[3];
 } SLMirLowerControl;
 
 typedef struct {
-    SLArena*            arena;
-    const SLAst*        ast;
-    SLStrView           src;
-    SLMirProgramBuilder builder;
-    uint32_t            functionIndex;
-    SLMirLowerLocal*    locals;
-    uint32_t            localLen;
-    uint32_t            localCap;
-    uint32_t            breakJumps[256];
-    uint32_t            breakJumpLen;
-    uint32_t            continueJumps[256];
-    uint32_t            continueJumpLen;
-    SLMirLowerControl   controls[32];
-    uint32_t            controlLen;
-    int                 supported;
-    SLDiag*             diag;
+    uint32_t deferStart;
+} SLMirLowerBlockScope;
+
+typedef struct {
+    SLArena*             arena;
+    const SLAst*         ast;
+    SLStrView            src;
+    SLMirProgramBuilder  builder;
+    uint32_t             functionIndex;
+    SLMirLowerLocal*     locals;
+    uint32_t             localLen;
+    uint32_t             localCap;
+    uint32_t             breakJumps[256];
+    uint32_t             breakJumpLen;
+    uint32_t             continueJumps[256];
+    uint32_t             continueJumpLen;
+    SLMirLowerControl    controls[32];
+    uint32_t             controlLen;
+    int32_t              deferredStmtNodes[256];
+    uint32_t             deferredStmtLen;
+    SLMirLowerBlockScope blockScopes[64];
+    uint32_t             blockDepth;
+    uint8_t              loweringDeferred;
+    uint8_t              _reserved2[3];
+    int                  supported;
+    SLDiag*              diag;
 } SLMirStmtLower;
 
 static void SLMirLowerStmtSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
@@ -313,6 +324,7 @@ static int SLMirStmtLowerPushControl(
         .breakJumpStart = c->breakJumpLen,
         .continueJumpStart = c->continueJumpLen,
         .continueTargetPc = continueTargetPc,
+        .blockDepth = c->blockDepth,
         .hasContinue = hasContinue ? 1u : 0u,
     };
     return 1;
@@ -645,8 +657,47 @@ static int32_t SLMirStmtLowerVarLikeInitExprNodeAt(
 
 static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode);
 
+static int SLMirStmtLowerEmitDeferredRange(SLMirStmtLower* c, uint32_t start) {
+    uint32_t i;
+    uint8_t  savedLoweringDeferred;
+    if (c == NULL || start > c->deferredStmtLen) {
+        return -1;
+    }
+    savedLoweringDeferred = c->loweringDeferred;
+    c->loweringDeferred = 1u;
+    for (i = c->deferredStmtLen; i > start; i--) {
+        if (SLMirStmtLowerStmt(c, c->deferredStmtNodes[i - 1u]) != 0 || !c->supported) {
+            c->loweringDeferred = savedLoweringDeferred;
+            return c->supported ? -1 : 0;
+        }
+    }
+    c->loweringDeferred = savedLoweringDeferred;
+    return 0;
+}
+
+static int SLMirStmtLowerEmitDeferredForControl(
+    SLMirStmtLower* c, const SLMirLowerControl* control) {
+    uint32_t targetDepth;
+    uint32_t i;
+    if (c == NULL || control == NULL) {
+        return -1;
+    }
+    targetDepth = control->blockDepth;
+    i = c->blockDepth;
+    while (i > targetDepth) {
+        const SLMirLowerBlockScope* scope = &c->blockScopes[i - 1u];
+        if (SLMirStmtLowerEmitDeferredRange(c, scope->deferStart) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        i--;
+    }
+    return 0;
+}
+
 static int SLMirStmtLowerBlock(SLMirStmtLower* c, int32_t blockNode) {
     uint32_t scopeMark = c->localLen;
+    uint32_t blockDepth = c->blockDepth;
+    uint32_t deferStart;
     int32_t  child;
     if (blockNode < 0 || (uint32_t)blockNode >= c->ast->len
         || c->ast->nodes[blockNode].kind != SLAst_BLOCK)
@@ -654,14 +705,48 @@ static int SLMirStmtLowerBlock(SLMirStmtLower* c, int32_t blockNode) {
         c->supported = 0;
         return 0;
     }
+    if (c->blockDepth >= (uint32_t)(sizeof(c->blockScopes) / sizeof(c->blockScopes[0]))) {
+        c->supported = 0;
+        return 0;
+    }
+    deferStart = c->deferredStmtLen;
+    c->blockScopes[c->blockDepth++].deferStart = deferStart;
     child = c->ast->nodes[blockNode].firstChild;
     while (child >= 0) {
+        int32_t nextChild = c->ast->nodes[child].nextSibling;
+        if (c->ast->nodes[child].kind == SLAst_DEFER) {
+            int32_t deferredStmtNode = c->ast->nodes[child].firstChild;
+            if (c->loweringDeferred || deferredStmtNode < 0
+                || c->ast->nodes[deferredStmtNode].nextSibling >= 0
+                || c->deferredStmtLen >= (uint32_t)(sizeof(c->deferredStmtNodes)
+                                                    / sizeof(c->deferredStmtNodes[0])))
+            {
+                c->supported = 0;
+                c->deferredStmtLen = deferStart;
+                c->blockDepth = blockDepth;
+                c->localLen = scopeMark;
+                return 0;
+            }
+            c->deferredStmtNodes[c->deferredStmtLen++] = deferredStmtNode;
+            child = nextChild;
+            continue;
+        }
         if (SLMirStmtLowerStmt(c, child) != 0 || !c->supported) {
+            c->deferredStmtLen = deferStart;
+            c->blockDepth = blockDepth;
             c->localLen = scopeMark;
             return c->supported ? -1 : 0;
         }
-        child = c->ast->nodes[child].nextSibling;
+        child = nextChild;
     }
+    if (SLMirStmtLowerEmitDeferredRange(c, deferStart) != 0 || !c->supported) {
+        c->deferredStmtLen = deferStart;
+        c->blockDepth = blockDepth;
+        c->localLen = scopeMark;
+        return c->supported ? -1 : 0;
+    }
+    c->deferredStmtLen = deferStart;
+    c->blockDepth = blockDepth;
     c->localLen = scopeMark;
     return 0;
 }
@@ -1458,9 +1543,14 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
         case SLAst_BREAK:  {
             uint32_t           jumpInst = UINT32_MAX;
             SLMirLowerControl* control = SLMirStmtLowerCurrentBreakable(c);
-            if (control == NULL) {
+            if (c->loweringDeferred || control == NULL) {
                 c->supported = 0;
                 return 0;
+            }
+            if (c->deferredStmtLen > 0
+                && (SLMirStmtLowerEmitDeferredForControl(c, control) != 0 || !c->supported))
+            {
+                return c->supported ? -1 : 0;
             }
             if (SLMirStmtLowerAppendInst(
                     c, SLMirOp_JUMP, 0, UINT32_MAX, s->start, s->end, &jumpInst)
@@ -1468,7 +1558,6 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             {
                 return -1;
             }
-            (void)control;
             if (!SLMirStmtLowerRecordControlJump(c, 0, jumpInst)) {
                 return 0;
             }
@@ -1477,9 +1566,14 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
         case SLAst_CONTINUE: {
             uint32_t           jumpInst = UINT32_MAX;
             SLMirLowerControl* control = SLMirStmtLowerCurrentContinuable(c);
-            if (control == NULL) {
+            if (c->loweringDeferred || control == NULL) {
                 c->supported = 0;
                 return 0;
+            }
+            if (c->deferredStmtLen > 0
+                && (SLMirStmtLowerEmitDeferredForControl(c, control) != 0 || !c->supported))
+            {
+                return c->supported ? -1 : 0;
             }
             if (SLMirStmtLowerAppendInst(
                     c, SLMirOp_JUMP, 0, control->continueTargetPc, s->start, s->end, &jumpInst)
@@ -1494,13 +1588,27 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
         }
         case SLAst_RETURN: {
             int32_t exprNode = s->firstChild;
+            if (c->loweringDeferred) {
+                c->supported = 0;
+                return 0;
+            }
             if (exprNode < 0) {
+                if (c->deferredStmtLen > 0
+                    && (SLMirStmtLowerEmitDeferredRange(c, 0) != 0 || !c->supported))
+                {
+                    return c->supported ? -1 : 0;
+                }
                 return SLMirStmtLowerAppendInst(
                     c, SLMirOp_RETURN_VOID, 0, 0, s->start, s->end, NULL);
             }
             if (c->ast->nodes[exprNode].nextSibling >= 0) {
                 c->supported = 0;
                 return 0;
+            }
+            if (c->deferredStmtLen > 0
+                && (SLMirStmtLowerEmitDeferredRange(c, 0) != 0 || !c->supported))
+            {
+                return c->supported ? -1 : 0;
             }
             if (SLMirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;

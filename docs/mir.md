@@ -222,6 +222,7 @@ So today:
   - expression statements
   - `if` / `else`
   - successful `assert` statements
+  - conservative block-scoped `defer`, including reverse-order execution and return-path replay before a MIR `return`
   - simple non-`for in` `for` loops, plus `break` and `continue`
   - conservative `switch` lowering for plain subject/condition switches with case labels, `default`, switch-local `break`, and subject-pattern alias bindings
   - `return`
