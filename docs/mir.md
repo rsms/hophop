@@ -16,6 +16,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Function executor: `src/mir_exec.c` now also exposes `SLMirEvalFunction(...)` over `SLMirProgram`.
 - `mir_exec` now also has a real `CALL_FN` execution path for same-program MIR calls, with the current local-slot and parameter-binding semantics.
 - `mir_exec` now also has local-slot frame storage for MIR functions, with parameter binding into the first `paramCount` local slots and execution support for `LOCAL_LOAD` / `LOCAL_STORE`.
+- `mir_exec` now also supports local address-taking and simple reference dereference through `LOCAL_ADDR`, `DEREF_LOAD`, and `DEREF_STORE`.
 - `mir_exec` now also executes basic control-flow ops: `JUMP`, `JUMP_IF_FALSE`, and `RETURN_VOID`.
 - `mir_exec` now also executes `CALL_HOST` through the explicit `SLMirExecEnv.hostCall` bridge.
 - `mir_exec` now also materializes `SLMirConst_FUNCTION` and executes `CALL_INDIRECT` for same-program function references.
@@ -82,9 +83,12 @@ From `SLMirOp` in `src/mir.h`:
 - `SLMirOp_LOCAL_ZERO`
 - `SLMirOp_LOCAL_LOAD`
 - `SLMirOp_LOCAL_STORE`
+- `SLMirOp_LOCAL_ADDR`
 - `SLMirOp_DROP`
 - `SLMirOp_JUMP`
 - `SLMirOp_JUMP_IF_FALSE`
+- `SLMirOp_DEREF_LOAD`
+- `SLMirOp_DEREF_STORE`
 - `SLMirOp_UNARY`
 - `SLMirOp_BINARY`
 - `SLMirOp_INDEX` (element index; non-slice form)
@@ -150,6 +154,8 @@ Interpreter details:
 - `SLMirConst_FUNCTION` currently materializes as a same-program function reference value.
 - `CALL_INDIRECT` currently expects the callee value to have been pushed before its arguments, then invokes the referenced same-program MIR function.
 - `LOCAL_LOAD` and `LOCAL_STORE` execute against per-frame local storage.
+- `LOCAL_ADDR` currently materializes a reference to a MIR local slot.
+- `DEREF_LOAD` and `DEREF_STORE` currently operate on those reference values.
 - `LOCAL_ZERO` now resolves the target local's `typeRef` through `program.locals[]` and delegates zero-value materialization through `SLMirExecEnv.zeroInitLocal(...)`.
 - `DROP` pops and discards one stack value.
 - `JUMP` and `JUMP_IF_FALSE` execute using function-local instruction indices stored in `aux`.
@@ -187,6 +193,7 @@ So today:
   - parameters mapped to typed local slots
   - single-name `var`/`const` declarations with initializer expressions
   - typed single-name declarations without initializer, lowered as `LOCAL_ZERO`
+  - local `&name`, `*name`, and `*name = value` forms where `name` is a MIR local
   - simple local assignment and compound assignment
   - expression statements
   - `if` / `else`
@@ -198,7 +205,7 @@ So today:
 - The `SLMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
 - The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.
 - The initial `CALL_FN` support means that boundary is no longer just an entry point; MIR function-to-function execution has started to exist, even though full frame/locals/param semantics are still ahead.
-- Local-slot execution is the next step in that direction: MIR functions can now carry state in frame slots, and typed zero-init now uses MIR local metadata, but address-taking and richer lvalue semantics are still ahead.
+- Local-slot execution is the next step in that direction: MIR functions can now carry state in frame slots, typed zero-init now uses MIR local metadata, and local address-taking works, but richer lvalue semantics beyond plain local refs are still ahead.
 - Basic control flow is now part of the MIR executor contract too, which is necessary before checked function bodies can migrate off the AST/`ctfe_exec` path.
 - The explicit hostcall path is another backend-facing step: non-pure operations no longer have to masquerade as generic name-resolved calls once MIR lowering starts using `CALL_HOST`.
 - The indirect-call path is the same kind of step for function values: MIR now has a backend-visible function-reference form instead of leaving all such execution to evaluator-specific machinery.

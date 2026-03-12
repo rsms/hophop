@@ -132,6 +132,13 @@ static uint32_t SLMirResolveHostId(const SLMirExecRun* run, const SLMirInst* ins
     return run->program->hosts[ins->aux].target;
 }
 
+static SLCTFEValue* _Nullable SLMirReferenceTarget(SLCTFEValue* value) {
+    if (value == NULL || value->kind != SLCTFEValue_REFERENCE || value->s.bytes == NULL) {
+        return NULL;
+    }
+    return (SLCTFEValue*)value->s.bytes;
+}
+
 static int SLMirEvalFunctionInternal(
     SLArena* _Nonnull arena,
     const SLMirProgram* _Nonnull program,
@@ -377,6 +384,20 @@ static int SLMirRunLoop(
                     return -1;
                 }
                 break;
+            case SLMirOp_LOCAL_ADDR: {
+                SLMirExecValue v;
+                if (ins->aux >= run->localCount) {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&v);
+                v.kind = SLCTFEValue_REFERENCE;
+                v.s.bytes = (const uint8_t*)&run->locals[ins->aux];
+                v.s.len = 0;
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_LOCAL_ZERO: {
                 const SLMirLocal* local;
                 SLMirExecValue    v;
@@ -403,6 +424,35 @@ static int SLMirRunLoop(
                     return 0;
                 }
                 run->locals[ins->aux] = v;
+                break;
+            }
+            case SLMirOp_DEREF_LOAD: {
+                SLMirExecValue ref;
+                SLCTFEValue*   target;
+                if (SLCTFEPop(run, &ref) != 0) {
+                    return 0;
+                }
+                target = SLMirReferenceTarget(&ref);
+                if (target == NULL) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, target) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_DEREF_STORE: {
+                SLMirExecValue ref;
+                SLMirExecValue v;
+                SLCTFEValue*   target;
+                if (SLCTFEPop(run, &ref) != 0 || SLCTFEPop(run, &v) != 0) {
+                    return 0;
+                }
+                target = SLMirReferenceTarget(&ref);
+                if (target == NULL) {
+                    return 0;
+                }
+                *target = v;
                 break;
             }
             case SLMirOp_LOCAL_STORE: {
