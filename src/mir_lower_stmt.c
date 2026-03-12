@@ -1144,6 +1144,17 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             }
             return SLMirStmtLowerAppendInst(c, SLMirOp_RETURN, 0, 0, s->start, s->end, NULL);
         }
+        case SLAst_ASSERT: {
+            int32_t condNode = s->firstChild;
+            if (condNode < 0 || c->ast->nodes[condNode].nextSibling >= 0) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerExpr(c, condNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            return SLMirStmtLowerAppendInst(c, SLMirOp_ASSERT, 0, 0, s->start, s->end, NULL);
+        }
         case SLAst_EXPR_STMT: return SLMirStmtLowerExprStmt(c, stmtNode);
         case SLAst_VAR:
         case SLAst_CONST:     {

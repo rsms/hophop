@@ -96,6 +96,7 @@ From `SLMirOp` in `src/mir.h`:
 - `SLMirOp_DROP`
 - `SLMirOp_JUMP`
 - `SLMirOp_JUMP_IF_FALSE`
+- `SLMirOp_ASSERT`
 - `SLMirOp_DEREF_LOAD`
 - `SLMirOp_DEREF_STORE`
 - `SLMirOp_UNARY`
@@ -217,6 +218,7 @@ So today:
   - simple local assignment and compound assignment
   - expression statements
   - `if` / `else`
+  - successful `assert` statements
   - simple non-`for in` `for` loops, plus `break` and `continue`
   - `return`
   - nested blocks

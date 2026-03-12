@@ -547,6 +547,20 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_ASSERT: {
+                SLMirExecValue cond;
+                SLMirExecValue condBool;
+                if (SLCTFEPop(run, &cond) != 0) {
+                    return 0;
+                }
+                if (!SLCTFEEvalCast(SLMirCastTarget_BOOL, &cond, &condBool)) {
+                    return 0;
+                }
+                if (!condBool.b) {
+                    return 0;
+                }
+                break;
+            }
             case SLMirOp_LOAD_IDENT: {
                 SLCTFEValue v;
                 int         idIsConst = 0;

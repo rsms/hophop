@@ -26,6 +26,7 @@ typedef enum {
     SLMirOp_DROP,
     SLMirOp_JUMP,
     SLMirOp_JUMP_IF_FALSE,
+    SLMirOp_ASSERT,
     SLMirOp_CALL_FN,
     SLMirOp_CALL_HOST,
     SLMirOp_CALL_INDIRECT,
