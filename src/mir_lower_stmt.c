@@ -341,6 +341,8 @@ static int SLMirStmtLowerRewriteExprChunk(SLMirStmtLower* c, const SLMirChunk* c
     return 0;
 }
 
+static int SLMirStmtLowerIsReplayableExpr(const SLMirStmtLower* c, int32_t exprNode);
+
 static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
     const SLAstNode* expr;
     SLMirChunk       chunk = { 0 };
@@ -361,22 +363,6 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
                 if ((SLTokenKind)expr->op == SLTok_AND) {
                     return SLMirStmtLowerAppendInst(
                         c, SLMirOp_LOCAL_ADDR, 0, slot, expr->start, expr->end, NULL);
-                }
-                if ((SLTokenKind)expr->op == SLTok_MUL) {
-                    if (SLMirStmtLowerAppendInst(
-                            c,
-                            SLMirOp_LOCAL_LOAD,
-                            0,
-                            slot,
-                            c->ast->nodes[child].start,
-                            c->ast->nodes[child].end,
-                            NULL)
-                        != 0)
-                    {
-                        return -1;
-                    }
-                    return SLMirStmtLowerAppendInst(
-                        c, SLMirOp_DEREF_LOAD, 0, 0, expr->start, expr->end, NULL);
                 }
             }
         }
@@ -418,6 +404,13 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
             }
             return SLMirStmtLowerAppendInst(
                 c, SLMirOp_ARRAY_ADDR, 0, 0, expr->start, expr->end, NULL);
+        }
+        if ((SLTokenKind)expr->op == SLTok_MUL && SLMirStmtLowerIsReplayableExpr(c, child)) {
+            if (SLMirStmtLowerExpr(c, child) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            return SLMirStmtLowerAppendInst(
+                c, SLMirOp_DEREF_LOAD, 0, 0, expr->start, expr->end, NULL);
         }
     }
     if (expr->kind == SLAst_FIELD_EXPR) {
@@ -685,29 +678,14 @@ static int SLMirStmtLowerExprNodeAsStmt(
         {
             int32_t derefBase = c->ast->nodes[lhsNode].firstChild;
             if (derefBase >= 0 && (uint32_t)derefBase < c->ast->len
-                && c->ast->nodes[derefBase].kind == SLAst_IDENT
-                && SLMirStmtLowerFindLocal(
-                    c,
-                    c->ast->nodes[derefBase].dataStart,
-                    c->ast->nodes[derefBase].dataEnd,
-                    &slot,
-                    NULL))
+                && SLMirStmtLowerIsReplayableExpr(c, derefBase))
             {
                 if ((SLTokenKind)expr->op == SLTok_ASSIGN) {
                     if (SLMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
                         return c->supported ? -1 : 0;
                     }
-                    if (SLMirStmtLowerAppendInst(
-                            c,
-                            SLMirOp_LOCAL_LOAD,
-                            0,
-                            slot,
-                            c->ast->nodes[derefBase].start,
-                            c->ast->nodes[derefBase].end,
-                            NULL)
-                        != 0)
-                    {
-                        return -1;
+                    if (SLMirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
+                        return c->supported ? -1 : 0;
                     }
                     return SLMirStmtLowerAppendInst(
                         c, SLMirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
@@ -716,18 +694,12 @@ static int SLMirStmtLowerExprNodeAsStmt(
                     c->supported = 0;
                     return 0;
                 }
+                if (SLMirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
+                    return c->supported ? -1 : 0;
+                }
                 if (SLMirStmtLowerAppendInst(
-                        c,
-                        SLMirOp_LOCAL_LOAD,
-                        0,
-                        slot,
-                        c->ast->nodes[derefBase].start,
-                        c->ast->nodes[derefBase].end,
-                        NULL)
-                        != 0
-                    || SLMirStmtLowerAppendInst(
-                           c, SLMirOp_DEREF_LOAD, 0, 0, expr->start, expr->end, NULL)
-                           != 0)
+                        c, SLMirOp_DEREF_LOAD, 0, 0, expr->start, expr->end, NULL)
+                    != 0)
                 {
                     return -1;
                 }
@@ -736,18 +708,12 @@ static int SLMirStmtLowerExprNodeAsStmt(
                 }
                 if (SLMirStmtLowerAppendInst(
                         c, SLMirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
-                        != 0
-                    || SLMirStmtLowerAppendInst(
-                           c,
-                           SLMirOp_LOCAL_LOAD,
-                           0,
-                           slot,
-                           c->ast->nodes[derefBase].start,
-                           c->ast->nodes[derefBase].end,
-                           NULL)
-                           != 0)
+                    != 0)
                 {
                     return -1;
+                }
+                if (SLMirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
+                    return c->supported ? -1 : 0;
                 }
                 return SLMirStmtLowerAppendInst(
                     c, SLMirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);

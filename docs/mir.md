@@ -205,6 +205,7 @@ So today:
   - single-name `var`/`const` declarations with initializer expressions
   - typed single-name declarations without initializer, lowered as `LOCAL_ZERO`
   - local `&name`, `*name`, and `*name = value` forms where `name` is a MIR local
+  - conservative `*expr`, `*expr = rhs`, and `*expr op= rhs` forms where `expr` is a replayable pointer/ref expression such as a field or element access
   - conservative `&arr[i]` and plain `arr[i] = rhs` forms lowered through `ARRAY_ADDR`
   - conservative `arr[i] op= rhs` forms lowered by replaying side-effect-free lvalues through `INDEX` plus `ARRAY_ADDR`
   - conservative `x.field`, `&x.field`, and plain `x.field = rhs` forms lowered through `AGG_GET` / `AGG_ADDR`
