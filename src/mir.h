@@ -95,8 +95,13 @@ typedef struct {
 } SLMirConst;
 
 typedef struct {
+    SLStrView src;
+} SLMirSourceRef;
+
+typedef struct {
     uint32_t instStart;
     uint32_t instLen;
+    uint32_t sourceRef;
     uint32_t localCount;
     uint32_t paramCount;
     uint32_t tempCount;
@@ -142,6 +147,8 @@ typedef struct {
     uint32_t              instLen;
     const SLMirConst*     consts;
     uint32_t              constLen;
+    const SLMirSourceRef* sources;
+    uint32_t              sourceLen;
     const SLMirFunction*  funcs;
     uint32_t              funcLen;
     const SLMirField*     fields;
@@ -160,6 +167,9 @@ typedef struct {
     SLMirConst*     consts;
     uint32_t        constLen;
     uint32_t        constCap;
+    SLMirSourceRef* sources;
+    uint32_t        sourceLen;
+    uint32_t        sourceCap;
     SLMirFunction*  funcs;
     uint32_t        funcLen;
     uint32_t        funcCap;
@@ -191,6 +201,10 @@ int  SLMirProgramBuilderAddConst(
      SLMirProgramBuilder* _Nonnull b,
      const SLMirConst* _Nonnull value,
      uint32_t* _Nullable outIndex);
+int SLMirProgramBuilderAddSource(
+    SLMirProgramBuilder* _Nonnull b,
+    const SLMirSourceRef* _Nonnull value,
+    uint32_t* _Nullable outIndex);
 int SLMirProgramBuilderAddField(
     SLMirProgramBuilder* _Nonnull b,
     const SLMirField* _Nonnull value,

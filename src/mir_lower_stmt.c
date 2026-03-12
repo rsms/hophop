@@ -480,6 +480,8 @@ int SLMirLowerAppendSimpleFunction(
     SLDiag* _Nullable diag) {
     SLMirStmtLower c;
     SLMirFunction  fn = { 0 };
+    SLMirSourceRef sourceRef = { 0 };
+    uint32_t       sourceIndex = 0;
     int32_t        child;
     if (diag != NULL) {
         *diag = (SLDiag){ 0 };
@@ -503,9 +505,15 @@ int SLMirLowerAppendSimpleFunction(
     c.supported = 1;
     c.diag = diag;
     c.builder = *builder;
+    sourceRef.src = src;
+    if (SLMirProgramBuilderAddSource(&c.builder, &sourceRef, &sourceIndex) != 0) {
+        SLMirLowerStmtSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        return -1;
+    }
 
     fn.nameStart = fnNode >= 0 && (uint32_t)fnNode < ast->len ? ast->nodes[fnNode].dataStart : 0;
     fn.nameEnd = fnNode >= 0 && (uint32_t)fnNode < ast->len ? ast->nodes[fnNode].dataEnd : 0;
+    fn.sourceRef = sourceIndex;
     if (SLMirProgramBuilderBeginFunction(&c.builder, &fn, &c.functionIndex) != 0) {
         SLMirLowerStmtSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;

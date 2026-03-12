@@ -1409,7 +1409,10 @@ static int SLMirEvalFunctionInternal(
     int* _Nonnull outIsConst) {
     const SLMirFunction* fn;
     SLMirChunk           chunk;
+    SLMirExecEnv         frameEnv;
     SLMirExecRun         run;
+    int                  enteredFunction = 0;
+    int                  rc = 0;
     (void)args;
     if (program == NULL || functionIndex >= program->funcLen) {
         if (env != NULL) {
@@ -1433,6 +1436,22 @@ static int SLMirEvalFunctionInternal(
     if (fn->localCount < fn->paramCount) {
         return 0;
     }
+    memset(&frameEnv, 0, sizeof(frameEnv));
+    if (env != NULL) {
+        frameEnv = *env;
+    }
+    if (fn->sourceRef < program->sourceLen) {
+        frameEnv.src = program->sources[fn->sourceRef].src;
+    }
+    if (frameEnv.enterFunction != NULL) {
+        if (frameEnv.enterFunction(
+                frameEnv.functionCtx, functionIndex, fn->sourceRef, frameEnv.diag)
+            != 0)
+        {
+            return -1;
+        }
+        enteredFunction = 1;
+    }
     chunk.v = program->insts + fn->instStart;
     chunk.len = fn->instLen;
     if (SLMirInitRun(
@@ -1443,15 +1462,21 @@ static int SLMirEvalFunctionInternal(
             fn->localCount,
             args,
             argCount,
-            env,
+            &frameEnv,
             clearDiag,
             outValue,
             outIsConst)
         != 0)
     {
-        return -1;
+        rc = -1;
+        goto end;
     }
-    return SLMirRunLoop(&run, outValue, outIsConst);
+    rc = SLMirRunLoop(&run, outValue, outIsConst);
+end:
+    if (enteredFunction && frameEnv.leaveFunction != NULL) {
+        frameEnv.leaveFunction(frameEnv.functionCtx);
+    }
+    return rc;
 }
 
 int SLMirEvalFunction(

@@ -25,6 +25,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Lowered call symbols now also preserve simple call-shape flags, such as selector-style calls where the receiver has already been lowered as argument `0`.
 - Lowered `CAST` instructions now also intern their target types into `program.types[]`, so type-directed backends do not need to recover cast metadata from parser ASTs later.
 - `mir_lower` now exposes the same instruction-materialization path to `mir_lower_stmt`, so statement-lowered runtime MIR also uses the same const/symbol/type tables instead of appending raw expression instructions.
+- MIR programs now also carry explicit source entries and per-function `sourceRef` metadata, so execution and future backends do not need to assume one global source/file for the whole program.
 
 MIR is not yet the full lowering IR for runtime execution, but the repo now carries the beginning of a backend-facing MIR program model in `src/mir.h`. The extra function/program/metadata structs and runtime-oriented opcodes are scaffolding for that migration. `src/mir_lower_stmt.c` is the first runtime-side lowering step and currently targets a deliberately small statement subset.
 
@@ -56,6 +57,7 @@ For backend-facing `SLMirProgram` lowering, instructions also have a 32-bit `aux
 The same `aux` slot is also used by lowered identifier/call instructions to reference `program.symbols[]`.
 For lowered `CAST` instructions, `aux` references `program.types[]`.
 For `JUMP` and `JUMP_IF_FALSE`, `aux` is a function-local instruction index within the current `SLMirFunction`.
+Each `SLMirFunction` now also points at `program.sources[function.sourceRef]`, which is how runtime execution keeps the active source/file context aligned with the current MIR frame.
 
 ## Opcode set (current)
 
@@ -149,6 +151,7 @@ Interpreter details:
 - When lowered symbol metadata exists, `mir_exec` resolves identifier/call names through `program.symbols[]` before falling back to instruction spans.
 - For direct call symbols, `program.symbols[]` now also carries lightweight call-shape flags that future backends can use when deciding between plain calls, method-style lowering, or host shims.
 - When lowered type metadata exists, `CAST` retains both its current scalar cast opcode token and an explicit type-table reference for backend consumers.
+- `mir_exec` now also switches function source context per MIR frame through `function.sourceRef`, and can notify embedders through `SLMirExecEnv.enterFunction` / `leaveFunction`.
 - `RETURN` expects exactly one stack value; then sets `*outIsConst = 1`.
 - `RETURN_VOID` completes a MIR function without requiring a stack value.
 
@@ -182,8 +185,8 @@ So today:
   - `return`
   - nested blocks
 - The evaluator now tries that MIR function-body path before falling back to `ctfe_exec`, which keeps runtime behavior stable while the MIR subset grows.
-- That evaluator-side MIR path now also lowers unambiguous same-file plain direct calls into same-program `CALL_FN` edges, while leaving recursive, variadic, selector-style, ambiguous, builtin-package, and cross-file calls on the older callback path.
-- Cross-file direct-call lowering is still intentionally deferred because `mir_exec` currently runs with one active source view and one evaluator file context per MIR invocation. A future broader package/program lowering step should give MIR functions explicit source/file identity so multi-file programs become first-class backend input.
+- That evaluator-side MIR path now also lowers unambiguous plain direct calls into same-program `CALL_FN` edges, while leaving recursive, variadic, selector-style, ambiguous, and builtin-package calls on the older callback path.
+- The new per-function source identity is what makes that broader direct-call lowering possible without depending on one evaluator-global `currentFile`/source view for the whole MIR program.
 - The `SLMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
 - The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.
 - The initial `CALL_FN` support means that boundary is no longer just an entry point; MIR function-to-function execution has started to exist, even though full frame/locals/param semantics are still ahead.

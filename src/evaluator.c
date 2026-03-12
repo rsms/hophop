@@ -6547,12 +6547,65 @@ enum {
 };
 
 typedef struct {
-    SLEvalProgram*      p;
-    const SLParsedFile* rootFile;
-    SLMirProgramBuilder builder;
-    uint32_t*           evalToMir;
-    SLDiag*             diag;
+    SLEvalProgram*       p;
+    SLMirProgramBuilder  builder;
+    uint32_t*            evalToMir;
+    const SLParsedFile** sourceFiles;
+    uint32_t             sourceFileCap;
+    const SLParsedFile*  savedFiles[SL_EVAL_CALL_MAX_DEPTH];
+    uint32_t             savedFileLen;
+    SLDiag*              diag;
 } SLEvalMirLowerCtx;
+
+static int SLEvalMirInternSourceFile(
+    SLEvalMirLowerCtx* c, const SLParsedFile* file, uint32_t* _Nonnull outSourceRef) {
+    SLMirSourceRef sourceRef = { 0 };
+    if (c == NULL || file == NULL || outSourceRef == NULL) {
+        return -1;
+    }
+    sourceRef.src.ptr = file->source;
+    sourceRef.src.len = file->sourceLen;
+    if (SLMirProgramBuilderAddSource(&c->builder, &sourceRef, outSourceRef) != 0) {
+        return -1;
+    }
+    if (*outSourceRef >= c->sourceFileCap) {
+        return -1;
+    }
+    c->sourceFiles[*outSourceRef] = file;
+    return 0;
+}
+
+static int SLEvalMirEnterFunction(
+    void* ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* diag) {
+    SLEvalMirLowerCtx* c = (SLEvalMirLowerCtx*)ctx;
+    (void)functionIndex;
+    if (c == NULL || c->p == NULL || sourceRef >= c->sourceFileCap
+        || c->savedFileLen >= SL_EVAL_CALL_MAX_DEPTH)
+    {
+        if (diag != NULL) {
+            diag->code = SLDiag_UNEXPECTED_TOKEN;
+            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->start = 0;
+            diag->end = 0;
+            diag->argStart = 0;
+            diag->argEnd = 0;
+        }
+        return -1;
+    }
+    c->savedFiles[c->savedFileLen++] = c->p->currentFile;
+    if (c->sourceFiles[sourceRef] != NULL) {
+        c->p->currentFile = c->sourceFiles[sourceRef];
+    }
+    return 0;
+}
+
+static void SLEvalMirLeaveFunction(void* ctx) {
+    SLEvalMirLowerCtx* c = (SLEvalMirLowerCtx*)ctx;
+    if (c == NULL || c->p == NULL || c->savedFileLen == 0) {
+        return;
+    }
+    c->p->currentFile = c->savedFiles[--c->savedFileLen];
+}
 
 static int SLEvalMirResolveDirectCallTarget(
     const SLEvalMirLowerCtx* c,
@@ -6582,8 +6635,7 @@ static int SLEvalMirResolveDirectCallTarget(
     {
         return 0;
     }
-    if (c->p->funcs[(uint32_t)targetFnIndex].file != callerFn->file
-        || c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn
+    if (c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn
         || c->p->funcs[(uint32_t)targetFnIndex].isVariadic)
     {
         return 0;
@@ -6596,6 +6648,7 @@ static int SLEvalMirLowerFunction(
     SLEvalMirLowerCtx* c, int32_t evalFnIndex, uint32_t* _Nullable outMirFnIndex) {
     const SLEvalFunction* fn;
     uint32_t              mirFnIndex = UINT32_MAX;
+    uint32_t              sourceRefIndex = UINT32_MAX;
     uint32_t              instIndex;
     int                   supported = 0;
     if (outMirFnIndex != NULL) {
@@ -6616,10 +6669,15 @@ static int SLEvalMirLowerFunction(
         return 1;
     }
     fn = &c->p->funcs[(uint32_t)evalFnIndex];
-    if (fn->file != c->rootFile || fn->isBuiltinPackageFn || fn->isVariadic) {
+    if (fn->isBuiltinPackageFn || fn->isVariadic) {
         return 0;
     }
     c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_IN_PROGRESS;
+    if (SLEvalMirInternSourceFile(c, fn->file, &sourceRefIndex) != 0) {
+        c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+        return -1;
+    }
+    (void)sourceRefIndex;
     if (SLMirLowerAppendSimpleFunction(
             &c->builder,
             c->p->arena,
@@ -6676,15 +6734,16 @@ static int SLEvalTryMirInvokeFunction(
     SLCTFEValue*          outValue,
     int*                  outDidReturn,
     int*                  outIsConst) {
-    SLMirProgram        program = { 0 };
-    SLMirProgramBuilder builder;
-    SLMirExecEnv        env = { 0 };
-    SLEvalMirLowerCtx   lowerCtx;
-    uint32_t*           evalToMir;
-    uint32_t            mirFnIndex = UINT32_MAX;
-    uint32_t            i;
-    int                 lowerRc;
-    int                 mirIsConst = 0;
+    SLMirProgram         program = { 0 };
+    SLMirProgramBuilder  builder;
+    SLMirExecEnv         env = { 0 };
+    SLEvalMirLowerCtx    lowerCtx;
+    uint32_t*            evalToMir;
+    const SLParsedFile** sourceFiles;
+    uint32_t             mirFnIndex = UINT32_MAX;
+    uint32_t             i;
+    int                  lowerRc;
+    int                  mirIsConst = 0;
     if (p == NULL || fn == NULL || outValue == NULL || outDidReturn == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -6692,18 +6751,24 @@ static int SLEvalTryMirInvokeFunction(
     *outIsConst = 0;
     evalToMir = (uint32_t*)SLArenaAlloc(
         p->arena, sizeof(uint32_t) * p->funcLen, (uint32_t)_Alignof(uint32_t));
-    if (evalToMir == NULL) {
+    sourceFiles = (const SLParsedFile**)SLArenaAlloc(
+        p->arena,
+        sizeof(const SLParsedFile*) * p->funcLen,
+        (uint32_t)_Alignof(const SLParsedFile*));
+    if (evalToMir == NULL || sourceFiles == NULL) {
         return ErrorSimple("out of memory");
     }
     for (i = 0; i < p->funcLen; i++) {
         evalToMir[i] = SL_EVAL_MIR_FN_NONE;
+        sourceFiles[i] = NULL;
     }
     SLMirProgramBuilderInit(&builder, p->arena);
     memset(&lowerCtx, 0, sizeof(lowerCtx));
     lowerCtx.p = p;
-    lowerCtx.rootFile = fn->file;
     lowerCtx.builder = builder;
     lowerCtx.evalToMir = evalToMir;
+    lowerCtx.sourceFiles = sourceFiles;
+    lowerCtx.sourceFileCap = p->funcLen;
     lowerCtx.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
     lowerRc = SLEvalMirLowerFunction(&lowerCtx, fnIndex, &mirFnIndex);
     if (lowerRc < 0) {
@@ -6717,6 +6782,9 @@ static int SLEvalTryMirInvokeFunction(
     env.resolveIdent = SLEvalResolveIdent;
     env.resolveCall = SLEvalResolveCall;
     env.resolveCtx = p;
+    env.enterFunction = SLEvalMirEnterFunction;
+    env.leaveFunction = SLEvalMirLeaveFunction;
+    env.functionCtx = &lowerCtx;
     env.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
     if (SLMirEvalFunction(
             p->arena, &program, mirFnIndex, args, argCount, &env, outValue, &mirIsConst)

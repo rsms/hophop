@@ -363,8 +363,10 @@ int SLMirLowerExprAsFunction(
     SLDiag* _Nullable diag) {
     SLMirChunk          chunk;
     SLMirFunction       function = { 0 };
+    SLMirSourceRef      sourceRef = { 0 };
     SLMirProgramBuilder builder;
     uint32_t            functionIndex = 0;
+    uint32_t            sourceIndex = 0;
     uint32_t            i;
 
     if (outProgram != NULL) {
@@ -391,8 +393,21 @@ int SLMirLowerExprAsFunction(
     }
 
     SLMirProgramBuilderInit(&builder, arena);
+    sourceRef.src = src;
+    if (SLMirProgramBuilderAddSource(&builder, &sourceRef, &sourceIndex) != 0) {
+        if (diag != NULL) {
+            diag->code = SLDiag_ARENA_OOM;
+            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->start = 0;
+            diag->end = 0;
+            diag->argStart = 0;
+            diag->argEnd = 0;
+        }
+        return -1;
+    }
     function.instStart = 0;
     function.instLen = 0;
+    function.sourceRef = sourceIndex;
     function.paramCount = 0;
     function.localCount = 0;
     function.tempCount = 0;

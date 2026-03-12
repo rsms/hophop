@@ -112,6 +112,30 @@ int SLMirProgramBuilderAddConst(
         outIndex);
 }
 
+int SLMirProgramBuilderAddSource(
+    SLMirProgramBuilder* b, const SLMirSourceRef* value, uint32_t* _Nullable outIndex) {
+    uint32_t i;
+    if (b == NULL || value == NULL) {
+        return -1;
+    }
+    for (i = 0; i < b->sourceLen; i++) {
+        if (b->sources[i].src.ptr == value->src.ptr && b->sources[i].src.len == value->src.len) {
+            if (outIndex != NULL) {
+                *outIndex = i;
+            }
+            return 0;
+        }
+    }
+    return SLMirProgramBuilderAppendElem(
+        b->arena,
+        (void**)&b->sources,
+        value,
+        (uint32_t)sizeof(*value),
+        &b->sourceLen,
+        &b->sourceCap,
+        outIndex);
+}
+
 int SLMirProgramBuilderAddField(
     SLMirProgramBuilder* b, const SLMirField* value, uint32_t* _Nullable outIndex) {
     if (b == NULL) {
@@ -225,6 +249,8 @@ void SLMirProgramBuilderFinish(const SLMirProgramBuilder* b, SLMirProgram* outPr
     outProgram->instLen = b->instLen;
     outProgram->consts = b->consts;
     outProgram->constLen = b->constLen;
+    outProgram->sources = b->sources;
+    outProgram->sourceLen = b->sourceLen;
     outProgram->funcs = b->funcs;
     outProgram->funcLen = b->funcLen;
     outProgram->fields = b->fields;
@@ -252,6 +278,10 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
             return -1;
         }
         if (fn->localCount < fn->paramCount) {
+            SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, fn->nameStart, fn->nameEnd);
+            return -1;
+        }
+        if (fn->sourceRef >= program->sourceLen) {
             SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, fn->nameStart, fn->nameEnd);
             return -1;
         }
