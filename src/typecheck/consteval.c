@@ -2805,21 +2805,189 @@ int SLTCMirConstCoerceValueForType(
     return 0;
 }
 
+enum {
+    SL_TC_MIR_CONST_FN_NONE = UINT32_MAX,
+};
+
+typedef struct {
+    SLTCConstEvalCtx*   evalCtx;
+    SLMirProgramBuilder builder;
+    uint32_t*           tcToMir;
+    uint8_t*            loweringFns;
+    SLDiag*             diag;
+} SLTCMirConstLowerCtx;
+
+static int SLTCMirConstGetFunctionBody(
+    SLTypeCheckCtx* c, int32_t fnIndex, int32_t* outFnNode, int32_t* outBodyNode) {
+    int32_t child;
+    int32_t fnNode;
+    int32_t bodyNode = -1;
+    if (outFnNode != NULL) {
+        *outFnNode = -1;
+    }
+    if (outBodyNode != NULL) {
+        *outBodyNode = -1;
+    }
+    if (c == NULL || outFnNode == NULL || outBodyNode == NULL || fnIndex < 0
+        || (uint32_t)fnIndex >= c->funcLen)
+    {
+        return 0;
+    }
+    fnNode = c->funcs[(uint32_t)fnIndex].defNode;
+    if (fnNode < 0 || (uint32_t)fnNode >= c->ast->len || c->ast->nodes[fnNode].kind != SLAst_FN) {
+        return 0;
+    }
+    child = SLAstFirstChild(c->ast, fnNode);
+    while (child >= 0) {
+        if (c->ast->nodes[child].kind == SLAst_BLOCK) {
+            if (bodyNode >= 0) {
+                return 0;
+            }
+            bodyNode = child;
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    if (bodyNode < 0) {
+        return 0;
+    }
+    *outFnNode = fnNode;
+    *outBodyNode = bodyNode;
+    return 1;
+}
+
+static int SLTCMirConstResolveDirectCallTarget(
+    const SLTCMirConstLowerCtx* c, const SLMirInst* ins, int32_t* outFnIndex) {
+    const SLMirSymbolRef* symbol;
+    SLTypeCheckCtx*       tc;
+    int32_t               fnIndex;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
+        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->aux >= c->builder.symbolLen)
+    {
+        return 0;
+    }
+    symbol = &c->builder.symbols[ins->aux];
+    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL) {
+        return 0;
+    }
+    fnIndex = SLTCFindConstCallableFunction(
+        tc, symbol->nameStart, symbol->nameEnd, (uint32_t)ins->tok);
+    if (fnIndex < 0) {
+        return 0;
+    }
+    *outFnIndex = fnIndex;
+    return 1;
+}
+
+static int SLTCMirConstLowerFunction(
+    SLTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex) {
+    SLTypeCheckCtx* tc;
+    uint32_t        mirFnIndex = UINT32_MAX;
+    uint32_t        instIndex;
+    int32_t         fnNode = -1;
+    int32_t         bodyNode = -1;
+    int             supported = 0;
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = UINT32_MAX;
+    }
+    if (c == NULL || c->evalCtx == NULL || c->tcToMir == NULL || c->loweringFns == NULL) {
+        return -1;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL || fnIndex < 0 || (uint32_t)fnIndex >= tc->funcLen) {
+        return 0;
+    }
+    if (c->tcToMir[(uint32_t)fnIndex] != SL_TC_MIR_CONST_FN_NONE) {
+        if (outMirFnIndex != NULL) {
+            *outMirFnIndex = c->tcToMir[(uint32_t)fnIndex];
+        }
+        return 1;
+    }
+    if (c->loweringFns[(uint32_t)fnIndex] != 0u) {
+        return 0;
+    }
+    if (!SLTCMirConstGetFunctionBody(tc, fnIndex, &fnNode, &bodyNode)) {
+        return 0;
+    }
+    c->loweringFns[(uint32_t)fnIndex] = 1u;
+    if (SLMirLowerAppendSimpleFunction(
+            &c->builder,
+            tc->arena,
+            tc->ast,
+            tc->src,
+            fnNode,
+            bodyNode,
+            &mirFnIndex,
+            &supported,
+            c->diag)
+        != 0)
+    {
+        c->loweringFns[(uint32_t)fnIndex] = 0u;
+        return -1;
+    }
+    if (!supported) {
+        c->loweringFns[(uint32_t)fnIndex] = 0u;
+        return 0;
+    }
+    c->tcToMir[(uint32_t)fnIndex] = mirFnIndex;
+    for (instIndex = c->builder.funcs[mirFnIndex].instStart;
+         instIndex < c->builder.funcs[mirFnIndex].instStart + c->builder.funcs[mirFnIndex].instLen;
+         instIndex++)
+    {
+        SLMirInst* ins = &c->builder.insts[instIndex];
+        int32_t    targetFnIndex = -1;
+        uint32_t   targetMirFnIndex = UINT32_MAX;
+        int        lowerRc;
+        if (!SLTCMirConstResolveDirectCallTarget(c, ins, &targetFnIndex)) {
+            continue;
+        }
+        lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+        if (lowerRc < 0) {
+            c->loweringFns[(uint32_t)fnIndex] = 0u;
+            return -1;
+        }
+        if (lowerRc == 0) {
+            c->tcToMir[(uint32_t)fnIndex] = SL_TC_MIR_CONST_FN_NONE;
+            c->loweringFns[(uint32_t)fnIndex] = 0u;
+            return 0;
+        }
+        ins->op = SLMirOp_CALL_FN;
+        ins->aux = targetMirFnIndex;
+    }
+    c->loweringFns[(uint32_t)fnIndex] = 0u;
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = mirFnIndex;
+    }
+    return 1;
+}
+
 static int SLTCTryMirConstCall(
     SLTCConstEvalCtx*  evalCtx,
-    int32_t            fnNode,
-    int32_t            bodyNode,
+    int32_t            fnIndex,
     const SLCTFEValue* args,
     uint32_t           argCount,
     SLCTFEValue*       outValue,
     int*               outDidReturn,
     int*               outIsConst,
     int*               outSupported) {
-    SLTypeCheckCtx* c;
-    SLMirProgram    program = { 0 };
-    SLMirExecEnv    env = { 0 };
-    int             supported = 0;
-    int             mirIsConst = 0;
+    SLTypeCheckCtx*      c;
+    SLMirProgram         program = { 0 };
+    SLMirProgramBuilder  builder;
+    SLMirExecEnv         env = { 0 };
+    SLTCMirConstLowerCtx lowerCtx;
+    uint32_t*            tcToMir;
+    uint8_t*             loweringFns;
+    uint32_t             mirFnIndex = UINT32_MAX;
+    uint32_t             i;
+    int                  lowerRc;
+    int                  mirIsConst = 0;
     if (outDidReturn != NULL) {
         *outDidReturn = 0;
     }
@@ -2835,18 +3003,35 @@ static int SLTCTryMirConstCall(
         return -1;
     }
     c = evalCtx->tc;
-    if (c == NULL) {
+    if (c == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
         return -1;
     }
-    if (SLMirLowerSimpleFunction(
-            c->arena, c->ast, c->src, fnNode, bodyNode, &program, &supported, c->diag)
-        != 0)
-    {
+    tcToMir = (uint32_t*)SLArenaAlloc(
+        c->arena, sizeof(uint32_t) * c->funcLen, (uint32_t)_Alignof(uint32_t));
+    loweringFns = (uint8_t*)SLArenaAlloc(
+        c->arena, sizeof(uint8_t) * c->funcLen, (uint32_t)_Alignof(uint8_t));
+    if (tcToMir == NULL || loweringFns == NULL) {
         return -1;
     }
-    if (!supported) {
+    for (i = 0; i < c->funcLen; i++) {
+        tcToMir[i] = SL_TC_MIR_CONST_FN_NONE;
+        loweringFns[i] = 0u;
+    }
+    SLMirProgramBuilderInit(&builder, c->arena);
+    memset(&lowerCtx, 0, sizeof(lowerCtx));
+    lowerCtx.evalCtx = evalCtx;
+    lowerCtx.builder = builder;
+    lowerCtx.tcToMir = tcToMir;
+    lowerCtx.loweringFns = loweringFns;
+    lowerCtx.diag = c->diag;
+    lowerRc = SLTCMirConstLowerFunction(&lowerCtx, fnIndex, &mirFnIndex);
+    if (lowerRc < 0) {
+        return -1;
+    }
+    if (lowerRc == 0 || mirFnIndex == UINT32_MAX) {
         return 0;
     }
+    SLMirProgramBuilderFinish(&lowerCtx.builder, &program);
     env.src = c->src;
     env.resolveIdent = SLTCResolveConstIdent;
     env.resolveCall = SLTCResolveConstCall;
@@ -2856,7 +3041,9 @@ static int SLTCTryMirConstCall(
     env.coerceValueForType = SLTCMirConstCoerceValueForType;
     env.coerceValueCtx = evalCtx;
     env.diag = c->diag;
-    if (SLMirEvalFunction(c->arena, &program, 0, args, argCount, &env, outValue, &mirIsConst) != 0)
+    if (SLMirEvalFunction(
+            c->arena, &program, mirFnIndex, args, argCount, &env, outValue, &mirIsConst)
+        != 0)
     {
         return -1;
     }
@@ -3154,7 +3341,7 @@ int SLTCResolveConstCall(
     evalCtx->fnStack[evalCtx->fnDepth++] = fnIndex;
 
     rc = SLTCTryMirConstCall(
-        evalCtx, fnNode, bodyNode, args, argCount, &retValue, &didReturn, &isConst, &mirSupported);
+        evalCtx, fnIndex, args, argCount, &retValue, &didReturn, &isConst, &mirSupported);
     if (rc != 0) {
         evalCtx->fnDepth = savedDepth;
         evalCtx->execCtx = savedExecCtx;
