@@ -106,6 +106,11 @@ typedef struct {
 
 #define SL_EVAL_CALL_MAX_DEPTH 128u
 
+enum {
+    SL_EVAL_MIR_HOST_INVALID = 0,
+    SL_EVAL_MIR_HOST_PRINT = 1,
+};
+
 int ErrorDiagf(
     const char* file,
     const char* _Nullable source,
@@ -2126,6 +2131,14 @@ static int SLEvalMirZeroInitLocal(
     const SLMirTypeRef* typeRef,
     SLCTFEValue*        outValue,
     int*                outIsConst,
+    SLDiag* _Nullable diag);
+static int SLEvalMirHostCall(
+    void*              ctx,
+    uint32_t           hostId,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
     SLDiag* _Nullable diag);
 static int SLEvalResolveIdent(
     void*        ctx,
@@ -6031,6 +6044,35 @@ static int SLEvalMirZeroInitLocal(
         p, p->currentFile, (int32_t)typeRef->astNode, outValue, outIsConst);
 }
 
+static int SLEvalMirHostCall(
+    void*              ctx,
+    uint32_t           hostId,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram* p = (SLEvalProgram*)ctx;
+    (void)diag;
+    if (p == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (hostId == SL_EVAL_MIR_HOST_PRINT && argCount == 1u && args[0].kind == SLCTFEValue_STRING) {
+        if (args[0].s.len > 0 && args[0].s.bytes != NULL) {
+            if (fwrite(args[0].s.bytes, 1, args[0].s.len, stdout) != args[0].s.len) {
+                return ErrorSimple("failed to write print output");
+            }
+        }
+        fputc('\n', stdout);
+        fflush(stdout);
+        SLEvalValueSetNull(outValue);
+        *outIsConst = 1;
+        return 0;
+    }
+    *outIsConst = 0;
+    return 0;
+}
+
 static int SLEvalBinaryOpForAssignToken(SLTokenKind assignOp, SLTokenKind* outBinaryOp) {
     if (outBinaryOp == NULL) {
         return 0;
@@ -6715,6 +6757,46 @@ static int SLEvalMirResolveDirectCallTarget(
     return 1;
 }
 
+static int SLEvalMirRewriteBuiltinHostCall(
+    SLEvalMirLowerCtx*    c,
+    const SLEvalFunction* callerFn,
+    SLMirInst*            ins,
+    int* _Nonnull outRewritten) {
+    const SLMirSymbolRef* symbol;
+    SLMirHostRef          host = { 0 };
+    uint32_t              hostIndex = UINT32_MAX;
+    if (outRewritten != NULL) {
+        *outRewritten = 0;
+    }
+    if (c == NULL || callerFn == NULL || ins == NULL || outRewritten == NULL
+        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->aux >= c->builder.symbolLen)
+    {
+        return 0;
+    }
+    symbol = &c->builder.symbols[ins->aux];
+    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+        return 0;
+    }
+    if ((uint32_t)ins->tok == 1u
+        && SliceEqCStr(callerFn->file->source, symbol->nameStart, symbol->nameEnd, "print"))
+    {
+        host.nameStart = symbol->nameStart;
+        host.nameEnd = symbol->nameEnd;
+        host.kind = SLMirHost_GENERIC;
+        host.flags = 0;
+        host.target = SL_EVAL_MIR_HOST_PRINT;
+        if (SLMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
+            return -1;
+        }
+        ins->op = SLMirOp_CALL_HOST;
+        ins->aux = hostIndex;
+        *outRewritten = 1;
+        return 1;
+    }
+    return 0;
+}
+
 static int SLEvalMirLowerFunction(
     SLEvalMirLowerCtx* c, int32_t evalFnIndex, uint32_t* _Nullable outMirFnIndex) {
     const SLEvalFunction* fn;
@@ -6780,6 +6862,14 @@ static int SLEvalMirLowerFunction(
         uint32_t   targetEvalFnIndex = UINT32_MAX;
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        lowerRc;
+        int        rewrittenHost = 0;
+        lowerRc = SLEvalMirRewriteBuiltinHostCall(c, fn, ins, &rewrittenHost);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (rewrittenHost) {
+            continue;
+        }
         if (!SLEvalMirResolveDirectCallTarget(c, fn, evalFnIndex, ins, &targetEvalFnIndex)) {
             continue;
         }
@@ -6863,6 +6953,8 @@ static int SLEvalTryMirInvokeFunction(
     env.resolveIdent = SLEvalResolveIdent;
     env.resolveCall = SLEvalResolveCall;
     env.resolveCtx = p;
+    env.hostCall = SLEvalMirHostCall;
+    env.hostCtx = p;
     env.zeroInitLocal = SLEvalMirZeroInitLocal;
     env.zeroInitCtx = p;
     env.enterFunction = SLEvalMirEnterFunction;

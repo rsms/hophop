@@ -27,6 +27,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Lowered call symbols now also preserve simple call-shape flags, such as selector-style calls where the receiver has already been lowered as argument `0`.
 - Lowered `CAST` instructions now also intern their target types into `program.types[]`, so type-directed backends do not need to recover cast metadata from parser ASTs later.
 - MIR programs now also have an explicit `program.hosts[]` table for hostcall metadata, so `CALL_HOST` does not have to treat instruction `aux` as evaluator-private state forever.
+- The evaluator now uses that host table for one real runtime case: plain builtin `print(...)` calls lowered through the simple MIR path are rewritten to `CALL_HOST`.
 - `mir_lower` now exposes the same instruction-materialization path to `mir_lower_stmt`, so statement-lowered runtime MIR also uses the same const/symbol/type tables instead of appending raw expression instructions.
 - MIR programs now also carry explicit source entries and per-function `sourceRef` metadata, so execution and future backends do not need to assume one global source/file for the whole program.
 - MIR programs now also carry explicit local metadata in `program.locals[]`, sliced per function by `localStart` / `localCount`.
@@ -194,6 +195,7 @@ So today:
   - single-name `var`/`const` declarations with initializer expressions
   - typed single-name declarations without initializer, lowered as `LOCAL_ZERO`
   - local `&name`, `*name`, and `*name = value` forms where `name` is a MIR local
+  - plain builtin `print(...)` rewritten to `CALL_HOST`
   - simple local assignment and compound assignment
   - expression statements
   - `if` / `else`
