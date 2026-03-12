@@ -204,6 +204,7 @@ So today:
   - parameters mapped to typed local slots
   - single-name `var`/`const` declarations with initializer expressions
   - typed single-name declarations without initializer, lowered as `LOCAL_ZERO`
+  - conservative grouped local declarations with typed zero-init or one initializer per declared name
   - local `&name`, `*name`, and `*name = value` forms where `name` is a MIR local
   - conservative `*expr`, `*expr = rhs`, and `*expr op= rhs` forms where `expr` is a replayable pointer/ref expression such as a field or element access
   - conservative `&arr[i]` and plain `arr[i] = rhs` forms lowered through `ARRAY_ADDR`

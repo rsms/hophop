@@ -1,0 +1,25 @@
+import "platform"
+
+fn main() {
+	var u, v, w f64
+	var x, y u32 = 1, 2
+	var re, im = 0.0, 1.0
+	const c, d = 4, 5
+	var found = true
+
+	if !(u == 0.0 && v == 0.0 && w == 0.0) {
+		platform.exit(1)
+	}
+	if !(x == 1 && y == 2) {
+		platform.exit(1)
+	}
+	if !(re == 0.0 && im == 1.0) {
+		platform.exit(1)
+	}
+	if !(c + d == 9) {
+		platform.exit(1)
+	}
+	if !found {
+		platform.exit(1)
+	}
+}
