@@ -445,4 +445,102 @@ int SLMirLowerExprAsFunction(
     return 0;
 }
 
+int SLMirLowerZeroInitTypeAsFunction(
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   typeNode,
+    SLMirProgram* _Nonnull outProgram,
+    int* _Nonnull outSupported,
+    SLDiag* _Nullable diag) {
+    SLMirFunction       function = { 0 };
+    SLMirSourceRef      sourceRef = { 0 };
+    SLMirTypeRef        typeRef = { 0 };
+    SLMirLocal          local = { 0 };
+    SLMirProgramBuilder builder;
+    uint32_t            functionIndex = 0;
+    uint32_t            sourceIndex = 0;
+    uint32_t            typeIndex = 0;
+    uint32_t            slot = 0;
+    const SLAstNode*    typeAst;
+
+    if (outProgram != NULL) {
+        *outProgram = (SLMirProgram){ 0 };
+    }
+    if (diag != NULL) {
+        *diag = (SLDiag){ 0 };
+    }
+    if (arena == NULL || ast == NULL || outProgram == NULL || outSupported == NULL || typeNode < 0
+        || (uint32_t)typeNode >= ast->len)
+    {
+        SLMirLowerSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        return -1;
+    }
+    *outSupported = 0;
+    typeAst = &ast->nodes[typeNode];
+
+    SLMirProgramBuilderInit(&builder, arena);
+    sourceRef.src = src;
+    if (SLMirProgramBuilderAddSource(&builder, &sourceRef, &sourceIndex) != 0) {
+        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, typeAst->start, typeAst->end);
+        return -1;
+    }
+    typeRef.astNode = (uint32_t)typeNode;
+    typeRef.flags = 0;
+    if (SLMirProgramBuilderAddType(&builder, &typeRef, &typeIndex) != 0) {
+        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, typeAst->start, typeAst->end);
+        return -1;
+    }
+    function.sourceRef = sourceIndex;
+    function.nameStart = typeAst->start;
+    function.nameEnd = typeAst->end;
+    if (SLMirProgramBuilderBeginFunction(&builder, &function, &functionIndex) != 0) {
+        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, typeAst->start, typeAst->end);
+        return -1;
+    }
+    local.typeRef = typeIndex;
+    local.flags = SLMirLocalFlag_ZERO_INIT;
+    if (SLMirProgramBuilderAddLocal(&builder, &local, &slot) != 0) {
+        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, typeAst->start, typeAst->end);
+        return -1;
+    }
+    if (SLMirProgramBuilderAppendInst(
+            &builder,
+            &(SLMirInst){
+                .op = SLMirOp_LOCAL_ZERO,
+                .aux = slot,
+                .start = typeAst->start,
+                .end = typeAst->end,
+            })
+            != 0
+        || SLMirProgramBuilderAppendInst(
+               &builder,
+               &(SLMirInst){
+                   .op = SLMirOp_LOCAL_LOAD,
+                   .aux = slot,
+                   .start = typeAst->start,
+                   .end = typeAst->end,
+               })
+               != 0
+        || SLMirProgramBuilderAppendInst(
+               &builder,
+               &(SLMirInst){
+                   .op = SLMirOp_RETURN,
+                   .start = typeAst->start,
+                   .end = typeAst->end,
+               })
+               != 0)
+    {
+        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, typeAst->start, typeAst->end);
+        return -1;
+    }
+    if (SLMirProgramBuilderEndFunction(&builder) != 0) {
+        SLMirLowerSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, typeAst->start, typeAst->end);
+        return -1;
+    }
+    SLMirProgramBuilderFinish(&builder, outProgram);
+    *outSupported = 1;
+    return 0;
+}
+
 SL_API_END

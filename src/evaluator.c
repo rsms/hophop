@@ -6108,77 +6108,32 @@ static int SLEvalTryMirZeroInitType(
     int32_t             typeNode,
     SLCTFEValue*        outValue,
     int*                outIsConst) {
-    SLMirProgram        program = { 0 };
-    SLMirProgramBuilder builder;
-    SLMirFunction       fn = { 0 };
-    SLMirSourceRef      sourceRef = { 0 };
-    SLMirTypeRef        typeRef = { 0 };
-    SLMirLocal          local = { 0 };
-    SLMirExecEnv        env = { 0 };
-    uint32_t            sourceIndex = UINT32_MAX;
-    uint32_t            typeIndex = UINT32_MAX;
-    uint32_t            slot = UINT32_MAX;
+    SLMirProgram program = { 0 };
+    SLMirExecEnv env = { 0 };
+    int          supported = 0;
     if (p == NULL || file == NULL || outValue == NULL || outIsConst == NULL || typeNode < 0
         || (uint32_t)typeNode >= file->ast.len)
     {
         return -1;
     }
-    SLMirProgramBuilderInit(&builder, p->arena);
-    sourceRef.src.ptr = file->source;
-    sourceRef.src.len = file->sourceLen;
-    if (SLMirProgramBuilderAddSource(&builder, &sourceRef, &sourceIndex) != 0) {
-        return ErrorSimple("out of memory");
-    }
-    typeRef.astNode = (uint32_t)typeNode;
-    typeRef.flags = 0;
-    if (SLMirProgramBuilderAddType(&builder, &typeRef, &typeIndex) != 0) {
-        return ErrorSimple("out of memory");
-    }
-    fn.sourceRef = sourceIndex;
-    fn.nameStart = file->ast.nodes[typeNode].start;
-    fn.nameEnd = file->ast.nodes[typeNode].end;
-    if (SLMirProgramBuilderBeginFunction(&builder, &fn, NULL) != 0) {
-        return ErrorSimple("out of memory");
-    }
-    local.typeRef = typeIndex;
-    local.flags = SLMirLocalFlag_ZERO_INIT;
-    if (SLMirProgramBuilderAddLocal(&builder, &local, &slot) != 0) {
-        return ErrorSimple("out of memory");
-    }
-    if (SLMirProgramBuilderAppendInst(
-            &builder,
-            &(SLMirInst){
-                .op = SLMirOp_LOCAL_ZERO,
-                .aux = slot,
-                .start = file->ast.nodes[typeNode].start,
-                .end = file->ast.nodes[typeNode].end,
-            })
-            != 0
-        || SLMirProgramBuilderAppendInst(
-               &builder,
-               &(SLMirInst){
-                   .op = SLMirOp_LOCAL_LOAD,
-                   .aux = slot,
-                   .start = file->ast.nodes[typeNode].start,
-                   .end = file->ast.nodes[typeNode].end,
-               })
-               != 0
-        || SLMirProgramBuilderAppendInst(
-               &builder,
-               &(SLMirInst){
-                   .op = SLMirOp_RETURN,
-                   .start = file->ast.nodes[typeNode].start,
-                   .end = file->ast.nodes[typeNode].end,
-               })
-               != 0)
+    if (SLMirLowerZeroInitTypeAsFunction(
+            p->arena,
+            &file->ast,
+            (SLStrView){ file->source, file->sourceLen },
+            typeNode,
+            &program,
+            &supported,
+            p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL)
+        != 0)
     {
-        return ErrorSimple("out of memory");
-    }
-    if (SLMirProgramBuilderEndFunction(&builder) != 0) {
         return -1;
     }
-    SLMirProgramBuilderFinish(&builder, &program);
-    env.src = sourceRef.src;
+    if (!supported) {
+        *outIsConst = 0;
+        return 0;
+    }
+    env.src.ptr = file->source;
+    env.src.len = file->sourceLen;
     env.zeroInitLocal = SLEvalMirZeroInitLocal;
     env.zeroInitCtx = p;
     env.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
