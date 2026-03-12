@@ -2269,6 +2269,15 @@ static int SLEvalTryMirEvalTopInit(
     SLCTFEValue* outValue,
     int*         outIsConst,
     int* _Nullable outSupported);
+static int SLEvalMirBuildTopInitProgram(
+    SLEvalProgram*      p,
+    const SLParsedFile* file,
+    int32_t             initExprNode,
+    int32_t             declTypeNode,
+    SLMirProgram*       outProgram,
+    SLEvalMirExecCtx*   outExecCtx,
+    uint32_t*           outRootMirFnIndex,
+    int*                outSupported);
 static int SLEvalTryMirEvalExprWithType(
     SLEvalProgram*      p,
     int32_t             exprNode,
@@ -6864,26 +6873,26 @@ static int SLEvalTryMirEvalTopInit(
     SLCTFEValue* outValue,
     int*         outIsConst,
     int* _Nullable outSupported) {
-    SLMirProgram        program = { 0 };
-    SLMirExecEnv        env = { 0 };
-    const SLParsedFile* sourceFiles[1];
-    SLEvalMirExecCtx    functionCtx = { 0 };
-    int                 supported = 0;
+    SLMirProgram     program = { 0 };
+    SLMirExecEnv     env = { 0 };
+    SLEvalMirExecCtx functionCtx = { 0 };
+    uint32_t         rootMirFnIndex = UINT32_MAX;
+    int              supported = 0;
     if (outSupported != NULL) {
         *outSupported = 0;
     }
     if (p == NULL || file == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (SLMirLowerTopInitAsFunction(
-            p->arena,
-            &file->ast,
-            (SLStrView){ file->source, file->sourceLen },
+    if (SLEvalMirBuildTopInitProgram(
+            p,
+            file,
             initExprNode,
             declTypeNode,
             &program,
-            &supported,
-            p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL)
+            &functionCtx,
+            &rootMirFnIndex,
+            &supported)
         != 0)
     {
         return -1;
@@ -6892,16 +6901,10 @@ static int SLEvalTryMirEvalTopInit(
         *outIsConst = 0;
         return 0;
     }
-    sourceFiles[0] = file;
-    functionCtx.p = p;
-    functionCtx.sourceFiles = sourceFiles;
-    functionCtx.sourceFileCap = 1u;
-    functionCtx.rootMirFnIndex = 0u;
-    functionCtx.mirToEval = NULL;
-    functionCtx.mirToEvalLen = 0u;
-    functionCtx.savedFileLen = 0u;
     SLEvalMirInitExecEnv(p, file, &env, &functionCtx);
-    if (SLMirEvalFunction(p->arena, &program, 0, NULL, 0, &env, outValue, outIsConst) != 0) {
+    if (SLMirEvalFunction(p->arena, &program, rootMirFnIndex, NULL, 0, &env, outValue, outIsConst)
+        != 0)
+    {
         return -1;
     }
     if (*outIsConst && coerceTypeFile != NULL && coerceTypeNode >= 0
