@@ -40,9 +40,10 @@ static int SLMirInitRun(
     SLMirChunk chunk,
     const SLMirProgram* _Nullable program,
     const SLMirExecEnv* _Nullable env,
+    int clearDiag,
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
-    if (env != NULL && env->diag != NULL) {
+    if (clearDiag && env != NULL && env->diag != NULL) {
         *env->diag = (SLDiag){ 0 };
     }
     if (run == NULL || arena == NULL || outValue == NULL || outIsConst == NULL) {
@@ -77,6 +78,18 @@ static int SLMirInitRun(
     }
     return 0;
 }
+
+static int SLMirEvalFunctionInternal(
+    SLArena* _Nonnull arena,
+    const SLMirProgram* _Nonnull program,
+    uint32_t functionIndex,
+    const SLMirExecValue* _Nullable args,
+    uint32_t argCount,
+    const SLMirExecEnv* _Nullable env,
+    int validateProgram,
+    int clearDiag,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
 
 static int SLMirConstToValue(const SLMirConst* _Nonnull in, SLMirExecValue* _Nonnull out) {
     double f64 = 0.0;
@@ -356,6 +369,30 @@ static int SLMirRunLoop(
                     return -1;
                 }
                 if (!callIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_CALL_FN: {
+                SLMirExecValue v;
+                int            callOk = 0;
+                uint32_t       argCount = (uint32_t)ins->tok;
+                if (run->program == NULL || ins->aux >= run->program->funcLen) {
+                    return 0;
+                }
+                if (argCount != 0u) {
+                    return 0;
+                }
+                if (SLMirEvalFunctionInternal(
+                        run->arena, run->program, ins->aux, NULL, 0u, &run->env, 0, 0, &v, &callOk)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!callOk) {
                     return 0;
                 }
                 if (SLCTFEPush(run, &v) != 0) {
@@ -1132,19 +1169,21 @@ int SLMirEvalChunk(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
     SLMirExecRun run;
-    if (SLMirInitRun(&run, arena, chunk, NULL, env, outValue, outIsConst) != 0) {
+    if (SLMirInitRun(&run, arena, chunk, NULL, env, 1, outValue, outIsConst) != 0) {
         return -1;
     }
     return SLMirRunLoop(&run, outValue, outIsConst);
 }
 
-int SLMirEvalFunction(
+static int SLMirEvalFunctionInternal(
     SLArena* _Nonnull arena,
     const SLMirProgram* _Nonnull program,
     uint32_t functionIndex,
     const SLMirExecValue* _Nullable args,
     uint32_t argCount,
     const SLMirExecEnv* _Nullable env,
+    int validateProgram,
+    int clearDiag,
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
     const SLMirFunction* fn;
@@ -1157,7 +1196,7 @@ int SLMirEvalFunction(
         }
         return -1;
     }
-    if (SLMirValidateProgram(program, env != NULL ? env->diag : NULL) != 0) {
+    if (validateProgram && SLMirValidateProgram(program, env != NULL ? env->diag : NULL) != 0) {
         return -1;
     }
     fn = &program->funcs[functionIndex];
@@ -1175,9 +1214,22 @@ int SLMirEvalFunction(
     }
     chunk.v = program->insts + fn->instStart;
     chunk.len = fn->instLen;
-    if (SLMirInitRun(&run, arena, chunk, program, env, outValue, outIsConst) != 0) {
+    if (SLMirInitRun(&run, arena, chunk, program, env, clearDiag, outValue, outIsConst) != 0) {
         return -1;
     }
     return SLMirRunLoop(&run, outValue, outIsConst);
+}
+
+int SLMirEvalFunction(
+    SLArena* _Nonnull arena,
+    const SLMirProgram* _Nonnull program,
+    uint32_t functionIndex,
+    const SLMirExecValue* _Nullable args,
+    uint32_t argCount,
+    const SLMirExecEnv* _Nullable env,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst) {
+    return SLMirEvalFunctionInternal(
+        arena, program, functionIndex, args, argCount, env, 1, 1, outValue, outIsConst);
 }
 SL_API_END
