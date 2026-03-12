@@ -8,6 +8,7 @@
 #include "evaluator.h"
 #include "libsl-impl.h"
 #include "mir_exec.h"
+#include "mir_lower.h"
 #include "mir_lower_stmt.h"
 
 SL_API_BEGIN
@@ -2141,6 +2142,21 @@ static int SLEvalMirHostCall(
     SLCTFEValue*       outValue,
     int*               outIsConst,
     SLDiag* _Nullable diag);
+static int SLEvalTryMirZeroInitType(
+    SLEvalProgram*      p,
+    const SLParsedFile* file,
+    int32_t             typeNode,
+    SLCTFEValue*        outValue,
+    int*                outIsConst);
+static int SLEvalTryMirEvalExprWithType(
+    SLEvalProgram*      p,
+    int32_t             exprNode,
+    const SLParsedFile* exprFile,
+    const SLParsedFile* _Nullable typeFile,
+    int32_t      typeNode,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    int*         outSupported);
 static int SLEvalResolveIdent(
     void*        ctx,
     uint32_t     nameStart,
@@ -6086,6 +6102,144 @@ static int SLEvalMirHostCall(
     return 0;
 }
 
+static int SLEvalTryMirZeroInitType(
+    SLEvalProgram*      p,
+    const SLParsedFile* file,
+    int32_t             typeNode,
+    SLCTFEValue*        outValue,
+    int*                outIsConst) {
+    SLMirProgram        program = { 0 };
+    SLMirProgramBuilder builder;
+    SLMirFunction       fn = { 0 };
+    SLMirSourceRef      sourceRef = { 0 };
+    SLMirTypeRef        typeRef = { 0 };
+    SLMirLocal          local = { 0 };
+    SLMirExecEnv        env = { 0 };
+    uint32_t            sourceIndex = UINT32_MAX;
+    uint32_t            typeIndex = UINT32_MAX;
+    uint32_t            slot = UINT32_MAX;
+    if (p == NULL || file == NULL || outValue == NULL || outIsConst == NULL || typeNode < 0
+        || (uint32_t)typeNode >= file->ast.len)
+    {
+        return -1;
+    }
+    SLMirProgramBuilderInit(&builder, p->arena);
+    sourceRef.src.ptr = file->source;
+    sourceRef.src.len = file->sourceLen;
+    if (SLMirProgramBuilderAddSource(&builder, &sourceRef, &sourceIndex) != 0) {
+        return ErrorSimple("out of memory");
+    }
+    typeRef.astNode = (uint32_t)typeNode;
+    typeRef.flags = 0;
+    if (SLMirProgramBuilderAddType(&builder, &typeRef, &typeIndex) != 0) {
+        return ErrorSimple("out of memory");
+    }
+    fn.sourceRef = sourceIndex;
+    fn.nameStart = file->ast.nodes[typeNode].start;
+    fn.nameEnd = file->ast.nodes[typeNode].end;
+    if (SLMirProgramBuilderBeginFunction(&builder, &fn, NULL) != 0) {
+        return ErrorSimple("out of memory");
+    }
+    local.typeRef = typeIndex;
+    local.flags = SLMirLocalFlag_ZERO_INIT;
+    if (SLMirProgramBuilderAddLocal(&builder, &local, &slot) != 0) {
+        return ErrorSimple("out of memory");
+    }
+    if (SLMirProgramBuilderAppendInst(
+            &builder,
+            &(SLMirInst){
+                .op = SLMirOp_LOCAL_ZERO,
+                .aux = slot,
+                .start = file->ast.nodes[typeNode].start,
+                .end = file->ast.nodes[typeNode].end,
+            })
+            != 0
+        || SLMirProgramBuilderAppendInst(
+               &builder,
+               &(SLMirInst){
+                   .op = SLMirOp_LOCAL_LOAD,
+                   .aux = slot,
+                   .start = file->ast.nodes[typeNode].start,
+                   .end = file->ast.nodes[typeNode].end,
+               })
+               != 0
+        || SLMirProgramBuilderAppendInst(
+               &builder,
+               &(SLMirInst){
+                   .op = SLMirOp_RETURN,
+                   .start = file->ast.nodes[typeNode].start,
+                   .end = file->ast.nodes[typeNode].end,
+               })
+               != 0)
+    {
+        return ErrorSimple("out of memory");
+    }
+    if (SLMirProgramBuilderEndFunction(&builder) != 0) {
+        return -1;
+    }
+    SLMirProgramBuilderFinish(&builder, &program);
+    env.src = sourceRef.src;
+    env.zeroInitLocal = SLEvalMirZeroInitLocal;
+    env.zeroInitCtx = p;
+    env.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
+    return SLMirEvalFunction(p->arena, &program, 0, NULL, 0, &env, outValue, outIsConst);
+}
+
+static int SLEvalTryMirEvalExprWithType(
+    SLEvalProgram*      p,
+    int32_t             exprNode,
+    const SLParsedFile* exprFile,
+    const SLParsedFile* _Nullable typeFile,
+    int32_t      typeNode,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    int*         outSupported) {
+    SLMirProgram program = { 0 };
+    SLMirExecEnv env = { 0 };
+    int          supported = 0;
+    if (outSupported != NULL) {
+        *outSupported = 0;
+    }
+    if (p == NULL || exprFile == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (SLMirLowerExprAsFunction(
+            p->arena,
+            &exprFile->ast,
+            (SLStrView){ exprFile->source, exprFile->sourceLen },
+            exprNode,
+            &program,
+            &supported,
+            p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL)
+        != 0)
+    {
+        return -1;
+    }
+    if (!supported) {
+        return 0;
+    }
+    env.src.ptr = exprFile->source;
+    env.src.len = exprFile->sourceLen;
+    env.resolveIdent = SLEvalResolveIdent;
+    env.resolveCall = SLEvalResolveCall;
+    env.resolveCtx = p;
+    env.hostCall = SLEvalMirHostCall;
+    env.hostCtx = p;
+    env.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
+    if (SLMirEvalFunction(p->arena, &program, 0, NULL, 0, &env, outValue, outIsConst) != 0) {
+        return -1;
+    }
+    if (*outIsConst && typeFile != NULL && typeNode >= 0
+        && SLEvalAdaptStringValueForType(p->arena, typeFile, typeNode, outValue, outValue) < 0)
+    {
+        return -1;
+    }
+    if (outSupported != NULL) {
+        *outSupported = 1;
+    }
+    return 0;
+}
+
 static int SLEvalBinaryOpForAssignToken(SLTokenKind assignOp, SLTokenKind* outBinaryOp) {
     if (outBinaryOp == NULL) {
         return 0;
@@ -7487,10 +7641,22 @@ static int SLEvalEvalTopVar(
     p->currentFile = topVar->file;
     p->currentExecCtx = &execCtx;
     if (topVar->initExprNode >= 0) {
-        rc = SLEvalExecExprWithTypeNode(
-            p, topVar->initExprNode, topVar->file, topVar->declTypeNode, &value, &isConst);
+        int mirSupported = 0;
+        rc = SLEvalTryMirEvalExprWithType(
+            p,
+            topVar->initExprNode,
+            topVar->file,
+            topVar->file,
+            topVar->declTypeNode,
+            &value,
+            &isConst,
+            &mirSupported);
+        if (rc == 0 && !mirSupported) {
+            rc = SLEvalExecExprWithTypeNode(
+                p, topVar->initExprNode, topVar->file, topVar->declTypeNode, &value, &isConst);
+        }
     } else if (topVar->declTypeNode >= 0) {
-        rc = SLEvalZeroInitTypeNode(p, topVar->file, topVar->declTypeNode, &value, &isConst);
+        rc = SLEvalTryMirZeroInitType(p, topVar->file, topVar->declTypeNode, &value, &isConst);
     } else {
         rc = 0;
         isConst = 0;
@@ -7575,7 +7741,14 @@ static int SLEvalEvalTopConst(
     savedExecCtx = p->currentExecCtx;
     p->currentFile = topConst->file;
     p->currentExecCtx = &constExecCtx;
-    rc = SLEvalExecExprCb(p, topConst->initExprNode, &value, &isConst);
+    {
+        int mirSupported = 0;
+        rc = SLEvalTryMirEvalExprWithType(
+            p, topConst->initExprNode, topConst->file, NULL, -1, &value, &isConst, &mirSupported);
+        if (rc == 0 && !mirSupported) {
+            rc = SLEvalExecExprCb(p, topConst->initExprNode, &value, &isConst);
+        }
+    }
     p->currentExecCtx = savedExecCtx;
     p->currentFile = savedFile;
 
