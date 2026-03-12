@@ -270,6 +270,50 @@ static int SLMirLowerRewriteSymbolInst(
     return 1;
 }
 
+static int SLMirLowerInternType(
+    SLMirProgramBuilder* _Nonnull builder,
+    uint32_t astNode,
+    uint32_t flags,
+    uint32_t* _Nonnull outIndex,
+    SLDiag* _Nullable diag) {
+    uint32_t     i;
+    SLMirTypeRef typeRef;
+    if (builder == NULL || outIndex == NULL) {
+        return -1;
+    }
+    for (i = 0; i < builder->typeLen; i++) {
+        const SLMirTypeRef* existing = &builder->types[i];
+        if (existing->astNode == astNode && existing->flags == flags) {
+            *outIndex = i;
+            return 0;
+        }
+    }
+    typeRef.astNode = astNode;
+    typeRef.flags = flags;
+    if (SLMirProgramBuilderAddType(builder, &typeRef, outIndex) != 0) {
+        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        return -1;
+    }
+    return 0;
+}
+
+static int SLMirLowerRewriteTypeInst(
+    SLMirProgramBuilder* _Nonnull builder,
+    const SLMirInst* _Nonnull in,
+    SLMirInst* _Nonnull out,
+    SLDiag* _Nullable diag) {
+    uint32_t typeIndex = 0;
+    memcpy(out, in, sizeof(*out));
+    if (in->op != SLMirOp_CAST) {
+        return 0;
+    }
+    if (SLMirLowerInternType(builder, in->aux, 0u, &typeIndex, diag) != 0) {
+        return -1;
+    }
+    out->aux = typeIndex;
+    return 1;
+}
+
 int SLMirLowerExprAsFunction(
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,
@@ -339,6 +383,13 @@ int SLMirLowerExprAsFunction(
             rewriteStatus = SLMirLowerRewriteSymbolInst(&builder, &chunk.v[i], &loweredInst, diag);
             if (rewriteStatus < 0) {
                 return -1;
+            }
+            if (rewriteStatus == 0) {
+                rewriteStatus = SLMirLowerRewriteTypeInst(
+                    &builder, &chunk.v[i], &loweredInst, diag);
+                if (rewriteStatus < 0) {
+                    return -1;
+                }
             }
         }
         if (SLMirProgramBuilderAppendInst(&builder, &loweredInst) != 0) {

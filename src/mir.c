@@ -273,8 +273,8 @@ static int SLMirIsAllowedBinaryToken(SLTokenKind tok) {
     }
 }
 
-static int SLMirEmitInst(
-    SLMirBuilder* b, SLMirOp op, SLTokenKind tok, uint32_t start, uint32_t end) {
+static int SLMirEmitInstEx(
+    SLMirBuilder* b, SLMirOp op, SLTokenKind tok, uint32_t aux, uint32_t start, uint32_t end) {
     if (!b->supported) {
         return 0;
     }
@@ -285,11 +285,16 @@ static int SLMirEmitInst(
     b->v[b->len].op = op;
     b->v[b->len].tok = (uint16_t)tok;
     b->v[b->len]._reserved = 0;
-    b->v[b->len].aux = 0;
+    b->v[b->len].aux = aux;
     b->v[b->len].start = start;
     b->v[b->len].end = end;
     b->len++;
     return 0;
+}
+
+static int SLMirEmitInst(
+    SLMirBuilder* b, SLMirOp op, SLTokenKind tok, uint32_t start, uint32_t end) {
+    return SLMirEmitInstEx(b, op, tok, 0, start, end);
 }
 
 static int SLMirTypeNameEqCStr(SLMirBuilder* b, const SLAstNode* n, const char* s) {
@@ -472,7 +477,8 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             if (SLMirBuildExprNode(b, valueNode) != 0) {
                 return -1;
             }
-            return SLMirEmitInst(b, SLMirOp_CAST, (SLTokenKind)target, n->start, n->end);
+            return SLMirEmitInstEx(
+                b, SLMirOp_CAST, (SLTokenKind)target, (uint32_t)typeNode, n->start, n->end);
         }
         default: b->supported = 0; return 0;
     }
