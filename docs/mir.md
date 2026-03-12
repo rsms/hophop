@@ -17,6 +17,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - `mir_exec` now also has local-slot frame storage for MIR functions, with parameter binding into the first `paramCount` local slots and execution support for `LOCAL_LOAD` / `LOCAL_STORE`.
 - `mir_exec` now also executes basic control-flow ops: `JUMP`, `JUMP_IF_FALSE`, and `RETURN_VOID`.
 - `mir_exec` now also executes `CALL_HOST` through the explicit `SLMirExecEnv.hostCall` bridge.
+- `mir_exec` now also materializes `SLMirConst_FUNCTION` and executes `CALL_INDIRECT` for same-program function references.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
 - Lowered function programs can now rewrite literal pushes into `SLMirConst` entries plus `SLMirOp_PUSH_CONST`, so function execution is less dependent on source-slice decoding.
 - Lowered function programs can also rewrite `LOAD_IDENT` and direct `CALL` sites to `SLMirSymbolRef` table entries, so name metadata lives in the MIR program instead of only in instruction spans.
@@ -68,6 +69,7 @@ From `SLMirOp` in `src/mir.h`:
 - `SLMirOp_CALL`
 - `SLMirOp_CALL_FN`
 - `SLMirOp_CALL_HOST`
+- `SLMirOp_CALL_INDIRECT`
 - `SLMirOp_LOCAL_LOAD`
 - `SLMirOp_LOCAL_STORE`
 - `SLMirOp_JUMP`
@@ -134,6 +136,8 @@ Interpreter details:
 - `CALL_FN` now executes same-program MIR functions through the function executor. Today that path is intentionally narrow and only supports the current arg-less/simple case until local slots and parameter binding move into MIR.
 - `CALL_FN` now supports passing arguments into same-program MIR functions, with those arguments bound to the first `paramCount` local slots.
 - `CALL_HOST` invokes `SLMirExecEnv.hostCall(hostCtx, hostId, args, argCount, ...)`, where `hostId` comes from instruction `aux`.
+- `SLMirConst_FUNCTION` currently materializes as a same-program function reference value.
+- `CALL_INDIRECT` currently expects the callee value to have been pushed before its arguments, then invokes the referenced same-program MIR function.
 - `LOCAL_LOAD` and `LOCAL_STORE` execute against per-frame local storage.
 - `JUMP` and `JUMP_IF_FALSE` execute using function-local instruction indices stored in `aux`.
 - `JUMP_IF_FALSE` currently coerces its popped condition through the existing MIR boolean-cast rules.
@@ -171,6 +175,7 @@ So today:
 - Local-slot execution is the next step in that direction: MIR functions can now carry state in frame slots, but typed zero-init, address-taking, and richer lvalue semantics are still ahead.
 - Basic control flow is now part of the MIR executor contract too, which is necessary before checked function bodies can migrate off the AST/`ctfe_exec` path.
 - The explicit hostcall path is another backend-facing step: non-pure operations no longer have to masquerade as generic name-resolved calls once MIR lowering starts using `CALL_HOST`.
+- The indirect-call path is the same kind of step for function values: MIR now has a backend-visible function-reference form instead of leaving all such execution to evaluator-specific machinery.
 - The constant-pool rewrite is the first step away from MIR depending on parser source text at execution time, which is important for a future Wasm backend or any serialized MIR consumer.
 - The symbol-table rewrite does the same for simple name resolution metadata: a backend can inspect imports/calls/idents from MIR program tables instead of reverse-engineering them from parser offsets.
 - That symbol metadata now also preserves one small but useful execution detail: whether a lowered direct call came from selector syntax and already includes the receiver as argument `0`.

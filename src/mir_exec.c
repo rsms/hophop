@@ -19,6 +19,8 @@ typedef struct {
     SLMirExecEnv        env;
 } SLMirExecRun;
 
+#define SLMIR_EXEC_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 61)
+
 static void SLCTFESetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end);
 static void SLCTFEValueInvalid(SLCTFEValue* v);
 static int  SLCTFEPush(SLMirExecRun* r, const SLMirExecValue* v);
@@ -144,9 +146,25 @@ static int SLMirConstToValue(const SLMirConst* _Nonnull in, SLMirExecValue* _Non
             out->s.bytes = (const uint8_t*)in->bytes.ptr;
             out->s.len = in->bytes.len;
             return 1;
+        case SLMirConst_FUNCTION:
+            out->kind = SLCTFEValue_TYPE;
+            out->typeTag = SLMIR_EXEC_FUNCTION_REF_TAG_FLAG | in->bits;
+            return 1;
         case SLMirConst_NULL: out->kind = SLCTFEValue_NULL; return 1;
         default:              return 0;
     }
+}
+
+static int SLMirValueIsFunctionRef(const SLMirExecValue* value, uint32_t* _Nullable outFnIndex) {
+    if (value == NULL || value->kind != SLCTFEValue_TYPE
+        || (value->typeTag & SLMIR_EXEC_FUNCTION_REF_TAG_FLAG) == 0)
+    {
+        return 0;
+    }
+    if (outFnIndex != NULL) {
+        *outFnIndex = (uint32_t)(value->typeTag & ~SLMIR_EXEC_FUNCTION_REF_TAG_FLAG);
+    }
+    return 1;
 }
 
 static void SLMirResolveSymbolName(
@@ -519,6 +537,60 @@ static int SLMirRunLoop(
                         run->arena,
                         run->program,
                         ins->aux,
+                        args,
+                        argCount,
+                        &run->env,
+                        0,
+                        0,
+                        &v,
+                        &callOk)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!callOk) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_CALL_INDIRECT: {
+                SLMirExecValue  callee;
+                SLMirExecValue  v;
+                SLMirExecValue* args = NULL;
+                int             callOk = 0;
+                uint32_t        fnIndex = 0;
+                uint32_t        argCount = (uint32_t)ins->tok;
+                uint32_t        i;
+                if (run->program == NULL || argCount + 1u > run->stackLen) {
+                    return 0;
+                }
+                if (argCount != 0u) {
+                    args = (SLMirExecValue*)SLArenaAlloc(
+                        run->arena,
+                        sizeof(SLMirExecValue) * argCount,
+                        (uint32_t)_Alignof(SLMirExecValue));
+                    if (args == NULL) {
+                        SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                        return -1;
+                    }
+                }
+                for (i = argCount; i > 0; i--) {
+                    if (SLCTFEPop(run, &args[i - 1]) != 0) {
+                        return 0;
+                    }
+                }
+                if (SLCTFEPop(run, &callee) != 0 || !SLMirValueIsFunctionRef(&callee, &fnIndex)
+                    || fnIndex >= run->program->funcLen)
+                {
+                    return 0;
+                }
+                if (SLMirEvalFunctionInternal(
+                        run->arena,
+                        run->program,
+                        fnIndex,
                         args,
                         argCount,
                         &run->env,
