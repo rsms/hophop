@@ -18,6 +18,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - `mir_exec` now also has local-slot frame storage for MIR functions, with parameter binding into the first `paramCount` local slots and execution support for `LOCAL_LOAD` / `LOCAL_STORE`.
 - `mir_exec` now also supports local address-taking and simple reference dereference through `LOCAL_ADDR`, `DEREF_LOAD`, and `DEREF_STORE`.
 - `mir_exec` now also has a backend-neutral index hook in `SLMirExecEnv`, which the evaluator uses for array/slice-style indexing without baking evaluator-private storage types into MIR execution.
+- `mir_exec` now also has a backend-neutral indexed-address hook in `SLMirExecEnv`, which the evaluator uses for element references (`ARRAY_ADDR`) and simple `arr[i] = rhs` lowering on the MIR path.
 - `mir_exec` now also executes basic control-flow ops: `JUMP`, `JUMP_IF_FALSE`, and `RETURN_VOID`.
 - `mir_exec` now also executes `CALL_HOST` through the explicit `SLMirExecEnv.hostCall` bridge.
 - `mir_exec` now also materializes `SLMirConst_FUNCTION` and executes `CALL_INDIRECT` for same-program function references.
@@ -202,6 +203,7 @@ So today:
   - single-name `var`/`const` declarations with initializer expressions
   - typed single-name declarations without initializer, lowered as `LOCAL_ZERO`
   - local `&name`, `*name`, and `*name = value` forms where `name` is a MIR local
+  - conservative `&arr[i]` and plain `arr[i] = rhs` forms lowered through `ARRAY_ADDR`
   - plain builtin `print(...)` rewritten to `CALL_HOST`
   - conservative imported package calls like `pkg.F(...)`, lowered to `CALL_FN` when the target is unambiguous and non-variadic
   - conservative `platform.exit(...)` selector calls rewritten to `CALL_HOST`

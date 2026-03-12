@@ -577,6 +577,8 @@ static int SLEvalTryMirInvokeFunction(
     env.coerceValueCtx = p;
     env.indexValue = SLEvalMirIndexValue;
     env.indexValueCtx = p;
+    env.indexAddr = SLEvalMirIndexAddr;
+    env.indexAddrCtx = p;
     env.enterFunction = SLEvalMirEnterFunction;
     env.leaveFunction = SLEvalMirLeaveFunction;
     env.functionCtx = &lowerCtx;

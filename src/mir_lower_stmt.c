@@ -380,6 +380,25 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
                 }
             }
         }
+        if ((SLTokenKind)expr->op == SLTok_AND && child >= 0 && (uint32_t)child < c->ast->len
+            && c->ast->nodes[child].kind == SLAst_INDEX
+            && (c->ast->nodes[child].flags & 0x7u) == 0u)
+        {
+            int32_t baseNode = c->ast->nodes[child].firstChild;
+            int32_t indexNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
+            if (baseNode < 0 || indexNode < 0 || c->ast->nodes[indexNode].nextSibling >= 0) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            if (SLMirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            return SLMirStmtLowerAppendInst(
+                c, SLMirOp_ARRAY_ADDR, 0, 0, expr->start, expr->end, NULL);
+        }
     }
     if (SLMirBuildExpr(c->arena, c->ast, c->src, exprNode, &chunk, &supported, c->diag) != 0) {
         return -1;
@@ -650,6 +669,40 @@ static int SLMirStmtLowerExprNodeAsStmt(
                 return SLMirStmtLowerAppendInst(
                     c, SLMirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
             }
+        }
+        if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
+            && c->ast->nodes[lhsNode].kind == SLAst_INDEX
+            && (c->ast->nodes[lhsNode].flags & 0x7u) == 0u && (SLTokenKind)expr->op == SLTok_ASSIGN)
+        {
+            int32_t baseNode = c->ast->nodes[lhsNode].firstChild;
+            int32_t indexNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
+            if (baseNode < 0 || indexNode < 0 || c->ast->nodes[indexNode].nextSibling >= 0) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            if (SLMirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            if (SLMirStmtLowerAppendInst(
+                    c,
+                    SLMirOp_ARRAY_ADDR,
+                    0,
+                    0,
+                    c->ast->nodes[lhsNode].start,
+                    c->ast->nodes[lhsNode].end,
+                    NULL)
+                != 0)
+            {
+                return -1;
+            }
+            return SLMirStmtLowerAppendInst(
+                c, SLMirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
         }
     }
     if (SLMirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {

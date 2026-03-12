@@ -51,6 +51,13 @@ typedef int (*SLMirIndexValueFn)(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef int (*SLMirIndexAddrFn)(
+    void* _Nullable ctx,
+    const SLMirExecValue* _Nonnull base,
+    const SLMirExecValue* _Nonnull index,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 
 typedef int (*SLMirEnterFunctionFn)(
     void* _Nullable ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag);
@@ -70,6 +77,8 @@ typedef struct {
     void* _Nullable coerceValueCtx;
     SLMirIndexValueFn _Nullable indexValue;
     void* _Nullable indexValueCtx;
+    SLMirIndexAddrFn _Nullable indexAddr;
+    void* _Nullable indexAddrCtx;
     SLMirEnterFunctionFn _Nullable enterFunction;
     SLMirLeaveFunctionFn _Nullable leaveFunction;
     void* _Nullable functionCtx;

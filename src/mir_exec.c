@@ -867,6 +867,32 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_ARRAY_ADDR: {
+                SLCTFEValue base;
+                SLCTFEValue idx;
+                SLCTFEValue out;
+                int         addrIsConst = 0;
+                if (SLCTFEPop(run, &idx) != 0 || SLCTFEPop(run, &base) != 0) {
+                    return 0;
+                }
+                if (run->env.indexAddr == NULL) {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&out);
+                if (run->env.indexAddr(
+                        run->env.indexAddrCtx, &base, &idx, &out, &addrIsConst, run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!addrIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_CAST: {
                 SLCTFEValue in;
                 SLCTFEValue out;
