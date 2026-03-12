@@ -9,6 +9,7 @@
 #include "libsl-impl.h"
 #include "mir_exec.h"
 #include "mir_lower.h"
+#include "mir_lower_pkg.h"
 #include "mir_lower_stmt.h"
 
 SL_API_BEGIN

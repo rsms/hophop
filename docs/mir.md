@@ -1,6 +1,6 @@
 # MIR in SL
 
-This document describes the MIR (Mid-level Intermediate Representation) implementation in this repository (`src/mir.c`, `src/mir.h`, `src/mir_lower.c`, `src/mir_lower_stmt.c`, `src/mir_exec.c`), how it is used today, and where it is being extended.
+This document describes the MIR (Mid-level Intermediate Representation) implementation in this repository (`src/mir.c`, `src/mir.h`, `src/mir_lower.c`, `src/mir_lower_pkg.c`, `src/mir_lower_stmt.c`, `src/mir_exec.c`), how it is used today, and where it is being extended.
 
 ## What MIR is
 
@@ -8,6 +8,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 
 - Builder: `src/mir.c` builds MIR from AST expression nodes (`SLMirBuildExpr`).
 - Lowering wrapper: `src/mir_lower.c` currently lowers one expression into a one-function `SLMirProgram`.
+- Package/top-init lowering: `src/mir_lower_pkg.c` owns the current top-level initializer and zero-init lowering path.
 - Statement lowering: `src/mir_lower_stmt.c` now lowers a narrow simple-function subset into a one-function `SLMirProgram` for evaluator-first runtime migration.
 - Program builder: `src/mir.c` now also exposes `SLMirProgramBuilder` helpers for assembling backend-facing MIR programs incrementally.
 - Program validation: `src/mir.c` also exposes `SLMirValidateProgram(...)` for backend-facing sanity checks on function ranges and table references.
@@ -201,6 +202,7 @@ So today:
 - `ctfe_exec` is still the statement/control-flow evaluator backend.
 - `mir_exec` is now the dedicated MIR execution module that future runtime MIR work should extend instead of growing `ctfe.c` or `evaluator.c`.
 - `mir_lower` is now the dedicated MIR lowering boundary for expression-to-program lowering, and should grow into checked-program/function lowering instead of adding more MIR assembly logic to `ctfe.c`.
+- `mir_lower_pkg` is the first explicit package/top-init lowering boundary on the runtime side, so evaluator top-level initialization no longer needs to treat zero-init and initializer lowering as an implicit extension of expression lowering.
 - `mir_lower_stmt` is the first function-body lowering step on the runtime side. Today it only handles a narrow simple subset:
   - parameters mapped to typed local slots
   - single-name `var`/`const` declarations with initializer expressions
