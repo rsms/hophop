@@ -1,3 +1,5 @@
+SL_API_BEGIN
+
 enum {
     SL_EVAL_MIR_FN_NONE = UINT32_MAX,
     SL_EVAL_MIR_FN_IN_PROGRESS = UINT32_MAX - 1u,
@@ -562,3 +564,5 @@ static int SLEvalTryMirInvokeFunction(
     }
     return 0;
 }
+
+SL_API_END
