@@ -1500,6 +1500,8 @@ static int SLCTFEEvalCast(SLMirCastTarget target, const SLCTFEValue* in, SLCTFEV
                 asBool = in->i64 != 0 ? 1u : 0u;
             } else if (in->kind == SLCTFEValue_FLOAT) {
                 asBool = in->f64 != 0.0 ? 1u : 0u;
+            } else if (in->kind == SLCTFEValue_OPTIONAL) {
+                asBool = in->b != 0u ? 1u : 0u;
             } else if (in->kind == SLCTFEValue_STRING) {
                 asBool = 1u;
             } else if (in->kind == SLCTFEValue_NULL) {
