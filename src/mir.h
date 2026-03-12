@@ -123,10 +123,16 @@ typedef enum {
     SLMirSymbol_HOST,
 } SLMirSymbolKind;
 
+typedef enum {
+    SLMirSymbolFlag_NONE = 0,
+    SLMirSymbolFlag_CALL_RECEIVER_ARG0 = 1u << 0,
+} SLMirSymbolFlag;
+
 typedef struct {
     uint32_t        nameStart;
     uint32_t        nameEnd;
     SLMirSymbolKind kind;
+    uint32_t        flags;
     uint32_t        target;
 } SLMirSymbolRef;
 

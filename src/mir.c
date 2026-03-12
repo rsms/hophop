@@ -418,6 +418,7 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             int32_t  callee = b->ast->nodes[nodeId].firstChild;
             int32_t  arg;
             uint32_t argc = 0;
+            uint32_t callFlags = 0;
             uint32_t callStart;
             uint32_t callEnd;
             if (callee < 0 || (uint32_t)callee >= b->ast->len) {
@@ -437,6 +438,7 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
                     return -1;
                 }
                 argc = 1;
+                callFlags = SLMirSymbolFlag_CALL_RECEIVER_ARG0;
                 callStart = b->ast->nodes[callee].dataStart;
                 callEnd = b->ast->nodes[callee].dataEnd;
             } else {
@@ -463,7 +465,8 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
                 argc++;
                 arg = b->ast->nodes[arg].nextSibling;
             }
-            return SLMirEmitInst(b, SLMirOp_CALL, (SLTokenKind)argc, callStart, callEnd);
+            return SLMirEmitInstEx(
+                b, SLMirOp_CALL, (SLTokenKind)argc, callFlags, callStart, callEnd);
         }
         case SLAst_UNARY: {
             int32_t child = b->ast->nodes[nodeId].firstChild;

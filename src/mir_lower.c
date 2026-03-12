@@ -219,6 +219,7 @@ static int SLMirLowerInternSymbol(
     SLMirSymbolKind kind,
     uint32_t        nameStart,
     uint32_t        nameEnd,
+    uint32_t        flags,
     uint32_t        target,
     uint32_t* _Nonnull outIndex,
     SLDiag* _Nullable diag) {
@@ -230,7 +231,8 @@ static int SLMirLowerInternSymbol(
     for (i = 0; i < builder->symbolLen; i++) {
         const SLMirSymbolRef* existing = &builder->symbols[i];
         if (existing->kind == kind && existing->nameStart == nameStart
-            && existing->nameEnd == nameEnd && existing->target == target)
+            && existing->nameEnd == nameEnd && existing->flags == flags
+            && existing->target == target)
         {
             *outIndex = i;
             return 0;
@@ -239,6 +241,7 @@ static int SLMirLowerInternSymbol(
     symbol.kind = kind;
     symbol.nameStart = nameStart;
     symbol.nameEnd = nameEnd;
+    symbol.flags = flags;
     symbol.target = target;
     if (SLMirProgramBuilderAddSymbol(builder, &symbol, outIndex) != 0) {
         SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, nameStart, nameEnd);
@@ -261,7 +264,7 @@ static int SLMirLowerRewriteSymbolInst(
         default:                 return 0;
     }
     if (SLMirLowerInternSymbol(
-            builder, kind, in->start, in->end, (uint32_t)in->tok, &symbolIndex, diag)
+            builder, kind, in->start, in->end, in->aux, (uint32_t)in->tok, &symbolIndex, diag)
         != 0)
     {
         return -1;

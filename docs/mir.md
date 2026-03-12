@@ -16,6 +16,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
 - Lowered function programs can now rewrite literal pushes into `SLMirConst` entries plus `SLMirOp_PUSH_CONST`, so function execution is less dependent on source-slice decoding.
 - Lowered function programs can also rewrite `LOAD_IDENT` and direct `CALL` sites to `SLMirSymbolRef` table entries, so name metadata lives in the MIR program instead of only in instruction spans.
+- Lowered call symbols now also preserve simple call-shape flags, such as selector-style calls where the receiver has already been lowered as argument `0`.
 - Lowered `CAST` instructions now also intern their target types into `program.types[]`, so type-directed backends do not need to recover cast metadata from parser ASTs later.
 
 MIR is not yet the main lowering IR for runtime execution, but the repo now carries the beginning of a backend-facing MIR program model in `src/mir.h`. The extra function/program/metadata structs and runtime-oriented opcodes are scaffolding for that migration; current builders/executors still only use the expression subset.
@@ -119,6 +120,7 @@ Interpreter details:
 - `LOAD_IDENT` is resolved by `SLMirResolveIdentFn`.
 - `CALL` is resolved by `SLMirResolveCallFn` with popped arguments in source order.
 - When lowered symbol metadata exists, `mir_exec` resolves identifier/call names through `program.symbols[]` before falling back to instruction spans.
+- For direct call symbols, `program.symbols[]` now also carries lightweight call-shape flags that future backends can use when deciding between plain calls, method-style lowering, or host shims.
 - When lowered type metadata exists, `CAST` retains both its current scalar cast opcode token and an explicit type-table reference for backend consumers.
 - `RETURN` expects exactly one stack value; then sets `*outIsConst = 1`.
 
@@ -147,6 +149,7 @@ So today:
 - The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.
 - The constant-pool rewrite is the first step away from MIR depending on parser source text at execution time, which is important for a future Wasm backend or any serialized MIR consumer.
 - The symbol-table rewrite does the same for simple name resolution metadata: a backend can inspect imports/calls/idents from MIR program tables instead of reverse-engineering them from parser offsets.
+- That symbol metadata now also preserves one small but useful execution detail: whether a lowered direct call came from selector syntax and already includes the receiver as argument `0`.
 - The type-table rewrite does the same for cast targets: a backend can inspect cast target metadata from MIR tables instead of reconstructing it from AST shape at codegen time.
 - `SLMirValidateProgram(...)` makes those table contracts explicit, which is useful before adding more backends that will consume MIR directly instead of relying on evaluator fallbacks.
 
