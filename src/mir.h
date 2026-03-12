@@ -61,6 +61,10 @@ typedef enum {
     SLMirCastTarget_BOOL = 3,
 } SLMirCastTarget;
 
+enum {
+    SLMirCallArgFlag_RECEIVER_ARG0 = 0x8000u,
+};
+
 typedef struct {
     SLMirOp  op;
     uint16_t tok;

@@ -109,6 +109,7 @@ typedef struct {
 enum {
     SL_EVAL_MIR_HOST_INVALID = 0,
     SL_EVAL_MIR_HOST_PRINT = 1,
+    SL_EVAL_MIR_HOST_PLATFORM_EXIT = 2,
 };
 
 int ErrorDiagf(
@@ -6069,6 +6070,18 @@ static int SLEvalMirHostCall(
         *outIsConst = 1;
         return 0;
     }
+    if (hostId == SL_EVAL_MIR_HOST_PLATFORM_EXIT && argCount == 1u) {
+        int64_t exitCode = 0;
+        if (SLCTFEValueToInt64(&args[0], &exitCode) != 0) {
+            *outIsConst = 0;
+            return 0;
+        }
+        p->exitCalled = 1;
+        p->exitCode = (int)(exitCode & 255);
+        SLEvalValueSetNull(outValue);
+        *outIsConst = 1;
+        return 0;
+    }
     *outIsConst = 0;
     return 0;
 }
@@ -6765,7 +6778,8 @@ static int SLEvalMirResolveDirectCallTarget(
                     && (uint32_t)baseNode < ast->len && ast->nodes[baseNode].kind == SLAst_IDENT
                     && ast->nodes[calleeNode].dataStart == symbol->nameStart
                     && ast->nodes[calleeNode].dataEnd == symbol->nameEnd
-                    && AstListCount(ast, nodeId) + 1u == (uint32_t)ins->tok)
+                    && AstListCount(ast, nodeId) + 1u
+                           == (uint32_t)(ins->tok & ~SLMirCallArgFlag_RECEIVER_ARG0))
                 {
                     const SLPackage* currentPkg = callerFn->pkg;
                     uint32_t         i;
@@ -6892,6 +6906,101 @@ static int SLEvalMirRewriteBuiltinHostCall(
     return 0;
 }
 
+static int SLEvalMirRewriteQualifiedHostCall(
+    SLEvalMirLowerCtx*    c,
+    const SLEvalFunction* callerFn,
+    SLMirInst*            ins,
+    int* _Nonnull outRewritten) {
+    const SLMirSymbolRef* symbol;
+    const SLAst*          ast;
+    int32_t               stack[256];
+    uint32_t              stackLen = 0;
+    if (outRewritten != NULL) {
+        *outRewritten = 0;
+    }
+    if (c == NULL || callerFn == NULL || ins == NULL || outRewritten == NULL
+        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->aux >= c->builder.symbolLen)
+    {
+        return 0;
+    }
+    symbol = &c->builder.symbols[ins->aux];
+    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != SLMirSymbolFlag_CALL_RECEIVER_ARG0
+        || callerFn->bodyNode < 0)
+    {
+        return 0;
+    }
+    ast = &callerFn->file->ast;
+    if ((uint32_t)callerFn->bodyNode >= ast->len) {
+        return 0;
+    }
+    stack[stackLen++] = callerFn->bodyNode;
+    while (stackLen > 0) {
+        int32_t          nodeId = stack[--stackLen];
+        const SLAstNode* node = &ast->nodes[nodeId];
+        int32_t          child;
+        if (node->kind == SLAst_CALL) {
+            int32_t calleeNode = node->firstChild;
+            int32_t baseNode = calleeNode >= 0 ? ast->nodes[calleeNode].firstChild : -1;
+            if (calleeNode >= 0 && (uint32_t)calleeNode < ast->len
+                && ast->nodes[calleeNode].kind == SLAst_FIELD_EXPR && baseNode >= 0
+                && (uint32_t)baseNode < ast->len && ast->nodes[baseNode].kind == SLAst_IDENT
+                && ast->nodes[calleeNode].dataStart == symbol->nameStart
+                && ast->nodes[calleeNode].dataEnd == symbol->nameEnd
+                && AstListCount(ast, nodeId) + 1u
+                       == (uint32_t)(ins->tok & ~SLMirCallArgFlag_RECEIVER_ARG0))
+            {
+                const SLPackage* currentPkg = callerFn->pkg;
+                uint32_t         i;
+                for (i = 0; currentPkg != NULL && i < currentPkg->importLen; i++) {
+                    const SLImportRef* imp = &currentPkg->imports[i];
+                    if (imp->bindName == NULL || imp->target == NULL) {
+                        continue;
+                    }
+                    if (strlen(imp->bindName)
+                            == (size_t)(ast->nodes[baseNode].dataEnd
+                                        - ast->nodes[baseNode].dataStart)
+                        && memcmp(
+                               imp->bindName,
+                               callerFn->file->source + ast->nodes[baseNode].dataStart,
+                               (size_t)(ast->nodes[baseNode].dataEnd
+                                        - ast->nodes[baseNode].dataStart))
+                               == 0
+                        && StrEq(imp->target->name, "platform")
+                        && SliceEqCStr(
+                            callerFn->file->source, symbol->nameStart, symbol->nameEnd, "exit"))
+                    {
+                        SLMirHostRef host = { 0 };
+                        uint32_t     hostIndex = UINT32_MAX;
+                        host.nameStart = symbol->nameStart;
+                        host.nameEnd = symbol->nameEnd;
+                        host.kind = SLMirHost_GENERIC;
+                        host.flags = 0;
+                        host.target = SL_EVAL_MIR_HOST_PLATFORM_EXIT;
+                        if (SLMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
+                            return -1;
+                        }
+                        ins->op = SLMirOp_CALL_HOST;
+                        ins->aux = hostIndex;
+                        ins->tok |= SLMirCallArgFlag_RECEIVER_ARG0;
+                        *outRewritten = 1;
+                        return 1;
+                    }
+                }
+            }
+        }
+        child = node->firstChild;
+        while (child >= 0) {
+            if (stackLen >= (uint32_t)(sizeof(stack) / sizeof(stack[0]))) {
+                return 0;
+            }
+            stack[stackLen++] = child;
+            child = ast->nodes[child].nextSibling;
+        }
+    }
+    return 0;
+}
+
 static int SLEvalMirLowerFunction(
     SLEvalMirLowerCtx* c, int32_t evalFnIndex, uint32_t* _Nullable outMirFnIndex) {
     const SLEvalFunction* fn;
@@ -6958,12 +7067,25 @@ static int SLEvalMirLowerFunction(
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        lowerRc;
         int        rewrittenHost = 0;
+        int        dropReceiverArg0 = 0;
         lowerRc = SLEvalMirRewriteBuiltinHostCall(c, fn, ins, &rewrittenHost);
         if (lowerRc < 0) {
             return -1;
         }
         if (rewrittenHost) {
             continue;
+        }
+        lowerRc = SLEvalMirRewriteQualifiedHostCall(c, fn, ins, &rewrittenHost);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (rewrittenHost) {
+            continue;
+        }
+        if (ins->op == SLMirOp_CALL && c->builder.symbols != NULL && ins->aux < c->builder.symbolLen
+            && (c->builder.symbols[ins->aux].flags & SLMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u)
+        {
+            dropReceiverArg0 = 1;
         }
         if (!SLEvalMirResolveDirectCallTarget(c, fn, evalFnIndex, ins, &targetEvalFnIndex)) {
             continue;
@@ -6977,6 +7099,9 @@ static int SLEvalMirLowerFunction(
         }
         ins->op = SLMirOp_CALL_FN;
         ins->aux = targetMirFnIndex;
+        if (dropReceiverArg0) {
+            ins->tok |= SLMirCallArgFlag_RECEIVER_ARG0;
+        }
     }
     if (outMirFnIndex != NULL) {
         *outMirFnIndex = mirFnIndex;

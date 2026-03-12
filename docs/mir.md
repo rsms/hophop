@@ -29,6 +29,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - MIR programs now also have an explicit `program.hosts[]` table for hostcall metadata, so `CALL_HOST` does not have to treat instruction `aux` as evaluator-private state forever.
 - The evaluator now uses that host table for one real runtime case: plain builtin `print(...)` calls lowered through the simple MIR path are rewritten to `CALL_HOST`.
 - The evaluator-side direct-call rewrite now also covers conservative imported package selector calls, such as `math.Add(...)`, when the import alias and callee resolve unambiguously by arity.
+- The evaluator-side hostcall rewrite now also covers conservative selector calls for `platform.exit(...)`, including import aliases such as `p.exit(...)`.
 - `mir_lower` now exposes the same instruction-materialization path to `mir_lower_stmt`, so statement-lowered runtime MIR also uses the same const/symbol/type tables instead of appending raw expression instructions.
 - MIR programs now also carry explicit source entries and per-function `sourceRef` metadata, so execution and future backends do not need to assume one global source/file for the whole program.
 - MIR programs now also carry explicit local metadata in `program.locals[]`, sliced per function by `localStart` / `localCount`.
@@ -66,6 +67,7 @@ For lowered `CALL_HOST` instructions, `aux` can reference `program.hosts[]`; unt
 For `JUMP` and `JUMP_IF_FALSE`, `aux` is a function-local instruction index within the current `SLMirFunction`.
 Each `SLMirFunction` now also points at `program.sources[function.sourceRef]`, which is how runtime execution keeps the active source/file context aligned with the current MIR frame.
 Each `SLMirFunction` also points at its local metadata slice in `program.locals[]`, and each `SLMirLocal` currently carries a `typeRef` plus flags such as `PARAM`, `MUTABLE`, and `ZERO_INIT`.
+For lowered `CALL_FN` and `CALL_HOST` instructions that came from selector syntax with a synthetic receiver in argument slot `0`, the high bit of `tok` is now used as `SLMirCallArgFlag_RECEIVER_ARG0`, so execution can drop that receiver before invoking the resolved target.
 
 ## Opcode set (current)
 
@@ -152,6 +154,7 @@ Interpreter details:
 - `CALL` is resolved by `SLMirResolveCallFn` with popped arguments in source order.
 - `CALL_FN` now executes same-program MIR functions through the function executor. Today that path is intentionally narrow and only supports the current arg-less/simple case until local slots and parameter binding move into MIR.
 - `CALL_FN` now supports passing arguments into same-program MIR functions, with those arguments bound to the first `paramCount` local slots.
+- When `SLMirCallArgFlag_RECEIVER_ARG0` is set on lowered `CALL_FN` or `CALL_HOST`, execution drops argument `0` before invoking the resolved target.
 - `CALL_HOST` invokes `SLMirExecEnv.hostCall(hostCtx, hostId, args, argCount, ...)`, where `hostId` comes from `program.hosts[aux].target` when a host table is present, and falls back to raw `aux` only for older MIR.
 - `SLMirConst_FUNCTION` currently materializes as a same-program function reference value.
 - `CALL_INDIRECT` currently expects the callee value to have been pushed before its arguments, then invokes the referenced same-program MIR function.
@@ -198,6 +201,7 @@ So today:
   - local `&name`, `*name`, and `*name = value` forms where `name` is a MIR local
   - plain builtin `print(...)` rewritten to `CALL_HOST`
   - conservative imported package calls like `pkg.F(...)`, lowered to `CALL_FN` when the target is unambiguous and non-variadic
+  - conservative `platform.exit(...)` selector calls rewritten to `CALL_HOST`
   - simple local assignment and compound assignment
   - expression statements
   - `if` / `else`

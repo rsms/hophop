@@ -132,6 +132,17 @@ static uint32_t SLMirResolveHostId(const SLMirExecRun* run, const SLMirInst* ins
     return run->program->hosts[ins->aux].target;
 }
 
+static uint32_t SLMirResolvedCallArgCount(const SLMirInst* ins) {
+    if (ins == NULL) {
+        return 0;
+    }
+    return (uint32_t)(ins->tok & ~SLMirCallArgFlag_RECEIVER_ARG0);
+}
+
+static int SLMirResolvedCallDropsReceiverArg0(const SLMirInst* ins) {
+    return ins != NULL && (ins->tok & SLMirCallArgFlag_RECEIVER_ARG0) != 0;
+}
+
 static SLCTFEValue* _Nullable SLMirReferenceTarget(SLCTFEValue* value) {
     if (value == NULL || value->kind != SLCTFEValue_REFERENCE || value->s.bytes == NULL) {
         return NULL;
@@ -576,8 +587,9 @@ static int SLMirRunLoop(
                 SLMirExecValue* args = NULL;
                 SLMirExecValue  v;
                 int             callOk = 0;
-                uint32_t        argCount = (uint32_t)ins->tok;
+                uint32_t        argCount = SLMirResolvedCallArgCount(ins);
                 uint32_t        i;
+                uint32_t        callArgOffset = 0;
                 if (run->env.hostCall == NULL) {
                     return 0;
                 }
@@ -600,11 +612,17 @@ static int SLMirRunLoop(
                     }
                 }
                 SLCTFEValueInvalid(&v);
+                if (SLMirResolvedCallDropsReceiverArg0(ins)) {
+                    if (argCount == 0u) {
+                        return 0;
+                    }
+                    callArgOffset = 1u;
+                }
                 if (run->env.hostCall(
                         run->env.hostCtx,
                         SLMirResolveHostId(run, ins),
-                        args,
-                        argCount,
+                        args != NULL ? args + callArgOffset : NULL,
+                        argCount - callArgOffset,
                         &v,
                         &callOk,
                         run->env.diag)
@@ -624,8 +642,9 @@ static int SLMirRunLoop(
                 SLMirExecValue  v;
                 SLMirExecValue* args = NULL;
                 int             callOk = 0;
-                uint32_t        argCount = (uint32_t)ins->tok;
+                uint32_t        argCount = SLMirResolvedCallArgCount(ins);
                 uint32_t        i;
+                uint32_t        callArgOffset = 0;
                 if (run->program == NULL || ins->aux >= run->program->funcLen) {
                     return 0;
                 }
@@ -647,12 +666,18 @@ static int SLMirRunLoop(
                         return 0;
                     }
                 }
+                if (SLMirResolvedCallDropsReceiverArg0(ins)) {
+                    if (argCount == 0u) {
+                        return 0;
+                    }
+                    callArgOffset = 1u;
+                }
                 if (SLMirEvalFunctionInternal(
                         run->arena,
                         run->program,
                         ins->aux,
-                        args,
-                        argCount,
+                        args != NULL ? args + callArgOffset : NULL,
+                        argCount - callArgOffset,
                         &run->env,
                         0,
                         0,
