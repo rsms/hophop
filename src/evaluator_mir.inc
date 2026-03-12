@@ -2,13 +2,13 @@ SL_API_BEGIN
 
 enum {
     SL_EVAL_MIR_FN_NONE = UINT32_MAX,
-    SL_EVAL_MIR_FN_IN_PROGRESS = UINT32_MAX - 1u,
 };
 
 typedef struct {
     SLEvalProgram*       p;
     SLMirProgramBuilder  builder;
     uint32_t*            evalToMir;
+    uint8_t*             loweringFns;
     uint32_t*            mirToEval;
     const SLParsedFile** sourceFiles;
     uint32_t             sourceFileCap;
@@ -209,7 +209,7 @@ static int SLEvalMirResolveDirectCallTarget(
                 child = ast->nodes[child].nextSibling;
             }
         }
-        if (!found || ambiguous || resolvedFnIndex < 0 || resolvedFnIndex == callerFnIndex) {
+        if (!found || ambiguous || resolvedFnIndex < 0) {
             return 0;
         }
         *outEvalFnIndex = (uint32_t)resolvedFnIndex;
@@ -220,8 +220,7 @@ static int SLEvalMirResolveDirectCallTarget(
     }
     targetFnIndex = SLEvalResolveFunctionBySlice(
         c->p, NULL, callerFn->file, symbol->nameStart, symbol->nameEnd, NULL, (uint32_t)ins->tok);
-    if (targetFnIndex < 0 || targetFnIndex == callerFnIndex
-        || (uint32_t)targetFnIndex >= c->p->funcLen)
+    if (targetFnIndex < 0 || (uint32_t)targetFnIndex >= c->p->funcLen)
     {
         return 0;
     }
@@ -384,7 +383,13 @@ static int SLEvalMirLowerFunction(
     {
         return -1;
     }
-    if (c->evalToMir[(uint32_t)evalFnIndex] == SL_EVAL_MIR_FN_IN_PROGRESS) {
+    if (c->loweringFns != NULL && c->loweringFns[(uint32_t)evalFnIndex] != 0u) {
+        if (c->evalToMir[(uint32_t)evalFnIndex] != SL_EVAL_MIR_FN_NONE) {
+            if (outMirFnIndex != NULL) {
+                *outMirFnIndex = c->evalToMir[(uint32_t)evalFnIndex];
+            }
+            return 1;
+        }
         return 0;
     }
     if (c->evalToMir[(uint32_t)evalFnIndex] != SL_EVAL_MIR_FN_NONE) {
@@ -397,9 +402,13 @@ static int SLEvalMirLowerFunction(
     if (fn->isBuiltinPackageFn || fn->isVariadic) {
         return 0;
     }
-    c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_IN_PROGRESS;
+    if (c->loweringFns != NULL) {
+        c->loweringFns[(uint32_t)evalFnIndex] = 1u;
+    }
     if (SLEvalMirInternSourceFile(c, fn->file, &sourceRefIndex) != 0) {
-        c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+        if (c->loweringFns != NULL) {
+            c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+        }
         return -1;
     }
     (void)sourceRefIndex;
@@ -415,11 +424,15 @@ static int SLEvalMirLowerFunction(
             c->diag)
         != 0)
     {
-        c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+        if (c->loweringFns != NULL) {
+            c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+        }
         return -1;
     }
     if (!supported) {
-        c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+        if (c->loweringFns != NULL) {
+            c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+        }
         return 0;
     }
     c->evalToMir[(uint32_t)evalFnIndex] = mirFnIndex;
@@ -460,10 +473,16 @@ static int SLEvalMirLowerFunction(
         }
         lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
         if (lowerRc < 0) {
+            if (c->loweringFns != NULL) {
+                c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+            }
             return -1;
         }
         if (lowerRc == 0) {
             c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+            if (c->loweringFns != NULL) {
+                c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+            }
             return 0;
         }
         ins->op = SLMirOp_CALL_FN;
@@ -471,6 +490,9 @@ static int SLEvalMirLowerFunction(
         if (dropReceiverArg0) {
             ins->tok |= SLMirCallArgFlag_RECEIVER_ARG0;
         }
+    }
+    if (c->loweringFns != NULL) {
+        c->loweringFns[(uint32_t)evalFnIndex] = 0u;
     }
     if (outMirFnIndex != NULL) {
         *outMirFnIndex = mirFnIndex;
@@ -492,6 +514,7 @@ static int SLEvalTryMirInvokeFunction(
     SLMirExecEnv         env = { 0 };
     SLEvalMirLowerCtx    lowerCtx;
     uint32_t*            evalToMir;
+    uint8_t*             loweringFns;
     uint32_t*            mirToEval;
     const SLParsedFile** sourceFiles;
     uint32_t             mirFnIndex = UINT32_MAX;
@@ -505,17 +528,20 @@ static int SLEvalTryMirInvokeFunction(
     *outIsConst = 0;
     evalToMir = (uint32_t*)SLArenaAlloc(
         p->arena, sizeof(uint32_t) * p->funcLen, (uint32_t)_Alignof(uint32_t));
+    loweringFns = (uint8_t*)SLArenaAlloc(
+        p->arena, sizeof(uint8_t) * p->funcLen, (uint32_t)_Alignof(uint8_t));
     mirToEval = (uint32_t*)SLArenaAlloc(
         p->arena, sizeof(uint32_t) * p->funcLen, (uint32_t)_Alignof(uint32_t));
     sourceFiles = (const SLParsedFile**)SLArenaAlloc(
         p->arena,
         sizeof(const SLParsedFile*) * p->funcLen,
         (uint32_t)_Alignof(const SLParsedFile*));
-    if (evalToMir == NULL || mirToEval == NULL || sourceFiles == NULL) {
+    if (evalToMir == NULL || loweringFns == NULL || mirToEval == NULL || sourceFiles == NULL) {
         return ErrorSimple("out of memory");
     }
     for (i = 0; i < p->funcLen; i++) {
         evalToMir[i] = SL_EVAL_MIR_FN_NONE;
+        loweringFns[i] = 0u;
         mirToEval[i] = UINT32_MAX;
         sourceFiles[i] = NULL;
     }
@@ -524,6 +550,7 @@ static int SLEvalTryMirInvokeFunction(
     lowerCtx.p = p;
     lowerCtx.builder = builder;
     lowerCtx.evalToMir = evalToMir;
+    lowerCtx.loweringFns = loweringFns;
     lowerCtx.mirToEval = mirToEval;
     lowerCtx.sourceFiles = sourceFiles;
     lowerCtx.sourceFileCap = p->funcLen;
