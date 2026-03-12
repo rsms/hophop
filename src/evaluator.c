@@ -2148,6 +2148,16 @@ static int SLEvalTryMirZeroInitType(
     int32_t             typeNode,
     SLCTFEValue*        outValue,
     int*                outIsConst);
+static int SLEvalTryMirEvalTopInit(
+    SLEvalProgram*      p,
+    const SLParsedFile* file,
+    int32_t             initExprNode,
+    int32_t             declTypeNode,
+    const SLParsedFile* _Nullable coerceTypeFile,
+    int32_t      coerceTypeNode,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    int* _Nullable outSupported);
 static int SLEvalTryMirEvalExprWithType(
     SLEvalProgram*      p,
     int32_t             exprNode,
@@ -6108,19 +6118,34 @@ static int SLEvalTryMirZeroInitType(
     int32_t             typeNode,
     SLCTFEValue*        outValue,
     int*                outIsConst) {
+    return SLEvalTryMirEvalTopInit(p, file, -1, typeNode, NULL, -1, outValue, outIsConst, NULL);
+}
+
+static int SLEvalTryMirEvalTopInit(
+    SLEvalProgram*      p,
+    const SLParsedFile* file,
+    int32_t             initExprNode,
+    int32_t             declTypeNode,
+    const SLParsedFile* _Nullable coerceTypeFile,
+    int32_t      coerceTypeNode,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    int* _Nullable outSupported) {
     SLMirProgram program = { 0 };
     SLMirExecEnv env = { 0 };
     int          supported = 0;
-    if (p == NULL || file == NULL || outValue == NULL || outIsConst == NULL || typeNode < 0
-        || (uint32_t)typeNode >= file->ast.len)
-    {
+    if (outSupported != NULL) {
+        *outSupported = 0;
+    }
+    if (p == NULL || file == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (SLMirLowerZeroInitTypeAsFunction(
+    if (SLMirLowerTopInitAsFunction(
             p->arena,
             &file->ast,
             (SLStrView){ file->source, file->sourceLen },
-            typeNode,
+            initExprNode,
+            declTypeNode,
             &program,
             &supported,
             p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL)
@@ -6134,10 +6159,28 @@ static int SLEvalTryMirZeroInitType(
     }
     env.src.ptr = file->source;
     env.src.len = file->sourceLen;
+    env.resolveIdent = SLEvalResolveIdent;
+    env.resolveCall = SLEvalResolveCall;
+    env.resolveCtx = p;
+    env.hostCall = SLEvalMirHostCall;
+    env.hostCtx = p;
     env.zeroInitLocal = SLEvalMirZeroInitLocal;
     env.zeroInitCtx = p;
     env.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
-    return SLMirEvalFunction(p->arena, &program, 0, NULL, 0, &env, outValue, outIsConst);
+    if (SLMirEvalFunction(p->arena, &program, 0, NULL, 0, &env, outValue, outIsConst) != 0) {
+        return -1;
+    }
+    if (*outIsConst && coerceTypeFile != NULL && coerceTypeNode >= 0
+        && SLEvalAdaptStringValueForType(
+               p->arena, coerceTypeFile, coerceTypeNode, outValue, outValue)
+               < 0)
+    {
+        return -1;
+    }
+    if (outSupported != NULL) {
+        *outSupported = 1;
+    }
+    return 0;
 }
 
 static int SLEvalTryMirEvalExprWithType(
@@ -6149,50 +6192,8 @@ static int SLEvalTryMirEvalExprWithType(
     SLCTFEValue* outValue,
     int*         outIsConst,
     int*         outSupported) {
-    SLMirProgram program = { 0 };
-    SLMirExecEnv env = { 0 };
-    int          supported = 0;
-    if (outSupported != NULL) {
-        *outSupported = 0;
-    }
-    if (p == NULL || exprFile == NULL || outValue == NULL || outIsConst == NULL) {
-        return -1;
-    }
-    if (SLMirLowerExprAsFunction(
-            p->arena,
-            &exprFile->ast,
-            (SLStrView){ exprFile->source, exprFile->sourceLen },
-            exprNode,
-            &program,
-            &supported,
-            p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL)
-        != 0)
-    {
-        return -1;
-    }
-    if (!supported) {
-        return 0;
-    }
-    env.src.ptr = exprFile->source;
-    env.src.len = exprFile->sourceLen;
-    env.resolveIdent = SLEvalResolveIdent;
-    env.resolveCall = SLEvalResolveCall;
-    env.resolveCtx = p;
-    env.hostCall = SLEvalMirHostCall;
-    env.hostCtx = p;
-    env.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
-    if (SLMirEvalFunction(p->arena, &program, 0, NULL, 0, &env, outValue, outIsConst) != 0) {
-        return -1;
-    }
-    if (*outIsConst && typeFile != NULL && typeNode >= 0
-        && SLEvalAdaptStringValueForType(p->arena, typeFile, typeNode, outValue, outValue) < 0)
-    {
-        return -1;
-    }
-    if (outSupported != NULL) {
-        *outSupported = 1;
-    }
-    return 0;
+    return SLEvalTryMirEvalTopInit(
+        p, exprFile, exprNode, -1, typeFile, typeNode, outValue, outIsConst, outSupported);
 }
 
 static int SLEvalBinaryOpForAssignToken(SLTokenKind assignOp, SLTokenKind* outBinaryOp) {

@@ -543,4 +543,35 @@ int SLMirLowerZeroInitTypeAsFunction(
     return 0;
 }
 
+int SLMirLowerTopInitAsFunction(
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   initExprNode,
+    int32_t   declTypeNode,
+    SLMirProgram* _Nonnull outProgram,
+    int* _Nonnull outSupported,
+    SLDiag* _Nullable diag) {
+    if (outProgram != NULL) {
+        *outProgram = (SLMirProgram){ 0 };
+    }
+    if (diag != NULL) {
+        *diag = (SLDiag){ 0 };
+    }
+    if (arena == NULL || ast == NULL || outProgram == NULL || outSupported == NULL) {
+        SLMirLowerSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        return -1;
+    }
+    *outSupported = 0;
+    if (initExprNode >= 0) {
+        return SLMirLowerExprAsFunction(
+            arena, ast, src, initExprNode, outProgram, outSupported, diag);
+    }
+    if (declTypeNode >= 0) {
+        return SLMirLowerZeroInitTypeAsFunction(
+            arena, ast, src, declTypeNode, outProgram, outSupported, diag);
+    }
+    return 0;
+}
+
 SL_API_END
