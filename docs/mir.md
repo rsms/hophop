@@ -20,6 +20,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - `mir_exec` now also supports local address-taking and simple reference dereference through `LOCAL_ADDR`, `DEREF_LOAD`, and `DEREF_STORE`.
 - `mir_exec` now also has a backend-neutral index hook in `SLMirExecEnv`, which the evaluator uses for array/slice-style indexing without baking evaluator-private storage types into MIR execution.
 - `mir_exec` now also has a backend-neutral indexed-address hook in `SLMirExecEnv`, which the evaluator uses for element references (`ARRAY_ADDR`) and simple `arr[i] = rhs` lowering on the MIR path.
+- `mir_exec` now also has backend-neutral iterator hooks in `SLMirExecEnv`, which the evaluator uses for MIR `for in` lowering across both synthetic sequence iteration and iterator-protocol sources.
 - `mir_exec` now also has backend-neutral aggregate field hooks in `SLMirExecEnv`, which the evaluator uses for `AGG_GET` / `AGG_ADDR` without exposing evaluator-private aggregate layout to MIR execution.
 - When lowered field metadata exists, `mir_exec` resolves aggregate field names through `program.fields[]` before falling back to instruction spans.
 - `mir_exec` now also executes basic control-flow ops: `JUMP`, `JUMP_IF_FALSE`, and `RETURN_VOID`.
@@ -106,6 +107,8 @@ From `SLMirOp` in `src/mir.h`:
 - `SLMirOp_UNARY`
 - `SLMirOp_BINARY`
 - `SLMirOp_INDEX` (element index; non-slice form; strings handled directly, backend-specific containers can go through the index hook)
+- `SLMirOp_ITER_INIT`
+- `SLMirOp_ITER_NEXT`
 - `SLMirOp_RETURN`
 - `SLMirOp_RETURN_VOID`
 
@@ -163,6 +166,7 @@ Interpreter details:
 - `LOAD_IDENT` is resolved by `SLMirResolveIdentFn`.
 - `CALL` is resolved by `SLMirResolveCallFn` with popped arguments in source order.
 - `INDEX` handles strings directly in `mir_exec` and can delegate other container indexing to `SLMirExecEnv.indexValue(...)`.
+- `ITER_INIT` and `ITER_NEXT` execute through backend-neutral iterator hooks in `SLMirExecEnv`.
 - `CALL_FN` now executes same-program MIR functions through the function executor. Today that path is intentionally narrow and only supports the current arg-less/simple case until local slots and parameter binding move into MIR.
 - `CALL_FN` now supports passing arguments into same-program MIR functions, with those arguments bound to the first `paramCount` local slots.
 - When `SLMirCallArgFlag_RECEIVER_ARG0` is set on lowered `CALL_FN` or `CALL_HOST`, execution drops argument `0` before invoking the resolved target.
@@ -227,7 +231,7 @@ So today:
   - successful `assert` statements
   - conservative block-scoped `defer`, including reverse-order execution and replay on `return`, `break`, and `continue` when unwinding out of active nested scopes
   - simple non-`for in` `for` loops, plus `break` and `continue`
-  - conservative sequence-path `for in` over strings and array-backed values, with key/value or value-only identifier bindings and discard
+  - conservative `for in` lowering through MIR iterator hooks, covering both sequence sources and iterator-protocol sources, with key/value or value-only identifier bindings and discard
   - conservative `switch` lowering for plain subject/condition switches with case labels, `default`, switch-local `break`, and subject-pattern alias bindings
   - `return`
   - nested blocks

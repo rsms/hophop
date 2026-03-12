@@ -114,6 +114,23 @@ enum {
     SL_EVAL_MIR_HOST_PLATFORM_EXIT = 2,
 };
 
+enum {
+    SL_EVAL_MIR_ITER_KIND_INVALID = 0,
+    SL_EVAL_MIR_ITER_KIND_SEQUENCE = 1,
+    SL_EVAL_MIR_ITER_KIND_PROTOCOL = 2,
+    SL_EVAL_MIR_ITER_MAGIC = 0x534c4954u,
+};
+
+typedef struct {
+    uint32_t    magic;
+    uint32_t    sourceNode;
+    uint32_t    index;
+    uint16_t    flags;
+    uint8_t     kind;
+    uint8_t     _reserved[5];
+    SLCTFEValue sourceValue;
+} SLEvalMirIteratorState;
+
 int ErrorDiagf(
     const char* file,
     const char* _Nullable source,
@@ -6400,6 +6417,198 @@ static int SLEvalMirSequenceLen(
     return 0;
 }
 
+static SLEvalMirIteratorState* _Nullable SLEvalMirIteratorStateFromValue(
+    const SLCTFEValue* iterValue) {
+    SLCTFEValue* target;
+    if (iterValue == NULL) {
+        return NULL;
+    }
+    target = SLEvalValueReferenceTarget(iterValue);
+    if (target == NULL || target->kind != SLCTFEValue_SPAN
+        || target->typeTag != SL_EVAL_MIR_ITER_MAGIC || target->s.bytes == NULL)
+    {
+        return NULL;
+    }
+    return (SLEvalMirIteratorState*)target->s.bytes;
+}
+
+static int SLEvalMirIterInit(
+    void*              ctx,
+    uint32_t           sourceNode,
+    const SLCTFEValue* source,
+    uint16_t           flags,
+    SLCTFEValue*       outIter,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram*          p = (SLEvalProgram*)ctx;
+    SLEvalMirIteratorState* state;
+    SLCTFEValue*            target;
+    const SLCTFEValue*      sourceValue;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || source == NULL || outIter == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if ((flags & SLMirIterFlag_KEY_REF) != 0u) {
+        return 0;
+    }
+    state = (SLEvalMirIteratorState*)SLArenaAlloc(
+        p->arena, sizeof(*state), (uint32_t)_Alignof(SLEvalMirIteratorState));
+    target = (SLCTFEValue*)SLArenaAlloc(p->arena, sizeof(*target), (uint32_t)_Alignof(SLCTFEValue));
+    if (state == NULL || target == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    memset(state, 0, sizeof(*state));
+    state->magic = SL_EVAL_MIR_ITER_MAGIC;
+    state->sourceNode = sourceNode;
+    state->index = 0;
+    state->flags = flags;
+    state->sourceValue = *source;
+    sourceValue = SLEvalValueTargetOrSelf(source);
+    if (sourceValue->kind == SLCTFEValue_ARRAY || sourceValue->kind == SLCTFEValue_STRING
+        || sourceValue->kind == SLCTFEValue_NULL)
+    {
+        state->kind = SL_EVAL_MIR_ITER_KIND_SEQUENCE;
+    } else {
+        state->kind = SL_EVAL_MIR_ITER_KIND_PROTOCOL;
+    }
+    target->kind = SLCTFEValue_SPAN;
+    target->i64 = 0;
+    target->f64 = 0.0;
+    target->b = 0;
+    target->typeTag = SL_EVAL_MIR_ITER_MAGIC;
+    target->s.bytes = (const uint8_t*)state;
+    target->s.len = 0;
+    target->span = (SLCTFESpan){ 0 };
+    SLEvalValueSetReference(outIter, target);
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLEvalMirIterNext(
+    void*              ctx,
+    const SLCTFEValue* iter,
+    uint16_t           flags,
+    int*               outHasItem,
+    SLCTFEValue*       outKey,
+    int*               outKeyIsConst,
+    SLCTFEValue*       outValue,
+    int*               outValueIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram*          p = (SLEvalProgram*)ctx;
+    SLEvalMirIteratorState* state;
+    const SLCTFEValue*      sourceValue;
+    int                     hasKey;
+    int                     keyRef;
+    int                     valueRef;
+    int                     valueDiscard;
+    (void)diag;
+    if (outHasItem != NULL) {
+        *outHasItem = 0;
+    }
+    if (outKeyIsConst != NULL) {
+        *outKeyIsConst = 0;
+    }
+    if (outValueIsConst != NULL) {
+        *outValueIsConst = 0;
+    }
+    if (outKey != NULL) {
+        SLEvalValueSetNull(outKey);
+    }
+    if (outValue != NULL) {
+        SLEvalValueSetNull(outValue);
+    }
+    if (p == NULL || iter == NULL || outHasItem == NULL || outKey == NULL || outKeyIsConst == NULL
+        || outValue == NULL || outValueIsConst == NULL)
+    {
+        return -1;
+    }
+    state = SLEvalMirIteratorStateFromValue(iter);
+    if (state == NULL) {
+        return 0;
+    }
+    hasKey = (flags & SLMirIterFlag_HAS_KEY) != 0u;
+    keyRef = (flags & SLMirIterFlag_KEY_REF) != 0u;
+    valueRef = (flags & SLMirIterFlag_VALUE_REF) != 0u;
+    valueDiscard = (flags & SLMirIterFlag_VALUE_DISCARD) != 0u;
+    if (state->kind == SL_EVAL_MIR_ITER_KIND_SEQUENCE) {
+        sourceValue = SLEvalValueTargetOrSelf(&state->sourceValue);
+        if (sourceValue->kind != SLCTFEValue_ARRAY && sourceValue->kind != SLCTFEValue_STRING
+            && sourceValue->kind != SLCTFEValue_NULL)
+        {
+            return 0;
+        }
+        if (state->index >= sourceValue->s.len) {
+            *outHasItem = 0;
+            *outKeyIsConst = 1;
+            *outValueIsConst = 1;
+            return 0;
+        }
+        if (hasKey) {
+            SLEvalValueSetInt(outKey, (int64_t)state->index);
+            *outKeyIsConst = 1;
+        } else {
+            *outKeyIsConst = 1;
+        }
+        if (!valueDiscard) {
+            if (p->currentExecCtx == NULL) {
+                return 0;
+            }
+            if (SLEvalForInIndexCb(
+                    p,
+                    p->currentExecCtx,
+                    &state->sourceValue,
+                    state->index,
+                    valueRef,
+                    outValue,
+                    outValueIsConst)
+                != 0)
+            {
+                return -1;
+            }
+            if (!*outValueIsConst) {
+                return 0;
+            }
+        } else {
+            *outValueIsConst = 1;
+        }
+        *outHasItem = 1;
+        state->index++;
+        return 0;
+    }
+    if (state->kind == SL_EVAL_MIR_ITER_KIND_PROTOCOL) {
+        if (p->currentExecCtx == NULL) {
+            return 0;
+        }
+        if (SLEvalForInIterCb(
+                p,
+                p->currentExecCtx,
+                (int32_t)state->sourceNode,
+                &state->sourceValue,
+                state->index,
+                hasKey,
+                keyRef,
+                valueRef,
+                valueDiscard,
+                outHasItem,
+                outKey,
+                outKeyIsConst,
+                outValue,
+                outValueIsConst)
+            != 0)
+        {
+            return -1;
+        }
+        if (*outHasItem) {
+            state->index++;
+        }
+        return 0;
+    }
+    return 0;
+}
+
 static int SLEvalMirAggGetField(
     void*              ctx,
     const SLCTFEValue* base,
@@ -6620,6 +6829,10 @@ static void SLEvalMirInitExecEnv(
     env->indexAddrCtx = p;
     env->sequenceLen = SLEvalMirSequenceLen;
     env->sequenceLenCtx = p;
+    env->iterInit = SLEvalMirIterInit;
+    env->iterInitCtx = p;
+    env->iterNext = SLEvalMirIterNext;
+    env->iterNextCtx = p;
     env->aggGetField = SLEvalMirAggGetField;
     env->aggGetFieldCtx = p;
     env->aggAddrField = SLEvalMirAggAddrField;

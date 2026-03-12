@@ -19,6 +19,8 @@ typedef enum {
     SLMirOp_BINARY,
     SLMirOp_INDEX,
     SLMirOp_SEQ_LEN,
+    SLMirOp_ITER_INIT,
+    SLMirOp_ITER_NEXT,
     SLMirOp_CAST,
     SLMirOp_LOCAL_ZERO,
     SLMirOp_LOCAL_LOAD,
@@ -65,6 +67,13 @@ typedef enum {
 
 enum {
     SLMirCallArgFlag_RECEIVER_ARG0 = 0x8000u,
+};
+
+enum {
+    SLMirIterFlag_HAS_KEY = 1u << 0,
+    SLMirIterFlag_KEY_REF = 1u << 1,
+    SLMirIterFlag_VALUE_REF = 1u << 2,
+    SLMirIterFlag_VALUE_DISCARD = 1u << 3,
 };
 
 typedef struct {

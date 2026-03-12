@@ -64,6 +64,24 @@ typedef int (*SLMirSequenceLenFn)(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef int (*SLMirIterInitFn)(
+    void* _Nullable ctx,
+    uint32_t sourceNode,
+    const SLMirExecValue* _Nonnull source,
+    uint16_t flags,
+    SLMirExecValue* _Nonnull outIter,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLMirIterNextFn)(
+    void* _Nullable ctx,
+    const SLMirExecValue* _Nonnull iter,
+    uint16_t flags,
+    int* _Nonnull outHasItem,
+    SLMirExecValue* _Nonnull outKey,
+    int* _Nonnull outKeyIsConst,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outValueIsConst,
+    SLDiag* _Nullable diag);
 typedef int (*SLMirAggGetFieldFn)(
     void* _Nullable ctx,
     const SLMirExecValue* _Nonnull base,
@@ -103,6 +121,10 @@ typedef struct {
     void* _Nullable indexAddrCtx;
     SLMirSequenceLenFn _Nullable sequenceLen;
     void* _Nullable sequenceLenCtx;
+    SLMirIterInitFn _Nullable iterInit;
+    void* _Nullable iterInitCtx;
+    SLMirIterNextFn _Nullable iterNext;
+    void* _Nullable iterNextCtx;
     SLMirAggGetFieldFn _Nullable aggGetField;
     void* _Nullable aggGetFieldCtx;
     SLMirAggAddrFieldFn _Nullable aggAddrField;

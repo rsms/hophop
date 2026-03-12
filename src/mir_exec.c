@@ -1037,6 +1037,98 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_ITER_INIT: {
+                SLCTFEValue source;
+                SLCTFEValue iter;
+                int         iterIsConst = 0;
+                if (SLCTFEPop(run, &source) != 0) {
+                    return 0;
+                }
+                if (run->env.iterInit == NULL) {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&iter);
+                if (run->env.iterInit(
+                        run->env.iterInitCtx,
+                        ins->aux,
+                        &source,
+                        ins->tok,
+                        &iter,
+                        &iterIsConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!iterIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &iter) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_ITER_NEXT: {
+                SLCTFEValue iter;
+                SLCTFEValue key;
+                SLCTFEValue value;
+                SLCTFEValue hasItemValue;
+                int         hasItem = 0;
+                int         keyIsConst = 0;
+                int         valueIsConst = 0;
+                if (SLCTFEPop(run, &iter) != 0) {
+                    return 0;
+                }
+                if (run->env.iterNext == NULL) {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&key);
+                SLCTFEValueInvalid(&value);
+                if (run->env.iterNext(
+                        run->env.iterNextCtx,
+                        &iter,
+                        ins->tok,
+                        &hasItem,
+                        &key,
+                        &keyIsConst,
+                        &value,
+                        &valueIsConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (hasItem) {
+                    if ((ins->tok & SLMirIterFlag_HAS_KEY) != 0u && !keyIsConst) {
+                        return 0;
+                    }
+                    if ((ins->tok & SLMirIterFlag_VALUE_DISCARD) == 0u && !valueIsConst) {
+                        return 0;
+                    }
+                    if ((ins->tok & SLMirIterFlag_HAS_KEY) != 0u) {
+                        if (SLCTFEPush(run, &key) != 0) {
+                            return -1;
+                        }
+                    }
+                    if ((ins->tok & SLMirIterFlag_VALUE_DISCARD) == 0u) {
+                        if (SLCTFEPush(run, &value) != 0) {
+                            return -1;
+                        }
+                    }
+                }
+                hasItemValue.kind = SLCTFEValue_BOOL;
+                hasItemValue.i64 = 0;
+                hasItemValue.f64 = 0.0;
+                hasItemValue.b = hasItem ? 1u : 0u;
+                hasItemValue.typeTag = 0;
+                hasItemValue.s.bytes = NULL;
+                hasItemValue.s.len = 0;
+                hasItemValue.span = (SLCTFESpan){ 0 };
+                if (SLCTFEPush(run, &hasItemValue) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_CAST: {
                 SLCTFEValue in;
                 SLCTFEValue out;

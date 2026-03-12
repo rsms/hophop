@@ -257,22 +257,6 @@ static int SLMirStmtLowerAppendInst(
     return 0;
 }
 
-static int SLMirStmtLowerAppendConstInt(
-    SLMirStmtLower* c, int64_t value, uint32_t start, uint32_t end) {
-    SLMirConst valueConst = { 0 };
-    uint32_t   constIndex = 0;
-    if (c == NULL) {
-        return -1;
-    }
-    valueConst.kind = SLMirConst_INT;
-    valueConst.bits = (uint64_t)value;
-    if (SLMirProgramBuilderAddConst(&c->builder, &valueConst, &constIndex) != 0) {
-        SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, start, end);
-        return -1;
-    }
-    return SLMirStmtLowerAppendInst(c, SLMirOp_PUSH_CONST, 0, constIndex, start, end, NULL);
-}
-
 static int SLMirStmtLowerAddFieldRef(
     SLMirStmtLower* c, uint32_t nameStart, uint32_t nameEnd, uint32_t* outIndex) {
     SLMirField field = { 0 };
@@ -1468,14 +1452,14 @@ static int SLMirStmtLowerForIn(SLMirStmtLower* c, int32_t stmtNode) {
     int32_t          bodyNode = -1;
     uint32_t         scopeMark = c->localLen;
     uint32_t         sourceSlot = UINT32_MAX;
-    uint32_t         lenSlot = UINT32_MAX;
-    uint32_t         idxSlot = UINT32_MAX;
+    uint32_t         iterSlot = UINT32_MAX;
     uint32_t         keySlot = UINT32_MAX;
     uint32_t         valueSlot = UINT32_MAX;
     uint32_t         loopStartPc;
     uint32_t         continueTargetPc;
     uint32_t         loopEndPc;
     uint32_t         condFalseJump = UINT32_MAX;
+    uint16_t         iterFlags = 0;
     if (keyRef) {
         c->supported = 0;
         return 0;
@@ -1519,9 +1503,20 @@ static int SLMirStmtLowerForIn(SLMirStmtLower* c, int32_t stmtNode) {
         c->supported = 0;
         return 0;
     }
+    if ((hasKey ? SLMirIterFlag_HAS_KEY : 0u) != 0u) {
+        iterFlags |= SLMirIterFlag_HAS_KEY;
+    }
+    if (keyRef) {
+        iterFlags |= SLMirIterFlag_KEY_REF;
+    }
+    if (valueRef) {
+        iterFlags |= SLMirIterFlag_VALUE_REF;
+    }
+    if (valueDiscard) {
+        iterFlags |= SLMirIterFlag_VALUE_DISCARD;
+    }
     if (SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &sourceSlot) != 0
-        || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &lenSlot) != 0
-        || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &idxSlot) != 0)
+        || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &iterSlot) != 0)
     {
         return -1;
     }
@@ -1532,10 +1527,10 @@ static int SLMirStmtLowerForIn(SLMirStmtLower* c, int32_t stmtNode) {
     if (SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_STORE, 0, sourceSlot, s->start, s->end, NULL) != 0
         || SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_LOAD, 0, sourceSlot, s->start, s->end, NULL)
                != 0
-        || SLMirStmtLowerAppendInst(c, SLMirOp_SEQ_LEN, 0, 0, s->start, s->end, NULL) != 0
-        || SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_STORE, 0, lenSlot, s->start, s->end, NULL) != 0
-        || SLMirStmtLowerAppendConstInt(c, 0, s->start, s->end) != 0
-        || SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_STORE, 0, idxSlot, s->start, s->end, NULL)
+        || SLMirStmtLowerAppendInst(
+               c, SLMirOp_ITER_INIT, iterFlags, (uint32_t)sourceNode, s->start, s->end, NULL)
+               != 0
+        || SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_STORE, 0, iterSlot, s->start, s->end, NULL)
                != 0)
     {
         c->localLen = scopeMark;
@@ -1582,11 +1577,8 @@ static int SLMirStmtLowerForIn(SLMirStmtLower* c, int32_t stmtNode) {
         c->localLen = scopeMark;
         return 0;
     }
-    if (SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_LOAD, 0, idxSlot, s->start, s->end, NULL) != 0
-        || SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_LOAD, 0, lenSlot, s->start, s->end, NULL) != 0
-        || SLMirStmtLowerAppendInst(
-               c, SLMirOp_BINARY, (uint16_t)SLTok_LT, 0, s->start, s->end, NULL)
-               != 0
+    if (SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_LOAD, 0, iterSlot, s->start, s->end, NULL) != 0
+        || SLMirStmtLowerAppendInst(c, SLMirOp_ITER_NEXT, iterFlags, 0, s->start, s->end, NULL) != 0
         || SLMirStmtLowerAppendInst(
                c, SLMirOp_JUMP_IF_FALSE, 0, UINT32_MAX, s->start, s->end, &condFalseJump)
                != 0)
@@ -1595,27 +1587,31 @@ static int SLMirStmtLowerForIn(SLMirStmtLower* c, int32_t stmtNode) {
         c->controlLen--;
         return -1;
     }
-    if (hasKey && keySlot != UINT32_MAX
-        && (SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_LOAD, 0, idxSlot, s->start, s->end, NULL) != 0
-            || SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_STORE, 0, keySlot, s->start, s->end, NULL)
-                   != 0))
-    {
-        c->localLen = scopeMark;
-        c->controlLen--;
-        return -1;
-    }
     if (!valueDiscard && valueSlot != UINT32_MAX) {
-        if (SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_LOAD, 0, sourceSlot, s->start, s->end, NULL)
-                != 0
-            || SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_LOAD, 0, idxSlot, s->start, s->end, NULL)
-                   != 0
-            || SLMirStmtLowerAppendInst(
-                   c, valueRef ? SLMirOp_ARRAY_ADDR : SLMirOp_INDEX, 0, 0, s->start, s->end, NULL)
-                   != 0
-            || SLMirStmtLowerAppendInst(
-                   c, SLMirOp_LOCAL_STORE, 0, valueSlot, s->start, s->end, NULL)
-                   != 0)
+        if (SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_STORE, 0, valueSlot, s->start, s->end, NULL)
+            != 0)
         {
+            c->localLen = scopeMark;
+            c->controlLen--;
+            return -1;
+        }
+    } else if (!valueDiscard) {
+        if (SLMirStmtLowerAppendInst(c, SLMirOp_DROP, 0, 0, s->start, s->end, NULL) != 0) {
+            c->localLen = scopeMark;
+            c->controlLen--;
+            return -1;
+        }
+    }
+    if (hasKey && keySlot != UINT32_MAX) {
+        if (SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_STORE, 0, keySlot, s->start, s->end, NULL)
+            != 0)
+        {
+            c->localLen = scopeMark;
+            c->controlLen--;
+            return -1;
+        }
+    } else if (hasKey) {
+        if (SLMirStmtLowerAppendInst(c, SLMirOp_DROP, 0, 0, s->start, s->end, NULL) != 0) {
             c->localLen = scopeMark;
             c->controlLen--;
             return -1;
@@ -1627,14 +1623,7 @@ static int SLMirStmtLowerForIn(SLMirStmtLower* c, int32_t stmtNode) {
         return c->supported ? -1 : 0;
     }
     continueTargetPc = SLMirStmtLowerFnPc(c);
-    if (SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_LOAD, 0, idxSlot, s->start, s->end, NULL) != 0
-        || SLMirStmtLowerAppendConstInt(c, 1, s->start, s->end) != 0
-        || SLMirStmtLowerAppendInst(
-               c, SLMirOp_BINARY, (uint16_t)SLTok_ADD, 0, s->start, s->end, NULL)
-               != 0
-        || SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_STORE, 0, idxSlot, s->start, s->end, NULL) != 0
-        || SLMirStmtLowerAppendInst(c, SLMirOp_JUMP, 0, loopStartPc, s->start, s->end, NULL) != 0)
-    {
+    if (SLMirStmtLowerAppendInst(c, SLMirOp_JUMP, 0, loopStartPc, s->start, s->end, NULL) != 0) {
         c->localLen = scopeMark;
         c->controlLen--;
         return -1;

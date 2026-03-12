@@ -1,0 +1,28 @@
+struct Box {
+	value i32
+}
+
+struct BoxIter {
+	box  *Box
+	done bool
+}
+
+fn __iterator(box *Box) BoxIter {
+	return BoxIter{ box }
+}
+
+fn next_value(it *BoxIter) ?*i32 {
+	if it.done {
+		return null
+	}
+	it.done = true
+	return &it.box.value
+}
+
+fn main() {
+	var box = Box{ value: 5 }
+	for &n in &box {
+		*n += 3
+	}
+	assert box.value == 8
+}
