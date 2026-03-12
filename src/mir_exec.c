@@ -365,6 +365,13 @@ static int SLMirRunLoop(
                 run->locals[ins->aux] = v;
                 break;
             }
+            case SLMirOp_DROP: {
+                SLMirExecValue v;
+                if (SLCTFEPop(run, &v) != 0) {
+                    return 0;
+                }
+                break;
+            }
             case SLMirOp_JUMP:
                 if (ins->aux >= run->len) {
                     return 0;

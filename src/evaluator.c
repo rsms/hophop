@@ -7,6 +7,8 @@
 #include "ctfe_exec.h"
 #include "evaluator.h"
 #include "libsl-impl.h"
+#include "mir_exec.h"
+#include "mir_lower_stmt.h"
 
 SL_API_BEGIN
 
@@ -6539,6 +6541,57 @@ static int SLEvalMatchPatternCb(
     return 1;
 }
 
+static int SLEvalTryMirInvokeFunction(
+    SLEvalProgram*        p,
+    const SLEvalFunction* fn,
+    int32_t               fnIndex,
+    const SLCTFEValue*    args,
+    uint32_t              argCount,
+    SLCTFEValue*          outValue,
+    int*                  outDidReturn,
+    int*                  outIsConst) {
+    SLMirProgram program = { 0 };
+    SLMirExecEnv env = { 0 };
+    int          supported = 0;
+    int          mirIsConst = 0;
+    (void)fnIndex;
+    if (p == NULL || fn == NULL || outValue == NULL || outDidReturn == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    *outDidReturn = 0;
+    *outIsConst = 0;
+    if (SLMirLowerSimpleFunction(
+            p->arena,
+            &fn->file->ast,
+            (SLStrView){ fn->file->source, fn->file->sourceLen },
+            fn->fnNode,
+            fn->bodyNode,
+            &program,
+            &supported,
+            p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL)
+        != 0)
+    {
+        return -1;
+    }
+    if (!supported) {
+        return 0;
+    }
+    env.src = (SLStrView){ fn->file->source, fn->file->sourceLen };
+    env.resolveIdent = SLEvalResolveIdent;
+    env.resolveCall = SLEvalResolveCall;
+    env.resolveCtx = p;
+    env.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
+    if (SLMirEvalFunction(p->arena, &program, 0, args, argCount, &env, outValue, &mirIsConst) != 0)
+    {
+        return -1;
+    }
+    *outIsConst = mirIsConst;
+    if (mirIsConst) {
+        *outDidReturn = outValue->kind != SLCTFEValue_INVALID;
+    }
+    return 0;
+}
+
 static int SLEvalInvokeFunction(
     SLEvalProgram*       p,
     int32_t              fnIndex,
@@ -6699,7 +6752,11 @@ static int SLEvalInvokeFunction(
     p->currentContext = callContext;
     p->callStack[p->callDepth++] = (uint32_t)fnIndex;
 
-    rc = SLCTFEExecEvalBlock(&execCtx, fn->bodyNode, outValue, outDidReturn, &isConst);
+    rc = SLEvalTryMirInvokeFunction(
+        p, fn, fnIndex, args, argCount, outValue, outDidReturn, &isConst);
+    if (rc == 0 && !isConst) {
+        rc = SLCTFEExecEvalBlock(&execCtx, fn->bodyNode, outValue, outDidReturn, &isConst);
+    }
 
     p->callDepth--;
     p->currentContext = savedContext;

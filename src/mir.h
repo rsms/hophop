@@ -23,6 +23,7 @@ typedef enum {
     SLMirOp_LOCAL_LOAD,
     SLMirOp_LOCAL_STORE,
     SLMirOp_LOCAL_ADDR,
+    SLMirOp_DROP,
     SLMirOp_JUMP,
     SLMirOp_JUMP_IF_FALSE,
     SLMirOp_CALL_FN,

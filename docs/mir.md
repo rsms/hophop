@@ -1,6 +1,6 @@
 # MIR in SL
 
-This document describes the MIR (Mid-level Intermediate Representation) implementation in this repository (`src/mir.c`, `src/mir.h`, `src/mir_lower.c`, `src/mir_exec.c`), how it is used today, and where it is being extended.
+This document describes the MIR (Mid-level Intermediate Representation) implementation in this repository (`src/mir.c`, `src/mir.h`, `src/mir_lower.c`, `src/mir_lower_stmt.c`, `src/mir_exec.c`), how it is used today, and where it is being extended.
 
 ## What MIR is
 
@@ -8,6 +8,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 
 - Builder: `src/mir.c` builds MIR from AST expression nodes (`SLMirBuildExpr`).
 - Lowering wrapper: `src/mir_lower.c` currently lowers one expression into a one-function `SLMirProgram`.
+- Statement lowering: `src/mir_lower_stmt.c` now lowers a narrow simple-function subset into a one-function `SLMirProgram` for evaluator-first runtime migration.
 - Program builder: `src/mir.c` now also exposes `SLMirProgramBuilder` helpers for assembling backend-facing MIR programs incrementally.
 - Program validation: `src/mir.c` also exposes `SLMirValidateProgram(...)` for backend-facing sanity checks on function ranges and table references.
 - IR shape: `src/mir.h` defines a compact stack-machine instruction format.
@@ -24,7 +25,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Lowered call symbols now also preserve simple call-shape flags, such as selector-style calls where the receiver has already been lowered as argument `0`.
 - Lowered `CAST` instructions now also intern their target types into `program.types[]`, so type-directed backends do not need to recover cast metadata from parser ASTs later.
 
-MIR is not yet the main lowering IR for runtime execution, but the repo now carries the beginning of a backend-facing MIR program model in `src/mir.h`. The extra function/program/metadata structs and runtime-oriented opcodes are scaffolding for that migration; current builders/executors still only use the expression subset.
+MIR is not yet the full lowering IR for runtime execution, but the repo now carries the beginning of a backend-facing MIR program model in `src/mir.h`. The extra function/program/metadata structs and runtime-oriented opcodes are scaffolding for that migration. `src/mir_lower_stmt.c` is the first runtime-side lowering step and currently targets a deliberately small statement subset.
 
 ## Current role in the compiler
 
@@ -32,9 +33,9 @@ Today, MIR is used for const-evaluating expressions.
 
 - Typechecker const-eval path (`src/typecheck.c`) calls `SLCTFEEvalExpr`, which first builds MIR and then interprets it.
 - C backend const folding (`src/codegen_c.c`) uses `SLConstEvalSession*` APIs; those APIs route through the same const-eval path and therefore use MIR for expression evaluation.
-- The CLI evaluator path (`src/slc.c`) also calls `SLCTFEEvalExpr` for expression evaluation inside its execution engine.
+- The CLI evaluator path (`src/evaluator.c`) also calls `SLCTFEEvalExpr` for expression evaluation inside its execution engine.
 
-MIR is expression-only. Statement/block/control-flow const execution is handled by `src/ctfe_exec.c`.
+MIR is still mostly expression-first. Statement/block/control-flow const execution is handled by `src/ctfe_exec.c`, but the evaluator now attempts MIR execution first for a simple function-body subset before falling back.
 
 ## IR model
 
@@ -72,6 +73,7 @@ From `SLMirOp` in `src/mir.h`:
 - `SLMirOp_CALL_INDIRECT`
 - `SLMirOp_LOCAL_LOAD`
 - `SLMirOp_LOCAL_STORE`
+- `SLMirOp_DROP`
 - `SLMirOp_JUMP`
 - `SLMirOp_JUMP_IF_FALSE`
 - `SLMirOp_UNARY`
@@ -139,6 +141,7 @@ Interpreter details:
 - `SLMirConst_FUNCTION` currently materializes as a same-program function reference value.
 - `CALL_INDIRECT` currently expects the callee value to have been pushed before its arguments, then invokes the referenced same-program MIR function.
 - `LOCAL_LOAD` and `LOCAL_STORE` execute against per-frame local storage.
+- `DROP` pops and discards one stack value.
 - `JUMP` and `JUMP_IF_FALSE` execute using function-local instruction indices stored in `aux`.
 - `JUMP_IF_FALSE` currently coerces its popped condition through the existing MIR boolean-cast rules.
 - `LOCAL_ZERO` is still intentionally not executed yet because MIR does not carry enough typed zero-value information for that operation to be correct.
@@ -169,6 +172,15 @@ So today:
 - `ctfe_exec` is still the statement/control-flow evaluator backend.
 - `mir_exec` is now the dedicated MIR execution module that future runtime MIR work should extend instead of growing `ctfe.c` or `evaluator.c`.
 - `mir_lower` is now the dedicated MIR lowering boundary for expression-to-program lowering, and should grow into checked-program/function lowering instead of adding more MIR assembly logic to `ctfe.c`.
+- `mir_lower_stmt` is the first function-body lowering step on the runtime side. Today it only handles a narrow simple subset:
+  - parameters mapped to local slots
+  - single-name `var`/`const` declarations with initializer expressions
+  - simple local assignment and compound assignment
+  - expression statements
+  - `if` / `else`
+  - `return`
+  - nested blocks
+- The evaluator now tries that MIR function-body path before falling back to `ctfe_exec`, which keeps runtime behavior stable while the MIR subset grows.
 - The `SLMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
 - The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.
 - The initial `CALL_FN` support means that boundary is no longer just an entry point; MIR function-to-function execution has started to exist, even though full frame/locals/param semantics are still ahead.
