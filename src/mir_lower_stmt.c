@@ -1421,7 +1421,7 @@ static int SLMirStmtLowerForIn(SLMirStmtLower* c, int32_t stmtNode) {
     uint32_t         continueTargetPc;
     uint32_t         loopEndPc;
     uint32_t         condFalseJump = UINT32_MAX;
-    if (keyRef || valueRef) {
+    if (keyRef) {
         c->supported = 0;
         return 0;
     }
@@ -1554,7 +1554,9 @@ static int SLMirStmtLowerForIn(SLMirStmtLower* c, int32_t stmtNode) {
                 != 0
             || SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_LOAD, 0, idxSlot, s->start, s->end, NULL)
                    != 0
-            || SLMirStmtLowerAppendInst(c, SLMirOp_INDEX, 0, 0, s->start, s->end, NULL) != 0
+            || SLMirStmtLowerAppendInst(
+                   c, valueRef ? SLMirOp_ARRAY_ADDR : SLMirOp_INDEX, 0, 0, s->start, s->end, NULL)
+                   != 0
             || SLMirStmtLowerAppendInst(
                    c, SLMirOp_LOCAL_STORE, 0, valueSlot, s->start, s->end, NULL)
                    != 0)
