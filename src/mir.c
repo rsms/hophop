@@ -286,6 +286,13 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
                         return -1;
                     }
                     break;
+                case SLMirOp_JUMP:
+                case SLMirOp_JUMP_IF_FALSE:
+                    if (ins->aux >= fn->instLen) {
+                        SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
+                        return -1;
+                    }
+                    break;
                 case SLMirOp_CALL_FN:
                     if (ins->aux >= program->funcLen) {
                         SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);

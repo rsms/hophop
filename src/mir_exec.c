@@ -347,6 +347,29 @@ static int SLMirRunLoop(
                 run->locals[ins->aux] = v;
                 break;
             }
+            case SLMirOp_JUMP:
+                if (ins->aux >= run->len) {
+                    return 0;
+                }
+                run->pc = ins->aux;
+                break;
+            case SLMirOp_JUMP_IF_FALSE: {
+                SLMirExecValue cond;
+                SLMirExecValue condBool;
+                if (ins->aux >= run->len) {
+                    return 0;
+                }
+                if (SLCTFEPop(run, &cond) != 0) {
+                    return 0;
+                }
+                if (!SLCTFEEvalCast(SLMirCastTarget_BOOL, &cond, &condBool)) {
+                    return 0;
+                }
+                if (!condBool.b) {
+                    run->pc = ins->aux;
+                }
+                break;
+            }
             case SLMirOp_LOAD_IDENT: {
                 SLCTFEValue v;
                 int         idIsConst = 0;
@@ -553,6 +576,10 @@ static int SLMirRunLoop(
                     return 0;
                 }
                 *outValue = run->stack[0];
+                *outIsConst = 1;
+                return 0;
+            case SLMirOp_RETURN_VOID:
+                SLCTFEValueInvalid(outValue);
                 *outIsConst = 1;
                 return 0;
             default: return 0;

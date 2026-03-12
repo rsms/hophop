@@ -15,6 +15,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Function executor: `src/mir_exec.c` now also exposes `SLMirEvalFunction(...)` over `SLMirProgram`.
 - `mir_exec` now also has a real `CALL_FN` execution path for same-program MIR calls, in the currently supported simple arg-less case.
 - `mir_exec` now also has local-slot frame storage for MIR functions, with parameter binding into the first `paramCount` local slots and execution support for `LOCAL_LOAD` / `LOCAL_STORE`.
+- `mir_exec` now also executes basic control-flow ops: `JUMP`, `JUMP_IF_FALSE`, and `RETURN_VOID`.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
 - Lowered function programs can now rewrite literal pushes into `SLMirConst` entries plus `SLMirOp_PUSH_CONST`, so function execution is less dependent on source-slice decoding.
 - Lowered function programs can also rewrite `LOAD_IDENT` and direct `CALL` sites to `SLMirSymbolRef` table entries, so name metadata lives in the MIR program instead of only in instruction spans.
@@ -50,6 +51,7 @@ The builder emits children before parent operators, so the stream is directly ex
 For backend-facing `SLMirProgram` lowering, instructions also have a 32-bit `aux` operand slot. It is currently used by `SLMirOp_PUSH_CONST` to reference entries in the program constant pool.
 The same `aux` slot is also used by lowered identifier/call instructions to reference `program.symbols[]`.
 For lowered `CAST` instructions, `aux` references `program.types[]`.
+For `JUMP` and `JUMP_IF_FALSE`, `aux` is a function-local instruction index within the current `SLMirFunction`.
 
 ## Opcode set (current)
 
@@ -66,10 +68,13 @@ From `SLMirOp` in `src/mir.h`:
 - `SLMirOp_CALL_FN`
 - `SLMirOp_LOCAL_LOAD`
 - `SLMirOp_LOCAL_STORE`
+- `SLMirOp_JUMP`
+- `SLMirOp_JUMP_IF_FALSE`
 - `SLMirOp_UNARY`
 - `SLMirOp_BINARY`
 - `SLMirOp_INDEX` (element index; non-slice form)
 - `SLMirOp_RETURN`
+- `SLMirOp_RETURN_VOID`
 
 ## AST coverage and limits
 
@@ -127,11 +132,14 @@ Interpreter details:
 - `CALL_FN` now executes same-program MIR functions through the function executor. Today that path is intentionally narrow and only supports the current arg-less/simple case until local slots and parameter binding move into MIR.
 - `CALL_FN` now supports passing arguments into same-program MIR functions, with those arguments bound to the first `paramCount` local slots.
 - `LOCAL_LOAD` and `LOCAL_STORE` execute against per-frame local storage.
+- `JUMP` and `JUMP_IF_FALSE` execute using function-local instruction indices stored in `aux`.
+- `JUMP_IF_FALSE` currently coerces its popped condition through the existing MIR boolean-cast rules.
 - `LOCAL_ZERO` is still intentionally not executed yet because MIR does not carry enough typed zero-value information for that operation to be correct.
 - When lowered symbol metadata exists, `mir_exec` resolves identifier/call names through `program.symbols[]` before falling back to instruction spans.
 - For direct call symbols, `program.symbols[]` now also carries lightweight call-shape flags that future backends can use when deciding between plain calls, method-style lowering, or host shims.
 - When lowered type metadata exists, `CAST` retains both its current scalar cast opcode token and an explicit type-table reference for backend consumers.
 - `RETURN` expects exactly one stack value; then sets `*outIsConst = 1`.
+- `RETURN_VOID` completes a MIR function without requiring a stack value.
 
 Return behavior:
 
@@ -158,6 +166,7 @@ So today:
 - The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.
 - The initial `CALL_FN` support means that boundary is no longer just an entry point; MIR function-to-function execution has started to exist, even though full frame/locals/param semantics are still ahead.
 - Local-slot execution is the next step in that direction: MIR functions can now carry state in frame slots, but typed zero-init, address-taking, and richer lvalue semantics are still ahead.
+- Basic control flow is now part of the MIR executor contract too, which is necessary before checked function bodies can migrate off the AST/`ctfe_exec` path.
 - The constant-pool rewrite is the first step away from MIR depending on parser source text at execution time, which is important for a future Wasm backend or any serialized MIR consumer.
 - The symbol-table rewrite does the same for simple name resolution metadata: a backend can inspect imports/calls/idents from MIR program tables instead of reverse-engineering them from parser offsets.
 - That symbol metadata now also preserves one small but useful execution detail: whether a lowered direct call came from selector syntax and already includes the receiver as argument `0`.
