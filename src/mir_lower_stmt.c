@@ -19,7 +19,6 @@ typedef struct {
     SLStrView           src;
     SLMirProgramBuilder builder;
     uint32_t            functionIndex;
-    uint32_t            localCount;
     SLMirLowerLocal*    locals;
     uint32_t            localLen;
     uint32_t            localCap;
@@ -37,6 +36,14 @@ static void SLMirLowerStmtSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start,
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+}
+
+static int SLMirStmtLowerIsTypeNodeKind(SLAstKind kind) {
+    return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
+        || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
+        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_TUPLE || kind == SLAst_TYPE_ANON_STRUCT
+        || kind == SLAst_TYPE_ANON_UNION;
 }
 
 static uint32_t SLMirStmtLowerFnPc(const SLMirStmtLower* c) {
@@ -72,22 +79,51 @@ static int SLMirStmtLowerEnsureLocalCap(SLMirStmtLower* c, uint32_t needLen) {
 }
 
 static int SLMirStmtLowerPushLocal(
-    SLMirStmtLower* c, uint32_t nameStart, uint32_t nameEnd, int mutable, uint32_t* outSlot) {
+    SLMirStmtLower* c,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    int             mutable,
+    int             isParam,
+    int             zeroInit,
+    int32_t         typeNode,
+    uint32_t*       outSlot) {
+    SLMirLocal   local = { 0 };
+    SLMirTypeRef typeRef = { 0 };
+    uint32_t     slot = 0;
     if (SLMirStmtLowerEnsureLocalCap(c, c->localLen + 1u) != 0) {
+        return -1;
+    }
+    local.typeRef = UINT32_MAX;
+    local.flags = mutable ? SLMirLocalFlag_MUTABLE : SLMirLocalFlag_NONE;
+    if (isParam) {
+        local.flags |= SLMirLocalFlag_PARAM;
+    }
+    if (zeroInit) {
+        local.flags |= SLMirLocalFlag_ZERO_INIT;
+    }
+    if (typeNode >= 0) {
+        typeRef.astNode = (uint32_t)typeNode;
+        typeRef.flags = 0;
+        if (SLMirProgramBuilderAddType(&c->builder, &typeRef, &local.typeRef) != 0) {
+            SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, nameStart, nameEnd);
+            return -1;
+        }
+    }
+    if (SLMirProgramBuilderAddLocal(&c->builder, &local, &slot) != 0) {
+        SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, nameStart, nameEnd);
         return -1;
     }
     c->locals[c->localLen].nameStart = nameStart;
     c->locals[c->localLen].nameEnd = nameEnd;
-    c->locals[c->localLen].slot = c->localCount;
+    c->locals[c->localLen].slot = slot;
     c->locals[c->localLen].mutable = mutable ? 1u : 0u;
     c->locals[c->localLen]._reserved[0] = 0;
     c->locals[c->localLen]._reserved[1] = 0;
     c->locals[c->localLen]._reserved[2] = 0;
     if (outSlot != NULL) {
-        *outSlot = c->localCount;
+        *outSlot = slot;
     }
     c->localLen++;
-    c->localCount++;
     return 0;
 }
 
@@ -217,20 +253,7 @@ static int32_t SLMirStmtLowerVarInitExprNode(const SLAst* ast, int32_t nodeId) {
     if (ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
         return -1;
     }
-    if (ast->nodes[firstChild].kind == SLAst_TYPE_NAME
-        || ast->nodes[firstChild].kind == SLAst_TYPE_PTR
-        || ast->nodes[firstChild].kind == SLAst_TYPE_REF
-        || ast->nodes[firstChild].kind == SLAst_TYPE_MUTREF
-        || ast->nodes[firstChild].kind == SLAst_TYPE_ARRAY
-        || ast->nodes[firstChild].kind == SLAst_TYPE_VARRAY
-        || ast->nodes[firstChild].kind == SLAst_TYPE_SLICE
-        || ast->nodes[firstChild].kind == SLAst_TYPE_MUTSLICE
-        || ast->nodes[firstChild].kind == SLAst_TYPE_OPTIONAL
-        || ast->nodes[firstChild].kind == SLAst_TYPE_FN
-        || ast->nodes[firstChild].kind == SLAst_TYPE_TUPLE
-        || ast->nodes[firstChild].kind == SLAst_TYPE_ANON_STRUCT
-        || ast->nodes[firstChild].kind == SLAst_TYPE_ANON_UNION)
-    {
+    if (SLMirStmtLowerIsTypeNodeKind(ast->nodes[firstChild].kind)) {
         return ast->nodes[firstChild].nextSibling;
     }
     return firstChild;
@@ -428,35 +451,36 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
         case SLAst_VAR:
         case SLAst_CONST:     {
             int32_t  firstChild = s->firstChild;
+            int32_t  typeNode = -1;
             int32_t  initNode = SLMirStmtLowerVarInitExprNode(c->ast, stmtNode);
             uint32_t slot = 0;
-            if (firstChild < 0 || (c->ast->nodes[firstChild].kind == SLAst_NAME_LIST)
-                || initNode < 0)
-            {
+            if (firstChild < 0 || c->ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
                 c->supported = 0;
                 return 0;
             }
-            if (c->ast->nodes[firstChild].kind == SLAst_TYPE_NAME
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_PTR
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_REF
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_MUTREF
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_ARRAY
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_VARRAY
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_SLICE
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_MUTSLICE
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_OPTIONAL
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_FN
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_TUPLE
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_ANON_STRUCT
-                || c->ast->nodes[firstChild].kind == SLAst_TYPE_ANON_UNION)
-            {
+            if (SLMirStmtLowerIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
+                typeNode = firstChild;
+            }
+            if (initNode < 0 && typeNode < 0) {
                 c->supported = 0;
                 return 0;
             }
-            if (SLMirStmtLowerPushLocal(c, s->dataStart, s->dataEnd, s->kind == SLAst_VAR, &slot)
+            if (SLMirStmtLowerPushLocal(
+                    c,
+                    s->dataStart,
+                    s->dataEnd,
+                    s->kind == SLAst_VAR,
+                    0,
+                    initNode < 0,
+                    typeNode,
+                    &slot)
                 != 0)
             {
                 return -1;
+            }
+            if (initNode < 0) {
+                return SLMirStmtLowerAppendInst(
+                    c, SLMirOp_LOCAL_ZERO, 0, slot, s->start, s->end, NULL);
             }
             if (SLMirStmtLowerExpr(c, initNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
@@ -523,9 +547,17 @@ int SLMirLowerAppendSimpleFunction(
         child = ast->nodes[fnNode].firstChild;
         while (child >= 0) {
             if (ast->nodes[child].kind == SLAst_PARAM) {
+                int32_t  paramTypeNode = ast->nodes[child].firstChild;
                 uint32_t slot = 0;
                 if (SLMirStmtLowerPushLocal(
-                        &c, ast->nodes[child].dataStart, ast->nodes[child].dataEnd, 1, &slot)
+                        &c,
+                        ast->nodes[child].dataStart,
+                        ast->nodes[child].dataEnd,
+                        1,
+                        1,
+                        0,
+                        paramTypeNode,
+                        &slot)
                     != 0)
                 {
                     return -1;
@@ -554,7 +586,6 @@ int SLMirLowerAppendSimpleFunction(
     {
         return -1;
     }
-    c.builder.funcs[c.functionIndex].localCount = c.localCount;
     if (SLMirProgramBuilderEndFunction(&c.builder) != 0) {
         SLMirLowerStmtSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
         return -1;

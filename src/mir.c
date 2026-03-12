@@ -136,6 +136,32 @@ int SLMirProgramBuilderAddSource(
         outIndex);
 }
 
+int SLMirProgramBuilderAddLocal(
+    SLMirProgramBuilder* b, const SLMirLocal* value, uint32_t* _Nullable outSlot) {
+    uint32_t slot = 0;
+    if (b == NULL || value == NULL || !b->hasOpenFunc) {
+        return -1;
+    }
+    slot = b->funcs[b->openFunc].localCount;
+    if (SLMirProgramBuilderAppendElem(
+            b->arena,
+            (void**)&b->locals,
+            value,
+            (uint32_t)sizeof(*value),
+            &b->localLen,
+            &b->localCap,
+            NULL)
+        != 0)
+    {
+        return -1;
+    }
+    b->funcs[b->openFunc].localCount++;
+    if (outSlot != NULL) {
+        *outSlot = slot;
+    }
+    return 0;
+}
+
 int SLMirProgramBuilderAddField(
     SLMirProgramBuilder* b, const SLMirField* value, uint32_t* _Nullable outIndex) {
     if (b == NULL) {
@@ -191,6 +217,8 @@ int SLMirProgramBuilderBeginFunction(
     fn = *value;
     fn.instStart = b->instLen;
     fn.instLen = 0;
+    fn.localStart = b->localLen;
+    fn.localCount = 0;
     if (SLMirProgramBuilderAppendElem(
             b->arena,
             (void**)&b->funcs,
@@ -253,6 +281,8 @@ void SLMirProgramBuilderFinish(const SLMirProgramBuilder* b, SLMirProgram* outPr
     outProgram->sourceLen = b->sourceLen;
     outProgram->funcs = b->funcs;
     outProgram->funcLen = b->funcLen;
+    outProgram->locals = b->locals;
+    outProgram->localLen = b->localLen;
     outProgram->fields = b->fields;
     outProgram->fieldLen = b->fieldLen;
     outProgram->types = b->types;
@@ -277,13 +307,26 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
             SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, fn->nameStart, fn->nameEnd);
             return -1;
         }
-        if (fn->localCount < fn->paramCount) {
+        if (fn->localStart > program->localLen
+            || fn->localCount > program->localLen - fn->localStart
+            || fn->localCount < fn->paramCount)
+        {
             SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, fn->nameStart, fn->nameEnd);
             return -1;
         }
         if (fn->sourceRef >= program->sourceLen) {
             SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, fn->nameStart, fn->nameEnd);
             return -1;
+        }
+        if (fn->localCount != 0u) {
+            uint32_t localIndex;
+            for (localIndex = 0; localIndex < fn->localCount; localIndex++) {
+                const SLMirLocal* local = &program->locals[fn->localStart + localIndex];
+                if (local->typeRef != UINT32_MAX && local->typeRef >= program->typeLen) {
+                    SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, fn->nameStart, fn->nameEnd);
+                    return -1;
+                }
+            }
         }
         for (instIndex = 0; instIndex < fn->instLen; instIndex++) {
             const SLMirInst* ins = &program->insts[fn->instStart + instIndex];

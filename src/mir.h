@@ -98,10 +98,23 @@ typedef struct {
     SLStrView src;
 } SLMirSourceRef;
 
+typedef enum {
+    SLMirLocalFlag_NONE = 0,
+    SLMirLocalFlag_PARAM = 1u << 0,
+    SLMirLocalFlag_MUTABLE = 1u << 1,
+    SLMirLocalFlag_ZERO_INIT = 1u << 2,
+} SLMirLocalFlag;
+
+typedef struct {
+    uint32_t typeRef;
+    uint32_t flags;
+} SLMirLocal;
+
 typedef struct {
     uint32_t instStart;
     uint32_t instLen;
     uint32_t sourceRef;
+    uint32_t localStart;
     uint32_t localCount;
     uint32_t paramCount;
     uint32_t tempCount;
@@ -151,6 +164,8 @@ typedef struct {
     uint32_t              sourceLen;
     const SLMirFunction*  funcs;
     uint32_t              funcLen;
+    const SLMirLocal*     locals;
+    uint32_t              localLen;
     const SLMirField*     fields;
     uint32_t              fieldLen;
     const SLMirTypeRef*   types;
@@ -173,6 +188,9 @@ typedef struct {
     SLMirFunction*  funcs;
     uint32_t        funcLen;
     uint32_t        funcCap;
+    SLMirLocal*     locals;
+    uint32_t        localLen;
+    uint32_t        localCap;
     SLMirField*     fields;
     uint32_t        fieldLen;
     uint32_t        fieldCap;
@@ -205,6 +223,8 @@ int SLMirProgramBuilderAddSource(
     SLMirProgramBuilder* _Nonnull b,
     const SLMirSourceRef* _Nonnull value,
     uint32_t* _Nullable outIndex);
+int SLMirProgramBuilderAddLocal(
+    SLMirProgramBuilder* _Nonnull b, const SLMirLocal* _Nonnull value, uint32_t* _Nullable outSlot);
 int SLMirProgramBuilderAddField(
     SLMirProgramBuilder* _Nonnull b,
     const SLMirField* _Nonnull value,

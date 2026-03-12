@@ -6,17 +6,18 @@
 SL_API_BEGIN
 
 typedef struct {
-    const SLMirInst*    ip;
-    uint32_t            len;
-    uint32_t            pc;
-    SLMirExecValue*     stack;
-    uint32_t            stackLen;
-    uint32_t            stackCap;
-    SLMirExecValue*     locals;
-    uint32_t            localCount;
-    SLArena*            arena;
-    const SLMirProgram* program;
-    SLMirExecEnv        env;
+    const SLMirInst*     ip;
+    uint32_t             len;
+    uint32_t             pc;
+    SLMirExecValue*      stack;
+    uint32_t             stackLen;
+    uint32_t             stackCap;
+    SLMirExecValue*      locals;
+    uint32_t             localCount;
+    SLArena*             arena;
+    const SLMirProgram*  program;
+    const SLMirFunction* function;
+    SLMirExecEnv         env;
 } SLMirExecRun;
 
 #define SLMIR_EXEC_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 61)
@@ -43,6 +44,7 @@ static int SLMirInitRun(
     SLArena* _Nonnull arena,
     SLMirChunk chunk,
     const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
     uint32_t localCount,
     const SLMirExecValue* _Nullable args,
     uint32_t argCount,
@@ -78,6 +80,7 @@ static int SLMirInitRun(
     }
     run->arena = arena;
     run->program = program;
+    run->function = function;
     run->localCount = localCount;
     if (localCount != 0u) {
         uint32_t i;
@@ -107,6 +110,17 @@ static int SLMirInitRun(
         memset(&run->env, 0, sizeof(run->env));
     }
     return 0;
+}
+
+static const SLMirLocal* SLMirGetLocalMeta(const SLMirExecRun* run, uint32_t slot) {
+    static const SLMirLocal invalidLocal = { UINT32_MAX, SLMirLocalFlag_NONE };
+    if (run == NULL || run->program == NULL || run->function == NULL || slot >= run->localCount
+        || run->function->localStart > run->program->localLen
+        || slot >= run->program->localLen - run->function->localStart)
+    {
+        return &invalidLocal;
+    }
+    return &run->program->locals[run->function->localStart + slot];
 }
 
 static int SLMirEvalFunctionInternal(
@@ -354,6 +368,34 @@ static int SLMirRunLoop(
                     return -1;
                 }
                 break;
+            case SLMirOp_LOCAL_ZERO: {
+                const SLMirLocal* local;
+                SLMirExecValue    v;
+                int               isConst = 0;
+                if (ins->aux >= run->localCount || run->env.zeroInitLocal == NULL) {
+                    return 0;
+                }
+                local = SLMirGetLocalMeta(run, ins->aux);
+                if (local->typeRef == UINT32_MAX || local->typeRef >= run->program->typeLen) {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&v);
+                if (run->env.zeroInitLocal(
+                        run->env.zeroInitCtx,
+                        &run->program->types[local->typeRef],
+                        &v,
+                        &isConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!isConst) {
+                    return 0;
+                }
+                run->locals[ins->aux] = v;
+                break;
+            }
             case SLMirOp_LOCAL_STORE: {
                 SLMirExecValue v;
                 if (ins->aux >= run->localCount) {
@@ -1390,7 +1432,9 @@ int SLMirEvalChunk(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
     SLMirExecRun run;
-    if (SLMirInitRun(&run, arena, chunk, NULL, 0u, NULL, 0u, env, 1, outValue, outIsConst) != 0) {
+    if (SLMirInitRun(&run, arena, chunk, NULL, NULL, 0u, NULL, 0u, env, 1, outValue, outIsConst)
+        != 0)
+    {
         return -1;
     }
     return SLMirRunLoop(&run, outValue, outIsConst);
@@ -1459,6 +1503,7 @@ static int SLMirEvalFunctionInternal(
             arena,
             chunk,
             program,
+            fn,
             fn->localCount,
             args,
             argCount,

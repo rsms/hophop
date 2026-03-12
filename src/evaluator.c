@@ -2121,6 +2121,12 @@ static int SLEvalMatchPatternCb(
     int32_t            labelExprNode,
     int*               outMatched);
 static int SLEvalZeroInitCb(void* ctx, int32_t typeNode, SLCTFEValue* outValue, int* outIsConst);
+static int SLEvalMirZeroInitLocal(
+    void*               ctx,
+    const SLMirTypeRef* typeRef,
+    SLCTFEValue*        outValue,
+    int*                outIsConst,
+    SLDiag* _Nullable diag);
 static int SLEvalResolveIdent(
     void*        ctx,
     uint32_t     nameStart,
@@ -5542,6 +5548,12 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
 static int SLEvalAssignExprCb(
     void* ctx, SLCTFEExecCtx* execCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
 static int SLEvalZeroInitCb(void* ctx, int32_t typeNode, SLCTFEValue* outValue, int* outIsConst);
+static int SLEvalMirZeroInitLocal(
+    void*               ctx,
+    const SLMirTypeRef* typeRef,
+    SLCTFEValue*        outValue,
+    int*                outIsConst,
+    SLDiag* _Nullable diag);
 static int SLEvalExecExprForTypeCb(
     void* ctx, int32_t exprNode, int32_t typeNode, SLCTFEValue* outValue, int* outIsConst) {
     SLEvalProgram* p = (SLEvalProgram*)ctx;
@@ -5993,6 +6005,30 @@ static int SLEvalZeroInitCb(void* ctx, int32_t typeNode, SLCTFEValue* outValue, 
         return -1;
     }
     return SLEvalZeroInitTypeNode(p, p->currentFile, typeNode, outValue, outIsConst);
+}
+
+static int SLEvalMirZeroInitLocal(
+    void*               ctx,
+    const SLMirTypeRef* typeRef,
+    SLCTFEValue*        outValue,
+    int*                outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram* p = (SLEvalProgram*)ctx;
+    if (p == NULL || p->currentFile == NULL || typeRef == NULL || typeRef->astNode == UINT32_MAX
+        || typeRef->astNode >= p->currentFile->ast.len)
+    {
+        if (diag != NULL) {
+            diag->code = SLDiag_UNEXPECTED_TOKEN;
+            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->start = 0;
+            diag->end = 0;
+            diag->argStart = 0;
+            diag->argEnd = 0;
+        }
+        return -1;
+    }
+    return SLEvalZeroInitTypeNode(
+        p, p->currentFile, (int32_t)typeRef->astNode, outValue, outIsConst);
 }
 
 static int SLEvalBinaryOpForAssignToken(SLTokenKind assignOp, SLTokenKind* outBinaryOp) {
@@ -6827,6 +6863,8 @@ static int SLEvalTryMirInvokeFunction(
     env.resolveIdent = SLEvalResolveIdent;
     env.resolveCall = SLEvalResolveCall;
     env.resolveCtx = p;
+    env.zeroInitLocal = SLEvalMirZeroInitLocal;
+    env.zeroInitCtx = p;
     env.enterFunction = SLEvalMirEnterFunction;
     env.leaveFunction = SLEvalMirLeaveFunction;
     env.functionCtx = &lowerCtx;
