@@ -205,7 +205,9 @@ So today:
   - typed single-name declarations without initializer, lowered as `LOCAL_ZERO`
   - local `&name`, `*name`, and `*name = value` forms where `name` is a MIR local
   - conservative `&arr[i]` and plain `arr[i] = rhs` forms lowered through `ARRAY_ADDR`
+  - conservative `arr[i] op= rhs` forms lowered by replaying side-effect-free lvalues through `INDEX` plus `ARRAY_ADDR`
   - conservative `x.field`, `&x.field`, and plain `x.field = rhs` forms lowered through `AGG_GET` / `AGG_ADDR`
+  - conservative `x.field op= rhs` forms lowered by replaying side-effect-free lvalues through `AGG_GET` plus `AGG_ADDR`
   - plain builtin `print(...)` rewritten to `CALL_HOST`
   - conservative imported package calls like `pkg.F(...)`, lowered to `CALL_FN` when the target is unambiguous and non-variadic
   - conservative `platform.exit(...)` selector calls rewritten to `CALL_HOST`

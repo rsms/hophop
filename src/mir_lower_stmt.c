@@ -459,6 +459,57 @@ static int SLMirStmtLowerBinaryOpForAssign(SLTokenKind tok, SLTokenKind* outTok)
     }
 }
 
+static int SLMirStmtLowerIsReplayableExpr(const SLMirStmtLower* c, int32_t exprNode) {
+    const SLAstNode* expr;
+    int32_t          lhsNode;
+    int32_t          rhsNode;
+    SLTokenKind      binaryTok = SLTok_INVALID;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    expr = &c->ast->nodes[exprNode];
+    switch (expr->kind) {
+        case SLAst_IDENT:
+        case SLAst_INT:
+        case SLAst_FLOAT:
+        case SLAst_STRING:
+        case SLAst_BOOL:
+        case SLAst_NULL:   return 1;
+        case SLAst_UNARY:
+            if ((SLTokenKind)expr->op == SLTok_AND) {
+                return 0;
+            }
+            lhsNode = expr->firstChild;
+            return lhsNode >= 0 && c->ast->nodes[lhsNode].nextSibling < 0
+                && SLMirStmtLowerIsReplayableExpr(c, lhsNode);
+        case SLAst_BINARY:
+            lhsNode = expr->firstChild;
+            rhsNode = lhsNode >= 0 ? c->ast->nodes[lhsNode].nextSibling : -1;
+            if (lhsNode < 0 || rhsNode < 0 || c->ast->nodes[rhsNode].nextSibling >= 0
+                || (SLTokenKind)expr->op == SLTok_ASSIGN)
+            {
+                return 0;
+            }
+            if (SLMirStmtLowerBinaryOpForAssign((SLTokenKind)expr->op, &binaryTok)) {
+                return 0;
+            }
+            return SLMirStmtLowerIsReplayableExpr(c, lhsNode)
+                && SLMirStmtLowerIsReplayableExpr(c, rhsNode);
+        case SLAst_INDEX:
+            lhsNode = expr->firstChild;
+            rhsNode = lhsNode >= 0 ? c->ast->nodes[lhsNode].nextSibling : -1;
+            return (expr->flags & 0x7u) == 0u && lhsNode >= 0 && rhsNode >= 0
+                && c->ast->nodes[rhsNode].nextSibling < 0
+                && SLMirStmtLowerIsReplayableExpr(c, lhsNode)
+                && SLMirStmtLowerIsReplayableExpr(c, rhsNode);
+        case SLAst_FIELD_EXPR:
+            lhsNode = expr->firstChild;
+            return lhsNode >= 0 && c->ast->nodes[lhsNode].nextSibling < 0
+                && SLMirStmtLowerIsReplayableExpr(c, lhsNode);
+        default: return 0;
+    }
+}
+
 static int32_t SLMirStmtLowerVarInitExprNode(const SLAst* ast, int32_t nodeId) {
     int32_t firstChild;
     if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
@@ -704,7 +755,7 @@ static int SLMirStmtLowerExprNodeAsStmt(
         }
         if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
             && c->ast->nodes[lhsNode].kind == SLAst_INDEX
-            && (c->ast->nodes[lhsNode].flags & 0x7u) == 0u && (SLTokenKind)expr->op == SLTok_ASSIGN)
+            && (c->ast->nodes[lhsNode].flags & 0x7u) == 0u)
         {
             int32_t baseNode = c->ast->nodes[lhsNode].firstChild;
             int32_t indexNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
@@ -712,8 +763,27 @@ static int SLMirStmtLowerExprNodeAsStmt(
                 c->supported = 0;
                 return 0;
             }
+            if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+                if (!SLMirStmtLowerBinaryOpForAssign((SLTokenKind)expr->op, &binaryTok)
+                    || !SLMirStmtLowerIsReplayableExpr(c, lhsNode))
+                {
+                    c->supported = 0;
+                    return 0;
+                }
+                if (SLMirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {
+                    return c->supported ? -1 : 0;
+                }
+            }
             if (SLMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
+            }
+            if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+                if (SLMirStmtLowerAppendInst(
+                        c, SLMirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
+                    != 0)
+                {
+                    return -1;
+                }
             }
             if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
@@ -737,16 +807,34 @@ static int SLMirStmtLowerExprNodeAsStmt(
                 c, SLMirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
         }
         if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
-            && c->ast->nodes[lhsNode].kind == SLAst_FIELD_EXPR
-            && (SLTokenKind)expr->op == SLTok_ASSIGN)
+            && c->ast->nodes[lhsNode].kind == SLAst_FIELD_EXPR)
         {
             int32_t baseNode = c->ast->nodes[lhsNode].firstChild;
             if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
                 c->supported = 0;
                 return 0;
             }
+            if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+                if (!SLMirStmtLowerBinaryOpForAssign((SLTokenKind)expr->op, &binaryTok)
+                    || !SLMirStmtLowerIsReplayableExpr(c, lhsNode))
+                {
+                    c->supported = 0;
+                    return 0;
+                }
+                if (SLMirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {
+                    return c->supported ? -1 : 0;
+                }
+            }
             if (SLMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
+            }
+            if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+                if (SLMirStmtLowerAppendInst(
+                        c, SLMirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
+                    != 0)
+                {
+                    return -1;
+                }
             }
             if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
