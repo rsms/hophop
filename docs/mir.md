@@ -9,6 +9,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Builder: `src/mir.c` builds MIR from AST expression nodes (`SLMirBuildExpr`).
 - Lowering wrapper: `src/mir_lower.c` currently lowers one expression into a one-function `SLMirProgram`.
 - Package/top-init lowering: `src/mir_lower_pkg.c` owns the current top-level initializer and zero-init lowering path.
+- `mir_lower_pkg` now also exposes append-style top-init helpers, so package initializers can be assembled into one MIR program instead of only one-function wrappers.
 - Statement lowering: `src/mir_lower_stmt.c` now lowers a narrow simple-function subset into a one-function `SLMirProgram` for evaluator-first runtime migration.
 - Program builder: `src/mir.c` now also exposes `SLMirProgramBuilder` helpers for assembling backend-facing MIR programs incrementally.
 - Program validation: `src/mir.c` also exposes `SLMirValidateProgram(...)` for backend-facing sanity checks on function ranges and table references.

@@ -353,26 +353,28 @@ int SLMirLowerAppendInst(
     return 0;
 }
 
-int SLMirLowerExprAsFunction(
+int SLMirLowerAppendExprAsFunction(
+    SLMirProgramBuilder* _Nonnull builder,
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,
     SLStrView src,
     int32_t   nodeId,
-    SLMirProgram* _Nonnull outProgram,
+    uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
     SLDiag* _Nullable diag) {
-    SLMirChunk          chunk;
-    SLMirFunction       function = { 0 };
-    SLMirSourceRef      sourceRef = { 0 };
-    SLMirProgramBuilder builder;
-    uint32_t            functionIndex = 0;
-    uint32_t            sourceIndex = 0;
-    uint32_t            i;
+    SLMirChunk     chunk;
+    SLMirFunction  function = { 0 };
+    SLMirSourceRef sourceRef = { 0 };
+    uint32_t       functionIndex = 0;
+    uint32_t       sourceIndex = 0;
+    uint32_t       i;
 
-    if (outProgram != NULL) {
-        *outProgram = (SLMirProgram){ 0 };
+    if (outFunctionIndex != NULL) {
+        *outFunctionIndex = UINT32_MAX;
     }
-    if (arena == NULL || ast == NULL || outProgram == NULL || outSupported == NULL) {
+    if (arena == NULL || builder == NULL || ast == NULL || outFunctionIndex == NULL
+        || outSupported == NULL)
+    {
         if (diag != NULL) {
             diag->code = SLDiag_UNEXPECTED_TOKEN;
             diag->type = SLDiagTypeOfCode(diag->code);
@@ -392,9 +394,8 @@ int SLMirLowerExprAsFunction(
         return 0;
     }
 
-    SLMirProgramBuilderInit(&builder, arena);
     sourceRef.src = src;
-    if (SLMirProgramBuilderAddSource(&builder, &sourceRef, &sourceIndex) != 0) {
+    if (SLMirProgramBuilderAddSource(builder, &sourceRef, &sourceIndex) != 0) {
         if (diag != NULL) {
             diag->code = SLDiag_ARENA_OOM;
             diag->type = SLDiagTypeOfCode(diag->code);
@@ -414,7 +415,7 @@ int SLMirLowerExprAsFunction(
     function.typeRef = UINT32_MAX;
     function.nameStart = 0;
     function.nameEnd = 0;
-    if (SLMirProgramBuilderBeginFunction(&builder, &function, &functionIndex) != 0) {
+    if (SLMirProgramBuilderBeginFunction(builder, &function, &functionIndex) != 0) {
         if (diag != NULL) {
             diag->code = SLDiag_ARENA_OOM;
             diag->type = SLDiagTypeOfCode(diag->code);
@@ -426,11 +427,11 @@ int SLMirLowerExprAsFunction(
         return -1;
     }
     for (i = 0; i < chunk.len; i++) {
-        if (SLMirLowerAppendInst(&builder, arena, src, &chunk.v[i], diag) != 0) {
+        if (SLMirLowerAppendInst(builder, arena, src, &chunk.v[i], diag) != 0) {
             return -1;
         }
     }
-    if (SLMirProgramBuilderEndFunction(&builder) != 0 || functionIndex != 0u) {
+    if (SLMirProgramBuilderEndFunction(builder) != 0) {
         if (diag != NULL) {
             diag->code = SLDiag_UNEXPECTED_TOKEN;
             diag->type = SLDiagTypeOfCode(diag->code);
@@ -440,6 +441,44 @@ int SLMirLowerExprAsFunction(
             diag->argEnd = 0;
         }
         return -1;
+    }
+    *outFunctionIndex = functionIndex;
+    return 0;
+}
+
+int SLMirLowerExprAsFunction(
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   nodeId,
+    SLMirProgram* _Nonnull outProgram,
+    int* _Nonnull outSupported,
+    SLDiag* _Nullable diag) {
+    SLMirProgramBuilder builder;
+    uint32_t            functionIndex = UINT32_MAX;
+    if (outProgram != NULL) {
+        *outProgram = (SLMirProgram){ 0 };
+    }
+    if (arena == NULL || ast == NULL || outProgram == NULL || outSupported == NULL) {
+        if (diag != NULL) {
+            diag->code = SLDiag_UNEXPECTED_TOKEN;
+            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->start = 0;
+            diag->end = 0;
+            diag->argStart = 0;
+            diag->argEnd = 0;
+        }
+        return -1;
+    }
+    SLMirProgramBuilderInit(&builder, arena);
+    if (SLMirLowerAppendExprAsFunction(
+            &builder, arena, ast, src, nodeId, &functionIndex, outSupported, diag)
+        != 0)
+    {
+        return -1;
+    }
+    if (!*outSupported || functionIndex == UINT32_MAX) {
+        return 0;
     }
     SLMirProgramBuilderFinish(&builder, outProgram);
     return 0;
