@@ -206,6 +206,7 @@ So today:
   - simple local assignment and compound assignment
   - expression statements
   - `if` / `else`
+  - simple non-`for in` `for` loops, plus `break` and `continue`
   - `return`
   - nested blocks
 - The evaluator now tries that MIR function-body path before falling back to `ctfe_exec`, which keeps runtime behavior stable while the MIR subset grows.

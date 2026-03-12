@@ -14,6 +14,12 @@ typedef struct {
 } SLMirLowerLocal;
 
 typedef struct {
+    uint32_t breakJumpStart;
+    uint32_t continueJumpStart;
+    uint32_t loopStartPc;
+} SLMirLowerLoop;
+
+typedef struct {
     SLArena*            arena;
     const SLAst*        ast;
     SLStrView           src;
@@ -22,6 +28,12 @@ typedef struct {
     SLMirLowerLocal*    locals;
     uint32_t            localLen;
     uint32_t            localCap;
+    uint32_t            breakJumps[256];
+    uint32_t            breakJumpLen;
+    uint32_t            continueJumps[256];
+    uint32_t            continueJumpLen;
+    SLMirLowerLoop      loops[32];
+    uint32_t            loopLen;
     int                 supported;
     SLDiag*             diag;
 } SLMirStmtLower;
@@ -174,6 +186,111 @@ static int SLMirStmtLowerAppendInst(
         *outInstIndex = c->builder.instLen - 1u;
     }
     return 0;
+}
+
+static int SLMirStmtLowerRangeHasChar(SLStrView src, uint32_t start, uint32_t end, char ch) {
+    uint32_t i;
+    if (end < start || end > src.len) {
+        return 0;
+    }
+    for (i = start; i < end; i++) {
+        if (src.ptr[i] == ch) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int SLMirStmtLowerFindCharForward(
+    SLStrView src, uint32_t start, uint32_t end, char ch, uint32_t* outPos) {
+    uint32_t i;
+    if (outPos != NULL) {
+        *outPos = 0;
+    }
+    if (outPos == NULL || end < start || end > src.len) {
+        return 0;
+    }
+    for (i = start; i < end; i++) {
+        if (src.ptr[i] == ch) {
+            *outPos = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static SLMirLowerLoop* _Nullable SLMirStmtLowerCurrentLoop(SLMirStmtLower* c) {
+    if (c == NULL || c->loopLen == 0) {
+        return NULL;
+    }
+    return &c->loops[c->loopLen - 1u];
+}
+
+static int SLMirStmtLowerPushLoop(SLMirStmtLower* c, uint32_t loopStartPc) {
+    if (c == NULL || c->loopLen >= (uint32_t)(sizeof(c->loops) / sizeof(c->loops[0]))) {
+        if (c != NULL) {
+            c->supported = 0;
+        }
+        return 0;
+    }
+    c->loops[c->loopLen++] = (SLMirLowerLoop){
+        .breakJumpStart = c->breakJumpLen,
+        .continueJumpStart = c->continueJumpLen,
+        .loopStartPc = loopStartPc,
+    };
+    return 1;
+}
+
+static int SLMirStmtLowerRecordLoopJump(SLMirStmtLower* c, int isContinue, uint32_t instIndex) {
+    if (c == NULL || c->loopLen == 0) {
+        if (c != NULL) {
+            c->supported = 0;
+        }
+        return 0;
+    }
+    if (isContinue) {
+        if (c->continueJumpLen
+            >= (uint32_t)(sizeof(c->continueJumps) / sizeof(c->continueJumps[0])))
+        {
+            c->supported = 0;
+            return 0;
+        }
+        c->continueJumps[c->continueJumpLen++] = instIndex;
+        return 1;
+    }
+    if (c->breakJumpLen >= (uint32_t)(sizeof(c->breakJumps) / sizeof(c->breakJumps[0]))) {
+        c->supported = 0;
+        return 0;
+    }
+    c->breakJumps[c->breakJumpLen++] = instIndex;
+    return 1;
+}
+
+static void SLMirStmtLowerPatchJumpRange(
+    SLMirStmtLower* c, const uint32_t* jumps, uint32_t start, uint32_t end, uint32_t targetPc) {
+    uint32_t i;
+    if (c == NULL || jumps == NULL) {
+        return;
+    }
+    for (i = start; i < end; i++) {
+        c->builder.insts[jumps[i]].aux = targetPc;
+    }
+}
+
+static void SLMirStmtLowerFinishLoop(
+    SLMirStmtLower* c, uint32_t continueTargetPc, uint32_t breakTargetPc) {
+    SLMirLowerLoop loop;
+    if (c == NULL || c->loopLen == 0) {
+        return;
+    }
+    loop = c->loops[c->loopLen - 1u];
+    SLMirStmtLowerPatchJumpRange(
+        c, c->continueJumps, loop.continueJumpStart, c->continueJumpLen, continueTargetPc);
+    SLMirStmtLowerPatchJumpRange(
+        c, c->breakJumps, loop.breakJumpStart, c->breakJumpLen, breakTargetPc);
+    c->continueJumpLen = loop.continueJumpStart;
+    c->breakJumpLen = loop.breakJumpStart;
+    c->loopLen--;
 }
 
 static int SLMirStmtLowerRewriteExprChunk(SLMirStmtLower* c, const SLMirChunk* chunk) {
@@ -393,9 +510,9 @@ static int SLMirStmtLowerIf(SLMirStmtLower* c, int32_t ifNode) {
     return 0;
 }
 
-static int SLMirStmtLowerExprStmt(SLMirStmtLower* c, int32_t stmtNode) {
-    int32_t exprNode = c->ast->nodes[stmtNode].firstChild;
-    if (exprNode < 0 || c->ast->nodes[exprNode].nextSibling >= 0) {
+static int SLMirStmtLowerExprNodeAsStmt(
+    SLMirStmtLower* c, int32_t exprNode, uint32_t start, uint32_t end) {
+    if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         c->supported = 0;
         return 0;
     }
@@ -529,8 +646,163 @@ static int SLMirStmtLowerExprStmt(SLMirStmtLower* c, int32_t stmtNode) {
     if (SLMirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
         return c->supported ? -1 : 0;
     }
-    return SLMirStmtLowerAppendInst(
-        c, SLMirOp_DROP, 0, 0, c->ast->nodes[stmtNode].start, c->ast->nodes[stmtNode].end, NULL);
+    return SLMirStmtLowerAppendInst(c, SLMirOp_DROP, 0, 0, start, end, NULL);
+}
+
+static int SLMirStmtLowerExprStmt(SLMirStmtLower* c, int32_t stmtNode) {
+    int32_t exprNode = c->ast->nodes[stmtNode].firstChild;
+    if (exprNode < 0 || c->ast->nodes[exprNode].nextSibling >= 0) {
+        c->supported = 0;
+        return 0;
+    }
+    return SLMirStmtLowerExprNodeAsStmt(
+        c, exprNode, c->ast->nodes[stmtNode].start, c->ast->nodes[stmtNode].end);
+}
+
+static int SLMirStmtLowerFor(SLMirStmtLower* c, int32_t stmtNode) {
+    const SLAstNode* s = &c->ast->nodes[stmtNode];
+    int32_t          parts[4];
+    uint32_t         partLen = 0;
+    int32_t          cur = s->firstChild;
+    int32_t          initNode = -1;
+    int32_t          condNode = -1;
+    int32_t          postNode = -1;
+    int32_t          bodyNode = -1;
+    uint32_t         bodyStart;
+    uint32_t         scopeMark = c->localLen;
+    uint32_t         loopStartPc;
+    uint32_t         condFalseJump = UINT32_MAX;
+    uint32_t         continueTargetPc;
+    uint32_t         loopEndPc;
+    uint32_t         semi1 = 0;
+    uint32_t         semi2 = 0;
+    int              hasSemicolons;
+    if ((s->flags & SLAstFlag_FOR_IN) != 0) {
+        c->supported = 0;
+        return 0;
+    }
+    while (cur >= 0 && partLen < 4u) {
+        parts[partLen++] = cur;
+        cur = c->ast->nodes[cur].nextSibling;
+    }
+    if (partLen == 0 || cur >= 0) {
+        c->supported = 0;
+        return 0;
+    }
+    bodyNode = parts[partLen - 1u];
+    if ((uint32_t)bodyNode >= c->ast->len || c->ast->nodes[bodyNode].kind != SLAst_BLOCK) {
+        c->supported = 0;
+        return 0;
+    }
+    bodyStart = c->ast->nodes[bodyNode].start;
+    hasSemicolons = SLMirStmtLowerRangeHasChar(c->src, s->start, bodyStart, ';');
+    if (!hasSemicolons) {
+        if (partLen == 2u) {
+            condNode = parts[0];
+        } else if (partLen != 1u) {
+            c->supported = 0;
+            return 0;
+        }
+    } else {
+        uint32_t i;
+        if (!SLMirStmtLowerFindCharForward(c->src, s->start, bodyStart, ';', &semi1)
+            || !SLMirStmtLowerFindCharForward(c->src, semi1 + 1u, bodyStart, ';', &semi2))
+        {
+            c->supported = 0;
+            return 0;
+        }
+        for (i = 0; i + 1u < partLen; i++) {
+            const SLAstNode* part = &c->ast->nodes[parts[i]];
+            if (part->end <= semi1) {
+                if (initNode >= 0) {
+                    c->supported = 0;
+                    return 0;
+                }
+                initNode = parts[i];
+            } else if (part->start > semi2) {
+                if (postNode >= 0) {
+                    c->supported = 0;
+                    return 0;
+                }
+                postNode = parts[i];
+            } else if (part->start > semi1 && part->end <= semi2) {
+                if (condNode >= 0) {
+                    c->supported = 0;
+                    return 0;
+                }
+                condNode = parts[i];
+            } else {
+                c->supported = 0;
+                return 0;
+            }
+        }
+    }
+    if (initNode >= 0) {
+        if (c->ast->nodes[initNode].kind == SLAst_VAR
+            || c->ast->nodes[initNode].kind == SLAst_CONST)
+        {
+            if (SLMirStmtLowerStmt(c, initNode) != 0 || !c->supported) {
+                c->localLen = scopeMark;
+                return c->supported ? -1 : 0;
+            }
+        } else if (
+            SLMirStmtLowerExprNodeAsStmt(
+                c, initNode, c->ast->nodes[initNode].start, c->ast->nodes[initNode].end)
+                != 0
+            || !c->supported)
+        {
+            c->localLen = scopeMark;
+            return c->supported ? -1 : 0;
+        }
+    }
+    loopStartPc = SLMirStmtLowerFnPc(c);
+    if (!SLMirStmtLowerPushLoop(c, loopStartPc)) {
+        c->localLen = scopeMark;
+        return 0;
+    }
+    if (condNode >= 0) {
+        if (SLMirStmtLowerExpr(c, condNode) != 0 || !c->supported) {
+            c->localLen = scopeMark;
+            c->loopLen--;
+            return c->supported ? -1 : 0;
+        }
+        if (SLMirStmtLowerAppendInst(
+                c, SLMirOp_JUMP_IF_FALSE, 0, UINT32_MAX, s->start, s->end, &condFalseJump)
+            != 0)
+        {
+            c->localLen = scopeMark;
+            c->loopLen--;
+            return -1;
+        }
+    }
+    if (SLMirStmtLowerBlock(c, bodyNode) != 0 || !c->supported) {
+        c->localLen = scopeMark;
+        c->loopLen--;
+        return c->supported ? -1 : 0;
+    }
+    continueTargetPc = postNode >= 0 ? SLMirStmtLowerFnPc(c) : loopStartPc;
+    if (postNode >= 0
+        && (SLMirStmtLowerExprNodeAsStmt(
+                c, postNode, c->ast->nodes[postNode].start, c->ast->nodes[postNode].end)
+                != 0
+            || !c->supported))
+    {
+        c->localLen = scopeMark;
+        c->loopLen--;
+        return c->supported ? -1 : 0;
+    }
+    if (SLMirStmtLowerAppendInst(c, SLMirOp_JUMP, 0, loopStartPc, s->start, s->end, NULL) != 0) {
+        c->localLen = scopeMark;
+        c->loopLen--;
+        return -1;
+    }
+    loopEndPc = SLMirStmtLowerFnPc(c);
+    if (condFalseJump != UINT32_MAX) {
+        c->builder.insts[condFalseJump].aux = loopEndPc;
+    }
+    SLMirStmtLowerFinishLoop(c, continueTargetPc, loopEndPc);
+    c->localLen = scopeMark;
+    return 0;
 }
 
 static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
@@ -541,8 +813,45 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
     }
     s = &c->ast->nodes[stmtNode];
     switch (s->kind) {
-        case SLAst_BLOCK:  return SLMirStmtLowerBlock(c, stmtNode);
-        case SLAst_IF:     return SLMirStmtLowerIf(c, stmtNode);
+        case SLAst_BLOCK: return SLMirStmtLowerBlock(c, stmtNode);
+        case SLAst_IF:    return SLMirStmtLowerIf(c, stmtNode);
+        case SLAst_FOR:   return SLMirStmtLowerFor(c, stmtNode);
+        case SLAst_BREAK: {
+            uint32_t        jumpInst = UINT32_MAX;
+            SLMirLowerLoop* loop = SLMirStmtLowerCurrentLoop(c);
+            if (loop == NULL) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerAppendInst(
+                    c, SLMirOp_JUMP, 0, UINT32_MAX, s->start, s->end, &jumpInst)
+                != 0)
+            {
+                return -1;
+            }
+            if (!SLMirStmtLowerRecordLoopJump(c, 0, jumpInst)) {
+                return 0;
+            }
+            return 0;
+        }
+        case SLAst_CONTINUE: {
+            uint32_t        jumpInst = UINT32_MAX;
+            SLMirLowerLoop* loop = SLMirStmtLowerCurrentLoop(c);
+            if (loop == NULL) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerAppendInst(
+                    c, SLMirOp_JUMP, 0, loop->loopStartPc, s->start, s->end, &jumpInst)
+                != 0)
+            {
+                return -1;
+            }
+            if (!SLMirStmtLowerRecordLoopJump(c, 1, jumpInst)) {
+                return 0;
+            }
+            return 0;
+        }
         case SLAst_RETURN: {
             int32_t exprNode = s->firstChild;
             if (exprNode < 0) {
