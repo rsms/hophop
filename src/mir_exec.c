@@ -38,6 +38,9 @@ static int SLCTFEEvalBinary(
     const SLCTFEValue* rhs,
     SLCTFEValue*       out);
 static int SLCTFEEvalCast(SLMirCastTarget target, const SLCTFEValue* in, SLCTFEValue* out);
+static const SLMirLocal* SLMirGetLocalMeta(const SLMirExecRun* run, uint32_t slot);
+static int               SLMirCoerceValueForType(
+                  const SLMirExecRun* run, uint32_t typeRefIndex, SLMirExecValue* inOutValue);
 
 static int SLMirInitRun(
     SLMirExecRun* _Nonnull run,
@@ -82,6 +85,11 @@ static int SLMirInitRun(
     run->program = program;
     run->function = function;
     run->localCount = localCount;
+    if (env != NULL) {
+        run->env = *env;
+    } else {
+        memset(&run->env, 0, sizeof(run->env));
+    }
     if (localCount != 0u) {
         uint32_t i;
         run->locals = (SLMirExecValue*)SLArenaAlloc(
@@ -100,14 +108,18 @@ static int SLMirInitRun(
         }
         for (i = 0; i < argCount; i++) {
             run->locals[i] = args[i];
+            if (program != NULL && function != NULL) {
+                const SLMirLocal* local = SLMirGetLocalMeta(run, i);
+                if (local->typeRef != UINT32_MAX) {
+                    int coerceRc = SLMirCoerceValueForType(run, local->typeRef, &run->locals[i]);
+                    if (coerceRc <= 0) {
+                        return coerceRc < 0 ? -1 : 0;
+                    }
+                }
+            }
         }
     } else if (argCount != 0u) {
         return 0;
-    }
-    if (env != NULL) {
-        run->env = *env;
-    } else {
-        memset(&run->env, 0, sizeof(run->env));
     }
     return 0;
 }
@@ -121,6 +133,26 @@ static const SLMirLocal* SLMirGetLocalMeta(const SLMirExecRun* run, uint32_t slo
         return &invalidLocal;
     }
     return &run->program->locals[run->function->localStart + slot];
+}
+
+static int SLMirCoerceValueForType(
+    const SLMirExecRun* run, uint32_t typeRefIndex, SLMirExecValue* inOutValue) {
+    if (run == NULL || inOutValue == NULL || typeRefIndex == UINT32_MAX) {
+        return 1;
+    }
+    if (run->env.coerceValueForType == NULL) {
+        return 1;
+    }
+    if (run->program == NULL || typeRefIndex >= run->program->typeLen) {
+        return 0;
+    }
+    if (run->env.coerceValueForType(
+            run->env.coerceValueCtx, &run->program->types[typeRefIndex], inOutValue, run->env.diag)
+        != 0)
+    {
+        return -1;
+    }
+    return 1;
 }
 
 static uint32_t SLMirResolveHostId(const SLMirExecRun* run, const SLMirInst* ins) {
@@ -467,12 +499,20 @@ static int SLMirRunLoop(
                 break;
             }
             case SLMirOp_LOCAL_STORE: {
-                SLMirExecValue v;
+                const SLMirLocal* local;
+                SLMirExecValue    v;
                 if (ins->aux >= run->localCount) {
                     return 0;
                 }
                 if (SLCTFEPop(run, &v) != 0) {
                     return 0;
+                }
+                local = SLMirGetLocalMeta(run, ins->aux);
+                if (local->typeRef != UINT32_MAX) {
+                    int coerceRc = SLMirCoerceValueForType(run, local->typeRef, &v);
+                    if (coerceRc <= 0) {
+                        return coerceRc < 0 ? -1 : 0;
+                    }
                 }
                 run->locals[ins->aux] = v;
                 break;
@@ -829,6 +869,12 @@ static int SLMirRunLoop(
                     return 0;
                 }
                 *outValue = run->stack[0];
+                if (run->function != NULL && run->function->typeRef != UINT32_MAX) {
+                    int coerceRc = SLMirCoerceValueForType(run, run->function->typeRef, outValue);
+                    if (coerceRc <= 0) {
+                        return coerceRc < 0 ? -1 : 0;
+                    }
+                }
                 *outIsConst = 1;
                 return 0;
             case SLMirOp_RETURN_VOID:
@@ -1232,10 +1278,32 @@ static int SLCTFEEvalBinary(
     const SLCTFEValue* lhs,
     const SLCTFEValue* rhs,
     SLCTFEValue*       out) {
-    int64_t i = 0;
-    double  lf = 0.0;
-    double  rf = 0.0;
+    int64_t            i = 0;
+    double             lf = 0.0;
+    double             rf = 0.0;
+    const SLCTFEValue* lhsPayload = NULL;
+    const SLCTFEValue* rhsPayload = NULL;
     SLCTFEValueInvalid(out);
+
+    if (lhs == NULL || rhs == NULL) {
+        return 0;
+    }
+    if (lhs->kind == SLCTFEValue_OPTIONAL && rhs->kind != SLCTFEValue_OPTIONAL
+        && rhs->kind != SLCTFEValue_NULL)
+    {
+        if (!SLCTFEOptionalPayload(lhs, &lhsPayload) || lhs->b == 0u || lhsPayload == NULL) {
+            return 0;
+        }
+        return SLCTFEEvalBinary(r, op, lhsPayload, rhs, out);
+    }
+    if (rhs->kind == SLCTFEValue_OPTIONAL && lhs->kind != SLCTFEValue_OPTIONAL
+        && lhs->kind != SLCTFEValue_NULL)
+    {
+        if (!SLCTFEOptionalPayload(rhs, &rhsPayload) || rhs->b == 0u || rhsPayload == NULL) {
+            return 0;
+        }
+        return SLCTFEEvalBinary(r, op, lhs, rhsPayload, out);
+    }
 
     if (lhs->kind == SLCTFEValue_INT && rhs->kind == SLCTFEValue_INT) {
         switch (op) {

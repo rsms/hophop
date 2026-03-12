@@ -411,7 +411,7 @@ int SLMirLowerExprAsFunction(
     function.paramCount = 0;
     function.localCount = 0;
     function.tempCount = 0;
-    function.typeRef = 0;
+    function.typeRef = UINT32_MAX;
     function.nameStart = 0;
     function.nameEnd = 0;
     if (SLMirProgramBuilderBeginFunction(&builder, &function, &functionIndex) != 0) {

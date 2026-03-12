@@ -515,6 +515,16 @@ static int SLCTFEExecEvalAssignExpr(
         *outIsConst = 0;
         return 0;
     }
+    if ((SLTokenKind)n->op != SLTok_ASSIGN && rhsValue.kind == SLCTFEValue_OPTIONAL) {
+        const SLCTFEValue* payload = NULL;
+        if (!SLCTFEExecOptionalPayload(&rhsValue, &payload) || rhsValue.b == 0u || payload == NULL)
+        {
+            SLCTFEExecSetReasonNode(c, exprNode, "assignment operands are not const-evaluable");
+            *outIsConst = 0;
+            return 0;
+        }
+        rhsValue = *payload;
+    }
 
     if ((SLTokenKind)n->op == SLTok_ASSIGN) {
         SLCTFEValue wrappedValue;

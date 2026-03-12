@@ -39,6 +39,11 @@ typedef int (*SLMirZeroInitLocalFn)(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef int (*SLMirCoerceValueForTypeFn)(
+    void* _Nullable ctx,
+    const SLMirTypeRef* _Nonnull typeRef,
+    SLMirExecValue* _Nonnull inOutValue,
+    SLDiag* _Nullable diag);
 
 typedef int (*SLMirEnterFunctionFn)(
     void* _Nullable ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag);
@@ -54,6 +59,8 @@ typedef struct {
     void* _Nullable hostCtx;
     SLMirZeroInitLocalFn _Nullable zeroInitLocal;
     void* _Nullable zeroInitCtx;
+    SLMirCoerceValueForTypeFn _Nullable coerceValueForType;
+    void* _Nullable coerceValueCtx;
     SLMirEnterFunctionFn _Nullable enterFunction;
     SLMirLeaveFunctionFn _Nullable leaveFunction;
     void* _Nullable functionCtx;

@@ -58,6 +58,24 @@ static int SLMirStmtLowerIsTypeNodeKind(SLAstKind kind) {
         || kind == SLAst_TYPE_ANON_UNION;
 }
 
+static int32_t SLMirStmtLowerFunctionReturnTypeNode(const SLAst* ast, int32_t fnNode) {
+    int32_t child;
+    if (ast == NULL || fnNode < 0 || (uint32_t)fnNode >= ast->len) {
+        return -1;
+    }
+    child = ast->nodes[fnNode].firstChild;
+    while (child >= 0) {
+        if (SLMirStmtLowerIsTypeNodeKind(ast->nodes[child].kind)) {
+            return child;
+        }
+        if (ast->nodes[child].kind == SLAst_BLOCK) {
+            break;
+        }
+        child = ast->nodes[child].nextSibling;
+    }
+    return -1;
+}
+
 static uint32_t SLMirStmtLowerFnPc(const SLMirStmtLower* c) {
     return c->builder.instLen - c->builder.funcs[c->functionIndex].instStart;
 }
@@ -145,12 +163,19 @@ static int SLMirStmtLowerFindLocal(
     uint32_t              nameEnd,
     uint32_t*             outSlot,
     int* _Nullable outMutable) {
+    uint32_t nameLen;
     uint32_t i = c->localLen;
+    if (c == NULL || nameEnd < nameStart || nameEnd > c->src.len) {
+        return 0;
+    }
+    nameLen = nameEnd - nameStart;
     while (i > 0) {
         const SLMirLowerLocal* local;
         i--;
         local = &c->locals[i];
-        if (local->nameStart == nameStart && local->nameEnd == nameEnd) {
+        if (local->nameEnd >= local->nameStart && local->nameEnd - local->nameStart == nameLen
+            && memcmp(c->src.ptr + local->nameStart, c->src.ptr + nameStart, nameLen) == 0)
+        {
             if (outSlot != NULL) {
                 *outSlot = local->slot;
             }
@@ -316,18 +341,6 @@ static int SLMirStmtLowerRewriteExprChunk(SLMirStmtLower* c, const SLMirChunk* c
     return 0;
 }
 
-static int SLMirStmtLowerIsSafeIfCondExpr(const SLAst* ast, int32_t exprNode) {
-    if (ast == NULL || exprNode < 0 || (uint32_t)exprNode >= ast->len) {
-        return 0;
-    }
-    switch (ast->nodes[exprNode].kind) {
-        case SLAst_BOOL:
-        case SLAst_UNARY:
-        case SLAst_BINARY: return 1;
-        default:           return 0;
-    }
-}
-
 static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
     const SLAstNode* expr;
     SLMirChunk       chunk = { 0 };
@@ -443,10 +456,6 @@ static int SLMirStmtLowerIf(SLMirStmtLower* c, int32_t ifNode) {
     uint32_t falseJumpInst = UINT32_MAX;
     uint32_t endJumpInst = UINT32_MAX;
     if (condNode < 0 || thenNode < 0) {
-        c->supported = 0;
-        return 0;
-    }
-    if (!SLMirStmtLowerIsSafeIfCondExpr(c->ast, condNode)) {
         c->supported = 0;
         return 0;
     }
@@ -925,7 +934,9 @@ int SLMirLowerAppendSimpleFunction(
     SLMirStmtLower c;
     SLMirFunction  fn = { 0 };
     SLMirSourceRef sourceRef = { 0 };
+    SLMirTypeRef   typeRef = { 0 };
     uint32_t       sourceIndex = 0;
+    int32_t        returnTypeNode = -1;
     int32_t        child;
     if (diag != NULL) {
         *diag = (SLDiag){ 0 };
@@ -958,6 +969,20 @@ int SLMirLowerAppendSimpleFunction(
     fn.nameStart = fnNode >= 0 && (uint32_t)fnNode < ast->len ? ast->nodes[fnNode].dataStart : 0;
     fn.nameEnd = fnNode >= 0 && (uint32_t)fnNode < ast->len ? ast->nodes[fnNode].dataEnd : 0;
     fn.sourceRef = sourceIndex;
+    fn.typeRef = UINT32_MAX;
+    returnTypeNode = SLMirStmtLowerFunctionReturnTypeNode(ast, fnNode);
+    if (returnTypeNode >= 0) {
+        typeRef.astNode = (uint32_t)returnTypeNode;
+        typeRef.flags = 0;
+        if (SLMirProgramBuilderAddType(&c.builder, &typeRef, &fn.typeRef) != 0) {
+            SLMirLowerStmtSetDiag(
+                diag,
+                SLDiag_ARENA_OOM,
+                ast->nodes[returnTypeNode].start,
+                ast->nodes[returnTypeNode].end);
+            return -1;
+        }
+    }
     if (SLMirProgramBuilderBeginFunction(&c.builder, &fn, &c.functionIndex) != 0) {
         SLMirLowerStmtSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
