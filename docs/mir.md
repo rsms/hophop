@@ -34,6 +34,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - The evaluator-side direct-call rewrite now also covers conservative imported package selector calls, such as `math.Add(...)`, when the import alias and callee resolve unambiguously by arity.
 - The evaluator-side hostcall rewrite now also covers conservative selector calls for `platform.exit(...)`, including import aliases such as `p.exit(...)`.
 - The evaluator now also uses tiny one-function MIR programs for top-level zero-init vars, and tries direct MIR-function evaluation first for simple top-level initializer expressions before falling back to older expression paths.
+- The evaluator-side MIR execution wiring now goes through one shared exec-context path for both function-body MIR and top-level init MIR, so per-frame source/file and call-stack bookkeeping no longer have to be reassembled separately for those two entrypoints.
 - `mir_lower` now exposes the same instruction-materialization path to `mir_lower_stmt`, so statement-lowered runtime MIR also uses the same const/symbol/type tables instead of appending raw expression instructions.
 - MIR programs now also carry explicit source entries and per-function `sourceRef` metadata, so execution and future backends do not need to assume one global source/file for the whole program.
 - MIR programs now also carry explicit local metadata in `program.locals[]`, sliced per function by `localStart` / `localCount`.

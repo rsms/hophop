@@ -844,6 +844,18 @@ struct SLEvalProgram {
     int                    exitCode;
 };
 
+typedef struct {
+    SLEvalProgram*       p;
+    uint32_t*            mirToEval;
+    uint32_t             mirToEvalLen;
+    const SLParsedFile** sourceFiles;
+    uint32_t             sourceFileCap;
+    const SLParsedFile*  savedFiles[SL_EVAL_CALL_MAX_DEPTH];
+    uint8_t              pushedFrames[SL_EVAL_CALL_MAX_DEPTH];
+    uint32_t             savedFileLen;
+    uint32_t             rootMirFnIndex;
+} SLEvalMirExecCtx;
+
 static void SLEvalValueSetNull(SLCTFEValue* value) {
     if (value == NULL) {
         return;
@@ -2248,6 +2260,14 @@ static int SLEvalTryMirEvalExprWithType(
     SLCTFEValue* outValue,
     int*         outIsConst,
     int*         outSupported);
+static int SLEvalMirEnterFunction(
+    void* ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag);
+static void SLEvalMirLeaveFunction(void* ctx);
+static void SLEvalMirInitExecEnv(
+    SLEvalProgram*      p,
+    const SLParsedFile* file,
+    SLMirExecEnv*       env,
+    SLEvalMirExecCtx* _Nullable functionCtx);
 static int SLEvalResolveIdent(
     void*        ctx,
     uint32_t     nameStart,
@@ -6483,6 +6503,106 @@ static int SLEvalMirHostCall(
     return 0;
 }
 
+static int SLEvalMirEnterFunction(
+    void* ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag) {
+    SLEvalMirExecCtx* c = (SLEvalMirExecCtx*)ctx;
+    uint8_t           pushed = 0;
+    if (c == NULL || c->p == NULL || sourceRef >= c->sourceFileCap
+        || c->savedFileLen >= SL_EVAL_CALL_MAX_DEPTH)
+    {
+        if (diag != NULL) {
+            diag->code = SLDiag_UNEXPECTED_TOKEN;
+            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->start = 0;
+            diag->end = 0;
+            diag->argStart = 0;
+            diag->argEnd = 0;
+        }
+        return -1;
+    }
+    if (functionIndex != c->rootMirFnIndex) {
+        uint32_t evalFnIndex;
+        if (c->mirToEval == NULL || functionIndex >= c->mirToEvalLen) {
+            if (diag != NULL) {
+                diag->code = SLDiag_UNEXPECTED_TOKEN;
+                diag->type = SLDiagTypeOfCode(diag->code);
+                diag->start = 0;
+                diag->end = 0;
+                diag->argStart = 0;
+                diag->argEnd = 0;
+            }
+            return -1;
+        }
+        evalFnIndex = c->mirToEval[functionIndex];
+        if (evalFnIndex >= c->p->funcLen || c->p->callDepth >= SL_EVAL_CALL_MAX_DEPTH) {
+            if (diag != NULL) {
+                diag->code = SLDiag_UNEXPECTED_TOKEN;
+                diag->type = SLDiagTypeOfCode(diag->code);
+                diag->start = 0;
+                diag->end = 0;
+                diag->argStart = 0;
+                diag->argEnd = 0;
+            }
+            return -1;
+        }
+        c->p->callStack[c->p->callDepth++] = evalFnIndex;
+        pushed = 1;
+    }
+    c->savedFiles[c->savedFileLen++] = c->p->currentFile;
+    c->pushedFrames[c->savedFileLen - 1u] = pushed;
+    if (c->sourceFiles[sourceRef] != NULL) {
+        c->p->currentFile = c->sourceFiles[sourceRef];
+    }
+    return 0;
+}
+
+static void SLEvalMirLeaveFunction(void* ctx) {
+    SLEvalMirExecCtx* c = (SLEvalMirExecCtx*)ctx;
+    if (c == NULL || c->p == NULL || c->savedFileLen == 0) {
+        return;
+    }
+    if (c->pushedFrames[c->savedFileLen - 1u] && c->p->callDepth > 0) {
+        c->p->callDepth--;
+    }
+    c->p->currentFile = c->savedFiles[--c->savedFileLen];
+}
+
+static void SLEvalMirInitExecEnv(
+    SLEvalProgram*      p,
+    const SLParsedFile* file,
+    SLMirExecEnv*       env,
+    SLEvalMirExecCtx* _Nullable functionCtx) {
+    if (p == NULL || file == NULL || env == NULL) {
+        return;
+    }
+    memset(env, 0, sizeof(*env));
+    env->src.ptr = file->source;
+    env->src.len = file->sourceLen;
+    env->resolveIdent = SLEvalResolveIdent;
+    env->resolveCall = SLEvalResolveCall;
+    env->resolveCtx = p;
+    env->hostCall = SLEvalMirHostCall;
+    env->hostCtx = p;
+    env->zeroInitLocal = SLEvalMirZeroInitLocal;
+    env->zeroInitCtx = p;
+    env->coerceValueForType = SLEvalMirCoerceValueForType;
+    env->coerceValueCtx = p;
+    env->indexValue = SLEvalMirIndexValue;
+    env->indexValueCtx = p;
+    env->indexAddr = SLEvalMirIndexAddr;
+    env->indexAddrCtx = p;
+    env->aggGetField = SLEvalMirAggGetField;
+    env->aggGetFieldCtx = p;
+    env->aggAddrField = SLEvalMirAggAddrField;
+    env->aggAddrFieldCtx = p;
+    env->diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
+    if (functionCtx != NULL) {
+        env->enterFunction = SLEvalMirEnterFunction;
+        env->leaveFunction = SLEvalMirLeaveFunction;
+        env->functionCtx = functionCtx;
+    }
+}
+
 static int SLEvalTryMirZeroInitType(
     SLEvalProgram*      p,
     const SLParsedFile* file,
@@ -6502,9 +6622,11 @@ static int SLEvalTryMirEvalTopInit(
     SLCTFEValue* outValue,
     int*         outIsConst,
     int* _Nullable outSupported) {
-    SLMirProgram program = { 0 };
-    SLMirExecEnv env = { 0 };
-    int          supported = 0;
+    SLMirProgram        program = { 0 };
+    SLMirExecEnv        env = { 0 };
+    const SLParsedFile* sourceFiles[1];
+    SLEvalMirExecCtx    functionCtx = { 0 };
+    int                 supported = 0;
     if (outSupported != NULL) {
         *outSupported = 0;
     }
@@ -6528,26 +6650,15 @@ static int SLEvalTryMirEvalTopInit(
         *outIsConst = 0;
         return 0;
     }
-    env.src.ptr = file->source;
-    env.src.len = file->sourceLen;
-    env.resolveIdent = SLEvalResolveIdent;
-    env.resolveCall = SLEvalResolveCall;
-    env.resolveCtx = p;
-    env.hostCall = SLEvalMirHostCall;
-    env.hostCtx = p;
-    env.zeroInitLocal = SLEvalMirZeroInitLocal;
-    env.zeroInitCtx = p;
-    env.coerceValueForType = SLEvalMirCoerceValueForType;
-    env.coerceValueCtx = p;
-    env.indexValue = SLEvalMirIndexValue;
-    env.indexValueCtx = p;
-    env.indexAddr = SLEvalMirIndexAddr;
-    env.indexAddrCtx = p;
-    env.aggGetField = SLEvalMirAggGetField;
-    env.aggGetFieldCtx = p;
-    env.aggAddrField = SLEvalMirAggAddrField;
-    env.aggAddrFieldCtx = p;
-    env.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
+    sourceFiles[0] = file;
+    functionCtx.p = p;
+    functionCtx.sourceFiles = sourceFiles;
+    functionCtx.sourceFileCap = 1u;
+    functionCtx.rootMirFnIndex = 0u;
+    functionCtx.mirToEval = NULL;
+    functionCtx.mirToEvalLen = 0u;
+    functionCtx.savedFileLen = 0u;
+    SLEvalMirInitExecEnv(p, file, &env, &functionCtx);
     if (SLMirEvalFunction(p->arena, &program, 0, NULL, 0, &env, outValue, outIsConst) != 0) {
         return -1;
     }

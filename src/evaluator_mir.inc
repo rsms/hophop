@@ -9,13 +9,7 @@ typedef struct {
     SLMirProgramBuilder  builder;
     uint32_t*            evalToMir;
     uint8_t*             loweringFns;
-    uint32_t*            mirToEval;
-    const SLParsedFile** sourceFiles;
-    uint32_t             sourceFileCap;
-    const SLParsedFile*  savedFiles[SL_EVAL_CALL_MAX_DEPTH];
-    uint8_t              pushedFrames[SL_EVAL_CALL_MAX_DEPTH];
-    uint32_t             savedFileLen;
-    uint32_t             rootMirFnIndex;
+    SLEvalMirExecCtx     execCtx;
     SLDiag*              diag;
 } SLEvalMirLowerCtx;
 
@@ -30,75 +24,11 @@ static int SLEvalMirInternSourceFile(
     if (SLMirProgramBuilderAddSource(&c->builder, &sourceRef, outSourceRef) != 0) {
         return -1;
     }
-    if (*outSourceRef >= c->sourceFileCap) {
+    if (*outSourceRef >= c->execCtx.sourceFileCap) {
         return -1;
     }
-    c->sourceFiles[*outSourceRef] = file;
+    c->execCtx.sourceFiles[*outSourceRef] = file;
     return 0;
-}
-
-static int SLEvalMirEnterFunction(
-    void* ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* diag) {
-    SLEvalMirLowerCtx* c = (SLEvalMirLowerCtx*)ctx;
-    uint8_t            pushed = 0;
-    if (c == NULL || c->p == NULL || sourceRef >= c->sourceFileCap
-        || c->savedFileLen >= SL_EVAL_CALL_MAX_DEPTH)
-    {
-        if (diag != NULL) {
-            diag->code = SLDiag_UNEXPECTED_TOKEN;
-            diag->type = SLDiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-        }
-        return -1;
-    }
-    if (functionIndex != c->rootMirFnIndex) {
-        uint32_t evalFnIndex;
-        if (c->mirToEval == NULL || functionIndex >= c->p->funcLen) {
-            if (diag != NULL) {
-                diag->code = SLDiag_UNEXPECTED_TOKEN;
-                diag->type = SLDiagTypeOfCode(diag->code);
-                diag->start = 0;
-                diag->end = 0;
-                diag->argStart = 0;
-                diag->argEnd = 0;
-            }
-            return -1;
-        }
-        evalFnIndex = c->mirToEval[functionIndex];
-        if (evalFnIndex >= c->p->funcLen || c->p->callDepth >= SL_EVAL_CALL_MAX_DEPTH) {
-            if (diag != NULL) {
-                diag->code = SLDiag_UNEXPECTED_TOKEN;
-                diag->type = SLDiagTypeOfCode(diag->code);
-                diag->start = 0;
-                diag->end = 0;
-                diag->argStart = 0;
-                diag->argEnd = 0;
-            }
-            return -1;
-        }
-        c->p->callStack[c->p->callDepth++] = evalFnIndex;
-        pushed = 1;
-    }
-    c->savedFiles[c->savedFileLen++] = c->p->currentFile;
-    c->pushedFrames[c->savedFileLen - 1u] = pushed;
-    if (c->sourceFiles[sourceRef] != NULL) {
-        c->p->currentFile = c->sourceFiles[sourceRef];
-    }
-    return 0;
-}
-
-static void SLEvalMirLeaveFunction(void* ctx) {
-    SLEvalMirLowerCtx* c = (SLEvalMirLowerCtx*)ctx;
-    if (c == NULL || c->p == NULL || c->savedFileLen == 0) {
-        return;
-    }
-    if (c->pushedFrames[c->savedFileLen - 1u] && c->p->callDepth > 0) {
-        c->p->callDepth--;
-    }
-    c->p->currentFile = c->savedFiles[--c->savedFileLen];
 }
 
 static int SLEvalMirResolveDirectCallTarget(
@@ -436,8 +366,8 @@ static int SLEvalMirLowerFunction(
         return 0;
     }
     c->evalToMir[(uint32_t)evalFnIndex] = mirFnIndex;
-    if (c->mirToEval != NULL && mirFnIndex < c->p->funcLen) {
-        c->mirToEval[mirFnIndex] = (uint32_t)evalFnIndex;
+    if (c->execCtx.mirToEval != NULL && mirFnIndex < c->execCtx.mirToEvalLen) {
+        c->execCtx.mirToEval[mirFnIndex] = (uint32_t)evalFnIndex;
     }
     for (instIndex = c->builder.funcs[mirFnIndex].instStart;
          instIndex < c->builder.funcs[mirFnIndex].instStart + c->builder.funcs[mirFnIndex].instLen;
@@ -551,10 +481,13 @@ static int SLEvalTryMirInvokeFunction(
     lowerCtx.builder = builder;
     lowerCtx.evalToMir = evalToMir;
     lowerCtx.loweringFns = loweringFns;
-    lowerCtx.mirToEval = mirToEval;
-    lowerCtx.sourceFiles = sourceFiles;
-    lowerCtx.sourceFileCap = p->funcLen;
-    lowerCtx.rootMirFnIndex = UINT32_MAX;
+    lowerCtx.execCtx.p = p;
+    lowerCtx.execCtx.mirToEval = mirToEval;
+    lowerCtx.execCtx.mirToEvalLen = p->funcLen;
+    lowerCtx.execCtx.sourceFiles = sourceFiles;
+    lowerCtx.execCtx.sourceFileCap = p->funcLen;
+    lowerCtx.execCtx.rootMirFnIndex = UINT32_MAX;
+    lowerCtx.execCtx.savedFileLen = 0u;
     lowerCtx.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
     lowerRc = SLEvalMirLowerFunction(&lowerCtx, fnIndex, &mirFnIndex);
     if (lowerRc < 0) {
@@ -563,30 +496,9 @@ static int SLEvalTryMirInvokeFunction(
     if (lowerRc == 0 || mirFnIndex == UINT32_MAX) {
         return 0;
     }
-    lowerCtx.rootMirFnIndex = mirFnIndex;
+    lowerCtx.execCtx.rootMirFnIndex = mirFnIndex;
     SLMirProgramBuilderFinish(&lowerCtx.builder, &program);
-    env.src = (SLStrView){ fn->file->source, fn->file->sourceLen };
-    env.resolveIdent = SLEvalResolveIdent;
-    env.resolveCall = SLEvalResolveCall;
-    env.resolveCtx = p;
-    env.hostCall = SLEvalMirHostCall;
-    env.hostCtx = p;
-    env.zeroInitLocal = SLEvalMirZeroInitLocal;
-    env.zeroInitCtx = p;
-    env.coerceValueForType = SLEvalMirCoerceValueForType;
-    env.coerceValueCtx = p;
-    env.indexValue = SLEvalMirIndexValue;
-    env.indexValueCtx = p;
-    env.indexAddr = SLEvalMirIndexAddr;
-    env.indexAddrCtx = p;
-    env.aggGetField = SLEvalMirAggGetField;
-    env.aggGetFieldCtx = p;
-    env.aggAddrField = SLEvalMirAggAddrField;
-    env.aggAddrFieldCtx = p;
-    env.enterFunction = SLEvalMirEnterFunction;
-    env.leaveFunction = SLEvalMirLeaveFunction;
-    env.functionCtx = &lowerCtx;
-    env.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
+    SLEvalMirInitExecEnv(p, fn->file, &env, &lowerCtx.execCtx);
     if (SLMirEvalFunction(
             p->arena, &program, mirFnIndex, args, argCount, &env, outValue, &mirIsConst)
         != 0)
