@@ -446,6 +446,48 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_CALL_HOST: {
+                SLMirExecValue* args = NULL;
+                SLMirExecValue  v;
+                int             callOk = 0;
+                uint32_t        argCount = (uint32_t)ins->tok;
+                uint32_t        i;
+                if (run->env.hostCall == NULL) {
+                    return 0;
+                }
+                if (argCount > run->stackLen) {
+                    return 0;
+                }
+                if (argCount > 0u) {
+                    args = (SLMirExecValue*)SLArenaAlloc(
+                        run->arena,
+                        sizeof(SLMirExecValue) * argCount,
+                        (uint32_t)_Alignof(SLMirExecValue));
+                    if (args == NULL) {
+                        SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                        return -1;
+                    }
+                }
+                for (i = argCount; i > 0; i--) {
+                    if (SLCTFEPop(run, &args[i - 1]) != 0) {
+                        return 0;
+                    }
+                }
+                SLCTFEValueInvalid(&v);
+                if (run->env.hostCall(
+                        run->env.hostCtx, ins->aux, args, argCount, &v, &callOk, run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!callOk) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &v) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_CALL_FN: {
                 SLMirExecValue  v;
                 SLMirExecValue* args = NULL;
