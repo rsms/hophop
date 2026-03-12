@@ -216,10 +216,12 @@ So today:
   - conservative imported package calls like `pkg.F(...)`, lowered to `CALL_FN` when the target is unambiguous and non-variadic
   - conservative `platform.exit(...)` selector calls rewritten to `CALL_HOST`
   - simple local assignment and compound assignment
+  - equal-count multi-assign lowered through temp locals so RHS evaluation stays separate from LHS stores
   - expression statements
   - `if` / `else`
   - successful `assert` statements
   - simple non-`for in` `for` loops, plus `break` and `continue`
+  - conservative `switch` lowering for plain subject/condition switches with case labels, `default`, and switch-local `break`
   - `return`
   - nested blocks
 - The evaluator now tries that MIR function-body path before falling back to `ctfe_exec`, which keeps runtime behavior stable while the MIR subset grows.
@@ -231,6 +233,7 @@ So today:
 - The initial `CALL_FN` support means that boundary is no longer just an entry point; MIR function-to-function execution has started to exist, even though full frame/locals/param semantics are still ahead.
 - Local-slot execution is the next step in that direction: MIR functions can now carry state in frame slots, typed zero-init now uses MIR local metadata, and local address-taking works, but richer lvalue semantics beyond plain local refs are still ahead.
 - Basic control flow is now part of the MIR executor contract too, which is necessary before checked function bodies can migrate off the AST/`ctfe_exec` path.
+- `mir_lower_stmt` now also tracks breakable vs continuable control scopes separately, so MIR-lowered `break` can target the innermost loop or switch while `continue` still finds the nearest loop.
 - The explicit hostcall path is another backend-facing step: non-pure operations no longer have to masquerade as generic name-resolved calls once MIR lowering starts using `CALL_HOST`.
 - The indirect-call path is the same kind of step for function values: MIR now has a backend-visible function-reference form instead of leaving all such execution to evaluator-specific machinery.
 - The constant-pool rewrite is the first step away from MIR depending on parser source text at execution time, which is important for a future Wasm backend or any serialized MIR consumer.
