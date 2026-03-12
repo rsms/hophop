@@ -317,6 +317,42 @@ static int SLMirLowerRewriteTypeInst(
     return 1;
 }
 
+int SLMirLowerAppendInst(
+    SLMirProgramBuilder* _Nonnull builder,
+    SLArena* _Nonnull arena,
+    SLStrView src,
+    const SLMirInst* _Nonnull in,
+    SLDiag* _Nullable diag) {
+    SLMirInst loweredInst;
+    int       rewriteStatus;
+    if (builder == NULL || arena == NULL || in == NULL) {
+        SLMirLowerSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        return -1;
+    }
+    rewriteStatus = SLMirLowerRewriteConstInst(builder, arena, src, in, &loweredInst, diag);
+    if (rewriteStatus < 0) {
+        return -1;
+    }
+    if (rewriteStatus == 0) {
+        memcpy(&loweredInst, in, sizeof(loweredInst));
+        rewriteStatus = SLMirLowerRewriteSymbolInst(builder, in, &loweredInst, diag);
+        if (rewriteStatus < 0) {
+            return -1;
+        }
+        if (rewriteStatus == 0) {
+            rewriteStatus = SLMirLowerRewriteTypeInst(builder, in, &loweredInst, diag);
+            if (rewriteStatus < 0) {
+                return -1;
+            }
+        }
+    }
+    if (SLMirProgramBuilderAppendInst(builder, &loweredInst) != 0) {
+        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, loweredInst.start, loweredInst.end);
+        return -1;
+    }
+    return 0;
+}
+
 int SLMirLowerExprAsFunction(
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,
@@ -375,35 +411,7 @@ int SLMirLowerExprAsFunction(
         return -1;
     }
     for (i = 0; i < chunk.len; i++) {
-        SLMirInst loweredInst;
-        int       rewriteStatus = SLMirLowerRewriteConstInst(
-            &builder, arena, src, &chunk.v[i], &loweredInst, diag);
-        if (rewriteStatus < 0) {
-            return -1;
-        }
-        if (rewriteStatus == 0) {
-            memcpy(&loweredInst, &chunk.v[i], sizeof(loweredInst));
-            rewriteStatus = SLMirLowerRewriteSymbolInst(&builder, &chunk.v[i], &loweredInst, diag);
-            if (rewriteStatus < 0) {
-                return -1;
-            }
-            if (rewriteStatus == 0) {
-                rewriteStatus = SLMirLowerRewriteTypeInst(
-                    &builder, &chunk.v[i], &loweredInst, diag);
-                if (rewriteStatus < 0) {
-                    return -1;
-                }
-            }
-        }
-        if (SLMirProgramBuilderAppendInst(&builder, &loweredInst) != 0) {
-            if (diag != NULL) {
-                diag->code = SLDiag_ARENA_OOM;
-                diag->type = SLDiagTypeOfCode(diag->code);
-                diag->start = loweredInst.start;
-                diag->end = loweredInst.end;
-                diag->argStart = 0;
-                diag->argEnd = 0;
-            }
+        if (SLMirLowerAppendInst(&builder, arena, src, &chunk.v[i], diag) != 0) {
             return -1;
         }
     }

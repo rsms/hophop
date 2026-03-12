@@ -11,5 +11,11 @@ int SLMirLowerExprAsFunction(
     SLMirProgram* _Nonnull outProgram,
     int* _Nonnull outSupported,
     SLDiag* _Nullable diag);
+int SLMirLowerAppendInst(
+    SLMirProgramBuilder* _Nonnull builder,
+    SLArena* _Nonnull arena,
+    SLStrView src,
+    const SLMirInst* _Nonnull in,
+    SLDiag* _Nullable diag);
 
 SL_API_END

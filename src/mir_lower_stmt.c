@@ -1,5 +1,6 @@
 #include "libsl-impl.h"
 #include "mir.h"
+#include "mir_lower.h"
 #include "mir_lower_stmt.h"
 
 SL_API_BEGIN
@@ -155,8 +156,7 @@ static int SLMirStmtLowerRewriteExprChunk(SLMirStmtLower* c, const SLMirChunk* c
                 inst.aux = slot;
             }
         }
-        if (SLMirProgramBuilderAppendInst(&c->builder, &inst) != 0) {
-            SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, inst.start, inst.end);
+        if (SLMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag) != 0) {
             return -1;
         }
     }
