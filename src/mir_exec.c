@@ -260,6 +260,22 @@ static void SLMirResolveSymbolName(
     *outEnd = run->program->symbols[ins->aux].nameEnd;
 }
 
+static void SLMirResolveFieldName(
+    const SLMirExecRun* _Nonnull run,
+    const SLMirInst* _Nonnull ins,
+    uint32_t* _Nonnull outStart,
+    uint32_t* _Nonnull outEnd) {
+    *outStart = ins->start;
+    *outEnd = ins->end;
+    if (run == NULL || ins == NULL || outStart == NULL || outEnd == NULL || run->program == NULL
+        || ins->aux >= run->program->fieldLen)
+    {
+        return;
+    }
+    *outStart = run->program->fields[ins->aux].nameStart;
+    *outEnd = run->program->fields[ins->aux].nameEnd;
+}
+
 static int SLMirRunLoop(
     SLMirExecRun* _Nonnull run, SLMirExecValue* _Nonnull outValue, int* _Nonnull outIsConst) {
     while (run->pc < run->len) {
@@ -957,18 +973,21 @@ static int SLMirRunLoop(
                 SLCTFEValue base;
                 SLCTFEValue out;
                 int         fieldIsConst = 0;
+                uint32_t    nameStart = ins->start;
+                uint32_t    nameEnd = ins->end;
                 if (SLCTFEPop(run, &base) != 0) {
                     return 0;
                 }
                 if (run->env.aggGetField == NULL) {
                     return 0;
                 }
+                SLMirResolveFieldName(run, ins, &nameStart, &nameEnd);
                 SLCTFEValueInvalid(&out);
                 if (run->env.aggGetField(
                         run->env.aggGetFieldCtx,
                         &base,
-                        ins->start,
-                        ins->end,
+                        nameStart,
+                        nameEnd,
                         &out,
                         &fieldIsConst,
                         run->env.diag)
@@ -988,18 +1007,21 @@ static int SLMirRunLoop(
                 SLCTFEValue base;
                 SLCTFEValue out;
                 int         fieldIsConst = 0;
+                uint32_t    nameStart = ins->start;
+                uint32_t    nameEnd = ins->end;
                 if (SLCTFEPop(run, &base) != 0) {
                     return 0;
                 }
                 if (run->env.aggAddrField == NULL) {
                     return 0;
                 }
+                SLMirResolveFieldName(run, ins, &nameStart, &nameEnd);
                 SLCTFEValueInvalid(&out);
                 if (run->env.aggAddrField(
                         run->env.aggAddrFieldCtx,
                         &base,
-                        ins->start,
-                        ins->end,
+                        nameStart,
+                        nameEnd,
                         &out,
                         &fieldIsConst,
                         run->env.diag)

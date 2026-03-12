@@ -21,6 +21,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - `mir_exec` now also has a backend-neutral index hook in `SLMirExecEnv`, which the evaluator uses for array/slice-style indexing without baking evaluator-private storage types into MIR execution.
 - `mir_exec` now also has a backend-neutral indexed-address hook in `SLMirExecEnv`, which the evaluator uses for element references (`ARRAY_ADDR`) and simple `arr[i] = rhs` lowering on the MIR path.
 - `mir_exec` now also has backend-neutral aggregate field hooks in `SLMirExecEnv`, which the evaluator uses for `AGG_GET` / `AGG_ADDR` without exposing evaluator-private aggregate layout to MIR execution.
+- When lowered field metadata exists, `mir_exec` resolves aggregate field names through `program.fields[]` before falling back to instruction spans.
 - `mir_exec` now also executes basic control-flow ops: `JUMP`, `JUMP_IF_FALSE`, and `RETURN_VOID`.
 - `mir_exec` now also executes `CALL_HOST` through the explicit `SLMirExecEnv.hostCall` bridge.
 - `mir_exec` now also materializes `SLMirConst_FUNCTION` and executes `CALL_INDIRECT` for same-program function references.
@@ -39,6 +40,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - `mir_lower` now exposes the same instruction-materialization path to `mir_lower_stmt`, so statement-lowered runtime MIR also uses the same const/symbol/type tables instead of appending raw expression instructions.
 - MIR programs now also carry explicit source entries and per-function `sourceRef` metadata, so execution and future backends do not need to assume one global source/file for the whole program.
 - MIR programs now also carry explicit local metadata in `program.locals[]`, sliced per function by `localStart` / `localCount`.
+- MIR programs also have `program.fields[]`, and statement-lowered aggregate field ops can now reference that table instead of depending only on source spans for field names.
 
 MIR is not yet the full lowering IR for runtime execution, but the repo now carries the beginning of a backend-facing MIR program model in `src/mir.h`. The extra function/program/metadata structs and runtime-oriented opcodes are scaffolding for that migration. `src/mir_lower_stmt.c` is the first runtime-side lowering step and currently targets a deliberately small statement subset.
 
@@ -70,6 +72,7 @@ For backend-facing `SLMirProgram` lowering, instructions also have a 32-bit `aux
 The same `aux` slot is also used by lowered identifier/call instructions to reference `program.symbols[]`.
 For lowered `CAST` instructions, `aux` references `program.types[]`.
 For lowered `CALL_HOST` instructions, `aux` can reference `program.hosts[]`; until lowering fully migrates, raw host IDs are still accepted when the host table is empty.
+For lowered `AGG_GET` and `AGG_ADDR`, `aux` can reference `program.fields[]`, so field metadata can travel with the MIR program instead of being recovered only from parser spans.
 For `JUMP` and `JUMP_IF_FALSE`, `aux` is a function-local instruction index within the current `SLMirFunction`.
 Each `SLMirFunction` now also points at `program.sources[function.sourceRef]`, which is how runtime execution keeps the active source/file context aligned with the current MIR frame.
 Each `SLMirFunction` also points at its local metadata slice in `program.locals[]`, and each `SLMirLocal` currently carries a `typeRef` plus flags such as `PARAM`, `MUTABLE`, and `ZERO_INIT`.

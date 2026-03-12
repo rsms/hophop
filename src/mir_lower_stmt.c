@@ -273,6 +273,36 @@ static int SLMirStmtLowerAppendConstInt(
     return SLMirStmtLowerAppendInst(c, SLMirOp_PUSH_CONST, 0, constIndex, start, end, NULL);
 }
 
+static int SLMirStmtLowerAddFieldRef(
+    SLMirStmtLower* c, uint32_t nameStart, uint32_t nameEnd, uint32_t* outIndex) {
+    SLMirField field = { 0 };
+    uint32_t   i;
+    if (outIndex != NULL) {
+        *outIndex = UINT32_MAX;
+    }
+    if (c == NULL || outIndex == NULL || nameEnd < nameStart || nameEnd > c->src.len) {
+        return -1;
+    }
+    for (i = 0; i < c->builder.fieldLen; i++) {
+        const SLMirField* existing = &c->builder.fields[i];
+        if (existing->nameStart == nameStart && existing->nameEnd == nameEnd
+            && existing->ownerTypeRef == UINT32_MAX && existing->typeRef == UINT32_MAX)
+        {
+            *outIndex = i;
+            return 0;
+        }
+    }
+    field.nameStart = nameStart;
+    field.nameEnd = nameEnd;
+    field.ownerTypeRef = UINT32_MAX;
+    field.typeRef = UINT32_MAX;
+    if (SLMirProgramBuilderAddField(&c->builder, &field, outIndex) != 0) {
+        SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, nameStart, nameEnd);
+        return -1;
+    }
+    return 0;
+}
+
 static int SLMirStmtLowerRangeHasChar(SLStrView src, uint32_t start, uint32_t end, char ch) {
     uint32_t i;
     if (end < start || end > src.len) {
@@ -451,7 +481,8 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
         if ((SLTokenKind)expr->op == SLTok_AND && child >= 0 && (uint32_t)child < c->ast->len
             && c->ast->nodes[child].kind == SLAst_FIELD_EXPR)
         {
-            int32_t baseNode = c->ast->nodes[child].firstChild;
+            int32_t  baseNode = c->ast->nodes[child].firstChild;
+            uint32_t fieldRef = UINT32_MAX;
             if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
                 c->supported = 0;
                 return 0;
@@ -459,11 +490,17 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
             if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
+            if (SLMirStmtLowerAddFieldRef(
+                    c, c->ast->nodes[child].dataStart, c->ast->nodes[child].dataEnd, &fieldRef)
+                != 0)
+            {
+                return -1;
+            }
             return SLMirStmtLowerAppendInst(
                 c,
                 SLMirOp_AGG_ADDR,
                 0,
-                0,
+                fieldRef,
                 c->ast->nodes[child].dataStart,
                 c->ast->nodes[child].dataEnd,
                 NULL);
@@ -496,7 +533,8 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
         }
     }
     if (expr->kind == SLAst_FIELD_EXPR) {
-        int32_t baseNode = expr->firstChild;
+        int32_t  baseNode = expr->firstChild;
+        uint32_t fieldRef = UINT32_MAX;
         if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
             c->supported = 0;
             return 0;
@@ -504,8 +542,11 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
         if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
+        if (SLMirStmtLowerAddFieldRef(c, expr->dataStart, expr->dataEnd, &fieldRef) != 0) {
+            return -1;
+        }
         return SLMirStmtLowerAppendInst(
-            c, SLMirOp_AGG_GET, 0, 0, expr->dataStart, expr->dataEnd, NULL);
+            c, SLMirOp_AGG_GET, 0, fieldRef, expr->dataStart, expr->dataEnd, NULL);
     }
     if (SLMirBuildExpr(c->arena, c->ast, c->src, exprNode, &chunk, &supported, c->diag) != 0) {
         return -1;
@@ -887,7 +928,8 @@ static int SLMirStmtLowerStoreToLValueFromStack(
         return SLMirStmtLowerAppendInst(c, SLMirOp_DEREF_STORE, 0, 0, start, end, NULL);
     }
     if (c->ast->nodes[lhsNode].kind == SLAst_FIELD_EXPR) {
-        int32_t baseNode = c->ast->nodes[lhsNode].firstChild;
+        int32_t  baseNode = c->ast->nodes[lhsNode].firstChild;
+        uint32_t fieldRef = UINT32_MAX;
         if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
             c->supported = 0;
             return 0;
@@ -895,11 +937,17 @@ static int SLMirStmtLowerStoreToLValueFromStack(
         if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
+        if (SLMirStmtLowerAddFieldRef(
+                c, c->ast->nodes[lhsNode].dataStart, c->ast->nodes[lhsNode].dataEnd, &fieldRef)
+            != 0)
+        {
+            return -1;
+        }
         if (SLMirStmtLowerAppendInst(
                 c,
                 SLMirOp_AGG_ADDR,
                 0,
-                0,
+                fieldRef,
                 c->ast->nodes[lhsNode].dataStart,
                 c->ast->nodes[lhsNode].dataEnd,
                 NULL)
@@ -1074,7 +1122,8 @@ static int SLMirStmtLowerExprNodeAsStmt(
         if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
             && c->ast->nodes[lhsNode].kind == SLAst_FIELD_EXPR)
         {
-            int32_t baseNode = c->ast->nodes[lhsNode].firstChild;
+            int32_t  baseNode = c->ast->nodes[lhsNode].firstChild;
+            uint32_t fieldRef = UINT32_MAX;
             if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
                 c->supported = 0;
                 return 0;
@@ -1104,11 +1153,17 @@ static int SLMirStmtLowerExprNodeAsStmt(
             if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
+            if (SLMirStmtLowerAddFieldRef(
+                    c, c->ast->nodes[lhsNode].dataStart, c->ast->nodes[lhsNode].dataEnd, &fieldRef)
+                != 0)
+            {
+                return -1;
+            }
             if (SLMirStmtLowerAppendInst(
                     c,
                     SLMirOp_AGG_ADDR,
                     0,
-                    0,
+                    fieldRef,
                     c->ast->nodes[lhsNode].dataStart,
                     c->ast->nodes[lhsNode].dataEnd,
                     NULL)
