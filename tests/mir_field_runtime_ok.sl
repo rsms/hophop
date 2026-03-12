@@ -1,0 +1,18 @@
+struct Pair {
+	a i32
+	b i32
+}
+
+fn set_a(p *Pair, v i32) {
+	p.a = v
+}
+
+fn get_a(p *Pair) i32 {
+	return p.a
+}
+
+fn main() {
+	var p = Pair{}
+	set_a(&p, v: 9)
+	assert get_a(&p) == 9
+}

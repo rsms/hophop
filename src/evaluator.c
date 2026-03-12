@@ -2199,6 +2199,22 @@ static int SLEvalMirIndexAddr(
     SLCTFEValue*       outValue,
     int*               outIsConst,
     SLDiag* _Nullable diag);
+static int SLEvalMirAggGetField(
+    void*              ctx,
+    const SLCTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag);
+static int SLEvalMirAggAddrField(
+    void*              ctx,
+    const SLCTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag);
 static int SLEvalMirHostCall(
     void*              ctx,
     uint32_t           hostId,
@@ -6337,6 +6353,95 @@ static int SLEvalMirIndexAddr(
     return 0;
 }
 
+static int SLEvalMirAggGetField(
+    void*              ctx,
+    const SLCTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram*     p = (SLEvalProgram*)ctx;
+    const SLCTFEValue* baseValue;
+    const SLCTFEValue* payload = NULL;
+    SLEvalAggregate*   agg = NULL;
+    SLEvalTaggedEnum*  tagged;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || p->currentFile == NULL || base == NULL || outValue == NULL
+        || outIsConst == NULL)
+    {
+        return -1;
+    }
+    baseValue = SLEvalValueTargetOrSelf(base);
+    tagged = SLEvalValueAsTaggedEnum(baseValue);
+    if (tagged != NULL && tagged->payload != NULL
+        && SLEvalAggregateGetFieldValue(
+            tagged->payload, p->currentFile->source, nameStart, nameEnd, outValue))
+    {
+        *outIsConst = 1;
+        return 0;
+    }
+    if (baseValue->kind == SLCTFEValue_OPTIONAL && SLEvalOptionalPayload(baseValue, &payload)
+        && baseValue->b != 0u && payload != NULL)
+    {
+        baseValue = SLEvalValueTargetOrSelf(payload);
+    }
+    agg = SLEvalValueAsAggregate(baseValue);
+    if (agg == NULL) {
+        return 0;
+    }
+    if (!SLEvalAggregateGetFieldValue(agg, p->currentFile->source, nameStart, nameEnd, outValue)) {
+        return 0;
+    }
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLEvalMirAggAddrField(
+    void*              ctx,
+    const SLCTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram*     p = (SLEvalProgram*)ctx;
+    const SLCTFEValue* baseValue;
+    const SLCTFEValue* payload = NULL;
+    SLEvalAggregate*   agg = NULL;
+    SLCTFEValue*       fieldValue;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || p->currentFile == NULL || base == NULL || outValue == NULL
+        || outIsConst == NULL)
+    {
+        return -1;
+    }
+    baseValue = SLEvalValueTargetOrSelf(base);
+    if (baseValue->kind == SLCTFEValue_OPTIONAL && SLEvalOptionalPayload(baseValue, &payload)
+        && baseValue->b != 0u && payload != NULL)
+    {
+        baseValue = SLEvalValueTargetOrSelf(payload);
+    }
+    agg = SLEvalValueAsAggregate(baseValue);
+    if (agg == NULL) {
+        return 0;
+    }
+    fieldValue = SLEvalAggregateLookupFieldValuePtr(
+        agg, p->currentFile->source, nameStart, nameEnd);
+    if (fieldValue == NULL) {
+        return 0;
+    }
+    SLEvalValueSetReference(outValue, fieldValue);
+    *outIsConst = 1;
+    return 0;
+}
+
 static int SLEvalMirHostCall(
     void*              ctx,
     uint32_t           hostId,
@@ -6438,6 +6543,10 @@ static int SLEvalTryMirEvalTopInit(
     env.indexValueCtx = p;
     env.indexAddr = SLEvalMirIndexAddr;
     env.indexAddrCtx = p;
+    env.aggGetField = SLEvalMirAggGetField;
+    env.aggGetFieldCtx = p;
+    env.aggAddrField = SLEvalMirAggAddrField;
+    env.aggAddrFieldCtx = p;
     env.diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
     if (SLMirEvalFunction(p->arena, &program, 0, NULL, 0, &env, outValue, outIsConst) != 0) {
         return -1;

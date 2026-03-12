@@ -893,6 +893,68 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_AGG_GET: {
+                SLCTFEValue base;
+                SLCTFEValue out;
+                int         fieldIsConst = 0;
+                if (SLCTFEPop(run, &base) != 0) {
+                    return 0;
+                }
+                if (run->env.aggGetField == NULL) {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&out);
+                if (run->env.aggGetField(
+                        run->env.aggGetFieldCtx,
+                        &base,
+                        ins->start,
+                        ins->end,
+                        &out,
+                        &fieldIsConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!fieldIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_AGG_ADDR: {
+                SLCTFEValue base;
+                SLCTFEValue out;
+                int         fieldIsConst = 0;
+                if (SLCTFEPop(run, &base) != 0) {
+                    return 0;
+                }
+                if (run->env.aggAddrField == NULL) {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&out);
+                if (run->env.aggAddrField(
+                        run->env.aggAddrFieldCtx,
+                        &base,
+                        ins->start,
+                        ins->end,
+                        &out,
+                        &fieldIsConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!fieldIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_CAST: {
                 SLCTFEValue in;
                 SLCTFEValue out;
