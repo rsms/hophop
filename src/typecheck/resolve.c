@@ -1,6 +1,62 @@
 #include "internal.h"
+#include "../mir_exec.h"
+#include "../mir_lower_stmt.h"
 
 SL_API_BEGIN
+
+static int SLTCTryMirConstBlock(
+    SLTCConstEvalCtx* evalCtx,
+    int32_t           blockNode,
+    SLCTFEValue*      outValue,
+    int*              outDidReturn,
+    int*              outIsConst,
+    int*              outSupported) {
+    SLTypeCheckCtx* c;
+    SLMirProgram    program = { 0 };
+    SLMirExecEnv    env = { 0 };
+    int             supported = 0;
+    int             mirIsConst = 0;
+    if (outDidReturn != NULL) {
+        *outDidReturn = 0;
+    }
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outSupported != NULL) {
+        *outSupported = 0;
+    }
+    if (evalCtx == NULL || outValue == NULL || outDidReturn == NULL || outIsConst == NULL
+        || outSupported == NULL)
+    {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+    if (SLMirLowerSimpleFunction(c->arena, c->ast, c->src, -1, blockNode, &program, &supported, c->diag)
+        != 0)
+    {
+        return -1;
+    }
+    if (!supported) {
+        return 0;
+    }
+    env.src = c->src;
+    env.resolveIdent = SLTCResolveConstIdent;
+    env.resolveCall = SLTCResolveConstCall;
+    env.resolveCtx = evalCtx;
+    env.diag = c->diag;
+    if (SLMirEvalFunction(c->arena, &program, 0, NULL, 0, &env, outValue, &mirIsConst) != 0) {
+        return -1;
+    }
+    *outSupported = 1;
+    *outIsConst = mirIsConst;
+    if (mirIsConst) {
+        *outDidReturn = outValue->kind != SLCTFEValue_INVALID;
+    }
+    return 0;
+}
 
 static void SLTCInitConstEvalCtxFromParent(
     SLTypeCheckCtx* c, const SLTCConstEvalCtx* _Nullable parent, SLTCConstEvalCtx* outCtx) {
@@ -2750,6 +2806,7 @@ int SLTCCheckConstBlocksForCall(
     while (child >= 0) {
         if (c->ast->nodes[child].kind == SLAst_CONST_BLOCK) {
             int32_t blockNode = SLAstFirstChild(c->ast, child);
+            int     mirSupported = 0;
             if (blockNode < 0 || c->ast->nodes[blockNode].kind != SLAst_BLOCK) {
                 if (outError != NULL) {
                     outError->code = SLDiag_CONST_BLOCK_EVAL_FAILED;
@@ -2764,6 +2821,39 @@ int SLTCCheckConstBlocksForCall(
                 c->variantNarrowLen = savedVariantNarrowLen;
                 c->activeConstEvalCtx = savedActiveConstEvalCtx;
                 return 1;
+            }
+            rc = SLTCTryMirConstBlock(
+                &evalCtx, blockNode, &retValue, &didReturn, &isConst, &mirSupported);
+            if (rc != 0) {
+                c->localLen = savedLocalLen;
+                c->localUseLen = savedLocalUseLen;
+                c->variantNarrowLen = savedVariantNarrowLen;
+                c->activeConstEvalCtx = savedActiveConstEvalCtx;
+                return -1;
+            }
+            if (mirSupported && isConst) {
+                if (didReturn) {
+                    SLTCConstSetReasonNode(&evalCtx, blockNode, "const block must not return a value");
+                    c->lastConstEvalReason = c->activeConstEvalCtx->nonConstReason;
+                    c->lastConstEvalReasonStart = c->activeConstEvalCtx->nonConstStart;
+                    c->lastConstEvalReasonEnd = c->activeConstEvalCtx->nonConstEnd;
+                    if (outError != NULL) {
+                        outError->code = SLDiag_CONST_BLOCK_EVAL_FAILED;
+                        outError->start =
+                            argCount > 0 ? callArgs[0].start : c->ast->nodes[child].start;
+                        outError->end =
+                            argCount > 0 ? callArgs[argCount - 1u].end : c->ast->nodes[child].end;
+                        outError->argStart = 0;
+                        outError->argEnd = 0;
+                    }
+                    c->localLen = savedLocalLen;
+                    c->localUseLen = savedLocalUseLen;
+                    c->variantNarrowLen = savedVariantNarrowLen;
+                    c->activeConstEvalCtx = savedActiveConstEvalCtx;
+                    return 1;
+                }
+                child = SLAstNextSibling(c->ast, child);
+                continue;
             }
             SLCTFEExecResetReason(&execCtx);
             execCtx.pendingReturnExprNode = -1;

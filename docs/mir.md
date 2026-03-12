@@ -30,6 +30,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - `mir_exec` now also executes `LOCAL_ZERO` through an explicit `SLMirExecEnv.zeroInitLocal` hook.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
 - The consteval path in `src/typecheck/consteval.c` now also tries MIR-first execution for simple const function bodies before falling back to `ctfe_exec`.
+- The const-block path in `src/typecheck/resolve.c` now also tries MIR-first execution for simple `const { ... }` blocks before falling back to `ctfe_exec`.
 - Lowered function programs can now rewrite literal pushes into `SLMirConst` entries plus `SLMirOp_PUSH_CONST`, so function execution is less dependent on source-slice decoding.
 - Lowered function programs can also rewrite `LOAD_IDENT` and direct `CALL` sites to `SLMirSymbolRef` table entries, so name metadata lives in the MIR program instead of only in instruction spans.
 - Lowered call symbols now also preserve simple call-shape flags, such as selector-style calls where the receiver has already been lowered as argument `0`.
@@ -202,7 +203,8 @@ Const-eval in the typechecker is layered:
 
 - `SLTCEvalConstExprNode` handles special expression forms directly (`sizeof`, `cast`).
 - For the remaining expression subset, it calls `SLCTFEEvalExpr` (MIR path).
-- For const function bodies/statements, `SLTCResolveConstCall` uses `SLCTFEExecEvalBlock` (`src/ctfe_exec.c`).
+- For const function bodies/statements, `SLTCResolveConstCall` now tries MIR first and then falls back to `SLCTFEExecEvalBlock` (`src/ctfe_exec.c`).
+- For `const { ... }` blocks, `src/typecheck/resolve.c` now also tries MIR first and then falls back to `SLCTFEExecEvalBlock`.
 - `ctfe_exec` delegates expression evaluation back through callbacks to `SLTCEvalConstExprNode`, which usually routes to MIR.
 
 So today:
