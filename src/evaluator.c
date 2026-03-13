@@ -114,6 +114,7 @@ enum {
     SL_EVAL_MIR_HOST_PLATFORM_EXIT = SLMirHostTarget_PLATFORM_EXIT,
     SL_EVAL_MIR_HOST_FREE = SLMirHostTarget_FREE,
     SL_EVAL_MIR_HOST_CONCAT = SLMirHostTarget_CONCAT,
+    SL_EVAL_MIR_HOST_COPY = SLMirHostTarget_COPY,
 };
 
 enum {
@@ -3778,6 +3779,101 @@ static int SLEvalValueConcatStrings(
     return 1;
 }
 
+static void SLEvalValueSetUInt(SLCTFEValue* value, uint32_t n) {
+    SLEvalValueSetInt(value, (int64_t)n);
+    SLEvalValueSetRuntimeTypeCode(value, SLEvalTypeCode_UINT);
+}
+
+static int SLEvalValueCopyBuiltin(
+    SLArena* arena, const SLCTFEValue* dstArg, const SLCTFEValue* srcArg, SLCTFEValue* outValue) {
+    const SLCTFEValue* srcValue;
+    SLCTFEValue*       dstValue;
+    SLEvalArray*       dstArray;
+    SLEvalArray*       srcArray;
+    uint32_t           copyLen;
+    if (arena == NULL || dstArg == NULL || srcArg == NULL || outValue == NULL) {
+        return -1;
+    }
+    srcValue = SLEvalValueTargetOrSelf(srcArg);
+    dstValue = SLEvalValueReferenceTarget(dstArg);
+    if (dstValue == NULL) {
+        dstValue = (SLCTFEValue*)SLEvalValueTargetOrSelf(dstArg);
+    }
+    if (dstValue == NULL || srcValue == NULL) {
+        return 0;
+    }
+    dstArray = SLEvalValueAsArray(dstValue);
+    srcArray = SLEvalValueAsArray(srcValue);
+    if (dstArray != NULL && srcArray != NULL) {
+        copyLen = dstArray->len < srcArray->len ? dstArray->len : srcArray->len;
+        if (copyLen > 0) {
+            SLCTFEValue* temp = (SLCTFEValue*)SLArenaAlloc(
+                arena, sizeof(SLCTFEValue) * copyLen, (uint32_t)_Alignof(SLCTFEValue));
+            if (temp == NULL) {
+                return -1;
+            }
+            memcpy(temp, srcArray->elems, sizeof(SLCTFEValue) * copyLen);
+            memcpy(dstArray->elems, temp, sizeof(SLCTFEValue) * copyLen);
+        }
+        SLEvalValueSetUInt(outValue, copyLen);
+        return 1;
+    }
+    if (dstValue->kind == SLCTFEValue_STRING && srcValue->kind == SLCTFEValue_STRING) {
+        int32_t dstTypeCode = SLEvalTypeCode_INVALID;
+        if (!SLEvalValueGetRuntimeTypeCode(dstValue, &dstTypeCode)
+            || dstTypeCode != SLEvalTypeCode_STR_PTR)
+        {
+            return 0;
+        }
+        copyLen = dstValue->s.len < srcValue->s.len ? dstValue->s.len : srcValue->s.len;
+        if (copyLen > 0 && dstValue->s.bytes != NULL && srcValue->s.bytes != NULL) {
+            memmove((uint8_t*)dstValue->s.bytes, srcValue->s.bytes, copyLen);
+        }
+        SLEvalValueSetUInt(outValue, copyLen);
+        return 1;
+    }
+    if (dstArray != NULL && srcValue->kind == SLCTFEValue_STRING) {
+        copyLen = dstArray->len < srcValue->s.len ? dstArray->len : srcValue->s.len;
+        for (uint32_t i = 0; i < copyLen; i++) {
+            SLEvalValueSetInt(&dstArray->elems[i], (int64_t)srcValue->s.bytes[i]);
+            SLEvalValueSetRuntimeTypeCode(&dstArray->elems[i], SLEvalTypeCode_U8);
+        }
+        SLEvalValueSetUInt(outValue, copyLen);
+        return 1;
+    }
+    if (dstValue->kind == SLCTFEValue_STRING && srcArray != NULL) {
+        int32_t  dstTypeCode = SLEvalTypeCode_INVALID;
+        uint8_t* tempBytes;
+        if (!SLEvalValueGetRuntimeTypeCode(dstValue, &dstTypeCode)
+            || dstTypeCode != SLEvalTypeCode_STR_PTR)
+        {
+            return 0;
+        }
+        copyLen = dstValue->s.len < srcArray->len ? dstValue->s.len : srcArray->len;
+        tempBytes =
+            copyLen > 0 ? (uint8_t*)SLArenaAlloc(arena, copyLen, (uint32_t)_Alignof(uint8_t))
+                        : NULL;
+        if (copyLen > 0 && tempBytes == NULL) {
+            return -1;
+        }
+        for (uint32_t i = 0; i < copyLen; i++) {
+            int64_t byteValue = 0;
+            if (SLCTFEValueToInt64(&srcArray->elems[i], &byteValue) != 0 || byteValue < 0
+                || byteValue > 255)
+            {
+                return 0;
+            }
+            tempBytes[i] = (uint8_t)byteValue;
+        }
+        if (copyLen > 0 && dstValue->s.bytes != NULL) {
+            memmove((uint8_t*)dstValue->s.bytes, tempBytes, copyLen);
+        }
+        SLEvalValueSetUInt(outValue, copyLen);
+        return 1;
+    }
+    return 0;
+}
+
 static void SLEvalValueSetSpan(
     const SLParsedFile* file, uint32_t start, uint32_t end, SLCTFEValue* value) {
     uint32_t startLine = 0;
@@ -6792,6 +6888,18 @@ static int SLEvalMirHostCall(
         *outIsConst = 0;
         return 0;
     }
+    if (hostId == SL_EVAL_MIR_HOST_COPY && argCount == 2u) {
+        int copyRc = SLEvalValueCopyBuiltin(p->arena, &args[0], &args[1], outValue);
+        if (copyRc < 0) {
+            return -1;
+        }
+        if (copyRc > 0) {
+            *outIsConst = 1;
+            return 0;
+        }
+        *outIsConst = 0;
+        return 0;
+    }
     if (hostId == SL_EVAL_MIR_HOST_FREE && (argCount == 1u || argCount == 2u)) {
         SLEvalValueSetNull(outValue);
         *outIsConst = 1;
@@ -7641,6 +7749,32 @@ static int SLEvalInvokeFunction(
         *outDidReturn = 1;
         return 0;
     }
+    if (fn->isBuiltinPackageFn && SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, "copy"))
+    {
+        int copyRc;
+        if (argCount != 2) {
+            return ErrorEvalUnsupported(
+                fn->file->path,
+                fn->file->source,
+                ast->nodes[fn->fnNode].start,
+                ast->nodes[fn->fnNode].end,
+                "evaluator backend call arity mismatch");
+        }
+        copyRc = SLEvalValueCopyBuiltin(p->arena, &args[0], &args[1], outValue);
+        if (copyRc < 0) {
+            return -1;
+        }
+        if (copyRc == 0) {
+            return ErrorEvalUnsupported(
+                fn->file->path,
+                fn->file->source,
+                ast->nodes[fn->fnNode].start,
+                ast->nodes[fn->fnNode].end,
+                "copy arguments are not available in evaluator backend");
+        }
+        *outDidReturn = 1;
+        return 0;
+    }
 
     if (fn->paramCount > 0) {
         paramBindings = (SLCTFEExecBinding*)SLArenaAlloc(
@@ -8243,6 +8377,16 @@ static int SLEvalResolveCall(
             return 0;
         }
     }
+    if (argCount == 2 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "copy")) {
+        int copyRc = SLEvalValueCopyBuiltin(p->arena, &args[0], &args[1], outValue);
+        if (copyRc < 0) {
+            return -1;
+        }
+        if (copyRc > 0) {
+            *outIsConst = 1;
+            return 0;
+        }
+    }
     if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "len")) {
         const SLCTFEValue* value = SLEvalValueTargetOrSelf(&args[0]);
         if (value->kind == SLCTFEValue_STRING) {
@@ -8510,10 +8654,6 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         }
         targetValue = SLEvalValueTargetOrSelf(&baseValue);
         array = SLEvalValueAsArray(targetValue);
-        if (array == NULL) {
-            *outIsConst = 0;
-            return 0;
-        }
         if ((n->flags & SLAstFlag_INDEX_HAS_START) != 0u) {
             if (extraNode < 0 || (uint32_t)extraNode >= ast->len
                 || SLEvalExecExprCb(p, extraNode, &startValue, &startIsConst) != 0)
@@ -8539,6 +8679,29 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             extraNode = ast->nodes[extraNode].nextSibling;
         }
         if (extraNode >= 0) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (array == NULL && targetValue->kind == SLCTFEValue_STRING) {
+            int32_t currentTypeCode = SLEvalTypeCode_INVALID;
+            startIndex = (uint32_t)start;
+            endIndex = end >= 0 ? (uint32_t)end : targetValue->s.len;
+            if (startIndex > endIndex || endIndex > targetValue->s.len) {
+                *outIsConst = 0;
+                return 0;
+            }
+            *outValue = *targetValue;
+            outValue->s.bytes =
+                targetValue->s.bytes != NULL ? targetValue->s.bytes + startIndex : NULL;
+            outValue->s.len = endIndex - startIndex;
+            if (!SLEvalValueGetRuntimeTypeCode(targetValue, &currentTypeCode)) {
+                currentTypeCode = SLEvalTypeCode_STR_REF;
+            }
+            SLEvalValueSetRuntimeTypeCode(outValue, currentTypeCode);
+            *outIsConst = 1;
+            return 0;
+        }
+        if (array == NULL) {
             *outIsConst = 0;
             return 0;
         }

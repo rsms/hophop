@@ -162,6 +162,7 @@ typedef enum {
     SLMirHostTarget_PLATFORM_EXIT = 2,
     SLMirHostTarget_FREE = 3,
     SLMirHostTarget_CONCAT = 4,
+    SLMirHostTarget_COPY = 5,
 } SLMirHostTarget;
 
 typedef struct {

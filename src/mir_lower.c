@@ -366,6 +366,8 @@ static int SLMirLowerRewriteHostInst(
     }
     if (in->end == in->start + 5u && memcmp(src.ptr + in->start, "print", 5) == 0) {
         hostTarget = SLMirHostTarget_PRINT;
+    } else if (in->end == in->start + 4u && memcmp(src.ptr + in->start, "copy", 4) == 0) {
+        hostTarget = SLMirHostTarget_COPY;
     } else if (in->end == in->start + 6u && memcmp(src.ptr + in->start, "concat", 6) == 0) {
         hostTarget = SLMirHostTarget_CONCAT;
     } else if (in->end == in->start + 4u && memcmp(src.ptr + in->start, "free", 4) == 0) {

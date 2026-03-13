@@ -403,6 +403,22 @@ static int SLEvalMirRewriteBuiltinHostCall(
         return 1;
     }
     if ((uint32_t)ins->tok == 2u
+        && SliceEqCStr(callerFn->file->source, symbol->nameStart, symbol->nameEnd, "copy"))
+    {
+        host.nameStart = symbol->nameStart;
+        host.nameEnd = symbol->nameEnd;
+        host.kind = SLMirHost_GENERIC;
+        host.flags = 0;
+        host.target = SL_EVAL_MIR_HOST_COPY;
+        if (SLMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
+            return -1;
+        }
+        ins->op = SLMirOp_CALL_HOST;
+        ins->aux = hostIndex;
+        *outRewritten = 1;
+        return 1;
+    }
+    if ((uint32_t)ins->tok == 2u
         && SliceEqCStr(callerFn->file->source, symbol->nameStart, symbol->nameEnd, "concat"))
     {
         host.nameStart = symbol->nameStart;

@@ -331,6 +331,7 @@
 {"id":"integration.runtime.mir_len_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_len_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_cstr_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_cstr_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_print_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_print_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":false,"stderr_empty":true}
+{"id":"integration.runtime.mir_copy_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_copy_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_concat_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_concat_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_free_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_free_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_tuple_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_tuple_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
@@ -414,7 +415,7 @@
 {"id":"integration.runtime.ptr_embedded_upcast_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/ptr_embedded_upcast_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"integration.runtime.types_mut_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/types_mut_ok.sl"}
 {"id":"integration.runtime.slice_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slice_ok.sl"}
-{"id":"integration.runtime.str_slice_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/str_slice_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
+{"id":"integration.runtime.str_slice_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/str_slice_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"pass","eval_expect_exit":0}
 {"id":"integration.runtime.slp29_for_in_runtime_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/slp29_for_in_runtime_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"pass"}
 {"id":"integration.runtime.slp30_for_in_protocol_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/slp30_for_in_protocol_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"pass"}
 {"id":"integration.runtime.slp30_for_in_protocol_iter_autoref_value_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/slp30_for_in_protocol_iter_autoref_value_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"pass"}
@@ -717,4 +718,4 @@
 {"id":"check:tests/copy_str_from_u8_slice_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"check","input":"tests/copy_str_from_u8_slice_bad.sl"}
 {"id":"check:tests/copy_str_from_u8_slice_cast_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/copy_str_from_u8_slice_cast_ok.sl"}
 {"id":"integration.codegen.copy_builtin_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/copy_builtin_ok.sl","contains":["__sl_copy("]}
-{"id":"integration.runtime.copy_builtin_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/copy_builtin_ok.sl","expect_exit":0}
+{"id":"integration.runtime.copy_builtin_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/copy_builtin_ok.sl","expect_exit":0,"eval_expect":"pass","eval_expect_exit":0}
