@@ -418,10 +418,6 @@ static int SLMirStmtLowerRewriteExprChunk(SLMirStmtLower* c, const SLMirChunk* c
     uint32_t i;
     for (i = 0; i < chunk->len; i++) {
         SLMirInst inst = chunk->v[i];
-        if (inst.op == SLMirOp_CALL && inst.aux != 0) {
-            c->supported = 0;
-            return 0;
-        }
         if (inst.op == SLMirOp_LOAD_IDENT) {
             uint32_t slot = 0;
             if (SLMirStmtLowerFindLocal(c, inst.start, inst.end, &slot, NULL)) {
