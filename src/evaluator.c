@@ -2257,6 +2257,8 @@ static int SLEvalTryMirZeroInitType(
     SLEvalProgram*      p,
     const SLParsedFile* file,
     int32_t             typeNode,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
     SLCTFEValue*        outValue,
     int*                outIsConst);
 static int SLEvalTryMirEvalTopInit(
@@ -6864,10 +6866,12 @@ static int SLEvalTryMirZeroInitType(
     SLEvalProgram*      p,
     const SLParsedFile* file,
     int32_t             typeNode,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
     SLCTFEValue*        outValue,
     int*                outIsConst) {
     return SLEvalTryMirEvalTopInit(
-        p, file, -1, typeNode, 0, 0, NULL, -1, outValue, outIsConst, NULL);
+        p, file, -1, typeNode, nameStart, nameEnd, NULL, -1, outValue, outIsConst, NULL);
 }
 
 static int SLEvalTryMirEvalTopInit(
@@ -7816,7 +7820,14 @@ static int SLEvalEvalTopVar(
                 p, topVar->initExprNode, topVar->file, topVar->declTypeNode, &value, &isConst);
         }
     } else if (topVar->declTypeNode >= 0) {
-        rc = SLEvalTryMirZeroInitType(p, topVar->file, topVar->declTypeNode, &value, &isConst);
+        rc = SLEvalTryMirZeroInitType(
+            p,
+            topVar->file,
+            topVar->declTypeNode,
+            topVar->nameStart,
+            topVar->nameEnd,
+            &value,
+            &isConst);
     } else {
         rc = 0;
         isConst = 0;
