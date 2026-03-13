@@ -240,6 +240,11 @@ static int SLMirValueIsFunctionRef(const SLMirExecValue* value, uint32_t* _Nulla
     return 1;
 }
 
+int SLMirValueAsFunctionRef(
+    const SLMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex) {
+    return SLMirValueIsFunctionRef(value, outFunctionIndex);
+}
+
 static void SLMirResolveSymbolName(
     const SLMirExecRun* _Nonnull run,
     const SLMirInst* _Nonnull ins,

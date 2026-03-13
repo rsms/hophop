@@ -114,6 +114,35 @@ static int SLEvalMirInternSourceFile(
     return 0;
 }
 
+static void SLEvalMirAdaptOutValue(
+    const SLEvalMirExecCtx* c, SLCTFEValue* _Nullable value, int* _Nullable inOutIsConst) {
+    uint32_t mirFnIndex = UINT32_MAX;
+    uint32_t evalFnIndex = UINT32_MAX;
+    if (inOutIsConst != NULL && !*inOutIsConst) {
+        return;
+    }
+    if (c == NULL || value == NULL) {
+        return;
+    }
+    if (!SLMirValueAsFunctionRef(value, &mirFnIndex)) {
+        return;
+    }
+    if (c->mirToEval == NULL || mirFnIndex >= c->mirToEvalLen) {
+        if (inOutIsConst != NULL) {
+            *inOutIsConst = 0;
+        }
+        return;
+    }
+    evalFnIndex = c->mirToEval[mirFnIndex];
+    if (evalFnIndex == UINT32_MAX) {
+        if (inOutIsConst != NULL) {
+            *inOutIsConst = 0;
+        }
+        return;
+    }
+    SLEvalValueSetFunctionRef(value, evalFnIndex);
+}
+
 static const SLPackage* _Nullable SLEvalMirFindImportTargetByAliasSlice(
     const SLPackage* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
@@ -752,6 +781,7 @@ static int SLEvalMirRewriteTopInitCalls(
         SLMirInst* ins = &c->builder.insts[instIndex];
         int        isTopConst = 0;
         uint32_t   targetTopInitIndex = UINT32_MAX;
+        uint32_t   targetFnIdentIndex = UINT32_MAX;
         uint32_t   targetEvalFnIndex = UINT32_MAX;
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        lowerRc;
@@ -768,6 +798,19 @@ static int SLEvalMirRewriteTopInitCalls(
                 return 0;
             }
             SLEvalMirRewriteLoadIdentToMirFunction(ins, targetMirFnIndex);
+            continue;
+        }
+        if (SLEvalMirResolveFunctionIdentTargetForFile(c, file, ins, &targetFnIdentIndex)) {
+            lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetFnIdentIndex, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                return -1;
+            }
+            if (lowerRc == 0) {
+                return 0;
+            }
+            if (SLEvalMirRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
+                return -1;
+            }
             continue;
         }
         if (SLEvalMirResolveQualifiedCallTargetForNode(
@@ -1057,6 +1100,7 @@ static int SLEvalTryMirInvokeFunction(
     {
         return -1;
     }
+    SLEvalMirAdaptOutValue(&lowerCtx.execCtx, outValue, &mirIsConst);
     *outIsConst = mirIsConst;
     if (mirIsConst) {
         *outDidReturn = outValue->kind != SLCTFEValue_INVALID;

@@ -2285,6 +2285,8 @@ static int SLEvalMirBuildTopInitProgram(
     SLEvalMirExecCtx*   outExecCtx,
     uint32_t*           outRootMirFnIndex,
     int*                outSupported);
+static void SLEvalMirAdaptOutValue(
+    const SLEvalMirExecCtx* c, SLCTFEValue* _Nullable value, int* _Nullable inOutIsConst);
 static int SLEvalTryMirEvalExprWithType(
     SLEvalProgram*      p,
     int32_t             exprNode,
@@ -6931,6 +6933,7 @@ static int SLEvalTryMirEvalTopInit(
     {
         return -1;
     }
+    SLEvalMirAdaptOutValue(&functionCtx, outValue, outIsConst);
     if (*outIsConst && coerceTypeFile != NULL && coerceTypeNode >= 0
         && SLEvalAdaptStringValueForType(
                p->arena, coerceTypeFile, coerceTypeNode, outValue, outValue)
