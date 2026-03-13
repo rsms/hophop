@@ -602,6 +602,8 @@ static int SLEvalMirBuildTopInitProgram(
     const SLParsedFile* file,
     int32_t             initExprNode,
     int32_t             declTypeNode,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
     SLMirProgram*       outProgram,
     SLEvalMirExecCtx*   outExecCtx,
     uint32_t*           outRootMirFnIndex,
@@ -631,13 +633,15 @@ static int SLEvalMirBuildTopInitProgram(
     if (SLEvalMirInitLowerCtx(p, 1u, &lowerCtx) != 0) {
         return -1;
     }
-    if (SLMirLowerAppendTopInitFunction(
+    if (SLMirLowerAppendNamedTopInitFunction(
             &lowerCtx.builder,
             p->arena,
             &file->ast,
             (SLStrView){ file->source, file->sourceLen },
             initExprNode,
             declTypeNode,
+            nameStart,
+            nameEnd,
             &rootMirFnIndex,
             &supported,
             lowerCtx.diag)

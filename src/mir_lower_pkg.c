@@ -182,6 +182,41 @@ int SLMirLowerAppendTopInitFunction(
     return 0;
 }
 
+int SLMirLowerAppendNamedTopInitFunction(
+    SLMirProgramBuilder* _Nonnull builder,
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   initExprNode,
+    int32_t   declTypeNode,
+    uint32_t  nameStart,
+    uint32_t  nameEnd,
+    uint32_t* _Nonnull outFunctionIndex,
+    int* _Nonnull outSupported,
+    SLDiag* _Nullable diag) {
+    if (SLMirLowerAppendTopInitFunction(
+            builder,
+            arena,
+            ast,
+            src,
+            initExprNode,
+            declTypeNode,
+            outFunctionIndex,
+            outSupported,
+            diag)
+        != 0)
+    {
+        return -1;
+    }
+    if (*outSupported && *outFunctionIndex != UINT32_MAX && nameEnd > nameStart
+        && *outFunctionIndex < builder->funcLen)
+    {
+        builder->funcs[*outFunctionIndex].nameStart = nameStart;
+        builder->funcs[*outFunctionIndex].nameEnd = nameEnd;
+    }
+    return 0;
+}
+
 int SLMirLowerTopInitAsFunction(
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,

@@ -2264,6 +2264,8 @@ static int SLEvalTryMirEvalTopInit(
     const SLParsedFile* file,
     int32_t             initExprNode,
     int32_t             declTypeNode,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
     const SLParsedFile* _Nullable coerceTypeFile,
     int32_t      coerceTypeNode,
     SLCTFEValue* outValue,
@@ -2274,6 +2276,8 @@ static int SLEvalMirBuildTopInitProgram(
     const SLParsedFile* file,
     int32_t             initExprNode,
     int32_t             declTypeNode,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
     SLMirProgram*       outProgram,
     SLEvalMirExecCtx*   outExecCtx,
     uint32_t*           outRootMirFnIndex,
@@ -2282,6 +2286,8 @@ static int SLEvalTryMirEvalExprWithType(
     SLEvalProgram*      p,
     int32_t             exprNode,
     const SLParsedFile* exprFile,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
     const SLParsedFile* _Nullable typeFile,
     int32_t      typeNode,
     SLCTFEValue* outValue,
@@ -6860,7 +6866,8 @@ static int SLEvalTryMirZeroInitType(
     int32_t             typeNode,
     SLCTFEValue*        outValue,
     int*                outIsConst) {
-    return SLEvalTryMirEvalTopInit(p, file, -1, typeNode, NULL, -1, outValue, outIsConst, NULL);
+    return SLEvalTryMirEvalTopInit(
+        p, file, -1, typeNode, 0, 0, NULL, -1, outValue, outIsConst, NULL);
 }
 
 static int SLEvalTryMirEvalTopInit(
@@ -6868,6 +6875,8 @@ static int SLEvalTryMirEvalTopInit(
     const SLParsedFile* file,
     int32_t             initExprNode,
     int32_t             declTypeNode,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
     const SLParsedFile* _Nullable coerceTypeFile,
     int32_t      coerceTypeNode,
     SLCTFEValue* outValue,
@@ -6889,6 +6898,8 @@ static int SLEvalTryMirEvalTopInit(
             file,
             initExprNode,
             declTypeNode,
+            nameStart,
+            nameEnd,
             &program,
             &functionCtx,
             &rootMirFnIndex,
@@ -6924,13 +6935,25 @@ static int SLEvalTryMirEvalExprWithType(
     SLEvalProgram*      p,
     int32_t             exprNode,
     const SLParsedFile* exprFile,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
     const SLParsedFile* _Nullable typeFile,
     int32_t      typeNode,
     SLCTFEValue* outValue,
     int*         outIsConst,
     int*         outSupported) {
     return SLEvalTryMirEvalTopInit(
-        p, exprFile, exprNode, -1, typeFile, typeNode, outValue, outIsConst, outSupported);
+        p,
+        exprFile,
+        exprNode,
+        -1,
+        nameStart,
+        nameEnd,
+        typeFile,
+        typeNode,
+        outValue,
+        outIsConst,
+        outSupported);
 }
 
 static int SLEvalBinaryOpForAssignToken(SLTokenKind assignOp, SLTokenKind* outBinaryOp) {
@@ -7781,6 +7804,8 @@ static int SLEvalEvalTopVar(
             p,
             topVar->initExprNode,
             topVar->file,
+            topVar->nameStart,
+            topVar->nameEnd,
             topVar->file,
             topVar->declTypeNode,
             &value,
@@ -7879,7 +7904,16 @@ static int SLEvalEvalTopConst(
     {
         int mirSupported = 0;
         rc = SLEvalTryMirEvalExprWithType(
-            p, topConst->initExprNode, topConst->file, NULL, -1, &value, &isConst, &mirSupported);
+            p,
+            topConst->initExprNode,
+            topConst->file,
+            topConst->nameStart,
+            topConst->nameEnd,
+            NULL,
+            -1,
+            &value,
+            &isConst,
+            &mirSupported);
         if (rc == 0 && !mirSupported) {
             rc = SLEvalExecExprCb(p, topConst->initExprNode, &value, &isConst);
         }
