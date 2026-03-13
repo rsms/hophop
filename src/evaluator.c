@@ -259,6 +259,12 @@ static void    SLEvalValueSetRuntimeTypeCode(SLCTFEValue* value, int32_t typeCod
 static int     SLEvalValueGetRuntimeTypeCode(const SLCTFEValue* value, int32_t* outTypeCode);
 static int32_t SLEvalFindTopConstBySlice(
     const SLEvalProgram* p, const SLParsedFile* file, uint32_t nameStart, uint32_t nameEnd);
+static int32_t SLEvalFindTopConstBySliceInPackage(
+    const SLEvalProgram* p,
+    const SLPackage*     pkg,
+    const SLParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd);
 static int SLEvalEvalTopConst(
     SLEvalProgram* p, uint32_t topConstIndex, SLCTFEValue* outValue, int* outIsConst);
 static int SLEvalInvokeFunction(
@@ -1380,12 +1386,26 @@ static int SLEvalResolveTypeValueName(
         if (declNode >= 0 && declFile != NULL) {
             return SLEvalMakeNamedTypeValue(p, declFile, declNode, namedKind, outValue);
         }
+        {
+            int32_t topConstIndex = SLEvalFindTopConstBySliceInPackage(
+                p, targetPkg, callerFile, lookupStart, lookupEnd);
+            if (topConstIndex >= 0) {
+                int isConst = 0;
+                if (SLEvalEvalTopConst(p, (uint32_t)topConstIndex, outValue, &isConst) != 0) {
+                    return -1;
+                }
+                if (isConst && outValue->kind == SLCTFEValue_TYPE) {
+                    return 1;
+                }
+            }
+        }
     }
     if (p->loader == NULL) {
         return 0;
     }
     for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
         const SLPackage* pkg = &p->loader->packages[pkgIndex];
+        int32_t          topConstIndex;
         if (pkg == targetPkg) {
             continue;
         }
@@ -1393,6 +1413,17 @@ static int SLEvalResolveTypeValueName(
             pkg, callerFile, lookupStart, lookupEnd, &declFile, &namedKind);
         if (declNode >= 0 && declFile != NULL) {
             return SLEvalMakeNamedTypeValue(p, declFile, declNode, namedKind, outValue);
+        }
+        topConstIndex = SLEvalFindTopConstBySliceInPackage(
+            p, pkg, callerFile, lookupStart, lookupEnd);
+        if (topConstIndex >= 0) {
+            int isConst = 0;
+            if (SLEvalEvalTopConst(p, (uint32_t)topConstIndex, outValue, &isConst) != 0) {
+                return -1;
+            }
+            if (isConst && outValue->kind == SLCTFEValue_TYPE) {
+                return 1;
+            }
         }
     }
     return 0;
@@ -4275,6 +4306,43 @@ static int32_t SLEvalFindTopConstBySlice(
         }
     }
     return -1;
+}
+
+static int32_t SLEvalFindTopConstBySliceInPackage(
+    const SLEvalProgram* p,
+    const SLPackage*     pkg,
+    const SLParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd) {
+    uint32_t i;
+    int32_t  found = -1;
+    if (p == NULL || pkg == NULL || callerFile == NULL || nameEnd < nameStart
+        || nameEnd > callerFile->sourceLen)
+    {
+        return -1;
+    }
+    for (i = 0; i < p->topConstLen; i++) {
+        const SLEvalTopConst* topConst = &p->topConsts[i];
+        const SLPackage*      topConstPkg = SLEvalFindPackageByFile(p, topConst->file);
+        if (topConstPkg != pkg) {
+            continue;
+        }
+        if (!SliceEqSlice(
+                callerFile->source,
+                nameStart,
+                nameEnd,
+                topConst->file->source,
+                topConst->nameStart,
+                topConst->nameEnd))
+        {
+            continue;
+        }
+        if (found >= 0) {
+            return -2;
+        }
+        found = (int32_t)i;
+    }
+    return found;
 }
 
 static int32_t SLEvalFindTopVarBySlice(
