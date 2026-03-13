@@ -457,6 +457,10 @@ static int SLEvalMirLowerTopConst(
     SLEvalMirLowerCtx* c, uint32_t topConstIndex, uint32_t* _Nullable outMirFnIndex);
 static int SLEvalMirResolveTopConstIdentTargetForFile(
     const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex);
+static int SLEvalMirResolveFunctionIdentTargetForFile(
+    const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex);
+static int SLEvalMirRewriteLoadIdentToFunctionConst(
+    SLEvalMirLowerCtx* c, SLMirInst* ins, uint32_t targetMirFnIndex);
 
 static int SLEvalMirLowerFunction(
     SLEvalMirLowerCtx* c, int32_t evalFnIndex, uint32_t* _Nullable outMirFnIndex) {
@@ -535,6 +539,7 @@ static int SLEvalMirLowerFunction(
     {
         SLMirInst* ins = &c->builder.insts[instIndex];
         uint32_t   targetTopConstIndex = UINT32_MAX;
+        uint32_t   targetFnIdentIndex = UINT32_MAX;
         uint32_t   targetEvalFnIndex = UINT32_MAX;
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        lowerRc;
@@ -555,6 +560,29 @@ static int SLEvalMirLowerFunction(
                 return 0;
             }
             SLEvalMirRewriteLoadIdentToMirFunction(ins, targetMirFnIndex);
+            continue;
+        }
+        if (SLEvalMirResolveFunctionIdentTargetForFile(c, fn->file, ins, &targetFnIdentIndex)) {
+            lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetFnIdentIndex, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                if (c->loweringFns != NULL) {
+                    c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+                }
+                return -1;
+            }
+            if (lowerRc == 0) {
+                c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+                if (c->loweringFns != NULL) {
+                    c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+                }
+                return 0;
+            }
+            if (SLEvalMirRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
+                if (c->loweringFns != NULL) {
+                    c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+                }
+                return -1;
+            }
             continue;
         }
         lowerRc = SLEvalMirRewriteBuiltinHostCall(c, fn, ins, &rewrittenHost);
@@ -608,6 +636,24 @@ static void SLEvalMirRewriteLoadIdentToMirFunction(SLMirInst* ins, uint32_t targ
     ins->aux = targetMirFnIndex;
 }
 
+static int SLEvalMirRewriteLoadIdentToFunctionConst(
+    SLEvalMirLowerCtx* c, SLMirInst* ins, uint32_t targetMirFnIndex) {
+    SLMirConst value = { 0 };
+    uint32_t   constIndex = UINT32_MAX;
+    if (c == NULL || ins == NULL) {
+        return -1;
+    }
+    value.kind = SLMirConst_FUNCTION;
+    value.bits = targetMirFnIndex;
+    if (SLMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
+        return -1;
+    }
+    ins->op = SLMirOp_PUSH_CONST;
+    ins->tok = 0u;
+    ins->aux = constIndex;
+    return 0;
+}
+
 static int SLEvalMirLowerTopConst(
     SLEvalMirLowerCtx* c, uint32_t topConstIndex, uint32_t* _Nullable outMirFnIndex);
 static int SLEvalMirLowerTopVar(
@@ -630,6 +676,28 @@ static int SLEvalMirResolveTopConstIdentTargetForFile(
         return 1;
     }
     return 0;
+}
+
+static int SLEvalMirResolveFunctionIdentTargetForFile(
+    const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex) {
+    int32_t fnIndex = -1;
+    if (outIndex != NULL) {
+        *outIndex = UINT32_MAX;
+    }
+    if (c == NULL || c->p == NULL || file == NULL || ins == NULL || outIndex == NULL
+        || ins->op != SLMirOp_LOAD_IDENT)
+    {
+        return 0;
+    }
+    fnIndex = SLEvalFindAnyFunctionBySlice(c->p, file, ins->start, ins->end);
+    if (fnIndex < 0 || (uint32_t)fnIndex >= c->p->funcLen
+        || c->p->funcs[(uint32_t)fnIndex].isBuiltinPackageFn
+        || c->p->funcs[(uint32_t)fnIndex].isVariadic)
+    {
+        return 0;
+    }
+    *outIndex = (uint32_t)fnIndex;
+    return 1;
 }
 
 static int SLEvalMirResolveTopInitIdentTargetForFile(
