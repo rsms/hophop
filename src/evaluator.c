@@ -113,6 +113,7 @@ enum {
     SL_EVAL_MIR_HOST_PRINT = SLMirHostTarget_PRINT,
     SL_EVAL_MIR_HOST_PLATFORM_EXIT = SLMirHostTarget_PLATFORM_EXIT,
     SL_EVAL_MIR_HOST_FREE = SLMirHostTarget_FREE,
+    SL_EVAL_MIR_HOST_CONCAT = SLMirHostTarget_CONCAT,
 };
 
 enum {
@@ -6777,6 +6778,18 @@ static int SLEvalMirHostCall(
         fflush(stdout);
         SLEvalValueSetNull(outValue);
         *outIsConst = 1;
+        return 0;
+    }
+    if (hostId == SL_EVAL_MIR_HOST_CONCAT && argCount == 2u) {
+        int concatRc = SLEvalValueConcatStrings(p->arena, &args[0], &args[1], outValue);
+        if (concatRc < 0) {
+            return -1;
+        }
+        if (concatRc > 0) {
+            *outIsConst = 1;
+            return 0;
+        }
+        *outIsConst = 0;
         return 0;
     }
     if (hostId == SL_EVAL_MIR_HOST_FREE && (argCount == 1u || argCount == 2u)) {
