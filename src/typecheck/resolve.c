@@ -73,6 +73,10 @@ static int SLTCTryMirConstBlock(
     env.zeroInitCtx = evalCtx;
     env.coerceValueForType = SLTCMirConstCoerceValueForType;
     env.coerceValueCtx = evalCtx;
+    env.indexValue = SLTCMirConstIndexValue;
+    env.indexValueCtx = evalCtx;
+    env.makeTuple = SLTCMirConstMakeTuple;
+    env.makeTupleCtx = evalCtx;
     env.diag = c->diag;
     if (SLMirEvalFunction(c->arena, &program, mirFnIndex, NULL, 0, &env, outValue, &mirIsConst)
         != 0)
@@ -2819,6 +2823,8 @@ int SLTCCheckConstBlocksForCall(
     execCtx.resolveTypeCtx = &evalCtx;
     execCtx.inferValueType = SLTCEvalConstExecInferValueTypeCb;
     execCtx.inferValueTypeCtx = &evalCtx;
+    execCtx.forInIndex = SLTCEvalConstForInIndexCb;
+    execCtx.forInIndexCtx = &evalCtx;
     execCtx.pendingReturnExprNode = -1;
     execCtx.forIterLimit = SLTC_CONST_FOR_MAX_ITERS;
     memset(&evalCtx, 0, sizeof(evalCtx));

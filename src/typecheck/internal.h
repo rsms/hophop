@@ -785,6 +785,29 @@ int SLTCMirConstCoerceValueForType(
     const SLMirTypeRef* _Nonnull typeRef,
     SLCTFEValue* _Nonnull inOutValue,
     SLDiag* _Nullable diag);
+int SLTCMirConstIndexValue(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    const SLCTFEValue* _Nonnull index,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstMakeTuple(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull elems,
+    uint32_t elemCount,
+    uint32_t typeNodeHint,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCEvalConstForInIndexCb(
+    void* _Nullable ctx,
+    SLCTFEExecCtx* _Nonnull execCtx,
+    const SLCTFEValue* _Nonnull sourceValue,
+    uint32_t index,
+    int      byRef,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
 int32_t SLTCFindConstCallableFunction(
     SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, uint32_t argCount);
 int SLTCResolveConstCall(

@@ -2647,7 +2647,7 @@ static const SLTCMirConstTuple* _Nullable SLTCMirConstTupleFromValue(const SLCTF
     return (const SLTCMirConstTuple*)value->s.bytes;
 }
 
-static int SLTCMirConstMakeTuple(
+int SLTCMirConstMakeTuple(
     void* _Nullable ctx,
     const SLCTFEValue* elems,
     uint32_t           elemCount,
@@ -2697,7 +2697,7 @@ static int SLTCMirConstMakeTuple(
     return 0;
 }
 
-static int SLTCMirConstIndexValue(
+int SLTCMirConstIndexValue(
     void* _Nullable ctx,
     const SLCTFEValue* base,
     const SLCTFEValue* index,
@@ -2725,8 +2725,8 @@ static int SLTCMirConstIndexValue(
     return 0;
 }
 
-static int SLTCEvalConstForInIndexCb(
-    void*              ctx,
+int SLTCEvalConstForInIndexCb(
+    void* _Nullable ctx,
     SLCTFEExecCtx*     execCtx,
     const SLCTFEValue* sourceValue,
     uint32_t           index,
