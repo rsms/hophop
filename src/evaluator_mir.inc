@@ -452,6 +452,12 @@ static void SLEvalMirRewriteCallToMirFunction(
     }
 }
 
+static void SLEvalMirRewriteLoadIdentToMirFunction(SLMirInst* ins, uint32_t targetMirFnIndex);
+static int SLEvalMirLowerTopConst(
+    SLEvalMirLowerCtx* c, uint32_t topConstIndex, uint32_t* _Nullable outMirFnIndex);
+static int SLEvalMirResolveTopConstIdentTargetForFile(
+    const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex);
+
 static int SLEvalMirLowerFunction(
     SLEvalMirLowerCtx* c, int32_t evalFnIndex, uint32_t* _Nullable outMirFnIndex) {
     const SLEvalFunction* fn;
@@ -528,10 +534,29 @@ static int SLEvalMirLowerFunction(
          instIndex++)
     {
         SLMirInst* ins = &c->builder.insts[instIndex];
+        uint32_t   targetTopConstIndex = UINT32_MAX;
         uint32_t   targetEvalFnIndex = UINT32_MAX;
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        lowerRc;
         int        rewrittenHost = 0;
+        if (SLEvalMirResolveTopConstIdentTargetForFile(c, fn->file, ins, &targetTopConstIndex)) {
+            lowerRc = SLEvalMirLowerTopConst(c, targetTopConstIndex, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                if (c->loweringFns != NULL) {
+                    c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+                }
+                return -1;
+            }
+            if (lowerRc == 0) {
+                c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+                if (c->loweringFns != NULL) {
+                    c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+                }
+                return 0;
+            }
+            SLEvalMirRewriteLoadIdentToMirFunction(ins, targetMirFnIndex);
+            continue;
+        }
         lowerRc = SLEvalMirRewriteBuiltinHostCall(c, fn, ins, &rewrittenHost);
         if (lowerRc < 0) {
             return -1;
@@ -588,6 +613,25 @@ static int SLEvalMirLowerTopConst(
 static int SLEvalMirLowerTopVar(
     SLEvalMirLowerCtx* c, uint32_t topVarIndex, uint32_t* _Nullable outMirFnIndex);
 
+static int SLEvalMirResolveTopConstIdentTargetForFile(
+    const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex) {
+    int32_t topIndex = -1;
+    if (outIndex != NULL) {
+        *outIndex = UINT32_MAX;
+    }
+    if (c == NULL || c->p == NULL || file == NULL || ins == NULL || outIndex == NULL
+        || ins->op != SLMirOp_LOAD_IDENT)
+    {
+        return 0;
+    }
+    topIndex = SLEvalFindTopConstBySlice(c->p, file, ins->start, ins->end);
+    if (topIndex >= 0) {
+        *outIndex = (uint32_t)topIndex;
+        return 1;
+    }
+    return 0;
+}
+
 static int SLEvalMirResolveTopInitIdentTargetForFile(
     const SLEvalMirLowerCtx* c,
     const SLParsedFile*      file,
@@ -606,10 +650,8 @@ static int SLEvalMirResolveTopInitIdentTargetForFile(
     {
         return 0;
     }
-    topIndex = SLEvalFindTopConstBySlice(c->p, file, ins->start, ins->end);
-    if (topIndex >= 0) {
+    if (SLEvalMirResolveTopConstIdentTargetForFile(c, file, ins, outIndex)) {
         *outIsTopConst = 1;
-        *outIndex = (uint32_t)topIndex;
         return 1;
     }
     topIndex = SLEvalFindTopVarBySlice(c->p, file, ins->start, ins->end);
