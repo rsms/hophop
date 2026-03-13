@@ -403,6 +403,24 @@ static int SLEvalMirRewriteQualifiedHostCall(
     return 0;
 }
 
+static void SLEvalMirRewriteCallToMirFunction(
+    const SLEvalMirLowerCtx* c, SLMirInst* ins, uint32_t targetMirFnIndex) {
+    int preserveReceiverArg0 = 0;
+    if (c != NULL && ins != NULL && c->builder.symbols != NULL && ins->aux < c->builder.symbolLen
+        && (c->builder.symbols[ins->aux].flags & SLMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u)
+    {
+        preserveReceiverArg0 = 1;
+    }
+    if (ins == NULL) {
+        return;
+    }
+    ins->op = SLMirOp_CALL_FN;
+    ins->aux = targetMirFnIndex;
+    if (preserveReceiverArg0) {
+        ins->tok |= SLMirCallArgFlag_RECEIVER_ARG0;
+    }
+}
+
 static int SLEvalMirLowerFunction(
     SLEvalMirLowerCtx* c, int32_t evalFnIndex, uint32_t* _Nullable outMirFnIndex) {
     const SLEvalFunction* fn;
@@ -483,7 +501,6 @@ static int SLEvalMirLowerFunction(
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        lowerRc;
         int        rewrittenHost = 0;
-        int        dropReceiverArg0 = 0;
         lowerRc = SLEvalMirRewriteBuiltinHostCall(c, fn, ins, &rewrittenHost);
         if (lowerRc < 0) {
             return -1;
@@ -497,11 +514,6 @@ static int SLEvalMirLowerFunction(
         }
         if (rewrittenHost) {
             continue;
-        }
-        if (ins->op == SLMirOp_CALL && c->builder.symbols != NULL && ins->aux < c->builder.symbolLen
-            && (c->builder.symbols[ins->aux].flags & SLMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u)
-        {
-            dropReceiverArg0 = 1;
         }
         if (!SLEvalMirResolveDirectCallTarget(c, fn, evalFnIndex, ins, &targetEvalFnIndex)) {
             continue;
@@ -520,11 +532,7 @@ static int SLEvalMirLowerFunction(
             }
             return 0;
         }
-        ins->op = SLMirOp_CALL_FN;
-        ins->aux = targetMirFnIndex;
-        if (dropReceiverArg0) {
-            ins->tok |= SLMirCallArgFlag_RECEIVER_ARG0;
-        }
+        SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
     }
     if (c->loweringFns != NULL) {
         c->loweringFns[(uint32_t)evalFnIndex] = 0u;
@@ -557,7 +565,6 @@ static int SLEvalMirRewriteTopInitCalls(
         uint32_t   targetEvalFnIndex = UINT32_MAX;
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        lowerRc;
-        int        dropReceiverArg0 = 0;
         if (SLEvalMirResolveQualifiedCallTargetForNode(
                 c, file, initExprNode, ins, &targetEvalFnIndex))
         {
@@ -568,16 +575,7 @@ static int SLEvalMirRewriteTopInitCalls(
             if (lowerRc == 0) {
                 return 0;
             }
-            if (c->builder.symbols != NULL && ins->aux < c->builder.symbolLen
-                && (c->builder.symbols[ins->aux].flags & SLMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u)
-            {
-                dropReceiverArg0 = 1;
-            }
-            ins->op = SLMirOp_CALL_FN;
-            ins->aux = targetMirFnIndex;
-            if (dropReceiverArg0) {
-                ins->tok |= SLMirCallArgFlag_RECEIVER_ARG0;
-            }
+            SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
             continue;
         }
         if (!SLEvalMirResolvePlainDirectCallTargetForFile(c, file, ins, &targetEvalFnIndex)) {
@@ -590,8 +588,7 @@ static int SLEvalMirRewriteTopInitCalls(
         if (lowerRc == 0) {
             return 0;
         }
-        ins->op = SLMirOp_CALL_FN;
-        ins->aux = targetMirFnIndex;
+        SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
     }
     *outSupported = 1;
     return 0;
