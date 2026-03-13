@@ -3929,6 +3929,44 @@ static int SLEvalValueCopyBuiltin(
     return 0;
 }
 
+static int SLEvalStringValueFromArrayBytes(
+    SLArena* arena, const SLCTFEValue* inValue, int32_t targetTypeCode, SLCTFEValue* outValue) {
+    SLEvalArray* array;
+    uint8_t*     bytes = NULL;
+    uint32_t     i;
+    if (arena == NULL || inValue == NULL || outValue == NULL) {
+        return -1;
+    }
+    array = SLEvalValueAsArray(SLEvalValueTargetOrSelf(inValue));
+    if (array == NULL) {
+        return 0;
+    }
+    if (array->len > 0) {
+        bytes = (uint8_t*)SLArenaAlloc(arena, array->len, (uint32_t)_Alignof(uint8_t));
+        if (bytes == NULL) {
+            return -1;
+        }
+        for (i = 0; i < array->len; i++) {
+            int64_t byteValue = 0;
+            if (SLCTFEValueToInt64(&array->elems[i], &byteValue) != 0 || byteValue < 0
+                || byteValue > 255)
+            {
+                return 0;
+            }
+            bytes[i] = (uint8_t)byteValue;
+        }
+    }
+    outValue->kind = SLCTFEValue_STRING;
+    outValue->i64 = 0;
+    outValue->f64 = 0.0;
+    outValue->b = 0;
+    outValue->typeTag = 0;
+    outValue->s.bytes = bytes;
+    outValue->s.len = array->len;
+    SLEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+    return 1;
+}
+
 static void SLEvalValueSetSpan(
     const SLParsedFile* file, uint32_t start, uint32_t end, SLCTFEValue* value) {
     uint32_t startLine = 0;
@@ -9868,6 +9906,36 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                         : SLEvalTypeCode_STR_PTR);
                 *outIsConst = 1;
                 return 0;
+            }
+            if ((p->currentFile->ast.nodes[typeNode].kind == SLAst_TYPE_REF
+                 || p->currentFile->ast.nodes[typeNode].kind == SLAst_TYPE_PTR)
+                && p->currentFile->ast.nodes[typeNode].firstChild >= 0
+                && (uint32_t)p->currentFile->ast.nodes[typeNode].firstChild < ast->len
+                && p->currentFile->ast.nodes[p->currentFile->ast.nodes[typeNode].firstChild].kind
+                       == SLAst_TYPE_NAME
+                && SliceEqCStr(
+                    p->currentFile->source,
+                    p->currentFile->ast.nodes[p->currentFile->ast.nodes[typeNode].firstChild]
+                        .dataStart,
+                    p->currentFile->ast.nodes[p->currentFile->ast.nodes[typeNode].firstChild]
+                        .dataEnd,
+                    "str")
+                && SLEvalValueAsArray(SLEvalValueTargetOrSelf(&inValue)) != NULL)
+            {
+                rc = SLEvalStringValueFromArrayBytes(
+                    p->arena,
+                    &inValue,
+                    p->currentFile->ast.nodes[typeNode].kind == SLAst_TYPE_REF
+                        ? SLEvalTypeCode_STR_REF
+                        : SLEvalTypeCode_STR_PTR,
+                    outValue);
+                if (rc < 0) {
+                    return -1;
+                }
+                if (rc > 0) {
+                    *outIsConst = 1;
+                    return 0;
+                }
             }
         }
     }
