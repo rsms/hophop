@@ -197,6 +197,7 @@ Interpreter details:
 - `CALL_HOST` invokes `SLMirExecEnv.hostCall(hostCtx, hostId, args, argCount, ...)`, where `hostId` comes from `program.hosts[aux].target` when a host table is present, and falls back to raw `aux` only for older MIR.
 - `SLMirConst_FUNCTION` currently materializes as a same-program function reference value.
 - `CALL_INDIRECT` currently expects the callee value to have been pushed before its arguments, then invokes the referenced same-program MIR function.
+- `TUPLE_MAKE` delegates tuple materialization through `SLMirExecEnv.makeTuple(...)`, so tuple storage stays owned by the embedding runtime instead of `mir_exec`.
 - `LOCAL_LOAD` and `LOCAL_STORE` execute against per-frame local storage.
 - `LOCAL_ADDR` currently materializes a reference to a MIR local slot.
 - `DEREF_LOAD` and `DEREF_STORE` currently operate on those reference values.
@@ -251,6 +252,8 @@ So today:
   - conservative `platform.exit(...)` selector calls rewritten to `CALL_HOST`
   - simple local assignment and compound assignment
   - equal-count multi-assign lowered through temp locals so RHS evaluation stays separate from LHS stores
+  - single-RHS tuple/multi-return decomposition in grouped declarations and multi-assign, lowered through temp locals plus `INDEX`
+  - tuple expressions and tuple-valued `return a, b, ...`, lowered through `TUPLE_MAKE`
   - expression statements
   - `if` / `else`
   - successful `assert` statements

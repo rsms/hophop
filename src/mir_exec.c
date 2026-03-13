@@ -1042,6 +1042,51 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_TUPLE_MAKE: {
+                SLMirExecValue* elems = NULL;
+                SLMirExecValue  out;
+                int             tupleIsConst = 0;
+                uint32_t        elemCount = (uint32_t)ins->tok;
+                uint32_t        i;
+                if (run->env.makeTuple == NULL || elemCount > run->stackLen) {
+                    return 0;
+                }
+                if (elemCount != 0u) {
+                    elems = (SLMirExecValue*)SLArenaAlloc(
+                        run->arena,
+                        sizeof(SLMirExecValue) * elemCount,
+                        (uint32_t)_Alignof(SLMirExecValue));
+                    if (elems == NULL) {
+                        SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                        return -1;
+                    }
+                }
+                for (i = elemCount; i > 0; i--) {
+                    if (SLCTFEPop(run, &elems[i - 1u]) != 0) {
+                        return 0;
+                    }
+                }
+                SLCTFEValueInvalid(&out);
+                if (run->env.makeTuple(
+                        run->env.makeTupleCtx,
+                        elems,
+                        elemCount,
+                        ins->aux,
+                        &out,
+                        &tupleIsConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!tupleIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_ITER_INIT: {
                 SLCTFEValue source;
                 SLCTFEValue iter;

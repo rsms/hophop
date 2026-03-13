@@ -574,6 +574,27 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
         case SLAst_NULL: return SLMirEmitInst(b, SLMirOp_PUSH_NULL, SLTok_NULL, n->start, n->end);
         case SLAst_IDENT:
             return SLMirEmitInst(b, SLMirOp_LOAD_IDENT, SLTok_IDENT, n->dataStart, n->dataEnd);
+        case SLAst_TUPLE_EXPR: {
+            int32_t  child = n->firstChild;
+            uint32_t elemCount = 0;
+            while (child >= 0) {
+                if (SLMirBuildExprNode(b, child) != 0) {
+                    return -1;
+                }
+                if (elemCount == UINT16_MAX) {
+                    b->supported = 0;
+                    return 0;
+                }
+                elemCount++;
+                child = b->ast->nodes[child].nextSibling;
+            }
+            if (elemCount == 0u) {
+                b->supported = 0;
+                return 0;
+            }
+            return SLMirEmitInstEx(
+                b, SLMirOp_TUPLE_MAKE, (SLTokenKind)elemCount, (uint32_t)nodeId, n->start, n->end);
+        }
         case SLAst_CALL: {
             int32_t  callee = b->ast->nodes[nodeId].firstChild;
             int32_t  arg;

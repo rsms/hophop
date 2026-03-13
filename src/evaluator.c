@@ -2246,6 +2246,14 @@ static int SLEvalMirAggAddrField(
     SLCTFEValue*       outValue,
     int*               outIsConst,
     SLDiag* _Nullable diag);
+static int SLEvalMirMakeTuple(
+    void*              ctx,
+    const SLCTFEValue* elems,
+    uint32_t           elemCount,
+    uint32_t           typeNodeHint,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag);
 static int SLEvalMirHostCall(
     void*              ctx,
     uint32_t           hostId,
@@ -6437,6 +6445,34 @@ static int SLEvalMirSequenceLen(
     return 0;
 }
 
+static int SLEvalMirMakeTuple(
+    void*              ctx,
+    const SLCTFEValue* elems,
+    uint32_t           elemCount,
+    uint32_t           typeNodeHint,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram*      p = (SLEvalProgram*)ctx;
+    const SLParsedFile* file;
+    int32_t             typeNode = -1;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    file = p->currentFile;
+    if (file == NULL) {
+        return 0;
+    }
+    if (typeNodeHint != UINT32_MAX && typeNodeHint < file->ast.len) {
+        typeNode = (int32_t)typeNodeHint;
+    }
+    return SLEvalAllocTupleValue(p, file, typeNode, elems, elemCount, outValue, outIsConst);
+}
+
 static SLEvalMirIteratorState* _Nullable SLEvalMirIteratorStateFromValue(
     const SLCTFEValue* iterValue) {
     SLCTFEValue* target;
@@ -6865,6 +6901,8 @@ static void SLEvalMirInitExecEnv(
     env->aggGetFieldCtx = p;
     env->aggAddrField = SLEvalMirAggAddrField;
     env->aggAddrFieldCtx = p;
+    env->makeTuple = SLEvalMirMakeTuple;
+    env->makeTupleCtx = p;
     env->diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
     if (functionCtx != NULL) {
         env->enterFunction = SLEvalMirEnterFunction;

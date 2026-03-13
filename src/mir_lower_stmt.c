@@ -32,6 +32,7 @@ typedef struct {
     SLStrView            src;
     SLMirProgramBuilder  builder;
     uint32_t             functionIndex;
+    int32_t              functionReturnTypeNode;
     SLMirLowerLocal*     locals;
     uint32_t             localLen;
     uint32_t             localCap;
@@ -287,6 +288,38 @@ static int SLMirStmtLowerAddFieldRef(
     return 0;
 }
 
+static int SLMirStmtLowerAppendIntConst(
+    SLMirStmtLower* c, int64_t value, uint32_t start, uint32_t end) {
+    SLMirConst valueConst = { 0 };
+    uint32_t   constIndex = 0;
+    if (c == NULL) {
+        return -1;
+    }
+    valueConst.kind = SLMirConst_INT;
+    valueConst.bits = (uint64_t)value;
+    if (SLMirProgramBuilderAddConst(&c->builder, &valueConst, &constIndex) != 0) {
+        SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, start, end);
+        return -1;
+    }
+    return SLMirStmtLowerAppendInst(c, SLMirOp_PUSH_CONST, 0, constIndex, start, end, NULL);
+}
+
+static int SLMirStmtLowerAppendTupleMake(
+    SLMirStmtLower* c, uint32_t elemCount, int32_t typeNodeHint, uint32_t start, uint32_t end) {
+    uint32_t aux = UINT32_MAX;
+    if (c == NULL || elemCount > UINT16_MAX) {
+        if (c != NULL) {
+            c->supported = 0;
+        }
+        return 0;
+    }
+    if (typeNodeHint >= 0) {
+        aux = (uint32_t)typeNodeHint;
+    }
+    return SLMirStmtLowerAppendInst(
+        c, SLMirOp_TUPLE_MAKE, (uint16_t)elemCount, aux, start, end, NULL);
+}
+
 static int SLMirStmtLowerRangeHasChar(SLStrView src, uint32_t start, uint32_t end, char ch) {
     uint32_t i;
     if (end < start || end > src.len) {
@@ -439,11 +472,31 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
     const SLAstNode* expr;
     SLMirChunk       chunk = { 0 };
     int              supported = 0;
+    uint32_t         elemCount = 0;
+    uint32_t         i;
     if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         c->supported = 0;
         return 0;
     }
     expr = &c->ast->nodes[exprNode];
+    if (expr->kind == SLAst_TUPLE_EXPR) {
+        elemCount = SLMirStmtLowerAstListCount(c->ast, exprNode);
+        if (elemCount == 0u) {
+            c->supported = 0;
+            return 0;
+        }
+        for (i = 0; i < elemCount; i++) {
+            int32_t itemNode = SLMirStmtLowerAstListItemAt(c->ast, exprNode, i);
+            if (itemNode < 0) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+        }
+        return SLMirStmtLowerAppendTupleMake(c, elemCount, exprNode, expr->start, expr->end);
+    }
     if (expr->kind == SLAst_UNARY) {
         int32_t child = expr->firstChild;
         if (child >= 0 && (uint32_t)child < c->ast->len && c->ast->nodes[child].kind == SLAst_IDENT)
@@ -1835,7 +1888,8 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             return 0;
         }
         case SLAst_RETURN: {
-            int32_t exprNode = s->firstChild;
+            int32_t  exprNode = s->firstChild;
+            uint32_t exprCount = 0;
             if (c->loweringDeferred) {
                 c->supported = 0;
                 return 0;
@@ -1849,17 +1903,47 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                 return SLMirStmtLowerAppendInst(
                     c, SLMirOp_RETURN_VOID, 0, 0, s->start, s->end, NULL);
             }
-            if (c->ast->nodes[exprNode].nextSibling >= 0) {
-                c->supported = 0;
-                return 0;
-            }
             if (c->deferredStmtLen > 0
                 && (SLMirStmtLowerEmitDeferredRange(c, 0) != 0 || !c->supported))
             {
                 return c->supported ? -1 : 0;
             }
-            if (SLMirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
-                return c->supported ? -1 : 0;
+            while (exprNode >= 0) {
+                exprCount++;
+                exprNode = c->ast->nodes[exprNode].nextSibling;
+            }
+            exprNode = s->firstChild;
+            if (exprCount == 1u) {
+                if (SLMirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
+                    return c->supported ? -1 : 0;
+                }
+            } else {
+                int32_t returnExprNode = s->firstChild;
+                int32_t returnTypeNode = c->functionReturnTypeNode;
+                if (exprCount > UINT16_MAX || returnTypeNode < 0
+                    || (uint32_t)returnTypeNode >= c->ast->len
+                    || c->ast->nodes[returnTypeNode].kind != SLAst_TYPE_TUPLE
+                    || SLMirStmtLowerAstListCount(c->ast, returnTypeNode) != exprCount)
+                {
+                    c->supported = 0;
+                    return 0;
+                }
+                while (returnExprNode >= 0) {
+                    int32_t itemNode = returnExprNode;
+                    returnExprNode = c->ast->nodes[returnExprNode].nextSibling;
+                    if (itemNode < 0) {
+                        c->supported = 0;
+                        return 0;
+                    }
+                    if (SLMirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
+                        return c->supported ? -1 : 0;
+                    }
+                }
+                if (SLMirStmtLowerAppendTupleMake(c, exprCount, returnTypeNode, s->start, s->end)
+                    != 0)
+                {
+                    return -1;
+                }
             }
             return SLMirStmtLowerAppendInst(c, SLMirOp_RETURN, 0, 0, s->start, s->end, NULL);
         }
@@ -1881,6 +1965,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             uint32_t rhsCount;
             uint32_t i;
             uint32_t tempSlots[256];
+            uint32_t tupleTempSlot = UINT32_MAX;
             if (lhsList < 0 || rhsList < 0 || c->ast->nodes[lhsList].kind != SLAst_EXPR_LIST
                 || c->ast->nodes[rhsList].kind != SLAst_EXPR_LIST)
             {
@@ -1889,14 +1974,32 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             }
             lhsCount = SLMirStmtLowerAstListCount(c->ast, lhsList);
             rhsCount = SLMirStmtLowerAstListCount(c->ast, rhsList);
-            if (lhsCount == 0u || lhsCount > 256u || rhsCount != lhsCount) {
+            if (lhsCount == 0u || lhsCount > 256u || (rhsCount != lhsCount && rhsCount != 1u)) {
                 c->supported = 0;
                 return 0;
             }
-            for (i = 0; i < rhsCount; i++) {
-                int32_t rhsExpr = SLMirStmtLowerAstListItemAt(c->ast, rhsList, i);
+            if (rhsCount == lhsCount) {
+                for (i = 0; i < rhsCount; i++) {
+                    int32_t rhsExpr = SLMirStmtLowerAstListItemAt(c->ast, rhsList, i);
+                    if (rhsExpr < 0
+                        || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &tempSlots[i]) != 0)
+                    {
+                        return rhsExpr < 0 ? 0 : -1;
+                    }
+                    if (SLMirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
+                        return c->supported ? -1 : 0;
+                    }
+                    if (SLMirStmtLowerAppendInst(
+                            c, SLMirOp_LOCAL_STORE, 0, tempSlots[i], s->start, s->end, NULL)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                }
+            } else {
+                int32_t rhsExpr = SLMirStmtLowerAstListItemAt(c->ast, rhsList, 0u);
                 if (rhsExpr < 0
-                    || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &tempSlots[i]) != 0)
+                    || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &tupleTempSlot) != 0)
                 {
                     return rhsExpr < 0 ? 0 : -1;
                 }
@@ -1904,7 +2007,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                     return c->supported ? -1 : 0;
                 }
                 if (SLMirStmtLowerAppendInst(
-                        c, SLMirOp_LOCAL_STORE, 0, tempSlots[i], s->start, s->end, NULL)
+                        c, SLMirOp_LOCAL_STORE, 0, tupleTempSlot, s->start, s->end, NULL)
                     != 0)
                 {
                     return -1;
@@ -1916,11 +2019,28 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                     c->supported = 0;
                     return 0;
                 }
-                if (SLMirStmtLowerAppendInst(
-                        c, SLMirOp_LOCAL_LOAD, 0, tempSlots[i], s->start, s->end, NULL)
-                    != 0)
-                {
-                    return -1;
+                if (rhsCount == lhsCount) {
+                    if (SLMirStmtLowerAppendInst(
+                            c, SLMirOp_LOCAL_LOAD, 0, tempSlots[i], s->start, s->end, NULL)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                } else {
+                    if (SLMirStmtLowerAppendInst(
+                            c, SLMirOp_LOCAL_LOAD, 0, tupleTempSlot, s->start, s->end, NULL)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (SLMirStmtLowerAppendIntConst(c, (int64_t)i, s->start, s->end) != 0) {
+                        return -1;
+                    }
+                    if (SLMirStmtLowerAppendInst(c, SLMirOp_INDEX, 0, 0, s->start, s->end, NULL)
+                        != 0)
+                    {
+                        return -1;
+                    }
                 }
                 if (SLMirStmtLowerStoreToLValueFromStack(c, lhsExpr, s->start, s->end) != 0
                     || !c->supported)
@@ -1936,6 +2056,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             int32_t  firstChild = s->firstChild;
             int32_t  typeNode = -1;
             int32_t  initNode = SLMirStmtLowerVarInitExprNode(c->ast, stmtNode);
+            int32_t  tupleInitNode = -1;
             uint32_t slot = 0;
             if (firstChild < 0) {
                 c->supported = 0;
@@ -1943,11 +2064,29 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             }
             if (c->ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
                 uint32_t nameCount = SLMirStmtLowerAstListCount(c->ast, firstChild);
+                uint32_t initCount = 0;
+                uint32_t tupleTempSlot = UINT32_MAX;
+                int      useTupleInitTemp = 0;
                 uint32_t i;
                 typeNode = SLMirStmtLowerVarLikeDeclTypeNode(c->ast, stmtNode);
                 if (nameCount == 0u || (initNode < 0 && typeNode < 0)) {
                     c->supported = 0;
                     return 0;
+                }
+                if (initNode >= 0) {
+                    if (c->ast->nodes[initNode].kind != SLAst_EXPR_LIST) {
+                        c->supported = 0;
+                        return 0;
+                    }
+                    initCount = SLMirStmtLowerAstListCount(c->ast, initNode);
+                    if (initCount == 1u && nameCount > 1u) {
+                        tupleInitNode = SLMirStmtLowerAstListItemAt(c->ast, initNode, 0u);
+                        if (tupleInitNode < 0) {
+                            c->supported = 0;
+                            return 0;
+                        }
+                        useTupleInitTemp = c->ast->nodes[tupleInitNode].kind != SLAst_TUPLE_EXPR;
+                    }
                 }
                 for (i = 0; i < nameCount; i++) {
                     uint32_t         localSlot = UINT32_MAX;
@@ -1965,9 +2104,23 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                             name->dataEnd,
                             s->kind == SLAst_VAR,
                             0,
-                            itemInitNode < 0,
+                            initNode < 0,
                             typeNode,
                             &localSlot)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                }
+                if (useTupleInitTemp) {
+                    if (SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &tupleTempSlot) != 0) {
+                        return -1;
+                    }
+                    if (SLMirStmtLowerExpr(c, tupleInitNode) != 0 || !c->supported) {
+                        return c->supported ? -1 : 0;
+                    }
+                    if (SLMirStmtLowerAppendInst(
+                            c, SLMirOp_LOCAL_STORE, 0, tupleTempSlot, s->start, s->end, NULL)
                         != 0)
                     {
                         return -1;
@@ -1978,6 +2131,31 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                         c->ast, stmtNode, (int32_t)i);
                     slot = c->locals[c->localLen - nameCount + i].slot;
                     if (itemInitNode < 0) {
+                        if (useTupleInitTemp) {
+                            if (SLMirStmtLowerAppendInst(
+                                    c, SLMirOp_LOCAL_LOAD, 0, tupleTempSlot, s->start, s->end, NULL)
+                                != 0)
+                            {
+                                return -1;
+                            }
+                            if (SLMirStmtLowerAppendIntConst(c, (int64_t)i, s->start, s->end) != 0)
+                            {
+                                return -1;
+                            }
+                            if (SLMirStmtLowerAppendInst(
+                                    c, SLMirOp_INDEX, 0, 0, s->start, s->end, NULL)
+                                != 0)
+                            {
+                                return -1;
+                            }
+                            if (SLMirStmtLowerAppendInst(
+                                    c, SLMirOp_LOCAL_STORE, 0, slot, s->start, s->end, NULL)
+                                != 0)
+                            {
+                                return -1;
+                            }
+                            continue;
+                        }
                         if (SLMirStmtLowerAppendInst(
                                 c, SLMirOp_LOCAL_ZERO, 0, slot, s->start, s->end, NULL)
                             != 0)
@@ -2071,6 +2249,7 @@ int SLMirLowerAppendSimpleFunction(
     c.supported = 1;
     c.diag = diag;
     c.builder = *builder;
+    c.functionReturnTypeNode = -1;
     sourceRef.src = src;
     if (SLMirProgramBuilderAddSource(&c.builder, &sourceRef, &sourceIndex) != 0) {
         SLMirLowerStmtSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
@@ -2082,6 +2261,7 @@ int SLMirLowerAppendSimpleFunction(
     fn.sourceRef = sourceIndex;
     fn.typeRef = UINT32_MAX;
     returnTypeNode = SLMirStmtLowerFunctionReturnTypeNode(ast, fnNode);
+    c.functionReturnTypeNode = returnTypeNode;
     if (returnTypeNode >= 0) {
         typeRef.astNode = (uint32_t)returnTypeNode;
         typeRef.flags = 0;
