@@ -729,6 +729,117 @@ static int SLEvalMirResolveFunctionIdentTargetForFile(
     return 1;
 }
 
+static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
+    const SLEvalMirLowerCtx* c,
+    const SLParsedFile*      file,
+    int                      isTopConst,
+    uint32_t                 topInitIndex,
+    uint32_t*                outEvalFnIndex) {
+    int32_t          initExprNode = -1;
+    const SLAstNode* initExpr;
+    int32_t          targetFnIndex = -1;
+    if (outEvalFnIndex != NULL) {
+        *outEvalFnIndex = UINT32_MAX;
+    }
+    if (c == NULL || c->p == NULL || file == NULL || outEvalFnIndex == NULL) {
+        return 0;
+    }
+    if (isTopConst) {
+        if (topInitIndex >= c->p->topConstLen) {
+            return 0;
+        }
+        initExprNode = c->p->topConsts[topInitIndex].initExprNode;
+    } else {
+        if (topInitIndex >= c->p->topVarLen) {
+            return 0;
+        }
+        initExprNode = c->p->topVars[topInitIndex].initExprNode;
+    }
+    if (initExprNode < 0 || (uint32_t)initExprNode >= file->ast.len) {
+        return 0;
+    }
+    initExpr = &file->ast.nodes[initExprNode];
+    if (initExpr->kind != SLAst_IDENT) {
+        return 0;
+    }
+    targetFnIndex = SLEvalFindAnyFunctionBySlice(c->p, file, initExpr->dataStart, initExpr->dataEnd);
+    if (targetFnIndex < 0 || (uint32_t)targetFnIndex >= c->p->funcLen
+        || c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn
+        || c->p->funcs[(uint32_t)targetFnIndex].isVariadic)
+    {
+        return 0;
+    }
+    *outEvalFnIndex = (uint32_t)targetFnIndex;
+    return 1;
+}
+
+static int SLEvalMirRewriteZeroArgTopInitFunctionValueCall(
+    SLEvalMirLowerCtx* c, const SLParsedFile* file, uint32_t rootMirFnIndex, uint32_t instIndex) {
+    SLMirInst*            ins;
+    const SLMirSymbolRef* symbol;
+    int32_t               topIndex = -1;
+    uint32_t              targetEvalFnIndex = UINT32_MAX;
+    uint32_t              targetMirFnIndex = UINT32_MAX;
+    uint32_t              constIndex = UINT32_MAX;
+    SLMirConst            value = { 0 };
+    int                   lowerRc;
+    if (c == NULL || file == NULL || rootMirFnIndex >= c->builder.funcLen || instIndex >= c->builder.instLen) {
+        return 0;
+    }
+    ins = &c->builder.insts[instIndex];
+    if (ins->op != SLMirOp_CALL || (uint32_t)ins->tok != 0u || c->builder.symbols == NULL
+        || ins->aux >= c->builder.symbolLen)
+    {
+        return 0;
+    }
+    symbol = &c->builder.symbols[ins->aux];
+    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+        return 0;
+    }
+    topIndex = SLEvalFindTopConstBySlice(c->p, file, symbol->nameStart, symbol->nameEnd);
+    if (topIndex >= 0) {
+        if (!SLEvalMirResolveSimpleTopInitFunctionValueTarget(
+                c, file, 1, (uint32_t)topIndex, &targetEvalFnIndex))
+        {
+            return 0;
+        }
+    } else {
+        topIndex = SLEvalFindTopVarBySlice(c->p, file, symbol->nameStart, symbol->nameEnd);
+        if (topIndex < 0
+            || !SLEvalMirResolveSimpleTopInitFunctionValueTarget(
+                c, file, 0, (uint32_t)topIndex, &targetEvalFnIndex))
+        {
+            return 0;
+        }
+    }
+    lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
+    if (lowerRc <= 0) {
+        return lowerRc;
+    }
+    value.kind = SLMirConst_FUNCTION;
+    value.bits = targetMirFnIndex;
+    if (SLMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0
+        || SLMirProgramBuilderInsertInst(
+               &c->builder,
+               rootMirFnIndex,
+               instIndex - c->builder.funcs[rootMirFnIndex].instStart,
+               &(SLMirInst){
+                   .op = SLMirOp_PUSH_CONST,
+                   .aux = constIndex,
+                   .start = ins->start,
+                   .end = ins->end,
+               })
+               != 0)
+    {
+        return -1;
+    }
+    ins = &c->builder.insts[instIndex + 1u];
+    ins->op = SLMirOp_CALL_INDIRECT;
+    ins->tok = 0u;
+    ins->aux = 0u;
+    return 1;
+}
+
 static int SLEvalMirResolveTopInitIdentTargetForFile(
     const SLEvalMirLowerCtx* c,
     const SLParsedFile*      file,
@@ -811,6 +922,14 @@ static int SLEvalMirRewriteTopInitCalls(
             if (SLEvalMirRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
                 return -1;
             }
+            continue;
+        }
+        lowerRc = SLEvalMirRewriteZeroArgTopInitFunctionValueCall(c, file, rootMirFnIndex, instIndex);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (lowerRc > 0) {
+            instIndex++;
             continue;
         }
         if (SLEvalMirResolveQualifiedCallTargetForNode(

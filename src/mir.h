@@ -286,7 +286,12 @@ int SLMirProgramBuilderBeginFunction(
     const SLMirFunction* _Nonnull value,
     uint32_t* _Nullable outIndex);
 int SLMirProgramBuilderAppendInst(SLMirProgramBuilder* _Nonnull b, const SLMirInst* _Nonnull value);
-int SLMirProgramBuilderEndFunction(SLMirProgramBuilder* _Nonnull b);
+int SLMirProgramBuilderInsertInst(
+    SLMirProgramBuilder* _Nonnull b,
+    uint32_t functionIndex,
+    uint32_t instIndexInFunction,
+    const SLMirInst* _Nonnull value);
+int  SLMirProgramBuilderEndFunction(SLMirProgramBuilder* _Nonnull b);
 void SLMirProgramBuilderFinish(
     const SLMirProgramBuilder* _Nonnull b, SLMirProgram* _Nonnull outProgram);
 int SLMirValidateProgram(const SLMirProgram* _Nonnull program, SLDiag* _Nullable diag);

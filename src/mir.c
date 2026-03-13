@@ -274,6 +274,43 @@ int SLMirProgramBuilderAppendInst(SLMirProgramBuilder* b, const SLMirInst* value
     return 0;
 }
 
+int SLMirProgramBuilderInsertInst(
+    SLMirProgramBuilder* b,
+    uint32_t             functionIndex,
+    uint32_t             instIndexInFunction,
+    const SLMirInst*     value) {
+    uint32_t absIndex;
+    uint32_t funcIndex;
+    if (b == NULL || value == NULL || b->hasOpenFunc || functionIndex >= b->funcLen) {
+        return -1;
+    }
+    if (instIndexInFunction > b->funcs[functionIndex].instLen) {
+        return -1;
+    }
+    if (SLMirProgramBuilderEnsureCap(
+            b->arena, (void**)&b->insts, (uint32_t)sizeof(*value), b->instLen + 1u, &b->instCap, 1u)
+        != 0)
+    {
+        return -1;
+    }
+    absIndex = b->funcs[functionIndex].instStart + instIndexInFunction;
+    if (absIndex < b->instLen) {
+        memmove(
+            &b->insts[absIndex + 1u],
+            &b->insts[absIndex],
+            sizeof(*value) * (size_t)(b->instLen - absIndex));
+    }
+    b->insts[absIndex] = *value;
+    b->instLen++;
+    b->funcs[functionIndex].instLen++;
+    for (funcIndex = functionIndex + 1u; funcIndex < b->funcLen; funcIndex++) {
+        if (b->funcs[funcIndex].instStart >= absIndex) {
+            b->funcs[funcIndex].instStart++;
+        }
+    }
+    return 0;
+}
+
 int SLMirProgramBuilderEndFunction(SLMirProgramBuilder* b) {
     if (b == NULL || !b->hasOpenFunc) {
         return -1;
