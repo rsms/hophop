@@ -359,11 +359,16 @@ static int SLMirLowerRewriteHostInst(
     SLMirInst* _Nonnull out,
     SLDiag* _Nullable diag) {
     uint32_t hostIndex = 0;
+    uint32_t hostTarget = SLMirHostTarget_INVALID;
     memcpy(out, in, sizeof(*out));
     if (in->op != SLMirOp_CALL || in->aux >= builder->symbolLen) {
         return 0;
     }
-    if (!(in->end == in->start + 5u && memcmp(src.ptr + in->start, "print", 5) == 0)) {
+    if (in->end == in->start + 5u && memcmp(src.ptr + in->start, "print", 5) == 0) {
+        hostTarget = SLMirHostTarget_PRINT;
+    } else if (in->end == in->start + 4u && memcmp(src.ptr + in->start, "free", 4) == 0) {
+        hostTarget = SLMirHostTarget_FREE;
+    } else {
         return 0;
     }
     if (builder->symbols[in->aux].kind != SLMirSymbol_CALL || builder->symbols[in->aux].flags != 0u)
@@ -371,14 +376,7 @@ static int SLMirLowerRewriteHostInst(
         return 0;
     }
     if (SLMirLowerInternHost(
-            builder,
-            in->start,
-            in->end,
-            SLMirHost_GENERIC,
-            0u,
-            SLMirHostTarget_PRINT,
-            &hostIndex,
-            diag)
+            builder, in->start, in->end, SLMirHost_GENERIC, 0u, hostTarget, &hostIndex, diag)
         != 0)
     {
         return -1;

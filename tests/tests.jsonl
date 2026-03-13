@@ -322,6 +322,7 @@
 {"id":"integration.runtime.mir_indirect_call_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_indirect_call_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_len_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_len_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_print_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_print_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":false,"stderr_empty":true}
+{"id":"integration.runtime.mir_free_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_free_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.optional_tuple_return_expr_list_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/optional_tuple_return_expr_list_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true}
 {"id":"check:tests/consteval_catalog.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/consteval_catalog.sl"}
 {"id":"check:tests/consteval_mir_simple_fn_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_simple_fn_ok.sl"}

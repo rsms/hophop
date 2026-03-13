@@ -112,6 +112,7 @@ enum {
     SL_EVAL_MIR_HOST_INVALID = SLMirHostTarget_INVALID,
     SL_EVAL_MIR_HOST_PRINT = SLMirHostTarget_PRINT,
     SL_EVAL_MIR_HOST_PLATFORM_EXIT = SLMirHostTarget_PLATFORM_EXIT,
+    SL_EVAL_MIR_HOST_FREE = SLMirHostTarget_FREE,
 };
 
 enum {
@@ -6736,6 +6737,11 @@ static int SLEvalMirHostCall(
         }
         fputc('\n', stdout);
         fflush(stdout);
+        SLEvalValueSetNull(outValue);
+        *outIsConst = 1;
+        return 0;
+    }
+    if (hostId == SL_EVAL_MIR_HOST_FREE && (argCount == 1u || argCount == 2u)) {
         SLEvalValueSetNull(outValue);
         *outIsConst = 1;
         return 0;

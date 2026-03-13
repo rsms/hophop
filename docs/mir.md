@@ -33,6 +33,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - `mir_exec` now also executes `LOCAL_ZERO` through an explicit `SLMirExecEnv.zeroInitLocal` hook.
 - Expression MIR now also lowers plain builtin `len(x)` calls to `SLMirOp_SEQ_LEN` instead of leaving them on generic name-resolved `CALL`.
 - Lowered MIR programs now also rewrite plain builtin `print(...)` calls to `CALL_HOST` through `program.hosts[]`, instead of leaving that builtin on generic call-name resolution.
+- Lowered MIR programs now also rewrite plain builtin `free(...)` calls to `CALL_HOST`, so allocation cleanup crosses the MIR host boundary explicitly instead of staying on generic call-name resolution.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
 - The consteval path in `src/typecheck/consteval.c` now also tries MIR-first execution for simple const function bodies before falling back to `ctfe_exec`.
 - The const-block path in `src/typecheck/resolve.c` now also tries MIR-first execution for simple `const { ... }` blocks before falling back to `ctfe_exec`.
