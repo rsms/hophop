@@ -2647,6 +2647,7 @@ static int SLTCMirConstResolveTypeRefTypeId(
 
 enum {
     SL_TC_MIR_TUPLE_TAG = 0x54434d4952545550ULL,
+    SL_TC_MIR_ITER_TAG = 0x54434d4952495445ULL,
 };
 
 typedef struct {
@@ -2655,6 +2656,13 @@ typedef struct {
     SLCTFEValue elems[];
 } SLTCMirConstTuple;
 
+typedef struct {
+    uint32_t    index;
+    uint16_t    flags;
+    uint16_t    _reserved;
+    SLCTFEValue sourceValue;
+} SLTCMirConstIter;
+
 static const SLTCMirConstTuple* _Nullable SLTCMirConstTupleFromValue(const SLCTFEValue* value) {
     if (value == NULL || value->kind != SLCTFEValue_ARRAY || value->typeTag != SL_TC_MIR_TUPLE_TAG
         || value->s.bytes == NULL)
@@ -2662,6 +2670,22 @@ static const SLTCMirConstTuple* _Nullable SLTCMirConstTupleFromValue(const SLCTF
         return NULL;
     }
     return (const SLTCMirConstTuple*)value->s.bytes;
+}
+
+static SLTCMirConstIter* _Nullable SLTCMirConstIterFromValue(const SLCTFEValue* value) {
+    const SLCTFEValue* target = value;
+    if (value == NULL) {
+        return NULL;
+    }
+    if (value->kind == SLCTFEValue_REFERENCE && value->s.bytes != NULL) {
+        target = (const SLCTFEValue*)value->s.bytes;
+    }
+    if (target == NULL || target->kind != SLCTFEValue_SPAN || target->typeTag != SL_TC_MIR_ITER_TAG
+        || target->s.bytes == NULL)
+    {
+        return NULL;
+    }
+    return (SLTCMirConstIter*)target->s.bytes;
 }
 
 int SLTCMirConstMakeTuple(
@@ -2739,6 +2763,189 @@ int SLTCMirConstIndexValue(
     }
     *outValue = tuple->elems[(uint32_t)indexValue];
     *outIsConst = 1;
+    return 0;
+}
+
+int SLTCMirConstSequenceLen(
+    void* _Nullable ctx,
+    const SLCTFEValue* base,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    const SLCTFEValue*       value = base;
+    const SLTCMirConstTuple* tuple;
+    (void)ctx;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (base == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (base->kind == SLCTFEValue_REFERENCE && base->s.bytes != NULL) {
+        value = (const SLCTFEValue*)base->s.bytes;
+    }
+    if (value->kind == SLCTFEValue_STRING) {
+        outValue->kind = SLCTFEValue_INT;
+        outValue->i64 = (int64_t)value->s.len;
+        *outIsConst = 1;
+        return 0;
+    }
+    tuple = SLTCMirConstTupleFromValue(value);
+    if (tuple != NULL) {
+        outValue->kind = SLCTFEValue_INT;
+        outValue->i64 = (int64_t)tuple->len;
+        *outIsConst = 1;
+        return 0;
+    }
+    return 0;
+}
+
+int SLTCMirConstIterInit(
+    void* _Nullable ctx,
+    uint32_t           sourceNode,
+    const SLCTFEValue* source,
+    uint16_t           flags,
+    SLCTFEValue*       outIter,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx*        evalCtx = (SLTCConstEvalCtx*)ctx;
+    const SLCTFEValue*       sourceValue = source;
+    const SLTCMirConstTuple* tuple;
+    SLTCMirConstIter*        iter;
+    SLCTFEValue*             target;
+    (void)diag;
+    (void)sourceNode;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (evalCtx == NULL || evalCtx->tc == NULL || source == NULL || outIter == NULL
+        || outIsConst == NULL)
+    {
+        return -1;
+    }
+    if ((flags & SLMirIterFlag_KEY_REF) != 0u || (flags & SLMirIterFlag_VALUE_REF) != 0u) {
+        return 0;
+    }
+    if (source->kind == SLCTFEValue_REFERENCE && source->s.bytes != NULL) {
+        sourceValue = (const SLCTFEValue*)source->s.bytes;
+    }
+    tuple = SLTCMirConstTupleFromValue(sourceValue);
+    if (sourceValue->kind != SLCTFEValue_STRING && tuple == NULL) {
+        return 0;
+    }
+    iter = (SLTCMirConstIter*)SLArenaAlloc(
+        evalCtx->tc->arena, sizeof(*iter), (uint32_t)_Alignof(SLTCMirConstIter));
+    target = (SLCTFEValue*)SLArenaAlloc(
+        evalCtx->tc->arena, sizeof(*target), (uint32_t)_Alignof(SLCTFEValue));
+    if (iter == NULL || target == NULL) {
+        return -1;
+    }
+    memset(iter, 0, sizeof(*iter));
+    iter->flags = flags;
+    iter->sourceValue = *source;
+    target->kind = SLCTFEValue_SPAN;
+    target->typeTag = SL_TC_MIR_ITER_TAG;
+    target->s.bytes = (const uint8_t*)iter;
+    target->s.len = 0;
+    target->span = (SLCTFESpan){ 0 };
+    outIter->kind = SLCTFEValue_REFERENCE;
+    outIter->s.bytes = (const uint8_t*)target;
+    outIter->s.len = 0;
+    outIter->typeTag = 0;
+    outIter->span = (SLCTFESpan){ 0 };
+    *outIsConst = 1;
+    return 0;
+}
+
+int SLTCMirConstIterNext(
+    void* _Nullable ctx,
+    const SLCTFEValue* iterValue,
+    uint16_t           flags,
+    int*               outHasItem,
+    SLCTFEValue*       outKey,
+    int*               outKeyIsConst,
+    SLCTFEValue*       outValue,
+    int*               outValueIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx*        evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTCMirConstIter*        iter;
+    const SLCTFEValue*       sourceValue;
+    const SLTCMirConstTuple* tuple;
+    (void)diag;
+    if (outHasItem != NULL) {
+        *outHasItem = 0;
+    }
+    if (outKeyIsConst != NULL) {
+        *outKeyIsConst = 0;
+    }
+    if (outValueIsConst != NULL) {
+        *outValueIsConst = 0;
+    }
+    if (evalCtx == NULL || iterValue == NULL || outHasItem == NULL || outKey == NULL
+        || outKeyIsConst == NULL || outValue == NULL || outValueIsConst == NULL)
+    {
+        return -1;
+    }
+    if ((flags & SLMirIterFlag_KEY_REF) != 0u || (flags & SLMirIterFlag_VALUE_REF) != 0u) {
+        return 0;
+    }
+    iter = SLTCMirConstIterFromValue(iterValue);
+    if (iter == NULL) {
+        return 0;
+    }
+    sourceValue = &iter->sourceValue;
+    if (sourceValue->kind == SLCTFEValue_REFERENCE && sourceValue->s.bytes != NULL) {
+        sourceValue = (const SLCTFEValue*)sourceValue->s.bytes;
+    }
+    tuple = SLTCMirConstTupleFromValue(sourceValue);
+    if (sourceValue->kind == SLCTFEValue_STRING) {
+        if (iter->index >= sourceValue->s.len) {
+            *outKeyIsConst = 1;
+            *outValueIsConst = 1;
+            return 0;
+        }
+        if ((flags & SLMirIterFlag_HAS_KEY) != 0u) {
+            outKey->kind = SLCTFEValue_INT;
+            outKey->i64 = (int64_t)iter->index;
+            *outKeyIsConst = 1;
+        } else {
+            *outKeyIsConst = 1;
+        }
+        if ((flags & SLMirIterFlag_VALUE_DISCARD) == 0u) {
+            outValue->kind = SLCTFEValue_INT;
+            outValue->i64 = (int64_t)sourceValue->s.bytes[iter->index];
+            *outValueIsConst = 1;
+        } else {
+            *outValueIsConst = 1;
+        }
+        *outHasItem = 1;
+        iter->index++;
+        return 0;
+    }
+    if (tuple != NULL) {
+        if (iter->index >= tuple->len) {
+            *outKeyIsConst = 1;
+            *outValueIsConst = 1;
+            return 0;
+        }
+        if ((flags & SLMirIterFlag_HAS_KEY) != 0u) {
+            outKey->kind = SLCTFEValue_INT;
+            outKey->i64 = (int64_t)iter->index;
+            *outKeyIsConst = 1;
+        } else {
+            *outKeyIsConst = 1;
+        }
+        if ((flags & SLMirIterFlag_VALUE_DISCARD) == 0u) {
+            *outValue = tuple->elems[iter->index];
+            *outValueIsConst = 1;
+        } else {
+            *outValueIsConst = 1;
+        }
+        *outHasItem = 1;
+        iter->index++;
+        return 0;
+    }
     return 0;
 }
 
@@ -3215,6 +3422,12 @@ static int SLTCTryMirConstCall(
     env.coerceValueCtx = evalCtx;
     env.indexValue = SLTCMirConstIndexValue;
     env.indexValueCtx = evalCtx;
+    env.sequenceLen = SLTCMirConstSequenceLen;
+    env.sequenceLenCtx = evalCtx;
+    env.iterInit = SLTCMirConstIterInit;
+    env.iterInitCtx = evalCtx;
+    env.iterNext = SLTCMirConstIterNext;
+    env.iterNextCtx = evalCtx;
     env.makeTuple = SLTCMirConstMakeTuple;
     env.makeTupleCtx = evalCtx;
     env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;

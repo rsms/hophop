@@ -349,10 +349,12 @@
 {"id":"check:tests/consteval_mir_typed_local_zero_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_typed_local_zero_ok.sl"}
 {"id":"check:tests/consteval_mir_optional_return_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_optional_return_ok.sl"}
 {"id":"check:tests/consteval_mir_len_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_len_ok.sl"}
+{"id":"check:tests/consteval_mir_for_in_string_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_for_in_string_ok.sl"}
 {"id":"check:tests/consteval_mir_tuple_return_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_tuple_return_ok.sl"}
 {"id":"check:tests/consteval_mir_tuple_arg_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_tuple_arg_ok.sl"}
 {"id":"check:tests/const_block_mir_tuple_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/const_block_mir_tuple_ok.sl"}
 {"id":"check:tests/const_block_mir_call_chain_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_call_chain_ok.sl"}
+{"id":"check:tests/const_block_mir_for_in_string_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_for_in_string_ok.sl"}
 {"id":"check:tests/reflection_typeof_type_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/reflection_typeof_type_ok.sl"}
 {"id":"check:tests/reflection_typeof_bad_arity.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/reflection_typeof_bad_arity.sl","expect_stderr":"tests/reflection_typeof_bad_arity.stderr"}
 {"id":"check:tests/reflection_kind_base_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/reflection_kind_base_ok.sl"}

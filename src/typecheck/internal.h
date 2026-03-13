@@ -792,6 +792,30 @@ int SLTCMirConstIndexValue(
     SLCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+int SLTCMirConstSequenceLen(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstIterInit(
+    void* _Nullable ctx,
+    uint32_t sourceNode,
+    const SLCTFEValue* _Nonnull source,
+    uint16_t flags,
+    SLCTFEValue* _Nonnull outIter,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstIterNext(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull iterValue,
+    uint16_t flags,
+    int* _Nonnull outHasItem,
+    SLCTFEValue* _Nonnull outKey,
+    int* _Nonnull outKeyIsConst,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outValueIsConst,
+    SLDiag* _Nullable diag);
 int SLTCMirConstMakeTuple(
     void* _Nullable ctx,
     const SLCTFEValue* _Nonnull elems,
