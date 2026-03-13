@@ -1908,17 +1908,27 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             {
                 return c->supported ? -1 : 0;
             }
-            while (exprNode >= 0) {
-                exprCount++;
-                exprNode = c->ast->nodes[exprNode].nextSibling;
+            if (c->ast->nodes[exprNode].kind == SLAst_EXPR_LIST) {
+                exprCount = SLMirStmtLowerAstListCount(c->ast, exprNode);
+            } else {
+                while (exprNode >= 0) {
+                    exprCount++;
+                    exprNode = c->ast->nodes[exprNode].nextSibling;
+                }
+                exprNode = s->firstChild;
             }
-            exprNode = s->firstChild;
             if (exprCount == 1u) {
+                if (c->ast->nodes[exprNode].kind == SLAst_EXPR_LIST) {
+                    exprNode = SLMirStmtLowerAstListItemAt(c->ast, exprNode, 0u);
+                    if (exprNode < 0) {
+                        c->supported = 0;
+                        return 0;
+                    }
+                }
                 if (SLMirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
                     return c->supported ? -1 : 0;
                 }
             } else {
-                int32_t returnExprNode = s->firstChild;
                 int32_t returnTypeNode = c->functionReturnTypeNode;
                 if (exprCount > UINT16_MAX || returnTypeNode < 0
                     || (uint32_t)returnTypeNode >= c->ast->len
@@ -1928,15 +1938,26 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                     c->supported = 0;
                     return 0;
                 }
-                while (returnExprNode >= 0) {
-                    int32_t itemNode = returnExprNode;
-                    returnExprNode = c->ast->nodes[returnExprNode].nextSibling;
-                    if (itemNode < 0) {
-                        c->supported = 0;
-                        return 0;
+                if (c->ast->nodes[exprNode].kind == SLAst_EXPR_LIST) {
+                    uint32_t i;
+                    for (i = 0; i < exprCount; i++) {
+                        int32_t itemNode = SLMirStmtLowerAstListItemAt(c->ast, exprNode, i);
+                        if (itemNode < 0) {
+                            c->supported = 0;
+                            return 0;
+                        }
+                        if (SLMirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
+                            return c->supported ? -1 : 0;
+                        }
                     }
-                    if (SLMirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
-                        return c->supported ? -1 : 0;
+                } else {
+                    int32_t returnExprNode = s->firstChild;
+                    while (returnExprNode >= 0) {
+                        int32_t itemNode = returnExprNode;
+                        returnExprNode = c->ast->nodes[returnExprNode].nextSibling;
+                        if (SLMirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
+                            return c->supported ? -1 : 0;
+                        }
                     }
                 }
                 if (SLMirStmtLowerAppendTupleMake(c, exprCount, returnTypeNode, s->start, s->end)
