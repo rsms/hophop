@@ -59,6 +59,37 @@ typedef int (*SLCTFEResolveCallFn)(
     SLCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef int (*SLCTFEMakeTupleFn)(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull elems,
+    uint32_t elemCount,
+    uint32_t typeNodeHint,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLCTFEIndexValueFn)(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    const SLCTFEValue* _Nonnull index,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+
+int SLCTFEEvalExprEx(
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   nodeId,
+    SLCTFEResolveIdentFn _Nullable resolveIdent,
+    SLCTFEResolveCallFn _Nullable resolveCall,
+    void* _Nullable resolveCtx,
+    SLCTFEMakeTupleFn _Nullable makeTuple,
+    void* _Nullable makeTupleCtx,
+    SLCTFEIndexValueFn _Nullable indexValue,
+    void* _Nullable indexValueCtx,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 
 int SLCTFEEvalExpr(
     SLArena* _Nonnull arena,

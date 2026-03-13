@@ -6,7 +6,7 @@
 
 SL_API_BEGIN
 
-int SLCTFEEvalExpr(
+int SLCTFEEvalExprEx(
     SLArena*     arena,
     const SLAst* ast,
     SLStrView    src,
@@ -14,6 +14,10 @@ int SLCTFEEvalExpr(
     SLCTFEResolveIdentFn _Nullable resolveIdent,
     SLCTFEResolveCallFn _Nullable resolveCall,
     void* _Nullable resolveCtx,
+    SLCTFEMakeTupleFn _Nullable makeTuple,
+    void* _Nullable makeTupleCtx,
+    SLCTFEIndexValueFn _Nullable indexValue,
+    void* _Nullable indexValueCtx,
     SLCTFEValue* outValue,
     int*         outIsConst,
     SLDiag* _Nullable diag) {
@@ -47,8 +51,40 @@ int SLCTFEEvalExpr(
     env.resolveIdent = resolveIdent;
     env.resolveCall = resolveCall;
     env.resolveCtx = resolveCtx;
+    env.makeTuple = makeTuple;
+    env.makeTupleCtx = makeTupleCtx;
+    env.indexValue = indexValue;
+    env.indexValueCtx = indexValueCtx;
     env.diag = diag;
     return SLMirEvalFunction(arena, &program, 0, NULL, 0, &env, outValue, outIsConst);
+}
+
+int SLCTFEEvalExpr(
+    SLArena*     arena,
+    const SLAst* ast,
+    SLStrView    src,
+    int32_t      nodeId,
+    SLCTFEResolveIdentFn _Nullable resolveIdent,
+    SLCTFEResolveCallFn _Nullable resolveCall,
+    void* _Nullable resolveCtx,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    SLDiag* _Nullable diag) {
+    return SLCTFEEvalExprEx(
+        arena,
+        ast,
+        src,
+        nodeId,
+        resolveIdent,
+        resolveCall,
+        resolveCtx,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        outValue,
+        outIsConst,
+        diag);
 }
 
 int SLCTFEValueToInt64(const SLCTFEValue* value, int64_t* out) {

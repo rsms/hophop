@@ -2510,13 +2510,17 @@ int SLTCEvalConstExprNode(
     if (kind == SLAst_CAST) {
         return SLTCConstEvalCast(evalCtx, exprNode, outValue, outIsConst);
     }
-    rc = SLCTFEEvalExpr(
+    rc = SLCTFEEvalExprEx(
         c->arena,
         c->ast,
         c->src,
         exprNode,
         SLTCResolveConstIdent,
         SLTCResolveConstCall,
+        evalCtx,
+        SLTCMirConstMakeTuple,
+        evalCtx,
+        SLTCMirConstIndexValue,
         evalCtx,
         outValue,
         outIsConst,

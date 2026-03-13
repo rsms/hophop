@@ -9600,13 +9600,17 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
         }
     }
 
-    rc = SLCTFEEvalExpr(
+    rc = SLCTFEEvalExprEx(
         p->arena,
         ast,
         (SLStrView){ p->currentFile->source, p->currentFile->sourceLen },
         exprNode,
         SLEvalResolveIdent,
         SLEvalResolveCall,
+        p,
+        SLEvalMirMakeTuple,
+        p,
+        SLEvalMirIndexValue,
         p,
         outValue,
         outIsConst,

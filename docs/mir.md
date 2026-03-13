@@ -35,6 +35,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Lowered MIR programs now also rewrite plain builtin `print(...)` calls to `CALL_HOST` through `program.hosts[]`, instead of leaving that builtin on generic call-name resolution.
 - Lowered MIR programs now also rewrite plain builtin `free(...)` calls to `CALL_HOST`, so allocation cleanup crosses the MIR host boundary explicitly instead of staying on generic call-name resolution.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
+- The direct-expression CTFE wrapper in `src/ctfe.c` now also accepts optional tuple/index hooks, so evaluator and typechecker can keep tuple literals and tuple argument expressions on MIR instead of forcing expression-level fallback.
 - The consteval path in `src/typecheck/consteval.c` now also tries MIR-first execution for simple const function bodies before falling back to `ctfe_exec`.
 - The const-block path in `src/typecheck/resolve.c` now also tries MIR-first execution for simple `const { ... }` blocks before falling back to `ctfe_exec`.
 - The consteval-side MIR env now also supplies typed zero-init and value-coercion hooks, so simple typed locals and scalar/optional return adaptation can stay on the MIR path.
