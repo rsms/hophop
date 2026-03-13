@@ -17,6 +17,7 @@ Common optional fields:
 
 - `input` (string): `.sl` file or package path
 - `mode` (string): `slc` mode (`_`, `ast`, `check`, `checkpkg`, `genpkg`, `genpkg:c`)
+- `exec_limit` (integer): per-execution wall-clock limit in milliseconds; if exceeded, the runner kills the current test process and fails the execution
 - `expect` (string): expected output file (for stdout golden tests)
 - `expect_stderr` (string): expected stderr golden file
 - `contains` (array of strings): required substrings in generated text

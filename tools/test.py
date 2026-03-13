@@ -7,9 +7,11 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -75,6 +77,20 @@ class RunContext:
 
 
 @dataclass
+class ExecTimeoutError(Exception):
+    argv: List[str]
+    elapsed: float
+    limit_ms: int
+
+    def __str__(self) -> str:
+        cmd = " ".join(self.argv)
+        return (
+            f"execution exceeded exec_limit of {self.limit_ms}ms after {self.elapsed:.2f}s\n"
+            f"command: {cmd}"
+        )
+
+
+@dataclass
 class ExecutionCase:
     index: int
     fixture: TestCase
@@ -126,6 +142,17 @@ def log_case_event(
     print(f"[{tag}] {describe_execution_case(case)}{suffix}", flush=True)
 
 
+_RUN_LIMIT = threading.local()
+
+
+def current_exec_timeout() -> tuple[Optional[float], Optional[int]]:
+    deadline = getattr(_RUN_LIMIT, "deadline", None)
+    limit_ms = getattr(_RUN_LIMIT, "limit_ms", None)
+    if not isinstance(deadline, float) or not isinstance(limit_ms, int):
+        return None, None
+    return deadline, limit_ms
+
+
 def read_text(path: str) -> str:
     return abs_path(path).read_text()
 
@@ -165,14 +192,36 @@ def strip_warning_diagnostics(stderr_text: str) -> str:
 
 
 def run_cmd(args: List[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        args,
-        cwd=str(cwd or ROOT),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-    )
+    deadline, limit_ms = current_exec_timeout()
+    timeout: Optional[float] = None
+    if deadline is not None and limit_ms is not None:
+        timeout = deadline - time.monotonic()
+        if timeout <= 0:
+            raise ExecTimeoutError(args, limit_ms / 1000.0, limit_ms)
+
+    popen_kwargs: Dict[str, Any] = {
+        "cwd": str(cwd or ROOT),
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if os.name == "posix":
+        popen_kwargs["preexec_fn"] = os.setsid
+
+    start = time.monotonic()
+    proc = subprocess.Popen(args, **popen_kwargs)
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if os.name == "posix":
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            proc.kill()
+        stdout, stderr = proc.communicate()
+        elapsed = time.monotonic() - start
+        raise ExecTimeoutError(args, elapsed, limit_ms or 0)
+
+    return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
 
 
 def normalize_rel_path(path: str) -> str:
@@ -1181,8 +1230,14 @@ def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunRe
 
     c = case.fixture.data
     k = case.fixture.kind
+    exec_limit = c.get("exec_limit")
+    deadline = None
+    if isinstance(exec_limit, int) and exec_limit > 0:
+        deadline = time.monotonic() + (exec_limit / 1000.0)
 
     try:
+        _RUN_LIMIT.deadline = deadline
+        _RUN_LIMIT.limit_ms = exec_limit if deadline is not None else None
         if case.variant == "cli-eval":
             ok_main, detail = kind_eval_run_expectation(ctx, c)
         else:
@@ -1228,8 +1283,13 @@ def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunRe
             elif sidecar_detail:
                 detail = sidecar_detail
 
+    except ExecTimeoutError as e:
+        ok_main, detail = False, str(e)
     except Exception as e:  # noqa: BLE001
         ok_main, detail = False, f"exception: {e}"
+    finally:
+        _RUN_LIMIT.deadline = None
+        _RUN_LIMIT.limit_ms = None
 
     return RunResult(case=case, ok=ok_main, duration=time.time() - start, detail=detail)
 
@@ -1286,6 +1346,9 @@ def cmd_list(args: argparse.Namespace) -> int:
 def lint_case_fields(case: TestCase) -> List[str]:
     errors: List[str] = []
     c = case.data
+    exec_limit = c.get("exec_limit")
+    if exec_limit is not None and (not isinstance(exec_limit, int) or exec_limit <= 0):
+        errors.append(f"{case.id}: exec_limit must be a positive integer number of milliseconds")
     for field in ("input", "expect", "expect_stderr", "expect_stdout", "harness"):
         v = c.get(field)
         if isinstance(v, str) and v and field != "harness":
