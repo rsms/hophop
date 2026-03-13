@@ -31,6 +31,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - `mir_exec` now also materializes `SLMirConst_FUNCTION` and executes `CALL_INDIRECT` for same-program function references.
 - The MIR runtime path now also has focused evaluator integration coverage for statement-lowered indirect function-value calls.
 - `mir_exec` now also executes `LOCAL_ZERO` through an explicit `SLMirExecEnv.zeroInitLocal` hook.
+- Expression MIR now also lowers plain builtin `len(x)` calls to `SLMirOp_SEQ_LEN` instead of leaving them on generic name-resolved `CALL`.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
 - The consteval path in `src/typecheck/consteval.c` now also tries MIR-first execution for simple const function bodies before falling back to `ctfe_exec`.
 - The const-block path in `src/typecheck/resolve.c` now also tries MIR-first execution for simple `const { ... }` blocks before falling back to `ctfe_exec`.

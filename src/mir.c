@@ -544,6 +544,7 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             uint32_t callFlags = 0;
             uint32_t callStart;
             uint32_t callEnd;
+            int      isBuiltinLen = 0;
             if (callee < 0 || (uint32_t)callee >= b->ast->len) {
                 b->supported = 0;
                 return 0;
@@ -551,6 +552,8 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             if (b->ast->nodes[callee].kind == SLAst_IDENT) {
                 callStart = b->ast->nodes[callee].dataStart;
                 callEnd = b->ast->nodes[callee].dataEnd;
+                isBuiltinLen =
+                    callEnd == callStart + 3u && memcmp(b->src.ptr + callStart, "len", 3) == 0;
             } else if (b->ast->nodes[callee].kind == SLAst_FIELD_EXPR) {
                 int32_t baseNode = b->ast->nodes[callee].firstChild;
                 if (baseNode < 0) {
@@ -587,6 +590,9 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
                 }
                 argc++;
                 arg = b->ast->nodes[arg].nextSibling;
+            }
+            if (isBuiltinLen && callFlags == 0u && argc == 1u) {
+                return SLMirEmitInstEx(b, SLMirOp_SEQ_LEN, SLTok_INVALID, 0, callStart, callEnd);
             }
             return SLMirEmitInstEx(
                 b, SLMirOp_CALL, (SLTokenKind)argc, callFlags, callStart, callEnd);
