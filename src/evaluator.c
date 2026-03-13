@@ -4497,6 +4497,143 @@ static int32_t SLEvalFunctionParamTypeNodeAt(const SLEvalFunction* fn, uint32_t 
     return -1;
 }
 
+static int SLEvalReorderFixedCallArgsByName(
+    SLEvalProgram*        p,
+    const SLEvalFunction* fn,
+    const SLAst*          callAst,
+    int32_t               firstArgNode,
+    SLCTFEValue*          args,
+    uint32_t              argCount) {
+    uint32_t     argNameStarts[256];
+    uint32_t     argNameEnds[256];
+    uint32_t     paramNameStarts[256];
+    uint32_t     paramNameEnds[256];
+    uint8_t      paramAssigned[256];
+    SLCTFEValue  reorderedArgs[256];
+    const SLAst* fnAst;
+    const char*  callSource;
+    int32_t      child;
+    int32_t      argNode;
+    uint32_t     i = 0;
+    int          reordered = 0;
+
+    if (p == NULL || fn == NULL || callAst == NULL || args == NULL || fn->file == NULL) {
+        return 0;
+    }
+    if (argCount == 0 || argCount > 256u || fn->isVariadic || fn->paramCount != argCount) {
+        return 0;
+    }
+    callSource = p->currentFile != NULL ? p->currentFile->source : NULL;
+    if (callSource == NULL) {
+        return 0;
+    }
+
+    memset(argNameStarts, 0, sizeof(argNameStarts));
+    memset(argNameEnds, 0, sizeof(argNameEnds));
+    argNode = firstArgNode;
+    while (argNode >= 0) {
+        const SLAstNode* arg = &callAst->nodes[argNode];
+        int32_t          exprNode = argNode;
+        if (i >= argCount) {
+            return 0;
+        }
+        if (arg->kind == SLAst_CALL_ARG) {
+            if ((arg->flags & SLAstFlag_CALL_ARG_SPREAD) != 0) {
+                return 0;
+            }
+            exprNode = arg->firstChild;
+            if (arg->dataEnd > arg->dataStart) {
+                argNameStarts[i] = arg->dataStart;
+                argNameEnds[i] = arg->dataEnd;
+            }
+        }
+        if (exprNode < 0 || (uint32_t)exprNode >= callAst->len) {
+            return 0;
+        }
+        if (argNameEnds[i] <= argNameStarts[i] && callAst->nodes[exprNode].kind == SLAst_IDENT) {
+            SLCTFEValue ignoredTypeValue;
+            if (SLEvalResolveTypeValueName(
+                    p,
+                    p->currentFile,
+                    callAst->nodes[exprNode].dataStart,
+                    callAst->nodes[exprNode].dataEnd,
+                    &ignoredTypeValue)
+                <= 0)
+            {
+                argNameStarts[i] = callAst->nodes[exprNode].dataStart;
+                argNameEnds[i] = callAst->nodes[exprNode].dataEnd;
+            }
+        }
+        if (argNameEnds[i] <= argNameStarts[i]) {
+            return 0;
+        }
+        i++;
+        argNode = ASTNextSibling(callAst, argNode);
+    }
+    if (i != argCount) {
+        return 0;
+    }
+
+    fnAst = &fn->file->ast;
+    if (fn->fnNode < 0 || (uint32_t)fn->fnNode >= fnAst->len) {
+        return 0;
+    }
+    memset(paramNameStarts, 0, sizeof(paramNameStarts));
+    memset(paramNameEnds, 0, sizeof(paramNameEnds));
+    memset(paramAssigned, 0, sizeof(paramAssigned));
+    child = ASTFirstChild(fnAst, fn->fnNode);
+    i = 0;
+    while (child >= 0) {
+        const SLAstNode* n = &fnAst->nodes[child];
+        if (n->kind == SLAst_PARAM) {
+            if (i >= argCount) {
+                return 0;
+            }
+            paramNameStarts[i] = n->dataStart;
+            paramNameEnds[i] = n->dataEnd;
+            i++;
+        }
+        child = ASTNextSibling(fnAst, child);
+    }
+    if (i != argCount) {
+        return 0;
+    }
+
+    for (i = 0; i < argCount; i++) {
+        uint32_t j;
+        uint32_t matchIndex = UINT32_MAX;
+        for (j = 0; j < argCount; j++) {
+            if (paramAssigned[j]) {
+                continue;
+            }
+            if (SliceEqSlice(
+                    callSource,
+                    argNameStarts[i],
+                    argNameEnds[i],
+                    fn->file->source,
+                    paramNameStarts[j],
+                    paramNameEnds[j]))
+            {
+                matchIndex = j;
+                break;
+            }
+        }
+        if (matchIndex == UINT32_MAX) {
+            return 0;
+        }
+        reorderedArgs[matchIndex] = args[i];
+        paramAssigned[matchIndex] = 1;
+        if (matchIndex != i) {
+            reordered = 1;
+        }
+    }
+    if (!reordered) {
+        return 1;
+    }
+    memcpy(args, reorderedArgs, sizeof(SLCTFEValue) * argCount);
+    return 1;
+}
+
 static int32_t SLEvalFunctionReturnTypeNode(const SLEvalFunction* fn) {
     const SLAst* ast;
     int32_t      child;
@@ -9653,6 +9790,10 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 if (resolvedFnIndex >= 0 || directFnIndex < 0) {
                     directFnIndex = resolvedFnIndex;
                 }
+            }
+            if (directFnIndex >= 0 && argCount > 0) {
+                (void)SLEvalReorderFixedCallArgsByName(
+                    p, &p->funcs[(uint32_t)directFnIndex], ast, argNode, args, argCount);
             }
             if (SLEvalExecExprCb(p, calleeNode, &calleeValue, &calleeIsConst) != 0) {
                 return -1;

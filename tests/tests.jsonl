@@ -610,7 +610,7 @@
 {"id":"coverage.cli_eval.examples.variadic.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/variadic.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":false,"stderr_empty":true}
 {"id":"coverage.cli_eval.examples.vss.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/vss.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"check:tests/named_args_reorder_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/named_args_reorder_ok.sl"}
-{"id":"integration.runtime.named_args_reorder_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/named_args_reorder_ok.sl","expect_exit":0}
+{"id":"integration.runtime.named_args_reorder_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/named_args_reorder_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"check:tests/named_args_missing_name_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/named_args_missing_name_bad.sl","expect_stderr":"tests/named_args_missing_name_bad.stderr"}
 {"id":"check:tests/compound_literal_field_shorthand_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_field_shorthand_ok.sl"}
 {"id":"integration.runtime.compound_literal_field_shorthand_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/compound_literal_field_shorthand_ok.sl","expect_exit":0}
