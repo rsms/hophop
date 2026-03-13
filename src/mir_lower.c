@@ -317,6 +317,77 @@ static int SLMirLowerRewriteTypeInst(
     return 1;
 }
 
+static int SLMirLowerInternHost(
+    SLMirProgramBuilder* _Nonnull builder,
+    uint32_t      nameStart,
+    uint32_t      nameEnd,
+    SLMirHostKind kind,
+    uint32_t      flags,
+    uint32_t      target,
+    uint32_t* _Nonnull outIndex,
+    SLDiag* _Nullable diag) {
+    uint32_t     i;
+    SLMirHostRef host;
+    if (builder == NULL || outIndex == NULL) {
+        return -1;
+    }
+    for (i = 0; i < builder->hostLen; i++) {
+        const SLMirHostRef* existing = &builder->hosts[i];
+        if (existing->nameStart == nameStart && existing->nameEnd == nameEnd
+            && existing->kind == kind && existing->flags == flags && existing->target == target)
+        {
+            *outIndex = i;
+            return 0;
+        }
+    }
+    host.nameStart = nameStart;
+    host.nameEnd = nameEnd;
+    host.kind = kind;
+    host.flags = flags;
+    host.target = target;
+    if (SLMirProgramBuilderAddHost(builder, &host, outIndex) != 0) {
+        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, nameStart, nameEnd);
+        return -1;
+    }
+    return 0;
+}
+
+static int SLMirLowerRewriteHostInst(
+    SLMirProgramBuilder* _Nonnull builder,
+    SLStrView src,
+    const SLMirInst* _Nonnull in,
+    SLMirInst* _Nonnull out,
+    SLDiag* _Nullable diag) {
+    uint32_t hostIndex = 0;
+    memcpy(out, in, sizeof(*out));
+    if (in->op != SLMirOp_CALL || in->aux >= builder->symbolLen) {
+        return 0;
+    }
+    if (!(in->end == in->start + 5u && memcmp(src.ptr + in->start, "print", 5) == 0)) {
+        return 0;
+    }
+    if (builder->symbols[in->aux].kind != SLMirSymbol_CALL || builder->symbols[in->aux].flags != 0u)
+    {
+        return 0;
+    }
+    if (SLMirLowerInternHost(
+            builder,
+            in->start,
+            in->end,
+            SLMirHost_GENERIC,
+            0u,
+            SLMirHostTarget_PRINT,
+            &hostIndex,
+            diag)
+        != 0)
+    {
+        return -1;
+    }
+    out->op = SLMirOp_CALL_HOST;
+    out->aux = hostIndex;
+    return 1;
+}
+
 int SLMirLowerAppendInst(
     SLMirProgramBuilder* _Nonnull builder,
     SLArena* _Nonnull arena,
@@ -343,6 +414,13 @@ int SLMirLowerAppendInst(
             rewriteStatus = SLMirLowerRewriteTypeInst(builder, in, &loweredInst, diag);
             if (rewriteStatus < 0) {
                 return -1;
+            }
+            if (rewriteStatus == 0) {
+                rewriteStatus = SLMirLowerRewriteHostInst(
+                    builder, src, &loweredInst, &loweredInst, diag);
+                if (rewriteStatus < 0) {
+                    return -1;
+                }
             }
         }
     }

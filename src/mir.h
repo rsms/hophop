@@ -155,6 +155,12 @@ typedef enum {
     SLMirHost_GENERIC,
 } SLMirHostKind;
 
+typedef enum {
+    SLMirHostTarget_INVALID = 0,
+    SLMirHostTarget_PRINT = 1,
+    SLMirHostTarget_PLATFORM_EXIT = 2,
+} SLMirHostTarget;
+
 typedef struct {
     uint32_t      nameStart;
     uint32_t      nameEnd;
