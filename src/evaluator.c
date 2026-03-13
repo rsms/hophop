@@ -2839,6 +2839,48 @@ static int SLEvalTypeValueFromTypeNode(
     return 1;
 }
 
+static SLCTFEExecBinding* _Nullable SLEvalFindBinding(
+    const SLCTFEExecCtx* _Nullable execCtx,
+    const SLParsedFile* file,
+    uint32_t            nameStart,
+    uint32_t            nameEnd);
+
+static int SLEvalTypeValueFromExprNode(
+    SLEvalProgram*      p,
+    const SLParsedFile* file,
+    const SLAst*        ast,
+    int32_t             exprNode,
+    SLCTFEValue*        outValue) {
+    const SLAstNode* n;
+    if (p == NULL || file == NULL || ast == NULL || outValue == NULL || exprNode < 0
+        || (uint32_t)exprNode >= ast->len)
+    {
+        return 0;
+    }
+    n = &ast->nodes[exprNode];
+    while (n->kind == SLAst_CALL_ARG) {
+        exprNode = n->firstChild;
+        if (exprNode < 0 || (uint32_t)exprNode >= ast->len) {
+            return 0;
+        }
+        n = &ast->nodes[exprNode];
+    }
+    if (SLEvalTypeValueFromTypeNode(p, file, exprNode, outValue)) {
+        return 1;
+    }
+    if (n->kind == SLAst_IDENT) {
+        SLCTFEExecBinding* binding = SLEvalFindBinding(
+            p->currentExecCtx, file, n->dataStart, n->dataEnd);
+        if (binding != NULL && binding->typeNode >= 0
+            && SLEvalTypeValueFromTypeNode(p, file, binding->typeNode, outValue))
+        {
+            return 1;
+        }
+        return SLEvalResolveTypeValueName(p, file, n->dataStart, n->dataEnd, outValue);
+    }
+    return 0;
+}
+
 static int SLEvalZeroInitTypeValue(
     const SLEvalProgram* p, const SLCTFEValue* typeValue, SLCTFEValue* outValue, int* outIsConst) {
     int32_t              typeCode = SLEvalTypeCode_INVALID;
@@ -3091,6 +3133,7 @@ static int SLEvalZeroInitTypeNode(
                 outValue->typeTag = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
+                SLEvalValueSetRuntimeTypeCode(outValue, SLEvalTypeCode_BOOL);
                 *outIsConst = 1;
                 return 0;
             }
@@ -3104,6 +3147,11 @@ static int SLEvalZeroInitTypeNode(
                 outValue->typeTag = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
+                SLEvalValueSetRuntimeTypeCode(
+                    outValue,
+                    SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "f32")
+                        ? SLEvalTypeCode_F32
+                        : SLEvalTypeCode_F64);
                 *outIsConst = 1;
                 return 0;
             }
@@ -3117,6 +3165,7 @@ static int SLEvalZeroInitTypeNode(
                 outValue->typeTag = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
+                SLEvalValueSetRuntimeTypeCode(outValue, SLEvalTypeCode_STR_REF);
                 *outIsConst = 1;
                 return 0;
             }
@@ -3131,7 +3180,13 @@ static int SLEvalZeroInitTypeNode(
                 || SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "i64")
                 || SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "int"))
             {
+                int32_t typeCode = SLEvalTypeCode_INVALID;
                 SLEvalValueSetInt(outValue, 0);
+                if (SLEvalBuiltinTypeCode(
+                        file->source, typeNameNode->dataStart, typeNameNode->dataEnd, &typeCode))
+                {
+                    SLEvalValueSetRuntimeTypeCode(outValue, typeCode);
+                }
                 *outIsConst = 1;
                 return 0;
             }
@@ -5983,7 +6038,10 @@ static int SLEvalEvalTopConst(
     SLEvalProgram* p, uint32_t topConstIndex, SLCTFEValue* outValue, int* outIsConst);
 
 static SLCTFEExecBinding* _Nullable SLEvalFindBinding(
-    const SLCTFEExecCtx* execCtx, const SLParsedFile* file, uint32_t nameStart, uint32_t nameEnd) {
+    const SLCTFEExecCtx* _Nullable execCtx,
+    const SLParsedFile* file,
+    uint32_t            nameStart,
+    uint32_t            nameEnd) {
     const SLCTFEExecEnv* frame;
     if (execCtx == NULL || file == NULL) {
         return NULL;
@@ -8160,6 +8218,23 @@ static int SLEvalResolveIdent(
     {
         return -1;
     }
+    {
+        SLCTFEExecBinding* binding = SLEvalFindBinding(
+            p->currentExecCtx, p->currentFile, nameStart, nameEnd);
+        if (binding != NULL) {
+            *outValue = binding->value;
+            if (binding->typeNode >= 0) {
+                int32_t typeCode = SLEvalTypeCode_INVALID;
+                if (!SLEvalValueGetRuntimeTypeCode(outValue, &typeCode)
+                    && SLEvalTypeCodeFromTypeNode(p->currentFile, binding->typeNode, &typeCode))
+                {
+                    SLEvalValueSetRuntimeTypeCode(outValue, typeCode);
+                }
+            }
+            *outIsConst = 1;
+            return 0;
+        }
+    }
     if (SLCTFEExecEnvLookup(p->currentExecCtx, nameStart, nameEnd, outValue)) {
         *outIsConst = 1;
         return 0;
@@ -8383,6 +8458,19 @@ static int SLEvalResolveCall(
             return -1;
         }
         if (copyRc > 0) {
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "typeof")) {
+        int32_t typeCode = SLEvalTypeCode_INVALID;
+        if (args[0].kind == SLCTFEValue_TYPE) {
+            SLEvalValueSetSimpleTypeValue(outValue, SLEvalTypeCode_TYPE);
+            *outIsConst = 1;
+            return 0;
+        }
+        if (SLEvalTypeCodeFromValue(&args[0], &typeCode)) {
+            SLEvalValueSetSimpleTypeValue(outValue, typeCode);
             *outIsConst = 1;
             return 0;
         }
@@ -9189,6 +9277,14 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             }
             if (argExprNode < 0 || (uint32_t)argExprNode >= ast->len) {
                 *outIsConst = 0;
+                return 0;
+            }
+            rc = SLEvalTypeValueFromExprNode(p, p->currentFile, ast, argExprNode, outValue);
+            if (rc < 0) {
+                return -1;
+            }
+            if (rc > 0) {
+                *outIsConst = 1;
                 return 0;
             }
             if (ast->nodes[argExprNode].kind == SLAst_CAST) {
