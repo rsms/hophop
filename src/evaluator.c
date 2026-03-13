@@ -1713,8 +1713,15 @@ static int SLEvalForInIndexCb(
             return 0;
         }
         if (byRef) {
-            SLCTFEExecSetReason(
-                execCtx, 0, 0, "for-in string references are not supported in evaluator backend");
+            SLCTFEValue* byteValue = (SLCTFEValue*)SLArenaAlloc(
+                ((SLEvalProgram*)ctx)->arena, sizeof(SLCTFEValue), (uint32_t)_Alignof(SLCTFEValue));
+            if (byteValue == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            SLEvalValueSetInt(byteValue, (int64_t)targetValue->s.bytes[index]);
+            SLEvalValueSetRuntimeTypeCode(byteValue, SLEvalTypeCode_U8);
+            SLEvalValueSetReference(outValue, byteValue);
+            *outIsConst = 1;
             return 0;
         }
         SLEvalValueSetInt(outValue, (int64_t)targetValue->s.bytes[index]);
