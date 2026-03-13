@@ -814,6 +814,7 @@ static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
     int                      isTopConst,
     uint32_t                 topInitIndex,
     uint32_t*                outEvalFnIndex) {
+    const SLPackage*   currentPkg;
     int32_t          initExprNode = -1;
     const SLAstNode* initExpr;
     int32_t          targetFnIndex = -1;
@@ -821,6 +822,10 @@ static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
         *outEvalFnIndex = UINT32_MAX;
     }
     if (c == NULL || c->p == NULL || file == NULL || outEvalFnIndex == NULL) {
+        return 0;
+    }
+    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    if (currentPkg == NULL) {
         return 0;
     }
     if (isTopConst) {
@@ -841,7 +846,8 @@ static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
     if (initExpr->kind != SLAst_IDENT) {
         return 0;
     }
-    targetFnIndex = SLEvalFindAnyFunctionBySlice(c->p, file, initExpr->dataStart, initExpr->dataEnd);
+    targetFnIndex = SLEvalFindAnyFunctionBySliceInPackage(
+        c->p, currentPkg, file, initExpr->dataStart, initExpr->dataEnd);
     if (targetFnIndex < 0 || (uint32_t)targetFnIndex >= c->p->funcLen
         || c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn
         || c->p->funcs[(uint32_t)targetFnIndex].isVariadic)
@@ -857,6 +863,7 @@ static int SLEvalMirResolveSimpleFunctionValueAliasCallTarget(
     const SLParsedFile*      file,
     const SLMirInst*         ins,
     uint32_t*                outEvalFnIndex) {
+    const SLPackage*      currentPkg;
     const SLMirSymbolRef* symbol;
     int32_t               topIndex = -1;
     if (outEvalFnIndex != NULL) {
@@ -867,16 +874,22 @@ static int SLEvalMirResolveSimpleFunctionValueAliasCallTarget(
     {
         return 0;
     }
+    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    if (currentPkg == NULL) {
+        return 0;
+    }
     symbol = &c->builder.symbols[ins->aux];
     if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
-    topIndex = SLEvalFindTopConstBySlice(c->p, file, symbol->nameStart, symbol->nameEnd);
+    topIndex = SLEvalFindTopConstBySliceInPackage(
+        c->p, currentPkg, file, symbol->nameStart, symbol->nameEnd);
     if (topIndex >= 0) {
         return SLEvalMirResolveSimpleTopInitFunctionValueTarget(
             c, file, 1, (uint32_t)topIndex, outEvalFnIndex);
     }
-    topIndex = SLEvalFindTopVarBySlice(c->p, file, symbol->nameStart, symbol->nameEnd);
+    topIndex = SLEvalFindTopVarBySliceInPackage(
+        c->p, currentPkg, file, symbol->nameStart, symbol->nameEnd);
     if (topIndex >= 0) {
         return SLEvalMirResolveSimpleTopInitFunctionValueTarget(
             c, file, 0, (uint32_t)topIndex, outEvalFnIndex);
@@ -886,6 +899,7 @@ static int SLEvalMirResolveSimpleFunctionValueAliasCallTarget(
 
 static int SLEvalMirRewriteZeroArgTopInitFunctionValueCall(
     SLEvalMirLowerCtx* c, const SLParsedFile* file, uint32_t rootMirFnIndex, uint32_t instIndex) {
+    const SLPackage*      currentPkg;
     SLMirInst*            ins;
     const SLMirSymbolRef* symbol;
     int32_t               topIndex = -1;
@@ -895,6 +909,10 @@ static int SLEvalMirRewriteZeroArgTopInitFunctionValueCall(
     SLMirConst            value = { 0 };
     int                   lowerRc;
     if (c == NULL || file == NULL || rootMirFnIndex >= c->builder.funcLen || instIndex >= c->builder.instLen) {
+        return 0;
+    }
+    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    if (currentPkg == NULL) {
         return 0;
     }
     ins = &c->builder.insts[instIndex];
@@ -907,7 +925,8 @@ static int SLEvalMirRewriteZeroArgTopInitFunctionValueCall(
     if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
-    topIndex = SLEvalFindTopConstBySlice(c->p, file, symbol->nameStart, symbol->nameEnd);
+    topIndex = SLEvalFindTopConstBySliceInPackage(
+        c->p, currentPkg, file, symbol->nameStart, symbol->nameEnd);
     if (topIndex >= 0) {
         if (!SLEvalMirResolveSimpleTopInitFunctionValueTarget(
                 c, file, 1, (uint32_t)topIndex, &targetEvalFnIndex))
@@ -915,7 +934,8 @@ static int SLEvalMirRewriteZeroArgTopInitFunctionValueCall(
             return 0;
         }
     } else {
-        topIndex = SLEvalFindTopVarBySlice(c->p, file, symbol->nameStart, symbol->nameEnd);
+        topIndex = SLEvalFindTopVarBySliceInPackage(
+            c->p, currentPkg, file, symbol->nameStart, symbol->nameEnd);
         if (topIndex < 0
             || !SLEvalMirResolveSimpleTopInitFunctionValueTarget(
                 c, file, 0, (uint32_t)topIndex, &targetEvalFnIndex))
@@ -953,6 +973,7 @@ static int SLEvalMirRewriteZeroArgTopInitFunctionValueCall(
 
 static int SLEvalMirRewriteZeroArgRuntimeFunctionValueCall(
     SLEvalMirLowerCtx* c, const SLParsedFile* file, uint32_t mirFnIndex, uint32_t instIndex) {
+    const SLPackage*      currentPkg;
     SLMirInst*            ins;
     const SLMirSymbolRef* symbol;
     int32_t               topIndex = -1;
@@ -962,6 +983,10 @@ static int SLEvalMirRewriteZeroArgRuntimeFunctionValueCall(
     SLMirConst            value = { 0 };
     int                   lowerRc;
     if (c == NULL || file == NULL || mirFnIndex >= c->builder.funcLen || instIndex >= c->builder.instLen) {
+        return 0;
+    }
+    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    if (currentPkg == NULL) {
         return 0;
     }
     ins = &c->builder.insts[instIndex];
@@ -974,7 +999,8 @@ static int SLEvalMirRewriteZeroArgRuntimeFunctionValueCall(
     if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
-    topIndex = SLEvalFindTopConstBySlice(c->p, file, symbol->nameStart, symbol->nameEnd);
+    topIndex = SLEvalFindTopConstBySliceInPackage(
+        c->p, currentPkg, file, symbol->nameStart, symbol->nameEnd);
     if (topIndex >= 0) {
         if (!SLEvalMirResolveSimpleTopInitFunctionValueTarget(
                 c, file, 1, (uint32_t)topIndex, &targetEvalFnIndex))
@@ -982,7 +1008,8 @@ static int SLEvalMirRewriteZeroArgRuntimeFunctionValueCall(
             return 0;
         }
     } else {
-        topIndex = SLEvalFindTopVarBySlice(c->p, file, symbol->nameStart, symbol->nameEnd);
+        topIndex = SLEvalFindTopVarBySliceInPackage(
+            c->p, currentPkg, file, symbol->nameStart, symbol->nameEnd);
         if (topIndex < 0
             || !SLEvalMirResolveSimpleTopInitFunctionValueTarget(
                 c, file, 0, (uint32_t)topIndex, &targetEvalFnIndex))
@@ -1024,6 +1051,7 @@ static int SLEvalMirResolveTopInitIdentTargetForFile(
     const SLMirInst*         ins,
     int*                     outIsTopConst,
     uint32_t*                outIndex) {
+    const SLPackage* currentPkg;
     int32_t topIndex = -1;
     if (outIsTopConst != NULL) {
         *outIsTopConst = 0;
@@ -1036,11 +1064,15 @@ static int SLEvalMirResolveTopInitIdentTargetForFile(
     {
         return 0;
     }
+    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    if (currentPkg == NULL) {
+        return 0;
+    }
     if (SLEvalMirResolveTopConstIdentTargetForFile(c, file, ins, outIndex)) {
         *outIsTopConst = 1;
         return 1;
     }
-    topIndex = SLEvalFindTopVarBySlice(c->p, file, ins->start, ins->end);
+    topIndex = SLEvalFindTopVarBySliceInPackage(c->p, currentPkg, file, ins->start, ins->end);
     if (topIndex >= 0) {
         *outIsTopConst = 0;
         *outIndex = (uint32_t)topIndex;
