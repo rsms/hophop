@@ -42,6 +42,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - The simple const-block MIR path now also rewrites safe plain direct helper calls into same-program `CALL_FN` edges, so `const { ... }` blocks no longer have to fall back to per-call `resolveCall` when they stay within that conservative subset.
 - The evaluator top-init path now also rewrites safe plain direct calls from the root initializer MIR function into same-program `CALL_FN` edges, so simple top-level initializer call chains can stay inside one MIR program.
 - The evaluator top-init path now also rewrites conservative imported package selector calls in the root initializer expression to `CALL_FN`, so direct top-level initializer package calls no longer have to stay as generic evaluator-resolved `CALL`.
+- The evaluator top-init path now also rewrites simple top-level identifier dependencies to zero-arg `CALL_FN` edges, so same-package top const/top var init chains can stay inside one MIR program instead of falling back to `resolveIdent`.
 - Lowered function programs can now rewrite literal pushes into `SLMirConst` entries plus `SLMirOp_PUSH_CONST`, so function execution is less dependent on source-slice decoding.
 - Lowered function programs can also rewrite `LOAD_IDENT` and direct `CALL` sites to `SLMirSymbolRef` table entries, so name metadata lives in the MIR program instead of only in instruction spans.
 - Lowered call symbols now also preserve simple call-shape flags, such as selector-style calls where the receiver has already been lowered as argument `0`.

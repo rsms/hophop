@@ -6793,7 +6793,9 @@ static int SLEvalMirEnterFunction(
             return -1;
         }
         evalFnIndex = c->mirToEval[functionIndex];
-        if (evalFnIndex >= c->p->funcLen || c->p->callDepth >= SL_EVAL_CALL_MAX_DEPTH) {
+        if (evalFnIndex == UINT32_MAX) {
+            pushed = 0;
+        } else if (evalFnIndex >= c->p->funcLen || c->p->callDepth >= SL_EVAL_CALL_MAX_DEPTH) {
             if (diag != NULL) {
                 diag->code = SLDiag_UNEXPECTED_TOKEN;
                 diag->type = SLDiagTypeOfCode(diag->code);
@@ -6803,9 +6805,10 @@ static int SLEvalMirEnterFunction(
                 diag->argEnd = 0;
             }
             return -1;
+        } else {
+            c->p->callStack[c->p->callDepth++] = evalFnIndex;
+            pushed = 1;
         }
-        c->p->callStack[c->p->callDepth++] = evalFnIndex;
-        pushed = 1;
     }
     c->savedFiles[c->savedFileLen++] = c->p->currentFile;
     c->pushedFrames[c->savedFileLen - 1u] = pushed;
