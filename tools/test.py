@@ -71,6 +71,7 @@ class RunContext:
     cc: str
     update: bool
     sidecar_codegen: bool
+    log_progress: bool
 
 
 @dataclass
@@ -110,6 +111,19 @@ def abs_path(path: str) -> Path:
     if p.is_absolute():
         return p
     return ROOT / p
+
+
+def describe_execution_case(case: "ExecutionCase") -> str:
+    return f"{case.id} ({case.suite}, {case.kind})"
+
+
+def log_case_event(
+    enabled: bool, tag: str, case: "ExecutionCase", duration: Optional[float] = None
+) -> None:
+    if not enabled:
+        return
+    suffix = "" if duration is None else f" in {duration:.2f}s"
+    print(f"[{tag}] {describe_execution_case(case)}{suffix}", flush=True)
 
 
 def read_text(path: str) -> str:
@@ -1410,6 +1424,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         cc=args.cc,
         update=args.update,
         sidecar_codegen=not args.no_sidecar_codegen and not args.eval_only,
+        log_progress=args.log_progress,
     )
 
     jobs = args.jobs if args.jobs and args.jobs > 0 else (os.cpu_count() or 1)
@@ -1429,10 +1444,32 @@ def cmd_run(args: argparse.Namespace) -> int:
     results: List[RunResult] = []
 
     try:
-        with ThreadPoolExecutor(max_workers=jobs) as ex:
-            futs = {ex.submit(execute_case, ctx, c, temp_root): c for c in cases}
-            for fut in as_completed(futs):
-                results.append(fut.result())
+        if jobs == 1:
+            for case in cases:
+                log_case_event(ctx.log_progress, "RUN ", case)
+                result = execute_case(ctx, case, temp_root)
+                results.append(result)
+                log_case_event(
+                    ctx.log_progress,
+                    " OK " if result.ok else "FAIL",
+                    case,
+                    result.duration,
+                )
+        else:
+            with ThreadPoolExecutor(max_workers=jobs) as ex:
+                futs = {}
+                for case in cases:
+                    log_case_event(ctx.log_progress, "RUN ", case)
+                    futs[ex.submit(execute_case, ctx, case, temp_root)] = case
+                for fut in as_completed(futs):
+                    result = fut.result()
+                    results.append(result)
+                    log_case_event(
+                        ctx.log_progress,
+                        " OK " if result.ok else "FAIL",
+                        result.case,
+                        result.duration,
+                    )
     finally:
         if args.keep_temp:
             print(f"kept temp dir: {temp_root}")
@@ -1487,6 +1524,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     sp.add_argument("--update", action="store_true", help="update *.expected.c sidecars")
     sp.add_argument("--no-sidecar-codegen", action="store_true")
     sp.add_argument("--eval-only", action="store_true", help="skip C-backend-only executions")
+    sp.add_argument(
+        "--log-progress",
+        action="store_true",
+        help="log each execution start/finish; useful with --jobs 1 when diagnosing hangs",
+    )
     sp.add_argument("--keep-temp", action="store_true")
     sp.set_defaults(func=cmd_run)
 
