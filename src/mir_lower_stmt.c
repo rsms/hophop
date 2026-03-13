@@ -2120,8 +2120,6 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                     uint32_t         localSlot = UINT32_MAX;
                     int32_t          nameNode = SLMirStmtLowerAstListItemAt(c->ast, firstChild, i);
                     const SLAstNode* name = nameNode >= 0 ? &c->ast->nodes[nameNode] : NULL;
-                    int32_t          itemInitNode = SLMirStmtLowerVarLikeInitExprNodeAt(
-                        c->ast, stmtNode, (int32_t)i);
                     if (name == NULL || name->kind != SLAst_IDENT) {
                         c->supported = 0;
                         return 0;

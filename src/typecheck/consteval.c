@@ -3095,14 +3095,14 @@ int SLTCMirConstLowerFunction(
     if (tc == NULL || fnIndex < 0 || (uint32_t)fnIndex >= tc->funcLen) {
         return 0;
     }
+    if (c->loweringFns[(uint32_t)fnIndex] != 0u) {
+        return 0;
+    }
     if (c->tcToMir[(uint32_t)fnIndex] != SL_TC_MIR_CONST_FN_NONE) {
         if (outMirFnIndex != NULL) {
             *outMirFnIndex = c->tcToMir[(uint32_t)fnIndex];
         }
         return 1;
-    }
-    if (c->loweringFns[(uint32_t)fnIndex] != 0u) {
-        return 0;
     }
     if (!SLTCMirConstGetFunctionBody(tc, fnIndex, &fnNode, &bodyNode)) {
         return 0;
@@ -3204,6 +3204,7 @@ static int SLTCTryMirConstCall(
     env.indexValueCtx = evalCtx;
     env.makeTuple = SLTCMirConstMakeTuple;
     env.makeTupleCtx = evalCtx;
+    env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;
     env.diag = c->diag;
     if (SLMirEvalFunction(
             c->arena, &program, mirFnIndex, args, argCount, &env, outValue, &mirIsConst)

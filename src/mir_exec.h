@@ -142,6 +142,7 @@ typedef struct {
     SLMirEnterFunctionFn _Nullable enterFunction;
     SLMirLeaveFunctionFn _Nullable leaveFunction;
     void* _Nullable functionCtx;
+    uint32_t backwardJumpLimit;
     SLDiag* _Nullable diag;
 } SLMirExecEnv;
 

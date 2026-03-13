@@ -77,6 +77,7 @@ static int SLTCTryMirConstBlock(
     env.indexValueCtx = evalCtx;
     env.makeTuple = SLTCMirConstMakeTuple;
     env.makeTupleCtx = evalCtx;
+    env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;
     env.diag = c->diag;
     if (SLMirEvalFunction(c->arena, &program, mirFnIndex, NULL, 0, &env, outValue, &mirIsConst)
         != 0)

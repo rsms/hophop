@@ -18,6 +18,7 @@ typedef struct {
     const SLMirProgram*  program;
     const SLMirFunction* function;
     SLMirExecEnv         env;
+    uint32_t             backwardJumpCount;
 } SLMirExecRun;
 
 #define SLMIR_EXEC_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 61)
@@ -549,6 +550,11 @@ static int SLMirRunLoop(
                 if (ins->aux >= run->len) {
                     return 0;
                 }
+                if (run->env.backwardJumpLimit != 0 && ins->aux < run->pc) {
+                    if (++run->backwardJumpCount > run->env.backwardJumpLimit) {
+                        return 0;
+                    }
+                }
                 run->pc = ins->aux;
                 break;
             case SLMirOp_JUMP_IF_FALSE: {
@@ -564,6 +570,11 @@ static int SLMirRunLoop(
                     return 0;
                 }
                 if (!condBool.b) {
+                    if (run->env.backwardJumpLimit != 0 && ins->aux < run->pc) {
+                        if (++run->backwardJumpCount > run->env.backwardJumpLimit) {
+                            return 0;
+                        }
+                    }
                     run->pc = ins->aux;
                 }
                 break;

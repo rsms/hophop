@@ -213,6 +213,7 @@ Interpreter details:
 - `DROP` pops and discards one stack value.
 - `JUMP` and `JUMP_IF_FALSE` execute using function-local instruction indices stored in `aux`.
 - `JUMP_IF_FALSE` currently coerces its popped condition through the existing MIR boolean-cast rules.
+- `SLMirExecEnv.backwardJumpLimit` can cap taken backward jumps per MIR frame. The typechecker now uses that to keep MIR consteval from spinning forever on non-progressing loops, then falls back to the older CTFE path for the final user-facing diagnostic.
 - When lowered symbol metadata exists, `mir_exec` resolves identifier/call names through `program.symbols[]` before falling back to instruction spans.
 - For direct call symbols, `program.symbols[]` now also carries lightweight call-shape flags that future backends can use when deciding between plain calls, method-style lowering, or host shims.
 - When lowered type metadata exists, `CAST` retains both its current scalar cast opcode token and an explicit type-table reference for backend consumers.

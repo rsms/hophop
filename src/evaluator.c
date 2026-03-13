@@ -7405,6 +7405,7 @@ static void SLEvalMirInitExecEnv(
     env->aggAddrFieldCtx = p;
     env->makeTuple = SLEvalMirMakeTuple;
     env->makeTupleCtx = p;
+    env->backwardJumpLimit = p->currentExecCtx != NULL ? p->currentExecCtx->forIterLimit : 0;
     env->diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
     if (functionCtx != NULL) {
         env->enterFunction = SLEvalMirEnterFunction;
