@@ -33,6 +33,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - The const-block path in `src/typecheck/resolve.c` now also tries MIR-first execution for simple `const { ... }` blocks before falling back to `ctfe_exec`.
 - The consteval-side MIR env now also supplies typed zero-init and value-coercion hooks, so simple typed locals and scalar/optional return adaptation can stay on the MIR path.
 - The simple const-call path now also rewrites safe plain direct calls into same-program `CALL_FN` edges, so small const call chains can stay on MIR instead of re-entering `ctfe_exec` one function at a time.
+- The simple const-block MIR path now also rewrites safe plain direct helper calls into same-program `CALL_FN` edges, so `const { ... }` blocks no longer have to fall back to per-call `resolveCall` when they stay within that conservative subset.
 - The evaluator top-init path now also rewrites safe plain direct calls from the root initializer MIR function into same-program `CALL_FN` edges, so simple top-level initializer call chains can stay inside one MIR program.
 - The evaluator top-init path now also rewrites conservative imported package selector calls in the root initializer expression to `CALL_FN`, so direct top-level initializer package calls no longer have to stay as generic evaluator-resolved `CALL`.
 - Lowered function programs can now rewrite literal pushes into `SLMirConst` entries plus `SLMirOp_PUSH_CONST`, so function execution is less dependent on source-slice decoding.

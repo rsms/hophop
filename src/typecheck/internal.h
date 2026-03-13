@@ -159,6 +159,13 @@ typedef struct {
 } SLTCVariantNarrow;
 
 typedef struct SLTCConstEvalCtx SLTCConstEvalCtx;
+typedef struct {
+    SLTCConstEvalCtx*   evalCtx;
+    SLMirProgramBuilder builder;
+    uint32_t*           tcToMir;
+    uint8_t*            loweringFns;
+    SLDiag*             diag;
+} SLTCMirConstLowerCtx;
 
 typedef struct {
     void* _Nullable ctx;
@@ -816,6 +823,10 @@ int     SLTCFnNodeHasTypeParamName(
         SLTypeCheckCtx* c, int32_t fnNode, uint32_t nameStart, uint32_t nameEnd);
 int SLTCResolveActiveTypeParamType(
     SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int32_t* outType);
+int SLTCMirConstInitLowerCtx(SLTCConstEvalCtx* evalCtx, SLTCMirConstLowerCtx* _Nonnull outCtx);
+int SLTCMirConstLowerFunction(
+    SLTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex);
+int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex);
 int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
 int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, int32_t* outTypeId);
 int SLTCCollectTypeDeclsFromNode(SLTypeCheckCtx* c, int32_t nodeId);

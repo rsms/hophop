@@ -11,11 +11,14 @@ static int SLTCTryMirConstBlock(
     int*              outDidReturn,
     int*              outIsConst,
     int*              outSupported) {
-    SLTypeCheckCtx* c;
-    SLMirProgram    program = { 0 };
-    SLMirExecEnv    env = { 0 };
-    int             supported = 0;
-    int             mirIsConst = 0;
+    SLTypeCheckCtx*      c;
+    SLMirProgram         program = { 0 };
+    SLMirExecEnv         env = { 0 };
+    SLTCMirConstLowerCtx lowerCtx;
+    uint32_t             mirFnIndex = UINT32_MAX;
+    int                  supported = 0;
+    int                  mirIsConst = 0;
+    int                  rewriteRc;
     if (outDidReturn != NULL) {
         *outDidReturn = 0;
     }
@@ -34,15 +37,34 @@ static int SLTCTryMirConstBlock(
     if (c == NULL) {
         return -1;
     }
-    if (SLMirLowerSimpleFunction(
-            c->arena, c->ast, c->src, -1, blockNode, &program, &supported, c->diag)
+    if (SLTCMirConstInitLowerCtx(evalCtx, &lowerCtx) != 0) {
+        return -1;
+    }
+    if (SLMirLowerAppendSimpleFunction(
+            &lowerCtx.builder,
+            c->arena,
+            c->ast,
+            c->src,
+            -1,
+            blockNode,
+            &mirFnIndex,
+            &supported,
+            c->diag)
         != 0)
     {
         return -1;
     }
-    if (!supported) {
+    if (!supported || mirFnIndex == UINT32_MAX) {
         return 0;
     }
+    rewriteRc = SLTCMirConstRewriteDirectCalls(&lowerCtx, mirFnIndex);
+    if (rewriteRc < 0) {
+        return -1;
+    }
+    if (rewriteRc == 0) {
+        return 0;
+    }
+    SLMirProgramBuilderFinish(&lowerCtx.builder, &program);
     env.src = c->src;
     env.resolveIdent = SLTCResolveConstIdent;
     env.resolveCall = SLTCResolveConstCall;
@@ -52,7 +74,9 @@ static int SLTCTryMirConstBlock(
     env.coerceValueForType = SLTCMirConstCoerceValueForType;
     env.coerceValueCtx = evalCtx;
     env.diag = c->diag;
-    if (SLMirEvalFunction(c->arena, &program, 0, NULL, 0, &env, outValue, &mirIsConst) != 0) {
+    if (SLMirEvalFunction(c->arena, &program, mirFnIndex, NULL, 0, &env, outValue, &mirIsConst)
+        != 0)
+    {
         return -1;
     }
     *outSupported = 1;
