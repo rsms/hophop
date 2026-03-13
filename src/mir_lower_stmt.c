@@ -1865,7 +1865,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
         }
         case SLAst_ASSERT: {
             int32_t condNode = s->firstChild;
-            if (condNode < 0 || c->ast->nodes[condNode].nextSibling >= 0) {
+            if (condNode < 0) {
                 c->supported = 0;
                 return 0;
             }
