@@ -948,6 +948,24 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_STR_CSTR: {
+                SLCTFEValue  base;
+                SLCTFEValue* target;
+                if (SLCTFEPop(run, &base) != 0) {
+                    return 0;
+                }
+                target = SLMirReferenceTarget(&base);
+                if (target != NULL) {
+                    base = *target;
+                }
+                if (base.kind != SLCTFEValue_STRING) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &base) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_ARRAY_ADDR: {
                 SLCTFEValue base;
                 SLCTFEValue idx;

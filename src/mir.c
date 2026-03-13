@@ -603,6 +603,7 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             uint32_t callStart;
             uint32_t callEnd;
             int      isBuiltinLen = 0;
+            int      isBuiltinCStr = 0;
             if (callee < 0 || (uint32_t)callee >= b->ast->len) {
                 b->supported = 0;
                 return 0;
@@ -612,6 +613,8 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
                 callEnd = b->ast->nodes[callee].dataEnd;
                 isBuiltinLen =
                     callEnd == callStart + 3u && memcmp(b->src.ptr + callStart, "len", 3) == 0;
+                isBuiltinCStr =
+                    callEnd == callStart + 4u && memcmp(b->src.ptr + callStart, "cstr", 4) == 0;
             } else if (b->ast->nodes[callee].kind == SLAst_FIELD_EXPR) {
                 int32_t baseNode = b->ast->nodes[callee].firstChild;
                 if (baseNode < 0) {
@@ -625,6 +628,8 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
                 callFlags = SLMirSymbolFlag_CALL_RECEIVER_ARG0;
                 callStart = b->ast->nodes[callee].dataStart;
                 callEnd = b->ast->nodes[callee].dataEnd;
+                isBuiltinCStr =
+                    callEnd == callStart + 4u && memcmp(b->src.ptr + callStart, "cstr", 4) == 0;
             } else {
                 b->supported = 0;
                 return 0;
@@ -651,6 +656,9 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             }
             if (isBuiltinLen && callFlags == 0u && argc == 1u) {
                 return SLMirEmitInstEx(b, SLMirOp_SEQ_LEN, SLTok_INVALID, 0, callStart, callEnd);
+            }
+            if (isBuiltinCStr && argc == 1u) {
+                return SLMirEmitInstEx(b, SLMirOp_STR_CSTR, SLTok_INVALID, 0, callStart, callEnd);
             }
             return SLMirEmitInstEx(
                 b, SLMirOp_CALL, (SLTokenKind)argc, callFlags, callStart, callEnd);

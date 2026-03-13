@@ -32,6 +32,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - The MIR runtime path now also has focused evaluator integration coverage for statement-lowered indirect function-value calls.
 - `mir_exec` now also executes `LOCAL_ZERO` through an explicit `SLMirExecEnv.zeroInitLocal` hook.
 - Expression MIR now also lowers plain builtin `len(x)` calls to `SLMirOp_SEQ_LEN` instead of leaving them on generic name-resolved `CALL`.
+- Expression MIR now also lowers builtin `cstr(x)` and receiver sugar `x.cstr()` to `SLMirOp_STR_CSTR`, so that pure builtin no longer depends on generic evaluator call resolution.
 - Lowered MIR programs now also rewrite plain builtin `print(...)` calls to `CALL_HOST` through `program.hosts[]`, instead of leaving that builtin on generic call-name resolution.
 - Lowered MIR programs now also rewrite plain builtin `concat(...)` calls to `CALL_HOST`, so string concatenation crosses the MIR host boundary explicitly instead of staying on generic call-name resolution.
 - Lowered MIR programs now also rewrite plain builtin `free(...)` calls to `CALL_HOST`, so allocation cleanup crosses the MIR host boundary explicitly instead of staying on generic call-name resolution.
@@ -253,6 +254,7 @@ So today:
   - conservative `x.field op= rhs` forms lowered by replaying side-effect-free lvalues through `AGG_GET` plus `AGG_ADDR`
   - plain builtin `print(...)` rewritten to `CALL_HOST`
   - plain builtin `concat(...)` rewritten to `CALL_HOST`
+  - builtin `cstr(x)` and `x.cstr()` lowered to `STR_CSTR`
   - conservative imported package calls like `pkg.F(...)`, lowered to `CALL_FN` when the target is unambiguous and non-variadic
   - conservative `platform.exit(...)` selector calls rewritten to `CALL_HOST`
   - simple local assignment and compound assignment
