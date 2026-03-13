@@ -198,8 +198,7 @@ static int SLEvalMirMatchQualifiedCallBaseSlice(
                 && (uint32_t)baseNode < ast->len && ast->nodes[baseNode].kind == SLAst_IDENT
                 && ast->nodes[calleeNode].dataStart == symbol->nameStart
                 && ast->nodes[calleeNode].dataEnd == symbol->nameEnd
-                && AstListCount(ast, nodeId) + 1u
-                       == (encodedArgCount & ~SLMirCallArgFlag_RECEIVER_ARG0))
+                && AstListCount(ast, nodeId) == (encodedArgCount & ~SLMirCallArgFlag_RECEIVER_ARG0))
             {
                 uint32_t baseStart = ast->nodes[baseNode].dataStart;
                 uint32_t baseEnd = ast->nodes[baseNode].dataEnd;

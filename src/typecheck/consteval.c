@@ -2619,6 +2619,8 @@ int SLTCEvalConstExecIsOptionalTypeCb(
 static int SLTCMirConstResolveTypeRefTypeId(
     SLTCConstEvalCtx* evalCtx, const SLMirTypeRef* typeRef, int32_t* outTypeId) {
     SLTypeCheckCtx* c;
+    uint8_t         savedAllowConstNumericTypeName;
+    uint8_t         savedAllowAnytypeParamType;
     if (outTypeId != NULL) {
         *outTypeId = -1;
     }
@@ -2629,7 +2631,18 @@ static int SLTCMirConstResolveTypeRefTypeId(
     if (c == NULL || typeRef->astNode > INT32_MAX || typeRef->astNode >= c->ast->len) {
         return -1;
     }
-    return SLTCResolveTypeNode(c, (int32_t)typeRef->astNode, outTypeId);
+    savedAllowConstNumericTypeName = c->allowConstNumericTypeName;
+    savedAllowAnytypeParamType = c->allowAnytypeParamType;
+    c->allowConstNumericTypeName = 1;
+    c->allowAnytypeParamType = 1;
+    if (SLTCResolveTypeNode(c, (int32_t)typeRef->astNode, outTypeId) != 0) {
+        c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+        c->allowAnytypeParamType = savedAllowAnytypeParamType;
+        return -1;
+    }
+    c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+    c->allowAnytypeParamType = savedAllowAnytypeParamType;
+    return 0;
 }
 
 enum {

@@ -1217,6 +1217,12 @@ static int SLMirRunLoop(
                 if (!SLCTFEEvalCast((SLMirCastTarget)ins->tok, &in, &out)) {
                     return 0;
                 }
+                if (run->program != NULL && ins->aux < run->program->typeLen) {
+                    int coerceRc = SLMirCoerceValueForType(run, ins->aux, &out);
+                    if (coerceRc <= 0) {
+                        return coerceRc < 0 ? -1 : 0;
+                    }
+                }
                 if (SLCTFEPush(run, &out) != 0) {
                     return -1;
                 }
