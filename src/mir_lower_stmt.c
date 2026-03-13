@@ -459,6 +459,13 @@ static int SLMirStmtLowerRewriteExprChunk(SLMirStmtLower* c, const SLMirChunk* c
                 inst.aux = slot;
             }
         }
+        if (inst.op == SLMirOp_CALL && (inst.tok & SLMirCallArgFlag_RECEIVER_ARG0) == 0u) {
+            uint32_t slot = 0;
+            if (SLMirStmtLowerFindLocal(c, inst.start, inst.end, &slot, NULL)) {
+                inst.op = SLMirOp_CALL_INDIRECT;
+                inst.aux = 0;
+            }
+        }
         if (SLMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag) != 0) {
             return -1;
         }

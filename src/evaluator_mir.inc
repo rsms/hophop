@@ -760,6 +760,7 @@ static int SLEvalMirLowerTopVar(
 
 static int SLEvalMirResolveTopConstIdentTargetForFile(
     const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex) {
+    const SLPackage* currentPkg;
     int32_t topIndex = -1;
     if (outIndex != NULL) {
         *outIndex = UINT32_MAX;
@@ -769,7 +770,11 @@ static int SLEvalMirResolveTopConstIdentTargetForFile(
     {
         return 0;
     }
-    topIndex = SLEvalFindTopConstBySlice(c->p, file, ins->start, ins->end);
+    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    if (currentPkg == NULL) {
+        return 0;
+    }
+    topIndex = SLEvalFindTopConstBySliceInPackage(c->p, currentPkg, file, ins->start, ins->end);
     if (topIndex >= 0) {
         *outIndex = (uint32_t)topIndex;
         return 1;
@@ -779,6 +784,7 @@ static int SLEvalMirResolveTopConstIdentTargetForFile(
 
 static int SLEvalMirResolveFunctionIdentTargetForFile(
     const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex) {
+    const SLPackage* currentPkg;
     int32_t fnIndex = -1;
     if (outIndex != NULL) {
         *outIndex = UINT32_MAX;
@@ -788,7 +794,11 @@ static int SLEvalMirResolveFunctionIdentTargetForFile(
     {
         return 0;
     }
-    fnIndex = SLEvalFindAnyFunctionBySlice(c->p, file, ins->start, ins->end);
+    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    if (currentPkg == NULL) {
+        return 0;
+    }
+    fnIndex = SLEvalFindAnyFunctionBySliceInPackage(c->p, currentPkg, file, ins->start, ins->end);
     if (fnIndex < 0 || (uint32_t)fnIndex >= c->p->funcLen
         || c->p->funcs[(uint32_t)fnIndex].isBuiltinPackageFn
         || c->p->funcs[(uint32_t)fnIndex].isVariadic)

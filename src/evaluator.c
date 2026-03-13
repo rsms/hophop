@@ -4345,6 +4345,43 @@ static int32_t SLEvalFindTopConstBySliceInPackage(
     return found;
 }
 
+static int32_t SLEvalFindTopVarBySliceInPackage(
+    const SLEvalProgram* p,
+    const SLPackage*     pkg,
+    const SLParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd) {
+    uint32_t i;
+    int32_t  found = -1;
+    if (p == NULL || pkg == NULL || callerFile == NULL || nameEnd < nameStart
+        || nameEnd > callerFile->sourceLen)
+    {
+        return -1;
+    }
+    for (i = 0; i < p->topVarLen; i++) {
+        const SLEvalTopVar* topVar = &p->topVars[i];
+        const SLPackage*    topVarPkg = SLEvalFindPackageByFile(p, topVar->file);
+        if (topVarPkg != pkg) {
+            continue;
+        }
+        if (!SliceEqSlice(
+                callerFile->source,
+                nameStart,
+                nameEnd,
+                topVar->file->source,
+                topVar->nameStart,
+                topVar->nameEnd))
+        {
+            continue;
+        }
+        if (found >= 0) {
+            return -2;
+        }
+        found = (int32_t)i;
+    }
+    return found;
+}
+
 static int32_t SLEvalFindTopVarBySlice(
     const SLEvalProgram* p, const SLParsedFile* callerFile, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
@@ -4502,6 +4539,42 @@ static int32_t SLEvalFindFunctionBySliceInPackage(
     for (i = 0; i < p->funcLen; i++) {
         const SLEvalFunction* fn = &p->funcs[i];
         if (fn->pkg != pkg || fn->paramCount != argCount) {
+            continue;
+        }
+        if (!SliceEqSlice(
+                callerFile->source,
+                nameStart,
+                nameEnd,
+                fn->file->source,
+                fn->nameStart,
+                fn->nameEnd))
+        {
+            continue;
+        }
+        if (found >= 0) {
+            return -2;
+        }
+        found = (int32_t)i;
+    }
+    return found;
+}
+
+static int32_t SLEvalFindAnyFunctionBySliceInPackage(
+    const SLEvalProgram* p,
+    const SLPackage*     pkg,
+    const SLParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd) {
+    uint32_t i;
+    int32_t  found = -1;
+    if (p == NULL || pkg == NULL || callerFile == NULL || nameEnd < nameStart
+        || nameEnd > callerFile->sourceLen)
+    {
+        return -1;
+    }
+    for (i = 0; i < p->funcLen; i++) {
+        const SLEvalFunction* fn = &p->funcs[i];
+        if (fn->pkg != pkg) {
             continue;
         }
         if (!SliceEqSlice(
@@ -8461,13 +8534,15 @@ static int SLEvalResolveIdent(
     SLCTFEValue* outValue,
     int*         outIsConst,
     SLDiag* _Nullable diag) {
-    SLEvalProgram* p = (SLEvalProgram*)ctx;
+    SLEvalProgram*   p = (SLEvalProgram*)ctx;
+    const SLPackage* currentPkg;
     (void)diag;
     if (p == NULL || outValue == NULL || outIsConst == NULL || p->currentExecCtx == NULL
         || p->currentFile == NULL)
     {
         return -1;
     }
+    currentPkg = SLEvalFindPackageByFile(p, p->currentFile);
     {
         SLCTFEExecBinding* binding = SLEvalFindBinding(
             p->currentExecCtx, p->currentFile, nameStart, nameEnd);
@@ -8502,7 +8577,6 @@ static int SLEvalResolveIdent(
         }
     }
     {
-        const SLPackage* currentPkg = SLEvalFindPackageByFile(p, p->currentFile);
         if (currentPkg != NULL) {
             uint32_t i;
             for (i = 0; i < currentPkg->importLen; i++) {
@@ -8528,7 +8602,11 @@ static int SLEvalResolveIdent(
         }
     }
     {
-        int32_t topVarIndex = SLEvalFindTopVarBySlice(p, p->currentFile, nameStart, nameEnd);
+        int32_t topVarIndex =
+            currentPkg != NULL
+                ? SLEvalFindTopVarBySliceInPackage(
+                      p, currentPkg, p->currentFile, nameStart, nameEnd)
+                : SLEvalFindTopVarBySlice(p, p->currentFile, nameStart, nameEnd);
         if (topVarIndex >= 0) {
             int isConst = 0;
             if (SLEvalEvalTopVar(p, (uint32_t)topVarIndex, outValue, &isConst) != 0) {
@@ -8548,7 +8626,11 @@ static int SLEvalResolveIdent(
         }
     }
     {
-        int32_t topConstIndex = SLEvalFindTopConstBySlice(p, p->currentFile, nameStart, nameEnd);
+        int32_t topConstIndex =
+            currentPkg != NULL
+                ? SLEvalFindTopConstBySliceInPackage(
+                      p, currentPkg, p->currentFile, nameStart, nameEnd)
+                : SLEvalFindTopConstBySlice(p, p->currentFile, nameStart, nameEnd);
         if (topConstIndex >= 0) {
             int isConst = 0;
             if (SLEvalEvalTopConst(p, (uint32_t)topConstIndex, outValue, &isConst) != 0) {
@@ -8568,7 +8650,11 @@ static int SLEvalResolveIdent(
         }
     }
     {
-        int32_t fnIndex = SLEvalFindAnyFunctionBySlice(p, p->currentFile, nameStart, nameEnd);
+        int32_t fnIndex =
+            currentPkg != NULL
+                ? SLEvalFindAnyFunctionBySliceInPackage(
+                      p, currentPkg, p->currentFile, nameStart, nameEnd)
+                : SLEvalFindAnyFunctionBySlice(p, p->currentFile, nameStart, nameEnd);
         if (fnIndex >= 0) {
             SLEvalValueSetFunctionRef(outValue, (uint32_t)fnIndex);
             *outIsConst = 1;

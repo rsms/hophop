@@ -204,6 +204,7 @@ Interpreter details:
 - `CALL_HOST` invokes `SLMirExecEnv.hostCall(hostCtx, hostId, args, argCount, ...)`, where `hostId` comes from `program.hosts[aux].target` when a host table is present, and falls back to raw `aux` only for older MIR.
 - `SLMirConst_FUNCTION` currently materializes as a same-program function reference value.
 - `CALL_INDIRECT` currently expects the callee value to have been pushed before its arguments, then invokes the referenced same-program MIR function.
+- Statement MIR rewrite now also turns local-identifier calls like `f(...)` into `CALL_INDIRECT` when `f` resolves to a local slot, so local function values do not need to fall back to evaluator name resolution.
 - `TUPLE_MAKE` delegates tuple materialization through `SLMirExecEnv.makeTuple(...)`, so tuple storage stays owned by the embedding runtime instead of `mir_exec`.
 - `LOCAL_LOAD` and `LOCAL_STORE` execute against per-frame local storage.
 - `LOCAL_ADDR` currently materializes a reference to a MIR local slot.
