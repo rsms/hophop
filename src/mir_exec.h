@@ -161,7 +161,8 @@ int SLMirEvalFunction(
     const SLMirExecEnv* _Nullable env,
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
-int SLMirValueAsFunctionRef(
-    const SLMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex);
+void SLMirValueSetFunctionRef(SLMirExecValue* _Nonnull value, uint32_t functionIndex);
+int  SLMirValueAsFunctionRef(
+     const SLMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex);
 
 SL_API_END

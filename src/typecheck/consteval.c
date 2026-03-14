@@ -511,6 +511,14 @@ int SLTCResolveConstIdent(
         }
     }
     {
+        int32_t fnIdx = SLTCFindPlainFunctionValueIndex(c, nameStart, nameEnd);
+        if (fnIdx >= 0) {
+            SLMirValueSetFunctionRef(outValue, (uint32_t)fnIdx);
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    {
         int32_t typeId = SLTCResolveTypeValueName(c, nameStart, nameEnd);
         if (typeId >= 0) {
             outValue->kind = SLCTFEValue_TYPE;
@@ -3894,6 +3902,9 @@ static int SLTCConstEvalDirectCall(
     SLTypeCheckCtx*  c;
     int32_t          calleeNode;
     const SLAstNode* callee;
+    SLCTFEValue      calleeValue;
+    int              calleeIsConst = 0;
+    uint32_t         calleeFnIndex = UINT32_MAX;
     int32_t          argNode;
     uint32_t         argCount = 0;
     uint32_t         argIndex = 0;
@@ -3946,6 +3957,27 @@ static int SLTCConstEvalDirectCall(
         }
         argIndex++;
         argNode = SLAstNextSibling(c->ast, argNode);
+    }
+
+    if (SLTCResolveConstIdent(
+            evalCtx, callee->dataStart, callee->dataEnd, &calleeValue, &calleeIsConst, c->diag)
+        != 0)
+    {
+        return -1;
+    }
+    if (calleeIsConst && SLMirValueAsFunctionRef(&calleeValue, &calleeFnIndex)
+        && calleeFnIndex < c->funcLen)
+    {
+        const SLTCFunction* fn = &c->funcs[calleeFnIndex];
+        return SLTCResolveConstCall(
+            evalCtx,
+            fn->nameStart,
+            fn->nameEnd,
+            argValues,
+            argCount,
+            outValue,
+            outIsConst,
+            c->diag);
     }
 
     return SLTCResolveConstCall(

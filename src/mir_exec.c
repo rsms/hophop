@@ -220,13 +220,19 @@ static int SLMirConstToValue(const SLMirConst* _Nonnull in, SLMirExecValue* _Non
             out->s.bytes = (const uint8_t*)in->bytes.ptr;
             out->s.len = in->bytes.len;
             return 1;
-        case SLMirConst_FUNCTION:
-            out->kind = SLCTFEValue_TYPE;
-            out->typeTag = SLMIR_EXEC_FUNCTION_REF_TAG_FLAG | in->bits;
-            return 1;
-        case SLMirConst_NULL: out->kind = SLCTFEValue_NULL; return 1;
-        default:              return 0;
+        case SLMirConst_FUNCTION: SLMirValueSetFunctionRef(out, (uint32_t)in->bits); return 1;
+        case SLMirConst_NULL:     out->kind = SLCTFEValue_NULL; return 1;
+        default:                  return 0;
     }
+}
+
+void SLMirValueSetFunctionRef(SLMirExecValue* _Nonnull value, uint32_t functionIndex) {
+    if (value == NULL) {
+        return;
+    }
+    SLCTFEValueInvalid(value);
+    value->kind = SLCTFEValue_TYPE;
+    value->typeTag = SLMIR_EXEC_FUNCTION_REF_TAG_FLAG | (uint64_t)functionIndex;
 }
 
 static int SLMirValueIsFunctionRef(const SLMirExecValue* value, uint32_t* _Nullable outFnIndex) {
