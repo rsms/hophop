@@ -3264,6 +3264,46 @@ static int SLTCMirConstResolveDirectCallTarget(
     return 1;
 }
 
+static int SLTCMirConstResolveFunctionIdentTarget(
+    const SLTCMirConstLowerCtx* c, const SLMirInst* ins, int32_t* outFnIndex) {
+    SLTypeCheckCtx* tc;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
+        || ins->op != SLMirOp_LOAD_IDENT)
+    {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL) {
+        return 0;
+    }
+    *outFnIndex = SLTCFindPlainFunctionValueIndex(tc, ins->start, ins->end);
+    if (*outFnIndex < 0) {
+        return 0;
+    }
+    return 1;
+}
+
+static int SLTCMirConstRewriteLoadIdentToFunctionConst(
+    SLTCMirConstLowerCtx* c, SLMirInst* ins, uint32_t targetMirFnIndex) {
+    SLMirConst value = { 0 };
+    uint32_t   constIndex = UINT32_MAX;
+    if (c == NULL || ins == NULL) {
+        return -1;
+    }
+    value.kind = SLMirConst_FUNCTION;
+    value.bits = targetMirFnIndex;
+    if (SLMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
+        return -1;
+    }
+    ins->op = SLMirOp_PUSH_CONST;
+    ins->tok = 0u;
+    ins->aux = constIndex;
+    return 0;
+}
+
 int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex) {
     SLTypeCheckCtx* tc;
     uint32_t        instIndex;
@@ -3282,6 +3322,19 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex)
         int32_t    targetFnIndex = -1;
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        lowerRc;
+        if (SLTCMirConstResolveFunctionIdentTarget(c, ins, &targetFnIndex)) {
+            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                return -1;
+            }
+            if (lowerRc == 0) {
+                return 0;
+            }
+            if (SLTCMirConstRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
+                return -1;
+            }
+            continue;
+        }
         if (!SLTCMirConstResolveDirectCallTarget(c, ins, &targetFnIndex)) {
             continue;
         }

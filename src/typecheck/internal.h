@@ -638,6 +638,7 @@ int32_t            SLTCFindFmtValueType(SLTypeCheckCtx* c);
 int                SLTCTypeIsReflectSpan(SLTypeCheckCtx* c, int32_t typeId);
 int                SLTCTypeIsFmtValue(SLTypeCheckCtx* c, int32_t typeId);
 int32_t            SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
+int32_t            SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int SLTCFunctionNameEq(const SLTypeCheckCtx* c, uint32_t funcIndex, uint32_t start, uint32_t end);
 int SLTCNameEqPkgPrefixedMethod(
     SLTypeCheckCtx* c,

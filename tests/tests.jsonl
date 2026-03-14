@@ -310,6 +310,7 @@
 {"id":"integration.runtime.mir_grouped_decl_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_grouped_decl_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_assert_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_assert_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_assert_message_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_assert_message_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
+{"id":"integration.runtime.mir_local_fn_value_binary_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_local_fn_value_binary_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_multi_assign_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_multi_assign_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_switch_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_switch_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.mir_switch_alias_runtime_ok.slc_run_platform_cli_eval","suite":"integration.runtime","kind":"slc_run","input":"tests/mir_switch_alias_runtime_ok.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
@@ -351,6 +352,7 @@
 {"id":"check:tests/consteval_mir_len_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_len_ok.sl"}
 {"id":"check:tests/consteval_mir_defer_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_defer_ok.sl"}
 {"id":"check:tests/consteval_mir_for_in_string_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_for_in_string_ok.sl"}
+{"id":"check:tests/const_local_function_value_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/const_local_function_value_ok.sl"}
 {"id":"check:tests/consteval_mir_switch_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_switch_ok.sl"}
 {"id":"check:tests/consteval_mir_tuple_return_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_tuple_return_ok.sl"}
 {"id":"check:tests/consteval_mir_tuple_arg_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_tuple_arg_ok.sl"}

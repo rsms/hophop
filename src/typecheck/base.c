@@ -1499,6 +1499,26 @@ int32_t SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
     return -1;
 }
 
+int32_t SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
+    uint32_t i;
+    int32_t  found = -1;
+    for (i = 0; i < c->funcLen; i++) {
+        const SLTCFunction* fn = &c->funcs[i];
+        if (!SLNameEqSlice(c->src, fn->nameStart, fn->nameEnd, start, end)) {
+            continue;
+        }
+        if (fn->contextType >= 0 || (fn->flags & SLTCFunctionFlag_VARIADIC) != 0 || fn->defNode < 0)
+        {
+            continue;
+        }
+        if (found >= 0) {
+            return -1;
+        }
+        found = (int32_t)i;
+    }
+    return found;
+}
+
 int SLTCFunctionNameEq(const SLTypeCheckCtx* c, uint32_t funcIndex, uint32_t start, uint32_t end) {
     return SLNameEqSlice(
         c->src, c->funcs[funcIndex].nameStart, c->funcs[funcIndex].nameEnd, start, end);

@@ -27,6 +27,14 @@ typedef struct {
 } SLMirLowerBlockScope;
 
 typedef struct {
+    uint32_t atIndex;
+    uint32_t slot;
+    uint32_t start;
+    uint32_t end;
+    uint32_t next;
+} SLMirChunkInsert;
+
+typedef struct {
     SLArena*             arena;
     const SLAst*         ast;
     SLStrView            src;
@@ -447,10 +455,138 @@ static void SLMirStmtLowerFinishControl(
     c->controlLen--;
 }
 
-static int SLMirStmtLowerRewriteExprChunk(SLMirStmtLower* c, const SLMirChunk* chunk) {
+static int SLMirStmtLowerExprInstStackDelta(const SLMirInst* inst, int32_t* outDelta) {
+    uint32_t elemCount = 0;
+    if (inst == NULL || outDelta == NULL) {
+        return 0;
+    }
+    switch (inst->op) {
+        case SLMirOp_PUSH_CONST:
+        case SLMirOp_PUSH_INT:
+        case SLMirOp_PUSH_FLOAT:
+        case SLMirOp_PUSH_BOOL:
+        case SLMirOp_PUSH_STRING:
+        case SLMirOp_PUSH_NULL:
+        case SLMirOp_LOAD_IDENT:  *outDelta = 1; return 1;
+        case SLMirOp_UNARY:
+        case SLMirOp_CAST:
+        case SLMirOp_SEQ_LEN:
+        case SLMirOp_STR_CSTR:    *outDelta = 0; return 1;
+        case SLMirOp_BINARY:
+        case SLMirOp_INDEX:       *outDelta = -1; return 1;
+        case SLMirOp_CALL:
+            *outDelta = 1 - (int32_t)(inst->tok & ~SLMirCallArgFlag_RECEIVER_ARG0);
+            return 1;
+        case SLMirOp_TUPLE_MAKE:
+            elemCount = (uint32_t)inst->tok;
+            *outDelta = 1 - (int32_t)elemCount;
+            return 1;
+        default: return 0;
+    }
+}
+
+static int SLMirStmtLowerFindCallArgStart(
+    const SLMirChunk* chunk, uint32_t callIndex, uint32_t argCount, uint32_t* outArgStart) {
+    int32_t  need = 0;
     uint32_t i;
-    for (i = 0; i < chunk->len; i++) {
-        SLMirInst inst = chunk->v[i];
+    if (outArgStart != NULL) {
+        *outArgStart = UINT32_MAX;
+    }
+    if (chunk == NULL || outArgStart == NULL || callIndex > chunk->len || argCount == 0u) {
+        return 0;
+    }
+    need = (int32_t)argCount;
+    i = callIndex;
+    while (i > 0u) {
+        int32_t delta = 0;
+        i--;
+        if (!SLMirStmtLowerExprInstStackDelta(&chunk->v[i], &delta)) {
+            return 0;
+        }
+        need -= delta;
+        if (need == 0) {
+            *outArgStart = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int SLMirStmtLowerRewriteExprChunk(SLMirStmtLower* c, const SLMirChunk* chunk) {
+    SLMirChunkInsert* inserts = NULL;
+    uint32_t*         insertHeads = NULL;
+    uint32_t          insertLen = 0;
+    uint32_t          i;
+    uint32_t          chunkLen;
+    uint32_t          emitIndex;
+    uint32_t          insertIndex;
+    uint8_t*          callIndirect = NULL;
+    if (chunk == NULL) {
+        return -1;
+    }
+    chunkLen = chunk->len;
+    if (chunkLen != 0u) {
+        inserts = (SLMirChunkInsert*)SLArenaAlloc(
+            c->arena, sizeof(SLMirChunkInsert) * chunkLen, (uint32_t)_Alignof(SLMirChunkInsert));
+        insertHeads = (uint32_t*)SLArenaAlloc(
+            c->arena, sizeof(uint32_t) * chunkLen, (uint32_t)_Alignof(uint32_t));
+        callIndirect = (uint8_t*)SLArenaAlloc(
+            c->arena, chunkLen * sizeof(uint8_t), (uint32_t)_Alignof(uint8_t));
+        if (inserts == NULL || insertHeads == NULL || callIndirect == NULL) {
+            SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, 0, 0);
+            return -1;
+        }
+        memset(callIndirect, 0, chunkLen * sizeof(uint8_t));
+        for (i = 0; i < chunkLen; i++) {
+            insertHeads[i] = UINT32_MAX;
+        }
+        for (i = chunkLen; i > 0u; i--) {
+            SLMirInst inst = chunk->v[i - 1u];
+            uint32_t  slot = 0;
+            uint32_t  argStart = UINT32_MAX;
+            if (inst.op != SLMirOp_CALL || (inst.tok & SLMirCallArgFlag_RECEIVER_ARG0) != 0u
+                || !SLMirStmtLowerFindLocal(c, inst.start, inst.end, &slot, NULL))
+            {
+                continue;
+            }
+            if ((inst.tok & ~SLMirCallArgFlag_RECEIVER_ARG0) == 0u) {
+                argStart = i - 1u;
+            } else if (!SLMirStmtLowerFindCallArgStart(
+                           chunk,
+                           i - 1u,
+                           (uint32_t)(inst.tok & ~SLMirCallArgFlag_RECEIVER_ARG0),
+                           &argStart))
+            {
+                c->supported = 0;
+                return 0;
+            }
+            inserts[insertLen].atIndex = argStart;
+            inserts[insertLen].slot = slot;
+            inserts[insertLen].start = inst.start;
+            inserts[insertLen].end = inst.end;
+            inserts[insertLen].next = insertHeads[argStart];
+            insertHeads[argStart] = insertLen++;
+            callIndirect[i - 1u] = 1u;
+        }
+    }
+    for (emitIndex = 0; emitIndex < chunkLen; emitIndex++) {
+        insertIndex = insertHeads != NULL ? insertHeads[emitIndex] : UINT32_MAX;
+        while (insertIndex != UINT32_MAX) {
+            if (SLMirStmtLowerAppendInst(
+                    c,
+                    SLMirOp_LOCAL_LOAD,
+                    0,
+                    inserts[insertIndex].slot,
+                    inserts[insertIndex].start,
+                    inserts[insertIndex].end,
+                    NULL)
+                != 0)
+            {
+                return -1;
+            }
+            insertIndex = inserts[insertIndex].next;
+        }
+        SLMirInst inst = chunk->v[emitIndex];
         if (inst.op == SLMirOp_LOAD_IDENT) {
             uint32_t slot = 0;
             if (SLMirStmtLowerFindLocal(c, inst.start, inst.end, &slot, NULL)) {
@@ -459,12 +595,9 @@ static int SLMirStmtLowerRewriteExprChunk(SLMirStmtLower* c, const SLMirChunk* c
                 inst.aux = slot;
             }
         }
-        if (inst.op == SLMirOp_CALL && (inst.tok & SLMirCallArgFlag_RECEIVER_ARG0) == 0u) {
-            uint32_t slot = 0;
-            if (SLMirStmtLowerFindLocal(c, inst.start, inst.end, &slot, NULL)) {
-                inst.op = SLMirOp_CALL_INDIRECT;
-                inst.aux = 0;
-            }
+        if (callIndirect != NULL && callIndirect[emitIndex] != 0u) {
+            inst.op = SLMirOp_CALL_INDIRECT;
+            inst.aux = 0u;
         }
         if (SLMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag) != 0) {
             return -1;

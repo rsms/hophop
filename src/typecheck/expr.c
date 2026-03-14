@@ -3173,6 +3173,18 @@ int SLTCValidateConstInitializerExprNode(SLTypeCheckCtx* c, int32_t initNode) {
     return rc;
 }
 
+static int SLTCValidateLocalConstFunctionInitializerExprNode(SLTypeCheckCtx* c, int32_t initNode) {
+    const SLAstNode* init;
+    if (c == NULL || initNode < 0 || (uint32_t)initNode >= c->ast->len) {
+        return 0;
+    }
+    init = &c->ast->nodes[initNode];
+    if (init->kind != SLAst_IDENT) {
+        return 0;
+    }
+    return SLTCFindPlainFunctionValueIndex(c, init->dataStart, init->dataEnd) >= 0;
+}
+
 int SLTCValidateLocalConstVarLikeInitializers(
     SLTypeCheckCtx* c, int32_t nodeId, const SLTCVarLikeParts* parts) {
     uint32_t i;
@@ -3183,6 +3195,9 @@ int SLTCValidateLocalConstVarLikeInitializers(
         int32_t initNode = SLTCVarLikeInitExprNode(c, nodeId);
         if (initNode < 0) {
             return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        }
+        if (SLTCValidateLocalConstFunctionInitializerExprNode(c, initNode)) {
+            return 0;
         }
         return SLTCValidateConstInitializerExprNode(c, initNode);
     }
@@ -3199,6 +3214,9 @@ int SLTCValidateLocalConstVarLikeInitializers(
                 if (initNode < 0) {
                     return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
                 }
+                if (SLTCValidateLocalConstFunctionInitializerExprNode(c, initNode)) {
+                    continue;
+                }
                 if (SLTCValidateConstInitializerExprNode(c, initNode) != 0) {
                     return -1;
                 }
@@ -3209,6 +3227,9 @@ int SLTCValidateLocalConstVarLikeInitializers(
             int32_t initNode = SLTCListItemAt(c->ast, parts->initNode, 0);
             if (initNode < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+            }
+            if (SLTCValidateLocalConstFunctionInitializerExprNode(c, initNode)) {
+                return 0;
             }
             return SLTCValidateConstInitializerExprNode(c, initNode);
         }
