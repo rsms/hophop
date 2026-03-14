@@ -3529,18 +3529,16 @@ int32_t SLTCFindConstCallableFunction(
     return found;
 }
 
-int SLTCResolveConstCall(
-    void*              ctx,
+static int SLTCInvokeConstFunctionByIndex(
+    SLTCConstEvalCtx*  evalCtx,
     uint32_t           nameStart,
     uint32_t           nameEnd,
+    int32_t            fnIndex,
     const SLCTFEValue* args,
     uint32_t           argCount,
     SLCTFEValue*       outValue,
-    int*               outIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx*  evalCtx = (SLTCConstEvalCtx*)ctx;
+    int*               outIsConst) {
     SLTypeCheckCtx*    c;
-    int32_t            fnIndex;
     int32_t            fnNode;
     int32_t            bodyNode = -1;
     int32_t            child;
@@ -3555,95 +3553,14 @@ int SLTCResolveConstCall(
     int                isConst = 0;
     int                mirSupported = 0;
     int                rc;
-
-    (void)diag;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
     c = evalCtx->tc;
-    if (c == NULL) {
+    if (c == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
         return -1;
     }
 
-    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "len")) {
-        if (argCount == 1u) {
-            if (args[0].kind == SLCTFEValue_STRING) {
-                outValue->kind = SLCTFEValue_INT;
-                outValue->i64 = (int64_t)args[0].s.len;
-                outValue->f64 = 0.0;
-                outValue->b = 0;
-                outValue->typeTag = 0;
-                outValue->s.bytes = NULL;
-                outValue->s.len = 0;
-                outValue->span.fileBytes = NULL;
-                outValue->span.fileLen = 0;
-                outValue->span.startLine = 0;
-                outValue->span.startColumn = 0;
-                outValue->span.endLine = 0;
-                outValue->span.endColumn = 0;
-                *outIsConst = 1;
-                return 0;
-            }
-            if (args[0].kind == SLCTFEValue_TYPE) {
-                int32_t typeId = -1;
-                int32_t baseType;
-                if (SLTCDecodeTypeTag(c, args[0].typeTag, &typeId) == 0) {
-                    baseType = SLTCResolveAliasBaseType(c, typeId);
-                    if (baseType >= 0 && (uint32_t)baseType < c->typeLen) {
-                        const SLTCType* t = &c->types[baseType];
-                        if (t->kind == SLTCType_PACK) {
-                            outValue->kind = SLCTFEValue_INT;
-                            outValue->i64 = (int64_t)t->fieldCount;
-                            outValue->f64 = 0.0;
-                            outValue->b = 0;
-                            outValue->typeTag = 0;
-                            outValue->s.bytes = NULL;
-                            outValue->s.len = 0;
-                            outValue->span.fileBytes = NULL;
-                            outValue->span.fileLen = 0;
-                            outValue->span.startLine = 0;
-                            outValue->span.startColumn = 0;
-                            outValue->span.endLine = 0;
-                            outValue->span.endColumn = 0;
-                            *outIsConst = 1;
-                            return 0;
-                        }
-                        if (t->kind == SLTCType_ARRAY) {
-                            outValue->kind = SLCTFEValue_INT;
-                            outValue->i64 = (int64_t)t->arrayLen;
-                            outValue->f64 = 0.0;
-                            outValue->b = 0;
-                            outValue->typeTag = 0;
-                            outValue->s.bytes = NULL;
-                            outValue->s.len = 0;
-                            outValue->span.fileBytes = NULL;
-                            outValue->span.fileLen = 0;
-                            outValue->span.startLine = 0;
-                            outValue->span.startColumn = 0;
-                            outValue->span.endLine = 0;
-                            outValue->span.endColumn = 0;
-                            *outIsConst = 1;
-                            return 0;
-                        }
-                    }
-                }
-            }
-        }
-        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "len() operand is not const-evaluable");
-        *outIsConst = 0;
-        return 0;
-    }
-
-    fnIndex = SLTCFindConstCallableFunction(c, nameStart, nameEnd, argCount);
-    if (fnIndex < 0) {
-        SLTCConstSetReason(
-            evalCtx,
-            nameStart,
-            nameEnd,
-            "call target is not a const-evaluable function for these arguments");
-        *outIsConst = 0;
-        return 0;
-    }
     SLTCMarkConstDiagFnInvoked(c, fnIndex);
 
     for (savedDepth = 0; savedDepth < evalCtx->fnDepth; savedDepth++) {
@@ -3897,6 +3814,111 @@ int SLTCResolveConstCall(
     return 0;
 }
 
+int SLTCResolveConstCall(
+    void*              ctx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*   c;
+    int32_t           fnIndex;
+
+    (void)diag;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+
+    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "len")) {
+        if (argCount == 1u) {
+            if (args[0].kind == SLCTFEValue_STRING) {
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = (int64_t)args[0].s.len;
+                outValue->f64 = 0.0;
+                outValue->b = 0;
+                outValue->typeTag = 0;
+                outValue->s.bytes = NULL;
+                outValue->s.len = 0;
+                outValue->span.fileBytes = NULL;
+                outValue->span.fileLen = 0;
+                outValue->span.startLine = 0;
+                outValue->span.startColumn = 0;
+                outValue->span.endLine = 0;
+                outValue->span.endColumn = 0;
+                *outIsConst = 1;
+                return 0;
+            }
+            if (args[0].kind == SLCTFEValue_TYPE) {
+                int32_t typeId = -1;
+                int32_t baseType;
+                if (SLTCDecodeTypeTag(c, args[0].typeTag, &typeId) == 0) {
+                    baseType = SLTCResolveAliasBaseType(c, typeId);
+                    if (baseType >= 0 && (uint32_t)baseType < c->typeLen) {
+                        const SLTCType* t = &c->types[baseType];
+                        if (t->kind == SLTCType_PACK) {
+                            outValue->kind = SLCTFEValue_INT;
+                            outValue->i64 = (int64_t)t->fieldCount;
+                            outValue->f64 = 0.0;
+                            outValue->b = 0;
+                            outValue->typeTag = 0;
+                            outValue->s.bytes = NULL;
+                            outValue->s.len = 0;
+                            outValue->span.fileBytes = NULL;
+                            outValue->span.fileLen = 0;
+                            outValue->span.startLine = 0;
+                            outValue->span.startColumn = 0;
+                            outValue->span.endLine = 0;
+                            outValue->span.endColumn = 0;
+                            *outIsConst = 1;
+                            return 0;
+                        }
+                        if (t->kind == SLTCType_ARRAY) {
+                            outValue->kind = SLCTFEValue_INT;
+                            outValue->i64 = (int64_t)t->arrayLen;
+                            outValue->f64 = 0.0;
+                            outValue->b = 0;
+                            outValue->typeTag = 0;
+                            outValue->s.bytes = NULL;
+                            outValue->s.len = 0;
+                            outValue->span.fileBytes = NULL;
+                            outValue->span.fileLen = 0;
+                            outValue->span.startLine = 0;
+                            outValue->span.startColumn = 0;
+                            outValue->span.endLine = 0;
+                            outValue->span.endColumn = 0;
+                            *outIsConst = 1;
+                            return 0;
+                        }
+                    }
+                }
+            }
+        }
+        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "len() operand is not const-evaluable");
+        *outIsConst = 0;
+        return 0;
+    }
+
+    fnIndex = SLTCFindConstCallableFunction(c, nameStart, nameEnd, argCount);
+    if (fnIndex < 0) {
+        SLTCConstSetReason(
+            evalCtx,
+            nameStart,
+            nameEnd,
+            "call target is not a const-evaluable function for these arguments");
+        *outIsConst = 0;
+        return 0;
+    }
+    return SLTCInvokeConstFunctionByIndex(
+        evalCtx, nameStart, nameEnd, fnIndex, args, argCount, outValue, outIsConst);
+}
+
 static int SLTCConstEvalDirectCall(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
     SLTypeCheckCtx*  c;
@@ -3969,15 +3991,15 @@ static int SLTCConstEvalDirectCall(
         && calleeFnIndex < c->funcLen)
     {
         const SLTCFunction* fn = &c->funcs[calleeFnIndex];
-        return SLTCResolveConstCall(
+        return SLTCInvokeConstFunctionByIndex(
             evalCtx,
             fn->nameStart,
             fn->nameEnd,
+            (int32_t)calleeFnIndex,
             argValues,
             argCount,
             outValue,
-            outIsConst,
-            c->diag);
+            outIsConst);
     }
 
     return SLTCResolveConstCall(
