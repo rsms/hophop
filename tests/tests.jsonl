@@ -351,7 +351,9 @@
 {"id":"check:tests/consteval_mir_optional_return_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_optional_return_ok.sl"}
 {"id":"check:tests/consteval_mir_len_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_len_ok.sl"}
 {"id":"check:tests/consteval_mir_defer_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_defer_ok.sl"}
+{"id":"check:tests/consteval_mir_for_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_for_ok.sl"}
 {"id":"check:tests/consteval_mir_for_in_string_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_for_in_string_ok.sl"}
+{"id":"check:tests/consteval_mir_assert_message_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_assert_message_ok.sl"}
 {"id":"check:tests/const_local_function_value_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/const_local_function_value_ok.sl"}
 {"id":"check:tests/consteval_mir_top_const_local_function_value_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_top_const_local_function_value_ok.sl"}
 {"id":"check:tests/consteval_mir_top_const_local_function_value_arg_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_top_const_local_function_value_arg_ok.sl"}
@@ -361,7 +363,9 @@
 {"id":"check:tests/const_block_mir_tuple_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/const_block_mir_tuple_ok.sl"}
 {"id":"check:tests/const_block_mir_call_chain_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_call_chain_ok.sl"}
 {"id":"check:tests/const_block_mir_defer_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_defer_ok.sl"}
+{"id":"check:tests/const_block_mir_for_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_for_ok.sl"}
 {"id":"check:tests/const_block_mir_for_in_string_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_for_in_string_ok.sl"}
+{"id":"check:tests/const_block_mir_assert_message_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_assert_message_ok.sl"}
 {"id":"check:tests/const_block_mir_local_function_value_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_local_function_value_ok.sl"}
 {"id":"check:tests/const_block_mir_local_function_value_arg_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_local_function_value_arg_ok.sl"}
 {"id":"check:tests/const_block_mir_switch_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_switch_ok.sl"}
