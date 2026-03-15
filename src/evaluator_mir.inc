@@ -550,8 +550,16 @@ static void SLEvalMirRewriteCallToMirFunction(
 static void SLEvalMirRewriteLoadIdentToMirFunction(SLMirInst* ins, uint32_t targetMirFnIndex);
 static int SLEvalMirLowerTopConst(
     SLEvalMirLowerCtx* c, uint32_t topConstIndex, uint32_t* _Nullable outMirFnIndex);
+static int SLEvalMirLowerTopVar(
+    SLEvalMirLowerCtx* c, uint32_t topVarIndex, uint32_t* _Nullable outMirFnIndex);
 static int SLEvalMirResolveTopConstIdentTargetForFile(
     const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex);
+static int SLEvalMirResolveTopInitIdentTargetForFile(
+    const SLEvalMirLowerCtx* c,
+    const SLParsedFile*      file,
+    const SLMirInst*         ins,
+    int*                     outIsTopConst,
+    uint32_t*                outIndex);
 static int SLEvalMirResolveFunctionIdentTargetForFile(
     const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex);
 static int SLEvalMirRewriteLoadIdentToFunctionConst(
@@ -640,15 +648,20 @@ static int SLEvalMirLowerFunction(
          instIndex++)
     {
         SLMirInst* ins = &c->builder.insts[instIndex];
-        uint32_t   targetTopConstIndex = UINT32_MAX;
+        int        isTopConst = 0;
+        uint32_t   targetTopInitIndex = UINT32_MAX;
         uint32_t   targetFnIdentIndex = UINT32_MAX;
         uint32_t   targetEvalFnIndex = UINT32_MAX;
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        lowerRc;
         int        rewrittenBuiltinHost = 0;
         int        rewrittenHost = 0;
-        if (SLEvalMirResolveTopConstIdentTargetForFile(c, fn->file, ins, &targetTopConstIndex)) {
-            lowerRc = SLEvalMirLowerTopConst(c, targetTopConstIndex, &targetMirFnIndex);
+        if (SLEvalMirResolveTopInitIdentTargetForFile(
+                c, fn->file, ins, &isTopConst, &targetTopInitIndex))
+        {
+            lowerRc = isTopConst
+                ? SLEvalMirLowerTopConst(c, targetTopInitIndex, &targetMirFnIndex)
+                : SLEvalMirLowerTopVar(c, targetTopInitIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 if (c->loweringFns != NULL) {
                     c->loweringFns[(uint32_t)evalFnIndex] = 0u;
