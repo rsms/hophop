@@ -364,10 +364,10 @@ static int SLEvalMirResolveQualifiedCallTargetForNode(
         c, currentPkg, file, rootNode, ins, outEvalFnIndex);
 }
 
-static int SLEvalMirRewriteBuiltinHostCall(
-    SLEvalMirLowerCtx*    c,
-    const SLEvalFunction* callerFn,
-    SLMirInst*            ins,
+static int SLEvalMirRewriteBuiltinHostCallForFile(
+    SLEvalMirLowerCtx*  c,
+    const SLParsedFile* file,
+    SLMirInst*          ins,
     int* _Nonnull outRewritten) {
     const SLMirSymbolRef* symbol;
     SLMirHostRef          host = { 0 };
@@ -375,7 +375,7 @@ static int SLEvalMirRewriteBuiltinHostCall(
     if (outRewritten != NULL) {
         *outRewritten = 0;
     }
-    if (c == NULL || callerFn == NULL || ins == NULL || outRewritten == NULL
+    if (c == NULL || file == NULL || ins == NULL || outRewritten == NULL
         || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
         || ins->aux >= c->builder.symbolLen)
     {
@@ -386,7 +386,7 @@ static int SLEvalMirRewriteBuiltinHostCall(
         return 0;
     }
     if ((uint32_t)ins->tok == 1u
-        && SliceEqCStr(callerFn->file->source, symbol->nameStart, symbol->nameEnd, "print"))
+        && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "print"))
     {
         host.nameStart = symbol->nameStart;
         host.nameEnd = symbol->nameEnd;
@@ -402,7 +402,7 @@ static int SLEvalMirRewriteBuiltinHostCall(
         return 1;
     }
     if ((uint32_t)ins->tok == 2u
-        && SliceEqCStr(callerFn->file->source, symbol->nameStart, symbol->nameEnd, "copy"))
+        && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "copy"))
     {
         host.nameStart = symbol->nameStart;
         host.nameEnd = symbol->nameEnd;
@@ -418,7 +418,7 @@ static int SLEvalMirRewriteBuiltinHostCall(
         return 1;
     }
     if ((uint32_t)ins->tok == 2u
-        && SliceEqCStr(callerFn->file->source, symbol->nameStart, symbol->nameEnd, "concat"))
+        && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "concat"))
     {
         host.nameStart = symbol->nameStart;
         host.nameEnd = symbol->nameEnd;
@@ -433,13 +433,42 @@ static int SLEvalMirRewriteBuiltinHostCall(
         *outRewritten = 1;
         return 1;
     }
+    if (((uint32_t)ins->tok == 1u || (uint32_t)ins->tok == 2u)
+        && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "free"))
+    {
+        host.nameStart = symbol->nameStart;
+        host.nameEnd = symbol->nameEnd;
+        host.kind = SLMirHost_GENERIC;
+        host.flags = 0;
+        host.target = SL_EVAL_MIR_HOST_FREE;
+        if (SLMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
+            return -1;
+        }
+        ins->op = SLMirOp_CALL_HOST;
+        ins->aux = hostIndex;
+        *outRewritten = 1;
+        return 1;
+    }
     return 0;
 }
 
-static int SLEvalMirRewriteQualifiedHostCall(
+static int SLEvalMirRewriteBuiltinHostCall(
     SLEvalMirLowerCtx*    c,
     const SLEvalFunction* callerFn,
     SLMirInst*            ins,
+    int* _Nonnull outRewritten) {
+    if (c == NULL || callerFn == NULL) {
+        return 0;
+    }
+    return SLEvalMirRewriteBuiltinHostCallForFile(c, callerFn->file, ins, outRewritten);
+}
+
+static int SLEvalMirRewriteQualifiedHostCallForNode(
+    SLEvalMirLowerCtx*  c,
+    const SLPackage*    currentPkg,
+    const SLParsedFile* file,
+    int32_t             rootNode,
+    SLMirInst*          ins,
     int* _Nonnull outRewritten) {
     const SLMirSymbolRef* symbol;
     const SLPackage*      targetPkg;
@@ -448,7 +477,7 @@ static int SLEvalMirRewriteQualifiedHostCall(
     if (outRewritten != NULL) {
         *outRewritten = 0;
     }
-    if (c == NULL || callerFn == NULL || ins == NULL || outRewritten == NULL
+    if (c == NULL || currentPkg == NULL || file == NULL || ins == NULL || outRewritten == NULL
         || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
         || ins->aux >= c->builder.symbolLen)
     {
@@ -456,24 +485,18 @@ static int SLEvalMirRewriteQualifiedHostCall(
     }
     symbol = &c->builder.symbols[ins->aux];
     if (symbol->kind != SLMirSymbol_CALL || symbol->flags != SLMirSymbolFlag_CALL_RECEIVER_ARG0
-        || callerFn->bodyNode < 0)
+        || rootNode < 0)
     {
         return 0;
     }
     if (!SLEvalMirMatchQualifiedCallBaseSlice(
-            &callerFn->file->ast,
-            symbol,
-            callerFn->bodyNode,
-            (uint32_t)ins->tok,
-            &baseStart,
-            &baseEnd))
+            &file->ast, symbol, rootNode, (uint32_t)ins->tok, &baseStart, &baseEnd))
     {
         return 0;
     }
-    targetPkg = SLEvalMirFindImportTargetByAliasSlice(
-        callerFn->pkg, callerFn->file->source, baseStart, baseEnd);
+    targetPkg = SLEvalMirFindImportTargetByAliasSlice(currentPkg, file->source, baseStart, baseEnd);
     if (targetPkg != NULL && StrEq(targetPkg->name, "platform")
-        && SliceEqCStr(callerFn->file->source, symbol->nameStart, symbol->nameEnd, "exit"))
+        && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "exit"))
     {
         SLMirHostRef host = { 0 };
         uint32_t     hostIndex = UINT32_MAX;
@@ -492,6 +515,18 @@ static int SLEvalMirRewriteQualifiedHostCall(
         return 1;
     }
     return 0;
+}
+
+static int SLEvalMirRewriteQualifiedHostCall(
+    SLEvalMirLowerCtx*    c,
+    const SLEvalFunction* callerFn,
+    SLMirInst*            ins,
+    int* _Nonnull outRewritten) {
+    if (c == NULL || callerFn == NULL) {
+        return 0;
+    }
+    return SLEvalMirRewriteQualifiedHostCallForNode(
+        c, callerFn->pkg, callerFn->file, callerFn->bodyNode, ins, outRewritten);
 }
 
 static void SLEvalMirRewriteCallToMirFunction(
@@ -610,6 +645,7 @@ static int SLEvalMirLowerFunction(
         uint32_t   targetEvalFnIndex = UINT32_MAX;
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        lowerRc;
+        int        rewrittenBuiltinHost = 0;
         int        rewrittenHost = 0;
         if (SLEvalMirResolveTopConstIdentTargetForFile(c, fn->file, ins, &targetTopConstIndex)) {
             lowerRc = SLEvalMirLowerTopConst(c, targetTopConstIndex, &targetMirFnIndex);
