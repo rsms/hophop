@@ -1,5 +1,6 @@
 #include "internal.h"
 #include "../mir_exec.h"
+#include "../mir_lower_pkg.h"
 #include "../mir_lower_stmt.h"
 
 SL_API_BEGIN
@@ -3758,6 +3759,8 @@ int SLTCMirConstInitLowerCtx(SLTCConstEvalCtx* evalCtx, SLTCMirConstLowerCtx* _N
     SLTypeCheckCtx* c;
     uint32_t*       tcToMir;
     uint8_t*        loweringFns;
+    uint32_t*       topConstToMir;
+    uint8_t*        loweringTopConsts;
     uint32_t        i;
     if (outCtx == NULL) {
         return -1;
@@ -3771,17 +3774,29 @@ int SLTCMirConstInitLowerCtx(SLTCConstEvalCtx* evalCtx, SLTCMirConstLowerCtx* _N
         c->arena, sizeof(uint32_t) * c->funcLen, (uint32_t)_Alignof(uint32_t));
     loweringFns = (uint8_t*)SLArenaAlloc(
         c->arena, sizeof(uint8_t) * c->funcLen, (uint32_t)_Alignof(uint8_t));
-    if (tcToMir == NULL || loweringFns == NULL) {
+    topConstToMir = (uint32_t*)SLArenaAlloc(
+        c->arena, sizeof(uint32_t) * c->ast->len, (uint32_t)_Alignof(uint32_t));
+    loweringTopConsts = (uint8_t*)SLArenaAlloc(
+        c->arena, sizeof(uint8_t) * c->ast->len, (uint32_t)_Alignof(uint8_t));
+    if (tcToMir == NULL || loweringFns == NULL || topConstToMir == NULL
+        || loweringTopConsts == NULL)
+    {
         return -1;
     }
     for (i = 0; i < c->funcLen; i++) {
         tcToMir[i] = SL_TC_MIR_CONST_FN_NONE;
         loweringFns[i] = 0u;
     }
+    for (i = 0; i < c->ast->len; i++) {
+        topConstToMir[i] = SL_TC_MIR_CONST_FN_NONE;
+        loweringTopConsts[i] = 0u;
+    }
     SLMirProgramBuilderInit(&outCtx->builder, c->arena);
     outCtx->evalCtx = evalCtx;
     outCtx->tcToMir = tcToMir;
     outCtx->loweringFns = loweringFns;
+    outCtx->topConstToMir = topConstToMir;
+    outCtx->loweringTopConsts = loweringTopConsts;
     outCtx->diag = c->diag;
     return 0;
 }
@@ -3877,6 +3892,114 @@ static int SLTCMirConstResolveFunctionIdentTarget(
     return 1;
 }
 
+static int SLTCMirConstResolveTopConstIdentTarget(
+    const SLTCMirConstLowerCtx* c, const SLMirInst* ins, int32_t* outNodeId) {
+    SLTypeCheckCtx*  tc;
+    int32_t          nodeId = -1;
+    int32_t          nameIndex = -1;
+    SLTCVarLikeParts parts;
+    const SLAstNode* n;
+    if (outNodeId != NULL) {
+        *outNodeId = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || ins == NULL || outNodeId == NULL
+        || ins->op != SLMirOp_LOAD_IDENT)
+    {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL) {
+        return 0;
+    }
+    nodeId = SLTCFindTopLevelVarLikeNode(tc, ins->start, ins->end, &nameIndex);
+    if (nodeId < 0 || (uint32_t)nodeId >= tc->ast->len || nameIndex != 0) {
+        return 0;
+    }
+    n = &tc->ast->nodes[nodeId];
+    if (n->kind != SLAst_CONST || SLTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped
+        || parts.nameCount != 1u)
+    {
+        return 0;
+    }
+    *outNodeId = nodeId;
+    return 1;
+}
+
+static int SLTCMirConstLowerTopConstNode(
+    SLTCMirConstLowerCtx* c, int32_t nodeId, uint32_t* _Nullable outMirFnIndex) {
+    SLTypeCheckCtx*  tc;
+    SLTCVarLikeParts parts;
+    uint32_t         mirFnIndex = UINT32_MAX;
+    int32_t          initNode;
+    int              supported = 0;
+    int              rewriteRc;
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = UINT32_MAX;
+    }
+    if (c == NULL || c->evalCtx == NULL || c->topConstToMir == NULL || c->loweringTopConsts == NULL)
+    {
+        return -1;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL || nodeId < 0 || (uint32_t)nodeId >= tc->ast->len) {
+        return 0;
+    }
+    if (c->topConstToMir[(uint32_t)nodeId] != SL_TC_MIR_CONST_FN_NONE) {
+        if (outMirFnIndex != NULL) {
+            *outMirFnIndex = c->topConstToMir[(uint32_t)nodeId];
+        }
+        return 1;
+    }
+    if (c->loweringTopConsts[(uint32_t)nodeId] != 0u) {
+        return 0;
+    }
+    if (SLTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped || parts.nameCount != 1u
+        || tc->ast->nodes[nodeId].kind != SLAst_CONST)
+    {
+        return 0;
+    }
+    initNode = SLTCVarLikeInitExprNodeAt(tc, nodeId, 0);
+    if (initNode < 0) {
+        return 0;
+    }
+    c->loweringTopConsts[(uint32_t)nodeId] = 1u;
+    if (SLMirLowerAppendNamedTopInitFunction(
+            &c->builder,
+            tc->arena,
+            tc->ast,
+            tc->src,
+            initNode,
+            -1,
+            tc->ast->nodes[nodeId].dataStart,
+            tc->ast->nodes[nodeId].dataEnd,
+            &mirFnIndex,
+            &supported,
+            c->diag)
+        != 0)
+    {
+        c->loweringTopConsts[(uint32_t)nodeId] = 0u;
+        return -1;
+    }
+    if (!supported || mirFnIndex == UINT32_MAX) {
+        c->loweringTopConsts[(uint32_t)nodeId] = 0u;
+        return 0;
+    }
+    c->topConstToMir[(uint32_t)nodeId] = mirFnIndex;
+    rewriteRc = SLTCMirConstRewriteDirectCalls(c, mirFnIndex);
+    c->loweringTopConsts[(uint32_t)nodeId] = 0u;
+    if (rewriteRc < 0) {
+        return -1;
+    }
+    if (rewriteRc == 0) {
+        c->topConstToMir[(uint32_t)nodeId] = SL_TC_MIR_CONST_FN_NONE;
+        return 0;
+    }
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = mirFnIndex;
+    }
+    return 1;
+}
+
 static int SLTCMirConstRewriteLoadIdentToFunctionConst(
     SLTCMirConstLowerCtx* c, SLMirInst* ins, uint32_t targetMirFnIndex) {
     SLMirConst value = { 0 };
@@ -3911,8 +4034,22 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex)
     {
         SLMirInst* ins = &c->builder.insts[instIndex];
         int32_t    targetFnIndex = -1;
+        int32_t    targetTopConstNode = -1;
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        lowerRc;
+        if (SLTCMirConstResolveTopConstIdentTarget(c, ins, &targetTopConstNode)) {
+            lowerRc = SLTCMirConstLowerTopConstNode(c, targetTopConstNode, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                return -1;
+            }
+            if (lowerRc == 0) {
+                return 0;
+            }
+            ins->op = SLMirOp_CALL_FN;
+            ins->tok = 0u;
+            ins->aux = targetMirFnIndex;
+            continue;
+        }
         if (SLTCMirConstResolveFunctionIdentTarget(c, ins, &targetFnIndex)) {
             lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
             if (lowerRc < 0) {

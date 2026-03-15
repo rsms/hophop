@@ -170,6 +170,8 @@ typedef struct {
     SLMirProgramBuilder builder;
     uint32_t*           tcToMir;
     uint8_t*            loweringFns;
+    uint32_t*           topConstToMir;
+    uint8_t*            loweringTopConsts;
     SLDiag*             diag;
 } SLTCMirConstLowerCtx;
 
