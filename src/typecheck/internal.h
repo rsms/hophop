@@ -158,6 +158,12 @@ typedef struct {
     uint32_t variantEnd;
 } SLTCVariantNarrow;
 
+typedef enum {
+    SLTCForInValueMode_VALUE = 0,
+    SLTCForInValueMode_REF,
+    SLTCForInValueMode_ANY,
+} SLTCForInValueMode;
+
 typedef struct SLTCConstEvalCtx SLTCConstEvalCtx;
 typedef struct {
     SLTCConstEvalCtx*   evalCtx;
@@ -835,6 +841,27 @@ int SLTCEvalConstForInIndexCb(
     int* _Nonnull outIsConst);
 int32_t SLTCFindConstCallableFunction(
     SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, uint32_t argCount);
+int SLTCResolveForInIterator(
+    SLTypeCheckCtx* c,
+    int32_t         sourceNode,
+    int32_t         sourceType,
+    int32_t*        outFnIndex,
+    int32_t*        outIterType);
+int SLTCResolveForInNextValue(
+    SLTypeCheckCtx*    c,
+    int32_t            iterPtrType,
+    SLTCForInValueMode valueMode,
+    int32_t*           outValueType,
+    int32_t*           outFn);
+int SLTCResolveForInNextKey(
+    SLTypeCheckCtx* c, int32_t iterPtrType, int32_t* outKeyType, int32_t* outFn);
+int SLTCResolveForInNextKeyAndValue(
+    SLTypeCheckCtx*    c,
+    int32_t            iterPtrType,
+    SLTCForInValueMode valueMode,
+    int32_t*           outKeyType,
+    int32_t*           outValueType,
+    int32_t*           outFn);
 int SLTCResolveConstCall(
     void*              ctx,
     uint32_t           nameStart,
