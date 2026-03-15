@@ -446,6 +446,19 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
     return 0;
 }
 
+int SLMirProgramNeedsDynamicResolution(const SLMirProgram* program) {
+    uint32_t i;
+    if (program == NULL) {
+        return 1;
+    }
+    for (i = 0; i < program->instLen; i++) {
+        if (program->insts[i].op == SLMirOp_LOAD_IDENT || program->insts[i].op == SLMirOp_CALL) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void SLMirSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;

@@ -298,5 +298,6 @@ int  SLMirProgramBuilderEndFunction(SLMirProgramBuilder* _Nonnull b);
 void SLMirProgramBuilderFinish(
     const SLMirProgramBuilder* _Nonnull b, SLMirProgram* _Nonnull outProgram);
 int SLMirValidateProgram(const SLMirProgram* _Nonnull program, SLDiag* _Nullable diag);
+int SLMirProgramNeedsDynamicResolution(const SLMirProgram* _Nonnull program);
 
 SL_API_END

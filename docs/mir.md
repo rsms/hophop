@@ -207,6 +207,7 @@ Interpreter details:
 - Lowered function programs may instead materialize those literals in `program.consts[]` and execute them via `SLMirOp_PUSH_CONST`.
 - `SLCTFEEvalExpr` now adapts its CTFE callbacks into `SLMirExecEnv`.
 - `SLMirEvalFunction(...)` validates the MIR program shape before execution.
+- `SLMirProgramNeedsDynamicResolution(...)` reports whether a MIR program still contains generic `LOAD_IDENT` / `CALL` instructions.
 - `LOAD_IDENT` is resolved by `SLMirResolveIdentFn`.
 - `CALL` is resolved by `SLMirResolveCallFn` with popped arguments in source order.
 - `INDEX` handles strings directly in `mir_exec` and can delegate other container indexing to `SLMirExecEnv.indexValue(...)`.
@@ -228,6 +229,7 @@ Interpreter details:
 - `JUMP_IF_FALSE` currently coerces its popped condition through the existing MIR boolean-cast rules.
 - `SLMirExecEnv.backwardJumpLimit` can cap taken backward jumps per MIR frame. The typechecker now uses that to keep MIR consteval from spinning forever on non-progressing loops, then falls back to the older CTFE path for the final user-facing diagnostic.
 - When lowered symbol metadata exists, `mir_exec` resolves identifier/call names through `program.symbols[]` before falling back to instruction spans.
+- The evaluator and consteval now also drop `resolveIdent` / `resolveCall` entirely when a MIR program has no remaining generic `LOAD_IDENT` / `CALL` instructions, so fully lowered MIR paths do not silently keep that callback dependency alive.
 - For direct call symbols, `program.symbols[]` now also carries lightweight call-shape flags that future backends can use when deciding between plain calls, method-style lowering, or host shims.
 - `CAST` retains both its current scalar cast opcode token and an explicit type-table reference for backend consumers.
 - `mir_exec` now also switches function source context per MIR frame through `function.sourceRef`, and can notify embedders through `SLMirExecEnv.enterFunction` / `leaveFunction`.

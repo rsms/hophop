@@ -1483,6 +1483,11 @@ static int SLEvalTryMirInvokeFunction(
     lowerCtx.execCtx.rootMirFnIndex = mirFnIndex;
     SLMirProgramBuilderFinish(&lowerCtx.builder, &program);
     SLEvalMirInitExecEnv(p, fn->file, &env, &lowerCtx.execCtx);
+    if (!SLMirProgramNeedsDynamicResolution(&program)) {
+        env.resolveIdent = NULL;
+        env.resolveCall = NULL;
+        env.resolveCtx = NULL;
+    }
     if (SLMirEvalFunction(
             p->arena, &program, mirFnIndex, args, argCount, &env, outValue, &mirIsConst)
         != 0)

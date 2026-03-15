@@ -4297,6 +4297,11 @@ static int SLTCTryMirConstCall(
     env.makeTupleCtx = evalCtx;
     env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;
     env.diag = c->diag;
+    if (!SLMirProgramNeedsDynamicResolution(&program)) {
+        env.resolveIdent = NULL;
+        env.resolveCall = NULL;
+        env.resolveCtx = NULL;
+    }
     if (SLMirEvalFunction(
             c->arena, &program, mirFnIndex, args, argCount, &env, outValue, &mirIsConst)
         != 0)
