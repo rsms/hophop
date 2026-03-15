@@ -41,45 +41,32 @@ fn next_key_and_value(it *i32) ?(&str, *i32) {
 	return "v", it
 }
 
-fn sum_counter() i32 {
-	var sum i32
-	for value in (1 as i32) {
-		sum += value
-	}
-	return sum
-}
-
-fn sum_keys() i32 {
-	var sum i32
-	for key, _ in true {
-		sum += key
-	}
-	return sum
-}
-
-fn sum_pair_value() i32 {
-	var sum i32
-	for value in (7 as u8) {
-		sum += value
-	}
-	return sum
-}
-
-fn sum_pair_ref() i32 {
-	var sum i32
-	for key, &value in (5 as u8) {
-		if len(key) == 1 {
-			sum += *value
-		}
-	}
-	return sum
-}
-
 fn main() {
 	const {
-		assert sum_counter() == 6
-		assert sum_keys() == 3
-		assert sum_pair_value() == 7
-		assert sum_pair_ref() == 5
+		var counterSum i32
+		for value in (1 as i32) {
+			counterSum += value
+		}
+		assert counterSum == 6
+
+		var keySum i32
+		for key, _ in true {
+			keySum += key
+		}
+		assert keySum == 3
+
+		var pairValueSum i32
+		for value in (7 as u8) {
+			pairValueSum += value
+		}
+		assert pairValueSum == 7
+
+		var pairRefSum i32
+		for key, &value in (5 as u8) {
+			if len(key) == 1 {
+				pairRefSum += *value
+			}
+		}
+		assert pairRefSum == 5
 	}
 }
