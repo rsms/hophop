@@ -711,6 +711,17 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             }
             return SLMirEmitInst(b, SLMirOp_INDEX, SLTok_INVALID, n->start, n->end);
         }
+        case SLAst_FIELD_EXPR: {
+            int32_t baseNode = b->ast->nodes[nodeId].firstChild;
+            if (baseNode < 0) {
+                SLMirSetDiag(b->diag, SLDiag_EXPECTED_EXPR, n->start, n->end);
+                return -1;
+            }
+            if (SLMirBuildExprNode(b, baseNode) != 0) {
+                return -1;
+            }
+            return SLMirEmitInstEx(b, SLMirOp_AGG_GET, SLTok_INVALID, 0, n->dataStart, n->dataEnd);
+        }
         case SLAst_CAST: {
             int32_t         valueNode = b->ast->nodes[nodeId].firstChild;
             int32_t         typeNode = valueNode >= 0 ? b->ast->nodes[valueNode].nextSibling : -1;

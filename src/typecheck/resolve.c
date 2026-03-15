@@ -81,6 +81,10 @@ static int SLTCTryMirConstBlock(
     env.iterInitCtx = evalCtx;
     env.iterNext = SLTCMirConstIterNext;
     env.iterNextCtx = evalCtx;
+    env.aggGetField = SLTCMirConstAggGetField;
+    env.aggGetFieldCtx = evalCtx;
+    env.aggAddrField = SLTCMirConstAggAddrField;
+    env.aggAddrFieldCtx = evalCtx;
     env.makeTuple = SLTCMirConstMakeTuple;
     env.makeTupleCtx = evalCtx;
     env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;

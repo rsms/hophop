@@ -2673,6 +2673,12 @@ typedef struct {
     SLCTFEValue elems[];
 } SLTCMirConstTuple;
 
+typedef struct {
+    int32_t     typeId;
+    uint32_t    fieldCount;
+    SLCTFEValue fields[];
+} SLTCMirConstAggregate;
+
 enum {
     SL_TC_MIR_CONST_ITER_KIND_SEQUENCE = 1u,
     SL_TC_MIR_CONST_ITER_KIND_PROTOCOL = 2u,
@@ -2714,6 +2720,29 @@ static SLTCMirConstIter* _Nullable SLTCMirConstIterFromValue(const SLCTFEValue* 
         return NULL;
     }
     return (SLTCMirConstIter*)target->s.bytes;
+}
+
+static const SLTCMirConstAggregate* _Nullable SLTCMirConstAggregateFromValue(
+    const SLCTFEValue* value) {
+    const SLCTFEValue* target = value;
+    if (value == NULL) {
+        return NULL;
+    }
+    if (value->kind == SLCTFEValue_REFERENCE && value->s.bytes != NULL) {
+        target = (const SLCTFEValue*)value->s.bytes;
+    }
+    if (target == NULL || target->kind != SLCTFEValue_AGGREGATE || target->s.bytes == NULL) {
+        return NULL;
+    }
+    return (const SLTCMirConstAggregate*)target->s.bytes;
+}
+
+static SLCTFEValue* _Nullable SLTCMirConstAggregateFieldValuePtr(
+    const SLTCMirConstAggregate* agg, uint32_t fieldIndex) {
+    if (agg == NULL || fieldIndex >= agg->fieldCount) {
+        return NULL;
+    }
+    return (SLCTFEValue*)&agg->fields[fieldIndex];
 }
 
 static const SLCTFEValue* SLTCMirConstValueTargetOrSelf(const SLCTFEValue* value) {
@@ -3310,16 +3339,141 @@ int SLTCEvalConstForInIndexCb(
     return 0;
 }
 
-int SLTCMirConstZeroInitLocal(
+static int SLTCMirConstResolveAggregateType(
+    SLTypeCheckCtx* c, int32_t typeId, int32_t* outBaseTypeId) {
+    int32_t         baseTypeId = -1;
+    const SLTCType* t;
+    if (outBaseTypeId != NULL) {
+        *outBaseTypeId = -1;
+    }
+    if (c == NULL) {
+        return 0;
+    }
+    baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+    if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen) {
+        return 0;
+    }
+    t = &c->types[baseTypeId];
+    if (t->kind == SLTCType_NAMED && t->fieldCount == 0u) {
+        int32_t  namedIndex = -1;
+        uint32_t i;
+        for (i = 0; i < c->namedTypeLen; i++) {
+            if (c->namedTypes[i].typeId == baseTypeId) {
+                namedIndex = (int32_t)i;
+                break;
+            }
+        }
+        if (namedIndex >= 0 && SLTCResolveNamedTypeFields(c, (uint32_t)namedIndex) != 0) {
+            return 0;
+        }
+        t = &c->types[baseTypeId];
+    }
+    if (t->kind != SLTCType_NAMED && t->kind != SLTCType_ANON_STRUCT) {
+        return 0;
+    }
+    if (outBaseTypeId != NULL) {
+        *outBaseTypeId = baseTypeId;
+    }
+    return 1;
+}
+
+static int SLTCMirConstAggregateLookupFieldIndex(
+    SLTypeCheckCtx* c,
+    int32_t         typeId,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    uint32_t*       outFieldIndex) {
+    int32_t  baseTypeId = -1;
+    int32_t  fieldType = -1;
+    uint32_t absFieldIndex = UINT32_MAX;
+    if (outFieldIndex != NULL) {
+        *outFieldIndex = UINT32_MAX;
+    }
+    if (!SLTCMirConstResolveAggregateType(c, typeId, &baseTypeId)) {
+        return 0;
+    }
+    if (SLTCFieldLookup(c, baseTypeId, nameStart, nameEnd, &fieldType, &absFieldIndex) != 0) {
+        return 0;
+    }
+    if (absFieldIndex < c->types[baseTypeId].fieldStart) {
+        return 0;
+    }
+    absFieldIndex -= c->types[baseTypeId].fieldStart;
+    if (absFieldIndex >= c->types[baseTypeId].fieldCount) {
+        return 0;
+    }
+    if (outFieldIndex != NULL) {
+        *outFieldIndex = absFieldIndex;
+    }
+    return 1;
+}
+
+static int SLTCMirConstZeroInitTypeId(
+    SLTCConstEvalCtx* evalCtx, int32_t typeId, SLCTFEValue* outValue, int* outIsConst);
+
+static int SLTCMirConstMakeAggregateValue(
+    SLTCConstEvalCtx* evalCtx, int32_t typeId, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx*        c;
+    int32_t                baseTypeId = -1;
+    uint32_t               fieldCount = 0;
+    uint32_t               i;
+    size_t                 bytes;
+    SLTCMirConstAggregate* agg;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue != NULL) {
+        SLTCConstEvalValueInvalid(outValue);
+    }
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (!SLTCMirConstResolveAggregateType(c, typeId, &baseTypeId)) {
+        return 0;
+    }
+    fieldCount = c->types[baseTypeId].fieldCount;
+    bytes = sizeof(*agg) + sizeof(SLCTFEValue) * (size_t)fieldCount;
+    agg = (SLTCMirConstAggregate*)SLArenaAlloc(
+        c->arena, (uint32_t)bytes, (uint32_t)_Alignof(SLTCMirConstAggregate));
+    if (agg == NULL) {
+        return -1;
+    }
+    agg->typeId = baseTypeId;
+    agg->fieldCount = fieldCount;
+    memset(agg->fields, 0, sizeof(SLCTFEValue) * fieldCount);
+    for (i = 0; i < fieldCount; i++) {
+        uint32_t fieldIndex = c->types[baseTypeId].fieldStart + i;
+        if (fieldIndex >= c->fieldLen
+            || SLTCMirConstZeroInitTypeId(
+                   evalCtx, c->fields[fieldIndex].typeId, &agg->fields[i], outIsConst)
+                   != 0)
+        {
+            return -1;
+        }
+        if (!*outIsConst) {
+            return 0;
+        }
+    }
+    outValue->kind = SLCTFEValue_AGGREGATE;
+    outValue->typeTag = (uint64_t)(uint32_t)baseTypeId;
+    outValue->s.bytes = (const uint8_t*)agg;
+    outValue->s.len = fieldCount;
+    *outIsConst = 1;
+    return 0;
+}
+
+int SLTCMirConstAggGetField(
     void* _Nullable ctx,
-    const SLMirTypeRef* typeRef,
-    SLCTFEValue*        outValue,
-    int*                outIsConst,
+    const SLCTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
     SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
-    SLTypeCheckCtx*   c;
-    int32_t           typeId = -1;
-    int32_t           baseTypeId;
+    SLTCConstEvalCtx*            evalCtx = (SLTCConstEvalCtx*)ctx;
+    const SLTCMirConstAggregate* agg;
+    uint32_t                     fieldIndex = UINT32_MAX;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -3327,11 +3481,80 @@ int SLTCMirConstZeroInitLocal(
     if (outValue != NULL) {
         SLTCConstEvalValueInvalid(outValue);
     }
-    if (evalCtx == NULL || typeRef == NULL || outValue == NULL || outIsConst == NULL) {
+    if (evalCtx == NULL || evalCtx->tc == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    agg = SLTCMirConstAggregateFromValue(base);
+    if (agg == NULL
+        || !SLTCMirConstAggregateLookupFieldIndex(
+            evalCtx->tc, agg->typeId, nameStart, nameEnd, &fieldIndex))
+    {
+        return 0;
+    }
+    {
+        SLCTFEValue* fieldValue = SLTCMirConstAggregateFieldValuePtr(agg, fieldIndex);
+        if (fieldValue == NULL) {
+            return 0;
+        }
+        *outValue = *fieldValue;
+    }
+    *outIsConst = 1;
+    return 0;
+}
+
+int SLTCMirConstAggAddrField(
+    void* _Nullable ctx,
+    const SLCTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx*            evalCtx = (SLTCConstEvalCtx*)ctx;
+    const SLTCMirConstAggregate* agg;
+    uint32_t                     fieldIndex = UINT32_MAX;
+    SLCTFEValue*                 fieldValue;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue != NULL) {
+        SLTCConstEvalValueInvalid(outValue);
+    }
+    if (evalCtx == NULL || evalCtx->tc == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    agg = SLTCMirConstAggregateFromValue(base);
+    if (agg == NULL
+        || !SLTCMirConstAggregateLookupFieldIndex(
+            evalCtx->tc, agg->typeId, nameStart, nameEnd, &fieldIndex))
+    {
+        return 0;
+    }
+    fieldValue = SLTCMirConstAggregateFieldValuePtr(agg, fieldIndex);
+    if (fieldValue == NULL) {
+        return 0;
+    }
+    SLTCMirConstSetReference(outValue, fieldValue);
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLTCMirConstZeroInitTypeId(
+    SLTCConstEvalCtx* evalCtx, int32_t typeId, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx* c;
+    int32_t         baseTypeId;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue != NULL) {
+        SLTCConstEvalValueInvalid(outValue);
+    }
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
     c = evalCtx->tc;
-    if (c == NULL || SLTCMirConstResolveTypeRefTypeId(evalCtx, typeRef, &typeId) != 0) {
+    if (c == NULL) {
         return -1;
     }
     baseTypeId = SLTCResolveAliasBaseType(c, typeId);
@@ -3378,7 +3601,31 @@ int SLTCMirConstZeroInitLocal(
         *outIsConst = 1;
         return 0;
     }
-    return 0;
+    return SLTCMirConstMakeAggregateValue(evalCtx, baseTypeId, outValue, outIsConst);
+}
+
+int SLTCMirConstZeroInitLocal(
+    void* _Nullable ctx,
+    const SLMirTypeRef* typeRef,
+    SLCTFEValue*        outValue,
+    int*                outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    int32_t           typeId = -1;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue != NULL) {
+        SLTCConstEvalValueInvalid(outValue);
+    }
+    if (evalCtx == NULL || typeRef == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (evalCtx->tc == NULL || SLTCMirConstResolveTypeRefTypeId(evalCtx, typeRef, &typeId) != 0) {
+        return -1;
+    }
+    return SLTCMirConstZeroInitTypeId(evalCtx, typeId, outValue, outIsConst);
 }
 
 int SLTCMirConstCoerceValueForType(
@@ -3400,6 +3647,15 @@ int SLTCMirConstCoerceValueForType(
     }
     baseTypeId = SLTCResolveAliasBaseType(c, typeId);
     if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen) {
+        return 0;
+    }
+    if ((c->types[baseTypeId].kind == SLTCType_NAMED
+         || c->types[baseTypeId].kind == SLTCType_ANON_STRUCT)
+        && inOutValue->kind == SLCTFEValue_AGGREGATE)
+    {
+        if (inOutValue->typeTag == (uint64_t)(uint32_t)baseTypeId) {
+            return 0;
+        }
         return 0;
     }
     if (c->types[baseTypeId].kind == SLTCType_OPTIONAL) {
@@ -3812,6 +4068,10 @@ static int SLTCTryMirConstCall(
     env.iterInitCtx = evalCtx;
     env.iterNext = SLTCMirConstIterNext;
     env.iterNextCtx = evalCtx;
+    env.aggGetField = SLTCMirConstAggGetField;
+    env.aggGetFieldCtx = evalCtx;
+    env.aggAddrField = SLTCMirConstAggAddrField;
+    env.aggAddrFieldCtx = evalCtx;
     env.makeTuple = SLTCMirConstMakeTuple;
     env.makeTupleCtx = evalCtx;
     env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;

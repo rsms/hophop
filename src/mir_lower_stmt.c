@@ -595,6 +595,13 @@ static int SLMirStmtLowerRewriteExprChunk(SLMirStmtLower* c, const SLMirChunk* c
                 inst.aux = slot;
             }
         }
+        if (inst.op == SLMirOp_AGG_GET || inst.op == SLMirOp_AGG_ADDR) {
+            uint32_t fieldRef = UINT32_MAX;
+            if (SLMirStmtLowerAddFieldRef(c, inst.start, inst.end, &fieldRef) != 0) {
+                return -1;
+            }
+            inst.aux = fieldRef;
+        }
         if (callIndirect != NULL && callIndirect[emitIndex] != 0u) {
             inst.op = SLMirOp_CALL_INDIRECT;
             inst.aux = 0u;
