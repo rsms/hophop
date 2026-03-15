@@ -1080,8 +1080,10 @@ static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
     uint32_t                 topInitIndex,
     uint32_t*                outEvalFnIndex) {
     const SLPackage*   currentPkg;
+    const SLPackage*   targetPkg;
     int32_t          initExprNode = -1;
     const SLAstNode* initExpr;
+    const SLAstNode* baseExpr;
     int32_t          targetFnIndex = -1;
     if (outEvalFnIndex != NULL) {
         *outEvalFnIndex = UINT32_MAX;
@@ -1108,11 +1110,28 @@ static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
         return 0;
     }
     initExpr = &file->ast.nodes[initExprNode];
-    if (initExpr->kind != SLAst_IDENT) {
+    if (initExpr->kind == SLAst_IDENT) {
+        targetFnIndex = SLEvalFindAnyFunctionBySliceInPackage(
+            c->p, currentPkg, file, initExpr->dataStart, initExpr->dataEnd);
+    } else if (initExpr->kind == SLAst_FIELD_EXPR) {
+        int32_t baseNode = initExpr->firstChild;
+        if (baseNode < 0 || (uint32_t)baseNode >= file->ast.len) {
+            return 0;
+        }
+        baseExpr = &file->ast.nodes[baseNode];
+        if (baseExpr->kind != SLAst_IDENT) {
+            return 0;
+        }
+        targetPkg = SLEvalMirFindImportTargetByAliasSlice(
+            currentPkg, file->source, baseExpr->dataStart, baseExpr->dataEnd);
+        if (targetPkg == NULL) {
+            return 0;
+        }
+        targetFnIndex = SLEvalMirFindAnyFunctionBySliceInPackage(
+            c->p, targetPkg, file, initExpr->dataStart, initExpr->dataEnd);
+    } else {
         return 0;
     }
-    targetFnIndex = SLEvalFindAnyFunctionBySliceInPackage(
-        c->p, currentPkg, file, initExpr->dataStart, initExpr->dataEnd);
     if (targetFnIndex < 0 || (uint32_t)targetFnIndex >= c->p->funcLen
         || c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn
         || c->p->funcs[(uint32_t)targetFnIndex].isVariadic)
