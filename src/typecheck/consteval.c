@@ -2700,6 +2700,7 @@ typedef struct {
     uint8_t     _reserved2[3];
     SLCTFEValue sourceValue;
     SLCTFEValue iteratorValue;
+    SLCTFEValue currentValue;
 } SLTCMirConstIter;
 
 static const SLTCMirConstTuple* _Nullable SLTCMirConstTupleFromValue(const SLCTFEValue* value) {
@@ -3256,9 +3257,6 @@ int SLTCMirConstIterNext(
         *outHasItem = 1;
         return 0;
     }
-    if ((flags & SLMirIterFlag_VALUE_REF) != 0u) {
-        return 0;
-    }
     sourceValue = &iter->sourceValue;
     if (sourceValue->kind == SLCTFEValue_REFERENCE && sourceValue->s.bytes != NULL) {
         sourceValue = (const SLCTFEValue*)sourceValue->s.bytes;
@@ -3278,8 +3276,13 @@ int SLTCMirConstIterNext(
             *outKeyIsConst = 1;
         }
         if ((flags & SLMirIterFlag_VALUE_DISCARD) == 0u) {
-            outValue->kind = SLCTFEValue_INT;
-            outValue->i64 = (int64_t)sourceValue->s.bytes[iter->index];
+            iter->currentValue.kind = SLCTFEValue_INT;
+            iter->currentValue.i64 = (int64_t)sourceValue->s.bytes[iter->index];
+            if ((flags & SLMirIterFlag_VALUE_REF) != 0u) {
+                SLTCMirConstSetReference(outValue, &iter->currentValue);
+            } else {
+                *outValue = iter->currentValue;
+            }
             *outValueIsConst = 1;
         } else {
             *outValueIsConst = 1;
@@ -3302,7 +3305,11 @@ int SLTCMirConstIterNext(
             *outKeyIsConst = 1;
         }
         if ((flags & SLMirIterFlag_VALUE_DISCARD) == 0u) {
-            *outValue = tuple->elems[iter->index];
+            if ((flags & SLMirIterFlag_VALUE_REF) != 0u) {
+                SLTCMirConstSetReference(outValue, (SLCTFEValue*)&tuple->elems[iter->index]);
+            } else {
+                *outValue = tuple->elems[iter->index];
+            }
             *outValueIsConst = 1;
         } else {
             *outValueIsConst = 1;

@@ -358,6 +358,7 @@
 {"id":"check:tests/consteval_mir_break_continue_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_break_continue_ok.sl"}
 {"id":"check:tests/consteval_mir_for_in_protocol_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_for_in_protocol_ok.sl"}
 {"id":"check:tests/consteval_mir_for_in_string_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_for_in_string_ok.sl"}
+{"id":"check:tests/consteval_mir_for_in_string_ref_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_for_in_string_ref_ok.sl"}
 {"id":"check:tests/consteval_mir_aggregate_call_field_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_aggregate_call_field_ok.sl"}
 {"id":"check:tests/consteval_mir_local_aggregate_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_local_aggregate_ok.sl"}
 {"id":"check:tests/consteval_mir_assert_message_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/consteval_mir_assert_message_ok.sl"}
@@ -376,6 +377,7 @@
 {"id":"check:tests/const_block_mir_break_continue_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_break_continue_ok.sl"}
 {"id":"check:tests/const_block_mir_for_in_string_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_for_in_string_ok.sl"}
 {"id":"check:tests/const_block_mir_for_in_protocol_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_for_in_protocol_ok.sl"}
+{"id":"check:tests/const_block_mir_for_in_string_ref_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_for_in_string_ref_ok.sl"}
 {"id":"check:tests/const_block_mir_aggregate_call_field_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_aggregate_call_field_ok.sl"}
 {"id":"check:tests/const_block_mir_local_aggregate_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_local_aggregate_ok.sl"}
 {"id":"check:tests/const_block_mir_assert_message_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/const_block_mir_assert_message_ok.sl"}
