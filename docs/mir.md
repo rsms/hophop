@@ -69,7 +69,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Lowered call symbols now also preserve simple call-shape flags, such as selector-style calls where the receiver has already been lowered as argument `0`.
 - Lowered `CAST` instructions now also intern their target types into `program.types[]`, so type-directed backends do not need to recover cast metadata from parser ASTs later.
 - Lowered expression MIR now also interns `AGG_GET` / `AGG_ADDR` field names into `program.fields[]`, so aggregate field ops no longer need to depend only on source spans once an expression has been lowered to a MIR program.
-- MIR programs now also have an explicit `program.hosts[]` table for hostcall metadata, so `CALL_HOST` does not have to treat instruction `aux` as evaluator-private state forever.
+- MIR programs now also have an explicit `program.hosts[]` table for hostcall metadata, and current lowered MIR requires `CALL_HOST` to reference that table instead of treating instruction `aux` as evaluator-private state.
 - The evaluator now uses that host table for one real runtime case: plain builtin `print(...)` calls lowered through the simple MIR path are rewritten to `CALL_HOST`.
 - The evaluator now also uses that host table for plain builtin `concat(...)` calls lowered through the simple MIR path.
 - The evaluator now also uses that host table for plain builtin `copy(dst, src)` calls lowered through the simple MIR path.
@@ -112,7 +112,7 @@ The builder emits children before parent operators, so the stream is directly ex
 For backend-facing `SLMirProgram` lowering, instructions also have a 32-bit `aux` operand slot. It is currently used by `SLMirOp_PUSH_CONST` to reference entries in the program constant pool.
 The same `aux` slot is also used by lowered identifier/call instructions to reference `program.symbols[]`.
 For lowered `CAST` instructions, `aux` references `program.types[]`.
-For lowered `CALL_HOST` instructions, `aux` can reference `program.hosts[]`; until lowering fully migrates, raw host IDs are still accepted when the host table is empty.
+For lowered `CALL_HOST` instructions, `aux` references `program.hosts[]`.
 For lowered `AGG_GET` and `AGG_ADDR`, `aux` can reference `program.fields[]`, so field metadata can travel with the MIR program instead of being recovered only from parser spans.
 For `JUMP` and `JUMP_IF_FALSE`, `aux` is a function-local instruction index within the current `SLMirFunction`.
 Each `SLMirFunction` now also points at `program.sources[function.sourceRef]`, which is how runtime execution keeps the active source/file context aligned with the current MIR frame.
@@ -210,7 +210,7 @@ Interpreter details:
 - `CALL_FN` now executes same-program MIR functions through the function executor. Today that path is intentionally narrow and only supports the current arg-less/simple case until local slots and parameter binding move into MIR.
 - `CALL_FN` now supports passing arguments into same-program MIR functions, with those arguments bound to the first `paramCount` local slots.
 - When `SLMirCallArgFlag_RECEIVER_ARG0` is set on lowered `CALL_FN` or `CALL_HOST`, execution drops argument `0` before invoking the resolved target.
-- `CALL_HOST` invokes `SLMirExecEnv.hostCall(hostCtx, hostId, args, argCount, ...)`, where `hostId` comes from `program.hosts[aux].target` when a host table is present, and falls back to raw `aux` only for older MIR.
+- `CALL_HOST` invokes `SLMirExecEnv.hostCall(hostCtx, hostId, args, argCount, ...)`, where `hostId` comes from `program.hosts[aux].target`.
 - `SLMirConst_FUNCTION` currently materializes as a same-program function reference value.
 - `CALL_INDIRECT` currently expects the callee value to have been pushed before its arguments, then invokes the referenced same-program MIR function.
 - Statement MIR rewrite now also turns local-identifier calls like `f(...)` into `CALL_INDIRECT` when `f` resolves to a local slot, so local function values do not need to fall back to evaluator name resolution.

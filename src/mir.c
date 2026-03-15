@@ -405,7 +405,7 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
                     }
                     break;
                 case SLMirOp_CALL_HOST:
-                    if (program->hostLen != 0 && ins->aux >= program->hostLen) {
+                    if (program->hostLen == 0 || ins->aux >= program->hostLen) {
                         SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
                         return -1;
                     }

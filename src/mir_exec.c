@@ -160,7 +160,7 @@ static uint32_t SLMirResolveHostId(const SLMirExecRun* run, const SLMirInst* ins
     if (run == NULL || ins == NULL || run->program == NULL || run->program->hostLen == 0
         || ins->aux >= run->program->hostLen)
     {
-        return ins != NULL ? ins->aux : 0;
+        return SLMirHostTarget_INVALID;
     }
     return run->program->hosts[ins->aux].target;
 }
