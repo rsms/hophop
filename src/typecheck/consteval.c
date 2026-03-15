@@ -3925,6 +3925,74 @@ static int SLTCMirConstResolveTopConstIdentTarget(
     return 1;
 }
 
+static int SLTCMirConstResolveSimpleTopConstFunctionValueTarget(
+    const SLTCMirConstLowerCtx* c, int32_t nodeId, int32_t* outFnIndex) {
+    SLTypeCheckCtx*  tc;
+    SLTCVarLikeParts parts;
+    int32_t          initNode;
+    const SLAstNode* initExpr;
+    int32_t          targetFnIndex;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || outFnIndex == NULL) {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL || nodeId < 0 || (uint32_t)nodeId >= tc->ast->len) {
+        return 0;
+    }
+    if (SLTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped || parts.nameCount != 1u
+        || tc->ast->nodes[nodeId].kind != SLAst_CONST)
+    {
+        return 0;
+    }
+    initNode = SLTCVarLikeInitExprNodeAt(tc, nodeId, 0);
+    if (initNode < 0 || (uint32_t)initNode >= tc->ast->len) {
+        return 0;
+    }
+    initExpr = &tc->ast->nodes[initNode];
+    if (initExpr->kind != SLAst_IDENT) {
+        return 0;
+    }
+    targetFnIndex = SLTCFindPlainFunctionValueIndex(tc, initExpr->dataStart, initExpr->dataEnd);
+    if (targetFnIndex < 0 || (uint32_t)targetFnIndex >= tc->funcLen) {
+        return 0;
+    }
+    *outFnIndex = targetFnIndex;
+    return 1;
+}
+
+static int SLTCMirConstResolveSimpleFunctionValueAliasCallTarget(
+    const SLTCMirConstLowerCtx* c, const SLMirInst* ins, int32_t* outFnIndex) {
+    SLTypeCheckCtx*       tc;
+    const SLMirSymbolRef* symbol;
+    int32_t               nodeId = -1;
+    int32_t               nameIndex = -1;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
+        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->aux >= c->builder.symbolLen)
+    {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL) {
+        return 0;
+    }
+    symbol = &c->builder.symbols[ins->aux];
+    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+        return 0;
+    }
+    nodeId = SLTCFindTopLevelVarLikeNode(tc, symbol->nameStart, symbol->nameEnd, &nameIndex);
+    if (nodeId < 0 || nameIndex != 0) {
+        return 0;
+    }
+    return SLTCMirConstResolveSimpleTopConstFunctionValueTarget(c, nodeId, outFnIndex);
+}
+
 static int SLTCMirConstLowerTopConstNode(
     SLTCMirConstLowerCtx* c, int32_t nodeId, uint32_t* _Nullable outMirFnIndex) {
     SLTypeCheckCtx*  tc;
@@ -4061,6 +4129,18 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex)
             if (SLTCMirConstRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
                 return -1;
             }
+            continue;
+        }
+        if (SLTCMirConstResolveSimpleFunctionValueAliasCallTarget(c, ins, &targetFnIndex)) {
+            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                return -1;
+            }
+            if (lowerRc == 0) {
+                return 0;
+            }
+            ins->op = SLMirOp_CALL_FN;
+            ins->aux = targetMirFnIndex;
             continue;
         }
         if (!SLTCMirConstResolveDirectCallTarget(c, ins, &targetFnIndex)) {
