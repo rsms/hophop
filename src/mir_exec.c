@@ -258,10 +258,10 @@ static void SLMirResolveSymbolName(
     SLMirSymbolKind expectedKind,
     uint32_t* _Nonnull outStart,
     uint32_t* _Nonnull outEnd) {
-    *outStart = ins->start;
-    *outEnd = ins->end;
+    *outStart = 0;
+    *outEnd = 0;
     if (run == NULL || ins == NULL || outStart == NULL || outEnd == NULL || run->program == NULL
-        || ins->aux >= run->program->symbolLen)
+        || run->program->symbolLen == 0 || ins->aux >= run->program->symbolLen)
     {
         return;
     }
