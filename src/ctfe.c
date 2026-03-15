@@ -18,6 +18,10 @@ int SLCTFEEvalExprEx(
     void* _Nullable makeTupleCtx,
     SLCTFEIndexValueFn _Nullable indexValue,
     void* _Nullable indexValueCtx,
+    SLCTFEAggGetFieldFn _Nullable aggGetField,
+    void* _Nullable aggGetFieldCtx,
+    SLCTFEAggAddrFieldFn _Nullable aggAddrField,
+    void* _Nullable aggAddrFieldCtx,
     SLCTFEValue* outValue,
     int*         outIsConst,
     SLDiag* _Nullable diag) {
@@ -55,6 +59,10 @@ int SLCTFEEvalExprEx(
     env.makeTupleCtx = makeTupleCtx;
     env.indexValue = indexValue;
     env.indexValueCtx = indexValueCtx;
+    env.aggGetField = aggGetField;
+    env.aggGetFieldCtx = aggGetFieldCtx;
+    env.aggAddrField = aggAddrField;
+    env.aggAddrFieldCtx = aggAddrFieldCtx;
     env.diag = diag;
     return SLMirEvalFunction(arena, &program, 0, NULL, 0, &env, outValue, outIsConst);
 }
@@ -78,6 +86,10 @@ int SLCTFEEvalExpr(
         resolveIdent,
         resolveCall,
         resolveCtx,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
         NULL,
         NULL,
         NULL,

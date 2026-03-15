@@ -74,6 +74,22 @@ typedef int (*SLCTFEIndexValueFn)(
     SLCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef int (*SLCTFEAggGetFieldFn)(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLCTFEAggAddrFieldFn)(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 
 int SLCTFEEvalExprEx(
     SLArena* _Nonnull arena,
@@ -87,6 +103,10 @@ int SLCTFEEvalExprEx(
     void* _Nullable makeTupleCtx,
     SLCTFEIndexValueFn _Nullable indexValue,
     void* _Nullable indexValueCtx,
+    SLCTFEAggGetFieldFn _Nullable aggGetField,
+    void* _Nullable aggGetFieldCtx,
+    SLCTFEAggAddrFieldFn _Nullable aggAddrField,
+    void* _Nullable aggAddrFieldCtx,
     SLCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);

@@ -2539,6 +2539,10 @@ int SLTCEvalConstExprNode(
         evalCtx,
         SLTCMirConstIndexValue,
         evalCtx,
+        SLTCMirConstAggGetField,
+        evalCtx,
+        SLTCMirConstAggAddrField,
+        evalCtx,
         outValue,
         outIsConst,
         c->diag);
