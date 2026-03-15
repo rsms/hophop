@@ -823,6 +823,22 @@ int SLTCMirConstIterNext(
     SLCTFEValue* _Nonnull outValue,
     int* _Nonnull outValueIsConst,
     SLDiag* _Nullable diag);
+int SLTCMirConstAggGetField(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstAggAddrField(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 int SLTCMirConstMakeTuple(
     void* _Nullable ctx,
     const SLCTFEValue* _Nonnull elems,

@@ -39,10 +39,12 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Lowered MIR programs now also rewrite plain builtin `free(...)` calls to `CALL_HOST`, so allocation cleanup crosses the MIR host boundary explicitly instead of staying on generic call-name resolution.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
 - The direct-expression CTFE wrapper in `src/ctfe.c` now also accepts optional tuple/index hooks, so evaluator and typechecker can keep tuple literals and tuple argument expressions on MIR instead of forcing expression-level fallback.
+- The direct-expression CTFE wrapper in `src/ctfe.c` now also accepts optional aggregate field hooks, so evaluator and typechecker can keep aggregate field reads on MIR instead of forcing expression-level fallback for `x.field` on MIR-owned values.
 - The consteval path in `src/typecheck/consteval.c` now also tries MIR-first execution for simple const function bodies before falling back to `ctfe_exec`.
 - The const-block path in `src/typecheck/resolve.c` now also tries MIR-first execution for simple `const { ... }` blocks before falling back to `ctfe_exec`.
 - The consteval-side MIR env now also supplies typed zero-init and value-coercion hooks, so simple typed locals and scalar/optional return adaptation can stay on the MIR path.
 - The consteval-side MIR env now also supplies tuple materialization and tuple indexing hooks, so simple const-call paths can keep tuple returns and grouped tuple decomposition on MIR instead of forcing immediate fallback.
+- The consteval-side MIR env now also supplies aggregate field hooks, which keeps local aggregate field reads/writes and aggregate-valued helper call results on MIR for both top-level const evaluation and `const { ... }` blocks.
 - The consteval-side MIR env now also supplies sequence-length and iterator hooks for simple `for in`, covering both string/tuple-style sequence iteration and iterator-protocol sources resolved through the shared typechecker hook-selection logic.
 - Consteval identifier resolution now also materializes plain function names as MIR-compatible function-reference values, so top-level consts and const-call bodies can keep local function-value aliases on the MIR path instead of dropping back to non-const identifier lookup.
 - The current consteval MIR subset also covers simple non-`for in` `for` loops and successful `assert` statements with trailing message/format arguments, and both const functions and `const { ... }` blocks now have focused regression coverage for those shapes.
@@ -66,6 +68,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Lowered function programs can also rewrite `LOAD_IDENT` and direct `CALL` sites to `SLMirSymbolRef` table entries, so name metadata lives in the MIR program instead of only in instruction spans.
 - Lowered call symbols now also preserve simple call-shape flags, such as selector-style calls where the receiver has already been lowered as argument `0`.
 - Lowered `CAST` instructions now also intern their target types into `program.types[]`, so type-directed backends do not need to recover cast metadata from parser ASTs later.
+- Lowered expression MIR now also interns `AGG_GET` / `AGG_ADDR` field names into `program.fields[]`, so aggregate field ops no longer need to depend only on source spans once an expression has been lowered to a MIR program.
 - MIR programs now also have an explicit `program.hosts[]` table for hostcall metadata, so `CALL_HOST` does not have to treat instruction `aux` as evaluator-private state forever.
 - The evaluator now uses that host table for one real runtime case: plain builtin `print(...)` calls lowered through the simple MIR path are rewritten to `CALL_HOST`.
 - The evaluator now also uses that host table for plain builtin `concat(...)` calls lowered through the simple MIR path.

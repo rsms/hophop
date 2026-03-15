@@ -390,6 +390,54 @@ static int SLMirLowerRewriteHostInst(
     return 1;
 }
 
+static int SLMirLowerInternField(
+    SLMirProgramBuilder* _Nonnull builder,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    uint32_t* _Nonnull outIndex,
+    SLDiag* _Nullable diag) {
+    uint32_t   i;
+    SLMirField fieldRef;
+    if (builder == NULL || outIndex == NULL) {
+        return -1;
+    }
+    for (i = 0; i < builder->fieldLen; i++) {
+        const SLMirField* existing = &builder->fields[i];
+        if (existing->nameStart == nameStart && existing->nameEnd == nameEnd
+            && existing->ownerTypeRef == UINT32_MAX && existing->typeRef == UINT32_MAX)
+        {
+            *outIndex = i;
+            return 0;
+        }
+    }
+    fieldRef.nameStart = nameStart;
+    fieldRef.nameEnd = nameEnd;
+    fieldRef.ownerTypeRef = UINT32_MAX;
+    fieldRef.typeRef = UINT32_MAX;
+    if (SLMirProgramBuilderAddField(builder, &fieldRef, outIndex) != 0) {
+        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, nameStart, nameEnd);
+        return -1;
+    }
+    return 0;
+}
+
+static int SLMirLowerRewriteFieldInst(
+    SLMirProgramBuilder* _Nonnull builder,
+    const SLMirInst* _Nonnull in,
+    SLMirInst* _Nonnull out,
+    SLDiag* _Nullable diag) {
+    uint32_t fieldIndex = 0;
+    memcpy(out, in, sizeof(*out));
+    if (in->op != SLMirOp_AGG_GET && in->op != SLMirOp_AGG_ADDR) {
+        return 0;
+    }
+    if (SLMirLowerInternField(builder, in->start, in->end, &fieldIndex, diag) != 0) {
+        return -1;
+    }
+    out->aux = fieldIndex;
+    return 1;
+}
+
 int SLMirLowerAppendInst(
     SLMirProgramBuilder* _Nonnull builder,
     SLArena* _Nonnull arena,
@@ -422,6 +470,13 @@ int SLMirLowerAppendInst(
                     builder, src, &loweredInst, &loweredInst, diag);
                 if (rewriteStatus < 0) {
                     return -1;
+                }
+                if (rewriteStatus == 0) {
+                    rewriteStatus = SLMirLowerRewriteFieldInst(
+                        builder, &loweredInst, &loweredInst, diag);
+                    if (rewriteStatus < 0) {
+                        return -1;
+                    }
                 }
             }
         }
