@@ -113,7 +113,7 @@ For backend-facing `SLMirProgram` lowering, instructions also have a 32-bit `aux
 The same `aux` slot is also used by lowered identifier/call instructions to reference `program.symbols[]`.
 For lowered `CAST` instructions, `aux` references `program.types[]`.
 For lowered `CALL_HOST` instructions, `aux` references `program.hosts[]`.
-For lowered `AGG_GET` and `AGG_ADDR`, `aux` can reference `program.fields[]`, so field metadata can travel with the MIR program instead of being recovered only from parser spans.
+For lowered `AGG_GET` and `AGG_ADDR`, `aux` references `program.fields[]`, so field metadata travels with the MIR program instead of being recovered only from parser spans.
 For `JUMP` and `JUMP_IF_FALSE`, `aux` is a function-local instruction index within the current `SLMirFunction`.
 Each `SLMirFunction` now also points at `program.sources[function.sourceRef]`, which is how runtime execution keeps the active source/file context aligned with the current MIR frame.
 Each `SLMirFunction` also points at its local metadata slice in `program.locals[]`, and each `SLMirLocal` currently carries a `typeRef` plus flags such as `PARAM`, `MUTABLE`, and `ZERO_INIT`.

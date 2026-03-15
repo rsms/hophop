@@ -412,7 +412,7 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
                     break;
                 case SLMirOp_AGG_GET:
                 case SLMirOp_AGG_ADDR:
-                    if (program->fieldLen != 0 && ins->aux >= program->fieldLen) {
+                    if (program->fieldLen == 0 || ins->aux >= program->fieldLen) {
                         SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
                         return -1;
                     }

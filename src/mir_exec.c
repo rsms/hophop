@@ -277,10 +277,10 @@ static void SLMirResolveFieldName(
     const SLMirInst* _Nonnull ins,
     uint32_t* _Nonnull outStart,
     uint32_t* _Nonnull outEnd) {
-    *outStart = ins->start;
-    *outEnd = ins->end;
+    *outStart = 0;
+    *outEnd = 0;
     if (run == NULL || ins == NULL || outStart == NULL || outEnd == NULL || run->program == NULL
-        || ins->aux >= run->program->fieldLen)
+        || run->program->fieldLen == 0 || ins->aux >= run->program->fieldLen)
     {
         return;
     }
