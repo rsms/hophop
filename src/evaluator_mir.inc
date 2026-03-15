@@ -1397,7 +1397,7 @@ static int SLEvalMirBuildTopInitProgram(
     if (SLEvalMirInitLowerCtx(p, 1u, &lowerCtx) != 0) {
         return -1;
     }
-    if (SLMirLowerAppendNamedTopInitFunction(
+    if (SLMirLowerBeginNamedTopInitProgram(
             &lowerCtx.builder,
             p->arena,
             &file->ast,

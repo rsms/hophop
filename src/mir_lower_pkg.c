@@ -217,6 +217,45 @@ int SLMirLowerAppendNamedTopInitFunction(
     return 0;
 }
 
+int SLMirLowerBeginNamedTopInitProgram(
+    SLMirProgramBuilder* _Nonnull outBuilder,
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   initExprNode,
+    int32_t   declTypeNode,
+    uint32_t  nameStart,
+    uint32_t  nameEnd,
+    uint32_t* _Nonnull outFunctionIndex,
+    int* _Nonnull outSupported,
+    SLDiag* _Nullable diag) {
+    if (outFunctionIndex != NULL) {
+        *outFunctionIndex = UINT32_MAX;
+    }
+    if (diag != NULL) {
+        *diag = (SLDiag){ 0 };
+    }
+    if (outBuilder == NULL || arena == NULL || ast == NULL || outFunctionIndex == NULL
+        || outSupported == NULL)
+    {
+        SLMirLowerPkgSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        return -1;
+    }
+    SLMirProgramBuilderInit(outBuilder, arena);
+    return SLMirLowerAppendNamedTopInitFunction(
+        outBuilder,
+        arena,
+        ast,
+        src,
+        initExprNode,
+        declTypeNode,
+        nameStart,
+        nameEnd,
+        outFunctionIndex,
+        outSupported,
+        diag);
+}
+
 int SLMirLowerTopInitAsFunction(
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,
@@ -238,14 +277,15 @@ int SLMirLowerTopInitAsFunction(
         SLMirLowerPkgSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
         return -1;
     }
-    SLMirProgramBuilderInit(&builder, arena);
-    if (SLMirLowerAppendTopInitFunction(
+    if (SLMirLowerBeginNamedTopInitProgram(
             &builder,
             arena,
             ast,
             src,
             initExprNode,
             declTypeNode,
+            0,
+            0,
             &functionIndex,
             outSupported,
             diag)
