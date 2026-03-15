@@ -399,7 +399,7 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
                     }
                     break;
                 case SLMirOp_CAST:
-                    if (program->typeLen != 0 && ins->aux >= program->typeLen) {
+                    if (program->typeLen == 0 || ins->aux >= program->typeLen) {
                         SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
                         return -1;
                     }
