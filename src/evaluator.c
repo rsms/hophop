@@ -8528,12 +8528,13 @@ static int SLEvalEvalTopVar(
     savedExecCtx = p->currentExecCtx;
     p->currentFile = topVar->file;
     p->currentExecCtx = &execCtx;
-    if (topVar->initExprNode >= 0) {
+    {
         int mirSupported = 0;
-        rc = SLEvalTryMirEvalExprWithType(
+        rc = SLEvalTryMirEvalTopInit(
             p,
-            topVar->initExprNode,
             topVar->file,
+            topVar->initExprNode,
+            topVar->declTypeNode,
             topVar->nameStart,
             topVar->nameEnd,
             topVar->file,
@@ -8542,21 +8543,41 @@ static int SLEvalEvalTopVar(
             &isConst,
             &mirSupported);
         if (rc == 0 && !mirSupported) {
-            rc = SLEvalExecExprWithTypeNode(
-                p, topVar->initExprNode, topVar->file, topVar->declTypeNode, &value, &isConst);
+            if (topVar->initExprNode >= 0) {
+                rc = SLEvalTryMirEvalExprWithType(
+                    p,
+                    topVar->initExprNode,
+                    topVar->file,
+                    topVar->nameStart,
+                    topVar->nameEnd,
+                    topVar->file,
+                    topVar->declTypeNode,
+                    &value,
+                    &isConst,
+                    &mirSupported);
+                if (rc == 0 && !mirSupported) {
+                    rc = SLEvalExecExprWithTypeNode(
+                        p,
+                        topVar->initExprNode,
+                        topVar->file,
+                        topVar->declTypeNode,
+                        &value,
+                        &isConst);
+                }
+            } else if (topVar->declTypeNode >= 0) {
+                rc = SLEvalTryMirZeroInitType(
+                    p,
+                    topVar->file,
+                    topVar->declTypeNode,
+                    topVar->nameStart,
+                    topVar->nameEnd,
+                    &value,
+                    &isConst);
+            } else {
+                rc = 0;
+                isConst = 0;
+            }
         }
-    } else if (topVar->declTypeNode >= 0) {
-        rc = SLEvalTryMirZeroInitType(
-            p,
-            topVar->file,
-            topVar->declTypeNode,
-            topVar->nameStart,
-            topVar->nameEnd,
-            &value,
-            &isConst);
-    } else {
-        rc = 0;
-        isConst = 0;
     }
     p->currentExecCtx = savedExecCtx;
     p->currentFile = savedFile;
@@ -8640,10 +8661,11 @@ static int SLEvalEvalTopConst(
     p->currentExecCtx = &constExecCtx;
     {
         int mirSupported = 0;
-        rc = SLEvalTryMirEvalExprWithType(
+        rc = SLEvalTryMirEvalTopInit(
             p,
-            topConst->initExprNode,
             topConst->file,
+            topConst->initExprNode,
+            -1,
             topConst->nameStart,
             topConst->nameEnd,
             NULL,
@@ -8652,7 +8674,20 @@ static int SLEvalEvalTopConst(
             &isConst,
             &mirSupported);
         if (rc == 0 && !mirSupported) {
-            rc = SLEvalExecExprCb(p, topConst->initExprNode, &value, &isConst);
+            rc = SLEvalTryMirEvalExprWithType(
+                p,
+                topConst->initExprNode,
+                topConst->file,
+                topConst->nameStart,
+                topConst->nameEnd,
+                NULL,
+                -1,
+                &value,
+                &isConst,
+                &mirSupported);
+            if (rc == 0 && !mirSupported) {
+                rc = SLEvalExecExprCb(p, topConst->initExprNode, &value, &isConst);
+            }
         }
     }
     p->currentExecCtx = savedExecCtx;
