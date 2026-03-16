@@ -17,6 +17,162 @@ static void SLMirLowerPkgSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, 
     diag->argEnd = 0;
 }
 
+typedef struct {
+    int32_t  nameListNode;
+    int32_t  typeNode;
+    int32_t  initNode;
+    uint32_t nameCount;
+    uint8_t  grouped;
+} SLMirLowerPkgVarLikeParts;
+
+static int SLMirLowerPkgIsTypeNodeKind(SLAstKind kind) {
+    return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
+        || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
+        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_TUPLE || kind == SLAst_TYPE_ANON_STRUCT
+        || kind == SLAst_TYPE_ANON_UNION;
+}
+
+static uint32_t SLMirLowerPkgAstListCount(const SLAst* ast, int32_t listNode) {
+    uint32_t count = 0;
+    int32_t  child;
+    if (ast == NULL || listNode < 0 || (uint32_t)listNode >= ast->len) {
+        return 0;
+    }
+    child = ast->nodes[listNode].firstChild;
+    while (child >= 0) {
+        count++;
+        child = ast->nodes[child].nextSibling;
+    }
+    return count;
+}
+
+static int32_t SLMirLowerPkgAstListItemAt(const SLAst* ast, int32_t listNode, uint32_t index) {
+    uint32_t i = 0;
+    int32_t  child;
+    if (ast == NULL || listNode < 0 || (uint32_t)listNode >= ast->len) {
+        return -1;
+    }
+    child = ast->nodes[listNode].firstChild;
+    while (child >= 0) {
+        if (i == index) {
+            return child;
+        }
+        i++;
+        child = ast->nodes[child].nextSibling;
+    }
+    return -1;
+}
+
+static int SLMirLowerPkgNameEqSlice(
+    SLStrView src, uint32_t aStart, uint32_t aEnd, uint32_t bStart, uint32_t bEnd) {
+    uint32_t len;
+    if (aEnd < aStart || bEnd < bStart || aEnd > src.len || bEnd > src.len) {
+        return 0;
+    }
+    len = aEnd - aStart;
+    if (len != bEnd - bStart) {
+        return 0;
+    }
+    return len == 0 || memcmp(src.ptr + aStart, src.ptr + bStart, len) == 0;
+}
+
+static int SLMirLowerPkgVarLikeGetParts(
+    const SLAst* _Nonnull ast, int32_t nodeId, SLMirLowerPkgVarLikeParts* _Nonnull out) {
+    int32_t          firstChild;
+    const SLAstNode* firstNode;
+    out->nameListNode = -1;
+    out->typeNode = -1;
+    out->initNode = -1;
+    out->nameCount = 0;
+    out->grouped = 0;
+    if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return -1;
+    }
+    firstChild = ast->nodes[nodeId].firstChild;
+    if (firstChild < 0) {
+        return 0;
+    }
+    firstNode = &ast->nodes[firstChild];
+    if (firstNode->kind == SLAst_NAME_LIST) {
+        int32_t afterNames = ast->nodes[firstChild].nextSibling;
+        out->grouped = 1;
+        out->nameListNode = firstChild;
+        out->nameCount = SLMirLowerPkgAstListCount(ast, firstChild);
+        if (afterNames >= 0 && SLMirLowerPkgIsTypeNodeKind(ast->nodes[afterNames].kind)) {
+            out->typeNode = afterNames;
+            out->initNode = ast->nodes[afterNames].nextSibling;
+        } else {
+            out->initNode = afterNames;
+        }
+        return 0;
+    }
+    out->grouped = 0;
+    out->nameCount = 1;
+    if (SLMirLowerPkgIsTypeNodeKind(firstNode->kind)) {
+        out->typeNode = firstChild;
+        out->initNode = ast->nodes[firstChild].nextSibling;
+    } else {
+        out->initNode = firstChild;
+    }
+    return 0;
+}
+
+static int32_t SLMirLowerPkgVarLikeNameIndexBySlice(
+    const SLAst* _Nonnull ast, SLStrView src, int32_t nodeId, uint32_t start, uint32_t end) {
+    SLMirLowerPkgVarLikeParts parts;
+    uint32_t                  i;
+    if (SLMirLowerPkgVarLikeGetParts(ast, nodeId, &parts) != 0 || parts.nameCount == 0) {
+        return -1;
+    }
+    if (!parts.grouped) {
+        return SLMirLowerPkgNameEqSlice(
+                   src, ast->nodes[nodeId].dataStart, ast->nodes[nodeId].dataEnd, start, end)
+                 ? 0
+                 : -1;
+    }
+    for (i = 0; i < parts.nameCount; i++) {
+        int32_t item = SLMirLowerPkgAstListItemAt(ast, parts.nameListNode, i);
+        if (item >= 0
+            && SLMirLowerPkgNameEqSlice(
+                src, ast->nodes[item].dataStart, ast->nodes[item].dataEnd, start, end))
+        {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static int32_t SLMirLowerPkgVarLikeInitExprNodeAt(
+    const SLAst* _Nonnull ast, int32_t nodeId, int32_t nameIndex) {
+    SLMirLowerPkgVarLikeParts parts;
+    uint32_t                  initCount;
+    int32_t                   onlyInit;
+    if (SLMirLowerPkgVarLikeGetParts(ast, nodeId, &parts) != 0) {
+        return -1;
+    }
+    if (!parts.grouped) {
+        return nameIndex == 0 ? parts.initNode : -1;
+    }
+    if (parts.initNode < 0 || ast->nodes[parts.initNode].kind != SLAst_EXPR_LIST || nameIndex < 0) {
+        return -1;
+    }
+    initCount = SLMirLowerPkgAstListCount(ast, parts.initNode);
+    if (initCount == parts.nameCount) {
+        return SLMirLowerPkgAstListItemAt(ast, parts.initNode, (uint32_t)nameIndex);
+    }
+    if (initCount != 1u) {
+        return -1;
+    }
+    onlyInit = SLMirLowerPkgAstListItemAt(ast, parts.initNode, 0);
+    if (onlyInit < 0 || (uint32_t)onlyInit >= ast->len
+        || ast->nodes[onlyInit].kind != SLAst_TUPLE_EXPR)
+    {
+        return -1;
+    }
+    return SLMirLowerPkgAstListItemAt(ast, onlyInit, (uint32_t)nameIndex);
+}
+
 int SLMirLowerAppendZeroInitTypeFunction(
     SLMirProgramBuilder* _Nonnull builder,
     SLArena* _Nonnull arena,
@@ -215,6 +371,58 @@ int SLMirLowerAppendNamedTopInitFunction(
         builder->funcs[*outFunctionIndex].nameEnd = nameEnd;
     }
     return 0;
+}
+
+int SLMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+    SLMirProgramBuilder* _Nonnull builder,
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   varLikeNode,
+    uint32_t  nameStart,
+    uint32_t  nameEnd,
+    uint32_t* _Nonnull outFunctionIndex,
+    int* _Nonnull outSupported,
+    SLDiag* _Nullable diag) {
+    SLMirLowerPkgVarLikeParts parts;
+    int32_t                   nameIndex;
+    int32_t                   initExprNode;
+    if (outFunctionIndex != NULL) {
+        *outFunctionIndex = UINT32_MAX;
+    }
+    if (diag != NULL) {
+        *diag = (SLDiag){ 0 };
+    }
+    if (builder == NULL || arena == NULL || ast == NULL || outFunctionIndex == NULL
+        || outSupported == NULL || varLikeNode < 0 || (uint32_t)varLikeNode >= ast->len)
+    {
+        SLMirLowerPkgSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        return -1;
+    }
+    *outSupported = 0;
+    if (ast->nodes[varLikeNode].kind != SLAst_CONST && ast->nodes[varLikeNode].kind != SLAst_VAR) {
+        return 0;
+    }
+    if (SLMirLowerPkgVarLikeGetParts(ast, varLikeNode, &parts) != 0 || parts.nameCount == 0) {
+        return -1;
+    }
+    nameIndex = SLMirLowerPkgVarLikeNameIndexBySlice(ast, src, varLikeNode, nameStart, nameEnd);
+    if (nameIndex < 0) {
+        return 0;
+    }
+    initExprNode = SLMirLowerPkgVarLikeInitExprNodeAt(ast, varLikeNode, nameIndex);
+    return SLMirLowerAppendNamedTopInitFunction(
+        builder,
+        arena,
+        ast,
+        src,
+        initExprNode,
+        parts.typeNode,
+        nameStart,
+        nameEnd,
+        outFunctionIndex,
+        outSupported,
+        diag);
 }
 
 int SLMirLowerBeginNamedTopInitProgram(

@@ -1583,19 +1583,21 @@ static int SLEvalMirLowerTopConst(
         return 0;
     }
     topConst = &c->p->topConsts[topConstIndex];
-    if (topConst->initExprNode < 0) {
+    if (topConst->nodeId < 0) {
         return 0;
     }
     c->loweringTopConsts[topConstIndex] = 1u;
-    if (SLEvalMirAppendAndRewriteTopInit(
-            c,
-            topConst->file,
-            topConst->initExprNode,
-            -1,
+    if (SLMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+            &c->builder,
+            c->p->arena,
+            &topConst->file->ast,
+            (SLStrView){ topConst->file->source, topConst->file->sourceLen },
+            topConst->nodeId,
             topConst->nameStart,
             topConst->nameEnd,
             &mirFnIndex,
-            &supported)
+            &supported,
+            c->diag)
         != 0)
     {
         c->loweringTopConsts[topConstIndex] = 0u;
@@ -1606,6 +1608,20 @@ static int SLEvalMirLowerTopConst(
         return 0;
     }
     c->topConstToMir[topConstIndex] = mirFnIndex;
+    {
+        uint32_t sourceRef = c->builder.funcs[mirFnIndex].sourceRef;
+        if (sourceRef >= c->execCtx.sourceFileCap) {
+            c->loweringTopConsts[topConstIndex] = 0u;
+            return -1;
+        }
+        c->execCtx.sourceFiles[sourceRef] = topConst->file;
+    }
+    if (SLEvalMirRewriteTopInitCalls(c, topConst->file, topConst->initExprNode, mirFnIndex, &supported)
+        != 0)
+    {
+        c->loweringTopConsts[topConstIndex] = 0u;
+        return -1;
+    }
     c->loweringTopConsts[topConstIndex] = 0u;
     if (!supported) {
         c->topConstToMir[topConstIndex] = SL_EVAL_MIR_FN_NONE;
@@ -1641,15 +1657,17 @@ static int SLEvalMirLowerTopVar(
     }
     topVar = &c->p->topVars[topVarIndex];
     c->loweringTopVars[topVarIndex] = 1u;
-    if (SLEvalMirAppendAndRewriteTopInit(
-            c,
-            topVar->file,
-            topVar->initExprNode,
-            topVar->declTypeNode,
+    if (SLMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+            &c->builder,
+            c->p->arena,
+            &topVar->file->ast,
+            (SLStrView){ topVar->file->source, topVar->file->sourceLen },
+            topVar->nodeId,
             topVar->nameStart,
             topVar->nameEnd,
             &mirFnIndex,
-            &supported)
+            &supported,
+            c->diag)
         != 0)
     {
         c->loweringTopVars[topVarIndex] = 0u;
@@ -1660,6 +1678,20 @@ static int SLEvalMirLowerTopVar(
         return 0;
     }
     c->topVarToMir[topVarIndex] = mirFnIndex;
+    {
+        uint32_t sourceRef = c->builder.funcs[mirFnIndex].sourceRef;
+        if (sourceRef >= c->execCtx.sourceFileCap) {
+            c->loweringTopVars[topVarIndex] = 0u;
+            return -1;
+        }
+        c->execCtx.sourceFiles[sourceRef] = topVar->file;
+    }
+    if (SLEvalMirRewriteTopInitCalls(c, topVar->file, topVar->initExprNode, mirFnIndex, &supported)
+        != 0)
+    {
+        c->loweringTopVars[topVarIndex] = 0u;
+        return -1;
+    }
     c->loweringTopVars[topVarIndex] = 0u;
     if (!supported) {
         c->topVarToMir[topVarIndex] = SL_EVAL_MIR_FN_NONE;
