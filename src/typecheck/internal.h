@@ -919,7 +919,7 @@ int SLTCResolveActiveTypeParamType(
 int SLTCMirConstInitLowerCtx(SLTCConstEvalCtx* evalCtx, SLTCMirConstLowerCtx* _Nonnull outCtx);
 int SLTCMirConstLowerFunction(
     SLTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex);
-int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex);
+int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex, int32_t rootNode);
 int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
 int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, int32_t* outTypeId);
 int SLTCCollectTypeDeclsFromNode(SLTypeCheckCtx* c, int32_t nodeId);

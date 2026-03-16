@@ -57,7 +57,7 @@ static int SLTCTryMirConstBlock(
     if (!supported || mirFnIndex == UINT32_MAX) {
         return 0;
     }
-    rewriteRc = SLTCMirConstRewriteDirectCalls(&lowerCtx, mirFnIndex);
+    rewriteRc = SLTCMirConstRewriteDirectCalls(&lowerCtx, mirFnIndex, blockNode);
     if (rewriteRc < 0) {
         return -1;
     }
