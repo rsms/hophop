@@ -2380,7 +2380,18 @@ static int SLTCConstEvalPkgFunctionValueExpr(
         return 1;
     }
     recv = &c->ast->nodes[recvNode];
-    if (recv->kind != SLAst_IDENT || !SLTCHasImportAlias(c, recv->dataStart, recv->dataEnd)) {
+    if (recv->kind != SLAst_IDENT) {
+        return 1;
+    }
+    if (evalCtx->execCtx != NULL) {
+        int32_t execType = -1;
+        if (SLTCConstLookupExecBindingType(evalCtx, recv->dataStart, recv->dataEnd, &execType)) {
+            return 1;
+        }
+    }
+    if (SLTCLocalFind(c, recv->dataStart, recv->dataEnd) >= 0
+        || SLTCFindFunctionIndex(c, recv->dataStart, recv->dataEnd) >= 0)
+    {
         return 1;
     }
     fnIndex = SLTCFindPkgQualifiedFunctionValueIndex(

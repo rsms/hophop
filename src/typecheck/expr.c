@@ -2570,6 +2570,7 @@ int SLTCTypeExpr_FIELD_EXPR(
     int32_t          recvNode = SLAstFirstChild(c->ast, nodeId);
     int32_t          recvType;
     int32_t          fieldType;
+    int32_t          fnIndex;
     int32_t          localIdx;
     const SLAstNode* recv;
     if (recvNode < 0) {
@@ -2599,6 +2600,17 @@ int SLTCTypeExpr_FIELD_EXPR(
                    == 0)
         {
             *outType = fieldType;
+            return 0;
+        }
+    }
+    if (recv->kind == SLAst_IDENT && localIdx < 0
+        && SLTCFindFunctionIndex(c, recv->dataStart, recv->dataEnd) < 0)
+    {
+        fnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+            c, recv->dataStart, recv->dataEnd, n->dataStart, n->dataEnd);
+        if (fnIndex >= 0) {
+            SLTCMarkFunctionUsed(c, fnIndex);
+            *outType = c->funcs[(uint32_t)fnIndex].funcTypeId;
             return 0;
         }
     }
@@ -3185,14 +3197,20 @@ static int SLTCValidateLocalConstFunctionInitializerExprNode(SLTypeCheckCtx* c, 
     if (init->kind == SLAst_FIELD_EXPR) {
         int32_t          recvNode = SLAstFirstChild(c->ast, initNode);
         const SLAstNode* recv;
+        int32_t          fnIndex;
         if (recvNode < 0 || (uint32_t)recvNode >= c->ast->len) {
             return 0;
         }
         recv = &c->ast->nodes[recvNode];
-        if (recv->kind != SLAst_IDENT || !SLTCHasImportAlias(c, recv->dataStart, recv->dataEnd)) {
+        if (recv->kind != SLAst_IDENT) {
             return 0;
         }
-        return 1;
+        if (SLTCHasImportAlias(c, recv->dataStart, recv->dataEnd)) {
+            return 1;
+        }
+        fnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+            c, recv->dataStart, recv->dataEnd, init->dataStart, init->dataEnd);
+        return fnIndex >= 0;
     }
     return 0;
 }
