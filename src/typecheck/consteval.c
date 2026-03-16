@@ -4316,13 +4316,12 @@ static int SLTCMirConstLowerTopConstNode(
         return 0;
     }
     c->loweringTopConsts[(uint32_t)nodeId] = 1u;
-    if (SLMirLowerAppendNamedTopInitFunction(
+    if (SLMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
             &c->builder,
             tc->arena,
             tc->ast,
             tc->src,
-            initNode,
-            -1,
+            nodeId,
             tc->ast->nodes[nodeId].dataStart,
             tc->ast->nodes[nodeId].dataEnd,
             &mirFnIndex,
