@@ -3846,11 +3846,70 @@ static int SLTCMirConstGetFunctionBody(
     return 1;
 }
 
+static int SLTCMirConstMatchPlainCallNode(
+    const SLTypeCheckCtx* tc,
+    const SLMirSymbolRef* symbol,
+    int32_t               rootNode,
+    uint32_t              encodedArgCount,
+    int32_t* _Nonnull outCallNode,
+    int32_t* _Nonnull outCalleeNode) {
+    int32_t  stack[256];
+    uint32_t stackLen = 0;
+    int      found = 0;
+    if (outCallNode != NULL) {
+        *outCallNode = -1;
+    }
+    if (outCalleeNode != NULL) {
+        *outCalleeNode = -1;
+    }
+    if (tc == NULL || symbol == NULL || outCallNode == NULL || outCalleeNode == NULL || rootNode < 0
+        || (uint32_t)rootNode >= tc->ast->len)
+    {
+        return 0;
+    }
+    stack[stackLen++] = rootNode;
+    while (stackLen > 0) {
+        int32_t          nodeId = stack[--stackLen];
+        const SLAstNode* node = &tc->ast->nodes[nodeId];
+        int32_t          child;
+        if (node->kind == SLAst_CALL) {
+            int32_t          calleeNode = node->firstChild;
+            const SLAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
+            if (callee != NULL && callee->kind == SLAst_IDENT
+                && callee->dataStart == symbol->nameStart && callee->dataEnd == symbol->nameEnd
+                && SLTCListCount(tc->ast, nodeId) == encodedArgCount)
+            {
+                if (found) {
+                    return 0;
+                }
+                *outCallNode = nodeId;
+                *outCalleeNode = calleeNode;
+                found = 1;
+            }
+        }
+        child = node->firstChild;
+        while (child >= 0) {
+            if (stackLen >= (uint32_t)(sizeof(stack) / sizeof(stack[0]))) {
+                return 0;
+            }
+            stack[stackLen++] = child;
+            child = tc->ast->nodes[child].nextSibling;
+        }
+    }
+    return found;
+}
+
 static int SLTCMirConstResolveDirectCallTarget(
-    const SLTCMirConstLowerCtx* c, const SLMirInst* ins, int32_t* outFnIndex) {
+    const SLTCMirConstLowerCtx* c, int32_t rootNode, const SLMirInst* ins, int32_t* outFnIndex) {
     const SLMirSymbolRef* symbol;
     SLTypeCheckCtx*       tc;
-    int32_t               fnIndex;
+    SLTCCallArgInfo       callArgs[SLTC_MAX_CALL_ARGS];
+    int32_t               callNode = -1;
+    int32_t               calleeNode = -1;
+    int32_t               fnIndex = -1;
+    int32_t               mutRefTempArgNode = -1;
+    uint32_t              argCount = 0;
+    int                   status;
     if (outFnIndex != NULL) {
         *outFnIndex = -1;
     }
@@ -3865,12 +3924,26 @@ static int SLTCMirConstResolveDirectCallTarget(
         return 0;
     }
     tc = c->evalCtx->tc;
-    if (tc == NULL) {
+    if (tc == NULL
+        || !SLTCMirConstMatchPlainCallNode(
+            tc, symbol, rootNode, (uint32_t)ins->tok, &callNode, &calleeNode))
+    {
         return 0;
     }
-    fnIndex = SLTCFindConstCallableFunction(
-        tc, symbol->nameStart, symbol->nameEnd, (uint32_t)ins->tok);
-    if (fnIndex < 0) {
+    if (SLTCCollectCallArgInfo(tc, callNode, calleeNode, 0, -1, callArgs, NULL, &argCount) != 0) {
+        return -1;
+    }
+    status = SLTCResolveCallByName(
+        tc,
+        symbol->nameStart,
+        symbol->nameEnd,
+        callArgs,
+        argCount,
+        0,
+        0,
+        &fnIndex,
+        &mutRefTempArgNode);
+    if (status != 0 || fnIndex < 0 || (uint32_t)fnIndex >= tc->funcLen) {
         return 0;
     }
     *outFnIndex = fnIndex;
@@ -4371,7 +4444,11 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex,
             ins->aux = targetMirFnIndex;
             continue;
         }
-        if (!SLTCMirConstResolveDirectCallTarget(c, ins, &targetFnIndex)) {
+        lowerRc = SLTCMirConstResolveDirectCallTarget(c, rootNode, ins, &targetFnIndex);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (lowerRc == 0) {
             continue;
         }
         lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
