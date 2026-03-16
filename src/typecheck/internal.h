@@ -647,6 +647,8 @@ int                SLTCTypeIsReflectSpan(SLTypeCheckCtx* c, int32_t typeId);
 int                SLTCTypeIsFmtValue(SLTypeCheckCtx* c, int32_t typeId);
 int32_t            SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t            SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
+int32_t            SLTCFindPkgQualifiedFunctionValueIndex(
+               SLTypeCheckCtx* c, uint32_t pkgStart, uint32_t pkgEnd, uint32_t nameStart, uint32_t nameEnd);
 int SLTCFunctionNameEq(const SLTypeCheckCtx* c, uint32_t funcIndex, uint32_t start, uint32_t end);
 int SLTCNameEqPkgPrefixedMethod(
     SLTypeCheckCtx* c,
@@ -662,6 +664,9 @@ int SLTCExtractPkgPrefixFromTypeName(
     uint32_t        typeNameEnd,
     uint32_t*       outPkgStart,
     uint32_t*       outPkgEnd);
+int SLTCImportDefaultAliasEq(
+    SLStrView src, uint32_t pathStart, uint32_t pathEnd, uint32_t aliasStart, uint32_t aliasEnd);
+int SLTCHasImportAlias(SLTypeCheckCtx* c, uint32_t aliasStart, uint32_t aliasEnd);
 int SLTCResolveReceiverPkgPrefix(
     SLTypeCheckCtx* c, int32_t typeId, uint32_t* outPkgStart, uint32_t* outPkgEnd);
 int SLTCResolveEnumMemberType(

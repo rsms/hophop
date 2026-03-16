@@ -1519,6 +1519,37 @@ int32_t SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint3
     return found;
 }
 
+int32_t SLTCFindPkgQualifiedFunctionValueIndex(
+    SLTypeCheckCtx* c, uint32_t pkgStart, uint32_t pkgEnd, uint32_t nameStart, uint32_t nameEnd) {
+    int32_t  candidates[SLTC_MAX_CALL_CANDIDATES];
+    uint32_t candidateCount = 0;
+    int      nameFound = 0;
+    uint32_t i;
+    int32_t  found = -1;
+    SLTCGatherCallCandidatesByPkgMethod(
+        c, pkgStart, pkgEnd, nameStart, nameEnd, candidates, &candidateCount, &nameFound);
+    if (!nameFound) {
+        return -1;
+    }
+    for (i = 0; i < candidateCount; i++) {
+        const SLTCFunction* fn;
+        int32_t             fnIndex = candidates[i];
+        if (fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
+            continue;
+        }
+        fn = &c->funcs[(uint32_t)fnIndex];
+        if (fn->contextType >= 0 || (fn->flags & SLTCFunctionFlag_VARIADIC) != 0 || fn->defNode < 0)
+        {
+            continue;
+        }
+        if (found >= 0) {
+            return -1;
+        }
+        found = fnIndex;
+    }
+    return found;
+}
+
 int SLTCFunctionNameEq(const SLTypeCheckCtx* c, uint32_t funcIndex, uint32_t start, uint32_t end) {
     return SLNameEqSlice(
         c->src, c->funcs[funcIndex].nameStart, c->funcs[funcIndex].nameEnd, start, end);
@@ -1571,6 +1602,61 @@ int SLTCExtractPkgPrefixFromTypeName(
             }
             *outPkgStart = typeNameStart;
             *outPkgEnd = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int SLTCImportDefaultAliasEq(
+    SLStrView src, uint32_t pathStart, uint32_t pathEnd, uint32_t aliasStart, uint32_t aliasEnd) {
+    uint32_t start;
+    uint32_t end;
+    uint32_t i;
+    if (pathEnd <= pathStart + 2u || aliasEnd <= aliasStart || pathEnd > src.len
+        || aliasEnd > src.len)
+    {
+        return 0;
+    }
+    if (src.ptr[pathStart] != '"' || src.ptr[pathEnd - 1u] != '"') {
+        return 0;
+    }
+    start = pathStart + 1u;
+    end = pathEnd - 1u;
+    for (i = start; i < end; i++) {
+        if (src.ptr[i] == '/') {
+            start = i + 1u;
+        }
+    }
+    return SLNameEqSlice(src, start, end, aliasStart, aliasEnd);
+}
+
+int SLTCHasImportAlias(SLTypeCheckCtx* c, uint32_t aliasStart, uint32_t aliasEnd) {
+    uint32_t nodeId;
+    if (c == NULL || aliasEnd <= aliasStart || aliasEnd > c->src.len) {
+        return 0;
+    }
+    for (nodeId = 0; nodeId < c->ast->len; nodeId++) {
+        const SLAstNode* importNode;
+        int32_t          child;
+        if (c->ast->nodes[nodeId].kind != SLAst_IMPORT) {
+            continue;
+        }
+        importNode = &c->ast->nodes[nodeId];
+        child = importNode->firstChild;
+        while (child >= 0) {
+            const SLAstNode* ch = &c->ast->nodes[child];
+            if (ch->kind == SLAst_IDENT) {
+                if (SLNameEqSlice(c->src, ch->dataStart, ch->dataEnd, aliasStart, aliasEnd)) {
+                    return 1;
+                }
+                break;
+            }
+            child = ch->nextSibling;
+        }
+        if (SLTCImportDefaultAliasEq(
+                c->src, importNode->dataStart, importNode->dataEnd, aliasStart, aliasEnd))
+        {
             return 1;
         }
     }

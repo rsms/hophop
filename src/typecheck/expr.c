@@ -3179,10 +3179,22 @@ static int SLTCValidateLocalConstFunctionInitializerExprNode(SLTypeCheckCtx* c, 
         return 0;
     }
     init = &c->ast->nodes[initNode];
-    if (init->kind != SLAst_IDENT) {
-        return 0;
+    if (init->kind == SLAst_IDENT) {
+        return SLTCFindPlainFunctionValueIndex(c, init->dataStart, init->dataEnd) >= 0;
     }
-    return SLTCFindPlainFunctionValueIndex(c, init->dataStart, init->dataEnd) >= 0;
+    if (init->kind == SLAst_FIELD_EXPR) {
+        int32_t          recvNode = SLAstFirstChild(c->ast, initNode);
+        const SLAstNode* recv;
+        if (recvNode < 0 || (uint32_t)recvNode >= c->ast->len) {
+            return 0;
+        }
+        recv = &c->ast->nodes[recvNode];
+        if (recv->kind != SLAst_IDENT || !SLTCHasImportAlias(c, recv->dataStart, recv->dataEnd)) {
+            return 0;
+        }
+        return 1;
+    }
+    return 0;
 }
 
 int SLTCValidateLocalConstVarLikeInitializers(

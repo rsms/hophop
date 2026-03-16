@@ -5,6 +5,12 @@
 
 SL_API_BEGIN
 
+enum {
+    SL_TC_MIR_TUPLE_TAG = 0x54434d4952545550ULL,
+    SL_TC_MIR_ITER_TAG = 0x54434d4952495445ULL,
+    SL_TC_MIR_IMPORT_ALIAS_TAG = 0x54434d49524d504bULL,
+};
+
 static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outCallArgIndex);
 static int SLTCConstEvalDirectCall(
@@ -527,6 +533,19 @@ int SLTCResolveConstIdent(
             *outIsConst = 1;
             return 0;
         }
+    }
+    if (SLTCHasImportAlias(c, nameStart, nameEnd)) {
+        SLTCConstEvalValueInvalid(outValue);
+        outValue->kind = SLCTFEValue_SPAN;
+        outValue->typeTag = SL_TC_MIR_IMPORT_ALIAS_TAG;
+        outValue->span.fileBytes = (const uint8_t*)c->src.ptr + nameStart;
+        outValue->span.fileLen = nameEnd - nameStart;
+        outValue->span.startLine = 0;
+        outValue->span.startColumn = 0;
+        outValue->span.endLine = 0;
+        outValue->span.endColumn = 0;
+        *outIsConst = 1;
+        return 0;
     }
     {
         int32_t typeId = SLTCResolveTypeValueName(c, nameStart, nameEnd);
@@ -2338,6 +2357,42 @@ int SLTCConstEvalTypeReflectionCall(
     return 0;
 }
 
+static int SLTCConstEvalPkgFunctionValueExpr(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx*  c;
+    const SLAstNode* n;
+    int32_t          recvNode;
+    const SLAstNode* recv;
+    int32_t          fnIndex;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return -1;
+    }
+    n = &c->ast->nodes[exprNode];
+    if (n->kind != SLAst_FIELD_EXPR) {
+        return 1;
+    }
+    recvNode = SLAstFirstChild(c->ast, exprNode);
+    if (recvNode < 0 || (uint32_t)recvNode >= c->ast->len) {
+        return 1;
+    }
+    recv = &c->ast->nodes[recvNode];
+    if (recv->kind != SLAst_IDENT || !SLTCHasImportAlias(c, recv->dataStart, recv->dataEnd)) {
+        return 1;
+    }
+    fnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+        c, recv->dataStart, recv->dataEnd, n->dataStart, n->dataEnd);
+    if (fnIndex < 0) {
+        return 1;
+    }
+    SLMirValueSetFunctionRef(outValue, (uint32_t)fnIndex);
+    *outIsConst = 1;
+    return 0;
+}
+
 int SLTCEvalConstExprNode(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
     SLTypeCheckCtx* c;
@@ -2473,6 +2528,16 @@ int SLTCEvalConstExprNode(
             return 0;
         }
         if (indexStatus < 0) {
+            return -1;
+        }
+    }
+    if (kind == SLAst_FIELD_EXPR) {
+        int pkgFnStatus = SLTCConstEvalPkgFunctionValueExpr(
+            evalCtx, exprNode, outValue, outIsConst);
+        if (pkgFnStatus == 0) {
+            return 0;
+        }
+        if (pkgFnStatus < 0) {
             return -1;
         }
     }
@@ -2666,11 +2731,6 @@ static int SLTCMirConstResolveTypeRefTypeId(
     c->allowAnytypeParamType = savedAllowAnytypeParamType;
     return 0;
 }
-
-enum {
-    SL_TC_MIR_TUPLE_TAG = 0x54434d4952545550ULL,
-    SL_TC_MIR_ITER_TAG = 0x54434d4952495445ULL,
-};
 
 typedef struct {
     uint32_t    len;
@@ -3496,6 +3556,33 @@ int SLTCMirConstAggGetField(
     if (evalCtx == NULL || evalCtx->tc == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
+    if (base != NULL && base->kind == SLCTFEValue_SPAN
+        && base->typeTag == SL_TC_MIR_IMPORT_ALIAS_TAG)
+    {
+        SLTypeCheckCtx* c = evalCtx->tc;
+        const uint8_t*  srcBytes = c != NULL ? (const uint8_t*)c->src.ptr : NULL;
+        const uint8_t*  aliasBytes = base->span.fileBytes;
+        uint32_t        aliasLen = base->span.fileLen;
+        uint32_t        aliasStart;
+        uint32_t        aliasEnd;
+        int32_t         fnIndex;
+        if (c == NULL || srcBytes == NULL || aliasBytes == NULL || aliasLen == 0u
+            || aliasBytes < srcBytes || (uint64_t)(aliasBytes - srcBytes) > UINT32_MAX
+            || (uint64_t)(aliasBytes - srcBytes) + aliasLen > c->src.len)
+        {
+            return 0;
+        }
+        aliasStart = (uint32_t)(aliasBytes - srcBytes);
+        aliasEnd = aliasStart + aliasLen;
+        fnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+            c, aliasStart, aliasEnd, nameStart, nameEnd);
+        if (fnIndex < 0) {
+            return 0;
+        }
+        SLMirValueSetFunctionRef(outValue, (uint32_t)fnIndex);
+        *outIsConst = 1;
+        return 0;
+    }
     agg = SLTCMirConstAggregateFromValue(base);
     if (agg == NULL
         || !SLTCMirConstAggregateLookupFieldIndex(
@@ -3950,65 +4037,14 @@ static int SLTCMirConstResolveDirectCallTarget(
     return 1;
 }
 
-static int SLTCMirConstImportDefaultAliasEq(
-    SLStrView src, uint32_t pathStart, uint32_t pathEnd, uint32_t aliasStart, uint32_t aliasEnd) {
-    uint32_t start;
-    uint32_t end;
-    uint32_t i;
-    if (pathEnd <= pathStart + 2u || aliasEnd <= aliasStart || pathEnd > src.len
-        || aliasEnd > src.len)
-    {
-        return 0;
-    }
-    if (src.ptr[pathStart] != '"' || src.ptr[pathEnd - 1u] != '"') {
-        return 0;
-    }
-    start = pathStart + 1u;
-    end = pathEnd - 1u;
-    for (i = start; i < end; i++) {
-        if (src.ptr[i] == '/') {
-            start = i + 1u;
-        }
-    }
-    return SLNameEqSlice(src, start, end, aliasStart, aliasEnd);
-}
-
 static int SLTCMirConstHasImportAlias(
     const SLTCMirConstLowerCtx* c, uint32_t aliasStart, uint32_t aliasEnd) {
     SLTypeCheckCtx* tc;
-    uint32_t        nodeId;
     if (c == NULL || c->evalCtx == NULL) {
         return 0;
     }
     tc = c->evalCtx->tc;
-    if (tc == NULL || aliasEnd <= aliasStart || aliasEnd > tc->src.len) {
-        return 0;
-    }
-    for (nodeId = 0; nodeId < tc->ast->len; nodeId++) {
-        const SLAstNode* importNode;
-        int32_t          child;
-        if (tc->ast->nodes[nodeId].kind != SLAst_IMPORT) {
-            continue;
-        }
-        importNode = &tc->ast->nodes[nodeId];
-        child = importNode->firstChild;
-        while (child >= 0) {
-            const SLAstNode* ch = &tc->ast->nodes[child];
-            if (ch->kind == SLAst_IDENT) {
-                if (SLNameEqSlice(tc->src, ch->dataStart, ch->dataEnd, aliasStart, aliasEnd)) {
-                    return 1;
-                }
-                break;
-            }
-            child = ch->nextSibling;
-        }
-        if (SLTCMirConstImportDefaultAliasEq(
-                tc->src, importNode->dataStart, importNode->dataEnd, aliasStart, aliasEnd))
-        {
-            return 1;
-        }
-    }
-    return 0;
+    return tc != NULL && SLTCHasImportAlias(tc, aliasStart, aliasEnd);
 }
 
 static int SLTCMirConstMatchQualifiedCallNode(
@@ -4175,6 +4211,84 @@ static int SLTCMirConstResolveFunctionIdentTarget(
         return 0;
     }
     return 1;
+}
+
+static int SLTCMirConstResolveQualifiedFunctionValueTarget(
+    const SLTCMirConstLowerCtx* c,
+    const SLMirInst*            loadIns,
+    const SLMirInst*            fieldIns,
+    int32_t*                    outFnIndex) {
+    SLTypeCheckCtx* tc;
+    uint32_t        fieldStart;
+    uint32_t        fieldEnd;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || loadIns == NULL || fieldIns == NULL || outFnIndex == NULL
+        || loadIns->op != SLMirOp_LOAD_IDENT || fieldIns->op != SLMirOp_AGG_GET)
+    {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL || !SLTCHasImportAlias(tc, loadIns->start, loadIns->end)) {
+        return 0;
+    }
+    if (c->builder.fields != NULL && fieldIns->aux < c->builder.fieldLen) {
+        fieldStart = c->builder.fields[fieldIns->aux].nameStart;
+        fieldEnd = c->builder.fields[fieldIns->aux].nameEnd;
+    } else {
+        fieldStart = fieldIns->start;
+        fieldEnd = fieldIns->end;
+    }
+    *outFnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+        tc, loadIns->start, loadIns->end, fieldStart, fieldEnd);
+    return *outFnIndex >= 0;
+}
+
+static int SLTCMirConstRewriteQualifiedFunctionValueLoad(
+    SLTCMirConstLowerCtx* c,
+    uint32_t              ownerMirFnIndex,
+    uint32_t              loadInstIndex,
+    uint32_t              targetMirFnIndex) {
+    SLMirInst* loadIns;
+    SLMirInst* fieldIns;
+    SLMirInst  inserted = { 0 };
+    SLMirConst value = { 0 };
+    uint32_t   constIndex = UINT32_MAX;
+    if (c == NULL || ownerMirFnIndex >= c->builder.funcLen || loadInstIndex >= c->builder.instLen
+        || loadInstIndex + 1u >= c->builder.instLen)
+    {
+        return -1;
+    }
+    loadIns = &c->builder.insts[loadInstIndex];
+    fieldIns = &c->builder.insts[loadInstIndex + 1u];
+    value.kind = SLMirConst_FUNCTION;
+    value.bits = targetMirFnIndex;
+    if (SLMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
+        return -1;
+    }
+    inserted.op = SLMirOp_PUSH_CONST;
+    inserted.aux = constIndex;
+    inserted.start = fieldIns->start;
+    inserted.end = fieldIns->end;
+    if (SLMirProgramBuilderInsertInst(
+            &c->builder,
+            ownerMirFnIndex,
+            loadInstIndex + 2u - c->builder.funcs[ownerMirFnIndex].instStart,
+            &inserted)
+        != 0)
+    {
+        return -1;
+    }
+    loadIns = &c->builder.insts[loadInstIndex];
+    fieldIns = &c->builder.insts[loadInstIndex + 1u];
+    loadIns->op = SLMirOp_PUSH_NULL;
+    loadIns->tok = 0u;
+    loadIns->aux = 0u;
+    fieldIns->op = SLMirOp_DROP;
+    fieldIns->tok = 0u;
+    fieldIns->aux = 0u;
+    return 0;
 }
 
 static int SLTCMirConstResolveTopConstIdentTarget(
@@ -4385,10 +4499,32 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex,
          instIndex++)
     {
         SLMirInst* ins = &c->builder.insts[instIndex];
-        int32_t    targetFnIndex = -1;
-        int32_t    targetTopConstNode = -1;
-        uint32_t   targetMirFnIndex = UINT32_MAX;
-        int        lowerRc;
+        SLMirInst* nextIns =
+            instIndex + 1u < c->builder.instLen ? &c->builder.insts[instIndex + 1u] : NULL;
+        int32_t  targetFnIndex = -1;
+        int32_t  targetTopConstNode = -1;
+        uint32_t targetMirFnIndex = UINT32_MAX;
+        int      lowerRc;
+        lowerRc = SLTCMirConstResolveQualifiedFunctionValueTarget(c, ins, nextIns, &targetFnIndex);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (lowerRc > 0) {
+            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                return -1;
+            }
+            if (lowerRc == 0) {
+                return 0;
+            }
+            if (SLTCMirConstRewriteQualifiedFunctionValueLoad(
+                    c, mirFnIndex, instIndex, targetMirFnIndex)
+                != 0)
+            {
+                return -1;
+            }
+            continue;
+        }
         if (SLTCMirConstResolveTopConstIdentTarget(c, ins, &targetTopConstNode)) {
             lowerRc = SLTCMirConstLowerTopConstNode(c, targetTopConstNode, &targetMirFnIndex);
             if (lowerRc < 0) {
@@ -4491,6 +4627,38 @@ int SLTCMirConstLowerFunction(
     }
     if (!SLTCMirConstGetFunctionBody(tc, fnIndex, &fnNode, &bodyNode)) {
         return 0;
+    }
+    {
+        int32_t  stack[256];
+        uint32_t stackLen = 0;
+        stack[stackLen++] = bodyNode;
+        while (stackLen > 0) {
+            int32_t          nodeId = stack[--stackLen];
+            const SLAstNode* node = &tc->ast->nodes[nodeId];
+            int32_t          child;
+            if (node->kind == SLAst_CONST) {
+                int32_t initNode = SLTCVarLikeInitExprNode(tc, nodeId);
+                if (initNode >= 0 && (uint32_t)initNode < tc->ast->len
+                    && tc->ast->nodes[initNode].kind == SLAst_FIELD_EXPR)
+                {
+                    int32_t          recvNode = SLAstFirstChild(tc->ast, initNode);
+                    const SLAstNode* recv = recvNode >= 0 ? &tc->ast->nodes[recvNode] : NULL;
+                    if (recv != NULL && recv->kind == SLAst_IDENT
+                        && SLTCHasImportAlias(tc, recv->dataStart, recv->dataEnd))
+                    {
+                        return 0;
+                    }
+                }
+            }
+            child = node->firstChild;
+            while (child >= 0) {
+                if (stackLen >= (uint32_t)(sizeof(stack) / sizeof(stack[0]))) {
+                    return 0;
+                }
+                stack[stackLen++] = child;
+                child = tc->ast->nodes[child].nextSibling;
+            }
+        }
     }
     c->loweringFns[(uint32_t)fnIndex] = 1u;
     if (SLMirLowerAppendSimpleFunction(
