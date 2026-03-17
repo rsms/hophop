@@ -4664,20 +4664,6 @@ int SLTCMirConstLowerFunction(
             int32_t          nodeId = stack[--stackLen];
             const SLAstNode* node = &tc->ast->nodes[nodeId];
             int32_t          child;
-            if (node->kind == SLAst_CONST) {
-                int32_t initNode = SLTCVarLikeInitExprNode(tc, nodeId);
-                if (initNode >= 0 && (uint32_t)initNode < tc->ast->len
-                    && tc->ast->nodes[initNode].kind == SLAst_FIELD_EXPR)
-                {
-                    int32_t          recvNode = SLAstFirstChild(tc->ast, initNode);
-                    const SLAstNode* recv = recvNode >= 0 ? &tc->ast->nodes[recvNode] : NULL;
-                    if (recv != NULL && recv->kind == SLAst_IDENT
-                        && SLTCHasImportAlias(tc, recv->dataStart, recv->dataEnd))
-                    {
-                        return 0;
-                    }
-                }
-            }
             child = node->firstChild;
             while (child >= 0) {
                 if (stackLen >= (uint32_t)(sizeof(stack) / sizeof(stack[0]))) {
