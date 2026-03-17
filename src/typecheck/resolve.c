@@ -92,6 +92,7 @@ static int SLTCTryMirConstBlock(
     if (!SLMirProgramNeedsDynamicResolution(&program)) {
         env.resolveIdent = NULL;
         env.resolveCall = NULL;
+        env.resolveCtx = NULL;
     }
     if (SLMirEvalFunction(c->arena, &program, mirFnIndex, NULL, 0, &env, outValue, &mirIsConst)
         != 0)
