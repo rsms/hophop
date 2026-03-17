@@ -1431,6 +1431,27 @@ static int SLEvalMirRewriteTopInitCalls(
     return 0;
 }
 
+static int SLEvalMirFinalizeLoweredTopInit(
+    SLEvalMirLowerCtx*  c,
+    const SLParsedFile* file,
+    int32_t             initExprNode,
+    uint32_t            mirFnIndex,
+    int*                outSupported) {
+    uint32_t sourceRef = UINT32_MAX;
+    if (outSupported != NULL) {
+        *outSupported = 0;
+    }
+    if (c == NULL || file == NULL || outSupported == NULL || mirFnIndex >= c->builder.funcLen) {
+        return -1;
+    }
+    sourceRef = c->builder.funcs[mirFnIndex].sourceRef;
+    if (sourceRef >= c->execCtx.sourceFileCap) {
+        return -1;
+    }
+    c->execCtx.sourceFiles[sourceRef] = file;
+    return SLEvalMirRewriteTopInitCalls(c, file, initExprNode, mirFnIndex, outSupported);
+}
+
 static int SLEvalMirAppendAndRewriteTopInit(
     SLEvalMirLowerCtx*  c,
     const SLParsedFile* file,
@@ -1440,9 +1461,7 @@ static int SLEvalMirAppendAndRewriteTopInit(
     uint32_t            nameEnd,
     uint32_t*           outMirFnIndex,
     int*                outSupported) {
-    uint32_t sourceRef = UINT32_MAX;
-    int      supported = 0;
-    int      lowerRc;
+    int supported = 0;
     if (outMirFnIndex != NULL) {
         *outMirFnIndex = UINT32_MAX;
     }
@@ -1471,13 +1490,7 @@ static int SLEvalMirAppendAndRewriteTopInit(
     if (!supported || *outMirFnIndex == UINT32_MAX) {
         return 0;
     }
-    sourceRef = c->builder.funcs[*outMirFnIndex].sourceRef;
-    if (sourceRef >= c->execCtx.sourceFileCap) {
-        return -1;
-    }
-    c->execCtx.sourceFiles[sourceRef] = file;
-    lowerRc = SLEvalMirRewriteTopInitCalls(c, file, initExprNode, *outMirFnIndex, &supported);
-    if (lowerRc != 0) {
+    if (SLEvalMirFinalizeLoweredTopInit(c, file, initExprNode, *outMirFnIndex, &supported) != 0) {
         return -1;
     }
     if (!supported) {
@@ -1538,15 +1551,7 @@ static int SLEvalMirLowerNamedTopInitVarLike(
         return 0;
     }
     mirMap[itemIndex] = mirFnIndex;
-    {
-        uint32_t sourceRef = c->builder.funcs[mirFnIndex].sourceRef;
-        if (sourceRef >= c->execCtx.sourceFileCap) {
-            lowering[itemIndex] = 0u;
-            return -1;
-        }
-        c->execCtx.sourceFiles[sourceRef] = file;
-    }
-    if (SLEvalMirRewriteTopInitCalls(c, file, initExprNode, mirFnIndex, &supported) != 0) {
+    if (SLEvalMirFinalizeLoweredTopInit(c, file, initExprNode, mirFnIndex, &supported) != 0) {
         lowering[itemIndex] = 0u;
         return -1;
     }
