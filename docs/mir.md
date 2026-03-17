@@ -241,6 +241,7 @@ Interpreter details:
 - `SLMirExecEnv.backwardJumpLimit` can cap taken backward jumps per MIR frame. The typechecker now uses that to keep MIR consteval from spinning forever on non-progressing loops, then falls back to the older CTFE path for the final user-facing diagnostic.
 - When lowered symbol metadata exists, `mir_exec` resolves identifier/call names through `program.symbols[]` before falling back to instruction spans.
 - The evaluator and consteval now also drop `resolveIdent` / `resolveCall` entirely when a MIR program has no remaining generic `LOAD_IDENT` / `CALL` instructions, so fully lowered MIR paths do not silently keep that callback dependency alive.
+- The expression-level CTFE wrapper in `src/ctfe.c` now does the same callback drop for fully lowered MIR expressions, so direct expression evaluation no longer keeps generic identifier/call callbacks alive when the MIR program does not need them.
 - For direct call symbols, `program.symbols[]` now also carries lightweight call-shape flags that future backends can use when deciding between plain calls, method-style lowering, or host shims.
 - `CAST` retains both its current scalar cast opcode token and an explicit type-table reference for backend consumers.
 - `mir_exec` now also switches function source context per MIR frame through `function.sourceRef`, and can notify embedders through `SLMirExecEnv.enterFunction` / `leaveFunction`.
