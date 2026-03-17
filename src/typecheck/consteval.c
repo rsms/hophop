@@ -4403,6 +4403,9 @@ static int SLTCMirConstResolveSimpleFunctionValueAliasCallTarget(
     return SLTCMirConstResolveSimpleTopConstFunctionValueTarget(c, nodeId, outFnIndex);
 }
 
+static int SLTCMirConstFinalizeLoweredFunction(
+    SLTCMirConstLowerCtx* c, uint32_t* mirMapSlot, uint32_t mirFnIndex, int32_t rootNode);
+
 static int SLTCMirConstLowerTopConstNode(
     SLTCMirConstLowerCtx* c, int32_t nodeId, uint32_t* _Nullable outMirFnIndex) {
     SLTypeCheckCtx*  tc;
@@ -4461,15 +4464,11 @@ static int SLTCMirConstLowerTopConstNode(
         c->loweringTopConsts[(uint32_t)nodeId] = 0u;
         return 0;
     }
-    c->topConstToMir[(uint32_t)nodeId] = mirFnIndex;
-    rewriteRc = SLTCMirConstRewriteDirectCalls(c, mirFnIndex, initNode);
+    rewriteRc = SLTCMirConstFinalizeLoweredFunction(
+        c, &c->topConstToMir[(uint32_t)nodeId], mirFnIndex, initNode);
     c->loweringTopConsts[(uint32_t)nodeId] = 0u;
-    if (rewriteRc < 0) {
-        return -1;
-    }
-    if (rewriteRc == 0) {
-        c->topConstToMir[(uint32_t)nodeId] = SL_TC_MIR_CONST_FN_NONE;
-        return 0;
+    if (rewriteRc <= 0) {
+        return rewriteRc;
     }
     if (outMirFnIndex != NULL) {
         *outMirFnIndex = mirFnIndex;
@@ -4493,6 +4492,24 @@ static int SLTCMirConstRewriteLoadIdentToFunctionConst(
     ins->tok = 0u;
     ins->aux = constIndex;
     return 0;
+}
+
+static int SLTCMirConstFinalizeLoweredFunction(
+    SLTCMirConstLowerCtx* c, uint32_t* mirMapSlot, uint32_t mirFnIndex, int32_t rootNode) {
+    int rewriteRc;
+    if (c == NULL || mirMapSlot == NULL || mirFnIndex == UINT32_MAX) {
+        return -1;
+    }
+    *mirMapSlot = mirFnIndex;
+    rewriteRc = SLTCMirConstRewriteDirectCalls(c, mirFnIndex, rootNode);
+    if (rewriteRc < 0) {
+        return -1;
+    }
+    if (rewriteRc == 0) {
+        *mirMapSlot = SL_TC_MIR_CONST_FN_NONE;
+        return 0;
+    }
+    return 1;
 }
 
 int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex, int32_t rootNode) {
@@ -4691,17 +4708,12 @@ int SLTCMirConstLowerFunction(
         c->loweringFns[(uint32_t)fnIndex] = 0u;
         return 0;
     }
-    c->tcToMir[(uint32_t)fnIndex] = mirFnIndex;
     {
-        int rewriteRc = SLTCMirConstRewriteDirectCalls(c, mirFnIndex, bodyNode);
-        if (rewriteRc < 0) {
+        int rewriteRc = SLTCMirConstFinalizeLoweredFunction(
+            c, &c->tcToMir[(uint32_t)fnIndex], mirFnIndex, bodyNode);
+        if (rewriteRc <= 0) {
             c->loweringFns[(uint32_t)fnIndex] = 0u;
-            return -1;
-        }
-        if (rewriteRc == 0) {
-            c->tcToMir[(uint32_t)fnIndex] = SL_TC_MIR_CONST_FN_NONE;
-            c->loweringFns[(uint32_t)fnIndex] = 0u;
-            return 0;
+            return rewriteRc;
         }
     }
     c->loweringFns[(uint32_t)fnIndex] = 0u;
