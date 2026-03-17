@@ -560,6 +560,14 @@ static int SLEvalMirFindAnyFunctionBySliceInPackage(
     uint32_t             nameEnd);
 static int SLEvalMirResolveTopConstIdentTargetForFile(
     const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex);
+static int SLEvalMirResolveTopInitSliceTargetForPackage(
+    const SLEvalMirLowerCtx* c,
+    const SLPackage*         currentPkg,
+    const SLParsedFile*      file,
+    uint32_t                 nameStart,
+    uint32_t                 nameEnd,
+    int*                     outIsTopConst,
+    uint32_t*                outIndex);
 static int SLEvalMirResolveTopInitIdentTargetForFile(
     const SLEvalMirLowerCtx* c,
     const SLParsedFile*      file,
@@ -1046,6 +1054,41 @@ static int SLEvalMirResolveTopConstIdentTargetForFile(
     return 0;
 }
 
+static int SLEvalMirResolveTopInitSliceTargetForPackage(
+    const SLEvalMirLowerCtx* c,
+    const SLPackage*         currentPkg,
+    const SLParsedFile*      file,
+    uint32_t                 nameStart,
+    uint32_t                 nameEnd,
+    int*                     outIsTopConst,
+    uint32_t*                outIndex) {
+    int32_t topIndex = -1;
+    if (outIsTopConst != NULL) {
+        *outIsTopConst = 0;
+    }
+    if (outIndex != NULL) {
+        *outIndex = UINT32_MAX;
+    }
+    if (c == NULL || c->p == NULL || currentPkg == NULL || file == NULL || outIsTopConst == NULL
+        || outIndex == NULL)
+    {
+        return 0;
+    }
+    topIndex = SLEvalFindTopConstBySliceInPackage(c->p, currentPkg, file, nameStart, nameEnd);
+    if (topIndex >= 0) {
+        *outIsTopConst = 1;
+        *outIndex = (uint32_t)topIndex;
+        return 1;
+    }
+    topIndex = SLEvalFindTopVarBySliceInPackage(c->p, currentPkg, file, nameStart, nameEnd);
+    if (topIndex >= 0) {
+        *outIsTopConst = 0;
+        *outIndex = (uint32_t)topIndex;
+        return 1;
+    }
+    return 0;
+}
+
 static int SLEvalMirResolveFunctionIdentTargetForFile(
     const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex) {
     const SLPackage* currentPkg;
@@ -1149,7 +1192,8 @@ static int SLEvalMirResolveSimpleFunctionValueAliasCallTarget(
     uint32_t*                outEvalFnIndex) {
     const SLPackage*      currentPkg;
     const SLMirSymbolRef* symbol;
-    int32_t               topIndex = -1;
+    uint32_t              topIndex = UINT32_MAX;
+    int                   isTopConst = 0;
     if (outEvalFnIndex != NULL) {
         *outEvalFnIndex = UINT32_MAX;
     }
@@ -1166,17 +1210,17 @@ static int SLEvalMirResolveSimpleFunctionValueAliasCallTarget(
     if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
-    topIndex = SLEvalFindTopConstBySliceInPackage(
-        c->p, currentPkg, file, symbol->nameStart, symbol->nameEnd);
-    if (topIndex >= 0) {
+    if (SLEvalMirResolveTopInitSliceTargetForPackage(
+            c,
+            currentPkg,
+            file,
+            symbol->nameStart,
+            symbol->nameEnd,
+            &isTopConst,
+            &topIndex))
+    {
         return SLEvalMirResolveSimpleTopInitFunctionValueTarget(
-            c, file, 1, (uint32_t)topIndex, outEvalFnIndex);
-    }
-    topIndex = SLEvalFindTopVarBySliceInPackage(
-        c->p, currentPkg, file, symbol->nameStart, symbol->nameEnd);
-    if (topIndex >= 0) {
-        return SLEvalMirResolveSimpleTopInitFunctionValueTarget(
-            c, file, 0, (uint32_t)topIndex, outEvalFnIndex);
+            c, file, isTopConst, topIndex, outEvalFnIndex);
     }
     return 0;
 }
@@ -1186,7 +1230,8 @@ static int SLEvalMirRewriteZeroArgFunctionValueCall(
     const SLPackage*      currentPkg;
     SLMirInst*            ins;
     const SLMirSymbolRef* symbol;
-    int32_t               topIndex = -1;
+    uint32_t              topIndex = UINT32_MAX;
+    int                   isTopConst = 0;
     uint32_t              targetEvalFnIndex = UINT32_MAX;
     uint32_t              targetMirFnIndex = UINT32_MAX;
     uint32_t              constIndex = UINT32_MAX;
@@ -1211,23 +1256,18 @@ static int SLEvalMirRewriteZeroArgFunctionValueCall(
     if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
-    topIndex = SLEvalFindTopConstBySliceInPackage(
-        c->p, currentPkg, file, symbol->nameStart, symbol->nameEnd);
-    if (topIndex >= 0) {
-        if (!SLEvalMirResolveSimpleTopInitFunctionValueTarget(
-                c, file, 1, (uint32_t)topIndex, &targetEvalFnIndex))
-        {
-            return 0;
-        }
-    } else {
-        topIndex = SLEvalFindTopVarBySliceInPackage(
-            c->p, currentPkg, file, symbol->nameStart, symbol->nameEnd);
-        if (topIndex < 0
-            || !SLEvalMirResolveSimpleTopInitFunctionValueTarget(
-                c, file, 0, (uint32_t)topIndex, &targetEvalFnIndex))
-        {
-            return 0;
-        }
+    if (!SLEvalMirResolveTopInitSliceTargetForPackage(
+            c,
+            currentPkg,
+            file,
+            symbol->nameStart,
+            symbol->nameEnd,
+            &isTopConst,
+            &topIndex)
+        || !SLEvalMirResolveSimpleTopInitFunctionValueTarget(
+            c, file, isTopConst, topIndex, &targetEvalFnIndex))
+    {
+        return 0;
     }
     lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
     if (lowerRc <= 0) {
@@ -1264,7 +1304,6 @@ static int SLEvalMirResolveTopInitIdentTargetForFile(
     int*                     outIsTopConst,
     uint32_t*                outIndex) {
     const SLPackage* currentPkg;
-    int32_t topIndex = -1;
     if (outIsTopConst != NULL) {
         *outIsTopConst = 0;
     }
@@ -1280,17 +1319,8 @@ static int SLEvalMirResolveTopInitIdentTargetForFile(
     if (currentPkg == NULL) {
         return 0;
     }
-    if (SLEvalMirResolveTopConstIdentTargetForFile(c, file, ins, outIndex)) {
-        *outIsTopConst = 1;
-        return 1;
-    }
-    topIndex = SLEvalFindTopVarBySliceInPackage(c->p, currentPkg, file, ins->start, ins->end);
-    if (topIndex >= 0) {
-        *outIsTopConst = 0;
-        *outIndex = (uint32_t)topIndex;
-        return 1;
-    }
-    return 0;
+    return SLEvalMirResolveTopInitSliceTargetForPackage(
+        c, currentPkg, file, ins->start, ins->end, outIsTopConst, outIndex);
 }
 
 static int SLEvalMirRewriteTopInitCalls(
