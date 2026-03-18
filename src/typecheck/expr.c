@@ -3187,32 +3187,23 @@ int SLTCValidateConstInitializerExprNode(SLTypeCheckCtx* c, int32_t initNode) {
 
 static int SLTCValidateLocalConstFunctionInitializerExprNode(SLTypeCheckCtx* c, int32_t initNode) {
     const SLAstNode* init;
+    int32_t          initType;
     if (c == NULL || initNode < 0 || (uint32_t)initNode >= c->ast->len) {
         return 0;
     }
     init = &c->ast->nodes[initNode];
-    if (init->kind == SLAst_IDENT) {
-        return SLTCFindPlainFunctionValueIndex(c, init->dataStart, init->dataEnd) >= 0;
+    if (init->kind == SLAst_CALL_ARG) {
+        int32_t inner = SLAstFirstChild(c->ast, initNode);
+        return SLTCValidateLocalConstFunctionInitializerExprNode(c, inner);
     }
-    if (init->kind == SLAst_FIELD_EXPR) {
-        int32_t          recvNode = SLAstFirstChild(c->ast, initNode);
-        const SLAstNode* recv;
-        int32_t          fnIndex;
-        if (recvNode < 0 || (uint32_t)recvNode >= c->ast->len) {
-            return 0;
-        }
-        recv = &c->ast->nodes[recvNode];
-        if (recv->kind != SLAst_IDENT) {
-            return 0;
-        }
-        if (SLTCHasImportAlias(c, recv->dataStart, recv->dataEnd)) {
-            return 1;
-        }
-        fnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
-            c, recv->dataStart, recv->dataEnd, init->dataStart, init->dataEnd);
-        return fnIndex >= 0;
+    if (init->kind != SLAst_IDENT && init->kind != SLAst_FIELD_EXPR) {
+        return 0;
     }
-    return 0;
+    if (SLTCTypeExpr(c, initNode, &initType) != 0) {
+        return 0;
+    }
+    return initType >= 0 && (uint32_t)initType < c->typeLen
+        && c->types[initType].kind == SLTCType_FUNCTION;
 }
 
 int SLTCValidateLocalConstVarLikeInitializers(
