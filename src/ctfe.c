@@ -65,9 +65,7 @@ int SLCTFEEvalExprEx(
     env.aggAddrFieldCtx = aggAddrFieldCtx;
     env.diag = diag;
     if (!SLMirProgramNeedsDynamicResolution(&program)) {
-        env.resolveIdent = NULL;
-        env.resolveCall = NULL;
-        env.resolveCtx = NULL;
+        SLMirExecEnvDisableDynamicResolution(&env);
     }
     return SLMirEvalFunction(arena, &program, 0, NULL, 0, &env, outValue, outIsConst);
 }

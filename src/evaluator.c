@@ -7617,9 +7617,7 @@ static int SLEvalTryMirEvalTopInit(
     }
     SLEvalMirInitExecEnv(p, file, &env, &functionCtx);
     if (!SLMirProgramNeedsDynamicResolution(&program)) {
-        env.resolveIdent = NULL;
-        env.resolveCall = NULL;
-        env.resolveCtx = NULL;
+        SLMirExecEnvDisableDynamicResolution(&env);
     }
     if (SLMirEvalFunction(p->arena, &program, rootMirFnIndex, NULL, 0, &env, outValue, outIsConst)
         != 0)

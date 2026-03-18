@@ -252,6 +252,15 @@ int SLMirValueAsFunctionRef(
     return SLMirValueIsFunctionRef(value, outFunctionIndex);
 }
 
+void SLMirExecEnvDisableDynamicResolution(SLMirExecEnv* env) {
+    if (env == NULL) {
+        return;
+    }
+    env->resolveIdent = NULL;
+    env->resolveCall = NULL;
+    env->resolveCtx = NULL;
+}
+
 static void SLMirResolveSymbolName(
     const SLMirExecRun* _Nonnull run,
     const SLMirInst* _Nonnull ins,

@@ -90,9 +90,7 @@ static int SLTCTryMirConstBlock(
     env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;
     env.diag = c->diag;
     if (!SLMirProgramNeedsDynamicResolution(&program)) {
-        env.resolveIdent = NULL;
-        env.resolveCall = NULL;
-        env.resolveCtx = NULL;
+        SLMirExecEnvDisableDynamicResolution(&env);
     }
     if (SLMirEvalFunction(c->arena, &program, mirFnIndex, NULL, 0, &env, outValue, &mirIsConst)
         != 0)
