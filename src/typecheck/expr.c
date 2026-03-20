@@ -3749,6 +3749,11 @@ int SLTCValidateTopLevelConstEvaluable(SLTypeCheckCtx* c) {
                 int32_t     initNode = SLTCVarLikeInitExprNode(c, child);
                 SLCTFEValue value;
                 int         isConst = 0;
+                if (initNode >= 0 && SLTCValidateLocalConstFunctionInitializerExprNode(c, initNode))
+                {
+                    child = SLAstNextSibling(c->ast, child);
+                    continue;
+                }
                 c->lastConstEvalReason = NULL;
                 c->lastConstEvalReasonStart = 0;
                 c->lastConstEvalReasonEnd = 0;
