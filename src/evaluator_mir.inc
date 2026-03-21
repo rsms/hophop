@@ -86,6 +86,8 @@ static int SLEvalMirInitLowerCtx(
     outCtx->topVarToMir = topVarToMir;
     outCtx->loweringTopVars = loweringTopVars;
     outCtx->execCtx.p = p;
+    outCtx->execCtx.evalToMir = evalToMir;
+    outCtx->execCtx.evalToMirLen = p->funcLen;
     outCtx->execCtx.mirToEval = mirToEval;
     outCtx->execCtx.mirToEvalLen = mirCap;
     outCtx->execCtx.sourceFiles = sourceFiles;
@@ -1108,10 +1110,9 @@ static int SLEvalMirResolveFunctionIdentTargetForFile(
         return 0;
     }
     currentPkg = SLEvalFindPackageByFile(c->p, file);
-    if (currentPkg == NULL) {
-        return 0;
-    }
-    fnIndex = SLEvalFindAnyFunctionBySliceInPackage(c->p, currentPkg, file, ins->start, ins->end);
+    fnIndex = currentPkg != NULL
+        ? SLEvalFindAnyFunctionBySliceInPackage(c->p, currentPkg, file, ins->start, ins->end)
+        : SLEvalFindAnyFunctionBySlice(c->p, file, ins->start, ins->end);
     if (fnIndex < 0 || (uint32_t)fnIndex >= c->p->funcLen
         || c->p->funcs[(uint32_t)fnIndex].isBuiltinPackageFn
         || c->p->funcs[(uint32_t)fnIndex].isVariadic)
@@ -1141,9 +1142,6 @@ static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
         return 0;
     }
     currentPkg = SLEvalFindPackageByFile(c->p, file);
-    if (currentPkg == NULL) {
-        return 0;
-    }
     if (isTopConst) {
         if (topInitIndex >= c->p->topConstLen) {
             return 0;
@@ -1160,15 +1158,18 @@ static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
     }
     initExpr = &file->ast.nodes[initExprNode];
     if (initExpr->kind == SLAst_IDENT) {
-        targetFnIndex = SLEvalFindAnyFunctionBySliceInPackage(
-            c->p, currentPkg, file, initExpr->dataStart, initExpr->dataEnd);
+        targetFnIndex = currentPkg != NULL
+            ? SLEvalFindAnyFunctionBySliceInPackage(
+                c->p, currentPkg, file, initExpr->dataStart, initExpr->dataEnd)
+            : SLEvalFindAnyFunctionBySlice(
+                c->p, file, initExpr->dataStart, initExpr->dataEnd);
     } else if (initExpr->kind == SLAst_FIELD_EXPR) {
         int32_t baseNode = initExpr->firstChild;
         if (baseNode < 0 || (uint32_t)baseNode >= file->ast.len) {
             return 0;
         }
         baseExpr = &file->ast.nodes[baseNode];
-        if (baseExpr->kind != SLAst_IDENT) {
+        if (currentPkg == NULL || baseExpr->kind != SLAst_IDENT) {
             return 0;
         }
         targetPkg = SLEvalMirFindImportTargetByAliasSlice(
@@ -1704,6 +1705,13 @@ static int SLEvalTryMirInvokeFunction(
         return -1;
     }
     if (lowerRc == 0 || mirFnIndex == UINT32_MAX) {
+        if (p->currentExecCtx != NULL && lowerCtx.diag != NULL && lowerCtx.diag->detail != NULL) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx,
+                lowerCtx.diag->start,
+                lowerCtx.diag->end,
+                lowerCtx.diag->detail);
+        }
         return 0;
     }
     lowerCtx.execCtx.rootMirFnIndex = mirFnIndex;

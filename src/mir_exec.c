@@ -21,7 +21,7 @@ typedef struct {
     uint32_t             backwardJumpCount;
 } SLMirExecRun;
 
-#define SLMIR_EXEC_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 61)
+#define SLMIR_EXEC_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 57)
 
 static void SLCTFESetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end);
 static void SLCTFEValueInvalid(SLCTFEValue* v);
@@ -914,6 +914,8 @@ static int SLMirRunLoop(
                 uint32_t        argCount = (uint32_t)ins->tok;
                 uint32_t        i;
                 if (run->program == NULL || argCount + 1u > run->stackLen) {
+                    SLMirSetReason(
+                        run, ins, "indirect call stack is invalid during const evaluation");
                     return 0;
                 }
                 if (argCount != 0u) {
@@ -928,12 +930,21 @@ static int SLMirRunLoop(
                 }
                 for (i = argCount; i > 0; i--) {
                     if (SLCTFEPop(run, &args[i - 1]) != 0) {
+                        SLMirSetReason(
+                            run,
+                            ins,
+                            "indirect call arguments are not available during const evaluation");
                         return 0;
                     }
                 }
-                if (SLCTFEPop(run, &callee) != 0 || !SLMirValueIsFunctionRef(&callee, &fnIndex)
-                    || fnIndex >= run->program->funcLen)
+                if (SLCTFEPop(run, &callee) != 0) {
+                    SLMirSetReason(
+                        run, ins, "indirect call target is not available during const evaluation");
+                    return 0;
+                }
+                if (!SLMirValueIsFunctionRef(&callee, &fnIndex) || fnIndex >= run->program->funcLen)
                 {
+                    SLMirSetReason(run, ins, "indirect call target is not a function");
                     return 0;
                 }
                 if (SLMirEvalFunctionInternal(

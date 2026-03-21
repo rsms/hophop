@@ -263,6 +263,9 @@ static int SLMirStmtLowerFindLocal(
     return 0;
 }
 
+static int SLMirStmtLowerNameEqLiteral(
+    const SLMirStmtLower* c, uint32_t start, uint32_t end, const char* lit);
+
 static const SLMirLowerLocal* _Nullable SLMirStmtLowerFindLocalRef(
     const SLMirStmtLower* c, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t nameLen;
@@ -350,6 +353,46 @@ static int SLMirStmtLowerBuiltinTypeSize(
         }
         default: return 0;
     }
+}
+
+static int SLMirStmtLowerCastNeedsCoerce(const SLMirStmtLower* c, int32_t typeNode) {
+    const SLAstNode* type;
+    int32_t          childNode;
+    if (c == NULL || typeNode < 0 || (uint32_t)typeNode >= c->ast->len) {
+        return 0;
+    }
+    type = &c->ast->nodes[typeNode];
+    if ((type->kind == SLAst_TYPE_REF || type->kind == SLAst_TYPE_PTR) && type->firstChild >= 0
+        && (uint32_t)type->firstChild < c->ast->len)
+    {
+        childNode = type->firstChild;
+        if (c->ast->nodes[childNode].kind == SLAst_TYPE_NAME
+            && SLMirStmtLowerNameEqLiteral(
+                c, c->ast->nodes[childNode].dataStart, c->ast->nodes[childNode].dataEnd, "str"))
+        {
+            return 0;
+        }
+    }
+    if (type->kind != SLAst_TYPE_NAME) {
+        return 1;
+    }
+    if (SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "bool")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "f32")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "f64")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u8")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u16")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u32")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u64")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "uint")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i8")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i16")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i32")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i64")
+        || SLMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "int"))
+    {
+        return 0;
+    }
+    return 1;
 }
 
 static int SLMirStmtLowerInferInitExprSize(
@@ -638,8 +681,7 @@ static int SLMirStmtLowerCallUsesLazyBuiltin(const SLMirStmtLower* c, int32_t ca
 }
 
 static int SLMirStmtLowerCallCanUseManualLowering(SLMirStmtLower* c, int32_t callNode) {
-    int32_t  calleeNode;
-    uint32_t slot = 0;
+    int32_t calleeNode;
     if (c == NULL || callNode < 0 || (uint32_t)callNode >= c->ast->len
         || c->ast->nodes[callNode].kind != SLAst_CALL
         || SLMirStmtLowerCallUsesLazyBuiltin(c, callNode))
@@ -648,12 +690,6 @@ static int SLMirStmtLowerCallCanUseManualLowering(SLMirStmtLower* c, int32_t cal
     }
     calleeNode = c->ast->nodes[callNode].firstChild;
     if (calleeNode < 0 || (uint32_t)calleeNode >= c->ast->len) {
-        return 0;
-    }
-    if (c->ast->nodes[calleeNode].kind == SLAst_IDENT
-        && SLMirStmtLowerFindLocal(
-            c, c->ast->nodes[calleeNode].dataStart, c->ast->nodes[calleeNode].dataEnd, &slot, NULL))
-    {
         return 0;
     }
     return 1;
@@ -670,6 +706,7 @@ static int SLMirStmtLowerCallExpr(SLMirStmtLower* c, int32_t exprNode) {
     uint32_t         localSlot = 0;
     int              isBuiltinLen = 0;
     int              isBuiltinCStr = 0;
+    int              isIndirectLocalCall = 0;
     SLMirInst        inst = { 0 };
     if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         if (c != NULL) {
@@ -691,48 +728,11 @@ static int SLMirStmtLowerCallExpr(SLMirStmtLower* c, int32_t exprNode) {
                 &localSlot,
                 NULL))
         {
-            return 0;
-        }
-        callStart = c->ast->nodes[calleeNode].dataStart;
-        callEnd = c->ast->nodes[calleeNode].dataEnd;
-        isBuiltinLen = SLMirStmtLowerNameEqLiteral(c, callStart, callEnd, "len");
-        isBuiltinCStr = SLMirStmtLowerNameEqLiteral(c, callStart, callEnd, "cstr");
-    } else if (c->ast->nodes[calleeNode].kind == SLAst_FIELD_EXPR) {
-        int32_t  baseNode = c->ast->nodes[calleeNode].firstChild;
-        uint32_t fieldRef = UINT32_MAX;
-        if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
-            c->supported = 0;
-            return 0;
-        }
-        if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
-            return c->supported ? -1 : 0;
-        }
-        callStart = c->ast->nodes[calleeNode].dataStart;
-        callEnd = c->ast->nodes[calleeNode].dataEnd;
-        isBuiltinCStr = SLMirStmtLowerNameEqLiteral(c, callStart, callEnd, "cstr");
-        if ((c->ast->nodes[baseNode].kind == SLAst_IDENT
-             && SLMirStmtLowerFindLocal(
-                 c,
-                 c->ast->nodes[baseNode].dataStart,
-                 c->ast->nodes[baseNode].dataEnd,
-                 &localSlot,
-                 NULL))
-            || c->ast->nodes[baseNode].kind != SLAst_IDENT)
-        {
-            if (SLMirStmtLowerAddFieldRef(
-                    c,
-                    c->ast->nodes[calleeNode].dataStart,
-                    c->ast->nodes[calleeNode].dataEnd,
-                    &fieldRef)
-                != 0)
-            {
-                return -1;
-            }
             if (SLMirStmtLowerAppendInst(
                     c,
-                    SLMirOp_AGG_GET,
+                    SLMirOp_LOCAL_LOAD,
                     0,
-                    fieldRef,
+                    localSlot,
                     c->ast->nodes[calleeNode].dataStart,
                     c->ast->nodes[calleeNode].dataEnd,
                     NULL)
@@ -740,10 +740,28 @@ static int SLMirStmtLowerCallExpr(SLMirStmtLower* c, int32_t exprNode) {
             {
                 return -1;
             }
-        } else {
-            argc = 1u;
-            callFlags = SLMirSymbolFlag_CALL_RECEIVER_ARG0;
+            isIndirectLocalCall = 1;
         }
+        callStart = c->ast->nodes[calleeNode].dataStart;
+        callEnd = c->ast->nodes[calleeNode].dataEnd;
+        if (!isIndirectLocalCall) {
+            isBuiltinLen = SLMirStmtLowerNameEqLiteral(c, callStart, callEnd, "len");
+            isBuiltinCStr = SLMirStmtLowerNameEqLiteral(c, callStart, callEnd, "cstr");
+        }
+    } else if (c->ast->nodes[calleeNode].kind == SLAst_FIELD_EXPR) {
+        int32_t baseNode = c->ast->nodes[calleeNode].firstChild;
+        if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
+            c->supported = 0;
+            return 0;
+        }
+        if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        argc = 1u;
+        callFlags = SLMirSymbolFlag_CALL_RECEIVER_ARG0;
+        callStart = c->ast->nodes[calleeNode].dataStart;
+        callEnd = c->ast->nodes[calleeNode].dataEnd;
+        isBuiltinCStr = SLMirStmtLowerNameEqLiteral(c, callStart, callEnd, "cstr");
     } else {
         c->supported = 0;
         return 0;
@@ -776,27 +794,9 @@ static int SLMirStmtLowerCallExpr(SLMirStmtLower* c, int32_t exprNode) {
         return SLMirStmtLowerAppendInst(
             c, SLMirOp_STR_CSTR, SLTok_INVALID, 0, callStart, callEnd, NULL);
     }
-    if (callFlags == 0u && c->ast->nodes[calleeNode].kind == SLAst_FIELD_EXPR
-        && c->ast->nodes[c->ast->nodes[calleeNode].firstChild].kind != SLAst_IDENT)
-    {
-        return SLMirStmtLowerAppendInst(
-            c, SLMirOp_CALL_INDIRECT, (uint16_t)argc, 0, callStart, callEnd, NULL);
-    }
-    if (callFlags == 0u && c->ast->nodes[calleeNode].kind == SLAst_FIELD_EXPR
-        && c->ast->nodes[c->ast->nodes[calleeNode].firstChild].kind == SLAst_IDENT
-        && SLMirStmtLowerFindLocal(
-            c,
-            c->ast->nodes[c->ast->nodes[calleeNode].firstChild].dataStart,
-            c->ast->nodes[c->ast->nodes[calleeNode].firstChild].dataEnd,
-            &localSlot,
-            NULL))
-    {
-        return SLMirStmtLowerAppendInst(
-            c, SLMirOp_CALL_INDIRECT, (uint16_t)argc, 0, callStart, callEnd, NULL);
-    }
-    inst.op = SLMirOp_CALL;
+    inst.op = isIndirectLocalCall ? SLMirOp_CALL_INDIRECT : SLMirOp_CALL;
     inst.tok = (uint16_t)argc;
-    inst.aux = SLMirRawCallAuxPack((uint32_t)exprNode, callFlags);
+    inst.aux = isIndirectLocalCall ? 0u : SLMirRawCallAuxPack((uint32_t)exprNode, callFlags);
     inst.start = callStart;
     inst.end = callEnd;
     return SLMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag);
@@ -1188,6 +1188,28 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
                     return SLMirStmtLowerAppendConstValue(c, &loweredConst, expr->start, expr->end);
                 }
             }
+        }
+    }
+    if (expr->kind == SLAst_CAST) {
+        int32_t      valueNode = expr->firstChild;
+        int32_t      typeNode = valueNode >= 0 ? c->ast->nodes[valueNode].nextSibling : -1;
+        int32_t      extraNode = typeNode >= 0 ? c->ast->nodes[typeNode].nextSibling : -1;
+        SLMirTypeRef typeRef = { 0 };
+        uint32_t     typeRefIndex = UINT32_MAX;
+        if (valueNode >= 0 && typeNode >= 0 && extraNode < 0
+            && SLMirStmtLowerCastNeedsCoerce(c, typeNode))
+        {
+            if (SLMirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            typeRef.astNode = (uint32_t)typeNode;
+            typeRef.flags = 0u;
+            if (SLMirProgramBuilderAddType(&c->builder, &typeRef, &typeRefIndex) != 0) {
+                SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, expr->start, expr->end);
+                return -1;
+            }
+            return SLMirStmtLowerAppendInst(
+                c, SLMirOp_COERCE, 0, typeRefIndex, expr->start, expr->end, NULL);
         }
     }
     if (expr->kind == SLAst_INDEX && (expr->flags & SLAstFlag_INDEX_SLICE) != 0u) {
