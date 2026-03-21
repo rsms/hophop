@@ -2810,6 +2810,9 @@ int SLMirLowerAppendSimpleFunctionWithOptions(
                     return -1;
                 }
                 c.builder.funcs[c.functionIndex].paramCount++;
+                if ((ast->nodes[child].flags & SLAstFlag_PARAM_VARIADIC) != 0u) {
+                    c.builder.funcs[c.functionIndex].flags |= SLMirFunctionFlag_VARIADIC;
+                }
             }
             child = ast->nodes[child].nextSibling;
         }

@@ -630,7 +630,7 @@ static int SLEvalMirLowerFunction(
         return 1;
     }
     fn = &c->p->funcs[(uint32_t)evalFnIndex];
-    if (fn->isBuiltinPackageFn || fn->isVariadic) {
+    if (fn->isBuiltinPackageFn) {
         return 0;
     }
     if (c->loweringFns != NULL) {

@@ -140,7 +140,13 @@ typedef struct {
     uint32_t typeRef;
     uint32_t nameStart;
     uint32_t nameEnd;
+    uint32_t flags;
 } SLMirFunction;
+
+enum {
+    SLMirFunctionFlag_NONE = 0,
+    SLMirFunctionFlag_VARIADIC = 1u << 0,
+};
 
 typedef struct {
     uint32_t nameStart;

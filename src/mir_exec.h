@@ -128,6 +128,16 @@ typedef int (*SLMirMakeTupleFn)(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef int (*SLMirMakeVariadicPackFn)(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirTypeRef* _Nullable paramTypeRef,
+    const SLMirExecValue* _Nonnull args,
+    uint32_t argCount,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 
 typedef int (*SLMirEnterFunctionFn)(
     void* _Nullable ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag);
@@ -174,6 +184,8 @@ typedef struct {
     void* _Nullable aggAddrFieldCtx;
     SLMirMakeTupleFn _Nullable makeTuple;
     void* _Nullable makeTupleCtx;
+    SLMirMakeVariadicPackFn _Nullable makeVariadicPack;
+    void* _Nullable makeVariadicPackCtx;
     SLMirEnterFunctionFn _Nullable enterFunction;
     SLMirLeaveFunctionFn _Nullable leaveFunction;
     void* _Nullable functionCtx;

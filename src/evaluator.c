@@ -168,6 +168,8 @@ static int StrEq(const char* a, const char* b) {
     return *a == '\0' && *b == '\0';
 }
 
+static int SLEvalTypeNodeIsAnytype(const SLParsedFile* file, int32_t typeNode);
+
 static int SliceEqCStr(const char* s, uint32_t start, uint32_t end, const char* cstr) {
     uint32_t i = 0;
     if (end < start) {
@@ -856,33 +858,44 @@ struct SLEvalProgram {
     const SLPackage*       entryPkg;
     const SLParsedFile*    currentFile;
     SLCTFEExecCtx*         currentExecCtx;
-    SLEvalFunction*        funcs;
-    uint32_t               funcLen;
-    uint32_t               funcCap;
-    SLEvalTopConst*        topConsts;
-    uint32_t               topConstLen;
-    uint32_t               topConstCap;
-    SLEvalTopVar*          topVars;
-    uint32_t               topVarLen;
-    uint32_t               topVarCap;
-    uint32_t               callDepth;
-    uint32_t               callStack[SL_EVAL_CALL_MAX_DEPTH];
-    SLEvalContext          rootContext;
-    const SLEvalContext*   currentContext;
-    int                    exitCalled;
-    int                    exitCode;
+    struct SLEvalMirExecCtx* _Nullable currentMirExecCtx;
+    SLEvalFunction*      funcs;
+    uint32_t             funcLen;
+    uint32_t             funcCap;
+    SLEvalTopConst*      topConsts;
+    uint32_t             topConstLen;
+    uint32_t             topConstCap;
+    SLEvalTopVar*        topVars;
+    uint32_t             topVarLen;
+    uint32_t             topVarCap;
+    uint32_t             callDepth;
+    uint32_t             callStack[SL_EVAL_CALL_MAX_DEPTH];
+    SLEvalContext        rootContext;
+    const SLEvalContext* currentContext;
+    int                  exitCalled;
+    int                  exitCode;
 };
 
-typedef struct {
-    SLEvalProgram*       p;
-    uint32_t*            mirToEval;
-    uint32_t             mirToEvalLen;
-    const SLParsedFile** sourceFiles;
-    uint32_t             sourceFileCap;
-    const SLParsedFile*  savedFiles[SL_EVAL_CALL_MAX_DEPTH];
-    uint8_t              pushedFrames[SL_EVAL_CALL_MAX_DEPTH];
-    uint32_t             savedFileLen;
-    uint32_t             rootMirFnIndex;
+typedef struct SLEvalMirExecCtx {
+    SLEvalProgram*           p;
+    uint32_t*                mirToEval;
+    uint32_t                 mirToEvalLen;
+    const SLParsedFile**     sourceFiles;
+    uint32_t                 sourceFileCap;
+    const SLParsedFile*      savedFiles[SL_EVAL_CALL_MAX_DEPTH];
+    uint8_t                  pushedFrames[SL_EVAL_CALL_MAX_DEPTH];
+    struct SLEvalMirExecCtx* savedMirExecCtxs[SL_EVAL_CALL_MAX_DEPTH];
+    uint32_t                 savedFileLen;
+    uint32_t                 rootMirFnIndex;
+    const SLMirProgram*      mirProgram;
+    const SLMirFunction*     mirFunction;
+    const SLCTFEValue*       mirLocals;
+    uint32_t                 mirLocalCount;
+    const SLMirProgram*      savedMirPrograms[SL_EVAL_CALL_MAX_DEPTH];
+    const SLMirFunction*     savedMirFunctions[SL_EVAL_CALL_MAX_DEPTH];
+    const SLCTFEValue*       savedMirLocals[SL_EVAL_CALL_MAX_DEPTH];
+    uint32_t                 savedMirLocalCounts[SL_EVAL_CALL_MAX_DEPTH];
+    uint32_t                 mirFrameDepth;
 } SLEvalMirExecCtx;
 
 static void SLEvalValueSetNull(SLCTFEValue* value) {
@@ -1621,6 +1634,9 @@ static int SLEvalCoerceValueToTypeNode(
     {
         return -1;
     }
+    if (SLEvalTypeNodeIsAnytype(typeFile, typeNode)) {
+        return 0;
+    }
     type = &typeFile->ast.nodes[typeNode];
     sourceValue = SLEvalValueTargetOrSelf(inOutValue);
     if (type->kind == SLAst_TYPE_OPTIONAL) {
@@ -2346,6 +2362,16 @@ static int SLEvalMirMakeTuple(
     SLCTFEValue*       outValue,
     int*               outIsConst,
     SLDiag* _Nullable diag);
+static int SLEvalMirMakeVariadicPack(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirTypeRef* _Nullable paramTypeRef,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag);
 static int SLEvalMirHostCall(
     void*              ctx,
     uint32_t           hostId,
@@ -2401,6 +2427,14 @@ static int SLEvalTryMirEvalExprWithType(
 static int SLEvalMirEnterFunction(
     void* ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag);
 static void SLEvalMirLeaveFunction(void* ctx);
+static int  SLEvalMirBindFrame(
+     void* _Nullable ctx,
+     const SLMirProgram* _Nullable program,
+     const SLMirFunction* _Nullable function,
+     const SLCTFEValue* _Nullable locals,
+     uint32_t localCount,
+     SLDiag* _Nullable diag);
+static void SLEvalMirUnbindFrame(void* _Nullable ctx);
 static void SLEvalMirInitExecEnv(
     SLEvalProgram*      p,
     const SLParsedFile* file,
@@ -2433,6 +2467,16 @@ static int SLEvalResolveCallMir(
     uint32_t           argCount,
     SLCTFEValue*       outValue,
     int*               outIsConst,
+    SLDiag* _Nullable diag);
+static int SLEvalResolveCallMirPre(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
     SLDiag* _Nullable diag);
 static int SLEvalEvalTopVar(
     SLEvalProgram* p, uint32_t topVarIndex, SLCTFEValue* outValue, int* outIsConst);
@@ -7190,6 +7234,10 @@ static int SLEvalMirSequenceLen(
     if (baseValue->kind != SLCTFEValue_STRING && baseValue->kind != SLCTFEValue_ARRAY
         && baseValue->kind != SLCTFEValue_NULL)
     {
+        if (p->currentExecCtx != NULL) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx, 0, 0, "len argument is not supported by evaluator backend");
+        }
         return 0;
     }
     SLEvalValueSetInt(outValue, (int64_t)baseValue->s.len);
@@ -7223,6 +7271,53 @@ static int SLEvalMirMakeTuple(
         typeNode = (int32_t)typeNodeHint;
     }
     return SLEvalAllocTupleValue(p, file, typeNode, elems, elemCount, outValue, outIsConst);
+}
+
+static int SLEvalMirMakeVariadicPack(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirTypeRef* _Nullable paramTypeRef,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram*      p = (SLEvalProgram*)ctx;
+    const SLParsedFile* file;
+    SLEvalArray*        packArray;
+    int32_t             typeNode = -1;
+    (void)program;
+    (void)function;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    file = p->currentFile;
+    if (file == NULL) {
+        return 0;
+    }
+    if (paramTypeRef != NULL && paramTypeRef->astNode < file->ast.len) {
+        typeNode = (int32_t)paramTypeRef->astNode;
+    }
+    packArray = SLEvalAllocArrayView(p, file, typeNode, typeNode, NULL, argCount);
+    if (packArray == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    if (argCount > 0u) {
+        packArray->elems = (SLCTFEValue*)SLArenaAlloc(
+            p->arena, sizeof(SLCTFEValue) * argCount, (uint32_t)_Alignof(SLCTFEValue));
+        if (packArray->elems == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        memcpy(packArray->elems, args, sizeof(SLCTFEValue) * argCount);
+    }
+    SLEvalValueSetArray(outValue, file, typeNode, packArray);
+    *outIsConst = 1;
+    return 0;
 }
 
 static SLEvalMirIteratorState* _Nullable SLEvalMirIteratorStateFromValue(
@@ -7455,9 +7550,23 @@ static int SLEvalMirAggGetField(
     }
     agg = SLEvalValueAsAggregate(baseValue);
     if (agg == NULL) {
+        if (p->currentExecCtx != NULL) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx,
+                nameStart,
+                nameEnd,
+                "field access is not supported by evaluator backend");
+        }
         return 0;
     }
     if (!SLEvalAggregateGetFieldValue(agg, p->currentFile->source, nameStart, nameEnd, outValue)) {
+        if (p->currentExecCtx != NULL) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx,
+                nameStart,
+                nameEnd,
+                "field access is not supported by evaluator backend");
+        }
         return 0;
     }
     *outIsConst = 1;
@@ -7494,11 +7603,25 @@ static int SLEvalMirAggAddrField(
     }
     agg = SLEvalValueAsAggregate(baseValue);
     if (agg == NULL) {
+        if (p->currentExecCtx != NULL) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx,
+                nameStart,
+                nameEnd,
+                "field address is not supported by evaluator backend");
+        }
         return 0;
     }
     fieldValue = SLEvalAggregateLookupFieldValuePtr(
         agg, p->currentFile->source, nameStart, nameEnd);
     if (fieldValue == NULL) {
+        if (p->currentExecCtx != NULL) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx,
+                nameStart,
+                nameEnd,
+                "field address is not supported by evaluator backend");
+        }
         return 0;
     }
     SLEvalValueSetReference(outValue, fieldValue);
@@ -7624,6 +7747,8 @@ static int SLEvalMirEnterFunction(
             pushed = 1;
         }
     }
+    c->savedMirExecCtxs[c->savedFileLen] = c->p->currentMirExecCtx;
+    c->p->currentMirExecCtx = c;
     c->savedFiles[c->savedFileLen++] = c->p->currentFile;
     c->pushedFrames[c->savedFileLen - 1u] = pushed;
     if (c->sourceFiles[sourceRef] != NULL) {
@@ -7640,7 +7765,166 @@ static void SLEvalMirLeaveFunction(void* ctx) {
     if (c->pushedFrames[c->savedFileLen - 1u] && c->p->callDepth > 0) {
         c->p->callDepth--;
     }
+    c->p->currentMirExecCtx = c->savedMirExecCtxs[c->savedFileLen - 1u];
     c->p->currentFile = c->savedFiles[--c->savedFileLen];
+}
+
+static int SLEvalMirBindFrame(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLCTFEValue* _Nullable locals,
+    uint32_t localCount,
+    SLDiag* _Nullable diag) {
+    SLEvalMirExecCtx* c = (SLEvalMirExecCtx*)ctx;
+    if (c == NULL || c->mirFrameDepth >= SL_EVAL_CALL_MAX_DEPTH) {
+        if (diag != NULL) {
+            diag->code = SLDiag_UNEXPECTED_TOKEN;
+            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->start = 0;
+            diag->end = 0;
+            diag->argStart = 0;
+            diag->argEnd = 0;
+        }
+        return -1;
+    }
+    c->savedMirPrograms[c->mirFrameDepth] = c->mirProgram;
+    c->savedMirFunctions[c->mirFrameDepth] = c->mirFunction;
+    c->savedMirLocals[c->mirFrameDepth] = c->mirLocals;
+    c->savedMirLocalCounts[c->mirFrameDepth] = c->mirLocalCount;
+    c->mirFrameDepth++;
+    c->mirProgram = program;
+    c->mirFunction = function;
+    c->mirLocals = locals;
+    c->mirLocalCount = localCount;
+    return 0;
+}
+
+static void SLEvalMirUnbindFrame(void* _Nullable ctx) {
+    SLEvalMirExecCtx* c = (SLEvalMirExecCtx*)ctx;
+    if (c == NULL || c->mirFrameDepth == 0) {
+        return;
+    }
+    c->mirFrameDepth--;
+    c->mirProgram = c->savedMirPrograms[c->mirFrameDepth];
+    c->mirFunction = c->savedMirFunctions[c->mirFrameDepth];
+    c->mirLocals = c->savedMirLocals[c->mirFrameDepth];
+    c->mirLocalCount = c->savedMirLocalCounts[c->mirFrameDepth];
+}
+
+static int SLEvalMirResolveCallNode(
+    const SLMirProgram* _Nullable program,
+    const SLMirInst* _Nullable inst,
+    int32_t* _Nonnull outCallNode) {
+    const SLMirSymbolRef* symbol;
+    *outCallNode = -1;
+    if (program == NULL || inst == NULL || inst->op != SLMirOp_CALL
+        || inst->aux >= program->symbolLen)
+    {
+        return 0;
+    }
+    symbol = &program->symbols[inst->aux];
+    if (symbol->kind != SLMirSymbol_CALL || symbol->target == UINT32_MAX) {
+        return 0;
+    }
+    *outCallNode = (int32_t)symbol->target;
+    return 1;
+}
+
+static int SLEvalMirCallNodeIsLazyBuiltin(SLEvalProgram* p, int32_t callNode) {
+    const SLAst*     ast;
+    const SLAstNode* call;
+    const SLAstNode* callee;
+    int32_t          calleeNode;
+    int32_t          recvNode;
+    if (p == NULL || p->currentFile == NULL) {
+        return 0;
+    }
+    ast = &p->currentFile->ast;
+    if (callNode < 0 || (uint32_t)callNode >= ast->len) {
+        return 0;
+    }
+    call = &ast->nodes[callNode];
+    calleeNode = call->firstChild;
+    callee = calleeNode >= 0 ? &ast->nodes[calleeNode] : NULL;
+    if (call->kind != SLAst_CALL || callee == NULL) {
+        return 0;
+    }
+    if (callee->kind == SLAst_IDENT) {
+        return SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "typeof")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "kind")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "base")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "is_alias")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "type_name")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "ptr")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "slice")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "array");
+    }
+    if (callee->kind != SLAst_FIELD_EXPR) {
+        return 0;
+    }
+    recvNode = callee->firstChild;
+    if (recvNode < 0 || (uint32_t)recvNode >= ast->len || ast->nodes[recvNode].kind != SLAst_IDENT)
+    {
+        return 0;
+    }
+    if (SliceEqCStr(
+            p->currentFile->source,
+            ast->nodes[recvNode].dataStart,
+            ast->nodes[recvNode].dataEnd,
+            "reflect"))
+    {
+        return SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "kind")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "base")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "is_alias")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "type_name");
+    }
+    return 0;
+}
+
+static int SLEvalMirLookupLocalValue(
+    SLEvalProgram* p, uint32_t nameStart, uint32_t nameEnd, SLCTFEValue* outValue) {
+    SLEvalMirExecCtx*   c;
+    const SLParsedFile* file;
+    uint32_t            i;
+    if (p == NULL || outValue == NULL || p->currentFile == NULL) {
+        return 0;
+    }
+    c = p->currentMirExecCtx;
+    file = p->currentFile;
+    if (c == NULL || c->mirProgram == NULL || c->mirFunction == NULL || c->mirLocals == NULL
+        || c->mirFunction->localStart > c->mirProgram->localLen
+        || c->mirFunction->localCount > c->mirProgram->localLen - c->mirFunction->localStart
+        || c->mirLocalCount < c->mirFunction->localCount)
+    {
+        return 0;
+    }
+    for (i = c->mirFunction->localCount; i > 0; i--) {
+        const SLMirLocal*  local = &c->mirProgram->locals[c->mirFunction->localStart + i - 1u];
+        const SLCTFEValue* value = &c->mirLocals[i - 1u];
+        if (local->nameEnd <= local->nameStart
+            || !SliceEqSlice(
+                file->source, nameStart, nameEnd, file->source, local->nameStart, local->nameEnd))
+        {
+            continue;
+        }
+        if (value->kind == SLCTFEValue_INVALID) {
+            continue;
+        }
+        *outValue = *value;
+        if (local->typeRef != UINT32_MAX && local->typeRef < c->mirProgram->typeLen) {
+            int32_t typeNode = (int32_t)c->mirProgram->types[local->typeRef].astNode;
+            int32_t typeCode = SLEvalTypeCode_INVALID;
+            if (!SLEvalValueGetRuntimeTypeCode(outValue, &typeCode) && typeNode >= 0
+                && SLEvalTypeCodeFromTypeNode(file, typeNode, &typeCode))
+            {
+                SLEvalValueSetRuntimeTypeCode(outValue, typeCode);
+            }
+        }
+        return 1;
+    }
+    return 0;
 }
 
 static void SLEvalMirInitExecEnv(
@@ -7655,6 +7939,7 @@ static void SLEvalMirInitExecEnv(
     env->src.ptr = file->source;
     env->src.len = file->sourceLen;
     env->resolveIdent = SLEvalResolveIdent;
+    env->resolveCallPre = SLEvalResolveCallMirPre;
     env->resolveCall = SLEvalResolveCallMir;
     env->resolveCtx = p;
     env->hostCall = SLEvalMirHostCall;
@@ -7681,12 +7966,17 @@ static void SLEvalMirInitExecEnv(
     env->aggAddrFieldCtx = p;
     env->makeTuple = SLEvalMirMakeTuple;
     env->makeTupleCtx = p;
+    env->makeVariadicPack = SLEvalMirMakeVariadicPack;
+    env->makeVariadicPackCtx = p;
     env->backwardJumpLimit = p->currentExecCtx != NULL ? p->currentExecCtx->forIterLimit : 0;
     env->diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
     if (functionCtx != NULL) {
         env->enterFunction = SLEvalMirEnterFunction;
         env->leaveFunction = SLEvalMirLeaveFunction;
         env->functionCtx = functionCtx;
+        env->bindFrame = SLEvalMirBindFrame;
+        env->unbindFrame = SLEvalMirUnbindFrame;
+        env->frameCtx = functionCtx;
     }
 }
 
@@ -8813,6 +9103,10 @@ static int SLEvalResolveIdent(
         return -1;
     }
     currentPkg = SLEvalFindPackageByFile(p, p->currentFile);
+    if (SLEvalMirLookupLocalValue(p, nameStart, nameEnd, outValue)) {
+        *outIsConst = 1;
+        return 0;
+    }
     {
         SLCTFEExecBinding* binding = SLEvalFindBinding(
             p->currentExecCtx, p->currentFile, nameStart, nameEnd);
@@ -8944,6 +9238,36 @@ static int SLEvalResolveIdent(
         p->currentExecCtx, nameStart, nameEnd, "identifier is not available in evaluator backend");
     *outIsConst = 0;
     return 0;
+}
+
+static int SLEvalResolveCallMirPre(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram* p = (SLEvalProgram*)ctx;
+    int32_t        callNode = -1;
+    (void)function;
+    (void)nameStart;
+    (void)nameEnd;
+    (void)diag;
+    if (p == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (!SLEvalMirResolveCallNode(program, inst, &callNode)
+        || !SLEvalMirCallNodeIsLazyBuiltin(p, callNode))
+    {
+        return 0;
+    }
+    if (SLEvalExecExprCb(p, callNode, outValue, outIsConst) != 0) {
+        return -1;
+    }
+    return 1;
 }
 
 static int SLEvalResolveCallMir(
@@ -9150,6 +9474,32 @@ static int SLEvalResolveCallMir(
         SLEvalValueSetNull(outValue);
         *outIsConst = 1;
         return 0;
+    }
+    {
+        SLCTFEValue calleeValue;
+        int         calleeIsConst = 0;
+        const char* savedReason = p->currentExecCtx->nonConstReason;
+        uint32_t    savedStart = p->currentExecCtx->nonConstStart;
+        uint32_t    savedEnd = p->currentExecCtx->nonConstEnd;
+        if (SLEvalResolveIdent(
+                p, nameStart, nameEnd, &calleeValue, &calleeIsConst, p->currentExecCtx->diag)
+            != 0)
+        {
+            return -1;
+        }
+        if (calleeIsConst && SLEvalValueIsFunctionRef(&calleeValue, NULL)) {
+            int invoked = SLEvalInvokeFunctionRef(
+                p, &calleeValue, args, argCount, outValue, outIsConst);
+            if (invoked < 0) {
+                return -1;
+            }
+            if (invoked > 0) {
+                return 0;
+            }
+        }
+        p->currentExecCtx->nonConstReason = savedReason;
+        p->currentExecCtx->nonConstStart = savedStart;
+        p->currentExecCtx->nonConstEnd = savedEnd;
     }
     if (argCount > 0) {
         uint32_t pkgIndex = 0;

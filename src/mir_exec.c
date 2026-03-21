@@ -2104,10 +2104,10 @@ static int SLMirEvalFunctionInternal(
     SLMirChunk           chunk;
     SLMirExecEnv         frameEnv;
     SLMirExecRun         run;
+    SLMirExecValue       variadicPackValue;
     int                  enteredFunction = 0;
     int                  boundFrame = 0;
     int                  rc = 0;
-    (void)args;
     if (program == NULL || functionIndex >= program->funcLen) {
         if (env != NULL) {
             SLCTFESetDiag(env->diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
@@ -2124,10 +2124,41 @@ static int SLMirEvalFunctionInternal(
         }
         return -1;
     }
-    if (argCount != fn->paramCount) {
+    if (fn->localCount < fn->paramCount) {
         return 0;
     }
-    if (fn->localCount < fn->paramCount) {
+    if ((fn->flags & SLMirFunctionFlag_VARIADIC) != 0u) {
+        uint32_t          fixedCount = fn->paramCount > 0u ? fn->paramCount - 1u : 0u;
+        const SLMirLocal* variadicLocal = NULL;
+        int               packIsConst = 0;
+        if (argCount < fixedCount || fn->paramCount == 0u || env == NULL
+            || env->makeVariadicPack == NULL)
+        {
+            return 0;
+        }
+        variadicLocal = &program->locals[fn->localStart + fn->paramCount - 1u];
+        SLCTFEValueInvalid(&variadicPackValue);
+        if (env->makeVariadicPack(
+                env->makeVariadicPackCtx,
+                program,
+                fn,
+                variadicLocal->typeRef != UINT32_MAX
+                    ? &program->types[variadicLocal->typeRef]
+                    : NULL,
+                args != NULL ? args + fixedCount : NULL,
+                argCount - fixedCount,
+                &variadicPackValue,
+                &packIsConst,
+                env->diag)
+            != 0)
+        {
+            return -1;
+        }
+        if (!packIsConst) {
+            return 0;
+        }
+        argCount = fixedCount;
+    } else if (argCount != fn->paramCount) {
         return 0;
     }
     memset(&frameEnv, 0, sizeof(frameEnv));
@@ -2165,6 +2196,9 @@ static int SLMirEvalFunctionInternal(
     {
         rc = -1;
         goto end;
+    }
+    if ((fn->flags & SLMirFunctionFlag_VARIADIC) != 0u) {
+        run.locals[fn->paramCount - 1u] = variadicPackValue;
     }
     if (frameEnv.bindFrame != NULL) {
         if (frameEnv.bindFrame(
