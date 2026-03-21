@@ -989,6 +989,11 @@ int SLTCTypeExpr_IDENT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, in
             *outType = execType;
             return 0;
         }
+        if (SLTCConstLookupMirLocalType(c->activeConstEvalCtx, n->dataStart, n->dataEnd, &execType))
+        {
+            *outType = execType;
+            return 0;
+        }
     }
     if (SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "context")) {
         if (c->currentFunctionIsCompareHook) {

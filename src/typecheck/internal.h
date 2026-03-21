@@ -769,6 +769,8 @@ int  SLTCResolveConstIdent(
      SLDiag* _Nullable diag);
 int SLTCConstLookupExecBindingType(
     SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, int32_t* outType);
+int SLTCConstLookupMirLocalType(
+    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, int32_t* outType);
 int      SLTCConstBuiltinSizeBytes(SLBuiltinKind b, uint64_t* outBytes);
 int      SLTCConstBuiltinAlignBytes(SLBuiltinKind b, uint64_t* outAlign);
 uint64_t SLTCConstAlignUpU64(uint64_t v, uint64_t align);
