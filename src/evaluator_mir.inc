@@ -707,6 +707,9 @@ static int SLEvalMirLowerFunction(
                 }
                 return -1;
             }
+            if (qualifiedValueTargetKind == 2) {
+                continue;
+            }
             if (lowerRc == 0) {
                 c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
                 if (c->loweringFns != NULL) {
@@ -733,6 +736,9 @@ static int SLEvalMirLowerFunction(
         if (SLEvalMirResolveTopInitIdentTargetForFile(
                 c, fn->file, ins, &isTopConst, &targetTopInitIndex))
         {
+            if (!isTopConst) {
+                continue;
+            }
             lowerRc = isTopConst
                 ? SLEvalMirLowerTopConst(c, targetTopInitIndex, &targetMirFnIndex)
                 : SLEvalMirLowerTopVar(c, targetTopInitIndex, &targetMirFnIndex);

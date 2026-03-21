@@ -500,6 +500,28 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_ADDR_OF: {
+                SLMirExecValue  value;
+                SLMirExecValue* target;
+                if (SLCTFEPop(run, &value) != 0) {
+                    return 0;
+                }
+                target = (SLMirExecValue*)SLArenaAlloc(
+                    run->arena, sizeof(*target), (uint32_t)_Alignof(SLMirExecValue));
+                if (target == NULL) {
+                    SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                    return -1;
+                }
+                *target = value;
+                SLCTFEValueInvalid(&value);
+                value.kind = SLCTFEValue_REFERENCE;
+                value.s.bytes = (const uint8_t*)target;
+                value.s.len = 0;
+                if (SLCTFEPush(run, &value) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_LOCAL_ZERO: {
                 const SLMirLocal* local;
                 SLMirExecValue    v;

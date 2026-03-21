@@ -4698,6 +4698,18 @@ static int32_t SLEvalFindTopVarBySlice(
     return -1;
 }
 
+static int32_t SLEvalFindCurrentTopVarBySlice(
+    const SLEvalProgram* p, const SLParsedFile* callerFile, uint32_t nameStart, uint32_t nameEnd) {
+    const SLPackage* currentPkg;
+    if (p == NULL || callerFile == NULL) {
+        return -1;
+    }
+    currentPkg = SLEvalFindPackageByFile(p, callerFile);
+    return currentPkg != NULL
+             ? SLEvalFindTopVarBySliceInPackage(p, currentPkg, callerFile, nameStart, nameEnd)
+             : SLEvalFindTopVarBySlice(p, callerFile, nameStart, nameEnd);
+}
+
 static int SLEvalCollectFunctionsFromPackage(
     SLEvalProgram* p, const SLPackage* pkg, uint8_t isBuiltinPackageFn) {
     uint32_t fileIndex;
@@ -7287,7 +7299,7 @@ static int SLEvalMirAssignIdent(
     if (p == NULL || p->currentFile == NULL || inValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    topVarIndex = SLEvalFindTopVarBySlice(p, p->currentFile, nameStart, nameEnd);
+    topVarIndex = SLEvalFindCurrentTopVarBySlice(p, p->currentFile, nameStart, nameEnd);
     if (topVarIndex < 0) {
         if (p->currentExecCtx != NULL) {
             SLCTFEExecSetReason(
@@ -8536,7 +8548,7 @@ static int SLEvalAssignExprCb(
             *outIsConst = 1;
             return 0;
         }
-        int32_t topVarIndex = SLEvalFindTopVarBySlice(
+        int32_t topVarIndex = SLEvalFindCurrentTopVarBySlice(
             p, p->currentFile, ast->nodes[lhsNode].dataStart, ast->nodes[lhsNode].dataEnd);
         if (topVarIndex >= 0) {
             SLEvalTopVar* topVar = &p->topVars[(uint32_t)topVarIndex];
@@ -8895,7 +8907,7 @@ static int SLEvalAssignValueExprCb(
             *outIsConst = 1;
             return 0;
         }
-        int32_t topVarIndex = SLEvalFindTopVarBySlice(
+        int32_t topVarIndex = SLEvalFindCurrentTopVarBySlice(
             p, p->currentFile, ast->nodes[lhsExprNode].dataStart, ast->nodes[lhsExprNode].dataEnd);
         if (topVarIndex >= 0) {
             SLEvalTopVar* topVar = &p->topVars[(uint32_t)topVarIndex];
@@ -9502,10 +9514,6 @@ static int SLEvalResolveIdent(
         return -1;
     }
     currentPkg = SLEvalFindPackageByFile(p, p->currentFile);
-    if (SLEvalMirLookupLocalValue(p, nameStart, nameEnd, outValue)) {
-        *outIsConst = 1;
-        return 0;
-    }
     {
         SLCTFEExecBinding* binding = SLEvalFindBinding(
             p->currentExecCtx, p->currentFile, nameStart, nameEnd);
@@ -9524,6 +9532,10 @@ static int SLEvalResolveIdent(
         }
     }
     if (SLCTFEExecEnvLookup(p->currentExecCtx, nameStart, nameEnd, outValue)) {
+        *outIsConst = 1;
+        return 0;
+    }
+    if (SLEvalMirLookupLocalValue(p, nameStart, nameEnd, outValue)) {
         *outIsConst = 1;
         return 0;
     }
@@ -10436,7 +10448,7 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 return 0;
             }
             {
-                int32_t topVarIndex = SLEvalFindTopVarBySlice(
+                int32_t topVarIndex = SLEvalFindCurrentTopVarBySlice(
                     p,
                     p->currentFile,
                     ast->nodes[childNode].dataStart,
