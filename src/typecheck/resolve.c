@@ -2871,6 +2871,9 @@ int SLTCCheckConstBlocksForCall(
                 c->activeConstEvalCtx = savedActiveConstEvalCtx;
                 return 1;
             }
+            evalCtx.nonConstReason = NULL;
+            evalCtx.nonConstStart = 0;
+            evalCtx.nonConstEnd = 0;
             rc = SLTCTryMirConstBlock(
                 &evalCtx, blockNode, &retValue, &didReturn, &isConst, &mirSupported);
             if (rc != 0) {
@@ -2880,62 +2883,31 @@ int SLTCCheckConstBlocksForCall(
                 c->activeConstEvalCtx = savedActiveConstEvalCtx;
                 return -1;
             }
-            if (mirSupported && isConst) {
-                if (didReturn) {
-                    SLTCConstSetReasonNode(
-                        &evalCtx, blockNode, "const block must not return a value");
-                    c->lastConstEvalReason = c->activeConstEvalCtx->nonConstReason;
-                    c->lastConstEvalReasonStart = c->activeConstEvalCtx->nonConstStart;
-                    c->lastConstEvalReasonEnd = c->activeConstEvalCtx->nonConstEnd;
-                    if (outError != NULL) {
-                        outError->code = SLDiag_CONST_BLOCK_EVAL_FAILED;
-                        outError->start =
-                            argCount > 0 ? callArgs[0].start : c->ast->nodes[child].start;
-                        outError->end =
-                            argCount > 0 ? callArgs[argCount - 1u].end : c->ast->nodes[child].end;
-                        outError->argStart = 0;
-                        outError->argEnd = 0;
-                    }
-                    c->localLen = savedLocalLen;
-                    c->localUseLen = savedLocalUseLen;
-                    c->variantNarrowLen = savedVariantNarrowLen;
-                    c->activeConstEvalCtx = savedActiveConstEvalCtx;
-                    return 1;
-                }
+            if (mirSupported && isConst && !didReturn) {
                 child = SLAstNextSibling(c->ast, child);
                 continue;
             }
-            evalCtx.nonConstReason = NULL;
-            evalCtx.nonConstStart = 0;
-            evalCtx.nonConstEnd = 0;
-            SLCTFEExecResetReason(&execCtx);
-            execCtx.pendingReturnExprNode = -1;
-            rc = SLCTFEExecEvalBlock(&execCtx, blockNode, &retValue, &didReturn, &isConst);
-            if (rc != 0) {
-                c->localLen = savedLocalLen;
-                c->localUseLen = savedLocalUseLen;
-                c->variantNarrowLen = savedVariantNarrowLen;
-                c->activeConstEvalCtx = savedActiveConstEvalCtx;
-                return -1;
+            if (didReturn) {
+                SLTCConstSetReasonNode(&evalCtx, blockNode, "const block must not return a value");
+            } else if (evalCtx.nonConstReason == NULL) {
+                SLTCConstSetReasonNode(&evalCtx, blockNode, "const block is not const-evaluable");
             }
-            if (!isConst || didReturn) {
-                c->lastConstEvalReason = execCtx.nonConstReason;
-                c->lastConstEvalReasonStart = execCtx.nonConstStart;
-                c->lastConstEvalReasonEnd = execCtx.nonConstEnd;
-                if (outError != NULL) {
-                    outError->code = SLDiag_CONST_BLOCK_EVAL_FAILED;
-                    outError->start = argCount > 0 ? callArgs[0].start : c->ast->nodes[child].start;
-                    outError->end =
-                        argCount > 0 ? callArgs[argCount - 1u].end : c->ast->nodes[child].end;
-                    outError->argStart = 0;
-                    outError->argEnd = 0;
-                }
-                c->localLen = savedLocalLen;
-                c->localUseLen = savedLocalUseLen;
-                c->variantNarrowLen = savedVariantNarrowLen;
-                c->activeConstEvalCtx = savedActiveConstEvalCtx;
-                return 1;
+            c->lastConstEvalReason = c->activeConstEvalCtx->nonConstReason;
+            c->lastConstEvalReasonStart = c->activeConstEvalCtx->nonConstStart;
+            c->lastConstEvalReasonEnd = c->activeConstEvalCtx->nonConstEnd;
+            if (outError != NULL) {
+                outError->code = SLDiag_CONST_BLOCK_EVAL_FAILED;
+                outError->start = argCount > 0 ? callArgs[0].start : c->ast->nodes[child].start;
+                outError->end =
+                    argCount > 0 ? callArgs[argCount - 1u].end : c->ast->nodes[child].end;
+                outError->argStart = 0;
+                outError->argEnd = 0;
             }
+            c->localLen = savedLocalLen;
+            c->localUseLen = savedLocalUseLen;
+            c->variantNarrowLen = savedVariantNarrowLen;
+            c->activeConstEvalCtx = savedActiveConstEvalCtx;
+            return 1;
         }
         child = SLAstNextSibling(c->ast, child);
     }

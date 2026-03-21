@@ -42,20 +42,20 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
 - The direct-expression CTFE wrapper in `src/ctfe.c` now also accepts optional tuple/index hooks, so evaluator and typechecker can keep tuple literals and tuple argument expressions on MIR instead of forcing expression-level fallback.
 - The direct-expression CTFE wrapper in `src/ctfe.c` now also accepts optional aggregate field hooks, so evaluator and typechecker can keep aggregate field reads on MIR instead of forcing expression-level fallback for `x.field` on MIR-owned values.
-- The consteval path in `src/typecheck/consteval.c` now also tries MIR-first execution for simple const function bodies before falling back to `ctfe_exec`.
-- The const-block path in `src/typecheck/resolve.c` now also tries MIR-first execution for simple `const { ... }` blocks before falling back to `ctfe_exec`.
+- The consteval path in `src/typecheck/consteval.c` now executes supported const function bodies on MIR.
+- The const-block path in `src/typecheck/resolve.c` now executes supported `const { ... }` blocks on MIR.
 - The consteval-side MIR env now also supplies typed zero-init and value-coercion hooks, so simple typed locals and scalar/optional return adaptation can stay on the MIR path.
 - The consteval-side MIR env now also supplies tuple materialization and tuple indexing hooks, so simple const-call paths can keep tuple returns and grouped tuple decomposition on MIR instead of forcing immediate fallback.
 - The consteval-side MIR env now also supplies aggregate field hooks, which keeps local aggregate field reads/writes and aggregate-valued helper call results on MIR for both top-level const evaluation and `const { ... }` blocks.
 - Consteval identifier/field resolution now also materializes imported package aliases as conservative const package-value sentinels, so direct const expressions and `const { ... }` local aliases like `const f = pkg.Helper` can stay const-evaluable without depending on generic identifier failure for `pkg`.
-- The consteval MIR function-body lowering path no longer pre-rejects imported-package field initializers in local `const` bindings, so those shapes now fall through to the normal MIR-lowering and fallback boundary instead of bailing out before lowering starts.
+- The consteval MIR function-body lowering path no longer pre-rejects imported-package field initializers in local `const` bindings, so those shapes now fall through to the normal MIR-lowering boundary instead of bailing out before lowering starts.
 - Evaluator root top-init program formation now starts through `src/mir_lower_pkg.c`'s named begin-program helper instead of a private evaluator-side append wrapper, which keeps one more package-entry formation step on the shared MIR-lowering boundary.
 - The consteval-side MIR env now also supplies sequence-length and iterator hooks for simple `for in`, covering both string/tuple-style sequence iteration and iterator-protocol sources resolved through the shared typechecker hook-selection logic.
-- That sequence `for in` coverage now also supports `for &item in ...` over string and tuple-backed MIR sequence sources in consteval, so const functions and `const { ... }` blocks can keep simple ref iteration on MIR instead of dropping back to `ctfe_exec`.
+- That sequence `for in` coverage now also supports `for &item in ...` over string and tuple-backed MIR sequence sources in consteval, so const functions and `const { ... }` blocks can keep simple ref iteration on MIR.
 - Consteval identifier resolution now also materializes plain function names as MIR-compatible function-reference values, so top-level consts and const-call bodies can keep local function-value aliases on the MIR path instead of dropping back to non-const identifier lookup.
 - The current consteval MIR subset also covers simple non-`for in` `for` loops and successful `assert` statements with trailing message/format arguments, and both const functions and `const { ... }` blocks now have focused regression coverage for those shapes.
 - That loop coverage now also pins `break` and `continue` behavior in simple consteval MIR `for` loops, for both top-level const calls and `const { ... }` blocks.
-- The simple const-call path now also rewrites safe plain direct calls into same-program `CALL_FN` edges, so small const call chains can stay on MIR instead of re-entering `ctfe_exec` one function at a time.
+- The simple const-call path now also rewrites safe plain direct calls into same-program `CALL_FN` edges, so small const call chains can stay inside one MIR program.
 - That direct-call rewrite now resolves conservative plain calls through the shared checked call resolver (`SLTCResolveCallByName(...)`) instead of only arity/name scanning, so supported MIR const calls can stay aligned with normal call resolution as package and overload handling expand.
 - The simple const-call path now also rewrites simple ungrouped top-level const identifier loads into zero-arg `CALL_FN` edges, so those supported const dependencies no longer have to stay on generic `resolveIdent` when the surrounding const function is already on MIR.
 - The simple const-call path now also rewrites direct calls through simple top-level const function-value aliases to `CALL_FN`, so those supported const calls no longer have to stay on generic `resolveCall`.
@@ -109,7 +109,7 @@ Today, MIR is used for const-evaluating expressions.
 - C backend const folding (`src/codegen_c.c`) uses `SLConstEvalSession*` APIs; those APIs route through the same const-eval path and therefore use MIR for expression evaluation.
 - The CLI evaluator path (`src/evaluator.c`) also calls `SLCTFEEvalExpr` for expression evaluation inside its execution engine.
 
-MIR is still mostly expression-first. Statement/block/control-flow const execution is handled by `src/ctfe_exec.c`, but the evaluator now attempts MIR execution first for a simple function-body subset before falling back.
+MIR is no longer expression-only. It now also executes supported const function bodies, `const { ... }` blocks, evaluator function bodies, and top-level initializer programs.
 
 ## IR model
 
@@ -256,20 +256,18 @@ Return behavior:
 - `0` + `*outIsConst = 0`: not const-evaluable in current context/subset.
 - `-1`: hard failure (for example OOM or decoding diagnostic errors).
 
-## Interaction with consteval and `ctfe_exec`
+## Interaction with consteval
 
 Const-eval in the typechecker is layered:
 
 - `SLTCEvalConstExprNode` handles special expression forms directly (`sizeof`, `cast`).
 - For the remaining expression subset, it calls `SLCTFEEvalExpr` (MIR path).
-- For const function bodies/statements, `SLTCResolveConstCall` now tries MIR first and then falls back to `SLCTFEExecEvalBlock` (`src/ctfe_exec.c`).
-- For `const { ... }` blocks, `src/typecheck/resolve.c` now also tries MIR first and then falls back to `SLCTFEExecEvalBlock`.
-- `ctfe_exec` delegates expression evaluation back through callbacks to `SLTCEvalConstExprNode`, which usually routes to MIR.
+- `SLTCResolveConstCall` lowers supported const function bodies into MIR programs and executes them through `src/mir_exec.c`.
+- `src/typecheck/resolve.c` lowers supported `const { ... }` blocks into MIR programs and executes them through the same MIR runtime hooks.
 
 So today:
 
-- MIR is the expression evaluator backend.
-- `ctfe_exec` is still the statement/control-flow evaluator backend.
+- MIR is the execution backend for both expression-level consteval and the supported statement/control-flow const subset.
 - `mir_exec` is now the dedicated MIR execution module that future runtime MIR work should extend instead of growing `ctfe.c` or `evaluator.c`.
 - `mir_lower` is now the dedicated MIR lowering boundary for expression-to-program lowering, and should grow into checked-program/function lowering instead of adding more MIR assembly logic to `ctfe.c`.
 - `mir_lower_pkg` is the first explicit package/top-init lowering boundary on the runtime side, so evaluator top-level initialization no longer needs to treat zero-init and initializer lowering as an implicit extension of expression lowering.
@@ -303,7 +301,7 @@ So today:
   - conservative `switch` lowering for plain subject/condition switches with case labels, `default`, switch-local `break`, and subject-pattern alias bindings
   - `return`
   - nested blocks
-- The evaluator now tries that MIR function-body path before falling back to `ctfe_exec`, which keeps runtime behavior stable while the MIR subset grows.
+- The evaluator now runs that MIR function-body path directly for supported function bodies.
 - That MIR lowering path now keeps “already has a MIR function index” separate from “still lowering”, so direct recursive calls can lower to `CALL_FN` instead of forcing the whole function back to the AST runtime path.
 - That evaluator-side MIR path now also lowers unambiguous plain direct calls into same-program `CALL_FN` edges. The remaining fallback cases are still variadic, ambiguous, and true receiver-style calls. Supported builtin/package calls that already have explicit MIR rewrites include `print(...)`, `copy(dst, src)`, `concat(...)`, `free(...)`, and `platform.exit(...)`.
 - The new per-function source identity is what makes that broader direct-call lowering possible without depending on one evaluator-global `currentFile`/source view for the whole MIR program.
@@ -311,7 +309,7 @@ So today:
 - The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.
 - The initial `CALL_FN` support means that boundary is no longer just an entry point; MIR function-to-function execution has started to exist, even though full frame/locals/param semantics are still ahead.
 - Local-slot execution is the next step in that direction: MIR functions can now carry state in frame slots, typed zero-init now uses MIR local metadata, and local address-taking works, but richer lvalue semantics beyond plain local refs are still ahead.
-- Basic control flow is now part of the MIR executor contract too, which is necessary before checked function bodies can migrate off the AST/`ctfe_exec` path.
+- Basic control flow is now part of the MIR executor contract too, which is necessary for checked function bodies to stay on the MIR path.
 - `mir_lower_stmt` now also tracks breakable vs continuable control scopes separately, so MIR-lowered `break` can target the innermost loop or switch while `continue` still finds the nearest loop.
 - The explicit hostcall path is another backend-facing step: non-pure operations no longer have to masquerade as generic name-resolved calls once MIR lowering starts using `CALL_HOST`.
 - The indirect-call path is the same kind of step for function values: MIR now has a backend-visible function-reference form instead of leaving all such execution to evaluator-specific machinery.
@@ -320,7 +318,7 @@ So today:
 - That symbol metadata now also preserves one small but useful execution detail: whether a lowered direct call came from selector syntax and already includes the receiver as argument `0`.
 - The type-table rewrite does the same for cast targets: a backend can inspect cast target metadata from MIR tables instead of reconstructing it from AST shape at codegen time.
 - The host-table rewrite is the same kind of cleanup for host-backed operations: future backends can inspect hostcall metadata from MIR tables instead of treating `CALL_HOST` operands as evaluator-private numbers.
-- `SLMirValidateProgram(...)` makes those table contracts explicit, which is useful before adding more backends that will consume MIR directly instead of relying on evaluator fallbacks.
+- `SLMirValidateProgram(...)` makes those table contracts explicit, which is useful before adding more backends that will consume MIR directly.
 
 ## Notes from `consteval` branch
 

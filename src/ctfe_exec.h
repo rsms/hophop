@@ -158,11 +158,4 @@ int SLCTFEExecEnvLookup(
     uint32_t nameEnd,
     SLCTFEValue* _Nonnull outValue);
 
-int SLCTFEExecEvalBlock(
-    SLCTFEExecCtx* _Nonnull c,
-    int32_t blockNode,
-    SLCTFEValue* _Nonnull outValue,
-    int* _Nonnull outDidReturn,
-    int* _Nonnull outIsConst);
-
 SL_API_END

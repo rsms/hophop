@@ -2219,8 +2219,11 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             return 0;
         }
         case SLAst_EXPR_STMT: return SLMirStmtLowerExprStmt(c, stmtNode);
+        case SLAst_CONST_BLOCK:
+            /* Consteval blocks are compile-time-only and do not execute at runtime. */
+            return 0;
         case SLAst_VAR:
-        case SLAst_CONST:     {
+        case SLAst_CONST: {
             int32_t  firstChild = s->firstChild;
             int32_t  typeNode = -1;
             int32_t  initNode = SLMirStmtLowerVarInitExprNode(c->ast, stmtNode);

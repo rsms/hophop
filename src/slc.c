@@ -16,7 +16,6 @@
 
 #include "codegen.h"
 #include "ctfe.h"
-#include "ctfe_exec.h"
 #include "evaluator.h"
 #include "libsl-impl.h"
 
@@ -5922,7 +5921,7 @@ static int PackageNeedsPrivateDeclSurface(const SLPackage* pkg) {
         return 0;
     }
     for (i = 0; i < pkg->pubDeclLen; i++) {
-        if (pkg->pubDecls[i].kind == SLAst_FN && pkg->pubDecls[i].hasBody) {
+        if (pkg->pubDecls[i].kind == SLAst_FN) {
             return 1;
         }
     }
@@ -5933,6 +5932,7 @@ static int AppendImportedPackageSurface(
     SLStringBuilder*         b,
     const SLPackage*         dep,
     const char*              alias,
+    int                      includePrivateImportDecls,
     SLEmittedImportSurface** emitted,
     uint32_t*                emittedLen,
     uint32_t*                emittedCap) {
@@ -5966,7 +5966,7 @@ static int AppendImportedPackageSurface(
             (*emittedLen)++;
         }
     }
-    includePrivateDecls = PackageNeedsPrivateDeclSurface(dep);
+    includePrivateDecls = includePrivateImportDecls ? PackageNeedsPrivateDeclSurface(dep) : 0;
     if (AppendAliasedPubDecls(b, dep, alias, dep->imports, dep->importLen, includePrivateDecls)
         != 0)
     {
@@ -5998,6 +5998,7 @@ static int AppendImportFunctionWrappers(SLStringBuilder* b, const SLPackage* pkg
 static int BuildCombinedPackageSource(
     SLPackageLoader* loader,
     const SLPackage* pkg,
+    int              includePrivateImportDecls,
     char**           outSource,
     uint32_t*        outLen,
     SLCombinedSourceMap* _Nullable sourceMap,
@@ -6020,7 +6021,13 @@ static int BuildCombinedPackageSource(
     for (i = 0; i < pkg->importLen; i++) {
         const SLPackage* dep = pkg->imports[i].target;
         if (AppendImportedPackageSurface(
-                &b, dep, pkg->imports[i].alias, &emitted, &emittedLen, &emittedCap)
+                &b,
+                dep,
+                pkg->imports[i].alias,
+                includePrivateImportDecls,
+                &emitted,
+                &emittedLen,
+                &emittedCap)
             != 0)
         {
             free(b.v);
@@ -6133,7 +6140,7 @@ static int CheckLoadedPackage(SLPackageLoader* loader, SLPackage* pkg, int suppr
         return 0;
     }
     if (BuildCombinedPackageSource(
-            loader, pkg, &source, &sourceLen, useSingleFileRemap ? &sourceMap : NULL, NULL)
+            loader, pkg, 1, &source, &sourceLen, useSingleFileRemap ? &sourceMap : NULL, NULL)
         != 0)
     {
         return -1;
@@ -6488,7 +6495,7 @@ static int GeneratePackage(
         return -1;
     }
 
-    if (BuildCombinedPackageSource(&loader, entryPkg, &source, &sourceLen, NULL, NULL) != 0) {
+    if (BuildCombinedPackageSource(&loader, entryPkg, 0, &source, &sourceLen, NULL, NULL) != 0) {
         FreeLoader(&loader);
         return -1;
     }
@@ -7071,7 +7078,7 @@ static int EmitPackageArtifact(
     if (PackageHasUnsupportedImportedPubGlobals(pkg) != 0) {
         return -1;
     }
-    if (BuildCombinedPackageSource(loader, pkg, &source, &sourceLen, NULL, &ownDeclStartOffset)
+    if (BuildCombinedPackageSource(loader, pkg, 0, &source, &sourceLen, NULL, &ownDeclStartOffset)
         != 0)
     {
         return -1;
