@@ -489,6 +489,237 @@ static int SLMirStmtLowerAddFieldRef(
     return 0;
 }
 
+static int SLMirStmtLowerAppendLoadValueBySlice(
+    SLMirStmtLower* c, uint32_t nameStart, uint32_t nameEnd, uint32_t start, uint32_t end) {
+    uint32_t  slot = 0;
+    SLMirInst inst = { 0 };
+    if (c == NULL) {
+        return -1;
+    }
+    if (SLMirStmtLowerFindLocal(c, nameStart, nameEnd, &slot, NULL)) {
+        return SLMirStmtLowerAppendInst(c, SLMirOp_LOCAL_LOAD, 0, slot, start, end, NULL);
+    }
+    inst.op = SLMirOp_LOAD_IDENT;
+    inst.tok = SLTok_IDENT;
+    inst.aux = 0u;
+    inst.start = nameStart;
+    inst.end = nameEnd;
+    return SLMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag);
+}
+
+static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode);
+
+static int SLMirStmtLowerNameEqLiteral(
+    const SLMirStmtLower* c, uint32_t start, uint32_t end, const char* lit) {
+    size_t litLen = 0;
+    if (c == NULL || lit == NULL || end < start || end > c->src.len) {
+        return 0;
+    }
+    while (lit[litLen] != '\0') {
+        litLen++;
+    }
+    return (size_t)(end - start) == litLen && memcmp(c->src.ptr + start, lit, litLen) == 0;
+}
+
+static int SLMirStmtLowerNameEqLiteralOrPkgBuiltin(
+    const SLMirStmtLower* c, uint32_t start, uint32_t end, const char* lit, const char* pkgPrefix) {
+    size_t litLen = 0;
+    size_t pkgLen = 0;
+    size_t i;
+    if (SLMirStmtLowerNameEqLiteral(c, start, end, lit)) {
+        return 1;
+    }
+    if (c == NULL || lit == NULL || pkgPrefix == NULL || end < start || end > c->src.len) {
+        return 0;
+    }
+    while (lit[litLen] != '\0') {
+        litLen++;
+    }
+    while (pkgPrefix[pkgLen] != '\0') {
+        pkgLen++;
+    }
+    if ((size_t)(end - start) != pkgLen + 2u + litLen) {
+        return 0;
+    }
+    for (i = 0; i < pkgLen; i++) {
+        if (c->src.ptr[start + i] != pkgPrefix[i]) {
+            return 0;
+        }
+    }
+    if (c->src.ptr[start + pkgLen] != '_' || c->src.ptr[start + pkgLen + 1u] != '_') {
+        return 0;
+    }
+    return memcmp(c->src.ptr + start + pkgLen + 2u, lit, litLen) == 0;
+}
+
+static int SLMirStmtLowerNameIsCompilerDiagBuiltin(
+    const SLMirStmtLower* c, uint32_t start, uint32_t end) {
+    return SLMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "error", "compiler")
+        || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "error_at", "compiler")
+        || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "warn", "compiler")
+        || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "warn_at", "compiler");
+}
+
+static int SLMirStmtLowerCallUsesLazyBuiltin(const SLMirStmtLower* c, int32_t callNode) {
+    const SLAstNode* call;
+    const SLAstNode* callee;
+    int32_t          calleeNode;
+    int32_t          recvNode;
+    if (c == NULL || c->ast == NULL || callNode < 0 || (uint32_t)callNode >= c->ast->len) {
+        return 0;
+    }
+    call = &c->ast->nodes[callNode];
+    calleeNode = call->firstChild;
+    callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
+    if (call->kind != SLAst_CALL || callee == NULL) {
+        return 0;
+    }
+    if (callee->kind == SLAst_IDENT) {
+        return SLMirStmtLowerNameEqLiteralOrPkgBuiltin(
+                   c, callee->dataStart, callee->dataEnd, "span_of", "reflect")
+            || SLMirStmtLowerNameIsCompilerDiagBuiltin(c, callee->dataStart, callee->dataEnd);
+    }
+    if (callee->kind != SLAst_FIELD_EXPR) {
+        return 0;
+    }
+    recvNode = callee->firstChild;
+    if (recvNode < 0 || (uint32_t)recvNode >= c->ast->len
+        || c->ast->nodes[recvNode].kind != SLAst_IDENT)
+    {
+        return 0;
+    }
+    if (SLMirStmtLowerNameEqLiteral(
+            c, c->ast->nodes[recvNode].dataStart, c->ast->nodes[recvNode].dataEnd, "reflect")
+        && (SLMirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "span_of")
+            || SLMirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "kind")
+            || SLMirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "base")
+            || SLMirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "is_alias")
+            || SLMirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "type_name")))
+    {
+        return 1;
+    }
+    if (!SLMirStmtLowerNameEqLiteral(
+            c, c->ast->nodes[recvNode].dataStart, c->ast->nodes[recvNode].dataEnd, "compiler"))
+    {
+        return 0;
+    }
+    return SLMirStmtLowerNameIsCompilerDiagBuiltin(c, callee->dataStart, callee->dataEnd);
+}
+
+static int SLMirStmtLowerCallCanUseManualLowering(SLMirStmtLower* c, int32_t callNode) {
+    int32_t  calleeNode;
+    uint32_t slot = 0;
+    if (c == NULL || callNode < 0 || (uint32_t)callNode >= c->ast->len
+        || c->ast->nodes[callNode].kind != SLAst_CALL
+        || SLMirStmtLowerCallUsesLazyBuiltin(c, callNode))
+    {
+        return 0;
+    }
+    calleeNode = c->ast->nodes[callNode].firstChild;
+    if (calleeNode < 0 || (uint32_t)calleeNode >= c->ast->len) {
+        return 0;
+    }
+    if (c->ast->nodes[calleeNode].kind == SLAst_IDENT
+        && SLMirStmtLowerFindLocal(
+            c, c->ast->nodes[calleeNode].dataStart, c->ast->nodes[calleeNode].dataEnd, &slot, NULL))
+    {
+        return 0;
+    }
+    return 1;
+}
+
+static int SLMirStmtLowerCallExpr(SLMirStmtLower* c, int32_t exprNode) {
+    const SLAstNode* call;
+    int32_t          calleeNode;
+    int32_t          argNode;
+    uint32_t         argc = 0;
+    uint32_t         callFlags = 0;
+    uint32_t         callStart = 0;
+    uint32_t         callEnd = 0;
+    uint32_t         localSlot = 0;
+    int              isBuiltinLen = 0;
+    int              isBuiltinCStr = 0;
+    SLMirInst        inst = { 0 };
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        if (c != NULL) {
+            c->supported = 0;
+        }
+        return 0;
+    }
+    call = &c->ast->nodes[exprNode];
+    calleeNode = call->firstChild;
+    if (call->kind != SLAst_CALL || calleeNode < 0 || (uint32_t)calleeNode >= c->ast->len) {
+        c->supported = 0;
+        return 0;
+    }
+    if (c->ast->nodes[calleeNode].kind == SLAst_IDENT) {
+        if (SLMirStmtLowerFindLocal(
+                c,
+                c->ast->nodes[calleeNode].dataStart,
+                c->ast->nodes[calleeNode].dataEnd,
+                &localSlot,
+                NULL))
+        {
+            return 0;
+        }
+        callStart = c->ast->nodes[calleeNode].dataStart;
+        callEnd = c->ast->nodes[calleeNode].dataEnd;
+        isBuiltinLen = SLMirStmtLowerNameEqLiteral(c, callStart, callEnd, "len");
+        isBuiltinCStr = SLMirStmtLowerNameEqLiteral(c, callStart, callEnd, "cstr");
+    } else if (c->ast->nodes[calleeNode].kind == SLAst_FIELD_EXPR) {
+        int32_t baseNode = c->ast->nodes[calleeNode].firstChild;
+        if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
+            c->supported = 0;
+            return 0;
+        }
+        if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        argc = 1u;
+        callFlags = SLMirSymbolFlag_CALL_RECEIVER_ARG0;
+        callStart = c->ast->nodes[calleeNode].dataStart;
+        callEnd = c->ast->nodes[calleeNode].dataEnd;
+        isBuiltinCStr = SLMirStmtLowerNameEqLiteral(c, callStart, callEnd, "cstr");
+    } else {
+        c->supported = 0;
+        return 0;
+    }
+    argNode = c->ast->nodes[calleeNode].nextSibling;
+    while (argNode >= 0) {
+        int32_t valueNode = argNode;
+        if (c->ast->nodes[argNode].kind == SLAst_CALL_ARG) {
+            valueNode = c->ast->nodes[argNode].firstChild;
+            if (valueNode < 0) {
+                c->supported = 0;
+                return 0;
+            }
+        }
+        if (SLMirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        if (argc == UINT16_MAX) {
+            c->supported = 0;
+            return 0;
+        }
+        argc++;
+        argNode = c->ast->nodes[argNode].nextSibling;
+    }
+    if (isBuiltinLen && callFlags == 0u && argc == 1u) {
+        return SLMirStmtLowerAppendInst(
+            c, SLMirOp_SEQ_LEN, SLTok_INVALID, 0, callStart, callEnd, NULL);
+    }
+    if (isBuiltinCStr && argc == 1u) {
+        return SLMirStmtLowerAppendInst(
+            c, SLMirOp_STR_CSTR, SLTok_INVALID, 0, callStart, callEnd, NULL);
+    }
+    inst.op = SLMirOp_CALL;
+    inst.tok = (uint16_t)argc;
+    inst.aux = SLMirRawCallAuxPack((uint32_t)exprNode, callFlags);
+    inst.start = callStart;
+    inst.end = callEnd;
+    return SLMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag);
+}
+
 static int SLMirStmtLowerAppendIntConst(
     SLMirStmtLower* c, int64_t value, uint32_t start, uint32_t end) {
     SLMirConst valueConst = { 0 };
@@ -831,6 +1062,8 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
     int              supported = 0;
     uint32_t         elemCount = 0;
     uint32_t         i;
+    int32_t          lhsNode;
+    int32_t          rhsNode;
     if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         c->supported = 0;
         return 0;
@@ -1019,6 +1252,102 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
         }
         return SLMirStmtLowerAppendInst(
             c, SLMirOp_AGG_GET, 0, fieldRef, expr->dataStart, expr->dataEnd, NULL);
+    }
+    if (expr->kind == SLAst_BINARY) {
+        lhsNode = expr->firstChild;
+        rhsNode = lhsNode >= 0 ? c->ast->nodes[lhsNode].nextSibling : -1;
+        if (lhsNode < 0 || rhsNode < 0 || c->ast->nodes[rhsNode].nextSibling >= 0
+            || (SLTokenKind)expr->op == SLTok_ASSIGN || (SLTokenKind)expr->op == SLTok_ADD_ASSIGN
+            || (SLTokenKind)expr->op == SLTok_SUB_ASSIGN
+            || (SLTokenKind)expr->op == SLTok_MUL_ASSIGN
+            || (SLTokenKind)expr->op == SLTok_DIV_ASSIGN
+            || (SLTokenKind)expr->op == SLTok_MOD_ASSIGN
+            || (SLTokenKind)expr->op == SLTok_AND_ASSIGN || (SLTokenKind)expr->op == SLTok_OR_ASSIGN
+            || (SLTokenKind)expr->op == SLTok_XOR_ASSIGN
+            || (SLTokenKind)expr->op == SLTok_LSHIFT_ASSIGN
+            || (SLTokenKind)expr->op == SLTok_RSHIFT_ASSIGN)
+        {
+            c->supported = 0;
+            return 0;
+        }
+        if (SLMirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        if (SLMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        return SLMirStmtLowerAppendInst(
+            c, SLMirOp_BINARY, (uint16_t)expr->op, 0, expr->start, expr->end, NULL);
+    }
+    if (expr->kind == SLAst_COMPOUND_LIT) {
+        int32_t      child = expr->firstChild;
+        int32_t      typeNode = -1;
+        SLMirTypeRef typeRef = { 0 };
+        uint32_t     typeRefIndex = UINT32_MAX;
+        if (child >= 0 && (uint32_t)child < c->ast->len
+            && SLMirStmtLowerIsTypeNodeKind(c->ast->nodes[child].kind))
+        {
+            typeNode = child;
+            child = c->ast->nodes[child].nextSibling;
+        }
+        if (typeNode < 0) {
+            SLMirLowerStmtSetUnsupportedDetail(
+                c,
+                expr->start,
+                expr->end,
+                "inferred compound literal is not supported by MIR lowering");
+            return 0;
+        }
+        typeRef.astNode = (uint32_t)typeNode;
+        typeRef.flags = 0u;
+        if (SLMirProgramBuilderAddType(&c->builder, &typeRef, &typeRefIndex) != 0) {
+            SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, expr->start, expr->end);
+            return -1;
+        }
+        if (SLMirStmtLowerAppendInst(
+                c, SLMirOp_AGG_ZERO, 0, typeRefIndex, expr->start, expr->end, NULL)
+            != 0)
+        {
+            return -1;
+        }
+        while (child >= 0) {
+            const SLAstNode* field = &c->ast->nodes[child];
+            int32_t          valueNode = c->ast->nodes[child].firstChild;
+            uint32_t         fieldRef = UINT32_MAX;
+            if (field->kind != SLAst_COMPOUND_FIELD) {
+                c->supported = 0;
+                return 0;
+            }
+            if (valueNode >= 0) {
+                if (SLMirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
+                    return c->supported ? -1 : 0;
+                }
+            } else if ((field->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) != 0u) {
+                if (SLMirStmtLowerAppendLoadValueBySlice(
+                        c, field->dataStart, field->dataEnd, field->start, field->end)
+                    != 0)
+                {
+                    return -1;
+                }
+            } else {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerAddFieldRef(c, field->dataStart, field->dataEnd, &fieldRef) != 0) {
+                return -1;
+            }
+            if (SLMirStmtLowerAppendInst(
+                    c, SLMirOp_AGG_SET, 0, fieldRef, field->dataStart, field->dataEnd, NULL)
+                != 0)
+            {
+                return -1;
+            }
+            child = c->ast->nodes[child].nextSibling;
+        }
+        return 0;
+    }
+    if (expr->kind == SLAst_CALL && SLMirStmtLowerCallCanUseManualLowering(c, exprNode)) {
+        return SLMirStmtLowerCallExpr(c, exprNode);
     }
     if (SLMirBuildExpr(c->arena, c->ast, c->src, exprNode, &chunk, &supported, c->diag) != 0) {
         return -1;

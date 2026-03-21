@@ -1127,6 +1127,66 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_AGG_ZERO: {
+                SLCTFEValue out;
+                int         aggIsConst = 0;
+                if (run->program == NULL || run->env.zeroInitLocal == NULL
+                    || ins->aux >= run->program->typeLen)
+                {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&out);
+                if (run->env.zeroInitLocal(
+                        run->env.zeroInitCtx,
+                        &run->program->types[ins->aux],
+                        &out,
+                        &aggIsConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!aggIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_AGG_SET: {
+                SLCTFEValue value;
+                SLCTFEValue base;
+                int         fieldIsConst = 0;
+                uint32_t    nameStart = ins->start;
+                uint32_t    nameEnd = ins->end;
+                if (SLCTFEPop(run, &value) != 0 || SLCTFEPop(run, &base) != 0) {
+                    return 0;
+                }
+                if (run->env.aggSetField == NULL) {
+                    return 0;
+                }
+                SLMirResolveFieldName(run, ins, &nameStart, &nameEnd);
+                if (run->env.aggSetField(
+                        run->env.aggSetFieldCtx,
+                        &base,
+                        nameStart,
+                        nameEnd,
+                        &value,
+                        &fieldIsConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!fieldIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &base) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_AGG_GET: {
                 SLCTFEValue base;
                 SLCTFEValue out;

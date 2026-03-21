@@ -2354,6 +2354,14 @@ static int SLEvalMirAggAddrField(
     SLCTFEValue*       outValue,
     int*               outIsConst,
     SLDiag* _Nullable diag);
+static int SLEvalMirAggSetField(
+    void* _Nullable ctx,
+    SLCTFEValue* _Nonnull inOutBase,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    const SLCTFEValue* _Nonnull inValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 static int SLEvalMirMakeTuple(
     void*              ctx,
     const SLCTFEValue* elems,
@@ -7629,6 +7637,38 @@ static int SLEvalMirAggAddrField(
     return 0;
 }
 
+static int SLEvalMirAggSetField(
+    void* _Nullable ctx,
+    SLCTFEValue* _Nonnull inOutBase,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    const SLCTFEValue* _Nonnull inValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram* p = (SLEvalProgram*)ctx;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || p->currentFile == NULL || inOutBase == NULL || inValue == NULL
+        || outIsConst == NULL)
+    {
+        return -1;
+    }
+    if (!SLEvalValueSetFieldPath(inOutBase, p->currentFile->source, nameStart, nameEnd, inValue)) {
+        if (p->currentExecCtx != NULL) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx,
+                nameStart,
+                nameEnd,
+                "field assignment is not supported by evaluator backend");
+        }
+        return 0;
+    }
+    *outIsConst = 1;
+    return 0;
+}
+
 static int SLEvalMirHostCall(
     void*              ctx,
     uint32_t           hostId,
@@ -7851,14 +7891,11 @@ static int SLEvalMirCallNodeIsLazyBuiltin(SLEvalProgram* p, int32_t callNode) {
         return 0;
     }
     if (callee->kind == SLAst_IDENT) {
-        return SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "typeof")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "kind")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "base")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "is_alias")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "type_name")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "ptr")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "slice")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "array");
+        return SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "error")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "error_at")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "warn")
+            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "warn_at");
     }
     if (callee->kind != SLAst_FIELD_EXPR) {
         return 0;
@@ -7874,11 +7911,7 @@ static int SLEvalMirCallNodeIsLazyBuiltin(SLEvalProgram* p, int32_t callNode) {
             ast->nodes[recvNode].dataEnd,
             "reflect"))
     {
-        return SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "kind")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "base")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "is_alias")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "type_name");
+        return SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of");
     }
     return 0;
 }
@@ -7964,6 +7997,8 @@ static void SLEvalMirInitExecEnv(
     env->aggGetFieldCtx = p;
     env->aggAddrField = SLEvalMirAggAddrField;
     env->aggAddrFieldCtx = p;
+    env->aggSetField = SLEvalMirAggSetField;
+    env->aggSetFieldCtx = p;
     env->makeTuple = SLEvalMirMakeTuple;
     env->makeTupleCtx = p;
     env->makeVariadicPack = SLEvalMirMakeVariadicPack;
