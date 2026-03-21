@@ -505,6 +505,7 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
                     }
                     break;
                 case SLMirOp_LOAD_IDENT:
+                case SLMirOp_STORE_IDENT:
                 case SLMirOp_CALL:
                     if (program->symbolLen == 0 || ins->aux >= program->symbolLen) {
                         SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
@@ -512,6 +513,7 @@ int SLMirValidateProgram(const SLMirProgram* program, SLDiag* _Nullable diag) {
                     }
                     break;
                 case SLMirOp_CAST:
+                case SLMirOp_COERCE:
                     if (program->typeLen == 0 || ins->aux >= program->typeLen) {
                         SLMirSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, ins->start, ins->end);
                         return -1;

@@ -13,6 +13,13 @@ typedef int (*SLMirResolveIdentFn)(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef int (*SLMirAssignIdentFn)(
+    void* _Nullable ctx,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    const SLMirExecValue* _Nonnull inValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 
 typedef int (*SLMirResolveCallFn)(
     void* _Nullable ctx,
@@ -128,6 +135,13 @@ typedef int (*SLMirAggSetFieldFn)(
     const SLMirExecValue* _Nonnull inValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef int (*SLMirMakeAggregateFn)(
+    void* _Nullable ctx,
+    uint32_t sourceNode,
+    uint32_t fieldCount,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 typedef int (*SLMirMakeTupleFn)(
     void* _Nullable ctx,
     const SLMirExecValue* _Nonnull elems,
@@ -165,6 +179,8 @@ typedef void (*SLMirSetReasonFn)(
 typedef struct {
     SLStrView src;
     SLMirResolveIdentFn _Nullable resolveIdent;
+    SLMirAssignIdentFn _Nullable assignIdent;
+    void* _Nullable assignIdentCtx;
     SLMirResolveCallPreFn _Nullable resolveCallPre;
     SLMirResolveCallFn _Nullable resolveCall;
     void* _Nullable resolveCtx;
@@ -192,6 +208,8 @@ typedef struct {
     void* _Nullable aggAddrFieldCtx;
     SLMirAggSetFieldFn _Nullable aggSetField;
     void* _Nullable aggSetFieldCtx;
+    SLMirMakeAggregateFn _Nullable makeAggregate;
+    void* _Nullable makeAggregateCtx;
     SLMirMakeTupleFn _Nullable makeTuple;
     void* _Nullable makeTupleCtx;
     SLMirMakeVariadicPackFn _Nullable makeVariadicPack;

@@ -262,6 +262,7 @@ static int SLMirLowerRewriteSymbolInst(
     memcpy(out, in, sizeof(*out));
     switch (in->op) {
         case SLMirOp_LOAD_IDENT:
+        case SLMirOp_STORE_IDENT:
             kind = SLMirSymbol_IDENT;
             target = in->aux;
             break;

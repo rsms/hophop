@@ -1505,7 +1505,9 @@ static uint64_t SLEvalMakeAggregateTag(const SLParsedFile* file, int32_t nodeId)
         tag = (uint64_t)(uintptr_t)file;
     }
     tag ^= (uint64_t)(uint32_t)(nodeId + 1) << 2;
-    return tag & ~(SL_EVAL_PACKAGE_REF_TAG_FLAG | SL_EVAL_NULL_FIXED_LEN_TAG);
+    return tag
+         & ~(SL_EVAL_PACKAGE_REF_TAG_FLAG | SL_EVAL_NULL_FIXED_LEN_TAG
+             | SLCTFEValueTag_AGG_PARTIAL);
 }
 
 static void SLEvalValueSetAggregate(
@@ -1552,6 +1554,24 @@ static int SLEvalAggregateSetFieldValue(
     uint32_t           nameEnd,
     const SLCTFEValue* inValue,
     SLCTFEValue* _Nullable outValue);
+static int SLEvalExecExprInFileWithType(
+    SLEvalProgram*      p,
+    const SLParsedFile* file,
+    SLCTFEExecEnv*      env,
+    int32_t             exprNode,
+    const SLParsedFile* typeFile,
+    int32_t             typeNode,
+    SLCTFEValue*        outValue,
+    int*                outIsConst);
+static SLEvalAggregateField* _Nullable SLEvalAggregateFindDirectField(
+    SLEvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd);
+static int SLEvalValueSetFieldPath(
+    SLCTFEValue*       value,
+    const char*        source,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* inValue);
+static int SLEvalFinalizeAggregateVarArrays(SLEvalProgram* p, SLEvalAggregate* agg);
 static int SLEvalForInIndexCb(
     void*              ctx,
     SLCTFEExecCtx*     execCtx,
@@ -1747,9 +1767,14 @@ static int SLEvalCoerceValueToTypeNode(
          || type->kind == SLAst_TYPE_ANON_UNION)
         && sourceAgg != NULL)
     {
-        SLCTFEValue      targetValue;
-        int              targetIsConst = 0;
-        SLEvalAggregate* targetAgg;
+        SLCTFEValue        targetValue;
+        int                targetIsConst = 0;
+        SLEvalAggregate*   targetAgg;
+        uint8_t*           explicitSet = NULL;
+        SLCTFEExecBinding* fieldBindings = NULL;
+        SLCTFEExecEnv      fieldFrame;
+        int                finalizeRc = 0;
+        int sourcePartial = (sourceValue->typeTag & SLCTFEValueTag_AGG_PARTIAL) != 0u;
         if (SLEvalZeroInitTypeNode(p, typeFile, typeNode, &targetValue, &targetIsConst) != 0) {
             return -1;
         }
@@ -1760,18 +1785,102 @@ static int SLEvalCoerceValueToTypeNode(
         if (targetAgg == NULL) {
             return 0;
         }
+        if (targetAgg->fieldLen > 0) {
+            explicitSet = (uint8_t*)SLArenaAlloc(
+                p->arena, targetAgg->fieldLen, (uint32_t)_Alignof(uint8_t));
+            fieldBindings = (SLCTFEExecBinding*)SLArenaAlloc(
+                p->arena,
+                sizeof(SLCTFEExecBinding) * targetAgg->fieldLen,
+                (uint32_t)_Alignof(SLCTFEExecBinding));
+            if (explicitSet == NULL || fieldBindings == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            memset(explicitSet, 0, targetAgg->fieldLen);
+            memset(fieldBindings, 0, sizeof(SLCTFEExecBinding) * targetAgg->fieldLen);
+        }
         for (i = 0; i < sourceAgg->fieldLen; i++) {
             const SLEvalAggregateField* field = &sourceAgg->fields[i];
-            if (!SLEvalAggregateSetFieldValue(
-                    targetAgg,
+            SLCTFEValue                 fieldValue = field->value;
+            if (sourcePartial && field->typeNode >= 0 && (field->_reserved & 1u) == 0u) {
+                continue;
+            }
+            if (explicitSet != NULL) {
+                uint32_t j;
+                for (j = 0; j < targetAgg->fieldLen; j++) {
+                    SLEvalAggregateField* targetField = &targetAgg->fields[j];
+                    if (SliceEqSlice(
+                            sourceAgg->file->source,
+                            field->nameStart,
+                            field->nameEnd,
+                            targetAgg->file->source,
+                            targetField->nameStart,
+                            targetField->nameEnd))
+                    {
+                        if (!sourcePartial || (field->_reserved & 1u) != 0u || field->typeNode < 0)
+                        {
+                            explicitSet[j] = 1u;
+                        }
+                        if (targetField->typeNode >= 0
+                            && SLEvalCoerceValueToTypeNode(
+                                   p, targetAgg->file, targetField->typeNode, &fieldValue)
+                                   != 0)
+                        {
+                            return -1;
+                        }
+                        break;
+                    }
+                }
+            }
+            if (!SLEvalValueSetFieldPath(
+                    &targetValue,
                     sourceAgg->file->source,
                     field->nameStart,
                     field->nameEnd,
-                    &field->value,
-                    NULL))
+                    &fieldValue))
             {
                 return 0;
             }
+        }
+        fieldFrame.parent = p->currentExecCtx != NULL ? p->currentExecCtx->env : NULL;
+        fieldFrame.bindings = fieldBindings;
+        fieldFrame.bindingLen = 0;
+        for (i = 0; i < targetAgg->fieldLen; i++) {
+            SLEvalAggregateField* field = &targetAgg->fields[i];
+            if ((explicitSet == NULL || explicitSet[i] == 0u) && field->defaultExprNode >= 0) {
+                SLCTFEValue defaultValue;
+                int         defaultIsConst = 0;
+                if (SLEvalExecExprInFileWithType(
+                        p,
+                        targetAgg->file,
+                        &fieldFrame,
+                        field->defaultExprNode,
+                        targetAgg->file,
+                        field->typeNode,
+                        &defaultValue,
+                        &defaultIsConst)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!defaultIsConst) {
+                    return 0;
+                }
+                field->value = defaultValue;
+            }
+            if (fieldBindings != NULL) {
+                fieldBindings[fieldFrame.bindingLen].nameStart = field->nameStart;
+                fieldBindings[fieldFrame.bindingLen].nameEnd = field->nameEnd;
+                fieldBindings[fieldFrame.bindingLen].typeId = -1;
+                fieldBindings[fieldFrame.bindingLen].typeNode = field->typeNode;
+                fieldBindings[fieldFrame.bindingLen].mutable = 1u;
+                fieldBindings[fieldFrame.bindingLen].value = field->value;
+                fieldFrame.bindingLen++;
+            }
+            field->_reserved = 0;
+        }
+        finalizeRc = SLEvalFinalizeAggregateVarArrays(p, targetAgg);
+        if (finalizeRc != 1) {
+            return finalizeRc < 0 ? -1 : 0;
         }
         *inOutValue = targetValue;
     }
@@ -2509,6 +2618,13 @@ static int SLEvalResolveIdent(
     uint32_t     nameEnd,
     SLCTFEValue* outValue,
     int*         outIsConst,
+    SLDiag* _Nullable diag);
+static int SLEvalMirAssignIdent(
+    void*              ctx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* inValue,
+    int*               outIsConst,
     SLDiag* _Nullable diag);
 static int SLEvalResolveCall(
     void*              ctx,
@@ -6618,6 +6734,13 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
 static int SLEvalAssignExprCb(
     void* ctx, SLCTFEExecCtx* execCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
 static int SLEvalZeroInitCb(void* ctx, int32_t typeNode, SLCTFEValue* outValue, int* outIsConst);
+static int SLEvalMirMakeAggregate(
+    void*        ctx,
+    uint32_t     sourceNode,
+    uint32_t     fieldCount,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    SLDiag* _Nullable diag);
 static int SLEvalMirZeroInitLocal(
     void*               ctx,
     const SLMirTypeRef* typeRef,
@@ -7090,6 +7213,106 @@ static int SLEvalZeroInitCb(void* ctx, int32_t typeNode, SLCTFEValue* outValue, 
         return -1;
     }
     return SLEvalZeroInitTypeNode(p, p->currentFile, typeNode, outValue, outIsConst);
+}
+
+static int SLEvalMirMakeAggregate(
+    void*        ctx,
+    uint32_t     sourceNode,
+    uint32_t     fieldCount,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram*   p = (SLEvalProgram*)ctx;
+    SLEvalAggregate* agg;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {
+        if (diag != NULL) {
+            diag->code = SLDiag_UNEXPECTED_TOKEN;
+            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->start = 0;
+            diag->end = 0;
+            diag->argStart = 0;
+            diag->argEnd = 0;
+        }
+        return -1;
+    }
+    agg = (SLEvalAggregate*)SLArenaAlloc(
+        p->arena, sizeof(SLEvalAggregate), (uint32_t)_Alignof(SLEvalAggregate));
+    if (agg == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    memset(agg, 0, sizeof(*agg));
+    agg->file = p->currentFile;
+    agg->nodeId = (int32_t)sourceNode;
+    agg->fieldLen = fieldCount;
+    if (fieldCount > 0) {
+        agg->fields = (SLEvalAggregateField*)SLArenaAlloc(
+            p->arena,
+            sizeof(SLEvalAggregateField) * fieldCount,
+            (uint32_t)_Alignof(SLEvalAggregateField));
+        if (agg->fields == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        memset(agg->fields, 0, sizeof(SLEvalAggregateField) * fieldCount);
+        {
+            uint32_t i;
+            for (i = 0; i < fieldCount; i++) {
+                agg->fields[i].typeNode = -1;
+                agg->fields[i].defaultExprNode = -1;
+            }
+        }
+    }
+    SLEvalValueSetAggregate(outValue, p->currentFile, (int32_t)sourceNode, agg);
+    outValue->typeTag |= SLCTFEValueTag_AGG_PARTIAL;
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLEvalMirAssignIdent(
+    void*              ctx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* inValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram* p = (SLEvalProgram*)ctx;
+    int32_t        topVarIndex;
+    SLCTFEValue    value;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || p->currentFile == NULL || inValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    topVarIndex = SLEvalFindTopVarBySlice(p, p->currentFile, nameStart, nameEnd);
+    if (topVarIndex < 0) {
+        if (p->currentExecCtx != NULL) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx,
+                nameStart,
+                nameEnd,
+                "identifier assignment is not supported by evaluator backend");
+        }
+        return 0;
+    }
+    value = *inValue;
+    if (p->topVars[(uint32_t)topVarIndex].declTypeNode >= 0
+        && SLEvalCoerceValueToTypeNode(
+               p,
+               p->topVars[(uint32_t)topVarIndex].file,
+               p->topVars[(uint32_t)topVarIndex].declTypeNode,
+               &value)
+               != 0)
+    {
+        return -1;
+    }
+    p->topVars[(uint32_t)topVarIndex].value = value;
+    p->topVars[(uint32_t)topVarIndex].state = SLEvalTopConstState_READY;
+    *outIsConst = 1;
+    return 0;
 }
 
 static int SLEvalMirZeroInitLocal(
@@ -7710,6 +7933,56 @@ static int SLEvalMirAggSetField(
     {
         return -1;
     }
+    {
+        SLCTFEValue*     value = inOutBase;
+        SLEvalAggregate* agg = SLEvalValueAsAggregate(value);
+        uint32_t         i;
+        uint32_t         dot = nameStart;
+        while (dot < nameEnd && p->currentFile->source[dot] != '.') {
+            dot++;
+        }
+        if (agg == NULL) {
+            value = (SLCTFEValue*)SLEvalValueTargetOrSelf(inOutBase);
+            agg = SLEvalValueAsAggregate(value);
+        }
+        if (agg != NULL && dot == nameEnd) {
+            if (value != NULL) {
+                value->typeTag |= SLCTFEValueTag_AGG_PARTIAL;
+            }
+            SLEvalAggregateField* field = SLEvalAggregateFindDirectField(
+                agg, p->currentFile->source, nameStart, nameEnd);
+            if (field != NULL) {
+                SLCTFEValue coercedValue = *inValue;
+                if (field->typeNode >= 0
+                    && SLEvalCoerceValueToTypeNode(p, agg->file, field->typeNode, &coercedValue)
+                           != 0)
+                {
+                    return -1;
+                }
+                field->_reserved |= 1u;
+                field->value = coercedValue;
+                *outIsConst = 1;
+                return 0;
+            }
+            for (i = 0; i < agg->fieldLen; i++) {
+                field = &agg->fields[i];
+                if (field->nameStart == 0 && field->nameEnd == 0 && field->typeNode < 0
+                    && field->defaultExprNode < 0)
+                {
+                    field->nameStart = nameStart;
+                    field->nameEnd = nameEnd;
+                    field->flags = 0;
+                    field->_reserved = 1u;
+                    field->value = *inValue;
+                    *outIsConst = 1;
+                    return 0;
+                }
+            }
+        }
+        if (agg != NULL && value != NULL) {
+            value->typeTag |= SLCTFEValueTag_AGG_PARTIAL;
+        }
+    }
     if (!SLEvalValueSetFieldPath(inOutBase, p->currentFile->source, nameStart, nameEnd, inValue)) {
         if (p->currentExecCtx != NULL) {
             SLCTFEExecSetReason(
@@ -8054,6 +8327,8 @@ static void SLEvalMirInitExecEnv(
     env->src.ptr = file->source;
     env->src.len = file->sourceLen;
     env->resolveIdent = SLEvalResolveIdent;
+    env->assignIdent = SLEvalMirAssignIdent;
+    env->assignIdentCtx = p;
     env->resolveCallPre = SLEvalResolveCallMirPre;
     env->resolveCall = SLEvalResolveCallMir;
     env->resolveCtx = p;
@@ -8081,6 +8356,8 @@ static void SLEvalMirInitExecEnv(
     env->aggAddrFieldCtx = p;
     env->aggSetField = SLEvalMirAggSetField;
     env->aggSetFieldCtx = p;
+    env->makeAggregate = SLEvalMirMakeAggregate;
+    env->makeAggregateCtx = p;
     env->makeTuple = SLEvalMirMakeTuple;
     env->makeTupleCtx = p;
     env->makeVariadicPack = SLEvalMirMakeVariadicPack;
@@ -8882,6 +9159,11 @@ static int SLEvalInvokeFunction(
                 SLEvalValueSetArray(&boundValue, fn->file, paramTypeNode, packArray);
             } else {
                 boundValue = args[paramIndex];
+                if (paramTypeNode >= 0
+                    && SLEvalCoerceValueToTypeNode(p, fn->file, paramTypeNode, &boundValue) != 0)
+                {
+                    return -1;
+                }
             }
             paramBindings[paramIndex].nameStart = n->dataStart;
             paramBindings[paramIndex].nameEnd = n->dataEnd;

@@ -507,6 +507,20 @@ static int SLMirStmtLowerAppendLoadValueBySlice(
     return SLMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag);
 }
 
+static int SLMirStmtLowerAppendStoreValueBySlice(
+    SLMirStmtLower* c, uint32_t nameStart, uint32_t nameEnd, uint32_t start, uint32_t end) {
+    SLMirInst inst = { 0 };
+    if (c == NULL) {
+        return -1;
+    }
+    inst.op = SLMirOp_STORE_IDENT;
+    inst.tok = SLTok_IDENT;
+    inst.aux = 0u;
+    inst.start = nameStart;
+    inst.end = nameEnd;
+    return SLMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag);
+}
+
 static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode);
 
 static int SLMirStmtLowerNameEqLiteral(
@@ -1316,6 +1330,7 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
         int32_t      typeNode = -1;
         SLMirTypeRef typeRef = { 0 };
         uint32_t     typeRefIndex = UINT32_MAX;
+        uint32_t     fieldCount = 0;
         if (child >= 0 && (uint32_t)child < c->ast->len
             && SLMirStmtLowerIsTypeNodeKind(c->ast->nodes[child].kind))
         {
@@ -1323,24 +1338,44 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
             child = c->ast->nodes[child].nextSibling;
         }
         if (typeNode < 0) {
-            SLMirLowerStmtSetUnsupportedDetail(
-                c,
-                expr->start,
-                expr->end,
-                "inferred compound literal is not supported by MIR lowering");
-            return 0;
-        }
-        typeRef.astNode = (uint32_t)typeNode;
-        typeRef.flags = 0u;
-        if (SLMirProgramBuilderAddType(&c->builder, &typeRef, &typeRefIndex) != 0) {
-            SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, expr->start, expr->end);
-            return -1;
-        }
-        if (SLMirStmtLowerAppendInst(
-                c, SLMirOp_AGG_ZERO, 0, typeRefIndex, expr->start, expr->end, NULL)
-            != 0)
-        {
-            return -1;
+            int32_t scan = child;
+            while (scan >= 0) {
+                if (c->ast->nodes[scan].kind != SLAst_COMPOUND_FIELD) {
+                    c->supported = 0;
+                    return 0;
+                }
+                fieldCount++;
+                scan = c->ast->nodes[scan].nextSibling;
+            }
+            if (fieldCount > UINT16_MAX) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerAppendInst(
+                    c,
+                    SLMirOp_AGG_MAKE,
+                    (uint16_t)fieldCount,
+                    (uint32_t)exprNode,
+                    expr->start,
+                    expr->end,
+                    NULL)
+                != 0)
+            {
+                return -1;
+            }
+        } else {
+            typeRef.astNode = (uint32_t)typeNode;
+            typeRef.flags = 0u;
+            if (SLMirProgramBuilderAddType(&c->builder, &typeRef, &typeRefIndex) != 0) {
+                SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, expr->start, expr->end);
+                return -1;
+            }
+            if (SLMirStmtLowerAppendInst(
+                    c, SLMirOp_AGG_ZERO, 0, typeRefIndex, expr->start, expr->end, NULL)
+                != 0)
+            {
+                return -1;
+            }
         }
         while (child >= 0) {
             const SLAstNode* field = &c->ast->nodes[child];
@@ -1375,6 +1410,10 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
                 return -1;
             }
             child = c->ast->nodes[child].nextSibling;
+        }
+        if (typeNode >= 0) {
+            return SLMirStmtLowerAppendInst(
+                c, SLMirOp_COERCE, 0, typeRefIndex, expr->start, expr->end, NULL);
         }
         return 0;
     }
@@ -1871,6 +1910,23 @@ static int SLMirStmtLowerExprNodeAsStmt(
             }
             return SLMirStmtLowerAppendInst(
                 c, SLMirOp_LOCAL_STORE, 0, slot, expr->start, expr->end, NULL);
+        }
+        if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
+            && c->ast->nodes[lhsNode].kind == SLAst_IDENT)
+        {
+            if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            return SLMirStmtLowerAppendStoreValueBySlice(
+                c,
+                c->ast->nodes[lhsNode].dataStart,
+                c->ast->nodes[lhsNode].dataEnd,
+                c->ast->nodes[lhsNode].start,
+                c->ast->nodes[lhsNode].end);
         }
         if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
             && c->ast->nodes[lhsNode].kind == SLAst_UNARY

@@ -659,6 +659,34 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_STORE_IDENT: {
+                SLCTFEValue value;
+                int         idIsConst = 0;
+                uint32_t    nameStart = ins->start;
+                uint32_t    nameEnd = ins->end;
+                if (SLCTFEPop(run, &value) != 0) {
+                    return 0;
+                }
+                if (run->env.assignIdent == NULL) {
+                    return 0;
+                }
+                SLMirResolveSymbolName(run, ins, SLMirSymbol_IDENT, &nameStart, &nameEnd);
+                if (run->env.assignIdent(
+                        run->env.assignIdentCtx,
+                        nameStart,
+                        nameEnd,
+                        &value,
+                        &idIsConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!idIsConst) {
+                    return 0;
+                }
+                break;
+            }
             case SLMirOp_CALL: {
                 SLCTFEValue* args = NULL;
                 SLCTFEValue  v;
@@ -1131,6 +1159,32 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_AGG_MAKE: {
+                SLCTFEValue out;
+                int         aggIsConst = 0;
+                if (run->env.makeAggregate == NULL) {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&out);
+                if (run->env.makeAggregate(
+                        run->env.makeAggregateCtx,
+                        ins->aux,
+                        (uint32_t)ins->tok,
+                        &out,
+                        &aggIsConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!aggIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_AGG_ZERO: {
                 SLCTFEValue out;
                 int         aggIsConst = 0;
@@ -1412,6 +1466,24 @@ static int SLMirRunLoop(
                     }
                 }
                 if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_COERCE: {
+                SLCTFEValue value;
+                int         coerceRc;
+                if (SLCTFEPop(run, &value) != 0) {
+                    return 0;
+                }
+                if (value.kind == SLCTFEValue_AGGREGATE) {
+                    value.typeTag |= SLCTFEValueTag_AGG_PARTIAL;
+                }
+                coerceRc = SLMirCoerceValueForType(run, ins->aux, &value);
+                if (coerceRc <= 0) {
+                    return coerceRc < 0 ? -1 : 0;
+                }
+                if (SLCTFEPush(run, &value) != 0) {
                     return -1;
                 }
                 break;
