@@ -9,8 +9,10 @@ typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
     uint32_t slot;
+    int32_t  typeNode;
+    int32_t  initExprNode;
     uint8_t  mutable;
-    uint8_t  _reserved[3];
+    uint8_t  _reserved[2];
 } SLMirLowerLocal;
 
 typedef struct {
@@ -35,29 +37,31 @@ typedef struct {
 } SLMirChunkInsert;
 
 typedef struct {
-    SLArena*             arena;
-    const SLAst*         ast;
-    SLStrView            src;
-    SLMirProgramBuilder  builder;
-    uint32_t             functionIndex;
-    int32_t              functionReturnTypeNode;
-    SLMirLowerLocal*     locals;
-    uint32_t             localLen;
-    uint32_t             localCap;
-    uint32_t             breakJumps[256];
-    uint32_t             breakJumpLen;
-    uint32_t             continueJumps[256];
-    uint32_t             continueJumpLen;
-    SLMirLowerControl    controls[32];
-    uint32_t             controlLen;
-    int32_t              deferredStmtNodes[256];
-    uint32_t             deferredStmtLen;
-    SLMirLowerBlockScope blockScopes[64];
-    uint32_t             blockDepth;
-    uint8_t              loweringDeferred;
-    uint8_t              _reserved2[3];
-    int                  supported;
-    SLDiag*              diag;
+    SLArena*              arena;
+    const SLAst*          ast;
+    SLStrView             src;
+    SLMirProgramBuilder   builder;
+    uint32_t              functionIndex;
+    int32_t               functionReturnTypeNode;
+    SLMirLowerLocal*      locals;
+    uint32_t              localLen;
+    uint32_t              localCap;
+    uint32_t              breakJumps[256];
+    uint32_t              breakJumpLen;
+    uint32_t              continueJumps[256];
+    uint32_t              continueJumpLen;
+    SLMirLowerControl     controls[32];
+    uint32_t              controlLen;
+    int32_t               deferredStmtNodes[256];
+    uint32_t              deferredStmtLen;
+    SLMirLowerBlockScope  blockScopes[64];
+    uint32_t              blockDepth;
+    uint8_t               loweringDeferred;
+    uint8_t               _reserved2[3];
+    int                   supported;
+    SLDiag*               diag;
+    SLMirLowerConstExprFn lowerConstExpr;
+    void*                 lowerConstExprCtx;
 } SLMirStmtLower;
 
 static void SLMirLowerStmtSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
@@ -70,6 +74,20 @@ static void SLMirLowerStmtSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start,
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+}
+
+static void SLMirLowerStmtSetUnsupportedDetail(
+    SLMirStmtLower* c, uint32_t start, uint32_t end, const char* reason) {
+    if (c == NULL) {
+        return;
+    }
+    c->supported = 0;
+    if (c->diag == NULL || reason == NULL || reason[0] == '\0' || c->diag->detail != NULL) {
+        return;
+    }
+    c->diag->start = start;
+    c->diag->end = end;
+    c->diag->detail = reason;
 }
 
 static int SLMirStmtLowerIsTypeNodeKind(SLAstKind kind) {
@@ -169,6 +187,7 @@ static int SLMirStmtLowerPushLocal(
     int             isParam,
     int             zeroInit,
     int32_t         typeNode,
+    int32_t         initExprNode,
     uint32_t*       outSlot) {
     SLMirLocal   local = { 0 };
     SLMirTypeRef typeRef = { 0 };
@@ -178,6 +197,8 @@ static int SLMirStmtLowerPushLocal(
     }
     local.typeRef = UINT32_MAX;
     local.flags = mutable ? SLMirLocalFlag_MUTABLE : SLMirLocalFlag_NONE;
+    local.nameStart = nameStart;
+    local.nameEnd = nameEnd;
     if (isParam) {
         local.flags |= SLMirLocalFlag_PARAM;
     }
@@ -199,10 +220,11 @@ static int SLMirStmtLowerPushLocal(
     c->locals[c->localLen].nameStart = nameStart;
     c->locals[c->localLen].nameEnd = nameEnd;
     c->locals[c->localLen].slot = slot;
+    c->locals[c->localLen].typeNode = typeNode;
+    c->locals[c->localLen].initExprNode = initExprNode;
     c->locals[c->localLen].mutable = mutable ? 1u : 0u;
     c->locals[c->localLen]._reserved[0] = 0;
     c->locals[c->localLen]._reserved[1] = 0;
-    c->locals[c->localLen]._reserved[2] = 0;
     if (outSlot != NULL) {
         *outSlot = slot;
     }
@@ -239,6 +261,177 @@ static int SLMirStmtLowerFindLocal(
         }
     }
     return 0;
+}
+
+static const SLMirLowerLocal* _Nullable SLMirStmtLowerFindLocalRef(
+    const SLMirStmtLower* c, uint32_t nameStart, uint32_t nameEnd) {
+    uint32_t nameLen;
+    uint32_t i;
+    if (c == NULL || nameEnd < nameStart || nameEnd > c->src.len) {
+        return NULL;
+    }
+    nameLen = nameEnd - nameStart;
+    i = c->localLen;
+    while (i > 0) {
+        const SLMirLowerLocal* local;
+        i--;
+        local = &c->locals[i];
+        if (local->nameEnd >= local->nameStart && local->nameEnd - local->nameStart == nameLen
+            && memcmp(c->src.ptr + local->nameStart, c->src.ptr + nameStart, nameLen) == 0)
+        {
+            return local;
+        }
+    }
+    return NULL;
+}
+
+static int SLMirStmtLowerBuiltinTypeSize(
+    const SLMirStmtLower* c, int32_t typeNode, int64_t* outSize) {
+    const SLAstNode* type;
+    if (c == NULL || outSize == NULL || typeNode < 0 || (uint32_t)typeNode >= c->ast->len) {
+        return 0;
+    }
+    type = &c->ast->nodes[typeNode];
+    switch (type->kind) {
+        case SLAst_TYPE_PTR:
+        case SLAst_TYPE_REF:
+        case SLAst_TYPE_MUTREF:
+        case SLAst_TYPE_FN:       *outSize = (int64_t)sizeof(void*); return 1;
+        case SLAst_TYPE_SLICE:
+        case SLAst_TYPE_MUTSLICE: *outSize = (int64_t)(sizeof(void*) * 2u); return 1;
+        case SLAst_TYPE_NAME:     {
+            uint32_t len = type->dataEnd >= type->dataStart ? type->dataEnd - type->dataStart : 0u;
+            const char* name = c->src.ptr + type->dataStart;
+            if ((len == 2u && memcmp(name, "u8", 2) == 0)
+                || (len == 2u && memcmp(name, "i8", 2) == 0)
+                || (len == 4u && memcmp(name, "bool", 4) == 0))
+            {
+                *outSize = 1;
+                return 1;
+            }
+            if ((len == 3u && memcmp(name, "u16", 3) == 0)
+                || (len == 3u && memcmp(name, "i16", 3) == 0))
+            {
+                *outSize = 2;
+                return 1;
+            }
+            if ((len == 3u && memcmp(name, "u32", 3) == 0)
+                || (len == 3u && memcmp(name, "i32", 3) == 0)
+                || (len == 3u && memcmp(name, "f32", 3) == 0)
+                || (len == 4u && memcmp(name, "rune", 4) == 0))
+            {
+                *outSize = 4;
+                return 1;
+            }
+            if ((len == 3u && memcmp(name, "u64", 3) == 0)
+                || (len == 3u && memcmp(name, "i64", 3) == 0)
+                || (len == 3u && memcmp(name, "f64", 3) == 0))
+            {
+                *outSize = 8;
+                return 1;
+            }
+            if ((len == 3u && memcmp(name, "int", 3) == 0)
+                || (len == 4u && memcmp(name, "uint", 4) == 0)
+                || (len == 5u && memcmp(name, "usize", 5) == 0)
+                || (len == 5u && memcmp(name, "isize", 5) == 0))
+            {
+                *outSize = (int64_t)sizeof(uintptr_t);
+                return 1;
+            }
+            if (len == 3u && memcmp(name, "str", 3) == 0) {
+                *outSize = (int64_t)(sizeof(void*) * 2u);
+                return 1;
+            }
+            if (len == 4u && memcmp(name, "type", 4) == 0) {
+                *outSize = (int64_t)sizeof(void*);
+                return 1;
+            }
+            return 0;
+        }
+        default: return 0;
+    }
+}
+
+static int SLMirStmtLowerInferInitExprSize(
+    const SLMirStmtLower* c, int32_t exprNode, int64_t* outSize) {
+    const SLAstNode* expr;
+    if (c == NULL || outSize == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    expr = &c->ast->nodes[exprNode];
+    switch (expr->kind) {
+        case SLAst_INT:    *outSize = (int64_t)sizeof(uintptr_t); return 1;
+        case SLAst_FLOAT:  *outSize = 8; return 1;
+        case SLAst_BOOL:   *outSize = 1; return 1;
+        case SLAst_STRING: *outSize = (int64_t)(sizeof(void*) * 2u); return 1;
+        case SLAst_CAST:   {
+            int32_t valueNode = expr->firstChild;
+            int32_t typeNode = valueNode >= 0 ? c->ast->nodes[valueNode].nextSibling : -1;
+            if (valueNode < 0 || typeNode < 0 || c->ast->nodes[typeNode].nextSibling >= 0) {
+                return 0;
+            }
+            return SLMirStmtLowerBuiltinTypeSize(c, typeNode, outSize);
+        }
+        default: return 0;
+    }
+}
+
+static int SLMirStmtLowerTryConstSizeofExpr(
+    const SLMirStmtLower* c, int32_t exprNode, int64_t* outSize) {
+    const SLAstNode* expr;
+    int32_t          innerNode;
+    if (c == NULL || outSize == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    expr = &c->ast->nodes[exprNode];
+    if (expr->kind != SLAst_SIZEOF) {
+        return 0;
+    }
+    innerNode = expr->firstChild;
+    if (innerNode < 0 || (uint32_t)innerNode >= c->ast->len) {
+        return 0;
+    }
+    if (expr->flags == 1u) {
+        if (SLMirStmtLowerBuiltinTypeSize(c, innerNode, outSize)) {
+            return 1;
+        }
+        if (c->ast->nodes[innerNode].kind == SLAst_TYPE_NAME
+            || c->ast->nodes[innerNode].kind == SLAst_IDENT)
+        {
+            const SLMirLowerLocal* local = SLMirStmtLowerFindLocalRef(
+                c, c->ast->nodes[innerNode].dataStart, c->ast->nodes[innerNode].dataEnd);
+            if (local != NULL) {
+                if (local->typeNode >= 0
+                    && SLMirStmtLowerBuiltinTypeSize(c, local->typeNode, outSize))
+                {
+                    return 1;
+                }
+                if (local->initExprNode >= 0
+                    && SLMirStmtLowerInferInitExprSize(c, local->initExprNode, outSize))
+                {
+                    return 1;
+                }
+            }
+        }
+        return 0;
+    }
+    if (c->ast->nodes[innerNode].kind == SLAst_IDENT) {
+        const SLMirLowerLocal* local = SLMirStmtLowerFindLocalRef(
+            c, c->ast->nodes[innerNode].dataStart, c->ast->nodes[innerNode].dataEnd);
+        if (local == NULL) {
+            return 0;
+        }
+        if (local->typeNode >= 0 && SLMirStmtLowerBuiltinTypeSize(c, local->typeNode, outSize)) {
+            return 1;
+        }
+        if (local->initExprNode >= 0
+            && SLMirStmtLowerInferInitExprSize(c, local->initExprNode, outSize))
+        {
+            return 1;
+        }
+        return 0;
+    }
+    return SLMirStmtLowerInferInitExprSize(c, innerNode, outSize);
 }
 
 static int SLMirStmtLowerAppendInst(
@@ -306,6 +499,19 @@ static int SLMirStmtLowerAppendIntConst(
     valueConst.kind = SLMirConst_INT;
     valueConst.bits = (uint64_t)value;
     if (SLMirProgramBuilderAddConst(&c->builder, &valueConst, &constIndex) != 0) {
+        SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, start, end);
+        return -1;
+    }
+    return SLMirStmtLowerAppendInst(c, SLMirOp_PUSH_CONST, 0, constIndex, start, end, NULL);
+}
+
+static int SLMirStmtLowerAppendConstValue(
+    SLMirStmtLower* c, const SLMirConst* value, uint32_t start, uint32_t end) {
+    uint32_t constIndex = 0;
+    if (c == NULL || value == NULL) {
+        return -1;
+    }
+    if (SLMirProgramBuilderAddConst(&c->builder, value, &constIndex) != 0) {
         SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, start, end);
         return -1;
     }
@@ -630,6 +836,45 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
         return 0;
     }
     expr = &c->ast->nodes[exprNode];
+    {
+        int64_t sizeValue = 0;
+        if (SLMirStmtLowerTryConstSizeofExpr(c, exprNode, &sizeValue)) {
+            return SLMirStmtLowerAppendIntConst(c, sizeValue, expr->start, expr->end);
+        }
+        if (expr->kind == SLAst_CAST) {
+            int32_t valueNode = expr->firstChild;
+            int32_t typeNode = valueNode >= 0 ? c->ast->nodes[valueNode].nextSibling : -1;
+            if (valueNode >= 0 && typeNode >= 0 && c->ast->nodes[typeNode].nextSibling < 0
+                && SLMirStmtLowerTryConstSizeofExpr(c, valueNode, &sizeValue))
+            {
+                return SLMirStmtLowerAppendIntConst(c, sizeValue, expr->start, expr->end);
+            }
+        }
+    }
+    if (c->lowerConstExpr != NULL) {
+        SLMirConst loweredConst = { 0 };
+        int lowerRc = c->lowerConstExpr(c->lowerConstExprCtx, exprNode, &loweredConst, c->diag);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (lowerRc > 0) {
+            return SLMirStmtLowerAppendConstValue(c, &loweredConst, expr->start, expr->end);
+        }
+        if (expr->kind == SLAst_CAST) {
+            int32_t valueNode = expr->firstChild;
+            int32_t typeNode = valueNode >= 0 ? c->ast->nodes[valueNode].nextSibling : -1;
+            if (valueNode >= 0 && typeNode >= 0 && c->ast->nodes[typeNode].nextSibling < 0) {
+                lowerRc = c->lowerConstExpr(
+                    c->lowerConstExprCtx, valueNode, &loweredConst, c->diag);
+                if (lowerRc < 0) {
+                    return -1;
+                }
+                if (lowerRc > 0) {
+                    return SLMirStmtLowerAppendConstValue(c, &loweredConst, expr->start, expr->end);
+                }
+            }
+        }
+    }
     if (expr->kind == SLAst_INDEX && (expr->flags & SLAstFlag_INDEX_SLICE) != 0u) {
         int32_t  baseNode = expr->firstChild;
         int32_t  extraNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
@@ -1473,7 +1718,7 @@ static int SLMirStmtLowerSwitch(SLMirStmtLower* c, int32_t stmtNode) {
             c->supported = 0;
             return 0;
         }
-        if (SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &subjectSlot) != 0) {
+        if (SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &subjectSlot) != 0) {
             return -1;
         }
         if (SLMirStmtLowerExpr(c, clauseNode) != 0 || !c->supported) {
@@ -1614,6 +1859,7 @@ static int SLMirStmtLowerSwitch(SLMirStmtLower* c, int32_t stmtNode) {
                         1,
                         0,
                         0,
+                        -1,
                         -1,
                         &aliasSlot)
                     != 0)
@@ -1778,8 +2024,8 @@ static int SLMirStmtLowerForIn(SLMirStmtLower* c, int32_t stmtNode) {
     if (valueDiscard) {
         iterFlags |= SLMirIterFlag_VALUE_DISCARD;
     }
-    if (SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &sourceSlot) != 0
-        || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &iterSlot) != 0)
+    if (SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &sourceSlot) != 0
+        || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &iterSlot) != 0)
     {
         return -1;
     }
@@ -1811,6 +2057,7 @@ static int SLMirStmtLowerForIn(SLMirStmtLower* c, int32_t stmtNode) {
                0,
                0,
                -1,
+               -1,
                &keySlot)
                != 0)
     {
@@ -1828,6 +2075,7 @@ static int SLMirStmtLowerForIn(SLMirStmtLower* c, int32_t stmtNode) {
                1,
                0,
                0,
+               -1,
                -1,
                &valueSlot)
                != 0)
@@ -2059,7 +2307,15 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             uint32_t           jumpInst = UINT32_MAX;
             SLMirLowerControl* control = SLMirStmtLowerCurrentBreakable(c);
             if (c->loweringDeferred || control == NULL) {
-                c->supported = 0;
+                if (c->loweringDeferred) {
+                    SLMirLowerStmtSetUnsupportedDetail(
+                        c,
+                        s->start,
+                        s->end,
+                        "deferred statement cannot alter control flow in const evaluation");
+                } else {
+                    c->supported = 0;
+                }
                 return 0;
             }
             if (c->deferredStmtLen > 0
@@ -2082,7 +2338,15 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             uint32_t           jumpInst = UINT32_MAX;
             SLMirLowerControl* control = SLMirStmtLowerCurrentContinuable(c);
             if (c->loweringDeferred || control == NULL) {
-                c->supported = 0;
+                if (c->loweringDeferred) {
+                    SLMirLowerStmtSetUnsupportedDetail(
+                        c,
+                        s->start,
+                        s->end,
+                        "deferred statement cannot alter control flow in const evaluation");
+                } else {
+                    c->supported = 0;
+                }
                 return 0;
             }
             if (c->deferredStmtLen > 0
@@ -2105,7 +2369,11 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             int32_t  exprNode = s->firstChild;
             uint32_t exprCount = 0;
             if (c->loweringDeferred) {
-                c->supported = 0;
+                SLMirLowerStmtSetUnsupportedDetail(
+                    c,
+                    s->start,
+                    s->end,
+                    "deferred statement cannot alter control flow in const evaluation");
                 return 0;
             }
             if (exprNode < 0) {
@@ -2217,7 +2485,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                 for (i = 0; i < rhsCount; i++) {
                     int32_t rhsExpr = SLMirStmtLowerAstListItemAt(c->ast, rhsList, i);
                     if (rhsExpr < 0
-                        || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &tempSlots[i]) != 0)
+                        || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tempSlots[i]) != 0)
                     {
                         return rhsExpr < 0 ? 0 : -1;
                     }
@@ -2234,7 +2502,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             } else {
                 int32_t rhsExpr = SLMirStmtLowerAstListItemAt(c->ast, rhsList, 0u);
                 if (rhsExpr < 0
-                    || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &tupleTempSlot) != 0)
+                    || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tupleTempSlot) != 0)
                 {
                     return rhsExpr < 0 ? 0 : -1;
                 }
@@ -2343,6 +2611,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                             0,
                             initNode < 0,
                             typeNode,
+                            SLMirStmtLowerVarLikeInitExprNodeAt(c->ast, stmtNode, (int32_t)i),
                             &localSlot)
                         != 0)
                     {
@@ -2350,7 +2619,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                     }
                 }
                 if (useTupleInitTemp) {
-                    if (SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, &tupleTempSlot) != 0) {
+                    if (SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tupleTempSlot) != 0) {
                         return -1;
                     }
                     if (SLMirStmtLowerExpr(c, tupleInitNode) != 0 || !c->supported) {
@@ -2428,6 +2697,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                     0,
                     initNode < 0,
                     typeNode,
+                    initNode,
                     &slot)
                 != 0)
             {
@@ -2447,13 +2717,14 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
     }
 }
 
-int SLMirLowerAppendSimpleFunction(
+int SLMirLowerAppendSimpleFunctionWithOptions(
     SLMirProgramBuilder* _Nonnull builder,
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,
     SLStrView src,
     int32_t   fnNode,
     int32_t   bodyNode,
+    const SLMirLowerOptions* _Nullable options,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
     SLDiag* _Nullable diag) {
@@ -2485,6 +2756,8 @@ int SLMirLowerAppendSimpleFunction(
     c.src = src;
     c.supported = 1;
     c.diag = diag;
+    c.lowerConstExpr = options != NULL ? options->lowerConstExpr : NULL;
+    c.lowerConstExprCtx = options != NULL ? options->lowerConstExprCtx : NULL;
     c.builder = *builder;
     c.functionReturnTypeNode = -1;
     sourceRef.src = src;
@@ -2530,6 +2803,7 @@ int SLMirLowerAppendSimpleFunction(
                         1,
                         0,
                         paramTypeNode,
+                        -1,
                         &slot)
                     != 0)
                 {
@@ -2569,12 +2843,27 @@ int SLMirLowerAppendSimpleFunction(
     return 0;
 }
 
-int SLMirLowerSimpleFunction(
+int SLMirLowerAppendSimpleFunction(
+    SLMirProgramBuilder* _Nonnull builder,
     SLArena* _Nonnull arena,
     const SLAst* _Nonnull ast,
     SLStrView src,
     int32_t   fnNode,
     int32_t   bodyNode,
+    uint32_t* _Nonnull outFunctionIndex,
+    int* _Nonnull outSupported,
+    SLDiag* _Nullable diag) {
+    return SLMirLowerAppendSimpleFunctionWithOptions(
+        builder, arena, ast, src, fnNode, bodyNode, NULL, outFunctionIndex, outSupported, diag);
+}
+
+int SLMirLowerSimpleFunctionWithOptions(
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
+    const SLMirLowerOptions* _Nullable options,
     SLMirProgram* _Nonnull outProgram,
     int* _Nonnull outSupported,
     SLDiag* _Nullable diag) {
@@ -2589,8 +2878,17 @@ int SLMirLowerSimpleFunction(
     }
     *outProgram = (SLMirProgram){ 0 };
     SLMirProgramBuilderInit(&builder, arena);
-    if (SLMirLowerAppendSimpleFunction(
-            &builder, arena, ast, src, fnNode, bodyNode, &functionIndex, outSupported, diag)
+    if (SLMirLowerAppendSimpleFunctionWithOptions(
+            &builder,
+            arena,
+            ast,
+            src,
+            fnNode,
+            bodyNode,
+            options,
+            &functionIndex,
+            outSupported,
+            diag)
         != 0)
     {
         return -1;
@@ -2600,6 +2898,19 @@ int SLMirLowerSimpleFunction(
     }
     SLMirProgramBuilderFinish(&builder, outProgram);
     return 0;
+}
+
+int SLMirLowerSimpleFunction(
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
+    SLMirProgram* _Nonnull outProgram,
+    int* _Nonnull outSupported,
+    SLDiag* _Nullable diag) {
+    return SLMirLowerSimpleFunctionWithOptions(
+        arena, ast, src, fnNode, bodyNode, NULL, outProgram, outSupported, diag);
 }
 
 SL_API_END

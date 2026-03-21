@@ -52,6 +52,16 @@ static int SLTCInvokeConstFunctionByIndex(
     int*               outIsConst);
 void SLTCConstSetReason(
     SLTCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason);
+static int SLTCConstLookupMirLocalValue(
+    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, SLCTFEValue* outValue);
+int SLTCMirConstBindFrame(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLCTFEValue* _Nullable locals,
+    uint32_t localCount,
+    SLDiag* _Nullable diag);
+void SLTCMirConstUnbindFrame(void* _Nullable ctx);
 
 static void SLTCMirConstSetReasonCb(
     void* _Nullable ctx, uint32_t start, uint32_t end, const char* reason) {
@@ -69,6 +79,125 @@ void SLTCConstSetReason(
     if (evalCtx->execCtx != NULL) {
         SLCTFEExecSetReason(evalCtx->execCtx, start, end, reason);
     }
+}
+
+static int SLTCConstLookupMirLocalValue(
+    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, SLCTFEValue* outValue) {
+    SLTypeCheckCtx* c;
+    uint32_t        i;
+    if (evalCtx == NULL || outValue == NULL || evalCtx->mirProgram == NULL
+        || evalCtx->mirFunction == NULL || evalCtx->mirLocals == NULL)
+    {
+        return 0;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || evalCtx->mirFunction->localStart > evalCtx->mirProgram->localLen
+        || evalCtx->mirFunction->localCount
+               > evalCtx->mirProgram->localLen - evalCtx->mirFunction->localStart
+        || evalCtx->mirLocalCount < evalCtx->mirFunction->localCount)
+    {
+        return 0;
+    }
+    for (i = evalCtx->mirFunction->localCount; i > 0; i--) {
+        const SLMirLocal* local =
+            &evalCtx->mirProgram->locals[evalCtx->mirFunction->localStart + i - 1u];
+        const SLCTFEValue* value = &evalCtx->mirLocals[i - 1u];
+        if (local->nameEnd <= local->nameStart
+            || !SLNameEqSlice(c->src, local->nameStart, local->nameEnd, nameStart, nameEnd))
+        {
+            continue;
+        }
+        if (value->kind == SLCTFEValue_INVALID) {
+            continue;
+        }
+        *outValue = *value;
+        return 1;
+    }
+    return 0;
+}
+
+int SLTCMirConstBindFrame(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLCTFEValue* _Nullable locals,
+    uint32_t localCount,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    if (evalCtx == NULL || evalCtx->mirFrameDepth >= SLTC_CONST_CALL_MAX_DEPTH) {
+        if (diag != NULL) {
+            diag->code = SLDiag_UNEXPECTED_TOKEN;
+            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->start = 0;
+            diag->end = 0;
+            diag->argStart = 0;
+            diag->argEnd = 0;
+        }
+        return -1;
+    }
+    evalCtx->mirSavedPrograms[evalCtx->mirFrameDepth] = evalCtx->mirProgram;
+    evalCtx->mirSavedFunctions[evalCtx->mirFrameDepth] = evalCtx->mirFunction;
+    evalCtx->mirSavedLocals[evalCtx->mirFrameDepth] = evalCtx->mirLocals;
+    evalCtx->mirSavedLocalCounts[evalCtx->mirFrameDepth] = evalCtx->mirLocalCount;
+    evalCtx->mirFrameDepth++;
+    evalCtx->mirProgram = program;
+    evalCtx->mirFunction = function;
+    evalCtx->mirLocals = locals;
+    evalCtx->mirLocalCount = localCount;
+    return 0;
+}
+
+void SLTCMirConstUnbindFrame(void* _Nullable ctx) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    if (evalCtx == NULL || evalCtx->mirFrameDepth == 0) {
+        return;
+    }
+    evalCtx->mirFrameDepth--;
+    evalCtx->mirProgram = evalCtx->mirSavedPrograms[evalCtx->mirFrameDepth];
+    evalCtx->mirFunction = evalCtx->mirSavedFunctions[evalCtx->mirFrameDepth];
+    evalCtx->mirLocals = evalCtx->mirSavedLocals[evalCtx->mirFrameDepth];
+    evalCtx->mirLocalCount = evalCtx->mirSavedLocalCounts[evalCtx->mirFrameDepth];
+}
+
+void SLTCMirConstAdoptLowerDiagReason(SLTCConstEvalCtx* evalCtx, const SLDiag* _Nullable diag) {
+    if (evalCtx == NULL || diag == NULL || diag->detail == NULL || diag->detail[0] == '\0') {
+        return;
+    }
+    SLTCConstSetReason(evalCtx, diag->start, diag->end, diag->detail);
+}
+
+int SLTCMirConstLowerConstExpr(
+    void* _Nullable ctx, int32_t exprNode, SLMirConst* _Nonnull outValue, SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTCConstEvalCtx  localEvalCtx;
+    SLTypeCheckCtx*   c;
+    SLCTFEValue       value;
+    int               isConst = 0;
+    if (outValue == NULL || evalCtx == NULL || evalCtx->tc == NULL || exprNode < 0) {
+        return 0;
+    }
+    c = evalCtx->tc;
+    if ((uint32_t)exprNode >= c->ast->len || c->ast->nodes[exprNode].kind != SLAst_SIZEOF) {
+        return 0;
+    }
+    localEvalCtx = *evalCtx;
+    localEvalCtx.nonConstReason = NULL;
+    localEvalCtx.nonConstStart = 0;
+    localEvalCtx.nonConstEnd = 0;
+    if (SLTCConstEvalSizeOf(&localEvalCtx, exprNode, &value, &isConst) != 0) {
+        return -1;
+    }
+    if (!isConst || value.kind != SLCTFEValue_INT) {
+        if (diag != NULL && diag->detail == NULL && localEvalCtx.nonConstReason != NULL) {
+            diag->start = localEvalCtx.nonConstStart;
+            diag->end = localEvalCtx.nonConstEnd;
+            diag->detail = localEvalCtx.nonConstReason;
+        }
+        return 0;
+    }
+    outValue->kind = SLMirConst_INT;
+    outValue->bits = (uint64_t)value.i64;
+    return 1;
 }
 
 void SLTCConstSetReasonNode(SLTCConstEvalCtx* evalCtx, int32_t nodeId, const char* reason) {
@@ -529,6 +658,10 @@ int SLTCResolveConstIdent(
     if (evalCtx->execCtx != NULL
         && SLCTFEExecEnvLookup(evalCtx->execCtx, nameStart, nameEnd, outValue))
     {
+        *outIsConst = 1;
+        return 0;
+    }
+    if (SLTCConstLookupMirLocalValue(evalCtx, nameStart, nameEnd, outValue)) {
         *outIsConst = 1;
         return 0;
     }
@@ -5179,6 +5312,9 @@ static int SLTCMirConstRunFunction(
     env.aggAddrFieldCtx = evalCtx;
     env.makeTuple = SLTCMirConstMakeTuple;
     env.makeTupleCtx = evalCtx;
+    env.bindFrame = SLTCMirConstBindFrame;
+    env.unbindFrame = SLTCMirConstUnbindFrame;
+    env.frameCtx = evalCtx;
     env.setReason = SLTCMirConstSetReasonCb;
     env.setReasonCtx = evalCtx;
     env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;
@@ -5400,11 +5536,12 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex,
 
 int SLTCMirConstLowerFunction(
     SLTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex) {
-    SLTypeCheckCtx* tc;
-    uint32_t        mirFnIndex = UINT32_MAX;
-    int32_t         fnNode = -1;
-    int32_t         bodyNode = -1;
-    int             supported = 0;
+    SLTypeCheckCtx*   tc;
+    SLMirLowerOptions options = { 0 };
+    uint32_t          mirFnIndex = UINT32_MAX;
+    int32_t           fnNode = -1;
+    int32_t           bodyNode = -1;
+    int               supported = 0;
     if (outMirFnIndex != NULL) {
         *outMirFnIndex = UINT32_MAX;
     }
@@ -5446,13 +5583,16 @@ int SLTCMirConstLowerFunction(
         }
     }
     c->loweringFns[(uint32_t)fnIndex] = 1u;
-    if (SLMirLowerAppendSimpleFunction(
+    options.lowerConstExpr = SLTCMirConstLowerConstExpr;
+    options.lowerConstExprCtx = c->evalCtx;
+    if (SLMirLowerAppendSimpleFunctionWithOptions(
             &c->builder,
             tc->arena,
             tc->ast,
             tc->src,
             fnNode,
             bodyNode,
+            &options,
             &mirFnIndex,
             &supported,
             c->diag)
@@ -5520,6 +5660,7 @@ static int SLTCTryMirConstCall(
         return -1;
     }
     if (lowerRc == 0 || mirFnIndex == UINT32_MAX) {
+        SLTCMirConstAdoptLowerDiagReason(evalCtx, lowerCtx.diag);
         return 0;
     }
     SLMirProgramBuilderFinish(&lowerCtx.builder, &program);
@@ -5568,6 +5709,7 @@ static int SLTCTryMirTopLevelConst(
         return -1;
     }
     if (lowerRc == 0 || mirFnIndex == UINT32_MAX) {
+        SLTCMirConstAdoptLowerDiagReason(evalCtx, lowerCtx.diag);
         return 0;
     }
     SLMirProgramBuilderFinish(&lowerCtx.builder, &program);

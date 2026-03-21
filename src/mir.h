@@ -125,6 +125,8 @@ typedef enum {
 typedef struct {
     uint32_t typeRef;
     uint32_t flags;
+    uint32_t nameStart;
+    uint32_t nameEnd;
 } SLMirLocal;
 
 typedef struct {

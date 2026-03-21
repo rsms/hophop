@@ -5822,11 +5822,11 @@ static int AppendAliasedPubDecls(
         }
     }
 
-    for (j = 0; j < declLen; j++) {
+    for (j = 0; j < sourcePkg->pubDeclLen; j++) {
         char* rewritten = NULL;
         rc = RewriteText(
-            sourcePkg->decls[j].declText,
-            (uint32_t)strlen(sourcePkg->decls[j].declText),
+            sourcePkg->pubDecls[j].declText,
+            (uint32_t)strlen(sourcePkg->pubDecls[j].declText),
             imports,
             importLen,
             maps,
@@ -5841,11 +5841,11 @@ static int AppendAliasedPubDecls(
         }
         free(rewritten);
     }
-    for (j = 0; j < sourcePkg->pubDeclLen; j++) {
+    for (j = 0; j < declLen; j++) {
         char* rewritten = NULL;
         rc = RewriteText(
-            sourcePkg->pubDecls[j].declText,
-            (uint32_t)strlen(sourcePkg->pubDecls[j].declText),
+            sourcePkg->decls[j].declText,
+            (uint32_t)strlen(sourcePkg->decls[j].declText),
             imports,
             importLen,
             maps,
@@ -6495,7 +6495,7 @@ static int GeneratePackage(
         return -1;
     }
 
-    if (BuildCombinedPackageSource(&loader, entryPkg, 0, &source, &sourceLen, NULL, NULL) != 0) {
+    if (BuildCombinedPackageSource(&loader, entryPkg, 1, &source, &sourceLen, NULL, NULL) != 0) {
         FreeLoader(&loader);
         return -1;
     }
@@ -7078,7 +7078,7 @@ static int EmitPackageArtifact(
     if (PackageHasUnsupportedImportedPubGlobals(pkg) != 0) {
         return -1;
     }
-    if (BuildCombinedPackageSource(loader, pkg, 0, &source, &sourceLen, NULL, &ownDeclStartOffset)
+    if (BuildCombinedPackageSource(loader, pkg, 1, &source, &sourceLen, NULL, &ownDeclStartOffset)
         != 0)
     {
         return -1;

@@ -133,6 +133,14 @@ typedef int (*SLMirEnterFunctionFn)(
     void* _Nullable ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag);
 
 typedef void (*SLMirLeaveFunctionFn)(void* _Nullable ctx);
+typedef int (*SLMirBindFrameFn)(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirExecValue* _Nullable locals,
+    uint32_t localCount,
+    SLDiag* _Nullable diag);
+typedef void (*SLMirUnbindFrameFn)(void* _Nullable ctx);
 typedef void (*SLMirSetReasonFn)(
     void* _Nullable ctx, uint32_t start, uint32_t end, const char* _Nonnull reason);
 
@@ -169,6 +177,9 @@ typedef struct {
     SLMirEnterFunctionFn _Nullable enterFunction;
     SLMirLeaveFunctionFn _Nullable leaveFunction;
     void* _Nullable functionCtx;
+    SLMirBindFrameFn _Nullable bindFrame;
+    SLMirUnbindFrameFn _Nullable unbindFrame;
+    void* _Nullable frameCtx;
     SLMirSetReasonFn _Nullable setReason;
     void* _Nullable setReasonCtx;
     uint32_t backwardJumpLimit;

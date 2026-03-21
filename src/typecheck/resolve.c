@@ -19,6 +19,7 @@ static int SLTCTryMirConstBlock(
     SLTypeCheckCtx*      c;
     SLMirProgram         program = { 0 };
     SLMirExecEnv         env = { 0 };
+    SLMirLowerOptions    options = { 0 };
     SLTCMirConstLowerCtx lowerCtx;
     uint32_t             mirFnIndex = UINT32_MAX;
     int                  supported = 0;
@@ -45,13 +46,16 @@ static int SLTCTryMirConstBlock(
     if (SLTCMirConstInitLowerCtx(evalCtx, &lowerCtx) != 0) {
         return -1;
     }
-    if (SLMirLowerAppendSimpleFunction(
+    options.lowerConstExpr = SLTCMirConstLowerConstExpr;
+    options.lowerConstExprCtx = evalCtx;
+    if (SLMirLowerAppendSimpleFunctionWithOptions(
             &lowerCtx.builder,
             c->arena,
             c->ast,
             c->src,
             -1,
             blockNode,
+            &options,
             &mirFnIndex,
             &supported,
             c->diag)
@@ -60,6 +64,7 @@ static int SLTCTryMirConstBlock(
         return -1;
     }
     if (!supported || mirFnIndex == UINT32_MAX) {
+        SLTCMirConstAdoptLowerDiagReason(evalCtx, c->diag);
         return 0;
     }
     rewriteRc = SLTCMirConstRewriteDirectCalls(&lowerCtx, mirFnIndex, blockNode);
@@ -93,6 +98,9 @@ static int SLTCTryMirConstBlock(
     env.aggAddrFieldCtx = evalCtx;
     env.makeTuple = SLTCMirConstMakeTuple;
     env.makeTupleCtx = evalCtx;
+    env.bindFrame = SLTCMirConstBindFrame;
+    env.unbindFrame = SLTCMirConstUnbindFrame;
+    env.frameCtx = evalCtx;
     env.setReason = SLTCResolveMirSetReasonCb;
     env.setReasonCtx = evalCtx;
     env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;
@@ -124,6 +132,10 @@ static void SLTCInitConstEvalCtxFromParent(
         return;
     }
     outCtx->execCtx = parent->execCtx;
+    outCtx->mirProgram = parent->mirProgram;
+    outCtx->mirFunction = parent->mirFunction;
+    outCtx->mirLocals = parent->mirLocals;
+    outCtx->mirLocalCount = parent->mirLocalCount;
     outCtx->callArgs = parent->callArgs;
     outCtx->callArgCount = parent->callArgCount;
     outCtx->callBinding = parent->callBinding;

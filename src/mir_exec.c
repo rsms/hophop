@@ -128,7 +128,7 @@ static int SLMirInitRun(
 }
 
 static const SLMirLocal* SLMirGetLocalMeta(const SLMirExecRun* run, uint32_t slot) {
-    static const SLMirLocal invalidLocal = { UINT32_MAX, SLMirLocalFlag_NONE };
+    static const SLMirLocal invalidLocal = { UINT32_MAX, SLMirLocalFlag_NONE, 0u, 0u };
     if (run == NULL || run->program == NULL || run->function == NULL || slot >= run->localCount
         || run->function->localStart > run->program->localLen
         || slot >= run->program->localLen - run->function->localStart)
@@ -2105,6 +2105,7 @@ static int SLMirEvalFunctionInternal(
     SLMirExecEnv         frameEnv;
     SLMirExecRun         run;
     int                  enteredFunction = 0;
+    int                  boundFrame = 0;
     int                  rc = 0;
     (void)args;
     if (program == NULL || functionIndex >= program->funcLen) {
@@ -2165,8 +2166,21 @@ static int SLMirEvalFunctionInternal(
         rc = -1;
         goto end;
     }
+    if (frameEnv.bindFrame != NULL) {
+        if (frameEnv.bindFrame(
+                frameEnv.frameCtx, program, fn, run.locals, run.localCount, frameEnv.diag)
+            != 0)
+        {
+            rc = -1;
+            goto end;
+        }
+        boundFrame = 1;
+    }
     rc = SLMirRunLoop(&run, outValue, outIsConst);
 end:
+    if (boundFrame && frameEnv.unbindFrame != NULL) {
+        frameEnv.unbindFrame(frameEnv.frameCtx);
+    }
     if (enteredFunction && frameEnv.leaveFunction != NULL) {
         frameEnv.leaveFunction(frameEnv.functionCtx);
     }

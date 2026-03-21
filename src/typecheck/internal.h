@@ -409,18 +409,27 @@ typedef struct {
 #define SLTC_CONST_FOR_MAX_ITERS  100000u
 
 struct SLTCConstEvalCtx {
-    SLTypeCheckCtx* tc;
-    SLCTFEExecCtx*  execCtx;
-    int32_t         fnStack[SLTC_CONST_CALL_MAX_DEPTH];
-    uint32_t        fnDepth;
-    const void*     callArgs;
-    uint32_t        callArgCount;
-    const void*     callBinding;
-    uint32_t        callPackParamNameStart;
-    uint32_t        callPackParamNameEnd;
-    const char*     nonConstReason;
-    uint32_t        nonConstStart;
-    uint32_t        nonConstEnd;
+    SLTypeCheckCtx*      tc;
+    SLCTFEExecCtx*       execCtx;
+    const SLMirProgram*  mirProgram;
+    const SLMirFunction* mirFunction;
+    const SLCTFEValue*   mirLocals;
+    uint32_t             mirLocalCount;
+    const SLMirProgram*  mirSavedPrograms[SLTC_CONST_CALL_MAX_DEPTH];
+    const SLMirFunction* mirSavedFunctions[SLTC_CONST_CALL_MAX_DEPTH];
+    const SLCTFEValue*   mirSavedLocals[SLTC_CONST_CALL_MAX_DEPTH];
+    uint32_t             mirSavedLocalCounts[SLTC_CONST_CALL_MAX_DEPTH];
+    uint32_t             mirFrameDepth;
+    int32_t              fnStack[SLTC_CONST_CALL_MAX_DEPTH];
+    uint32_t             fnDepth;
+    const void*          callArgs;
+    uint32_t             callArgCount;
+    const void*          callBinding;
+    uint32_t             callPackParamNameStart;
+    uint32_t             callPackParamNameEnd;
+    const char*          nonConstReason;
+    uint32_t             nonConstStart;
+    uint32_t             nonConstEnd;
 };
 
 int SLTCEvalTopLevelConstNode(
@@ -916,6 +925,17 @@ int SLTCResolveConstCallMirPre(
     SLCTFEValue* outValue,
     int*         outIsConst,
     SLDiag* _Nullable diag);
+int SLTCMirConstBindFrame(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLCTFEValue* _Nullable locals,
+    uint32_t localCount,
+    SLDiag* _Nullable diag);
+void SLTCMirConstUnbindFrame(void* _Nullable ctx);
+void SLTCMirConstAdoptLowerDiagReason(SLTCConstEvalCtx* evalCtx, const SLDiag* _Nullable diag);
+int  SLTCMirConstLowerConstExpr(
+     void* _Nullable ctx, int32_t exprNode, SLMirConst* _Nonnull outValue, SLDiag* _Nullable diag);
 int SLTCEvalTopLevelConstNodeAt(
     SLTypeCheckCtx*   c,
     SLTCConstEvalCtx* evalCtx,
