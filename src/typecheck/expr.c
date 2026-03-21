@@ -994,6 +994,20 @@ int SLTCTypeExpr_IDENT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, in
             *outType = execType;
             return 0;
         }
+        {
+            SLCTFEValue execValue;
+            int         execIsConst = 0;
+            if (SLTCResolveConstIdent(
+                    c->activeConstEvalCtx, n->dataStart, n->dataEnd, &execValue, &execIsConst, NULL)
+                    == 0
+                && execIsConst
+                && SLTCEvalConstExecInferValueTypeCb(c->activeConstEvalCtx, &execValue, &execType)
+                       == 0)
+            {
+                *outType = execType;
+                return 0;
+            }
+        }
     }
     if (SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "context")) {
         if (c->currentFunctionIsCompareHook) {

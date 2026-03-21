@@ -72,6 +72,31 @@ int SLTCMirConstBindFrame(
     SLDiag* _Nullable diag);
 void SLTCMirConstUnbindFrame(void* _Nullable ctx);
 
+static int SLTCConstEvalIsTrackedAnyPackName(
+    const SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd) {
+    SLTypeCheckCtx* c;
+    int32_t         localIdx;
+    if (evalCtx == NULL) {
+        return 0;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return 0;
+    }
+    if (evalCtx->callPackParamNameStart < evalCtx->callPackParamNameEnd
+        && SLNameEqSlice(
+            c->src,
+            nameStart,
+            nameEnd,
+            evalCtx->callPackParamNameStart,
+            evalCtx->callPackParamNameEnd))
+    {
+        return 1;
+    }
+    localIdx = SLTCLocalFind(c, nameStart, nameEnd);
+    return localIdx >= 0 && (c->locals[localIdx].flags & SLTCLocalFlag_ANYPACK) != 0;
+}
+
 static void SLTCMirConstSetReasonCb(
     void* _Nullable ctx, uint32_t start, uint32_t end, const char* reason) {
     SLTCConstSetReason((SLTCConstEvalCtx*)ctx, start, end, reason);
@@ -720,13 +745,7 @@ int SLTCResolveConstIdent(
             int32_t    localType = local->typeId;
             int32_t    resolvedLocalType = SLTCResolveAliasBaseType(c, localType);
             if ((local->flags & SLTCLocalFlag_ANYPACK) != 0 && evalCtx->callBinding != NULL
-                && evalCtx->callPackParamNameStart < evalCtx->callPackParamNameEnd
-                && SLNameEqSlice(
-                    c->src,
-                    nameStart,
-                    nameEnd,
-                    evalCtx->callPackParamNameStart,
-                    evalCtx->callPackParamNameEnd))
+                && SLTCConstEvalIsTrackedAnyPackName(evalCtx, nameStart, nameEnd))
             {
                 const SLTCCallBinding* binding = (const SLTCCallBinding*)evalCtx->callBinding;
                 int32_t                elemTypes[SLTC_MAX_CALL_ARGS];
@@ -886,11 +905,14 @@ int SLTCConstLookupExecBindingType(
             const SLCTFEExecBinding* b;
             i--;
             b = &frame->bindings[i];
-            if (SLNameEqSlice(evalCtx->tc->src, b->nameStart, b->nameEnd, nameStart, nameEnd)
-                && b->typeId >= 0)
-            {
-                *outType = b->typeId;
-                return 1;
+            if (SLNameEqSlice(evalCtx->tc->src, b->nameStart, b->nameEnd, nameStart, nameEnd)) {
+                if (b->typeId >= 0) {
+                    *outType = b->typeId;
+                    return 1;
+                }
+                if (SLTCEvalConstExecInferValueTypeCb(evalCtx, &b->value, outType) == 0) {
+                    return 1;
+                }
             }
         }
         frame = frame->parent;
@@ -926,24 +948,33 @@ int SLTCConstLookupMirLocalType(
     for (i = evalCtx->mirFunction->localCount; i > 0; i--) {
         const SLMirLocal* local =
             &evalCtx->mirProgram->locals[evalCtx->mirFunction->localStart + i - 1u];
-        const SLMirTypeRef* typeRef;
+        const SLCTFEValue* value =
+            i - 1u < evalCtx->mirLocalCount ? &evalCtx->mirLocals[i - 1u] : NULL;
         if (local->nameEnd <= local->nameStart
-            || !SLNameEqSlice(c->src, local->nameStart, local->nameEnd, nameStart, nameEnd)
-            || local->typeRef >= evalCtx->mirProgram->typeLen)
+            || !SLNameEqSlice(c->src, local->nameStart, local->nameEnd, nameStart, nameEnd))
         {
             continue;
         }
-        typeRef = &evalCtx->mirProgram->types[local->typeRef];
-        if (typeRef->astNode > INT32_MAX || typeRef->astNode >= c->ast->len
-            || SLTCResolveTypeNode(c, (int32_t)typeRef->astNode, outType) != 0)
+        if (local->typeRef < evalCtx->mirProgram->typeLen) {
+            const SLMirTypeRef* typeRef = &evalCtx->mirProgram->types[local->typeRef];
+            if (typeRef->astNode > INT32_MAX || typeRef->astNode >= c->ast->len
+                || SLTCResolveTypeNode(c, (int32_t)typeRef->astNode, outType) != 0)
+            {
+                c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+                c->allowAnytypeParamType = savedAllowAnytypeParamType;
+                return -1;
+            }
+            c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+            c->allowAnytypeParamType = savedAllowAnytypeParamType;
+            return 1;
+        }
+        if (value != NULL && value->kind != SLCTFEValue_INVALID
+            && SLTCEvalConstExecInferValueTypeCb(evalCtx, value, outType) == 0)
         {
             c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
             c->allowAnytypeParamType = savedAllowAnytypeParamType;
-            return -1;
+            return 1;
         }
-        c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
-        c->allowAnytypeParamType = savedAllowAnytypeParamType;
-        return 1;
     }
     c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
     c->allowAnytypeParamType = savedAllowAnytypeParamType;
@@ -1482,6 +1513,16 @@ int SLTCConstEvalTypeOf(
         *outIsConst = 0;
         return 0;
     }
+    {
+        SLCTFEValue argValue;
+        int         argIsConst = 0;
+        if (SLTCEvalConstExprNode(evalCtx, argExprNode, &argValue, &argIsConst) != 0) {
+            return -1;
+        }
+        if (argIsConst && SLTCEvalConstExecInferValueTypeCb(evalCtx, &argValue, &argType) == 0) {
+            goto done;
+        }
+    }
     savedActiveEvalCtx = c->activeConstEvalCtx;
     c->activeConstEvalCtx = evalCtx;
     if (SLTCTypeExpr(c, argExprNode, &argType) != 0) {
@@ -1973,9 +2014,7 @@ static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
     c = evalCtx->tc;
     binding = (const SLTCCallBinding*)evalCtx->callBinding;
     callArgs = (const SLTCCallArgInfo*)evalCtx->callArgs;
-    if (c == NULL || binding == NULL || callArgs == NULL || evalCtx->callArgCount == 0
-        || evalCtx->callPackParamNameStart >= evalCtx->callPackParamNameEnd)
-    {
+    if (c == NULL || binding == NULL || callArgs == NULL || evalCtx->callArgCount == 0) {
         return 1;
     }
     if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len
@@ -1991,12 +2030,8 @@ static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
         return 1;
     }
     if (c->ast->nodes[baseNode].kind != SLAst_IDENT
-        || !SLNameEqSlice(
-            c->src,
-            c->ast->nodes[baseNode].dataStart,
-            c->ast->nodes[baseNode].dataEnd,
-            evalCtx->callPackParamNameStart,
-            evalCtx->callPackParamNameEnd))
+        || !SLTCConstEvalIsTrackedAnyPackName(
+            evalCtx, c->ast->nodes[baseNode].dataStart, c->ast->nodes[baseNode].dataEnd))
     {
         return 1;
     }
@@ -6295,6 +6330,7 @@ static int SLTCInvokeConstFunctionByIndex(
     SLCTFEExecEnv      paramFrame;
     SLCTFEExecCtx      execCtx;
     SLCTFEExecCtx*     savedExecCtx;
+    SLTCConstEvalCtx*  savedActiveConstEvalCtx;
     const void*        savedCallArgs;
     uint32_t           savedCallArgCount;
     const void*        savedCallBinding;
@@ -6435,6 +6471,7 @@ static int SLTCInvokeConstFunctionByIndex(
     }
 
     savedExecCtx = evalCtx->execCtx;
+    savedActiveConstEvalCtx = c->activeConstEvalCtx;
     savedDepth = evalCtx->fnDepth;
     savedCallArgs = evalCtx->callArgs;
     savedCallArgCount = evalCtx->callArgCount;
@@ -6476,6 +6513,7 @@ static int SLTCInvokeConstFunctionByIndex(
     evalCtx->nonConstReason = NULL;
     evalCtx->nonConstStart = 0;
     evalCtx->nonConstEnd = 0;
+    c->activeConstEvalCtx = evalCtx;
 
     if (c->funcs[fnIndex].returnType == c->typeType) {
         rc = SLTCConstEvalTryDirectReturnFunction(evalCtx, bodyNode, &retValue, &isConst);
@@ -6487,6 +6525,7 @@ static int SLTCInvokeConstFunctionByIndex(
             evalCtx->callBinding = savedCallBinding;
             evalCtx->callPackParamNameStart = savedCallPackParamNameStart;
             evalCtx->callPackParamNameEnd = savedCallPackParamNameEnd;
+            c->activeConstEvalCtx = savedActiveConstEvalCtx;
             if (rc != 0) {
                 return -1;
             }
@@ -6505,6 +6544,7 @@ static int SLTCInvokeConstFunctionByIndex(
     evalCtx->callBinding = savedCallBinding;
     evalCtx->callPackParamNameStart = savedCallPackParamNameStart;
     evalCtx->callPackParamNameEnd = savedCallPackParamNameEnd;
+    c->activeConstEvalCtx = savedActiveConstEvalCtx;
     if (rc != 0) {
         return -1;
     }
@@ -6665,18 +6705,15 @@ int SLTCResolveConstCallMir(
                     }
                     if (argExprNode >= 0 && (uint32_t)argExprNode < c->ast->len
                         && c->ast->nodes[argExprNode].kind == SLAst_INDEX
-                        && (c->ast->nodes[argExprNode].flags & SLAstFlag_INDEX_SLICE) == 0u
-                        && evalCtx->callPackParamNameStart < evalCtx->callPackParamNameEnd)
+                        && (c->ast->nodes[argExprNode].flags & SLAstFlag_INDEX_SLICE) == 0u)
                     {
                         int32_t baseNode = SLAstFirstChild(c->ast, argExprNode);
                         if (baseNode >= 0 && (uint32_t)baseNode < c->ast->len
                             && c->ast->nodes[baseNode].kind == SLAst_IDENT
-                            && SLNameEqSlice(
-                                c->src,
+                            && SLTCConstEvalIsTrackedAnyPackName(
+                                evalCtx,
                                 c->ast->nodes[baseNode].dataStart,
-                                c->ast->nodes[baseNode].dataEnd,
-                                evalCtx->callPackParamNameStart,
-                                evalCtx->callPackParamNameEnd))
+                                c->ast->nodes[baseNode].dataEnd))
                         {
                             isCurrentPackIndexExpr = 1;
                         }

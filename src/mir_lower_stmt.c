@@ -1166,7 +1166,7 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
             }
         }
     }
-    if (c->lowerConstExpr != NULL) {
+    if (c->lowerConstExpr != NULL && !SLMirStmtLowerCallUsesLazyBuiltin(c, exprNode)) {
         SLMirConst loweredConst = { 0 };
         int lowerRc = c->lowerConstExpr(c->lowerConstExprCtx, exprNode, &loweredConst, c->diag);
         if (lowerRc < 0) {
