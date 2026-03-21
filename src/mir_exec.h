@@ -16,10 +16,23 @@ typedef int (*SLMirResolveIdentFn)(
 
 typedef int (*SLMirResolveCallFn)(
     void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
     uint32_t nameStart,
     uint32_t nameEnd,
     const SLMirExecValue* _Nonnull args,
     uint32_t argCount,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLMirResolveCallPreFn)(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t nameStart,
+    uint32_t nameEnd,
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
@@ -55,6 +68,15 @@ typedef int (*SLMirIndexAddrFn)(
     void* _Nullable ctx,
     const SLMirExecValue* _Nonnull base,
     const SLMirExecValue* _Nonnull index,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLMirSliceValueFn)(
+    void* _Nullable ctx,
+    const SLMirExecValue* _Nonnull base,
+    const SLMirExecValue* _Nullable start,
+    const SLMirExecValue* _Nullable end,
+    uint16_t flags,
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
@@ -111,10 +133,13 @@ typedef int (*SLMirEnterFunctionFn)(
     void* _Nullable ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag);
 
 typedef void (*SLMirLeaveFunctionFn)(void* _Nullable ctx);
+typedef void (*SLMirSetReasonFn)(
+    void* _Nullable ctx, uint32_t start, uint32_t end, const char* _Nonnull reason);
 
 typedef struct {
     SLStrView src;
     SLMirResolveIdentFn _Nullable resolveIdent;
+    SLMirResolveCallPreFn _Nullable resolveCallPre;
     SLMirResolveCallFn _Nullable resolveCall;
     void* _Nullable resolveCtx;
     SLMirHostCallFn _Nullable hostCall;
@@ -127,6 +152,8 @@ typedef struct {
     void* _Nullable indexValueCtx;
     SLMirIndexAddrFn _Nullable indexAddr;
     void* _Nullable indexAddrCtx;
+    SLMirSliceValueFn _Nullable sliceValue;
+    void* _Nullable sliceValueCtx;
     SLMirSequenceLenFn _Nullable sequenceLen;
     void* _Nullable sequenceLenCtx;
     SLMirIterInitFn _Nullable iterInit;
@@ -142,6 +169,8 @@ typedef struct {
     SLMirEnterFunctionFn _Nullable enterFunction;
     SLMirLeaveFunctionFn _Nullable leaveFunction;
     void* _Nullable functionCtx;
+    SLMirSetReasonFn _Nullable setReason;
+    void* _Nullable setReasonCtx;
     uint32_t backwardJumpLimit;
     SLDiag* _Nullable diag;
 } SLMirExecEnv;

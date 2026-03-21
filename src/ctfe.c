@@ -6,6 +6,50 @@
 
 SL_API_BEGIN
 
+typedef struct {
+    SLCTFEResolveIdentFn _Nullable resolveIdent;
+    SLCTFEResolveCallFn _Nullable resolveCall;
+    void* _Nullable resolveCtx;
+} SLCTFEMirResolveAdapterCtx;
+
+static int SLCTFEMirResolveIdentAdapter(
+    void* _Nullable ctx,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag) {
+    const SLCTFEMirResolveAdapterCtx* adapter = (const SLCTFEMirResolveAdapterCtx*)ctx;
+    if (adapter == NULL || adapter->resolveIdent == NULL) {
+        return 0;
+    }
+    return adapter->resolveIdent(
+        adapter->resolveCtx, nameStart, nameEnd, outValue, outIsConst, diag);
+}
+
+static int SLCTFEMirResolveCallAdapter(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    const SLMirExecValue* _Nonnull args,
+    uint32_t argCount,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag) {
+    const SLCTFEMirResolveAdapterCtx* adapter = (const SLCTFEMirResolveAdapterCtx*)ctx;
+    (void)program;
+    (void)function;
+    (void)inst;
+    if (adapter == NULL || adapter->resolveCall == NULL) {
+        return 0;
+    }
+    return adapter->resolveCall(
+        adapter->resolveCtx, nameStart, nameEnd, args, argCount, outValue, outIsConst, diag);
+}
+
 int SLCTFEEvalExprEx(
     SLArena*     arena,
     const SLAst* ast,
@@ -25,9 +69,14 @@ int SLCTFEEvalExprEx(
     SLCTFEValue* outValue,
     int*         outIsConst,
     SLDiag* _Nullable diag) {
-    SLMirProgram program = { 0 };
-    int          supported = 0;
-    SLMirExecEnv env = { 0 };
+    SLMirProgram               program = { 0 };
+    int                        supported = 0;
+    SLMirExecEnv               env = { 0 };
+    SLCTFEMirResolveAdapterCtx resolveAdapter = {
+        .resolveIdent = resolveIdent,
+        .resolveCall = resolveCall,
+        .resolveCtx = resolveCtx,
+    };
 
     if (diag != NULL) {
         *diag = (SLDiag){ 0 };
@@ -52,9 +101,9 @@ int SLCTFEEvalExprEx(
         return 0;
     }
     env.src = src;
-    env.resolveIdent = resolveIdent;
-    env.resolveCall = resolveCall;
-    env.resolveCtx = resolveCtx;
+    env.resolveIdent = resolveIdent != NULL ? SLCTFEMirResolveIdentAdapter : NULL;
+    env.resolveCall = resolveCall != NULL ? SLCTFEMirResolveCallAdapter : NULL;
+    env.resolveCtx = &resolveAdapter;
     env.makeTuple = makeTuple;
     env.makeTupleCtx = makeTupleCtx;
     env.indexValue = indexValue;

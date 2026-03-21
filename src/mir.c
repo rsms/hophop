@@ -14,6 +14,12 @@ typedef struct {
 } SLMirBuilder;
 
 static void SLMirSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end);
+static int  SLMirNameEqLiteral(SLStrView src, uint32_t start, uint32_t end, const char* lit);
+static int  SLMirNameEqLiteralOrPkgBuiltin(
+     SLStrView src, uint32_t start, uint32_t end, const char* lit, const char* pkgPrefix);
+static int SLMirNameIsCompilerDiagBuiltin(SLStrView src, uint32_t start, uint32_t end);
+static int SLMirNameIsLazyTypeBuiltin(SLStrView src, uint32_t start, uint32_t end);
+static int SLMirCallUsesLazyBuiltinLowering(const SLMirBuilder* b, int32_t callNode);
 
 static void* _Nullable SLMirArenaGrowArray(
     SLArena* arena, void* _Nullable oldMem, size_t elemSize, uint32_t oldCap, uint32_t newCap) {
@@ -62,6 +68,113 @@ static int SLMirProgramBuilderEnsureCap(
     *mem = newMem;
     *cap = newCap;
     return 0;
+}
+
+static int SLMirNameEqLiteral(SLStrView src, uint32_t start, uint32_t end, const char* lit) {
+    size_t litLen = 0;
+    if (lit == NULL || end < start || end > src.len) {
+        return 0;
+    }
+    while (lit[litLen] != '\0') {
+        litLen++;
+    }
+    return (size_t)(end - start) == litLen && memcmp(src.ptr + start, lit, litLen) == 0;
+}
+
+static int SLMirNameEqLiteralOrPkgBuiltin(
+    SLStrView src, uint32_t start, uint32_t end, const char* lit, const char* pkgPrefix) {
+    size_t litLen = 0;
+    size_t pkgLen = 0;
+    size_t i;
+    if (SLMirNameEqLiteral(src, start, end, lit)) {
+        return 1;
+    }
+    if (lit == NULL || pkgPrefix == NULL || end < start || end > src.len) {
+        return 0;
+    }
+    while (lit[litLen] != '\0') {
+        litLen++;
+    }
+    while (pkgPrefix[pkgLen] != '\0') {
+        pkgLen++;
+    }
+    if ((size_t)(end - start) != pkgLen + 2u + litLen) {
+        return 0;
+    }
+    for (i = 0; i < pkgLen; i++) {
+        if (src.ptr[start + i] != pkgPrefix[i]) {
+            return 0;
+        }
+    }
+    if (src.ptr[start + pkgLen] != '_' || src.ptr[start + pkgLen + 1u] != '_') {
+        return 0;
+    }
+    return memcmp(src.ptr + start + pkgLen + 2u, lit, litLen) == 0;
+}
+
+static int SLMirNameIsCompilerDiagBuiltin(SLStrView src, uint32_t start, uint32_t end) {
+    return SLMirNameEqLiteralOrPkgBuiltin(src, start, end, "error", "compiler")
+        || SLMirNameEqLiteralOrPkgBuiltin(src, start, end, "error_at", "compiler")
+        || SLMirNameEqLiteralOrPkgBuiltin(src, start, end, "warn", "compiler")
+        || SLMirNameEqLiteralOrPkgBuiltin(src, start, end, "warn_at", "compiler");
+}
+
+static int SLMirNameIsLazyTypeBuiltin(SLStrView src, uint32_t start, uint32_t end) {
+    return SLMirNameEqLiteral(src, start, end, "typeof")
+        || SLMirNameEqLiteral(src, start, end, "kind")
+        || SLMirNameEqLiteral(src, start, end, "base")
+        || SLMirNameEqLiteral(src, start, end, "is_alias")
+        || SLMirNameEqLiteral(src, start, end, "type_name")
+        || SLMirNameEqLiteral(src, start, end, "ptr")
+        || SLMirNameEqLiteral(src, start, end, "slice")
+        || SLMirNameEqLiteral(src, start, end, "array");
+}
+
+static int SLMirCallUsesLazyBuiltinLowering(const SLMirBuilder* b, int32_t callNode) {
+    const SLAstNode* call;
+    const SLAstNode* callee;
+    int32_t          calleeNode;
+    int32_t          recvNode;
+    if (b == NULL || b->ast == NULL || callNode < 0 || (uint32_t)callNode >= b->ast->len) {
+        return 0;
+    }
+    call = &b->ast->nodes[callNode];
+    calleeNode = call->firstChild;
+    callee = calleeNode >= 0 ? &b->ast->nodes[calleeNode] : NULL;
+    if (call->kind != SLAst_CALL || callee == NULL) {
+        return 0;
+    }
+    if (callee->kind == SLAst_IDENT) {
+        return SLMirNameEqLiteralOrPkgBuiltin(
+                   b->src, callee->dataStart, callee->dataEnd, "span_of", "reflect")
+            || SLMirNameIsCompilerDiagBuiltin(b->src, callee->dataStart, callee->dataEnd)
+            || SLMirNameIsLazyTypeBuiltin(b->src, callee->dataStart, callee->dataEnd);
+    }
+    if (callee->kind != SLAst_FIELD_EXPR) {
+        return 0;
+    }
+    recvNode = callee->firstChild;
+    if (recvNode < 0 || (uint32_t)recvNode >= b->ast->len
+        || b->ast->nodes[recvNode].kind != SLAst_IDENT)
+    {
+        return 0;
+    }
+    if (SLMirNameEqLiteral(
+            b->src, b->ast->nodes[recvNode].dataStart, b->ast->nodes[recvNode].dataEnd, "reflect")
+        && (SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "span_of")
+            || SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "kind")
+            || SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "base")
+            || SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "is_alias")
+            || SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "type_name")))
+    {
+        return 1;
+    }
+    if (!SLMirNameEqLiteral(
+            b->src, b->ast->nodes[recvNode].dataStart, b->ast->nodes[recvNode].dataEnd, "compiler"))
+    {
+        return 0;
+    }
+    return SLMirNameIsCompilerDiagBuiltin(b->src, callee->dataStart, callee->dataEnd);
 }
 
 void SLMirProgramBuilderInit(SLMirProgramBuilder* b, SLArena* arena) {
@@ -539,10 +652,21 @@ static int SLMirTypeNameEqCStr(SLMirBuilder* b, const SLAstNode* n, const char* 
 
 static SLMirCastTarget SLMirClassifyCastTarget(SLMirBuilder* b, int32_t typeNode) {
     const SLAstNode* n;
+    int32_t          childNode;
     if (typeNode < 0 || (uint32_t)typeNode >= b->ast->len) {
         return SLMirCastTarget_INVALID;
     }
     n = &b->ast->nodes[typeNode];
+    if ((n->kind == SLAst_TYPE_REF || n->kind == SLAst_TYPE_PTR) && n->firstChild >= 0
+        && (uint32_t)n->firstChild < b->ast->len)
+    {
+        childNode = n->firstChild;
+        if (b->ast->nodes[childNode].kind == SLAst_TYPE_NAME
+            && SLMirTypeNameEqCStr(b, &b->ast->nodes[childNode], "str"))
+        {
+            return SLMirCastTarget_STR_VIEW;
+        }
+    }
     if (n->kind != SLAst_TYPE_NAME) {
         return SLMirCastTarget_INVALID;
     }
@@ -586,7 +710,8 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             return SLMirEmitInst(b, SLMirOp_PUSH_STRING, SLTok_STRING, n->dataStart, n->dataEnd);
         case SLAst_NULL: return SLMirEmitInst(b, SLMirOp_PUSH_NULL, SLTok_NULL, n->start, n->end);
         case SLAst_IDENT:
-            return SLMirEmitInst(b, SLMirOp_LOAD_IDENT, SLTok_IDENT, n->dataStart, n->dataEnd);
+            return SLMirEmitInstEx(
+                b, SLMirOp_LOAD_IDENT, SLTok_IDENT, (uint32_t)nodeId, n->dataStart, n->dataEnd);
         case SLAst_TUPLE_EXPR: {
             int32_t  child = n->firstChild;
             uint32_t elemCount = 0;
@@ -617,6 +742,7 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             uint32_t callEnd;
             int      isBuiltinLen = 0;
             int      isBuiltinCStr = 0;
+            int      isLazyBuiltin = SLMirCallUsesLazyBuiltinLowering(b, nodeId);
             if (callee < 0 || (uint32_t)callee >= b->ast->len) {
                 b->supported = 0;
                 return 0;
@@ -634,11 +760,13 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
                     b->supported = 0;
                     return 0;
                 }
-                if (SLMirBuildExprNode(b, baseNode) != 0) {
-                    return -1;
+                if (!isLazyBuiltin) {
+                    if (SLMirBuildExprNode(b, baseNode) != 0) {
+                        return -1;
+                    }
+                    argc = 1;
+                    callFlags = SLMirSymbolFlag_CALL_RECEIVER_ARG0;
                 }
-                argc = 1;
-                callFlags = SLMirSymbolFlag_CALL_RECEIVER_ARG0;
                 callStart = b->ast->nodes[callee].dataStart;
                 callEnd = b->ast->nodes[callee].dataEnd;
                 isBuiltinCStr =
@@ -648,24 +776,26 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
                 return 0;
             }
             arg = b->ast->nodes[callee].nextSibling;
-            while (arg >= 0) {
-                int32_t exprNode = arg;
-                if (b->ast->nodes[arg].kind == SLAst_CALL_ARG) {
-                    exprNode = b->ast->nodes[arg].firstChild;
-                    if (exprNode < 0) {
+            if (!isLazyBuiltin) {
+                while (arg >= 0) {
+                    int32_t exprNode = arg;
+                    if (b->ast->nodes[arg].kind == SLAst_CALL_ARG) {
+                        exprNode = b->ast->nodes[arg].firstChild;
+                        if (exprNode < 0) {
+                            b->supported = 0;
+                            return 0;
+                        }
+                    }
+                    if (SLMirBuildExprNode(b, exprNode) != 0) {
+                        return -1;
+                    }
+                    if (argc == UINT16_MAX) {
                         b->supported = 0;
                         return 0;
                     }
+                    argc++;
+                    arg = b->ast->nodes[arg].nextSibling;
                 }
-                if (SLMirBuildExprNode(b, exprNode) != 0) {
-                    return -1;
-                }
-                if (argc == UINT16_MAX) {
-                    b->supported = 0;
-                    return 0;
-                }
-                argc++;
-                arg = b->ast->nodes[arg].nextSibling;
             }
             if (isBuiltinLen && callFlags == 0u && argc == 1u) {
                 return SLMirEmitInstEx(b, SLMirOp_SEQ_LEN, SLTok_INVALID, 0, callStart, callEnd);
@@ -674,7 +804,12 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
                 return SLMirEmitInstEx(b, SLMirOp_STR_CSTR, SLTok_INVALID, 0, callStart, callEnd);
             }
             return SLMirEmitInstEx(
-                b, SLMirOp_CALL, (SLTokenKind)argc, callFlags, callStart, callEnd);
+                b,
+                SLMirOp_CALL,
+                (SLTokenKind)argc,
+                SLMirRawCallAuxPack((uint32_t)nodeId, callFlags),
+                callStart,
+                callEnd);
         }
         case SLAst_UNARY: {
             int32_t child = b->ast->nodes[nodeId].firstChild;
@@ -708,12 +843,46 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             return SLMirEmitInst(b, SLMirOp_BINARY, (SLTokenKind)n->op, n->start, n->end);
         }
         case SLAst_INDEX: {
-            int32_t baseNode = b->ast->nodes[nodeId].firstChild;
-            int32_t idxNode = baseNode >= 0 ? b->ast->nodes[baseNode].nextSibling : -1;
-            int32_t extraNode = idxNode >= 0 ? b->ast->nodes[idxNode].nextSibling : -1;
-            if ((n->flags & SLAstFlag_INDEX_SLICE) != 0) {
-                b->supported = 0;
-                return 0;
+            int32_t  baseNode = b->ast->nodes[nodeId].firstChild;
+            int32_t  idxNode = baseNode >= 0 ? b->ast->nodes[baseNode].nextSibling : -1;
+            int32_t  extraNode = idxNode >= 0 ? b->ast->nodes[idxNode].nextSibling : -1;
+            uint16_t sliceFlags =
+                (uint16_t)(n->flags & (SLAstFlag_INDEX_HAS_START | SLAstFlag_INDEX_HAS_END));
+            if ((n->flags & SLAstFlag_INDEX_SLICE) != 0u) {
+                if (baseNode < 0) {
+                    SLMirSetDiag(b->diag, SLDiag_EXPECTED_EXPR, n->start, n->end);
+                    return -1;
+                }
+                if (SLMirBuildExprNode(b, baseNode) != 0) {
+                    return -1;
+                }
+                if ((n->flags & SLAstFlag_INDEX_HAS_START) != 0u) {
+                    if (idxNode < 0) {
+                        SLMirSetDiag(b->diag, SLDiag_EXPECTED_EXPR, n->start, n->end);
+                        return -1;
+                    }
+                    if (SLMirBuildExprNode(b, idxNode) != 0) {
+                        return -1;
+                    }
+                    idxNode = extraNode;
+                    extraNode = idxNode >= 0 ? b->ast->nodes[idxNode].nextSibling : -1;
+                }
+                if ((n->flags & SLAstFlag_INDEX_HAS_END) != 0u) {
+                    if (idxNode < 0) {
+                        SLMirSetDiag(b->diag, SLDiag_EXPECTED_EXPR, n->start, n->end);
+                        return -1;
+                    }
+                    if (SLMirBuildExprNode(b, idxNode) != 0) {
+                        return -1;
+                    }
+                    idxNode = extraNode;
+                    extraNode = idxNode >= 0 ? b->ast->nodes[idxNode].nextSibling : -1;
+                }
+                if (extraNode >= 0 || idxNode >= 0) {
+                    SLMirSetDiag(b->diag, SLDiag_EXPECTED_EXPR, n->start, n->end);
+                    return -1;
+                }
+                return SLMirEmitInstEx(b, SLMirOp_SLICE_MAKE, sliceFlags, 0, n->start, n->end);
             }
             if (baseNode < 0 || idxNode < 0 || extraNode >= 0) {
                 SLMirSetDiag(b->diag, SLDiag_EXPECTED_EXPR, n->start, n->end);

@@ -474,6 +474,10 @@ static int SLMirStmtLowerExprInstStackDelta(const SLMirInst* inst, int32_t* outD
         case SLMirOp_STR_CSTR:    *outDelta = 0; return 1;
         case SLMirOp_BINARY:
         case SLMirOp_INDEX:       *outDelta = -1; return 1;
+        case SLMirOp_SLICE_MAKE:
+            *outDelta = 0 - (((inst->tok & SLAstFlag_INDEX_HAS_START) != 0u) ? 1 : 0)
+                      - (((inst->tok & SLAstFlag_INDEX_HAS_END) != 0u) ? 1 : 0);
+            return 1;
         case SLMirOp_CALL:
             *outDelta = 1 - (int32_t)(inst->tok & ~SLMirCallArgFlag_RECEIVER_ARG0);
             return 1;
@@ -626,6 +630,49 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
         return 0;
     }
     expr = &c->ast->nodes[exprNode];
+    if (expr->kind == SLAst_INDEX && (expr->flags & SLAstFlag_INDEX_SLICE) != 0u) {
+        int32_t  baseNode = expr->firstChild;
+        int32_t  extraNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
+        int32_t  startNode = -1;
+        int32_t  endNode = -1;
+        uint16_t sliceFlags =
+            (uint16_t)(expr->flags & (SLAstFlag_INDEX_HAS_START | SLAstFlag_INDEX_HAS_END));
+        if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
+            c->supported = 0;
+            return 0;
+        }
+        if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        if ((expr->flags & SLAstFlag_INDEX_HAS_START) != 0u) {
+            startNode = extraNode;
+            extraNode = startNode >= 0 ? c->ast->nodes[startNode].nextSibling : -1;
+            if (startNode < 0 || (uint32_t)startNode >= c->ast->len) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerExpr(c, startNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+        }
+        if ((expr->flags & SLAstFlag_INDEX_HAS_END) != 0u) {
+            endNode = extraNode;
+            extraNode = endNode >= 0 ? c->ast->nodes[endNode].nextSibling : -1;
+            if (endNode < 0 || (uint32_t)endNode >= c->ast->len) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerExpr(c, endNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+        }
+        if (extraNode >= 0) {
+            c->supported = 0;
+            return 0;
+        }
+        return SLMirStmtLowerAppendInst(
+            c, SLMirOp_SLICE_MAKE, sliceFlags, 0, expr->start, expr->end, NULL);
+    }
     if (expr->kind == SLAst_TUPLE_EXPR) {
         elemCount = SLMirStmtLowerAstListCount(c->ast, exprNode);
         if (elemCount == 0u) {
@@ -808,6 +855,7 @@ static int SLMirStmtLowerIsReplayableExpr(const SLMirStmtLower* c, int32_t exprN
 
 static int32_t SLMirStmtLowerVarInitExprNode(const SLAst* ast, int32_t nodeId) {
     int32_t firstChild;
+    int32_t nextNode;
     if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
@@ -816,7 +864,11 @@ static int32_t SLMirStmtLowerVarInitExprNode(const SLAst* ast, int32_t nodeId) {
         return -1;
     }
     if (ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
-        return -1;
+        nextNode = ast->nodes[firstChild].nextSibling;
+        if (nextNode >= 0 && SLMirStmtLowerIsTypeNodeKind(ast->nodes[nextNode].kind)) {
+            nextNode = ast->nodes[nextNode].nextSibling;
+        }
+        return nextNode;
     }
     if (SLMirStmtLowerIsTypeNodeKind(ast->nodes[firstChild].kind)) {
         return ast->nodes[firstChild].nextSibling;
@@ -1154,6 +1206,21 @@ static int SLMirStmtLowerExprNodeAsStmt(
         uint32_t         slot = 0;
         int              mutable = 0;
         SLTokenKind      binaryTok = SLTok_INVALID;
+        if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
+            && c->ast->nodes[lhsNode].kind == SLAst_IDENT
+            && c->ast->nodes[lhsNode].dataEnd == c->ast->nodes[lhsNode].dataStart + 1u
+            && c->ast->nodes[lhsNode].dataEnd <= c->src.len
+            && c->src.ptr[c->ast->nodes[lhsNode].dataStart] == '_')
+        {
+            if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            return SLMirStmtLowerAppendInst(c, SLMirOp_DROP, 0, 0, expr->start, expr->end, NULL);
+        }
         if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
             && c->ast->nodes[lhsNode].kind == SLAst_IDENT
             && SLMirStmtLowerFindLocal(
@@ -2237,6 +2304,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                 uint32_t nameCount = SLMirStmtLowerAstListCount(c->ast, firstChild);
                 uint32_t initCount = 0;
                 uint32_t tupleTempSlot = UINT32_MAX;
+                uint32_t nameLocalStart = c->localLen;
                 int      useTupleInitTemp = 0;
                 uint32_t i;
                 typeNode = SLMirStmtLowerVarLikeDeclTypeNode(c->ast, stmtNode);
@@ -2298,7 +2366,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                 for (i = 0; i < nameCount; i++) {
                     int32_t itemInitNode = SLMirStmtLowerVarLikeInitExprNodeAt(
                         c->ast, stmtNode, (int32_t)i);
-                    slot = c->locals[c->localLen - nameCount + i].slot;
+                    slot = c->locals[nameLocalStart + i].slot;
                     if (itemInitNode < 0) {
                         if (useTupleInitTemp) {
                             if (SLMirStmtLowerAppendInst(

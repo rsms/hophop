@@ -64,6 +64,7 @@ typedef enum {
     SLMirCastTarget_INT = 1,
     SLMirCastTarget_FLOAT = 2,
     SLMirCastTarget_BOOL = 3,
+    SLMirCastTarget_STR_VIEW = 4,
 } SLMirCastTarget;
 
 enum {
@@ -184,6 +185,22 @@ typedef enum {
     SLMirSymbolFlag_NONE = 0,
     SLMirSymbolFlag_CALL_RECEIVER_ARG0 = 1u << 0,
 } SLMirSymbolFlag;
+
+enum {
+    SLMIR_RAW_CALL_AUX_FLAG_MASK = (1u << 1u) - 1u,
+};
+
+static inline uint32_t SLMirRawCallAuxPack(uint32_t nodeId, uint32_t flags) {
+    return (nodeId << 1u) | (flags & SLMIR_RAW_CALL_AUX_FLAG_MASK);
+}
+
+static inline uint32_t SLMirRawCallAuxNode(uint32_t aux) {
+    return aux >> 1u;
+}
+
+static inline uint32_t SLMirRawCallAuxFlags(uint32_t aux) {
+    return aux & SLMIR_RAW_CALL_AUX_FLAG_MASK;
+}
 
 typedef struct {
     uint32_t        nameStart;

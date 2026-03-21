@@ -152,8 +152,10 @@ int  LoadAndCheckPackage(
      const char* _Nullable platformTarget,
      SLPackageLoader* outLoader,
      SLPackage**      outEntryPkg);
-int ValidateEntryMainSignature(const SLPackage* entryPkg);
-int FindPackageIndex(const SLPackageLoader* loader, const SLPackage* pkg);
+int        ValidateEntryMainSignature(const SLPackage* entryPkg);
+int        FindPackageIndex(const SLPackageLoader* loader, const SLPackage* pkg);
+static int SLEvalStringValueFromArrayBytes(
+    SLArena* arena, const SLCTFEValue* inValue, int32_t targetTypeCode, SLCTFEValue* outValue);
 
 static int StrEq(const char* a, const char* b) {
     while (*a != '\0' && *b != '\0') {
@@ -1702,6 +1704,20 @@ static int SLEvalCoerceValueToTypeNode(
         }
         *inOutValue = targetValue;
     }
+    if (SLEvalStringViewTypeCodeFromTypeNode(typeFile, typeNode, &targetTypeCode)
+        && sourceValue->kind != SLCTFEValue_STRING)
+    {
+        SLCTFEValue stringValue;
+        int         stringRc = SLEvalStringValueFromArrayBytes(
+            p->arena, sourceValue, targetTypeCode, &stringValue);
+        if (stringRc < 0) {
+            return -1;
+        }
+        if (stringRc > 0) {
+            *inOutValue = stringValue;
+            sourceValue = inOutValue;
+        }
+    }
     if (SLEvalAdaptStringValueForType(p->arena, typeFile, typeNode, inOutValue, inOutValue) < 0) {
         return -1;
     }
@@ -2297,6 +2313,15 @@ static int SLEvalMirIndexAddr(
     SLCTFEValue*       outValue,
     int*               outIsConst,
     SLDiag* _Nullable diag);
+static int SLEvalMirSliceValue(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    const SLCTFEValue* _Nullable start,
+    const SLCTFEValue* _Nullable end,
+    uint16_t flags,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 static int SLEvalMirAggGetField(
     void*              ctx,
     const SLCTFEValue* base,
@@ -2390,6 +2415,18 @@ static int SLEvalResolveIdent(
     SLDiag* _Nullable diag);
 static int SLEvalResolveCall(
     void*              ctx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag);
+static int SLEvalResolveCallMir(
+    void* ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
     uint32_t           nameStart,
     uint32_t           nameEnd,
     const SLCTFEValue* args,
@@ -6504,6 +6541,18 @@ static int SLEvalResolveCall(
     SLCTFEValue*       outValue,
     int*               outIsConst,
     SLDiag* _Nullable diag);
+static int SLEvalResolveCallMir(
+    void* ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag);
 static int SLEvalEvalTopConst(
     SLEvalProgram* p, uint32_t topConstIndex, SLCTFEValue* outValue, int* outIsConst);
 
@@ -7044,6 +7093,84 @@ static int SLEvalMirIndexAddr(
     return 0;
 }
 
+static int SLEvalMirSliceValue(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    const SLCTFEValue* _Nullable start,
+    const SLCTFEValue* _Nullable end,
+    uint16_t flags,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram*     p = (SLEvalProgram*)ctx;
+    const SLCTFEValue* baseValue;
+    SLEvalArray*       array;
+    SLEvalArray*       view;
+    int64_t            startInt = 0;
+    int64_t            endInt = -1;
+    uint32_t           startIndex = 0;
+    uint32_t           endIndex = 0;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || base == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    baseValue = SLEvalValueTargetOrSelf(base);
+    if ((flags & SLAstFlag_INDEX_HAS_START) != 0u) {
+        if (start == NULL || SLCTFEValueToInt64(start, &startInt) != 0 || startInt < 0) {
+            return 0;
+        }
+    }
+    if ((flags & SLAstFlag_INDEX_HAS_END) != 0u) {
+        if (end == NULL || SLCTFEValueToInt64(end, &endInt) != 0 || endInt < 0) {
+            return 0;
+        }
+    }
+    if (baseValue->kind == SLCTFEValue_STRING) {
+        int32_t currentTypeCode = SLEvalTypeCode_INVALID;
+        startIndex = (uint32_t)startInt;
+        endIndex = endInt >= 0 ? (uint32_t)endInt : baseValue->s.len;
+        if (startIndex > endIndex || endIndex > baseValue->s.len) {
+            return 0;
+        }
+        *outValue = *baseValue;
+        outValue->s.bytes = baseValue->s.bytes != NULL ? baseValue->s.bytes + startIndex : NULL;
+        outValue->s.len = endIndex - startIndex;
+        if (!SLEvalValueGetRuntimeTypeCode(baseValue, &currentTypeCode)) {
+            currentTypeCode = SLEvalTypeCode_STR_REF;
+        }
+        SLEvalValueSetRuntimeTypeCode(outValue, currentTypeCode);
+        *outIsConst = 1;
+        return 0;
+    }
+    array = SLEvalValueAsArray(baseValue);
+    if (array == NULL) {
+        return 0;
+    }
+    startIndex = (uint32_t)startInt;
+    endIndex = endInt >= 0 ? (uint32_t)endInt : array->len;
+    if (startIndex > endIndex || endIndex > array->len) {
+        return 0;
+    }
+    view = SLEvalAllocArrayView(
+        p,
+        baseValue->kind == SLCTFEValue_ARRAY ? array->file : p->currentFile,
+        array->typeNode,
+        array->elemTypeNode,
+        array->elems + startIndex,
+        endIndex - startIndex);
+    if (view == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    {
+        SLCTFEValue viewValue;
+        SLEvalValueSetArray(&viewValue, p->currentFile, array->typeNode, view);
+        return SLEvalAllocReferencedValue(p, &viewValue, outValue, outIsConst);
+    }
+}
+
 static int SLEvalMirSequenceLen(
     void*              ctx,
     const SLCTFEValue* base,
@@ -7528,7 +7655,7 @@ static void SLEvalMirInitExecEnv(
     env->src.ptr = file->source;
     env->src.len = file->sourceLen;
     env->resolveIdent = SLEvalResolveIdent;
-    env->resolveCall = SLEvalResolveCall;
+    env->resolveCall = SLEvalResolveCallMir;
     env->resolveCtx = p;
     env->hostCall = SLEvalMirHostCall;
     env->hostCtx = p;
@@ -7540,6 +7667,8 @@ static void SLEvalMirInitExecEnv(
     env->indexValueCtx = p;
     env->indexAddr = SLEvalMirIndexAddr;
     env->indexAddrCtx = p;
+    env->sliceValue = SLEvalMirSliceValue;
+    env->sliceValueCtx = p;
     env->sequenceLen = SLEvalMirSequenceLen;
     env->sequenceLenCtx = p;
     env->iterInit = SLEvalMirIterInit;
@@ -8817,8 +8946,11 @@ static int SLEvalResolveIdent(
     return 0;
 }
 
-static int SLEvalResolveCall(
-    void*              ctx,
+static int SLEvalResolveCallMir(
+    void* ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
     uint32_t           nameStart,
     uint32_t           nameEnd,
     const SLCTFEValue* args,
@@ -8830,6 +8962,9 @@ static int SLEvalResolveCall(
     int32_t               fnIndex;
     const SLEvalFunction* fn;
     int                   didReturn = 0;
+    (void)program;
+    (void)function;
+    (void)inst;
     (void)diag;
 
     if (p == NULL || p->currentFile == NULL || p->currentExecCtx == NULL || outValue == NULL
@@ -8892,6 +9027,23 @@ static int SLEvalResolveCall(
             memset(rt, 0, sizeof(*rt));
             rt->kind = SLEvalReflectType_PTR;
             rt->namedKind = SLEvalTypeKind_POINTER;
+            rt->elemType = args[0];
+            SLEvalValueSetReflectedTypeValue(outValue, rt);
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "slice")) {
+        SLEvalReflectedType* rt;
+        if (args[0].kind == SLCTFEValue_TYPE) {
+            rt = (SLEvalReflectedType*)SLArenaAlloc(
+                p->arena, sizeof(SLEvalReflectedType), (uint32_t)_Alignof(SLEvalReflectedType));
+            if (rt == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            memset(rt, 0, sizeof(*rt));
+            rt->kind = SLEvalReflectType_SLICE;
+            rt->namedKind = SLEvalTypeKind_SLICE;
             rt->elemType = args[0];
             SLEvalValueSetReflectedTypeValue(outValue, rt);
             *outIsConst = 1;
@@ -9018,6 +9170,7 @@ static int SLEvalResolveCall(
                 *outIsConst = 0;
                 return 0;
             }
+
             if (fnIndex >= 0) {
                 args++;
                 argCount--;
@@ -9090,6 +9243,19 @@ static int SLEvalResolveCall(
     }
     *outIsConst = 1;
     return 0;
+}
+
+static int SLEvalResolveCall(
+    void*              ctx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    return SLEvalResolveCallMir(
+        ctx, NULL, NULL, NULL, nameStart, nameEnd, args, argCount, outValue, outIsConst, diag);
 }
 
 static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {

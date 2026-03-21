@@ -256,15 +256,23 @@ static int SLMirLowerRewriteSymbolInst(
     SLMirInst* _Nonnull out,
     SLDiag* _Nullable diag) {
     SLMirSymbolKind kind = SLMirSymbol_INVALID;
+    uint32_t        flags = 0;
+    uint32_t        target = 0;
     uint32_t        symbolIndex = 0;
     memcpy(out, in, sizeof(*out));
     switch (in->op) {
-        case SLMirOp_LOAD_IDENT: kind = SLMirSymbol_IDENT; break;
-        case SLMirOp_CALL:       kind = SLMirSymbol_CALL; break;
-        default:                 return 0;
+        case SLMirOp_LOAD_IDENT:
+            kind = SLMirSymbol_IDENT;
+            target = in->aux;
+            break;
+        case SLMirOp_CALL:
+            kind = SLMirSymbol_CALL;
+            flags = SLMirRawCallAuxFlags(in->aux);
+            target = SLMirRawCallAuxNode(in->aux);
+            break;
+        default: return 0;
     }
-    if (SLMirLowerInternSymbol(
-            builder, kind, in->start, in->end, in->aux, (uint32_t)in->tok, &symbolIndex, diag)
+    if (SLMirLowerInternSymbol(builder, kind, in->start, in->end, flags, target, &symbolIndex, diag)
         != 0)
     {
         return -1;

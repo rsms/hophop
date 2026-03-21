@@ -42,6 +42,8 @@ static int SLCTFEEvalCast(SLMirCastTarget target, const SLCTFEValue* in, SLCTFEV
 static const SLMirLocal* SLMirGetLocalMeta(const SLMirExecRun* run, uint32_t slot);
 static int               SLMirCoerceValueForType(
                   const SLMirExecRun* run, uint32_t typeRefIndex, SLMirExecValue* inOutValue);
+static void SLMirSetReason(
+    const SLMirExecRun* _Nullable run, const SLMirInst* _Nullable ins, const char* _Nonnull reason);
 
 static int SLMirInitRun(
     SLMirExecRun* _Nonnull run,
@@ -174,6 +176,22 @@ static uint32_t SLMirResolvedCallArgCount(const SLMirInst* ins) {
 
 static int SLMirResolvedCallDropsReceiverArg0(const SLMirInst* ins) {
     return ins != NULL && (ins->tok & SLMirCallArgFlag_RECEIVER_ARG0) != 0;
+}
+
+static void SLMirSetReason(
+    const SLMirExecRun* _Nullable run,
+    const SLMirInst* _Nullable ins,
+    const char* _Nonnull reason) {
+    uint32_t start = 0;
+    uint32_t end = 0;
+    if (run == NULL || reason == NULL || reason[0] == '\0' || run->env.setReason == NULL) {
+        return;
+    }
+    if (ins != NULL) {
+        start = ins->start;
+        end = ins->end;
+    }
+    run->env.setReason(run->env.setReasonCtx, start, end, reason);
 }
 
 static SLCTFEValue* _Nullable SLMirReferenceTarget(SLCTFEValue* value) {
@@ -567,6 +585,7 @@ static int SLMirRunLoop(
                 }
                 if (run->env.backwardJumpLimit != 0 && ins->aux < run->pc) {
                     if (++run->backwardJumpCount > run->env.backwardJumpLimit) {
+                        SLMirSetReason(run, ins, "for-loop exceeded const-eval iteration limit");
                         return 0;
                     }
                 }
@@ -587,6 +606,8 @@ static int SLMirRunLoop(
                 if (!condBool.b) {
                     if (run->env.backwardJumpLimit != 0 && ins->aux < run->pc) {
                         if (++run->backwardJumpCount > run->env.backwardJumpLimit) {
+                            SLMirSetReason(
+                                run, ins, "for-loop exceeded const-eval iteration limit");
                             return 0;
                         }
                     }
@@ -604,6 +625,8 @@ static int SLMirRunLoop(
                     return 0;
                 }
                 if (!condBool.b) {
+                    SLMirSetReason(
+                        run, ins, "assert condition evaluated to false during const evaluation");
                     return 0;
                 }
                 break;
@@ -640,10 +663,39 @@ static int SLMirRunLoop(
                 uint32_t     i;
                 uint32_t     nameStart = ins->start;
                 uint32_t     nameEnd = ins->end;
-                if (run->env.resolveCall == NULL) {
+                if (run->env.resolveCall == NULL && run->env.resolveCallPre == NULL) {
                     return 0;
                 }
                 SLMirResolveSymbolName(run, ins, SLMirSymbol_CALL, &nameStart, &nameEnd);
+                if (run->env.resolveCallPre != NULL) {
+                    int preRc;
+                    SLCTFEValueInvalid(&v);
+                    preRc = run->env.resolveCallPre(
+                        run->env.resolveCtx,
+                        run->program,
+                        run->function,
+                        ins,
+                        nameStart,
+                        nameEnd,
+                        &v,
+                        &callIsConst,
+                        run->env.diag);
+                    if (preRc < 0) {
+                        return -1;
+                    }
+                    if (preRc > 0) {
+                        if (!callIsConst) {
+                            return 0;
+                        }
+                        if (SLCTFEPush(run, &v) != 0) {
+                            return -1;
+                        }
+                        break;
+                    }
+                }
+                if (run->env.resolveCall == NULL) {
+                    return 0;
+                }
                 if (argCount > run->stackLen) {
                     return 0;
                 }
@@ -665,6 +717,9 @@ static int SLMirRunLoop(
                 SLCTFEValueInvalid(&v);
                 if (run->env.resolveCall(
                         run->env.resolveCtx,
+                        run->program,
+                        run->function,
+                        ins,
                         nameStart,
                         nameEnd,
                         args,
@@ -889,7 +944,12 @@ static int SLMirRunLoop(
                     return 0;
                 }
                 if (base.kind == SLCTFEValue_STRING && SLCTFEValueToInt64(&idx, &idxInt) == 0) {
-                    if (idxInt < 0 || (uint64_t)idxInt >= (uint64_t)base.s.len) {
+                    if (idxInt < 0) {
+                        SLMirSetReason(run, ins, "index is negative in const evaluation");
+                        return 0;
+                    }
+                    if ((uint64_t)idxInt >= (uint64_t)base.s.len) {
+                        SLMirSetReason(run, ins, "index is out of bounds in const evaluation");
                         return 0;
                     }
                     out.kind = SLCTFEValue_INT;
@@ -1011,6 +1071,55 @@ static int SLMirRunLoop(
                     return -1;
                 }
                 if (!addrIsConst) {
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_SLICE_MAKE: {
+                SLCTFEValue  base;
+                SLCTFEValue  startValue;
+                SLCTFEValue  endValue;
+                SLCTFEValue  out;
+                SLCTFEValue* startPtr = NULL;
+                SLCTFEValue* endPtr = NULL;
+                int          sliceIsConst = 0;
+                uint16_t     sliceFlags = ins->tok;
+                if (run->env.sliceValue == NULL) {
+                    return 0;
+                }
+                if ((sliceFlags & SLAstFlag_INDEX_HAS_END) != 0u) {
+                    if (SLCTFEPop(run, &endValue) != 0) {
+                        return 0;
+                    }
+                    endPtr = &endValue;
+                }
+                if ((sliceFlags & SLAstFlag_INDEX_HAS_START) != 0u) {
+                    if (SLCTFEPop(run, &startValue) != 0) {
+                        return 0;
+                    }
+                    startPtr = &startValue;
+                }
+                if (SLCTFEPop(run, &base) != 0) {
+                    return 0;
+                }
+                SLCTFEValueInvalid(&out);
+                if (run->env.sliceValue(
+                        run->env.sliceValueCtx,
+                        &base,
+                        startPtr,
+                        endPtr,
+                        sliceFlags,
+                        &out,
+                        &sliceIsConst,
+                        run->env.diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (!sliceIsConst) {
                     return 0;
                 }
                 if (SLCTFEPush(run, &out) != 0) {
@@ -1960,7 +2069,8 @@ static int SLCTFEEvalCast(SLMirCastTarget target, const SLCTFEValue* in, SLCTFEV
             out->b = asBool;
             return 1;
         }
-        default: return 0;
+        case SLMirCastTarget_STR_VIEW: *out = *in; return 1;
+        default:                       return 0;
     }
 }
 

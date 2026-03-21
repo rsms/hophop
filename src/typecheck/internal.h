@@ -447,6 +447,18 @@ int SLTCResolveConstCall(
     SLCTFEValue*       outValue,
     int*               outIsConst,
     SLDiag* _Nullable diag);
+int SLTCResolveConstCallMir(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    const SLCTFEValue* _Nonnull args,
+    uint32_t argCount,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 
 /* Returns 1 if handled as span compound, 0 if not span-like, -1 on hard error. */
 
@@ -893,6 +905,16 @@ int SLTCResolveConstCall(
     uint32_t           argCount,
     SLCTFEValue*       outValue,
     int*               outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCResolveConstCallMirPre(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
     SLDiag* _Nullable diag);
 int SLTCEvalTopLevelConstNodeAt(
     SLTypeCheckCtx*   c,

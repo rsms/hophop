@@ -4,6 +4,11 @@
 
 SL_API_BEGIN
 
+static void SLTCResolveMirSetReasonCb(
+    void* _Nullable ctx, uint32_t start, uint32_t end, const char* reason) {
+    SLTCConstSetReason((SLTCConstEvalCtx*)ctx, start, end, reason);
+}
+
 static int SLTCTryMirConstBlock(
     SLTCConstEvalCtx* evalCtx,
     int32_t           blockNode,
@@ -67,7 +72,8 @@ static int SLTCTryMirConstBlock(
     SLMirProgramBuilderFinish(&lowerCtx.builder, &program);
     env.src = c->src;
     env.resolveIdent = SLTCResolveConstIdent;
-    env.resolveCall = SLTCResolveConstCall;
+    env.resolveCallPre = SLTCResolveConstCallMirPre;
+    env.resolveCall = SLTCResolveConstCallMir;
     env.resolveCtx = evalCtx;
     env.zeroInitLocal = SLTCMirConstZeroInitLocal;
     env.zeroInitCtx = evalCtx;
@@ -87,6 +93,8 @@ static int SLTCTryMirConstBlock(
     env.aggAddrFieldCtx = evalCtx;
     env.makeTuple = SLTCMirConstMakeTuple;
     env.makeTupleCtx = evalCtx;
+    env.setReason = SLTCResolveMirSetReasonCb;
+    env.setReasonCtx = evalCtx;
     env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;
     env.diag = c->diag;
     if (!SLMirProgramNeedsDynamicResolution(&program)) {
