@@ -124,6 +124,61 @@ enum {
     SL_EVAL_MIR_ITER_MAGIC = 0x534c4954u,
 };
 
+static int SliceEqCStr(const char* s, uint32_t start, uint32_t end, const char* cstr);
+
+static int SLEvalNameEqLiteralOrPkgBuiltin(
+    const char* _Nullable src,
+    uint32_t start,
+    uint32_t end,
+    const char* _Nonnull lit,
+    const char* _Nonnull pkgPrefix) {
+    size_t litLen = 0;
+    size_t pkgLen = 0;
+    size_t i;
+    if (src == NULL || lit == NULL || pkgPrefix == NULL || end < start) {
+        return 0;
+    }
+    while (lit[litLen] != '\0') {
+        litLen++;
+    }
+    while (pkgPrefix[pkgLen] != '\0') {
+        pkgLen++;
+    }
+    if ((size_t)(end - start) == litLen && memcmp(src + start, lit, litLen) == 0) {
+        return 1;
+    }
+    if ((size_t)(end - start) != pkgLen + 2u + litLen) {
+        return 0;
+    }
+    for (i = 0; i < pkgLen; i++) {
+        if (src[start + i] != pkgPrefix[i]) {
+            return 0;
+        }
+    }
+    if (src[start + pkgLen] != '_' || src[start + pkgLen + 1u] != '_') {
+        return 0;
+    }
+    return memcmp(src + start + pkgLen + 2u, lit, litLen) == 0;
+}
+
+static int SLEvalNameIsCompilerDiagBuiltin(
+    const char* _Nullable src, uint32_t start, uint32_t end) {
+    return SLEvalNameEqLiteralOrPkgBuiltin(src, start, end, "error", "compiler")
+        || SLEvalNameEqLiteralOrPkgBuiltin(src, start, end, "error_at", "compiler")
+        || SLEvalNameEqLiteralOrPkgBuiltin(src, start, end, "warn", "compiler")
+        || SLEvalNameEqLiteralOrPkgBuiltin(src, start, end, "warn_at", "compiler");
+}
+
+static int SLEvalNameIsLazyTypeBuiltin(const char* _Nullable src, uint32_t start, uint32_t end) {
+    return SliceEqCStr(src, start, end, "typeof")
+        || SLEvalNameEqLiteralOrPkgBuiltin(src, start, end, "kind", "reflect")
+        || SLEvalNameEqLiteralOrPkgBuiltin(src, start, end, "base", "reflect")
+        || SLEvalNameEqLiteralOrPkgBuiltin(src, start, end, "is_alias", "reflect")
+        || SLEvalNameEqLiteralOrPkgBuiltin(src, start, end, "type_name", "reflect")
+        || SliceEqCStr(src, start, end, "ptr") || SliceEqCStr(src, start, end, "slice")
+        || SliceEqCStr(src, start, end, "array");
+}
+
 typedef struct {
     uint32_t    magic;
     uint32_t    sourceNode;
@@ -7891,11 +7946,12 @@ static int SLEvalMirCallNodeIsLazyBuiltin(SLEvalProgram* p, int32_t callNode) {
         return 0;
     }
     if (callee->kind == SLAst_IDENT) {
-        return SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "error")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "error_at")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "warn")
-            || SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "warn_at");
+        return SLEvalNameEqLiteralOrPkgBuiltin(
+                   p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of", "reflect")
+            || SLEvalNameIsLazyTypeBuiltin(
+                   p->currentFile->source, callee->dataStart, callee->dataEnd)
+            || SLEvalNameIsCompilerDiagBuiltin(
+                   p->currentFile->source, callee->dataStart, callee->dataEnd);
     }
     if (callee->kind != SLAst_FIELD_EXPR) {
         return 0;
@@ -7911,9 +7967,35 @@ static int SLEvalMirCallNodeIsLazyBuiltin(SLEvalProgram* p, int32_t callNode) {
             ast->nodes[recvNode].dataEnd,
             "reflect"))
     {
-        return SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of");
+        return SLEvalNameEqLiteralOrPkgBuiltin(
+                   p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of", "reflect")
+            || SLEvalNameEqLiteralOrPkgBuiltin(
+                   p->currentFile->source, callee->dataStart, callee->dataEnd, "kind", "reflect")
+            || SLEvalNameEqLiteralOrPkgBuiltin(
+                   p->currentFile->source, callee->dataStart, callee->dataEnd, "base", "reflect")
+            || SLEvalNameEqLiteralOrPkgBuiltin(
+                   p->currentFile->source,
+                   callee->dataStart,
+                   callee->dataEnd,
+                   "is_alias",
+                   "reflect")
+            || SLEvalNameEqLiteralOrPkgBuiltin(
+                   p->currentFile->source,
+                   callee->dataStart,
+                   callee->dataEnd,
+                   "type_name",
+                   "reflect");
     }
-    return 0;
+    if (!SliceEqCStr(
+            p->currentFile->source,
+            ast->nodes[recvNode].dataStart,
+            ast->nodes[recvNode].dataEnd,
+            "compiler"))
+    {
+        return 0;
+    }
+    return SLEvalNameIsCompilerDiagBuiltin(
+        p->currentFile->source, callee->dataStart, callee->dataEnd);
 }
 
 static int SLEvalMirLookupLocalValue(
@@ -9321,6 +9403,11 @@ static int SLEvalResolveCallMir(
     int32_t               fnIndex;
     const SLEvalFunction* fn;
     int                   didReturn = 0;
+    int                   isReflectKind = 0;
+    int                   isReflectIsAlias = 0;
+    int                   isReflectTypeName = 0;
+    int                   isReflectBase = 0;
+    int                   isTypeOf = 0;
     (void)program;
     (void)function;
     (void)inst;
@@ -9332,7 +9419,17 @@ static int SLEvalResolveCallMir(
         return -1;
     }
 
-    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "kind")) {
+    isReflectKind = SLEvalNameEqLiteralOrPkgBuiltin(
+        p->currentFile->source, nameStart, nameEnd, "kind", "reflect");
+    isReflectIsAlias = SLEvalNameEqLiteralOrPkgBuiltin(
+        p->currentFile->source, nameStart, nameEnd, "is_alias", "reflect");
+    isReflectTypeName = SLEvalNameEqLiteralOrPkgBuiltin(
+        p->currentFile->source, nameStart, nameEnd, "type_name", "reflect");
+    isReflectBase = SLEvalNameEqLiteralOrPkgBuiltin(
+        p->currentFile->source, nameStart, nameEnd, "base", "reflect");
+    isTypeOf = SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "typeof");
+
+    if (argCount == 1 && isReflectKind) {
         int32_t kind = 0;
         if (SLEvalTypeKindOfValue(&args[0], &kind)) {
             SLEvalValueSetInt(outValue, kind);
@@ -9340,7 +9437,7 @@ static int SLEvalResolveCallMir(
             return 0;
         }
     }
-    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "is_alias")) {
+    if (argCount == 1 && isReflectIsAlias) {
         int32_t kind = 0;
         if (SLEvalTypeKindOfValue(&args[0], &kind)) {
             outValue->kind = SLCTFEValue_BOOL;
@@ -9354,13 +9451,13 @@ static int SLEvalResolveCallMir(
             return 0;
         }
     }
-    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "type_name")) {
+    if (argCount == 1 && isReflectTypeName) {
         if (SLEvalTypeNameOfValue((SLCTFEValue*)&args[0], outValue)) {
             *outIsConst = 1;
             return 0;
         }
     }
-    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "base")) {
+    if (argCount == 1 && isReflectBase) {
         SLEvalReflectedType* rt = SLEvalValueAsReflectedType(&args[0]);
         if (rt != NULL && rt->kind == SLEvalReflectType_NAMED
             && rt->namedKind == SLEvalTypeKind_ALIAS && rt->file != NULL && rt->nodeId >= 0
@@ -9450,7 +9547,7 @@ static int SLEvalResolveCallMir(
             return 0;
         }
     }
-    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "typeof")) {
+    if (argCount == 1 && isTypeOf) {
         int32_t typeCode = SLEvalTypeCode_INVALID;
         if (args[0].kind == SLCTFEValue_TYPE) {
             SLEvalValueSetSimpleTypeValue(outValue, SLEvalTypeCode_TYPE);

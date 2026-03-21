@@ -560,6 +560,18 @@ static int SLMirStmtLowerNameIsCompilerDiagBuiltin(
         || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "warn_at", "compiler");
 }
 
+static int SLMirStmtLowerNameIsLazyTypeBuiltin(
+    const SLMirStmtLower* c, uint32_t start, uint32_t end) {
+    return SLMirStmtLowerNameEqLiteral(c, start, end, "typeof")
+        || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "kind", "reflect")
+        || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "base", "reflect")
+        || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "is_alias", "reflect")
+        || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "type_name", "reflect")
+        || SLMirStmtLowerNameEqLiteral(c, start, end, "ptr")
+        || SLMirStmtLowerNameEqLiteral(c, start, end, "slice")
+        || SLMirStmtLowerNameEqLiteral(c, start, end, "array");
+}
+
 static int SLMirStmtLowerCallUsesLazyBuiltin(const SLMirStmtLower* c, int32_t callNode) {
     const SLAstNode* call;
     const SLAstNode* callee;
@@ -577,6 +589,7 @@ static int SLMirStmtLowerCallUsesLazyBuiltin(const SLMirStmtLower* c, int32_t ca
     if (callee->kind == SLAst_IDENT) {
         return SLMirStmtLowerNameEqLiteralOrPkgBuiltin(
                    c, callee->dataStart, callee->dataEnd, "span_of", "reflect")
+            || SLMirStmtLowerNameIsLazyTypeBuiltin(c, callee->dataStart, callee->dataEnd)
             || SLMirStmtLowerNameIsCompilerDiagBuiltin(c, callee->dataStart, callee->dataEnd);
     }
     if (callee->kind != SLAst_FIELD_EXPR) {
@@ -591,10 +604,14 @@ static int SLMirStmtLowerCallUsesLazyBuiltin(const SLMirStmtLower* c, int32_t ca
     if (SLMirStmtLowerNameEqLiteral(
             c, c->ast->nodes[recvNode].dataStart, c->ast->nodes[recvNode].dataEnd, "reflect")
         && (SLMirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "span_of")
-            || SLMirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "kind")
-            || SLMirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "base")
-            || SLMirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "is_alias")
-            || SLMirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "type_name")))
+            || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(
+                c, callee->dataStart, callee->dataEnd, "kind", "reflect")
+            || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(
+                c, callee->dataStart, callee->dataEnd, "base", "reflect")
+            || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(
+                c, callee->dataStart, callee->dataEnd, "is_alias", "reflect")
+            || SLMirStmtLowerNameEqLiteralOrPkgBuiltin(
+                c, callee->dataStart, callee->dataEnd, "type_name", "reflect")))
     {
         return 1;
     }
@@ -1150,6 +1167,21 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
         }
         return SLMirStmtLowerAppendInst(
             c, SLMirOp_SLICE_MAKE, sliceFlags, 0, expr->start, expr->end, NULL);
+    }
+    if (expr->kind == SLAst_INDEX) {
+        int32_t baseNode = expr->firstChild;
+        int32_t indexNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
+        if (baseNode < 0 || indexNode < 0 || c->ast->nodes[indexNode].nextSibling >= 0) {
+            c->supported = 0;
+            return 0;
+        }
+        if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        if (SLMirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        return SLMirStmtLowerAppendInst(c, SLMirOp_INDEX, 0, 0, expr->start, expr->end, NULL);
     }
     if (expr->kind == SLAst_TUPLE_EXPR) {
         elemCount = SLMirStmtLowerAstListCount(c->ast, exprNode);
