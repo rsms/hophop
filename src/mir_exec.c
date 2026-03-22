@@ -171,11 +171,11 @@ static uint32_t SLMirResolvedCallArgCount(const SLMirInst* ins) {
     if (ins == NULL) {
         return 0;
     }
-    return (uint32_t)(ins->tok & ~SLMirCallArgFlag_RECEIVER_ARG0);
+    return SLMirCallArgCountFromTok(ins->tok);
 }
 
 static int SLMirResolvedCallDropsReceiverArg0(const SLMirInst* ins) {
-    return ins != NULL && (ins->tok & SLMirCallArgFlag_RECEIVER_ARG0) != 0;
+    return ins != NULL && SLMirCallTokDropsReceiverArg0(ins->tok);
 }
 
 static void SLMirSetReason(
@@ -207,6 +207,7 @@ static int SLMirEvalFunctionInternal(
     uint32_t functionIndex,
     const SLMirExecValue* _Nullable args,
     uint32_t argCount,
+    uint16_t callFlags,
     const SLMirExecEnv* _Nullable env,
     int validateProgram,
     int clearDiag,
@@ -713,7 +714,7 @@ static int SLMirRunLoop(
                 SLCTFEValue* args = NULL;
                 SLCTFEValue  v;
                 int          callIsConst = 0;
-                uint32_t     argCount = (uint32_t)ins->tok;
+                uint32_t     argCount = SLMirResolvedCallArgCount(ins);
                 uint32_t     i;
                 uint32_t     nameStart = ins->start;
                 uint32_t     nameEnd = ins->end;
@@ -888,6 +889,7 @@ static int SLMirRunLoop(
                         ins->aux,
                         args != NULL ? args + callArgOffset : NULL,
                         argCount - callArgOffset,
+                        ins->tok,
                         &run->env,
                         0,
                         0,
@@ -911,7 +913,7 @@ static int SLMirRunLoop(
                 SLMirExecValue* args = NULL;
                 int             callOk = 0;
                 uint32_t        fnIndex = 0;
-                uint32_t        argCount = (uint32_t)ins->tok;
+                uint32_t        argCount = SLMirResolvedCallArgCount(ins);
                 uint32_t        i;
                 if (run->program == NULL || argCount + 1u > run->stackLen) {
                     SLMirSetReason(
@@ -953,6 +955,7 @@ static int SLMirRunLoop(
                         fnIndex,
                         args,
                         argCount,
+                        ins->tok,
                         &run->env,
                         0,
                         0,
@@ -2369,6 +2372,7 @@ static int SLMirEvalFunctionInternal(
     uint32_t functionIndex,
     const SLMirExecValue* _Nullable args,
     uint32_t argCount,
+    uint16_t callFlags,
     const SLMirExecEnv* _Nullable env,
     int validateProgram,
     int clearDiag,
@@ -2419,6 +2423,7 @@ static int SLMirEvalFunctionInternal(
                 variadicLocal->typeRef != UINT32_MAX
                     ? &program->types[variadicLocal->typeRef]
                     : NULL,
+                callFlags,
                 args != NULL ? args + fixedCount : NULL,
                 argCount - fixedCount,
                 &variadicPackValue,
@@ -2505,6 +2510,6 @@ int SLMirEvalFunction(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
     return SLMirEvalFunctionInternal(
-        arena, program, functionIndex, args, argCount, env, 1, 1, outValue, outIsConst);
+        arena, program, functionIndex, args, argCount, 0u, env, 1, 1, outValue, outIsConst);
 }
 SL_API_END

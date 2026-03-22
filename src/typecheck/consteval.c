@@ -4734,7 +4734,8 @@ static int SLTCMirConstMatchPlainCallNode(
             const SLAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
             if (callee != NULL && callee->kind == SLAst_IDENT
                 && callee->dataStart == symbol->nameStart && callee->dataEnd == symbol->nameEnd
-                && SLTCListCount(tc->ast, nodeId) == encodedArgCount)
+                && SLTCListCount(tc->ast, nodeId)
+                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount))
             {
                 if (found) {
                     return 0;
@@ -4787,7 +4788,8 @@ static int SLTCMirConstMatchAliasCallNode(
             const SLAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
             if (callee != NULL && callee->kind == SLAst_IDENT
                 && callee->dataStart == symbol->nameStart && callee->dataEnd == symbol->nameEnd
-                && SLTCListCount(tc->ast, nodeId) == encodedArgCount + 1u)
+                && SLTCListCount(tc->ast, nodeId)
+                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount) + 1u)
             {
                 if (found) {
                     return 0;
@@ -4917,7 +4919,7 @@ static int SLTCMirConstMatchQualifiedCallNode(
                 && (uint32_t)recvNode < tc->ast->len && tc->ast->nodes[recvNode].kind == SLAst_IDENT
                 && callee->dataStart == symbol->nameStart && callee->dataEnd == symbol->nameEnd
                 && SLTCListCount(tc->ast, nodeId)
-                       == (encodedArgCount & ~SLMirCallArgFlag_RECEIVER_ARG0))
+                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount))
             {
                 uint32_t baseStart = tc->ast->nodes[recvNode].dataStart;
                 uint32_t baseEnd = tc->ast->nodes[recvNode].dataEnd;
@@ -4992,7 +4994,8 @@ static int SLTCMirConstMatchPkgPrefixedQualifiedCallNode(
                     tc->ast->nodes[recvNode].dataEnd,
                     pkgStart,
                     pkgEnd)
-                && SLTCListCount(tc->ast, nodeId) == encodedArgCount + 1u)
+                && SLTCListCount(tc->ast, nodeId)
+                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount) + 1u)
             {
                 if (!found) {
                     *outCallNode = nodeId;

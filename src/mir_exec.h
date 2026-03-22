@@ -155,6 +155,7 @@ typedef int (*SLMirMakeVariadicPackFn)(
     const SLMirProgram* _Nullable program,
     const SLMirFunction* _Nullable function,
     const SLMirTypeRef* _Nullable paramTypeRef,
+    uint16_t callFlags,
     const SLMirExecValue* _Nonnull args,
     uint32_t argCount,
     SLMirExecValue* _Nonnull outValue,

@@ -740,6 +740,7 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             int32_t  arg;
             uint32_t argc = 0;
             uint32_t callFlags = 0;
+            uint16_t callTokFlags = 0;
             uint32_t callStart;
             uint32_t callEnd;
             int      isBuiltinLen = 0;
@@ -781,12 +782,23 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             if (!isLazyBuiltin) {
                 while (arg >= 0) {
                     int32_t exprNode = arg;
+                    int     isSpread = 0;
                     if (b->ast->nodes[arg].kind == SLAst_CALL_ARG) {
                         exprNode = b->ast->nodes[arg].firstChild;
                         if (exprNode < 0) {
                             b->supported = 0;
                             return 0;
                         }
+                        isSpread = (b->ast->nodes[arg].flags & SLAstFlag_CALL_ARG_SPREAD) != 0;
+                    }
+                    if (isSpread) {
+                        if (b->ast->nodes[arg].nextSibling >= 0
+                            || (callTokFlags & SLMirCallArgFlag_SPREAD_LAST) != 0u)
+                        {
+                            b->supported = 0;
+                            return 0;
+                        }
+                        callTokFlags |= SLMirCallArgFlag_SPREAD_LAST;
                     }
                     if (SLMirBuildExprNode(b, exprNode) != 0) {
                         return -1;
@@ -808,7 +820,7 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
             return SLMirEmitInstEx(
                 b,
                 SLMirOp_CALL,
-                (SLTokenKind)argc,
+                (SLTokenKind)((uint16_t)argc | callTokFlags),
                 SLMirRawCallAuxPack((uint32_t)nodeId, callFlags),
                 callStart,
                 callEnd);

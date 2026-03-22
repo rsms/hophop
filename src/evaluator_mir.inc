@@ -200,7 +200,7 @@ static int SLEvalMirMatchQualifiedCallBaseSlice(
                 && (uint32_t)baseNode < ast->len && ast->nodes[baseNode].kind == SLAst_IDENT
                 && ast->nodes[calleeNode].dataStart == symbol->nameStart
                 && ast->nodes[calleeNode].dataEnd == symbol->nameEnd
-                && AstListCount(ast, nodeId) == (encodedArgCount & ~SLMirCallArgFlag_RECEIVER_ARG0))
+                && AstListCount(ast, nodeId) == SLMirCallArgCountFromTok((uint16_t)encodedArgCount))
             {
                 uint32_t baseStart = ast->nodes[baseNode].dataStart;
                 uint32_t baseEnd = ast->nodes[baseNode].dataEnd;
@@ -258,13 +258,18 @@ static int SLEvalMirResolveQualifiedCallTargetInNode(
         return 0;
     }
     fnIndex = SLEvalResolveFunctionBySlice(
-        c->p, targetPkg, file, symbol->nameStart, symbol->nameEnd, NULL, (uint32_t)ins->tok - 1u);
+        c->p,
+        targetPkg,
+        file,
+        symbol->nameStart,
+        symbol->nameEnd,
+        NULL,
+        SLMirCallArgCountFromTok(ins->tok) - 1u);
     if (fnIndex == -2) {
         return 0;
     }
     if (fnIndex < 0 || (uint32_t)fnIndex >= c->p->funcLen
-        || c->p->funcs[(uint32_t)fnIndex].isBuiltinPackageFn
-        || c->p->funcs[(uint32_t)fnIndex].isVariadic)
+        || c->p->funcs[(uint32_t)fnIndex].isBuiltinPackageFn)
     {
         return 0;
     }
@@ -301,13 +306,18 @@ static int SLEvalMirResolveDirectCallTarget(
         return 0;
     }
     targetFnIndex = SLEvalResolveFunctionBySlice(
-        c->p, NULL, callerFn->file, symbol->nameStart, symbol->nameEnd, NULL, (uint32_t)ins->tok);
+        c->p,
+        NULL,
+        callerFn->file,
+        symbol->nameStart,
+        symbol->nameEnd,
+        NULL,
+        SLMirCallArgCountFromTok(ins->tok));
     if (targetFnIndex < 0 || (uint32_t)targetFnIndex >= c->p->funcLen)
     {
         return 0;
     }
-    if (c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn
-        || c->p->funcs[(uint32_t)targetFnIndex].isVariadic)
+    if (c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn)
     {
         return 0;
     }
@@ -335,10 +345,15 @@ static int SLEvalMirResolvePlainDirectCallTargetForFile(
         return 0;
     }
     targetFnIndex = SLEvalResolveFunctionBySlice(
-        c->p, NULL, file, symbol->nameStart, symbol->nameEnd, NULL, (uint32_t)ins->tok);
+        c->p,
+        NULL,
+        file,
+        symbol->nameStart,
+        symbol->nameEnd,
+        NULL,
+        SLMirCallArgCountFromTok(ins->tok));
     if (targetFnIndex < 0 || (uint32_t)targetFnIndex >= c->p->funcLen
-        || c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn
-        || c->p->funcs[(uint32_t)targetFnIndex].isVariadic)
+        || c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn)
     {
         return 0;
     }
@@ -387,7 +402,7 @@ static int SLEvalMirRewriteBuiltinHostCallForFile(
     if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
-    if ((uint32_t)ins->tok == 1u
+    if (SLMirCallArgCountFromTok(ins->tok) == 1u
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "print"))
     {
         host.nameStart = symbol->nameStart;
@@ -403,7 +418,7 @@ static int SLEvalMirRewriteBuiltinHostCallForFile(
         *outRewritten = 1;
         return 1;
     }
-    if ((uint32_t)ins->tok == 2u
+    if (SLMirCallArgCountFromTok(ins->tok) == 2u
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "copy"))
     {
         host.nameStart = symbol->nameStart;
@@ -419,7 +434,7 @@ static int SLEvalMirRewriteBuiltinHostCallForFile(
         *outRewritten = 1;
         return 1;
     }
-    if ((uint32_t)ins->tok == 2u
+    if (SLMirCallArgCountFromTok(ins->tok) == 2u
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "concat"))
     {
         host.nameStart = symbol->nameStart;
@@ -435,7 +450,7 @@ static int SLEvalMirRewriteBuiltinHostCallForFile(
         *outRewritten = 1;
         return 1;
     }
-    if (((uint32_t)ins->tok == 1u || (uint32_t)ins->tok == 2u)
+    if ((SLMirCallArgCountFromTok(ins->tok) == 1u || SLMirCallArgCountFromTok(ins->tok) == 2u)
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "free"))
     {
         host.nameStart = symbol->nameStart;
@@ -757,6 +772,7 @@ static int SLEvalMirLowerFunction(
                 }
                 return 0;
             }
+            ins = &c->builder.insts[instIndex];
             SLEvalMirRewriteLoadIdentToMirFunction(ins, targetMirFnIndex);
             continue;
         }
@@ -775,6 +791,7 @@ static int SLEvalMirLowerFunction(
                 }
                 return 0;
             }
+            ins = &c->builder.insts[instIndex];
             if (SLEvalMirRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
                 if (c->loweringFns != NULL) {
                     c->loweringFns[(uint32_t)evalFnIndex] = 0u;
@@ -800,6 +817,7 @@ static int SLEvalMirLowerFunction(
                 }
                 return 0;
             }
+            ins = &c->builder.insts[instIndex];
             SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
             continue;
         }
@@ -845,6 +863,7 @@ static int SLEvalMirLowerFunction(
             }
             return 0;
         }
+        ins = &c->builder.insts[instIndex];
         SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
     }
     if (c->loweringFns != NULL) {
@@ -1404,6 +1423,7 @@ static int SLEvalMirRewriteTopInitCalls(
             if (lowerRc == 0) {
                 return 0;
             }
+            ins = &c->builder.insts[instIndex];
             SLEvalMirRewriteLoadIdentToMirFunction(ins, targetMirFnIndex);
             continue;
         }
@@ -1415,6 +1435,7 @@ static int SLEvalMirRewriteTopInitCalls(
             if (lowerRc == 0) {
                 return 0;
             }
+            ins = &c->builder.insts[instIndex];
             if (SLEvalMirRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
                 return -1;
             }
@@ -1428,6 +1449,7 @@ static int SLEvalMirRewriteTopInitCalls(
             if (lowerRc == 0) {
                 return 0;
             }
+            ins = &c->builder.insts[instIndex];
             SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
             continue;
         }
@@ -1449,6 +1471,7 @@ static int SLEvalMirRewriteTopInitCalls(
             if (lowerRc == 0) {
                 return 0;
             }
+            ins = &c->builder.insts[instIndex];
             SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
             continue;
         }
@@ -1462,6 +1485,7 @@ static int SLEvalMirRewriteTopInitCalls(
         if (lowerRc == 0) {
             return 0;
         }
+        ins = &c->builder.insts[instIndex];
         SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
     }
     *outSupported = 1;

@@ -701,6 +701,7 @@ static int SLMirStmtLowerCallExpr(SLMirStmtLower* c, int32_t exprNode) {
     int32_t          argNode;
     uint32_t         argc = 0;
     uint32_t         callFlags = 0;
+    uint16_t         callTokFlags = 0;
     uint32_t         callStart = 0;
     uint32_t         callEnd = 0;
     uint32_t         localSlot = 0;
@@ -769,12 +770,23 @@ static int SLMirStmtLowerCallExpr(SLMirStmtLower* c, int32_t exprNode) {
     argNode = c->ast->nodes[calleeNode].nextSibling;
     while (argNode >= 0) {
         int32_t valueNode = argNode;
+        int     isSpread = 0;
         if (c->ast->nodes[argNode].kind == SLAst_CALL_ARG) {
             valueNode = c->ast->nodes[argNode].firstChild;
             if (valueNode < 0) {
                 c->supported = 0;
                 return 0;
             }
+            isSpread = (c->ast->nodes[argNode].flags & SLAstFlag_CALL_ARG_SPREAD) != 0u;
+        }
+        if (isSpread) {
+            if (c->ast->nodes[argNode].nextSibling >= 0
+                || (callTokFlags & SLMirCallArgFlag_SPREAD_LAST) != 0u)
+            {
+                c->supported = 0;
+                return 0;
+            }
+            callTokFlags |= SLMirCallArgFlag_SPREAD_LAST;
         }
         if (SLMirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
@@ -795,7 +807,7 @@ static int SLMirStmtLowerCallExpr(SLMirStmtLower* c, int32_t exprNode) {
             c, SLMirOp_STR_CSTR, SLTok_INVALID, 0, callStart, callEnd, NULL);
     }
     inst.op = isIndirectLocalCall ? SLMirOp_CALL_INDIRECT : SLMirOp_CALL;
-    inst.tok = (uint16_t)argc;
+    inst.tok = (uint16_t)argc | callTokFlags;
     inst.aux = isIndirectLocalCall ? 0u : SLMirRawCallAuxPack((uint32_t)exprNode, callFlags);
     inst.start = callStart;
     inst.end = callEnd;
@@ -997,9 +1009,7 @@ static int SLMirStmtLowerExprInstStackDelta(const SLMirInst* inst, int32_t* outD
             *outDelta = 0 - (((inst->tok & SLAstFlag_INDEX_HAS_START) != 0u) ? 1 : 0)
                       - (((inst->tok & SLAstFlag_INDEX_HAS_END) != 0u) ? 1 : 0);
             return 1;
-        case SLMirOp_CALL:
-            *outDelta = 1 - (int32_t)(inst->tok & ~SLMirCallArgFlag_RECEIVER_ARG0);
-            return 1;
+        case SLMirOp_CALL: *outDelta = 1 - (int32_t)SLMirCallArgCountFromTok(inst->tok); return 1;
         case SLMirOp_TUPLE_MAKE:
             elemCount = (uint32_t)inst->tok;
             *outDelta = 1 - (int32_t)elemCount;
@@ -1067,18 +1077,15 @@ static int SLMirStmtLowerRewriteExprChunk(SLMirStmtLower* c, const SLMirChunk* c
             SLMirInst inst = chunk->v[i - 1u];
             uint32_t  slot = 0;
             uint32_t  argStart = UINT32_MAX;
-            if (inst.op != SLMirOp_CALL || (inst.tok & SLMirCallArgFlag_RECEIVER_ARG0) != 0u
+            if (inst.op != SLMirOp_CALL || SLMirCallTokDropsReceiverArg0(inst.tok)
                 || !SLMirStmtLowerFindLocal(c, inst.start, inst.end, &slot, NULL))
             {
                 continue;
             }
-            if ((inst.tok & ~SLMirCallArgFlag_RECEIVER_ARG0) == 0u) {
+            if (SLMirCallArgCountFromTok(inst.tok) == 0u) {
                 argStart = i - 1u;
             } else if (!SLMirStmtLowerFindCallArgStart(
-                           chunk,
-                           i - 1u,
-                           (uint32_t)(inst.tok & ~SLMirCallArgFlag_RECEIVER_ARG0),
-                           &argStart))
+                           chunk, i - 1u, SLMirCallArgCountFromTok(inst.tok), &argStart))
             {
                 c->supported = 0;
                 return 0;

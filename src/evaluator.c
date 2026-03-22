@@ -1031,6 +1031,22 @@ static int SLEvalValueGetSimpleTypeCode(const SLCTFEValue* value, int32_t* outTy
     return 1;
 }
 
+static void SLEvalAnnotateUntypedLiteralValue(SLCTFEValue* value) {
+    int32_t typeCode = SLEvalTypeCode_INVALID;
+    if (value == NULL || SLEvalValueGetRuntimeTypeCode(value, &typeCode)) {
+        return;
+    }
+    switch (value->kind) {
+        case SLCTFEValue_BOOL:  SLEvalValueSetRuntimeTypeCode(value, SLEvalTypeCode_BOOL); break;
+        case SLCTFEValue_INT:   SLEvalValueSetRuntimeTypeCode(value, SLEvalTypeCode_INT); break;
+        case SLCTFEValue_FLOAT: SLEvalValueSetRuntimeTypeCode(value, SLEvalTypeCode_F64); break;
+        case SLCTFEValue_STRING:
+            SLEvalValueSetRuntimeTypeCode(value, SLEvalTypeCode_STR_REF);
+            break;
+        default: break;
+    }
+}
+
 static uint64_t SLEvalHashMix64(uint64_t x) {
     x ^= x >> 21;
     x ^= x << 13;
@@ -1723,6 +1739,7 @@ static int SLEvalCoerceValueToTypeNode(
         return -1;
     }
     if (SLEvalTypeNodeIsAnytype(typeFile, typeNode)) {
+        SLEvalAnnotateUntypedLiteralValue(inOutValue);
         return 0;
     }
     type = &typeFile->ast.nodes[typeNode];
@@ -2645,6 +2662,7 @@ static int SLEvalMirMakeVariadicPack(
     const SLMirProgram* _Nullable program,
     const SLMirFunction* _Nullable function,
     const SLMirTypeRef* _Nullable paramTypeRef,
+    uint16_t           callFlags,
     const SLCTFEValue* args,
     uint32_t           argCount,
     SLCTFEValue*       outValue,
@@ -7775,6 +7793,7 @@ static int SLEvalMirMakeVariadicPack(
     const SLMirProgram* _Nullable program,
     const SLMirFunction* _Nullable function,
     const SLMirTypeRef* _Nullable paramTypeRef,
+    uint16_t           callFlags,
     const SLCTFEValue* args,
     uint32_t           argCount,
     SLCTFEValue*       outValue,
@@ -7782,8 +7801,12 @@ static int SLEvalMirMakeVariadicPack(
     SLDiag* _Nullable diag) {
     SLEvalProgram*      p = (SLEvalProgram*)ctx;
     const SLParsedFile* file;
+    const SLEvalArray*  spreadArray = NULL;
     SLEvalArray*        packArray;
     int32_t             typeNode = -1;
+    uint32_t            packLen = argCount;
+    uint32_t            prefixCount = argCount;
+    uint32_t            i;
     (void)program;
     (void)function;
     (void)diag;
@@ -7800,17 +7823,43 @@ static int SLEvalMirMakeVariadicPack(
     if (paramTypeRef != NULL && paramTypeRef->astNode < file->ast.len) {
         typeNode = (int32_t)paramTypeRef->astNode;
     }
-    packArray = SLEvalAllocArrayView(p, file, typeNode, typeNode, NULL, argCount);
+    if (SLMirCallTokHasSpreadLast(callFlags)) {
+        if (argCount == 0u) {
+            return 0;
+        }
+        spreadArray = SLEvalValueAsArray(SLEvalValueTargetOrSelf(&args[argCount - 1u]));
+        if (spreadArray == NULL || spreadArray->len > UINT32_MAX - (argCount - 1u)) {
+            return 0;
+        }
+        prefixCount = argCount - 1u;
+        packLen = prefixCount + spreadArray->len;
+    }
+    packArray = SLEvalAllocArrayView(p, file, typeNode, typeNode, NULL, packLen);
     if (packArray == NULL) {
         return ErrorSimple("out of memory");
     }
-    if (argCount > 0u) {
+    if (packLen > 0u) {
         packArray->elems = (SLCTFEValue*)SLArenaAlloc(
-            p->arena, sizeof(SLCTFEValue) * argCount, (uint32_t)_Alignof(SLCTFEValue));
+            p->arena, sizeof(SLCTFEValue) * packLen, (uint32_t)_Alignof(SLCTFEValue));
         if (packArray->elems == NULL) {
             return ErrorSimple("out of memory");
         }
-        memcpy(packArray->elems, args, sizeof(SLCTFEValue) * argCount);
+        for (i = 0; i < prefixCount; i++) {
+            packArray->elems[i] = args[i];
+            SLEvalAnnotateUntypedLiteralValue(&packArray->elems[i]);
+        }
+        if (spreadArray != NULL) {
+            uint32_t j;
+            for (j = 0; j < spreadArray->len; j++) {
+                packArray->elems[prefixCount + j] = spreadArray->elems[j];
+                SLEvalAnnotateUntypedLiteralValue(&packArray->elems[prefixCount + j]);
+            }
+        } else {
+            for (; i < packLen; i++) {
+                packArray->elems[i] = args[i];
+                SLEvalAnnotateUntypedLiteralValue(&packArray->elems[i]);
+            }
+        }
     }
     SLEvalValueSetArray(outValue, file, typeNode, packArray);
     *outIsConst = 1;
@@ -10331,6 +10380,58 @@ static int SLEvalResolveCallMirPre(
     return 1;
 }
 
+static int SLEvalExpandMirSpreadLastArgs(
+    SLEvalProgram*        p,
+    const SLMirInst*      inst,
+    const SLEvalFunction* fn,
+    const SLCTFEValue*    args,
+    uint32_t              argCount,
+    const SLCTFEValue**   outArgs,
+    uint32_t*             outArgCount) {
+    const SLEvalArray* spreadArray;
+    SLCTFEValue*       expandedArgs;
+    uint32_t           prefixCount;
+    uint32_t           i;
+    if (outArgs != NULL) {
+        *outArgs = args;
+    }
+    if (outArgCount != NULL) {
+        *outArgCount = argCount;
+    }
+    if (p == NULL || fn == NULL || outArgs == NULL || outArgCount == NULL) {
+        return -1;
+    }
+    if (inst == NULL || !fn->isVariadic || !SLMirCallTokHasSpreadLast(inst->tok)) {
+        return 1;
+    }
+    if (argCount == 0u) {
+        return 0;
+    }
+    spreadArray = SLEvalValueAsArray(SLEvalValueTargetOrSelf(&args[argCount - 1u]));
+    if (spreadArray == NULL || spreadArray->len > UINT32_MAX - (argCount - 1u)) {
+        return 0;
+    }
+    prefixCount = argCount - 1u;
+    expandedArgs = (SLCTFEValue*)SLArenaAlloc(
+        p->arena,
+        sizeof(SLCTFEValue) * (prefixCount + spreadArray->len),
+        (uint32_t)_Alignof(SLCTFEValue));
+    if (expandedArgs == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    for (i = 0; i < prefixCount; i++) {
+        expandedArgs[i] = args[i];
+        SLEvalAnnotateUntypedLiteralValue(&expandedArgs[i]);
+    }
+    for (i = 0; i < spreadArray->len; i++) {
+        expandedArgs[prefixCount + i] = spreadArray->elems[i];
+        SLEvalAnnotateUntypedLiteralValue(&expandedArgs[prefixCount + i]);
+    }
+    *outArgs = expandedArgs;
+    *outArgCount = prefixCount + spreadArray->len;
+    return 1;
+}
+
 static int SLEvalResolveCallMir(
     void* ctx,
     const SLMirProgram* _Nullable program,
@@ -10665,6 +10766,26 @@ static int SLEvalResolveCallMir(
         return 0;
     }
     fn = &p->funcs[fnIndex];
+    {
+        const SLCTFEValue* invokeArgs = args;
+        uint32_t           invokeArgCount = argCount;
+        int                expandRc = SLEvalExpandMirSpreadLastArgs(
+            p, inst, fn, args, argCount, &invokeArgs, &invokeArgCount);
+        if (expandRc < 0) {
+            return -1;
+        }
+        if (expandRc == 0) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx,
+                nameStart,
+                nameEnd,
+                "spread argument is not supported by evaluator backend");
+            *outIsConst = 0;
+            return 0;
+        }
+        args = invokeArgs;
+        argCount = invokeArgCount;
+    }
 
     if (p->callDepth >= SL_EVAL_CALL_MAX_DEPTH) {
         SLCTFEExecSetReason(

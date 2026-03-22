@@ -72,7 +72,21 @@ typedef enum {
 
 enum {
     SLMirCallArgFlag_RECEIVER_ARG0 = 0x8000u,
+    SLMirCallArgFlag_SPREAD_LAST = 0x4000u,
+    SLMirCallArgFlag_MASK = SLMirCallArgFlag_RECEIVER_ARG0 | SLMirCallArgFlag_SPREAD_LAST,
 };
+
+static inline uint32_t SLMirCallArgCountFromTok(uint16_t tok) {
+    return (uint32_t)(tok & ~SLMirCallArgFlag_MASK);
+}
+
+static inline int SLMirCallTokDropsReceiverArg0(uint16_t tok) {
+    return (tok & SLMirCallArgFlag_RECEIVER_ARG0) != 0;
+}
+
+static inline int SLMirCallTokHasSpreadLast(uint16_t tok) {
+    return (tok & SLMirCallArgFlag_SPREAD_LAST) != 0;
+}
 
 enum {
     SLMirIterFlag_HAS_KEY = 1u << 0,
