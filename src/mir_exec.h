@@ -43,6 +43,15 @@ typedef int (*SLMirResolveCallPreFn)(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef int (*SLMirAdjustCallArgsFn)(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t calleeFunctionIndex,
+    SLMirExecValue* _Nonnull args,
+    uint32_t argCount,
+    SLDiag* _Nullable diag);
 
 typedef int (*SLMirHostCallFn)(
     void* _Nullable ctx,
@@ -210,7 +219,9 @@ typedef struct {
     void* _Nullable assignIdentCtx;
     SLMirResolveCallPreFn _Nullable resolveCallPre;
     SLMirResolveCallFn _Nullable resolveCall;
+    SLMirAdjustCallArgsFn _Nullable adjustCallArgs;
     void* _Nullable resolveCtx;
+    void* _Nullable adjustCallArgsCtx;
     SLMirHostCallFn _Nullable hostCall;
     void* _Nullable hostCtx;
     SLMirZeroInitLocalFn _Nullable zeroInitLocal;

@@ -183,10 +183,12 @@ typedef struct {
     uint32_t    magic;
     uint32_t    sourceNode;
     uint32_t    index;
+    int32_t     iteratorFn;
     uint16_t    flags;
     uint8_t     kind;
-    uint8_t     _reserved[5];
+    uint8_t     _reserved[1];
     SLCTFEValue sourceValue;
+    SLCTFEValue iteratorValue;
 } SLEvalMirIteratorState;
 
 int ErrorDiagf(
@@ -1569,6 +1571,11 @@ static int SLEvalResolveAliasCastTargetNode(
     const SLParsedFile** outAliasFile,
     int32_t*             outAliasNode,
     int32_t*             outTargetNode);
+static int SLEvalResolveAggregateDeclFromValue(
+    const SLEvalProgram* p,
+    const SLCTFEValue*   value,
+    const SLParsedFile** outFile,
+    int32_t*             outNode);
 static int SLEvalAggregateSetFieldValue(
     SLEvalAggregate*   agg,
     const char*        source,
@@ -5287,7 +5294,8 @@ static int SLEvalReorderFixedCallArgsByName(
     const SLAst*          callAst,
     int32_t               firstArgNode,
     SLCTFEValue*          args,
-    uint32_t              argCount) {
+    uint32_t              argCount,
+    uint32_t              paramOffset) {
     uint32_t     argNameStarts[256];
     uint32_t     argNameEnds[256];
     uint32_t     paramNameStarts[256];
@@ -5304,7 +5312,9 @@ static int SLEvalReorderFixedCallArgsByName(
     if (p == NULL || fn == NULL || callAst == NULL || args == NULL || fn->file == NULL) {
         return 0;
     }
-    if (argCount == 0 || argCount > 256u || fn->isVariadic || fn->paramCount != argCount) {
+    if (argCount == 0 || argCount > 256u || fn->isVariadic
+        || fn->paramCount != paramOffset + argCount)
+    {
         return 0;
     }
     callSource = p->currentFile != NULL ? p->currentFile->source : NULL;
@@ -5370,16 +5380,21 @@ static int SLEvalReorderFixedCallArgsByName(
     while (child >= 0) {
         const SLAstNode* n = &fnAst->nodes[child];
         if (n->kind == SLAst_PARAM) {
-            if (i >= argCount) {
+            if (i < paramOffset) {
+                i++;
+                child = ASTNextSibling(fnAst, child);
+                continue;
+            }
+            if (i - paramOffset >= argCount) {
                 return 0;
             }
-            paramNameStarts[i] = n->dataStart;
-            paramNameEnds[i] = n->dataEnd;
+            paramNameStarts[i - paramOffset] = n->dataStart;
+            paramNameEnds[i - paramOffset] = n->dataEnd;
             i++;
         }
         child = ASTNextSibling(fnAst, child);
     }
-    if (i != argCount) {
+    if (i != paramOffset + argCount) {
         return 0;
     }
 
@@ -5561,11 +5576,10 @@ static int SLEvalAggregateDistanceToType(
     const SLParsedFile* curFile = NULL;
     int32_t             curNode = -1;
     uint32_t            distance = 0;
-    SLEvalAggregate*    agg = SLEvalValueAsAggregate(value);
     if (outDistance != NULL) {
         *outDistance = 0;
     }
-    if (p == NULL || callerFile == NULL || agg == NULL) {
+    if (p == NULL || callerFile == NULL) {
         return 0;
     }
     pkg = SLEvalFindPackageByFile(p, callerFile);
@@ -5576,8 +5590,9 @@ static int SLEvalAggregateDistanceToType(
     if (!SLEvalResolveAggregateTypeNode(p, callerFile, typeNode, &targetFile, &targetNode)) {
         return 0;
     }
-    curFile = agg->file;
-    curNode = agg->nodeId;
+    if (!SLEvalResolveAggregateDeclFromValue(p, value, &curFile, &curNode)) {
+        return 0;
+    }
     while (curFile != NULL && curNode >= 0) {
         if (curFile == targetFile && curNode == targetNode) {
             if (outDistance != NULL) {
@@ -7115,12 +7130,169 @@ static int32_t SLEvalResolveFunctionByTypeNodeLiteral(
     return found;
 }
 
+static int32_t SLEvalResolvePointerFunctionByPointeeTypeLiteral(
+    const SLEvalProgram* p,
+    const char*          name,
+    const SLParsedFile*  typeFile,
+    int32_t              pointeeTypeNode) {
+    uint32_t i;
+    int32_t  found = -1;
+    if (p == NULL || name == NULL || typeFile == NULL || pointeeTypeNode < 0) {
+        return -1;
+    }
+    for (i = 0; i < p->funcLen; i++) {
+        const SLEvalFunction* fn = &p->funcs[i];
+        int32_t               paramTypeNode;
+        int32_t               childTypeNode;
+        if (!SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, name)
+            || fn->paramCount != 1u)
+        {
+            continue;
+        }
+        paramTypeNode = SLEvalFunctionParamTypeNodeAt(fn, 0);
+        if (paramTypeNode < 0) {
+            continue;
+        }
+        if (fn->file->ast.nodes[paramTypeNode].kind != SLAst_TYPE_PTR
+            && fn->file->ast.nodes[paramTypeNode].kind != SLAst_TYPE_REF
+            && fn->file->ast.nodes[paramTypeNode].kind != SLAst_TYPE_MUTREF)
+        {
+            continue;
+        }
+        childTypeNode = fn->file->ast.nodes[paramTypeNode].firstChild;
+        if (childTypeNode < 0
+            || !SLEvalTypeNodesEquivalent(fn->file, childTypeNode, typeFile, pointeeTypeNode))
+        {
+            continue;
+        }
+        if (found >= 0) {
+            return -2;
+        }
+        found = (int32_t)i;
+    }
+    return found;
+}
+
+static int SLEvalIsTypeNodeKind(SLAstKind kind) {
+    return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
+        || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
+        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_TUPLE || kind == SLAst_TYPE_ANON_STRUCT
+        || kind == SLAst_TYPE_ANON_UNION;
+}
+
+static int SLEvalFindVisibleLocalTypeNodeByName(
+    const SLParsedFile* file,
+    uint32_t            beforePos,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    int32_t*            outTypeNode) {
+    const SLAst* ast;
+    uint32_t     i;
+    int32_t      found = -1;
+    if (outTypeNode != NULL) {
+        *outTypeNode = -1;
+    }
+    if (file == NULL || outTypeNode == NULL) {
+        return 0;
+    }
+    ast = &file->ast;
+    for (i = 0; i < ast->len; i++) {
+        const SLAstNode* n = &ast->nodes[i];
+        int32_t          firstChild;
+        int32_t          maybeTypeNode;
+        int32_t          initNode;
+        if ((n->kind != SLAst_VAR && n->kind != SLAst_CONST) || n->start >= beforePos) {
+            continue;
+        }
+        firstChild = n->firstChild;
+        if (firstChild < 0 || (uint32_t)firstChild >= ast->len
+            || ast->nodes[firstChild].kind != SLAst_IDENT
+            || !SliceEqSlice(
+                file->source,
+                ast->nodes[firstChild].dataStart,
+                ast->nodes[firstChild].dataEnd,
+                file->source,
+                nameStart,
+                nameEnd))
+        {
+            continue;
+        }
+        maybeTypeNode = ast->nodes[firstChild].nextSibling;
+        initNode = maybeTypeNode;
+        if (maybeTypeNode >= 0 && (uint32_t)maybeTypeNode < ast->len
+            && SLEvalIsTypeNodeKind(ast->nodes[maybeTypeNode].kind))
+        {
+            found = maybeTypeNode;
+            continue;
+        }
+        if (initNode >= 0 && (uint32_t)initNode < ast->len
+            && ast->nodes[initNode].kind == SLAst_COMPOUND_LIT)
+        {
+            int32_t typeNode = ast->nodes[initNode].firstChild;
+            if (typeNode >= 0 && (uint32_t)typeNode < ast->len
+                && SLEvalIsTypeNodeKind(ast->nodes[typeNode].kind))
+            {
+                found = typeNode;
+            }
+        }
+    }
+    if (found < 0) {
+        return 0;
+    }
+    *outTypeNode = found;
+    return 1;
+}
+
+static int SLEvalResolveAggregateDeclFromValue(
+    const SLEvalProgram* p,
+    const SLCTFEValue*   value,
+    const SLParsedFile** outFile,
+    int32_t*             outNode) {
+    const SLCTFEValue* valueTarget;
+    SLEvalAggregate*   agg;
+    if (outFile != NULL) {
+        *outFile = NULL;
+    }
+    if (outNode != NULL) {
+        *outNode = -1;
+    }
+    if (p == NULL || value == NULL || outFile == NULL || outNode == NULL) {
+        return 0;
+    }
+    valueTarget = SLEvalValueTargetOrSelf(value);
+    agg = SLEvalValueAsAggregate(valueTarget);
+    if (agg == NULL || agg->file == NULL || agg->nodeId < 0) {
+        return 0;
+    }
+    if ((uint32_t)agg->nodeId < agg->file->ast.len) {
+        const SLAstNode* aggNode = &agg->file->ast.nodes[agg->nodeId];
+        if (aggNode->kind == SLAst_COMPOUND_LIT) {
+            int32_t             typeNode = aggNode->firstChild;
+            const SLParsedFile* declFile = NULL;
+            int32_t             declNode = -1;
+            if (typeNode >= 0
+                && SLEvalResolveAggregateTypeNode(p, agg->file, typeNode, &declFile, &declNode))
+            {
+                *outFile = declFile;
+                *outNode = declNode;
+                return 1;
+            }
+        }
+    }
+    *outFile = agg->file;
+    *outNode = agg->nodeId;
+    return 1;
+}
+
 static int32_t SLEvalResolvePointerAggregateFunctionByLiteral(
     const SLEvalProgram* p, const char* name, const SLCTFEValue* argValue) {
-    const SLCTFEValue* targetValue;
-    SLEvalAggregate*   agg;
-    uint32_t           i;
-    int32_t            found = -1;
+    const SLCTFEValue*  targetValue;
+    SLEvalAggregate*    agg;
+    const SLParsedFile* aggDeclFile = NULL;
+    int32_t             aggDeclNode = -1;
+    uint32_t            i;
+    int32_t             found = -1;
     if (p == NULL || name == NULL || argValue == NULL) {
         return -1;
     }
@@ -7128,6 +7300,10 @@ static int32_t SLEvalResolvePointerAggregateFunctionByLiteral(
     agg = SLEvalValueAsAggregate(targetValue);
     if (agg == NULL) {
         return SLEvalResolveFunctionByLiteralArgs(p, name, argValue, 1);
+    }
+    if (!SLEvalResolveAggregateDeclFromValue(p, argValue, &aggDeclFile, &aggDeclNode)) {
+        aggDeclFile = agg->file;
+        aggDeclNode = agg->nodeId;
     }
     for (i = 0; i < p->funcLen; i++) {
         const SLEvalFunction* fn = &p->funcs[i];
@@ -7152,7 +7328,7 @@ static int32_t SLEvalResolvePointerAggregateFunctionByLiteral(
         }
         childTypeNode = fn->file->ast.nodes[paramTypeNode].firstChild;
         if (!SLEvalResolveAggregateTypeNode(p, fn->file, childTypeNode, &declFile, &declNode)
-            || declFile != agg->file || declNode != agg->nodeId)
+            || declFile != aggDeclFile || declNode != aggDeclNode)
         {
             continue;
         }
@@ -7162,6 +7338,62 @@ static int32_t SLEvalResolvePointerAggregateFunctionByLiteral(
         found = (int32_t)i;
     }
     return found;
+}
+
+static int32_t SLEvalResolveFunctionBySourceExprLiteral(
+    SLEvalProgram*      p,
+    SLCTFEExecCtx*      execCtx,
+    const SLParsedFile* file,
+    int32_t             exprNode,
+    const char*         name) {
+    const SLAstNode* expr;
+    int32_t          bindingTypeNode = -1;
+    if (p == NULL || execCtx == NULL || file == NULL || exprNode < 0
+        || (uint32_t)exprNode >= file->ast.len || name == NULL)
+    {
+        return -1;
+    }
+    expr = &file->ast.nodes[exprNode];
+    if (expr->kind == SLAst_IDENT) {
+        SLCTFEExecBinding* binding = SLEvalFindBinding(
+            execCtx, file, expr->dataStart, expr->dataEnd);
+        if (binding != NULL && binding->typeNode >= 0) {
+            return SLEvalResolveFunctionByTypeNodeLiteral(p, name, file, binding->typeNode);
+        }
+        if (SLEvalFindVisibleLocalTypeNodeByName(
+                file, expr->start, expr->dataStart, expr->dataEnd, &bindingTypeNode))
+        {
+            return SLEvalResolveFunctionByTypeNodeLiteral(p, name, file, bindingTypeNode);
+        }
+        return -1;
+    }
+    if (expr->kind == SLAst_UNARY && (SLTokenKind)expr->op == SLTok_AND) {
+        int32_t childNode = expr->firstChild;
+        if (childNode >= 0 && (uint32_t)childNode < file->ast.len
+            && file->ast.nodes[childNode].kind == SLAst_IDENT)
+        {
+            SLCTFEExecBinding* binding = SLEvalFindBinding(
+                execCtx,
+                file,
+                file->ast.nodes[childNode].dataStart,
+                file->ast.nodes[childNode].dataEnd);
+            if (binding != NULL && binding->typeNode >= 0) {
+                return SLEvalResolvePointerFunctionByPointeeTypeLiteral(
+                    p, name, file, binding->typeNode);
+            }
+            if (SLEvalFindVisibleLocalTypeNodeByName(
+                    file,
+                    expr->start,
+                    file->ast.nodes[childNode].dataStart,
+                    file->ast.nodes[childNode].dataEnd,
+                    &bindingTypeNode))
+            {
+                return SLEvalResolvePointerFunctionByPointeeTypeLiteral(
+                    p, name, file, bindingTypeNode);
+            }
+        }
+    }
+    return -1;
 }
 
 static int32_t SLEvalResolveIteratorHookByReturnType(
@@ -7229,35 +7461,67 @@ static void SLEvalAdaptForInValueBinding(
     *outValue = target != NULL ? *target : *inValue;
 }
 
-static int SLEvalForInIterCb(
-    void*              ctx,
-    SLCTFEExecCtx*     execCtx,
-    int32_t            sourceNode,
-    const SLCTFEValue* sourceValue,
-    uint32_t           index,
-    int                hasKey,
-    int                keyRef,
-    int                valueRef,
-    int                valueDiscard,
-    int*               outHasItem,
-    SLCTFEValue*       outKey,
-    int*               outKeyIsConst,
-    SLCTFEValue*       outValue,
-    int*               outValueIsConst) {
-    SLEvalProgram*      p = (SLEvalProgram*)ctx;
+static int32_t SLEvalResolveForInIteratorFn(
+    SLEvalProgram* p, SLCTFEExecCtx* execCtx, int32_t sourceNode, const SLCTFEValue* sourceValue) {
     SLCTFEValue         sourceArg;
-    SLCTFEValue         iterValue;
-    SLCTFEValue         iterRef;
-    SLCTFEValue         callResult;
-    const SLCTFEValue*  payload = NULL;
     const SLParsedFile* sourceTypeFile = NULL;
     int32_t             sourceTypeNode = -1;
     int32_t             iteratorFn = -1;
-    int32_t             nextFn = -1;
-    int32_t             nextReturnTypeNode = -1;
-    uint32_t            step;
-    int                 didReturn = 0;
-    int                 usePair = 0;
+    if (p == NULL || execCtx == NULL || sourceValue == NULL) {
+        return -1;
+    }
+    sourceArg = *sourceValue;
+    if (p->currentFile != NULL) {
+        iteratorFn = SLEvalResolveFunctionBySourceExprLiteral(
+            p, execCtx, p->currentFile, sourceNode, "__iterator");
+        if (sourceNode >= 0 && (uint32_t)sourceNode < p->currentFile->ast.len
+            && p->currentFile->ast.nodes[sourceNode].kind == SLAst_IDENT)
+        {
+            SLCTFEExecBinding* binding = SLEvalFindBinding(
+                execCtx,
+                p->currentFile,
+                p->currentFile->ast.nodes[sourceNode].dataStart,
+                p->currentFile->ast.nodes[sourceNode].dataEnd);
+            if (binding != NULL && binding->typeNode >= 0) {
+                sourceTypeFile = p->currentFile;
+                sourceTypeNode = binding->typeNode;
+            }
+        }
+    }
+    if (iteratorFn < 0 && sourceTypeNode >= 0) {
+        iteratorFn = SLEvalResolveFunctionByTypeNodeLiteral(
+            p, "__iterator", sourceTypeFile, sourceTypeNode);
+    }
+    if (iteratorFn < 0) {
+        iteratorFn = SLEvalResolvePointerAggregateFunctionByLiteral(p, "__iterator", sourceValue);
+    }
+    if (iteratorFn < 0) {
+        iteratorFn = SLEvalResolveFunctionByLiteralArgs(p, "__iterator", &sourceArg, 1);
+    }
+    return iteratorFn;
+}
+
+static int SLEvalAdvanceForInIterator(
+    SLEvalProgram* p,
+    SLCTFEExecCtx* execCtx,
+    int32_t        iteratorFn,
+    SLCTFEValue*   iteratorValue,
+    int            hasKey,
+    int            keyRef,
+    int            valueRef,
+    int            valueDiscard,
+    int*           outHasItem,
+    SLCTFEValue*   outKey,
+    int*           outKeyIsConst,
+    SLCTFEValue*   outValue,
+    int*           outValueIsConst) {
+    SLCTFEValue        iterRef;
+    SLCTFEValue        callResult;
+    const SLCTFEValue* payload = NULL;
+    int32_t            nextFn = -1;
+    int32_t            nextReturnTypeNode = -1;
+    int                didReturn = 0;
+    int                usePair = 0;
     if (outHasItem != NULL) {
         *outHasItem = 1;
     }
@@ -7273,8 +7537,8 @@ static int SLEvalForInIterCb(
     if (outValue != NULL) {
         SLEvalValueSetNull(outValue);
     }
-    if (p == NULL || execCtx == NULL || sourceValue == NULL || outHasItem == NULL || outKey == NULL
-        || outKeyIsConst == NULL || outValue == NULL || outValueIsConst == NULL)
+    if (p == NULL || execCtx == NULL || iteratorValue == NULL || outHasItem == NULL
+        || outKey == NULL || outKeyIsConst == NULL || outValue == NULL || outValueIsConst == NULL)
     {
         return -1;
     }
@@ -7283,48 +7547,7 @@ static int SLEvalForInIterCb(
             execCtx, 0, 0, "for-in key reference is not supported in evaluator backend");
         return 0;
     }
-
-    sourceArg = *sourceValue;
-    if (p->currentFile != NULL && sourceNode >= 0 && (uint32_t)sourceNode < p->currentFile->ast.len
-        && p->currentFile->ast.nodes[sourceNode].kind == SLAst_IDENT)
-    {
-        SLCTFEExecBinding* binding = SLEvalFindBinding(
-            execCtx,
-            p->currentFile,
-            p->currentFile->ast.nodes[sourceNode].dataStart,
-            p->currentFile->ast.nodes[sourceNode].dataEnd);
-        if (binding != NULL && binding->typeNode >= 0) {
-            sourceTypeFile = p->currentFile;
-            sourceTypeNode = binding->typeNode;
-        }
-    }
-    if (sourceTypeNode >= 0) {
-        iteratorFn = SLEvalResolveFunctionByTypeNodeLiteral(
-            p, "__iterator", sourceTypeFile, sourceTypeNode);
-    }
-    if (iteratorFn < 0) {
-        iteratorFn = SLEvalResolvePointerAggregateFunctionByLiteral(p, "__iterator", sourceValue);
-    }
-    if (iteratorFn < 0) {
-        iteratorFn = SLEvalResolveFunctionByLiteralArgs(p, "__iterator", &sourceArg, 1);
-    }
-    if (iteratorFn < 0) {
-        SLCTFEExecSetReason(
-            execCtx, 0, 0, "for-in loop source is not supported in evaluator backend");
-        return 0;
-    }
-    if (SLEvalInvokeFunction(
-            p, iteratorFn, &sourceArg, 1, p->currentContext, &iterValue, &didReturn)
-        != 0)
-    {
-        return -1;
-    }
-    if (!didReturn) {
-        SLCTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook did not return a value");
-        return 0;
-    }
-    SLEvalValueSetReference(&iterRef, &iterValue);
-
+    SLEvalValueSetReference(&iterRef, iteratorValue);
     if (hasKey) {
         if (!valueDiscard) {
             nextFn = SLEvalResolveIteratorHookByReturnType(p, "next_key_and_value", iteratorFn);
@@ -7355,82 +7578,159 @@ static int SLEvalForInIterCb(
         SLCTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook has unsupported return type");
         return 0;
     }
-
-    for (step = 0; step <= index; step++) {
-        const SLCTFEValue* pairValue;
-        SLEvalArray*       tuple;
-        didReturn = 0;
-        if (SLEvalInvokeFunction(p, nextFn, &iterRef, 1, p->currentContext, &callResult, &didReturn)
-            != 0)
-        {
-            return -1;
-        }
-        payload = NULL;
-        if (!didReturn) {
-            SLCTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook returned unsupported value");
-            return 0;
-        }
-        if (p->funcs[nextFn].file->ast.nodes[nextReturnTypeNode].kind == SLAst_TYPE_OPTIONAL) {
-            if (callResult.kind == SLCTFEValue_OPTIONAL) {
-                if (!SLEvalOptionalPayload(&callResult, &payload)) {
-                    SLCTFEExecSetReason(
-                        execCtx, 0, 0, "for-in iterator hook returned unsupported value");
-                    return 0;
-                }
-                if (callResult.b == 0u || payload == NULL) {
-                    *outHasItem = 0;
-                    *outKeyIsConst = 1;
-                    *outValueIsConst = 1;
-                    return 0;
-                }
-            } else if (callResult.kind == SLCTFEValue_NULL) {
+    if (SLEvalInvokeFunction(p, nextFn, &iterRef, 1, p->currentContext, &callResult, &didReturn)
+        != 0)
+    {
+        return -1;
+    }
+    if (!didReturn) {
+        SLCTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook returned unsupported value");
+        return 0;
+    }
+    if (p->funcs[nextFn].file->ast.nodes[nextReturnTypeNode].kind == SLAst_TYPE_OPTIONAL) {
+        if (callResult.kind == SLCTFEValue_OPTIONAL) {
+            if (!SLEvalOptionalPayload(&callResult, &payload)) {
+                SLCTFEExecSetReason(
+                    execCtx, 0, 0, "for-in iterator hook returned unsupported value");
+                return 0;
+            }
+            if (callResult.b == 0u || payload == NULL) {
                 *outHasItem = 0;
                 *outKeyIsConst = 1;
                 *outValueIsConst = 1;
                 return 0;
-            } else {
-                payload = &callResult;
             }
-        } else {
-            SLCTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook has unsupported return type");
-            return 0;
-        }
-        if (payload == NULL) {
+        } else if (callResult.kind == SLCTFEValue_NULL) {
             *outHasItem = 0;
             *outKeyIsConst = 1;
             *outValueIsConst = 1;
             return 0;
+        } else {
+            payload = &callResult;
         }
-        if (step == index) {
-            if (usePair) {
-                pairValue = SLEvalValueTargetOrSelf(payload);
-                tuple = SLEvalValueAsArray(pairValue);
-                if (tuple == NULL || tuple->len != 2u) {
-                    SLCTFEExecSetReason(
-                        execCtx, 0, 0, "for-in pair iterator returned malformed tuple");
-                    return 0;
-                }
-                if (hasKey) {
-                    *outKey = tuple->elems[0];
-                    *outKeyIsConst = 1;
-                } else {
-                    *outValueIsConst = 1;
-                }
-                if (!valueDiscard) {
-                    SLEvalAdaptForInValueBinding(&tuple->elems[1], valueRef, outValue);
-                    *outValueIsConst = 1;
-                } else {
-                    *outValueIsConst = 1;
-                }
-            } else if (hasKey) {
-                *outKey = *payload;
-                *outKeyIsConst = 1;
-                *outValueIsConst = 1;
-            } else {
-                SLEvalAdaptForInValueBinding(payload, valueRef, outValue);
-                *outValueIsConst = 1;
-                *outKeyIsConst = 1;
-            }
+    } else {
+        SLCTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook has unsupported return type");
+        return 0;
+    }
+    if (payload == NULL) {
+        *outHasItem = 0;
+        *outKeyIsConst = 1;
+        *outValueIsConst = 1;
+        return 0;
+    }
+    if (usePair) {
+        const SLCTFEValue* pairValue = SLEvalValueTargetOrSelf(payload);
+        SLEvalArray*       tuple = SLEvalValueAsArray(pairValue);
+        if (tuple == NULL || tuple->len != 2u) {
+            SLCTFEExecSetReason(execCtx, 0, 0, "for-in pair iterator returned malformed tuple");
+            return 0;
+        }
+        if (hasKey) {
+            *outKey = tuple->elems[0];
+            *outKeyIsConst = 1;
+        } else {
+            *outValueIsConst = 1;
+        }
+        if (!valueDiscard) {
+            SLEvalAdaptForInValueBinding(&tuple->elems[1], valueRef, outValue);
+            *outValueIsConst = 1;
+        } else {
+            *outValueIsConst = 1;
+        }
+    } else if (hasKey) {
+        *outKey = *payload;
+        *outKeyIsConst = 1;
+        *outValueIsConst = 1;
+    } else {
+        SLEvalAdaptForInValueBinding(payload, valueRef, outValue);
+        *outValueIsConst = 1;
+        *outKeyIsConst = 1;
+    }
+    return 0;
+}
+
+static int SLEvalForInIterCb(
+    void*              ctx,
+    SLCTFEExecCtx*     execCtx,
+    int32_t            sourceNode,
+    const SLCTFEValue* sourceValue,
+    uint32_t           index,
+    int                hasKey,
+    int                keyRef,
+    int                valueRef,
+    int                valueDiscard,
+    int*               outHasItem,
+    SLCTFEValue*       outKey,
+    int*               outKeyIsConst,
+    SLCTFEValue*       outValue,
+    int*               outValueIsConst) {
+    SLEvalProgram* p = (SLEvalProgram*)ctx;
+    SLCTFEValue    iterValue;
+    int32_t        iteratorFn = -1;
+    uint32_t       step;
+    int            didReturn = 0;
+    if (outHasItem != NULL) {
+        *outHasItem = 1;
+    }
+    if (outKeyIsConst != NULL) {
+        *outKeyIsConst = 0;
+    }
+    if (outValueIsConst != NULL) {
+        *outValueIsConst = 0;
+    }
+    if (outKey != NULL) {
+        SLEvalValueSetNull(outKey);
+    }
+    if (outValue != NULL) {
+        SLEvalValueSetNull(outValue);
+    }
+    if (p == NULL || execCtx == NULL || sourceValue == NULL || outHasItem == NULL || outKey == NULL
+        || outKeyIsConst == NULL || outValue == NULL || outValueIsConst == NULL)
+    {
+        return -1;
+    }
+    if (keyRef) {
+        SLCTFEExecSetReason(
+            execCtx, 0, 0, "for-in key reference is not supported in evaluator backend");
+        return 0;
+    }
+    iteratorFn = SLEvalResolveForInIteratorFn(p, execCtx, sourceNode, sourceValue);
+    if (iteratorFn < 0) {
+        SLCTFEExecSetReason(
+            execCtx, 0, 0, "for-in loop source is not supported in evaluator backend");
+        return 0;
+    }
+    if (SLEvalInvokeFunction(
+            p, iteratorFn, sourceValue, 1, p->currentContext, &iterValue, &didReturn)
+        != 0)
+    {
+        return -1;
+    }
+    if (!didReturn) {
+        SLCTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook did not return a value");
+        return 0;
+    }
+    for (step = 0; step <= index; step++) {
+        if (SLEvalAdvanceForInIterator(
+                p,
+                execCtx,
+                iteratorFn,
+                &iterValue,
+                hasKey,
+                keyRef,
+                valueRef,
+                valueDiscard,
+                outHasItem,
+                outKey,
+                outKeyIsConst,
+                outValue,
+                outValueIsConst)
+            != 0)
+        {
+            return -1;
+        }
+        if (*outHasItem == 0 || step == index) {
+            return 0;
         }
     }
     return 0;
@@ -7475,6 +7775,18 @@ static int SLEvalMirMakeAggregate(
     memset(agg, 0, sizeof(*agg));
     agg->file = p->currentFile;
     agg->nodeId = (int32_t)sourceNode;
+    if (sourceNode < p->currentFile->ast.len) {
+        const SLAstNode*    sourceAst = &p->currentFile->ast.nodes[sourceNode];
+        const SLParsedFile* declFile = NULL;
+        int32_t             declNode = -1;
+        if (sourceAst->kind == SLAst_COMPOUND_LIT && sourceAst->firstChild >= 0
+            && SLEvalResolveAggregateTypeNode(
+                p, p->currentFile, sourceAst->firstChild, &declFile, &declNode))
+        {
+            agg->file = declFile;
+            agg->nodeId = declNode;
+        }
+    }
     agg->fieldLen = fieldCount;
     if (fieldCount > 0) {
         agg->fields = (SLEvalAggregateField*)SLArenaAlloc(
@@ -7493,9 +7805,124 @@ static int SLEvalMirMakeAggregate(
             }
         }
     }
-    SLEvalValueSetAggregate(outValue, p->currentFile, (int32_t)sourceNode, agg);
+    SLEvalValueSetAggregate(outValue, agg->file, agg->nodeId, agg);
     outValue->typeTag |= SLCTFEValueTag_AGG_PARTIAL;
     *outIsConst = 1;
+    return 0;
+}
+
+static int SLEvalMirFindCallNodeBySpan(
+    const SLParsedFile* file,
+    uint32_t            callStart,
+    uint32_t            callEnd,
+    uint32_t            argCount,
+    int32_t*            outCallNode) {
+    uint32_t i;
+    int32_t  found = -1;
+    if (outCallNode != NULL) {
+        *outCallNode = -1;
+    }
+    if (file == NULL || outCallNode == NULL) {
+        return 0;
+    }
+    for (i = 0; i < file->ast.len; i++) {
+        const SLAstNode* call = &file->ast.nodes[i];
+        const SLAstNode* callee;
+        int32_t          calleeNode;
+        uint32_t         curArgCount = 0;
+        int32_t          argNode;
+        uint32_t         curStart;
+        uint32_t         curEnd;
+        if (call->kind != SLAst_CALL) {
+            continue;
+        }
+        calleeNode = call->firstChild;
+        if (calleeNode < 0 || (uint32_t)calleeNode >= file->ast.len) {
+            continue;
+        }
+        callee = &file->ast.nodes[calleeNode];
+        if (callee->kind != SLAst_IDENT && callee->kind != SLAst_FIELD_EXPR) {
+            continue;
+        }
+        curStart = callee->dataStart;
+        curEnd = callee->dataEnd;
+        if (curStart != callStart || curEnd != callEnd) {
+            continue;
+        }
+        argNode = callee->nextSibling;
+        while (argNode >= 0) {
+            curArgCount++;
+            argNode = file->ast.nodes[argNode].nextSibling;
+        }
+        if (curArgCount != argCount) {
+            continue;
+        }
+        if (found >= 0) {
+            return 0;
+        }
+        found = (int32_t)i;
+    }
+    if (found < 0) {
+        return 0;
+    }
+    *outCallNode = found;
+    return 1;
+}
+
+static int SLEvalMirAdjustCallArgs(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t        calleeFunctionIndex,
+    SLMirExecValue* args,
+    uint32_t        argCount,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram*        p = (SLEvalProgram*)ctx;
+    SLEvalMirExecCtx*     execCtx;
+    uint32_t              evalFnIndex;
+    uint32_t              receiverArgCount;
+    int32_t               callNode = -1;
+    int32_t               calleeNode;
+    const SLEvalFunction* calleeFn;
+    (void)program;
+    (void)function;
+    (void)diag;
+    if (p == NULL || inst == NULL || args == NULL || p->currentFile == NULL) {
+        return 0;
+    }
+    execCtx = p->currentMirExecCtx;
+    if (execCtx == NULL || execCtx->mirToEval == NULL
+        || calleeFunctionIndex >= execCtx->mirToEvalLen)
+    {
+        return 0;
+    }
+    evalFnIndex = execCtx->mirToEval[calleeFunctionIndex];
+    if (evalFnIndex == UINT32_MAX || evalFnIndex >= p->funcLen) {
+        return 0;
+    }
+    receiverArgCount = SLMirCallTokDropsReceiverArg0(inst->tok) ? 1u : 0u;
+    if (argCount < receiverArgCount) {
+        return 0;
+    }
+    if (!SLEvalMirFindCallNodeBySpan(
+            p->currentFile, inst->start, inst->end, argCount - receiverArgCount, &callNode))
+    {
+        return 0;
+    }
+    calleeNode = p->currentFile->ast.nodes[callNode].firstChild;
+    if (calleeNode < 0 || (uint32_t)calleeNode >= p->currentFile->ast.len) {
+        return 0;
+    }
+    calleeFn = &p->funcs[evalFnIndex];
+    (void)SLEvalReorderFixedCallArgsByName(
+        p,
+        calleeFn,
+        &p->currentFile->ast,
+        p->currentFile->ast.nodes[calleeNode].nextSibling,
+        args + receiverArgCount,
+        argCount - receiverArgCount,
+        receiverArgCount);
     return 0;
 }
 
@@ -7913,15 +8340,48 @@ static int SLEvalMirIterInit(
     state->magic = SL_EVAL_MIR_ITER_MAGIC;
     state->sourceNode = sourceNode;
     state->index = 0;
+    state->iteratorFn = -1;
     state->flags = flags;
     state->sourceValue = *source;
+    state->iteratorValue = (SLCTFEValue){ .kind = SLCTFEValue_INVALID };
     sourceValue = SLEvalValueTargetOrSelf(source);
     if (sourceValue->kind == SLCTFEValue_ARRAY || sourceValue->kind == SLCTFEValue_STRING
         || sourceValue->kind == SLCTFEValue_NULL)
     {
         state->kind = SL_EVAL_MIR_ITER_KIND_SEQUENCE;
     } else {
+        int didReturn = 0;
         state->kind = SL_EVAL_MIR_ITER_KIND_PROTOCOL;
+        if (p->currentExecCtx == NULL) {
+            return 0;
+        }
+        state->iteratorFn = SLEvalResolveForInIteratorFn(
+            p, p->currentExecCtx, (int32_t)sourceNode, source);
+        if (state->iteratorFn < 0) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx,
+                0,
+                0,
+                "for-in loop source is not supported in evaluator backend");
+            return 0;
+        }
+        if (SLEvalInvokeFunction(
+                p,
+                state->iteratorFn,
+                source,
+                1,
+                p->currentContext,
+                &state->iteratorValue,
+                &didReturn)
+            != 0)
+        {
+            return -1;
+        }
+        if (!didReturn) {
+            SLCTFEExecSetReason(
+                p->currentExecCtx, 0, 0, "for-in iterator hook did not return a value");
+            return 0;
+        }
     }
     target->kind = SLCTFEValue_SPAN;
     target->i64 = 0;
@@ -8031,12 +8491,11 @@ static int SLEvalMirIterNext(
         if (p->currentExecCtx == NULL) {
             return 0;
         }
-        if (SLEvalForInIterCb(
+        if (SLEvalAdvanceForInIterator(
                 p,
                 p->currentExecCtx,
-                (int32_t)state->sourceNode,
-                &state->sourceValue,
-                state->index,
+                state->iteratorFn,
+                &state->iteratorValue,
                 hasKey,
                 keyRef,
                 valueRef,
@@ -8737,7 +9196,9 @@ static void SLEvalMirInitExecEnv(
     env->assignIdentCtx = p;
     env->resolveCallPre = SLEvalResolveCallMirPre;
     env->resolveCall = SLEvalResolveCallMir;
+    env->adjustCallArgs = SLEvalMirAdjustCallArgs;
     env->resolveCtx = p;
+    env->adjustCallArgsCtx = p;
     env->hostCall = SLEvalMirHostCall;
     env->hostCtx = p;
     env->zeroInitLocal = SLEvalMirZeroInitLocal;
@@ -11880,7 +12341,7 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             }
             if (directFnIndex >= 0 && argCount > 0) {
                 (void)SLEvalReorderFixedCallArgsByName(
-                    p, &p->funcs[(uint32_t)directFnIndex], ast, argNode, args, argCount);
+                    p, &p->funcs[(uint32_t)directFnIndex], ast, argNode, args, argCount, 0u);
             }
             if (SLEvalExecExprCb(p, calleeNode, &calleeValue, &calleeIsConst) != 0) {
                 return -1;

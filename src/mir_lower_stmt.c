@@ -1322,6 +1322,20 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
                         c, SLMirOp_LOCAL_ADDR, 0, slot, expr->start, expr->end, NULL);
                 }
             }
+            if ((SLTokenKind)expr->op == SLTok_AND) {
+                if (SLMirStmtLowerAppendLoadValueBySlice(
+                        c,
+                        c->ast->nodes[child].dataStart,
+                        c->ast->nodes[child].dataEnd,
+                        c->ast->nodes[child].start,
+                        c->ast->nodes[child].end)
+                    != 0)
+                {
+                    return -1;
+                }
+                return SLMirStmtLowerAppendInst(
+                    c, SLMirOp_ADDR_OF, 0, 0, expr->start, expr->end, NULL);
+            }
         }
         if ((SLTokenKind)expr->op == SLTok_AND && child >= 0 && (uint32_t)child < c->ast->len
             && c->ast->nodes[child].kind == SLAst_FIELD_EXPR)

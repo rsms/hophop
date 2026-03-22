@@ -883,6 +883,20 @@ static int SLMirRunLoop(
                     }
                     callArgOffset = 1u;
                 }
+                if (run->env.adjustCallArgs != NULL
+                    && run->env.adjustCallArgs(
+                           run->env.adjustCallArgsCtx,
+                           run->program,
+                           run->function,
+                           ins,
+                           ins->aux,
+                           args,
+                           argCount,
+                           run->env.diag)
+                           != 0)
+                {
+                    return -1;
+                }
                 if (SLMirEvalFunctionInternal(
                         run->arena,
                         run->program,
@@ -948,6 +962,20 @@ static int SLMirRunLoop(
                 {
                     SLMirSetReason(run, ins, "indirect call target is not a function");
                     return 0;
+                }
+                if (run->env.adjustCallArgs != NULL
+                    && run->env.adjustCallArgs(
+                           run->env.adjustCallArgsCtx,
+                           run->program,
+                           run->function,
+                           ins,
+                           fnIndex,
+                           args,
+                           argCount,
+                           run->env.diag)
+                           != 0)
+                {
+                    return -1;
                 }
                 if (SLMirEvalFunctionInternal(
                         run->arena,
@@ -2158,6 +2186,18 @@ static int SLCTFEEvalBinary(
     }
 
     if (lhs->kind == SLCTFEValue_STRING && rhs->kind == SLCTFEValue_STRING) {
+        int cmp = 0;
+        if (lhs->s.len != rhs->s.len) {
+            uint32_t minLen = lhs->s.len < rhs->s.len ? lhs->s.len : rhs->s.len;
+            if (minLen > 0u) {
+                cmp = memcmp(lhs->s.bytes, rhs->s.bytes, minLen);
+            }
+            if (cmp == 0) {
+                cmp = lhs->s.len < rhs->s.len ? -1 : 1;
+            }
+        } else if (lhs->s.len > 0u) {
+            cmp = memcmp(lhs->s.bytes, rhs->s.bytes, lhs->s.len);
+        }
         switch (op) {
             case SLTok_ADD:
                 out->kind = SLCTFEValue_STRING;
@@ -2169,6 +2209,22 @@ static int SLCTFEEvalBinary(
             case SLTok_NEQ:
                 out->kind = SLCTFEValue_BOOL;
                 out->b = !SLCTFEStringEq(&lhs->s, &rhs->s);
+                return 1;
+            case SLTok_LT:
+                out->kind = SLCTFEValue_BOOL;
+                out->b = cmp < 0;
+                return 1;
+            case SLTok_GT:
+                out->kind = SLCTFEValue_BOOL;
+                out->b = cmp > 0;
+                return 1;
+            case SLTok_LTE:
+                out->kind = SLCTFEValue_BOOL;
+                out->b = cmp <= 0;
+                return 1;
+            case SLTok_GTE:
+                out->kind = SLCTFEValue_BOOL;
+                out->b = cmp >= 0;
                 return 1;
             default: return 0;
         }
