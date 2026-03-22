@@ -342,6 +342,8 @@ static int SLEvalMirLookupLocalTypeNode(
     uint32_t             nameEnd,
     const SLParsedFile** outFile,
     int32_t*             outTypeNode);
+static int SLEvalMirLookupLocalValue(
+    SLEvalProgram* p, uint32_t nameStart, uint32_t nameEnd, SLCTFEValue* outValue);
 static int SLEvalFindVisibleLocalTypeNodeByName(
     const SLParsedFile* file,
     uint32_t            beforePos,
@@ -5294,13 +5296,43 @@ static int32_t SLEvalFunctionParamTypeNodeAt(const SLEvalFunction* fn, uint32_t 
     return -1;
 }
 
-static int SLEvalExprIsAnytypePackIndex(
-    const SLEvalProgram* p, const SLAst* ast, int32_t exprNode) {
-    int32_t            baseNode;
-    int32_t            idxNode;
-    int32_t            extraNode;
-    SLCTFEExecBinding* binding;
-    const SLCTFEValue* bindingValue;
+static int32_t SLEvalFunctionParamIndexByName(
+    const SLEvalFunction* fn, const char* source, uint32_t nameStart, uint32_t nameEnd) {
+    const SLAst* ast;
+    int32_t      child;
+    uint32_t     i = 0;
+    if (fn == NULL || fn->file == NULL || source == NULL) {
+        return -1;
+    }
+    ast = &fn->file->ast;
+    if (fn->fnNode < 0 || (uint32_t)fn->fnNode >= ast->len) {
+        return -1;
+    }
+    child = ASTFirstChild(ast, fn->fnNode);
+    while (child >= 0) {
+        const SLAstNode* n = &ast->nodes[child];
+        if (n->kind == SLAst_PARAM) {
+            if (SliceEqSlice(
+                    source, nameStart, nameEnd, fn->file->source, n->dataStart, n->dataEnd))
+            {
+                return (int32_t)i;
+            }
+            i++;
+        }
+        child = ASTNextSibling(ast, child);
+    }
+    return -1;
+}
+
+static int SLEvalExprIsAnytypePackIndex(SLEvalProgram* p, const SLAst* ast, int32_t exprNode) {
+    int32_t             baseNode;
+    int32_t             idxNode;
+    int32_t             extraNode;
+    SLCTFEExecBinding*  binding;
+    const SLCTFEValue*  bindingValue;
+    const SLParsedFile* localTypeFile = NULL;
+    int32_t             localTypeNode = -1;
+    SLCTFEValue         localValue;
     while (ast != NULL && exprNode >= 0 && (uint32_t)exprNode < ast->len
            && ast->nodes[exprNode].kind == SLAst_CALL_ARG)
     {
@@ -5324,10 +5356,24 @@ static int SLEvalExprIsAnytypePackIndex(
         p->currentFile,
         ast->nodes[baseNode].dataStart,
         ast->nodes[baseNode].dataEnd);
-    if (binding == NULL || !SLEvalTypeNodeIsAnytype(p->currentFile, binding->typeNode)) {
+    if (binding != NULL && SLEvalTypeNodeIsAnytype(p->currentFile, binding->typeNode)) {
+        bindingValue = SLEvalValueTargetOrSelf(&binding->value);
+        return bindingValue->kind == SLCTFEValue_ARRAY;
+    }
+    if (!SLEvalMirLookupLocalTypeNode(
+            p,
+            ast->nodes[baseNode].dataStart,
+            ast->nodes[baseNode].dataEnd,
+            &localTypeFile,
+            &localTypeNode)
+        || localTypeFile == NULL || localTypeNode < 0
+        || !SLEvalTypeNodeIsAnytype(localTypeFile, localTypeNode)
+        || !SLEvalMirLookupLocalValue(
+            p, ast->nodes[baseNode].dataStart, ast->nodes[baseNode].dataEnd, &localValue))
+    {
         return 0;
     }
-    bindingValue = SLEvalValueTargetOrSelf(&binding->value);
+    bindingValue = SLEvalValueTargetOrSelf(&localValue);
     return bindingValue->kind == SLCTFEValue_ARRAY;
 }
 
@@ -7957,6 +8003,8 @@ static int SLEvalMirAdjustCallArgs(
     uint32_t              receiverArgCount;
     int32_t               callNode = -1;
     int32_t               calleeNode;
+    int32_t               argNode;
+    int32_t               firstArgNode;
     const SLEvalFunction* calleeFn;
     (void)program;
     (void)function;
@@ -7988,11 +8036,52 @@ static int SLEvalMirAdjustCallArgs(
         return 0;
     }
     calleeFn = &p->funcs[evalFnIndex];
+    firstArgNode = p->currentFile->ast.nodes[calleeNode].nextSibling;
+    argNode = firstArgNode;
+    if (argCount > receiverArgCount && argNode >= 0) {
+        uint32_t argIndex = 0;
+        while (argNode >= 0 && argIndex + receiverArgCount < argCount) {
+            const SLAstNode* arg = &p->currentFile->ast.nodes[argNode];
+            int32_t          exprNode = argNode;
+            int32_t          paramTypeNode;
+            int32_t          paramIndex = (int32_t)(argIndex + receiverArgCount);
+            if (arg->kind == SLAst_CALL_ARG) {
+                if ((arg->flags & SLAstFlag_CALL_ARG_SPREAD) != 0) {
+                    break;
+                }
+                exprNode = arg->firstChild;
+                if (arg->dataEnd > arg->dataStart) {
+                    paramIndex = SLEvalFunctionParamIndexByName(
+                        calleeFn, p->currentFile->source, arg->dataStart, arg->dataEnd);
+                    if (paramIndex < 0) {
+                        break;
+                    }
+                }
+            }
+            if (exprNode < 0 || (uint32_t)exprNode >= p->currentFile->ast.len) {
+                break;
+            }
+            paramTypeNode = SLEvalFunctionParamTypeNodeAt(calleeFn, (uint32_t)paramIndex);
+            if (paramTypeNode >= 0
+                && SLEvalExprIsAnytypePackIndex(p, &p->currentFile->ast, exprNode)
+                && !SLEvalValueMatchesExpectedTypeNode(
+                    p, calleeFn->file, paramTypeNode, &args[argIndex + receiverArgCount]))
+            {
+                if (p->currentExecCtx != NULL) {
+                    SLCTFEExecSetReasonNode(
+                        p->currentExecCtx, exprNode, "anytype pack element type mismatch");
+                }
+                return 1;
+            }
+            argIndex++;
+            argNode = p->currentFile->ast.nodes[argNode].nextSibling;
+        }
+    }
     (void)SLEvalReorderFixedCallArgsByName(
         p,
         calleeFn,
         &p->currentFile->ast,
-        p->currentFile->ast.nodes[calleeNode].nextSibling,
+        firstArgNode,
         args + receiverArgCount,
         argCount - receiverArgCount,
         receiverArgCount);
@@ -8145,6 +8234,27 @@ static int SLEvalMirIndexAddr(
     }
     array = SLEvalValueAsArray(baseValue);
     if (array == NULL || (uint64_t)indexInt >= (uint64_t)array->len) {
+        SLCTFEValue* targetValue = SLEvalValueReferenceTarget(base);
+        int32_t      baseTypeCode = SLEvalTypeCode_INVALID;
+        if (targetValue == NULL) {
+            targetValue = (SLCTFEValue*)baseValue;
+        }
+        if (targetValue != NULL && targetValue->kind == SLCTFEValue_STRING
+            && SLEvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
+            && baseTypeCode == SLEvalTypeCode_STR_PTR
+            && (uint64_t)indexInt < (uint64_t)targetValue->s.len)
+        {
+            SLCTFEValue* byteProxy = (SLCTFEValue*)SLArenaAlloc(
+                p->arena, sizeof(SLCTFEValue), (uint32_t)_Alignof(SLCTFEValue));
+            if (byteProxy == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            SLMirValueSetByteRefProxy(byteProxy, (uint8_t*)targetValue->s.bytes + indexInt);
+            SLEvalValueSetRuntimeTypeCode(byteProxy, SLEvalTypeCode_U8);
+            SLEvalValueSetReference(outValue, byteProxy);
+            *outIsConst = 1;
+            return 0;
+        }
         return 0;
     }
     SLEvalValueSetReference(outValue, &array->elems[(uint32_t)indexInt]);

@@ -21,7 +21,8 @@ typedef struct {
     uint32_t             backwardJumpCount;
 } SLMirExecRun;
 
-#define SLMIR_EXEC_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 57)
+#define SLMIR_EXEC_FUNCTION_REF_TAG_FLAG   (UINT64_C(1) << 57)
+#define SLMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG (UINT64_C(1) << 56)
 
 static void SLCTFESetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end);
 static void SLCTFEValueInvalid(SLCTFEValue* v);
@@ -274,6 +275,31 @@ static int SLMirValueIsFunctionRef(const SLMirExecValue* value, uint32_t* _Nulla
 int SLMirValueAsFunctionRef(
     const SLMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex) {
     return SLMirValueIsFunctionRef(value, outFunctionIndex);
+}
+
+void SLMirValueSetByteRefProxy(SLMirExecValue* _Nonnull value, uint8_t* _Nullable targetByte) {
+    if (value == NULL) {
+        return;
+    }
+    SLCTFEValueInvalid(value);
+    value->kind = SLCTFEValue_INT;
+    value->i64 = targetByte != NULL ? (int64_t)(*targetByte) : 0;
+    value->typeTag = SLMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG;
+    value->s.bytes = targetByte;
+    value->s.len = targetByte != NULL ? 1u : 0u;
+}
+
+int SLMirValueAsByteRefProxy(
+    const SLMirExecValue* _Nonnull value, uint8_t* _Nullable* _Nullable outTargetByte) {
+    if (value == NULL || value->kind != SLCTFEValue_INT
+        || (value->typeTag & SLMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG) == 0 || value->s.bytes == NULL)
+    {
+        return 0;
+    }
+    if (outTargetByte != NULL) {
+        *outTargetByte = (uint8_t*)value->s.bytes;
+    }
+    return 1;
 }
 
 void SLMirExecEnvDisableDynamicResolution(SLMirExecEnv* env) {
@@ -564,6 +590,23 @@ static int SLMirRunLoop(
                 if (target == NULL) {
                     return 0;
                 }
+                {
+                    uint8_t*       bytePtr = NULL;
+                    SLMirExecValue out;
+                    if (SLMirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
+                        out = *target;
+                        out.i64 = (int64_t)(*bytePtr);
+                        out.f64 = 0.0;
+                        out.b = 0;
+                        out.typeTag = 0;
+                        out.s.bytes = NULL;
+                        out.s.len = 0;
+                        if (SLCTFEPush(run, &out) != 0) {
+                            return -1;
+                        }
+                        break;
+                    }
+                }
                 if (SLCTFEPush(run, target) != 0) {
                     return -1;
                 }
@@ -579,6 +622,20 @@ static int SLMirRunLoop(
                 target = SLMirReferenceTarget(&ref);
                 if (target == NULL) {
                     return 0;
+                }
+                {
+                    uint8_t* bytePtr = NULL;
+                    int64_t  byteValue = 0;
+                    if (SLMirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
+                        if (SLCTFEValueToInt64(&v, &byteValue) != 0 || byteValue < 0
+                            || byteValue > 255)
+                        {
+                            return 0;
+                        }
+                        *bytePtr = (uint8_t)byteValue;
+                        target->i64 = byteValue;
+                        break;
+                    }
                 }
                 *target = v;
                 break;
@@ -886,19 +943,22 @@ static int SLMirRunLoop(
                     }
                     callArgOffset = 1u;
                 }
-                if (run->env.adjustCallArgs != NULL
-                    && run->env.adjustCallArgs(
-                           run->env.adjustCallArgsCtx,
-                           run->program,
-                           run->function,
-                           ins,
-                           ins->aux,
-                           args,
-                           argCount,
-                           run->env.diag)
-                           != 0)
-                {
-                    return -1;
+                if (run->env.adjustCallArgs != NULL) {
+                    int adjustRc = run->env.adjustCallArgs(
+                        run->env.adjustCallArgsCtx,
+                        run->program,
+                        run->function,
+                        ins,
+                        ins->aux,
+                        args,
+                        argCount,
+                        run->env.diag);
+                    if (adjustRc < 0) {
+                        return -1;
+                    }
+                    if (adjustRc > 0) {
+                        return 0;
+                    }
                 }
                 if (SLMirEvalFunctionInternal(
                         run->arena,
@@ -966,19 +1026,22 @@ static int SLMirRunLoop(
                     SLMirSetReason(run, ins, "indirect call target is not a function");
                     return 0;
                 }
-                if (run->env.adjustCallArgs != NULL
-                    && run->env.adjustCallArgs(
-                           run->env.adjustCallArgsCtx,
-                           run->program,
-                           run->function,
-                           ins,
-                           fnIndex,
-                           args,
-                           argCount,
-                           run->env.diag)
-                           != 0)
-                {
-                    return -1;
+                if (run->env.adjustCallArgs != NULL) {
+                    int adjustRc = run->env.adjustCallArgs(
+                        run->env.adjustCallArgsCtx,
+                        run->program,
+                        run->function,
+                        ins,
+                        fnIndex,
+                        args,
+                        argCount,
+                        run->env.diag);
+                    if (adjustRc < 0) {
+                        return -1;
+                    }
+                    if (adjustRc > 0) {
+                        return 0;
+                    }
                 }
                 if (SLMirEvalFunctionInternal(
                         run->arena,
@@ -1705,6 +1768,7 @@ static int SLMirRunLoop(
             }
             case SLMirOp_RETURN:
                 if (run->stackLen != 1) {
+                    SLMirSetReason(run, ins, "return stack is invalid during const evaluation");
                     return 0;
                 }
                 *outValue = run->stack[0];

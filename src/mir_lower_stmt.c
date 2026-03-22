@@ -1414,6 +1414,17 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
             return SLMirStmtLowerAppendInst(
                 c, SLMirOp_DEREF_LOAD, 0, 0, expr->start, expr->end, NULL);
         }
+        if ((SLTokenKind)expr->op != SLTok_AND && (SLTokenKind)expr->op != SLTok_MUL) {
+            if (child < 0 || (uint32_t)child >= c->ast->len) {
+                c->supported = 0;
+                return 0;
+            }
+            if (SLMirStmtLowerExpr(c, child) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            return SLMirStmtLowerAppendInst(
+                c, SLMirOp_UNARY, (uint16_t)expr->op, 0, expr->start, expr->end, NULL);
+        }
     }
     if (expr->kind == SLAst_FIELD_EXPR) {
         int32_t  baseNode = expr->firstChild;
@@ -1764,18 +1775,26 @@ static int SLMirStmtLowerEmitDeferredForControl(
     SLMirStmtLower* c, const SLMirLowerControl* control) {
     uint32_t targetDepth;
     uint32_t i;
+    uint32_t originalDeferredLen;
+    uint32_t deferLimit;
     if (c == NULL || control == NULL) {
         return -1;
     }
     targetDepth = control->blockDepth;
+    originalDeferredLen = c->deferredStmtLen;
+    deferLimit = c->deferredStmtLen;
     i = c->blockDepth;
     while (i > targetDepth) {
         const SLMirLowerBlockScope* scope = &c->blockScopes[i - 1u];
+        c->deferredStmtLen = deferLimit;
         if (SLMirStmtLowerEmitDeferredRange(c, scope->deferStart) != 0 || !c->supported) {
+            c->deferredStmtLen = originalDeferredLen;
             return c->supported ? -1 : 0;
         }
+        deferLimit = scope->deferStart;
         i--;
     }
+    c->deferredStmtLen = originalDeferredLen;
     return 0;
 }
 
