@@ -177,6 +177,13 @@ typedef enum {
     SLMirHostTarget_COPY = 5,
 } SLMirHostTarget;
 
+typedef enum {
+    SLMirContextField_INVALID = 0,
+    SLMirContextField_MEM = 1,
+    SLMirContextField_TEMP_MEM = 2,
+    SLMirContextField_LOG = 3,
+} SLMirContextField;
+
 typedef struct {
     uint32_t      nameStart;
     uint32_t      nameEnd;

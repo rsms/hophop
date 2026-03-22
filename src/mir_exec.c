@@ -988,10 +988,17 @@ static int SLMirRunLoop(
                 SLCTFEValue lhs;
                 SLCTFEValue rhs;
                 SLCTFEValue out;
+                int         binaryRc;
                 if (SLCTFEPop(run, &rhs) != 0 || SLCTFEPop(run, &lhs) != 0) {
                     return 0;
                 }
-                if (!SLCTFEEvalBinary(run, (SLTokenKind)ins->tok, &lhs, &rhs, &out)) {
+                binaryRc = SLCTFEEvalBinary(run, (SLTokenKind)ins->tok, &lhs, &rhs, &out);
+                if (binaryRc < 0) {
+                    return -1;
+                }
+                if (binaryRc == 0) {
+                    SLMirSetReason(
+                        run, ins, "binary operation is not supported during const evaluation");
                     return 0;
                 }
                 if (SLCTFEPush(run, &out) != 0) {
@@ -1517,6 +1524,78 @@ static int SLMirRunLoop(
                     return coerceRc < 0 ? -1 : 0;
                 }
                 if (SLCTFEPush(run, &value) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_ALLOC_NEW: {
+                SLCTFEValue out;
+                int         allocRc;
+                int         allocIsConst = 0;
+                if (run->env.allocNew == NULL) {
+                    SLMirSetReason(
+                        run, ins, "new expression is not supported during const evaluation");
+                    return 0;
+                }
+                allocRc = run->env.allocNew(
+                    run->env.allocNewCtx, ins->aux, &out, &allocIsConst, run->env.diag);
+                if (allocRc < 0) {
+                    return -1;
+                }
+                if (allocRc == 0 || !allocIsConst) {
+                    SLMirSetReason(
+                        run, ins, "new expression is not supported during const evaluation");
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_CTX_GET: {
+                SLCTFEValue out;
+                int         getRc;
+                int         isConst = 0;
+                if (run->env.contextGet == NULL) {
+                    SLMirSetReason(
+                        run, ins, "context access is not supported during const evaluation");
+                    return 0;
+                }
+                getRc = run->env.contextGet(
+                    run->env.contextGetCtx, ins->aux, &out, &isConst, run->env.diag);
+                if (getRc < 0) {
+                    return -1;
+                }
+                if (getRc == 0 || !isConst) {
+                    SLMirSetReason(
+                        run, ins, "context access is not supported during const evaluation");
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_CTX_SET: {
+                SLCTFEValue out;
+                int         evalRc;
+                int         isConst = 0;
+                if (run->env.evalWithContext == NULL) {
+                    SLMirSetReason(
+                        run, ins, "context overlay is not supported during const evaluation");
+                    return 0;
+                }
+                evalRc = run->env.evalWithContext(
+                    run->env.evalWithContextCtx, ins->aux, &out, &isConst, run->env.diag);
+                if (evalRc < 0) {
+                    return -1;
+                }
+                if (evalRc == 0 || !isConst) {
+                    SLMirSetReason(
+                        run, ins, "context overlay is not supported during const evaluation");
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
@@ -2092,6 +2171,20 @@ static int SLCTFEEvalBinary(
         }
     }
 
+    if (lhs->kind == SLCTFEValue_TYPE && rhs->kind == SLCTFEValue_TYPE && r != NULL
+        && r->env.evalBinary != NULL)
+    {
+        int hookIsConst = 0;
+        int hookRc = r->env.evalBinary(
+            r->env.evalBinaryCtx, op, lhs, rhs, out, &hookIsConst, r->env.diag);
+        if (hookRc < 0) {
+            return -1;
+        }
+        if (hookRc > 0 && hookIsConst) {
+            return 1;
+        }
+    }
+
     if (lhs->kind == SLCTFEValue_TYPE && rhs->kind == SLCTFEValue_TYPE) {
         switch (op) {
             case SLTok_EQ:
@@ -2168,6 +2261,18 @@ static int SLCTFEEvalBinary(
         {
             out->kind = SLCTFEValue_BOOL;
             out->b = (op == SLTok_EQ) ? (eq ? 1u : 0u) : (eq ? 0u : 1u);
+            return 1;
+        }
+    }
+
+    if (r != NULL && r->env.evalBinary != NULL) {
+        int hookIsConst = 0;
+        int hookRc = r->env.evalBinary(
+            r->env.evalBinaryCtx, op, lhs, rhs, out, &hookIsConst, r->env.diag);
+        if (hookRc < 0) {
+            return -1;
+        }
+        if (hookRc > 0 && hookIsConst) {
             return 1;
         }
     }

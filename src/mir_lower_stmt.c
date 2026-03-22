@@ -1270,6 +1270,20 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
         }
         return SLMirStmtLowerAppendInst(c, SLMirOp_INDEX, 0, 0, expr->start, expr->end, NULL);
     }
+    if (expr->kind == SLAst_NEW) {
+        return SLMirStmtLowerAppendInst(
+            c,
+            SLMirOp_ALLOC_NEW,
+            (uint16_t)expr->flags,
+            (uint32_t)exprNode,
+            expr->start,
+            expr->end,
+            NULL);
+    }
+    if (expr->kind == SLAst_CALL_WITH_CONTEXT) {
+        return SLMirStmtLowerAppendInst(
+            c, SLMirOp_CTX_SET, 0, (uint32_t)exprNode, expr->start, expr->end, NULL);
+    }
     if (expr->kind == SLAst_TUPLE_EXPR) {
         elemCount = SLMirStmtLowerAstListCount(c->ast, exprNode);
         if (elemCount == 0u) {
@@ -1367,9 +1381,28 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
     if (expr->kind == SLAst_FIELD_EXPR) {
         int32_t  baseNode = expr->firstChild;
         uint32_t fieldRef = UINT32_MAX;
+        uint32_t contextField = SLMirContextField_INVALID;
         if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
             c->supported = 0;
             return 0;
+        }
+        if (c->ast->nodes[baseNode].kind == SLAst_IDENT
+            && c->ast->nodes[baseNode].dataEnd - c->ast->nodes[baseNode].dataStart == 7u
+            && memcmp(c->src.ptr + c->ast->nodes[baseNode].dataStart, "context", 7u) == 0)
+        {
+            uint32_t fieldLen = expr->dataEnd - expr->dataStart;
+            if (fieldLen == 3u && memcmp(c->src.ptr + expr->dataStart, "mem", 3u) == 0) {
+                contextField = SLMirContextField_MEM;
+            } else if (fieldLen == 8u && memcmp(c->src.ptr + expr->dataStart, "temp_mem", 8u) == 0)
+            {
+                contextField = SLMirContextField_TEMP_MEM;
+            } else if (fieldLen == 3u && memcmp(c->src.ptr + expr->dataStart, "log", 3u) == 0) {
+                contextField = SLMirContextField_LOG;
+            }
+            if (contextField != SLMirContextField_INVALID) {
+                return SLMirStmtLowerAppendInst(
+                    c, SLMirOp_CTX_GET, 0, contextField, expr->start, expr->end, NULL);
+            }
         }
         if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
@@ -2906,10 +2939,16 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                 }
             } else {
                 int32_t returnTypeNode = c->functionReturnTypeNode;
-                if (exprCount > UINT16_MAX || returnTypeNode < 0
-                    || (uint32_t)returnTypeNode >= c->ast->len
-                    || c->ast->nodes[returnTypeNode].kind != SLAst_TYPE_TUPLE
-                    || SLMirStmtLowerAstListCount(c->ast, returnTypeNode) != exprCount)
+                int32_t tupleReturnTypeNode = returnTypeNode;
+                if (tupleReturnTypeNode >= 0 && (uint32_t)tupleReturnTypeNode < c->ast->len
+                    && c->ast->nodes[tupleReturnTypeNode].kind == SLAst_TYPE_OPTIONAL)
+                {
+                    tupleReturnTypeNode = c->ast->nodes[tupleReturnTypeNode].firstChild;
+                }
+                if (exprCount > UINT16_MAX || returnTypeNode < 0 || tupleReturnTypeNode < 0
+                    || (uint32_t)tupleReturnTypeNode >= c->ast->len
+                    || c->ast->nodes[tupleReturnTypeNode].kind != SLAst_TYPE_TUPLE
+                    || SLMirStmtLowerAstListCount(c->ast, tupleReturnTypeNode) != exprCount)
                 {
                     c->supported = 0;
                     return 0;
@@ -2936,7 +2975,8 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                         }
                     }
                 }
-                if (SLMirStmtLowerAppendTupleMake(c, exprCount, returnTypeNode, s->start, s->end)
+                if (SLMirStmtLowerAppendTupleMake(
+                        c, exprCount, tupleReturnTypeNode, s->start, s->end)
                     != 0)
                 {
                     return -1;

@@ -160,6 +160,32 @@ typedef int (*SLMirMakeVariadicPackFn)(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef int (*SLMirEvalBinaryFn)(
+    void* _Nullable ctx,
+    SLTokenKind op,
+    const SLMirExecValue* _Nonnull lhs,
+    const SLMirExecValue* _Nonnull rhs,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLMirAllocNewFn)(
+    void* _Nullable ctx,
+    uint32_t sourceNode,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLMirContextGetFn)(
+    void* _Nullable ctx,
+    uint32_t fieldId,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLMirEvalWithContextFn)(
+    void* _Nullable ctx,
+    uint32_t sourceNode,
+    SLMirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
 
 typedef int (*SLMirEnterFunctionFn)(
     void* _Nullable ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag);
@@ -214,6 +240,14 @@ typedef struct {
     void* _Nullable makeTupleCtx;
     SLMirMakeVariadicPackFn _Nullable makeVariadicPack;
     void* _Nullable makeVariadicPackCtx;
+    SLMirEvalBinaryFn _Nullable evalBinary;
+    void* _Nullable evalBinaryCtx;
+    SLMirAllocNewFn _Nullable allocNew;
+    void* _Nullable allocNewCtx;
+    SLMirContextGetFn _Nullable contextGet;
+    void* _Nullable contextGetCtx;
+    SLMirEvalWithContextFn _Nullable evalWithContext;
+    void* _Nullable evalWithContextCtx;
     SLMirEnterFunctionFn _Nullable enterFunction;
     SLMirLeaveFunctionFn _Nullable leaveFunction;
     void* _Nullable functionCtx;
