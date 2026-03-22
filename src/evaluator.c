@@ -342,6 +342,12 @@ static int SLEvalMirLookupLocalTypeNode(
     uint32_t             nameEnd,
     const SLParsedFile** outFile,
     int32_t*             outTypeNode);
+static int SLEvalFindVisibleLocalTypeNodeByName(
+    const SLParsedFile* file,
+    uint32_t            beforePos,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    int32_t*            outTypeNode);
 
 static int SLEvalBuiltinTypeSize(
     const char* source, uint32_t nameStart, uint32_t nameEnd, uint64_t* outSize) {
@@ -3374,6 +3380,7 @@ static int SLEvalTypeValueFromExprNode(
             p->currentExecCtx, file, n->dataStart, n->dataEnd);
         const SLParsedFile* localTypeFile = NULL;
         int32_t             localTypeNode = -1;
+        int32_t             visibleLocalTypeNode = -1;
         if (binding != NULL && binding->typeNode >= 0
             && !(
                 file->ast.nodes[binding->typeNode].kind == SLAst_TYPE_NAME
@@ -3383,6 +3390,20 @@ static int SLEvalTypeValueFromExprNode(
                     file->ast.nodes[binding->typeNode].dataEnd,
                     "anytype"))
             && SLEvalTypeValueFromTypeNode(p, file, binding->typeNode, outValue))
+        {
+            return 1;
+        }
+        if (SLEvalFindVisibleLocalTypeNodeByName(
+                file, n->start, n->dataStart, n->dataEnd, &visibleLocalTypeNode)
+            && visibleLocalTypeNode >= 0
+            && !(
+                file->ast.nodes[visibleLocalTypeNode].kind == SLAst_TYPE_NAME
+                && SliceEqCStr(
+                    file->source,
+                    file->ast.nodes[visibleLocalTypeNode].dataStart,
+                    file->ast.nodes[visibleLocalTypeNode].dataEnd,
+                    "anytype"))
+            && SLEvalTypeValueFromTypeNode(p, file, visibleLocalTypeNode, outValue))
         {
             return 1;
         }
@@ -7224,27 +7245,57 @@ static int SLEvalFindVisibleLocalTypeNodeByName(
         int32_t          firstChild;
         int32_t          maybeTypeNode;
         int32_t          initNode;
+        int              nameMatches = 0;
         if ((n->kind != SLAst_VAR && n->kind != SLAst_CONST) || n->start >= beforePos) {
             continue;
         }
         firstChild = n->firstChild;
-        if (firstChild < 0 || (uint32_t)firstChild >= ast->len
-            || ast->nodes[firstChild].kind != SLAst_IDENT
-            || !SliceEqSlice(
-                file->source,
-                ast->nodes[firstChild].dataStart,
-                ast->nodes[firstChild].dataEnd,
-                file->source,
-                nameStart,
-                nameEnd))
-        {
+        if (firstChild < 0 || (uint32_t)firstChild >= ast->len) {
             continue;
         }
-        maybeTypeNode = ast->nodes[firstChild].nextSibling;
-        initNode = maybeTypeNode;
-        if (maybeTypeNode >= 0 && (uint32_t)maybeTypeNode < ast->len
-            && SLEvalIsTypeNodeKind(ast->nodes[maybeTypeNode].kind))
-        {
+        maybeTypeNode = -1;
+        initNode = -1;
+        if (ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
+            int32_t afterNames;
+            int32_t nameNode = ast->nodes[firstChild].firstChild;
+            while (nameNode >= 0) {
+                if ((uint32_t)nameNode < ast->len && ast->nodes[nameNode].kind == SLAst_IDENT
+                    && SliceEqSlice(
+                        file->source,
+                        ast->nodes[nameNode].dataStart,
+                        ast->nodes[nameNode].dataEnd,
+                        file->source,
+                        nameStart,
+                        nameEnd))
+                {
+                    nameMatches = 1;
+                    break;
+                }
+                nameNode = ast->nodes[nameNode].nextSibling;
+            }
+            afterNames = ast->nodes[firstChild].nextSibling;
+            if (afterNames >= 0 && (uint32_t)afterNames < ast->len
+                && SLEvalIsTypeNodeKind(ast->nodes[afterNames].kind))
+            {
+                maybeTypeNode = afterNames;
+                initNode = ast->nodes[afterNames].nextSibling;
+            } else {
+                initNode = afterNames;
+            }
+        } else {
+            nameMatches = SliceEqSlice(
+                file->source, n->dataStart, n->dataEnd, file->source, nameStart, nameEnd);
+            if (SLEvalIsTypeNodeKind(ast->nodes[firstChild].kind)) {
+                maybeTypeNode = firstChild;
+                initNode = ast->nodes[firstChild].nextSibling;
+            } else {
+                initNode = firstChild;
+            }
+        }
+        if (!nameMatches) {
+            continue;
+        }
+        if (maybeTypeNode >= 0) {
             found = maybeTypeNode;
             continue;
         }
@@ -10695,19 +10746,32 @@ static int SLEvalEvalTopConst(
     p->currentFile = topConst->file;
     p->currentExecCtx = &constExecCtx;
     {
-        int mirSupported = 0;
-        rc = SLEvalTryMirEvalTopInit(
-            p,
-            topConst->file,
-            topConst->initExprNode,
-            -1,
-            topConst->nameStart,
-            topConst->nameEnd,
-            NULL,
-            -1,
-            &value,
-            &isConst,
-            &mirSupported);
+        rc = SLEvalTypeValueFromExprNode(
+            p, topConst->file, &topConst->file->ast, topConst->initExprNode, &value);
+        if (rc < 0) {
+            p->currentExecCtx = savedExecCtx;
+            p->currentFile = savedFile;
+            topConst->state = SLEvalTopConstState_FAILED;
+            return -1;
+        }
+        if (rc > 0) {
+            rc = 0;
+            isConst = 1;
+        } else {
+            int mirSupported = 0;
+            rc = SLEvalTryMirEvalTopInit(
+                p,
+                topConst->file,
+                topConst->initExprNode,
+                -1,
+                topConst->nameStart,
+                topConst->nameEnd,
+                NULL,
+                -1,
+                &value,
+                &isConst,
+                &mirSupported);
+        }
     }
     p->currentExecCtx = savedExecCtx;
     p->currentFile = savedFile;
@@ -12030,12 +12094,15 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 ast->nodes[calleeNode].dataEnd,
                 "typeof"))
         {
-            SLCTFEExecBinding* binding = NULL;
-            int32_t            argNode = ast->nodes[calleeNode].nextSibling;
-            int32_t            argExprNode = argNode;
-            SLCTFEValue        argValue;
-            int                argIsConst = 0;
-            int32_t            typeCode = SLEvalTypeCode_INVALID;
+            SLCTFEExecBinding*  binding = NULL;
+            const SLParsedFile* localTypeFile = NULL;
+            int32_t             argNode = ast->nodes[calleeNode].nextSibling;
+            int32_t             argExprNode = argNode;
+            int32_t             localTypeNode = -1;
+            int32_t             visibleLocalTypeNode = -1;
+            SLCTFEValue         argValue;
+            int                 argIsConst = 0;
+            int32_t             typeCode = SLEvalTypeCode_INVALID;
             if (argNode < 0 || ast->nodes[argNode].nextSibling >= 0) {
                 *outIsConst = 0;
                 return 0;
@@ -12058,6 +12125,43 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 {
                     rc = SLEvalTypeValueFromTypeNode(
                         p, p->currentFile, binding->typeNode, outValue);
+                    if (rc < 0) {
+                        return -1;
+                    }
+                    if (rc > 0) {
+                        *outIsConst = 1;
+                        return 0;
+                    }
+                }
+                if (SLEvalFindVisibleLocalTypeNodeByName(
+                        p->currentFile,
+                        ast->nodes[argExprNode].start,
+                        ast->nodes[argExprNode].dataStart,
+                        ast->nodes[argExprNode].dataEnd,
+                        &visibleLocalTypeNode)
+                    && visibleLocalTypeNode >= 0
+                    && !SLEvalTypeNodeIsAnytype(p->currentFile, visibleLocalTypeNode))
+                {
+                    rc = SLEvalTypeValueFromTypeNode(
+                        p, p->currentFile, visibleLocalTypeNode, outValue);
+                    if (rc < 0) {
+                        return -1;
+                    }
+                    if (rc > 0) {
+                        *outIsConst = 1;
+                        return 0;
+                    }
+                }
+                if (SLEvalMirLookupLocalTypeNode(
+                        p,
+                        ast->nodes[argExprNode].dataStart,
+                        ast->nodes[argExprNode].dataEnd,
+                        &localTypeFile,
+                        &localTypeNode)
+                    && localTypeFile != NULL && localTypeNode >= 0
+                    && !SLEvalTypeNodeIsAnytype(localTypeFile, localTypeNode))
+                {
+                    rc = SLEvalTypeValueFromTypeNode(p, localTypeFile, localTypeNode, outValue);
                     if (rc < 0) {
                         return -1;
                     }
@@ -12290,6 +12394,7 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             int32_t      directFnIndex = -1;
             SLCTFEValue  calleeValue;
             int          calleeIsConst = 0;
+            int          calleeMayResolveByNameWithoutValue = 0;
             int32_t      scanNode;
             uint32_t     rawArgCount = 0;
             for (scanNode = argNode; scanNode >= 0; scanNode = ast->nodes[scanNode].nextSibling) {
@@ -12422,17 +12527,55 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 (void)SLEvalReorderFixedCallArgsByName(
                     p, &p->funcs[(uint32_t)directFnIndex], ast, argNode, args, argCount, 0u);
             }
-            if (SLEvalExecExprCb(p, calleeNode, &calleeValue, &calleeIsConst) != 0) {
-                return -1;
-            }
-            if (calleeIsConst && SLEvalValueIsInvokableFunctionRef(&calleeValue)) {
-                int invoked = SLEvalInvokeFunctionRef(
-                    p, &calleeValue, args, argCount, outValue, outIsConst);
-                if (invoked < 0) {
+            calleeMayResolveByNameWithoutValue =
+                directFnIndex >= 0
+                || SLEvalNameIsLazyTypeBuiltin(
+                    p->currentFile->source,
+                    ast->nodes[calleeNode].dataStart,
+                    ast->nodes[calleeNode].dataEnd)
+                || SliceEqCStr(
+                    p->currentFile->source,
+                    ast->nodes[calleeNode].dataStart,
+                    ast->nodes[calleeNode].dataEnd,
+                    "len")
+                || SliceEqCStr(
+                    p->currentFile->source,
+                    ast->nodes[calleeNode].dataStart,
+                    ast->nodes[calleeNode].dataEnd,
+                    "concat")
+                || SliceEqCStr(
+                    p->currentFile->source,
+                    ast->nodes[calleeNode].dataStart,
+                    ast->nodes[calleeNode].dataEnd,
+                    "copy")
+                || SliceEqCStr(
+                    p->currentFile->source,
+                    ast->nodes[calleeNode].dataStart,
+                    ast->nodes[calleeNode].dataEnd,
+                    "free");
+            {
+                const char* savedReason =
+                    p->currentExecCtx != NULL ? p->currentExecCtx->nonConstReason : NULL;
+                uint32_t savedStart =
+                    p->currentExecCtx != NULL ? p->currentExecCtx->nonConstStart : 0;
+                uint32_t savedEnd = p->currentExecCtx != NULL ? p->currentExecCtx->nonConstEnd : 0;
+                if (SLEvalExecExprCb(p, calleeNode, &calleeValue, &calleeIsConst) != 0) {
                     return -1;
                 }
-                if (invoked > 0) {
-                    return 0;
+                if (calleeIsConst && SLEvalValueIsInvokableFunctionRef(&calleeValue)) {
+                    int invoked = SLEvalInvokeFunctionRef(
+                        p, &calleeValue, args, argCount, outValue, outIsConst);
+                    if (invoked < 0) {
+                        return -1;
+                    }
+                    if (invoked > 0) {
+                        return 0;
+                    }
+                }
+                if (calleeMayResolveByNameWithoutValue && p->currentExecCtx != NULL) {
+                    p->currentExecCtx->nonConstReason = savedReason;
+                    p->currentExecCtx->nonConstStart = savedStart;
+                    p->currentExecCtx->nonConstEnd = savedEnd;
                 }
             }
             if (SLEvalResolveCall(
