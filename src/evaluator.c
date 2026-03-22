@@ -336,6 +336,12 @@ static int SLEvalInvokeFunction(
     const SLEvalContext* callContext,
     SLCTFEValue*         outValue,
     int*                 outDidReturn);
+static int SLEvalMirLookupLocalTypeNode(
+    SLEvalProgram*       p,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    const SLParsedFile** outFile,
+    int32_t*             outTypeNode);
 
 static int SLEvalBuiltinTypeSize(
     const char* source, uint32_t nameStart, uint32_t nameEnd, uint64_t* outSize) {
@@ -3366,6 +3372,8 @@ static int SLEvalTypeValueFromExprNode(
     if (n->kind == SLAst_IDENT) {
         SLCTFEExecBinding* binding = SLEvalFindBinding(
             p->currentExecCtx, file, n->dataStart, n->dataEnd);
+        const SLParsedFile* localTypeFile = NULL;
+        int32_t             localTypeNode = -1;
         if (binding != NULL && binding->typeNode >= 0
             && !(
                 file->ast.nodes[binding->typeNode].kind == SLAst_TYPE_NAME
@@ -3375,6 +3383,20 @@ static int SLEvalTypeValueFromExprNode(
                     file->ast.nodes[binding->typeNode].dataEnd,
                     "anytype"))
             && SLEvalTypeValueFromTypeNode(p, file, binding->typeNode, outValue))
+        {
+            return 1;
+        }
+        if (SLEvalMirLookupLocalTypeNode(
+                p, n->dataStart, n->dataEnd, &localTypeFile, &localTypeNode)
+            && localTypeFile != NULL && localTypeNode >= 0
+            && !(
+                localTypeFile->ast.nodes[localTypeNode].kind == SLAst_TYPE_NAME
+                && SliceEqCStr(
+                    localTypeFile->source,
+                    localTypeFile->ast.nodes[localTypeNode].dataStart,
+                    localTypeFile->ast.nodes[localTypeNode].dataEnd,
+                    "anytype"))
+            && SLEvalTypeValueFromTypeNode(p, localTypeFile, localTypeNode, outValue))
         {
             return 1;
         }
@@ -9167,6 +9189,63 @@ static int SLEvalMirLookupLocalValue(
                     }
                 }
                 return 1;
+            }
+        }
+        if (c->savedFileLen == 0) {
+            break;
+        }
+        if (c->savedMirExecCtxs[c->savedFileLen - 1u] == c) {
+            break;
+        }
+        c = c->savedMirExecCtxs[c->savedFileLen - 1u];
+    }
+    return 0;
+}
+
+static int SLEvalMirLookupLocalTypeNode(
+    SLEvalProgram*       p,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    const SLParsedFile** outFile,
+    int32_t*             outTypeNode) {
+    SLEvalMirExecCtx*   c;
+    const SLParsedFile* file;
+    if (outFile != NULL) {
+        *outFile = NULL;
+    }
+    if (outTypeNode != NULL) {
+        *outTypeNode = -1;
+    }
+    if (p == NULL || outFile == NULL || outTypeNode == NULL || p->currentFile == NULL) {
+        return 0;
+    }
+    c = p->currentMirExecCtx;
+    file = p->currentFile;
+    while (c != NULL) {
+        uint32_t i;
+        if (c->mirProgram != NULL && c->mirFunction != NULL && c->mirLocals != NULL
+            && c->mirFunction->localStart <= c->mirProgram->localLen
+            && c->mirFunction->localCount <= c->mirProgram->localLen - c->mirFunction->localStart
+            && c->mirLocalCount >= c->mirFunction->localCount)
+        {
+            for (i = c->mirFunction->localCount; i > 0; i--) {
+                const SLMirLocal* local =
+                    &c->mirProgram->locals[c->mirFunction->localStart + i - 1u];
+                if (local->nameEnd <= local->nameStart || local->typeRef == UINT32_MAX
+                    || local->typeRef >= c->mirProgram->typeLen
+                    || !SliceEqSlice(
+                        file->source,
+                        nameStart,
+                        nameEnd,
+                        file->source,
+                        local->nameStart,
+                        local->nameEnd))
+                {
+                    continue;
+                }
+                *outFile = file;
+                *outTypeNode = (int32_t)c->mirProgram->types[local->typeRef].astNode;
+                return *outTypeNode >= 0;
             }
         }
         if (c->savedFileLen == 0) {

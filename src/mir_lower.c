@@ -168,6 +168,8 @@ static int SLMirLowerRewriteConstInst(
                     return -1;
                 }
                 value.bits = (uint64_t)(int64_t)rune;
+            } else if ((SLTokenKind)in->tok == SLTok_INVALID) {
+                value.bits = (uint64_t)(int64_t)(int32_t)in->aux;
             } else if (SLMirLowerParseIntLiteral(src, in->start, in->end, &intValue) != 0) {
                 return 0;
             } else {

@@ -31,6 +31,7 @@ static int  SLCTFEParseIntLiteral(SLStrView src, uint32_t start, uint32_t end, i
 static int  SLCTFEParseFloatLiteral(
      SLArena* arena, SLStrView src, uint32_t start, uint32_t end, double* out);
 static int SLCTFEParseBoolLiteral(SLStrView src, uint32_t start, uint32_t end, uint8_t* out);
+static int SLCTFEOptionalPayload(const SLCTFEValue* opt, const SLCTFEValue** outPayload);
 static int SLCTFEEvalUnary(SLTokenKind op, const SLCTFEValue* in, SLCTFEValue* out);
 static int SLCTFEEvalBinary(
     SLMirExecRun*      r,
@@ -367,6 +368,8 @@ static int SLMirRunLoop(
                         return -1;
                     }
                     v.i64 = (int64_t)rune;
+                } else if ((SLTokenKind)ins->tok == SLTok_INVALID) {
+                    v.i64 = (int64_t)(int32_t)ins->aux;
                 } else {
                     if (SLCTFEParseIntLiteral(run->env.src, ins->start, ins->end, &v.i64) != 0) {
                         return 0;
@@ -1555,6 +1558,75 @@ static int SLMirRunLoop(
                     return coerceRc < 0 ? -1 : 0;
                 }
                 if (SLCTFEPush(run, &value) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_OPTIONAL_WRAP: {
+                SLCTFEValue  value;
+                SLCTFEValue* payloadCopy;
+                if (SLCTFEPop(run, &value) != 0) {
+                    return 0;
+                }
+                if (value.kind == SLCTFEValue_OPTIONAL) {
+                    if (SLCTFEPush(run, &value) != 0) {
+                        return -1;
+                    }
+                    break;
+                }
+                if (value.kind == SLCTFEValue_NULL) {
+                    value.kind = SLCTFEValue_OPTIONAL;
+                    value.i64 = 0;
+                    value.f64 = 0.0;
+                    value.b = 0u;
+                    value.typeTag = 0;
+                    value.s.bytes = NULL;
+                    value.s.len = 0;
+                    if (SLCTFEPush(run, &value) != 0) {
+                        return -1;
+                    }
+                    break;
+                }
+                payloadCopy = (SLCTFEValue*)SLArenaAlloc(
+                    run->arena, sizeof(*payloadCopy), (uint32_t)_Alignof(SLCTFEValue));
+                if (payloadCopy == NULL) {
+                    SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                    return -1;
+                }
+                *payloadCopy = value;
+                value.kind = SLCTFEValue_OPTIONAL;
+                value.i64 = 0;
+                value.f64 = 0.0;
+                value.b = 1u;
+                value.typeTag = 0;
+                value.s.bytes = (const uint8_t*)payloadCopy;
+                value.s.len = 0;
+                if (SLCTFEPush(run, &value) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case SLMirOp_OPTIONAL_UNWRAP: {
+                SLCTFEValue        value;
+                const SLCTFEValue* payload = NULL;
+                if (SLCTFEPop(run, &value) != 0) {
+                    return 0;
+                }
+                if (!SLCTFEOptionalPayload(&value, &payload)) {
+                    if (value.kind == SLCTFEValue_NULL) {
+                        SLMirSetReason(run, ins, "unwrap of empty optional in evaluator backend");
+                        return 0;
+                    }
+                    if (SLCTFEPush(run, &value) != 0) {
+                        return -1;
+                    }
+                    break;
+                }
+                if (value.b == 0u || payload == NULL) {
+                    SLMirSetReason(run, ins, "unwrap of empty optional in evaluator backend");
+                    return 0;
+                }
+                if (SLCTFEPush(run, payload) != 0) {
                     return -1;
                 }
                 break;

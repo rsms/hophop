@@ -20,6 +20,8 @@ static int  SLMirNameEqLiteralOrPkgBuiltin(
 static int SLMirNameIsCompilerDiagBuiltin(SLStrView src, uint32_t start, uint32_t end);
 static int SLMirNameIsLazyTypeBuiltin(SLStrView src, uint32_t start, uint32_t end);
 static int SLMirCallUsesLazyBuiltinLowering(const SLMirBuilder* b, int32_t callNode);
+static int SLMirBuiltinTypeSize(const SLMirBuilder* b, int32_t typeNode, int64_t* outSize);
+static int SLMirInferExprSize(const SLMirBuilder* b, int32_t exprNode, int64_t* outSize);
 
 static void* _Nullable SLMirArenaGrowArray(
     SLArena* arena, void* _Nullable oldMem, size_t elemSize, uint32_t oldCap, uint32_t newCap) {
@@ -689,6 +691,91 @@ static SLMirCastTarget SLMirClassifyCastTarget(SLMirBuilder* b, int32_t typeNode
     return SLMirCastTarget_INVALID;
 }
 
+static int SLMirBuiltinTypeSize(const SLMirBuilder* b, int32_t typeNode, int64_t* outSize) {
+    const SLAstNode* type;
+    uint32_t         len;
+    const char*      name;
+    if (b == NULL || outSize == NULL || typeNode < 0 || (uint32_t)typeNode >= b->ast->len) {
+        return 0;
+    }
+    type = &b->ast->nodes[typeNode];
+    switch (type->kind) {
+        case SLAst_TYPE_PTR:
+        case SLAst_TYPE_REF:
+        case SLAst_TYPE_MUTREF:
+        case SLAst_TYPE_FN:       *outSize = (int64_t)sizeof(void*); return 1;
+        case SLAst_TYPE_SLICE:
+        case SLAst_TYPE_MUTSLICE: *outSize = (int64_t)(sizeof(void*) * 2u); return 1;
+        case SLAst_TYPE_NAME:     break;
+        default:                  return 0;
+    }
+    len = type->dataEnd >= type->dataStart ? type->dataEnd - type->dataStart : 0u;
+    name = b->src.ptr + type->dataStart;
+    if ((len == 2u && memcmp(name, "u8", 2) == 0) || (len == 2u && memcmp(name, "i8", 2) == 0)
+        || (len == 4u && memcmp(name, "bool", 4) == 0))
+    {
+        *outSize = 1;
+        return 1;
+    }
+    if ((len == 3u && memcmp(name, "u16", 3) == 0) || (len == 3u && memcmp(name, "i16", 3) == 0)) {
+        *outSize = 2;
+        return 1;
+    }
+    if ((len == 3u && memcmp(name, "u32", 3) == 0) || (len == 3u && memcmp(name, "i32", 3) == 0)
+        || (len == 3u && memcmp(name, "f32", 3) == 0)
+        || (len == 4u && memcmp(name, "rune", 4) == 0))
+    {
+        *outSize = 4;
+        return 1;
+    }
+    if ((len == 3u && memcmp(name, "u64", 3) == 0) || (len == 3u && memcmp(name, "i64", 3) == 0)
+        || (len == 3u && memcmp(name, "f64", 3) == 0))
+    {
+        *outSize = 8;
+        return 1;
+    }
+    if ((len == 3u && memcmp(name, "int", 3) == 0) || (len == 4u && memcmp(name, "uint", 4) == 0)
+        || (len == 5u && memcmp(name, "usize", 5) == 0)
+        || (len == 5u && memcmp(name, "isize", 5) == 0))
+    {
+        *outSize = (int64_t)sizeof(uintptr_t);
+        return 1;
+    }
+    if (len == 3u && memcmp(name, "str", 3) == 0) {
+        *outSize = (int64_t)(sizeof(void*) * 2u);
+        return 1;
+    }
+    if (len == 4u && memcmp(name, "type", 4) == 0) {
+        *outSize = (int64_t)sizeof(void*);
+        return 1;
+    }
+    return 0;
+}
+
+static int SLMirInferExprSize(const SLMirBuilder* b, int32_t exprNode, int64_t* outSize) {
+    const SLAstNode* expr;
+    int32_t          valueNode;
+    int32_t          typeNode;
+    if (b == NULL || outSize == NULL || exprNode < 0 || (uint32_t)exprNode >= b->ast->len) {
+        return 0;
+    }
+    expr = &b->ast->nodes[exprNode];
+    switch (expr->kind) {
+        case SLAst_INT:    *outSize = (int64_t)sizeof(uintptr_t); return 1;
+        case SLAst_FLOAT:  *outSize = 8; return 1;
+        case SLAst_BOOL:   *outSize = 1; return 1;
+        case SLAst_STRING: *outSize = (int64_t)(sizeof(void*) * 2u); return 1;
+        case SLAst_CAST:
+            valueNode = expr->firstChild;
+            typeNode = valueNode >= 0 ? b->ast->nodes[valueNode].nextSibling : -1;
+            if (valueNode < 0 || typeNode < 0 || b->ast->nodes[typeNode].nextSibling >= 0) {
+                return 0;
+            }
+            return SLMirBuiltinTypeSize(b, typeNode, outSize);
+        default: return 0;
+    }
+}
+
 static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
     const SLAstNode* n;
     if (!b->supported) {
@@ -714,6 +801,25 @@ static int SLMirBuildExprNode(SLMirBuilder* b, int32_t nodeId) {
         case SLAst_IDENT:
             return SLMirEmitInstEx(
                 b, SLMirOp_LOAD_IDENT, SLTok_IDENT, (uint32_t)nodeId, n->dataStart, n->dataEnd);
+        case SLAst_SIZEOF: {
+            int32_t innerNode = n->firstChild;
+            int64_t sizeValue = 0;
+            if (innerNode < 0 || (uint32_t)innerNode >= b->ast->len) {
+                SLMirSetDiag(b->diag, SLDiag_EXPECTED_EXPR, n->start, n->end);
+                return -1;
+            }
+            if (n->flags == 1u) {
+                if (!SLMirBuiltinTypeSize(b, innerNode, &sizeValue)) {
+                    b->supported = 0;
+                    return 0;
+                }
+            } else if (!SLMirInferExprSize(b, innerNode, &sizeValue)) {
+                b->supported = 0;
+                return 0;
+            }
+            return SLMirEmitInstEx(
+                b, SLMirOp_PUSH_INT, SLTok_INVALID, (uint32_t)sizeValue, n->start, n->end);
+        }
         case SLAst_TUPLE_EXPR: {
             int32_t  child = n->firstChild;
             uint32_t elemCount = 0;

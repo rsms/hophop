@@ -998,13 +998,15 @@ static int SLMirStmtLowerExprInstStackDelta(const SLMirInst* inst, int32_t* outD
         case SLMirOp_PUSH_BOOL:
         case SLMirOp_PUSH_STRING:
         case SLMirOp_PUSH_NULL:
-        case SLMirOp_LOAD_IDENT:  *outDelta = 1; return 1;
+        case SLMirOp_LOAD_IDENT:      *outDelta = 1; return 1;
         case SLMirOp_UNARY:
         case SLMirOp_CAST:
         case SLMirOp_SEQ_LEN:
-        case SLMirOp_STR_CSTR:    *outDelta = 0; return 1;
+        case SLMirOp_STR_CSTR:
+        case SLMirOp_OPTIONAL_WRAP:
+        case SLMirOp_OPTIONAL_UNWRAP: *outDelta = 0; return 1;
         case SLMirOp_BINARY:
-        case SLMirOp_INDEX:       *outDelta = -1; return 1;
+        case SLMirOp_INDEX:           *outDelta = -1; return 1;
         case SLMirOp_SLICE_MAKE:
             *outDelta = 0 - (((inst->tok & SLAstFlag_INDEX_HAS_START) != 0u) ? 1 : 0)
                       - (((inst->tok & SLAstFlag_INDEX_HAS_END) != 0u) ? 1 : 0);
@@ -1308,6 +1310,20 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
             }
         }
         return SLMirStmtLowerAppendTupleMake(c, elemCount, exprNode, expr->start, expr->end);
+    }
+    if (expr->kind == SLAst_UNWRAP) {
+        int32_t childNode = expr->firstChild;
+        if (childNode < 0 || (uint32_t)childNode >= c->ast->len
+            || c->ast->nodes[childNode].nextSibling >= 0)
+        {
+            c->supported = 0;
+            return 0;
+        }
+        if (SLMirStmtLowerExpr(c, childNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        return SLMirStmtLowerAppendInst(
+            c, SLMirOp_OPTIONAL_UNWRAP, 0, 0, expr->start, expr->end, NULL);
     }
     if (expr->kind == SLAst_UNARY) {
         int32_t child = expr->firstChild;
