@@ -1,15 +1,106 @@
 #include "internal.h"
+#include "../mir_exec.h"
+#include "../mir_lower_pkg.h"
+#include "../mir_lower_stmt.h"
 
 SL_API_BEGIN
 
+enum {
+    SL_TC_MIR_TUPLE_TAG = 0x54434d4952545550ULL,
+    SL_TC_MIR_ITER_TAG = 0x54434d4952495445ULL,
+    SL_TC_MIR_IMPORT_ALIAS_TAG = 0x54434d49524d504bULL,
+};
+
 static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outCallArgIndex);
+static int SLTCConstEvalGetConcreteCallArgType(
+    SLTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outType);
+static int SLTCConstEvalGetConcreteCallArgPackType(
+    SLTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outPackType);
 static int SLTCConstEvalDirectCall(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
+int SLTCResolveConstCallMir(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    const SLCTFEValue* _Nonnull args,
+    uint32_t argCount,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCResolveConstCallMirPre(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    SLDiag* _Nullable diag);
 static int SLTCConstEvalSetOptionalNoneValue(
     SLTypeCheckCtx* c, int32_t optionalTypeId, SLCTFEValue* outValue);
 static int SLTCConstEvalSetOptionalSomeValue(
     SLTypeCheckCtx* c, int32_t optionalTypeId, const SLCTFEValue* payload, SLCTFEValue* outValue);
+static int SLTCInvokeConstFunctionByIndex(
+    SLTCConstEvalCtx*  evalCtx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    int32_t            fnIndex,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    const SLTCCallArgInfo* _Nullable callArgs,
+    uint32_t callArgCount,
+    const SLTCCallBinding* _Nullable callBinding,
+    uint32_t     callPackParamNameStart,
+    uint32_t     callPackParamNameEnd,
+    SLCTFEValue* outValue,
+    int*         outIsConst);
+void SLTCConstSetReason(
+    SLTCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason);
+static int SLTCConstLookupMirLocalValue(
+    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, SLCTFEValue* outValue);
+int SLTCMirConstBindFrame(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLCTFEValue* _Nullable locals,
+    uint32_t localCount,
+    SLDiag* _Nullable diag);
+void SLTCMirConstUnbindFrame(void* _Nullable ctx);
+
+static int SLTCConstEvalIsTrackedAnyPackName(
+    const SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd) {
+    SLTypeCheckCtx* c;
+    int32_t         localIdx;
+    if (evalCtx == NULL) {
+        return 0;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return 0;
+    }
+    if (evalCtx->callPackParamNameStart < evalCtx->callPackParamNameEnd
+        && SLNameEqSlice(
+            c->src,
+            nameStart,
+            nameEnd,
+            evalCtx->callPackParamNameStart,
+            evalCtx->callPackParamNameEnd))
+    {
+        return 1;
+    }
+    localIdx = SLTCLocalFind(c, nameStart, nameEnd);
+    return localIdx >= 0 && (c->locals[localIdx].flags & SLTCLocalFlag_ANYPACK) != 0;
+}
+
+static void SLTCMirConstSetReasonCb(
+    void* _Nullable ctx, uint32_t start, uint32_t end, const char* reason) {
+    SLTCConstSetReason((SLTCConstEvalCtx*)ctx, start, end, reason);
+}
 
 void SLTCConstSetReason(
     SLTCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason) {
@@ -22,6 +113,164 @@ void SLTCConstSetReason(
     if (evalCtx->execCtx != NULL) {
         SLCTFEExecSetReason(evalCtx->execCtx, start, end, reason);
     }
+}
+
+static int SLTCConstLookupMirLocalValue(
+    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, SLCTFEValue* outValue) {
+    SLTypeCheckCtx* c;
+    uint32_t        i;
+    if (evalCtx == NULL || outValue == NULL || evalCtx->mirProgram == NULL
+        || evalCtx->mirFunction == NULL || evalCtx->mirLocals == NULL)
+    {
+        return 0;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || evalCtx->mirFunction->localStart > evalCtx->mirProgram->localLen
+        || evalCtx->mirFunction->localCount
+               > evalCtx->mirProgram->localLen - evalCtx->mirFunction->localStart
+        || evalCtx->mirLocalCount < evalCtx->mirFunction->localCount)
+    {
+        return 0;
+    }
+    for (i = evalCtx->mirFunction->localCount; i > 0; i--) {
+        const SLMirLocal* local =
+            &evalCtx->mirProgram->locals[evalCtx->mirFunction->localStart + i - 1u];
+        const SLCTFEValue* value = &evalCtx->mirLocals[i - 1u];
+        if (local->nameEnd <= local->nameStart
+            || !SLNameEqSlice(c->src, local->nameStart, local->nameEnd, nameStart, nameEnd))
+        {
+            continue;
+        }
+        if (value->kind == SLCTFEValue_INVALID) {
+            continue;
+        }
+        *outValue = *value;
+        return 1;
+    }
+    return 0;
+}
+
+int SLTCMirConstBindFrame(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLCTFEValue* _Nullable locals,
+    uint32_t localCount,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    if (evalCtx == NULL || evalCtx->mirFrameDepth >= SLTC_CONST_CALL_MAX_DEPTH) {
+        if (diag != NULL) {
+            diag->code = SLDiag_UNEXPECTED_TOKEN;
+            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->start = 0;
+            diag->end = 0;
+            diag->argStart = 0;
+            diag->argEnd = 0;
+        }
+        return -1;
+    }
+    evalCtx->mirSavedPrograms[evalCtx->mirFrameDepth] = evalCtx->mirProgram;
+    evalCtx->mirSavedFunctions[evalCtx->mirFrameDepth] = evalCtx->mirFunction;
+    evalCtx->mirSavedLocals[evalCtx->mirFrameDepth] = evalCtx->mirLocals;
+    evalCtx->mirSavedLocalCounts[evalCtx->mirFrameDepth] = evalCtx->mirLocalCount;
+    evalCtx->mirFrameDepth++;
+    evalCtx->mirProgram = program;
+    evalCtx->mirFunction = function;
+    evalCtx->mirLocals = locals;
+    evalCtx->mirLocalCount = localCount;
+    return 0;
+}
+
+void SLTCMirConstUnbindFrame(void* _Nullable ctx) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    if (evalCtx == NULL || evalCtx->mirFrameDepth == 0) {
+        return;
+    }
+    evalCtx->mirFrameDepth--;
+    evalCtx->mirProgram = evalCtx->mirSavedPrograms[evalCtx->mirFrameDepth];
+    evalCtx->mirFunction = evalCtx->mirSavedFunctions[evalCtx->mirFrameDepth];
+    evalCtx->mirLocals = evalCtx->mirSavedLocals[evalCtx->mirFrameDepth];
+    evalCtx->mirLocalCount = evalCtx->mirSavedLocalCounts[evalCtx->mirFrameDepth];
+}
+
+void SLTCMirConstAdoptLowerDiagReason(SLTCConstEvalCtx* evalCtx, const SLDiag* _Nullable diag) {
+    if (evalCtx == NULL || diag == NULL || diag->detail == NULL || diag->detail[0] == '\0') {
+        return;
+    }
+    SLTCConstSetReason(evalCtx, diag->start, diag->end, diag->detail);
+}
+
+int SLTCMirConstLowerConstExpr(
+    void* _Nullable ctx, int32_t exprNode, SLMirConst* _Nonnull outValue, SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTCConstEvalCtx  localEvalCtx;
+    SLTypeCheckCtx*   c;
+    SLCTFEValue       value;
+    int32_t           reflectedTypeId = -1;
+    int               isConst = 0;
+    if (outValue == NULL || evalCtx == NULL || evalCtx->tc == NULL || exprNode < 0) {
+        return 0;
+    }
+    c = evalCtx->tc;
+    if ((uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    localEvalCtx = *evalCtx;
+    localEvalCtx.nonConstReason = NULL;
+    localEvalCtx.nonConstStart = 0;
+    localEvalCtx.nonConstEnd = 0;
+    if (c->ast->nodes[exprNode].kind == SLAst_SIZEOF) {
+        if (SLTCConstEvalSizeOf(&localEvalCtx, exprNode, &value, &isConst) != 0) {
+            return -1;
+        }
+        if (!isConst || value.kind != SLCTFEValue_INT) {
+            if (diag != NULL && diag->detail == NULL && localEvalCtx.nonConstReason != NULL) {
+                diag->start = localEvalCtx.nonConstStart;
+                diag->end = localEvalCtx.nonConstEnd;
+                diag->detail = localEvalCtx.nonConstReason;
+            }
+            return 0;
+        }
+        outValue->kind = SLMirConst_INT;
+        outValue->bits = (uint64_t)value.i64;
+        return 1;
+    }
+    if (SLTCResolveReflectedTypeValueExpr(c, exprNode, &reflectedTypeId) < 0) {
+        return -1;
+    }
+    if (reflectedTypeId >= 0) {
+        outValue->kind = SLMirConst_TYPE;
+        outValue->bits = SLTCEncodeTypeTag(c, reflectedTypeId);
+        return 1;
+    }
+    if (c->ast->nodes[exprNode].kind == SLAst_CALL) {
+        int32_t calleeNode = SLAstFirstChild(c->ast, exprNode);
+        if (calleeNode < 0 || (uint32_t)calleeNode >= c->ast->len
+            || c->ast->nodes[calleeNode].kind != SLAst_IDENT
+            || !SLNameEqLiteral(
+                c->src,
+                c->ast->nodes[calleeNode].dataStart,
+                c->ast->nodes[calleeNode].dataEnd,
+                "typeof"))
+        {
+            return 0;
+        }
+        if (SLTCConstEvalTypeOf(&localEvalCtx, exprNode, &value, &isConst) != 0) {
+            return -1;
+        }
+        if (!isConst || value.kind != SLCTFEValue_TYPE) {
+            if (diag != NULL && diag->detail == NULL && localEvalCtx.nonConstReason != NULL) {
+                diag->start = localEvalCtx.nonConstStart;
+                diag->end = localEvalCtx.nonConstEnd;
+                diag->detail = localEvalCtx.nonConstReason;
+            }
+            return 0;
+        }
+        outValue->kind = SLMirConst_TYPE;
+        outValue->bits = value.typeTag;
+        return 1;
+    }
+    return 0;
 }
 
 void SLTCConstSetReasonNode(SLTCConstEvalCtx* evalCtx, int32_t nodeId, const char* reason) {
@@ -44,6 +293,29 @@ void SLTCAttachConstEvalReason(SLTypeCheckCtx* c) {
         return;
     }
     c->diag->detail = SLTCAllocDiagText(c, c->lastConstEvalReason);
+}
+
+static int32_t SLTCFindPkgQualifiedFunctionValueIndexBySlice(
+    SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd) {
+    uint32_t i;
+    uint32_t pkgStart = 0;
+    uint32_t pkgEnd = 0;
+    if (c == NULL || nameEnd <= nameStart + 2u || nameEnd > c->src.len) {
+        return -1;
+    }
+    for (i = nameStart + 1u; i + 1u < nameEnd; i++) {
+        if (c->src.ptr[i] == '.') {
+            return SLTCFindPkgQualifiedFunctionValueIndex(c, nameStart, i, i + 1u, nameEnd);
+        }
+    }
+    if (SLTCExtractPkgPrefixFromTypeName(c, nameStart, nameEnd, &pkgStart, &pkgEnd)) {
+        uint32_t methodStart = pkgEnd + 2u;
+        if (methodStart < nameEnd) {
+            return SLTCFindPkgQualifiedFunctionValueIndex(
+                c, pkgStart, pkgEnd, methodStart, nameEnd);
+        }
+    }
+    return -1;
 }
 
 static void SLTCConstEvalValueInvalid(SLCTFEValue* v) {
@@ -462,12 +734,65 @@ int SLTCResolveConstIdent(
         *outIsConst = 1;
         return 0;
     }
+    if (SLTCConstLookupMirLocalValue(evalCtx, nameStart, nameEnd, outValue)) {
+        *outIsConst = 1;
+        return 0;
+    }
     {
         int32_t localIdx = SLTCLocalFind(c, nameStart, nameEnd);
         if (localIdx >= 0) {
             SLTCLocal* local = &c->locals[localIdx];
             int32_t    localType = local->typeId;
             int32_t    resolvedLocalType = SLTCResolveAliasBaseType(c, localType);
+            if ((local->flags & SLTCLocalFlag_ANYPACK) != 0 && evalCtx->callBinding != NULL
+                && SLTCConstEvalIsTrackedAnyPackName(evalCtx, nameStart, nameEnd))
+            {
+                const SLTCCallBinding* binding = (const SLTCCallBinding*)evalCtx->callBinding;
+                int32_t                elemTypes[SLTC_MAX_CALL_ARGS];
+                uint32_t               elemCount = 0;
+                uint32_t               i;
+                int                    haveAllTypes = 1;
+                if (binding->isVariadic && binding->spreadArgIndex != UINT32_MAX) {
+                    uint32_t spreadArgIndex = binding->spreadArgIndex;
+                    int32_t  spreadArgType = -1;
+                    if (spreadArgIndex < evalCtx->callArgCount
+                        && SLTCConstEvalGetConcreteCallArgType(
+                               evalCtx, spreadArgIndex, &spreadArgType)
+                               == 0)
+                    {
+                        int32_t spreadType = SLTCResolveAliasBaseType(c, spreadArgType);
+                        if (spreadType >= 0 && (uint32_t)spreadType < c->typeLen
+                            && c->types[spreadType].kind == SLTCType_PACK)
+                        {
+                            localType = spreadArgType;
+                            resolvedLocalType = spreadType;
+                        }
+                    }
+                } else if (binding->isVariadic) {
+                    for (i = 0; i < evalCtx->callArgCount; i++) {
+                        int32_t elemType = -1;
+                        if (binding->argParamIndices[i] != (int32_t)binding->fixedCount) {
+                            continue;
+                        }
+                        if (elemCount >= SLTC_MAX_CALL_ARGS
+                            || SLTCConstEvalGetConcreteCallArgType(evalCtx, i, &elemType) != 0)
+                        {
+                            haveAllTypes = 0;
+                            break;
+                        }
+                        elemTypes[elemCount++] = elemType;
+                    }
+                    if (haveAllTypes) {
+                        int32_t packTypeId = SLTCInternPackType(
+                            c, elemTypes, elemCount, nameStart, nameEnd);
+                        if (packTypeId < 0) {
+                            return -1;
+                        }
+                        localType = packTypeId;
+                        resolvedLocalType = SLTCResolveAliasBaseType(c, localType);
+                    }
+                }
+            }
             if (resolvedLocalType >= 0 && (uint32_t)resolvedLocalType < c->typeLen
                 && c->types[resolvedLocalType].kind == SLTCType_PACK)
             {
@@ -507,6 +832,35 @@ int SLTCResolveConstIdent(
                 return 0;
             }
         }
+    }
+    {
+        int32_t fnIdx = SLTCFindPlainFunctionValueIndex(c, nameStart, nameEnd);
+        if (fnIdx >= 0) {
+            SLMirValueSetFunctionRef(outValue, (uint32_t)fnIdx);
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    {
+        int32_t fnIdx = SLTCFindPkgQualifiedFunctionValueIndexBySlice(c, nameStart, nameEnd);
+        if (fnIdx >= 0) {
+            SLMirValueSetFunctionRef(outValue, (uint32_t)fnIdx);
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (SLTCHasImportAlias(c, nameStart, nameEnd)) {
+        SLTCConstEvalValueInvalid(outValue);
+        outValue->kind = SLCTFEValue_SPAN;
+        outValue->typeTag = SL_TC_MIR_IMPORT_ALIAS_TAG;
+        outValue->span.fileBytes = (const uint8_t*)c->src.ptr + nameStart;
+        outValue->span.fileLen = nameEnd - nameStart;
+        outValue->span.startLine = 0;
+        outValue->span.startColumn = 0;
+        outValue->span.endLine = 0;
+        outValue->span.endColumn = 0;
+        *outIsConst = 1;
+        return 0;
     }
     {
         int32_t typeId = SLTCResolveTypeValueName(c, nameStart, nameEnd);
@@ -551,15 +905,79 @@ int SLTCConstLookupExecBindingType(
             const SLCTFEExecBinding* b;
             i--;
             b = &frame->bindings[i];
-            if (SLNameEqSlice(evalCtx->tc->src, b->nameStart, b->nameEnd, nameStart, nameEnd)
-                && b->typeId >= 0)
-            {
-                *outType = b->typeId;
-                return 1;
+            if (SLNameEqSlice(evalCtx->tc->src, b->nameStart, b->nameEnd, nameStart, nameEnd)) {
+                if (b->typeId >= 0) {
+                    *outType = b->typeId;
+                    return 1;
+                }
+                if (SLTCEvalConstExecInferValueTypeCb(evalCtx, &b->value, outType) == 0) {
+                    return 1;
+                }
             }
         }
         frame = frame->parent;
     }
+    return 0;
+}
+
+int SLTCConstLookupMirLocalType(
+    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, int32_t* outType) {
+    SLTypeCheckCtx* c;
+    uint32_t        i;
+    uint8_t         savedAllowConstNumericTypeName;
+    uint8_t         savedAllowAnytypeParamType;
+    if (outType != NULL) {
+        *outType = -1;
+    }
+    if (evalCtx == NULL || outType == NULL || evalCtx->mirProgram == NULL
+        || evalCtx->mirFunction == NULL)
+    {
+        return 0;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || evalCtx->mirFunction->localStart > evalCtx->mirProgram->localLen
+        || evalCtx->mirFunction->localCount
+               > evalCtx->mirProgram->localLen - evalCtx->mirFunction->localStart)
+    {
+        return 0;
+    }
+    savedAllowConstNumericTypeName = c->allowConstNumericTypeName;
+    savedAllowAnytypeParamType = c->allowAnytypeParamType;
+    c->allowConstNumericTypeName = 1;
+    c->allowAnytypeParamType = 1;
+    for (i = evalCtx->mirFunction->localCount; i > 0; i--) {
+        const SLMirLocal* local =
+            &evalCtx->mirProgram->locals[evalCtx->mirFunction->localStart + i - 1u];
+        const SLCTFEValue* value =
+            i - 1u < evalCtx->mirLocalCount ? &evalCtx->mirLocals[i - 1u] : NULL;
+        if (local->nameEnd <= local->nameStart
+            || !SLNameEqSlice(c->src, local->nameStart, local->nameEnd, nameStart, nameEnd))
+        {
+            continue;
+        }
+        if (local->typeRef < evalCtx->mirProgram->typeLen) {
+            const SLMirTypeRef* typeRef = &evalCtx->mirProgram->types[local->typeRef];
+            if (typeRef->astNode > INT32_MAX || typeRef->astNode >= c->ast->len
+                || SLTCResolveTypeNode(c, (int32_t)typeRef->astNode, outType) != 0)
+            {
+                c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+                c->allowAnytypeParamType = savedAllowAnytypeParamType;
+                return -1;
+            }
+            c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+            c->allowAnytypeParamType = savedAllowAnytypeParamType;
+            return 1;
+        }
+        if (value != NULL && value->kind != SLCTFEValue_INVALID
+            && SLTCEvalConstExecInferValueTypeCb(evalCtx, value, outType) == 0)
+        {
+            c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+            c->allowAnytypeParamType = savedAllowAnytypeParamType;
+            return 1;
+        }
+    }
+    c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+    c->allowAnytypeParamType = savedAllowAnytypeParamType;
     return 0;
 }
 
@@ -1078,17 +1496,32 @@ int SLTCConstEvalTypeOf(
         return -1;
     }
     if (packStatus == 0) {
-        const SLTCCallBinding* binding = (const SLTCCallBinding*)evalCtx->callBinding;
-        if (binding != NULL && callArgIndex < evalCtx->callArgCount
-            && binding->argExpectedTypes[callArgIndex] >= 0)
-        {
-            argType = binding->argExpectedTypes[callArgIndex];
+        if (SLTCConstEvalGetConcreteCallArgType(evalCtx, callArgIndex, &argType) == 0) {
             goto done;
+        }
+        {
+            const SLTCCallBinding* binding = (const SLTCCallBinding*)evalCtx->callBinding;
+            if (binding != NULL && callArgIndex < evalCtx->callArgCount
+                && binding->argExpectedTypes[callArgIndex] >= 0)
+            {
+                argType = binding->argExpectedTypes[callArgIndex];
+                goto done;
+            }
         }
     }
     if (packStatus == 2 || packStatus == 3) {
         *outIsConst = 0;
         return 0;
+    }
+    {
+        SLCTFEValue argValue;
+        int         argIsConst = 0;
+        if (SLTCEvalConstExprNode(evalCtx, argExprNode, &argValue, &argIsConst) != 0) {
+            return -1;
+        }
+        if (argIsConst && SLTCEvalConstExecInferValueTypeCb(evalCtx, &argValue, &argType) == 0) {
+            goto done;
+        }
     }
     savedActiveEvalCtx = c->activeConstEvalCtx;
     c->activeConstEvalCtx = evalCtx;
@@ -1458,6 +1891,25 @@ int SLTCConstEvalTypeNameValue(
     return 0;
 }
 
+static void SLTCConstEvalSetTypeValue(SLTypeCheckCtx* c, int32_t typeId, SLCTFEValue* outValue) {
+    if (c == NULL || outValue == NULL) {
+        return;
+    }
+    outValue->kind = SLCTFEValue_TYPE;
+    outValue->i64 = 0;
+    outValue->f64 = 0.0;
+    outValue->b = 0;
+    outValue->typeTag = SLTCEncodeTypeTag(c, typeId);
+    outValue->s.bytes = NULL;
+    outValue->s.len = 0;
+    outValue->span.fileBytes = NULL;
+    outValue->span.fileLen = 0;
+    outValue->span.startLine = 0;
+    outValue->span.startColumn = 0;
+    outValue->span.endLine = 0;
+    outValue->span.endColumn = 0;
+}
+
 void SLTCConstEvalSetNullValue(SLCTFEValue* outValue) {
     if (outValue == NULL) {
         return;
@@ -1562,9 +2014,7 @@ static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
     c = evalCtx->tc;
     binding = (const SLTCCallBinding*)evalCtx->callBinding;
     callArgs = (const SLTCCallArgInfo*)evalCtx->callArgs;
-    if (c == NULL || binding == NULL || callArgs == NULL || evalCtx->callArgCount == 0
-        || evalCtx->callPackParamNameStart >= evalCtx->callPackParamNameEnd)
-    {
+    if (c == NULL || binding == NULL || callArgs == NULL || evalCtx->callArgCount == 0) {
         return 1;
     }
     if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len
@@ -1580,18 +2030,10 @@ static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
         return 1;
     }
     if (c->ast->nodes[baseNode].kind != SLAst_IDENT
-        || !SLNameEqSlice(
-            c->src,
-            c->ast->nodes[baseNode].dataStart,
-            c->ast->nodes[baseNode].dataEnd,
-            evalCtx->callPackParamNameStart,
-            evalCtx->callPackParamNameEnd))
+        || !SLTCConstEvalIsTrackedAnyPackName(
+            evalCtx, c->ast->nodes[baseNode].dataStart, c->ast->nodes[baseNode].dataEnd))
     {
         return 1;
-    }
-    if (!binding->isVariadic || binding->spreadArgIndex != UINT32_MAX) {
-        SLTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
-        return 3;
     }
     if (SLTCEvalConstExprNode(evalCtx, idxNode, &idxConstValue, &idxIsConst) != 0) {
         return -1;
@@ -1602,6 +2044,30 @@ static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
         return 2;
     }
     if (idxValue < 0) {
+        SLTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
+        return 3;
+    }
+    if (!binding->isVariadic) {
+        SLTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
+        return 3;
+    }
+    if (binding->spreadArgIndex != UINT32_MAX) {
+        uint32_t spreadArgIndex = binding->spreadArgIndex;
+        int32_t  spreadArgType = -1;
+        if (spreadArgIndex < evalCtx->callArgCount
+            && SLTCConstEvalGetConcreteCallArgType(evalCtx, spreadArgIndex, &spreadArgType) == 0)
+        {
+            int32_t spreadType = SLTCResolveAliasBaseType(c, spreadArgType);
+            if (spreadType >= 0 && (uint32_t)spreadType < c->typeLen
+                && c->types[spreadType].kind == SLTCType_PACK)
+            {
+                if ((uint64_t)idxValue >= (uint64_t)c->types[spreadType].fieldCount) {
+                    SLTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
+                    return 3;
+                }
+                return 1;
+            }
+        }
         SLTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
         return 3;
     }
@@ -1618,6 +2084,60 @@ static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
     }
     SLTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
     return 3;
+}
+
+static int SLTCConstEvalGetConcreteCallArgType(
+    SLTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outType) {
+    SLTypeCheckCtx*        c;
+    const SLTCCallBinding* binding;
+    const SLTCCallArgInfo* callArgs;
+    SLTCConstEvalCtx* _Nullable savedActiveEvalCtx;
+    int32_t argType = -1;
+    if (outType != NULL) {
+        *outType = -1;
+    }
+    if (evalCtx == NULL || outType == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    binding = (const SLTCCallBinding*)evalCtx->callBinding;
+    callArgs = (const SLTCCallArgInfo*)evalCtx->callArgs;
+    if (c == NULL || binding == NULL || callArgs == NULL || callArgIndex >= evalCtx->callArgCount) {
+        return 1;
+    }
+    if (callArgs[callArgIndex].exprNode >= 0
+        && (uint32_t)callArgs[callArgIndex].exprNode < c->ast->len)
+    {
+        savedActiveEvalCtx = c->activeConstEvalCtx;
+        c->activeConstEvalCtx = evalCtx;
+        if (SLTCTypeExpr(c, callArgs[callArgIndex].exprNode, &argType) != 0) {
+            c->activeConstEvalCtx = savedActiveEvalCtx;
+            return -1;
+        }
+        c->activeConstEvalCtx = savedActiveEvalCtx;
+        if ((argType == c->typeUntypedInt || argType == c->typeUntypedFloat)
+            && SLTCConcretizeInferredType(c, argType, &argType) != 0)
+        {
+            return -1;
+        }
+        if (argType >= 0 && argType != c->typeAnytype) {
+            *outType = argType;
+            return 0;
+        }
+    }
+    if (SLTCConstEvalGetConcreteCallArgPackType(evalCtx, callArgIndex, &argType) == 0) {
+        *outType = argType;
+        return 0;
+    }
+    if (binding->argExpectedTypes[callArgIndex] >= 0) {
+        *outType = binding->argExpectedTypes[callArgIndex];
+        return 0;
+    }
+    if (argType >= 0) {
+        *outType = argType;
+        return 0;
+    }
+    return 1;
 }
 
 int SLTCConstEvalSpanOfCall(
@@ -2271,19 +2791,7 @@ int SLTCConstEvalTypeReflectionCall(
         if (constructedTypeId < 0) {
             return -1;
         }
-        outValue->kind = SLCTFEValue_TYPE;
-        outValue->i64 = 0;
-        outValue->f64 = 0.0;
-        outValue->b = 0;
-        outValue->typeTag = SLTCEncodeTypeTag(c, constructedTypeId);
-        outValue->s.bytes = NULL;
-        outValue->s.len = 0;
-        outValue->span.fileBytes = NULL;
-        outValue->span.fileLen = 0;
-        outValue->span.startLine = 0;
-        outValue->span.startColumn = 0;
-        outValue->span.endLine = 0;
-        outValue->span.endColumn = 0;
+        SLTCConstEvalSetTypeValue(c, constructedTypeId, outValue);
         *outIsConst = 1;
         return 0;
     }
@@ -2301,19 +2809,194 @@ int SLTCConstEvalTypeReflectionCall(
         return -1;
     }
     reflectedTypeId = c->types[reflectedTypeId].baseType;
-    outValue->kind = SLCTFEValue_TYPE;
-    outValue->i64 = 0;
-    outValue->f64 = 0.0;
-    outValue->b = 0;
-    outValue->typeTag = SLTCEncodeTypeTag(c, reflectedTypeId);
-    outValue->s.bytes = NULL;
-    outValue->s.len = 0;
-    outValue->span.fileBytes = NULL;
-    outValue->span.fileLen = 0;
-    outValue->span.startLine = 0;
-    outValue->span.startColumn = 0;
-    outValue->span.endLine = 0;
-    outValue->span.endColumn = 0;
+    SLTCConstEvalSetTypeValue(c, reflectedTypeId, outValue);
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLTCConstEvalTypeReflectionByArgs(
+    SLTCConstEvalCtx*  evalCtx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst) {
+    SLTypeCheckCtx* c;
+    int32_t         op = 0;
+    int32_t         reflectedTypeId = -1;
+    enum {
+        SLTCReflectArg_KIND = 1,
+        SLTCReflectArg_BASE = 2,
+        SLTCReflectArg_IS_ALIAS = 3,
+        SLTCReflectArg_TYPE_NAME = 4,
+        SLTCReflectArg_PTR = 5,
+        SLTCReflectArg_SLICE = 6,
+        SLTCReflectArg_ARRAY = 7,
+    };
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "kind")) {
+        op = SLTCReflectArg_KIND;
+    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "base")) {
+        op = SLTCReflectArg_BASE;
+    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "is_alias")) {
+        op = SLTCReflectArg_IS_ALIAS;
+    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "type_name")) {
+        op = SLTCReflectArg_TYPE_NAME;
+    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "ptr")) {
+        op = SLTCReflectArg_PTR;
+    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "slice")) {
+        op = SLTCReflectArg_SLICE;
+    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "array")) {
+        op = SLTCReflectArg_ARRAY;
+    } else {
+        return 1;
+    }
+    if (op == SLTCReflectArg_ARRAY) {
+        int64_t arrayLen = 0;
+        int32_t arrayTypeId;
+        if (argCount != 2u || args == NULL || args[0].kind != SLCTFEValue_TYPE
+            || SLCTFEValueToInt64(&args[1], &arrayLen) != 0 || arrayLen < 0
+            || arrayLen > (int64_t)UINT32_MAX)
+        {
+            return 1;
+        }
+        if (SLTCDecodeTypeTag(c, args[0].typeTag, &reflectedTypeId) != 0) {
+            return -1;
+        }
+        arrayTypeId = SLTCInternArrayType(c, reflectedTypeId, (uint32_t)arrayLen, 0, 0);
+        if (arrayTypeId < 0) {
+            return -1;
+        }
+        SLTCConstEvalSetTypeValue(c, arrayTypeId, outValue);
+        *outIsConst = 1;
+        return 0;
+    }
+    if (argCount != 1u || args == NULL || args[0].kind != SLCTFEValue_TYPE) {
+        return 1;
+    }
+    if (op == SLTCReflectArg_KIND) {
+        outValue->kind = SLCTFEValue_INT;
+        outValue->i64 = (int64_t)((args[0].typeTag >> 56u) & 0xffu);
+        outValue->f64 = 0.0;
+        outValue->b = 0;
+        outValue->typeTag = 0;
+        outValue->s.bytes = NULL;
+        outValue->s.len = 0;
+        outValue->span.fileBytes = NULL;
+        outValue->span.fileLen = 0;
+        outValue->span.startLine = 0;
+        outValue->span.startColumn = 0;
+        outValue->span.endLine = 0;
+        outValue->span.endColumn = 0;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (op == SLTCReflectArg_IS_ALIAS) {
+        outValue->kind = SLCTFEValue_BOOL;
+        outValue->b = ((args[0].typeTag >> 56u) & 0xffu) == (uint64_t)SLTCTypeTagKind_ALIAS;
+        outValue->i64 = 0;
+        outValue->f64 = 0.0;
+        outValue->typeTag = 0;
+        outValue->s.bytes = NULL;
+        outValue->s.len = 0;
+        outValue->span.fileBytes = NULL;
+        outValue->span.fileLen = 0;
+        outValue->span.startLine = 0;
+        outValue->span.startColumn = 0;
+        outValue->span.endLine = 0;
+        outValue->span.endColumn = 0;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (SLTCDecodeTypeTag(c, args[0].typeTag, &reflectedTypeId) != 0) {
+        return -1;
+    }
+    if (op == SLTCReflectArg_PTR) {
+        int32_t ptrTypeId = SLTCInternPtrType(c, reflectedTypeId, 0, 0);
+        if (ptrTypeId < 0) {
+            return -1;
+        }
+        SLTCConstEvalSetTypeValue(c, ptrTypeId, outValue);
+        *outIsConst = 1;
+        return 0;
+    }
+    if (op == SLTCReflectArg_SLICE) {
+        int32_t sliceTypeId = SLTCInternSliceType(c, reflectedTypeId, 0, 0, 0);
+        if (sliceTypeId < 0) {
+            return -1;
+        }
+        SLTCConstEvalSetTypeValue(c, sliceTypeId, outValue);
+        *outIsConst = 1;
+        return 0;
+    }
+    if (op == SLTCReflectArg_TYPE_NAME) {
+        return SLTCConstEvalTypeNameValue(c, reflectedTypeId, outValue, outIsConst);
+    }
+    if (reflectedTypeId < 0 || (uint32_t)reflectedTypeId >= c->typeLen
+        || c->types[reflectedTypeId].kind != SLTCType_ALIAS)
+    {
+        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "base() requires an alias type");
+        *outIsConst = 0;
+        return 0;
+    }
+    if (SLTCResolveAliasTypeId(c, reflectedTypeId) != 0) {
+        return -1;
+    }
+    SLTCConstEvalSetTypeValue(c, c->types[reflectedTypeId].baseType, outValue);
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLTCConstEvalPkgFunctionValueExpr(
+    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx*  c;
+    const SLAstNode* n;
+    int32_t          recvNode;
+    const SLAstNode* recv;
+    int32_t          fnIndex;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return -1;
+    }
+    n = &c->ast->nodes[exprNode];
+    if (n->kind != SLAst_FIELD_EXPR) {
+        return 1;
+    }
+    recvNode = SLAstFirstChild(c->ast, exprNode);
+    if (recvNode < 0 || (uint32_t)recvNode >= c->ast->len) {
+        return 1;
+    }
+    recv = &c->ast->nodes[recvNode];
+    if (recv->kind != SLAst_IDENT) {
+        return 1;
+    }
+    if (evalCtx->execCtx != NULL) {
+        int32_t execType = -1;
+        if (SLTCConstLookupExecBindingType(evalCtx, recv->dataStart, recv->dataEnd, &execType)) {
+            return 1;
+        }
+    }
+    if (SLTCLocalFind(c, recv->dataStart, recv->dataEnd) >= 0
+        || SLTCFindFunctionIndex(c, recv->dataStart, recv->dataEnd) >= 0)
+    {
+        return 1;
+    }
+    fnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+        c, recv->dataStart, recv->dataEnd, n->dataStart, n->dataEnd);
+    if (fnIndex < 0) {
+        return 1;
+    }
+    SLMirValueSetFunctionRef(outValue, (uint32_t)fnIndex);
     *outIsConst = 1;
     return 0;
 }
@@ -2456,6 +3139,16 @@ int SLTCEvalConstExprNode(
             return -1;
         }
     }
+    if (kind == SLAst_FIELD_EXPR) {
+        int pkgFnStatus = SLTCConstEvalPkgFunctionValueExpr(
+            evalCtx, exprNode, outValue, outIsConst);
+        if (pkgFnStatus == 0) {
+            return 0;
+        }
+        if (pkgFnStatus < 0) {
+            return -1;
+        }
+    }
     if (kind == SLAst_CALL) {
         int32_t          calleeNode = SLAstFirstChild(c->ast, exprNode);
         const SLAstNode* callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
@@ -2508,13 +3201,21 @@ int SLTCEvalConstExprNode(
     if (kind == SLAst_CAST) {
         return SLTCConstEvalCast(evalCtx, exprNode, outValue, outIsConst);
     }
-    rc = SLCTFEEvalExpr(
+    rc = SLCTFEEvalExprEx(
         c->arena,
         c->ast,
         c->src,
         exprNode,
         SLTCResolveConstIdent,
         SLTCResolveConstCall,
+        evalCtx,
+        SLTCMirConstMakeTuple,
+        evalCtx,
+        SLTCMirConstIndexValue,
+        evalCtx,
+        SLTCMirConstAggGetField,
+        evalCtx,
+        SLTCMirConstAggAddrField,
         evalCtx,
         outValue,
         outIsConst,
@@ -2554,6 +3255,12 @@ int SLTCEvalConstExecInferValueTypeCb(void* ctx, const SLCTFEValue* value, int32
     c = evalCtx->tc;
     if (c == NULL) {
         return -1;
+    }
+    if (value->kind != SLCTFEValue_TYPE && value->typeTag > 0
+        && value->typeTag <= (uint64_t)INT32_MAX && (uint32_t)value->typeTag < c->typeLen)
+    {
+        *outTypeId = (int32_t)value->typeTag;
+        return 0;
     }
     switch (value->kind) {
         case SLCTFEValue_INT:   *outTypeId = c->typeUntypedInt; return *outTypeId >= 0 ? 0 : -1;
@@ -2610,6 +3317,2871 @@ int SLTCEvalConstExecIsOptionalTypeCb(
     return 0;
 }
 
+static int SLTCMirConstResolveTypeRefTypeId(
+    SLTCConstEvalCtx* evalCtx, const SLMirTypeRef* typeRef, int32_t* outTypeId) {
+    SLTypeCheckCtx* c;
+    uint8_t         savedAllowConstNumericTypeName;
+    uint8_t         savedAllowAnytypeParamType;
+    if (outTypeId != NULL) {
+        *outTypeId = -1;
+    }
+    if (evalCtx == NULL || typeRef == NULL || outTypeId == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || typeRef->astNode > INT32_MAX || typeRef->astNode >= c->ast->len) {
+        return -1;
+    }
+    savedAllowConstNumericTypeName = c->allowConstNumericTypeName;
+    savedAllowAnytypeParamType = c->allowAnytypeParamType;
+    c->allowConstNumericTypeName = 1;
+    c->allowAnytypeParamType = 1;
+    if (SLTCResolveTypeNode(c, (int32_t)typeRef->astNode, outTypeId) != 0) {
+        c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+        c->allowAnytypeParamType = savedAllowAnytypeParamType;
+        return -1;
+    }
+    c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+    c->allowAnytypeParamType = savedAllowAnytypeParamType;
+    return 0;
+}
+
+typedef struct {
+    uint32_t    len;
+    uint32_t    _reserved;
+    SLCTFEValue elems[];
+} SLTCMirConstTuple;
+
+typedef struct {
+    int32_t     typeId;
+    uint32_t    fieldCount;
+    SLCTFEValue fields[];
+} SLTCMirConstAggregate;
+
+enum {
+    SL_TC_MIR_CONST_ITER_KIND_SEQUENCE = 1u,
+    SL_TC_MIR_CONST_ITER_KIND_PROTOCOL = 2u,
+};
+
+typedef struct {
+    uint32_t    index;
+    uint16_t    flags;
+    uint8_t     kind;
+    uint8_t     _reserved;
+    int32_t     iterFnIndex;
+    int32_t     nextFnIndex;
+    uint8_t     usePair;
+    uint8_t     _reserved2[3];
+    SLCTFEValue sourceValue;
+    SLCTFEValue iteratorValue;
+    SLCTFEValue currentValue;
+} SLTCMirConstIter;
+
+static const SLTCMirConstTuple* _Nullable SLTCMirConstTupleFromValue(const SLCTFEValue* value) {
+    if (value == NULL || value->kind != SLCTFEValue_ARRAY || value->typeTag != SL_TC_MIR_TUPLE_TAG
+        || value->s.bytes == NULL)
+    {
+        return NULL;
+    }
+    return (const SLTCMirConstTuple*)value->s.bytes;
+}
+
+static int SLTCConstEvalGetConcreteCallArgPackType(
+    SLTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outPackType) {
+    SLTypeCheckCtx*          c;
+    const SLTCCallArgInfo*   callArgs;
+    SLCTFEValue              argValue;
+    const SLCTFEValue*       sourceValue;
+    const SLTCMirConstTuple* tuple;
+    int32_t                  elemTypes[SLTC_MAX_CALL_ARGS];
+    uint32_t                 i;
+    int                      argIsConst = 0;
+    if (outPackType != NULL) {
+        *outPackType = -1;
+    }
+    if (evalCtx == NULL || outPackType == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    callArgs = (const SLTCCallArgInfo*)evalCtx->callArgs;
+    if (c == NULL || callArgs == NULL || callArgIndex >= evalCtx->callArgCount
+        || callArgs[callArgIndex].exprNode < 0
+        || (uint32_t)callArgs[callArgIndex].exprNode >= c->ast->len)
+    {
+        return 1;
+    }
+    if (SLTCEvalConstExprNode(evalCtx, callArgs[callArgIndex].exprNode, &argValue, &argIsConst)
+        != 0)
+    {
+        return -1;
+    }
+    if (!argIsConst) {
+        return 1;
+    }
+    sourceValue = &argValue;
+    if (sourceValue->kind == SLCTFEValue_REFERENCE && sourceValue->s.bytes != NULL) {
+        sourceValue = (const SLCTFEValue*)sourceValue->s.bytes;
+    }
+    tuple = SLTCMirConstTupleFromValue(sourceValue);
+    if (tuple == NULL || tuple->len > SLTC_MAX_CALL_ARGS) {
+        return 1;
+    }
+    for (i = 0; i < tuple->len; i++) {
+        if (SLTCEvalConstExecInferValueTypeCb(evalCtx, &tuple->elems[i], &elemTypes[i]) != 0) {
+            return 1;
+        }
+        if ((elemTypes[i] == c->typeUntypedInt || elemTypes[i] == c->typeUntypedFloat)
+            && SLTCConcretizeInferredType(c, elemTypes[i], &elemTypes[i]) != 0)
+        {
+            return -1;
+        }
+    }
+    *outPackType = SLTCInternPackType(c, elemTypes, tuple->len, 0, 0);
+    return *outPackType >= 0 ? 0 : -1;
+}
+
+static SLTCMirConstIter* _Nullable SLTCMirConstIterFromValue(const SLCTFEValue* value) {
+    const SLCTFEValue* target = value;
+    if (value == NULL) {
+        return NULL;
+    }
+    if (value->kind == SLCTFEValue_REFERENCE && value->s.bytes != NULL) {
+        target = (const SLCTFEValue*)value->s.bytes;
+    }
+    if (target == NULL || target->kind != SLCTFEValue_SPAN || target->typeTag != SL_TC_MIR_ITER_TAG
+        || target->s.bytes == NULL)
+    {
+        return NULL;
+    }
+    return (SLTCMirConstIter*)target->s.bytes;
+}
+
+static const SLTCMirConstAggregate* _Nullable SLTCMirConstAggregateFromValue(
+    const SLCTFEValue* value) {
+    const SLCTFEValue* target = value;
+    if (value == NULL) {
+        return NULL;
+    }
+    if (value->kind == SLCTFEValue_REFERENCE && value->s.bytes != NULL) {
+        target = (const SLCTFEValue*)value->s.bytes;
+    }
+    if (target == NULL || target->kind != SLCTFEValue_AGGREGATE || target->s.bytes == NULL) {
+        return NULL;
+    }
+    return (const SLTCMirConstAggregate*)target->s.bytes;
+}
+
+static SLCTFEValue* _Nullable SLTCMirConstAggregateFieldValuePtr(
+    const SLTCMirConstAggregate* agg, uint32_t fieldIndex) {
+    if (agg == NULL || fieldIndex >= agg->fieldCount) {
+        return NULL;
+    }
+    return (SLCTFEValue*)&agg->fields[fieldIndex];
+}
+
+static const SLCTFEValue* SLTCMirConstValueTargetOrSelf(const SLCTFEValue* value) {
+    if (value != NULL && value->kind == SLCTFEValue_REFERENCE && value->s.bytes != NULL) {
+        return (const SLCTFEValue*)value->s.bytes;
+    }
+    return value;
+}
+
+static void SLTCMirConstSetReference(SLCTFEValue* outValue, SLCTFEValue* target) {
+    if (outValue == NULL) {
+        return;
+    }
+    SLTCConstEvalValueInvalid(outValue);
+    if (target == NULL) {
+        return;
+    }
+    outValue->kind = SLCTFEValue_REFERENCE;
+    outValue->s.bytes = (const uint8_t*)target;
+    outValue->s.len = 0;
+}
+
+static int SLTCMirConstOptionalPayload(const SLCTFEValue* value, const SLCTFEValue** outPayload) {
+    if (outPayload != NULL) {
+        *outPayload = NULL;
+    }
+    if (value == NULL || value->kind != SLCTFEValue_OPTIONAL) {
+        return 0;
+    }
+    if (value->b == 0u || value->s.bytes == NULL) {
+        return 1;
+    }
+    if (outPayload != NULL) {
+        *outPayload = (const SLCTFEValue*)value->s.bytes;
+    }
+    return 1;
+}
+
+static void SLTCMirConstAdaptForInValueBinding(
+    const SLCTFEValue* inValue, int valueRef, SLCTFEValue* outValue) {
+    const SLCTFEValue* target;
+    if (outValue == NULL) {
+        return;
+    }
+    SLTCConstEvalValueInvalid(outValue);
+    if (inValue == NULL) {
+        return;
+    }
+    if (valueRef) {
+        *outValue = *inValue;
+        return;
+    }
+    target = SLTCMirConstValueTargetOrSelf(inValue);
+    *outValue = target != NULL ? *target : *inValue;
+}
+
+static int SLTCMirConstFindExecBindingTypeId(
+    SLTCConstEvalCtx* evalCtx, int32_t sourceNode, int32_t* outTypeId) {
+    SLTypeCheckCtx*  c;
+    const SLAstNode* node;
+    SLCTFEExecCtx*   execCtx;
+    SLCTFEExecEnv*   env;
+    uint8_t          savedAllowConstNumericTypeName;
+    if (outTypeId != NULL) {
+        *outTypeId = -1;
+    }
+    if (evalCtx == NULL || outTypeId == NULL || evalCtx->tc == NULL || evalCtx->execCtx == NULL) {
+        return 0;
+    }
+    c = evalCtx->tc;
+    execCtx = evalCtx->execCtx;
+    if (sourceNode < 0 || (uint32_t)sourceNode >= c->ast->len) {
+        return 0;
+    }
+    node = &c->ast->nodes[sourceNode];
+    if (node->kind != SLAst_IDENT) {
+        return 0;
+    }
+    for (env = execCtx->env; env != NULL; env = env->parent) {
+        uint32_t i;
+        for (i = 0; i < env->bindingLen; i++) {
+            SLCTFEExecBinding* binding = &env->bindings[i];
+            if (binding->nameStart != node->dataStart || binding->nameEnd != node->dataEnd) {
+                continue;
+            }
+            if (binding->typeId >= 0) {
+                *outTypeId = binding->typeId;
+                return 1;
+            }
+            if (binding->typeNode < 0) {
+                return 0;
+            }
+            savedAllowConstNumericTypeName = c->allowConstNumericTypeName;
+            c->allowConstNumericTypeName = 1;
+            if (SLTCResolveTypeNode(c, binding->typeNode, outTypeId) != 0) {
+                c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+                return -1;
+            }
+            c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int SLTCMirConstMakeTuple(
+    void* _Nullable ctx,
+    const SLCTFEValue* elems,
+    uint32_t           elemCount,
+    uint32_t           typeNodeHint,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx*  evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*    c;
+    SLTCMirConstTuple* tuple;
+    size_t             bytes;
+    (void)typeNodeHint;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue != NULL) {
+        SLTCConstEvalValueInvalid(outValue);
+    }
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+    bytes = sizeof(*tuple) + sizeof(SLCTFEValue) * (size_t)elemCount;
+    tuple = (SLTCMirConstTuple*)SLArenaAlloc(
+        c->arena, (uint32_t)bytes, (uint32_t)_Alignof(SLTCMirConstTuple));
+    if (tuple == NULL) {
+        return -1;
+    }
+    tuple->len = elemCount;
+    tuple->_reserved = 0u;
+    if (elemCount != 0u && elems != NULL) {
+        memcpy(tuple->elems, elems, sizeof(SLCTFEValue) * elemCount);
+    }
+    outValue->kind = SLCTFEValue_ARRAY;
+    outValue->i64 = 0;
+    outValue->f64 = 0.0;
+    outValue->b = 0u;
+    outValue->typeTag = SL_TC_MIR_TUPLE_TAG;
+    outValue->s.bytes = (const uint8_t*)tuple;
+    outValue->s.len = elemCount;
+    outValue->span = (SLCTFESpan){ 0 };
+    *outIsConst = 1;
+    return 0;
+}
+
+int SLTCMirConstIndexValue(
+    void* _Nullable ctx,
+    const SLCTFEValue* base,
+    const SLCTFEValue* index,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    const SLTCMirConstTuple* tuple;
+    int64_t                  indexValue = 0;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (base == NULL || index == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    tuple = SLTCMirConstTupleFromValue(base);
+    if (tuple == NULL || SLCTFEValueToInt64(index, &indexValue) != 0 || indexValue < 0
+        || (uint64_t)indexValue >= (uint64_t)tuple->len)
+    {
+        SLTCConstEvalCtx*      evalCtx = (SLTCConstEvalCtx*)ctx;
+        SLTypeCheckCtx*        c;
+        const SLTCCallBinding* binding;
+        const SLTCCallArgInfo* callArgs;
+        int32_t                typeId = -1;
+        int32_t                baseTypeId;
+        uint32_t               paramIndex;
+        uint32_t               ordinal = 0;
+        uint32_t               callArgIndex = UINT32_MAX;
+        uint32_t               i;
+        if (evalCtx == NULL || base->kind != SLCTFEValue_TYPE) {
+            return 0;
+        }
+        c = evalCtx->tc;
+        binding = (const SLTCCallBinding*)evalCtx->callBinding;
+        callArgs = (const SLTCCallArgInfo*)evalCtx->callArgs;
+        if (c == NULL || binding == NULL || callArgs == NULL || evalCtx->callArgCount == 0
+            || evalCtx->callPackParamNameStart >= evalCtx->callPackParamNameEnd
+            || !binding->isVariadic || binding->spreadArgIndex != UINT32_MAX
+            || SLTCDecodeTypeTag(c, base->typeTag, &typeId) != 0)
+        {
+            return 0;
+        }
+        baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+        if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen
+            || c->types[baseTypeId].kind != SLTCType_PACK)
+        {
+            return 0;
+        }
+        paramIndex = binding->fixedCount;
+        for (i = 0; i < evalCtx->callArgCount; i++) {
+            if (binding->argParamIndices[i] != (int32_t)paramIndex) {
+                continue;
+            }
+            if ((int64_t)ordinal == indexValue) {
+                callArgIndex = i;
+                break;
+            }
+            ordinal++;
+        }
+        if (callArgIndex == UINT32_MAX) {
+            return 0;
+        }
+        if (SLTCEvalConstExprNode(evalCtx, callArgs[callArgIndex].exprNode, outValue, outIsConst)
+            != 0)
+        {
+            return -1;
+        }
+        if (*outIsConst) {
+            int32_t elemType = -1;
+            if (SLTCConstEvalGetConcreteCallArgType(evalCtx, callArgIndex, &elemType) == 0) {
+                switch (outValue->kind) {
+                    case SLCTFEValue_INT:
+                    case SLCTFEValue_FLOAT:
+                    case SLCTFEValue_BOOL:
+                    case SLCTFEValue_STRING:
+                        outValue->typeTag = (uint64_t)(uint32_t)elemType;
+                        break;
+                    default: break;
+                }
+            }
+        }
+        return 0;
+    }
+    *outValue = tuple->elems[(uint32_t)indexValue];
+    *outIsConst = 1;
+    return 0;
+}
+
+int SLTCMirConstSequenceLen(
+    void* _Nullable ctx,
+    const SLCTFEValue* base,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx*        evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*          c;
+    const SLCTFEValue*       value = base;
+    const SLTCMirConstTuple* tuple;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (base == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx != NULL ? evalCtx->tc : NULL;
+    if (base->kind == SLCTFEValue_REFERENCE && base->s.bytes != NULL) {
+        value = (const SLCTFEValue*)base->s.bytes;
+    }
+    if (value->kind == SLCTFEValue_STRING) {
+        outValue->kind = SLCTFEValue_INT;
+        outValue->i64 = (int64_t)value->s.len;
+        *outIsConst = 1;
+        return 0;
+    }
+    tuple = SLTCMirConstTupleFromValue(value);
+    if (tuple != NULL) {
+        outValue->kind = SLCTFEValue_INT;
+        outValue->i64 = (int64_t)tuple->len;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (c != NULL && value->kind == SLCTFEValue_TYPE) {
+        int32_t typeId = -1;
+        int32_t baseTypeId;
+        if (SLTCDecodeTypeTag(c, value->typeTag, &typeId) == 0) {
+            baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+            if (baseTypeId >= 0 && (uint32_t)baseTypeId < c->typeLen) {
+                const SLTCType* t = &c->types[baseTypeId];
+                if (t->kind == SLTCType_PACK) {
+                    outValue->kind = SLCTFEValue_INT;
+                    outValue->i64 = (int64_t)t->fieldCount;
+                    *outIsConst = 1;
+                    return 0;
+                }
+                if (t->kind == SLTCType_ARRAY) {
+                    outValue->kind = SLCTFEValue_INT;
+                    outValue->i64 = (int64_t)t->arrayLen;
+                    *outIsConst = 1;
+                    return 0;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+int SLTCMirConstIterInit(
+    void* _Nullable ctx,
+    uint32_t           sourceNode,
+    const SLCTFEValue* source,
+    uint16_t           flags,
+    SLCTFEValue*       outIter,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx*        evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*          c;
+    const SLCTFEValue*       sourceValue = source;
+    const SLTCMirConstTuple* tuple;
+    SLTCMirConstIter*        iter;
+    SLCTFEValue*             target;
+    int32_t                  sourceType = -1;
+    int32_t                  iterType = -1;
+    int32_t                  iterPtrType = -1;
+    int32_t                  iterFn = -1;
+    int32_t                  nextValueFn = -1;
+    int32_t                  nextKeyFn = -1;
+    int32_t                  nextPairFn = -1;
+    int32_t                  valueType = -1;
+    int32_t                  keyType = -1;
+    const SLAstNode*         sourceAstNode = NULL;
+    int                      hasKey;
+    int                      valueDiscard;
+    int                      valueRef;
+    int                      rc;
+    int                      iterIsConst = 0;
+    SLCTFEValue              iterValue;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (evalCtx == NULL || evalCtx->tc == NULL || source == NULL || outIter == NULL
+        || outIsConst == NULL)
+    {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if ((flags & SLMirIterFlag_KEY_REF) != 0u || (flags & SLMirIterFlag_VALUE_REF) != 0u) {
+        if ((flags & SLMirIterFlag_VALUE_REF) == 0u) {
+            return 0;
+        }
+    }
+    if (source->kind == SLCTFEValue_REFERENCE && source->s.bytes != NULL) {
+        sourceValue = (const SLCTFEValue*)source->s.bytes;
+    }
+    tuple = SLTCMirConstTupleFromValue(sourceValue);
+    iter = (SLTCMirConstIter*)SLArenaAlloc(
+        c->arena, sizeof(*iter), (uint32_t)_Alignof(SLTCMirConstIter));
+    target = (SLCTFEValue*)SLArenaAlloc(c->arena, sizeof(*target), (uint32_t)_Alignof(SLCTFEValue));
+    if (iter == NULL || target == NULL) {
+        return -1;
+    }
+    memset(iter, 0, sizeof(*iter));
+    iter->flags = flags;
+    iter->sourceValue = *source;
+    iter->iterFnIndex = -1;
+    iter->nextFnIndex = -1;
+    hasKey = (flags & SLMirIterFlag_HAS_KEY) != 0u;
+    valueDiscard = (flags & SLMirIterFlag_VALUE_DISCARD) != 0u;
+    valueRef = (flags & SLMirIterFlag_VALUE_REF) != 0u;
+    if (sourceValue->kind == SLCTFEValue_STRING || tuple != NULL) {
+        iter->kind = SL_TC_MIR_CONST_ITER_KIND_SEQUENCE;
+    } else {
+        if (sourceNode < c->ast->len) {
+            sourceAstNode = &c->ast->nodes[sourceNode];
+        }
+        rc = SLTCMirConstFindExecBindingTypeId(evalCtx, (int32_t)sourceNode, &sourceType);
+        if (rc < 0) {
+            return -1;
+        }
+        if (rc == 0 && SLTCTypeExpr(c, (int32_t)sourceNode, &sourceType) != 0) {
+            return -1;
+        }
+        rc = SLTCResolveForInIterator(c, (int32_t)sourceNode, sourceType, &iterFn, &iterType);
+        if (rc != 0) {
+            return 0;
+        }
+        iterPtrType = SLTCInternPtrType(
+            c,
+            iterType,
+            sourceAstNode != NULL ? sourceAstNode->start : 0u,
+            sourceAstNode != NULL ? sourceAstNode->end : 0u);
+        if (iterPtrType < 0) {
+            return -1;
+        }
+        if (hasKey && valueDiscard) {
+            rc = SLTCResolveForInNextKey(c, iterPtrType, &keyType, &nextKeyFn);
+            if (rc == 1 || rc == 2) {
+                rc = SLTCResolveForInNextKeyAndValue(
+                    c, iterPtrType, SLTCForInValueMode_ANY, &keyType, &valueType, &nextPairFn);
+            }
+            if (rc != 0) {
+                return 0;
+            }
+            iter->usePair = nextPairFn >= 0 ? 1u : 0u;
+            iter->nextFnIndex = nextPairFn >= 0 ? nextPairFn : nextKeyFn;
+        } else if (hasKey) {
+            rc = SLTCResolveForInNextKeyAndValue(
+                c,
+                iterPtrType,
+                valueDiscard ? SLTCForInValueMode_ANY
+                             : (valueRef ? SLTCForInValueMode_REF : SLTCForInValueMode_VALUE),
+                &keyType,
+                &valueType,
+                &nextPairFn);
+            if (rc != 0) {
+                return 0;
+            }
+            iter->usePair = 1u;
+            iter->nextFnIndex = nextPairFn;
+        } else {
+            rc = SLTCResolveForInNextValue(
+                c,
+                iterPtrType,
+                valueDiscard ? SLTCForInValueMode_ANY
+                             : (valueRef ? SLTCForInValueMode_REF : SLTCForInValueMode_VALUE),
+                &valueType,
+                &nextValueFn);
+            if (rc == 1 || rc == 2) {
+                rc = SLTCResolveForInNextKeyAndValue(
+                    c,
+                    iterPtrType,
+                    valueDiscard ? SLTCForInValueMode_ANY
+                                 : (valueRef ? SLTCForInValueMode_REF : SLTCForInValueMode_VALUE),
+                    &keyType,
+                    &valueType,
+                    &nextPairFn);
+            }
+            if (rc != 0) {
+                return 0;
+            }
+            iter->usePair = nextPairFn >= 0 ? 1u : 0u;
+            iter->nextFnIndex = nextPairFn >= 0 ? nextPairFn : nextValueFn;
+        }
+        if (iter->nextFnIndex < 0) {
+            return 0;
+        }
+        SLTCConstEvalValueInvalid(&iterValue);
+        if (SLTCInvokeConstFunctionByIndex(
+                evalCtx,
+                c->funcs[iterFn].nameStart,
+                c->funcs[iterFn].nameEnd,
+                iterFn,
+                source,
+                1u,
+                NULL,
+                0u,
+                NULL,
+                0u,
+                0u,
+                &iterValue,
+                &iterIsConst)
+            != 0)
+        {
+            return -1;
+        }
+        if (!iterIsConst) {
+            return 0;
+        }
+        iter->kind = SL_TC_MIR_CONST_ITER_KIND_PROTOCOL;
+        iter->iterFnIndex = iterFn;
+        iter->iteratorValue = iterValue;
+    }
+    target->kind = SLCTFEValue_SPAN;
+    target->typeTag = SL_TC_MIR_ITER_TAG;
+    target->s.bytes = (const uint8_t*)iter;
+    target->s.len = 0;
+    target->span = (SLCTFESpan){ 0 };
+    outIter->kind = SLCTFEValue_REFERENCE;
+    outIter->s.bytes = (const uint8_t*)target;
+    outIter->s.len = 0;
+    outIter->typeTag = 0;
+    outIter->span = (SLCTFESpan){ 0 };
+    *outIsConst = 1;
+    return 0;
+}
+
+int SLTCMirConstIterNext(
+    void* _Nullable ctx,
+    const SLCTFEValue* iterValue,
+    uint16_t           flags,
+    int*               outHasItem,
+    SLCTFEValue*       outKey,
+    int*               outKeyIsConst,
+    SLCTFEValue*       outValue,
+    int*               outValueIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx*        evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*          c;
+    SLTCMirConstIter*        iter;
+    const SLCTFEValue*       sourceValue;
+    const SLTCMirConstTuple* tuple;
+    const SLCTFEValue*       payload = NULL;
+    SLCTFEValue              callResult;
+    SLCTFEValue              iterRef;
+    const SLCTFEValue*       pairValue;
+    const SLTCMirConstTuple* pairTuple;
+    int                      isConst = 0;
+    (void)diag;
+    if (outHasItem != NULL) {
+        *outHasItem = 0;
+    }
+    if (outKeyIsConst != NULL) {
+        *outKeyIsConst = 0;
+    }
+    if (outValueIsConst != NULL) {
+        *outValueIsConst = 0;
+    }
+    if (evalCtx == NULL || iterValue == NULL || outHasItem == NULL || outKey == NULL
+        || outKeyIsConst == NULL || outValue == NULL || outValueIsConst == NULL)
+    {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if ((flags & SLMirIterFlag_KEY_REF) != 0u) {
+        return 0;
+    }
+    iter = SLTCMirConstIterFromValue(iterValue);
+    if (iter == NULL) {
+        return 0;
+    }
+    if (iter->kind == SL_TC_MIR_CONST_ITER_KIND_PROTOCOL) {
+        if (c == NULL || iter->nextFnIndex < 0 || (uint32_t)iter->nextFnIndex >= c->funcLen) {
+            return 0;
+        }
+        SLTCConstEvalValueInvalid(&callResult);
+        SLTCMirConstSetReference(&iterRef, &iter->iteratorValue);
+        if (SLTCInvokeConstFunctionByIndex(
+                evalCtx,
+                c->funcs[iter->nextFnIndex].nameStart,
+                c->funcs[iter->nextFnIndex].nameEnd,
+                iter->nextFnIndex,
+                &iterRef,
+                1u,
+                NULL,
+                0u,
+                NULL,
+                0u,
+                0u,
+                &callResult,
+                &isConst)
+            != 0)
+        {
+            return -1;
+        }
+        if (!isConst) {
+            return 0;
+        }
+        if (callResult.kind == SLCTFEValue_NULL) {
+            *outKeyIsConst = 1;
+            *outValueIsConst = 1;
+            return 0;
+        }
+        if (callResult.kind == SLCTFEValue_OPTIONAL) {
+            if (!SLTCMirConstOptionalPayload(&callResult, &payload)) {
+                return 0;
+            }
+            if (callResult.b == 0u || payload == NULL) {
+                *outKeyIsConst = 1;
+                *outValueIsConst = 1;
+                return 0;
+            }
+        } else {
+            payload = &callResult;
+        }
+        if (iter->usePair) {
+            pairValue = SLTCMirConstValueTargetOrSelf(payload);
+            pairTuple = SLTCMirConstTupleFromValue(pairValue);
+            if (pairTuple == NULL || pairTuple->len != 2u) {
+                return 0;
+            }
+            if ((flags & SLMirIterFlag_HAS_KEY) != 0u) {
+                *outKey = pairTuple->elems[0];
+                *outKeyIsConst = 1;
+            } else {
+                *outKeyIsConst = 1;
+            }
+            if ((flags & SLMirIterFlag_VALUE_DISCARD) == 0u) {
+                SLTCMirConstAdaptForInValueBinding(
+                    &pairTuple->elems[1], (flags & SLMirIterFlag_VALUE_REF) != 0u, outValue);
+                *outValueIsConst = 1;
+            } else {
+                *outValueIsConst = 1;
+            }
+        } else if ((flags & SLMirIterFlag_HAS_KEY) != 0u) {
+            *outKey = *payload;
+            *outKeyIsConst = 1;
+            *outValueIsConst = 1;
+        } else {
+            SLTCMirConstAdaptForInValueBinding(
+                payload, (flags & SLMirIterFlag_VALUE_REF) != 0u, outValue);
+            *outKeyIsConst = 1;
+            *outValueIsConst = 1;
+        }
+        *outHasItem = 1;
+        return 0;
+    }
+    sourceValue = &iter->sourceValue;
+    if (sourceValue->kind == SLCTFEValue_REFERENCE && sourceValue->s.bytes != NULL) {
+        sourceValue = (const SLCTFEValue*)sourceValue->s.bytes;
+    }
+    tuple = SLTCMirConstTupleFromValue(sourceValue);
+    if (sourceValue->kind == SLCTFEValue_STRING) {
+        if (iter->index >= sourceValue->s.len) {
+            *outKeyIsConst = 1;
+            *outValueIsConst = 1;
+            return 0;
+        }
+        if ((flags & SLMirIterFlag_HAS_KEY) != 0u) {
+            outKey->kind = SLCTFEValue_INT;
+            outKey->i64 = (int64_t)iter->index;
+            *outKeyIsConst = 1;
+        } else {
+            *outKeyIsConst = 1;
+        }
+        if ((flags & SLMirIterFlag_VALUE_DISCARD) == 0u) {
+            iter->currentValue.kind = SLCTFEValue_INT;
+            iter->currentValue.i64 = (int64_t)sourceValue->s.bytes[iter->index];
+            if ((flags & SLMirIterFlag_VALUE_REF) != 0u) {
+                SLTCMirConstSetReference(outValue, &iter->currentValue);
+            } else {
+                *outValue = iter->currentValue;
+            }
+            *outValueIsConst = 1;
+        } else {
+            *outValueIsConst = 1;
+        }
+        *outHasItem = 1;
+        iter->index++;
+        return 0;
+    }
+    if (tuple != NULL) {
+        if (iter->index >= tuple->len) {
+            *outKeyIsConst = 1;
+            *outValueIsConst = 1;
+            return 0;
+        }
+        if ((flags & SLMirIterFlag_HAS_KEY) != 0u) {
+            outKey->kind = SLCTFEValue_INT;
+            outKey->i64 = (int64_t)iter->index;
+            *outKeyIsConst = 1;
+        } else {
+            *outKeyIsConst = 1;
+        }
+        if ((flags & SLMirIterFlag_VALUE_DISCARD) == 0u) {
+            if ((flags & SLMirIterFlag_VALUE_REF) != 0u) {
+                SLTCMirConstSetReference(outValue, (SLCTFEValue*)&tuple->elems[iter->index]);
+            } else {
+                *outValue = tuple->elems[iter->index];
+            }
+            *outValueIsConst = 1;
+        } else {
+            *outValueIsConst = 1;
+        }
+        *outHasItem = 1;
+        iter->index++;
+        return 0;
+    }
+    return 0;
+}
+
+int SLTCEvalConstForInIndexCb(
+    void* _Nullable ctx,
+    SLCTFEExecCtx*     execCtx,
+    const SLCTFEValue* sourceValue,
+    uint32_t           index,
+    int                byRef,
+    SLCTFEValue*       outValue,
+    int*               outIsConst) {
+    const SLCTFEValue*       value = sourceValue;
+    const SLTCMirConstTuple* tuple;
+    (void)ctx;
+    (void)execCtx;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (sourceValue == NULL || outValue == NULL || outIsConst == NULL || byRef) {
+        return 0;
+    }
+    if (sourceValue->kind == SLCTFEValue_REFERENCE && sourceValue->s.bytes != NULL) {
+        value = (const SLCTFEValue*)sourceValue->s.bytes;
+    }
+    tuple = SLTCMirConstTupleFromValue(value);
+    if (tuple == NULL || index >= tuple->len) {
+        return 0;
+    }
+    *outValue = tuple->elems[index];
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLTCMirConstResolveAggregateType(
+    SLTypeCheckCtx* c, int32_t typeId, int32_t* outBaseTypeId) {
+    int32_t         baseTypeId = -1;
+    const SLTCType* t;
+    if (outBaseTypeId != NULL) {
+        *outBaseTypeId = -1;
+    }
+    if (c == NULL) {
+        return 0;
+    }
+    baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+    if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen) {
+        return 0;
+    }
+    t = &c->types[baseTypeId];
+    if (t->kind == SLTCType_NAMED && t->fieldCount == 0u) {
+        int32_t  namedIndex = -1;
+        uint32_t i;
+        for (i = 0; i < c->namedTypeLen; i++) {
+            if (c->namedTypes[i].typeId == baseTypeId) {
+                namedIndex = (int32_t)i;
+                break;
+            }
+        }
+        if (namedIndex >= 0 && SLTCResolveNamedTypeFields(c, (uint32_t)namedIndex) != 0) {
+            return 0;
+        }
+        t = &c->types[baseTypeId];
+    }
+    if (t->kind != SLTCType_NAMED && t->kind != SLTCType_ANON_STRUCT) {
+        return 0;
+    }
+    if (outBaseTypeId != NULL) {
+        *outBaseTypeId = baseTypeId;
+    }
+    return 1;
+}
+
+static int SLTCMirConstAggregateLookupFieldIndex(
+    SLTypeCheckCtx* c,
+    int32_t         typeId,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    uint32_t*       outFieldIndex) {
+    int32_t  baseTypeId = -1;
+    int32_t  fieldType = -1;
+    uint32_t absFieldIndex = UINT32_MAX;
+    if (outFieldIndex != NULL) {
+        *outFieldIndex = UINT32_MAX;
+    }
+    if (!SLTCMirConstResolveAggregateType(c, typeId, &baseTypeId)) {
+        return 0;
+    }
+    if (SLTCFieldLookup(c, baseTypeId, nameStart, nameEnd, &fieldType, &absFieldIndex) != 0) {
+        return 0;
+    }
+    if (absFieldIndex < c->types[baseTypeId].fieldStart) {
+        return 0;
+    }
+    absFieldIndex -= c->types[baseTypeId].fieldStart;
+    if (absFieldIndex >= c->types[baseTypeId].fieldCount) {
+        return 0;
+    }
+    if (outFieldIndex != NULL) {
+        *outFieldIndex = absFieldIndex;
+    }
+    return 1;
+}
+
+static int SLTCMirConstZeroInitTypeId(
+    SLTCConstEvalCtx* evalCtx, int32_t typeId, SLCTFEValue* outValue, int* outIsConst);
+
+static int SLTCMirConstMakeAggregateValue(
+    SLTCConstEvalCtx* evalCtx, int32_t typeId, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx*        c;
+    int32_t                baseTypeId = -1;
+    uint32_t               fieldCount = 0;
+    uint32_t               i;
+    size_t                 bytes;
+    SLTCMirConstAggregate* agg;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue != NULL) {
+        SLTCConstEvalValueInvalid(outValue);
+    }
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (!SLTCMirConstResolveAggregateType(c, typeId, &baseTypeId)) {
+        return 0;
+    }
+    fieldCount = c->types[baseTypeId].fieldCount;
+    bytes = sizeof(*agg) + sizeof(SLCTFEValue) * (size_t)fieldCount;
+    agg = (SLTCMirConstAggregate*)SLArenaAlloc(
+        c->arena, (uint32_t)bytes, (uint32_t)_Alignof(SLTCMirConstAggregate));
+    if (agg == NULL) {
+        return -1;
+    }
+    agg->typeId = baseTypeId;
+    agg->fieldCount = fieldCount;
+    memset(agg->fields, 0, sizeof(SLCTFEValue) * fieldCount);
+    for (i = 0; i < fieldCount; i++) {
+        uint32_t fieldIndex = c->types[baseTypeId].fieldStart + i;
+        if (fieldIndex >= c->fieldLen
+            || SLTCMirConstZeroInitTypeId(
+                   evalCtx, c->fields[fieldIndex].typeId, &agg->fields[i], outIsConst)
+                   != 0)
+        {
+            return -1;
+        }
+        if (!*outIsConst) {
+            return 0;
+        }
+    }
+    outValue->kind = SLCTFEValue_AGGREGATE;
+    outValue->typeTag = (uint64_t)(uint32_t)baseTypeId;
+    outValue->s.bytes = (const uint8_t*)agg;
+    outValue->s.len = fieldCount;
+    *outIsConst = 1;
+    return 0;
+}
+
+int SLTCMirConstAggGetField(
+    void* _Nullable ctx,
+    const SLCTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx*            evalCtx = (SLTCConstEvalCtx*)ctx;
+    const SLTCMirConstAggregate* agg;
+    uint32_t                     fieldIndex = UINT32_MAX;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue != NULL) {
+        SLTCConstEvalValueInvalid(outValue);
+    }
+    if (evalCtx == NULL || evalCtx->tc == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (base != NULL && base->kind == SLCTFEValue_SPAN
+        && base->typeTag == SL_TC_MIR_IMPORT_ALIAS_TAG)
+    {
+        SLTypeCheckCtx* c = evalCtx->tc;
+        const uint8_t*  srcBytes = c != NULL ? (const uint8_t*)c->src.ptr : NULL;
+        const uint8_t*  aliasBytes = base->span.fileBytes;
+        uint32_t        aliasLen = base->span.fileLen;
+        uint32_t        aliasStart;
+        uint32_t        aliasEnd;
+        int32_t         fnIndex;
+        if (c == NULL || srcBytes == NULL || aliasBytes == NULL || aliasLen == 0u
+            || aliasBytes < srcBytes || (uint64_t)(aliasBytes - srcBytes) > UINT32_MAX
+            || (uint64_t)(aliasBytes - srcBytes) + aliasLen > c->src.len)
+        {
+            return 0;
+        }
+        aliasStart = (uint32_t)(aliasBytes - srcBytes);
+        aliasEnd = aliasStart + aliasLen;
+        fnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+            c, aliasStart, aliasEnd, nameStart, nameEnd);
+        if (fnIndex < 0) {
+            return 0;
+        }
+        SLMirValueSetFunctionRef(outValue, (uint32_t)fnIndex);
+        *outIsConst = 1;
+        return 0;
+    }
+    agg = SLTCMirConstAggregateFromValue(base);
+    if (agg == NULL
+        || !SLTCMirConstAggregateLookupFieldIndex(
+            evalCtx->tc, agg->typeId, nameStart, nameEnd, &fieldIndex))
+    {
+        return 0;
+    }
+    {
+        SLCTFEValue* fieldValue = SLTCMirConstAggregateFieldValuePtr(agg, fieldIndex);
+        if (fieldValue == NULL) {
+            return 0;
+        }
+        *outValue = *fieldValue;
+    }
+    *outIsConst = 1;
+    return 0;
+}
+
+int SLTCMirConstAggAddrField(
+    void* _Nullable ctx,
+    const SLCTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx*            evalCtx = (SLTCConstEvalCtx*)ctx;
+    const SLTCMirConstAggregate* agg;
+    uint32_t                     fieldIndex = UINT32_MAX;
+    SLCTFEValue*                 fieldValue;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue != NULL) {
+        SLTCConstEvalValueInvalid(outValue);
+    }
+    if (evalCtx == NULL || evalCtx->tc == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    agg = SLTCMirConstAggregateFromValue(base);
+    if (agg == NULL
+        || !SLTCMirConstAggregateLookupFieldIndex(
+            evalCtx->tc, agg->typeId, nameStart, nameEnd, &fieldIndex))
+    {
+        return 0;
+    }
+    fieldValue = SLTCMirConstAggregateFieldValuePtr(agg, fieldIndex);
+    if (fieldValue == NULL) {
+        return 0;
+    }
+    SLTCMirConstSetReference(outValue, fieldValue);
+    *outIsConst = 1;
+    return 0;
+}
+
+static int SLTCMirConstZeroInitTypeId(
+    SLTCConstEvalCtx* evalCtx, int32_t typeId, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx* c;
+    int32_t         baseTypeId;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue != NULL) {
+        SLTCConstEvalValueInvalid(outValue);
+    }
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+    baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+    if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen) {
+        return 0;
+    }
+    if (SLTCIsIntegerType(c, baseTypeId)) {
+        outValue->kind = SLCTFEValue_INT;
+        outValue->i64 = 0;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (SLTCIsFloatType(c, baseTypeId)) {
+        outValue->kind = SLCTFEValue_FLOAT;
+        outValue->f64 = 0.0;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (SLTCIsBoolType(c, baseTypeId)) {
+        outValue->kind = SLCTFEValue_BOOL;
+        outValue->b = 0u;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (SLTCIsStringLikeType(c, baseTypeId)) {
+        outValue->kind = SLCTFEValue_STRING;
+        outValue->s.bytes = NULL;
+        outValue->s.len = 0;
+        outValue->typeTag = (uint64_t)(uint32_t)typeId;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (c->types[baseTypeId].kind == SLTCType_OPTIONAL) {
+        if (SLTCConstEvalSetOptionalNoneValue(c, baseTypeId, outValue) != 0) {
+            return -1;
+        }
+        *outIsConst = 1;
+        return 0;
+    }
+    if (c->types[baseTypeId].kind == SLTCType_PTR || c->types[baseTypeId].kind == SLTCType_REF
+        || c->types[baseTypeId].kind == SLTCType_FUNCTION
+        || c->types[baseTypeId].kind == SLTCType_NULL)
+    {
+        SLTCConstEvalSetNullValue(outValue);
+        *outIsConst = 1;
+        return 0;
+    }
+    return SLTCMirConstMakeAggregateValue(evalCtx, baseTypeId, outValue, outIsConst);
+}
+
+int SLTCMirConstZeroInitLocal(
+    void* _Nullable ctx,
+    const SLMirTypeRef* typeRef,
+    SLCTFEValue*        outValue,
+    int*                outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    int32_t           typeId = -1;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue != NULL) {
+        SLTCConstEvalValueInvalid(outValue);
+    }
+    if (evalCtx == NULL || typeRef == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (evalCtx->tc == NULL || SLTCMirConstResolveTypeRefTypeId(evalCtx, typeRef, &typeId) != 0) {
+        return -1;
+    }
+    return SLTCMirConstZeroInitTypeId(evalCtx, typeId, outValue, outIsConst);
+}
+
+int SLTCMirConstCoerceValueForType(
+    void* _Nullable ctx,
+    const SLMirTypeRef* typeRef,
+    SLCTFEValue*        inOutValue,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*   c;
+    int32_t           typeId = -1;
+    int32_t           baseTypeId;
+    (void)diag;
+    if (evalCtx == NULL || typeRef == NULL || inOutValue == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || SLTCMirConstResolveTypeRefTypeId(evalCtx, typeRef, &typeId) != 0) {
+        return -1;
+    }
+    baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+    if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen) {
+        return 0;
+    }
+    if ((c->types[baseTypeId].kind == SLTCType_NAMED
+         || c->types[baseTypeId].kind == SLTCType_ANON_STRUCT)
+        && inOutValue->kind == SLCTFEValue_AGGREGATE)
+    {
+        if (inOutValue->typeTag == (uint64_t)(uint32_t)baseTypeId) {
+            return 0;
+        }
+        return 0;
+    }
+    if (c->types[baseTypeId].kind == SLTCType_OPTIONAL) {
+        SLCTFEValue wrapped;
+        if (inOutValue->kind == SLCTFEValue_OPTIONAL) {
+            if (inOutValue->typeTag > 0 && inOutValue->typeTag <= (uint64_t)INT32_MAX
+                && (uint32_t)inOutValue->typeTag < c->typeLen
+                && (int32_t)inOutValue->typeTag == baseTypeId)
+            {
+                return 0;
+            }
+            if (inOutValue->b == 0u) {
+                if (SLTCConstEvalSetOptionalNoneValue(c, baseTypeId, &wrapped) != 0) {
+                    return -1;
+                }
+            } else if (inOutValue->s.bytes == NULL) {
+                return 0;
+            } else if (
+                SLTCConstEvalSetOptionalSomeValue(
+                    c, baseTypeId, (const SLCTFEValue*)inOutValue->s.bytes, &wrapped)
+                != 0)
+            {
+                return -1;
+            }
+            *inOutValue = wrapped;
+            return 0;
+        }
+        if (inOutValue->kind == SLCTFEValue_NULL) {
+            if (SLTCConstEvalSetOptionalNoneValue(c, baseTypeId, &wrapped) != 0) {
+                return -1;
+            }
+            *inOutValue = wrapped;
+            return 0;
+        }
+        if (SLTCConstEvalSetOptionalSomeValue(c, baseTypeId, inOutValue, &wrapped) != 0) {
+            return -1;
+        }
+        *inOutValue = wrapped;
+        return 0;
+    }
+    if (SLTCIsIntegerType(c, baseTypeId)) {
+        if (inOutValue->kind == SLCTFEValue_BOOL) {
+            inOutValue->kind = SLCTFEValue_INT;
+            inOutValue->i64 = inOutValue->b ? 1 : 0;
+        } else if (inOutValue->kind == SLCTFEValue_FLOAT) {
+            inOutValue->kind = SLCTFEValue_INT;
+            inOutValue->i64 = (int64_t)inOutValue->f64;
+            inOutValue->f64 = 0.0;
+        } else if (inOutValue->kind == SLCTFEValue_NULL) {
+            inOutValue->kind = SLCTFEValue_INT;
+            inOutValue->i64 = 0;
+        }
+        return 0;
+    }
+    if (SLTCIsFloatType(c, baseTypeId)) {
+        if (inOutValue->kind == SLCTFEValue_INT) {
+            inOutValue->kind = SLCTFEValue_FLOAT;
+            inOutValue->f64 = (double)inOutValue->i64;
+            inOutValue->i64 = 0;
+        } else if (inOutValue->kind == SLCTFEValue_BOOL) {
+            inOutValue->kind = SLCTFEValue_FLOAT;
+            inOutValue->f64 = inOutValue->b ? 1.0 : 0.0;
+            inOutValue->i64 = 0;
+        } else if (inOutValue->kind == SLCTFEValue_NULL) {
+            inOutValue->kind = SLCTFEValue_FLOAT;
+            inOutValue->f64 = 0.0;
+        }
+        return 0;
+    }
+    if (SLTCIsBoolType(c, baseTypeId)) {
+        if (inOutValue->kind == SLCTFEValue_INT) {
+            inOutValue->kind = SLCTFEValue_BOOL;
+            inOutValue->b = inOutValue->i64 != 0 ? 1u : 0u;
+            inOutValue->i64 = 0;
+        } else if (inOutValue->kind == SLCTFEValue_FLOAT) {
+            inOutValue->kind = SLCTFEValue_BOOL;
+            inOutValue->b = inOutValue->f64 != 0.0 ? 1u : 0u;
+            inOutValue->f64 = 0.0;
+        } else if (inOutValue->kind == SLCTFEValue_NULL) {
+            inOutValue->kind = SLCTFEValue_BOOL;
+            inOutValue->b = 0u;
+        }
+        return 0;
+    }
+    if (SLTCIsStringLikeType(c, typeId)) {
+        if (inOutValue->kind == SLCTFEValue_STRING || inOutValue->kind == SLCTFEValue_NULL) {
+            inOutValue->typeTag = (uint64_t)(uint32_t)typeId;
+        }
+        return 0;
+    }
+    return 0;
+}
+
+enum {
+    SL_TC_MIR_CONST_FN_NONE = UINT32_MAX,
+};
+
+int SLTCMirConstLowerFunction(
+    SLTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex);
+
+int SLTCMirConstInitLowerCtx(SLTCConstEvalCtx* evalCtx, SLTCMirConstLowerCtx* _Nonnull outCtx) {
+    SLTypeCheckCtx* c;
+    uint32_t*       tcToMir;
+    uint8_t*        loweringFns;
+    uint32_t*       topConstToMir;
+    uint8_t*        loweringTopConsts;
+    uint32_t        i;
+    if (outCtx == NULL) {
+        return -1;
+    }
+    memset(outCtx, 0, sizeof(*outCtx));
+    if (evalCtx == NULL || evalCtx->tc == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    tcToMir = (uint32_t*)SLArenaAlloc(
+        c->arena, sizeof(uint32_t) * c->funcLen, (uint32_t)_Alignof(uint32_t));
+    loweringFns = (uint8_t*)SLArenaAlloc(
+        c->arena, sizeof(uint8_t) * c->funcLen, (uint32_t)_Alignof(uint8_t));
+    topConstToMir = (uint32_t*)SLArenaAlloc(
+        c->arena, sizeof(uint32_t) * c->ast->len, (uint32_t)_Alignof(uint32_t));
+    loweringTopConsts = (uint8_t*)SLArenaAlloc(
+        c->arena, sizeof(uint8_t) * c->ast->len, (uint32_t)_Alignof(uint8_t));
+    if (tcToMir == NULL || loweringFns == NULL || topConstToMir == NULL
+        || loweringTopConsts == NULL)
+    {
+        return -1;
+    }
+    for (i = 0; i < c->funcLen; i++) {
+        tcToMir[i] = SL_TC_MIR_CONST_FN_NONE;
+        loweringFns[i] = 0u;
+    }
+    for (i = 0; i < c->ast->len; i++) {
+        topConstToMir[i] = SL_TC_MIR_CONST_FN_NONE;
+        loweringTopConsts[i] = 0u;
+    }
+    SLMirProgramBuilderInit(&outCtx->builder, c->arena);
+    outCtx->evalCtx = evalCtx;
+    outCtx->tcToMir = tcToMir;
+    outCtx->loweringFns = loweringFns;
+    outCtx->topConstToMir = topConstToMir;
+    outCtx->loweringTopConsts = loweringTopConsts;
+    outCtx->diag = c->diag;
+    return 0;
+}
+
+static int SLTCMirConstGetFunctionBody(
+    SLTypeCheckCtx* c, int32_t fnIndex, int32_t* outFnNode, int32_t* outBodyNode) {
+    int32_t child;
+    int32_t fnNode;
+    int32_t bodyNode = -1;
+    if (outFnNode != NULL) {
+        *outFnNode = -1;
+    }
+    if (outBodyNode != NULL) {
+        *outBodyNode = -1;
+    }
+    if (c == NULL || outFnNode == NULL || outBodyNode == NULL || fnIndex < 0
+        || (uint32_t)fnIndex >= c->funcLen)
+    {
+        return 0;
+    }
+    fnNode = c->funcs[(uint32_t)fnIndex].defNode;
+    if (fnNode < 0 || (uint32_t)fnNode >= c->ast->len || c->ast->nodes[fnNode].kind != SLAst_FN) {
+        return 0;
+    }
+    child = SLAstFirstChild(c->ast, fnNode);
+    while (child >= 0) {
+        if (c->ast->nodes[child].kind == SLAst_BLOCK) {
+            if (bodyNode >= 0) {
+                return 0;
+            }
+            bodyNode = child;
+        }
+        child = SLAstNextSibling(c->ast, child);
+    }
+    if (bodyNode < 0) {
+        return 0;
+    }
+    *outFnNode = fnNode;
+    *outBodyNode = bodyNode;
+    return 1;
+}
+
+static int SLTCMirConstMatchPlainCallNode(
+    const SLTypeCheckCtx* tc,
+    const SLMirSymbolRef* symbol,
+    int32_t               rootNode,
+    uint32_t              encodedArgCount,
+    int32_t* _Nonnull outCallNode,
+    int32_t* _Nonnull outCalleeNode) {
+    int32_t  stack[256];
+    uint32_t stackLen = 0;
+    int      found = 0;
+    if (outCallNode != NULL) {
+        *outCallNode = -1;
+    }
+    if (outCalleeNode != NULL) {
+        *outCalleeNode = -1;
+    }
+    if (tc == NULL || symbol == NULL || outCallNode == NULL || outCalleeNode == NULL || rootNode < 0
+        || (uint32_t)rootNode >= tc->ast->len)
+    {
+        return 0;
+    }
+    stack[stackLen++] = rootNode;
+    while (stackLen > 0) {
+        int32_t          nodeId = stack[--stackLen];
+        const SLAstNode* node = &tc->ast->nodes[nodeId];
+        int32_t          child;
+        if (node->kind == SLAst_CALL) {
+            int32_t          calleeNode = node->firstChild;
+            const SLAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
+            if (callee != NULL && callee->kind == SLAst_IDENT
+                && callee->dataStart == symbol->nameStart && callee->dataEnd == symbol->nameEnd
+                && SLTCListCount(tc->ast, nodeId)
+                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount))
+            {
+                if (found) {
+                    return 0;
+                }
+                *outCallNode = nodeId;
+                *outCalleeNode = calleeNode;
+                found = 1;
+            }
+        }
+        child = node->firstChild;
+        while (child >= 0) {
+            if (stackLen >= (uint32_t)(sizeof(stack) / sizeof(stack[0]))) {
+                return 0;
+            }
+            stack[stackLen++] = child;
+            child = tc->ast->nodes[child].nextSibling;
+        }
+    }
+    return found;
+}
+
+static int SLTCMirConstMatchAliasCallNode(
+    const SLTypeCheckCtx* tc,
+    const SLMirSymbolRef* symbol,
+    int32_t               rootNode,
+    uint32_t              encodedArgCount,
+    int32_t* _Nonnull outCallNode,
+    int32_t* _Nonnull outCalleeNode) {
+    int32_t  stack[256];
+    uint32_t stackLen = 0;
+    int      found = 0;
+    if (outCallNode != NULL) {
+        *outCallNode = -1;
+    }
+    if (outCalleeNode != NULL) {
+        *outCalleeNode = -1;
+    }
+    if (tc == NULL || symbol == NULL || outCallNode == NULL || outCalleeNode == NULL || rootNode < 0
+        || (uint32_t)rootNode >= tc->ast->len)
+    {
+        return 0;
+    }
+    stack[stackLen++] = rootNode;
+    while (stackLen > 0) {
+        int32_t          nodeId = stack[--stackLen];
+        const SLAstNode* node = &tc->ast->nodes[nodeId];
+        int32_t          child;
+        if (node->kind == SLAst_CALL) {
+            int32_t          calleeNode = node->firstChild;
+            const SLAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
+            if (callee != NULL && callee->kind == SLAst_IDENT
+                && callee->dataStart == symbol->nameStart && callee->dataEnd == symbol->nameEnd
+                && SLTCListCount(tc->ast, nodeId)
+                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount) + 1u)
+            {
+                if (found) {
+                    return 0;
+                }
+                *outCallNode = nodeId;
+                *outCalleeNode = calleeNode;
+                found = 1;
+            }
+        }
+        child = node->firstChild;
+        while (child >= 0) {
+            if (stackLen >= (uint32_t)(sizeof(stack) / sizeof(stack[0]))) {
+                return 0;
+            }
+            stack[stackLen++] = child;
+            child = tc->ast->nodes[child].nextSibling;
+        }
+    }
+    return found;
+}
+
+static int SLTCMirConstResolveDirectCallTarget(
+    const SLTCMirConstLowerCtx* c, int32_t rootNode, const SLMirInst* ins, int32_t* outFnIndex) {
+    const SLMirSymbolRef* symbol;
+    SLTypeCheckCtx*       tc;
+    SLTCCallArgInfo       callArgs[SLTC_MAX_CALL_ARGS];
+    int32_t               callNode = -1;
+    int32_t               calleeNode = -1;
+    int32_t               fnIndex = -1;
+    int32_t               mutRefTempArgNode = -1;
+    uint32_t              argCount = 0;
+    int                   status;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
+        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->aux >= c->builder.symbolLen)
+    {
+        return 0;
+    }
+    symbol = &c->builder.symbols[ins->aux];
+    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL
+        || !SLTCMirConstMatchPlainCallNode(
+            tc, symbol, rootNode, (uint32_t)ins->tok, &callNode, &calleeNode))
+    {
+        return 0;
+    }
+    if (SLTCCollectCallArgInfo(tc, callNode, calleeNode, 0, -1, callArgs, NULL, &argCount) != 0) {
+        return -1;
+    }
+    status = SLTCResolveCallByName(
+        tc,
+        symbol->nameStart,
+        symbol->nameEnd,
+        callArgs,
+        argCount,
+        0,
+        0,
+        &fnIndex,
+        &mutRefTempArgNode);
+    if (status != 0 || fnIndex < 0 || (uint32_t)fnIndex >= tc->funcLen) {
+        return 0;
+    }
+    *outFnIndex = fnIndex;
+    return 1;
+}
+
+static int SLTCMirConstHasImportAlias(
+    const SLTCMirConstLowerCtx* c, uint32_t aliasStart, uint32_t aliasEnd) {
+    SLTypeCheckCtx* tc;
+    if (c == NULL || c->evalCtx == NULL) {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    return tc != NULL && SLTCHasImportAlias(tc, aliasStart, aliasEnd);
+}
+
+static int SLTCMirConstMatchQualifiedCallNode(
+    const SLTypeCheckCtx* tc,
+    const SLMirSymbolRef* symbol,
+    int32_t               rootNode,
+    uint32_t              encodedArgCount,
+    int32_t* _Nonnull outCallNode,
+    int32_t* _Nonnull outCalleeNode,
+    int32_t* _Nonnull outRecvNode,
+    uint32_t* _Nonnull outBaseStart,
+    uint32_t* _Nonnull outBaseEnd) {
+    int32_t  stack[256];
+    uint32_t stackLen = 0;
+    int      found = 0;
+    if (outCallNode != NULL) {
+        *outCallNode = -1;
+    }
+    if (outCalleeNode != NULL) {
+        *outCalleeNode = -1;
+    }
+    if (outRecvNode != NULL) {
+        *outRecvNode = -1;
+    }
+    if (outBaseStart != NULL) {
+        *outBaseStart = 0;
+    }
+    if (outBaseEnd != NULL) {
+        *outBaseEnd = 0;
+    }
+    if (tc == NULL || symbol == NULL || outCallNode == NULL || outCalleeNode == NULL
+        || outRecvNode == NULL || outBaseStart == NULL || outBaseEnd == NULL || rootNode < 0
+        || (uint32_t)rootNode >= tc->ast->len)
+    {
+        return 0;
+    }
+    stack[stackLen++] = rootNode;
+    while (stackLen > 0) {
+        int32_t          nodeId = stack[--stackLen];
+        const SLAstNode* node = &tc->ast->nodes[nodeId];
+        int32_t          child;
+        if (node->kind == SLAst_CALL) {
+            int32_t          calleeNode = node->firstChild;
+            const SLAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
+            int32_t recvNode = calleeNode >= 0 ? tc->ast->nodes[calleeNode].firstChild : -1;
+            if (callee != NULL && callee->kind == SLAst_FIELD_EXPR && recvNode >= 0
+                && (uint32_t)recvNode < tc->ast->len && tc->ast->nodes[recvNode].kind == SLAst_IDENT
+                && callee->dataStart == symbol->nameStart && callee->dataEnd == symbol->nameEnd
+                && SLTCListCount(tc->ast, nodeId)
+                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount))
+            {
+                uint32_t baseStart = tc->ast->nodes[recvNode].dataStart;
+                uint32_t baseEnd = tc->ast->nodes[recvNode].dataEnd;
+                if (!found) {
+                    *outCallNode = nodeId;
+                    *outCalleeNode = calleeNode;
+                    *outRecvNode = recvNode;
+                    *outBaseStart = baseStart;
+                    *outBaseEnd = baseEnd;
+                    found = 1;
+                } else if (*outBaseStart != baseStart || *outBaseEnd != baseEnd) {
+                    return 0;
+                }
+            }
+        }
+        child = node->firstChild;
+        while (child >= 0) {
+            if (stackLen >= (uint32_t)(sizeof(stack) / sizeof(stack[0]))) {
+                return 0;
+            }
+            stack[stackLen++] = child;
+            child = tc->ast->nodes[child].nextSibling;
+        }
+    }
+    return found;
+}
+
+static int SLTCMirConstMatchPkgPrefixedQualifiedCallNode(
+    const SLTypeCheckCtx* tc,
+    int32_t               rootNode,
+    uint32_t              encodedArgCount,
+    uint32_t              pkgStart,
+    uint32_t              pkgEnd,
+    uint32_t              methodStart,
+    uint32_t              methodEnd,
+    int32_t* _Nonnull outCallNode,
+    int32_t* _Nonnull outCalleeNode,
+    int32_t* _Nonnull outRecvNode) {
+    int32_t  stack[256];
+    uint32_t stackLen = 0;
+    int      found = 0;
+    if (outCallNode != NULL) {
+        *outCallNode = -1;
+    }
+    if (outCalleeNode != NULL) {
+        *outCalleeNode = -1;
+    }
+    if (outRecvNode != NULL) {
+        *outRecvNode = -1;
+    }
+    if (tc == NULL || outCallNode == NULL || outCalleeNode == NULL || outRecvNode == NULL
+        || rootNode < 0 || (uint32_t)rootNode >= tc->ast->len)
+    {
+        return 0;
+    }
+    stack[stackLen++] = rootNode;
+    while (stackLen > 0) {
+        int32_t          nodeId = stack[--stackLen];
+        const SLAstNode* node = &tc->ast->nodes[nodeId];
+        int32_t          child;
+        if (node->kind == SLAst_CALL) {
+            int32_t          calleeNode = node->firstChild;
+            const SLAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
+            int32_t recvNode = calleeNode >= 0 ? tc->ast->nodes[calleeNode].firstChild : -1;
+            if (callee != NULL && callee->kind == SLAst_FIELD_EXPR && recvNode >= 0
+                && (uint32_t)recvNode < tc->ast->len && tc->ast->nodes[recvNode].kind == SLAst_IDENT
+                && SLNameEqSlice(
+                    tc->src, callee->dataStart, callee->dataEnd, methodStart, methodEnd)
+                && SLNameEqSlice(
+                    tc->src,
+                    tc->ast->nodes[recvNode].dataStart,
+                    tc->ast->nodes[recvNode].dataEnd,
+                    pkgStart,
+                    pkgEnd)
+                && SLTCListCount(tc->ast, nodeId)
+                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount) + 1u)
+            {
+                if (!found) {
+                    *outCallNode = nodeId;
+                    *outCalleeNode = calleeNode;
+                    *outRecvNode = recvNode;
+                    found = 1;
+                }
+            }
+        }
+        child = node->firstChild;
+        while (child >= 0) {
+            if (stackLen >= (uint32_t)(sizeof(stack) / sizeof(stack[0]))) {
+                return 0;
+            }
+            stack[stackLen++] = child;
+            child = tc->ast->nodes[child].nextSibling;
+        }
+    }
+    return found;
+}
+
+static int SLTCMirConstResolveQualifiedCallTarget(
+    const SLTCMirConstLowerCtx* c, int32_t rootNode, const SLMirInst* ins, int32_t* outFnIndex) {
+    SLTypeCheckCtx*       tc;
+    const SLMirSymbolRef* symbol;
+    SLTCCallArgInfo       callArgs[SLTC_MAX_CALL_ARGS];
+    int32_t               callNode = -1;
+    int32_t               calleeNode = -1;
+    int32_t               recvNode = -1;
+    int32_t               fnIndex = -1;
+    int32_t               mutRefTempArgNode = -1;
+    uint32_t              argCount = 0;
+    uint32_t              baseStart = 0;
+    uint32_t              baseEnd = 0;
+    int                   status;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
+        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->aux >= c->builder.symbolLen)
+    {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL) {
+        return 0;
+    }
+    symbol = &c->builder.symbols[ins->aux];
+    if (symbol->kind != SLMirSymbol_CALL
+        || !SLTCMirConstMatchQualifiedCallNode(
+            tc,
+            symbol,
+            rootNode,
+            (uint32_t)ins->tok,
+            &callNode,
+            &calleeNode,
+            &recvNode,
+            &baseStart,
+            &baseEnd))
+    {
+        return 0;
+    }
+    if (!SLTCMirConstHasImportAlias(c, baseStart, baseEnd)) {
+        return 0;
+    }
+    if (SLTCCollectCallArgInfo(tc, callNode, calleeNode, 1, recvNode, callArgs, NULL, &argCount)
+        != 0)
+    {
+        return -1;
+    }
+    status = SLTCResolveCallByPkgMethod(
+        tc,
+        baseStart,
+        baseEnd,
+        symbol->nameStart,
+        symbol->nameEnd,
+        callArgs,
+        argCount,
+        1,
+        0,
+        &fnIndex,
+        &mutRefTempArgNode);
+    if (status != 0 || fnIndex < 0 || (uint32_t)fnIndex >= tc->funcLen) {
+        return 0;
+    }
+    *outFnIndex = fnIndex;
+    return 1;
+}
+
+static int SLTCMirConstResolveFunctionIdentTarget(
+    const SLTCMirConstLowerCtx* c, const SLMirInst* ins, int32_t* outFnIndex) {
+    SLTypeCheckCtx* tc;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
+        || ins->op != SLMirOp_LOAD_IDENT)
+    {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL) {
+        return 0;
+    }
+    *outFnIndex = SLTCFindPlainFunctionValueIndex(tc, ins->start, ins->end);
+    if (*outFnIndex < 0) {
+        return 0;
+    }
+    return 1;
+}
+
+static int SLTCMirConstResolveQualifiedFunctionValueTarget(
+    const SLTCMirConstLowerCtx* c,
+    const SLMirInst*            loadIns,
+    const SLMirInst*            fieldIns,
+    int32_t*                    outFnIndex) {
+    SLTypeCheckCtx* tc;
+    uint32_t        fieldStart;
+    uint32_t        fieldEnd;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || loadIns == NULL || fieldIns == NULL || outFnIndex == NULL
+        || loadIns->op != SLMirOp_LOAD_IDENT || fieldIns->op != SLMirOp_AGG_GET)
+    {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL || !SLTCHasImportAlias(tc, loadIns->start, loadIns->end)) {
+        return 0;
+    }
+    if (c->builder.fields != NULL && fieldIns->aux < c->builder.fieldLen) {
+        fieldStart = c->builder.fields[fieldIns->aux].nameStart;
+        fieldEnd = c->builder.fields[fieldIns->aux].nameEnd;
+    } else {
+        fieldStart = fieldIns->start;
+        fieldEnd = fieldIns->end;
+    }
+    *outFnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+        tc, loadIns->start, loadIns->end, fieldStart, fieldEnd);
+    return *outFnIndex >= 0;
+}
+
+static int SLTCMirConstRewriteQualifiedFunctionValueLoad(
+    SLTCMirConstLowerCtx* c,
+    uint32_t              ownerMirFnIndex,
+    uint32_t              loadInstIndex,
+    uint32_t              targetMirFnIndex) {
+    SLMirInst* loadIns;
+    SLMirInst* fieldIns;
+    SLMirInst  inserted = { 0 };
+    SLMirConst value = { 0 };
+    uint32_t   constIndex = UINT32_MAX;
+    if (c == NULL || ownerMirFnIndex >= c->builder.funcLen || loadInstIndex >= c->builder.instLen
+        || loadInstIndex + 1u >= c->builder.instLen)
+    {
+        return -1;
+    }
+    loadIns = &c->builder.insts[loadInstIndex];
+    fieldIns = &c->builder.insts[loadInstIndex + 1u];
+    value.kind = SLMirConst_FUNCTION;
+    value.bits = targetMirFnIndex;
+    if (SLMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
+        return -1;
+    }
+    inserted.op = SLMirOp_PUSH_CONST;
+    inserted.aux = constIndex;
+    inserted.start = fieldIns->start;
+    inserted.end = fieldIns->end;
+    if (SLMirProgramBuilderInsertInst(
+            &c->builder,
+            ownerMirFnIndex,
+            loadInstIndex + 2u - c->builder.funcs[ownerMirFnIndex].instStart,
+            &inserted)
+        != 0)
+    {
+        return -1;
+    }
+    loadIns = &c->builder.insts[loadInstIndex];
+    fieldIns = &c->builder.insts[loadInstIndex + 1u];
+    loadIns->op = SLMirOp_PUSH_NULL;
+    loadIns->tok = 0u;
+    loadIns->aux = 0u;
+    fieldIns->op = SLMirOp_DROP;
+    fieldIns->tok = 0u;
+    fieldIns->aux = 0u;
+    return 0;
+}
+
+static int SLTCMirConstResolveTopConstIdentTarget(
+    const SLTCMirConstLowerCtx* c, int32_t rootNode, const SLMirInst* ins, int32_t* outNodeId) {
+    SLTypeCheckCtx*  tc;
+    int32_t          nodeId = -1;
+    int32_t          nameIndex = -1;
+    SLTCVarLikeParts parts;
+    const SLAstNode* n;
+    if (outNodeId != NULL) {
+        *outNodeId = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || ins == NULL || outNodeId == NULL
+        || ins->op != SLMirOp_LOAD_IDENT)
+    {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL) {
+        return 0;
+    }
+    nodeId = SLTCFindTopLevelVarLikeNode(tc, ins->start, ins->end, &nameIndex);
+    if (nodeId < 0 || (uint32_t)nodeId >= tc->ast->len || nameIndex != 0) {
+        return 0;
+    }
+    n = &tc->ast->nodes[nodeId];
+    if (n->kind != SLAst_CONST || SLTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped
+        || parts.nameCount != 1u)
+    {
+        return 0;
+    }
+    if (rootNode >= 0 && SLTCVarLikeInitExprNodeAt(tc, nodeId, 0) == rootNode) {
+        return 0;
+    }
+    *outNodeId = nodeId;
+    return 1;
+}
+
+static int SLTCMirConstResolvePkgPrefixedDirectCallTarget(
+    const SLTCMirConstLowerCtx* c, int32_t rootNode, const SLMirInst* ins, int32_t* outFnIndex) {
+    SLTypeCheckCtx*       tc;
+    const SLMirSymbolRef* symbol;
+    SLTCCallArgInfo       callArgs[SLTC_MAX_CALL_ARGS];
+    int32_t               callNode = -1;
+    int32_t               calleeNode = -1;
+    int32_t               recvNode = -1;
+    int32_t               fnIndex = -1;
+    int32_t               mutRefTempArgNode = -1;
+    uint32_t              argCount = 0;
+    uint32_t              pkgStart = 0;
+    uint32_t              pkgEnd = 0;
+    uint32_t              methodStart;
+    uint32_t              firstPositionalArgIndex = 0;
+    int                   collectReceiver = 0;
+    int                   status;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
+        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->aux >= c->builder.symbolLen)
+    {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL) {
+        return 0;
+    }
+    symbol = &c->builder.symbols[ins->aux];
+    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u
+        || !SLTCExtractPkgPrefixFromTypeName(
+            tc, symbol->nameStart, symbol->nameEnd, &pkgStart, &pkgEnd))
+    {
+        return 0;
+    }
+    methodStart = pkgEnd + 2u;
+    if (methodStart >= symbol->nameEnd) {
+        return 0;
+    }
+    if (SLTCMirConstMatchPkgPrefixedQualifiedCallNode(
+            tc,
+            rootNode,
+            (uint32_t)ins->tok,
+            pkgStart,
+            pkgEnd,
+            methodStart,
+            symbol->nameEnd,
+            &callNode,
+            &calleeNode,
+            &recvNode))
+    {
+        collectReceiver = 1;
+        firstPositionalArgIndex = 1u;
+    } else if (!SLTCMirConstMatchPlainCallNode(
+                   tc, symbol, rootNode, (uint32_t)ins->tok, &callNode, &calleeNode))
+    {
+        return 0;
+    }
+    if (SLTCCollectCallArgInfo(
+            tc, callNode, calleeNode, collectReceiver, recvNode, callArgs, NULL, &argCount)
+        != 0)
+    {
+        return -1;
+    }
+    status = SLTCResolveCallByPkgMethod(
+        tc,
+        pkgStart,
+        pkgEnd,
+        methodStart,
+        symbol->nameEnd,
+        callArgs,
+        argCount,
+        firstPositionalArgIndex,
+        0,
+        &fnIndex,
+        &mutRefTempArgNode);
+    if (status != 0 || fnIndex < 0 || (uint32_t)fnIndex >= tc->funcLen) {
+        return 0;
+    }
+    *outFnIndex = fnIndex;
+    return 1;
+}
+
+static int SLTCMirConstResolveSimpleTopConstAliasCallTarget(
+    const SLTCMirConstLowerCtx* c, int32_t rootNode, const SLMirInst* ins, int32_t* outFnIndex) {
+    SLTypeCheckCtx*       tc;
+    const SLMirSymbolRef* symbol;
+    SLTCVarLikeParts      parts;
+    SLTCCallArgInfo       callArgs[SLTC_MAX_CALL_ARGS];
+    int32_t               nodeId = -1;
+    int32_t               nameIndex = -1;
+    int32_t               initNode;
+    int32_t               callNode = -1;
+    int32_t               calleeNode = -1;
+    int32_t               fnIndex = -1;
+    int32_t               mutRefTempArgNode = -1;
+    uint32_t              argCount = 0;
+    int                   status;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
+        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->aux >= c->builder.symbolLen)
+    {
+        return 0;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL) {
+        return 0;
+    }
+    symbol = &c->builder.symbols[ins->aux];
+    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+        return 0;
+    }
+    nodeId = SLTCFindTopLevelVarLikeNode(tc, symbol->nameStart, symbol->nameEnd, &nameIndex);
+    if (nodeId < 0 || nameIndex != 0) {
+        return 0;
+    }
+    if (!SLTCMirConstMatchPlainCallNode(
+            tc, symbol, rootNode, (uint32_t)ins->tok, &callNode, &calleeNode)
+        && !SLTCMirConstMatchAliasCallNode(
+            tc, symbol, rootNode, (uint32_t)ins->tok, &callNode, &calleeNode))
+    {
+        return 0;
+    }
+    if (SLTCCollectCallArgInfo(tc, callNode, calleeNode, 0, -1, callArgs, NULL, &argCount) != 0) {
+        return -1;
+    }
+    if (SLTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped || parts.nameCount != 1u
+        || tc->ast->nodes[nodeId].kind != SLAst_CONST)
+    {
+        return 0;
+    }
+    initNode = SLTCVarLikeInitExprNodeAt(tc, nodeId, 0);
+    if (initNode < 0 || (uint32_t)initNode >= tc->ast->len) {
+        return 0;
+    }
+    if (tc->ast->nodes[initNode].kind == SLAst_IDENT) {
+        const SLAstNode* initExpr = &tc->ast->nodes[initNode];
+        uint32_t         pkgStart = 0;
+        uint32_t         pkgEnd = 0;
+        if (SLTCExtractPkgPrefixFromTypeName(
+                tc, initExpr->dataStart, initExpr->dataEnd, &pkgStart, &pkgEnd))
+        {
+            uint32_t methodStart = pkgEnd + 2u;
+            if (methodStart >= initExpr->dataEnd) {
+                return 0;
+            }
+            status = SLTCResolveCallByPkgMethod(
+                tc,
+                pkgStart,
+                pkgEnd,
+                methodStart,
+                initExpr->dataEnd,
+                callArgs,
+                argCount,
+                0,
+                0,
+                &fnIndex,
+                &mutRefTempArgNode);
+        } else {
+            status = SLTCResolveCallByName(
+                tc,
+                initExpr->dataStart,
+                initExpr->dataEnd,
+                callArgs,
+                argCount,
+                0,
+                0,
+                &fnIndex,
+                &mutRefTempArgNode);
+        }
+    } else if (tc->ast->nodes[initNode].kind == SLAst_FIELD_EXPR) {
+        const SLAstNode* initExpr = &tc->ast->nodes[initNode];
+        int32_t          baseNode = initExpr->firstChild;
+        const SLAstNode* baseExpr;
+        if (baseNode < 0 || (uint32_t)baseNode >= tc->ast->len) {
+            return 0;
+        }
+        baseExpr = &tc->ast->nodes[baseNode];
+        if (baseExpr->kind != SLAst_IDENT
+            || !SLTCHasImportAlias(tc, baseExpr->dataStart, baseExpr->dataEnd))
+        {
+            return 0;
+        }
+        status = SLTCResolveCallByPkgMethod(
+            tc,
+            baseExpr->dataStart,
+            baseExpr->dataEnd,
+            initExpr->dataStart,
+            initExpr->dataEnd,
+            callArgs,
+            argCount,
+            0,
+            0,
+            &fnIndex,
+            &mutRefTempArgNode);
+    } else {
+        return 0;
+    }
+    if (status != 0 || fnIndex < 0 || (uint32_t)fnIndex >= tc->funcLen) {
+        return 0;
+    }
+    *outFnIndex = fnIndex;
+    return 1;
+}
+
+static int SLTCMirConstFinalizeLoweredFunction(
+    SLTCMirConstLowerCtx* c, uint32_t* mirMapSlot, uint32_t mirFnIndex, int32_t rootNode);
+static int SLTCMirConstRunFunction(
+    SLTCConstEvalCtx*     evalCtx,
+    SLTCMirConstLowerCtx* lowerCtx,
+    const SLMirProgram*   program,
+    uint32_t              mirFnIndex,
+    const SLCTFEValue* _Nullable args,
+    uint32_t     argCount,
+    SLCTFEValue* outValue,
+    int* _Nullable outDidReturn,
+    int* outIsConst);
+
+static int SLTCMirConstLowerTopConstNode(
+    SLTCMirConstLowerCtx* c, int32_t nodeId, uint32_t* _Nullable outMirFnIndex) {
+    SLTypeCheckCtx*  tc;
+    SLTCVarLikeParts parts;
+    uint32_t         mirFnIndex = UINT32_MAX;
+    int32_t          initNode;
+    int              supported = 0;
+    int              rewriteRc;
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = UINT32_MAX;
+    }
+    if (c == NULL || c->evalCtx == NULL || c->topConstToMir == NULL || c->loweringTopConsts == NULL)
+    {
+        return -1;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL || nodeId < 0 || (uint32_t)nodeId >= tc->ast->len) {
+        return 0;
+    }
+    if (c->topConstToMir[(uint32_t)nodeId] != SL_TC_MIR_CONST_FN_NONE) {
+        if (outMirFnIndex != NULL) {
+            *outMirFnIndex = c->topConstToMir[(uint32_t)nodeId];
+        }
+        return 1;
+    }
+    if (c->loweringTopConsts[(uint32_t)nodeId] != 0u) {
+        return 0;
+    }
+    if (SLTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped || parts.nameCount != 1u
+        || tc->ast->nodes[nodeId].kind != SLAst_CONST)
+    {
+        return 0;
+    }
+    initNode = SLTCVarLikeInitExprNodeAt(tc, nodeId, 0);
+    if (initNode < 0) {
+        return 0;
+    }
+    c->loweringTopConsts[(uint32_t)nodeId] = 1u;
+    if (SLMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+            &c->builder,
+            tc->arena,
+            tc->ast,
+            tc->src,
+            nodeId,
+            tc->ast->nodes[nodeId].dataStart,
+            tc->ast->nodes[nodeId].dataEnd,
+            &mirFnIndex,
+            &supported,
+            c->diag)
+        != 0)
+    {
+        c->loweringTopConsts[(uint32_t)nodeId] = 0u;
+        return -1;
+    }
+    if (!supported || mirFnIndex == UINT32_MAX) {
+        c->loweringTopConsts[(uint32_t)nodeId] = 0u;
+        return 0;
+    }
+    rewriteRc = SLTCMirConstFinalizeLoweredFunction(
+        c, &c->topConstToMir[(uint32_t)nodeId], mirFnIndex, initNode);
+    c->loweringTopConsts[(uint32_t)nodeId] = 0u;
+    if (rewriteRc <= 0) {
+        return rewriteRc;
+    }
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = mirFnIndex;
+    }
+    return 1;
+}
+
+static int SLTCMirConstRewriteLoadIdentToFunctionConst(
+    SLTCMirConstLowerCtx* c, SLMirInst* ins, uint32_t targetMirFnIndex) {
+    SLMirConst value = { 0 };
+    uint32_t   constIndex = UINT32_MAX;
+    if (c == NULL || ins == NULL) {
+        return -1;
+    }
+    value.kind = SLMirConst_FUNCTION;
+    value.bits = targetMirFnIndex;
+    if (SLMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
+        return -1;
+    }
+    ins->op = SLMirOp_PUSH_CONST;
+    ins->tok = 0u;
+    ins->aux = constIndex;
+    return 0;
+}
+
+static int SLTCMirConstFinalizeLoweredFunction(
+    SLTCMirConstLowerCtx* c, uint32_t* mirMapSlot, uint32_t mirFnIndex, int32_t rootNode) {
+    int rewriteRc;
+    if (c == NULL || mirMapSlot == NULL || mirFnIndex == UINT32_MAX) {
+        return -1;
+    }
+    *mirMapSlot = mirFnIndex;
+    rewriteRc = SLTCMirConstRewriteDirectCalls(c, mirFnIndex, rootNode);
+    if (rewriteRc < 0) {
+        return -1;
+    }
+    if (rewriteRc == 0) {
+        *mirMapSlot = SL_TC_MIR_CONST_FN_NONE;
+        return 0;
+    }
+    return 1;
+}
+
+static int SLTCMirConstFindTcFunctionIndexForMir(
+    const SLTCMirConstLowerCtx* c, uint32_t mirFnIndex, int32_t* outFnIndex) {
+    uint32_t i;
+    if (outFnIndex != NULL) {
+        *outFnIndex = -1;
+    }
+    if (c == NULL || c->tcToMir == NULL || c->evalCtx == NULL || c->evalCtx->tc == NULL
+        || outFnIndex == NULL)
+    {
+        return 0;
+    }
+    for (i = 0; i < c->evalCtx->tc->funcLen; i++) {
+        if (c->tcToMir[i] == mirFnIndex) {
+            *outFnIndex = (int32_t)i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int SLTCMirConstExportValue(const SLTCMirConstLowerCtx* c, SLCTFEValue* _Nonnull value) {
+    uint32_t mirFnIndex = UINT32_MAX;
+    int32_t  tcFnIndex = -1;
+    if (c == NULL || value == NULL || !SLMirValueAsFunctionRef(value, &mirFnIndex)) {
+        return 1;
+    }
+    if (!SLTCMirConstFindTcFunctionIndexForMir(c, mirFnIndex, &tcFnIndex) || tcFnIndex < 0) {
+        return 0;
+    }
+    SLMirValueSetFunctionRef(value, (uint32_t)tcFnIndex);
+    return 1;
+}
+
+static int SLTCMirConstCallNodeIsSpecialBuiltin(SLTypeCheckCtx* tc, int32_t callNode) {
+    const SLAstNode* call;
+    const SLAstNode* callee;
+    int32_t          calleeNode;
+    int32_t          recvNode;
+    if (tc == NULL || callNode < 0 || (uint32_t)callNode >= tc->ast->len) {
+        return 0;
+    }
+    call = &tc->ast->nodes[callNode];
+    calleeNode = call->firstChild;
+    callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
+    if (call->kind != SLAst_CALL || callee == NULL) {
+        return 0;
+    }
+    if (callee->kind == SLAst_IDENT) {
+        return SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "typeof")
+            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "kind")
+            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "base")
+            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "is_alias")
+            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "type_name")
+            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "ptr")
+            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "slice")
+            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "array")
+            || SLTCIsSpanOfName(tc, callee->dataStart, callee->dataEnd)
+            || SLTCCompilerDiagOpFromName(tc, callee->dataStart, callee->dataEnd)
+                   != SLTCCompilerDiagOp_NONE;
+    }
+    if (callee->kind != SLAst_FIELD_EXPR) {
+        return 0;
+    }
+    recvNode = callee->firstChild;
+    if (recvNode < 0 || (uint32_t)recvNode >= tc->ast->len
+        || tc->ast->nodes[recvNode].kind != SLAst_IDENT)
+    {
+        return 0;
+    }
+    if (SLNameEqLiteral(
+            tc->src,
+            tc->ast->nodes[recvNode].dataStart,
+            tc->ast->nodes[recvNode].dataEnd,
+            "reflect")
+        && (SLTCIsSpanOfName(tc, callee->dataStart, callee->dataEnd)
+            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "kind")
+            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "base")
+            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "is_alias")
+            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "type_name")))
+    {
+        return 1;
+    }
+    if (SLNameEqLiteral(
+            tc->src,
+            tc->ast->nodes[recvNode].dataStart,
+            tc->ast->nodes[recvNode].dataEnd,
+            "compiler")
+        && SLTCConstEvalCompilerDiagOpFromFieldExpr(tc, callee) != SLTCCompilerDiagOp_NONE)
+    {
+        return 1;
+    }
+    return 0;
+}
+
+static int SLTCMirConstResolveCallNode(
+    SLTCConstEvalCtx* evalCtx,
+    const SLMirProgram* _Nullable program,
+    const SLMirInst* _Nullable inst,
+    int32_t* outCallNode) {
+    const SLMirSymbolRef* symbol;
+    if (outCallNode != NULL) {
+        *outCallNode = -1;
+    }
+    if (evalCtx == NULL || evalCtx->tc == NULL || program == NULL || inst == NULL
+        || outCallNode == NULL || inst->op != SLMirOp_CALL || inst->aux >= program->symbolLen)
+    {
+        return 0;
+    }
+    symbol = &program->symbols[inst->aux];
+    if (symbol->kind != SLMirSymbol_CALL || symbol->target >= evalCtx->tc->ast->len) {
+        return 0;
+    }
+    *outCallNode = (int32_t)symbol->target;
+    return 1;
+}
+
+static int SLTCMirConstRunFunction(
+    SLTCConstEvalCtx*     evalCtx,
+    SLTCMirConstLowerCtx* lowerCtx,
+    const SLMirProgram*   program,
+    uint32_t              mirFnIndex,
+    const SLCTFEValue* _Nullable args,
+    uint32_t     argCount,
+    SLCTFEValue* outValue,
+    int* _Nullable outDidReturn,
+    int* outIsConst) {
+    SLTypeCheckCtx* c;
+    SLMirExecEnv    env = { 0 };
+    int             mirIsConst = 0;
+    if (outDidReturn != NULL) {
+        *outDidReturn = 0;
+    }
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (evalCtx == NULL || program == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+    env.src = c->src;
+    env.resolveIdent = SLTCResolveConstIdent;
+    env.resolveCallPre = SLTCResolveConstCallMirPre;
+    env.resolveCall = SLTCResolveConstCallMir;
+    env.resolveCtx = evalCtx;
+    env.zeroInitLocal = SLTCMirConstZeroInitLocal;
+    env.zeroInitCtx = evalCtx;
+    env.coerceValueForType = SLTCMirConstCoerceValueForType;
+    env.coerceValueCtx = evalCtx;
+    env.indexValue = SLTCMirConstIndexValue;
+    env.indexValueCtx = evalCtx;
+    env.sequenceLen = SLTCMirConstSequenceLen;
+    env.sequenceLenCtx = evalCtx;
+    env.iterInit = SLTCMirConstIterInit;
+    env.iterInitCtx = evalCtx;
+    env.iterNext = SLTCMirConstIterNext;
+    env.iterNextCtx = evalCtx;
+    env.aggGetField = SLTCMirConstAggGetField;
+    env.aggGetFieldCtx = evalCtx;
+    env.aggAddrField = SLTCMirConstAggAddrField;
+    env.aggAddrFieldCtx = evalCtx;
+    env.makeTuple = SLTCMirConstMakeTuple;
+    env.makeTupleCtx = evalCtx;
+    env.bindFrame = SLTCMirConstBindFrame;
+    env.unbindFrame = SLTCMirConstUnbindFrame;
+    env.frameCtx = evalCtx;
+    env.setReason = SLTCMirConstSetReasonCb;
+    env.setReasonCtx = evalCtx;
+    env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;
+    env.diag = c->diag;
+    if (!SLMirProgramNeedsDynamicResolution(program)) {
+        SLMirExecEnvDisableDynamicResolution(&env);
+    }
+    if (SLMirEvalFunction(
+            c->arena, program, mirFnIndex, args, argCount, &env, outValue, &mirIsConst)
+        != 0)
+    {
+        return -1;
+    }
+    if (mirIsConst && !SLTCMirConstExportValue(lowerCtx, outValue)) {
+        return 0;
+    }
+    *outIsConst = mirIsConst;
+    if (outDidReturn != NULL && mirIsConst) {
+        *outDidReturn = outValue->kind != SLCTFEValue_INVALID;
+    }
+    return 0;
+}
+
+int SLTCResolveConstCallMirPre(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    int32_t           callNode = -1;
+    int               status;
+
+    (void)function;
+    (void)nameStart;
+    (void)nameEnd;
+    (void)diag;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    if (!SLTCMirConstResolveCallNode(evalCtx, program, inst, &callNode) || callNode < 0) {
+        return 0;
+    }
+
+    status = SLTCConstEvalCompilerDiagCall(evalCtx, callNode, outValue, outIsConst);
+    if (status < 0) {
+        return -1;
+    }
+    if (status == 0) {
+        return 1;
+    }
+
+    status = SLTCConstEvalSpanOfCall(evalCtx, callNode, outValue, outIsConst);
+    if (status < 0) {
+        return -1;
+    }
+    if (status == 0) {
+        return 1;
+    }
+
+    return 0;
+}
+
+int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex, int32_t rootNode) {
+    SLTypeCheckCtx* tc;
+    uint32_t        instIndex;
+    if (c == NULL || c->evalCtx == NULL || c->tcToMir == NULL || c->loweringFns == NULL) {
+        return -1;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL || mirFnIndex >= c->builder.funcLen) {
+        return 0;
+    }
+    for (instIndex = c->builder.funcs[mirFnIndex].instStart;
+         instIndex < c->builder.funcs[mirFnIndex].instStart + c->builder.funcs[mirFnIndex].instLen;
+         instIndex++)
+    {
+        SLMirInst* ins = &c->builder.insts[instIndex];
+        SLMirInst* nextIns =
+            instIndex + 1u < c->builder.instLen ? &c->builder.insts[instIndex + 1u] : NULL;
+        int32_t  targetFnIndex = -1;
+        int32_t  targetTopConstNode = -1;
+        uint32_t targetMirFnIndex = UINT32_MAX;
+        int      lowerRc;
+        if (ins->op == SLMirOp_CALL && ins->aux < c->builder.symbolLen) {
+            const SLMirSymbolRef* symbol = &c->builder.symbols[ins->aux];
+            int32_t               callNode = (int32_t)symbol->target;
+            if (symbol->kind == SLMirSymbol_CALL && callNode >= 0
+                && (uint32_t)callNode < tc->ast->len
+                && SLTCMirConstCallNodeIsSpecialBuiltin(tc, callNode))
+            {
+                continue;
+            }
+        }
+        lowerRc = SLTCMirConstResolveQualifiedFunctionValueTarget(c, ins, nextIns, &targetFnIndex);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (lowerRc > 0) {
+            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                return -1;
+            }
+            if (lowerRc == 0) {
+                return 0;
+            }
+            if (SLTCMirConstRewriteQualifiedFunctionValueLoad(
+                    c, mirFnIndex, instIndex, targetMirFnIndex)
+                != 0)
+            {
+                return -1;
+            }
+            continue;
+        }
+        if (SLTCMirConstResolveTopConstIdentTarget(c, rootNode, ins, &targetTopConstNode)) {
+            lowerRc = SLTCMirConstLowerTopConstNode(c, targetTopConstNode, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                return -1;
+            }
+            if (lowerRc == 0) {
+                return 0;
+            }
+            ins = &c->builder.insts[instIndex];
+            ins->op = SLMirOp_CALL_FN;
+            ins->tok = 0u;
+            ins->aux = targetMirFnIndex;
+            continue;
+        }
+        if (SLTCMirConstResolveFunctionIdentTarget(c, ins, &targetFnIndex)) {
+            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                return -1;
+            }
+            if (lowerRc == 0) {
+                return 0;
+            }
+            ins = &c->builder.insts[instIndex];
+            if (SLTCMirConstRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
+                return -1;
+            }
+            continue;
+        }
+        lowerRc = SLTCMirConstResolveSimpleTopConstAliasCallTarget(
+            c, rootNode, ins, &targetFnIndex);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (lowerRc > 0) {
+            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                return -1;
+            }
+            if (lowerRc == 0) {
+                return 0;
+            }
+            ins = &c->builder.insts[instIndex];
+            ins->op = SLMirOp_CALL_FN;
+            ins->aux = targetMirFnIndex;
+            continue;
+        }
+        lowerRc = SLTCMirConstResolveQualifiedCallTarget(c, rootNode, ins, &targetFnIndex);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (lowerRc > 0) {
+            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                return -1;
+            }
+            if (lowerRc == 0) {
+                return 0;
+            }
+            ins = &c->builder.insts[instIndex];
+            ins->op = SLMirOp_CALL_FN;
+            ins->aux = targetMirFnIndex;
+            continue;
+        }
+        lowerRc = SLTCMirConstResolvePkgPrefixedDirectCallTarget(c, rootNode, ins, &targetFnIndex);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (lowerRc > 0) {
+            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            if (lowerRc < 0) {
+                return -1;
+            }
+            if (lowerRc == 0) {
+                return 0;
+            }
+            ins = &c->builder.insts[instIndex];
+            ins->op = SLMirOp_CALL_FN;
+            ins->aux = targetMirFnIndex;
+            continue;
+        }
+        lowerRc = SLTCMirConstResolveDirectCallTarget(c, rootNode, ins, &targetFnIndex);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (lowerRc == 0) {
+            continue;
+        }
+        lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+        if (lowerRc < 0) {
+            return -1;
+        }
+        if (lowerRc == 0) {
+            return 0;
+        }
+        ins = &c->builder.insts[instIndex];
+        ins->op = SLMirOp_CALL_FN;
+        ins->aux = targetMirFnIndex;
+    }
+    return 1;
+}
+
+int SLTCMirConstLowerFunction(
+    SLTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex) {
+    SLTypeCheckCtx*   tc;
+    SLMirLowerOptions options = { 0 };
+    uint32_t          mirFnIndex = UINT32_MAX;
+    int32_t           fnNode = -1;
+    int32_t           bodyNode = -1;
+    int               supported = 0;
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = UINT32_MAX;
+    }
+    if (c == NULL || c->evalCtx == NULL || c->tcToMir == NULL || c->loweringFns == NULL) {
+        return -1;
+    }
+    tc = c->evalCtx->tc;
+    if (tc == NULL || fnIndex < 0 || (uint32_t)fnIndex >= tc->funcLen) {
+        return 0;
+    }
+    if (c->loweringFns[(uint32_t)fnIndex] != 0u) {
+        return 0;
+    }
+    if (c->tcToMir[(uint32_t)fnIndex] != SL_TC_MIR_CONST_FN_NONE) {
+        if (outMirFnIndex != NULL) {
+            *outMirFnIndex = c->tcToMir[(uint32_t)fnIndex];
+        }
+        return 1;
+    }
+    if (!SLTCMirConstGetFunctionBody(tc, fnIndex, &fnNode, &bodyNode)) {
+        return 0;
+    }
+    {
+        int32_t  stack[256];
+        uint32_t stackLen = 0;
+        stack[stackLen++] = bodyNode;
+        while (stackLen > 0) {
+            int32_t          nodeId = stack[--stackLen];
+            const SLAstNode* node = &tc->ast->nodes[nodeId];
+            int32_t          child;
+            child = node->firstChild;
+            while (child >= 0) {
+                if (stackLen >= (uint32_t)(sizeof(stack) / sizeof(stack[0]))) {
+                    return 0;
+                }
+                stack[stackLen++] = child;
+                child = tc->ast->nodes[child].nextSibling;
+            }
+        }
+    }
+    c->loweringFns[(uint32_t)fnIndex] = 1u;
+    options.lowerConstExpr = SLTCMirConstLowerConstExpr;
+    options.lowerConstExprCtx = c->evalCtx;
+    if (SLMirLowerAppendSimpleFunctionWithOptions(
+            &c->builder,
+            tc->arena,
+            tc->ast,
+            tc->src,
+            fnNode,
+            bodyNode,
+            &options,
+            &mirFnIndex,
+            &supported,
+            c->diag)
+        != 0)
+    {
+        c->loweringFns[(uint32_t)fnIndex] = 0u;
+        return -1;
+    }
+    if (!supported) {
+        c->loweringFns[(uint32_t)fnIndex] = 0u;
+        return 0;
+    }
+    {
+        int rewriteRc = SLTCMirConstFinalizeLoweredFunction(
+            c, &c->tcToMir[(uint32_t)fnIndex], mirFnIndex, bodyNode);
+        if (rewriteRc <= 0) {
+            c->loweringFns[(uint32_t)fnIndex] = 0u;
+            return rewriteRc;
+        }
+    }
+    c->loweringFns[(uint32_t)fnIndex] = 0u;
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = mirFnIndex;
+    }
+    return 1;
+}
+
+static int SLTCTryMirConstCall(
+    SLTCConstEvalCtx*  evalCtx,
+    int32_t            fnIndex,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outDidReturn,
+    int*               outIsConst,
+    int*               outSupported) {
+    SLTypeCheckCtx*      c;
+    SLMirProgram         program = { 0 };
+    SLTCMirConstLowerCtx lowerCtx;
+    uint32_t             mirFnIndex = UINT32_MAX;
+    int                  lowerRc;
+    if (outDidReturn != NULL) {
+        *outDidReturn = 0;
+    }
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outSupported != NULL) {
+        *outSupported = 0;
+    }
+    if (evalCtx == NULL || outValue == NULL || outDidReturn == NULL || outIsConst == NULL
+        || outSupported == NULL)
+    {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
+        return -1;
+    }
+    if (SLTCMirConstInitLowerCtx(evalCtx, &lowerCtx) != 0) {
+        return -1;
+    }
+    lowerRc = SLTCMirConstLowerFunction(&lowerCtx, fnIndex, &mirFnIndex);
+    if (lowerRc < 0) {
+        return -1;
+    }
+    if (lowerRc == 0 || mirFnIndex == UINT32_MAX) {
+        SLTCMirConstAdoptLowerDiagReason(evalCtx, lowerCtx.diag);
+        return 0;
+    }
+    SLMirProgramBuilderFinish(&lowerCtx.builder, &program);
+    if (SLTCMirConstRunFunction(
+            evalCtx,
+            &lowerCtx,
+            &program,
+            mirFnIndex,
+            args,
+            argCount,
+            outValue,
+            outDidReturn,
+            outIsConst)
+        != 0)
+    {
+        return -1;
+    }
+    *outSupported = 1;
+    return 0;
+}
+
+static int SLTCConstEvalTryDirectReturnFunction(
+    SLTCConstEvalCtx* evalCtx, int32_t bodyNode, SLCTFEValue* outValue, int* outIsConst) {
+    SLTypeCheckCtx* c;
+    int32_t         stmtNode;
+    int32_t         exprNode;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || bodyNode < 0 || (uint32_t)bodyNode >= c->ast->len
+        || c->ast->nodes[bodyNode].kind != SLAst_BLOCK)
+    {
+        return 1;
+    }
+    stmtNode = SLAstFirstChild(c->ast, bodyNode);
+    if (stmtNode < 0 || SLAstNextSibling(c->ast, stmtNode) >= 0
+        || c->ast->nodes[stmtNode].kind != SLAst_RETURN)
+    {
+        return 1;
+    }
+    exprNode = SLAstFirstChild(c->ast, stmtNode);
+    if (exprNode < 0 || SLAstNextSibling(c->ast, exprNode) >= 0) {
+        return 1;
+    }
+    return SLTCEvalConstExprNode(evalCtx, exprNode, outValue, outIsConst);
+}
+
+static int SLTCTryMirTopLevelConst(
+    SLTCConstEvalCtx* evalCtx,
+    int32_t           nodeId,
+    int32_t           nameIndex,
+    SLCTFEValue*      outValue,
+    int*              outIsConst,
+    int*              outSupported) {
+    SLMirProgram         program = { 0 };
+    SLTCMirConstLowerCtx lowerCtx;
+    uint32_t             mirFnIndex = UINT32_MAX;
+    int                  lowerRc;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outSupported != NULL) {
+        *outSupported = 0;
+    }
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL || outSupported == NULL) {
+        return -1;
+    }
+    if (evalCtx->tc != NULL) {
+        SLTypeCheckCtx*  c = evalCtx->tc;
+        SLTCVarLikeParts parts;
+        int32_t          initNode = -1;
+        int32_t          initType = -1;
+        SLDiag           savedDiag = { 0 };
+        int              haveSavedDiag = c->diag != NULL;
+        if (haveSavedDiag) {
+            savedDiag = *c->diag;
+        }
+        if (SLTCVarLikeGetParts(c, nodeId, &parts) == 0 && !parts.grouped && nameIndex >= 0
+            && (uint32_t)nameIndex < parts.nameCount)
+        {
+            initNode = SLTCVarLikeInitExprNodeAt(c, nodeId, nameIndex);
+            if (initNode >= 0 && SLTCTypeExpr(c, initNode, &initType) == 0
+                && initType == c->typeType)
+            {
+                if (haveSavedDiag) {
+                    *c->diag = savedDiag;
+                }
+                return 0;
+            }
+        }
+        if (haveSavedDiag) {
+            *c->diag = savedDiag;
+        }
+    }
+    if (SLTCMirConstInitLowerCtx(evalCtx, &lowerCtx) != 0) {
+        return -1;
+    }
+    lowerRc = SLTCMirConstLowerTopConstNode(&lowerCtx, nodeId, &mirFnIndex);
+    if (lowerRc < 0) {
+        return -1;
+    }
+    if (lowerRc == 0 || mirFnIndex == UINT32_MAX) {
+        SLTCMirConstAdoptLowerDiagReason(evalCtx, lowerCtx.diag);
+        return 0;
+    }
+    SLMirProgramBuilderFinish(&lowerCtx.builder, &program);
+    if (SLTCMirConstRunFunction(
+            evalCtx, &lowerCtx, &program, mirFnIndex, NULL, 0, outValue, NULL, outIsConst)
+        != 0)
+    {
+        return -1;
+    }
+    *outSupported = 1;
+    return 0;
+}
+
 int32_t SLTCFindConstCallableFunction(
     SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, uint32_t argCount) {
     uint32_t i;
@@ -2632,18 +6204,127 @@ int32_t SLTCFindConstCallableFunction(
     return found;
 }
 
-int SLTCResolveConstCall(
-    void*              ctx,
+static int32_t SLTCFindPkgConstCallableFunction(
+    SLTypeCheckCtx* c,
+    uint32_t        pkgStart,
+    uint32_t        pkgEnd,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    uint32_t        argCount) {
+    int32_t  candidates[SLTC_MAX_CALL_CANDIDATES];
+    uint32_t candidateCount = 0;
+    int      nameFound = 0;
+    uint32_t i;
+    int32_t  found = -1;
+    SLTCGatherCallCandidatesByPkgMethod(
+        c, pkgStart, pkgEnd, nameStart, nameEnd, candidates, &candidateCount, &nameFound);
+    if (!nameFound) {
+        return -1;
+    }
+    for (i = 0; i < candidateCount; i++) {
+        const SLTCFunction* f;
+        int32_t             fnIndex = candidates[i];
+        if (fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
+            continue;
+        }
+        f = &c->funcs[(uint32_t)fnIndex];
+        if (f->contextType >= 0 || (f->flags & SLTCFunctionFlag_VARIADIC) != 0
+            || f->paramCount != argCount || f->defNode < 0)
+        {
+            continue;
+        }
+        if (found >= 0) {
+            return -2;
+        }
+        found = fnIndex;
+    }
+    return found;
+}
+
+static int SLTCConstEvalPrepareInvokeCallContext(
+    SLTCConstEvalCtx* evalCtx,
+    int32_t           callNode,
+    int32_t           calleeNode,
+    int32_t           fnIndex,
+    SLTCCallArgInfo*  outCallArgs,
+    uint32_t*         outCallArgCount,
+    SLTCCallBinding*  outBinding,
+    uint32_t*         outPackParamNameStart,
+    uint32_t*         outPackParamNameEnd) {
+    SLTypeCheckCtx*     c;
+    const SLTCFunction* fn;
+    SLTCCallMapError    mapError;
+    uint32_t            paramStart;
+    uint32_t            argCount = 0;
+    if (outCallArgCount != NULL) {
+        *outCallArgCount = 0;
+    }
+    if (outPackParamNameStart != NULL) {
+        *outPackParamNameStart = 0;
+    }
+    if (outPackParamNameEnd != NULL) {
+        *outPackParamNameEnd = 0;
+    }
+    if (evalCtx == NULL || outCallArgs == NULL || outCallArgCount == NULL || outBinding == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen || callNode < 0
+        || (uint32_t)callNode >= c->ast->len || calleeNode < 0
+        || (uint32_t)calleeNode >= c->ast->len)
+    {
+        return 1;
+    }
+    fn = &c->funcs[(uint32_t)fnIndex];
+    paramStart = fn->paramTypeStart;
+    if (SLTCCollectCallArgInfo(c, callNode, calleeNode, 0, -1, outCallArgs, NULL, &argCount) != 0) {
+        return -1;
+    }
+    SLTCCallMapErrorClear(&mapError);
+    if (SLTCPrepareCallBinding(
+            c,
+            outCallArgs,
+            argCount,
+            &c->funcParamNameStarts[paramStart],
+            &c->funcParamNameEnds[paramStart],
+            &c->funcParamTypes[paramStart],
+            fn->paramCount,
+            (fn->flags & SLTCFunctionFlag_VARIADIC) != 0,
+            1,
+            0,
+            outBinding,
+            &mapError)
+        != 0)
+    {
+        return 1;
+    }
+    *outCallArgCount = argCount;
+    if ((fn->flags & SLTCFunctionFlag_VARIADIC) != 0 && fn->paramCount > 0u) {
+        if (outPackParamNameStart != NULL) {
+            *outPackParamNameStart = c->funcParamNameStarts[paramStart + fn->paramCount - 1u];
+        }
+        if (outPackParamNameEnd != NULL) {
+            *outPackParamNameEnd = c->funcParamNameEnds[paramStart + fn->paramCount - 1u];
+        }
+    }
+    return 0;
+}
+
+static int SLTCInvokeConstFunctionByIndex(
+    SLTCConstEvalCtx*  evalCtx,
     uint32_t           nameStart,
     uint32_t           nameEnd,
+    int32_t            fnIndex,
     const SLCTFEValue* args,
     uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx*  evalCtx = (SLTCConstEvalCtx*)ctx;
+    const SLTCCallArgInfo* _Nullable callArgs,
+    uint32_t callArgCount,
+    const SLTCCallBinding* _Nullable callBinding,
+    uint32_t     callPackParamNameStart,
+    uint32_t     callPackParamNameEnd,
+    SLCTFEValue* outValue,
+    int*         outIsConst) {
     SLTypeCheckCtx*    c;
-    int32_t            fnIndex;
     int32_t            fnNode;
     int32_t            bodyNode = -1;
     int32_t            child;
@@ -2652,100 +6333,26 @@ int SLTCResolveConstCall(
     SLCTFEExecEnv      paramFrame;
     SLCTFEExecCtx      execCtx;
     SLCTFEExecCtx*     savedExecCtx;
+    SLTCConstEvalCtx*  savedActiveConstEvalCtx;
+    const void*        savedCallArgs;
+    uint32_t           savedCallArgCount;
+    const void*        savedCallBinding;
+    uint32_t           savedCallPackParamNameStart;
+    uint32_t           savedCallPackParamNameEnd;
     uint32_t           savedDepth;
     SLCTFEValue        retValue;
     int                didReturn = 0;
     int                isConst = 0;
+    int                mirSupported = 0;
     int                rc;
-
-    (void)diag;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
     c = evalCtx->tc;
-    if (c == NULL) {
+    if (c == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
         return -1;
     }
 
-    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "len")) {
-        if (argCount == 1u) {
-            if (args[0].kind == SLCTFEValue_STRING) {
-                outValue->kind = SLCTFEValue_INT;
-                outValue->i64 = (int64_t)args[0].s.len;
-                outValue->f64 = 0.0;
-                outValue->b = 0;
-                outValue->typeTag = 0;
-                outValue->s.bytes = NULL;
-                outValue->s.len = 0;
-                outValue->span.fileBytes = NULL;
-                outValue->span.fileLen = 0;
-                outValue->span.startLine = 0;
-                outValue->span.startColumn = 0;
-                outValue->span.endLine = 0;
-                outValue->span.endColumn = 0;
-                *outIsConst = 1;
-                return 0;
-            }
-            if (args[0].kind == SLCTFEValue_TYPE) {
-                int32_t typeId = -1;
-                int32_t baseType;
-                if (SLTCDecodeTypeTag(c, args[0].typeTag, &typeId) == 0) {
-                    baseType = SLTCResolveAliasBaseType(c, typeId);
-                    if (baseType >= 0 && (uint32_t)baseType < c->typeLen) {
-                        const SLTCType* t = &c->types[baseType];
-                        if (t->kind == SLTCType_PACK) {
-                            outValue->kind = SLCTFEValue_INT;
-                            outValue->i64 = (int64_t)t->fieldCount;
-                            outValue->f64 = 0.0;
-                            outValue->b = 0;
-                            outValue->typeTag = 0;
-                            outValue->s.bytes = NULL;
-                            outValue->s.len = 0;
-                            outValue->span.fileBytes = NULL;
-                            outValue->span.fileLen = 0;
-                            outValue->span.startLine = 0;
-                            outValue->span.startColumn = 0;
-                            outValue->span.endLine = 0;
-                            outValue->span.endColumn = 0;
-                            *outIsConst = 1;
-                            return 0;
-                        }
-                        if (t->kind == SLTCType_ARRAY) {
-                            outValue->kind = SLCTFEValue_INT;
-                            outValue->i64 = (int64_t)t->arrayLen;
-                            outValue->f64 = 0.0;
-                            outValue->b = 0;
-                            outValue->typeTag = 0;
-                            outValue->s.bytes = NULL;
-                            outValue->s.len = 0;
-                            outValue->span.fileBytes = NULL;
-                            outValue->span.fileLen = 0;
-                            outValue->span.startLine = 0;
-                            outValue->span.startColumn = 0;
-                            outValue->span.endLine = 0;
-                            outValue->span.endColumn = 0;
-                            *outIsConst = 1;
-                            return 0;
-                        }
-                    }
-                }
-            }
-        }
-        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "len() operand is not const-evaluable");
-        *outIsConst = 0;
-        return 0;
-    }
-
-    fnIndex = SLTCFindConstCallableFunction(c, nameStart, nameEnd, argCount);
-    if (fnIndex < 0) {
-        SLTCConstSetReason(
-            evalCtx,
-            nameStart,
-            nameEnd,
-            "call target is not a const-evaluable function for these arguments");
-        *outIsConst = 0;
-        return 0;
-    }
     SLTCMarkConstDiagFnInvoked(c, fnIndex);
 
     for (savedDepth = 0; savedDepth < evalCtx->fnDepth; savedDepth++) {
@@ -2867,7 +6474,13 @@ int SLTCResolveConstCall(
     }
 
     savedExecCtx = evalCtx->execCtx;
+    savedActiveConstEvalCtx = c->activeConstEvalCtx;
     savedDepth = evalCtx->fnDepth;
+    savedCallArgs = evalCtx->callArgs;
+    savedCallArgCount = evalCtx->callArgCount;
+    savedCallBinding = evalCtx->callBinding;
+    savedCallPackParamNameStart = evalCtx->callPackParamNameStart;
+    savedCallPackParamNameEnd = evalCtx->callPackParamNameEnd;
 
     paramFrame.parent = NULL;
     paramFrame.bindings = paramBindings;
@@ -2888,23 +6501,59 @@ int SLTCResolveConstCall(
     execCtx.inferExprTypeCtx = evalCtx;
     execCtx.isOptionalType = SLTCEvalConstExecIsOptionalTypeCb;
     execCtx.isOptionalTypeCtx = evalCtx;
+    execCtx.forInIndex = SLTCEvalConstForInIndexCb;
+    execCtx.forInIndexCtx = evalCtx;
     execCtx.pendingReturnExprNode = -1;
     execCtx.forIterLimit = SLTC_CONST_FOR_MAX_ITERS;
     SLCTFEExecResetReason(&execCtx);
     evalCtx->execCtx = &execCtx;
     evalCtx->fnStack[evalCtx->fnDepth++] = fnIndex;
+    evalCtx->callArgs = callArgs;
+    evalCtx->callArgCount = callArgCount;
+    evalCtx->callBinding = callBinding;
+    evalCtx->callPackParamNameStart = callPackParamNameStart;
+    evalCtx->callPackParamNameEnd = callPackParamNameEnd;
+    evalCtx->nonConstReason = NULL;
+    evalCtx->nonConstStart = 0;
+    evalCtx->nonConstEnd = 0;
+    c->activeConstEvalCtx = evalCtx;
 
-    rc = SLCTFEExecEvalBlock(&execCtx, bodyNode, &retValue, &didReturn, &isConst);
+    if (c->funcs[fnIndex].returnType == c->typeType) {
+        rc = SLTCConstEvalTryDirectReturnFunction(evalCtx, bodyNode, &retValue, &isConst);
+        if (rc <= 0) {
+            evalCtx->fnDepth = savedDepth;
+            evalCtx->execCtx = savedExecCtx;
+            evalCtx->callArgs = savedCallArgs;
+            evalCtx->callArgCount = savedCallArgCount;
+            evalCtx->callBinding = savedCallBinding;
+            evalCtx->callPackParamNameStart = savedCallPackParamNameStart;
+            evalCtx->callPackParamNameEnd = savedCallPackParamNameEnd;
+            c->activeConstEvalCtx = savedActiveConstEvalCtx;
+            if (rc != 0) {
+                return -1;
+            }
+            *outValue = retValue;
+            *outIsConst = isConst;
+            return 0;
+        }
+    }
+
+    rc = SLTCTryMirConstCall(
+        evalCtx, fnIndex, args, argCount, &retValue, &didReturn, &isConst, &mirSupported);
     evalCtx->fnDepth = savedDepth;
     evalCtx->execCtx = savedExecCtx;
+    evalCtx->callArgs = savedCallArgs;
+    evalCtx->callArgCount = savedCallArgCount;
+    evalCtx->callBinding = savedCallBinding;
+    evalCtx->callPackParamNameStart = savedCallPackParamNameStart;
+    evalCtx->callPackParamNameEnd = savedCallPackParamNameEnd;
+    c->activeConstEvalCtx = savedActiveConstEvalCtx;
     if (rc != 0) {
         return -1;
     }
-    if (!isConst) {
-        if (execCtx.nonConstReason != NULL) {
-            evalCtx->nonConstReason = execCtx.nonConstReason;
-            evalCtx->nonConstStart = execCtx.nonConstStart;
-            evalCtx->nonConstEnd = execCtx.nonConstEnd;
+    if (!mirSupported || !isConst) {
+        if (evalCtx->nonConstReason == NULL) {
+            SLTCConstSetReasonNode(evalCtx, bodyNode, "function body is not const-evaluable");
         }
         *outIsConst = 0;
         return 0;
@@ -2968,15 +6617,413 @@ int SLTCResolveConstCall(
     return 0;
 }
 
+int SLTCResolveConstCallMir(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+    SLTypeCheckCtx*   c;
+    int32_t           callNode = -1;
+    int32_t           callCalleeNode = -1;
+    int32_t           fnIndex;
+    SLTCCallArgInfo   invokeCallArgs[SLTC_MAX_CALL_ARGS];
+    SLTCCallBinding   invokeBinding;
+    uint32_t          invokeCallArgCount = 0;
+    uint32_t          invokePackParamNameStart = 0;
+    uint32_t          invokePackParamNameEnd = 0;
+    int               invokeHasCallContext = 0;
+
+    (void)function;
+    (void)diag;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL) {
+        return -1;
+    }
+    if (SLTCMirConstResolveCallNode(evalCtx, program, inst, &callNode)) {
+        if (callNode >= 0 && (uint32_t)callNode < c->ast->len) {
+            callCalleeNode = SLAstFirstChild(c->ast, callNode);
+        }
+        int status = SLTCConstEvalLenCall(evalCtx, callNode, outValue, outIsConst);
+        if (status == 0) {
+            return 0;
+        }
+        if (status < 0) {
+            return -1;
+        }
+        status = SLTCConstEvalCompilerDiagCall(evalCtx, callNode, outValue, outIsConst);
+        if (status == 0) {
+            return 0;
+        }
+        if (status < 0) {
+            return -1;
+        }
+        status = SLTCConstEvalSpanOfCall(evalCtx, callNode, outValue, outIsConst);
+        if (status == 0) {
+            return 0;
+        }
+        if (status < 0) {
+            return -1;
+        }
+        status = SLTCConstEvalTypeReflectionCall(evalCtx, callNode, outValue, outIsConst);
+        if (status == 0) {
+            return 0;
+        }
+        if (status < 0) {
+            return -1;
+        }
+        if (callNode >= 0) {
+            int32_t calleeNode = SLAstFirstChild(c->ast, callNode);
+            if (calleeNode >= 0 && c->ast->nodes[calleeNode].kind == SLAst_IDENT
+                && SLNameEqLiteral(
+                    c->src,
+                    c->ast->nodes[calleeNode].dataStart,
+                    c->ast->nodes[calleeNode].dataEnd,
+                    "typeof"))
+            {
+                int32_t argNode = SLAstNextSibling(c->ast, calleeNode);
+                int32_t argExprNode = argNode;
+                if (argCount == 1u) {
+                    int      isCurrentPackIndexExpr = 0;
+                    uint32_t trackedAnyPackArgIndex = 0;
+                    int32_t  argTypeId = -1;
+                    int      packStatus = -1;
+                    if (argExprNode >= 0 && (uint32_t)argExprNode < c->ast->len
+                        && c->ast->nodes[argExprNode].kind == SLAst_CALL_ARG)
+                    {
+                        int32_t innerArgExprNode = SLAstFirstChild(c->ast, argExprNode);
+                        if (innerArgExprNode >= 0) {
+                            argExprNode = innerArgExprNode;
+                        }
+                    }
+                    if (argExprNode >= 0 && (uint32_t)argExprNode < c->ast->len
+                        && c->ast->nodes[argExprNode].kind == SLAst_INDEX
+                        && (c->ast->nodes[argExprNode].flags & SLAstFlag_INDEX_SLICE) == 0u)
+                    {
+                        int32_t baseNode = SLAstFirstChild(c->ast, argExprNode);
+                        if (baseNode >= 0 && (uint32_t)baseNode < c->ast->len
+                            && c->ast->nodes[baseNode].kind == SLAst_IDENT
+                            && SLTCConstEvalIsTrackedAnyPackName(
+                                evalCtx,
+                                c->ast->nodes[baseNode].dataStart,
+                                c->ast->nodes[baseNode].dataEnd))
+                        {
+                            isCurrentPackIndexExpr = 1;
+                        }
+                    }
+                    if (isCurrentPackIndexExpr) {
+                        return SLTCConstEvalTypeOf(evalCtx, callNode, outValue, outIsConst);
+                    }
+                    packStatus = SLTCConstEvalResolveTrackedAnyPackArgIndex(
+                        evalCtx, argExprNode, &trackedAnyPackArgIndex);
+                    if (packStatus < 0) {
+                        return -1;
+                    }
+                    if (packStatus == 0 || packStatus == 2 || packStatus == 3) {
+                        return SLTCConstEvalTypeOf(evalCtx, callNode, outValue, outIsConst);
+                    }
+                    if (SLTCEvalConstExecInferValueTypeCb(evalCtx, &args[0], &argTypeId) == 0) {
+                        outValue->kind = SLCTFEValue_TYPE;
+                        outValue->i64 = 0;
+                        outValue->f64 = 0.0;
+                        outValue->b = 0;
+                        outValue->typeTag = SLTCEncodeTypeTag(c, argTypeId);
+                        outValue->s.bytes = NULL;
+                        outValue->s.len = 0;
+                        outValue->span.fileBytes = NULL;
+                        outValue->span.fileLen = 0;
+                        outValue->span.startLine = 0;
+                        outValue->span.startColumn = 0;
+                        outValue->span.endLine = 0;
+                        outValue->span.endColumn = 0;
+                        *outIsConst = 1;
+                        return 0;
+                    }
+                }
+                return SLTCConstEvalTypeOf(evalCtx, callNode, outValue, outIsConst);
+            }
+        }
+    }
+
+    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "typeof")) {
+        if (argCount == 1u) {
+            int32_t argTypeId = -1;
+            if (SLTCEvalConstExecInferValueTypeCb(evalCtx, &args[0], &argTypeId) == 0) {
+                if ((argTypeId == c->typeUntypedInt || argTypeId == c->typeUntypedFloat)
+                    && SLTCConcretizeInferredType(c, argTypeId, &argTypeId) != 0)
+                {
+                    return -1;
+                }
+                outValue->kind = SLCTFEValue_TYPE;
+                outValue->i64 = 0;
+                outValue->f64 = 0.0;
+                outValue->b = 0;
+                outValue->typeTag = SLTCEncodeTypeTag(c, argTypeId);
+                outValue->s.bytes = NULL;
+                outValue->s.len = 0;
+                outValue->span.fileBytes = NULL;
+                outValue->span.fileLen = 0;
+                outValue->span.startLine = 0;
+                outValue->span.startColumn = 0;
+                outValue->span.endLine = 0;
+                outValue->span.endColumn = 0;
+                *outIsConst = 1;
+                return 0;
+            }
+        }
+        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "typeof() operand is not const-evaluable");
+        *outIsConst = 0;
+        return 0;
+    }
+
+    {
+        int reflectArgStatus = SLTCConstEvalTypeReflectionByArgs(
+            evalCtx, nameStart, nameEnd, args, argCount, outValue, outIsConst);
+        if (reflectArgStatus == 0) {
+            return 0;
+        }
+        if (reflectArgStatus < 0) {
+            return -1;
+        }
+    }
+
+    if (args != NULL && argCount > 0 && args[0].kind == SLCTFEValue_SPAN
+        && args[0].typeTag == SL_TC_MIR_IMPORT_ALIAS_TAG && args[0].span.fileBytes != NULL
+        && args[0].span.fileLen > 0)
+    {
+        const uint8_t* srcBytes = (const uint8_t*)c->src.ptr;
+        const uint8_t* aliasPtr = args[0].span.fileBytes;
+        uint32_t       aliasStart;
+        uint32_t       aliasEnd;
+        if (aliasPtr >= srcBytes && (uint64_t)(aliasPtr - srcBytes) <= UINT32_MAX) {
+            aliasStart = (uint32_t)(aliasPtr - srcBytes);
+            aliasEnd = aliasStart + args[0].span.fileLen;
+            if (aliasEnd <= c->src.len) {
+                fnIndex = SLTCFindPkgConstCallableFunction(
+                    c, aliasStart, aliasEnd, nameStart, nameEnd, argCount - 1u);
+                if (fnIndex >= 0) {
+                    return SLTCInvokeConstFunctionByIndex(
+                        evalCtx,
+                        nameStart,
+                        nameEnd,
+                        fnIndex,
+                        args + 1u,
+                        argCount - 1u,
+                        NULL,
+                        0u,
+                        NULL,
+                        0u,
+                        0u,
+                        outValue,
+                        outIsConst);
+                }
+            }
+        }
+    }
+
+    {
+        SLCTFEValue calleeValue;
+        int         calleeIsConst = 0;
+        uint32_t    calleeFnIndex = UINT32_MAX;
+        const char* savedReason = evalCtx->nonConstReason;
+        uint32_t    savedStart = evalCtx->nonConstStart;
+        uint32_t    savedEnd = evalCtx->nonConstEnd;
+        if (SLTCResolveConstIdent(
+                evalCtx, nameStart, nameEnd, &calleeValue, &calleeIsConst, c->diag)
+            != 0)
+        {
+            return -1;
+        }
+        if (calleeIsConst && SLMirValueAsFunctionRef(&calleeValue, &calleeFnIndex)
+            && calleeFnIndex < c->funcLen)
+        {
+            const SLTCFunction* fn = &c->funcs[calleeFnIndex];
+            if (callNode >= 0 && callCalleeNode >= 0
+                && SLTCConstEvalPrepareInvokeCallContext(
+                       evalCtx,
+                       callNode,
+                       callCalleeNode,
+                       (int32_t)calleeFnIndex,
+                       invokeCallArgs,
+                       &invokeCallArgCount,
+                       &invokeBinding,
+                       &invokePackParamNameStart,
+                       &invokePackParamNameEnd)
+                       == 0)
+            {
+                invokeHasCallContext = 1;
+            }
+            return SLTCInvokeConstFunctionByIndex(
+                evalCtx,
+                fn->nameStart,
+                fn->nameEnd,
+                (int32_t)calleeFnIndex,
+                args,
+                argCount,
+                invokeHasCallContext ? invokeCallArgs : NULL,
+                invokeHasCallContext ? invokeCallArgCount : 0u,
+                invokeHasCallContext ? &invokeBinding : NULL,
+                invokeHasCallContext ? invokePackParamNameStart : 0u,
+                invokeHasCallContext ? invokePackParamNameEnd : 0u,
+                outValue,
+                outIsConst);
+        }
+        evalCtx->nonConstReason = savedReason;
+        evalCtx->nonConstStart = savedStart;
+        evalCtx->nonConstEnd = savedEnd;
+    }
+
+    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "len")) {
+        if (argCount == 1u) {
+            if (args[0].kind == SLCTFEValue_STRING) {
+                outValue->kind = SLCTFEValue_INT;
+                outValue->i64 = (int64_t)args[0].s.len;
+                outValue->f64 = 0.0;
+                outValue->b = 0;
+                outValue->typeTag = 0;
+                outValue->s.bytes = NULL;
+                outValue->s.len = 0;
+                outValue->span.fileBytes = NULL;
+                outValue->span.fileLen = 0;
+                outValue->span.startLine = 0;
+                outValue->span.startColumn = 0;
+                outValue->span.endLine = 0;
+                outValue->span.endColumn = 0;
+                *outIsConst = 1;
+                return 0;
+            }
+            if (args[0].kind == SLCTFEValue_TYPE) {
+                int32_t typeId = -1;
+                int32_t baseType;
+                if (SLTCDecodeTypeTag(c, args[0].typeTag, &typeId) == 0) {
+                    baseType = SLTCResolveAliasBaseType(c, typeId);
+                    if (baseType >= 0 && (uint32_t)baseType < c->typeLen) {
+                        const SLTCType* t = &c->types[baseType];
+                        if (t->kind == SLTCType_PACK) {
+                            outValue->kind = SLCTFEValue_INT;
+                            outValue->i64 = (int64_t)t->fieldCount;
+                            outValue->f64 = 0.0;
+                            outValue->b = 0;
+                            outValue->typeTag = 0;
+                            outValue->s.bytes = NULL;
+                            outValue->s.len = 0;
+                            outValue->span.fileBytes = NULL;
+                            outValue->span.fileLen = 0;
+                            outValue->span.startLine = 0;
+                            outValue->span.startColumn = 0;
+                            outValue->span.endLine = 0;
+                            outValue->span.endColumn = 0;
+                            *outIsConst = 1;
+                            return 0;
+                        }
+                        if (t->kind == SLTCType_ARRAY) {
+                            outValue->kind = SLCTFEValue_INT;
+                            outValue->i64 = (int64_t)t->arrayLen;
+                            outValue->f64 = 0.0;
+                            outValue->b = 0;
+                            outValue->typeTag = 0;
+                            outValue->s.bytes = NULL;
+                            outValue->s.len = 0;
+                            outValue->span.fileBytes = NULL;
+                            outValue->span.fileLen = 0;
+                            outValue->span.startLine = 0;
+                            outValue->span.startColumn = 0;
+                            outValue->span.endLine = 0;
+                            outValue->span.endColumn = 0;
+                            *outIsConst = 1;
+                            return 0;
+                        }
+                    }
+                }
+            }
+        }
+        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "len() operand is not const-evaluable");
+        *outIsConst = 0;
+        return 0;
+    }
+
+    fnIndex = SLTCFindConstCallableFunction(c, nameStart, nameEnd, argCount);
+    if (fnIndex < 0) {
+        SLTCConstSetReason(
+            evalCtx,
+            nameStart,
+            nameEnd,
+            "call target is not a const-evaluable function for these arguments");
+        *outIsConst = 0;
+        return 0;
+    }
+    if (callNode >= 0 && callCalleeNode >= 0
+        && SLTCConstEvalPrepareInvokeCallContext(
+               evalCtx,
+               callNode,
+               callCalleeNode,
+               fnIndex,
+               invokeCallArgs,
+               &invokeCallArgCount,
+               &invokeBinding,
+               &invokePackParamNameStart,
+               &invokePackParamNameEnd)
+               == 0)
+    {
+        invokeHasCallContext = 1;
+    }
+    return SLTCInvokeConstFunctionByIndex(
+        evalCtx,
+        nameStart,
+        nameEnd,
+        fnIndex,
+        args,
+        argCount,
+        invokeHasCallContext ? invokeCallArgs : NULL,
+        invokeHasCallContext ? invokeCallArgCount : 0u,
+        invokeHasCallContext ? &invokeBinding : NULL,
+        invokeHasCallContext ? invokePackParamNameStart : 0u,
+        invokeHasCallContext ? invokePackParamNameEnd : 0u,
+        outValue,
+        outIsConst);
+}
+
+int SLTCResolveConstCall(
+    void*              ctx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const SLCTFEValue* args,
+    uint32_t           argCount,
+    SLCTFEValue*       outValue,
+    int*               outIsConst,
+    SLDiag* _Nullable diag) {
+    return SLTCResolveConstCallMir(
+        ctx, NULL, NULL, NULL, nameStart, nameEnd, args, argCount, outValue, outIsConst, diag);
+}
+
 static int SLTCConstEvalDirectCall(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
     SLTypeCheckCtx*  c;
     int32_t          calleeNode;
     const SLAstNode* callee;
+    SLCTFEValue      calleeValue;
+    int              calleeIsConst = 0;
+    uint32_t         calleeFnIndex = UINT32_MAX;
     int32_t          argNode;
     uint32_t         argCount = 0;
     uint32_t         argIndex = 0;
     SLCTFEValue*     argValues = NULL;
+    SLTCCallArgInfo  invokeCallArgs[SLTC_MAX_CALL_ARGS];
+    SLTCCallBinding  invokeBinding;
+    uint32_t         invokeCallArgCount = 0;
+    uint32_t         invokePackParamNameStart = 0;
+    uint32_t         invokePackParamNameEnd = 0;
+    int              invokeHasCallContext = 0;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -3027,6 +7074,46 @@ static int SLTCConstEvalDirectCall(
         argNode = SLAstNextSibling(c->ast, argNode);
     }
 
+    if (SLTCResolveConstIdent(
+            evalCtx, callee->dataStart, callee->dataEnd, &calleeValue, &calleeIsConst, c->diag)
+        != 0)
+    {
+        return -1;
+    }
+    if (calleeIsConst && SLMirValueAsFunctionRef(&calleeValue, &calleeFnIndex)
+        && calleeFnIndex < c->funcLen)
+    {
+        const SLTCFunction* fn = &c->funcs[calleeFnIndex];
+        if (SLTCConstEvalPrepareInvokeCallContext(
+                evalCtx,
+                exprNode,
+                calleeNode,
+                (int32_t)calleeFnIndex,
+                invokeCallArgs,
+                &invokeCallArgCount,
+                &invokeBinding,
+                &invokePackParamNameStart,
+                &invokePackParamNameEnd)
+            == 0)
+        {
+            invokeHasCallContext = 1;
+        }
+        return SLTCInvokeConstFunctionByIndex(
+            evalCtx,
+            fn->nameStart,
+            fn->nameEnd,
+            (int32_t)calleeFnIndex,
+            argValues,
+            argCount,
+            invokeHasCallContext ? invokeCallArgs : NULL,
+            invokeHasCallContext ? invokeCallArgCount : 0u,
+            invokeHasCallContext ? &invokeBinding : NULL,
+            invokeHasCallContext ? invokePackParamNameStart : 0u,
+            invokeHasCallContext ? invokePackParamNameEnd : 0u,
+            outValue,
+            outIsConst);
+    }
+
     return SLTCResolveConstCall(
         evalCtx,
         callee->dataStart,
@@ -3048,6 +7135,7 @@ int SLTCEvalTopLevelConstNodeAt(
     uint8_t          state;
     int32_t          initNode;
     int              isConst = 0;
+    int              mirSupported = 0;
     SLTCVarLikeParts parts;
     if (c == NULL || evalCtx == NULL || outValue == NULL || outIsConst == NULL || nodeId < 0
         || (uint32_t)nodeId >= c->ast->len)
@@ -3086,6 +7174,33 @@ int SLTCEvalTopLevelConstNodeAt(
         SLTCConstSetReasonNode(evalCtx, nodeId, "const declaration is missing an initializer");
         c->constEvalState[nodeId] = SLTCConstEval_NONCONST;
         *outIsConst = 0;
+        return 0;
+    }
+    evalCtx->nonConstReason = NULL;
+    evalCtx->nonConstStart = 0;
+    evalCtx->nonConstEnd = 0;
+    if (SLTCTryMirTopLevelConst(evalCtx, nodeId, nameIndex, outValue, &isConst, &mirSupported) != 0)
+    {
+        c->constEvalState[nodeId] = SLTCConstEval_UNSEEN;
+        return -1;
+    }
+    if (mirSupported) {
+        if (!isConst) {
+            if (evalCtx->nonConstReason == NULL) {
+                SLTCConstSetReasonNode(
+                    evalCtx, initNode, "const initializer is not const-evaluable");
+            }
+            c->constEvalState[nodeId] = SLTCConstEval_NONCONST;
+            *outIsConst = 0;
+            return 0;
+        }
+        if (!parts.grouped) {
+            c->constEvalValues[nodeId] = *outValue;
+            c->constEvalState[nodeId] = SLTCConstEval_READY;
+        } else {
+            c->constEvalState[nodeId] = SLTCConstEval_UNSEEN;
+        }
+        *outIsConst = 1;
         return 0;
     }
     if (SLTCEvalConstExprNode(evalCtx, initNode, outValue, &isConst) != 0) {

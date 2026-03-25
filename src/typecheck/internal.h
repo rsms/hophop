@@ -5,6 +5,7 @@
 #include "../ctfe.h"
 #include "../ctfe_exec.h"
 #include "../fmt_parse.h"
+#include "../mir.h"
 
 SL_API_BEGIN
 
@@ -157,7 +158,22 @@ typedef struct {
     uint32_t variantEnd;
 } SLTCVariantNarrow;
 
+typedef enum {
+    SLTCForInValueMode_VALUE = 0,
+    SLTCForInValueMode_REF,
+    SLTCForInValueMode_ANY,
+} SLTCForInValueMode;
+
 typedef struct SLTCConstEvalCtx SLTCConstEvalCtx;
+typedef struct {
+    SLTCConstEvalCtx*   evalCtx;
+    SLMirProgramBuilder builder;
+    uint32_t*           tcToMir;
+    uint8_t*            loweringFns;
+    uint32_t*           topConstToMir;
+    uint8_t*            loweringTopConsts;
+    SLDiag*             diag;
+} SLTCMirConstLowerCtx;
 
 typedef struct {
     void* _Nullable ctx;
@@ -393,18 +409,27 @@ typedef struct {
 #define SLTC_CONST_FOR_MAX_ITERS  100000u
 
 struct SLTCConstEvalCtx {
-    SLTypeCheckCtx* tc;
-    SLCTFEExecCtx*  execCtx;
-    int32_t         fnStack[SLTC_CONST_CALL_MAX_DEPTH];
-    uint32_t        fnDepth;
-    const void*     callArgs;
-    uint32_t        callArgCount;
-    const void*     callBinding;
-    uint32_t        callPackParamNameStart;
-    uint32_t        callPackParamNameEnd;
-    const char*     nonConstReason;
-    uint32_t        nonConstStart;
-    uint32_t        nonConstEnd;
+    SLTypeCheckCtx*      tc;
+    SLCTFEExecCtx*       execCtx;
+    const SLMirProgram*  mirProgram;
+    const SLMirFunction* mirFunction;
+    const SLCTFEValue*   mirLocals;
+    uint32_t             mirLocalCount;
+    const SLMirProgram*  mirSavedPrograms[SLTC_CONST_CALL_MAX_DEPTH];
+    const SLMirFunction* mirSavedFunctions[SLTC_CONST_CALL_MAX_DEPTH];
+    const SLCTFEValue*   mirSavedLocals[SLTC_CONST_CALL_MAX_DEPTH];
+    uint32_t             mirSavedLocalCounts[SLTC_CONST_CALL_MAX_DEPTH];
+    uint32_t             mirFrameDepth;
+    int32_t              fnStack[SLTC_CONST_CALL_MAX_DEPTH];
+    uint32_t             fnDepth;
+    const void*          callArgs;
+    uint32_t             callArgCount;
+    const void*          callBinding;
+    uint32_t             callPackParamNameStart;
+    uint32_t             callPackParamNameEnd;
+    const char*          nonConstReason;
+    uint32_t             nonConstStart;
+    uint32_t             nonConstEnd;
 };
 
 int SLTCEvalTopLevelConstNode(
@@ -430,6 +455,18 @@ int SLTCResolveConstCall(
     uint32_t           argCount,
     SLCTFEValue*       outValue,
     int*               outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCResolveConstCallMir(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    const SLCTFEValue* _Nonnull args,
+    uint32_t argCount,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
 
 /* Returns 1 if handled as span compound, 0 if not span-like, -1 on hard error. */
@@ -630,6 +667,9 @@ int32_t            SLTCFindFmtValueType(SLTypeCheckCtx* c);
 int                SLTCTypeIsReflectSpan(SLTypeCheckCtx* c, int32_t typeId);
 int                SLTCTypeIsFmtValue(SLTypeCheckCtx* c, int32_t typeId);
 int32_t            SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
+int32_t            SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
+int32_t            SLTCFindPkgQualifiedFunctionValueIndex(
+               SLTypeCheckCtx* c, uint32_t pkgStart, uint32_t pkgEnd, uint32_t nameStart, uint32_t nameEnd);
 int SLTCFunctionNameEq(const SLTypeCheckCtx* c, uint32_t funcIndex, uint32_t start, uint32_t end);
 int SLTCNameEqPkgPrefixedMethod(
     SLTypeCheckCtx* c,
@@ -645,6 +685,9 @@ int SLTCExtractPkgPrefixFromTypeName(
     uint32_t        typeNameEnd,
     uint32_t*       outPkgStart,
     uint32_t*       outPkgEnd);
+int SLTCImportDefaultAliasEq(
+    SLStrView src, uint32_t pathStart, uint32_t pathEnd, uint32_t aliasStart, uint32_t aliasEnd);
+int SLTCHasImportAlias(SLTypeCheckCtx* c, uint32_t aliasStart, uint32_t aliasEnd);
 int SLTCResolveReceiverPkgPrefix(
     SLTypeCheckCtx* c, int32_t typeId, uint32_t* outPkgStart, uint32_t* outPkgEnd);
 int SLTCResolveEnumMemberType(
@@ -726,6 +769,8 @@ int  SLTCResolveConstIdent(
      SLDiag* _Nullable diag);
 int SLTCConstLookupExecBindingType(
     SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, int32_t* outType);
+int SLTCConstLookupMirLocalType(
+    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, int32_t* outType);
 int      SLTCConstBuiltinSizeBytes(SLBuiltinKind b, uint64_t* outBytes);
 int      SLTCConstBuiltinAlignBytes(SLBuiltinKind b, uint64_t* outAlign);
 uint64_t SLTCConstAlignUpU64(uint64_t v, uint64_t align);
@@ -766,8 +811,103 @@ int SLTCEvalConstExprNode(
 int SLTCEvalConstExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
 int SLTCEvalConstExecResolveTypeCb(void* ctx, int32_t typeNode, int32_t* outTypeId);
 int SLTCEvalConstExecInferValueTypeCb(void* ctx, const SLCTFEValue* value, int32_t* outTypeId);
+int SLTCMirConstZeroInitLocal(
+    void* _Nullable ctx,
+    const SLMirTypeRef* _Nonnull typeRef,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstCoerceValueForType(
+    void* _Nullable ctx,
+    const SLMirTypeRef* _Nonnull typeRef,
+    SLCTFEValue* _Nonnull inOutValue,
+    SLDiag* _Nullable diag);
+int SLTCMirConstIndexValue(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    const SLCTFEValue* _Nonnull index,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstSequenceLen(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstIterInit(
+    void* _Nullable ctx,
+    uint32_t sourceNode,
+    const SLCTFEValue* _Nonnull source,
+    uint16_t flags,
+    SLCTFEValue* _Nonnull outIter,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstIterNext(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull iterValue,
+    uint16_t flags,
+    int* _Nonnull outHasItem,
+    SLCTFEValue* _Nonnull outKey,
+    int* _Nonnull outKeyIsConst,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outValueIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstAggGetField(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstAggAddrField(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstMakeTuple(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull elems,
+    uint32_t elemCount,
+    uint32_t typeNodeHint,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCEvalConstForInIndexCb(
+    void* _Nullable ctx,
+    SLCTFEExecCtx* _Nonnull execCtx,
+    const SLCTFEValue* _Nonnull sourceValue,
+    uint32_t index,
+    int      byRef,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
 int32_t SLTCFindConstCallableFunction(
     SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, uint32_t argCount);
+int SLTCResolveForInIterator(
+    SLTypeCheckCtx* c,
+    int32_t         sourceNode,
+    int32_t         sourceType,
+    int32_t*        outFnIndex,
+    int32_t*        outIterType);
+int SLTCResolveForInNextValue(
+    SLTypeCheckCtx*    c,
+    int32_t            iterPtrType,
+    SLTCForInValueMode valueMode,
+    int32_t*           outValueType,
+    int32_t*           outFn);
+int SLTCResolveForInNextKey(
+    SLTypeCheckCtx* c, int32_t iterPtrType, int32_t* outKeyType, int32_t* outFn);
+int SLTCResolveForInNextKeyAndValue(
+    SLTypeCheckCtx*    c,
+    int32_t            iterPtrType,
+    SLTCForInValueMode valueMode,
+    int32_t*           outKeyType,
+    int32_t*           outValueType,
+    int32_t*           outFn);
 int SLTCResolveConstCall(
     void*              ctx,
     uint32_t           nameStart,
@@ -777,6 +917,27 @@ int SLTCResolveConstCall(
     SLCTFEValue*       outValue,
     int*               outIsConst,
     SLDiag* _Nullable diag);
+int SLTCResolveConstCallMirPre(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    SLDiag* _Nullable diag);
+int SLTCMirConstBindFrame(
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLCTFEValue* _Nullable locals,
+    uint32_t localCount,
+    SLDiag* _Nullable diag);
+void SLTCMirConstUnbindFrame(void* _Nullable ctx);
+void SLTCMirConstAdoptLowerDiagReason(SLTCConstEvalCtx* evalCtx, const SLDiag* _Nullable diag);
+int  SLTCMirConstLowerConstExpr(
+     void* _Nullable ctx, int32_t exprNode, SLMirConst* _Nonnull outValue, SLDiag* _Nullable diag);
 int SLTCEvalTopLevelConstNodeAt(
     SLTypeCheckCtx*   c,
     SLTCConstEvalCtx* evalCtx,
@@ -804,6 +965,10 @@ int     SLTCFnNodeHasTypeParamName(
         SLTypeCheckCtx* c, int32_t fnNode, uint32_t nameStart, uint32_t nameEnd);
 int SLTCResolveActiveTypeParamType(
     SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int32_t* outType);
+int SLTCMirConstInitLowerCtx(SLTCConstEvalCtx* evalCtx, SLTCMirConstLowerCtx* _Nonnull outCtx);
+int SLTCMirConstLowerFunction(
+    SLTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex);
+int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex, int32_t rootNode);
 int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType);
 int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, int32_t* outTypeId);
 int SLTCCollectTypeDeclsFromNode(SLTypeCheckCtx* c, int32_t nodeId);

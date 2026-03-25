@@ -989,6 +989,25 @@ int SLTCTypeExpr_IDENT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, in
             *outType = execType;
             return 0;
         }
+        if (SLTCConstLookupMirLocalType(c->activeConstEvalCtx, n->dataStart, n->dataEnd, &execType))
+        {
+            *outType = execType;
+            return 0;
+        }
+        {
+            SLCTFEValue execValue;
+            int         execIsConst = 0;
+            if (SLTCResolveConstIdent(
+                    c->activeConstEvalCtx, n->dataStart, n->dataEnd, &execValue, &execIsConst, NULL)
+                    == 0
+                && execIsConst
+                && SLTCEvalConstExecInferValueTypeCb(c->activeConstEvalCtx, &execValue, &execType)
+                       == 0)
+            {
+                *outType = execType;
+                return 0;
+            }
+        }
     }
     if (SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "context")) {
         if (c->currentFunctionIsCompareHook) {
@@ -2570,6 +2589,7 @@ int SLTCTypeExpr_FIELD_EXPR(
     int32_t          recvNode = SLAstFirstChild(c->ast, nodeId);
     int32_t          recvType;
     int32_t          fieldType;
+    int32_t          fnIndex;
     int32_t          localIdx;
     const SLAstNode* recv;
     if (recvNode < 0) {
@@ -2599,6 +2619,17 @@ int SLTCTypeExpr_FIELD_EXPR(
                    == 0)
         {
             *outType = fieldType;
+            return 0;
+        }
+    }
+    if (recv->kind == SLAst_IDENT && localIdx < 0
+        && SLTCFindFunctionIndex(c, recv->dataStart, recv->dataEnd) < 0)
+    {
+        fnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+            c, recv->dataStart, recv->dataEnd, n->dataStart, n->dataEnd);
+        if (fnIndex >= 0) {
+            SLTCMarkFunctionUsed(c, fnIndex);
+            *outType = c->funcs[(uint32_t)fnIndex].funcTypeId;
             return 0;
         }
     }
@@ -3173,6 +3204,27 @@ int SLTCValidateConstInitializerExprNode(SLTypeCheckCtx* c, int32_t initNode) {
     return rc;
 }
 
+static int SLTCValidateLocalConstFunctionInitializerExprNode(SLTypeCheckCtx* c, int32_t initNode) {
+    const SLAstNode* init;
+    int32_t          initType;
+    if (c == NULL || initNode < 0 || (uint32_t)initNode >= c->ast->len) {
+        return 0;
+    }
+    init = &c->ast->nodes[initNode];
+    if (init->kind == SLAst_CALL_ARG) {
+        int32_t inner = SLAstFirstChild(c->ast, initNode);
+        return SLTCValidateLocalConstFunctionInitializerExprNode(c, inner);
+    }
+    if (init->kind != SLAst_IDENT && init->kind != SLAst_FIELD_EXPR) {
+        return 0;
+    }
+    if (SLTCTypeExpr(c, initNode, &initType) != 0) {
+        return 0;
+    }
+    return initType >= 0 && (uint32_t)initType < c->typeLen
+        && c->types[initType].kind == SLTCType_FUNCTION;
+}
+
 int SLTCValidateLocalConstVarLikeInitializers(
     SLTypeCheckCtx* c, int32_t nodeId, const SLTCVarLikeParts* parts) {
     uint32_t i;
@@ -3183,6 +3235,9 @@ int SLTCValidateLocalConstVarLikeInitializers(
         int32_t initNode = SLTCVarLikeInitExprNode(c, nodeId);
         if (initNode < 0) {
             return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        }
+        if (SLTCValidateLocalConstFunctionInitializerExprNode(c, initNode)) {
+            return 0;
         }
         return SLTCValidateConstInitializerExprNode(c, initNode);
     }
@@ -3199,6 +3254,9 @@ int SLTCValidateLocalConstVarLikeInitializers(
                 if (initNode < 0) {
                     return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
                 }
+                if (SLTCValidateLocalConstFunctionInitializerExprNode(c, initNode)) {
+                    continue;
+                }
                 if (SLTCValidateConstInitializerExprNode(c, initNode) != 0) {
                     return -1;
                 }
@@ -3209,6 +3267,9 @@ int SLTCValidateLocalConstVarLikeInitializers(
             int32_t initNode = SLTCListItemAt(c->ast, parts->initNode, 0);
             if (initNode < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+            }
+            if (SLTCValidateLocalConstFunctionInitializerExprNode(c, initNode)) {
+                return 0;
             }
             return SLTCValidateConstInitializerExprNode(c, initNode);
         }
@@ -3707,6 +3768,11 @@ int SLTCValidateTopLevelConstEvaluable(SLTypeCheckCtx* c) {
                 int32_t     initNode = SLTCVarLikeInitExprNode(c, child);
                 SLCTFEValue value;
                 int         isConst = 0;
+                if (initNode >= 0 && SLTCValidateLocalConstFunctionInitializerExprNode(c, initNode))
+                {
+                    child = SLAstNextSibling(c->ast, child);
+                    continue;
+                }
                 c->lastConstEvalReason = NULL;
                 c->lastConstEvalReasonStart = 0;
                 c->lastConstEvalReasonEnd = 0;

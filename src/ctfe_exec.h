@@ -9,6 +9,7 @@ typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
     int32_t  typeId;
+    int32_t  typeNode;
     uint8_t mutable;
     uint8_t     _reserved[3];
     SLCTFEValue value;
@@ -23,6 +24,13 @@ typedef struct SLCTFEExecEnv {
 typedef int (*SLCTFEExecEvalExprFn)(
     void* _Nullable ctx,
     int32_t exprNode,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
+
+typedef int (*SLCTFEExecEvalExprForTypeFn)(
+    void* _Nullable ctx,
+    int32_t exprNode,
+    int32_t typeNode,
     SLCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
@@ -41,7 +49,62 @@ typedef int (*SLCTFEExecIsOptionalTypeFn)(
     int32_t* _Nullable outPayloadTypeId,
     int* _Nonnull outIsOptional);
 
-typedef struct {
+typedef struct SLCTFEExecCtx SLCTFEExecCtx;
+
+typedef int (*SLCTFEExecZeroInitFn)(
+    void* _Nullable ctx,
+    int32_t typeNode,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
+
+typedef int (*SLCTFEExecAssignExprFn)(
+    void* _Nullable ctx,
+    SLCTFEExecCtx* _Nonnull execCtx,
+    int32_t exprNode,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
+
+typedef int (*SLCTFEExecAssignValueExprFn)(
+    void* _Nullable ctx,
+    SLCTFEExecCtx* _Nonnull execCtx,
+    int32_t lhsExprNode,
+    const SLCTFEValue* _Nonnull inValue,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
+
+typedef int (*SLCTFEExecMatchPatternFn)(
+    void* _Nullable ctx,
+    SLCTFEExecCtx* _Nonnull execCtx,
+    const SLCTFEValue* _Nonnull subjectValue,
+    int32_t labelExprNode,
+    int* _Nonnull outMatched);
+
+typedef int (*SLCTFEExecForInIndexFn)(
+    void* _Nullable ctx,
+    SLCTFEExecCtx* _Nonnull execCtx,
+    const SLCTFEValue* _Nonnull sourceValue,
+    uint32_t index,
+    int      byRef,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst);
+
+typedef int (*SLCTFEExecForInIterFn)(
+    void* _Nullable ctx,
+    SLCTFEExecCtx* _Nonnull execCtx,
+    int32_t sourceNode,
+    const SLCTFEValue* _Nonnull sourceValue,
+    uint32_t index,
+    int      hasKey,
+    int      keyRef,
+    int      valueRef,
+    int      valueDiscard,
+    int* _Nonnull outHasItem,
+    SLCTFEValue* _Nonnull outKey,
+    int* _Nonnull outKeyIsConst,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outValueIsConst);
+
+struct SLCTFEExecCtx {
     SLArena* _Nonnull arena;
     const SLAst* _Nonnull ast;
     SLStrView src;
@@ -50,6 +113,8 @@ typedef struct {
     SLCTFEExecEnv* _Nullable env;
     SLCTFEExecEvalExprFn _Nonnull evalExpr;
     void* _Nullable evalExprCtx;
+    SLCTFEExecEvalExprForTypeFn _Nullable evalExprForType;
+    void* _Nullable evalExprForTypeCtx;
     SLCTFEExecResolveTypeFn _Nullable resolveType;
     void* _Nullable resolveTypeCtx;
     SLCTFEExecInferValueTypeFn _Nullable inferValueType;
@@ -58,6 +123,18 @@ typedef struct {
     void* _Nullable inferExprTypeCtx;
     SLCTFEExecIsOptionalTypeFn _Nullable isOptionalType;
     void* _Nullable isOptionalTypeCtx;
+    SLCTFEExecZeroInitFn _Nullable zeroInit;
+    void* _Nullable zeroInitCtx;
+    SLCTFEExecAssignExprFn _Nullable assignExpr;
+    void* _Nullable assignExprCtx;
+    SLCTFEExecAssignValueExprFn _Nullable assignValueExpr;
+    void* _Nullable assignValueExprCtx;
+    SLCTFEExecMatchPatternFn _Nullable matchPattern;
+    void* _Nullable matchPatternCtx;
+    SLCTFEExecForInIndexFn _Nullable forInIndex;
+    void* _Nullable forInIndexCtx;
+    SLCTFEExecForInIterFn _Nullable forInIter;
+    void* _Nullable forInIterCtx;
 
     const char* _Nullable nonConstReason;
     uint32_t nonConstStart;
@@ -67,7 +144,7 @@ typedef struct {
     uint32_t forIterLimit;
     uint8_t  skipConstBlocks;
     uint8_t  _reserved[3];
-} SLCTFEExecCtx;
+};
 
 void SLCTFEExecResetReason(SLCTFEExecCtx* _Nonnull c);
 void SLCTFEExecSetReason(
@@ -80,12 +157,5 @@ int SLCTFEExecEnvLookup(
     uint32_t nameStart,
     uint32_t nameEnd,
     SLCTFEValue* _Nonnull outValue);
-
-int SLCTFEExecEvalBlock(
-    SLCTFEExecCtx* _Nonnull c,
-    int32_t blockNode,
-    SLCTFEValue* _Nonnull outValue,
-    int* _Nonnull outDidReturn,
-    int* _Nonnull outIsConst);
 
 SL_API_END

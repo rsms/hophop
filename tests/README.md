@@ -17,6 +17,7 @@ Common optional fields:
 
 - `input` (string): `.sl` file or package path
 - `mode` (string): `slc` mode (`_`, `ast`, `check`, `checkpkg`, `genpkg`, `genpkg:c`)
+- `exec_limit` (integer): per-execution wall-clock limit in milliseconds; if exceeded, the runner kills the current test process and fails the execution
 - `expect` (string): expected output file (for stdout golden tests)
 - `expect_stderr` (string): expected stderr golden file
 - `contains` (array of strings): required substrings in generated text
@@ -118,7 +119,15 @@ Use `tools/test.py run --update` to rewrite `.expected.c` files from current out
   - `python3 tools/test.py list`
 - Run all tests:
   - `python3 tools/test.py run --build-dir _build/macos-aarch64-debug --cc clang`
+- Run evaluator-only-compatible tests against an evaluator-only build:
+  - `python3 tools/test.py run --build-dir _build/macos-aarch64-debug --cc clang --eval-only`
 - Run one suite:
   - `python3 tools/test.py run --suite spec.lex_parse_check --build-dir _build/macos-aarch64-debug`
 - Lint manifest paths/shape and unmanifested top-level test artifacts:
   - `python3 tools/test.py lint`
+
+## Evaluator-only builds
+
+If `slc` was built without the C backend, run the test runner with `--eval-only`.
+This skips C-backend-only executions while still running parse/typecheck/fmt coverage plus
+all `cli-eval` coverage.

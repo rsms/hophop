@@ -7,9 +7,11 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -71,6 +73,21 @@ class RunContext:
     cc: str
     update: bool
     sidecar_codegen: bool
+    log_progress: bool
+
+
+@dataclass
+class ExecTimeoutError(Exception):
+    argv: List[str]
+    elapsed: float
+    limit_ms: int
+
+    def __str__(self) -> str:
+        cmd = " ".join(self.argv)
+        return (
+            f"execution exceeded exec_limit of {self.limit_ms}ms after {self.elapsed:.2f}s\n"
+            f"command: {cmd}"
+        )
 
 
 @dataclass
@@ -112,6 +129,30 @@ def abs_path(path: str) -> Path:
     return ROOT / p
 
 
+def describe_execution_case(case: "ExecutionCase") -> str:
+    return f"{case.id} ({case.suite}, {case.kind})"
+
+
+def log_case_event(
+    enabled: bool, tag: str, case: "ExecutionCase", duration: Optional[float] = None
+) -> None:
+    if not enabled:
+        return
+    suffix = "" if duration is None else f" in {duration:.2f}s"
+    print(f"[{tag}] {describe_execution_case(case)}{suffix}", flush=True)
+
+
+_RUN_LIMIT = threading.local()
+
+
+def current_exec_timeout() -> tuple[Optional[float], Optional[int]]:
+    deadline = getattr(_RUN_LIMIT, "deadline", None)
+    limit_ms = getattr(_RUN_LIMIT, "limit_ms", None)
+    if not isinstance(deadline, float) or not isinstance(limit_ms, int):
+        return None, None
+    return deadline, limit_ms
+
+
 def read_text(path: str) -> str:
     return abs_path(path).read_text()
 
@@ -151,14 +192,36 @@ def strip_warning_diagnostics(stderr_text: str) -> str:
 
 
 def run_cmd(args: List[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        args,
-        cwd=str(cwd or ROOT),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-    )
+    deadline, limit_ms = current_exec_timeout()
+    timeout: Optional[float] = None
+    if deadline is not None and limit_ms is not None:
+        timeout = deadline - time.monotonic()
+        if timeout <= 0:
+            raise ExecTimeoutError(args, limit_ms / 1000.0, limit_ms)
+
+    popen_kwargs: Dict[str, Any] = {
+        "cwd": str(cwd or ROOT),
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if os.name == "posix":
+        popen_kwargs["preexec_fn"] = os.setsid
+
+    start = time.monotonic()
+    proc = subprocess.Popen(args, **popen_kwargs)
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if os.name == "posix":
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            proc.kill()
+        stdout, stderr = proc.communicate()
+        elapsed = time.monotonic() - start
+        raise ExecTimeoutError(args, elapsed, limit_ms or 0)
+
+    return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
 
 
 def normalize_rel_path(path: str) -> str:
@@ -1131,6 +1194,35 @@ def expand_execution_cases(fixtures: List[TestCase]) -> List[ExecutionCase]:
     return cases
 
 
+def mode_uses_c_backend(mode: Any) -> bool:
+    if not isinstance(mode, str):
+        return False
+    return mode == "genpkg" or mode.startswith("genpkg:")
+
+
+def execution_case_supported_in_eval_only(case: ExecutionCase) -> bool:
+    fixture = case.fixture
+    kind = fixture.kind
+    data = fixture.data
+
+    if case.variant == "cli-eval":
+        return True
+
+    if kind in (
+        "compile_only",
+        "compile_cache_reuse",
+        "compile_and_run",
+        "genpkg_text_check",
+        "genpkg_compile",
+    ):
+        return False
+
+    if kind == "slc_run":
+        return data.get("platform") == "cli-eval"
+
+    return not mode_uses_c_backend(data.get("mode"))
+
+
 def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunResult:
     start = time.time()
     work_dir = temp_root / f"{case.index:04d}-{sanitize_name(case.id)}"
@@ -1138,8 +1230,14 @@ def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunRe
 
     c = case.fixture.data
     k = case.fixture.kind
+    exec_limit = c.get("exec_limit")
+    deadline = None
+    if isinstance(exec_limit, int) and exec_limit > 0:
+        deadline = time.monotonic() + (exec_limit / 1000.0)
 
     try:
+        _RUN_LIMIT.deadline = deadline
+        _RUN_LIMIT.limit_ms = exec_limit if deadline is not None else None
         if case.variant == "cli-eval":
             ok_main, detail = kind_eval_run_expectation(ctx, c)
         else:
@@ -1185,8 +1283,13 @@ def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunRe
             elif sidecar_detail:
                 detail = sidecar_detail
 
+    except ExecTimeoutError as e:
+        ok_main, detail = False, str(e)
     except Exception as e:  # noqa: BLE001
         ok_main, detail = False, f"exception: {e}"
+    finally:
+        _RUN_LIMIT.deadline = None
+        _RUN_LIMIT.limit_ms = None
 
     return RunResult(case=case, ok=ok_main, duration=time.time() - start, detail=detail)
 
@@ -1243,6 +1346,9 @@ def cmd_list(args: argparse.Namespace) -> int:
 def lint_case_fields(case: TestCase) -> List[str]:
     errors: List[str] = []
     c = case.data
+    exec_limit = c.get("exec_limit")
+    if exec_limit is not None and (not isinstance(exec_limit, int) or exec_limit <= 0):
+        errors.append(f"{case.id}: exec_limit must be a positive integer number of milliseconds")
     for field in ("input", "expect", "expect_stderr", "expect_stdout", "harness"):
         v = c.get(field)
         if isinstance(v, str) and v and field != "harness":
@@ -1366,6 +1472,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("no tests selected")
         return 0
     cases = expand_execution_cases(fixtures)
+    if args.eval_only:
+        cases = [case for case in cases if execution_case_supported_in_eval_only(case)]
 
     build_dir = abs_path(args.build_dir)
     slc = build_dir / "slc"
@@ -1378,7 +1486,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         slc=slc,
         cc=args.cc,
         update=args.update,
-        sidecar_codegen=not args.no_sidecar_codegen,
+        sidecar_codegen=not args.no_sidecar_codegen and not args.eval_only,
+        log_progress=args.log_progress,
     )
 
     jobs = args.jobs if args.jobs and args.jobs > 0 else (os.cpu_count() or 1)
@@ -1398,10 +1507,32 @@ def cmd_run(args: argparse.Namespace) -> int:
     results: List[RunResult] = []
 
     try:
-        with ThreadPoolExecutor(max_workers=jobs) as ex:
-            futs = {ex.submit(execute_case, ctx, c, temp_root): c for c in cases}
-            for fut in as_completed(futs):
-                results.append(fut.result())
+        if jobs == 1:
+            for case in cases:
+                log_case_event(ctx.log_progress, "RUN ", case)
+                result = execute_case(ctx, case, temp_root)
+                results.append(result)
+                log_case_event(
+                    ctx.log_progress,
+                    " OK " if result.ok else "FAIL",
+                    case,
+                    result.duration,
+                )
+        else:
+            with ThreadPoolExecutor(max_workers=jobs) as ex:
+                futs = {}
+                for case in cases:
+                    log_case_event(ctx.log_progress, "RUN ", case)
+                    futs[ex.submit(execute_case, ctx, case, temp_root)] = case
+                for fut in as_completed(futs):
+                    result = fut.result()
+                    results.append(result)
+                    log_case_event(
+                        ctx.log_progress,
+                        " OK " if result.ok else "FAIL",
+                        result.case,
+                        result.duration,
+                    )
     finally:
         if args.keep_temp:
             print(f"kept temp dir: {temp_root}")
@@ -1455,6 +1586,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     sp.add_argument("--jobs", type=int, default=0)
     sp.add_argument("--update", action="store_true", help="update *.expected.c sidecars")
     sp.add_argument("--no-sidecar-codegen", action="store_true")
+    sp.add_argument("--eval-only", action="store_true", help="skip C-backend-only executions")
+    sp.add_argument(
+        "--log-progress",
+        action="store_true",
+        help="log each execution start/finish; useful with --jobs 1 when diagnosing hangs",
+    )
     sp.add_argument("--keep-temp", action="store_true")
     sp.set_defaults(func=cmd_run)
 

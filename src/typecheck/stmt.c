@@ -196,12 +196,6 @@ int SLTCTypeBlock(
     return 0;
 }
 
-typedef enum {
-    SLTCForInValueMode_VALUE = 0,
-    SLTCForInValueMode_REF,
-    SLTCForInValueMode_ANY,
-} SLTCForInValueMode;
-
 static void SLTCAttachForInNextHookNoMatchingDetail(
     SLTypeCheckCtx* c, int hasKey, int valueDiscard, int32_t iterType) {
     char        detailBuf[512];
@@ -415,7 +409,7 @@ static int SLTCResolveForInIteratorFromType(
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
-static int SLTCResolveForInIterator(
+int SLTCResolveForInIterator(
     SLTypeCheckCtx* c,
     int32_t         sourceNode,
     int32_t         sourceType,
@@ -436,7 +430,7 @@ static int SLTCResolveForInIterator(
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 bad return type */
-static int SLTCResolveForInNextValue(
+int SLTCResolveForInNextValue(
     SLTypeCheckCtx*    c,
     int32_t            iterPtrType,
     SLTCForInValueMode valueMode,
@@ -506,7 +500,7 @@ static int SLTCResolveForInNextValue(
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 bad return type */
-static int SLTCResolveForInNextKey(
+int SLTCResolveForInNextKey(
     SLTypeCheckCtx* c, int32_t iterPtrType, int32_t* outKeyType, int32_t* outFn) {
     int32_t bestFn = -1;
     uint8_t bestCost = 0;
@@ -569,7 +563,7 @@ static int SLTCResolveForInNextKey(
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 bad return type */
-static int SLTCResolveForInNextKeyAndValue(
+int SLTCResolveForInNextKeyAndValue(
     SLTypeCheckCtx*    c,
     int32_t            iterPtrType,
     SLTCForInValueMode valueMode,

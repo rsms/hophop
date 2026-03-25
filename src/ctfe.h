@@ -13,6 +13,9 @@ typedef enum {
     SLCTFEValue_SPAN,
     SLCTFEValue_NULL,
     SLCTFEValue_OPTIONAL,
+    SLCTFEValue_AGGREGATE,
+    SLCTFEValue_ARRAY,
+    SLCTFEValue_REFERENCE,
 } SLCTFEValueKind;
 
 typedef struct {
@@ -39,6 +42,10 @@ typedef struct {
     SLCTFESpan      span;
 } SLCTFEValue;
 
+enum {
+    SLCTFEValueTag_AGG_PARTIAL = UINT64_C(1) << 57,
+};
+
 typedef int (*SLCTFEResolveIdentFn)(
     void* _Nullable ctx,
     uint32_t nameStart,
@@ -53,6 +60,57 @@ typedef int (*SLCTFEResolveCallFn)(
     uint32_t nameEnd,
     const SLCTFEValue* _Nonnull args,
     uint32_t argCount,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLCTFEMakeTupleFn)(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull elems,
+    uint32_t elemCount,
+    uint32_t typeNodeHint,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLCTFEIndexValueFn)(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    const SLCTFEValue* _Nonnull index,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLCTFEAggGetFieldFn)(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+typedef int (*SLCTFEAggAddrFieldFn)(
+    void* _Nullable ctx,
+    const SLCTFEValue* _Nonnull base,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    SLCTFEValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    SLDiag* _Nullable diag);
+
+int SLCTFEEvalExprEx(
+    SLArena* _Nonnull arena,
+    const SLAst* _Nonnull ast,
+    SLStrView src,
+    int32_t   nodeId,
+    SLCTFEResolveIdentFn _Nullable resolveIdent,
+    SLCTFEResolveCallFn _Nullable resolveCall,
+    void* _Nullable resolveCtx,
+    SLCTFEMakeTupleFn _Nullable makeTuple,
+    void* _Nullable makeTupleCtx,
+    SLCTFEIndexValueFn _Nullable indexValue,
+    void* _Nullable indexValueCtx,
+    SLCTFEAggGetFieldFn _Nullable aggGetField,
+    void* _Nullable aggGetFieldCtx,
+    SLCTFEAggAddrFieldFn _Nullable aggAddrField,
+    void* _Nullable aggAddrFieldCtx,
     SLCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
