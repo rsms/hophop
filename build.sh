@@ -171,13 +171,13 @@ if [ $analyze != 0 ]; then
     a_flags=( "${a_flags[@]/-fsani*/}" )
     a_flags=( "${a_flags[@]/-fcolor-diagnostics*/}" )
     a_flags+=( -isystem lib )
-    a_flags+=( --analyze -Xanalyzer )
+    a_flags+=( --analyze -Xanalyzer -analyzer-output=sarif )
     a_files=( "${cli_sources[@]}" "${lib_sources[@]}" )
     echo "Analyzing ${#a_files[@]} files"
     for srcfile in "${a_files[@]}"; do
         report=$build_dir/analyze/$srcfile.json
         mkdir -p "$(dirname "$report")"
-        clang "${a_flags[@]}" -analyzer-output=sarif -o "$report" $srcfile > /dev/null 2>&1 &
+        clang "${a_flags[@]}" -o "$report" $srcfile > /dev/null 2>&1 &
     done
     wait
     total_issues=0
@@ -202,8 +202,8 @@ if [ $analyze != 0 ]; then
         echo "Total: $total_issues issues"
     fi
     if [ $total_issues -gt 0 ]; then
-        # echo "Tip: Run the following for plain-text summary of issues in a file:"
-        # echo "    clang ${a_flags[@]/-W*/} -fcolor-diagnostics <srcfile>"
+        echo "Tip: Run the following to analyze a specific file:"
+        echo "    clang ${a_flags[*]} -o - <srcfile> 2>/dev/null"
         exit 1
     else
         exit 0
