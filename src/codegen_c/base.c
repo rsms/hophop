@@ -75,7 +75,7 @@ char ToUpperChar(char ch) {
     return (char)c;
 }
 
-void SetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
+void SetDiag(SLDiag* _Nullable diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
@@ -2287,7 +2287,7 @@ const SLFnTypeAlias* _Nullable FindFnTypeAliasByName(const SLCBackendC* c, const
 int EnsureFnTypeAlias(
     SLCBackendC* c,
     SLTypeRef    returnType,
-    SLTypeRef*   paramTypes,
+    SLTypeRef* _Nullable paramTypes,
     uint32_t     paramLen,
     int          isVariadic,
     const char** outAliasName) {
@@ -2715,7 +2715,7 @@ int AddFnSig(
     const char*  baseCName,
     int32_t      nodeId,
     SLTypeRef    returnType,
-    SLTypeRef*   paramTypes,
+    SLTypeRef* _Nullable paramTypes,
     char** _Nullable paramNames,
     uint8_t* _Nullable paramFlags,
     uint32_t  paramLen,
@@ -2760,7 +2760,7 @@ int AddFnSig(
             }
         }
         if (sameSig) {
-            uint32_t idx = c->fnNodeNameLen;
+            uint32_t idx;
             for (idx = 0; idx < c->fnNodeNameLen; idx++) {
                 if (c->fnNodeNames[idx].nodeId == nodeId) {
                     c->fnNodeNames[idx].cName = c->fnSigs[i].cName;
@@ -4994,17 +4994,17 @@ int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
 int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) {
     SLTypeRef        t;
     SLTypeRef        lowered;
-    const SLTypeRef* src = &t;
+    const SLTypeRef* src;
     int              i;
     int              stars;
     int              pointerBackedOptional = 0;
     if (ParseTypeRef(c, typeNode, &t) != 0 || !t.valid) {
         return -1;
     }
-    pointerBackedOptional = TypeRefIsPointerBackedOptional(&t);
     if (TypeRefLowerForStorage(c, &t, &lowered) != 0) {
         return -1;
     }
+    pointerBackedOptional = TypeRefIsPointerBackedOptional(&t);
     src = &lowered;
     if (src->containerKind == SLTypeContainer_SLICE_RO
         || src->containerKind == SLTypeContainer_SLICE_MUT)

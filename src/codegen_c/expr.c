@@ -1534,9 +1534,9 @@ int EmitRuntimeAnytypeDispatchFromTemplateBase(
     uint32_t              argCount) {
     uint32_t       dynamicArgIndex = 0;
     int32_t        idxNode = -1;
-    SLCCallBinding caseBindings[SLCCG_MAX_CALL_ARGS];
-    const SLFnSig* caseSigs[SLCCG_MAX_CALL_ARGS];
-    const char*    caseNames[SLCCG_MAX_CALL_ARGS];
+    SLCCallBinding caseBindings[SLCCG_MAX_CALL_ARGS] = { 0 };
+    const SLFnSig* caseSigs[SLCCG_MAX_CALL_ARGS] = { 0 };
+    const char*    caseNames[SLCCG_MAX_CALL_ARGS] = { 0 };
     SLTypeRef      returnType;
     int            returnsVoid = 0;
     uint32_t       i;
@@ -1618,10 +1618,16 @@ int EmitRuntimeAnytypeDispatchFromTemplateBase(
         {
             return -1;
         }
+        if (caseSig == NULL) {
+            return 1;
+        }
         caseSigs[i] = caseSig;
         caseNames[i] = caseSig->cName;
     }
 
+    if (caseSigs[0] == NULL) {
+        return 1;
+    }
     returnType = caseSigs[0]->returnType;
     for (i = 1; i < c->activePackElemCount; i++) {
         if (!TypeRefEqual(&returnType, &caseSigs[i]->returnType)) {
@@ -1667,6 +1673,9 @@ int EmitRuntimeAnytypeDispatchFromTemplateBase(
         return -1;
     }
     for (i = 0; i < c->activePackElemCount; i++) {
+        if (caseSigs[i] == NULL) {
+            return 1;
+        }
         if (BufAppendCStr(&c->out, "case ") != 0 || BufAppendU32(&c->out, i) != 0
             || BufAppendCStr(&c->out, "u: ") != 0
             || EmitInlineStaticFnPrototypeForSig(c, caseSigs[i]) != 0)
@@ -1716,10 +1725,10 @@ int EmitRuntimeAnytypeDispatchCallBySlice(
     uint32_t              firstPositionalArgIndex) {
     uint32_t       dynamicArgIndex = 0;
     int32_t        idxNode = -1;
-    SLCCallBinding caseBindings[SLCCG_MAX_CALL_ARGS];
-    const SLFnSig* caseSigs[SLCCG_MAX_CALL_ARGS];
-    const char*    caseNames[SLCCG_MAX_CALL_ARGS];
-    uint8_t        caseAutoRef[SLCCG_MAX_CALL_ARGS];
+    SLCCallBinding caseBindings[SLCCG_MAX_CALL_ARGS] = { 0 };
+    const SLFnSig* caseSigs[SLCCG_MAX_CALL_ARGS] = { 0 };
+    const char*    caseNames[SLCCG_MAX_CALL_ARGS] = { 0 };
+    uint8_t        caseAutoRef[SLCCG_MAX_CALL_ARGS] = { 0 };
     SLTypeRef      returnType;
     int            returnsVoid = 0;
     uint32_t       i;
@@ -1928,6 +1937,9 @@ int EmitRuntimeAnytypeDispatchCallBySlice(
         caseNames[i] = resolvedName;
     }
 
+    if (caseSigs[0] == NULL) {
+        return 1;
+    }
     returnType = caseSigs[0]->returnType;
     for (i = 1; i < c->activePackElemCount; i++) {
         if (!TypeRefEqual(&returnType, &caseSigs[i]->returnType)) {
@@ -1973,6 +1985,9 @@ int EmitRuntimeAnytypeDispatchCallBySlice(
         return -1;
     }
     for (i = 0; i < c->activePackElemCount; i++) {
+        if (caseSigs[i] == NULL || caseNames[i] == NULL) {
+            return 1;
+        }
         if (BufAppendCStr(&c->out, "case ") != 0 || BufAppendU32(&c->out, i) != 0
             || BufAppendCStr(&c->out, "u: ") != 0)
         {
@@ -6630,7 +6645,7 @@ int EmitNewExpr(
     return BufAppendChar(&c->out, ')');
 }
 
-int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType) {
+int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* _Nullable dstType) {
     const SLAstNode*   expr = NodeAt(c, exprNode);
     SLTypeRef          srcType;
     const SLFieldInfo* embedPath[64];

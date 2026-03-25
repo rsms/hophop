@@ -25,7 +25,7 @@ typedef int (*SLCodegenEmitFn)(
     const struct SLCodegenBackend* backend,
     const SLCodegenUnit*           unit,
     const SLCodegenOptions* _Nullable options,
-    char** outHeader,
+    char* _Nullable* _Nonnull outHeader,
     SLDiag* _Nullable diag);
 
 typedef struct SLCodegenBackend {
