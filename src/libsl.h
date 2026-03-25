@@ -82,13 +82,13 @@ typedef enum {
 } SLDiagType;
 
 typedef struct {
-    const char* ptr;
-    uint32_t    len;
+    const char* _Nullable ptr;
+    uint32_t           len;
 } SLStrView;
 
 typedef struct {
-    void* ctx;
-    void (*write)(void* ctx, const char* data, uint32_t len);
+    void* _Nullable ctx;
+    void (*write)(void* _Nullable ctx, const char* data, uint32_t len);
 } SLWriter;
 
 typedef void* _Nullable (*SLArenaGrowFn)(
@@ -150,7 +150,7 @@ typedef struct {
     uint32_t flags;
 } SLTypeCheckOptions;
 
-void        SLDiagClear(SLDiag* diag);
+void        SLDiagClear(SLDiag* _Nullable diag);
 const char* SLDiagId(SLDiagCode code);
 const char* SLDiagMessage(SLDiagCode code);
 const char* _Nullable SLDiagHint(SLDiagCode code);
@@ -253,8 +253,8 @@ typedef struct {
 } SLToken;
 
 typedef struct {
-    const SLToken* v;
-    uint32_t       len;
+    const SLToken* _Nullable v;
+    uint32_t               len;
 } SLTokenStream;
 
 typedef enum {
@@ -385,10 +385,10 @@ typedef struct {
 } SLComment;
 
 typedef struct {
-    const SLAstNode* nodes;
-    uint32_t         len;
-    int32_t          root;
-    SLFeatures       features;
+    const SLAstNode* _Nullable nodes;
+    uint32_t                  len;
+    int32_t                   root;
+    SLFeatures                features;
 } SLAst;
 
 typedef enum {
@@ -401,8 +401,8 @@ typedef struct {
 } SLParseOptions;
 
 typedef struct {
-    const SLComment* comments;
-    uint32_t         commentLen;
+    const SLComment* _Nullable comments;
+    uint32_t                  commentLen;
 } SLParseExtras;
 
 typedef struct {
@@ -425,28 +425,28 @@ int SLNormalizeImportPath(
 
 // Tokenize src into arena memory and return a view over tokens.
 // Returns 0 on success, -1 on failure. On failure, diag is set.
-int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag);
+int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* _Nullable diag);
 int SLParse(
     SLArena*  arena,
     SLStrView src,
     const SLParseOptions* _Nullable options,
     SLAst* out,
     SLParseExtras* _Nullable outExtras,
-    SLDiag* diag);
+    SLDiag* _Nullable diag);
 int SLFormat(
     SLArena*  arena,
     SLStrView src,
     const SLFormatOptions* _Nullable options,
     SLStrView* out,
-    SLDiag*    diag);
+    SLDiag* _Nullable diag);
 int SLTypeCheckEx(
     SLArena*     arena,
     const SLAst* ast,
     SLStrView    src,
     const SLTypeCheckOptions* _Nullable options,
-    SLDiag* diag);
-int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag);
-int SLAstDump(const SLAst* ast, SLStrView src, SLWriter* w, SLDiag* diag);
+    SLDiag* _Nullable diag);
+int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* _Nullable diag);
+int SLAstDump(const SLAst* ast, SLStrView src, SLWriter* w, SLDiag* _Nullable diag);
 
 SL_API_END
 

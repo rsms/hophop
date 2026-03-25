@@ -10,10 +10,10 @@ typedef struct {
     uint32_t     len;
     uint32_t     cap;
     int          supported;
-    SLDiag*      diag;
+    SLDiag* _Nullable diag;
 } SLMirBuilder;
 
-static void SLMirSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end);
+static void SLMirSetDiag(SLDiag* _Nullable diag, SLDiagCode code, uint32_t start, uint32_t end);
 static int  SLMirNameEqLiteral(SLStrView src, uint32_t start, uint32_t end, const char* lit);
 static int  SLMirNameEqLiteralOrPkgBuiltin(
     SLStrView src, uint32_t start, uint32_t end, const char* lit, const char* pkgPrefix);
@@ -576,7 +576,7 @@ int SLMirProgramNeedsDynamicResolution(const SLMirProgram* program) {
     return 0;
 }
 
-static void SLMirSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
+static void SLMirSetDiag(SLDiag* _Nullable diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }

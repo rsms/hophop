@@ -5,7 +5,7 @@
 
 SL_API_BEGIN
 
-static void SLMirLowerPkgSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
+static void SLMirLowerPkgSetDiag(SLDiag* _Nullable diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }

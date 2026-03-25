@@ -4,21 +4,21 @@ SL_API_BEGIN
 
 typedef struct {
     SLArena* arena;
-    char*    v;
-    uint32_t len;
-    uint32_t cap;
+    char* _Nullable v;
+    uint32_t       len;
+    uint32_t       cap;
 } SLFmtBuf;
 
 typedef struct {
-    const SLAst*     ast;
-    SLStrView        src;
-    const SLComment* comments;
-    uint32_t         commentLen;
-    uint8_t*         commentUsed;
-    uint32_t         indent;
-    uint32_t         indentWidth;
-    int              lineStart;
-    SLFmtBuf         out;
+    const SLAst*                ast;
+    SLStrView                   src;
+    const SLComment* _Nullable  comments;
+    uint32_t                    commentLen;
+    uint8_t* _Nullable          commentUsed;
+    uint32_t                    indent;
+    uint32_t                    indentWidth;
+    int                         lineStart;
+    SLFmtBuf                    out;
 } SLFmtCtx;
 
 enum {
@@ -2557,7 +2557,7 @@ static int SLFmtEmitAlignedVarOrConstGroup(
     for (i = 0; i < count; i++) {
         const SLAstNode* n = &c->ast->nodes[rows[i].nodeId];
         uint32_t         nameColLen = rows[i].hasType ? maxNameLenWithType : maxNameLenNoType;
-        uint32_t         lineLen = kwLen + 1u + rows[i].nameLen;
+        uint32_t         lineLen;
         if (SLFmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
             return -1;
         }
@@ -4235,7 +4235,7 @@ static int SLFmtEmitAlignedFieldGroup(
     }
 
     for (i = 0; i < count; i++) {
-        uint32_t lineLen = 0;
+        uint32_t lineLen;
         int32_t  nodeIds[1];
         if (SLFmtEmitLeadingCommentsForNode(c, rows[i].firstNodeId) != 0) {
             return -1;
@@ -4243,12 +4243,11 @@ static int SLFmtEmitAlignedFieldGroup(
         if (SLFmtEmitMergedFieldNames(c, rows[i].firstNodeId, rows[i].lastNodeId) != 0) {
             return -1;
         }
-        lineLen += rows[i].nameLen;
+        lineLen = rows[i].nameLen;
         if (rows[i].noTypeAlign) {
             if (SLFmtWriteChar(c, ' ') != 0) {
                 return -1;
             }
-            lineLen = rows[i].nameLen + 1u;
         } else {
             if (SLFmtWriteSpaces(c, maxNameLen - rows[i].nameLen + 1u) != 0) {
                 return -1;

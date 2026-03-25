@@ -105,8 +105,8 @@ typedef struct {
 } SLMirInst;
 
 typedef struct {
-    const SLMirInst* v;
-    uint32_t         len;
+    const SLMirInst* _Nullable v;
+    uint32_t                 len;
 } SLMirChunk;
 
 typedef enum {

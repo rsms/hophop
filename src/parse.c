@@ -2,7 +2,7 @@
 
 SL_API_BEGIN
 
-static void SLPSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
+static void SLPSetDiag(SLDiag* _Nullable diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
@@ -15,7 +15,7 @@ static void SLPSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t e
 }
 
 static void SLPSetDiagWithArg(
-    SLDiag*    diag,
+    SLDiag* _Nullable diag,
     SLDiagCode code,
     uint32_t   start,
     uint32_t   end,
@@ -33,16 +33,16 @@ static void SLPSetDiagWithArg(
 }
 
 typedef struct {
-    SLStrView      src;
-    SLArena*       arena;
-    const SLToken* tok;
-    uint32_t       tokLen;
-    uint32_t       pos;
-    SLAstNode*     nodes;
-    uint32_t       nodeLen;
-    uint32_t       nodeCap;
-    SLDiag*        diag;
-    SLFeatures     features;
+    SLStrView             src;
+    SLArena*              arena;
+    const SLToken*        tok;
+    uint32_t              tokLen;
+    uint32_t              pos;
+    SLAstNode* _Nullable  nodes;
+    uint32_t              nodeLen;
+    uint32_t              nodeCap;
+    SLDiag* _Nullable     diag;
+    SLFeatures            features;
 } SLParser;
 
 static const SLToken* SLPPeek(SLParser* p) {
