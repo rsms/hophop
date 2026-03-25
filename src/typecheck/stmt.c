@@ -1791,7 +1791,7 @@ int SLTCBuildCheckedContext(
     const SLAst* ast,
     SLStrView    src,
     const SLTypeCheckOptions* _Nullable options,
-    SLDiag* diag,
+    SLDiag* _Nullable diag,
     SLTypeCheckCtx* _Nullable outCtx) {
     SLTypeCheckCtx c;
     uint32_t       capBase;

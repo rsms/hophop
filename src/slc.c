@@ -28,9 +28,9 @@ SL_API_BEGIN
 typedef struct {
     char* _Nullable path;
     char* _Nullable source;
-    uint32_t       sourceLen;
+    uint32_t sourceLen;
     void* _Nullable arenaMem;
-    SLAst    ast;
+    SLAst ast;
 } SLParsedFile;
 
 struct SLPackage;
@@ -38,11 +38,11 @@ struct SLPackage;
 typedef struct {
     char* alias; /* internal mangle prefix */
     char* _Nullable bindName;
-    char*                 path;
+    char* path;
     struct SLPackage* _Nullable target;
-    uint32_t              fileIndex;
-    uint32_t              start;
-    uint32_t              end;
+    uint32_t fileIndex;
+    uint32_t start;
+    uint32_t end;
 } SLImportRef;
 
 typedef struct {
@@ -113,19 +113,19 @@ typedef struct {
     char* _Nullable rootDir;
     char* _Nullable platformTarget;
     SLPackage* _Nullable packages;
-    uint32_t            packageLen;
-    uint32_t            packageCap;
+    uint32_t packageLen;
+    uint32_t packageCap;
 } SLPackageLoader;
 
 typedef struct {
-    const char*           name;
+    const char* name;
     const char* _Nullable replacement;
 } SLIdentMap;
 
 typedef struct {
     char* _Nullable v;
-    uint32_t       len;
-    uint32_t       cap;
+    uint32_t len;
+    uint32_t cap;
 } SLStringBuilder;
 
 typedef struct {
@@ -139,8 +139,8 @@ typedef struct {
 
 typedef struct {
     SLCombinedSourceSpan* _Nullable spans;
-    uint32_t                       len;
-    uint32_t                       cap;
+    uint32_t len;
+    uint32_t cap;
 } SLCombinedSourceMap;
 
 typedef struct {
@@ -174,8 +174,8 @@ static int BuildFnImportShapeAndWrapper(
     const char* _Nullable aliasedDeclText,
     const char* _Nullable localName,
     const char* _Nullable qualifiedName,
-    char** _Nullable      outShapeKey,
-    char** _Nullable      outWrapperDeclText);
+    char** _Nullable outShapeKey,
+    char** _Nullable outWrapperDeclText);
 static int IsAsciiSpaceChar(char c);
 static int IsIdentStartChar(unsigned char c);
 static int IsIdentContinueChar(unsigned char c);
@@ -2351,9 +2351,9 @@ static int CheckSourceWithSpec(const SLCheckRunSpec* spec) {
 static int CheckSourceEx(
     const char* filename,
     const char* _Nullable source,
-    uint32_t    sourceLen,
-    int         useLineColDiag,
-    int         suppressUnusedWarnings) {
+    uint32_t sourceLen,
+    int      useLineColDiag,
+    int      suppressUnusedWarnings) {
     if (filename == NULL || source == NULL) {
         return -1;
     }
@@ -2370,11 +2370,11 @@ static int CheckSourceEx(
 }
 
 static int CheckSourceExWithSingleFileRemap(
-    const char*                filename,
-    const char* _Nullable      source,
-    uint32_t                   sourceLen,
-    int                        useLineColDiag,
-    const char* _Nullable      remapSource,
+    const char* filename,
+    const char* _Nullable source,
+    uint32_t sourceLen,
+    int      useLineColDiag,
+    const char* _Nullable remapSource,
     const SLCombinedSourceMap* remapMap,
     int                        suppressUnusedWarnings) {
     if (filename == NULL || source == NULL) {
@@ -5247,12 +5247,12 @@ static int CompareTextRewrite(const void* a, const void* b) {
 }
 
 static int ApplyTextRewrites(
-    const char*    text,
-    uint32_t       textLen,
-    uint32_t       baseStart,
+    const char* text,
+    uint32_t    textLen,
+    uint32_t    baseStart,
     SLTextRewrite* _Nullable rewrites,
-    uint32_t       rewriteLen,
-    char**         outText) {
+    uint32_t rewriteLen,
+    char**   outText) {
     SLStringBuilder b = { 0 };
     uint32_t        i;
     uint32_t        copyPos = 0;
@@ -5597,8 +5597,8 @@ static int BuildFnImportShapeAndWrapper(
     const char* _Nullable aliasedDeclText,
     const char* _Nullable localName,
     const char* _Nullable qualifiedName,
-    char** _Nullable      outShapeKey,
-    char** _Nullable      outWrapperDeclText) {
+    char** _Nullable outShapeKey,
+    char** _Nullable outWrapperDeclText) {
     SLAst           ast = { 0 };
     void*           arenaMem = NULL;
     int32_t         fnNode = -1;
@@ -5936,9 +5936,9 @@ static int EnsureEmittedImportSurfaceCap(
 
 static int HasEmittedImportSurface(
     const SLEmittedImportSurface* _Nullable arr,
-    uint32_t                              len,
-    const SLPackage* _Nullable            pkg,
-    const char* _Nullable                 alias) {
+    uint32_t len,
+    const SLPackage* _Nullable pkg,
+    const char* _Nullable alias) {
     uint32_t i;
     if (arr == NULL || pkg == NULL || alias == NULL) {
         return 0;
@@ -6729,8 +6729,8 @@ static int ResolveBuiltinPath(
 
 static int ResolveCacheRoot(
     const SLPackageLoader* _Nullable loader,
-    const char* _Nullable  cacheDirArg,
-    char**                 outCacheRoot) {
+    const char* _Nullable cacheDirArg,
+    char** outCacheRoot) {
     char* cacheRoot;
     if (outCacheRoot == NULL) {
         return -1;
@@ -6847,9 +6847,7 @@ static char* _Nullable BuildPackageMacro(const char* key, const char* suffix) {
 }
 
 static SLPackageArtifact* _Nullable FindArtifactByPkg(
-    SLPackageArtifact* _Nullable artifacts,
-    uint32_t                    artifactLen,
-    const SLPackage* _Nullable  pkg) {
+    SLPackageArtifact* _Nullable artifacts, uint32_t artifactLen, const SLPackage* _Nullable pkg) {
     uint32_t i;
     if (artifacts == NULL || pkg == NULL) {
         return NULL;
@@ -7022,10 +7020,10 @@ static int IsPackageArtifactUpToDate(
 }
 
 static void RestoreImportOverrides(
-    SLAliasOverride* _Nullable        aliasOverrides,
-    uint32_t                          aliasOverrideLen,
+    SLAliasOverride* _Nullable aliasOverrides,
+    uint32_t aliasOverrideLen,
     SLImportSymbolOverride* _Nullable symbolOverrides,
-    uint32_t                          symbolOverrideLen) {
+    uint32_t symbolOverrideLen) {
     uint32_t i;
     for (i = 0; aliasOverrides != NULL && i < aliasOverrideLen; i++) {
         aliasOverrides[i].imp->alias = aliasOverrides[i].oldAlias;
@@ -7504,7 +7502,7 @@ static int BuildCachedPlatformObject(
     const char* libDir,
     const char* _Nullable platformPath,
     const char* _Nullable toolchainSignature,
-    char** _Nullable      outPlatformObjPath) {
+    char** _Nullable outPlatformObjPath) {
     char*       cacheRoot = NULL;
     char*       cacheV1Dir = NULL;
     char*       cachePlatformDir = NULL;
@@ -7600,7 +7598,7 @@ static int BuildCachedBuiltinObject(
     const char* _Nullable builtinPath,
     const char* _Nullable builtinHeaderPath,
     const char* _Nullable toolchainSignature,
-    char** _Nullable      outBuiltinObjPath) {
+    char** _Nullable outBuiltinObjPath) {
     char*       cacheRoot = NULL;
     char*       cacheV1Dir = NULL;
     char*       cacheBuiltinDir = NULL;

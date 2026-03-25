@@ -3782,7 +3782,7 @@ int EmitStringLiteralPool(SLCBackendC* c) {
 }
 
 int EmitExpr(SLCBackendC* c, int32_t nodeId);
-int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType);
+int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* _Nullable dstType);
 int EmitAssertFormatArg(SLCBackendC* c, int32_t nodeId);
 
 int IsStrBaseName(const char* _Nullable s) {

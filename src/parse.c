@@ -33,16 +33,16 @@ static void SLPSetDiagWithArg(
 }
 
 typedef struct {
-    SLStrView             src;
-    SLArena*              arena;
-    const SLToken*        tok;
-    uint32_t              tokLen;
-    uint32_t              pos;
-    SLAstNode* _Nullable  nodes;
-    uint32_t              nodeLen;
-    uint32_t              nodeCap;
-    SLDiag* _Nullable     diag;
-    SLFeatures            features;
+    SLStrView      src;
+    SLArena*       arena;
+    const SLToken* tok;
+    uint32_t       tokLen;
+    uint32_t       pos;
+    SLAstNode* _Nullable nodes;
+    uint32_t nodeLen;
+    uint32_t nodeCap;
+    SLDiag* _Nullable diag;
+    SLFeatures features;
 } SLParser;
 
 static const SLToken* SLPPeek(SLParser* p) {
@@ -3781,7 +3781,7 @@ int SLParse(
     const SLParseOptions* _Nullable options,
     SLAst* out,
     SLParseExtras* _Nullable outExtras,
-    SLDiag* diag) {
+    SLDiag* _Nullable diag) {
     SLTokenStream ts;
     SLParser      p;
     int32_t       root;

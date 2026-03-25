@@ -46,12 +46,12 @@ static int SLTCConstEvalSetOptionalNoneValue(
 static int SLTCConstEvalSetOptionalSomeValue(
     SLTypeCheckCtx* c, int32_t optionalTypeId, const SLCTFEValue* payload, SLCTFEValue* outValue);
 static int SLTCInvokeConstFunctionByIndex(
-    SLTCConstEvalCtx*  evalCtx,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
-    int32_t            fnIndex,
+    SLTCConstEvalCtx* evalCtx,
+    uint32_t          nameStart,
+    uint32_t          nameEnd,
+    int32_t           fnIndex,
     const SLCTFEValue* _Nullable args,
-    uint32_t           argCount,
+    uint32_t argCount,
     const SLTCCallArgInfo* _Nullable callArgs,
     uint32_t callArgCount,
     const SLTCCallBinding* _Nullable callBinding,
@@ -5111,8 +5111,8 @@ static int SLTCMirConstResolveFunctionIdentTarget(
 static int SLTCMirConstResolveQualifiedFunctionValueTarget(
     const SLTCMirConstLowerCtx* c,
     const SLMirInst*            loadIns,
-    const SLMirInst* _Nullable  fieldIns,
-    int32_t*                    outFnIndex) {
+    const SLMirInst* _Nullable fieldIns,
+    int32_t* outFnIndex) {
     SLTypeCheckCtx* tc;
     uint32_t        fieldStart;
     uint32_t        fieldEnd;
@@ -5145,6 +5145,7 @@ static int SLTCMirConstRewriteQualifiedFunctionValueLoad(
     uint32_t              ownerMirFnIndex,
     uint32_t              loadInstIndex,
     uint32_t              targetMirFnIndex) {
+    SLMirInst* loadIns;
     SLMirInst* fieldIns;
     SLMirInst  inserted = { 0 };
     SLMirConst value = { 0 };
@@ -6309,12 +6310,12 @@ static int SLTCConstEvalPrepareInvokeCallContext(
 }
 
 static int SLTCInvokeConstFunctionByIndex(
-    SLTCConstEvalCtx*  evalCtx,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
-    int32_t            fnIndex,
-    const SLCTFEValue* args,
-    uint32_t           argCount,
+    SLTCConstEvalCtx* evalCtx,
+    uint32_t          nameStart,
+    uint32_t          nameEnd,
+    int32_t           fnIndex,
+    const SLCTFEValue* _Nullable args,
+    uint32_t argCount,
     const SLTCCallArgInfo* _Nullable callArgs,
     uint32_t callArgCount,
     const SLTCCallBinding* _Nullable callBinding,
@@ -6995,13 +6996,13 @@ int SLTCResolveConstCallMir(
 }
 
 int SLTCResolveConstCall(
-    void*                    ctx,
-    uint32_t                 nameStart,
-    uint32_t                 nameEnd,
+    void*    ctx,
+    uint32_t nameStart,
+    uint32_t nameEnd,
     const SLCTFEValue* _Nullable args,
-    uint32_t                 argCount,
-    SLCTFEValue*             outValue,
-    int*                     outIsConst,
+    uint32_t     argCount,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
     SLDiag* _Nullable diag) {
     return SLTCResolveConstCallMir(
         ctx, NULL, NULL, NULL, nameStart, nameEnd, args, argCount, outValue, outIsConst, diag);

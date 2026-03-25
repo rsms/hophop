@@ -195,7 +195,9 @@ if [ $analyze != 0 ]; then
             fi
         fi
     done < <(find _build/macos-aarch64-debug/analyze -type f -name '*.json' -print0)
-    printf '%s\n' "${lines[@]}" | sort
+    if [ ${#lines[@]} -gt 0 ]; then
+        printf '%s\n' "${lines[@]}" | sort
+    fi
     if [ "$total_issues" -eq 1 ]; then
         echo "Total: $total_issues issue"
     else

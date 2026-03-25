@@ -21,7 +21,7 @@ static void SLSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t en
     diag->hintOverride = NULL;
 }
 
-void SLDiagClear(SLDiag* diag) {
+void SLDiagClear(SLDiag* _Nullable diag) {
     if (diag == NULL) {
         return;
     }
@@ -661,7 +661,7 @@ const char* SLTokenKindName(SLTokenKind kind) {
     return "UNKNOWN";
 }
 
-int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* diag) {
+int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* _Nullable diag) {
     SLTokenBuf  tokbuf;
     uint32_t    pos = 0;
     int         insertedEOFSemicolon = 0;
@@ -1190,7 +1190,7 @@ static int SLAstDumpNode(
     return 0;
 }
 
-int SLAstDump(const SLAst* ast, SLStrView src, SLWriter* w, SLDiag* diag) {
+int SLAstDump(const SLAst* ast, SLStrView src, SLWriter* w, SLDiag* _Nullable diag) {
     if (diag != NULL) {
         *diag = (SLDiag){ 0 };
     }

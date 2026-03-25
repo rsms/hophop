@@ -5,20 +5,20 @@ SL_API_BEGIN
 typedef struct {
     SLArena* arena;
     char* _Nullable v;
-    uint32_t       len;
-    uint32_t       cap;
+    uint32_t len;
+    uint32_t cap;
 } SLFmtBuf;
 
 typedef struct {
-    const SLAst*                ast;
-    SLStrView                   src;
-    const SLComment* _Nullable  comments;
-    uint32_t                    commentLen;
-    uint8_t* _Nullable          commentUsed;
-    uint32_t                    indent;
-    uint32_t                    indentWidth;
-    int                         lineStart;
-    SLFmtBuf                    out;
+    const SLAst* ast;
+    SLStrView    src;
+    const SLComment* _Nullable comments;
+    uint32_t commentLen;
+    uint8_t* _Nullable commentUsed;
+    uint32_t indent;
+    uint32_t indentWidth;
+    int      lineStart;
+    SLFmtBuf out;
 } SLFmtCtx;
 
 enum {
@@ -4838,7 +4838,7 @@ int SLFormat(
     SLStrView src,
     const SLFormatOptions* _Nullable options,
     SLStrView* out,
-    SLDiag*    diag) {
+    SLDiag* _Nullable diag) {
     SLAst          ast;
     SLParseExtras  extras;
     SLParseOptions parseOptions;

@@ -5222,7 +5222,7 @@ int EmitCompoundLiteralOrderedStruct(
 int EmitEffectiveContextFieldValue(
     SLCBackendC* c, const char* fieldName, const SLTypeRef* requiredType);
 int InferNewExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
-int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* dstType);
+int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* _Nullable dstType);
 int EmitCompoundFieldValueCoerced(
     SLCBackendC* c, const SLAstNode* field, int32_t exprNode, const SLTypeRef* _Nullable dstType);
 int EmitContextArgForSig(SLCBackendC* c, const SLFnSig* sig);

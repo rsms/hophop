@@ -83,7 +83,7 @@ typedef enum {
 
 typedef struct {
     const char* _Nullable ptr;
-    uint32_t           len;
+    uint32_t len;
 } SLStrView;
 
 typedef struct {
@@ -254,7 +254,7 @@ typedef struct {
 
 typedef struct {
     const SLToken* _Nullable v;
-    uint32_t               len;
+    uint32_t len;
 } SLTokenStream;
 
 typedef enum {
@@ -386,9 +386,9 @@ typedef struct {
 
 typedef struct {
     const SLAstNode* _Nullable nodes;
-    uint32_t                  len;
-    int32_t                   root;
-    SLFeatures                features;
+    uint32_t   len;
+    int32_t    root;
+    SLFeatures features;
 } SLAst;
 
 typedef enum {
@@ -402,7 +402,7 @@ typedef struct {
 
 typedef struct {
     const SLComment* _Nullable comments;
-    uint32_t                  commentLen;
+    uint32_t commentLen;
 } SLParseExtras;
 
 typedef struct {

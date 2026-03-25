@@ -682,16 +682,16 @@ int SLTCFailAssignToConst(SLTypeCheckCtx* c, int32_t lhsNode) {
 }
 
 int SLTCFailSwitchMissingCases(
-    SLTypeCheckCtx*           c,
-    int32_t                   failNode,
-    int32_t                   subjectType,
-    int32_t                   subjectEnumType,
-    uint32_t                  enumVariantCount,
+    SLTypeCheckCtx* c,
+    int32_t         failNode,
+    int32_t         subjectType,
+    int32_t         subjectEnumType,
+    uint32_t        enumVariantCount,
     const uint32_t* _Nullable enumVariantStarts,
     const uint32_t* _Nullable enumVariantEnds,
-    const uint8_t* _Nullable  enumCovered,
-    int                       boolCoveredTrue,
-    int                       boolCoveredFalse) {
+    const uint8_t* _Nullable enumCovered,
+    int boolCoveredTrue,
+    int boolCoveredFalse) {
     uint32_t          start = 0;
     uint32_t          end = 0;
     char              typeBuf[SLTC_DIAG_TEXT_CAP];

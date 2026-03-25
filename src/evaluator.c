@@ -17,9 +17,9 @@ SL_API_BEGIN
 typedef struct {
     char* _Nullable path;
     char* _Nullable source;
-    uint32_t       sourceLen;
+    uint32_t sourceLen;
     void* _Nullable arenaMem;
-    SLAst    ast;
+    SLAst ast;
 } SLParsedFile;
 
 struct SLPackage;
@@ -27,11 +27,11 @@ struct SLPackage;
 typedef struct {
     char* alias;
     char* _Nullable bindName;
-    char*                 path;
+    char* path;
     struct SLPackage* _Nullable target;
-    uint32_t              fileIndex;
-    uint32_t              start;
-    uint32_t              end;
+    uint32_t fileIndex;
+    uint32_t start;
+    uint32_t end;
 } SLImportRef;
 
 typedef struct {
@@ -329,8 +329,8 @@ static int32_t SLEvalFindTopConstBySliceInPackage(
 static int SLEvalEvalTopConst(
     SLEvalProgram* p, uint32_t topConstIndex, SLCTFEValue* outValue, int* outIsConst);
 static int SLEvalInvokeFunction(
-    SLEvalProgram*       p,
-    int32_t              fnIndex,
+    SLEvalProgram* p,
+    int32_t        fnIndex,
     const SLCTFEValue* _Nullable args,
     uint32_t             argCount,
     const SLEvalContext* callContext,
@@ -865,7 +865,7 @@ typedef struct {
     int32_t             typeNode;
     int32_t             elemTypeNode;
     SLCTFEValue* _Nullable elems;
-    uint32_t            len;
+    uint32_t len;
 } SLEvalArray;
 
 struct SLEvalContext {
@@ -930,21 +930,21 @@ struct SLEvalProgram {
     const SLParsedFile*    currentFile;
     SLCTFEExecCtx*         currentExecCtx;
     struct SLEvalMirExecCtx* _Nullable currentMirExecCtx;
-    SLEvalFunction*      funcs;
-    uint32_t             funcLen;
-    uint32_t             funcCap;
-    SLEvalTopConst*      topConsts;
-    uint32_t             topConstLen;
-    uint32_t             topConstCap;
-    SLEvalTopVar*        topVars;
-    uint32_t             topVarLen;
-    uint32_t             topVarCap;
-    uint32_t             callDepth;
-    uint32_t             callStack[SL_EVAL_CALL_MAX_DEPTH];
-    SLEvalContext        rootContext;
+    SLEvalFunction* funcs;
+    uint32_t        funcLen;
+    uint32_t        funcCap;
+    SLEvalTopConst* topConsts;
+    uint32_t        topConstLen;
+    uint32_t        topConstCap;
+    SLEvalTopVar*   topVars;
+    uint32_t        topVarLen;
+    uint32_t        topVarCap;
+    uint32_t        callDepth;
+    uint32_t        callStack[SL_EVAL_CALL_MAX_DEPTH];
+    SLEvalContext   rootContext;
     const SLEvalContext* _Nullable currentContext;
-    int                            exitCalled;
-    int                            exitCode;
+    int exitCalled;
+    int exitCode;
 };
 
 typedef struct SLEvalMirExecCtx {
@@ -2797,25 +2797,25 @@ static int SLEvalMirAssignIdent(
     int*               outIsConst,
     SLDiag* _Nullable diag);
 static int SLEvalResolveCall(
-    void*              ctx,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
+    void*    ctx,
+    uint32_t nameStart,
+    uint32_t nameEnd,
     const SLCTFEValue* _Nullable args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
+    uint32_t     argCount,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
     SLDiag* _Nullable diag);
 static int SLEvalResolveCallMir(
     void* ctx,
     const SLMirProgram* _Nullable program,
     const SLMirFunction* _Nullable function,
     const SLMirInst* _Nullable inst,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
+    uint32_t nameStart,
+    uint32_t nameEnd,
     const SLCTFEValue* _Nullable args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
+    uint32_t     argCount,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
     SLDiag* _Nullable diag);
 static int SLEvalResolveCallMirPre(
     void* _Nullable ctx,
@@ -7098,25 +7098,25 @@ static int SLEvalResolveIdent(
     int*         outIsConst,
     SLDiag* _Nullable diag);
 static int SLEvalResolveCall(
-    void*              ctx,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
+    void*    ctx,
+    uint32_t nameStart,
+    uint32_t nameEnd,
     const SLCTFEValue* _Nullable args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
+    uint32_t     argCount,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
     SLDiag* _Nullable diag);
 static int SLEvalResolveCallMir(
     void* ctx,
     const SLMirProgram* _Nullable program,
     const SLMirFunction* _Nullable function,
     const SLMirInst* _Nullable inst,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
+    uint32_t nameStart,
+    uint32_t nameEnd,
     const SLCTFEValue* _Nullable args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
+    uint32_t     argCount,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
     SLDiag* _Nullable diag);
 static int SLEvalEvalTopConst(
     SLEvalProgram* p, uint32_t topConstIndex, SLCTFEValue* outValue, int* outIsConst);
@@ -10398,8 +10398,8 @@ SL_API_END
 SL_API_BEGIN
 
 static int SLEvalInvokeFunction(
-    SLEvalProgram*       p,
-    int32_t              fnIndex,
+    SLEvalProgram* p,
+    int32_t        fnIndex,
     const SLCTFEValue* _Nullable args,
     uint32_t             argCount,
     const SLEvalContext* callContext,
@@ -10420,8 +10420,7 @@ static int SLEvalInvokeFunction(
     uint32_t              fixedCount = 0;
 
     if (p == NULL || outValue == NULL || outDidReturn == NULL || (argCount > 0 && args == NULL)
-        || fnIndex < 0
-        || (uint32_t)fnIndex >= p->funcLen)
+        || fnIndex < 0 || (uint32_t)fnIndex >= p->funcLen)
     {
         return -1;
     }
@@ -10633,9 +10632,9 @@ static int SLEvalInvokeFunctionRef(
     SLEvalProgram*     p,
     const SLCTFEValue* calleeValue,
     const SLCTFEValue* _Nullable args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst) {
+    uint32_t     argCount,
+    SLCTFEValue* outValue,
+    int*         outIsConst) {
     uint32_t              fnIndex = 0;
     uint32_t              mirFnIndex = 0;
     int                   didReturn = 0;
@@ -11102,13 +11101,13 @@ static int SLEvalResolveCallMirPre(
 }
 
 static int SLEvalExpandMirSpreadLastArgs(
-    SLEvalProgram*        p,
+    SLEvalProgram* p,
     const SLMirInst* _Nullable inst,
     const SLEvalFunction* fn,
     const SLCTFEValue* _Nullable args,
-    uint32_t              argCount,
-    const SLCTFEValue**   outArgs,
-    uint32_t*             outArgCount) {
+    uint32_t            argCount,
+    const SLCTFEValue** outArgs,
+    uint32_t*           outArgCount) {
     const SLEvalArray* spreadArray;
     SLCTFEValue*       expandedArgs;
     uint32_t           prefixCount;
@@ -11163,12 +11162,12 @@ static int SLEvalResolveCallMir(
     const SLMirProgram* _Nullable program,
     const SLMirFunction* _Nullable function,
     const SLMirInst* _Nullable inst,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
+    uint32_t nameStart,
+    uint32_t nameEnd,
     const SLCTFEValue* _Nullable args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
+    uint32_t     argCount,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
     SLDiag* _Nullable diag) {
     SLEvalProgram*        p = (SLEvalProgram*)ctx;
     int32_t               fnIndex = -1;
@@ -11556,13 +11555,13 @@ static int SLEvalResolveCallMir(
 }
 
 static int SLEvalResolveCall(
-    void*              ctx,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
+    void*    ctx,
+    uint32_t nameStart,
+    uint32_t nameEnd,
     const SLCTFEValue* _Nullable args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
+    uint32_t     argCount,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
     SLDiag* _Nullable diag) {
     return SLEvalResolveCallMir(
         ctx, NULL, NULL, NULL, nameStart, nameEnd, args, argCount, outValue, outIsConst, diag);

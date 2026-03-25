@@ -7,11 +7,11 @@ int SLTypeCheckEx(
     const SLAst* ast,
     SLStrView    src,
     const SLTypeCheckOptions* _Nullable options,
-    SLDiag* diag) {
+    SLDiag* _Nullable diag) {
     return SLTCBuildCheckedContext(arena, ast, src, options, diag, NULL);
 }
 
-int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag) {
+int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* _Nullable diag) {
     return SLTypeCheckEx(arena, ast, src, NULL, diag);
 }
 

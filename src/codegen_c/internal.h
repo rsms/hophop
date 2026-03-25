@@ -6,21 +6,21 @@
 SL_API_BEGIN
 typedef struct {
     const char* _Nullable baseName;
-    int                  ptrDepth;
-    int                  valid;
-    int                  containerKind; /* 0 scalar, 1 array, 2 ro-slice, 3 rw-slice */
-    int                  containerPtrDepth;
-    uint32_t             arrayLen;
-    int                  hasArrayLen;
-    int                  readOnly;
-    int                  isOptional;
+    int      ptrDepth;
+    int      valid;
+    int      containerKind; /* 0 scalar, 1 array, 2 ro-slice, 3 rw-slice */
+    int      containerPtrDepth;
+    uint32_t arrayLen;
+    int      hasArrayLen;
+    int      readOnly;
+    int      isOptional;
 } SLTypeRef;
 
 typedef struct {
     SLArena* _Nullable arena;
     char* _Nullable v;
-    uint32_t       len;
-    uint32_t       cap;
+    uint32_t len;
+    uint32_t cap;
 } SLBuf;
 
 typedef struct {
@@ -35,17 +35,17 @@ typedef struct {
 } SLNodeRef;
 
 typedef struct {
-    char*      slName;
-    char*      cName;
-    int32_t    nodeId;
-    uint32_t   tcFuncIndex;
-    SLTypeRef  returnType;
+    char*     slName;
+    char*     cName;
+    int32_t   nodeId;
+    uint32_t  tcFuncIndex;
+    SLTypeRef returnType;
     SLTypeRef* _Nullable paramTypes;
-    char** _Nullable     paramNames;
-    uint8_t* _Nullable   paramFlags;
-    uint32_t             paramLen;
-    uint32_t             packArgStart;
-    uint32_t             packArgCount;
+    char** _Nullable paramNames;
+    uint8_t* _Nullable paramFlags;
+    uint32_t paramLen;
+    uint32_t packArgStart;
+    uint32_t packArgCount;
     char* _Nullable packParamName;
     uint16_t  flags;
     SLTypeRef contextType;
@@ -61,12 +61,12 @@ enum {
 };
 
 typedef struct {
-    char*      aliasName;
-    SLTypeRef  returnType;
+    char*     aliasName;
+    SLTypeRef returnType;
     SLTypeRef* _Nullable paramTypes;
-    uint32_t             paramLen;
-    uint8_t              isVariadic;
-    uint8_t              _reserved[3];
+    uint32_t paramLen;
+    uint8_t  isVariadic;
+    uint8_t  _reserved[3];
 } SLFnTypeAlias;
 
 typedef struct {
@@ -78,9 +78,9 @@ typedef struct {
     char* _Nullable ownerType;
     char* _Nullable fieldName;
     char* _Nullable lenFieldName;
-    int             isDependent;
-    int             isEmbedded;
-    int32_t         defaultExprNode;
+    int       isDependent;
+    int       isEmbedded;
+    int32_t   defaultExprNode;
     SLTypeRef type;
 } SLFieldInfo;
 
@@ -128,7 +128,7 @@ typedef struct {
 typedef struct {
     const SLCodegenUnit*    unit;
     const SLCodegenOptions* options;
-    SLDiag* _Nullable       diag;
+    SLDiag* _Nullable diag;
 
     SLArena arena;
     uint8_t arenaInlineStorage[16384];
