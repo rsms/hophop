@@ -15,10 +15,10 @@
 SL_API_BEGIN
 
 typedef struct {
-    char*    path;
-    char*    source;
-    uint32_t sourceLen;
-    void*    arenaMem;
+    char* _Nullable path;
+    char* _Nullable source;
+    uint32_t       sourceLen;
+    void* _Nullable arenaMem;
     SLAst    ast;
 } SLParsedFile;
 
@@ -27,11 +27,11 @@ struct SLPackage;
 typedef struct {
     char* alias;
     char* _Nullable bindName;
-    char*             path;
-    struct SLPackage* target;
-    uint32_t          fileIndex;
-    uint32_t          start;
-    uint32_t          end;
+    char*                 path;
+    struct SLPackage* _Nullable target;
+    uint32_t              fileIndex;
+    uint32_t              start;
+    uint32_t              end;
 } SLImportRef;
 
 typedef struct {
@@ -331,7 +331,7 @@ static int SLEvalEvalTopConst(
 static int SLEvalInvokeFunction(
     SLEvalProgram*       p,
     int32_t              fnIndex,
-    const SLCTFEValue*   args,
+    const SLCTFEValue* _Nullable args,
     uint32_t             argCount,
     const SLEvalContext* callContext,
     SLCTFEValue*         outValue,
@@ -864,7 +864,7 @@ typedef struct {
     const SLParsedFile* file;
     int32_t             typeNode;
     int32_t             elemTypeNode;
-    SLCTFEValue*        elems;
+    SLCTFEValue* _Nullable elems;
     uint32_t            len;
 } SLEvalArray;
 
@@ -942,9 +942,9 @@ struct SLEvalProgram {
     uint32_t             callDepth;
     uint32_t             callStack[SL_EVAL_CALL_MAX_DEPTH];
     SLEvalContext        rootContext;
-    const SLEvalContext* currentContext;
-    int                  exitCalled;
-    int                  exitCode;
+    const SLEvalContext* _Nullable currentContext;
+    int                            exitCalled;
+    int                            exitCode;
 };
 
 typedef struct SLEvalMirExecCtx {
@@ -1962,7 +1962,6 @@ static int SLEvalCoerceValueToTypeNode(
         }
         if (stringRc > 0) {
             *inOutValue = stringValue;
-            sourceValue = inOutValue;
         }
     }
     if (SLEvalAdaptStringValueForType(p->arena, typeFile, typeNode, inOutValue, inOutValue) < 0) {
@@ -2801,7 +2800,7 @@ static int SLEvalResolveCall(
     void*              ctx,
     uint32_t           nameStart,
     uint32_t           nameEnd,
-    const SLCTFEValue* args,
+    const SLCTFEValue* _Nullable args,
     uint32_t           argCount,
     SLCTFEValue*       outValue,
     int*               outIsConst,
@@ -2813,7 +2812,7 @@ static int SLEvalResolveCallMir(
     const SLMirInst* _Nullable inst,
     uint32_t           nameStart,
     uint32_t           nameEnd,
-    const SLCTFEValue* args,
+    const SLCTFEValue* _Nullable args,
     uint32_t           argCount,
     SLCTFEValue*       outValue,
     int*               outIsConst,
@@ -6922,6 +6921,9 @@ static int SLEvalEvalCompoundLiteral(
             return 0;
         }
         if (fieldIndex >= 0) {
+            if (explicitSet == NULL || explicitValues == NULL) {
+                return ErrorSimple("out of memory");
+            }
             explicitSet[fieldIndex] = 1u;
             explicitValues[fieldIndex] = fieldValue;
         } else if (!SLEvalValueSetFieldPath(
@@ -7099,7 +7101,7 @@ static int SLEvalResolveCall(
     void*              ctx,
     uint32_t           nameStart,
     uint32_t           nameEnd,
-    const SLCTFEValue* args,
+    const SLCTFEValue* _Nullable args,
     uint32_t           argCount,
     SLCTFEValue*       outValue,
     int*               outIsConst,
@@ -7111,7 +7113,7 @@ static int SLEvalResolveCallMir(
     const SLMirInst* _Nullable inst,
     uint32_t           nameStart,
     uint32_t           nameEnd,
-    const SLCTFEValue* args,
+    const SLCTFEValue* _Nullable args,
     uint32_t           argCount,
     SLCTFEValue*       outValue,
     int*               outIsConst,
@@ -7300,7 +7302,6 @@ static int SLEvalFindVisibleLocalTypeNodeByName(
             continue;
         }
         maybeTypeNode = -1;
-        initNode = -1;
         if (ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
             int32_t afterNames;
             int32_t nameNode = ast->nodes[firstChild].firstChild;
@@ -10399,7 +10400,7 @@ SL_API_BEGIN
 static int SLEvalInvokeFunction(
     SLEvalProgram*       p,
     int32_t              fnIndex,
-    const SLCTFEValue*   args,
+    const SLCTFEValue* _Nullable args,
     uint32_t             argCount,
     const SLEvalContext* callContext,
     SLCTFEValue*         outValue,
@@ -10418,7 +10419,8 @@ static int SLEvalInvokeFunction(
     uint32_t              paramIndex = 0;
     uint32_t              fixedCount = 0;
 
-    if (p == NULL || outValue == NULL || outDidReturn == NULL || fnIndex < 0
+    if (p == NULL || outValue == NULL || outDidReturn == NULL || (argCount > 0 && args == NULL)
+        || fnIndex < 0
         || (uint32_t)fnIndex >= p->funcLen)
     {
         return -1;
@@ -10504,6 +10506,9 @@ static int SLEvalInvokeFunction(
     while (child >= 0) {
         const SLAstNode* n = &ast->nodes[child];
         if (n->kind == SLAst_PARAM) {
+            if (paramBindings == NULL) {
+                return ErrorSimple("out of memory");
+            }
             int32_t     paramTypeNode = ASTFirstChild(ast, child);
             SLCTFEValue boundValue;
             if (fn->isVariadic && paramIndex + 1u == fn->paramCount) {
@@ -10627,7 +10632,7 @@ static int SLEvalInvokeFunction(
 static int SLEvalInvokeFunctionRef(
     SLEvalProgram*     p,
     const SLCTFEValue* calleeValue,
-    const SLCTFEValue* args,
+    const SLCTFEValue* _Nullable args,
     uint32_t           argCount,
     SLCTFEValue*       outValue,
     int*               outIsConst) {
@@ -10635,7 +10640,9 @@ static int SLEvalInvokeFunctionRef(
     uint32_t              mirFnIndex = 0;
     int                   didReturn = 0;
     const SLEvalFunction* fn;
-    if (p == NULL || calleeValue == NULL || outValue == NULL || outIsConst == NULL) {
+    if (p == NULL || calleeValue == NULL || outValue == NULL || outIsConst == NULL
+        || (argCount > 0 && args == NULL))
+    {
         return 0;
     }
     if (SLMirValueAsFunctionRef(calleeValue, &mirFnIndex)) {
@@ -11096,9 +11103,9 @@ static int SLEvalResolveCallMirPre(
 
 static int SLEvalExpandMirSpreadLastArgs(
     SLEvalProgram*        p,
-    const SLMirInst*      inst,
+    const SLMirInst* _Nullable inst,
     const SLEvalFunction* fn,
-    const SLCTFEValue*    args,
+    const SLCTFEValue* _Nullable args,
     uint32_t              argCount,
     const SLCTFEValue**   outArgs,
     uint32_t*             outArgCount) {
@@ -11112,7 +11119,9 @@ static int SLEvalExpandMirSpreadLastArgs(
     if (outArgCount != NULL) {
         *outArgCount = argCount;
     }
-    if (p == NULL || fn == NULL || outArgs == NULL || outArgCount == NULL) {
+    if (p == NULL || fn == NULL || outArgs == NULL || outArgCount == NULL
+        || (argCount > 0 && args == NULL))
+    {
         return -1;
     }
     if (inst == NULL || !fn->isVariadic || !SLMirCallTokHasSpreadLast(inst->tok)) {
@@ -11124,6 +11133,9 @@ static int SLEvalExpandMirSpreadLastArgs(
     spreadArray = SLEvalValueAsArray(SLEvalValueTargetOrSelf(&args[argCount - 1u]));
     if (spreadArray == NULL || spreadArray->len > UINT32_MAX - (argCount - 1u)) {
         return 0;
+    }
+    if (spreadArray->len > 0 && spreadArray->elems == NULL) {
+        return -1;
     }
     prefixCount = argCount - 1u;
     expandedArgs = (SLCTFEValue*)SLArenaAlloc(
@@ -11153,7 +11165,7 @@ static int SLEvalResolveCallMir(
     const SLMirInst* _Nullable inst,
     uint32_t           nameStart,
     uint32_t           nameEnd,
-    const SLCTFEValue* args,
+    const SLCTFEValue* _Nullable args,
     uint32_t           argCount,
     SLCTFEValue*       outValue,
     int*               outIsConst,
@@ -11173,7 +11185,7 @@ static int SLEvalResolveCallMir(
     (void)diag;
 
     if (p == NULL || p->currentFile == NULL || p->currentExecCtx == NULL || outValue == NULL
-        || outIsConst == NULL)
+        || outIsConst == NULL || (argCount > 0 && args == NULL))
     {
         return -1;
     }
@@ -11547,7 +11559,7 @@ static int SLEvalResolveCall(
     void*              ctx,
     uint32_t           nameStart,
     uint32_t           nameEnd,
-    const SLCTFEValue* args,
+    const SLCTFEValue* _Nullable args,
     uint32_t           argCount,
     SLCTFEValue*       outValue,
     int*               outIsConst,

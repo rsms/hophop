@@ -599,7 +599,7 @@ static int SLEvalMirResolveQualifiedValueLoadTargetForFile(
     const SLEvalMirLowerCtx* c,
     const SLParsedFile*      file,
     const SLMirInst*         loadIns,
-    const SLMirInst*         fieldIns,
+    const SLMirInst* _Nullable fieldIns,
     int*                     outTargetKind,
     uint32_t*                outTargetIndex);
 static int SLEvalMirRewriteQualifiedValueLoad(
@@ -940,7 +940,7 @@ static int SLEvalMirResolveQualifiedValueLoadTargetForFile(
     const SLEvalMirLowerCtx* c,
     const SLParsedFile*      file,
     const SLMirInst*         loadIns,
-    const SLMirInst*         fieldIns,
+    const SLMirInst* _Nullable fieldIns,
     int*                     outTargetKind,
     uint32_t*                outTargetIndex) {
     const SLPackage* currentPkg;
@@ -1014,7 +1014,6 @@ static int SLEvalMirRewriteQualifiedValueLoad(
     {
         return -1;
     }
-    loadIns = &c->builder.insts[loadInstIndex];
     fieldIns = &c->builder.insts[loadInstIndex + 1u];
     inserted.start = fieldIns->start;
     inserted.end = fieldIns->end;
