@@ -540,13 +540,13 @@ int SLTCReadFunctionSig(
 
 int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
     const SLAstNode* n = &c->ast->nodes[nodeId];
-    int32_t          returnType;
-    int32_t          contextType;
-    uint32_t         paramCount;
+    int32_t          returnType = -1;
+    int32_t          contextType = -1;
+    uint32_t         paramCount = 0;
     int              isVariadic = 0;
     int              hasAnytype = 0;
     int              hasAnyPack = 0;
-    int              hasBody;
+    int              hasBody = 0;
     int32_t          savedActiveTypeParamFnNode = c->activeTypeParamFnNode;
 
     if (n->kind == SLAst_PUB) {

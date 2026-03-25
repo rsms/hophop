@@ -50,7 +50,7 @@ static int SLTCInvokeConstFunctionByIndex(
     uint32_t           nameStart,
     uint32_t           nameEnd,
     int32_t            fnIndex,
-    const SLCTFEValue* args,
+    const SLCTFEValue* _Nullable args,
     uint32_t           argCount,
     const SLTCCallArgInfo* _Nullable callArgs,
     uint32_t callArgCount,
@@ -5111,7 +5111,7 @@ static int SLTCMirConstResolveFunctionIdentTarget(
 static int SLTCMirConstResolveQualifiedFunctionValueTarget(
     const SLTCMirConstLowerCtx* c,
     const SLMirInst*            loadIns,
-    const SLMirInst*            fieldIns,
+    const SLMirInst* _Nullable  fieldIns,
     int32_t*                    outFnIndex) {
     SLTypeCheckCtx* tc;
     uint32_t        fieldStart;
@@ -5145,7 +5145,6 @@ static int SLTCMirConstRewriteQualifiedFunctionValueLoad(
     uint32_t              ownerMirFnIndex,
     uint32_t              loadInstIndex,
     uint32_t              targetMirFnIndex) {
-    SLMirInst* loadIns;
     SLMirInst* fieldIns;
     SLMirInst  inserted = { 0 };
     SLMirConst value = { 0 };
@@ -5155,7 +5154,6 @@ static int SLTCMirConstRewriteQualifiedFunctionValueLoad(
     {
         return -1;
     }
-    loadIns = &c->builder.insts[loadInstIndex];
     fieldIns = &c->builder.insts[loadInstIndex + 1u];
     value.kind = SLMirConst_FUNCTION;
     value.bits = targetMirFnIndex;
@@ -6416,6 +6414,9 @@ static int SLTCInvokeConstFunctionByIndex(
     while (child >= 0) {
         const SLAstNode* n = &c->ast->nodes[child];
         if (n->kind == SLAst_PARAM) {
+            if (paramBindings == NULL) {
+                return -1;
+            }
             int32_t paramTypeNode = SLAstFirstChild(c->ast, child);
             int32_t paramTypeId = -1;
             uint8_t savedAllowConstNumericTypeName = c->allowConstNumericTypeName;
@@ -6994,13 +6995,13 @@ int SLTCResolveConstCallMir(
 }
 
 int SLTCResolveConstCall(
-    void*              ctx,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
-    const SLCTFEValue* args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
+    void*                    ctx,
+    uint32_t                 nameStart,
+    uint32_t                 nameEnd,
+    const SLCTFEValue* _Nullable args,
+    uint32_t                 argCount,
+    SLCTFEValue*             outValue,
+    int*                     outIsConst,
     SLDiag* _Nullable diag) {
     return SLTCResolveConstCallMir(
         ctx, NULL, NULL, NULL, nameStart, nameEnd, args, argCount, outValue, outIsConst, diag);

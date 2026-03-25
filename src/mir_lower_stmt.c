@@ -37,34 +37,34 @@ typedef struct {
 } SLMirChunkInsert;
 
 typedef struct {
-    SLArena*              arena;
-    const SLAst*          ast;
-    SLStrView             src;
-    SLMirProgramBuilder   builder;
-    uint32_t              functionIndex;
-    int32_t               functionReturnTypeNode;
-    SLMirLowerLocal*      locals;
-    uint32_t              localLen;
-    uint32_t              localCap;
-    uint32_t              breakJumps[256];
-    uint32_t              breakJumpLen;
-    uint32_t              continueJumps[256];
-    uint32_t              continueJumpLen;
-    SLMirLowerControl     controls[32];
-    uint32_t              controlLen;
-    int32_t               deferredStmtNodes[256];
-    uint32_t              deferredStmtLen;
-    SLMirLowerBlockScope  blockScopes[64];
-    uint32_t              blockDepth;
-    uint8_t               loweringDeferred;
-    uint8_t               _reserved2[3];
-    int                   supported;
-    SLDiag*               diag;
-    SLMirLowerConstExprFn lowerConstExpr;
-    void*                 lowerConstExprCtx;
+    SLArena*                     arena;
+    const SLAst*                 ast;
+    SLStrView                    src;
+    SLMirProgramBuilder          builder;
+    uint32_t                     functionIndex;
+    int32_t                      functionReturnTypeNode;
+    SLMirLowerLocal*             locals;
+    uint32_t                     localLen;
+    uint32_t                     localCap;
+    uint32_t                     breakJumps[256];
+    uint32_t                     breakJumpLen;
+    uint32_t                     continueJumps[256];
+    uint32_t                     continueJumpLen;
+    SLMirLowerControl            controls[32];
+    uint32_t                     controlLen;
+    int32_t                      deferredStmtNodes[256];
+    uint32_t                     deferredStmtLen;
+    SLMirLowerBlockScope         blockScopes[64];
+    uint32_t                     blockDepth;
+    uint8_t                      loweringDeferred;
+    uint8_t                      _reserved2[3];
+    int                          supported;
+    SLDiag* _Nullable            diag;
+    SLMirLowerConstExprFn _Nullable lowerConstExpr;
+    void* _Nullable              lowerConstExprCtx;
 } SLMirStmtLower;
 
-static void SLMirLowerStmtSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
+static void SLMirLowerStmtSetDiag(SLDiag* _Nullable diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
@@ -2344,7 +2344,6 @@ static int SLMirStmtLowerSwitch(SLMirStmtLower* c, int32_t stmtNode) {
                 }
                 if (pendingFalseJump != UINT32_MAX) {
                     c->builder.insts[pendingFalseJump].aux = SLMirStmtLowerFnPc(c);
-                    pendingFalseJump = UINT32_MAX;
                 }
                 if (c->ast->nodes[caseChild].kind == SLAst_CASE_PATTERN) {
                     labelExprNode = c->ast->nodes[caseChild].firstChild;

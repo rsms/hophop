@@ -197,7 +197,7 @@ typedef struct {
     SLArena*     arena;
     const SLAst* ast;
     SLStrView    src;
-    SLDiag*      diag;
+    SLDiag* _Nullable diag;
     SLTCDiagSink diagSink;
 
     SLTCType* types;
@@ -244,9 +244,9 @@ typedef struct {
     uint8_t*     constEvalState;
     int32_t*     topVarLikeTypes;
     uint8_t*     topVarLikeTypeState;
-    const char*  lastConstEvalReason;
-    uint32_t     lastConstEvalReasonStart;
-    uint32_t     lastConstEvalReasonEnd;
+    const char* _Nullable lastConstEvalReason;
+    uint32_t              lastConstEvalReasonStart;
+    uint32_t              lastConstEvalReasonEnd;
 
     int32_t typeVoid;
     int32_t typeBool;
@@ -280,15 +280,15 @@ typedef struct {
     int               currentFunctionIsCompareHook;
     int32_t           activeTypeParamFnNode;
     int32_t           currentTypeOwnerTypeId;
-    SLTCConstEvalCtx* activeConstEvalCtx;
-    uint8_t           compilerDiagPathProven;
-    uint8_t           allowAnytypeParamType;
-    uint8_t           allowConstNumericTypeName;
+    SLTCConstEvalCtx* _Nullable activeConstEvalCtx;
+    uint8_t                     compilerDiagPathProven;
+    uint8_t                     allowAnytypeParamType;
+    uint8_t                     allowConstNumericTypeName;
 
-    const int32_t* defaultFieldNodes;
-    const int32_t* defaultFieldTypes;
-    uint32_t       defaultFieldCount;
-    uint32_t       defaultFieldCurrentIndex;
+    const int32_t* _Nullable defaultFieldNodes;
+    const int32_t* _Nullable defaultFieldTypes;
+    uint32_t                 defaultFieldCount;
+    uint32_t                 defaultFieldCurrentIndex;
 } SLTypeCheckCtx;
 
 struct SLConstEvalSession {
@@ -319,9 +319,9 @@ typedef struct {
 #define SLTC_DIAG_TEXT_CAP 128u
 
 typedef struct {
-    char*    ptr;
-    uint32_t cap;
-    uint32_t len;
+    char* _Nullable ptr;
+    uint32_t       cap;
+    uint32_t       len;
 } SLTCTextBuf;
 
 int32_t SLTCInternPtrType(SLTypeCheckCtx* c, int32_t baseType, uint32_t errStart, uint32_t errEnd);
@@ -410,26 +410,26 @@ typedef struct {
 
 struct SLTCConstEvalCtx {
     SLTypeCheckCtx*      tc;
-    SLCTFEExecCtx*       execCtx;
-    const SLMirProgram*  mirProgram;
-    const SLMirFunction* mirFunction;
-    const SLCTFEValue*   mirLocals;
-    uint32_t             mirLocalCount;
-    const SLMirProgram*  mirSavedPrograms[SLTC_CONST_CALL_MAX_DEPTH];
-    const SLMirFunction* mirSavedFunctions[SLTC_CONST_CALL_MAX_DEPTH];
-    const SLCTFEValue*   mirSavedLocals[SLTC_CONST_CALL_MAX_DEPTH];
-    uint32_t             mirSavedLocalCounts[SLTC_CONST_CALL_MAX_DEPTH];
-    uint32_t             mirFrameDepth;
-    int32_t              fnStack[SLTC_CONST_CALL_MAX_DEPTH];
-    uint32_t             fnDepth;
-    const void*          callArgs;
-    uint32_t             callArgCount;
-    const void*          callBinding;
-    uint32_t             callPackParamNameStart;
-    uint32_t             callPackParamNameEnd;
-    const char*          nonConstReason;
-    uint32_t             nonConstStart;
-    uint32_t             nonConstEnd;
+    SLCTFEExecCtx* _Nullable       execCtx;
+    const SLMirProgram* _Nullable  mirProgram;
+    const SLMirFunction* _Nullable mirFunction;
+    const SLCTFEValue* _Nullable   mirLocals;
+    uint32_t                      mirLocalCount;
+    const SLMirProgram* _Nullable mirSavedPrograms[SLTC_CONST_CALL_MAX_DEPTH];
+    const SLMirFunction* _Nullable mirSavedFunctions[SLTC_CONST_CALL_MAX_DEPTH];
+    const SLCTFEValue* _Nullable   mirSavedLocals[SLTC_CONST_CALL_MAX_DEPTH];
+    uint32_t                      mirSavedLocalCounts[SLTC_CONST_CALL_MAX_DEPTH];
+    uint32_t                      mirFrameDepth;
+    int32_t                       fnStack[SLTC_CONST_CALL_MAX_DEPTH];
+    uint32_t                      fnDepth;
+    const void* _Nullable         callArgs;
+    uint32_t                      callArgCount;
+    const void* _Nullable         callBinding;
+    uint32_t                      callPackParamNameStart;
+    uint32_t                      callPackParamNameEnd;
+    const char* _Nullable nonConstReason;
+    uint32_t              nonConstStart;
+    uint32_t              nonConstEnd;
 };
 
 int SLTCEvalTopLevelConstNode(
@@ -448,13 +448,13 @@ int SLTCEvalTopLevelConstNodeAt(
 int SLTCEvalConstExprNode(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
 int SLTCResolveConstCall(
-    void*              ctx,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
-    const SLCTFEValue* args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
+    void*                    ctx,
+    uint32_t                 nameStart,
+    uint32_t                 nameEnd,
+    const SLCTFEValue* _Nullable args,
+    uint32_t                 argCount,
+    SLCTFEValue*             outValue,
+    int*                     outIsConst,
     SLDiag* _Nullable diag);
 int SLTCResolveConstCallMir(
     void* _Nullable ctx,
@@ -621,16 +621,16 @@ int SLTCFailTypeMismatchDetail(
     SLTypeCheckCtx* c, int32_t failNode, int32_t exprNode, int32_t srcType, int32_t dstType);
 int SLTCFailAssignToConst(SLTypeCheckCtx* c, int32_t lhsNode);
 int SLTCFailSwitchMissingCases(
-    SLTypeCheckCtx* c,
-    int32_t         failNode,
-    int32_t         subjectType,
-    int32_t         subjectEnumType,
-    uint32_t        enumVariantCount,
-    const uint32_t* enumVariantStarts,
-    const uint32_t* enumVariantEnds,
-    const uint8_t*  enumCovered,
-    int             boolCoveredTrue,
-    int             boolCoveredFalse);
+    SLTypeCheckCtx*           c,
+    int32_t                   failNode,
+    int32_t                   subjectType,
+    int32_t                   subjectEnumType,
+    uint32_t                  enumVariantCount,
+    const uint32_t* _Nullable enumVariantStarts,
+    const uint32_t* _Nullable enumVariantEnds,
+    const uint8_t* _Nullable  enumCovered,
+    int                       boolCoveredTrue,
+    int                       boolCoveredFalse);
 int32_t SLAstFirstChild(const SLAst* ast, int32_t nodeId);
 int32_t SLAstNextSibling(const SLAst* ast, int32_t nodeId);
 int SLNameEqSlice(SLStrView src, uint32_t aStart, uint32_t aEnd, uint32_t bStart, uint32_t bEnd);
@@ -1305,15 +1305,15 @@ int SLTCBuildCheckedContext(
     const SLAst* ast,
     SLStrView    src,
     const SLTypeCheckOptions* _Nullable options,
-    SLDiag* diag,
+    SLDiag* _Nullable diag,
     SLTypeCheckCtx* _Nullable outCtx);
 int SLTypeCheckEx(
     SLArena*     arena,
     const SLAst* ast,
     SLStrView    src,
     const SLTypeCheckOptions* _Nullable options,
-    SLDiag* diag);
-int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* diag);
+    SLDiag* _Nullable diag);
+int SLTypeCheck(SLArena* arena, const SLAst* ast, SLStrView src, SLDiag* _Nullable diag);
 int SLConstEvalSessionInit(
     SLArena*             arena,
     const SLAst*         ast,

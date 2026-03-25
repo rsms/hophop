@@ -309,7 +309,7 @@ int SLTCInferAnonStructTypeFromCompound(
     while (fieldNode >= 0) {
         const SLAstNode* field = &c->ast->nodes[fieldNode];
         int32_t          exprNode;
-        int32_t          fieldType;
+        int32_t          fieldType = -1;
         uint32_t         i;
         if (field->kind != SLAst_COMPOUND_FIELD) {
             return SLTCFailNode(c, fieldNode, SLDiag_UNEXPECTED_TOKEN);
@@ -493,9 +493,9 @@ int SLTCTypeCompoundLit(SLTypeCheckCtx* c, int32_t nodeId, int32_t expectedType,
 
     while (firstField >= 0) {
         const SLAstNode* fieldNode = &c->ast->nodes[firstField];
-        int32_t          fieldType;
+        int32_t          fieldType = -1;
         int32_t          exprNode;
-        int32_t          exprType;
+        int32_t          exprType = -1;
         int32_t          scan;
 
         if (fieldNode->kind != SLAst_COMPOUND_FIELD) {
@@ -2587,8 +2587,8 @@ int SLTCTypeExpr_SIZEOF(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, i
 int SLTCTypeExpr_FIELD_EXPR(
     SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
     int32_t          recvNode = SLAstFirstChild(c->ast, nodeId);
-    int32_t          recvType;
-    int32_t          fieldType;
+    int32_t          recvType = -1;
+    int32_t          fieldType = -1;
     int32_t          fnIndex;
     int32_t          localIdx;
     const SLAstNode* recv;
@@ -3206,7 +3206,7 @@ int SLTCValidateConstInitializerExprNode(SLTypeCheckCtx* c, int32_t initNode) {
 
 static int SLTCValidateLocalConstFunctionInitializerExprNode(SLTypeCheckCtx* c, int32_t initNode) {
     const SLAstNode* init;
-    int32_t          initType;
+    int32_t          initType = -1;
     if (c == NULL || initNode < 0 || (uint32_t)initNode >= c->ast->len) {
         return 0;
     }

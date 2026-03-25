@@ -2195,7 +2195,7 @@ int SLTCValidateCallContextRequirements(SLTypeCheckCtx* c, int32_t requiredConte
     for (i = 0; i < c->types[typeId].fieldCount; i++) {
         uint32_t        fieldIdx = c->types[typeId].fieldStart + i;
         const SLTCField field = c->fields[fieldIdx];
-        int32_t         gotType;
+        int32_t         gotType = -1;
         if (field.nameEnd <= field.nameStart) {
             continue;
         }
