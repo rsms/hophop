@@ -22,6 +22,7 @@ format=   # run clang-format on the source (default: on if clang-format is found
 test=0    # run tests after successful build
 cc=clang  # compiler to use (also used for linking)
 release=0 # compatibility alias for debug=0
+analyze=0 # run clang analyzer on source code and exit
 toolchain=
 jobs=     # explicit number of -j or --jobs to use for running tests (defaults to CPU count)
 c_backend=1 # build C backend support into slc
@@ -156,7 +157,57 @@ if [ $format != 0 ]; then
 
     [ $verbose -lt 2 ] || echo "clang-format" "${format_files[@]}"
 
+    echo "Formatting ${#format_files[@]} files"
     clang-format --Werror --style=file:clang-format.yaml -i "${format_files[@]}"
+fi
+
+####################################################################################################
+# analyze
+if [ $analyze != 0 ]; then
+    # See `clang --help | grep -A1 analyzer-output`
+    rm -rf "$build_dir/analyze"
+    mkdir -p "$build_dir/analyze"
+    a_flags=( "${x_flags[@]}" "${c_flags[@]}" )
+    a_flags=( "${a_flags[@]/-fsani*/}" )
+    a_flags=( "${a_flags[@]/-fcolor-diagnostics*/}" )
+    a_flags+=( -isystem lib )
+    a_flags+=( --analyze -Xanalyzer )
+    a_files=( "${cli_sources[@]}" "${lib_sources[@]}" )
+    echo "Analyzing ${#a_files[@]} files"
+    for srcfile in "${a_files[@]}"; do
+        report=$build_dir/analyze/$srcfile.json
+        mkdir -p "$(dirname "$report")"
+        clang "${a_flags[@]}" -analyzer-output=sarif -o "$report" $srcfile > /dev/null 2>&1 &
+    done
+    wait
+    total_issues=0
+    lines=()
+    while IFS= read -r -d '' f; do
+        n=$(jq '[.runs[].results[]?] | length' "$f")
+        if [ "$n" -gt 0 ]; then
+            total_issues=$((total_issues + n))
+            rel=${f#_build/macos-aarch64-debug/analyze/}
+            src=${rel%.json}
+            if [ "$n" -eq 1 ]; then
+                lines+=("$(printf '%s: %d issue: %s' "$src" "$n" "$f")")
+            else
+                lines+=("$(printf '%s: %d issues: %s' "$src" "$n" "$f")")
+            fi
+        fi
+    done < <(find _build/macos-aarch64-debug/analyze -type f -name '*.json' -print0)
+    printf '%s\n' "${lines[@]}" | sort
+    if [ "$total_issues" -eq 1 ]; then
+        echo "Total: $total_issues issue"
+    else
+        echo "Total: $total_issues issues"
+    fi
+    if [ $total_issues -gt 0 ]; then
+        # echo "Tip: Run the following for plain-text summary of issues in a file:"
+        # echo "    clang ${a_flags[@]/-W*/} -fcolor-diagnostics <srcfile>"
+        exit 1
+    else
+        exit 0
+    fi
 fi
 
 ####################################################################################################
