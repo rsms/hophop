@@ -99,15 +99,15 @@ contexts:
       - match: '\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b'
         scope: constant.numeric.slang
 
-    function-params:
-      - match: '\('
-        scope: meta.function.parameters.slang punctuation.definition.group.begin.slang
-        push:
-          - meta_scope: meta.function.parameters.slang
-          - include: main
-          - match: '\)'
-            scope: meta.function.parameters.slang punctuation.definition.group.end.slang
-            pop: true
+    # function-params:
+    #   - match: '\('
+    #     scope: meta.function.parameters.slang punctuation.definition.group.begin.slang
+    #     push:
+    #       - meta_scope: meta.function.parameters.slang
+    #       - include: main
+    #       - match: '\)'
+    #         scope: meta.function.parameters.slang punctuation.definition.group.end.slang
+    #         pop: true
 
     functions:
       - match: '\b(pub)\s+(fn)\s+({{ident}})(?=\s*\()'
@@ -116,12 +116,12 @@ contexts:
             1: storage.modifier.visibility.slang
             2: keyword.declaration.function.slang
             3: entity.name.function.slang
-        push: function-params
+        # push: function-params
       - match: '\b(fn)\s+({{ident}})'
         captures:
             1: keyword.declaration.function.slang
             2: entity.name.function.slang
-        push: function-params
+        # push: function-params
 
     declarations:
       - include: functions
