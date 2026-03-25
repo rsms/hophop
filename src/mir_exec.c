@@ -30,7 +30,7 @@ static int  SLCTFEPush(SLMirExecRun* r, const SLMirExecValue* v);
 static int  SLCTFEPop(SLMirExecRun* r, SLMirExecValue* out);
 static int  SLCTFEParseIntLiteral(SLStrView src, uint32_t start, uint32_t end, int64_t* out);
 static int  SLCTFEParseFloatLiteral(
-     SLArena* arena, SLStrView src, uint32_t start, uint32_t end, double* out);
+    SLArena* arena, SLStrView src, uint32_t start, uint32_t end, double* out);
 static int SLCTFEParseBoolLiteral(SLStrView src, uint32_t start, uint32_t end, uint8_t* out);
 static int SLCTFEOptionalPayload(const SLCTFEValue* opt, const SLCTFEValue** outPayload);
 static int SLCTFEEvalUnary(SLTokenKind op, const SLCTFEValue* in, SLCTFEValue* out);
@@ -43,7 +43,7 @@ static int SLCTFEEvalBinary(
 static int SLCTFEEvalCast(SLMirCastTarget target, const SLCTFEValue* in, SLCTFEValue* out);
 static const SLMirLocal* SLMirGetLocalMeta(const SLMirExecRun* run, uint32_t slot);
 static int               SLMirCoerceValueForType(
-                  const SLMirExecRun* run, uint32_t typeRefIndex, SLMirExecValue* inOutValue);
+    const SLMirExecRun* run, uint32_t typeRefIndex, SLMirExecValue* inOutValue);
 static void SLMirSetReason(
     const SLMirExecRun* _Nullable run, const SLMirInst* _Nullable ins, const char* _Nonnull reason);
 

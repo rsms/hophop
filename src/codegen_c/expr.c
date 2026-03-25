@@ -2467,8 +2467,8 @@ int InferCompoundLiteralType(
             const SLAstNode* expr = NodeAt(c, exprNode);
             const char*      dstBase =
                 fieldType.baseName != NULL
-                         ? ResolveScalarAliasBaseName(c, fieldType.baseName)
-                         : NULL;
+                    ? ResolveScalarAliasBaseName(c, fieldType.baseName)
+                    : NULL;
             if (dstBase == NULL) {
                 dstBase = fieldType.baseName;
             }

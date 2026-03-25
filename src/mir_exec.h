@@ -290,9 +290,9 @@ int SLMirEvalFunction(
 void SLMirExecEnvDisableDynamicResolution(SLMirExecEnv* _Nonnull env);
 void SLMirValueSetFunctionRef(SLMirExecValue* _Nonnull value, uint32_t functionIndex);
 int  SLMirValueAsFunctionRef(
-     const SLMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex);
+    const SLMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex);
 void SLMirValueSetByteRefProxy(SLMirExecValue* _Nonnull value, uint8_t* _Nullable targetByte);
 int  SLMirValueAsByteRefProxy(
-     const SLMirExecValue* _Nonnull value, uint8_t* _Nullable* _Nullable outTargetByte);
+    const SLMirExecValue* _Nonnull value, uint8_t* _Nullable* _Nullable outTargetByte);
 
 SL_API_END

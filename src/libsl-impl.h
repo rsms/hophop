@@ -62,7 +62,7 @@ typedef struct {
 SLDiagCode SLStringLitErrDiagCode(SLStringLitErrKind kind);
 SLDiagCode SLRuneLitErrDiagCode(SLRuneLitErrKind kind);
 int        SLDecodeStringLiteralValidate(
-           const char* _Nonnull src, uint32_t start, uint32_t end, SLStringLitErr* _Nullable outErr);
+    const char* _Nonnull src, uint32_t start, uint32_t end, SLStringLitErr* _Nullable outErr);
 int SLDecodeStringLiteralArena(
     SLArena* _Nonnull arena,
     const char* _Nonnull src,

@@ -205,10 +205,10 @@ void* _Nullable CodegenArenaGrow(void* _Nullable ctx, uint32_t minSize, uint32_t
 void CodegenArenaFree(void* _Nullable ctx, void* _Nullable block, uint32_t blockSize);
 void FreeLoader(SLPackageLoader* loader);
 int  LoadAndCheckPackage(
-     const char* entryPath,
-     const char* _Nullable platformTarget,
-     SLPackageLoader* outLoader,
-     SLPackage**      outEntryPkg);
+    const char* entryPath,
+    const char* _Nullable platformTarget,
+    SLPackageLoader* outLoader,
+    SLPackage**      outEntryPkg);
 int        ValidateEntryMainSignature(const SLPackage* entryPkg);
 int        FindPackageIndex(const SLPackageLoader* loader, const SLPackage* pkg);
 static int SLEvalStringValueFromArrayBytes(
@@ -1573,11 +1573,11 @@ static SLCTFEValue* _Nullable SLEvalValueReferenceTarget(const SLCTFEValue* valu
 static void SLEvalValueSetReference(SLCTFEValue* value, SLCTFEValue* target);
 static int  SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
 static int  SLEvalZeroInitTypeNode(
-     const SLEvalProgram* p,
-     const SLParsedFile*  file,
-     int32_t              typeNode,
-     SLCTFEValue*         outValue,
-     int*                 outIsConst);
+    const SLEvalProgram* p,
+    const SLParsedFile*  file,
+    int32_t              typeNode,
+    SLCTFEValue*         outValue,
+    int*                 outIsConst);
 static int SLEvalResolveAliasCastTargetNode(
     const SLEvalProgram* p,
     const SLParsedFile*  file,
@@ -2745,12 +2745,12 @@ static int SLEvalMirEnterFunction(
     void* ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag);
 static void SLEvalMirLeaveFunction(void* ctx);
 static int  SLEvalMirBindFrame(
-     void* _Nullable ctx,
-     const SLMirProgram* _Nullable program,
-     const SLMirFunction* _Nullable function,
-     const SLCTFEValue* _Nullable locals,
-     uint32_t localCount,
-     SLDiag* _Nullable diag);
+    void* _Nullable ctx,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLCTFEValue* _Nullable locals,
+    uint32_t localCount,
+    SLDiag* _Nullable diag);
 static void SLEvalMirUnbindFrame(void* _Nullable ctx);
 static void SLEvalMirInitExecEnv(
     SLEvalProgram*      p,
@@ -12543,8 +12543,8 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                     const SLEvalFunction* directFn = &p->funcs[(uint32_t)directFnIndex];
                     uint32_t              fixedCount =
                         directFn->isVariadic && directFn->paramCount > 0
-                                         ? directFn->paramCount - 1u
-                                         : directFn->paramCount;
+                            ? directFn->paramCount - 1u
+                            : directFn->paramCount;
                     if (!(ast->nodes[scanNode].kind == SLAst_CALL_ARG
                           && (ast->nodes[scanNode].flags & SLAstFlag_CALL_ARG_SPREAD) != 0)
                         && (!directFn->isVariadic || argCount < fixedCount))

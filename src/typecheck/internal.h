@@ -651,7 +651,7 @@ int      SLTCDecodeTypeTag(SLTypeCheckCtx* c, uint64_t typeTag, int32_t* outType
 int32_t  SLTCResolveTypeValueName(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t  SLTCFindNamedTypeIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t  SLTCFindNamedTypeIndexOwned(
-     SLTypeCheckCtx* c, int32_t ownerTypeId, uint32_t start, uint32_t end);
+    SLTypeCheckCtx* c, int32_t ownerTypeId, uint32_t start, uint32_t end);
 int32_t SLTCResolveTypeNamePath(
     SLTypeCheckCtx* c, uint32_t start, uint32_t end, int32_t ownerTypeId);
 int32_t SLTCFindNamedTypeByLiteral(SLTypeCheckCtx* c, const char* name);
@@ -659,7 +659,7 @@ int32_t SLTCFindBuiltinNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix);
 int32_t SLTCFindNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix);
 int32_t SLTCFindReflectKindType(SLTypeCheckCtx* c);
 int     SLTCNameEqLiteralOrPkgBuiltin(
-        SLTypeCheckCtx* c, uint32_t start, uint32_t end, const char* name, const char* pkgPrefix);
+    SLTypeCheckCtx* c, uint32_t start, uint32_t end, const char* name, const char* pkgPrefix);
 SLTCCompilerDiagOp SLTCCompilerDiagOpFromName(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int                SLTCIsSpanOfName(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t            SLTCFindReflectSpanType(SLTypeCheckCtx* c);
@@ -669,7 +669,7 @@ int                SLTCTypeIsFmtValue(SLTypeCheckCtx* c, int32_t typeId);
 int32_t            SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t            SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t            SLTCFindPkgQualifiedFunctionValueIndex(
-               SLTypeCheckCtx* c, uint32_t pkgStart, uint32_t pkgEnd, uint32_t nameStart, uint32_t nameEnd);
+    SLTypeCheckCtx* c, uint32_t pkgStart, uint32_t pkgEnd, uint32_t nameStart, uint32_t nameEnd);
 int SLTCFunctionNameEq(const SLTypeCheckCtx* c, uint32_t funcIndex, uint32_t start, uint32_t end);
 int SLTCNameEqPkgPrefixedMethod(
     SLTypeCheckCtx* c,
@@ -753,20 +753,20 @@ int32_t  SLTCListItemAt(const SLAst* ast, int32_t listNode, uint32_t index);
 uint32_t SLTCListCount(const SLAst* ast, int32_t listNode);
 int      SLTCVarLikeGetParts(SLTypeCheckCtx* c, int32_t nodeId, SLTCVarLikeParts* out);
 int32_t  SLTCVarLikeNameIndexBySlice(
-     SLTypeCheckCtx* c, int32_t nodeId, uint32_t start, uint32_t end);
+    SLTypeCheckCtx* c, int32_t nodeId, uint32_t start, uint32_t end);
 int32_t SLTCVarLikeInitExprNodeAt(SLTypeCheckCtx* c, int32_t nodeId, int32_t nameIndex);
 int32_t SLTCVarLikeInitExprNode(SLTypeCheckCtx* c, int32_t nodeId);
 void    SLTCConstSetReason(
-       SLTCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason);
+    SLTCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason);
 void SLTCConstSetReasonNode(SLTCConstEvalCtx* evalCtx, int32_t nodeId, const char* reason);
 void SLTCAttachConstEvalReason(SLTypeCheckCtx* c);
 int  SLTCResolveConstIdent(
-     void*        ctx,
-     uint32_t     nameStart,
-     uint32_t     nameEnd,
-     SLCTFEValue* outValue,
-     int*         outIsConst,
-     SLDiag* _Nullable diag);
+    void*        ctx,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    SLCTFEValue* outValue,
+    int*         outIsConst,
+    SLDiag* _Nullable diag);
 int SLTCConstLookupExecBindingType(
     SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, int32_t* outType);
 int SLTCConstLookupMirLocalType(
@@ -775,7 +775,7 @@ int      SLTCConstBuiltinSizeBytes(SLBuiltinKind b, uint64_t* outBytes);
 int      SLTCConstBuiltinAlignBytes(SLBuiltinKind b, uint64_t* outAlign);
 uint64_t SLTCConstAlignUpU64(uint64_t v, uint64_t align);
 int      SLTCConstTypeLayout(
-         SLTypeCheckCtx* c, int32_t typeId, uint64_t* outSize, uint64_t* outAlign, uint32_t depth);
+    SLTypeCheckCtx* c, int32_t typeId, uint64_t* outSize, uint64_t* outAlign, uint32_t depth);
 int SLTCConstEvalSizeOf(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
 int SLTCConstEvalCast(
@@ -937,7 +937,7 @@ int SLTCMirConstBindFrame(
 void SLTCMirConstUnbindFrame(void* _Nullable ctx);
 void SLTCMirConstAdoptLowerDiagReason(SLTCConstEvalCtx* evalCtx, const SLDiag* _Nullable diag);
 int  SLTCMirConstLowerConstExpr(
-     void* _Nullable ctx, int32_t exprNode, SLMirConst* _Nonnull outValue, SLDiag* _Nullable diag);
+    void* _Nullable ctx, int32_t exprNode, SLMirConst* _Nonnull outValue, SLDiag* _Nullable diag);
 int SLTCEvalTopLevelConstNodeAt(
     SLTypeCheckCtx*   c,
     SLTCConstEvalCtx* evalCtx,
@@ -958,11 +958,11 @@ int SLTCConstStringExpr(
     SLTypeCheckCtx* c, int32_t nodeId, const uint8_t** outBytes, uint32_t* outLen, int* outIsConst);
 void SLTCMarkRuntimeBoundsCheck(SLTypeCheckCtx* c, int32_t nodeId);
 int  SLTCResolveAnonAggregateTypeNode(
-     SLTypeCheckCtx* c, int32_t nodeId, int isUnion, int32_t* outType);
+    SLTypeCheckCtx* c, int32_t nodeId, int isUnion, int32_t* outType);
 int     SLTCResolveAliasTypeId(SLTypeCheckCtx* c, int32_t typeId);
 int32_t SLTCResolveAliasBaseType(SLTypeCheckCtx* c, int32_t typeId);
 int     SLTCFnNodeHasTypeParamName(
-        SLTypeCheckCtx* c, int32_t fnNode, uint32_t nameStart, uint32_t nameEnd);
+    SLTypeCheckCtx* c, int32_t fnNode, uint32_t nameStart, uint32_t nameEnd);
 int SLTCResolveActiveTypeParamType(
     SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int32_t* outType);
 int SLTCMirConstInitLowerCtx(SLTCConstEvalCtx* evalCtx, SLTCMirConstLowerCtx* _Nonnull outCtx);
@@ -1002,7 +1002,7 @@ int     SLTCTypeIsU8Slice(SLTypeCheckCtx* c, int32_t typeId, int requireMutable)
 int     SLTCTypeIsFreeablePointer(SLTypeCheckCtx* c, int32_t typeId);
 int32_t SLTCFindEmbeddedFieldIndex(SLTypeCheckCtx* c, int32_t namedTypeId);
 int     SLTCEmbedDistanceToType(
-        SLTypeCheckCtx* c, int32_t srcType, int32_t dstType, uint32_t* outDistance);
+    SLTypeCheckCtx* c, int32_t srcType, int32_t dstType, uint32_t* outDistance);
 int SLTCIsTypeDerivedFromEmbedded(SLTypeCheckCtx* c, int32_t srcType, int32_t dstType);
 int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType);
 int SLTCCoerceForBinary(SLTypeCheckCtx* c, int32_t leftType, int32_t rightType, int32_t* outType);
@@ -1010,18 +1010,18 @@ int SLTCConversionCost(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType, uint
 int SLTCCostVectorCompare(const uint8_t* a, const uint8_t* b, uint32_t len);
 int32_t SLTCUnwrapCallArgExprNode(SLTypeCheckCtx* c, int32_t argNode);
 int     SLTCCollectCallArgInfo(
-        SLTypeCheckCtx*  c,
-        int32_t          callNode,
-        int32_t          calleeNode,
-        int              includeReceiver,
-        int32_t          receiverNode,
-        SLTCCallArgInfo* outArgs,
-        int32_t* _Nullable outArgTypes,
-        uint32_t* outArgCount);
+    SLTypeCheckCtx*  c,
+    int32_t          callNode,
+    int32_t          calleeNode,
+    int              includeReceiver,
+    int32_t          receiverNode,
+    SLTCCallArgInfo* outArgs,
+    int32_t* _Nullable outArgTypes,
+    uint32_t* outArgCount);
 int     SLTCIsMainFunction(SLTypeCheckCtx* c, const SLTCFunction* fn);
 int32_t SLTCResolveImplicitMainContextType(SLTypeCheckCtx* c);
 int     SLTCCurrentContextFieldType(
-        SLTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, int32_t* outType);
+    SLTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, int32_t* outType);
 int SLTCCurrentContextFieldTypeByLiteral(
     SLTypeCheckCtx* c, const char* fieldName, int32_t* outType);
 int32_t SLTCContextFindOverlayNode(SLTypeCheckCtx* c);
@@ -1029,7 +1029,7 @@ int32_t SLTCContextFindOverlayBindMatch(
     SLTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, const char* _Nullable fieldName);
 int32_t SLTCContextFindOverlayBindByLiteral(SLTypeCheckCtx* c, const char* fieldName);
 int     SLTCGetEffectiveContextFieldType(
-        SLTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, int32_t* outType);
+    SLTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, int32_t* outType);
 int SLTCGetEffectiveContextFieldTypeByLiteral(
     SLTypeCheckCtx* c, const char* fieldName, int32_t* outType);
 int SLTCValidateCurrentCallOverlay(SLTypeCheckCtx* c);
@@ -1043,15 +1043,15 @@ int SLTCGetFunctionTypeSignature(
     int* _Nullable outIsVariadic);
 void SLTCCallMapErrorClear(SLTCCallMapError* err);
 int  SLTCMapCallArgsToParams(
-     SLTypeCheckCtx*        c,
-     const SLTCCallArgInfo* callArgs,
-     uint32_t               argCount,
-     const uint32_t*        paramNameStarts,
-     const uint32_t*        paramNameEnds,
-     uint32_t               paramCount,
-     uint32_t               firstPositionalArgIndex,
-     int32_t*               outMappedArgExprNodes,
-     SLTCCallMapError* _Nullable outError);
+    SLTypeCheckCtx*        c,
+    const SLTCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    const uint32_t*        paramNameStarts,
+    const uint32_t*        paramNameEnds,
+    uint32_t               paramCount,
+    uint32_t               firstPositionalArgIndex,
+    int32_t*               outMappedArgExprNodes,
+    SLTCCallMapError* _Nullable outError);
 int SLTCPrepareCallBinding(
     SLTypeCheckCtx*        c,
     const SLTCCallArgInfo* callArgs,
@@ -1166,12 +1166,12 @@ int SLTCTypeTopLevelVarLikeNode(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t nameIndex, int32_t* outType);
 int32_t SLTCLocalFind(SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd);
 int     SLTCLocalAdd(
-        SLTypeCheckCtx* c,
-        uint32_t        nameStart,
-        uint32_t        nameEnd,
-        int32_t         typeId,
-        int             isConst,
-        int32_t         initExprNode);
+    SLTypeCheckCtx* c,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    int32_t         typeId,
+    int             isConst,
+    int32_t         initExprNode);
 int SLTCVariantNarrowPush(
     SLTypeCheckCtx* c,
     int32_t         localIdx,

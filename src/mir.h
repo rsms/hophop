@@ -308,9 +308,9 @@ int SLMirBuildExpr(
 
 void SLMirProgramBuilderInit(SLMirProgramBuilder* _Nonnull b, SLArena* _Nonnull arena);
 int  SLMirProgramBuilderAddConst(
-     SLMirProgramBuilder* _Nonnull b,
-     const SLMirConst* _Nonnull value,
-     uint32_t* _Nullable outIndex);
+    SLMirProgramBuilder* _Nonnull b,
+    const SLMirConst* _Nonnull value,
+    uint32_t* _Nullable outIndex);
 int SLMirProgramBuilderAddSource(
     SLMirProgramBuilder* _Nonnull b,
     const SLMirSourceRef* _Nonnull value,

@@ -16,7 +16,7 @@ typedef struct {
 static void SLMirSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end);
 static int  SLMirNameEqLiteral(SLStrView src, uint32_t start, uint32_t end, const char* lit);
 static int  SLMirNameEqLiteralOrPkgBuiltin(
-     SLStrView src, uint32_t start, uint32_t end, const char* lit, const char* pkgPrefix);
+    SLStrView src, uint32_t start, uint32_t end, const char* lit, const char* pkgPrefix);
 static int SLMirNameIsCompilerDiagBuiltin(SLStrView src, uint32_t start, uint32_t end);
 static int SLMirNameIsLazyTypeBuiltin(SLStrView src, uint32_t start, uint32_t end);
 static int SLMirCallUsesLazyBuiltinLowering(const SLMirBuilder* b, int32_t callNode);

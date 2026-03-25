@@ -1713,8 +1713,9 @@ static void SLFmtCheckReport(
             const char* reason = "line content differs";
             if (SLFmtCheckLineEqTrimmed(current, &currentLines[i], expected, &expectedLines[j])) {
                 reason = "leading or trailing whitespace differs";
-            } else if (SLFmtCheckLineEqNoWhitespace(
-                           current, &currentLines[i], expected, &expectedLines[j]))
+            } else if (
+                SLFmtCheckLineEqNoWhitespace(
+                    current, &currentLines[i], expected, &expectedLines[j]))
             {
                 reason = "internal whitespace differs";
             }
