@@ -6515,7 +6515,12 @@ static void PrintUsage(const char* argv0) {
 }
 
 static void PrintVersion(void) {
-    fprintf(stdout, "SL compiler version %d (%s)\n", SL_VERSION, SL_SOURCE_HASH);
+    fprintf(
+        stdout,
+        "SL compiler version %d (%s) eval%s\n",
+        SL_VERSION,
+        SL_SOURCE_HASH,
+        SL_WITH_C_BACKEND ? " c11" : "");
 }
 
 static int HasCBackendBuild(void) {
