@@ -26,10 +26,10 @@ SL_API_BEGIN
 #endif
 
 typedef struct {
-    char*    path;
-    char*    source;
-    uint32_t sourceLen;
-    void*    arenaMem;
+    char* _Nullable path;
+    char* _Nullable source;
+    uint32_t       sourceLen;
+    void* _Nullable arenaMem;
     SLAst    ast;
 } SLParsedFile;
 
@@ -38,11 +38,11 @@ struct SLPackage;
 typedef struct {
     char* alias; /* internal mangle prefix */
     char* _Nullable bindName;
-    char*             path;
-    struct SLPackage* target;
-    uint32_t          fileIndex;
-    uint32_t          start;
-    uint32_t          end;
+    char*                 path;
+    struct SLPackage* _Nullable target;
+    uint32_t              fileIndex;
+    uint32_t              start;
+    uint32_t              end;
 } SLImportRef;
 
 typedef struct {
@@ -110,22 +110,22 @@ typedef struct SLPackage {
 } SLPackage;
 
 typedef struct {
-    char*      rootDir;
-    char*      platformTarget;
-    SLPackage* packages;
-    uint32_t   packageLen;
-    uint32_t   packageCap;
+    char* _Nullable rootDir;
+    char* _Nullable platformTarget;
+    SLPackage* _Nullable packages;
+    uint32_t            packageLen;
+    uint32_t            packageCap;
 } SLPackageLoader;
 
 typedef struct {
-    const char* name;
-    const char* replacement;
+    const char*           name;
+    const char* _Nullable replacement;
 } SLIdentMap;
 
 typedef struct {
-    char*    v;
-    uint32_t len;
-    uint32_t cap;
+    char* _Nullable v;
+    uint32_t       len;
+    uint32_t       cap;
 } SLStringBuilder;
 
 typedef struct {
@@ -138,9 +138,9 @@ typedef struct {
 } SLCombinedSourceSpan;
 
 typedef struct {
-    SLCombinedSourceSpan* spans;
-    uint32_t              len;
-    uint32_t              cap;
+    SLCombinedSourceSpan* _Nullable spans;
+    uint32_t                       len;
+    uint32_t                       cap;
 } SLCombinedSourceMap;
 
 typedef struct {
@@ -171,11 +171,11 @@ static int BuildPrefixedName(const char* alias, const char* name, char** outName
 static int RewriteAliasedPubDeclText(
     const SLPackage* sourcePkg, const SLSymbolDecl* pubDecl, const char* alias, char** outText);
 static int BuildFnImportShapeAndWrapper(
-    const char* aliasedDeclText,
-    const char* localName,
-    const char* qualifiedName,
-    char**      outShapeKey,
-    char**      outWrapperDeclText);
+    const char* _Nullable aliasedDeclText,
+    const char* _Nullable localName,
+    const char* _Nullable qualifiedName,
+    char** _Nullable      outShapeKey,
+    char** _Nullable      outWrapperDeclText);
 static int IsAsciiSpaceChar(char c);
 static int IsIdentStartChar(unsigned char c);
 static int IsIdentContinueChar(unsigned char c);
@@ -186,7 +186,7 @@ static int BuildCachedPackageArtifacts(
     const char*         libDir,
     SLPackageArtifact** outArtifacts,
     uint32_t*           outArtifactLen);
-static void     FreePackageArtifacts(SLPackageArtifact* artifacts, uint32_t artifactLen);
+static void     FreePackageArtifacts(SLPackageArtifact* _Nullable artifacts, uint32_t artifactLen);
 static uint32_t AstListCount(const SLAst* ast, int32_t listNode);
 static int32_t  AstListItemAt(const SLAst* ast, int32_t listNode, uint32_t index);
 
@@ -471,7 +471,6 @@ static int NormalizeIdentifierTokenSpan(
 static int NormalizeIdentifierAdjacentSpan(
     const char* source, uint32_t inStart, uint32_t inEnd, uint32_t* outStart, uint32_t* outEnd) {
     uint32_t s = inStart;
-    uint32_t e = inEnd;
     uint32_t srcLen;
     uint32_t anchor = UINT32_MAX;
     uint32_t tokenStart;
@@ -483,12 +482,6 @@ static int NormalizeIdentifierAdjacentSpan(
     srcLen = (uint32_t)strlen(source);
     if (s > srcLen) {
         s = srcLen;
-    }
-    if (e > srcLen) {
-        e = srcLen;
-    }
-    if (e < s) {
-        e = s;
     }
     for (i = s; i < srcLen; i++) {
         if (IsIdentifierChar(source[i])) {
@@ -943,10 +936,13 @@ static int SBReserve(SLStringBuilder* b, uint32_t extra) {
 }
 
 static int SBAppend(SLStringBuilder* b, const char* s, uint32_t len) {
-    if (len == 0) {
+    if (b == NULL || len == 0) {
         return 0;
     }
     if (SBReserve(b, len) != 0) {
+        return -1;
+    }
+    if (b->v == NULL || s == NULL) {
         return -1;
     }
     memcpy(b->v + b->len, s, len);
@@ -955,7 +951,10 @@ static int SBAppend(SLStringBuilder* b, const char* s, uint32_t len) {
     return 0;
 }
 
-static int SBAppendCStr(SLStringBuilder* b, const char* s) {
+static int SBAppendCStr(SLStringBuilder* b, const char* _Nullable s) {
+    if (s == NULL) {
+        return -1;
+    }
     return SBAppend(b, s, (uint32_t)strlen(s));
 }
 
@@ -989,7 +988,10 @@ static char* _Nullable SBFinish(SLStringBuilder* b, uint32_t* _Nullable outLen) 
     return out;
 }
 
-static char* _Nullable JoinPath(const char* a, const char* b) {
+static char* _Nullable JoinPath(const char* _Nullable a, const char* _Nullable b) {
+    if (a == NULL || b == NULL) {
+        return NULL;
+    }
     size_t aLen = strlen(a);
     size_t bLen = strlen(b);
     int    needSlash = 1;
@@ -1426,6 +1428,11 @@ static int ListTopLevelSLFilesForFmt(const char* dirPath, char*** outFiles, uint
         }
         filePath = JoinPath(dirPath, ent->d_name);
         if (filePath == NULL) {
+            uint32_t i;
+            for (i = 0; i < len; i++) {
+                free(files[i]);
+            }
+            free(files);
             closedir(dir);
             return ErrorSimple("out of memory");
         }
@@ -1434,7 +1441,12 @@ static int ListTopLevelSLFilesForFmt(const char* dirPath, char*** outFiles, uint
             continue;
         }
         if (EnsureCap((void**)&files, &cap, len + 1u, sizeof(char*)) != 0) {
+            uint32_t i;
             free(filePath);
+            for (i = 0; i < len; i++) {
+                free(files[i]);
+            }
+            free(files);
             closedir(dir);
             return ErrorSimple("out of memory");
         }
@@ -2338,10 +2350,13 @@ static int CheckSourceWithSpec(const SLCheckRunSpec* spec) {
 
 static int CheckSourceEx(
     const char* filename,
-    const char* source,
+    const char* _Nullable source,
     uint32_t    sourceLen,
     int         useLineColDiag,
     int         suppressUnusedWarnings) {
+    if (filename == NULL || source == NULL) {
+        return -1;
+    }
     SLCheckRunSpec spec = {
         .filename = filename,
         .source = source,
@@ -2356,12 +2371,15 @@ static int CheckSourceEx(
 
 static int CheckSourceExWithSingleFileRemap(
     const char*                filename,
-    const char*                source,
+    const char* _Nullable      source,
     uint32_t                   sourceLen,
     int                        useLineColDiag,
-    const char*                remapSource,
+    const char* _Nullable      remapSource,
     const SLCombinedSourceMap* remapMap,
     int                        suppressUnusedWarnings) {
+    if (filename == NULL || source == NULL) {
+        return -1;
+    }
     SLCheckRunSpec spec = {
         .filename = filename,
         .source = source,
@@ -4599,8 +4617,14 @@ static int PushShadowIfValueImportName(
 }
 
 static void PopShadowToMark(
-    uint8_t* shadowCounts, uint32_t* shadowStack, uint32_t* shadowLen, uint32_t mark) {
+    uint8_t* shadowCounts, uint32_t* _Nullable shadowStack, uint32_t* shadowLen, uint32_t mark) {
+    if (shadowCounts == NULL || shadowLen == NULL) {
+        return;
+    }
     while (*shadowLen > mark) {
+        if (shadowStack == NULL) {
+            return;
+        }
         uint32_t idx = shadowStack[--(*shadowLen)];
         if (shadowCounts[idx] > 0) {
             shadowCounts[idx]--;
@@ -5226,7 +5250,7 @@ static int ApplyTextRewrites(
     const char*    text,
     uint32_t       textLen,
     uint32_t       baseStart,
-    SLTextRewrite* rewrites,
+    SLTextRewrite* _Nullable rewrites,
     uint32_t       rewriteLen,
     char**         outText) {
     SLStringBuilder b = { 0 };
@@ -5537,7 +5561,7 @@ static int RewriteAliasedPubDeclText(
     if (sourcePkg->pubDeclLen == 0) {
         return ErrorSimple("internal error: empty public declaration set");
     }
-    maps = (SLIdentMap*)malloc(sizeof(SLIdentMap) * sourcePkg->pubDeclLen);
+    maps = (SLIdentMap*)calloc(sourcePkg->pubDeclLen, sizeof(SLIdentMap));
     if (maps == NULL) {
         return ErrorSimple("out of memory");
     }
@@ -5570,11 +5594,11 @@ done:
 }
 
 static int BuildFnImportShapeAndWrapper(
-    const char* aliasedDeclText,
-    const char* localName,
-    const char* qualifiedName,
-    char**      outShapeKey,
-    char**      outWrapperDeclText) {
+    const char* _Nullable aliasedDeclText,
+    const char* _Nullable localName,
+    const char* _Nullable qualifiedName,
+    char** _Nullable      outShapeKey,
+    char** _Nullable      outWrapperDeclText) {
     SLAst           ast = { 0 };
     void*           arenaMem = NULL;
     int32_t         fnNode = -1;
@@ -5586,6 +5610,11 @@ static int BuildFnImportShapeAndWrapper(
     SLStringBuilder callArgs = { 0 };
     uint32_t        paramIndex = 0;
 
+    if (aliasedDeclText == NULL || localName == NULL || qualifiedName == NULL || outShapeKey == NULL
+        || outWrapperDeclText == NULL)
+    {
+        return ErrorSimple("internal error: invalid generated import wrapper input");
+    }
     *outShapeKey = NULL;
     *outWrapperDeclText = NULL;
 
@@ -5801,7 +5830,7 @@ static int AppendAliasedPubDecls(
         return 0;
     }
     mapLen = declLen + sourcePkg->pubDeclLen;
-    maps = (SLIdentMap*)malloc(sizeof(SLIdentMap) * mapLen);
+    maps = (SLIdentMap*)calloc(mapLen, sizeof(SLIdentMap));
     if (maps == NULL) {
         return ErrorSimple("out of memory");
     }
@@ -5836,7 +5865,7 @@ static int AppendAliasedPubDecls(
         if (rc != 0) {
             goto done;
         }
-        if (SBAppendCStr(b, rewritten) != 0 || SBAppendCStr(b, "\n") != 0) {
+        if (rewritten == NULL || SBAppendCStr(b, rewritten) != 0 || SBAppendCStr(b, "\n") != 0) {
             free(rewritten);
             goto done;
         }
@@ -5855,7 +5884,7 @@ static int AppendAliasedPubDecls(
         if (rc != 0) {
             goto done;
         }
-        if (SBAppendCStr(b, rewritten) != 0 || SBAppendCStr(b, "\n") != 0) {
+        if (rewritten == NULL || SBAppendCStr(b, rewritten) != 0 || SBAppendCStr(b, "\n") != 0) {
             free(rewritten);
             goto done;
         }
@@ -5906,8 +5935,14 @@ static int EnsureEmittedImportSurfaceCap(
 }
 
 static int HasEmittedImportSurface(
-    const SLEmittedImportSurface* arr, uint32_t len, const SLPackage* pkg, const char* alias) {
+    const SLEmittedImportSurface* _Nullable arr,
+    uint32_t                              len,
+    const SLPackage* _Nullable            pkg,
+    const char* _Nullable                 alias) {
     uint32_t i;
+    if (arr == NULL || pkg == NULL || alias == NULL) {
+        return 0;
+    }
     for (i = 0; i < len; i++) {
         if (arr[i].pkg == pkg && StrEq(arr[i].alias, alias)) {
             return 1;
@@ -5939,7 +5974,9 @@ static int AppendImportedPackageSurface(
     uint32_t*                emittedCap) {
     uint32_t j;
     int      includePrivateDecls;
-    if (dep == NULL) {
+    if (b == NULL || dep == NULL || alias == NULL || emitted == NULL || emittedLen == NULL
+        || emittedCap == NULL)
+    {
         return ErrorSimple("internal error: unresolved import");
     }
     if (HasEmittedImportSurface(*emitted, *emittedLen, dep, alias)) {
@@ -5960,6 +5997,9 @@ static int AppendImportedPackageSurface(
         }
         if (!HasEmittedImportSurface(*emitted, *emittedLen, subDep, dep->imports[j].alias)) {
             if (EnsureEmittedImportSurfaceCap(emitted, emittedCap, *emittedLen + 1u) != 0) {
+                return ErrorSimple("out of memory");
+            }
+            if (*emitted == NULL) {
                 return ErrorSimple("out of memory");
             }
             (*emitted)[*emittedLen].pkg = subDep;
@@ -6077,6 +6117,12 @@ static int BuildCombinedPackageSource(
                 &rewritten)
             != 0)
         {
+            free(namedRewritten);
+            free(b.v);
+            free(emitted);
+            return -1;
+        }
+        if (rewritten == NULL) {
             free(namedRewritten);
             free(b.v);
             free(emitted);
@@ -6242,7 +6288,7 @@ int LoadAndCheckPackage(
     char*           pkgDir = NULL;
     char*           rootDir;
     SLPackageLoader loader;
-    SLPackage*      entryPkg;
+    SLPackage*      entryPkg = NULL;
     uint32_t        i;
     memset(outLoader, 0, sizeof(*outLoader));
     *outEntryPkg = NULL;
@@ -6300,7 +6346,11 @@ int LoadAndCheckPackage(
         return -1;
     }
     free(pkgDir);
-    (void)entryPkg;
+    if (entryPkg == NULL || entryPkg->dirPath == NULL) {
+        free(canonical);
+        FreeLoader(&loader);
+        return ErrorSimple("internal error: failed to load entry package");
+    }
 
     if (LoadSelectedPlatformTargetPackage(&loader, entryPkg->dirPath, NULL) != 0) {
         free(canonical);
@@ -6323,9 +6373,13 @@ int LoadAndCheckPackage(
     return 0;
 }
 
-int ValidateEntryMainSignature(const SLPackage* entryPkg) {
+int ValidateEntryMainSignature(const SLPackage* _Nullable entryPkg) {
     uint32_t fileIndex;
     int      hasMainDefinition = 0;
+
+    if (entryPkg == NULL) {
+        return ErrorSimple("internal error: missing entry package");
+    }
 
     for (fileIndex = 0; fileIndex < entryPkg->fileLen; fileIndex++) {
         const SLParsedFile* file = &entryPkg->files[fileIndex];
@@ -6378,7 +6432,7 @@ int ValidateEntryMainSignature(const SLPackage* entryPkg) {
 
 static int CheckPackageDir(const char* entryPath, const char* _Nullable platformTarget) {
     SLPackageLoader loader;
-    SLPackage*      entryPkg;
+    SLPackage*      entryPkg = NULL;
     if (LoadAndCheckPackage(entryPath, platformTarget, &loader, &entryPkg) != 0) {
         return -1;
     }
@@ -6483,7 +6537,7 @@ static int GeneratePackage(
     const char* _Nullable platformTarget,
     const char* _Nullable cacheDirArg) {
     SLPackageLoader         loader;
-    SLPackage*              entryPkg;
+    SLPackage*              entryPkg = NULL;
     char*                   source = NULL;
     uint32_t                sourceLen = 0;
     char*                   outHeader = NULL;
@@ -6518,6 +6572,10 @@ static int GeneratePackage(
             return ErrorCBackendDisabled();
         }
         return ErrorSimple("unknown backend: %s", backendName);
+    }
+    if (source == NULL) {
+        FreeLoader(&loader);
+        return ErrorSimple("out of memory");
     }
 
     unit.packageName = entryPkg->name;
@@ -6583,7 +6641,7 @@ static int RunCommand(const char* const* argv) {
     return -1;
 }
 
-static void FreePackageArtifacts(SLPackageArtifact* artifacts, uint32_t artifactLen) {
+static void FreePackageArtifacts(SLPackageArtifact* _Nullable artifacts, uint32_t artifactLen) {
     uint32_t i;
     if (artifacts == NULL) {
         return;
@@ -6615,10 +6673,13 @@ static int ResolveLibDir(char** outLibDir) {
 }
 
 static int ResolvePlatformPath(
-    const char* libDir, const char* platformTarget, char** outPlatformPath) {
+    const char* _Nullable libDir, const char* _Nullable platformTarget, char** outPlatformPath) {
     char* platformDir = NULL;
     char* platformTargetDir = NULL;
     char* platformPath = NULL;
+    if (libDir == NULL || platformTarget == NULL || outPlatformPath == NULL) {
+        return -1;
+    }
     *outPlatformPath = NULL;
     platformDir = JoinPath(libDir, "platform");
     if (platformDir == NULL) {
@@ -6640,10 +6701,13 @@ static int ResolvePlatformPath(
 }
 
 static int ResolveBuiltinPath(
-    const char* libDir, char** outBuiltinPath, char** outBuiltinHeaderPath) {
+    const char* _Nullable libDir, char** outBuiltinPath, char** outBuiltinHeaderPath) {
     char* builtinDir = NULL;
     char* builtinPath = NULL;
     char* builtinHeaderPath = NULL;
+    if (libDir == NULL || outBuiltinPath == NULL || outBuiltinHeaderPath == NULL) {
+        return -1;
+    }
     *outBuiltinPath = NULL;
     *outBuiltinHeaderPath = NULL;
     builtinDir = JoinPath(libDir, "builtin");
@@ -6664,12 +6728,20 @@ static int ResolveBuiltinPath(
 }
 
 static int ResolveCacheRoot(
-    const SLPackageLoader* loader, const char* _Nullable cacheDirArg, char** outCacheRoot) {
+    const SLPackageLoader* _Nullable loader,
+    const char* _Nullable  cacheDirArg,
+    char**                 outCacheRoot) {
     char* cacheRoot;
+    if (outCacheRoot == NULL) {
+        return -1;
+    }
     *outCacheRoot = NULL;
     if (cacheDirArg != NULL) {
         cacheRoot = MakeAbsolutePathDup(cacheDirArg);
     } else {
+        if (loader == NULL || loader->rootDir == NULL) {
+            return -1;
+        }
         cacheRoot = JoinPath(loader->rootDir, ".sl-cache");
     }
     if (cacheRoot == NULL) {
@@ -6775,8 +6847,13 @@ static char* _Nullable BuildPackageMacro(const char* key, const char* suffix) {
 }
 
 static SLPackageArtifact* _Nullable FindArtifactByPkg(
-    SLPackageArtifact* artifacts, uint32_t artifactLen, const SLPackage* pkg) {
+    SLPackageArtifact* _Nullable artifacts,
+    uint32_t                    artifactLen,
+    const SLPackage* _Nullable  pkg) {
     uint32_t i;
+    if (artifacts == NULL || pkg == NULL) {
+        return NULL;
+    }
     for (i = 0; i < artifactLen; i++) {
         if (artifacts[i].pkg == pkg) {
             return &artifacts[i];
@@ -6945,16 +7022,16 @@ static int IsPackageArtifactUpToDate(
 }
 
 static void RestoreImportOverrides(
-    SLAliasOverride*        aliasOverrides,
-    uint32_t                aliasOverrideLen,
-    SLImportSymbolOverride* symbolOverrides,
-    uint32_t                symbolOverrideLen) {
+    SLAliasOverride* _Nullable        aliasOverrides,
+    uint32_t                          aliasOverrideLen,
+    SLImportSymbolOverride* _Nullable symbolOverrides,
+    uint32_t                          symbolOverrideLen) {
     uint32_t i;
-    for (i = 0; i < aliasOverrideLen; i++) {
+    for (i = 0; aliasOverrides != NULL && i < aliasOverrideLen; i++) {
         aliasOverrides[i].imp->alias = aliasOverrides[i].oldAlias;
         free(aliasOverrides[i].newAlias);
     }
-    for (i = 0; i < symbolOverrideLen; i++) {
+    for (i = 0; symbolOverrides != NULL && i < symbolOverrideLen; i++) {
         symbolOverrides[i].sym->qualifiedName = symbolOverrides[i].oldQualifiedName;
         free(symbolOverrides[i].newQualifiedName);
     }
@@ -7012,6 +7089,11 @@ static int ApplyLinkPrefixImportOverrides(
                 RestoreImportOverrides(aliasOverrides, aliasLen, symbolOverrides, symbolLen);
                 return ErrorSimple("out of memory");
             }
+            if (aliasOverrides == NULL) {
+                free(newAlias);
+                RestoreImportOverrides(aliasOverrides, aliasLen, symbolOverrides, symbolLen);
+                return ErrorSimple("out of memory");
+            }
             aliasOverrides[aliasLen].imp = imp;
             aliasOverrides[aliasLen].oldAlias = imp->alias;
             aliasOverrides[aliasLen].newAlias = newAlias;
@@ -7033,6 +7115,11 @@ static int ApplyLinkPrefixImportOverrides(
             }
             imp = &pkg->imports[sym->importIndex];
             if (BuildPrefixedName(imp->alias, sym->sourceName, &newQualifiedName) != 0) {
+                RestoreImportOverrides(aliasOverrides, aliasLen, symbolOverrides, symbolLen);
+                return ErrorSimple("out of memory");
+            }
+            if (symbolOverrides == NULL) {
+                free(newQualifiedName);
                 RestoreImportOverrides(aliasOverrides, aliasLen, symbolOverrides, symbolLen);
                 return ErrorSimple("out of memory");
             }
@@ -7083,6 +7170,9 @@ static int EmitPackageArtifact(
         != 0)
     {
         return -1;
+    }
+    if (source == NULL) {
+        return ErrorSimple("out of memory");
     }
 
     unit.packageName = artifact->linkPrefix;
@@ -7412,9 +7502,9 @@ static int BuildCachedPlatformObject(
     const SLPackageLoader* loader,
     const char* _Nullable cacheDirArg,
     const char* libDir,
-    const char* platformPath,
-    const char* toolchainSignature,
-    char**      outPlatformObjPath) {
+    const char* _Nullable platformPath,
+    const char* _Nullable toolchainSignature,
+    char** _Nullable      outPlatformObjPath) {
     char*       cacheRoot = NULL;
     char*       cacheV1Dir = NULL;
     char*       cachePlatformDir = NULL;
@@ -7426,6 +7516,11 @@ static int BuildCachedPlatformObject(
     const char* ccArgv[12];
     int         isUpToDate = 0;
 
+    if (loader == NULL || loader->platformTarget == NULL || libDir == NULL || platformPath == NULL
+        || toolchainSignature == NULL || outPlatformObjPath == NULL)
+    {
+        return -1;
+    }
     *outPlatformObjPath = NULL;
     if (ResolveCacheRoot(loader, cacheDirArg, &cacheRoot) != 0) {
         return -1;
@@ -7502,10 +7597,10 @@ static int BuildCachedBuiltinObject(
     const SLPackageLoader* loader,
     const char* _Nullable cacheDirArg,
     const char* libDir,
-    const char* builtinPath,
-    const char* builtinHeaderPath,
-    const char* toolchainSignature,
-    char**      outBuiltinObjPath) {
+    const char* _Nullable builtinPath,
+    const char* _Nullable builtinHeaderPath,
+    const char* _Nullable toolchainSignature,
+    char** _Nullable      outBuiltinObjPath) {
     char*       cacheRoot = NULL;
     char*       cacheV1Dir = NULL;
     char*       cacheBuiltinDir = NULL;
@@ -7518,6 +7613,11 @@ static int BuildCachedBuiltinObject(
     const char* ccArgv[12];
     int         isUpToDate = 0;
 
+    if (loader == NULL || loader->platformTarget == NULL || libDir == NULL || builtinPath == NULL
+        || builtinHeaderPath == NULL || toolchainSignature == NULL || outBuiltinObjPath == NULL)
+    {
+        return -1;
+    }
     *outBuiltinObjPath = NULL;
     if (ResolveCacheRoot(loader, cacheDirArg, &cacheRoot) != 0) {
         return -1;
