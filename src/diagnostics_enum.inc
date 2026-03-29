@@ -136,13 +136,19 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_FOR_IN_ITERATOR_AMBIGUOUS, /* SL2089: ambiguous __iterator overload for for-in source */
     SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD, /* SL2090: no compatible next_value overload for
                                                    this for-in loop form */
-    SLDiag_FOR_IN_ADVANCE_NON_BOOL,     /* SL2091: for-in next_value overload must return ?T */
-    SLDiag_UNUSED_FUNCTION,             /* SL2092: function '{s}' is unused */
-    SLDiag_UNUSED_VARIABLE,             /* SL2093: variable '{s}' is unused */
-    SLDiag_UNUSED_VARIABLE_NEVER_READ,  /* SL2094: variable '{s}' is never read */
-    SLDiag_UNUSED_PARAMETER,            /* SL2095: parameter '{s}' is unused */
-    SLDiag_UNUSED_PARAMETER_NEVER_READ, /* SL2096: parameter '{s}' is never read */
-    SLDiag_CODEGEN_INTERNAL,            /* SL3001: internal codegen error */
-    SLDiag_ARENA_OOM,                   /* SL4001: arena out of memory */
-    SLDiag_UNKNOWN_FEATURE,             /* SL4002: unknown feature '{s}' */
-    SLDiag_EVAL_BACKEND_UNSUPPORTED,    /* SL4003: evaluator backend: {s} */
+    SLDiag_FOR_IN_ADVANCE_NON_BOOL,      /* SL2091: for-in next_value overload must return ?T */
+    SLDiag_UNUSED_FUNCTION,              /* SL2092: function '{s}' is unused */
+    SLDiag_UNUSED_VARIABLE,              /* SL2093: variable '{s}' is unused */
+    SLDiag_UNUSED_VARIABLE_NEVER_READ,   /* SL2094: variable '{s}' is never read */
+    SLDiag_UNUSED_PARAMETER,             /* SL2095: parameter '{s}' is unused */
+    SLDiag_UNUSED_PARAMETER_NEVER_READ,  /* SL2096: parameter '{s}' is never read */
+    SLDiag_CODEGEN_INTERNAL,             /* SL3001: internal codegen error */
+    SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, /* SL3002: Wasm backend does not support this MIR */
+    SLDiag_WASM_BACKEND_UNSUPPORTED_HOSTCALL, /* SL3003: Wasm backend does not support this hostcall
+                                               */
+    SLDiag_WASM_BACKEND_PLATFORM_REQUIRED,    /* SL3004: Wasm backend requires a platform target for
+                                                 this package */
+    SLDiag_WASM_BACKEND_INTERNAL,             /* SL3005: internal Wasm backend error */
+    SLDiag_ARENA_OOM,                         /* SL4001: arena out of memory */
+    SLDiag_UNKNOWN_FEATURE,                   /* SL4002: unknown feature '{s}' */
+    SLDiag_EVAL_BACKEND_UNSUPPORTED,          /* SL4003: evaluator backend: {s} */

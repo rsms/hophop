@@ -1250,7 +1250,7 @@ int EmitCBackend(
     const SLCodegenBackend* backend,
     const SLCodegenUnit*    unit,
     const SLCodegenOptions* _Nullable options,
-    char** outHeader,
+    SLCodegenArtifact* _Nonnull outArtifact,
     SLDiag* _Nullable diag);
 
 SL_API_END

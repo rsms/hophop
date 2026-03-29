@@ -1816,7 +1816,7 @@ int EmitCBackend(
     const SLCodegenBackend* backend,
     const SLCodegenUnit*    unit,
     const SLCodegenOptions* _Nullable options,
-    char** outHeader,
+    SLCodegenArtifact* _Nonnull outArtifact,
     SLDiag* _Nullable diag) {
     SLCBackendC c;
     (void)backend;
@@ -1831,7 +1831,7 @@ int EmitCBackend(
     if (diag != NULL) {
         *diag = (SLDiag){ 0 };
     }
-    *outHeader = NULL;
+    *outArtifact = (SLCodegenArtifact){ 0 };
 
     if (InitAst(&c) != 0) {
         FreeContext(&c);
@@ -1894,12 +1894,14 @@ int EmitCBackend(
         return -1;
     }
 
-    *outHeader = AllocOutputCopy(&c);
-    if (*outHeader == NULL) {
+    outArtifact->data = (uint8_t*)AllocOutputCopy(&c);
+    if (outArtifact->data == NULL) {
         SetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         FreeContext(&c);
         return -1;
     }
+    outArtifact->len = (uint32_t)StrLen((const char*)outArtifact->data);
+    outArtifact->isBinary = 0;
 
     FreeContext(&c);
     return 0;

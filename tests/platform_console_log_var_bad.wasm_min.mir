@@ -1,0 +1,28 @@
+mir
+  dynamic_resolution=no
+  insts=7 consts=2 sources=1 funcs=1 locals=1 fields=0 types=1 hosts=1 symbols=2
+sources
+  #0 len=103
+types
+  #0 astNode=4294967295 source=#0 flags=256
+hosts
+  #0 GENERIC target=PLATFORM_CONSOLE_LOG name="console_log" [74,85]
+symbols
+  #0 IDENT target=6 name="platform" [65,73]
+  #1 CALL target=8 name="console_log" [74,85] flags=1
+fields
+consts
+  #0 STRING bytes="hello from platform"
+  #1 INT value=0
+functions
+  #0 name="main" [22,26] source=#0 type=#4294967295 params=0 temps=0 locals=#0+1 insts=#0+7
+    locals
+      #0 name="msg" [36,39] type=#0 flags=2
+    insts
+      0: PUSH_CONST const=#0 span=[42,63]
+      1: LOCAL_STORE local=#0 "msg" [36,39] span=[32,63]
+      2: LOCAL_LOAD local=#0 "msg" [36,39] span=[86,89]
+      3: PUSH_CONST const=#1 span=[98,99]
+      4: CALL_HOST host=#0 argc=2 span=[74,85]
+      5: DROP span=[65,100]
+      6: RETURN_VOID span=[29,102]

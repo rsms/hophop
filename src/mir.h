@@ -168,14 +168,200 @@ enum {
 typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
+    uint32_t sourceRef;
     uint32_t ownerTypeRef;
     uint32_t typeRef;
 } SLMirField;
 
 typedef struct {
     uint32_t astNode;
+    uint32_t sourceRef;
     uint32_t flags;
+    uint32_t aux;
 } SLMirTypeRef;
+
+typedef enum {
+    SLMirTypeScalar_NONE = 0,
+    SLMirTypeScalar_I32 = 1,
+    SLMirTypeScalar_I64 = 2,
+    SLMirTypeScalar_F32 = 3,
+    SLMirTypeScalar_F64 = 4,
+} SLMirTypeScalar;
+
+enum {
+    SLMirTypeFlag_SCALAR_MASK = 0x000000ffu,
+    SLMirTypeFlag_STR_REF = 0x00000100u,
+    SLMirTypeFlag_STR_PTR = 0x00000200u,
+    SLMirTypeFlag_U8_PTR = 0x00000400u,
+    SLMirTypeFlag_I32_PTR = 0x00000800u,
+    SLMirTypeFlag_I8_PTR = 0x00001000u,
+    SLMirTypeFlag_U16_PTR = 0x00002000u,
+    SLMirTypeFlag_I16_PTR = 0x00004000u,
+    SLMirTypeFlag_U32_PTR = 0x00008000u,
+    SLMirTypeFlag_FIXED_ARRAY = 0x00010000u,
+    SLMirTypeFlag_FIXED_ARRAY_VIEW = 0x00020000u,
+    SLMirTypeFlag_SLICE_VIEW = 0x00040000u,
+    SLMirTypeFlag_AGGREGATE = 0x00080000u,
+    SLMirTypeFlag_OPAQUE_PTR = 0x00100000u,
+    SLMirTypeFlag_OPTIONAL = 0x00200000u,
+    SLMirTypeFlag_FUNC_REF = 0x00400000u,
+    SLMirTypeFlag_STR_OBJ = 0x00800000u,
+    SLMirTypeFlag_VARRAY_VIEW = 0x01000000u,
+    SLMirTypeFlag_AGG_SLICE_VIEW = 0x02000000u,
+};
+
+typedef enum {
+    SLMirIntKind_NONE = 0,
+    SLMirIntKind_BOOL = 1,
+    SLMirIntKind_U8 = 2,
+    SLMirIntKind_I8 = 3,
+    SLMirIntKind_U16 = 4,
+    SLMirIntKind_I16 = 5,
+    SLMirIntKind_U32 = 6,
+    SLMirIntKind_I32 = 7,
+} SLMirIntKind;
+
+enum {
+    SLMirTypeAux_INT_KIND_MASK = 0x000000ffu,
+    SLMirTypeAux_ARRAY_COUNT_SHIFT = 8u,
+    SLMirTypeAux_ARRAY_COUNT_MASK = 0x00ffff00u,
+};
+
+static inline uint32_t SLMirTypeAuxMakeScalarInt(SLMirIntKind intKind) {
+    return (uint32_t)intKind;
+}
+
+static inline uint32_t SLMirTypeAuxMakeFixedArray(SLMirIntKind elemKind, uint32_t count) {
+    return (uint32_t)elemKind
+         | ((count << SLMirTypeAux_ARRAY_COUNT_SHIFT) & SLMirTypeAux_ARRAY_COUNT_MASK);
+}
+
+static inline uint32_t SLMirTypeAuxMakeVArrayView(SLMirIntKind elemKind, uint32_t countFieldRef) {
+    return (uint32_t)elemKind
+         | (((countFieldRef + 1u) << SLMirTypeAux_ARRAY_COUNT_SHIFT)
+            & SLMirTypeAux_ARRAY_COUNT_MASK);
+}
+
+static inline SLMirIntKind SLMirTypeRefIntKind(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL
+             ? (SLMirIntKind)(typeRef->aux & SLMirTypeAux_INT_KIND_MASK)
+             : SLMirIntKind_NONE;
+}
+
+static inline uint32_t SLMirTypeRefFixedArrayCount(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL
+             ? (typeRef->aux & SLMirTypeAux_ARRAY_COUNT_MASK) >> SLMirTypeAux_ARRAY_COUNT_SHIFT
+             : 0u;
+}
+
+static inline uint32_t SLMirTypeRefVArrayCountField(const SLMirTypeRef* typeRef) {
+    uint32_t encoded;
+    if (typeRef == NULL) {
+        return UINT32_MAX;
+    }
+    encoded = (typeRef->aux & SLMirTypeAux_ARRAY_COUNT_MASK) >> SLMirTypeAux_ARRAY_COUNT_SHIFT;
+    return encoded == 0u ? UINT32_MAX : encoded - 1u;
+}
+
+static inline uint32_t SLMirTypeAuxMakeAggSliceView(uint32_t elemTypeRef) {
+    return elemTypeRef == UINT32_MAX ? 0u : (elemTypeRef + 1u);
+}
+
+static inline uint32_t SLMirTypeRefAggSliceElemTypeRef(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_AGG_SLICE_VIEW) != 0u
+                && typeRef->aux != 0u
+             ? typeRef->aux - 1u
+             : UINT32_MAX;
+}
+
+static inline SLMirTypeScalar SLMirTypeRefScalarKind(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL
+             ? (SLMirTypeScalar)(typeRef->flags & SLMirTypeFlag_SCALAR_MASK)
+             : SLMirTypeScalar_NONE;
+}
+
+static inline int SLMirTypeRefIsStrRef(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_STR_REF) != 0;
+}
+
+static inline int SLMirTypeRefIsStrPtr(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_STR_PTR) != 0;
+}
+
+static inline int SLMirTypeRefIsStrObj(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_STR_OBJ) != 0;
+}
+
+static inline int SLMirTypeRefIsU8Ptr(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_U8_PTR) != 0;
+}
+
+static inline int SLMirTypeRefIsI32Ptr(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_I32_PTR) != 0;
+}
+
+static inline int SLMirTypeRefIsI8Ptr(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_I8_PTR) != 0;
+}
+
+static inline int SLMirTypeRefIsU16Ptr(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_U16_PTR) != 0;
+}
+
+static inline int SLMirTypeRefIsI16Ptr(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_I16_PTR) != 0;
+}
+
+static inline int SLMirTypeRefIsU32Ptr(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_U32_PTR) != 0;
+}
+
+static inline int SLMirTypeRefIsFixedArray(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_FIXED_ARRAY) != 0;
+}
+
+static inline int SLMirTypeRefIsFixedArrayView(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_FIXED_ARRAY_VIEW) != 0;
+}
+
+static inline int SLMirTypeRefIsSliceView(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_SLICE_VIEW) != 0;
+}
+
+static inline int SLMirTypeRefIsVArrayView(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_VARRAY_VIEW) != 0;
+}
+
+static inline int SLMirTypeRefIsAggSliceView(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_AGG_SLICE_VIEW) != 0;
+}
+
+static inline int SLMirTypeRefIsAggregate(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_AGGREGATE) != 0;
+}
+
+static inline int SLMirTypeRefIsOpaquePtr(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_OPAQUE_PTR) != 0;
+}
+
+static inline int SLMirTypeRefIsOptional(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_OPTIONAL) != 0;
+}
+
+static inline int SLMirTypeRefIsFuncRef(const SLMirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & SLMirTypeFlag_FUNC_REF) != 0;
+}
+
+static inline uint32_t SLMirTypeRefFuncRefFunctionIndex(const SLMirTypeRef* typeRef) {
+    if (!SLMirTypeRefIsFuncRef(typeRef) || typeRef->aux == 0u) {
+        return UINT32_MAX;
+    }
+    return typeRef->aux - 1u;
+}
+
+static inline uint32_t SLMirTypeRefOpaquePointeeTypeRef(const SLMirTypeRef* typeRef) {
+    return SLMirTypeRefIsOpaquePtr(typeRef) ? typeRef->aux : UINT32_MAX;
+}
 
 typedef enum {
     SLMirHost_INVALID = 0,
@@ -189,6 +375,7 @@ typedef enum {
     SLMirHostTarget_FREE = 3,
     SLMirHostTarget_CONCAT = 4,
     SLMirHostTarget_COPY = 5,
+    SLMirHostTarget_PLATFORM_CONSOLE_LOG = 6,
 } SLMirHostTarget;
 
 typedef enum {
@@ -348,5 +535,10 @@ void SLMirProgramBuilderFinish(
     const SLMirProgramBuilder* _Nonnull b, SLMirProgram* _Nonnull outProgram);
 int SLMirValidateProgram(const SLMirProgram* _Nonnull program, SLDiag* _Nullable diag);
 int SLMirProgramNeedsDynamicResolution(const SLMirProgram* _Nonnull program);
+int SLMirDumpProgram(
+    const SLMirProgram* _Nonnull program,
+    SLStrView src,
+    SLWriter* _Nonnull w,
+    SLDiag* _Nullable diag);
 
 SL_API_END

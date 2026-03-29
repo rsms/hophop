@@ -26,6 +26,7 @@ analyze=0 # run clang analyzer on source code and exit
 toolchain=
 jobs=     # explicit number of -j or --jobs to use for running tests (defaults to CPU count)
 c_backend=1 # build C backend support into slc
+wasm_backend=1 # build Wasm backend support into slc
 [ "$*" = "--help" ] && { echo "Usage: $0 [var[=value] ...]"; exit 0; };
 for a in "$@"; do
     case "$a" in
@@ -76,9 +77,6 @@ case " ${lib_sources[*]} " in
 esac
 libsl_sources=()
 for srcfile in "${lib_sources[@]}"; do
-    if [ $c_backend = 0 ] && [ "$srcfile" = "src/codegen.c" ]; then
-        continue
-    fi
     libsl_sources+=( "$srcfile" )
 done
 lib_headers=( $(find src -maxdepth 2 -name '*.h' | sort -V) )
@@ -107,6 +105,7 @@ c_flags=(
     -Werror=switch \
     -Werror=enum-conversion \
     -DSL_WITH_C_BACKEND=$c_backend \
+    -DSL_WITH_WASM_BACKEND=$wasm_backend \
     $(_if_release -O2 -DNDEBUG -flto=thin) \
 )
 l_flags=()
@@ -135,6 +134,7 @@ mode, arch, sys = $mode, $arch, $sys
 toolchain, cc   = $toolchain, $cc
 build_dir       = $build_dir
 c_backend       = $c_backend
+wasm_backend    = $wasm_backend
 cli_sources     = ${cli_sources[@]:-}
 lib_sources     = ${lib_sources[@]:-}
 libsl_sources   = ${libsl_sources[@]:-}

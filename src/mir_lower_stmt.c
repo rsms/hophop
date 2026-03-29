@@ -41,6 +41,7 @@ typedef struct {
     const SLAst*         ast;
     SLStrView            src;
     SLMirProgramBuilder  builder;
+    uint32_t             sourceIndex;
     uint32_t             functionIndex;
     int32_t              functionReturnTypeNode;
     SLMirLowerLocal*     locals;
@@ -208,7 +209,9 @@ static int SLMirStmtLowerPushLocal(
     }
     if (typeNode >= 0) {
         typeRef.astNode = (uint32_t)typeNode;
+        typeRef.sourceRef = c->sourceIndex;
         typeRef.flags = 0;
+        typeRef.aux = 0;
         if (SLMirProgramBuilderAddType(&c->builder, &typeRef, &local.typeRef) != 0) {
             SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, nameStart, nameEnd);
             return -1;
@@ -516,7 +519,8 @@ static int SLMirStmtLowerAddFieldRef(
     for (i = 0; i < c->builder.fieldLen; i++) {
         const SLMirField* existing = &c->builder.fields[i];
         if (existing->nameStart == nameStart && existing->nameEnd == nameEnd
-            && existing->ownerTypeRef == UINT32_MAX && existing->typeRef == UINT32_MAX)
+            && existing->sourceRef == c->sourceIndex && existing->ownerTypeRef == UINT32_MAX
+            && existing->typeRef == UINT32_MAX)
         {
             *outIndex = i;
             return 0;
@@ -524,6 +528,7 @@ static int SLMirStmtLowerAddFieldRef(
     }
     field.nameStart = nameStart;
     field.nameEnd = nameEnd;
+    field.sourceRef = c->sourceIndex;
     field.ownerTypeRef = UINT32_MAX;
     field.typeRef = UINT32_MAX;
     if (SLMirProgramBuilderAddField(&c->builder, &field, outIndex) != 0) {
@@ -1213,7 +1218,9 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
                 return c->supported ? -1 : 0;
             }
             typeRef.astNode = (uint32_t)typeNode;
+            typeRef.sourceRef = c->sourceIndex;
             typeRef.flags = 0u;
+            typeRef.aux = 0u;
             if (SLMirProgramBuilderAddType(&c->builder, &typeRef, &typeRefIndex) != 0) {
                 SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, expr->start, expr->end);
                 return -1;
@@ -1528,7 +1535,9 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
             }
         } else {
             typeRef.astNode = (uint32_t)typeNode;
+            typeRef.sourceRef = c->sourceIndex;
             typeRef.flags = 0u;
+            typeRef.aux = 0u;
             if (SLMirProgramBuilderAddType(&c->builder, &typeRef, &typeRefIndex) != 0) {
                 SLMirLowerStmtSetDiag(c->diag, SLDiag_ARENA_OOM, expr->start, expr->end);
                 return -1;
@@ -3355,6 +3364,7 @@ int SLMirLowerAppendSimpleFunctionWithOptions(
         SLMirLowerStmtSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
     }
+    c.sourceIndex = sourceIndex;
 
     fn.nameStart = fnNode >= 0 && (uint32_t)fnNode < ast->len ? ast->nodes[fnNode].dataStart : 0;
     fn.nameEnd = fnNode >= 0 && (uint32_t)fnNode < ast->len ? ast->nodes[fnNode].dataEnd : 0;
@@ -3364,7 +3374,9 @@ int SLMirLowerAppendSimpleFunctionWithOptions(
     c.functionReturnTypeNode = returnTypeNode;
     if (returnTypeNode >= 0) {
         typeRef.astNode = (uint32_t)returnTypeNode;
+        typeRef.sourceRef = sourceIndex;
         typeRef.flags = 0;
+        typeRef.aux = 0;
         if (SLMirProgramBuilderAddType(&c.builder, &typeRef, &fn.typeRef) != 0) {
             SLMirLowerStmtSetDiag(
                 diag,

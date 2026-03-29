@@ -1,0 +1,31 @@
+mir
+  dynamic_resolution=no
+  insts=9 consts=0 sources=1 funcs=1 locals=3 fields=0 types=5 hosts=0 symbols=0
+sources
+  #0 len=119
+types
+  #0 astNode=6 source=#0 flags=2049
+  #1 astNode=12 source=#0 flags=131073
+  #2 astNode=9 source=#0 flags=1
+  #3 astNode=17 source=#0 flags=1
+  #4 astNode=4294967295 source=#0 flags=1048576
+hosts
+symbols
+fields
+consts
+functions
+  #0 name="main" [3,7] source=#0 type=#4294967295 params=0 temps=0 locals=#0+3 insts=#0+9
+    locals
+      #0 name="ma" [17,19] type=#4 flags=2
+      #1 name="_p" [48,50] type=#0 flags=2
+      #2 name="_q" [83,85] type=#1 flags=2
+    insts
+      0: CTX_GET field=MEM span=[31,42]
+      1: LOCAL_STORE local=#0 "ma" [17,19] span=[13,42]
+      2: LOCAL_LOAD local=#0 "ma" [17,19] span=[75,77]
+      3: ALLOC_NEW tok=128 aux=8 span=[62,77]
+      4: LOCAL_STORE local=#1 "_p" [48,50] span=[44,77]
+      5: LOCAL_LOAD local=#0 "ma" [17,19] span=[114,116]
+      6: ALLOC_NEW tok=192 aux=16 span=[97,116]
+      7: LOCAL_STORE local=#2 "_q" [83,85] span=[79,116]
+      8: RETURN_VOID span=[10,118]

@@ -1,0 +1,36 @@
+mir
+  dynamic_resolution=no
+  insts=16 consts=3 sources=1 funcs=1 locals=1 fields=0 types=2 hosts=0 symbols=0
+sources
+  #0 len=102
+types
+  #0 astNode=2 source=#0 flags=1
+  #1 astNode=4 source=#0 flags=1
+hosts
+symbols
+fields
+consts
+  #0 INT value=0
+  #1 INT value=1
+  #2 INT value=3
+functions
+  #0 name="main" [3,7] source=#0 type=#0 params=0 temps=0 locals=#0+1 insts=#0+16
+    locals
+      #0 name="i" [21,22] type=#1 flags=2
+    insts
+      0: PUSH_CONST const=#0 span=[29,30]
+      1: LOCAL_STORE local=#0 "i" [21,22] span=[17,30]
+      2: LOCAL_LOAD local=#0 "i" [21,22] span=[44,45]
+      3: PUSH_CONST const=#1 span=[48,49]
+      4: BINARY op=ADD span=[44,49]
+      5: LOCAL_STORE local=#0 "i" [21,22] span=[40,49]
+      6: LOCAL_LOAD local=#0 "i" [21,22] span=[55,56]
+      7: PUSH_CONST const=#2 span=[59,60]
+      8: BINARY op=LT span=[55,60]
+      9: JUMP_IF_FALSE target=11 span=[52,78]
+      10: JUMP target=2 span=[66,74]
+      11: JUMP target=13 span=[81,86]
+      12: JUMP target=2 span=[32,89]
+      13: LOCAL_LOAD local=#0 "i" [21,22] span=[98,99]
+      14: RETURN span=[91,99]
+      15: RETURN_VOID span=[14,101]

@@ -1,0 +1,132 @@
+mir
+  dynamic_resolution=yes
+  insts=87 consts=20 sources=1 funcs=1 locals=4 fields=0 types=1 hosts=0 symbols=6
+sources
+  #0 len=400
+types
+  #0 astNode=4294967295 source=#0 flags=1
+hosts
+symbols
+  #0 IDENT target=29 name="platform" [124,132]
+  #1 CALL target=31 name="exit" [133,137] flags=1
+  #2 IDENT target=39 name="platform" [162,170]
+  #3 CALL target=41 name="exit" [171,175] flags=1
+  #4 IDENT target=93 name="platform" [378,386]
+  #5 CALL target=95 name="exit" [387,391] flags=1
+fields
+consts
+  #0 INT value=0
+  #1 INT value=2
+  #2 INT value=0
+  #3 INT value=10
+  #4 INT value=1
+  #5 INT value=2
+  #6 INT value=20
+  #7 INT value=1
+  #8 INT value=20
+  #9 INT value=2
+  #10 INT value=0
+  #11 INT value=0
+  #12 INT value=4
+  #13 INT value=0
+  #14 INT value=1
+  #15 INT value=2
+  #16 INT value=1
+  #17 INT value=4
+  #18 INT value=4
+  #19 INT value=3
+functions
+  #0 name="main" [22,26] source=#0 type=#4294967295 params=0 temps=0 locals=#0+4 insts=#0+87
+    locals
+      #0 name="y" [36,37] type=#0 flags=2
+      #1 name="" [0,0] type=#0
+      #2 name="sum" [188,191] type=#4294967295 flags=2
+      #3 name="i" [201,202] type=#4294967295 flags=2
+    insts
+      0: PUSH_CONST const=#0 span=[40,41]
+      1: LOCAL_STORE local=#0 "y" [36,37] span=[32,41]
+      2: PUSH_CONST const=#1 span=[51,52]
+      3: LOCAL_STORE local=#1 "" [0,0] span=[44,145]
+      4: LOCAL_LOAD local=#1 "" [0,0] span=[62,63]
+      5: PUSH_CONST const=#2 span=[62,63]
+      6: BINARY op=EQ span=[62,63]
+      7: JUMP_IF_FALSE target=12 span=[62,63]
+      8: JUMP target=9 span=[62,63]
+      9: PUSH_CONST const=#3 span=[70,72]
+      10: LOCAL_STORE local=#0 "y" [36,37] span=[66,72]
+      11: JUMP target=30 span=[57,74]
+      12: LOCAL_LOAD local=#1 "" [0,0] span=[82,83]
+      13: PUSH_CONST const=#4 span=[82,83]
+      14: BINARY op=EQ span=[82,83]
+      15: JUMP_IF_FALSE target=17 span=[82,83]
+      16: JUMP target=22 span=[82,83]
+      17: LOCAL_LOAD local=#1 "" [0,0] span=[85,86]
+      18: PUSH_CONST const=#5 span=[85,86]
+      19: BINARY op=EQ span=[85,86]
+      20: JUMP_IF_FALSE target=26 span=[85,86]
+      21: JUMP target=22 span=[85,86]
+      22: PUSH_CONST const=#6 span=[96,98]
+      23: LOCAL_STORE local=#0 "y" [36,37] span=[92,98]
+      24: JUMP target=30 span=[102,107]
+      25: JUMP target=30 span=[77,111]
+      26: LOAD_IDENT symbol=#0 "platform" [124,132] span=[124,132]
+      27: PUSH_CONST const=#7 span=[138,139]
+      28: CALL symbol=#1 "exit" [133,137] argc=2 span=[133,137]
+      29: DROP span=[124,140]
+      30: LOCAL_LOAD local=#0 "y" [36,37] span=[150,151]
+      31: PUSH_CONST const=#8 span=[155,157]
+      32: BINARY op=NEQ span=[150,157]
+      33: JUMP_IF_FALSE target=38 span=[147,181]
+      34: LOAD_IDENT symbol=#2 "platform" [162,170] span=[162,170]
+      35: PUSH_CONST const=#9 span=[176,177]
+      36: CALL symbol=#3 "exit" [171,175] argc=2 span=[171,175]
+      37: DROP span=[162,178]
+      38: PUSH_CONST const=#10 span=[194,195]
+      39: LOCAL_STORE local=#2 "sum" [188,191] span=[184,195]
+      40: PUSH_CONST const=#11 span=[207,208]
+      41: LOCAL_STORE local=#3 "i" [201,202] span=[197,208]
+      42: LOCAL_LOAD local=#3 "i" [201,202] span=[214,215]
+      43: PUSH_CONST const=#12 span=[218,219]
+      44: BINARY op=LT span=[214,219]
+      45: JUMP_IF_FALSE target=73 span=[210,347]
+      46: LOCAL_LOAD local=#3 "i" [201,202] span=[241,242]
+      47: PUSH_CONST const=#13 span=[246,247]
+      48: BINARY op=EQ span=[241,247]
+      49: JUMP_IF_FALSE target=57 span=[241,247]
+      50: JUMP target=51 span=[241,247]
+      51: LOCAL_LOAD local=#3 "i" [201,202] span=[254,255]
+      52: PUSH_CONST const=#14 span=[259,260]
+      53: BINARY op=ADD span=[254,260]
+      54: LOCAL_STORE local=#3 "i" [201,202] span=[254,260]
+      55: JUMP target=42 span=[265,273]
+      56: JUMP target=68 span=[236,278]
+      57: LOCAL_LOAD local=#3 "i" [201,202] span=[287,288]
+      58: PUSH_CONST const=#15 span=[292,293]
+      59: BINARY op=EQ span=[287,293]
+      60: JUMP_IF_FALSE target=64 span=[287,293]
+      61: JUMP target=62 span=[287,293]
+      62: JUMP target=68 span=[296,301]
+      63: JUMP target=68 span=[282,303]
+      64: LOCAL_LOAD local=#2 "sum" [188,191] span=[321,324]
+      65: LOCAL_LOAD local=#3 "i" [201,202] span=[328,329]
+      66: BINARY op=ADD span=[321,329]
+      67: LOCAL_STORE local=#2 "sum" [188,191] span=[321,329]
+      68: LOCAL_LOAD local=#3 "i" [201,202] span=[338,339]
+      69: PUSH_CONST const=#16 span=[343,344]
+      70: BINARY op=ADD span=[338,344]
+      71: LOCAL_STORE local=#3 "i" [201,202] span=[338,344]
+      72: JUMP target=42 span=[210,347]
+      73: LOCAL_LOAD local=#2 "sum" [188,191] span=[354,357]
+      74: PUSH_CONST const=#17 span=[361,362]
+      75: BINARY op=EQ span=[354,362]
+      76: LOCAL_LOAD local=#3 "i" [201,202] span=[366,367]
+      77: PUSH_CONST const=#18 span=[371,372]
+      78: BINARY op=EQ span=[366,372]
+      79: BINARY op=LOGICAL_AND span=[354,372]
+      80: UNARY op=NOT span=[352,372]
+      81: JUMP_IF_FALSE target=86 span=[349,397]
+      82: LOAD_IDENT symbol=#4 "platform" [378,386] span=[378,386]
+      83: PUSH_CONST const=#19 span=[392,393]
+      84: CALL symbol=#5 "exit" [387,391] argc=2 span=[387,391]
+      85: DROP span=[378,394]
+      86: RETURN_VOID span=[29,399]

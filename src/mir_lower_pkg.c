@@ -214,7 +214,9 @@ int SLMirLowerAppendZeroInitTypeFunction(
         return -1;
     }
     typeRef.astNode = (uint32_t)typeNode;
+    typeRef.sourceRef = sourceIndex;
     typeRef.flags = 0;
+    typeRef.aux = 0;
     if (SLMirProgramBuilderAddType(builder, &typeRef, &typeIndex) != 0) {
         SLMirLowerPkgSetDiag(diag, SLDiag_ARENA_OOM, typeAst->start, typeAst->end);
         return -1;

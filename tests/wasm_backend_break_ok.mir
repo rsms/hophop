@@ -1,0 +1,43 @@
+mir
+  dynamic_resolution=no
+  insts=21 consts=5 sources=1 funcs=1 locals=1 fields=0 types=2 hosts=0 symbols=0
+sources
+  #0 len=101
+types
+  #0 astNode=2 source=#0 flags=1
+  #1 astNode=4 source=#0 flags=1
+hosts
+symbols
+fields
+consts
+  #0 INT value=0
+  #1 INT value=0
+  #2 INT value=5
+  #3 INT value=3
+  #4 INT value=1
+functions
+  #0 name="main" [3,7] source=#0 type=#0 params=0 temps=0 locals=#0+1 insts=#0+21
+    locals
+      #0 name="x" [21,22] type=#1 flags=2
+    insts
+      0: PUSH_CONST const=#0 span=[29,30]
+      1: LOCAL_STORE local=#0 "x" [21,22] span=[17,30]
+      2: PUSH_CONST const=#1 span=[40,41]
+      3: LOCAL_STORE local=#0 "x" [21,22] span=[36,41]
+      4: LOCAL_LOAD local=#0 "x" [21,22] span=[43,44]
+      5: PUSH_CONST const=#2 span=[47,48]
+      6: BINARY op=LT span=[43,48]
+      7: JUMP_IF_FALSE target=18 span=[32,88]
+      8: LOCAL_LOAD local=#0 "x" [21,22] span=[64,65]
+      9: PUSH_CONST const=#3 span=[69,70]
+      10: BINARY op=EQ span=[64,70]
+      11: JUMP_IF_FALSE target=13 span=[61,85]
+      12: JUMP target=18 span=[76,81]
+      13: LOCAL_LOAD local=#0 "x" [21,22] span=[50,51]
+      14: PUSH_CONST const=#4 span=[55,56]
+      15: BINARY op=ADD span=[50,56]
+      16: LOCAL_STORE local=#0 "x" [21,22] span=[50,56]
+      17: JUMP target=4 span=[32,88]
+      18: LOCAL_LOAD local=#0 "x" [21,22] span=[97,98]
+      19: RETURN span=[90,98]
+      20: RETURN_VOID span=[14,100]

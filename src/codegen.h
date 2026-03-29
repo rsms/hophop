@@ -1,5 +1,6 @@
 #pragma once
 #include "libsl.h"
+#include "mir.h"
 
 SL_API_BEGIN
 
@@ -7,7 +8,18 @@ typedef struct {
     const char* packageName;
     const char* source;
     uint32_t    sourceLen;
+    const char* _Nullable platformTarget;
+    const SLMirProgram* _Nullable mirProgram;
+    uint8_t usesPlatform;
+    uint8_t _reserved[3];
 } SLCodegenUnit;
+
+typedef struct {
+    uint8_t* _Nullable data;
+    uint32_t len;
+    uint8_t  isBinary;
+    uint8_t  _reserved[3];
+} SLCodegenArtifact;
 
 typedef struct {
     const char* _Nullable headerGuard; /* optional */
@@ -25,7 +37,7 @@ typedef int (*SLCodegenEmitFn)(
     const struct SLCodegenBackend* backend,
     const SLCodegenUnit*           unit,
     const SLCodegenOptions* _Nullable options,
-    char* _Nullable* _Nonnull outHeader,
+    SLCodegenArtifact* _Nonnull outArtifact,
     SLDiag* _Nullable diag);
 
 typedef struct SLCodegenBackend {

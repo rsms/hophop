@@ -1,0 +1,1 @@
+tests:1:1: SL3004: Wasm backend requires a platform target for this package: packages using import "platform" require --platform wasm-min

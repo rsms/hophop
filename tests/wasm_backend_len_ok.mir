@@ -1,0 +1,41 @@
+mir
+  dynamic_resolution=no
+  insts=17 consts=5 sources=1 funcs=1 locals=2 fields=0 types=3 hosts=0 symbols=0
+sources
+  #0 len=109
+types
+  #0 astNode=2 source=#0 flags=1
+  #1 astNode=4 source=#0 flags=256
+  #2 astNode=8 source=#0 flags=513
+hosts
+symbols
+fields
+consts
+  #0 STRING bytes="abc"
+  #1 STRING bytes="de"
+  #2 INT value=3
+  #3 INT value=2
+  #4 INT value=5
+functions
+  #0 name="main" [3,7] source=#0 type=#0 params=0 temps=0 locals=#0+2 insts=#0+17
+    locals
+      #0 name="a" [21,22] type=#1 flags=2
+      #1 name="s" [41,42] type=#2 flags=2
+    insts
+      0: PUSH_CONST const=#0 span=[30,35]
+      1: LOCAL_STORE local=#0 "a" [21,22] span=[17,35]
+      2: PUSH_CONST const=#1 span=[50,54]
+      3: LOCAL_STORE local=#1 "s" [41,42] span=[37,54]
+      4: LOCAL_LOAD local=#0 "a" [21,22] span=[68,69]
+      5: SEQ_LEN span=[64,67]
+      6: PUSH_CONST const=#2 span=[74,75]
+      7: BINARY op=EQ span=[64,75]
+      8: ASSERT span=[57,75]
+      9: LOCAL_LOAD local=#1 "s" [41,42] span=[88,89]
+      10: SEQ_LEN span=[84,87]
+      11: PUSH_CONST const=#3 span=[94,95]
+      12: BINARY op=EQ span=[84,95]
+      13: ASSERT span=[77,95]
+      14: PUSH_CONST const=#4 span=[105,106]
+      15: RETURN span=[98,106]
+      16: RETURN_VOID span=[14,108]

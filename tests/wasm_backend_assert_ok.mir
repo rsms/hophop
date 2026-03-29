@@ -1,0 +1,38 @@
+mir
+  dynamic_resolution=no
+  insts=13 consts=3 sources=1 funcs=2 locals=2 fields=0 types=2 hosts=0 symbols=1
+sources
+  #0 len=86
+types
+  #0 astNode=4 source=#0 flags=1
+  #1 astNode=3 source=#0 flags=1
+hosts
+symbols
+  #0 CALL target=13 name="add1" [59,63]
+fields
+consts
+  #0 INT value=1
+  #1 INT value=41
+  #2 INT value=42
+functions
+  #0 name="add1" [3,7] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
+    locals
+      #0 name="x" [8,9] type=#1 flags=3
+    insts
+      0: LOCAL_LOAD local=#0 "x" [8,9] span=[29,30]
+      1: PUSH_CONST const=#0 span=[33,34]
+      2: BINARY op=ADD span=[29,34]
+      3: RETURN span=[22,34]
+      4: RETURN_VOID span=[19,36]
+  #1 name="main" [41,45] source=#0 type=#4294967295 params=0 temps=0 locals=#1+1 insts=#5+8
+    locals
+      #0 name="x" [55,56] type=#0 flags=2
+    insts
+      0: PUSH_CONST const=#1 span=[64,66]
+      1: CALL_FN fn=#0 argc=1 span=[59,63]
+      2: LOCAL_STORE local=#0 "x" [55,56] span=[51,67]
+      3: LOCAL_LOAD local=#0 "x" [55,56] span=[76,77]
+      4: PUSH_CONST const=#2 span=[81,83]
+      5: BINARY op=EQ span=[76,83]
+      6: ASSERT span=[69,83]
+      7: RETURN_VOID span=[48,85]

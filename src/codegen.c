@@ -7,15 +7,25 @@ SL_API_BEGIN
     #define SL_WITH_C_BACKEND 1
 #endif
 
+#ifndef SL_WITH_WASM_BACKEND
+    #define SL_WITH_WASM_BACKEND 1
+#endif
+
 #if SL_WITH_C_BACKEND
 extern const SLCodegenBackend gSLCodegenBackendC;
+#endif
+#if SL_WITH_WASM_BACKEND
+extern const SLCodegenBackend gSLCodegenBackendWasm;
+#endif
 
 static const SLCodegenBackend* const gSLCodegenBackends[] = {
-    &gSLCodegenBackendC,
-};
-#else
-static const SLCodegenBackend* const gSLCodegenBackends[] = {};
+#if SL_WITH_WASM_BACKEND
+    &gSLCodegenBackendWasm,
 #endif
+#if SL_WITH_C_BACKEND
+    &gSLCodegenBackendC,
+#endif
+};
 
 static int BackendNameEq(const char* a, const char* b) {
     while (*a != '\0' && *b != '\0') {
@@ -33,10 +43,6 @@ const SLCodegenBackend* _Nullable SLCodegenFindBackend(const char* _Nullable nam
 #if SL_WITH_C_BACKEND
     if (name == NULL || name[0] == '\0') {
         return &gSLCodegenBackendC;
-    }
-#else
-    if (name == NULL || name[0] == '\0') {
-        return NULL;
     }
 #endif
     for (i = 0; i < (uint32_t)(sizeof(gSLCodegenBackends) / sizeof(gSLCodegenBackends[0])); i++) {

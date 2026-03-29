@@ -1,0 +1,30 @@
+mir
+  dynamic_resolution=no
+  insts=11 consts=2 sources=1 funcs=1 locals=1 fields=0 types=2 hosts=0 symbols=0
+sources
+  #0 len=60
+types
+  #0 astNode=3 source=#0 flags=2049
+  #1 astNode=6 source=#0 flags=1
+hosts
+symbols
+fields
+consts
+  #0 INT value=7
+  #1 INT value=7
+functions
+  #0 name="main" [3,7] source=#0 type=#4294967295 params=0 temps=0 locals=#0+1 insts=#0+11
+    locals
+      #0 name="p" [17,18] type=#0 flags=2
+    insts
+      0: ALLOC_NEW aux=5 span=[26,33]
+      1: LOCAL_STORE local=#0 "p" [17,18] span=[13,33]
+      2: PUSH_CONST const=#0 span=[40,41]
+      3: LOCAL_LOAD local=#0 "p" [17,18] span=[36,37]
+      4: DEREF_STORE span=[35,41]
+      5: LOCAL_LOAD local=#0 "p" [17,18] span=[51,52]
+      6: DEREF_LOAD span=[50,52]
+      7: PUSH_CONST const=#1 span=[56,57]
+      8: BINARY op=EQ span=[50,57]
+      9: ASSERT span=[43,57]
+      10: RETURN_VOID span=[10,59]

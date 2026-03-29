@@ -39,6 +39,7 @@ Common optional fields:
 - `slc_run`
 - `genpkg_text_check`
 - `genpkg_compile`
+- `genpkg_wasm_check`
 - `libsl_freestanding`
 - `builtin_h_freestanding`
 - `arena_grow_test`
@@ -95,11 +96,17 @@ Optional:
 - `expect_nonzero` (bool)
 - `stdout_empty` (bool, default `true`)
 - `stderr_empty` (bool, default `true`)
+- `expect_stdout` (string): exact expected stdout file
+- `expect_stderr` (string): exact expected stderr file
 - `stderr_contains` (string)
 - `eval_expect` (string): `pass` or `fail` for `slc run --platform cli-eval`
 - `eval_expect_exit` (int): expected `cli-eval` exit code when `eval_expect` is `pass`
 - `eval_expect_nonzero` (bool): require non-zero `cli-eval` exit when `eval_expect` is `pass`
 - `eval_stderr_contains` (string): expected substring in `cli-eval` stderr
+
+Note:
+
+- `platform: "wasm-min"` uses the bundled Node-based Wasm smoke-test runner.
 
 ## Codegen golden sidecars
 
@@ -112,6 +119,18 @@ When present, the runner executes `slc genpkg:c` and diffs actual output against
 `foo.expected.c`.
 
 Use `tools/test.py run --update` to rewrite `.expected.c` files from current output.
+
+### `genpkg_wasm_check`
+
+Runs `slc genpkg:wasm <input> <temp-output>` and validates the emitted Wasm file structurally.
+
+Optional:
+
+- `platform` (string): `slc --platform` target override for codegen
+- `expect_section_ids` (array of integers): exact section id sequence
+- `expect_exports` (array of strings): exact export name list
+- `expect_imports` (array of strings): exact imported `module.field` name list
+- `expect_func_count` (integer): expected function section count
 
 ## Typical usage
 

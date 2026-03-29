@@ -535,6 +535,17 @@ def slc_args(ctx: RunContext, mode: str, input_path: str) -> List[str]:
     return [str(ctx.slc), mode, input_path]
 
 
+def slc_case_args(ctx: RunContext, case: Dict[str, Any]) -> List[str]:
+    args = [str(ctx.slc)]
+    if case.get("platform") is not None:
+        args.extend(["--platform", str(case["platform"])])
+    mode = str(case.get("mode", ""))
+    if mode not in ("", "_"):
+        args.append(mode)
+    args.append(str(case["input"]))
+    return args
+
+
 def check_text_constraints(text: str, case: Dict[str, Any]) -> tuple[bool, str]:
     contains = case.get("contains", [])
     for s in contains:
@@ -598,7 +609,7 @@ def maybe_check_codegen_sidecar(ctx: RunContext, case: Dict[str, Any]) -> tuple[
 
 
 def kind_slc_stdout_eq(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
-    cp = run_cmd(slc_args(ctx, str(case["mode"]), str(case["input"])))
+    cp = run_cmd(slc_case_args(ctx, case))
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"unexpected failure (exit {cp.returncode})\nstderr:\n{cp.stderr}")
@@ -650,7 +661,7 @@ def kind_slc_ok_tmp(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
 
 
 def kind_slc_fail_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
-    cp = run_cmd(slc_args(ctx, str(case["mode"]), str(case["input"])))
+    cp = run_cmd(slc_case_args(ctx, case))
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode == 0:
         return fail("expected failure but command succeeded")
@@ -931,6 +942,8 @@ def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     stderr = strip_warning_diagnostics(cp.stderr)
     expect_nonzero = bool(case.get("expect_nonzero", False))
     expect_exit = int(case.get("expect_exit", 0))
+    expected_stdout_path = case.get("expect_stdout")
+    expected_stderr_path = case.get("expect_stderr")
     if expect_nonzero:
         if cp.returncode == 0:
             return fail("expected non-zero exit code")
@@ -941,6 +954,30 @@ def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
         return fail(f"unexpected stdout:\n{cp.stdout}")
     if case.get("stderr_empty", True) and stderr:
         return fail(f"unexpected stderr:\n{stderr}")
+    if expected_stdout_path is not None:
+        expected_stdout = read_text(str(expected_stdout_path))
+        if cp.stdout != expected_stdout:
+            diff = "".join(
+                difflib.unified_diff(
+                    expected_stdout.splitlines(True),
+                    cp.stdout.splitlines(True),
+                    fromfile=str(expected_stdout_path),
+                    tofile="actual.stdout",
+                )
+            )
+            return fail(f"stdout mismatch:\n{diff}")
+    if expected_stderr_path is not None:
+        expected_stderr = read_text(str(expected_stderr_path))
+        if stderr != expected_stderr:
+            diff = "".join(
+                difflib.unified_diff(
+                    expected_stderr.splitlines(True),
+                    stderr.splitlines(True),
+                    fromfile=str(expected_stderr_path),
+                    tofile="actual.stderr",
+                )
+            )
+            return fail(f"stderr mismatch:\n{diff}")
     stderr_contains = case.get("stderr_contains")
     if stderr_contains is not None and str(stderr_contains) not in stderr:
         return fail(f"stderr missing expected text {stderr_contains!r}\n{stderr}")
@@ -950,6 +987,104 @@ def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
 
 def run_genpkg_mode(ctx: RunContext, mode: str, input_path: str) -> subprocess.CompletedProcess[str]:
     return run_cmd([str(ctx.slc), mode, input_path])
+
+
+def read_uleb(data: bytes, offset: int) -> tuple[int, int]:
+    shift = 0
+    value = 0
+    while True:
+        if offset >= len(data):
+            raise ValueError("truncated ULEB")
+        byte = data[offset]
+        offset += 1
+        value |= (byte & 0x7F) << shift
+        if (byte & 0x80) == 0:
+            return value, offset
+        shift += 7
+        if shift > 35:
+            raise ValueError("ULEB too large")
+
+
+def parse_wasm_module(data: bytes) -> dict[str, Any]:
+    if len(data) < 8 or data[:4] != b"\x00asm" or data[4:8] != b"\x01\x00\x00\x00":
+        raise ValueError("invalid wasm header")
+
+    offset = 8
+    section_ids: list[int] = []
+    exports: list[str] = []
+    imports: list[str] = []
+    func_count = 0
+
+    while offset < len(data):
+        section_id = data[offset]
+        offset += 1
+        size, offset = read_uleb(data, offset)
+        end = offset + size
+        if end > len(data):
+            raise ValueError("truncated section")
+        section_ids.append(section_id)
+        if section_id == 2:
+            import_count, cursor = read_uleb(data, offset)
+            for _ in range(import_count):
+                module_len, cursor = read_uleb(data, cursor)
+                module_end = cursor + module_len
+                if module_end > end:
+                    raise ValueError("truncated import module name")
+                module_name = data[cursor:module_end].decode("utf-8")
+                cursor = module_end
+                field_len, cursor = read_uleb(data, cursor)
+                field_end = cursor + field_len
+                if field_end > end:
+                    raise ValueError("truncated import field name")
+                field_name = data[cursor:field_end].decode("utf-8")
+                cursor = field_end
+                if cursor >= end:
+                    raise ValueError("truncated import descriptor")
+                kind = data[cursor]
+                cursor += 1
+                if kind == 0:
+                    _, cursor = read_uleb(data, cursor)
+                elif kind == 1:
+                    elem_type, cursor = read_uleb(data, cursor)
+                    if elem_type > 0xFF:
+                        raise ValueError("invalid table elem type")
+                    _, cursor = read_uleb(data, cursor)
+                    limits_flag, cursor = read_uleb(data, cursor)
+                    if limits_flag & 1:
+                        _, cursor = read_uleb(data, cursor)
+                elif kind == 2:
+                    limits_flag, cursor = read_uleb(data, cursor)
+                    _, cursor = read_uleb(data, cursor)
+                    if limits_flag & 1:
+                        _, cursor = read_uleb(data, cursor)
+                elif kind == 3:
+                    content_type, cursor = read_uleb(data, cursor)
+                    if content_type > 0xFF:
+                        raise ValueError("invalid global content type")
+                    if cursor >= end:
+                        raise ValueError("truncated global mutability")
+                    cursor += 1
+                else:
+                    raise ValueError(f"unsupported import kind {kind}")
+                imports.append(f"{module_name}.{field_name}")
+        elif section_id == 3:
+            func_count, _ = read_uleb(data, offset)
+        elif section_id == 7:
+            export_count, cursor = read_uleb(data, offset)
+            for _ in range(export_count):
+                name_len, cursor = read_uleb(data, cursor)
+                name_end = cursor + name_len
+                if name_end > end:
+                    raise ValueError("truncated export")
+                exports.append(data[cursor:name_end].decode("utf-8"))
+                cursor = name_end
+                if cursor >= end:
+                    raise ValueError("truncated export descriptor")
+                cursor += 1
+                _, cursor = read_uleb(data, cursor)
+        offset = end
+
+    return {"section_ids": section_ids, "exports": exports, "imports": imports, "func_count": func_count}
 
 
 def compile_harness(ctx: RunContext, work_dir: Path, header_path: Path, harness_relpath: str) -> tuple[bool, str]:
@@ -1010,6 +1145,41 @@ def kind_genpkg_compile(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -
     if isinstance(harness, str) and harness:
         return compile_harness(ctx, work_dir, header_path, harness)
 
+    return ok()
+
+
+def kind_genpkg_wasm_check(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
+    output_path = work_dir / "out.wasm"
+    mode = str(case.get("mode", "genpkg:wasm"))
+    args = [str(ctx.slc)]
+    if case.get("platform") is not None:
+        args.extend(["--platform", str(case["platform"])])
+    args.extend([mode, str(case["input"]), str(output_path)])
+    cp = run_cmd(args)
+    stderr = strip_warning_diagnostics(cp.stderr)
+    if cp.returncode != 0:
+        return fail(f"{mode} failed (exit {cp.returncode})\nstderr:\n{cp.stderr}")
+    if case.get("stderr_empty", True) and stderr:
+        return fail(f"unexpected stderr:\n{stderr}")
+    if not output_path.exists():
+        return fail("missing Wasm output file")
+    try:
+        info = parse_wasm_module(output_path.read_bytes())
+    except ValueError as e:
+        return fail(f"invalid wasm output: {e}")
+
+    if "expect_section_ids" in case and info["section_ids"] != list(case["expect_section_ids"]):
+        return fail(
+            f"section_ids mismatch: expected {list(case['expect_section_ids'])}, got {info['section_ids']}"
+        )
+    if "expect_exports" in case and info["exports"] != list(case["expect_exports"]):
+        return fail(f"exports mismatch: expected {list(case['expect_exports'])}, got {info['exports']}")
+    if "expect_imports" in case and info["imports"] != list(case["expect_imports"]):
+        return fail(f"imports mismatch: expected {list(case['expect_imports'])}, got {info['imports']}")
+    if "expect_func_count" in case and info["func_count"] != int(case["expect_func_count"]):
+        return fail(
+            f"func_count mismatch: expected {int(case['expect_func_count'])}, got {info['func_count']}"
+        )
     return ok()
 
 
@@ -1197,7 +1367,7 @@ def expand_execution_cases(fixtures: List[TestCase]) -> List[ExecutionCase]:
 def mode_uses_c_backend(mode: Any) -> bool:
     if not isinstance(mode, str):
         return False
-    return mode == "genpkg" or mode.startswith("genpkg:")
+    return mode == "genpkg" or mode == "genpkg:c"
 
 
 def execution_case_supported_in_eval_only(case: ExecutionCase) -> bool:
@@ -1267,6 +1437,8 @@ def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunRe
                 ok_main, detail = kind_genpkg_text_check(ctx, c)
             elif k == "genpkg_compile":
                 ok_main, detail = kind_genpkg_compile(ctx, c, work_dir)
+            elif k == "genpkg_wasm_check":
+                ok_main, detail = kind_genpkg_wasm_check(ctx, c, work_dir)
             elif k == "libsl_freestanding":
                 ok_main, detail = kind_libsl_freestanding(ctx, work_dir)
             elif k == "builtin_h_freestanding":

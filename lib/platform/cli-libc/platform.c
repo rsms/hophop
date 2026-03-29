@@ -13,6 +13,7 @@
 #endif
 
 extern int sl_main(__sl_Context* context);
+static __sl_Context gMainContext;
 
 #define MALLOC_ALIGN ((size_t)_Alignof(max_align_t))
 
@@ -114,6 +115,14 @@ __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 li
 
 __sl_noreturn void platform__exit(__sl_i32 status) {
     exit(status);
+}
+
+void platform__console_log(__sl_str* message, __sl_i32 flags) {
+    if (message == NULL) {
+        static __sl_str empty = { (__sl_u8*)(uintptr_t)0, 0 };
+        message = &empty;
+    }
+    platform_log_handler(&gMainContext.log, message, __sl_LogLevel_Info, (__sl_LogFlags)flags);
 }
 
 static __sl_Allocator gAllocator = { .impl = platform_mem_allocator_impl };

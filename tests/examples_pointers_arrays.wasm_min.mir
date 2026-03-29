@@ -1,0 +1,85 @@
+mir
+  dynamic_resolution=no
+  insts=38 consts=8 sources=1 funcs=1 locals=3 fields=12 types=10 hosts=0 symbols=0
+sources
+  #0 len=312
+types
+  #0 astNode=11 source=#0 flags=65536 aux=1031
+  #1 astNode=24 source=#0 flags=524288
+  #2 astNode=36 source=#0 flags=1048577
+  #3 astNode=44 source=#0 flags=1048577
+  #4 astNode=37 source=#0 flags=524288
+  #5 astNode=2 source=#0 flags=1
+  #6 astNode=4 source=#0 flags=1048577
+  #7 astNode=45 source=#0 flags=524288
+  #8 astNode=5 source=#0 flags=524288
+  #9 astNode=4294967295 source=#0 flags=2048
+hosts
+symbols
+fields
+  #0 ownerType=#4294967295 type=#4294967295 name="value" [193,198]
+  #1 ownerType=#4294967295 type=#4294967295 name="next" [207,211]
+  #2 ownerType=#4294967295 type=#4294967295 name="next" [235,239]
+  #3 ownerType=#4294967295 type=#4294967295 name="value" [270,275]
+  #4 ownerType=#4 type=#5 name="value" [84,89]
+  #5 ownerType=#4 type=#6 name="next" [95,99]
+  #6 ownerType=#7 type=#5 name="value" [84,89]
+  #7 ownerType=#7 type=#6 name="next" [95,99]
+  #8 ownerType=#8 type=#5 name="value" [84,89]
+  #9 ownerType=#8 type=#6 name="next" [95,99]
+  #10 ownerType=#1 type=#5 name="value" [84,89]
+  #11 ownerType=#1 type=#6 name="next" [95,99]
+consts
+  #0 INT value=7
+  #1 INT value=0
+  #2 INT value=0
+  #3 NULL
+  #4 NULL
+  #5 INT value=7
+  #6 INT value=0
+  #7 INT value=1
+functions
+  #0 name="main" [113,117] source=#0 type=#4294967295 params=0 temps=0 locals=#0+3 insts=#0+38
+    locals
+      #0 name="values" [127,133] type=#0 flags=6
+      #1 name="p" [163,164] type=#9 flags=2
+      #2 name="n" [183,184] type=#1 flags=6
+    insts
+      0: LOCAL_ZERO local=#0 "values" [127,133] span=[123,141]
+      1: PUSH_CONST const=#0 span=[155,156]
+      2: LOCAL_LOAD local=#0 "values" [127,133] span=[143,149]
+      3: PUSH_CONST const=#1 span=[150,151]
+      4: ARRAY_ADDR span=[143,152]
+      5: DEREF_STORE span=[143,156]
+      6: LOCAL_LOAD local=#0 "values" [127,133] span=[168,174]
+      7: PUSH_CONST const=#2 span=[175,176]
+      8: ARRAY_ADDR span=[167,177]
+      9: LOCAL_STORE local=#1 "p" [163,164] span=[159,177]
+      10: LOCAL_ZERO local=#2 "n" [183,184] span=[179,189]
+      11: LOCAL_LOAD local=#1 "p" [163,164] span=[202,203]
+      12: DEREF_LOAD span=[201,203]
+      13: LOCAL_LOAD local=#2 "n" [183,184] span=[191,192]
+      14: AGG_ADDR field=#0 "value" [193,198] span=[193,198]
+      15: DEREF_STORE span=[191,203]
+      16: PUSH_CONST const=#3 span=[214,218]
+      17: COERCE type=#2 span=[214,227]
+      18: LOCAL_LOAD local=#2 "n" [183,184] span=[205,206]
+      19: AGG_ADDR field=#1 "next" [207,211] span=[207,211]
+      20: DEREF_STORE span=[205,227]
+      21: LOCAL_LOAD local=#2 "n" [183,184] span=[233,234]
+      22: AGG_GET field=#2 "next" [235,239] span=[235,239]
+      23: PUSH_CONST const=#4 span=[243,247]
+      24: COERCE type=#3 span=[243,256]
+      25: BINARY op=EQ span=[233,256]
+      26: JUMP_IF_FALSE target=33 span=[230,309]
+      27: LOCAL_LOAD local=#2 "n" [183,184] span=[268,269]
+      28: AGG_GET field=#3 "value" [270,275] span=[270,275]
+      29: PUSH_CONST const=#5 span=[279,280]
+      30: BINARY op=EQ span=[268,280]
+      31: ASSERT span=[261,280]
+      32: JUMP target=37 span=[230,309]
+      33: PUSH_CONST const=#6 span=[300,301]
+      34: PUSH_CONST const=#7 span=[305,306]
+      35: BINARY op=EQ span=[300,306]
+      36: ASSERT span=[293,306]
+      37: RETURN_VOID span=[120,311]

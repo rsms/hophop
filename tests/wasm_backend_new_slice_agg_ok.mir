@@ -1,0 +1,54 @@
+mir
+  dynamic_resolution=no
+  insts=24 consts=6 sources=1 funcs=1 locals=2 fields=3 types=5 hosts=0 symbols=0
+sources
+  #0 len=144
+types
+  #0 astNode=6 source=#0 flags=1
+  #1 astNode=9 source=#0 flags=33554433
+  #2 astNode=10 source=#0 flags=524288
+  #3 astNode=2 source=#0 flags=1
+  #4 astNode=13 source=#0 flags=524288
+hosts
+symbols
+fields
+  #0 ownerType=#4294967295 type=#4294967295 name="a" [115,116]
+  #1 ownerType=#4294967295 type=#4294967295 name="a" [135,136]
+  #2 ownerType=#2 type=#3 name="a" [15,16]
+consts
+  #0 INT value=4
+  #1 INT value=4
+  #2 INT value=7
+  #3 INT value=0
+  #4 INT value=0
+  #5 INT value=7
+functions
+  #0 name="main" [27,31] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+24
+    locals
+      #0 name="n" [41,42] type=#0 flags=2
+      #1 name="xs" [61,63] type=#1 flags=2
+    insts
+      0: PUSH_CONST const=#0 span=[54,55]
+      1: LOCAL_STORE local=#0 "n" [41,42] span=[37,55]
+      2: LOCAL_LOAD local=#0 "n" [41,42] span=[84,85]
+      3: ALLOC_NEW tok=64 aux=12 span=[74,86]
+      4: LOCAL_STORE local=#1 "xs" [61,63] span=[57,86]
+      5: LOCAL_LOAD local=#1 "xs" [61,63] span=[99,101]
+      6: SEQ_LEN span=[95,98]
+      7: PUSH_CONST const=#1 span=[106,107]
+      8: BINARY op=EQ span=[95,107]
+      9: ASSERT span=[88,107]
+      10: PUSH_CONST const=#2 span=[119,120]
+      11: LOCAL_LOAD local=#1 "xs" [61,63] span=[109,111]
+      12: PUSH_CONST const=#3 span=[112,113]
+      13: INDEX span=[109,114]
+      14: AGG_ADDR field=#0 "a" [115,116] span=[115,116]
+      15: DEREF_STORE span=[109,120]
+      16: LOCAL_LOAD local=#1 "xs" [61,63] span=[129,131]
+      17: PUSH_CONST const=#4 span=[132,133]
+      18: INDEX span=[129,134]
+      19: AGG_GET field=#1 "a" [135,136] span=[135,136]
+      20: PUSH_CONST const=#5 span=[140,141]
+      21: BINARY op=EQ span=[129,141]
+      22: ASSERT span=[122,141]
+      23: RETURN_VOID span=[34,143]

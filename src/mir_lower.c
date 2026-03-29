@@ -297,13 +297,15 @@ static int SLMirLowerInternType(
     }
     for (i = 0; i < builder->typeLen; i++) {
         const SLMirTypeRef* existing = &builder->types[i];
-        if (existing->astNode == astNode && existing->flags == flags) {
+        if (existing->astNode == astNode && existing->sourceRef == 0u && existing->flags == flags) {
             *outIndex = i;
             return 0;
         }
     }
     typeRef.astNode = astNode;
+    typeRef.sourceRef = 0u;
     typeRef.flags = flags;
+    typeRef.aux = 0u;
     if (SLMirProgramBuilderAddType(builder, &typeRef, outIndex) != 0) {
         SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
@@ -415,7 +417,8 @@ static int SLMirLowerInternField(
     for (i = 0; i < builder->fieldLen; i++) {
         const SLMirField* existing = &builder->fields[i];
         if (existing->nameStart == nameStart && existing->nameEnd == nameEnd
-            && existing->ownerTypeRef == UINT32_MAX && existing->typeRef == UINT32_MAX)
+            && existing->sourceRef == 0u && existing->ownerTypeRef == UINT32_MAX
+            && existing->typeRef == UINT32_MAX)
         {
             *outIndex = i;
             return 0;
@@ -423,6 +426,7 @@ static int SLMirLowerInternField(
     }
     fieldRef.nameStart = nameStart;
     fieldRef.nameEnd = nameEnd;
+    fieldRef.sourceRef = 0u;
     fieldRef.ownerTypeRef = UINT32_MAX;
     fieldRef.typeRef = UINT32_MAX;
     if (SLMirProgramBuilderAddField(builder, &fieldRef, outIndex) != 0) {

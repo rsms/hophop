@@ -84,3 +84,7 @@ Implemented core includes:
 - [SLP-26-format-function.md](SLP-26-format-function.md)
 - [SLP-27-const-numeric-literals.md](SLP-27-const-numeric-literals.md)
 - [SLP-28-call-site-compile-time-validation.md](SLP-28-call-site-compile-time-validation.md)
+- [SLP-29-for-in-loops.md](SLP-29-for-in-loops.md)
+- [SLP-30-iterator-protocol.md](SLP-30-iterator-protocol.md)
+- [SLP-31-nested-types.md](SLP-31-nested-types.md)
+- [SLP-32-wasm-backend.md](SLP-32-wasm-backend.md)

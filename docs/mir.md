@@ -2,6 +2,12 @@
 
 This document describes the MIR (Mid-level Intermediate Representation) implementation in this repository (`src/mir.c`, `src/mir.h`, `src/mir_lower.c`, `src/mir_lower_pkg.c`, `src/mir_lower_stmt.c`, `src/mir_exec.c`), how it is used today, and where it is being extended.
 
+For inspection from the CLI, use:
+
+```sh
+_build/macos-aarch64-debug/slc mir <package-dir|file.sl>
+```
+
 ## What MIR is
 
 MIR is a small, internal, expression-level IR used by compile-time evaluation.

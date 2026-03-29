@@ -1,0 +1,41 @@
+mir
+  dynamic_resolution=no
+  insts=17 consts=4 sources=1 funcs=1 locals=2 fields=0 types=4 hosts=0 symbols=0
+sources
+  #0 len=90
+types
+  #0 astNode=5 source=#0 flags=65536 aux=517
+  #1 astNode=7 source=#0 flags=16385
+  #2 astNode=18 source=#0 flags=1
+  #3 astNode=27 source=#0 flags=1
+hosts
+symbols
+fields
+consts
+  #0 INT value=0
+  #1 INT value=7
+  #2 INT value=0
+  #3 INT value=7
+functions
+  #0 name="main" [3,7] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+17
+    locals
+      #0 name="a" [17,18] type=#0 flags=6
+      #1 name="p" [32,33] type=#1 flags=2
+    insts
+      0: LOCAL_ZERO local=#0 "a" [17,18] span=[13,26]
+      1: LOCAL_LOAD local=#0 "a" [17,18] span=[42,43]
+      2: PUSH_CONST const=#0 span=[44,45]
+      3: ARRAY_ADDR span=[41,46]
+      4: LOCAL_STORE local=#1 "p" [32,33] span=[28,46]
+      5: PUSH_CONST const=#1 span=[54,55]
+      6: CAST cast=INT type=#2 span=[54,62]
+      7: LOCAL_LOAD local=#1 "p" [32,33] span=[50,51]
+      8: DEREF_STORE span=[49,62]
+      9: LOCAL_LOAD local=#0 "a" [17,18] span=[71,72]
+      10: PUSH_CONST const=#2 span=[73,74]
+      11: INDEX span=[71,75]
+      12: PUSH_CONST const=#3 span=[79,80]
+      13: CAST cast=INT type=#3 span=[79,87]
+      14: BINARY op=EQ span=[71,87]
+      15: ASSERT span=[64,87]
+      16: RETURN_VOID span=[10,89]

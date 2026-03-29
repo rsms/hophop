@@ -119,6 +119,10 @@
 {"id": "SL2095", "name": "UNUSED_PARAMETER", "category": "semantic", "message": "parameter '{s}' is unused", "type": "warning"}
 {"id": "SL2096", "name": "UNUSED_PARAMETER_NEVER_READ", "category": "semantic", "message": "parameter '{s}' is never read", "type": "warning"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
+{"id": "SL3002", "name": "WASM_BACKEND_UNSUPPORTED_MIR", "category": "codegen", "message": "Wasm backend does not support this MIR"}
+{"id": "SL3003", "name": "WASM_BACKEND_UNSUPPORTED_HOSTCALL", "category": "codegen", "message": "Wasm backend does not support this hostcall"}
+{"id": "SL3004", "name": "WASM_BACKEND_PLATFORM_REQUIRED", "category": "codegen", "message": "Wasm backend requires a platform target for this package"}
+{"id": "SL3005", "name": "WASM_BACKEND_INTERNAL", "category": "codegen", "message": "internal Wasm backend error"}
 {"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
 {"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}
 {"id": "SL4003", "name": "EVAL_BACKEND_UNSUPPORTED", "category": "compiler", "message": "evaluator backend: {s}"}

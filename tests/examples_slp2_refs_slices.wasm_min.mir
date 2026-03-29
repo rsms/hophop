@@ -1,0 +1,128 @@
+mir
+  dynamic_resolution=no
+  insts=65 consts=8 sources=1 funcs=4 locals=12 fields=0 types=17 hosts=0 symbols=3
+sources
+  #0 len=543
+types
+  #0 astNode=3 source=#0 flags=131073
+  #1 astNode=8 source=#0 flags=1
+  #2 astNode=22 source=#0 flags=1
+  #3 astNode=18 source=#0 flags=131073
+  #4 astNode=33 source=#0 flags=1
+  #5 astNode=40 source=#0 flags=262145
+  #6 astNode=37 source=#0 flags=262145
+  #7 astNode=52 source=#0 flags=65536 aux=1031
+  #8 astNode=54 source=#0 flags=2049
+  #9 astNode=66 source=#0 flags=2049
+  #10 astNode=70 source=#0 flags=131073
+  #11 astNode=84 source=#0 flags=131073
+  #12 astNode=90 source=#0 flags=262145
+  #13 astNode=96 source=#0 flags=262145
+  #14 astNode=103 source=#0 flags=262145
+  #15 astNode=124 source=#0 flags=1
+  #16 astNode=131 source=#0 flags=1
+hosts
+symbols
+  #0 CALL target=78 name="setfirst" [334,342]
+  #1 CALL target=107 name="head" [460,464]
+  #2 CALL target=113 name="rosum" [479,484]
+fields
+consts
+  #0 INT value=0
+  #1 INT value=0
+  #2 INT value=1
+  #3 INT value=2
+  #4 INT value=7
+  #5 INT value=9
+  #6 INT value=1
+  #7 INT value=24
+functions
+  #0 name="setfirst" [80,88] source=#0 type=#4294967295 params=2 temps=0 locals=#0+2 insts=#0+6
+    locals
+      #0 name="xs" [89,91] type=#0 flags=3
+      #1 name="v" [102,103] type=#1 flags=3
+    insts
+      0: LOCAL_LOAD local=#1 "v" [102,103] span=[120,121]
+      1: LOCAL_LOAD local=#0 "xs" [89,91] span=[112,114]
+      2: PUSH_CONST const=#0 span=[115,116]
+      3: ARRAY_ADDR span=[112,117]
+      4: DEREF_STORE span=[112,121]
+      5: RETURN_VOID span=[109,123]
+  #1 name="rosum" [128,133] source=#0 type=#2 params=1 temps=0 locals=#2+1 insts=#6+9
+    locals
+      #0 name="xs" [134,136] type=#3 flags=3
+    insts
+      0: LOCAL_LOAD local=#0 "xs" [134,136] span=[161,163]
+      1: PUSH_CONST const=#1 span=[164,165]
+      2: INDEX span=[161,166]
+      3: LOCAL_LOAD local=#0 "xs" [134,136] span=[173,175]
+      4: SEQ_LEN span=[169,172]
+      5: CAST cast=INT type=#4 span=[169,183]
+      6: BINARY op=ADD span=[161,183]
+      7: RETURN span=[154,183]
+      8: RETURN_VOID span=[151,185]
+  #2 name="head" [190,194] source=#0 type=#5 params=1 temps=0 locals=#3+1 insts=#15+5
+    locals
+      #0 name="xs" [195,197] type=#6 flags=3
+    insts
+      0: LOCAL_LOAD local=#0 "xs" [195,197] span=[223,225]
+      1: PUSH_CONST const=#2 span=[227,228]
+      2: SLICE_MAKE tok=4 span=[223,229]
+      3: RETURN span=[216,229]
+      4: RETURN_VOID span=[213,231]
+  #3 name="main" [236,240] source=#0 type=#4294967295 params=0 temps=0 locals=#4+8 insts=#20+45
+    locals
+      #0 name="a" [250,251] type=#7 flags=6
+      #1 name="mr" [266,268] type=#8 flags=2
+      #2 name="rr" [296,298] type=#9 flags=2
+      #3 name="arf" [315,318] type=#10 flags=2
+      #4 name="rof" [360,363] type=#11 flags=2
+      #5 name="all" [386,389] type=#12 flags=2
+      #6 name="tail" [413,417] type=#13 flags=2
+      #7 name="first" [443,448] type=#14 flags=2
+    insts
+      0: LOCAL_ZERO local=#0 "a" [250,251] span=[246,259]
+      1: LOCAL_LOAD local=#0 "a" [250,251] span=[277,278]
+      2: PUSH_CONST const=#3 span=[279,280]
+      3: ARRAY_ADDR span=[276,281]
+      4: LOCAL_STORE local=#1 "mr" [266,268] span=[262,281]
+      5: PUSH_CONST const=#4 span=[289,290]
+      6: LOCAL_LOAD local=#1 "mr" [266,268] span=[284,286]
+      7: DEREF_STORE span=[283,290]
+      8: LOCAL_LOAD local=#1 "mr" [266,268] span=[306,308]
+      9: LOCAL_STORE local=#2 "rr" [296,298] span=[292,308]
+      10: LOCAL_ADDR local=#0 "a" [250,251] span=[330,332]
+      11: LOCAL_STORE local=#3 "arf" [315,318] span=[311,332]
+      12: LOCAL_LOAD local=#3 "arf" [315,318] span=[343,346]
+      13: PUSH_CONST const=#5 span=[351,352]
+      14: CALL_FN fn=#0 argc=2 span=[334,342]
+      15: DROP span=[334,353]
+      16: LOCAL_LOAD local=#3 "arf" [315,318] span=[377,380]
+      17: LOCAL_STORE local=#4 "rof" [360,363] span=[356,380]
+      18: LOCAL_LOAD local=#0 "a" [250,251] span=[403,404]
+      19: SLICE_MAKE span=[403,407]
+      20: LOCAL_STORE local=#5 "all" [386,389] span=[382,407]
+      21: LOCAL_LOAD local=#5 "all" [386,389] span=[430,433]
+      22: PUSH_CONST const=#6 span=[434,435]
+      23: SLICE_MAKE tok=2 span=[430,437]
+      24: LOCAL_STORE local=#6 "tail" [413,417] span=[409,437]
+      25: LOCAL_LOAD local=#5 "all" [386,389] span=[465,468]
+      26: CALL_FN fn=#2 argc=1 span=[460,464]
+      27: LOCAL_STORE local=#7 "first" [443,448] span=[439,469]
+      28: LOCAL_LOAD local=#4 "rof" [360,363] span=[485,488]
+      29: CALL_FN fn=#1 argc=1 span=[479,484]
+      30: LOCAL_LOAD local=#2 "rr" [296,298] span=[493,495]
+      31: DEREF_LOAD span=[492,495]
+      32: BINARY op=ADD span=[479,495]
+      33: LOCAL_LOAD local=#6 "tail" [413,417] span=[502,506]
+      34: SEQ_LEN span=[498,501]
+      35: CAST cast=INT type=#15 span=[498,514]
+      36: BINARY op=ADD span=[479,514]
+      37: LOCAL_LOAD local=#7 "first" [443,448] span=[521,526]
+      38: SEQ_LEN span=[517,520]
+      39: CAST cast=INT type=#16 span=[517,534]
+      40: BINARY op=ADD span=[479,534]
+      41: PUSH_CONST const=#7 span=[538,540]
+      42: BINARY op=EQ span=[479,540]
+      43: ASSERT span=[472,540]
+      44: RETURN_VOID span=[243,542]

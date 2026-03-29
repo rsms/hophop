@@ -1,0 +1,66 @@
+mir
+  dynamic_resolution=no
+  insts=35 consts=10 sources=1 funcs=1 locals=4 fields=0 types=3 hosts=0 symbols=0
+sources
+  #0 len=178
+types
+  #0 astNode=3 source=#0 flags=256
+  #1 astNode=24 source=#0 flags=513
+  #2 astNode=4294967295 source=#0 flags=1024
+hosts
+symbols
+fields
+consts
+  #0 STRING bytes="ab"
+  #1 INT value=0
+  #2 INT value=97
+  #3 INT value=1
+  #4 INT value=98
+  #5 STRING bytes="cd"
+  #6 INT value=0
+  #7 INT value=99
+  #8 INT value=1
+  #9 INT value=100
+functions
+  #0 name="main" [3,7] source=#0 type=#4294967295 params=0 temps=0 locals=#0+4 insts=#0+35
+    locals
+      #0 name="a" [17,18] type=#0 flags=2
+      #1 name="b" [36,37] type=#2 flags=2
+      #2 name="s" [99,100] type=#1 flags=2
+      #3 name="t" [118,119] type=#2 flags=2
+    insts
+      0: PUSH_CONST const=#0 span=[26,30]
+      1: LOCAL_STORE local=#0 "a" [17,18] span=[13,30]
+      2: LOCAL_LOAD local=#0 "a" [17,18] span=[50,51]
+      3: STR_CSTR span=[45,49]
+      4: LOCAL_STORE local=#1 "b" [36,37] span=[32,52]
+      5: LOCAL_LOAD local=#1 "b" [36,37] span=[61,62]
+      6: PUSH_CONST const=#1 span=[63,64]
+      7: INDEX span=[61,65]
+      8: PUSH_CONST const=#2 span=[69,72]
+      9: BINARY op=EQ span=[61,72]
+      10: ASSERT span=[54,72]
+      11: LOCAL_LOAD local=#1 "b" [36,37] span=[81,82]
+      12: PUSH_CONST const=#3 span=[83,84]
+      13: INDEX span=[81,85]
+      14: PUSH_CONST const=#4 span=[89,92]
+      15: BINARY op=EQ span=[81,92]
+      16: ASSERT span=[74,92]
+      17: PUSH_CONST const=#5 span=[108,112]
+      18: LOCAL_STORE local=#2 "s" [99,100] span=[95,112]
+      19: LOCAL_LOAD local=#2 "s" [99,100] span=[127,128]
+      20: STR_CSTR span=[129,133]
+      21: LOCAL_STORE local=#3 "t" [118,119] span=[114,135]
+      22: LOCAL_LOAD local=#3 "t" [118,119] span=[144,145]
+      23: PUSH_CONST const=#6 span=[146,147]
+      24: INDEX span=[144,148]
+      25: PUSH_CONST const=#7 span=[152,155]
+      26: BINARY op=EQ span=[144,155]
+      27: ASSERT span=[137,155]
+      28: LOCAL_LOAD local=#3 "t" [118,119] span=[164,165]
+      29: PUSH_CONST const=#8 span=[166,167]
+      30: INDEX span=[164,168]
+      31: PUSH_CONST const=#9 span=[172,175]
+      32: BINARY op=EQ span=[164,175]
+      33: ASSERT span=[157,175]
+      34: RETURN_VOID span=[10,177]

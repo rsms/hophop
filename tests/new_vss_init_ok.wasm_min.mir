@@ -1,0 +1,171 @@
+mir
+  dynamic_resolution=no
+  insts=105 consts=15 sources=1 funcs=1 locals=4 fields=18 types=15 hosts=0 symbols=0
+sources
+  #0 len=670
+types
+  #0 astNode=27 source=#0 flags=1048577
+  #1 astNode=70 source=#0 flags=1048577
+  #2 astNode=96 source=#0 flags=513
+  #3 astNode=28 source=#0 flags=524288
+  #4 astNode=2 source=#0 flags=1
+  #5 astNode=4 source=#0 flags=1
+  #6 astNode=6 source=#0 flags=8388608
+  #7 astNode=9 source=#0 flags=16777216
+  #8 astNode=12 source=#0 flags=16777216
+  #9 astNode=71 source=#0 flags=524288
+  #10 astNode=15 source=#0 flags=256
+  #11 astNode=18 source=#0 flags=1
+  #12 astNode=20 source=#0 flags=1
+  #13 astNode=99 source=#0 flags=8388608
+  #14 astNode=4294967295 source=#0 flags=1048576
+hosts
+symbols
+fields
+  #0 ownerType=#4294967295 type=#4294967295 name="payloadLen" [317,327]
+  #1 ownerType=#4294967295 type=#4294967295 name="sampleLen" [348,357]
+  #2 ownerType=#4294967295 type=#4294967295 name="name" [378,382]
+  #3 ownerType=#4294967295 type=#4294967295 name="len" [383,386]
+  #4 ownerType=#4294967295 type=#4294967295 name="payload" [407,414]
+  #5 ownerType=#4294967295 type=#4294967295 name="samples" [438,445]
+  #6 ownerType=#4294967295 type=#4294967295 name="name" [541,545]
+  #7 ownerType=#4294967295 type=#4294967295 name="x" [570,571]
+  #8 ownerType=#4294967295 type=#4294967295 name="y" [591,592]
+  #9 ownerType=#4294967295 type=#4294967295 name="len" [659,662]
+  #10 ownerType=#3 type=#4 name="payloadLen" [17,27]
+  #11 ownerType=#3 type=#5 name="sampleLen" [33,42]
+  #12 ownerType=#3 type=#6 name="name" [49,53]
+  #13 ownerType=#3 type=#7 name="payload" [65,72]
+  #14 ownerType=#3 type=#8 name="samples" [94,101]
+  #15 ownerType=#9 type=#10 name="name" [147,151]
+  #16 ownerType=#9 type=#11 name="x" [158,159]
+  #17 ownerType=#9 type=#12 name="y" [169,170]
+consts
+  #0 INT value=3
+  #1 INT value=2
+  #2 INT value=4
+  #3 INT value=0
+  #4 INT value=0
+  #5 INT value=0
+  #6 INT value=0
+  #7 STRING bytes="Monz"
+  #8 INT value=0
+  #9 INT value=2
+  #10 INT value=5
+  #11 INT value=16
+  #12 INT value=1
+  #13 INT value=-4
+  #14 INT value=9
+functions
+  #0 name="main" [185,189] source=#0 type=#4294967295 params=0 temps=0 locals=#0+4 insts=#0+105
+    locals
+      #0 name="ma" [199,201] type=#14 flags=2
+      #1 name="packet" [222,228] type=#0 flags=2
+      #2 name="plain" [460,465] type=#1 flags=2
+      #3 name="string" [604,610] type=#2 flags=2
+    insts
+      0: CTX_GET field=MEM span=[204,215]
+      1: LOCAL_STORE local=#0 "ma" [199,201] span=[195,215]
+      2: PUSH_CONST const=#11 span=[0,0]
+      3: PUSH_CONST const=#2 span=[290,291]
+      4: PUSH_CONST const=#12 span=[0,0]
+      5: BINARY op=ADD span=[0,0]
+      6: BINARY op=ADD span=[0,0]
+      7: PUSH_CONST const=#0 span=[263,264]
+      8: BINARY op=ADD span=[0,0]
+      9: PUSH_CONST const=#0 span=[0,0]
+      10: BINARY op=ADD span=[0,0]
+      11: PUSH_CONST const=#13 span=[0,0]
+      12: BINARY op=AND span=[0,0]
+      13: PUSH_CONST const=#1 span=[277,278]
+      14: PUSH_CONST const=#2 span=[0,0]
+      15: BINARY op=MUL span=[0,0]
+      16: BINARY op=ADD span=[0,0]
+      17: LOCAL_LOAD local=#0 "ma" [199,201] span=[299,301]
+      18: ALLOC_NEW tok=192 aux=29 span=[239,301]
+      19: LOCAL_STORE local=#1 "packet" [222,228] span=[218,301]
+      20: LOCAL_LOAD local=#1 "packet" [222,228] span=[251,264]
+      21: PUSH_CONST const=#0 span=[263,264]
+      22: AGG_SET aux=10 span=[251,264]
+      23: DROP span=[251,264]
+      24: LOCAL_LOAD local=#1 "packet" [222,228] span=[266,278]
+      25: PUSH_CONST const=#1 span=[277,278]
+      26: AGG_SET aux=11 span=[266,278]
+      27: DROP span=[266,278]
+      28: LOCAL_LOAD local=#1 "packet" [222,228] span=[280,291]
+      29: AGG_GET field=#12 "name" [49,53] span=[280,291]
+      30: PUSH_CONST const=#2 span=[290,291]
+      31: AGG_SET aux=3 span=[280,291]
+      32: DROP span=[280,291]
+      33: LOCAL_LOAD local=#1 "packet" [222,228] span=[310,316]
+      34: AGG_GET field=#0 "payloadLen" [317,327] span=[317,327]
+      35: PUSH_CONST const=#0 span=[331,332]
+      36: BINARY op=EQ span=[310,332]
+      37: ASSERT span=[303,332]
+      38: LOCAL_LOAD local=#1 "packet" [222,228] span=[341,347]
+      39: AGG_GET field=#1 "sampleLen" [348,357] span=[348,357]
+      40: PUSH_CONST const=#1 span=[361,362]
+      41: BINARY op=EQ span=[341,362]
+      42: ASSERT span=[334,362]
+      43: LOCAL_LOAD local=#1 "packet" [222,228] span=[371,377]
+      44: AGG_GET field=#2 "name" [378,382] span=[378,382]
+      45: AGG_GET field=#3 "len" [383,386] span=[383,386]
+      46: PUSH_CONST const=#2 span=[390,391]
+      47: BINARY op=EQ span=[371,391]
+      48: ASSERT span=[364,391]
+      49: LOCAL_LOAD local=#1 "packet" [222,228] span=[400,406]
+      50: AGG_GET field=#4 "payload" [407,414] span=[407,414]
+      51: PUSH_CONST const=#3 span=[415,416]
+      52: INDEX span=[400,417]
+      53: PUSH_CONST const=#4 span=[421,422]
+      54: BINARY op=EQ span=[400,422]
+      55: ASSERT span=[393,422]
+      56: LOCAL_LOAD local=#1 "packet" [222,228] span=[431,437]
+      57: AGG_GET field=#5 "samples" [438,445] span=[438,445]
+      58: PUSH_CONST const=#5 span=[446,447]
+      59: INDEX span=[431,448]
+      60: PUSH_CONST const=#6 span=[452,453]
+      61: BINARY op=EQ span=[431,453]
+      62: ASSERT span=[424,453]
+      63: LOCAL_LOAD local=#0 "ma" [199,201] span=[524,526]
+      64: ALLOC_NEW tok=128 aux=72 span=[481,526]
+      65: LOCAL_STORE local=#2 "plain" [460,465] span=[456,526]
+      66: LOCAL_LOAD local=#2 "plain" [460,465] span=[498,510]
+      67: PUSH_CONST const=#7 span=[504,510]
+      68: AGG_SET aux=15 span=[498,510]
+      69: DROP span=[498,510]
+      70: LOCAL_LOAD local=#2 "plain" [460,465] span=[512,516]
+      71: PUSH_CONST const=#1 span=[515,516]
+      72: AGG_SET aux=17 span=[512,516]
+      73: DROP span=[512,516]
+      74: LOCAL_LOAD local=#2 "plain" [460,465] span=[535,540]
+      75: AGG_GET field=#6 "name" [541,545] span=[541,545]
+      76: PUSH_CONST const=#7 span=[549,555]
+      77: BINARY op=EQ span=[535,555]
+      78: ASSERT span=[528,555]
+      79: LOCAL_LOAD local=#2 "plain" [460,465] span=[564,569]
+      80: AGG_GET field=#7 "x" [570,571] span=[570,571]
+      81: PUSH_CONST const=#8 span=[575,576]
+      82: BINARY op=EQ span=[564,576]
+      83: ASSERT span=[557,576]
+      84: LOCAL_LOAD local=#2 "plain" [460,465] span=[585,590]
+      85: AGG_GET field=#8 "y" [591,592] span=[591,592]
+      86: PUSH_CONST const=#9 span=[596,597]
+      87: BINARY op=EQ span=[585,597]
+      88: ASSERT span=[578,597]
+      89: PUSH_CONST const=#10 span=[632,633]
+      90: PUSH_CONST const=#14 span=[0,0]
+      91: BINARY op=ADD span=[0,0]
+      92: LOCAL_LOAD local=#0 "ma" [199,201] span=[641,643]
+      93: ALLOC_NEW tok=192 aux=98 span=[618,643]
+      94: LOCAL_STORE local=#3 "string" [604,610] span=[600,643]
+      95: LOCAL_LOAD local=#3 "string" [604,610] span=[627,633]
+      96: PUSH_CONST const=#10 span=[632,633]
+      97: AGG_SET aux=3 span=[627,633]
+      98: DROP span=[627,633]
+      99: LOCAL_LOAD local=#3 "string" [604,610] span=[652,658]
+      100: AGG_GET field=#9 "len" [659,662] span=[659,662]
+      101: PUSH_CONST const=#10 span=[666,667]
+      102: BINARY op=EQ span=[652,667]
+      103: ASSERT span=[645,667]
+      104: RETURN_VOID span=[192,669]

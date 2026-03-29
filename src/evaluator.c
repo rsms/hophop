@@ -115,6 +115,7 @@ enum {
     SL_EVAL_MIR_HOST_FREE = SLMirHostTarget_FREE,
     SL_EVAL_MIR_HOST_CONCAT = SLMirHostTarget_CONCAT,
     SL_EVAL_MIR_HOST_COPY = SLMirHostTarget_COPY,
+    SL_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG = SLMirHostTarget_PLATFORM_CONSOLE_LOG,
 };
 
 enum {
@@ -9043,6 +9044,20 @@ static int SLEvalMirHostCall(
         *outIsConst = 1;
         return 0;
     }
+    if (hostId == SL_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG && argCount == 2u
+        && args[0].kind == SLCTFEValue_STRING)
+    {
+        if (args[0].s.len > 0 && args[0].s.bytes != NULL) {
+            if (fwrite(args[0].s.bytes, 1, args[0].s.len, stdout) != args[0].s.len) {
+                return ErrorSimple("failed to write console_log output");
+            }
+        }
+        fputc('\n', stdout);
+        fflush(stdout);
+        SLEvalValueSetNull(outValue);
+        *outIsConst = 1;
+        return 0;
+    }
     *outIsConst = 0;
     return 0;
 }
@@ -12419,6 +12434,56 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 }
                 p->exitCalled = 1;
                 p->exitCode = (int)(exitCode & 255);
+                SLEvalValueSetNull(outValue);
+                *outIsConst = 1;
+                return 0;
+            }
+            if (baseNode >= 0 && argNode >= 0 && ast->nodes[baseNode].kind == SLAst_IDENT
+                && SliceEqCStr(
+                    p->currentFile->source,
+                    ast->nodes[baseNode].dataStart,
+                    ast->nodes[baseNode].dataEnd,
+                    "platform")
+                && SliceEqCStr(
+                    p->currentFile->source, callee->dataStart, callee->dataEnd, "console_log"))
+            {
+                int32_t     flagsNode = ast->nodes[argNode].nextSibling;
+                int32_t     extraNode = flagsNode >= 0 ? ast->nodes[flagsNode].nextSibling : -1;
+                int32_t     messageExpr = ASTFirstChild(ast, argNode);
+                int32_t     flagsExpr = ASTFirstChild(ast, flagsNode);
+                SLCTFEValue messageValue;
+                SLCTFEValue flagsValue;
+                int         messageIsConst = 0;
+                int         flagsIsConst = 0;
+                if (flagsNode < 0 || extraNode >= 0 || messageExpr < 0 || flagsExpr < 0) {
+                    *outIsConst = 0;
+                    return 0;
+                }
+                if (SLEvalExecExprCb(p, messageExpr, &messageValue, &messageIsConst) != 0
+                    || SLEvalExecExprCb(p, flagsExpr, &flagsValue, &flagsIsConst) != 0)
+                {
+                    return -1;
+                }
+                if (!messageIsConst || messageValue.kind != SLCTFEValue_STRING || !flagsIsConst) {
+                    if (p->currentExecCtx != NULL) {
+                        SLCTFEExecSetReason(
+                            p->currentExecCtx,
+                            ast->nodes[messageExpr].start,
+                            ast->nodes[flagsExpr].end,
+                            "platform.console_log requires a string expression and integer flags");
+                    }
+                    *outIsConst = 0;
+                    return 0;
+                }
+                if (messageValue.s.len > 0 && messageValue.s.bytes != NULL) {
+                    if (fwrite(messageValue.s.bytes, 1, messageValue.s.len, stdout)
+                        != messageValue.s.len)
+                    {
+                        return ErrorSimple("failed to write console_log output");
+                    }
+                }
+                fputc('\n', stdout);
+                fflush(stdout);
                 SLEvalValueSetNull(outValue);
                 *outIsConst = 1;
                 return 0;

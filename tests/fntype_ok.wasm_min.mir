@@ -1,0 +1,78 @@
+mir
+  dynamic_resolution=no
+  insts=32 consts=6 sources=1 funcs=3 locals=5 fields=3 types=9 hosts=0 symbols=3
+sources
+  #0 len=246
+types
+  #0 astNode=4 source=#0 flags=1
+  #1 astNode=3 source=#0 flags=1
+  #2 astNode=17 source=#0 flags=1
+  #3 astNode=12 source=#0 flags=1
+  #4 astNode=14 source=#0 flags=4194304
+  #5 astNode=31 source=#0 flags=4194304
+  #6 astNode=36 source=#0 flags=524288
+  #7 astNode=25 source=#0 flags=4194304
+  #8 astNode=4294967295 source=#0 flags=4194304
+hosts
+symbols
+  #0 IDENT target=34 name="add1" [160,164]
+  #1 CALL target=45 name="apply" [198,203]
+  #2 CALL target=56 name="cb" [233,235] flags=1
+fields
+  #0 ownerType=#4294967295 type=#4294967295 name="cb" [183,185]
+  #1 ownerType=#4294967295 type=#4294967295 name="cb" [213,215]
+  #2 ownerType=#6 type=#7 name="cb" [109,111]
+consts
+  #0 INT value=1
+  #1 INT value=41
+  #2 INT value=42
+  #3 INT value=1
+  #4 INT value=2
+  #5 FUNCTION aux=0
+functions
+  #0 name="add1" [3,7] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
+    locals
+      #0 name="x" [8,9] type=#1 flags=3
+    insts
+      0: LOCAL_LOAD local=#0 "x" [8,9] span=[29,30]
+      1: PUSH_CONST const=#0 span=[33,34]
+      2: BINARY op=ADD span=[29,34]
+      3: RETURN span=[22,34]
+      4: RETURN_VOID span=[19,36]
+  #1 name="apply" [41,46] source=#0 type=#2 params=2 temps=0 locals=#1+2 insts=#5+5
+    locals
+      #0 name="x" [47,48] type=#3 flags=3
+      #1 name="f" [54,55] type=#4 flags=3
+    insts
+      0: LOCAL_LOAD local=#1 "f" [54,55] span=[83,84]
+      1: LOCAL_LOAD local=#0 "x" [47,48] span=[85,86]
+      2: CALL_INDIRECT argc=1 span=[83,84]
+      3: RETURN span=[76,87]
+      4: RETURN_VOID span=[73,89]
+  #2 name="main" [130,134] source=#0 type=#4294967295 params=0 temps=0 locals=#3+2 insts=#10+22
+    locals
+      #0 name="f" [144,145] type=#8 flags=2
+      #1 name="w" [170,171] type=#6 flags=6
+    insts
+      0: PUSH_CONST const=#5 span=[160,164]
+      1: LOCAL_STORE local=#0 "f" [144,145] span=[140,164]
+      2: LOCAL_ZERO local=#1 "w" [170,171] span=[166,179]
+      3: LOCAL_LOAD local=#0 "f" [144,145] span=[188,189]
+      4: LOCAL_LOAD local=#1 "w" [170,171] span=[181,182]
+      5: AGG_ADDR field=#0 "cb" [183,185] span=[183,185]
+      6: DEREF_STORE span=[181,189]
+      7: PUSH_CONST const=#1 span=[204,206]
+      8: LOCAL_LOAD local=#1 "w" [170,171] span=[211,212]
+      9: AGG_GET field=#1 "cb" [213,215] span=[213,215]
+      10: CALL_FN fn=#1 argc=2 span=[198,203]
+      11: PUSH_CONST const=#2 span=[220,222]
+      12: BINARY op=EQ span=[198,222]
+      13: ASSERT span=[191,222]
+      14: LOCAL_LOAD local=#1 "w" [170,171] span=[231,232]
+      15: AGG_GET field=#2 "cb" [109,111] span=[231,232]
+      16: PUSH_CONST const=#3 span=[236,237]
+      17: CALL_INDIRECT argc=1 span=[233,235]
+      18: PUSH_CONST const=#4 span=[242,243]
+      19: BINARY op=EQ span=[231,243]
+      20: ASSERT span=[224,243]
+      21: RETURN_VOID span=[137,245]
