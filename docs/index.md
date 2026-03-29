@@ -33,6 +33,7 @@ Learn the language:
 
 Understand architecture and compiler behavior:
 - `docs/project-overview.md`
+- `docs/wasm.md`
 - `README.md`
 
 Work on runtime/platform integration:
