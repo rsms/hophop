@@ -42,9 +42,7 @@ typedef struct {
     SLCTFESpan      span;
 } SLCTFEValue;
 
-enum {
-    SLCTFEValueTag_AGG_PARTIAL = UINT64_C(1) << 57,
-};
+static const uint64_t SLCTFEValueTag_AGG_PARTIAL = UINT64_C(1) << 57;
 
 typedef int (*SLCTFEResolveIdentFn)(
     void* _Nullable ctx,

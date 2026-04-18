@@ -11586,7 +11586,7 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
     SLEvalProgram*   p = (SLEvalProgram*)ctx;
     const SLAst*     ast;
     const SLAstNode* n;
-    SLDiag           diag = {};
+    SLDiag           diag = { 0 };
     int              rc;
 
     if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {

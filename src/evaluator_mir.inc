@@ -1,8 +1,6 @@
 SL_API_BEGIN
 
-enum {
-    SL_EVAL_MIR_FN_NONE = UINT32_MAX,
-};
+static const uint32_t SL_EVAL_MIR_FN_NONE = UINT32_MAX;
 
 typedef struct {
     SLEvalProgram*       p;

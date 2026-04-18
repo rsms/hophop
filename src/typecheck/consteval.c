@@ -5,11 +5,9 @@
 
 SL_API_BEGIN
 
-enum {
-    SL_TC_MIR_TUPLE_TAG = 0x54434d4952545550ULL,
-    SL_TC_MIR_ITER_TAG = 0x54434d4952495445ULL,
-    SL_TC_MIR_IMPORT_ALIAS_TAG = 0x54434d49524d504bULL,
-};
+static const uint64_t SL_TC_MIR_TUPLE_TAG = 0x54434d4952545550ULL;
+static const uint64_t SL_TC_MIR_ITER_TAG = 0x54434d4952495445ULL;
+static const uint64_t SL_TC_MIR_IMPORT_ALIAS_TAG = 0x54434d49524d504bULL;
 
 static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outCallArgIndex);
@@ -4612,9 +4610,7 @@ int SLTCMirConstCoerceValueForType(
     return 0;
 }
 
-enum {
-    SL_TC_MIR_CONST_FN_NONE = UINT32_MAX,
-};
+static const uint32_t SL_TC_MIR_CONST_FN_NONE = UINT32_MAX;
 
 int SLTCMirConstLowerFunction(
     SLTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex);

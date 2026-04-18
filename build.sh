@@ -95,10 +95,14 @@ c_flags=(
     -std=c11 \
     -Wall \
     -Wextra \
+    -Wc2x-compat \
+    -Wc2x-extensions \
     -Wno-unused \
     -Wno-unused-parameter \
     -Wno-bitwise-op-parentheses \
     -Wno-shift-op-parentheses \
+    -Werror=c2x-compat \
+    -Werror=c2x-extensions \
     -Werror=format \
     -Werror=incompatible-pointer-types \
     -Werror=return-type \

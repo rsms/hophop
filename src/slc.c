@@ -1799,7 +1799,7 @@ static int FormatOneFile(const char* filename, int checkOnly, int* outChanged) {
     size_t    arenaCap;
     void*     arenaMem = NULL;
     SLArena   arena;
-    SLDiag    diag = {};
+    SLDiag    diag = { 0 };
     SLStrView formatted = { 0 };
     int       changed = 0;
     int       rc = -1;
@@ -2006,7 +2006,7 @@ static int DumpTokens(const char* filename, const char* source, uint32_t sourceL
     size_t        arenaCap;
     SLArena       arena;
     SLTokenStream stream;
-    SLDiag        diag = {};
+    SLDiag        diag = { 0 };
     uint32_t      i;
 
     arenaCap64 = (uint64_t)(sourceLen + 16u) * (uint64_t)sizeof(SLToken) + 4096u;
@@ -2052,7 +2052,7 @@ static int DumpAST(const char* filename, const char* source, uint32_t sourceLen)
     size_t   arenaCap;
     SLArena  arena;
     SLAst    ast;
-    SLDiag   diag = {};
+    SLDiag   diag = { 0 };
     SLWriter writer;
 
     arenaCap64 = (uint64_t)(sourceLen + 64u) * (uint64_t)sizeof(SLAstNode) + 32768u;
@@ -2249,7 +2249,7 @@ static int AppendMirDeclsFromFile(
         if (n->kind == SLAst_FN) {
             uint32_t     outFunctionIndex = UINT32_MAX;
             int32_t      bodyNode;
-            SLDiag       diag = {};
+            SLDiag       diag = { 0 };
             int          supported = 0;
             SLStrView    src = { file->source, file->sourceLen };
             const SLAst* ast = &file->ast;
@@ -2291,7 +2291,7 @@ static int AppendMirDeclsFromFile(
             const char*  kindName = n->kind == SLAst_CONST ? "top-level const" : "top-level var";
             int32_t      firstChild = ASTFirstChild(ast, child);
             SLStrView    src = { file->source, file->sourceLen };
-            SLDiag       diag = {};
+            SLDiag       diag = { 0 };
             int          supported = 0;
             if (firstChild >= 0 && ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
                 uint32_t i;
@@ -8435,7 +8435,7 @@ static int DumpMIR(const char* entryPath, const char* _Nullable platformTarget) 
     SLPackageLoader loader = { 0 };
     SLPackage*      entryPkg = NULL;
     SLMirProgram    program = { 0 };
-    SLDiag          diag = {};
+    SLDiag          diag = { 0 };
     SLWriter        writer;
     SLStrView       fallbackSrc = { 0 };
 
@@ -8496,7 +8496,7 @@ static int ParseSourceEx(
     uint64_t arenaCap64;
     size_t   arenaCap;
     SLArena  arena;
-    SLDiag   diag = {};
+    SLDiag   diag = { 0 };
 
     *outArenaMem = NULL;
     if (outArena != NULL) {
@@ -8658,7 +8658,7 @@ static int CheckSourceWithSpec(const SLCheckRunSpec* spec) {
     size_t             arenaCap;
     SLArena            arena;
     SLAst              ast;
-    SLDiag             diag = {};
+    SLDiag             diag = { 0 };
     uint32_t           beforeTypecheckUsed;
     uint32_t           beforeTypecheckCap;
     uint32_t           afterTypecheckUsed;
@@ -11850,7 +11850,7 @@ static int RewriteText(
     uint64_t        arenaCap64;
     SLArena         arena;
     SLTokenStream   stream;
-    SLDiag          diag = {};
+    SLDiag          diag = { 0 };
     SLStringBuilder b = { 0 };
     uint32_t        i;
     uint32_t        copyPos = 0;
@@ -12970,7 +12970,7 @@ static int GeneratePackage(
     uint32_t                sourceLen = 0;
     SLMirProgram            mirProgram = { 0 };
     SLCodegenArtifact       artifact = { 0 };
-    SLDiag                  diag = {};
+    SLDiag                  diag = { 0 };
     SLCodegenUnit           unit;
     const SLCodegenBackend* backend;
     int                     needsMir = 0;
@@ -13678,7 +13678,7 @@ static int EmitPackageArtifact(
     uint32_t          ownDeclStartOffset = 0;
     SLCodegenUnit     unit;
     SLCodegenOptions  codegenOptions = { 0 };
-    SLDiag            diag = {};
+    SLDiag            diag = { 0 };
     SLCodegenArtifact outArtifact = { 0 };
     char*             headerGuard = NULL;
     char*             implMacro = NULL;

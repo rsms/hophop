@@ -1741,7 +1741,7 @@ int ShouldEmitDeclNode(const SLCBackendC* c, int32_t nodeId) {
 }
 
 int InitAst(SLCBackendC* c) {
-    SLDiag diag = {};
+    SLDiag diag = { 0 };
     void* _Nullable allocatorCtx = NULL;
     SLArenaGrowFn _Nullable growFn = NULL;
     SLArenaFreeFn _Nullable freeFn = NULL;
