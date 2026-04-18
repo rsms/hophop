@@ -1,3 +1,4 @@
+// Verifies const-eval diagnostic non const message is rejected.
 import "compiler"
 
 var MSG &str = "not const"

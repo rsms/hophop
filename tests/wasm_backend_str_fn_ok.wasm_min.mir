@@ -2,37 +2,37 @@ mir
   dynamic_resolution=no
   insts=11 consts=2 sources=1 funcs=2 locals=2 fields=0 types=2 hosts=1 symbols=3
 sources
-  #0 len=143
+  #0 len=197
 types
   #0 astNode=6 source=#0 flags=256
   #1 astNode=4 source=#0 flags=256
 hosts
-  #0 GENERIC target=PLATFORM_CONSOLE_LOG name="console_log" [114,125]
+  #0 GENERIC target=PLATFORM_CONSOLE_LOG name="console_log" [168,179]
 symbols
-  #0 CALL target=14 name="id" [80,82]
-  #1 IDENT target=18 name="platform" [105,113]
-  #2 CALL target=20 name="console_log" [114,125] flags=1
+  #0 CALL target=14 name="id" [134,136]
+  #1 IDENT target=18 name="platform" [159,167]
+  #2 CALL target=20 name="console_log" [168,179] flags=1
 fields
 consts
   #0 STRING bytes="hello from helper"
   #1 INT value=0
 functions
-  #0 name="id" [22,24] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+3
+  #0 name="id" [76,78] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+3
     locals
-      #0 name="msg" [25,28] type=#1 flags=3
+      #0 name="msg" [79,82] type=#1 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "msg" [25,28] span=[50,53]
-      1: RETURN span=[43,53]
-      2: RETURN_VOID span=[40,55]
-  #1 name="main" [60,64] source=#0 type=#4294967295 params=0 temps=0 locals=#1+1 insts=#3+8
+      0: LOCAL_LOAD local=#0 "msg" [79,82] span=[104,107]
+      1: RETURN span=[97,107]
+      2: RETURN_VOID span=[94,109]
+  #1 name="main" [114,118] source=#0 type=#4294967295 params=0 temps=0 locals=#1+1 insts=#3+8
     locals
-      #0 name="msg" [74,77] type=#0 flags=2
+      #0 name="msg" [128,131] type=#0 flags=2
     insts
-      0: PUSH_CONST const=#0 span=[83,102]
-      1: CALL_FN fn=#0 argc=1 span=[80,82]
-      2: LOCAL_STORE local=#0 "msg" [74,77] span=[70,103]
-      3: LOCAL_LOAD local=#0 "msg" [74,77] span=[126,129]
-      4: PUSH_CONST const=#1 span=[138,139]
-      5: CALL_HOST host=#0 argc=2 span=[114,125]
-      6: DROP span=[105,140]
-      7: RETURN_VOID span=[67,142]
+      0: PUSH_CONST const=#0 span=[137,156]
+      1: CALL_FN fn=#0 argc=1 span=[134,136]
+      2: LOCAL_STORE local=#0 "msg" [128,131] span=[124,157]
+      3: LOCAL_LOAD local=#0 "msg" [128,131] span=[180,183]
+      4: PUSH_CONST const=#1 span=[192,193]
+      5: CALL_HOST host=#0 argc=2 span=[168,179]
+      6: DROP span=[159,194]
+      7: RETURN_VOID span=[121,196]

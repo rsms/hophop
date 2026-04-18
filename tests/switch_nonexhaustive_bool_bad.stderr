@@ -1,1 +1,1 @@
-tests/switch_nonexhaustive_bool_bad.sl:2:2: SL2061: missing cases in switch of type bool: false
+tests/switch_nonexhaustive_bool_bad.sl:3:2: SL2061: missing cases in switch of type bool: false

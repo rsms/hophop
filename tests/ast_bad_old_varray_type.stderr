@@ -1,1 +1,1 @@
-tests/ast_bad_old_varray_type.sl:2:12: SL1007: expected type
+tests/ast_bad_old_varray_type.sl:3:12: SL1007: expected type

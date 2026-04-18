@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for multi assign.
 import "platform"
 
 fn main() {

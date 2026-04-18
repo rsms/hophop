@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts array addr i16.
 fn main() {
 	var a [i16 2]
 	var p *i16 = &a[0]

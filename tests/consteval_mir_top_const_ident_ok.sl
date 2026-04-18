@@ -1,3 +1,4 @@
+// Verifies const-eval MIR top-level const identifier is accepted.
 const BASE = 40
 
 fn run() i32 {

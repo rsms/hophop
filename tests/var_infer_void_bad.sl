@@ -1,3 +1,4 @@
+// Verifies variable inference void is rejected.
 fn noop() {}
 
 fn example() {

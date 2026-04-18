@@ -1,3 +1,4 @@
+// Verifies const-eval string index basic is accepted.
 fn validate_prefix(const s &str) {
 	const {
 		assert s[0] == 'x'

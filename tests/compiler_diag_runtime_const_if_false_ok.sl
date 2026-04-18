@@ -1,3 +1,4 @@
+// Verifies runtime behavior for compiler diagnostic const if false.
 import "compiler"
 
 fn runtime_const_if_false() {

@@ -1,3 +1,4 @@
+// Verifies type constructor const name is accepted.
 fn id_type(T type) type {
 	return T
 }

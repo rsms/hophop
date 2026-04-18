@@ -1,3 +1,4 @@
+// Verifies SLP 3 flow narrow bad null branch dereference.
 import "slang/feature/optional"
 
 // Inside if x == null { ... }, x is null-typed — cannot dereference.

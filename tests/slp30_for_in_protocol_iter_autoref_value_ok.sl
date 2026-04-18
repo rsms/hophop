@@ -1,3 +1,4 @@
+// Verifies SLP 30 for in protocol iterator autoref value is accepted.
 struct Counter {
 	start i32
 	done  bool

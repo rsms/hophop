@@ -1,3 +1,4 @@
+// Supports enum member import named by providing the app entrypoint.
 import "lib/mode" { Mode, is_mode_a }
 
 fn main() {

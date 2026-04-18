@@ -1,3 +1,4 @@
+// Verifies topvar zero initialization is accepted.
 var g int
 
 var bytes [u8 3]

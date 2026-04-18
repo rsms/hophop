@@ -1,3 +1,4 @@
+// Verifies new VSS initialization is accepted.
 struct Packet {
 	payloadLen u32
 	sampleLen  u32

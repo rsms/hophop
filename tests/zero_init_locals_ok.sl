@@ -1,3 +1,4 @@
+// Verifies zero initialization locals is accepted.
 struct A {
 	x int
 }

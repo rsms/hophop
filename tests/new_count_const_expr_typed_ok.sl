@@ -1,3 +1,4 @@
+// Verifies new count const expression typed is accepted.
 const N = 3
 
 fn main() {

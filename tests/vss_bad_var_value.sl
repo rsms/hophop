@@ -1,3 +1,4 @@
+// Verifies VSS bad variable value.
 struct Packet {
 	payloadLen u32
 	sampleLen  u32

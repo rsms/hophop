@@ -1,3 +1,4 @@
+// Verifies nested types is accepted.
 pub struct Collection {
 	union Value {
 		i i64

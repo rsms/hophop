@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for for in protocol.
 struct Box {
 	value i32
 }

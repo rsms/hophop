@@ -1,3 +1,4 @@
+// Verifies run exit7.
 import "platform"
 
 fn main() {

@@ -1,3 +1,4 @@
+// Verifies struct field group is accepted.
 struct Vec3 {
 	x, y, z f32
 }

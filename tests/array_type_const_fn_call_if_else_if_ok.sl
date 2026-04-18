@@ -1,3 +1,4 @@
+// Verifies array type const function call if else if is accepted.
 fn code(x i32) i32 {
 	if x == 0 {
 		return 11

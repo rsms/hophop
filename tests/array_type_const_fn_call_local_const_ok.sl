@@ -1,3 +1,4 @@
+// Verifies array type const function call local const is accepted.
 fn extent(x i32) i32 {
 	var base i32 = x + 1
 	var span     = base * 2

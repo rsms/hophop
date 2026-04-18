@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for top-level initialization function alias call.
 fn add1(x i32) i32 {
 	return x + 1
 }

@@ -1,3 +1,4 @@
+// Supports top-level const package alias call by providing the app entrypoint.
 import "lib/math"
 
 const f = math.Double

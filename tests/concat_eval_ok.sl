@@ -1,3 +1,4 @@
+// Verifies concatenation evaluator is accepted.
 fn main() {
 	var a &str = "ab"
 	var b &str = "cd"

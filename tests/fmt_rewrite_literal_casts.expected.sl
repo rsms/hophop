@@ -1,3 +1,4 @@
+// Verifies formatter output for rewrite literal casts.
 var x u32 = 3
 
 fn f() u32 {

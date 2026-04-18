@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for copy.
 fn main() {
 	var dst *str = "zz"
 	assert copy(dst, "ab") == 2

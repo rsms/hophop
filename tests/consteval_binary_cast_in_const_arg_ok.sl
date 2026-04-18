@@ -1,3 +1,4 @@
+// Verifies const-eval binary cast in const argument is accepted.
 fn pass_through(const value bool) bool {
 	const {
 		if value {}

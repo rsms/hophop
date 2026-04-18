@@ -1,3 +1,4 @@
+// Verifies the AST for const function type.
 struct Allocator {
 	impl fn(*Allocator, uint, uint, uint, *uint, u32) uint
 }

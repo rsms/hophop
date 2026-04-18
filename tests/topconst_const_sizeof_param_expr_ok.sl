@@ -1,3 +1,4 @@
+// Verifies topconst const sizeof parameter expression is accepted.
 fn elem_size(x i32) i32 {
 	return sizeof(x) as i32
 }

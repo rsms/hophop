@@ -1,3 +1,4 @@
+// Verifies tagged enum field outside narrow is rejected.
 enum Token u8 {
 	End
 	Int{

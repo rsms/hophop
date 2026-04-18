@@ -1,1 +1,1 @@
-tests/compound_literal_union_multi_field_bad.sl:7:12: SL2044: union compound literal can initialize at most one field
+tests/compound_literal_union_multi_field_bad.sl:8:12: SL2044: union compound literal can initialize at most one field

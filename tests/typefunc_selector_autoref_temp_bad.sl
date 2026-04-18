@@ -1,3 +1,4 @@
+// Verifies type function selector autoref temporary is rejected.
 struct S {
 	x int
 }

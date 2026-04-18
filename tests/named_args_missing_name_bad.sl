@@ -1,3 +1,4 @@
+// Verifies named arguments missing name is rejected.
 fn build(a, b, c i32) i32 {
 	return a + b + c
 }

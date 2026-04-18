@@ -1,1 +1,1 @@
-tests/const_param_assign_bad.sl:2:2: SL2004: type mismatch: assignment target is const
+tests/const_param_assign_bad.sl:3:2: SL2004: type mismatch: assignment target is const

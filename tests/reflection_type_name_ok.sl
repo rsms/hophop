@@ -1,3 +1,4 @@
+// Verifies reflection type name is accepted.
 type UserId u32
 
 const NAME_USER = type_name(UserId)

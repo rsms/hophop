@@ -1,3 +1,4 @@
+// Supports const-eval package function value function body by providing the app entrypoint.
 import "lib/math"
 
 fn answer() int {

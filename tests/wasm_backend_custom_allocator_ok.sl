@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts custom allocator.
 struct MyAllocator {
 	Allocator
 	mem *Allocator

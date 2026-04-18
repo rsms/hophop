@@ -1,3 +1,4 @@
+// Supports single file diagnostic unmapped overload by providing the app fixture source.
 import "single_file_diag_unmapped_overload_bad_dep"
 
 fn main() {

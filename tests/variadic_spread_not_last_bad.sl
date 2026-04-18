@@ -1,3 +1,4 @@
+// Verifies variadic spread not last is rejected.
 fn sum(nums ...i32) i32 {
 	return 0
 }

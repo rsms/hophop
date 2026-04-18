@@ -1,1 +1,1 @@
-tests/compiler_diag_runtime_const_if_true_bad.sl:5:2: SL2075: consteval error: int is too small
+tests/compiler_diag_runtime_const_if_true_bad.sl:6:2: SL2075: consteval error: int is too small

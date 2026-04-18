@@ -1,3 +1,4 @@
+// Verifies switch nonexhaustive enum is rejected.
 enum E u8 {
 	A
 	B

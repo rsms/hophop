@@ -1,3 +1,4 @@
+// Verifies anytype pack index runtime out-of-bounds panics.
 fn pick_i64(j uint, args ...anytype) i64 {
 	return args[j] as i64
 }

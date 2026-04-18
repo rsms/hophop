@@ -1,3 +1,4 @@
+// Verifies topconst const cast unused is accepted.
 fn trunc(x f64) i32 {
 	return x as i32
 }

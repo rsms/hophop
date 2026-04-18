@@ -1,3 +1,4 @@
+// Verifies runtime behavior for anytype pack index anytype call.
 fn score(v anytype) i64 {
 	const t = typeof(v)
 	if t == i64 {

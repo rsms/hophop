@@ -1,1 +1,1 @@
-tests/hole_param_unreachable_bad.sl:2:9: SL2002: unknown identifier '_'
+tests/hole_param_unreachable_bad.sl:3:9: SL2002: unknown identifier '_'

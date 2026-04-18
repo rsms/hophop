@@ -1,3 +1,4 @@
+// Supports nested type import named by providing the coll library package.
 pub struct Collection {
 	union Value {
 		i i64

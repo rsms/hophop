@@ -1,3 +1,4 @@
+// Verifies const-eval MIR switch is accepted.
 fn classify(x int) int {
 	switch x {
 		case 2  { return 7 }

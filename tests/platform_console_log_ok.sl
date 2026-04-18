@@ -1,3 +1,4 @@
+// Verifies platform console log is accepted.
 import "platform"
 
 fn main() {

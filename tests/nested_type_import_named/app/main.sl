@@ -1,3 +1,4 @@
+// Supports nested type import named by providing the app entrypoint.
 import "lib/coll" { Collection }
 
 fn is_one(t Collection.Tag) bool {

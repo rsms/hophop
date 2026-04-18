@@ -1,3 +1,4 @@
+// Verifies SLP 30 for in protocol non bool is rejected.
 struct Box {
 	next ?&Node
 }

@@ -1,3 +1,4 @@
+// Verifies len inference from len is accepted.
 fn payload_cap(buf *[u8]) uint {
 	var cap    = len(buf)
 	var p uint = 0

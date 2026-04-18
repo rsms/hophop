@@ -1,3 +1,4 @@
+// Verifies tagged enum switch narrow is accepted.
 enum Token u8 {
 	End
 	Int{

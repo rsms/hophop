@@ -1,3 +1,4 @@
+// Verifies anonymous struct inference no context is accepted.
 fn use(v struct {
 	a int
 	b &str

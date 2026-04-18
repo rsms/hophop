@@ -1,3 +1,4 @@
+// Verifies anytype spread requires pack is rejected.
 fn take(args ...anytype) {}
 
 fn main() {

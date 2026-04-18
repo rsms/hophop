@@ -1,1 +1,1 @@
-tests/hole_struct_name_bad.sl:1:8: SL2007: identifier '_' is reserved
+tests/hole_struct_name_bad.sl:2:8: SL2007: identifier '_' is reserved

@@ -1,3 +1,4 @@
+// Verifies multi variable const assign is accepted.
 const A, B = 2, 3
 
 fn main() {

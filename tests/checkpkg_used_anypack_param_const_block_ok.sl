@@ -1,3 +1,4 @@
+// Verifies checkpkg used anypack parameter const block is accepted.
 fn verify(args ...anytype) {
 	const {
 		assert len(args) == 3

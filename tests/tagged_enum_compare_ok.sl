@@ -1,3 +1,4 @@
+// Verifies tagged enum compare is accepted.
 enum Token u8 {
 	End
 	Int{

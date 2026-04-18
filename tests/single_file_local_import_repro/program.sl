@@ -1,3 +1,4 @@
+// Supports single file local import repro by providing the program fixture source.
 import "dep" { add }
 
 fn main() {

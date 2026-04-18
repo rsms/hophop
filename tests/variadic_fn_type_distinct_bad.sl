@@ -1,3 +1,4 @@
+// Verifies variadic function type distinct is rejected.
 fn sum(nums ...i32) i32 {
 	return 0
 }

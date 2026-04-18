@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for field compound assign.
 struct Pair {
 	a i32
 	b i32

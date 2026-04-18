@@ -1,3 +1,4 @@
+// Verifies topconst const float unused is accepted.
 fn bump(x f64) f64 {
 	var y f64 = x
 	y += 0.5

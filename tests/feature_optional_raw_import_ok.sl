@@ -1,3 +1,4 @@
+// Verifies feature optional raw import is accepted.
 import `feature/optional`
 
 fn main() {

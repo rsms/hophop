@@ -1,3 +1,4 @@
+// Verifies new zero initialization is accepted.
 struct S {
 	x int
 	y [i32 2]

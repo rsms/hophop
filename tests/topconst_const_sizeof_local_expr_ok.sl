@@ -1,3 +1,4 @@
+// Verifies topconst const sizeof local expression is accepted.
 fn local_size() i32 {
 	var x i32 = 1
 	return sizeof(x) as i32

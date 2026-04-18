@@ -1,3 +1,4 @@
+// Verifies const-eval branch specialize anytype is accepted.
 fn score(x anytype) i64 {
 	if typeof(x) == i64 {
 		// The else branch is not type-correct for i64 instantiation.

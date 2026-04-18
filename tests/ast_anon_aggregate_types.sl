@@ -1,3 +1,4 @@
+// Verifies the AST for anonymous aggregate types.
 struct Example {
 	pos struct {
 		x int

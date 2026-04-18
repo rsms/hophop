@@ -1,3 +1,4 @@
+// Verifies new count const identifier is accepted.
 const N = 3
 
 fn main() {

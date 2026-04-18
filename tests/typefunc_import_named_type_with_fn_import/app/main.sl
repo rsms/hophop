@@ -1,3 +1,4 @@
+// Supports type function import named type with function import by providing the app entrypoint.
 import "lib/mem" { ArenaAllocator, init }
 
 fn main() {

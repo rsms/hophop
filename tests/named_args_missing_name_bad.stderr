@@ -1,1 +1,1 @@
-tests/named_args_missing_name_bad.sl:6:19: SL2056: call argument must be named (or be an identifier) after the first argument
+tests/named_args_missing_name_bad.sl:7:19: SL2056: call argument must be named (or be an identifier) after the first argument

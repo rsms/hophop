@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for tuple.
 fn accepts_pair(p (int, bool)) {
 	_ = p
 }

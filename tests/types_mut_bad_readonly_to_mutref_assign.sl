@@ -1,3 +1,4 @@
+// Verifies types mutable bad read-only to mutable reference assign.
 fn main() i32 {
 	var x  i32
 	var y  i32

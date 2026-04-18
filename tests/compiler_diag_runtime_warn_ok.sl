@@ -1,3 +1,4 @@
+// Verifies runtime behavior for compiler diagnostic warning.
 import "compiler"
 
 fn runtime_warn() {

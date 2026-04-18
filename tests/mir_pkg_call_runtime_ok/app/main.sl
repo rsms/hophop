@@ -1,3 +1,4 @@
+// Supports MIR package call runtime by providing the app entrypoint.
 import "lib/math"
 
 fn main() {

@@ -1,3 +1,4 @@
+// Verifies enum member namespace is accepted.
 enum Mode i32 {
 	A = 0
 	B = 1

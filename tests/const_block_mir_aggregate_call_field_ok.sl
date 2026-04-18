@@ -1,3 +1,4 @@
+// Verifies const block MIR aggregate call field is accepted.
 struct Pair {
 	left  int
 	right int

@@ -1,3 +1,4 @@
+// Verifies the AST for multi variable assign.
 fn main() {
 	var u, v, w f64
 	var x, y u32 = 1, 2

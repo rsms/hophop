@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts aggregate nested.
 struct Inner {
 	x i32
 	y i32

@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=19 consts=4 sources=1 funcs=4 locals=2 fields=0 types=4 hosts=0 symbols=3
 sources
-  #0 len=140
+  #0 len=214
 types
   #0 astNode=4 source=#0 flags=1
   #1 astNode=3 source=#0 flags=1
@@ -10,9 +10,9 @@ types
   #3 astNode=12 source=#0 flags=1
 hosts
 symbols
-  #0 CALL target=17 name="add1" [67,71]
-  #1 CALL target=24 name="add2" [98,102]
-  #2 IDENT target=31 name="value" [127,132]
+  #0 CALL target=17 name="add1" [141,145]
+  #1 CALL target=24 name="add2" [172,176]
+  #2 IDENT target=31 name="value" [201,206]
 fields
 consts
   #0 INT value=1
@@ -20,36 +20,36 @@ consts
   #2 INT value=5
   #3 INT value=7
 functions
-  #0 name="add1" [3,7] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
+  #0 name="add1" [77,81] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
     locals
-      #0 name="x" [8,9] type=#1 flags=3
+      #0 name="x" [82,83] type=#1 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "x" [8,9] span=[29,30]
-      1: PUSH_CONST const=#0 span=[33,34]
-      2: BINARY op=ADD span=[29,34]
-      3: RETURN span=[22,34]
-      4: RETURN_VOID span=[19,36]
-  #1 name="add2" [41,45] source=#0 type=#2 params=1 temps=0 locals=#1+1 insts=#5+6
+      0: LOCAL_LOAD local=#0 "x" [82,83] span=[103,104]
+      1: PUSH_CONST const=#0 span=[107,108]
+      2: BINARY op=ADD span=[103,108]
+      3: RETURN span=[96,108]
+      4: RETURN_VOID span=[93,110]
+  #1 name="add2" [115,119] source=#0 type=#2 params=1 temps=0 locals=#1+1 insts=#5+6
     locals
-      #0 name="x" [46,47] type=#3 flags=3
+      #0 name="x" [120,121] type=#3 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "x" [46,47] span=[72,73]
-      1: CALL_FN fn=#0 argc=1 span=[67,71]
-      2: PUSH_CONST const=#1 span=[77,78]
-      3: BINARY op=ADD span=[67,78]
-      4: RETURN span=[60,78]
-      5: RETURN_VOID span=[57,80]
-  #2 name="value" [86,91] source=#0 type=#4294967295 params=0 temps=0 locals=#2+0 insts=#11+3
-    locals
-    insts
-      0: PUSH_CONST const=#2 span=[103,104]
-      1: CALL_FN fn=#1 argc=1 span=[98,102]
-      2: RETURN tok=1 span=[98,105]
-  #3 name="main" [110,114] source=#0 type=#4294967295 params=0 temps=0 locals=#2+0 insts=#14+5
+      0: LOCAL_LOAD local=#0 "x" [120,121] span=[146,147]
+      1: CALL_FN fn=#0 argc=1 span=[141,145]
+      2: PUSH_CONST const=#1 span=[151,152]
+      3: BINARY op=ADD span=[141,152]
+      4: RETURN span=[134,152]
+      5: RETURN_VOID span=[131,154]
+  #2 name="value" [160,165] source=#0 type=#4294967295 params=0 temps=0 locals=#2+0 insts=#11+3
     locals
     insts
-      0: CALL_FN fn=#2 argc=0 span=[127,132]
-      1: PUSH_CONST const=#3 span=[136,137]
-      2: BINARY op=EQ span=[127,137]
-      3: ASSERT span=[120,137]
-      4: RETURN_VOID span=[117,139]
+      0: PUSH_CONST const=#2 span=[177,178]
+      1: CALL_FN fn=#1 argc=1 span=[172,176]
+      2: RETURN tok=1 span=[172,179]
+  #3 name="main" [184,188] source=#0 type=#4294967295 params=0 temps=0 locals=#2+0 insts=#14+5
+    locals
+    insts
+      0: CALL_FN fn=#2 argc=0 span=[201,206]
+      1: PUSH_CONST const=#3 span=[210,211]
+      2: BINARY op=EQ span=[201,211]
+      3: ASSERT span=[194,211]
+      4: RETURN_VOID span=[191,213]

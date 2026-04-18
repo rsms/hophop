@@ -1,3 +1,4 @@
+// Verifies const parameter overload nonconst only is accepted.
 fn pick(const x i32) i32 {
 	return 1
 }

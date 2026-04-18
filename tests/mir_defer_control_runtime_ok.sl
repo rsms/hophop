@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for defer control.
 fn main() {
 	var acc i32
 	var i   i32

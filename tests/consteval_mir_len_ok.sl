@@ -1,3 +1,4 @@
+// Verifies const-eval MIR len is accepted.
 fn strlen3() int {
 	return len("abc") as int
 }

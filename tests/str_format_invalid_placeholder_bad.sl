@@ -1,3 +1,4 @@
+// Verifies string format invalid placeholder is rejected.
 import "str" { format }
 
 fn main() {

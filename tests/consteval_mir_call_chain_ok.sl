@@ -1,3 +1,4 @@
+// Verifies const-eval MIR call chain is accepted.
 fn add1(x int) int {
 	return x + 1
 }

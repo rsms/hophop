@@ -1,3 +1,4 @@
+// Verifies array type const function call variable stmt is accepted.
 fn next(x i32) i32 {
 	var y i32 = x + 1
 	return y

@@ -1,3 +1,4 @@
+// Verifies type function overload is accepted.
 struct A {
 	x int
 }

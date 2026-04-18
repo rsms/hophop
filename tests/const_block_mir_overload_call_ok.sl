@@ -1,3 +1,4 @@
+// Verifies const block MIR overload call is accepted.
 struct Cat {}
 
 struct Dog {}

@@ -1,3 +1,4 @@
+// Verifies const-eval diagnostic error basic.
 import "compiler"
 
 const X int = fail_now()

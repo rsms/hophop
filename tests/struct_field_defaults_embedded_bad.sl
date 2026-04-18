@@ -1,3 +1,4 @@
+// Verifies struct field defaults embedded is rejected.
 struct Base {
 	x i32
 }

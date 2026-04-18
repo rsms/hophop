@@ -1,3 +1,4 @@
+// Verifies VSS bad sizeof type.
 struct Packet {
 	payloadLen u32
 	sampleLen  u32

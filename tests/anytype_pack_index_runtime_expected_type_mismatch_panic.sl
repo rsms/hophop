@@ -1,3 +1,4 @@
+// Verifies anytype pack index runtime expected type mismatch panics.
 fn id_i64(x i64) i64 {
 	return x
 }

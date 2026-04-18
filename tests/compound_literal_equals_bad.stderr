@@ -1,1 +1,1 @@
-tests/compound_literal_equals_bad.sl:7:19: SL1004: unexpected token
+tests/compound_literal_equals_bad.sl:8:19: SL1004: unexpected token

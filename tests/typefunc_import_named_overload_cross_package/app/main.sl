@@ -1,3 +1,4 @@
+// Supports type function import named overload cross package by providing the app entrypoint.
 import "a" { foo }
 import "b" { foo }
 

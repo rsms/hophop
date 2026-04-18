@@ -1,3 +1,4 @@
+// Verifies const-eval MIR for is accepted.
 fn run() int {
 	var i   int = 0
 	var sum int = 0

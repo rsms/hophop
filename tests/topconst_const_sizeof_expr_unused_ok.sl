@@ -1,3 +1,4 @@
+// Verifies topconst const sizeof expression unused is accepted.
 const X = 7
 
 const SX = sizeof(X)

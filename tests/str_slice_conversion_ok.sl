@@ -1,3 +1,4 @@
+// Verifies string slice conversion is accepted.
 fn main() {
 	var r   &str  = "abc"
 	var m   *str  = "abc"

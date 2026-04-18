@@ -1,3 +1,4 @@
+// Verifies const parameter call is accepted.
 fn parse_base(const base i32, x i32) i32 {
 	return base + x
 }

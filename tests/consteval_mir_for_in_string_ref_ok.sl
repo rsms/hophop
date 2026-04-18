@@ -1,3 +1,4 @@
+// Verifies const-eval MIR for in string reference is accepted.
 fn sum_text() u32 {
 	var text &str = "ABC"
 	var sum  u32

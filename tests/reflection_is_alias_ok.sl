@@ -1,3 +1,4 @@
+// Verifies reflection is alias is accepted.
 type UserId u32
 
 struct Pair {

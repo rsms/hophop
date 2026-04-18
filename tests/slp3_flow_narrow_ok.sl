@@ -1,3 +1,4 @@
+// Verifies SLP 3 flow narrow is accepted.
 import "slang/feature/optional"
 
 // 1. Guard: if x == null { return } — x narrows to *i32 in continuation.

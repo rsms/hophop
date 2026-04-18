@@ -1,1 +1,1 @@
-tests/const_local_initializer_nonconst_bad.sl:2:12: SL2055: const initializer must be a const expression: identifier is not a const value in this context
+tests/const_local_initializer_nonconst_bad.sl:3:12: SL2055: const initializer must be a const expression: identifier is not a const value in this context

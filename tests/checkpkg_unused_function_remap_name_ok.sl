@@ -1,3 +1,4 @@
+// Verifies checkpkg unused function remap name is accepted.
 struct KVEntry {
 	key &str
 }

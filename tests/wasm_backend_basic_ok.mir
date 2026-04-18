@@ -2,32 +2,32 @@ mir
   dynamic_resolution=no
   insts=9 consts=2 sources=1 funcs=2 locals=1 fields=0 types=3 hosts=0 symbols=1
 sources
-  #0 len=73
+  #0 len=117
 types
   #0 astNode=4 source=#0 flags=1
   #1 astNode=3 source=#0 flags=1
   #2 astNode=11 source=#0 flags=1
 hosts
 symbols
-  #0 CALL target=15 name="add1" [62,66]
+  #0 CALL target=15 name="add1" [106,110]
 fields
 consts
   #0 INT value=1
   #1 INT value=41
 functions
-  #0 name="add1" [3,7] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
+  #0 name="add1" [47,51] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
     locals
-      #0 name="x" [8,9] type=#1 flags=3
+      #0 name="x" [52,53] type=#1 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "x" [8,9] span=[29,30]
-      1: PUSH_CONST const=#0 span=[33,34]
-      2: BINARY op=ADD span=[29,34]
-      3: RETURN span=[22,34]
-      4: RETURN_VOID span=[19,36]
-  #1 name="main" [41,45] source=#0 type=#2 params=0 temps=0 locals=#1+0 insts=#5+4
+      0: LOCAL_LOAD local=#0 "x" [52,53] span=[73,74]
+      1: PUSH_CONST const=#0 span=[77,78]
+      2: BINARY op=ADD span=[73,78]
+      3: RETURN span=[66,78]
+      4: RETURN_VOID span=[63,80]
+  #1 name="main" [85,89] source=#0 type=#2 params=0 temps=0 locals=#1+0 insts=#5+4
     locals
     insts
-      0: PUSH_CONST const=#1 span=[67,69]
-      1: CALL_FN fn=#0 argc=1 span=[62,66]
-      2: RETURN span=[55,70]
-      3: RETURN_VOID span=[52,72]
+      0: PUSH_CONST const=#1 span=[111,113]
+      1: CALL_FN fn=#0 argc=1 span=[106,110]
+      2: RETURN span=[99,114]
+      3: RETURN_VOID span=[96,116]

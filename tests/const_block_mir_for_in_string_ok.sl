@@ -1,3 +1,4 @@
+// Verifies const block MIR for in string is accepted.
 fn next() int {
 	const {
 		var sum int = 0

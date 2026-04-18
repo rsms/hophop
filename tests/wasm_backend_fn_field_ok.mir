@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=16 consts=3 sources=1 funcs=2 locals=2 fields=2 types=6 hosts=0 symbols=2
 sources
-  #0 len=149
+  #0 len=202
 types
   #0 astNode=9 source=#0 flags=1
   #1 astNode=8 source=#0 flags=1
@@ -12,37 +12,37 @@ types
   #5 astNode=4294967295 source=#0 flags=4194304
 hosts
 symbols
-  #0 IDENT target=22 name="add1" [121,125]
-  #1 CALL target=28 name="handle" [136,142] flags=1
+  #0 IDENT target=22 name="add1" [174,178]
+  #1 CALL target=28 name="handle" [189,195] flags=1
 fields
-  #0 ownerType=#4294967295 type=#4294967295 name="handle" [112,118]
-  #1 ownerType=#3 type=#5 name="handle" [18,24]
+  #0 ownerType=#4294967295 type=#4294967295 name="handle" [165,171]
+  #1 ownerType=#3 type=#5 name="handle" [71,77]
 consts
   #0 INT value=1
   #1 INT value=41
   #2 FUNCTION aux=0
 functions
-  #0 name="add1" [43,47] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
+  #0 name="add1" [96,100] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
     locals
-      #0 name="x" [48,49] type=#1 flags=3
+      #0 name="x" [101,102] type=#1 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "x" [48,49] span=[69,70]
-      1: PUSH_CONST const=#0 span=[73,74]
-      2: BINARY op=ADD span=[69,74]
-      3: RETURN span=[62,74]
-      4: RETURN_VOID span=[59,76]
-  #1 name="main" [81,85] source=#0 type=#2 params=0 temps=0 locals=#1+1 insts=#5+11
+      0: LOCAL_LOAD local=#0 "x" [101,102] span=[122,123]
+      1: PUSH_CONST const=#0 span=[126,127]
+      2: BINARY op=ADD span=[122,127]
+      3: RETURN span=[115,127]
+      4: RETURN_VOID span=[112,129]
+  #1 name="main" [134,138] source=#0 type=#2 params=0 temps=0 locals=#1+1 insts=#5+11
     locals
-      #0 name="h" [99,100] type=#3 flags=6
+      #0 name="h" [152,153] type=#3 flags=6
     insts
-      0: LOCAL_ZERO local=#0 "h" [99,100] span=[95,108]
-      1: PUSH_CONST const=#2 span=[121,125]
-      2: LOCAL_LOAD local=#0 "h" [99,100] span=[110,111]
-      3: AGG_ADDR field=#0 "handle" [112,118] span=[112,118]
-      4: DEREF_STORE span=[110,125]
-      5: LOCAL_LOAD local=#0 "h" [99,100] span=[134,135]
-      6: AGG_GET field=#1 "handle" [18,24] span=[134,135]
-      7: PUSH_CONST const=#1 span=[143,145]
-      8: CALL_INDIRECT argc=1 span=[136,142]
-      9: RETURN span=[127,146]
-      10: RETURN_VOID span=[92,148]
+      0: LOCAL_ZERO local=#0 "h" [152,153] span=[148,161]
+      1: PUSH_CONST const=#2 span=[174,178]
+      2: LOCAL_LOAD local=#0 "h" [152,153] span=[163,164]
+      3: AGG_ADDR field=#0 "handle" [165,171] span=[165,171]
+      4: DEREF_STORE span=[163,178]
+      5: LOCAL_LOAD local=#0 "h" [152,153] span=[187,188]
+      6: AGG_GET field=#1 "handle" [71,77] span=[187,188]
+      7: PUSH_CONST const=#1 span=[196,198]
+      8: CALL_INDIRECT argc=1 span=[189,195]
+      9: RETURN span=[180,199]
+      10: RETURN_VOID span=[145,201]

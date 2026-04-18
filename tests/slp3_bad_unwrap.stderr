@@ -1,1 +1,1 @@
-tests/slp3_bad_unwrap.sl:4:10: SL2004: type mismatch
+tests/slp3_bad_unwrap.sl:5:10: SL2004: type mismatch

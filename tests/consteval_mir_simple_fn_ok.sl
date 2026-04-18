@@ -1,3 +1,4 @@
+// Verifies const-eval MIR simple function is accepted.
 fn classify(x int) int {
 	if x > 1 {
 		return 7

@@ -1,3 +1,4 @@
+// Verifies reflection typeof type is accepted.
 type MyInt i32
 
 fn is_i32(T type) bool {

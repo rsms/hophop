@@ -1,3 +1,4 @@
+// Supports variable inference transitive type by providing the c package fixture.
 import "b"
 
 fn example1(v b.B) int {

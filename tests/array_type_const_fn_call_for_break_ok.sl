@@ -1,3 +1,4 @@
+// Verifies array type const function call for break is accepted.
 fn count_until(limit i32) i32 {
 	var i     i32 = 0
 	var count i32 = 0

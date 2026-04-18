@@ -1,3 +1,4 @@
+// Verifies comparison hook is accepted.
 struct Disc {
 	x      f32
 	y      f32

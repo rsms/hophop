@@ -1,3 +1,4 @@
+// Verifies const-eval MIR for in protocol is accepted.
 fn __iterator(start i32) i32 {
 	return start
 }

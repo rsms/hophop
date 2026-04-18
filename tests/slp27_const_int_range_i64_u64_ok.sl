@@ -1,3 +1,4 @@
+// Verifies SLP 27 const int range i64 u64 is accepted.
 fn main() {
 	var min_i64 i64 = -9223372036854775808
 	var max_u64 u64 = 18446744073709551615

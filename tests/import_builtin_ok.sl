@@ -1,3 +1,4 @@
+// Verifies import builtin is accepted.
 import "builtin"
 
 fn main() {

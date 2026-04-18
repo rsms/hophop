@@ -1,3 +1,4 @@
+// Verifies string format trunc nul is accepted.
 import "str" { format }
 
 fn main() {

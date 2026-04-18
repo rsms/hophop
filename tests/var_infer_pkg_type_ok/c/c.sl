@@ -1,3 +1,4 @@
+// Supports variable inference package type by providing the c package fixture.
 import "b"
 
 fn example() int {

@@ -1,3 +1,4 @@
+// Verifies array type const function call switch cond is accepted.
 fn norm(x i32) i32 {
 	switch {
 		case x < 0  { return 0 }

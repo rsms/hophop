@@ -1,3 +1,4 @@
+// Verifies const parameter call nonconst is rejected.
 fn parse_base(const base i32) i32 {
 	return base
 }

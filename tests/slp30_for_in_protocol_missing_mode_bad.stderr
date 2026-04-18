@@ -1,1 +1,1 @@
-tests/slp30_for_in_protocol_missing_mode_bad.sl:18:14: SL2090: no compatible next_value overload for this for-in loop form: loop form requires next_value(it *BoxIterator) or next_key_and_value(it *BoxIterator)
+tests/slp30_for_in_protocol_missing_mode_bad.sl:19:14: SL2090: no compatible next_value overload for this for-in loop form: loop form requires next_value(it *BoxIterator) or next_key_and_value(it *BoxIterator)

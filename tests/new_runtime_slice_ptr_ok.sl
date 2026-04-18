@@ -1,3 +1,4 @@
+// Verifies runtime behavior for new slice pointer.
 fn main() {
 	var ma *Allocator = null as *Allocator
 	var n  uint       = 4

@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts function field.
 struct Handler {
 	handle fn(i32) i32
 }

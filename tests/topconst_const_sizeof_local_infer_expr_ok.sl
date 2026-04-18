@@ -1,3 +1,4 @@
+// Verifies topconst const sizeof local inference expression is accepted.
 fn infer_int_size() i32 {
 	var x = 1
 	return sizeof(x) as i32

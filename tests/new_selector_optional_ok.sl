@@ -1,3 +1,4 @@
+// Verifies new selector optional is accepted.
 import "std/testing"
 
 fn main() {

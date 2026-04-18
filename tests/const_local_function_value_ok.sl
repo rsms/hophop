@@ -1,3 +1,4 @@
+// Verifies const local function value is accepted.
 fn forty_two() int {
 	return 42
 }

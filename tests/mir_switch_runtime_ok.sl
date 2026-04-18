@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for switch.
 import "platform"
 
 fn main() {

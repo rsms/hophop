@@ -1,3 +1,4 @@
+// Verifies run evaluator basic.
 fn add(a, b i32) i32 {
 	return a + b
 }

@@ -1,3 +1,4 @@
+// Verifies topconst const function call switch is accepted.
 fn classify(x i32) i32 {
 	var y i32 = 0
 	defer y = x

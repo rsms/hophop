@@ -1,1 +1,1 @@
-tests/rune_literal_range_u8_bad.sl:2:13: SL2004: type mismatch: constant value 0x101 is out of range for u8
+tests/rune_literal_range_u8_bad.sl:3:13: SL2004: type mismatch: constant value 0x101 is out of range for u8

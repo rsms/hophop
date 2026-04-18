@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for concatenation.
 fn main() {
 	var a &str = "ab"
 	var b &str = "cd"

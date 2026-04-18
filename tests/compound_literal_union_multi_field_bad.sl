@@ -1,3 +1,4 @@
+// Verifies compound literal union multi field is rejected.
 union U {
 	a i32
 	b i32

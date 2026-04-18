@@ -1,1 +1,1 @@
-tests/platform_import_alias_bad.sl:1:8: SL1004: unexpected token
+tests/platform_import_alias_bad.sl:2:8: SL1004: unexpected token

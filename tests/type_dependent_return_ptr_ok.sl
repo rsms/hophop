@@ -1,3 +1,4 @@
+// Verifies type dependent return pointer is accepted.
 fn allocate(T type) *T
 
 fn main() {

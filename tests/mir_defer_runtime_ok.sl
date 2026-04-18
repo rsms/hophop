@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for defer.
 import "platform"
 
 fn record_order(x i32, out *i32) i32 {

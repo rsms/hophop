@@ -1,3 +1,4 @@
+// Verifies parameter runs is accepted.
 struct Vec3 {
 	x f32
 	y f32

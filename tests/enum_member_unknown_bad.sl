@@ -1,3 +1,4 @@
+// Verifies enum member unknown is rejected.
 enum Mode i32 {
 	A = 0
 }

@@ -1,3 +1,4 @@
+// Verifies type function field precedence is rejected.
 struct S {
 	len int
 }

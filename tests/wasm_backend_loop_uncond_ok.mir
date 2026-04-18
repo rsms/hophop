@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=5 consts=1 sources=1 funcs=1 locals=0 fields=0 types=1 hosts=0 symbols=0
 sources
-  #0 len=46
+  #0 len=96
 types
   #0 astNode=2 source=#0 flags=1
 hosts
@@ -11,11 +11,11 @@ fields
 consts
   #0 INT value=1
 functions
-  #0 name="main" [3,7] source=#0 type=#0 params=0 temps=0 locals=#0+0 insts=#0+5
+  #0 name="main" [53,57] source=#0 type=#0 params=0 temps=0 locals=#0+0 insts=#0+5
     locals
     insts
-      0: JUMP target=2 span=[25,30]
-      1: JUMP target=0 span=[17,33]
-      2: PUSH_CONST const=#0 span=[42,43]
-      3: RETURN span=[35,43]
-      4: RETURN_VOID span=[14,45]
+      0: JUMP target=2 span=[75,80]
+      1: JUMP target=0 span=[67,83]
+      2: PUSH_CONST const=#0 span=[92,93]
+      3: RETURN span=[85,93]
+      4: RETURN_VOID span=[64,95]

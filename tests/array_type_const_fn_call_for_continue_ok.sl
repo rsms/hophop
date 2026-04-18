@@ -1,3 +1,4 @@
+// Verifies array type const function call for continue is accepted.
 fn count_odds(limit i32) i32 {
 	var i     i32 = 0
 	var count i32 = 0

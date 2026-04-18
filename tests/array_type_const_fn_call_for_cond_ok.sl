@@ -1,3 +1,4 @@
+// Verifies array type const function call for cond is accepted.
 fn count_to(n i32) i32 {
 	var i i32 = 0
 	for i < n {

@@ -1,3 +1,4 @@
+// Verifies VSS is accepted.
 struct Packet {
 	payloadLen u32
 	sampleLen  u32

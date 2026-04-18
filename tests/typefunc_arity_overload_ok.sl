@@ -1,3 +1,4 @@
+// Verifies type function arity overload is accepted.
 fn m(a int) int {
 	return a + 10
 }

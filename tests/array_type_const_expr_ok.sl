@@ -1,3 +1,4 @@
+// Verifies array type const expression is accepted.
 const N = 1 + 2
 
 fn f(x [i32 N]) i32 {

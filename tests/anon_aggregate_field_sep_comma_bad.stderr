@@ -1,1 +1,1 @@
-tests/anon_aggregate_field_sep_comma_bad.sl:2:25: SL1004: unexpected token
+tests/anon_aggregate_field_sep_comma_bad.sl:3:25: SL1004: unexpected token

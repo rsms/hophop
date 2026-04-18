@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts new aggregate initialization.
 struct Pair {
 	x i32
 	y i32

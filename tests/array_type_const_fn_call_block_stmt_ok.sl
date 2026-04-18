@@ -1,3 +1,4 @@
+// Verifies array type const function call block stmt is accepted.
 fn pick(x i32) i32 {
 	{
 		var y = x + 1

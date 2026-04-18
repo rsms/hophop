@@ -1,3 +1,4 @@
+// Verifies const block MIR call chain is accepted.
 fn double(const x int) int {
 	return x * 2
 }

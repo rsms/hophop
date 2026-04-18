@@ -1,3 +1,4 @@
+// Verifies new contextual count is accepted.
 struct Ctx {
 	mem *Allocator
 }

@@ -1,3 +1,4 @@
+// Verifies const block anytype pack index is accepted.
 fn validate(args ...anytype) {
 	const {
 		var i uint = 0

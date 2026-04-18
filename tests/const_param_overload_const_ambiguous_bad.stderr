@@ -1,1 +1,1 @@
-tests/const_param_overload_const_ambiguous_bad.sl:10:6: SL2016: ambiguous call
+tests/const_param_overload_const_ambiguous_bad.sl:11:6: SL2016: ambiguous call

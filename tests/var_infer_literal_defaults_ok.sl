@@ -1,3 +1,4 @@
+// Verifies variable inference literal defaults is accepted.
 const TOP = 1
 
 fn example() {

@@ -1,3 +1,4 @@
+// Verifies the AST for slice expression.
 fn main() i32 {
 	var a [i32 4]
 	var x i32    = a[1]

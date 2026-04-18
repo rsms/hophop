@@ -1,3 +1,4 @@
+// Verifies const-eval MIR tuple return is accepted.
 fn pair(x, y int) (int, int) {
 	return x + 1, y + 2
 }

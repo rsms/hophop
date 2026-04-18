@@ -1,3 +1,4 @@
+// Verifies struct field defaults is accepted.
 struct LoadFileContext {
 	mem     i32
 	tmpmem  i32 = mem

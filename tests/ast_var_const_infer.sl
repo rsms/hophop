@@ -1,3 +1,4 @@
+// Verifies the AST for variable const inference.
 fn example(a i32) {
 	var x = a
 	const y = 1

@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for dereference index.
 fn bump_second(ptrs *[*i32 2]) {
 	*ptrs[1] =  9
 	*ptrs[1] += 5

@@ -1,3 +1,4 @@
+// Verifies SLP 30 for in protocol iterator prefer value is accepted.
 struct Counter {
 	value i32
 	keys  *[&str]

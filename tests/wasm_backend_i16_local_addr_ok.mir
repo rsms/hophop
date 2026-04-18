@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=20 consts=4 sources=1 funcs=1 locals=2 fields=0 types=5 hosts=0 symbols=0
 sources
-  #0 len=108
+  #0 len=161
 types
   #0 astNode=3 source=#0 flags=1
   #1 astNode=6 source=#0 flags=16385
@@ -18,28 +18,28 @@ consts
   #2 INT value=9
   #3 INT value=9
 functions
-  #0 name="main" [3,7] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+20
+  #0 name="main" [56,60] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+20
     locals
-      #0 name="x" [17,18] type=#0 flags=2
-      #1 name="p" [33,34] type=#1 flags=2
+      #0 name="x" [70,71] type=#0 flags=2
+      #1 name="p" [86,87] type=#1 flags=2
     insts
-      0: PUSH_CONST const=#0 span=[26,27]
-      1: LOCAL_STORE local=#0 "x" [17,18] span=[13,27]
-      2: LOCAL_ADDR local=#0 "x" [17,18] span=[42,44]
-      3: LOCAL_STORE local=#1 "p" [33,34] span=[29,44]
-      4: LOCAL_LOAD local=#1 "p" [33,34] span=[55,56]
-      5: DEREF_LOAD span=[54,56]
-      6: PUSH_CONST const=#1 span=[60,61]
-      7: CAST cast=INT type=#2 span=[60,68]
-      8: BINARY op=EQ span=[54,68]
-      9: ASSERT span=[47,68]
-      10: PUSH_CONST const=#2 span=[75,76]
-      11: CAST cast=INT type=#3 span=[75,83]
-      12: LOCAL_LOAD local=#1 "p" [33,34] span=[71,72]
-      13: DEREF_STORE span=[70,83]
-      14: LOCAL_LOAD local=#0 "x" [17,18] span=[92,93]
-      15: PUSH_CONST const=#3 span=[97,98]
-      16: CAST cast=INT type=#4 span=[97,105]
-      17: BINARY op=EQ span=[92,105]
-      18: ASSERT span=[85,105]
-      19: RETURN_VOID span=[10,107]
+      0: PUSH_CONST const=#0 span=[79,80]
+      1: LOCAL_STORE local=#0 "x" [70,71] span=[66,80]
+      2: LOCAL_ADDR local=#0 "x" [70,71] span=[95,97]
+      3: LOCAL_STORE local=#1 "p" [86,87] span=[82,97]
+      4: LOCAL_LOAD local=#1 "p" [86,87] span=[108,109]
+      5: DEREF_LOAD span=[107,109]
+      6: PUSH_CONST const=#1 span=[113,114]
+      7: CAST cast=INT type=#2 span=[113,121]
+      8: BINARY op=EQ span=[107,121]
+      9: ASSERT span=[100,121]
+      10: PUSH_CONST const=#2 span=[128,129]
+      11: CAST cast=INT type=#3 span=[128,136]
+      12: LOCAL_LOAD local=#1 "p" [86,87] span=[124,125]
+      13: DEREF_STORE span=[123,136]
+      14: LOCAL_LOAD local=#0 "x" [70,71] span=[145,146]
+      15: PUSH_CONST const=#3 span=[150,151]
+      16: CAST cast=INT type=#4 span=[150,158]
+      17: BINARY op=EQ span=[145,158]
+      18: ASSERT span=[138,158]
+      19: RETURN_VOID span=[63,160]

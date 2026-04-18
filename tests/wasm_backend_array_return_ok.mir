@@ -2,35 +2,35 @@ mir
   dynamic_resolution=no
   insts=13 consts=1 sources=1 funcs=2 locals=2 fields=0 types=2 hosts=0 symbols=1
 sources
-  #0 len=97
+  #0 len=148
 types
   #0 astNode=4 source=#0 flags=65536 aux=775
   #1 astNode=8 source=#0 flags=65536 aux=775
 hosts
 symbols
-  #0 CALL target=15 name="mk" [67,69]
+  #0 CALL target=15 name="mk" [118,120]
 fields
 consts
   #0 INT value=3
 functions
-  #0 name="mk" [3,5] source=#0 type=#0 params=0 temps=0 locals=#0+1 insts=#0+4
+  #0 name="mk" [54,56] source=#0 type=#0 params=0 temps=0 locals=#0+1 insts=#0+4
     locals
-      #0 name="a" [23,24] type=#1 flags=6
+      #0 name="a" [74,75] type=#1 flags=6
     insts
-      0: LOCAL_ZERO local=#0 "a" [23,24] span=[19,32]
-      1: LOCAL_LOAD local=#0 "a" [23,24] span=[41,42]
-      2: RETURN span=[34,42]
-      3: RETURN_VOID span=[16,44]
-  #1 name="main" [49,53] source=#0 type=#4294967295 params=0 temps=0 locals=#1+1 insts=#4+9
+      0: LOCAL_ZERO local=#0 "a" [74,75] span=[70,83]
+      1: LOCAL_LOAD local=#0 "a" [74,75] span=[92,93]
+      2: RETURN span=[85,93]
+      3: RETURN_VOID span=[67,95]
+  #1 name="main" [100,104] source=#0 type=#4294967295 params=0 temps=0 locals=#1+1 insts=#4+9
     locals
-      #0 name="b" [63,64] type=#0 flags=2
+      #0 name="b" [114,115] type=#0 flags=2
     insts
-      0: CALL_FN fn=#0 argc=0 span=[67,69]
-      1: LOCAL_STORE local=#0 "b" [63,64] span=[59,71]
-      2: LOCAL_LOAD local=#0 "b" [63,64] span=[84,85]
-      3: SLICE_MAKE span=[84,88]
-      4: SEQ_LEN span=[80,83]
-      5: PUSH_CONST const=#0 span=[93,94]
-      6: BINARY op=EQ span=[80,94]
-      7: ASSERT span=[73,94]
-      8: RETURN_VOID span=[56,96]
+      0: CALL_FN fn=#0 argc=0 span=[118,120]
+      1: LOCAL_STORE local=#0 "b" [114,115] span=[110,122]
+      2: LOCAL_LOAD local=#0 "b" [114,115] span=[135,136]
+      3: SLICE_MAKE span=[135,139]
+      4: SEQ_LEN span=[131,134]
+      5: PUSH_CONST const=#0 span=[144,145]
+      6: BINARY op=EQ span=[131,145]
+      7: ASSERT span=[124,145]
+      8: RETURN_VOID span=[107,147]

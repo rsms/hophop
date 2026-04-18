@@ -1,3 +1,4 @@
+// Verifies compound literal typed is accepted.
 struct Point {
 	x i32
 	y i32

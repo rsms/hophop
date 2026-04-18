@@ -1,3 +1,4 @@
+// Verifies formatter output for canonical.
 import "feature/optional"
 
 import "math/basic" as math { Add as Sum, Sub }

@@ -1,3 +1,4 @@
+// Supports import named shadow by providing the app entrypoint.
 import "lib/math" { Double }
 
 fn main() i32 {

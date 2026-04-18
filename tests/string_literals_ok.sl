@@ -1,3 +1,4 @@
+// Verifies string literals is accepted.
 fn main() {
 	assert "Hello, world!\n" == "Hello, world!\x0a"
 	assert "\\n" == "\n"

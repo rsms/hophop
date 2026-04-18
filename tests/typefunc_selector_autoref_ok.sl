@@ -1,3 +1,4 @@
+// Verifies type function selector autoref is accepted.
 struct S {
 	x int
 }

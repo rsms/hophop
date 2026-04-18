@@ -1,3 +1,4 @@
+// Verifies const-eval MIR for in string is accepted.
 fn sum_text() int {
 	var sum int = 0
 	for i, ch in "ABC" {

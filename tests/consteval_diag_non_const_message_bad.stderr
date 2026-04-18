@@ -1,1 +1,1 @@
-tests/consteval_diag_non_const_message_bad.sl:8:17: SL2073: diagnostic message must be a const-evaluable string
+tests/consteval_diag_non_const_message_bad.sl:9:17: SL2073: diagnostic message must be a const-evaluable string

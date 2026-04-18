@@ -1,3 +1,4 @@
+// Verifies runtime behavior for multi return.
 import "platform"
 
 var calls uint = 0

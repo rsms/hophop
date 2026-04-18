@@ -1,1 +1,1 @@
-tests/consteval_diag_invalid_span_bad.sl:7:20: SL2074: diagnostic span is invalid
+tests/consteval_diag_invalid_span_bad.sl:8:20: SL2074: diagnostic span is invalid

@@ -1,3 +1,4 @@
+// Verifies runtime behavior for SLP 29 for in.
 fn main() {
 	var a [i32 3]
 	a[0] = 1

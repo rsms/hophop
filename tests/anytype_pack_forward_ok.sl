@@ -1,3 +1,4 @@
+// Verifies anytype pack forward is accepted.
 fn sink(args ...anytype) uint {
 	return len(args)
 }

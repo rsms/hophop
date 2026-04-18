@@ -1,3 +1,4 @@
+// Verifies topconst const sizeof type unused is accepted.
 const SZ = sizeof(i32)
 
 var ARR [u8 sizeof(i32)]

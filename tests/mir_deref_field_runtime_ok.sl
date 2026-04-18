@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for dereference field.
 struct Box {
 	p *i32
 }

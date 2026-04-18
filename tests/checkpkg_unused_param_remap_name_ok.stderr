@@ -1,1 +1,1 @@
-tests/checkpkg_unused_param_remap_name_ok.sl:3:10: SL2095: parameter 'self' is unused
+tests/checkpkg_unused_param_remap_name_ok.sl:4:10: SL2095: parameter 'self' is unused

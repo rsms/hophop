@@ -1,3 +1,4 @@
+// Verifies const-eval MIR tuple argument is accepted.
 fn accept_pair(p (int, int)) int {
 	return 7
 }

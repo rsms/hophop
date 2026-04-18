@@ -1,1 +1,1 @@
-tests/struct_composition_bad_non_struct.sl:2:2: SL2013: embedded field type must be a struct
+tests/struct_composition_bad_non_struct.sl:3:2: SL2013: embedded field type must be a struct

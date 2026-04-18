@@ -1,3 +1,4 @@
+// Verifies const-eval MIR typed local zero is accepted.
 fn classify() int {
 	var n int
 	if n == 0 {

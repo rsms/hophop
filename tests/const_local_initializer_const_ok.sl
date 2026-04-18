@@ -1,3 +1,4 @@
+// Verifies const local initializer const is accepted.
 fn f() int {
 	const y = 1 + 2
 	return y

@@ -1,3 +1,4 @@
+// Verifies const-eval diagnostic warning dedup.
 import "compiler"
 
 const A int = warn_once()

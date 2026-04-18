@@ -1,3 +1,4 @@
+// Verifies const block assert failure is rejected.
 fn must_be_positive(const n int) {
 	const {
 		assert n > 0

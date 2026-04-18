@@ -1,3 +1,4 @@
+// Verifies SLP 17 platform context main is accepted.
 import "platform"
 
 fn alloc() *u8 context Context {

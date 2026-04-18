@@ -1,3 +1,4 @@
+// Verifies struct field sep missing is rejected.
 struct S {
     x int y bool
 }

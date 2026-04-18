@@ -1,1 +1,1 @@
-tests/slp27_const_int_range_u8_bad.sl:2:13: SL2004: type mismatch: constant value 0x12c is out of range for u8
+tests/slp27_const_int_range_u8_bad.sl:3:13: SL2004: type mismatch: constant value 0x12c is out of range for u8

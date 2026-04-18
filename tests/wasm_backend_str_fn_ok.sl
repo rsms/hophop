@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts string function.
 import "platform"
 
 fn id(msg &str) &str {

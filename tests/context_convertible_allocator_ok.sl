@@ -1,3 +1,4 @@
+// Verifies context convertible allocator is accepted.
 struct NeedCtx {
 	mem *Allocator
 }

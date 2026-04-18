@@ -1,3 +1,4 @@
+// Verifies new bad arity.
 
 fn main() i32 {
     var ma Allocator

@@ -1,3 +1,4 @@
+// Verifies switch nonexhaustive enum multi is rejected.
 enum Shape u8 {
 	Circle
 	Rectangle

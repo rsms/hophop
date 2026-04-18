@@ -1,3 +1,4 @@
+// Verifies SLP 29 for in is accepted.
 fn sum(items &[i32]) i32 {
 	var acc i32
 	for item in items {

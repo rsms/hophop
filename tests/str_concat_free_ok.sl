@@ -1,3 +1,4 @@
+// Verifies string concatenation free is accepted.
 struct Ctx {
 	mem *Allocator
 }

@@ -1,3 +1,4 @@
+// Verifies VSS nested is accepted.
 struct Section {
 	entriesLen u8
 	entries    [i64 .entriesLen]

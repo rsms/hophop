@@ -1,3 +1,4 @@
+// Supports type function import named type no function import by providing the mem library package.
 pub struct ArenaAllocator {
 	block_size int
 }

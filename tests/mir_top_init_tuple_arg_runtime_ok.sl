@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for top-level initialization tuple argument.
 fn accept_pair(p (int, int)) int {
 	return 7
 }

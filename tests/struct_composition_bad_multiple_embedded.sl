@@ -1,3 +1,4 @@
+// Verifies struct composition bad multiple embedded.
 struct A {
 	x int
 }

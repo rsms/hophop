@@ -1,3 +1,4 @@
+// Verifies context is accepted.
 struct Ctx {
 	mem      *Allocator
 	temp_mem *Allocator

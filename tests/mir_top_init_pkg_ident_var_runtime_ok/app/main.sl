@@ -1,3 +1,4 @@
+// Supports MIR top-level initialization package identifier variable runtime by providing the app entrypoint.
 import "lib/dupe" as dupe
 
 var Answer = 7

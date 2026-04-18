@@ -1,3 +1,4 @@
+// Supports variable inference transitive type by providing the b package fixture.
 import "a"
 
 pub struct B {

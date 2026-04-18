@@ -1,4 +1,5 @@
 import "kiosk" // ice cream pealse
+// Verifies formatter output for import groups.
 import "all"
 import "cat"   // needed for meows
 

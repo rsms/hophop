@@ -1,1 +1,1 @@
-tests/bad_reserved_name_var.sl:2:9: SL2008: identifier prefix '__sl_' is reserved
+tests/bad_reserved_name_var.sl:3:9: SL2008: identifier prefix '__sl_' is reserved

@@ -1,3 +1,4 @@
+// Verifies copy builtin is accepted.
 fn main() {
 	var src [u8 6]
 	src[0] = 'a' as u8

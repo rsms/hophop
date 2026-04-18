@@ -1,1 +1,1 @@
-tests/consteval_diag_error_basic.sl:6:1: SL2075: consteval error: boom
+tests/consteval_diag_error_basic.sl:7:1: SL2075: consteval error: boom

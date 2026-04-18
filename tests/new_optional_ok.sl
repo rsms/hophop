@@ -1,3 +1,4 @@
+// Verifies new optional is accepted.
 import "std/testing"
 
 fn main() {

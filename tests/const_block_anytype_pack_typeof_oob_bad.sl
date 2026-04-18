@@ -1,3 +1,4 @@
+// Verifies const block anytype pack typeof out-of-bounds is rejected.
 fn demo(const format &str, args ...anytype) {
 	const {
 		for var i uint = 0; i < len(format); i += 1 {

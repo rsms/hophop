@@ -1,3 +1,4 @@
+// Supports MIR package function alias runtime by providing the app entrypoint.
 import "lib/dupe" as dupe
 
 fn helper(x i32) i32 {

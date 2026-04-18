@@ -1,3 +1,4 @@
+// Verifies types mutable bad read-only slice write.
 fn main() i32 {
 	var a  [i32 2]
 	var ro &[i32] = a

@@ -1,3 +1,4 @@
+// Verifies type const alias non distinct is accepted.
 type UserId u32
 
 const UserIdAlias = UserId

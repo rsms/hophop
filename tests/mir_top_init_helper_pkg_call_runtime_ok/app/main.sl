@@ -1,3 +1,4 @@
+// Supports MIR top-level initialization helper package call runtime by providing the app entrypoint.
 import "lib/math"
 
 fn helper() int {

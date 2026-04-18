@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for field.
 struct Pair {
 	a i32
 	b i32

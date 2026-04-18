@@ -1,3 +1,4 @@
+// Verifies struct field defaults order is accepted.
 var g i32 = 0
 
 fn step(v i32) i32 {

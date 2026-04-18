@@ -1,3 +1,4 @@
+// Verifies unused parameter warning is accepted.
 fn id_unused(x int) int {
 	return 0
 }

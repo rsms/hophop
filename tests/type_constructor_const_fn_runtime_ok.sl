@@ -1,3 +1,4 @@
+// Verifies runtime behavior for type constructor const function.
 fn make_ptr(T type) type {
 	return ptr(T)
 }

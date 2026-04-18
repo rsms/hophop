@@ -1,3 +1,4 @@
+// Verifies types mutable is accepted.
 fn main() {
 	var x i32
 	var y i32

@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts i16 local addr.
 fn main() {
 	var x i16  = 7
 	var p *i16 = &x

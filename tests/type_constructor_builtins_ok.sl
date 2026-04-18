@@ -1,3 +1,4 @@
+// Verifies type constructor builtins is accepted.
 const I64Ptr = ptr(i64)
 
 const I64SlicePtr = ptr(slice(i64))

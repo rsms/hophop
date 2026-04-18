@@ -1,3 +1,4 @@
+// Verifies pointer embedded upcast is accepted.
 struct A {
 	x i32
 }

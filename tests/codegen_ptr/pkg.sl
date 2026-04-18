@@ -1,3 +1,4 @@
+// Supports codegen pointer by providing the pkg fixture source.
 pub struct Foo {
 	x i32
 }

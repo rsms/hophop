@@ -1,1 +1,1 @@
-tests/ast_bad_ref_slice_type.sl:1:11: SL2004: type mismatch
+tests/ast_bad_ref_slice_type.sl:2:11: SL2004: type mismatch

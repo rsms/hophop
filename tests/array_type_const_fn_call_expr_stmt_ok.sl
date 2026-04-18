@@ -1,3 +1,4 @@
+// Verifies array type const function call expression stmt is accepted.
 fn id(x i32) i32 {
 	return x
 }

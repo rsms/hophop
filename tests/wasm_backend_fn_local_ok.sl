@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts function local.
 fn add1(x i32) i32 {
 	return x + 1
 }

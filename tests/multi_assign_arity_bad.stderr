@@ -1,1 +1,1 @@
-tests/multi_assign_arity_bad.sl:3:2: SL2005: call arity mismatch
+tests/multi_assign_arity_bad.sl:4:2: SL2005: call arity mismatch

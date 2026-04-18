@@ -1,3 +1,4 @@
+// Verifies rune literals is accepted.
 fn main() {
 	var a rune = 'a'
 	var n rune = '\n'

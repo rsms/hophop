@@ -1,3 +1,4 @@
+// Verifies runtime behavior for compiler diagnostic error at.
 import "compiler"
 import "reflect"
 

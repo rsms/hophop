@@ -1,3 +1,4 @@
+// Verifies SLP 30 for in protocol missing mode is rejected.
 struct Box {
 	next ?&Node
 }

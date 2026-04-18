@@ -1,3 +1,4 @@
+// Verifies array type const function call is accepted.
 fn add1(x i32) i32 {
 	return x + 1
 }

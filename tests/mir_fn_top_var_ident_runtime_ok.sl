@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for function top-level variable identifier.
 var BASE i32 = 40
 
 fn run() i32 {

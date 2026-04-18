@@ -1,3 +1,4 @@
+// Verifies the AST for compound literal.
 struct Point {
 	x i32
 	y i32

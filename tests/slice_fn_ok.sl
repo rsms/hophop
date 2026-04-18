@@ -1,3 +1,4 @@
+// Verifies slice function is accepted.
 fn sum(xs &[i32]) i32 {
 	var n uint = len(xs)
 	return xs[0] + n as i32

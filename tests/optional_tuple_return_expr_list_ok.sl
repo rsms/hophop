@@ -1,3 +1,4 @@
+// Verifies optional tuple return expression list is accepted.
 fn pair_or_none(flag bool) ?(i32, i32) {
 	if !flag {
 		return null

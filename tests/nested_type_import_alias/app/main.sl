@@ -1,3 +1,4 @@
+// Supports nested type import alias by providing the app entrypoint.
 import "lib/coll" as coll
 
 fn is_one(t coll.Collection.Tag) bool {

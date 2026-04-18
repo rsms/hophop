@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for for in.
 fn main() {
 	var a [i32 4]
 	a[0] = 1

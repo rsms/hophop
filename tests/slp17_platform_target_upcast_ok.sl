@@ -1,3 +1,4 @@
+// Verifies SLP 17 platform target upcast is accepted.
 import "platform"
 
 fn takes_base() context Context {}

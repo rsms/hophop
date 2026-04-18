@@ -1,3 +1,4 @@
+// Verifies unused function template root warning is accepted.
 fn helper_used() {}
 
 fn helper_unused() {}

@@ -1,3 +1,4 @@
+// Verifies switch bad default dup.
 fn f(x i32) i32 {
     switch x {
     default {

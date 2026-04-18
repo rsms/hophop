@@ -2,39 +2,39 @@ mir
   dynamic_resolution=no
   insts=13 consts=3 sources=2 funcs=2 locals=2 fields=0 types=2 hosts=0 symbols=2
 sources
-  #0 len=65
-  #1 len=74
+  #0 len=141
+  #1 len=144
 types
   #0 astNode=8 source=#0 flags=1
   #1 astNode=7 source=#0 flags=1
 hosts
 symbols
-  #0 IDENT target=4 name="math" [40,44]
-  #1 CALL target=6 name="Double" [45,51] flags=1
+  #0 IDENT target=4 name="math" [110,114]
+  #1 CALL target=6 name="Double" [115,121] flags=1
 fields
 consts
   #0 INT value=2
   #1 INT value=21
   #2 INT value=42
 functions
-  #0 name="Double" [29,35] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
+  #0 name="Double" [105,111] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
     locals
-      #0 name="x" [36,37] type=#1 flags=3
+      #0 name="x" [112,113] type=#1 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "x" [36,37] span=[57,58]
-      1: PUSH_CONST const=#0 span=[61,62]
-      2: BINARY op=MUL span=[57,62]
-      3: RETURN span=[50,62]
-      4: RETURN_VOID span=[47,64]
-  #1 name="main" [22,26] source=#1 type=#4294967295 params=0 temps=0 locals=#1+1 insts=#5+8
+      0: LOCAL_LOAD local=#0 "x" [112,113] span=[133,134]
+      1: PUSH_CONST const=#0 span=[137,138]
+      2: BINARY op=MUL span=[133,138]
+      3: RETURN span=[126,138]
+      4: RETURN_VOID span=[123,140]
+  #1 name="main" [92,96] source=#1 type=#4294967295 params=0 temps=0 locals=#1+1 insts=#5+8
     locals
-      #0 name="x" [36,37] type=#0 flags=2
+      #0 name="x" [106,107] type=#0 flags=2
     insts
-      0: PUSH_CONST const=#1 span=[52,54]
-      1: CALL_FN fn=#0 argc=1 span=[45,51]
-      2: LOCAL_STORE local=#0 "x" [36,37] span=[32,55]
-      3: LOCAL_LOAD local=#0 "x" [36,37] span=[64,65]
-      4: PUSH_CONST const=#2 span=[69,71]
-      5: BINARY op=EQ span=[64,71]
-      6: ASSERT span=[57,71]
-      7: RETURN_VOID span=[29,73]
+      0: PUSH_CONST const=#1 span=[122,124]
+      1: CALL_FN fn=#0 argc=1 span=[115,121]
+      2: LOCAL_STORE local=#0 "x" [106,107] span=[102,125]
+      3: LOCAL_LOAD local=#0 "x" [106,107] span=[134,135]
+      4: PUSH_CONST const=#2 span=[139,141]
+      5: BINARY op=EQ span=[134,141]
+      6: ASSERT span=[127,141]
+      7: RETURN_VOID span=[99,143]

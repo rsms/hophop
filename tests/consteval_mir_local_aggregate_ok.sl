@@ -1,3 +1,4 @@
+// Verifies const-eval MIR local aggregate is accepted.
 struct Pair {
 	left  int
 	right int

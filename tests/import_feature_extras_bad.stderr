@@ -1,1 +1,1 @@
-tests/import_feature_extras_bad.sl:1:1: SL2025: feature imports must be path-only (no alias or symbol list)
+tests/import_feature_extras_bad.sl:2:1: SL2025: feature imports must be path-only (no alias or symbol list)

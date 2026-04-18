@@ -1,3 +1,4 @@
+// Supports const block MIR package call by providing the app entrypoint.
 import "lib/math"
 
 fn answer() int {

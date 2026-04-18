@@ -1,3 +1,4 @@
+// Verifies new nonvss implicit initialization defaults is accepted.
 struct S {
 	a i32 = 7
 	b i32 = a + 2

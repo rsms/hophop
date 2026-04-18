@@ -1,3 +1,4 @@
+// Verifies const block MIR break continue is accepted.
 fn main() {
 	const {
 		var i   int = 0

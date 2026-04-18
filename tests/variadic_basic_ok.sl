@@ -1,3 +1,4 @@
+// Verifies variadic basic is accepted.
 fn sum(nums ...i32) i32 {
 	var total i32  = 0
 	var i     uint = 0

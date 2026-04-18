@@ -1,3 +1,4 @@
+// Verifies context missing field is rejected.
 struct Allocator {
 	impl fn(*Allocator, uint, uint, uint, *uint, u32) uint
 }

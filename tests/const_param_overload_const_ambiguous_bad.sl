@@ -1,3 +1,4 @@
+// Verifies const parameter overload const ambiguous is rejected.
 fn pick(const x i32) i32 {
 	return 1
 }

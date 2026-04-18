@@ -1,1 +1,1 @@
-tests/import_invalid_path_char.sl:1:1: SL2020: invalid import path (invalid character)
+tests/import_invalid_path_char.sl:2:1: SL2020: invalid import path (invalid character)

@@ -1,3 +1,4 @@
+// Verifies compound literal zero fill is accepted.
 struct Config {
 	retries    i32
 	timeout_ms i32

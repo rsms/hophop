@@ -1,3 +1,4 @@
+// Supports variable inference package type by providing the b package fixture.
 pub struct X {
 	value int
 }

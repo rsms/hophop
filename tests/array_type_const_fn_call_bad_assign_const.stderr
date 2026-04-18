@@ -1,1 +1,1 @@
-tests/array_type_const_fn_call_bad_assign_const.sl:3:2: SL2004: type mismatch: assignment target is const
+tests/array_type_const_fn_call_bad_assign_const.sl:4:2: SL2004: type mismatch: assignment target is const

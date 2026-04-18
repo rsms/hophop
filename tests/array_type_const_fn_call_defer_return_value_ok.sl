@@ -1,3 +1,4 @@
+// Verifies array type const function call defer return value is accepted.
 fn next(x i32) i32 {
 	var y i32 = x
 	defer y += 3

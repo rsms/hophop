@@ -1,3 +1,4 @@
+// Supports import symbols and alias by providing the app entrypoint.
 import "lib/math" as m { Double }
 
 fn main() i32 {

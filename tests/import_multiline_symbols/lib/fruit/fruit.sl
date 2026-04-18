@@ -1,3 +1,4 @@
+// Supports import multiline symbols by providing the fruit library package.
 pub fn apple() i32
 
 pub fn banana() i32

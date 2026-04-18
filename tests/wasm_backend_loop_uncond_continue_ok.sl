@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts loop uncond continue.
 fn main() i32 {
 	var i i32 = 0
 	for {

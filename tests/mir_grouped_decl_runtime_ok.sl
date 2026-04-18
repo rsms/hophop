@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for grouped decl.
 import "platform"
 
 fn main() {

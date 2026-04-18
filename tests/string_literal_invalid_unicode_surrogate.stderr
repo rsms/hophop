@@ -1,1 +1,1 @@
-tests/string_literal_invalid_unicode_surrogate.sl:1:12: SL1010: invalid Unicode code point in string literal
+tests/string_literal_invalid_unicode_surrogate.sl:2:12: SL1010: invalid Unicode code point in string literal

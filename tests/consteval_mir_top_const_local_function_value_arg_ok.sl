@@ -1,3 +1,4 @@
+// Verifies const-eval MIR top-level const local function value argument is accepted.
 fn add1(x int) int {
 	return x + 1
 }

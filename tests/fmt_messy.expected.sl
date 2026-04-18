@@ -1,3 +1,4 @@
+// Verifies formatter output for messy input.
 import "feature/optional"
 import "math/basic" as math { Add as Sum, Sub }
 

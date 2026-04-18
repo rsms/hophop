@@ -1,3 +1,4 @@
+// Verifies compound literal ambiguous is rejected.
 struct Vec2 {
 	x i32
 	y i32

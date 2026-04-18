@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for top-level initialization function identifier.
 fn twice(x i32) i32 {
 	return x * 2
 }

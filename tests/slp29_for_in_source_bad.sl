@@ -1,3 +1,4 @@
+// Verifies SLP 29 for in source is rejected.
 fn main() {
 	var x i32 = 1
 	for v in x {

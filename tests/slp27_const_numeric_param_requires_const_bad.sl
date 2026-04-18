@@ -1,3 +1,4 @@
+// Verifies SLP 27 const numeric parameter requires const is rejected.
 fn bad(x const_float) {
 	_ = x
 }

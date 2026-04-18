@@ -1,3 +1,4 @@
+// Verifies compound literal combined is accepted.
 struct Vec2 {
 	x i32
 	y i32

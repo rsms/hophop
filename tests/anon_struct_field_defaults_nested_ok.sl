@@ -1,3 +1,4 @@
+// Verifies anonymous struct field defaults nested is accepted.
 struct A {
 	x int = 1
 }

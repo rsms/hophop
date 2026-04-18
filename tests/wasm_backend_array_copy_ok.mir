@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=22 consts=5 sources=1 funcs=1 locals=2 fields=0 types=2 hosts=0 symbols=0
 sources
-  #0 len=102
+  #0 len=151
 types
   #0 astNode=5 source=#0 flags=65536 aux=775
   #1 astNode=9 source=#0 flags=65536 aux=775
@@ -16,30 +16,30 @@ consts
   #3 INT value=7
   #4 INT value=3
 functions
-  #0 name="main" [3,7] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+22
+  #0 name="main" [52,56] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+22
     locals
-      #0 name="a" [17,18] type=#0 flags=6
-      #1 name="b" [32,33] type=#1 flags=6
+      #0 name="a" [66,67] type=#0 flags=6
+      #1 name="b" [81,82] type=#1 flags=6
     insts
-      0: LOCAL_ZERO local=#0 "a" [17,18] span=[13,26]
-      1: LOCAL_ZERO local=#1 "b" [32,33] span=[28,41]
-      2: PUSH_CONST const=#0 span=[50,51]
-      3: LOCAL_LOAD local=#0 "a" [17,18] span=[43,44]
-      4: PUSH_CONST const=#1 span=[45,46]
-      5: ARRAY_ADDR span=[43,47]
-      6: DEREF_STORE span=[43,51]
-      7: LOCAL_LOAD local=#0 "a" [17,18] span=[57,58]
-      8: LOCAL_STORE local=#1 "b" [32,33] span=[53,58]
-      9: LOCAL_LOAD local=#1 "b" [32,33] span=[67,68]
-      10: PUSH_CONST const=#2 span=[69,70]
-      11: INDEX span=[67,71]
-      12: PUSH_CONST const=#3 span=[75,76]
-      13: BINARY op=EQ span=[67,76]
-      14: ASSERT span=[60,76]
-      15: LOCAL_LOAD local=#1 "b" [32,33] span=[89,90]
-      16: SLICE_MAKE span=[89,93]
-      17: SEQ_LEN span=[85,88]
-      18: PUSH_CONST const=#4 span=[98,99]
-      19: BINARY op=EQ span=[85,99]
-      20: ASSERT span=[78,99]
-      21: RETURN_VOID span=[10,101]
+      0: LOCAL_ZERO local=#0 "a" [66,67] span=[62,75]
+      1: LOCAL_ZERO local=#1 "b" [81,82] span=[77,90]
+      2: PUSH_CONST const=#0 span=[99,100]
+      3: LOCAL_LOAD local=#0 "a" [66,67] span=[92,93]
+      4: PUSH_CONST const=#1 span=[94,95]
+      5: ARRAY_ADDR span=[92,96]
+      6: DEREF_STORE span=[92,100]
+      7: LOCAL_LOAD local=#0 "a" [66,67] span=[106,107]
+      8: LOCAL_STORE local=#1 "b" [81,82] span=[102,107]
+      9: LOCAL_LOAD local=#1 "b" [81,82] span=[116,117]
+      10: PUSH_CONST const=#2 span=[118,119]
+      11: INDEX span=[116,120]
+      12: PUSH_CONST const=#3 span=[124,125]
+      13: BINARY op=EQ span=[116,125]
+      14: ASSERT span=[109,125]
+      15: LOCAL_LOAD local=#1 "b" [81,82] span=[138,139]
+      16: SLICE_MAKE span=[138,142]
+      17: SEQ_LEN span=[134,137]
+      18: PUSH_CONST const=#4 span=[147,148]
+      19: BINARY op=EQ span=[134,148]
+      20: ASSERT span=[127,148]
+      21: RETURN_VOID span=[59,150]

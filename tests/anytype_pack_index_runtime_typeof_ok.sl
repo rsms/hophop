@@ -1,3 +1,4 @@
+// Verifies runtime behavior for anytype pack index typeof.
 fn type_is_i64(j uint, args ...anytype) bool {
 	return typeof(args[j]) == typeof(0 as i64)
 }

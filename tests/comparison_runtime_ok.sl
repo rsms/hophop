@@ -1,3 +1,4 @@
+// Verifies runtime behavior for comparison.
 struct Vec3 {
 	x f32
 	y f32

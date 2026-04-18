@@ -1,1 +1,1 @@
-tests/multi_return_return_arity_bad.sl:2:9: SL2004: type mismatch
+tests/multi_return_return_arity_bad.sl:3:9: SL2004: type mismatch

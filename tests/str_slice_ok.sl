@@ -1,3 +1,4 @@
+// Verifies string slice is accepted.
 fn main() {
 	var s *str = concat("ab", "cde")
 	var t *str = s[2:]

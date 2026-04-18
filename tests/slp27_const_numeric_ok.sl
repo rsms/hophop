@@ -1,3 +1,4 @@
+// Verifies SLP 27 const numeric is accepted.
 fn add1(const x const_int) const_int {
 	return x + 1
 }

@@ -1,3 +1,4 @@
+// Verifies switch is accepted.
 fn f(x i32) i32 {
 	switch x {
 		case 0    { break }

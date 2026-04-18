@@ -1,3 +1,4 @@
+// Verifies anonymous aggregate field sep semicolon is accepted.
 fn main() {
 	var x struct { a int; b bool }     = { a: 123, b: true }
 	var y union { i int; f f64 }       = { i: x.a }

@@ -1,3 +1,4 @@
+// Verifies const block MIR local aggregate is accepted.
 struct Pair {
 	left  int
 	right int

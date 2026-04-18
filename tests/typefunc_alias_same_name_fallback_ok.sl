@@ -1,3 +1,4 @@
+// Verifies type function alias same name fallback is accepted.
 type MyInt int
 
 fn a(x int) int {

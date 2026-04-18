@@ -1,3 +1,4 @@
+// Verifies concatenation anonymous context collision is accepted.
 fn choose(v ?i32) i32 {
 	if v {
 		return v

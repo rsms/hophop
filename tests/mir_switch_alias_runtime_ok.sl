@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for switch alias.
 import "platform"
 
 enum Token u8 {

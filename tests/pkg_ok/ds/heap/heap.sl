@@ -1,3 +1,4 @@
+// Supports package by providing the heap package fixture.
 pub struct Box {
 	v i32
 }

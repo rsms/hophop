@@ -1,3 +1,4 @@
+// Verifies const parameter variadic nonconst is rejected.
 fn sum(const xs ...i32) i32 {
 	return 0
 }

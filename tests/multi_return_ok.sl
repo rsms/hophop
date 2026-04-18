@@ -1,3 +1,4 @@
+// Verifies multi return is accepted.
 fn time_of_day() (uint, uint, uint) {
 	return 14, 25, 30
 }

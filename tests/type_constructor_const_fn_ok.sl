@@ -1,3 +1,4 @@
+// Verifies type constructor const function is accepted.
 fn make_ptr(T type) type {
 	return ptr(T)
 }

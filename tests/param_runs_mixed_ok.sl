@@ -1,3 +1,4 @@
+// Verifies parameter runs mixed is accepted.
 fn example3(a, b int, c uint) int {
 	return a + b + c as int
 }

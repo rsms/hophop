@@ -1,3 +1,4 @@
+// Supports type function import named overload cross package by providing the a package fixture.
 pub fn foo(x int) int {
 	return x + 1
 }

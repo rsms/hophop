@@ -1,3 +1,4 @@
+// Verifies the AST for basic.
 import "ds/heap" as h
 
 fn main() i32 {

@@ -1,3 +1,4 @@
+// Verifies enum member unqualified is rejected.
 enum Mode i32 {
 	A = 0
 	B = 1

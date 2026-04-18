@@ -1,3 +1,4 @@
+// Verifies MIR lowering for runtime zero argument top-level function call.
 fn forty_two() i32 {
 	return 42
 }

@@ -1,3 +1,4 @@
+// Verifies array type const function call assert is rejected.
 fn count(n i32) i32 {
 	assert n > 10, "n too small"
 	return n + 1

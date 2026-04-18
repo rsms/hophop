@@ -1,3 +1,4 @@
+// Verifies compound literal field shorthand is accepted.
 struct Pair {
 	x i32
 	y i32

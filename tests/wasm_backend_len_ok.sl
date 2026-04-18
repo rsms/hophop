@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts len.
 fn main() i32 {
 	var a &str = "abc"
 	var s *str = "de"

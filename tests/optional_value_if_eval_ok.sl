@@ -1,3 +1,4 @@
+// Verifies optional value if evaluator is accepted.
 fn choose(v ?i32) i32 {
 	if v {
 		return v

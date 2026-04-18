@@ -1,3 +1,4 @@
+// Verifies string index inference u8 is accepted.
 fn first_ro(text &str) u8 {
 	var b = text
 	return b[0]

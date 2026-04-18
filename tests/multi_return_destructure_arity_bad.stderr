@@ -1,1 +1,1 @@
-tests/multi_return_destructure_arity_bad.sl:6:2: SL2005: call arity mismatch
+tests/multi_return_destructure_arity_bad.sl:7:2: SL2005: call arity mismatch

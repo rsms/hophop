@@ -1,3 +1,4 @@
+// Verifies nested type unknown member is rejected.
 struct Thing {
 	struct Item {
 		x i64

@@ -1,3 +1,4 @@
+// Verifies const-eval string index loop nested is accepted.
 fn validate_scan(const s &str) {
 	const {
 		var i uint = 0

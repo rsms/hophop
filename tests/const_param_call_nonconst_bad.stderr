@@ -1,1 +1,1 @@
-tests/const_param_call_nonconst_bad.sl:7:17: SL2077: const parameter 'base' requires a const-evaluable argument
+tests/const_param_call_nonconst_bad.sl:8:17: SL2077: const parameter 'base' requires a const-evaluable argument

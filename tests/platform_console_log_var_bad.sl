@@ -1,3 +1,4 @@
+// Verifies platform console log variable is rejected.
 import "platform"
 
 fn main() {

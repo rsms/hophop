@@ -1,3 +1,4 @@
+// Verifies void identifier is accepted.
 struct void {
 	x i32
 }

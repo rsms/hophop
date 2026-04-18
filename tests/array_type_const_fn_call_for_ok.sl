@@ -1,3 +1,4 @@
+// Verifies array type const function call for is accepted.
 fn sum_to(n i32) i32 {
 	var i   i32 = 0
 	var sum i32 = 0

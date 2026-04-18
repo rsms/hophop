@@ -1,3 +1,4 @@
+// Verifies SLP 30 for in protocol is accepted.
 struct List {
 	head ?*ListEntry
 }

@@ -1,3 +1,4 @@
+// Verifies topconst const cast null numeric is accepted.
 const I int = null as int
 
 const F f64 = null as f64

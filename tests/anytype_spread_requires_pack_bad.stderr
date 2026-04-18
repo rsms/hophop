@@ -1,1 +1,1 @@
-tests/anytype_spread_requires_pack_bad.sl:6:7: SL2082: spread into ...anytype requires an anytype pack value
+tests/anytype_spread_requires_pack_bad.sl:7:7: SL2082: spread into ...anytype requires an anytype pack value

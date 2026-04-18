@@ -1,3 +1,4 @@
+// Supports type function import overload by providing the app entrypoint.
 import "foo"
 
 struct A {

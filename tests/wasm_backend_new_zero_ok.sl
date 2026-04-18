@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts new zero.
 struct S {
 	x int
 	y [i32 2]

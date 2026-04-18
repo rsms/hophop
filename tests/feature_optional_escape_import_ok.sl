@@ -1,3 +1,4 @@
+// Verifies feature optional escape import is accepted.
 import "feature/\x6fptional"
 
 fn main() {

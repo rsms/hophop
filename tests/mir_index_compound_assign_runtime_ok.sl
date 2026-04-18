@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for index compound assign.
 fn bump_second(v *[i32]) {
 	v[1] += 5
 }

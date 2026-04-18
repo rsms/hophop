@@ -1,3 +1,4 @@
+// Verifies new selector non-optional panics.
 import "std/testing"
 
 fn main() {

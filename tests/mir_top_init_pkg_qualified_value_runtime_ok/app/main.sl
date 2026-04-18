@@ -1,3 +1,4 @@
+// Supports MIR top-level initialization package qualified value runtime by providing the app entrypoint.
 import "lib/dupe" as dupe
 
 var f = dupe.helper

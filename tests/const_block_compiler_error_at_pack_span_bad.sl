@@ -1,3 +1,4 @@
+// Verifies const block compiler error at pack span is rejected.
 import "compiler"
 import "reflect"
 

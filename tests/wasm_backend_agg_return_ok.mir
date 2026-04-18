@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=16 consts=3 sources=1 funcs=2 locals=1 fields=7 types=4 hosts=0 symbols=1
 sources
-  #0 len=121
+  #0 len=176
 types
   #0 astNode=7 source=#0 flags=524288
   #1 astNode=10 source=#0 flags=524288
@@ -10,40 +10,40 @@ types
   #3 astNode=4 source=#0 flags=1
 hosts
 symbols
-  #0 CALL target=19 name="mk" [97,99]
+  #0 CALL target=19 name="mk" [152,154]
 fields
-  #0 ownerType=#4294967295 type=#4294967295 name="x" [60,61]
-  #1 ownerType=#4294967295 type=#4294967295 name="y" [66,67]
-  #2 ownerType=#4294967295 type=#4294967295 name="x" [112,113]
-  #3 ownerType=#0 type=#2 name="x" [15,16]
-  #4 ownerType=#0 type=#3 name="y" [22,23]
-  #5 ownerType=#1 type=#2 name="x" [15,16]
-  #6 ownerType=#1 type=#3 name="y" [22,23]
+  #0 ownerType=#4294967295 type=#4294967295 name="x" [115,116]
+  #1 ownerType=#4294967295 type=#4294967295 name="y" [121,122]
+  #2 ownerType=#4294967295 type=#4294967295 name="x" [167,168]
+  #3 ownerType=#0 type=#2 name="x" [70,71]
+  #4 ownerType=#0 type=#3 name="y" [77,78]
+  #5 ownerType=#1 type=#2 name="x" [70,71]
+  #6 ownerType=#1 type=#3 name="y" [77,78]
 consts
   #0 INT value=1
   #1 INT value=2
   #2 INT value=1
 functions
-  #0 name="mk" [34,36] source=#0 type=#0 params=0 temps=0 locals=#0+0 insts=#0+8
+  #0 name="mk" [89,91] source=#0 type=#0 params=0 temps=0 locals=#0+0 insts=#0+8
     locals
     insts
-      0: AGG_ZERO aux=1 span=[54,72]
-      1: PUSH_CONST const=#0 span=[63,64]
-      2: AGG_SET span=[60,61]
-      3: PUSH_CONST const=#1 span=[69,70]
-      4: AGG_SET aux=1 span=[66,67]
-      5: COERCE type=#1 span=[54,72]
-      6: RETURN span=[47,72]
-      7: RETURN_VOID span=[44,74]
-  #1 name="main" [79,83] source=#0 type=#4294967295 params=0 temps=0 locals=#0+1 insts=#8+8
+      0: AGG_ZERO aux=1 span=[109,127]
+      1: PUSH_CONST const=#0 span=[118,119]
+      2: AGG_SET span=[115,116]
+      3: PUSH_CONST const=#1 span=[124,125]
+      4: AGG_SET aux=1 span=[121,122]
+      5: COERCE type=#1 span=[109,127]
+      6: RETURN span=[102,127]
+      7: RETURN_VOID span=[99,129]
+  #1 name="main" [134,138] source=#0 type=#4294967295 params=0 temps=0 locals=#0+1 insts=#8+8
     locals
-      #0 name="p" [93,94] type=#0 flags=2
+      #0 name="p" [148,149] type=#0 flags=2
     insts
-      0: CALL_FN fn=#0 argc=0 span=[97,99]
-      1: LOCAL_STORE local=#0 "p" [93,94] span=[89,101]
-      2: LOCAL_LOAD local=#0 "p" [93,94] span=[110,111]
-      3: AGG_GET field=#2 "x" [112,113] span=[112,113]
-      4: PUSH_CONST const=#2 span=[117,118]
-      5: BINARY op=EQ span=[110,118]
-      6: ASSERT span=[103,118]
-      7: RETURN_VOID span=[86,120]
+      0: CALL_FN fn=#0 argc=0 span=[152,154]
+      1: LOCAL_STORE local=#0 "p" [148,149] span=[144,156]
+      2: LOCAL_LOAD local=#0 "p" [148,149] span=[165,166]
+      3: AGG_GET field=#2 "x" [167,168] span=[167,168]
+      4: PUSH_CONST const=#2 span=[172,173]
+      5: BINARY op=EQ span=[165,173]
+      6: ASSERT span=[158,173]
+      7: RETURN_VOID span=[141,175]

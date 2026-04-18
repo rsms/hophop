@@ -1,3 +1,4 @@
+// Verifies const-eval diagnostic error at span of.
 import "compiler"
 import "reflect"
 

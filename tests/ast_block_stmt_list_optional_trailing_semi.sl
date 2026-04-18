@@ -1,3 +1,4 @@
+// Verifies the AST for block stmt list optional trailing semicolon.
 fn parse_block_paths() {
 	{}
 	{}

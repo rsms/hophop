@@ -1,3 +1,4 @@
+// Verifies runtime behavior for compiler diagnostic nonconst if.
 import "compiler"
 
 fn runtime_nonconst_if(flag bool) {

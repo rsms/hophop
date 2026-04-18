@@ -1,3 +1,4 @@
+// Verifies const block MIR switch is accepted.
 fn next() int {
 	const {
 		var y int = 0

@@ -2,23 +2,23 @@ mir
   dynamic_resolution=no
   insts=5 consts=2 sources=1 funcs=1 locals=0 fields=0 types=0 hosts=1 symbols=2
 sources
-  #0 len=88
+  #0 len=134
 types
 hosts
-  #0 GENERIC target=PLATFORM_CONSOLE_LOG name="console_log" [41,52]
+  #0 GENERIC target=PLATFORM_CONSOLE_LOG name="console_log" [87,98]
 symbols
-  #0 IDENT target=4 name="platform" [32,40]
-  #1 CALL target=6 name="console_log" [41,52] flags=1
+  #0 IDENT target=4 name="platform" [78,86]
+  #1 CALL target=6 name="console_log" [87,98] flags=1
 fields
 consts
   #0 STRING bytes="hello from platform"
   #1 INT value=0
 functions
-  #0 name="main" [22,26] source=#0 type=#4294967295 params=0 temps=0 locals=#0+0 insts=#0+5
+  #0 name="main" [68,72] source=#0 type=#4294967295 params=0 temps=0 locals=#0+0 insts=#0+5
     locals
     insts
-      0: PUSH_CONST const=#0 span=[53,74]
-      1: PUSH_CONST const=#1 span=[83,84]
-      2: CALL_HOST host=#0 argc=2 span=[41,52]
-      3: DROP span=[32,85]
-      4: RETURN_VOID span=[29,87]
+      0: PUSH_CONST const=#0 span=[99,120]
+      1: PUSH_CONST const=#1 span=[129,130]
+      2: CALL_HOST host=#0 argc=2 span=[87,98]
+      3: DROP span=[78,131]
+      4: RETURN_VOID span=[75,133]

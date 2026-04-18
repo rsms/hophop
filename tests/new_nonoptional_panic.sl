@@ -1,3 +1,4 @@
+// Verifies new non-optional panics.
 import "std/testing"
 
 fn main() {

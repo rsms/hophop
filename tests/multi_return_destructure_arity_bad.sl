@@ -1,3 +1,4 @@
+// Verifies multi return destructure arity is rejected.
 fn pair() (uint, uint) {
 	return 1, 2
 }

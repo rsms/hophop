@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for multi return.
 fn pair(x, y int) (int, int) {
 	return x + 1, y + 2
 }

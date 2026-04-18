@@ -1,3 +1,4 @@
+// Verifies const block warning at pack span is accepted.
 import "compiler"
 import "reflect"
 

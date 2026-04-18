@@ -1,2 +1,2 @@
-tests/str_var_byvalue_bad.sl:2:14: SL2004: type mismatch: cannot use string constant of type &str as str
+tests/str_var_byvalue_bad.sl:3:14: SL2004: type mismatch: cannot use string constant of type &str as str
   tip: change type to &str or *str

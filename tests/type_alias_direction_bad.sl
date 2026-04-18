@@ -1,3 +1,4 @@
+// Verifies type alias direction is rejected.
 type MyInt int
 
 fn takesAlias(x MyInt) {}

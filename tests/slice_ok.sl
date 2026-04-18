@@ -1,3 +1,4 @@
+// Verifies slice is accepted.
 fn main() {
 	var a [i32 4]
 	var i i32 = 1

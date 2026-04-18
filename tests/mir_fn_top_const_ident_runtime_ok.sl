@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for function top-level const identifier.
 const base = 41
 
 fn helper() i32 {

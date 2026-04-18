@@ -1,3 +1,4 @@
+// Verifies const parameter function type distinct is rejected.
 fn normal(x i32) i32 {
 	return x
 }

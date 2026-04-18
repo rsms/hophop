@@ -1,1 +1,1 @@
-tests/tagged_enum_field_outside_narrow_bad.sl:9:11: SL2002: unknown identifier 'value'
+tests/tagged_enum_field_outside_narrow_bad.sl:10:11: SL2002: unknown identifier 'value'

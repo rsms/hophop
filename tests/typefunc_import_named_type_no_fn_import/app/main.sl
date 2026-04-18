@@ -1,3 +1,4 @@
+// Supports type function import named type no function import by providing the app entrypoint.
 import "lib/mem" { ArenaAllocator, ArenaAllocator as Arena, free_all }
 
 fn main() {

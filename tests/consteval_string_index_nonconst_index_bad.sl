@@ -1,3 +1,4 @@
+// Verifies const-eval string index nonconst index is rejected.
 fn require_char(const s &str, n uint) {
 	const {
 		assert s[n] == 'b'

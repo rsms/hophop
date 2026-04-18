@@ -1,1 +1,1 @@
-tests/struct_field_defaults_embedded_bad.sl:6:2: SL2047: embedded field cannot have default initializer
+tests/struct_field_defaults_embedded_bad.sl:7:2: SL2047: embedded field cannot have default initializer

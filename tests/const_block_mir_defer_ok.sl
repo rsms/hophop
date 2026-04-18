@@ -1,3 +1,4 @@
+// Verifies const block MIR defer is accepted.
 fn next() int {
 	const {
 		var y int = 2

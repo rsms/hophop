@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for index.
 fn first(v &[i32]) i32 {
 	return v[0]
 }

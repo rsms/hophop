@@ -1,3 +1,4 @@
+// Verifies new bad type argument value.
 fn main() i32 {
 	var ma Allocator
 	var t  i32

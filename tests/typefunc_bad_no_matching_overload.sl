@@ -1,3 +1,4 @@
+// Verifies type function bad no matching overload.
 struct A {}
 
 struct B {}

@@ -1,3 +1,4 @@
+// Verifies const block const parameter visible is accepted.
 fn next(const n int) int {
 	const {
 		const m int = n + 1

@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts array copy.
 fn main() {
 	var a [i32 3]
 	var b [i32 3]

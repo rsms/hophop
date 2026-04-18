@@ -1,3 +1,4 @@
+// Supports type function import overload by providing the foo package fixture.
 pub struct B {
 	y int
 }

@@ -1,3 +1,4 @@
+// Verifies array type const function call bad stmt.
 fn next(x i32) i32 {
 	defer return x
 	return x

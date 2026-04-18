@@ -1,1 +1,1 @@
-tests/hole_top_level_const_bad.sl:1:7: SL2007: identifier '_' is reserved
+tests/hole_top_level_const_bad.sl:2:7: SL2007: identifier '_' is reserved

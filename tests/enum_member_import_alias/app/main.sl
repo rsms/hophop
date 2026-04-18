@@ -1,3 +1,4 @@
+// Supports enum member import alias by providing the app entrypoint.
 import "lib/mode" as mode
 
 fn main() {

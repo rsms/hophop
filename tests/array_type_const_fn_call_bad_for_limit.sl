@@ -1,3 +1,4 @@
+// Verifies array type const function call bad for limit.
 fn spins(n i32) i32 {
 	var i i32 = 0
 	for i = 0; i < n; i += 0 {}

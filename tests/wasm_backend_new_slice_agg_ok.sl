@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts new slice aggregate.
 struct Pair {
 	a i32
 }

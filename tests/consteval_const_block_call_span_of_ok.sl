@@ -1,3 +1,4 @@
+// Verifies const-eval const block call span of is accepted.
 import "compiler"
 import "reflect"
 

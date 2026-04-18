@@ -1,3 +1,4 @@
+// Verifies array type const function call bad recursion.
 fn rec(x i32) i32 {
 	return rec(x)
 }

@@ -1,1 +1,1 @@
-tests/import_invalid_alias/app/main.sl:1:1: SL2021: cannot infer package identifier; use 'import "lib/math-v2" as <name>'
+tests/import_invalid_alias/app/main.sl:2:1: SL2021: cannot infer package identifier; use 'import "lib/math-v2" as <name>'

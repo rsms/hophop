@@ -1,1 +1,1 @@
-tests/assert_bad_condition.sl:2:9: SL2009: expected bool expression
+tests/assert_bad_condition.sl:3:9: SL2009: expected bool expression

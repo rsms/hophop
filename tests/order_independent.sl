@@ -1,3 +1,4 @@
+// Verifies order independent.
 struct Foo {
 	parent *Bar
 }

@@ -1,3 +1,4 @@
+// Verifies multi assign evaluator order is accepted.
 import "platform"
 
 fn main() {

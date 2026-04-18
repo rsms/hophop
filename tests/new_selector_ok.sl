@@ -1,3 +1,4 @@
+// Verifies new selector is accepted.
 fn main() {
 	var ma         = context.mem
 	var p *i32     = new i32 with ma

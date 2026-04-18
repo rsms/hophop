@@ -1,3 +1,4 @@
+// Verifies array type const function call if is accepted.
 fn choose(flag bool, a, b i32) i32 {
 	if flag {
 		var v = a + 1

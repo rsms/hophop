@@ -1,3 +1,4 @@
+// Verifies const block MIR tuple is accepted.
 fn pair(x, y int) (int, int) {
 	return x + 1, y + 2
 }

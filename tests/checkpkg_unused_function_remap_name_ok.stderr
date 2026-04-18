@@ -1,1 +1,1 @@
-tests/checkpkg_unused_function_remap_name_ok.sl:5:3: SL2092: function 'f' is unused
+tests/checkpkg_unused_function_remap_name_ok.sl:6:3: SL2092: function 'f' is unused

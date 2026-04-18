@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for top-level initialization call chain.
 fn add1(x int) int {
 	return x + 1
 }

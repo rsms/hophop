@@ -1,3 +1,4 @@
+// Verifies reflection kind base is accepted.
 type MyInt i32
 
 struct Pair {

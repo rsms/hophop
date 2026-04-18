@@ -1,3 +1,4 @@
+// Verifies new VSS missing initialization is rejected.
 struct Packet {
 	payloadLen u32
 	sampleLen  u32

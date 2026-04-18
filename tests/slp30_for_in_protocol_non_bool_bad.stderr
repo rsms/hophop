@@ -1,1 +1,1 @@
-tests/slp30_for_in_protocol_non_bool_bad.sl:26:15: SL2091: for-in next_value overload must return ?T
+tests/slp30_for_in_protocol_non_bool_bad.sl:27:15: SL2091: for-in next_value overload must return ?T

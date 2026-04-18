@@ -1,3 +1,4 @@
+// Verifies len pointer reference is accepted.
 fn main() {
 	var ma         = context.mem
 	var a [i32 4]

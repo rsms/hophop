@@ -1,3 +1,4 @@
+// Verifies struct composition is accepted.
 struct A {
 	x int
 }

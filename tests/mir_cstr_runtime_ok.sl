@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for C string.
 fn main() {
 	var a &str = "ab"
 	var b      = cstr(a)

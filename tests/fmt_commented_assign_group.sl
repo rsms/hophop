@@ -1,3 +1,4 @@
+// Verifies formatter output for commented assign group.
 fn main(){
  // first
 a = b + c

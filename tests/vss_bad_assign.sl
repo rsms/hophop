@@ -1,3 +1,4 @@
+// Verifies VSS bad assign.
 struct Packet {
 	payloadLen u32
 	sampleLen  u32

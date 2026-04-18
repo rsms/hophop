@@ -1,3 +1,4 @@
+// Verifies string for in u8 is accepted.
 fn main() {
 	var text &str = "xyz"
 

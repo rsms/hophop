@@ -1,3 +1,4 @@
+// Verifies the AST for operator precedence.
 fn main() {
 	// Exhaustive binary ordered-pair matrix over all parser binary operators.
 	// bin-pair 0: = then =

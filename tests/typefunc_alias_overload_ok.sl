@@ -1,3 +1,4 @@
+// Verifies type function alias overload is accepted.
 type MyInt int
 
 fn a(x MyInt) int {

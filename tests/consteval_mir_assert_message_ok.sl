@@ -1,3 +1,4 @@
+// Verifies const-eval MIR assert message is accepted.
 fn run() int {
 	assert 1 == 1, "ok %d", 1
 	return 7

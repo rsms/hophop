@@ -1,3 +1,4 @@
+// Verifies formatter output for for in messy input.
 fn main() {
 	var a [i32 2]
 	a[0] = 1

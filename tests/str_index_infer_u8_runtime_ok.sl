@@ -1,3 +1,4 @@
+// Verifies runtime behavior for string index inference u8.
 fn first_ro(text &str) u8 {
 	var b = text
 	return b[0]

@@ -1,3 +1,4 @@
+// Supports codegen strings assert by providing the pkg fixture source.
 pub fn Main(x i32) i32
 
 fn Main(x i32) i32 {

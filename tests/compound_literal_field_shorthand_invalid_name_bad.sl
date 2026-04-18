@@ -1,3 +1,4 @@
+// Verifies compound literal field shorthand invalid name is rejected.
 struct Pair {
 	x i32
 	y i32

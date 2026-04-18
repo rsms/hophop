@@ -1,3 +1,4 @@
+// Verifies the Wasm backend accepts main return aggregate.
 struct Pair {
 	x i32
 	y i32

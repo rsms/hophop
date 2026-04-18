@@ -1,3 +1,4 @@
+// Verifies MIR runtime behavior for index assign.
 fn set_second(v *[i32]) {
 	v[1] = 42
 }

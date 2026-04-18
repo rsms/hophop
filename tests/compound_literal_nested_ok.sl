@@ -1,3 +1,4 @@
+// Verifies compound literal nested is accepted.
 struct Size {
 	w i32
 	h i32

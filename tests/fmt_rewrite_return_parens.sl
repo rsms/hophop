@@ -1,3 +1,4 @@
+// Verifies formatter output for rewrite return parens.
 fn ret_scalar(x int) int {
 return (x)
 }

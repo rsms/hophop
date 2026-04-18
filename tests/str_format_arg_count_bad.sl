@@ -1,3 +1,4 @@
+// Verifies string format argument count is rejected.
 import "str" { format }
 
 fn main() {

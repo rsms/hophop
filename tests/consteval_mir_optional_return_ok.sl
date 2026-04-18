@@ -1,3 +1,4 @@
+// Verifies const-eval MIR optional return is accepted.
 fn maybe_one(flag bool) ?int {
 	if flag {
 		return 1

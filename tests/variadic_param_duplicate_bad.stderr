@@ -1,1 +1,1 @@
-tests/variadic_param_duplicate_bad.sl:1:23: SL2067: only one variadic parameter is allowed
+tests/variadic_param_duplicate_bad.sl:2:23: SL2067: only one variadic parameter is allowed

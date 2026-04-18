@@ -1,3 +1,4 @@
+// Supports MIR package identifier runtime by providing the app entrypoint.
 import "lib/dupe" as dupe
 
 const Answer = 11

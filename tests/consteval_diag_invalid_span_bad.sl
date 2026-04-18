@@ -1,3 +1,4 @@
+// Verifies const-eval diagnostic invalid span is rejected.
 import "compiler"
 import "reflect"
 

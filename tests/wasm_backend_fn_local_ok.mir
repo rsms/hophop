@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=19 consts=5 sources=1 funcs=3 locals=3 fields=0 types=7 hosts=0 symbols=2
 sources
-  #0 len=132
+  #0 len=185
 types
   #0 astNode=4 source=#0 flags=1
   #1 astNode=3 source=#0 flags=1
@@ -13,8 +13,8 @@ types
   #6 astNode=4294967295 source=#0 flags=4194304
 hosts
 symbols
-  #0 IDENT target=22 name="add1" [101,105]
-  #1 IDENT target=25 name="add2" [111,115]
+  #0 IDENT target=22 name="add1" [154,158]
+  #1 IDENT target=25 name="add2" [164,168]
 fields
 consts
   #0 INT value=1
@@ -23,34 +23,34 @@ consts
   #3 FUNCTION aux=0
   #4 FUNCTION aux=1
 functions
-  #0 name="add1" [3,7] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
+  #0 name="add1" [56,60] source=#0 type=#0 params=1 temps=0 locals=#0+1 insts=#0+5
     locals
-      #0 name="x" [8,9] type=#1 flags=3
+      #0 name="x" [61,62] type=#1 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "x" [8,9] span=[29,30]
-      1: PUSH_CONST const=#0 span=[33,34]
-      2: BINARY op=ADD span=[29,34]
-      3: RETURN span=[22,34]
-      4: RETURN_VOID span=[19,36]
-  #1 name="add2" [41,45] source=#0 type=#2 params=1 temps=0 locals=#1+1 insts=#5+5
+      0: LOCAL_LOAD local=#0 "x" [61,62] span=[82,83]
+      1: PUSH_CONST const=#0 span=[86,87]
+      2: BINARY op=ADD span=[82,87]
+      3: RETURN span=[75,87]
+      4: RETURN_VOID span=[72,89]
+  #1 name="add2" [94,98] source=#0 type=#2 params=1 temps=0 locals=#1+1 insts=#5+5
     locals
-      #0 name="x" [46,47] type=#3 flags=3
+      #0 name="x" [99,100] type=#3 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "x" [46,47] span=[67,68]
-      1: PUSH_CONST const=#1 span=[71,72]
-      2: BINARY op=ADD span=[67,72]
-      3: RETURN span=[60,72]
-      4: RETURN_VOID span=[57,74]
-  #2 name="main" [79,83] source=#0 type=#4 params=0 temps=0 locals=#2+1 insts=#10+9
+      0: LOCAL_LOAD local=#0 "x" [99,100] span=[120,121]
+      1: PUSH_CONST const=#1 span=[124,125]
+      2: BINARY op=ADD span=[120,125]
+      3: RETURN span=[113,125]
+      4: RETURN_VOID span=[110,127]
+  #2 name="main" [132,136] source=#0 type=#4 params=0 temps=0 locals=#2+1 insts=#10+9
     locals
-      #0 name="f" [97,98] type=#5 flags=2
+      #0 name="f" [150,151] type=#5 flags=2
     insts
-      0: PUSH_CONST const=#3 span=[101,105]
-      1: LOCAL_STORE local=#0 "f" [97,98] span=[93,105]
-      2: PUSH_CONST const=#4 span=[111,115]
-      3: LOCAL_STORE local=#0 "f" [97,98] span=[107,115]
-      4: LOCAL_LOAD local=#0 "f" [97,98] span=[124,125]
-      5: PUSH_CONST const=#2 span=[126,128]
-      6: CALL_INDIRECT argc=1 span=[124,125]
-      7: RETURN span=[117,129]
-      8: RETURN_VOID span=[90,131]
+      0: PUSH_CONST const=#3 span=[154,158]
+      1: LOCAL_STORE local=#0 "f" [150,151] span=[146,158]
+      2: PUSH_CONST const=#4 span=[164,168]
+      3: LOCAL_STORE local=#0 "f" [150,151] span=[160,168]
+      4: LOCAL_LOAD local=#0 "f" [150,151] span=[177,178]
+      5: PUSH_CONST const=#2 span=[179,181]
+      6: CALL_INDIRECT argc=1 span=[177,178]
+      7: RETURN span=[170,182]
+      8: RETURN_VOID span=[143,184]

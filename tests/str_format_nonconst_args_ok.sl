@@ -1,3 +1,4 @@
+// Verifies string format nonconst arguments is accepted.
 import "str" { format }
 
 fn out_eq(out *[u8], n uint, want &str) bool {
