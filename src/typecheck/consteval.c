@@ -986,19 +986,20 @@ int SLTCConstBuiltinSizeBytes(SLBuiltinKind b, uint64_t* outBytes) {
     switch (b) {
         case SLBuiltin_BOOL:
         case SLBuiltin_U8:
-        case SLBuiltin_I8:    *outBytes = 1u; return 1;
-        case SLBuiltin_TYPE:  *outBytes = 8u; return 1;
+        case SLBuiltin_I8:     *outBytes = 1u; return 1;
+        case SLBuiltin_TYPE:   *outBytes = 8u; return 1;
         case SLBuiltin_U16:
-        case SLBuiltin_I16:   *outBytes = 2u; return 1;
+        case SLBuiltin_I16:    *outBytes = 2u; return 1;
         case SLBuiltin_U32:
         case SLBuiltin_I32:
-        case SLBuiltin_F32:   *outBytes = 4u; return 1;
+        case SLBuiltin_F32:    *outBytes = 4u; return 1;
         case SLBuiltin_U64:
         case SLBuiltin_I64:
-        case SLBuiltin_F64:   *outBytes = 8u; return 1;
+        case SLBuiltin_F64:    *outBytes = 8u; return 1;
         case SLBuiltin_USIZE:
-        case SLBuiltin_ISIZE: *outBytes = (uint64_t)sizeof(void*); return 1;
-        default:              return 0;
+        case SLBuiltin_ISIZE:
+        case SLBuiltin_RAWPTR: *outBytes = (uint64_t)sizeof(void*); return 1;
+        default:               return 0;
     }
 }
 
@@ -1389,6 +1390,19 @@ int SLTCConstEvalCast(
         outValue->span.endLine = 0;
         outValue->span.endColumn = 0;
         *outIsConst = 1;
+        return 0;
+    }
+
+    if (SLTCIsRawptrType(c, baseTarget)) {
+        if (inValue.kind == SLCTFEValue_NULL || inValue.kind == SLCTFEValue_REFERENCE
+            || inValue.kind == SLCTFEValue_STRING)
+        {
+            *outValue = inValue;
+            outValue->typeTag = (uint64_t)(uint32_t)baseTarget;
+            *outIsConst = 1;
+            return 0;
+        }
+        *outIsConst = 0;
         return 0;
     }
 
@@ -4436,6 +4450,12 @@ static int SLTCMirConstZeroInitTypeId(
     if (SLTCIsBoolType(c, baseTypeId)) {
         outValue->kind = SLCTFEValue_BOOL;
         outValue->b = 0u;
+        *outIsConst = 1;
+        return 0;
+    }
+    if (SLTCIsRawptrType(c, baseTypeId)) {
+        SLTCConstEvalSetNullValue(outValue);
+        outValue->typeTag = (uint64_t)(uint32_t)typeId;
         *outIsConst = 1;
         return 0;
     }

@@ -445,22 +445,23 @@ void SLTCTextBufAppendHexU64(SLTCTextBuf* b, uint64_t v) {
 
 const char* SLTCBuiltinName(SLTypeCheckCtx* c, int32_t typeId, SLBuiltinKind kind) {
     switch (kind) {
-        case SLBuiltin_VOID:  return "void";
-        case SLBuiltin_BOOL:  return "bool";
-        case SLBuiltin_TYPE:  return "type";
-        case SLBuiltin_U8:    return "u8";
-        case SLBuiltin_U16:   return "u16";
-        case SLBuiltin_U32:   return "u32";
-        case SLBuiltin_U64:   return "u64";
-        case SLBuiltin_I8:    return "i8";
-        case SLBuiltin_I16:   return "i16";
-        case SLBuiltin_I32:   return "i32";
-        case SLBuiltin_I64:   return "i64";
-        case SLBuiltin_USIZE: return "uint";
-        case SLBuiltin_ISIZE: return "int";
-        case SLBuiltin_F32:   return "f32";
-        case SLBuiltin_F64:   return "f64";
-        case SLBuiltin_STR:   return "str";
+        case SLBuiltin_VOID:   return "void";
+        case SLBuiltin_BOOL:   return "bool";
+        case SLBuiltin_TYPE:   return "type";
+        case SLBuiltin_U8:     return "u8";
+        case SLBuiltin_U16:    return "u16";
+        case SLBuiltin_U32:    return "u32";
+        case SLBuiltin_U64:    return "u64";
+        case SLBuiltin_I8:     return "i8";
+        case SLBuiltin_I16:    return "i16";
+        case SLBuiltin_I32:    return "i32";
+        case SLBuiltin_I64:    return "i64";
+        case SLBuiltin_USIZE:  return "uint";
+        case SLBuiltin_ISIZE:  return "int";
+        case SLBuiltin_RAWPTR: return "rawptr";
+        case SLBuiltin_F32:    return "f32";
+        case SLBuiltin_F64:    return "f64";
+        case SLBuiltin_STR:    return "str";
         case SLBuiltin_INVALID:
             if (typeId >= 0 && typeId == c->typeStr) {
                 return "str";
@@ -944,6 +945,7 @@ int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     c->typeRune = -1;
     c->typeMemAllocator = -1;
     c->typeUsize = -1;
+    c->typeRawptr = -1;
     c->typeReflectSpan = -1;
     c->typeFmtValue = -1;
     c->typeUntypedInt = -1;
@@ -968,9 +970,14 @@ int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
         || SLTCAddBuiltinType(c, "i64", SLBuiltin_I64) < 0
         || SLTCAddBuiltinType(c, "uint", SLBuiltin_USIZE) < 0
         || SLTCAddBuiltinType(c, "int", SLBuiltin_ISIZE) < 0
+        || SLTCAddBuiltinType(c, "rawptr", SLBuiltin_RAWPTR) < 0
         || SLTCAddBuiltinType(c, "f32", SLBuiltin_F32) < 0
         || SLTCAddBuiltinType(c, "f64", SLBuiltin_F64) < 0)
     {
+        return -1;
+    }
+    c->typeRawptr = SLTCFindBuiltinByKind(c, SLBuiltin_RAWPTR);
+    if (c->typeRawptr < 0) {
         return -1;
     }
     c->typeStr = SLTCAddBuiltinType(c, "str", SLBuiltin_INVALID);
@@ -1058,6 +1065,11 @@ int32_t SLTCFindBuiltinType(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
         && c->typeRune >= 0)
     {
         return c->typeRune;
+    }
+    if (SLNameEqLiteral(c->src, start, end, "rawptr")
+        || SLNameEqLiteral(c->src, start, end, "builtin__rawptr"))
+    {
+        return c->typeRawptr;
     }
     for (i = 0; i < c->typeLen; i++) {
         const SLTCType* t = &c->types[i];

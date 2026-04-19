@@ -307,7 +307,7 @@ fn f() {
 ## 5. Type System
 
 ### 5.1 Built-in and constructed types
-- [TYPE-BUILTIN-001][Stable] Built-ins include `bool`, `str`, and `type`.
+- [TYPE-BUILTIN-001][Stable] Built-ins include `bool`, `str`, `rawptr`, and `type`.
 - [TYPE-BUILTIN-002][Stable] Source-level numeric type names are:
   - unsigned integers: `u8`, `u16`, `u32`, `u64`, `uint`
   - signed integers: `i8`, `i16`, `i32`, `i64`, `int`
@@ -350,7 +350,7 @@ fn f() {
 
 ### 5.3 Optional types
 - [TYPE-OPT-001][Stable] `?T` accepts any well-formed `T`.
-- [TYPE-OPT-002][Stable] `null` is assignable only to optional types.
+- [TYPE-OPT-002][Stable] `null` is assignable only to optional types and `rawptr`.
 - [TYPE-OPT-003][Stable] Implicit lift `T -> ?T` is allowed.
 - [TYPE-OPT-004][Stable] `?T -> T` is not implicit; unwrap or narrowing is required.
 - [TYPE-OPT-005][Stable] Flow narrowing for optionals is supported for local identifiers (including parameters):
@@ -396,10 +396,10 @@ fn f() {
 - [EXPR-ASSIGN-002][Stable] Compound assignment requires assignable LHS and numeric LHS type.
 - [EXPR-ASSIGN-003][Stable] Multi-assignment (`lhs1, lhs2, ... = rhs1, rhs2, ...`) requires equal arity, except a single tuple-typed RHS may be decomposed positionally. RHS expressions are evaluated before stores; then stores apply left-to-right.
 - [EXPR-ASSIGN-004][Provisional] Assigning to a `const` binding is invalid.
-- [EXPR-CMP-001][Stable] Equality/ordering require coercion to a common comparable/ordered type, except optional-null equality special-case.
+- [EXPR-CMP-001][Stable] Equality/ordering require coercion to a common comparable/ordered type, except optional-null and pointer/rawptr-vs-`null` equality special-cases.
 - [EXPR-CAST-001][Stable] `as` is explicit cast syntax.
-- [EXPR-CAST-002][Stable] A cast expression is well-typed iff source expression typing succeeds and target type resolution succeeds; no additional cast-compatibility gate is applied by Core static semantics.
-- [EXPR-CAST-003][Provisional] Future profiles may add stricter cast-compatibility rules; `Reference-slc` currently follows [EXPR-CAST-002].
+- [EXPR-CAST-002][Stable] A cast expression is well-typed only when source expression typing succeeds, target type resolution succeeds, and the cast pair is explicitly permitted.
+- [EXPR-CAST-003][Stable] `rawptr` may be created only from `null`, another `rawptr`, or an explicit cast from a pointer/reference type; casts from `rawptr` are permitted only to `rawptr` or pointer/reference types.
 - [EXPR-UNWRAP-001][Stable] `x!` requires `x : ?T` and yields `T`.
 - [EXPR-UNWRAP-002][Stable] Unwrapping `null` is a runtime trap (panic), never undefined behavior.
 - [EXPR-ADD-001][Provisional] String `+` currently supports compile-time concatenation only for non-parenthesized literal chains (e.g. `"a" + "b" + "c"`). Other string `+` forms are invalid in `Reference-slc`.
@@ -415,6 +415,7 @@ fn f() {
 - [EXPR-CMPSET-001][Stable] Comparable types are:
   - `bool` and numeric types
   - `type` values
+  - `rawptr`
   - string-like values (`str`, `*str`, `&str`)
   - pointers/references
   - arrays/slices whose element type is comparable
@@ -423,6 +424,7 @@ fn f() {
   - optional types whose base type is comparable
 - [EXPR-CMPSET-002][Stable] Ordered types are:
   - numeric types
+  - `rawptr`
   - string-like values (`str`, `*str`, `&str`)
   - pointers/references
   - arrays/slices whose element type is ordered
@@ -430,6 +432,7 @@ fn f() {
   - optional types whose base type is ordered
 - [EXPR-CMPSEM-001][Stable] Operational comparison semantics are:
   - string-like: content-based bytewise equality/order
+  - `rawptr`: identity equality; ordering by pointer-address order
   - pointers/references (and pointer-vs-`null`): identity equality; ordering by pointer-address order
   - arrays/slices: bytewise sequence equality/order over `len * sizeof(element)`
   - `struct`/`union` equality: bytewise object-representation equality

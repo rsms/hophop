@@ -21,6 +21,7 @@ BUILTIN_C_TYPE = {
     "void": "void",
     "bool": "__sl_bool",
     "str": "__sl_str",
+    "rawptr": "void*",
     "u8": "__sl_u8",
     "u16": "__sl_u16",
     "u32": "__sl_u32",

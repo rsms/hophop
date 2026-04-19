@@ -6836,6 +6836,9 @@ static SLMirTypeScalar ClassifyMirScalarType(
             }
             return SLMirTypeScalar_I32;
         case SLAst_TYPE_NAME:
+            if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "rawptr")) {
+                return SLMirTypeScalar_NONE;
+            }
             if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "bool")
                 || SliceEqCStr(file->source, node->dataStart, node->dataEnd, "u8")
                 || SliceEqCStr(file->source, node->dataStart, node->dataEnd, "u16")
@@ -7156,6 +7159,11 @@ static uint32_t ClassifyMirTypeFlags(
         && SliceEqCStr(file->source, node->dataStart, node->dataEnd, "str"))
     {
         flags |= SLMirTypeFlag_STR_OBJ;
+    } else if (
+        node->kind == SLAst_TYPE_NAME
+        && SliceEqCStr(file->source, node->dataStart, node->dataEnd, "rawptr"))
+    {
+        flags |= SLMirTypeFlag_OPAQUE_PTR;
     } else if (
         loader != NULL && program != NULL
         && ResolveMirAggregateDeclNode(loader, program, typeRef, NULL, NULL) != NULL)
@@ -9598,13 +9606,14 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
 
 static int IsBuiltinTypeName(const char* src, uint32_t start, uint32_t end) {
     return SliceEqCStr(src, start, end, "bool") || SliceEqCStr(src, start, end, "str")
-        || SliceEqCStr(src, start, end, "type") || SliceEqCStr(src, start, end, "anytype")
-        || SliceEqCStr(src, start, end, "u8") || SliceEqCStr(src, start, end, "u16")
-        || SliceEqCStr(src, start, end, "u32") || SliceEqCStr(src, start, end, "u64")
-        || SliceEqCStr(src, start, end, "i8") || SliceEqCStr(src, start, end, "i16")
-        || SliceEqCStr(src, start, end, "i32") || SliceEqCStr(src, start, end, "i64")
-        || SliceEqCStr(src, start, end, "uint") || SliceEqCStr(src, start, end, "int")
-        || SliceEqCStr(src, start, end, "f32") || SliceEqCStr(src, start, end, "f64");
+        || SliceEqCStr(src, start, end, "rawptr") || SliceEqCStr(src, start, end, "type")
+        || SliceEqCStr(src, start, end, "anytype") || SliceEqCStr(src, start, end, "u8")
+        || SliceEqCStr(src, start, end, "u16") || SliceEqCStr(src, start, end, "u32")
+        || SliceEqCStr(src, start, end, "u64") || SliceEqCStr(src, start, end, "i8")
+        || SliceEqCStr(src, start, end, "i16") || SliceEqCStr(src, start, end, "i32")
+        || SliceEqCStr(src, start, end, "i64") || SliceEqCStr(src, start, end, "uint")
+        || SliceEqCStr(src, start, end, "int") || SliceEqCStr(src, start, end, "f32")
+        || SliceEqCStr(src, start, end, "f64");
 }
 
 static int PackageHasExport(const SLPackage* pkg, const char* name) {

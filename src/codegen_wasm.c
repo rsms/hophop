@@ -3023,6 +3023,9 @@ static int WasmEmitFunctionRange(
                     || (valueType == SLWasmType_I32
                         && (WasmTypeKindIsPointer(targetType)
                             || WasmTypeKindIsArrayView(targetType)))
+                    || ((WasmTypeKindIsPointer(valueType) || WasmTypeKindIsArrayView(valueType))
+                        && (WasmTypeKindIsPointer(targetType)
+                            || WasmTypeKindIsArrayView(targetType)))
                     || (valueType == SLWasmType_STR_REF && targetType == SLWasmType_STR_PTR)
                     || (valueType == SLWasmType_AGG_REF && targetType == SLWasmType_AGG_REF))
                 {
@@ -5338,12 +5341,12 @@ static int WasmEmitFunctionRange(
                                "allocator align must be i32")
                                != 0
                         || WasmStackPop(state, &valueType) != 0
-                        || WasmRequireI32Value(
+                        || WasmRequireAllocatorValue(
                                valueType,
                                diag,
                                inst->start,
                                inst->end,
-                               "allocator addr must be i32")
+                               "allocator addr must be pointer-like")
                                != 0
                         || WasmStackPop(state, &valueType) != 0
                         || WasmRequireAllocatorValue(
@@ -5393,7 +5396,7 @@ static int WasmEmitFunctionRange(
                         || WasmAppendByte(body, 0x11u) != 0
                         || WasmAppendULEB(body, imports->allocatorIndirectTypeIndex) != 0
                         || WasmAppendByte(body, 0x00u) != 0
-                        || WasmStackPush(state, SLWasmType_I32) != 0)
+                        || WasmStackPushEx(state, SLWasmType_OPAQUE_PTR, UINT32_MAX) != 0)
                     {
                         return -1;
                     }

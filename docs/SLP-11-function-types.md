@@ -19,7 +19,7 @@ and, critically for allocator APIs:
 
 ```sl
 pub struct Allocator {
-    impl fn(self mut&Allocator, addr, align, curSize uint, newSizeInOut mut&uint, flags u32) uint
+    impl fn(self mut&Allocator, addr rawptr, align, curSize uint, newSizeInOut mut&uint, flags u32) rawptr
 }
 ```
 
@@ -108,7 +108,7 @@ Allocator callback shape:
 
 ```sl
 pub struct Allocator {
-    impl fn(self mut&Allocator, addr, align, curSize uint, newSizeInOut mut&uint, flags u32) uint
+    impl fn(self mut&Allocator, addr rawptr, align, curSize uint, newSizeInOut mut&uint, flags u32) rawptr
 }
 ```
 
@@ -207,4 +207,3 @@ SLP-11 does not add:
 - method receiver semantics in function types
 - variance/subtyping rules for function types
 - generic function types
-

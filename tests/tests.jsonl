@@ -59,6 +59,10 @@
 {"id":"check:tests/len_uint_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/len_uint_ok.sl"}
 {"id":"check:tests/len_u32_mismatch_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/len_u32_mismatch_bad.sl","expect_stderr":"tests/len_u32_mismatch_bad.stderr"}
 {"id":"check:tests/null_as_ptr_cast_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/null_as_ptr_cast_ok.sl"}
+{"id":"check:tests/rawptr_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/rawptr_ok.sl"}
+{"id":"check:tests/rawptr_implicit_from_ptr_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/rawptr_implicit_from_ptr_bad.sl","expect_stderr":"tests/rawptr_implicit_from_ptr_bad.stderr"}
+{"id":"check:tests/rawptr_implicit_to_ptr_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/rawptr_implicit_to_ptr_bad.sl","expect_stderr":"tests/rawptr_implicit_to_ptr_bad.stderr"}
+{"id":"check:tests/rawptr_cast_to_int_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/rawptr_cast_to_int_bad.sl","expect_stderr":"tests/rawptr_cast_to_int_bad.stderr"}
 {"id":"checkpkg:tests/new_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/new_ok.sl"}
 {"id":"check:tests/struct_composition_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/struct_composition_ok.sl"}
 {"id":"check:tests/ptr_embedded_upcast_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/ptr_embedded_upcast_ok.sl"}
@@ -558,6 +562,7 @@
 {"id":"integration.runtime.print_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/print_ok.sl","expect_exit":0,"run_stdout_empty":false,"run_stderr_empty":true,"eval_expect":"pass"}
 {"id":"integration.runtime.struct_composition_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/struct_composition_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"integration.runtime.ptr_embedded_upcast_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/ptr_embedded_upcast_ok.sl","expect_exit":0,"eval_expect":"pass"}
+{"id":"integration.runtime.rawptr_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/rawptr_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"integration.runtime.types_mut_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/types_mut_ok.sl"}
 {"id":"integration.runtime.slice_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slice_ok.sl"}
 {"id":"integration.runtime.str_slice_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/str_slice_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"pass","eval_expect_exit":0}

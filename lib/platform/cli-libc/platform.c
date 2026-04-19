@@ -17,9 +17,9 @@ static __sl_Context gMainContext;
 
 #define MALLOC_ALIGN ((size_t)_Alignof(max_align_t))
 
-static __sl_uint platform_mem_allocator_impl(
+static void* platform_mem_allocator_impl(
     __sl_Allocator* self,
-    __sl_uint       addr,
+    void*           addr,
     __sl_uint       align,
     __sl_uint       curSize,
     __sl_uint*      newSizeInOut,
@@ -32,8 +32,8 @@ static __sl_uint platform_mem_allocator_impl(
     debugassert(newSizeInOut != NULL);
 
     if (*newSizeInOut == 0) {
-        free((void*)(uintptr_t)addr);
-        return 0;
+        free(addr);
+        return NULL;
     }
 
     if UNLIKELY (align == 0 || (align & (align - 1u)) != 0u) {
@@ -43,19 +43,19 @@ static __sl_uint platform_mem_allocator_impl(
     if (align > MALLOC_ALIGN) {
         __sl_uint alignedSize = __sl_align_up(*newSizeInOut, align);
         newPtr = aligned_alloc((size_t)align, (size_t)alignedSize);
-        if (addr == 0 && newPtr != NULL) {
+        if (addr != NULL && newPtr != NULL) {
             // resize case
             __sl_uint copySize = curSize < *newSizeInOut ? curSize : *newSizeInOut;
             if (copySize > 0) {
-                memcpy(newPtr, (void*)(uintptr_t)addr, (size_t)copySize);
+                memcpy(newPtr, addr, (size_t)copySize);
             }
-            free((void*)(uintptr_t)addr);
+            free(addr);
         }
     } else {
-        if (addr == 0) {
+        if (addr == NULL) {
             newPtr = malloc((size_t)*newSizeInOut);
         } else {
-            newPtr = realloc((void*)(uintptr_t)addr, (size_t)*newSizeInOut);
+            newPtr = realloc(addr, (size_t)*newSizeInOut);
         }
     }
 
@@ -64,7 +64,7 @@ static __sl_uint platform_mem_allocator_impl(
         memset((unsigned char*)newPtr + curSize, 0, (size_t)(*newSizeInOut - curSize));
     }
 
-    return (__sl_uint)(uintptr_t)newPtr;
+    return newPtr;
 }
 
 static void platform_log_handler(

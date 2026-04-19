@@ -225,6 +225,7 @@ static const char* SLMirCastTargetName(SLMirCastTarget target) {
         case SLMirCastTarget_FLOAT:    return "FLOAT";
         case SLMirCastTarget_BOOL:     return "BOOL";
         case SLMirCastTarget_STR_VIEW: return "STR_VIEW";
+        case SLMirCastTarget_PTR_LIKE: return "PTR_LIKE";
     }
     return "UNKNOWN";
 }

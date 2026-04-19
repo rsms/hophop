@@ -123,6 +123,7 @@ typedef enum {
     SLConstEvalBuiltinKind_I64,
     SLConstEvalBuiltinKind_USIZE,
     SLConstEvalBuiltinKind_ISIZE,
+    SLConstEvalBuiltinKind_RAWPTR,
     SLConstEvalBuiltinKind_F32,
     SLConstEvalBuiltinKind_F64,
 } SLConstEvalBuiltinKind;

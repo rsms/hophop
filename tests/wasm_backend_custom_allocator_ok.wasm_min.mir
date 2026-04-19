@@ -2,11 +2,11 @@ mir
   dynamic_resolution=no
   insts=72 consts=13 sources=1 funcs=2 locals=12 fields=8 types=18 hosts=0 symbols=2
 sources
-  #0 len=613
+  #0 len=622
 types
-  #0 astNode=22 source=#0 flags=1
+  #0 astNode=22 source=#0 flags=1048576
   #1 astNode=9 source=#0 flags=1
-  #2 astNode=14 source=#0 flags=1
+  #2 astNode=12 source=#0 flags=1048576
   #3 astNode=15 source=#0 flags=1
   #4 astNode=16 source=#0 flags=1
   #5 astNode=18 source=#0 flags=2049
@@ -24,13 +24,13 @@ types
   #17 astNode=90 source=#0 flags=1
 hosts
 symbols
-  #0 CALL target=33 name="impl" [255,259] flags=1
-  #1 IDENT target=64 name="custom_alloc_impl" [403,420]
+  #0 CALL target=33 name="impl" [264,268] flags=1
+  #1 IDENT target=64 name="custom_alloc_impl" [412,429]
 fields
-  #0 ownerType=#4294967295 type=#4294967295 name="mem" [251,254]
-  #1 ownerType=#4294967295 type=#4294967295 name="mem" [263,266]
-  #2 ownerType=#4294967295 type=#4294967295 name="mem" [350,353]
-  #3 ownerType=#4294967295 type=#4294967295 name="impl" [396,400]
+  #0 ownerType=#4294967295 type=#4294967295 name="mem" [260,263]
+  #1 ownerType=#4294967295 type=#4294967295 name="mem" [272,275]
+  #2 ownerType=#4294967295 type=#4294967295 name="mem" [359,362]
+  #3 ownerType=#4294967295 type=#4294967295 name="impl" [405,409]
   #4 ownerType=#13 type=#14 name="Allocator" [77,86]
   #5 ownerType=#13 type=#15 name="mem" [88,91]
   #6 ownerType=#8 type=#14 name="Allocator" [77,86]
@@ -54,89 +54,89 @@ functions
     locals
       #0 name="self" [127,131] type=#1 flags=3
       #1 name="addr" [144,148] type=#2 flags=3
-      #2 name="align" [150,155] type=#3 flags=3
-      #3 name="curSize" [157,164] type=#4 flags=3
-      #4 name="newSizeInOut" [171,183] type=#5 flags=3
-      #5 name="flags" [191,196] type=#6 flags=3
-      #6 name="ma" [214,216] type=#7 flags=2
+      #2 name="align" [157,162] type=#3 flags=3
+      #3 name="curSize" [164,171] type=#4 flags=3
+      #4 name="newSizeInOut" [178,190] type=#5 flags=3
+      #5 name="flags" [198,203] type=#6 flags=3
+      #6 name="ma" [223,225] type=#7 flags=2
     insts
-      0: LOCAL_LOAD local=#0 "self" [127,131] span=[219,223]
-      1: COERCE type=#7 span=[219,239]
-      2: LOCAL_STORE local=#6 "ma" [214,216] span=[210,239]
-      3: LOCAL_LOAD local=#6 "ma" [214,216] span=[248,250]
-      4: AGG_GET field=#0 "mem" [251,254] span=[251,254]
-      5: AGG_GET field=#3 "impl" [396,400] span=[251,254]
-      6: LOCAL_LOAD local=#6 "ma" [214,216] span=[260,262]
-      7: AGG_GET field=#1 "mem" [263,266] span=[263,266]
-      8: LOCAL_LOAD local=#1 "addr" [144,148] span=[268,272]
-      9: LOCAL_LOAD local=#2 "align" [150,155] span=[274,279]
-      10: LOCAL_LOAD local=#3 "curSize" [157,164] span=[281,288]
-      11: LOCAL_LOAD local=#4 "newSizeInOut" [171,183] span=[290,302]
-      12: LOCAL_LOAD local=#5 "flags" [191,196] span=[304,309]
-      13: CALL_INDIRECT argc=6 span=[255,259]
-      14: RETURN span=[241,310]
-      15: RETURN_VOID span=[207,312]
-  #1 name="main" [317,321] source=#0 type=#4294967295 params=0 temps=0 locals=#7+5 insts=#16+56
+      0: LOCAL_LOAD local=#0 "self" [127,131] span=[228,232]
+      1: COERCE type=#7 span=[228,248]
+      2: LOCAL_STORE local=#6 "ma" [223,225] span=[219,248]
+      3: LOCAL_LOAD local=#6 "ma" [223,225] span=[257,259]
+      4: AGG_GET field=#0 "mem" [260,263] span=[260,263]
+      5: AGG_GET field=#3 "impl" [405,409] span=[260,263]
+      6: LOCAL_LOAD local=#6 "ma" [223,225] span=[269,271]
+      7: AGG_GET field=#1 "mem" [272,275] span=[272,275]
+      8: LOCAL_LOAD local=#1 "addr" [144,148] span=[277,281]
+      9: LOCAL_LOAD local=#2 "align" [157,162] span=[283,288]
+      10: LOCAL_LOAD local=#3 "curSize" [164,171] span=[290,297]
+      11: LOCAL_LOAD local=#4 "newSizeInOut" [178,190] span=[299,311]
+      12: LOCAL_LOAD local=#5 "flags" [198,203] span=[313,318]
+      13: CALL_INDIRECT argc=6 span=[264,268]
+      14: RETURN span=[250,319]
+      15: RETURN_VOID span=[216,321]
+  #1 name="main" [326,330] source=#0 type=#4294967295 params=0 temps=0 locals=#7+5 insts=#16+56
     locals
-      #0 name="ma" [331,333] type=#8 flags=6
-      #1 name="a" [374,375] type=#9 flags=2
-      #2 name="p" [426,427] type=#10 flags=2
-      #3 name="n" [480,481] type=#11 flags=2
-      #4 name="xs" [499,501] type=#12 flags=2
+      #0 name="ma" [340,342] type=#8 flags=6
+      #1 name="a" [383,384] type=#9 flags=2
+      #2 name="p" [435,436] type=#10 flags=2
+      #3 name="n" [489,490] type=#11 flags=2
+      #4 name="xs" [508,510] type=#12 flags=2
     insts
-      0: LOCAL_ZERO local=#0 "ma" [331,333] span=[327,345]
-      1: CTX_GET field=MEM span=[356,367]
-      2: LOCAL_LOAD local=#0 "ma" [331,333] span=[347,349]
-      3: AGG_ADDR field=#2 "mem" [350,353] span=[350,353]
-      4: DEREF_STORE span=[347,367]
-      5: LOCAL_ADDR local=#0 "ma" [331,333] span=[389,392]
-      6: LOCAL_STORE local=#1 "a" [374,375] span=[370,392]
-      7: PUSH_CONST const=#12 span=[403,420]
-      8: LOCAL_LOAD local=#1 "a" [374,375] span=[394,395]
-      9: AGG_ADDR field=#3 "impl" [396,400] span=[396,400]
-      10: DEREF_STORE span=[394,420]
-      11: LOCAL_LOAD local=#1 "a" [374,375] span=[448,449]
-      12: ALLOC_NEW tok=128 aux=69 span=[435,449]
-      13: LOCAL_STORE local=#2 "p" [426,427] span=[422,449]
-      14: PUSH_CONST const=#0 span=[456,457]
-      15: LOCAL_LOAD local=#2 "p" [426,427] span=[452,453]
-      16: DEREF_STORE span=[451,457]
-      17: LOCAL_LOAD local=#2 "p" [426,427] span=[467,468]
-      18: DEREF_LOAD span=[466,468]
-      19: PUSH_CONST const=#1 span=[472,473]
-      20: BINARY op=EQ span=[466,473]
-      21: ASSERT span=[459,473]
-      22: PUSH_CONST const=#2 span=[492,493]
-      23: LOCAL_STORE local=#3 "n" [480,481] span=[476,493]
-      24: LOCAL_LOAD local=#3 "n" [480,481] span=[520,521]
-      25: LOCAL_LOAD local=#1 "a" [374,375] span=[528,529]
-      26: ALLOC_NEW tok=192 aux=89 span=[511,529]
-      27: LOCAL_STORE local=#4 "xs" [499,501] span=[495,529]
-      28: PUSH_CONST const=#3 span=[539,540]
-      29: LOCAL_LOAD local=#4 "xs" [499,501] span=[531,533]
-      30: PUSH_CONST const=#4 span=[534,535]
-      31: ARRAY_ADDR span=[531,536]
-      32: DEREF_STORE span=[531,540]
-      33: PUSH_CONST const=#5 span=[550,551]
-      34: LOCAL_LOAD local=#4 "xs" [499,501] span=[542,544]
-      35: PUSH_CONST const=#6 span=[545,546]
-      36: ARRAY_ADDR span=[542,547]
-      37: DEREF_STORE span=[542,551]
-      38: LOCAL_LOAD local=#4 "xs" [499,501] span=[564,566]
-      39: SEQ_LEN span=[560,563]
-      40: PUSH_CONST const=#7 span=[571,572]
-      41: BINARY op=EQ span=[560,572]
-      42: ASSERT span=[553,572]
-      43: LOCAL_LOAD local=#4 "xs" [499,501] span=[581,583]
-      44: PUSH_CONST const=#8 span=[584,585]
-      45: INDEX span=[581,586]
-      46: PUSH_CONST const=#9 span=[590,591]
-      47: BINARY op=EQ span=[581,591]
-      48: ASSERT span=[574,591]
-      49: LOCAL_LOAD local=#4 "xs" [499,501] span=[600,602]
-      50: PUSH_CONST const=#10 span=[603,604]
-      51: INDEX span=[600,605]
-      52: PUSH_CONST const=#11 span=[609,610]
-      53: BINARY op=EQ span=[600,610]
-      54: ASSERT span=[593,610]
-      55: RETURN_VOID span=[324,612]
+      0: LOCAL_ZERO local=#0 "ma" [340,342] span=[336,354]
+      1: CTX_GET field=MEM span=[365,376]
+      2: LOCAL_LOAD local=#0 "ma" [340,342] span=[356,358]
+      3: AGG_ADDR field=#2 "mem" [359,362] span=[359,362]
+      4: DEREF_STORE span=[356,376]
+      5: LOCAL_ADDR local=#0 "ma" [340,342] span=[398,401]
+      6: LOCAL_STORE local=#1 "a" [383,384] span=[379,401]
+      7: PUSH_CONST const=#12 span=[412,429]
+      8: LOCAL_LOAD local=#1 "a" [383,384] span=[403,404]
+      9: AGG_ADDR field=#3 "impl" [405,409] span=[405,409]
+      10: DEREF_STORE span=[403,429]
+      11: LOCAL_LOAD local=#1 "a" [383,384] span=[457,458]
+      12: ALLOC_NEW tok=128 aux=69 span=[444,458]
+      13: LOCAL_STORE local=#2 "p" [435,436] span=[431,458]
+      14: PUSH_CONST const=#0 span=[465,466]
+      15: LOCAL_LOAD local=#2 "p" [435,436] span=[461,462]
+      16: DEREF_STORE span=[460,466]
+      17: LOCAL_LOAD local=#2 "p" [435,436] span=[476,477]
+      18: DEREF_LOAD span=[475,477]
+      19: PUSH_CONST const=#1 span=[481,482]
+      20: BINARY op=EQ span=[475,482]
+      21: ASSERT span=[468,482]
+      22: PUSH_CONST const=#2 span=[501,502]
+      23: LOCAL_STORE local=#3 "n" [489,490] span=[485,502]
+      24: LOCAL_LOAD local=#3 "n" [489,490] span=[529,530]
+      25: LOCAL_LOAD local=#1 "a" [383,384] span=[537,538]
+      26: ALLOC_NEW tok=192 aux=89 span=[520,538]
+      27: LOCAL_STORE local=#4 "xs" [508,510] span=[504,538]
+      28: PUSH_CONST const=#3 span=[548,549]
+      29: LOCAL_LOAD local=#4 "xs" [508,510] span=[540,542]
+      30: PUSH_CONST const=#4 span=[543,544]
+      31: ARRAY_ADDR span=[540,545]
+      32: DEREF_STORE span=[540,549]
+      33: PUSH_CONST const=#5 span=[559,560]
+      34: LOCAL_LOAD local=#4 "xs" [508,510] span=[551,553]
+      35: PUSH_CONST const=#6 span=[554,555]
+      36: ARRAY_ADDR span=[551,556]
+      37: DEREF_STORE span=[551,560]
+      38: LOCAL_LOAD local=#4 "xs" [508,510] span=[573,575]
+      39: SEQ_LEN span=[569,572]
+      40: PUSH_CONST const=#7 span=[580,581]
+      41: BINARY op=EQ span=[569,581]
+      42: ASSERT span=[562,581]
+      43: LOCAL_LOAD local=#4 "xs" [508,510] span=[590,592]
+      44: PUSH_CONST const=#8 span=[593,594]
+      45: INDEX span=[590,595]
+      46: PUSH_CONST const=#9 span=[599,600]
+      47: BINARY op=EQ span=[590,600]
+      48: ASSERT span=[583,600]
+      49: LOCAL_LOAD local=#4 "xs" [508,510] span=[609,611]
+      50: PUSH_CONST const=#10 span=[612,613]
+      51: INDEX span=[609,614]
+      52: PUSH_CONST const=#11 span=[618,619]
+      53: BINARY op=EQ span=[609,619]
+      54: ASSERT span=[602,619]
+      55: RETURN_VOID span=[333,621]

@@ -1015,6 +1015,11 @@ int SLTCIsBoolType(SLTypeCheckCtx* c, int32_t typeId) {
     return typeId == c->typeBool;
 }
 
+int SLTCIsRawptrType(SLTypeCheckCtx* c, int32_t typeId) {
+    typeId = SLTCResolveAliasBaseType(c, typeId);
+    return c != NULL && typeId >= 0 && typeId == c->typeRawptr;
+}
+
 int SLTCIsNamedDeclKind(SLTypeCheckCtx* c, int32_t typeId, SLAstKind kind) {
     int32_t declNode;
     typeId = SLTCResolveAliasBaseType(c, typeId);
@@ -1056,7 +1061,7 @@ int SLTCTypeSupportsFmtReflectRec(SLTypeCheckCtx* c, int32_t typeId, uint32_t de
         case SLTCType_UNTYPED_INT:
         case SLTCType_UNTYPED_FLOAT:
             return SLTCIsBoolType(c, typeId) || SLTCIsNumericType(c, typeId)
-                || typeId == c->typeType;
+                || typeId == c->typeType || SLTCIsRawptrType(c, typeId);
         case SLTCType_ARRAY:
         case SLTCType_SLICE:
             return SLTCTypeSupportsFmtReflectRec(c, c->types[typeId].baseType, depth + 1u);
@@ -1107,7 +1112,7 @@ int SLTCIsComparableTypeRec(SLTypeCheckCtx* c, int32_t typeId, uint32_t depth) {
         case SLTCType_UNTYPED_INT:
         case SLTCType_UNTYPED_FLOAT:
             return SLTCIsBoolType(c, typeId) || SLTCIsNumericType(c, typeId)
-                || typeId == c->typeType;
+                || typeId == c->typeType || SLTCIsRawptrType(c, typeId);
         case SLTCType_ARRAY:
         case SLTCType_SLICE:
             return SLTCIsComparableTypeRec(c, c->types[typeId].baseType, depth + 1u);
@@ -1156,7 +1161,7 @@ int SLTCIsOrderedTypeRec(SLTypeCheckCtx* c, int32_t typeId, uint32_t depth) {
         return 1;
     }
     switch (c->types[typeId].kind) {
-        case SLTCType_BUILTIN:
+        case SLTCType_BUILTIN:       return SLTCIsNumericType(c, typeId) || SLTCIsRawptrType(c, typeId);
         case SLTCType_UNTYPED_INT:
         case SLTCType_UNTYPED_FLOAT: return SLTCIsNumericType(c, typeId);
         case SLTCType_ARRAY:
@@ -1594,6 +1599,10 @@ int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
         return 0;
     }
 
+    if (SLTCIsRawptrType(c, dstType)) {
+        return src->kind == SLTCType_NULL || SLTCIsRawptrType(c, srcType);
+    }
+
     /* null can only be assigned to ?T, not to plain types */
     if (src->kind == SLTCType_NULL) {
         return 0;
@@ -1723,6 +1732,11 @@ int SLTCConversionCost(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType, uint
 
     if (dst->kind == SLTCType_OPTIONAL && src->kind == SLTCType_OPTIONAL) {
         return SLTCConversionCost(c, dst->baseType, src->baseType, outCost);
+    }
+
+    if (SLTCIsRawptrType(c, dstType) && SLTCIsRawptrType(c, srcType)) {
+        *outCost = 0;
+        return 0;
     }
 
     if (dst->kind == SLTCType_REF && src->kind == SLTCType_REF) {

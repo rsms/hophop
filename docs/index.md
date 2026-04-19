@@ -89,3 +89,4 @@ Implemented core includes:
 - [SLP-30-iterator-protocol.md](SLP-30-iterator-protocol.md)
 - [SLP-31-nested-types.md](SLP-31-nested-types.md)
 - [SLP-32-wasm-backend.md](SLP-32-wasm-backend.md)
+- [SLP-33-rawptr.md](SLP-33-rawptr.md)

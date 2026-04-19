@@ -4,7 +4,7 @@ struct MyAllocator {
 	mem *Allocator
 }
 
-fn custom_alloc_impl(self *Allocator, addr, align, curSize uint, newSizeInOut *uint, flags u32) uint {
+fn custom_alloc_impl(self *Allocator, addr rawptr, align, curSize uint, newSizeInOut *uint, flags u32) rawptr {
 	var ma = self as *MyAllocator
 	return ma.mem.impl(ma.mem, addr, align, curSize, newSizeInOut, flags)
 }

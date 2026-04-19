@@ -68,6 +68,7 @@ typedef enum {
     SLMirCastTarget_FLOAT = 2,
     SLMirCastTarget_BOOL = 3,
     SLMirCastTarget_STR_VIEW = 4,
+    SLMirCastTarget_PTR_LIKE = 5,
 } SLMirCastTarget;
 
 enum {

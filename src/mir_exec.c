@@ -2444,6 +2444,14 @@ static int SLCTFEEvalBinary(
         int eq = 0;
         if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_NULL) {
             eq = 1;
+        } else if (lhs->kind == SLCTFEValue_REFERENCE && rhs->kind == SLCTFEValue_NULL) {
+            eq = lhs->s.bytes == NULL;
+        } else if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_REFERENCE) {
+            eq = rhs->s.bytes == NULL;
+        } else if (lhs->kind == SLCTFEValue_STRING && rhs->kind == SLCTFEValue_NULL) {
+            eq = lhs->s.bytes == NULL;
+        } else if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_STRING) {
+            eq = rhs->s.bytes == NULL;
         } else if (lhs->kind == SLCTFEValue_OPTIONAL && rhs->kind == SLCTFEValue_NULL) {
             eq = lhs->b == 0u;
         } else if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_OPTIONAL) {
@@ -2538,6 +2546,14 @@ static int SLCTFEEvalCast(SLMirCastTarget target, const SLCTFEValue* in, SLCTFEV
             out->b = asBool;
             return 1;
         }
+        case SLMirCastTarget_PTR_LIKE:
+            if (in->kind == SLCTFEValue_REFERENCE || in->kind == SLCTFEValue_NULL
+                || in->kind == SLCTFEValue_STRING)
+            {
+                *out = *in;
+                return 1;
+            }
+            return 0;
         case SLMirCastTarget_STR_VIEW: *out = *in; return 1;
         default:                       return 0;
     }

@@ -1,0 +1,14 @@
+fn main() {
+	var opaque1 rawptr
+	var opaque2 rawptr = null
+	assert opaque1 == opaque2
+
+	var i              = 123
+	var ip1     *int   = &i
+	var opaque3 rawptr = ip1 as rawptr
+	var ip2     *int   = opaque3 as *int
+	assert ip2 == ip1
+
+	opaque3 = null
+	assert opaque3 == null
+}

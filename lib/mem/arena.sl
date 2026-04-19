@@ -2,7 +2,7 @@ import "builtin"
 
 pub struct ArenaBlock {
 	next  *ArenaBlock
-	addr  uint
+	addr  rawptr
 	size  uint
 	used  uint
 	align uint
@@ -25,8 +25,8 @@ fn alloc_block(arena *ArenaAllocator, minSize, align uint) *ArenaBlock {
 		return null as *ArenaBlock
 	}
 
-	var payload_addr = arena.mem.impl(arena.mem, addr: 0, align, curSize: 0, newSizeInOut: &payload_size, flags: 0)
-	if payload_addr == 0 {
+	var payload_addr = arena.mem.impl(arena.mem, addr: null, align, curSize: 0, newSizeInOut: &payload_size, flags: 0)
+	if payload_addr == null {
 		return null as *ArenaBlock
 	}
 
@@ -40,28 +40,28 @@ fn alloc_block(arena *ArenaAllocator, minSize, align uint) *ArenaBlock {
 	return block
 }
 
-fn arena_alloc_impl(self *builtin.Allocator, addr, align, curSize uint, newSizeInOut *uint, flags u32) uint {
+fn arena_alloc_impl(self *builtin.Allocator, addr rawptr, align, curSize uint, newSizeInOut *uint, flags u32) rawptr {
 	var arena = self as *ArenaAllocator
 	if newSizeInOut == null as *uint {
-		return 0
+		return null
 	}
 
-	if addr != 0 || curSize != 0 || flags != 0 {
-		return 0
+	if addr != null || curSize != 0 || flags != 0 {
+		return null
 	}
 
 	if align == 0 {
-		return 0
+		return null
 	}
 
 	var newSize uint = *newSizeInOut
 	if newSize == 0 {
-		return 0
+		return null
 	}
 
 	var block = alloc_block(arena, minSize: newSize, align)
 	if block == null as *ArenaBlock {
-		return 0
+		return null
 	}
 	return block.addr
 }

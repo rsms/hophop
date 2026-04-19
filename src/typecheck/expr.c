@@ -1333,6 +1333,31 @@ static int SLTCFailUnsliceableExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t ba
     return rc;
 }
 
+static int SLTCFailInvalidRawptrCast(
+    SLTypeCheckCtx* c, int32_t nodeId, int32_t srcType, int32_t dstType) {
+    char        srcBuf[128];
+    char        dstBuf[128];
+    char        detailBuf[256];
+    SLTCTextBuf srcText;
+    SLTCTextBuf dstText;
+    SLTCTextBuf detailText;
+    int         rc = SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+    if (rc != -1 || c == NULL || c->diag == NULL) {
+        return rc;
+    }
+    SLTCTextBufInit(&srcText, srcBuf, (uint32_t)sizeof(srcBuf));
+    SLTCFormatTypeRec(c, srcType, &srcText, 0);
+    SLTCTextBufInit(&dstText, dstBuf, (uint32_t)sizeof(dstBuf));
+    SLTCFormatTypeRec(c, dstType, &dstText, 0);
+    SLTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    SLTCTextBufAppendCStr(&detailText, "cannot cast ");
+    SLTCTextBufAppendCStr(&detailText, srcBuf);
+    SLTCTextBufAppendCStr(&detailText, " to ");
+    SLTCTextBufAppendCStr(&detailText, dstBuf);
+    c->diag->detail = SLTCAllocDiagText(c, detailBuf);
+    return rc;
+}
+
 static int SLTCResolveCopySeqInfo(SLTypeCheckCtx* c, int32_t typeId, SLTCCopySeqInfo* out) {
     int32_t         resolvedType;
     const SLTCType* t;
@@ -2514,10 +2539,14 @@ typed_call_from_callee_type: {
 }
 
 int SLTCTypeExpr_CAST(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
-    int32_t exprNode = SLAstFirstChild(c->ast, nodeId);
-    int32_t typeNode;
-    int32_t ignoredType;
-    int32_t targetType;
+    int32_t         exprNode = SLAstFirstChild(c->ast, nodeId);
+    int32_t         typeNode;
+    int32_t         sourceType;
+    int32_t         resolvedSourceType;
+    int32_t         targetType;
+    int32_t         resolvedTargetType;
+    const SLTCType* src;
+    const SLTCType* dst;
     (void)n;
     if (exprNode < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
@@ -2526,7 +2555,7 @@ int SLTCTypeExpr_CAST(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
     if (typeNode < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
     }
-    if (SLTCTypeExpr(c, exprNode, &ignoredType) != 0) {
+    if (SLTCTypeExpr(c, exprNode, &sourceType) != 0) {
         return -1;
     }
     c->allowConstNumericTypeName = 1;
@@ -2535,6 +2564,28 @@ int SLTCTypeExpr_CAST(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
         return -1;
     }
     c->allowConstNumericTypeName = 0;
+    resolvedSourceType = SLTCResolveAliasBaseType(c, sourceType);
+    resolvedTargetType = SLTCResolveAliasBaseType(c, targetType);
+    if (resolvedSourceType < 0 || (uint32_t)resolvedSourceType >= c->typeLen
+        || resolvedTargetType < 0 || (uint32_t)resolvedTargetType >= c->typeLen)
+    {
+        return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+    }
+    src = &c->types[resolvedSourceType];
+    dst = &c->types[resolvedTargetType];
+    if (SLTCIsRawptrType(c, resolvedTargetType)) {
+        if (!(src->kind == SLTCType_NULL || SLTCIsRawptrType(c, resolvedSourceType)
+              || src->kind == SLTCType_PTR || src->kind == SLTCType_REF))
+        {
+            return SLTCFailInvalidRawptrCast(c, nodeId, sourceType, targetType);
+        }
+    } else if (SLTCIsRawptrType(c, resolvedSourceType)) {
+        if (!(dst->kind == SLTCType_PTR || dst->kind == SLTCType_REF
+              || SLTCIsRawptrType(c, resolvedTargetType)))
+        {
+            return SLTCFailInvalidRawptrCast(c, nodeId, sourceType, targetType);
+        }
+    }
     *outType = targetType;
     return 0;
 }
@@ -3016,13 +3067,17 @@ int SLTCTypeExpr_BINARY(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, i
         return 0;
     }
 
-    /* Allow ?T == null, null == ?T, ?T != null, null != ?T */
+    /* Allow ?T == null, null == ?T, rawptr == null, null == rawptr, and != variants. */
     if (op == SLTok_EQ || op == SLTok_NEQ) {
         int lhsIsOpt = c->types[lhsType].kind == SLTCType_OPTIONAL;
         int rhsIsOpt = c->types[rhsType].kind == SLTCType_OPTIONAL;
         int lhsIsNull = c->types[lhsType].kind == SLTCType_NULL;
         int rhsIsNull = c->types[rhsType].kind == SLTCType_NULL;
-        if ((lhsIsOpt && rhsIsNull) || (lhsIsNull && rhsIsOpt)) {
+        int lhsIsRawptr = SLTCIsRawptrType(c, lhsType);
+        int rhsIsRawptr = SLTCIsRawptrType(c, rhsType);
+        if ((lhsIsOpt && rhsIsNull) || (lhsIsNull && rhsIsOpt) || (lhsIsRawptr && rhsIsNull)
+            || (lhsIsNull && rhsIsRawptr))
+        {
             *outType = c->typeBool;
             return 0;
         }

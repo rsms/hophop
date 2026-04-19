@@ -670,9 +670,16 @@ static SLMirCastTarget SLMirClassifyCastTarget(SLMirBuilder* b, int32_t typeNode
         {
             return SLMirCastTarget_STR_VIEW;
         }
+        return SLMirCastTarget_PTR_LIKE;
+    }
+    if (n->kind == SLAst_TYPE_MUTREF) {
+        return SLMirCastTarget_PTR_LIKE;
     }
     if (n->kind != SLAst_TYPE_NAME) {
         return SLMirCastTarget_INVALID;
+    }
+    if (SLMirTypeNameEqCStr(b, n, "rawptr")) {
+        return SLMirCastTarget_PTR_LIKE;
     }
     if (SLMirTypeNameEqCStr(b, n, "bool")) {
         return SLMirCastTarget_BOOL;
@@ -739,6 +746,10 @@ static int SLMirBuiltinTypeSize(const SLMirBuilder* b, int32_t typeNode, int64_t
         || (len == 5u && memcmp(name, "isize", 5) == 0))
     {
         *outSize = (int64_t)sizeof(uintptr_t);
+        return 1;
+    }
+    if (len == 6u && memcmp(name, "rawptr", 6) == 0) {
+        *outSize = (int64_t)sizeof(void*);
         return 1;
     }
     if (len == 3u && memcmp(name, "str", 3) == 0) {

@@ -99,9 +99,9 @@ struct __sl_Logger {
 };
 
 struct __sl_Allocator {
-    __sl_uint (*impl)(
+    void* (*impl)(
         __sl_Allocator* arg0,
-        __sl_uint       arg1,
+        void*           arg1,
         __sl_uint       arg2,
         __sl_uint       arg3,
         __sl_uint*      arg4,
@@ -241,7 +241,7 @@ static inline void* __sl_new(__sl_Allocator* ma, __sl_uint size, __sl_uint align
         return NULL;
     }
 
-    return (void*)(uintptr_t)ma->impl(ma, 0, align, 0, &newSize, 0);
+    return ma->impl(ma, NULL, align, 0, &newSize, 0);
 }
 
 static inline void __sl_free(__sl_Allocator* ma, void* p, __sl_uint curSize, __sl_uint align) {
@@ -249,7 +249,7 @@ static inline void __sl_free(__sl_Allocator* ma, void* p, __sl_uint curSize, __s
     if (p == NULL || ma == NULL || ma->impl == NULL) {
         return;
     }
-    (void)ma->impl(ma, (__sl_uint)(uintptr_t)p, align, curSize, &newSize, 0);
+    (void)ma->impl(ma, p, align, curSize, &newSize, 0);
 }
 
 static inline void* __sl_new_array(

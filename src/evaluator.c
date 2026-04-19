@@ -310,6 +310,7 @@ enum {
     SLEvalTypeCode_TYPE,
     SLEvalTypeCode_STR_REF,
     SLEvalTypeCode_STR_PTR,
+    SLEvalTypeCode_RAWPTR,
     SLEvalTypeCode_ANYTYPE,
 };
 
@@ -461,6 +462,10 @@ static int SLEvalBuiltinTypeCode(
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "f64")) {
         *outTypeCode = SLEvalTypeCode_F64;
+        return 1;
+    }
+    if (SliceEqCStr(source, nameStart, nameEnd, "rawptr")) {
+        *outTypeCode = SLEvalTypeCode_RAWPTR;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "type")) {
@@ -1280,6 +1285,10 @@ static int SLEvalResolveNullCastTypeTag(
         return 0;
     }
     n = &file->ast.nodes[typeNode];
+    if (n->kind == SLAst_TYPE_NAME && SliceEqCStr(file->source, n->dataStart, n->dataEnd, "rawptr"))
+    {
+        return 1;
+    }
     if (n->kind != SLAst_TYPE_PTR && n->kind != SLAst_TYPE_REF && n->kind != SLAst_TYPE_MUTREF) {
         return 0;
     }
@@ -1984,6 +1993,12 @@ static int SLEvalCoerceValueToTypeNode(
                 || targetTypeCode == SLEvalTypeCode_UINT || targetTypeCode == SLEvalTypeCode_I8
                 || targetTypeCode == SLEvalTypeCode_I16 || targetTypeCode == SLEvalTypeCode_I32
                 || targetTypeCode == SLEvalTypeCode_I64 || targetTypeCode == SLEvalTypeCode_INT))
+        {
+            SLEvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
+        } else if (
+            targetTypeCode == SLEvalTypeCode_RAWPTR
+            && (sourceValue->kind == SLCTFEValue_REFERENCE || sourceValue->kind == SLCTFEValue_NULL
+                || sourceValue->kind == SLCTFEValue_STRING))
         {
             SLEvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
         } else if (
@@ -3470,6 +3485,12 @@ static int SLEvalZeroInitTypeValue(
                 outValue->typeTag = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
+                SLEvalValueSetRuntimeTypeCode(outValue, typeCode);
+                *outIsConst = 1;
+                return 0;
+            case SLEvalTypeCode_RAWPTR:
+                SLEvalValueSetNull(outValue);
+                SLEvalValueSetRuntimeTypeCode(outValue, typeCode);
                 *outIsConst = 1;
                 return 0;
             case SLEvalTypeCode_U8:
@@ -3626,6 +3647,9 @@ static int SLEvalTypeNameOfValue(SLCTFEValue* typeValue, SLCTFEValue* outValue) 
             case SLEvalTypeCode_INT:  SLEvalValueSetStringSlice(outValue, "int", 0, 3); return 1;
             case SLEvalTypeCode_F32:  SLEvalValueSetStringSlice(outValue, "f32", 0, 3); return 1;
             case SLEvalTypeCode_F64:  SLEvalValueSetStringSlice(outValue, "f64", 0, 3); return 1;
+            case SLEvalTypeCode_RAWPTR:
+                SLEvalValueSetStringSlice(outValue, "rawptr", 0, 6);
+                return 1;
             case SLEvalTypeCode_TYPE: SLEvalValueSetStringSlice(outValue, "type", 0, 4); return 1;
             case SLEvalTypeCode_ANYTYPE:
                 SLEvalValueSetStringSlice(outValue, "anytype", 0, 7);
@@ -3766,6 +3790,13 @@ static int SLEvalZeroInitTypeNode(
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
                 SLEvalValueSetRuntimeTypeCode(outValue, SLEvalTypeCode_STR_REF);
+                *outIsConst = 1;
+                return 0;
+            }
+            if (SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "rawptr"))
+            {
+                SLEvalValueSetNull(outValue);
+                SLEvalValueSetRuntimeTypeCode(outValue, SLEvalTypeCode_RAWPTR);
                 *outIsConst = 1;
                 return 0;
             }
@@ -5266,8 +5297,11 @@ static int SLEvalValueMatchesExpectedTypeNode(
         case SLEvalTypeCode_INT:     return sourceValue->kind == SLCTFEValue_INT;
         case SLEvalTypeCode_STR_REF:
         case SLEvalTypeCode_STR_PTR: return sourceValue->kind == SLCTFEValue_STRING;
-        case SLEvalTypeCode_TYPE:    return sourceValue->kind == SLCTFEValue_TYPE;
-        default:                     return 0;
+        case SLEvalTypeCode_RAWPTR:
+            return sourceValue->kind == SLCTFEValue_REFERENCE
+                || sourceValue->kind == SLCTFEValue_NULL || sourceValue->kind == SLCTFEValue_STRING;
+        case SLEvalTypeCode_TYPE: return sourceValue->kind == SLCTFEValue_TYPE;
+        default:                  return 0;
     }
 }
 
@@ -6033,9 +6067,58 @@ static int SLEvalCompareValues(
     if (lhs == NULL || rhs == NULL || outCmp == NULL || outHandled == NULL) {
         return -1;
     }
+    if ((lhsValue->kind == SLCTFEValue_NULL && rhsValue->kind == SLCTFEValue_REFERENCE)
+        || (lhsValue->kind == SLCTFEValue_REFERENCE && rhsValue->kind == SLCTFEValue_NULL))
+    {
+        uintptr_t la = lhsValue->kind == SLCTFEValue_REFERENCE ? (uintptr_t)lhsValue->s.bytes : 0u;
+        uintptr_t ra = rhsValue->kind == SLCTFEValue_REFERENCE ? (uintptr_t)rhsValue->s.bytes : 0u;
+        *outCmp = la < ra ? -1 : (la > ra ? 1 : 0);
+        *outHandled = 1;
+        return 0;
+    }
+    if ((lhsValue->kind == SLCTFEValue_NULL && rhsValue->kind == SLCTFEValue_STRING)
+        || (lhsValue->kind == SLCTFEValue_STRING && rhsValue->kind == SLCTFEValue_NULL))
+    {
+        int32_t   typeCode = SLEvalTypeCode_INVALID;
+        uintptr_t la = lhsValue->kind == SLCTFEValue_STRING ? (uintptr_t)lhsValue->s.bytes : 0u;
+        uintptr_t ra = rhsValue->kind == SLCTFEValue_STRING ? (uintptr_t)rhsValue->s.bytes : 0u;
+        const SLCTFEValue* stringValue = lhsValue->kind == SLCTFEValue_STRING ? lhsValue : rhsValue;
+        if (!SLEvalValueGetRuntimeTypeCode(stringValue, &typeCode)
+            || (typeCode != SLEvalTypeCode_RAWPTR && typeCode != SLEvalTypeCode_STR_PTR
+                && typeCode != SLEvalTypeCode_STR_REF))
+        {
+            return 0;
+        }
+        *outCmp = la < ra ? -1 : (la > ra ? 1 : 0);
+        *outHandled = 1;
+        return 0;
+    }
     if (lhs->kind == SLCTFEValue_REFERENCE && rhs->kind == SLCTFEValue_REFERENCE) {
         uintptr_t la = (uintptr_t)lhs->s.bytes;
         uintptr_t ra = (uintptr_t)rhs->s.bytes;
+        *outCmp = la < ra ? -1 : (la > ra ? 1 : 0);
+        *outHandled = 1;
+        return 0;
+    }
+    if ((lhsValue->kind == SLCTFEValue_REFERENCE && rhsValue->kind == SLCTFEValue_STRING)
+        || (lhsValue->kind == SLCTFEValue_STRING && rhsValue->kind == SLCTFEValue_REFERENCE))
+    {
+        int32_t            typeCode = SLEvalTypeCode_INVALID;
+        const SLCTFEValue* stringValue = lhsValue->kind == SLCTFEValue_STRING ? lhsValue : rhsValue;
+        uintptr_t          la =
+            lhsValue->kind == SLCTFEValue_REFERENCE
+                ? (uintptr_t)lhsValue->s.bytes
+                : (uintptr_t)lhsValue->s.bytes;
+        uintptr_t ra =
+            rhsValue->kind == SLCTFEValue_REFERENCE
+                ? (uintptr_t)rhsValue->s.bytes
+                : (uintptr_t)rhsValue->s.bytes;
+        if (!SLEvalValueGetRuntimeTypeCode(stringValue, &typeCode)
+            || (typeCode != SLEvalTypeCode_RAWPTR && typeCode != SLEvalTypeCode_STR_PTR
+                && typeCode != SLEvalTypeCode_STR_REF))
+        {
+            return 0;
+        }
         *outCmp = la < ra ? -1 : (la > ra ? 1 : 0);
         *outHandled = 1;
         return 0;
@@ -6056,6 +6139,19 @@ static int SLEvalCompareValues(
         return 0;
     }
     if (lhsValue->kind == SLCTFEValue_STRING && rhsValue->kind == SLCTFEValue_STRING) {
+        int32_t lhsTypeCode = SLEvalTypeCode_INVALID;
+        int32_t rhsTypeCode = SLEvalTypeCode_INVALID;
+        if ((SLEvalValueGetRuntimeTypeCode(lhsValue, &lhsTypeCode)
+             && (lhsTypeCode == SLEvalTypeCode_RAWPTR || lhsTypeCode == SLEvalTypeCode_STR_PTR))
+            || (SLEvalValueGetRuntimeTypeCode(rhsValue, &rhsTypeCode)
+                && (rhsTypeCode == SLEvalTypeCode_RAWPTR || rhsTypeCode == SLEvalTypeCode_STR_PTR)))
+        {
+            uintptr_t la = (uintptr_t)lhsValue->s.bytes;
+            uintptr_t ra = (uintptr_t)rhsValue->s.bytes;
+            *outCmp = la < ra ? -1 : (la > ra ? 1 : 0);
+            *outHandled = 1;
+            return 0;
+        }
         if (SLEvalLexCompareStrings(lhsValue, rhsValue, outCmp) != 0) {
             return -1;
         }
@@ -12877,6 +12973,17 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             {
                 *outValue = inValue;
                 outValue->typeTag = nullTypeTag;
+                if (targetTypeCode == SLEvalTypeCode_RAWPTR) {
+                    SLEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                }
+                *outIsConst = 1;
+                return 0;
+            }
+            if (targetTypeCode == SLEvalTypeCode_RAWPTR
+                && (inValue.kind == SLCTFEValue_REFERENCE || inValue.kind == SLCTFEValue_STRING))
+            {
+                *outValue = inValue;
+                SLEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                 *outIsConst = 1;
                 return 0;
             }
@@ -12981,6 +13088,16 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 }
             }
             if ((p->currentFile->ast.nodes[typeNode].kind == SLAst_TYPE_REF
+                 || p->currentFile->ast.nodes[typeNode].kind == SLAst_TYPE_MUTREF
+                 || p->currentFile->ast.nodes[typeNode].kind == SLAst_TYPE_PTR)
+                && inValue.kind == SLCTFEValue_REFERENCE)
+            {
+                *outValue = inValue;
+                *outIsConst = 1;
+                return 0;
+            }
+            if ((p->currentFile->ast.nodes[typeNode].kind == SLAst_TYPE_REF
+                 || p->currentFile->ast.nodes[typeNode].kind == SLAst_TYPE_MUTREF
                  || p->currentFile->ast.nodes[typeNode].kind == SLAst_TYPE_PTR)
                 && p->currentFile->ast.nodes[typeNode].firstChild >= 0
                 && (uint32_t)p->currentFile->ast.nodes[typeNode].firstChild < ast->len

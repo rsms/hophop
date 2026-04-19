@@ -215,8 +215,8 @@ int IsBuiltinType(const char* s) {
     return StrEq(s, "bool") || StrEq(s, "str") || StrEq(s, "u8") || StrEq(s, "u16")
         || StrEq(s, "u32") || StrEq(s, "u64") || StrEq(s, "i8") || StrEq(s, "i16")
         || StrEq(s, "i32") || StrEq(s, "i64") || StrEq(s, "uint") || StrEq(s, "int")
-        || StrEq(s, "f32") || StrEq(s, "f64") || StrEq(s, "const_int") || StrEq(s, "const_float")
-        || StrEq(s, "type") || StrEq(s, "anytype");
+        || StrEq(s, "rawptr") || StrEq(s, "f32") || StrEq(s, "f64") || StrEq(s, "const_int")
+        || StrEq(s, "const_float") || StrEq(s, "type") || StrEq(s, "anytype");
 }
 
 int IsIntegerCTypeName(const char* s) {
@@ -1413,6 +1413,11 @@ int ResolveTypeValueNameExprTypeRef(
         TypeRefSetScalar(outTypeRef, "__sl_int");
         return 1;
     }
+    if (SliceEq(c->unit->source, start, end, "rawptr")) {
+        TypeRefSetScalar(outTypeRef, "void");
+        outTypeRef->ptrDepth = 1;
+        return 1;
+    }
     if (SliceEq(c->unit->source, start, end, "const_int")) {
         TypeRefSetScalar(outTypeRef, "__sl_int");
         return 1;
@@ -1948,13 +1953,13 @@ const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t e
     int                      hasDot = 0;
     uint32_t                 i;
     static const char* const builtinSlNames[] = {
-        "bool", "str",  "u8",  "u16",       "u32", "u64", "i8",          "i16",  "i32",
-        "i64",  "uint", "int", "const_int", "f32", "f64", "const_float", "type", "anytype",
+        "bool", "str", "u8",     "u16",       "u32", "u64", "i8",          "i16",  "i32",     "i64",
+        "uint", "int", "rawptr", "const_int", "f32", "f64", "const_float", "type", "anytype",
     };
     static const char* const builtinCNames[] = {
-        "__sl_bool", "__sl_str", "__sl_u8",  "__sl_u16", "__sl_u32",  "__sl_u64",
-        "__sl_i8",   "__sl_i16", "__sl_i32", "__sl_i64", "__sl_uint", "__sl_int",
-        "__sl_int",  "__sl_f32", "__sl_f64", "__sl_f64", "__sl_type", "__sl_u8",
+        "__sl_bool", "__sl_str", "__sl_u8",  "__sl_u16",  "__sl_u32", "__sl_u64", "__sl_i8",
+        "__sl_i16",  "__sl_i32", "__sl_i64", "__sl_uint", "__sl_int", "void",     "__sl_int",
+        "__sl_f32",  "__sl_f64", "__sl_f64", "__sl_type", "__sl_u8",
     };
 
     normalized = DupAndReplaceDots(c, c->unit->source, start, end);
@@ -2008,23 +2013,24 @@ void NormalizeCoreRuntimeTypeName(SLTypeRef* outType) {
 
 const char* _Nullable ConstEvalBuiltinCName(SLConstEvalBuiltinKind builtin) {
     switch (builtin) {
-        case SLConstEvalBuiltinKind_VOID:  return "void";
-        case SLConstEvalBuiltinKind_BOOL:  return "__sl_bool";
-        case SLConstEvalBuiltinKind_STR:   return "__sl_str";
-        case SLConstEvalBuiltinKind_TYPE:  return "__sl_type";
-        case SLConstEvalBuiltinKind_U8:    return "__sl_u8";
-        case SLConstEvalBuiltinKind_U16:   return "__sl_u16";
-        case SLConstEvalBuiltinKind_U32:   return "__sl_u32";
-        case SLConstEvalBuiltinKind_U64:   return "__sl_u64";
-        case SLConstEvalBuiltinKind_I8:    return "__sl_i8";
-        case SLConstEvalBuiltinKind_I16:   return "__sl_i16";
-        case SLConstEvalBuiltinKind_I32:   return "__sl_i32";
-        case SLConstEvalBuiltinKind_I64:   return "__sl_i64";
-        case SLConstEvalBuiltinKind_USIZE: return "__sl_uint";
-        case SLConstEvalBuiltinKind_ISIZE: return "__sl_int";
-        case SLConstEvalBuiltinKind_F32:   return "__sl_f32";
-        case SLConstEvalBuiltinKind_F64:   return "__sl_f64";
-        default:                           return NULL;
+        case SLConstEvalBuiltinKind_VOID:   return "void";
+        case SLConstEvalBuiltinKind_BOOL:   return "__sl_bool";
+        case SLConstEvalBuiltinKind_STR:    return "__sl_str";
+        case SLConstEvalBuiltinKind_TYPE:   return "__sl_type";
+        case SLConstEvalBuiltinKind_U8:     return "__sl_u8";
+        case SLConstEvalBuiltinKind_U16:    return "__sl_u16";
+        case SLConstEvalBuiltinKind_U32:    return "__sl_u32";
+        case SLConstEvalBuiltinKind_U64:    return "__sl_u64";
+        case SLConstEvalBuiltinKind_I8:     return "__sl_i8";
+        case SLConstEvalBuiltinKind_I16:    return "__sl_i16";
+        case SLConstEvalBuiltinKind_I32:    return "__sl_i32";
+        case SLConstEvalBuiltinKind_I64:    return "__sl_i64";
+        case SLConstEvalBuiltinKind_USIZE:  return "__sl_uint";
+        case SLConstEvalBuiltinKind_ISIZE:  return "__sl_int";
+        case SLConstEvalBuiltinKind_RAWPTR: return "void";
+        case SLConstEvalBuiltinKind_F32:    return "__sl_f32";
+        case SLConstEvalBuiltinKind_F64:    return "__sl_f64";
+        default:                            return NULL;
     }
 }
 
@@ -2046,6 +2052,9 @@ int ParseTypeRefFromConstEvalTypeId(SLCBackendC* c, int32_t typeId, SLTypeRef* o
                 return -1;
             }
             TypeRefSetScalar(outType, baseName);
+            if (info.builtin == SLConstEvalBuiltinKind_RAWPTR) {
+                outType->ptrDepth = 1;
+            }
             NormalizeCoreRuntimeTypeName(outType);
             return 0;
         }
@@ -2379,6 +2388,11 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
     switch (n->kind) {
         case SLAst_TYPE_NAME: {
             SLTypeRef reflectedType;
+            if (SliceEq(c->unit->source, n->dataStart, n->dataEnd, "rawptr")) {
+                TypeRefSetScalar(outType, "void");
+                outType->ptrDepth = 1;
+                return 0;
+            }
             if (ResolveTypeValueNameExprTypeRef(c, n->dataStart, n->dataEnd, &reflectedType)) {
                 if (!reflectedType.valid) {
                     return -1;

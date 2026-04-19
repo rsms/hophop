@@ -37,7 +37,7 @@ pub struct Logger {
 }
 
 pub struct Allocator {
-	impl fn(*Allocator, uint, uint, uint, *uint, u32) uint
+	impl fn(*Allocator, rawptr, uint, uint, *uint, u32) rawptr
 }
 
 pub struct Context {

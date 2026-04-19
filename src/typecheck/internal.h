@@ -46,6 +46,7 @@ typedef enum {
     SLBuiltin_I64,
     SLBuiltin_USIZE,
     SLBuiltin_ISIZE,
+    SLBuiltin_RAWPTR,
     SLBuiltin_F32,
     SLBuiltin_F64,
 } SLBuiltinKind;
@@ -255,6 +256,7 @@ typedef struct {
     int32_t typeRune;
     int32_t typeMemAllocator;
     int32_t typeUsize;
+    int32_t typeRawptr;
     int32_t typeReflectSpan;
     int32_t typeFmtValue;
     int32_t typeUntypedInt;
@@ -983,6 +985,7 @@ int SLTCFailConstFloatRange(SLTypeCheckCtx* c, int32_t nodeId, int32_t expectedT
 int SLTCIsFloatType(SLTypeCheckCtx* c, int32_t typeId);
 int SLTCIsNumericType(SLTypeCheckCtx* c, int32_t typeId);
 int SLTCIsBoolType(SLTypeCheckCtx* c, int32_t typeId);
+int SLTCIsRawptrType(SLTypeCheckCtx* c, int32_t typeId);
 int SLTCIsNamedDeclKind(SLTypeCheckCtx* c, int32_t typeId, SLAstKind kind);
 int SLTCIsStringLikeType(SLTypeCheckCtx* c, int32_t typeId);
 int SLTCTypeSupportsFmtReflectRec(SLTypeCheckCtx* c, int32_t typeId, uint32_t depth);
