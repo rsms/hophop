@@ -92,10 +92,10 @@ typedef enum {
 typedef __sl_u32 __sl_LogFlags;
 
 struct __sl_Logger {
-    void (*handler)(__sl_Logger* arg0, __sl_str* arg1, __sl_LogLevel arg2, __sl_LogFlags arg3);
+    void (*handler)(__sl_Logger* arg0, __sl_str arg1, __sl_LogLevel arg2, __sl_LogFlags arg3);
     __sl_LogLevel min_level;
     __sl_LogFlags flags;
-    __sl_str*     prefix;
+    __sl_str      prefix;
 };
 
 struct __sl_Allocator {
@@ -127,27 +127,28 @@ __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 li
     (&(const __sl_str){                                    \
         .ptr = (__sl_u8*)(uintptr_t)(const void*)(strlit), \
         .len = (__sl_uint)(sizeof(strlit) - 1u) })
+#define __sl_strlitp(strlit) __sl_strlit(strlit)
 
-#define __sl_assert(expr)                                                    \
-    do {                                                                     \
-        if __sl_unlikely (!(expr)) {                                         \
-            __sl_panic(__sl_strlit("assertion failed"), __FILE__, __LINE__); \
-        }                                                                    \
+#define __sl_assert(expr)                                                     \
+    do {                                                                      \
+        if __sl_unlikely (!(expr)) {                                          \
+            __sl_panic(__sl_strlitp("assertion failed"), __FILE__, __LINE__); \
+        }                                                                     \
     } while (0)
 
-#define __sl_assertf(expr, fmt_cstr_lit, ...)                          \
-    do {                                                               \
-        if __sl_unlikely (!(expr)) {                                   \
-            __sl_panic(__sl_strlit(fmt_cstr_lit), __FILE__, __LINE__); \
-        }                                                              \
+#define __sl_assertf(expr, fmt_cstr_lit, ...)                           \
+    do {                                                                \
+        if __sl_unlikely (!(expr)) {                                    \
+            __sl_panic(__sl_strlitp(fmt_cstr_lit), __FILE__, __LINE__); \
+        }                                                               \
     } while (0)
 
-static inline __sl_uint __sl_len(const __sl_str* s) {
-    return s->len;
+static inline __sl_uint __sl_len(__sl_str s) {
+    return s.len;
 }
 
-static inline const __sl_u8* __sl_cstr(const __sl_str* s) {
-    return s->ptr;
+static inline const __sl_u8* __sl_cstr(__sl_str s) {
+    return s.ptr;
 }
 
 static inline __sl_uint __sl_align_up(__sl_uint x, __sl_uint a) {
@@ -184,14 +185,14 @@ static inline __sl_bool __sl_mem_equal(const void* a, const void* b, __sl_uint n
 
 __sl_int __sl_mem_order(const void* a, __sl_uint a_len, const void* b, __sl_uint b_len);
 
-static inline __sl_bool __sl_str_equal(const __sl_str* a, const __sl_str* b) {
+static inline __sl_bool __sl_str_equal(__sl_str a, __sl_str b) {
     __sl_uint a_len = __sl_len(a);
     __sl_uint b_len = __sl_len(b);
     return a_len == b_len
         && __sl_mem_equal((const void*)__sl_cstr(a), (const void*)__sl_cstr(b), a_len);
 }
 
-static inline __sl_int __sl_str_order(const __sl_str* a, const __sl_str* b) {
+static inline __sl_int __sl_str_order(__sl_str a, __sl_str b) {
     return __sl_mem_order(
         (const void*)__sl_cstr(a), __sl_len(a), (const void*)__sl_cstr(b), __sl_len(b));
 }
@@ -220,7 +221,7 @@ static inline __sl_int __sl_ptr_order(const void* a, const void* b) {
 
 static inline void* __sl_unwrap1(const char* file, __sl_u32 line, const void* p) {
     if __sl_unlikely (p == NULL) {
-        __sl_panic(__sl_strlit("unwrap: null value"), file, line);
+        __sl_panic(__sl_strlitp("unwrap: null value"), file, line);
     }
     return (void*)p;
 }
@@ -231,7 +232,7 @@ static inline void* __sl_new(__sl_Allocator* ma, __sl_uint size, __sl_uint align
     __sl_uint newSize = size;
 
     if __sl_unlikely (align == 0 || (align & (align - 1u)) != 0) {
-        __sl_panic(__sl_strlit("invalid alignment"), "", 0);
+        __sl_panic(__sl_strlitp("invalid alignment"), "", 0);
     }
 
     // TODO FIXME: make ma or ma->impl being NULL an error. For now we return NULL in that case,

@@ -243,6 +243,7 @@ static int SLPParseExpr(SLParser* p, int minPrec, int32_t* out);
 static int SLPParseStmt(SLParser* p, int32_t* out);
 static int SLPParseDecl(SLParser* p, int allowBody, int32_t* out);
 static int SLPParseDeclInner(SLParser* p, int allowBody, int32_t* out);
+static int SLPParseDirective(SLParser* p, int32_t* out);
 static int SLPParseSwitchStmt(SLParser* p, int32_t* out);
 static int SLPParseAggregateDecl(SLParser* p, int32_t* out);
 static int SLPParseTypeAliasDecl(SLParser* p, int32_t* out);
@@ -1663,6 +1664,95 @@ static int SLPParseExprList(SLParser* p, int32_t* out) {
         itemCount++;
     }
     return SLPBuildListNode(p, SLAst_EXPR_LIST, items, itemCount, out);
+}
+
+static int SLPParseDirectiveLiteral(SLParser* p, int32_t* out) {
+    const SLToken* t = SLPPeek(p);
+    int32_t        n;
+
+    switch (t->kind) {
+        case SLTok_INT:
+            p->pos++;
+            n = SLPNewNode(p, SLAst_INT, t->start, t->end);
+            break;
+        case SLTok_FLOAT:
+            p->pos++;
+            n = SLPNewNode(p, SLAst_FLOAT, t->start, t->end);
+            break;
+        case SLTok_STRING:
+            p->pos++;
+            n = SLPNewNode(p, SLAst_STRING, t->start, t->end);
+            break;
+        case SLTok_RUNE:
+            p->pos++;
+            n = SLPNewNode(p, SLAst_RUNE, t->start, t->end);
+            break;
+        case SLTok_TRUE:
+        case SLTok_FALSE:
+            p->pos++;
+            n = SLPNewNode(p, SLAst_BOOL, t->start, t->end);
+            break;
+        case SLTok_NULL:
+            p->pos++;
+            n = SLPNewNode(p, SLAst_NULL, t->start, t->end);
+            break;
+        default: return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
+    }
+    if (n < 0) {
+        return -1;
+    }
+    if (p->nodes[n].kind != SLAst_NULL) {
+        p->nodes[n].dataStart = t->start;
+        p->nodes[n].dataEnd = t->end;
+    }
+    *out = n;
+    return 0;
+}
+
+static int SLPParseDirective(SLParser* p, int32_t* out) {
+    const SLToken* atTok = NULL;
+    const SLToken* nameTok = NULL;
+    const SLToken* rp = NULL;
+    int32_t        directive;
+
+    if (SLPExpect(p, SLTok_AT, SLDiag_UNEXPECTED_TOKEN, &atTok) != 0) {
+        return -1;
+    }
+    if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &nameTok) != 0) {
+        return -1;
+    }
+    directive = SLPNewNode(p, SLAst_DIRECTIVE, atTok->start, nameTok->end);
+    if (directive < 0) {
+        return -1;
+    }
+    p->nodes[directive].dataStart = nameTok->start;
+    p->nodes[directive].dataEnd = nameTok->end;
+
+    if (SLPMatch(p, SLTok_LPAREN)) {
+        if (!SLPAt(p, SLTok_RPAREN)) {
+            for (;;) {
+                int32_t argNode = -1;
+                if (SLPParseDirectiveLiteral(p, &argNode) != 0) {
+                    return -1;
+                }
+                if (SLPAddChild(p, directive, argNode) != 0) {
+                    return -1;
+                }
+                if (!SLPMatch(p, SLTok_COMMA)) {
+                    break;
+                }
+                if (SLPAt(p, SLTok_RPAREN)) {
+                    break;
+                }
+            }
+        }
+        if (SLPExpect(p, SLTok_RPAREN, SLDiag_UNEXPECTED_TOKEN, &rp) != 0) {
+            return -1;
+        }
+        p->nodes[directive].end = rp->end;
+    }
+    *out = directive;
+    return 0;
 }
 
 static int SLPParseDeclNameList(
@@ -3416,6 +3506,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_FILE:              return "FILE";
         case SLAst_IMPORT:            return "IMPORT";
         case SLAst_IMPORT_SYMBOL:     return "IMPORT_SYMBOL";
+        case SLAst_DIRECTIVE:         return "DIRECTIVE";
         case SLAst_PUB:               return "PUB";
         case SLAst_FN:                return "FN";
         case SLAst_PARAM:             return "PARAM";
@@ -3839,6 +3930,23 @@ int SLParse(
         if (SLPAt(&p, SLTok_SEMICOLON)) {
             p.pos++;
             continue;
+        }
+        for (;;) {
+            if (SLPAt(&p, SLTok_SEMICOLON)) {
+                p.pos++;
+                continue;
+            }
+            if (SLPAt(&p, SLTok_AT)) {
+                int32_t directive;
+                if (SLPParseDirective(&p, &directive) != 0) {
+                    return -1;
+                }
+                if (SLPAddChild(&p, root, directive) != 0) {
+                    return -1;
+                }
+                continue;
+            }
+            break;
         }
         if (SLPParseDecl(&p, 1, &decl) != 0) {
             return -1;

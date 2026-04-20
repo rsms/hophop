@@ -90,3 +90,4 @@ Implemented core includes:
 - [SLP-31-nested-types.md](SLP-31-nested-types.md)
 - [SLP-32-wasm-backend.md](SLP-32-wasm-backend.md)
 - [SLP-33-rawptr.md](SLP-33-rawptr.md)
+- [SLP-34-link-time-imports.md](SLP-34-link-time-imports.md)

@@ -1,0 +1,1 @@
+tests/foreign_directives_codegen_ok.sl:2:1: SL0000: foreign imports are not supported for platform cli-eval

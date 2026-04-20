@@ -754,6 +754,7 @@ int      SLTCResolveIndexBaseInfo(SLTypeCheckCtx* c, int32_t baseType, SLTCIndex
 int32_t  SLTCListItemAt(const SLAst* ast, int32_t listNode, uint32_t index);
 uint32_t SLTCListCount(const SLAst* ast, int32_t listNode);
 int      SLTCVarLikeGetParts(SLTypeCheckCtx* c, int32_t nodeId, SLTCVarLikeParts* out);
+int      SLTCHasForeignImportDirective(const SLAst* ast, SLStrView src, int32_t nodeId);
 int32_t  SLTCVarLikeNameIndexBySlice(
     SLTypeCheckCtx* c, int32_t nodeId, uint32_t start, uint32_t end);
 int32_t SLTCVarLikeInitExprNodeAt(SLTypeCheckCtx* c, int32_t nodeId, int32_t nameIndex);

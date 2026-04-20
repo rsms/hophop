@@ -81,6 +81,12 @@ See also:
   - `CONTEXT` (when tokenized as identifier-like expression operand)
 - [LEX-SEMI-003][Stable] In section 3 productions, semicolons are modeled as separators between adjacent declarations/statements in lists.
 
+### 2.6 Directives
+- [LEX-DIR-001][Provisional] `@` introduces a directive token sequence at top-level declaration scope.
+- [LEX-DIR-002][Provisional] A directive name is an identifier.
+- [LEX-DIR-003][Provisional] A directive may be written as `@name` or `@name(...)`.
+- [LEX-DIR-004][Provisional] Directive arguments, when present, MUST be zero or more comma-separated SL literals.
+
 ## 3. Concrete Syntax
 
 ### 3.1 File structure
@@ -91,9 +97,12 @@ See also:
 ### 3.2 EBNF
 
 ```ebnf
-SourceFile      = { ImportDecl ";" } { TopDecl ";" } .
+SourceFile      = { ImportDecl ";" } { DirectiveRun TopDecl ";" } .
 StringLit       = /* lexical string literal; see [LEX-LIT-006] through [LEX-LIT-009] */ .
 RuneLit         = /* lexical rune literal; see [LEX-LIT-010] through [LEX-LIT-012] */ .
+Literal         = IntLit | FloatLit | StringLit | RuneLit | BoolLit | "null" .
+DirectiveRun    = { Directive ";" } .
+Directive       = "@" Ident [ "(" [ Literal { "," Literal } [ "," ] ] ")" ] .
 
 ImportDecl      = "import" StringLit [ ImportAlias ] [ ImportSymbols ] .
 ImportAlias     = "as" ( Ident | "_" ) .
@@ -231,6 +240,8 @@ FieldInit       = Ident { "." Ident } ":" Expr .
 - [SYN-DISAMBIG-003][Stable] `context` is always lexed as keyword token `CONTEXT`; when accepted as a primary expression it is represented as identifier-like operand, never as a bindable identifier declaration name.
 - [SYN-DISAMBIG-005][Stable] In statement context (`Stmt`), leading `{` is parsed unconditionally as `Block`.
 - [SYN-DISAMBIG-006][Stable] `ExprStmt` in statement context MUST NOT consume unparenthesized brace-leading compound-literal forms (`{ ... }`). If a compound-literal expression statement is intended, it MUST be parenthesized (`({ ... })`).
+- [SYN-DIR-001][Provisional] A top-level directive run attaches to the immediately following top-level declaration.
+- [SYN-DIR-002][Provisional] Directives are not standalone declarations and are invalid if no following top-level declaration exists.
 
 Canonical examples:
 
@@ -258,6 +269,14 @@ fn f() {
 - [DECL-TOP-002][Stable] Top-level `var` is invalid.
 - [DECL-TOP-003][Stable] `const` MUST have an initializer.
 - [DECL-CONST-001][Provisional] `const` initializers MUST be const-evaluable in all scopes (top-level and local).
+- [DECL-DIR-001][Provisional] Recognized foreign-linkage directives are:
+  - `@c_import("symbol")` on top-level `fn`, `const`, or `var` declarations
+  - `@wasm_import("module", "name")` on top-level `fn`, `const`, or `var` declarations
+  - `@export("name")` on `pub fn` definitions
+- [DECL-DIR-002][Provisional] `@c_import` and `@wasm_import` declare externally provided symbols and therefore require declarations, not definitions.
+- [DECL-DIR-003][Provisional] `@export` publishes the annotated function under the requested external name.
+- [DECL-DIR-004][Provisional] Foreign-linkage directives are invalid on overloaded functions.
+- [DECL-DIR-005][Provisional] Context parameters are invalid on `@c_import` and `@wasm_import` functions.
 - [DECL-TOP-004][Stable] `pub` applies to a single following top-level declaration.
 - [DECL-HOLE-001][Stable] `_` MUST NOT name top-level symbols, struct/union fields, enum items, or type aliases.
 - [DECL-HOLE-002][Stable] Local discard declarations `var _ = expr` and `const _ = expr` are valid statement forms.

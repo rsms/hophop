@@ -1,0 +1,1 @@
+tests/foreign_directives_wasm_backend_c_import_bad.sl:1:1: SL3002: Wasm backend does not support this MIR: @c_import is not supported by the direct Wasm backend

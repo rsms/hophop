@@ -224,15 +224,23 @@ Import path:
 
 Surface API:
 - `platform.exit(status)`
+- `platform.console_log(message, flags)`
+- `platform.panic(message, flags)`
 
 Operation semantics:
 - `exit`: terminate process with status code.
+- `console_log`: write a platform log message.
+- `panic`: stop execution after reporting a fatal error message.
 
 Allocation is provided by `Allocator` via `new`, with the platform setting
 `context.mem` before `sl_main`.
 
 Concrete default platform implementation used by `slc compile`/`slc run`:
 - `lib/platform/cli-libc/platform.c`
+
+Selected platform targets may provide the platform surface in SL using foreign-linkage directives.
+The `wasm-min` target does this in `lib/platform/wasm-min/platform.sl` with `@wasm_import(...)`
+declarations for `exit`, `console_log`, and `panic`.
 
 ### Draft delta (SLP-17, not implemented)
 

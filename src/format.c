@@ -1467,6 +1467,8 @@ static int SLFmtEmitExpr(SLFmtCtx* c, int32_t nodeId, int forceParen);
 static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitDecl(SLFmtCtx* c, int32_t nodeId);
+static int SLFmtEmitDirectiveGroup(SLFmtCtx* c, int32_t firstDirective, int32_t* outNext);
+static int SLFmtEmitDirective(SLFmtCtx* c, int32_t nodeId);
 static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId);
 static int SLFmtEmitExprList(SLFmtCtx* c, int32_t listNodeId);
 
@@ -4745,6 +4747,35 @@ static int SLFmtEmitFnDecl(SLFmtCtx* c, int32_t nodeId) {
     return SLFmtEmitTrailingCommentsForNode(c, nodeId);
 }
 
+static int SLFmtEmitDirective(SLFmtCtx* c, int32_t nodeId) {
+    const SLAstNode* n = &c->ast->nodes[nodeId];
+    int32_t          child = SLFmtFirstChild(c->ast, nodeId);
+    int              first = 1;
+    if (SLFmtWriteChar(c, '@') != 0 || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
+        return -1;
+    }
+    if (child >= 0 || SLFmtSliceHasChar(c->src, n->dataEnd, n->end, '(')) {
+        if (SLFmtWriteChar(c, '(') != 0) {
+            return -1;
+        }
+        while (child >= 0) {
+            int32_t next = SLFmtNextSibling(c->ast, child);
+            if (!first && SLFmtWriteCStr(c, ", ") != 0) {
+                return -1;
+            }
+            if (SLFmtEmitExpr(c, child, 0) != 0) {
+                return -1;
+            }
+            first = 0;
+            child = next;
+        }
+        if (SLFmtWriteChar(c, ')') != 0) {
+            return -1;
+        }
+    }
+    return SLFmtEmitTrailingCommentsForNode(c, nodeId);
+}
+
 static int SLFmtEmitDecl(SLFmtCtx* c, int32_t nodeId) {
     const SLAstNode* n = &c->ast->nodes[nodeId];
     if (SLFmtEmitLeadingCommentsForNode(c, nodeId) != 0) {
@@ -4752,6 +4783,7 @@ static int SLFmtEmitDecl(SLFmtCtx* c, int32_t nodeId) {
     }
     switch (n->kind) {
         case SLAst_IMPORT:     return SLFmtEmitImport(c, nodeId);
+        case SLAst_DIRECTIVE:  return SLFmtEmitDirective(c, nodeId);
         case SLAst_STRUCT:     return SLFmtEmitAggregateDecl(c, nodeId, "struct");
         case SLAst_UNION:      return SLFmtEmitAggregateDecl(c, nodeId, "union");
         case SLAst_ENUM:       return SLFmtEmitAggregateDecl(c, nodeId, "enum");
@@ -4792,6 +4824,34 @@ static int SLFmtEmitDecl(SLFmtCtx* c, int32_t nodeId) {
     }
 }
 
+static int SLFmtEmitDirectiveGroup(SLFmtCtx* c, int32_t firstDirective, int32_t* outNext) {
+    int32_t child = firstDirective;
+    int32_t next = -1;
+    int     first = 1;
+    while (child >= 0 && c->ast->nodes[child].kind == SLAst_DIRECTIVE) {
+        next = SLFmtNextSibling(c->ast, child);
+        if (!first && SLFmtNewline(c) != 0) {
+            return -1;
+        }
+        if (SLFmtEmitDecl(c, child) != 0) {
+            return -1;
+        }
+        first = 0;
+        child = next;
+    }
+    if (child >= 0) {
+        if (!first && SLFmtNewline(c) != 0) {
+            return -1;
+        }
+        if (SLFmtEmitDecl(c, child) != 0) {
+            return -1;
+        }
+        next = SLFmtNextSibling(c->ast, child);
+    }
+    *outNext = next;
+    return 0;
+}
+
 static int SLFmtEmitFile(SLFmtCtx* c) {
     int32_t child = SLFmtFirstChild(c->ast, c->ast->root);
     int     first = 1;
@@ -4806,6 +4866,10 @@ static int SLFmtEmitFile(SLFmtCtx* c) {
         if (c->ast->nodes[child].kind == SLAst_IMPORT) {
             int32_t lastSourceNode = child;
             if (SLFmtEmitImportGroup(c, child, &lastSourceNode, &next) != 0) {
+                return -1;
+            }
+        } else if (c->ast->nodes[child].kind == SLAst_DIRECTIVE) {
+            if (SLFmtEmitDirectiveGroup(c, child, &next) != 0) {
                 return -1;
             }
         } else if (SLFmtEmitDecl(c, child) != 0) {

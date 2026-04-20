@@ -778,7 +778,9 @@ int SLTCTypeTopLevelVarLikeNode(
     c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_VISITING;
     if (parts.typeNode >= 0) {
         initNode = parts.initNode;
-        if (c->ast->nodes[nodeId].kind == SLAst_CONST && initNode < 0) {
+        if (c->ast->nodes[nodeId].kind == SLAst_CONST && initNode < 0
+            && !SLTCHasForeignImportDirective(c->ast, c->src, nodeId))
+        {
             c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return SLTCFailNode(c, nodeId, SLDiag_CONST_MISSING_INITIALIZER);
         }

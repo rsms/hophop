@@ -7189,6 +7189,11 @@ int SLTCEvalTopLevelConstNodeAt(
     c->constEvalState[nodeId] = SLTCConstEval_VISITING;
     initNode = SLTCVarLikeInitExprNodeAt(c, nodeId, nameIndex);
     if (initNode < 0) {
+        if (SLTCHasForeignImportDirective(c->ast, c->src, nodeId)) {
+            c->constEvalState[nodeId] = SLTCConstEval_NONCONST;
+            *outIsConst = 0;
+            return 0;
+        }
         SLTCConstSetReasonNode(evalCtx, nodeId, "const declaration is missing an initializer");
         c->constEvalState[nodeId] = SLTCConstEval_NONCONST;
         *outIsConst = 0;

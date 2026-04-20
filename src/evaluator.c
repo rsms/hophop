@@ -64,6 +64,8 @@ typedef struct {
     char*    text;
     uint32_t fileIndex;
     int32_t  nodeId;
+    uint32_t sourceStart;
+    uint32_t sourceEnd;
 } SLDeclText;
 
 typedef struct SLPackage {
@@ -101,6 +103,7 @@ typedef struct SLPackage {
 typedef struct {
     char*      rootDir;
     char*      platformTarget;
+    SLPackage* selectedPlatformPkg;
     SLPackage* packages;
     uint32_t   packageLen;
     uint32_t   packageCap;

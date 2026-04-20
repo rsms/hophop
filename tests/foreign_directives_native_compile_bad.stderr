@@ -1,0 +1,1 @@
+error: native C compilation does not support @wasm_import; use `slc genpkg:c` or a Wasm toolchain

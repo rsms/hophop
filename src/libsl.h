@@ -208,6 +208,7 @@ typedef enum {
     SLTok_ELLIPSIS,
     SLTok_SEMICOLON,
     SLTok_COLON,
+    SLTok_AT,
 
     SLTok_ASSIGN,
     SLTok_ADD,
@@ -261,6 +262,7 @@ typedef enum {
     SLAst_FILE = 0,
     SLAst_IMPORT,
     SLAst_IMPORT_SYMBOL,
+    SLAst_DIRECTIVE,
     SLAst_PUB,
     SLAst_FN,
     SLAst_PARAM,

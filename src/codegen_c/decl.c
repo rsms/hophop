@@ -1,6 +1,417 @@
 #include "internal.h"
 
 SL_API_BEGIN
+typedef enum {
+    SLCForeignDecl_NONE = 0,
+    SLCForeignDecl_C_IMPORT,
+    SLCForeignDecl_WASM_IMPORT,
+    SLCForeignDecl_EXPORT,
+} SLCForeignDeclKind;
+
+typedef struct {
+    SLCForeignDeclKind kind;
+    uint32_t           arg0Start;
+    uint32_t           arg0End;
+    uint32_t           arg1Start;
+    uint32_t           arg1End;
+} SLCForeignDeclInfo;
+
+static int CDirectiveNameEq(const SLCBackendC* c, int32_t nodeId, const char* name) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    size_t           len = StrLen(name);
+    return n != NULL && n->kind == SLAst_DIRECTIVE && n->dataEnd >= n->dataStart
+        && (size_t)(n->dataEnd - n->dataStart) == len
+        && memcmp(c->unit->source + n->dataStart, name, len) == 0;
+}
+
+static int32_t CDirectiveArgAt(const SLCBackendC* c, int32_t nodeId, uint32_t index) {
+    uint32_t i = 0;
+    int32_t  child = AstFirstChild(&c->ast, nodeId);
+    while (child >= 0) {
+        if (i == index) {
+            return child;
+        }
+        i++;
+        child = AstNextSibling(&c->ast, child);
+    }
+    return -1;
+}
+
+static int CFindDirectiveRun(
+    const SLCBackendC* c,
+    int32_t            declNodeId,
+    int32_t*           outFirstDirective,
+    int32_t*           outLastDirective) {
+    int32_t child = AstFirstChild(&c->ast, c->ast.root);
+    int32_t first = -1;
+    int32_t last = -1;
+    while (child >= 0) {
+        const SLAstNode* n = NodeAt(c, child);
+        if (n != NULL && n->kind == SLAst_DIRECTIVE) {
+            if (first < 0) {
+                first = child;
+            }
+            last = child;
+        } else {
+            if (child == declNodeId) {
+                *outFirstDirective = first;
+                *outLastDirective = last;
+                return 0;
+            }
+            first = -1;
+            last = -1;
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    *outFirstDirective = -1;
+    *outLastDirective = -1;
+    return -1;
+}
+
+static int GetForeignDeclInfo(const SLCBackendC* c, int32_t nodeId, SLCForeignDeclInfo* out) {
+    int32_t firstDirective = -1;
+    int32_t lastDirective = -1;
+    int32_t child;
+    *out = (SLCForeignDeclInfo){ 0 };
+    if (CFindDirectiveRun(c, nodeId, &firstDirective, &lastDirective) != 0 || firstDirective < 0) {
+        return 0;
+    }
+    child = firstDirective;
+    while (child >= 0) {
+        if (CDirectiveNameEq(c, child, "c_import")) {
+            int32_t arg0 = CDirectiveArgAt(c, child, 0u);
+            if (arg0 >= 0) {
+                out->kind = SLCForeignDecl_C_IMPORT;
+                out->arg0Start = c->ast.nodes[arg0].start;
+                out->arg0End = c->ast.nodes[arg0].end;
+            }
+        } else if (CDirectiveNameEq(c, child, "wasm_import")) {
+            int32_t arg0 = CDirectiveArgAt(c, child, 0u);
+            int32_t arg1 = CDirectiveArgAt(c, child, 1u);
+            if (arg0 >= 0 && arg1 >= 0) {
+                out->kind = SLCForeignDecl_WASM_IMPORT;
+                out->arg0Start = c->ast.nodes[arg0].start;
+                out->arg0End = c->ast.nodes[arg0].end;
+                out->arg1Start = c->ast.nodes[arg1].start;
+                out->arg1End = c->ast.nodes[arg1].end;
+            }
+        } else if (CDirectiveNameEq(c, child, "export")) {
+            int32_t arg0 = CDirectiveArgAt(c, child, 0u);
+            if (arg0 >= 0) {
+                out->kind = SLCForeignDecl_EXPORT;
+                out->arg0Start = c->ast.nodes[arg0].start;
+                out->arg0End = c->ast.nodes[arg0].end;
+            }
+        }
+        if (child == lastDirective) {
+            break;
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    return out->kind != SLCForeignDecl_NONE;
+}
+
+static const char* _Nullable ForeignStubName(SLCBackendC* c, int32_t nodeId, const char* suffix) {
+    SLBuf b = { .arena = &c->arena };
+    char* name;
+    if (BufAppendCStr(&b, "__sl_foreign_") != 0 || BufAppendCStr(&b, suffix) != 0
+        || BufAppendChar(&b, '_') != 0 || BufAppendU32(&b, (uint32_t)nodeId) != 0)
+    {
+        return NULL;
+    }
+    name = BufFinish(&b);
+    return name;
+}
+
+static void BuildForeignArgName(char* dst, uint32_t dstCap, uint32_t index) {
+    uint32_t n = index;
+    uint32_t len = 0;
+    char     digits[16];
+    uint32_t i;
+    if (dst == NULL || dstCap < 5u) {
+        return;
+    }
+    dst[0] = 'a';
+    dst[1] = 'r';
+    dst[2] = 'g';
+    if (n == 0u) {
+        digits[len++] = '0';
+    } else {
+        while (n > 0u && len < (uint32_t)sizeof(digits)) {
+            digits[len++] = (char)('0' + (n % 10u));
+            n /= 10u;
+        }
+    }
+    if (3u + len + 1u > dstCap) {
+        dst[3] = '0';
+        dst[4] = '\0';
+        return;
+    }
+    for (i = 0; i < len; i++) {
+        dst[3u + i] = digits[len - 1u - i];
+    }
+    dst[3u + len] = '\0';
+}
+
+static int EmitAsmLabelAttr(
+    SLCBackendC* c, uint32_t labelStart, uint32_t labelEnd, int leadingSpace) {
+    if (leadingSpace && BufAppendChar(&c->out, ' ') != 0) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "__asm__(") != 0
+        || BufAppendSlice(&c->out, c->unit->source, labelStart, labelEnd) != 0
+        || BufAppendChar(&c->out, ')') != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitWasmImportAttrs(
+    SLCBackendC* c,
+    uint32_t     moduleStart,
+    uint32_t     moduleEnd,
+    uint32_t     nameStart,
+    uint32_t     nameEnd) {
+    if (BufAppendCStr(&c->out, " __attribute__((import_module(") != 0
+        || BufAppendSlice(&c->out, c->unit->source, moduleStart, moduleEnd) != 0
+        || BufAppendCStr(&c->out, "), import_name(") != 0
+        || BufAppendSlice(&c->out, c->unit->source, nameStart, nameEnd) != 0
+        || BufAppendCStr(&c->out, ")))") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitForeignFnParamList(
+    SLCBackendC* c, const SLFnSig* fnSig, int includeNames, int* _Nullable outNeedsNames) {
+    uint32_t paramIndex;
+    int      firstParam = 1;
+    if (fnSig->isVariadic) {
+        SetDiagNode(c, fnSig->nodeId, SLDiag_CODEGEN_INTERNAL);
+        if (c->diag != NULL) {
+            c->diag->detail = "foreign variadic functions are not supported";
+        }
+        return -1;
+    }
+    if (outNeedsNames != NULL) {
+        *outNeedsNames = 0;
+    }
+    for (paramIndex = 0; paramIndex < fnSig->paramLen; paramIndex++) {
+        const char* paramName = fnSig->paramNames != NULL ? fnSig->paramNames[paramIndex] : NULL;
+        char        fallback[24];
+        const char* emitName = NULL;
+        if (!firstParam && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        if (includeNames) {
+            if (paramName == NULL || paramName[0] == '\0') {
+                BuildForeignArgName(fallback, (uint32_t)sizeof(fallback), paramIndex);
+                emitName = fallback;
+            } else {
+                emitName = paramName;
+            }
+        }
+        if (EmitTypeRefWithName(c, &fnSig->paramTypes[paramIndex], emitName) != 0) {
+            return -1;
+        }
+        if (outNeedsNames != NULL && includeNames) {
+            *outNeedsNames = 1;
+        }
+        firstParam = 0;
+    }
+    if (firstParam && BufAppendCStr(&c->out, "void") != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitForeignImportFn(
+    SLCBackendC* c, int32_t nodeId, const SLFnSig* fnSig, int emitBody, int isPrivate) {
+    const char*        localName = fnSig->cName;
+    const char*        stubName = ForeignStubName(c, nodeId, "fn");
+    SLCForeignDeclInfo foreign = { 0 };
+    if (stubName == NULL || !GetForeignDeclInfo(c, nodeId, &foreign)
+        || (foreign.kind != SLCForeignDecl_C_IMPORT && foreign.kind != SLCForeignDecl_WASM_IMPORT))
+    {
+        return -1;
+    }
+
+    EmitIndent(c, 0);
+    if (BufAppendCStr(&c->out, "extern ") != 0
+        || EmitTypeRefWithName(c, &fnSig->returnType, stubName) != 0
+        || BufAppendChar(&c->out, '(') != 0 || EmitForeignFnParamList(c, fnSig, 1, NULL) != 0
+        || BufAppendChar(&c->out, ')') != 0)
+    {
+        return -1;
+    }
+    if (foreign.kind == SLCForeignDecl_C_IMPORT) {
+        if (EmitAsmLabelAttr(c, foreign.arg0Start, foreign.arg0End, 1) != 0) {
+            return -1;
+        }
+    } else if (
+        EmitWasmImportAttrs(
+            c, foreign.arg0Start, foreign.arg0End, foreign.arg1Start, foreign.arg1End)
+        != 0)
+    {
+        return -1;
+    }
+    if (BufAppendChar(&c->out, ';') != 0 || BufAppendChar(&c->out, '\n') != 0) {
+        return -1;
+    }
+
+    EmitIndent(c, 0);
+    if (isPrivate && BufAppendCStr(&c->out, "static ") != 0) {
+        return -1;
+    }
+    if (EmitTypeRefWithName(c, &fnSig->returnType, localName) != 0
+        || BufAppendChar(&c->out, '(') != 0 || EmitForeignFnParamList(c, fnSig, 1, NULL) != 0
+        || BufAppendChar(&c->out, ')') != 0)
+    {
+        return -1;
+    }
+    if (!emitBody) {
+        return BufAppendCStr(&c->out, ";\n");
+    }
+    if (BufAppendCStr(&c->out, " {\n") != 0) {
+        return -1;
+    }
+    EmitIndent(c, 1u);
+    if (fnSig->returnType.baseName != NULL && StrEq(fnSig->returnType.baseName, "void")) {
+        if (BufAppendCStr(&c->out, stubName) != 0 || BufAppendChar(&c->out, '(') != 0) {
+            return -1;
+        }
+    } else if (
+        BufAppendCStr(&c->out, "return ") != 0 || BufAppendCStr(&c->out, stubName) != 0
+        || BufAppendChar(&c->out, '(') != 0)
+    {
+        return -1;
+    }
+    {
+        uint32_t paramIndex;
+        for (paramIndex = 0; paramIndex < fnSig->paramLen; paramIndex++) {
+            const char* paramName =
+                fnSig->paramNames != NULL ? fnSig->paramNames[paramIndex] : NULL;
+            char fallback[24];
+            if (paramIndex != 0u && BufAppendCStr(&c->out, ", ") != 0) {
+                return -1;
+            }
+            if (paramName == NULL || paramName[0] == '\0') {
+                BuildForeignArgName(fallback, (uint32_t)sizeof(fallback), paramIndex);
+                paramName = fallback;
+            }
+            if (BufAppendCStr(&c->out, paramName) != 0) {
+                return -1;
+            }
+        }
+    }
+    if (BufAppendCStr(&c->out, ");\n}\n") != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitExportWrapper(SLCBackendC* c, int32_t nodeId, const SLFnSig* fnSig) {
+    const char*        exportName = ForeignStubName(c, nodeId, "export");
+    SLCForeignDeclInfo foreign = { 0 };
+    if (exportName == NULL || !GetForeignDeclInfo(c, nodeId, &foreign)
+        || foreign.kind != SLCForeignDecl_EXPORT)
+    {
+        return -1;
+    }
+    EmitIndent(c, 0);
+    if (EmitTypeRefWithName(c, &fnSig->returnType, exportName) != 0
+        || BufAppendChar(&c->out, '(') != 0 || EmitForeignFnParamList(c, fnSig, 1, NULL) != 0
+        || BufAppendChar(&c->out, ')') != 0
+        || EmitAsmLabelAttr(c, foreign.arg0Start, foreign.arg0End, 1) != 0)
+    {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, " {\n") != 0) {
+        return -1;
+    }
+    EmitIndent(c, 1u);
+    if (fnSig->returnType.baseName != NULL && StrEq(fnSig->returnType.baseName, "void")) {
+        if (BufAppendCStr(&c->out, fnSig->cName) != 0 || BufAppendChar(&c->out, '(') != 0) {
+            return -1;
+        }
+    } else if (
+        BufAppendCStr(&c->out, "return ") != 0 || BufAppendCStr(&c->out, fnSig->cName) != 0
+        || BufAppendChar(&c->out, '(') != 0)
+    {
+        return -1;
+    }
+    {
+        uint32_t paramIndex;
+        for (paramIndex = 0; paramIndex < fnSig->paramLen; paramIndex++) {
+            const char* paramName =
+                fnSig->paramNames != NULL ? fnSig->paramNames[paramIndex] : NULL;
+            char fallback[24];
+            if (paramIndex != 0u && BufAppendCStr(&c->out, ", ") != 0) {
+                return -1;
+            }
+            if (paramName == NULL || paramName[0] == '\0') {
+                BuildForeignArgName(fallback, (uint32_t)sizeof(fallback), paramIndex);
+                paramName = fallback;
+            }
+            if (BufAppendCStr(&c->out, paramName) != 0) {
+                return -1;
+            }
+        }
+    }
+    if (BufAppendCStr(&c->out, ");\n}\n") != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitForeignImportVarLike(
+    SLCBackendC*     c,
+    int32_t          nodeId,
+    const char*      localName,
+    const SLTypeRef* type,
+    int32_t          typeNode,
+    int              isConst) {
+    const char*        stubName = ForeignStubName(c, nodeId, isConst ? "const" : "var");
+    SLCForeignDeclInfo foreign = { 0 };
+    if (stubName == NULL || !GetForeignDeclInfo(c, nodeId, &foreign)
+        || (foreign.kind != SLCForeignDecl_C_IMPORT && foreign.kind != SLCForeignDecl_WASM_IMPORT))
+    {
+        return -1;
+    }
+    EmitIndent(c, 0);
+    if (BufAppendCStr(&c->out, "extern ") != 0) {
+        return -1;
+    }
+    if (isConst && BufAppendCStr(&c->out, "const ") != 0) {
+        return -1;
+    }
+    if ((typeNode >= 0 && EmitTypeWithName(c, typeNode, stubName) != 0)
+        || (typeNode < 0 && EmitTypeRefWithName(c, type, stubName) != 0))
+    {
+        return -1;
+    }
+    if (foreign.kind == SLCForeignDecl_C_IMPORT) {
+        if (EmitAsmLabelAttr(c, foreign.arg0Start, foreign.arg0End, 1) != 0) {
+            return -1;
+        }
+    } else if (
+        EmitWasmImportAttrs(
+            c, foreign.arg0Start, foreign.arg0End, foreign.arg1Start, foreign.arg1End)
+        != 0)
+    {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, ";\n#define ") != 0 || BufAppendCStr(&c->out, localName) != 0
+        || BufAppendChar(&c->out, ' ') != 0 || BufAppendCStr(&c->out, stubName) != 0
+        || BufAppendChar(&c->out, '\n') != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
 static const SLNameMap* _Nullable FindDeclMap(SLCBackendC* c, int32_t nodeId) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -281,13 +692,22 @@ int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             int32_t          typeNode = AstFirstChild(&c->ast, child);
             const SLAstNode* tn = NodeAt(c, typeNode);
             char*            name = DupSlice(c, c->unit->source, field->dataStart, field->dataEnd);
+            SLTypeRef        fieldType;
+            const char*      varSizeBaseName = NULL;
             if (name == NULL) {
                 return -1;
+            }
+            if (typeNode >= 0 && ParseTypeRef(c, typeNode, &fieldType) == 0) {
+                varSizeBaseName = ResolveVarSizeValueBaseName(c, &fieldType);
             }
             if (tn != NULL && tn->kind == SLAst_TYPE_VARRAY) {
             } else {
                 EmitIndent(c, depth + 1u);
-                if (EmitTypeWithName(c, typeNode, name) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+                if ((varSizeBaseName != NULL && IsStrBaseName(varSizeBaseName))
+                        ? (BufAppendCStr(&c->out, varSizeBaseName) != 0
+                           || BufAppendChar(&c->out, ' ') != 0 || BufAppendCStr(&c->out, name) != 0)
+                        : (EmitTypeWithName(c, typeNode, name) != 0)
+                              || BufAppendCStr(&c->out, ";\n") != 0)
                 {
                     return -1;
                 }
@@ -922,6 +1342,15 @@ int EmitFnDeclOrDef(
     {
         return 0;
     }
+    {
+        SLCForeignDeclInfo foreign = { 0 };
+        if (GetForeignDeclInfo(c, nodeId, &foreign)
+            && (foreign.kind == SLCForeignDecl_C_IMPORT
+                || foreign.kind == SLCForeignDecl_WASM_IMPORT))
+        {
+            return EmitForeignImportFn(c, nodeId, fnSig, emitBody, isPrivate);
+        }
+    }
     fnCName = fnSig->cName;
     isMainFn = IsMainFunctionNode(c, nodeId);
     hasFnContext = fnSig->hasContext || isMainFn;
@@ -1080,6 +1509,14 @@ int EmitFnDeclOrDef(
     PopScope(c);
     c->localLen = savedLocalLen;
     TrimVariantNarrowsToLocalLen(c);
+    if (emitBody) {
+        SLCForeignDeclInfo foreign = { 0 };
+        if (GetForeignDeclInfo(c, nodeId, &foreign) && foreign.kind == SLCForeignDecl_EXPORT) {
+            if (EmitExportWrapper(c, nodeId, fnSig) != 0) {
+                return -1;
+            }
+        }
+    }
     return 0;
 }
 
@@ -1114,6 +1551,15 @@ int EmitConstDecl(
         }
         if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
             return -1;
+        }
+        {
+            SLCForeignDeclInfo foreign = { 0 };
+            if (GetForeignDeclInfo(c, nodeId, &foreign)
+                && (foreign.kind == SLCForeignDecl_C_IMPORT
+                    || foreign.kind == SLCForeignDecl_WASM_IMPORT))
+            {
+                return EmitForeignImportVarLike(c, nodeId, map->cName, &type, typeNode, 1);
+            }
         }
         EmitIndent(c, depth);
         if (declarationOnly) {
@@ -1274,6 +1720,15 @@ int EmitVarDecl(
         }
         if (EnsureAnonTypeVisible(c, &type, depth) != 0) {
             return -1;
+        }
+        {
+            SLCForeignDeclInfo foreign = { 0 };
+            if (GetForeignDeclInfo(c, nodeId, &foreign)
+                && (foreign.kind == SLCForeignDecl_C_IMPORT
+                    || foreign.kind == SLCForeignDecl_WASM_IMPORT))
+            {
+                return EmitForeignImportVarLike(c, nodeId, map->cName, &type, typeNode, 0);
+            }
         }
 
         EmitIndent(c, depth);
@@ -1660,9 +2115,23 @@ int EmitHeader(SLCBackendC* c) {
                 {
                     return -1;
                 }
-            } else if (!exported && !HasFunctionBodyForName(c, nodeId)) {
-                if (EmitDeclNode(c, nodeId, 0, 1, 1, 0) != 0 || BufAppendChar(&c->out, '\n') != 0) {
-                    return -1;
+            } else {
+                SLCForeignDeclInfo foreign = { 0 };
+                if (GetForeignDeclInfo(c, nodeId, &foreign)
+                    && (foreign.kind == SLCForeignDecl_C_IMPORT
+                        || foreign.kind == SLCForeignDecl_WASM_IMPORT))
+                {
+                    if (EmitDeclNode(c, nodeId, 0, 0, !exported, 1) != 0
+                        || BufAppendChar(&c->out, '\n') != 0)
+                    {
+                        return -1;
+                    }
+                } else if (!exported && !HasFunctionBodyForName(c, nodeId)) {
+                    if (EmitDeclNode(c, nodeId, 0, 1, 1, 0) != 0
+                        || BufAppendChar(&c->out, '\n') != 0)
+                    {
+                        return -1;
+                    }
                 }
             }
             continue;

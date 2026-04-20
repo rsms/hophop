@@ -1511,6 +1511,19 @@ int32_t SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
     return -1;
 }
 
+static int SLTCFunctionSupportsFunctionValue(const SLTypeCheckCtx* c, const SLTCFunction* fn) {
+    if (c == NULL || fn == NULL) {
+        return 0;
+    }
+    if (fn->contextType >= 0 || (fn->flags & SLTCFunctionFlag_VARIADIC) != 0) {
+        return 0;
+    }
+    if (fn->defNode >= 0) {
+        return 1;
+    }
+    return fn->declNode >= 0 && SLTCHasForeignImportDirective(c->ast, c->src, fn->declNode);
+}
+
 int32_t SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
     uint32_t i;
     int32_t  found = -1;
@@ -1519,8 +1532,7 @@ int32_t SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint3
         if (!SLNameEqSlice(c->src, fn->nameStart, fn->nameEnd, start, end)) {
             continue;
         }
-        if (fn->contextType >= 0 || (fn->flags & SLTCFunctionFlag_VARIADIC) != 0 || fn->defNode < 0)
-        {
+        if (!SLTCFunctionSupportsFunctionValue(c, fn)) {
             continue;
         }
         if (found >= 0) {
@@ -1550,8 +1562,7 @@ int32_t SLTCFindPkgQualifiedFunctionValueIndex(
             continue;
         }
         fn = &c->funcs[(uint32_t)fnIndex];
-        if (fn->contextType >= 0 || (fn->flags & SLTCFunctionFlag_VARIADIC) != 0 || fn->defNode < 0)
-        {
+        if (!SLTCFunctionSupportsFunctionValue(c, fn)) {
             continue;
         }
         if (found >= 0) {
@@ -2332,6 +2343,41 @@ uint32_t SLTCListCount(const SLAst* ast, int32_t listNode) {
         child = ast->nodes[child].nextSibling;
     }
     return count;
+}
+
+int SLTCHasForeignImportDirective(const SLAst* ast, SLStrView src, int32_t nodeId) {
+    int32_t child;
+    int32_t first = -1;
+    if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return 0;
+    }
+    child = SLAstFirstChild(ast, ast->root);
+    while (child >= 0) {
+        const SLAstNode* n = &ast->nodes[child];
+        if (n->kind == SLAst_DIRECTIVE) {
+            if (first < 0) {
+                first = child;
+            }
+        } else {
+            if (child == nodeId && first >= 0) {
+                int32_t dir = first;
+                while (dir >= 0 && ast->nodes[dir].kind == SLAst_DIRECTIVE) {
+                    const SLAstNode* dn = &ast->nodes[dir];
+                    uint32_t         len = dn->dataEnd - dn->dataStart;
+                    if ((len == 8u && memcmp(src.ptr + dn->dataStart, "c_import", 8u) == 0)
+                        || (len == 11u && memcmp(src.ptr + dn->dataStart, "wasm_import", 11u) == 0))
+                    {
+                        return 1;
+                    }
+                    dir = SLAstNextSibling(ast, dir);
+                }
+                return 0;
+            }
+            first = -1;
+        }
+        child = SLAstNextSibling(ast, child);
+    }
+    return 0;
 }
 
 int SLTCVarLikeGetParts(SLTypeCheckCtx* c, int32_t nodeId, SLTCVarLikeParts* out) {

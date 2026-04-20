@@ -3624,7 +3624,9 @@ int SLTCTypeTopLevelVarLikes(SLTypeCheckCtx* c, SLAstKind wantKind) {
                     int32_t initNode = SLAstNextSibling(c->ast, firstChild);
                     int32_t declType;
                     int32_t initType;
-                    if (wantKind == SLAst_CONST && initNode < 0) {
+                    if (wantKind == SLAst_CONST && initNode < 0
+                        && !SLTCHasForeignImportDirective(c->ast, c->src, child))
+                    {
                         return SLTCFailNode(c, child, SLDiag_CONST_MISSING_INITIALIZER);
                     }
                     c->allowConstNumericTypeName = wantKind == SLAst_CONST ? 1u : 0u;
@@ -3674,7 +3676,9 @@ int SLTCTypeTopLevelVarLikes(SLTypeCheckCtx* c, SLAstKind wantKind) {
 
             if (parts.typeNode >= 0) {
                 int32_t declType;
-                if (wantKind == SLAst_CONST && parts.initNode < 0) {
+                if (wantKind == SLAst_CONST && parts.initNode < 0
+                    && !SLTCHasForeignImportDirective(c->ast, c->src, child))
+                {
                     return SLTCFailNode(c, child, SLDiag_CONST_MISSING_INITIALIZER);
                 }
                 c->allowConstNumericTypeName = wantKind == SLAst_CONST ? 1u : 0u;
@@ -3794,10 +3798,16 @@ int SLTCCheckTopLevelConstInitializers(SLTypeCheckCtx* c) {
         const SLAstNode* n = &c->ast->nodes[child];
         if (n->kind == SLAst_CONST) {
             SLTCVarLikeParts parts;
+            if (SLTCHasForeignImportDirective(c->ast, c->src, child)) {
+                child = SLAstNextSibling(c->ast, child);
+                continue;
+            }
             if (SLTCVarLikeGetParts(c, child, &parts) != 0 || parts.nameCount == 0) {
                 return SLTCFailNode(c, child, SLDiag_EXPECTED_TYPE);
             }
-            if (parts.typeNode >= 0 && parts.initNode < 0) {
+            if (parts.typeNode >= 0 && parts.initNode < 0
+                && !SLTCHasForeignImportDirective(c->ast, c->src, child))
+            {
                 return SLTCFailNode(c, child, SLDiag_CONST_MISSING_INITIALIZER);
             }
         }
@@ -3816,6 +3826,10 @@ int SLTCValidateTopLevelConstEvaluable(SLTypeCheckCtx* c) {
         const SLAstNode* n = &c->ast->nodes[child];
         if (n->kind == SLAst_CONST) {
             SLTCVarLikeParts parts;
+            if (SLTCHasForeignImportDirective(c->ast, c->src, child)) {
+                child = SLAstNextSibling(c->ast, child);
+                continue;
+            }
             if (SLTCVarLikeGetParts(c, child, &parts) != 0 || parts.nameCount == 0) {
                 return SLTCFailNode(c, child, SLDiag_EXPECTED_TYPE);
             }

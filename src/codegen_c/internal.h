@@ -939,7 +939,7 @@ int EmitHexByte(SLBuf* b, uint8_t value);
 
 int BufAppendHexU64Literal(SLBuf* b, uint64_t value);
 
-int EmitStringLiteralRef(SLCBackendC* c, int32_t literalId, int writable);
+int EmitStringLiteralValue(SLCBackendC* c, int32_t literalId, int writable);
 
 int EmitStringLiteralPool(SLCBackendC* c);
 

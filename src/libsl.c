@@ -625,6 +625,7 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_ELLIPSIS:      return "ELLIPSIS";
         case SLTok_SEMICOLON:     return "SEMICOLON";
         case SLTok_COLON:         return "COLON";
+        case SLTok_AT:            return "AT";
         case SLTok_ASSIGN:        return "ASSIGN";
         case SLTok_ADD:           return "ADD";
         case SLTok_SUB:           return "SUB";
@@ -939,6 +940,7 @@ int SLLex(SLArena* arena, SLStrView src, SLTokenStream* out, SLDiag* _Nullable d
                         break;
                     case (unsigned char)';': kind = SLTok_SEMICOLON; break;
                     case (unsigned char)':': kind = SLTok_COLON; break;
+                    case (unsigned char)'@': kind = SLTok_AT; break;
 
                     case (unsigned char)'+':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {

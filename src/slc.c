@@ -37,6 +37,7 @@ typedef struct {
 } SLParsedFile;
 
 struct SLPackage;
+struct SLPackageLoader;
 
 typedef struct {
     char* alias; /* internal mangle prefix */
@@ -78,6 +79,8 @@ typedef struct {
     char*    text;
     uint32_t fileIndex;
     int32_t  nodeId;
+    uint32_t sourceStart;
+    uint32_t sourceEnd;
 } SLDeclText;
 
 static int EnsureMirFunctionRefTypeRef(
@@ -115,9 +118,10 @@ typedef struct SLPackage {
     uint32_t    declTextCap;
 } SLPackage;
 
-typedef struct {
+typedef struct SLPackageLoader {
     char* _Nullable rootDir;
     char* _Nullable platformTarget;
+    struct SLPackage* _Nullable selectedPlatformPkg;
     SLPackage* _Nullable packages;
     uint32_t packageLen;
     uint32_t packageCap;
@@ -148,6 +152,12 @@ typedef struct {
     uint32_t len;
     uint32_t cap;
 } SLCombinedSourceMap;
+
+typedef struct {
+    SLForeignLinkageEntry* _Nullable entries;
+    uint32_t len;
+    uint32_t cap;
+} SLForeignLinkageBuilder;
 
 typedef struct {
     const SLPackage* pkg;
@@ -2169,6 +2179,177 @@ static int AddMirResolvedDecl(
     return 0;
 }
 
+static int32_t FindVarLikeTypeNode(const SLAst* ast, int32_t nodeId) {
+    int32_t child;
+    if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return -1;
+    }
+    child = ast->nodes[nodeId].firstChild;
+    if (child >= 0 && ast->nodes[child].kind == SLAst_NAME_LIST) {
+        child = ast->nodes[child].nextSibling;
+    }
+    while (child >= 0) {
+        if (ast->nodes[child].kind == SLAst_TYPE_NAME || ast->nodes[child].kind == SLAst_TYPE_PTR
+            || ast->nodes[child].kind == SLAst_TYPE_REF
+            || ast->nodes[child].kind == SLAst_TYPE_MUTREF
+            || ast->nodes[child].kind == SLAst_TYPE_ARRAY
+            || ast->nodes[child].kind == SLAst_TYPE_VARRAY
+            || ast->nodes[child].kind == SLAst_TYPE_SLICE
+            || ast->nodes[child].kind == SLAst_TYPE_MUTSLICE
+            || ast->nodes[child].kind == SLAst_TYPE_OPTIONAL
+            || ast->nodes[child].kind == SLAst_TYPE_FN
+            || ast->nodes[child].kind == SLAst_TYPE_ANON_STRUCT
+            || ast->nodes[child].kind == SLAst_TYPE_ANON_UNION
+            || ast->nodes[child].kind == SLAst_TYPE_TUPLE)
+        {
+            return child;
+        }
+        child = ast->nodes[child].nextSibling;
+    }
+    return -1;
+}
+
+static int32_t FindFnReturnTypeNode(const SLAst* ast, int32_t fnNode) {
+    int32_t child;
+    if (ast == NULL || fnNode < 0 || (uint32_t)fnNode >= ast->len) {
+        return -1;
+    }
+    child = ast->nodes[fnNode].firstChild;
+    while (child >= 0) {
+        if (ast->nodes[child].kind == SLAst_TYPE_NAME || ast->nodes[child].kind == SLAst_TYPE_PTR
+            || ast->nodes[child].kind == SLAst_TYPE_REF
+            || ast->nodes[child].kind == SLAst_TYPE_MUTREF
+            || ast->nodes[child].kind == SLAst_TYPE_ARRAY
+            || ast->nodes[child].kind == SLAst_TYPE_VARRAY
+            || ast->nodes[child].kind == SLAst_TYPE_SLICE
+            || ast->nodes[child].kind == SLAst_TYPE_MUTSLICE
+            || ast->nodes[child].kind == SLAst_TYPE_OPTIONAL
+            || ast->nodes[child].kind == SLAst_TYPE_FN || ast->nodes[child].kind == SLAst_TYPE_TUPLE
+            || ast->nodes[child].kind == SLAst_TYPE_ANON_STRUCT
+            || ast->nodes[child].kind == SLAst_TYPE_ANON_UNION)
+        {
+            return child;
+        }
+        if (ast->nodes[child].kind == SLAst_BLOCK) {
+            break;
+        }
+        child = ast->nodes[child].nextSibling;
+    }
+    return -1;
+}
+
+static int     DirectiveNameEq(const SLParsedFile* file, int32_t nodeId, const char* name);
+static int32_t DirectiveArgAt(const SLAst* ast, int32_t nodeId, uint32_t index);
+static int     FindAttachedDirectiveRun(
+    const SLAst* ast, int32_t declNodeId, int32_t* outFirstDirective, int32_t* outLastDirective);
+
+static int DeclHasDirective(
+    const SLParsedFile* file,
+    int32_t             nodeId,
+    const char*         name,
+    int32_t* _Nullable outDirectiveNode) {
+    int32_t firstDirective = -1;
+    int32_t lastDirective = -1;
+    int32_t child;
+    if (outDirectiveNode != NULL) {
+        *outDirectiveNode = -1;
+    }
+    if (file == NULL || name == NULL
+        || FindAttachedDirectiveRun(&file->ast, nodeId, &firstDirective, &lastDirective) != 0
+        || firstDirective < 0)
+    {
+        return 0;
+    }
+    child = firstDirective;
+    while (child >= 0) {
+        if (DirectiveNameEq(file, child, name)) {
+            if (outDirectiveNode != NULL) {
+                *outDirectiveNode = child;
+            }
+            return 1;
+        }
+        if (child == lastDirective) {
+            break;
+        }
+        child = ASTNextSibling(&file->ast, child);
+    }
+    return 0;
+}
+
+static int AppendMirForeignImportDecl(
+    SLMirProgramBuilder* builder,
+    SLArena*             arena,
+    const SLParsedFile*  file,
+    int32_t              nodeId,
+    uint32_t*            outFunctionIndex) {
+    const SLAst*     ast = &file->ast;
+    const SLAstNode* n = &ast->nodes[nodeId];
+    SLMirSourceRef   sourceRef = { .src = { file->source, file->sourceLen } };
+    SLMirFunction    fn = { 0 };
+    uint32_t         sourceIndex = 0;
+    int32_t          typeNode = -1;
+    int32_t          child;
+    if (builder == NULL || arena == NULL || file == NULL || outFunctionIndex == NULL) {
+        return -1;
+    }
+    *outFunctionIndex = UINT32_MAX;
+    if (SLMirProgramBuilderAddSource(builder, &sourceRef, &sourceIndex) != 0) {
+        return -1;
+    }
+    fn.nameStart = n->dataStart;
+    fn.nameEnd = n->dataEnd;
+    fn.sourceRef = sourceIndex;
+    fn.typeRef = UINT32_MAX;
+    typeNode =
+        n->kind == SLAst_FN ? FindFnReturnTypeNode(ast, nodeId) : FindVarLikeTypeNode(ast, nodeId);
+    if (typeNode >= 0) {
+        SLMirTypeRef typeRef = {
+            .astNode = (uint32_t)typeNode,
+            .sourceRef = sourceIndex,
+            .flags = 0,
+            .aux = 0,
+        };
+        if (SLMirProgramBuilderAddType(builder, &typeRef, &fn.typeRef) != 0) {
+            return -1;
+        }
+    }
+    if (SLMirProgramBuilderBeginFunction(builder, &fn, outFunctionIndex) != 0) {
+        return -1;
+    }
+    if (n->kind == SLAst_FN) {
+        child = n->firstChild;
+        while (child >= 0) {
+            if (ast->nodes[child].kind == SLAst_PARAM) {
+                SLMirLocal   local = { 0 };
+                SLMirTypeRef typeRef = { 0 };
+                int32_t      paramTypeNode = ast->nodes[child].firstChild;
+                local.typeRef = UINT32_MAX;
+                local.flags = SLMirLocalFlag_PARAM | SLMirLocalFlag_MUTABLE;
+                local.nameStart = ast->nodes[child].dataStart;
+                local.nameEnd = ast->nodes[child].dataEnd;
+                if (paramTypeNode >= 0) {
+                    typeRef.astNode = (uint32_t)paramTypeNode;
+                    typeRef.sourceRef = sourceIndex;
+                    typeRef.flags = 0;
+                    typeRef.aux = 0;
+                    if (SLMirProgramBuilderAddType(builder, &typeRef, &local.typeRef) != 0) {
+                        return -1;
+                    }
+                }
+                if (SLMirProgramBuilderAddLocal(builder, &local, NULL) != 0) {
+                    return -1;
+                }
+                builder->funcs[*outFunctionIndex].paramCount++;
+                if ((ast->nodes[child].flags & SLAstFlag_PARAM_VARIADIC) != 0u) {
+                    builder->funcs[*outFunctionIndex].flags |= SLMirFunctionFlag_VARIADIC;
+                }
+            }
+            child = ast->nodes[child].nextSibling;
+        }
+    }
+    return SLMirProgramBuilderEndFunction(builder);
+}
+
 static const SLMirResolvedDecl* _Nullable FindMirResolvedDeclBySlice(
     const SLMirResolvedDeclMap* map,
     const SLPackage*            pkg,
@@ -2249,6 +2430,7 @@ static int AppendMirDeclsFromFile(
         if (n->kind == SLAst_FN) {
             uint32_t     outFunctionIndex = UINT32_MAX;
             int32_t      bodyNode;
+            int32_t      wasmImportNode = -1;
             SLDiag       diag = { 0 };
             int          supported = 0;
             SLStrView    src = { file->source, file->sourceLen };
@@ -2271,6 +2453,24 @@ static int AppendMirDeclsFromFile(
                 }
                 if (!supported) {
                     return ErrorMirUnsupported(file, &ast->nodes[child], "function body", &diag);
+                }
+                if (declMap != NULL
+                    && AddMirResolvedDecl(
+                           declMap,
+                           pkg,
+                           file->source,
+                           n->dataStart,
+                           n->dataEnd,
+                           outFunctionIndex,
+                           SLMirDeclKind_FN)
+                           != 0)
+                {
+                    return ErrorSimple("out of memory");
+                }
+            } else if (DeclHasDirective(file, child, "wasm_import", &wasmImportNode)) {
+                if (AppendMirForeignImportDecl(builder, arena, file, child, &outFunctionIndex) != 0)
+                {
+                    return ErrorSimple("out of memory");
                 }
                 if (declMap != NULL
                     && AddMirResolvedDecl(
@@ -2342,23 +2542,32 @@ static int AppendMirDeclsFromFile(
                 }
             } else {
                 uint32_t outFunctionIndex = UINT32_MAX;
-                if (SLMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
-                        builder,
-                        arena,
-                        ast,
-                        src,
-                        child,
-                        n->dataStart,
-                        n->dataEnd,
-                        &outFunctionIndex,
-                        &supported,
-                        &diag)
-                    != 0)
-                {
-                    return PrintSLDiagLineCol(file->path, file->source, &diag, 0);
-                }
-                if (!supported) {
-                    return ErrorMirUnsupported(file, n, kindName, &diag);
+                int32_t  wasmImportNode = -1;
+                if (DeclHasDirective(file, child, "wasm_import", &wasmImportNode)) {
+                    if (AppendMirForeignImportDecl(builder, arena, file, child, &outFunctionIndex)
+                        != 0)
+                    {
+                        return ErrorSimple("out of memory");
+                    }
+                } else {
+                    if (SLMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+                            builder,
+                            arena,
+                            ast,
+                            src,
+                            child,
+                            n->dataStart,
+                            n->dataEnd,
+                            &outFunctionIndex,
+                            &supported,
+                            &diag)
+                        != 0)
+                    {
+                        return PrintSLDiagLineCol(file->path, file->source, &diag, 0);
+                    }
+                    if (!supported) {
+                        return ErrorMirUnsupported(file, n, kindName, &diag);
+                    }
                 }
                 if (declMap != NULL
                     && AddMirResolvedDecl(
@@ -2380,8 +2589,61 @@ static int AppendMirDeclsFromFile(
     return 0;
 }
 
+static int AppendMirSelectedPlatformPanicDeclsFromFile(
+    SLMirProgramBuilder* builder,
+    SLArena*             arena,
+    const SLPackage*     pkg,
+    const SLParsedFile*  file,
+    SLMirResolvedDeclMap* _Nullable declMap) {
+    int32_t child = ASTFirstChild(&file->ast, file->ast.root);
+    while (child >= 0) {
+        const SLAstNode* n = &file->ast.nodes[child];
+        int32_t          wasmImportNode = -1;
+        if (n->kind == SLAst_FN && SliceEqCStr(file->source, n->dataStart, n->dataEnd, "panic")
+            && DeclHasDirective(file, child, "wasm_import", &wasmImportNode))
+        {
+            uint32_t outFunctionIndex = UINT32_MAX;
+            if (AppendMirForeignImportDecl(builder, arena, file, child, &outFunctionIndex) != 0) {
+                return ErrorSimple("out of memory");
+            }
+            if (declMap != NULL
+                && AddMirResolvedDecl(
+                       declMap,
+                       pkg,
+                       file->source,
+                       n->dataStart,
+                       n->dataEnd,
+                       outFunctionIndex,
+                       SLMirDeclKind_FN)
+                       != 0)
+            {
+                return ErrorSimple("out of memory");
+            }
+        }
+        child = ASTNextSibling(&file->ast, child);
+    }
+    return 0;
+}
+
 static int IsPlatformImportPath(const char* _Nullable path) {
     return path != NULL && (StrEq(path, "platform") || strncmp(path, "platform/", 9u) == 0);
+}
+
+static int IsPlatformBaseImportPath(const char* _Nullable path) {
+    return path != NULL && StrEq(path, "platform");
+}
+
+static int PackageHasPlatformImport(const SLPackage* _Nullable pkg) {
+    uint32_t importIndex;
+    if (pkg == NULL) {
+        return 0;
+    }
+    for (importIndex = 0; importIndex < pkg->importLen; importIndex++) {
+        if (IsPlatformImportPath(pkg->imports[importIndex].path)) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static int ShouldSkipPackageMirImportPath(const char* _Nullable path) {
@@ -2389,6 +2651,19 @@ static int ShouldSkipPackageMirImportPath(const char* _Nullable path) {
         || (path != NULL
             && (StrEq(path, "builtin") || StrEq(path, "reflect")
                 || strncmp(path, "builtin/", 8u) == 0 || strncmp(path, "reflect/", 8u) == 0));
+}
+
+static const SLPackage* _Nullable EffectiveMirImportTargetPackage(
+    const SLPackageLoader* loader, const SLImportRef* imp) {
+    if (imp == NULL) {
+        return NULL;
+    }
+    if (loader != NULL && loader->selectedPlatformPkg != NULL
+        && IsPlatformBaseImportPath(imp->path))
+    {
+        return loader->selectedPlatformPkg;
+    }
+    return imp->target;
 }
 
 static int BuildEntryPackageMirOrderVisit(
@@ -2425,9 +2700,12 @@ static int BuildEntryPackageMirOrderVisit(
     return 0;
 }
 
+static int PackageUsesPlatformImport(const SLPackageLoader* loader);
+
 static int BuildEntryPackageMirOrder(
     const SLPackageLoader* loader,
     const SLPackage*       entryPkg,
+    int                    includeSelectedPlatform,
     uint32_t*              outOrder,
     uint32_t               outOrderCap,
     uint32_t*              outOrderLen) {
@@ -2450,8 +2728,220 @@ static int BuildEntryPackageMirOrder(
     }
     rc = BuildEntryPackageMirOrderVisit(
         loader, (uint32_t)entryPkgIndex, state, outOrder, outOrderLen);
+    if (rc == 0 && loader->selectedPlatformPkg != NULL
+        && (includeSelectedPlatform || PackageUsesPlatformImport(loader)))
+    {
+        int platformPkgIndex = FindPackageIndex(loader, loader->selectedPlatformPkg);
+        if (platformPkgIndex < 0) {
+            rc = ErrorSimple("internal error: selected platform package missing from loader");
+        } else {
+            rc = BuildEntryPackageMirOrderVisit(
+                loader, (uint32_t)platformPkgIndex, state, outOrder, outOrderLen);
+        }
+    }
     free(state);
     return rc;
+}
+
+static void FreeForeignLinkageInfo(SLForeignLinkageInfo* info) {
+    uint32_t               i;
+    SLForeignLinkageEntry* entries;
+    if (info == NULL || info->entries == NULL) {
+        if (info != NULL) {
+            *info = (SLForeignLinkageInfo){ 0 };
+        }
+        return;
+    }
+    entries = (SLForeignLinkageEntry*)(uintptr_t)info->entries;
+    for (i = 0; i < info->len; i++) {
+        free(entries[i].arg0.bytes);
+        free(entries[i].arg1.bytes);
+    }
+    free(entries);
+    *info = (SLForeignLinkageInfo){ 0 };
+}
+
+static int ForeignLinkageBuilderAppend(
+    SLForeignLinkageBuilder* b, const SLForeignLinkageEntry* entry) {
+    SLForeignLinkageEntry* newEntries;
+    uint32_t               newCap;
+    if (b == NULL || entry == NULL) {
+        return -1;
+    }
+    if (b->len >= b->cap) {
+        newCap = b->cap >= 8u ? b->cap * 2u : 8u;
+        newEntries = (SLForeignLinkageEntry*)realloc(
+            b->entries, sizeof(SLForeignLinkageEntry) * newCap);
+        if (newEntries == NULL) {
+            return -1;
+        }
+        b->entries = newEntries;
+        b->cap = newCap;
+    }
+    b->entries[b->len++] = *entry;
+    return 0;
+}
+
+static void ForeignLinkageBuilderFree(SLForeignLinkageBuilder* b) {
+    if (b == NULL) {
+        return;
+    }
+    FreeForeignLinkageInfo((SLForeignLinkageInfo*)b);
+    b->cap = 0;
+}
+
+static int BuildMirForeignLinkageInfo(
+    const SLPackageLoader*      loader,
+    const SLMirResolvedDeclMap* declMap,
+    SLForeignLinkageInfo*       outInfo,
+    SLDiag* _Nullable diag) {
+    SLForeignLinkageBuilder b = { 0 };
+    uint32_t                pkgIndex;
+    if (outInfo == NULL) {
+        return -1;
+    }
+    *outInfo = (SLForeignLinkageInfo){ 0 };
+    if (loader == NULL || declMap == NULL) {
+        return 0;
+    }
+    for (pkgIndex = 0; pkgIndex < loader->packageLen; pkgIndex++) {
+        const SLPackage* pkg = &loader->packages[pkgIndex];
+        uint32_t         fileIndex;
+        for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+            const SLParsedFile* file = &pkg->files[fileIndex];
+            int32_t             child = ASTFirstChild(&file->ast, file->ast.root);
+            while (child >= 0) {
+                const SLAstNode* decl = &file->ast.nodes[child];
+                int32_t          cImportNode = -1;
+                int32_t          wasmImportNode = -1;
+                int32_t          exportNode = -1;
+                if (DeclHasDirective(file, child, "c_import", &cImportNode)) {
+                    if (diag != NULL) {
+                        *diag = (SLDiag){
+                            .code = SLDiag_WASM_BACKEND_UNSUPPORTED_MIR,
+                            .type = SLDiagTypeOfCode(SLDiag_WASM_BACKEND_UNSUPPORTED_MIR),
+                            .start = file->ast.nodes[cImportNode].start,
+                            .end = file->ast.nodes[cImportNode].end,
+                            .detail = "@c_import is not supported by the direct Wasm backend",
+                        };
+                    }
+                    ForeignLinkageBuilderFree(&b);
+                    return -1;
+                }
+                if (DeclHasDirective(file, child, "wasm_import", &wasmImportNode)) {
+                    int32_t                  arg0 = DirectiveArgAt(&file->ast, wasmImportNode, 0u);
+                    int32_t                  arg1 = DirectiveArgAt(&file->ast, wasmImportNode, 1u);
+                    const SLMirResolvedDecl* resolved = NULL;
+                    SLForeignLinkageEntry    entry = { 0 };
+                    SLStringLitErr           litErr = { 0 };
+                    if (arg0 < 0 || arg1 < 0) {
+                        ForeignLinkageBuilderFree(&b);
+                        return -1;
+                    }
+                    if (decl->kind == SLAst_FN) {
+                        resolved = FindMirResolvedDeclBySlice(
+                            declMap,
+                            pkg,
+                            file->source,
+                            decl->dataStart,
+                            decl->dataEnd,
+                            SLMirDeclKind_FN);
+                        entry.kind = SLForeignLinkage_WASM_IMPORT_FN;
+                    } else if (decl->kind == SLAst_CONST) {
+                        resolved = FindMirResolvedDeclBySlice(
+                            declMap,
+                            pkg,
+                            file->source,
+                            decl->dataStart,
+                            decl->dataEnd,
+                            SLMirDeclKind_CONST);
+                        entry.kind = SLForeignLinkage_WASM_IMPORT_CONST;
+                    } else if (decl->kind == SLAst_VAR) {
+                        resolved = FindMirResolvedDeclBySlice(
+                            declMap,
+                            pkg,
+                            file->source,
+                            decl->dataStart,
+                            decl->dataEnd,
+                            SLMirDeclKind_VAR);
+                        entry.kind = SLForeignLinkage_WASM_IMPORT_VAR;
+                    }
+                    if (resolved == NULL) {
+                        child = ASTNextSibling(&file->ast, child);
+                        continue;
+                    }
+                    entry.functionIndex = resolved->functionIndex;
+                    entry.start = file->ast.nodes[wasmImportNode].start;
+                    entry.end = file->ast.nodes[wasmImportNode].end;
+                    if (loader->selectedPlatformPkg == pkg && decl->kind == SLAst_FN
+                        && SliceEqCStr(file->source, decl->dataStart, decl->dataEnd, "panic"))
+                    {
+                        entry.flags = SLForeignLinkageFlag_PLATFORM_PANIC;
+                    }
+                    if (SLDecodeStringLiteralMalloc(
+                            file->source,
+                            file->ast.nodes[arg0].start,
+                            file->ast.nodes[arg0].end,
+                            &entry.arg0.bytes,
+                            &entry.arg0.len,
+                            &litErr)
+                            != 0
+                        || SLDecodeStringLiteralMalloc(
+                               file->source,
+                               file->ast.nodes[arg1].start,
+                               file->ast.nodes[arg1].end,
+                               &entry.arg1.bytes,
+                               &entry.arg1.len,
+                               &litErr)
+                               != 0
+                        || ForeignLinkageBuilderAppend(&b, &entry) != 0)
+                    {
+                        free(entry.arg0.bytes);
+                        free(entry.arg1.bytes);
+                        ForeignLinkageBuilderFree(&b);
+                        return -1;
+                    }
+                } else if (
+                    DeclHasDirective(file, child, "export", &exportNode) && decl->kind == SLAst_FN)
+                {
+                    int32_t                  arg0 = DirectiveArgAt(&file->ast, exportNode, 0u);
+                    const SLMirResolvedDecl* resolved = FindMirResolvedDeclBySlice(
+                        declMap,
+                        pkg,
+                        file->source,
+                        decl->dataStart,
+                        decl->dataEnd,
+                        SLMirDeclKind_FN);
+                    SLForeignLinkageEntry entry = { 0 };
+                    SLStringLitErr        litErr = { 0 };
+                    if (arg0 >= 0 && resolved != NULL) {
+                        entry.kind = SLForeignLinkage_EXPORT_FN;
+                        entry.functionIndex = resolved->functionIndex;
+                        entry.start = file->ast.nodes[exportNode].start;
+                        entry.end = file->ast.nodes[exportNode].end;
+                        if (SLDecodeStringLiteralMalloc(
+                                file->source,
+                                file->ast.nodes[arg0].start,
+                                file->ast.nodes[arg0].end,
+                                &entry.arg0.bytes,
+                                &entry.arg0.len,
+                                &litErr)
+                                != 0
+                            || ForeignLinkageBuilderAppend(&b, &entry) != 0)
+                        {
+                            free(entry.arg0.bytes);
+                            ForeignLinkageBuilderFree(&b);
+                            return -1;
+                        }
+                    }
+                }
+                child = ASTNextSibling(&file->ast, child);
+            }
+        }
+    }
+    outInfo->entries = b.entries;
+    outInfo->len = b.len;
+    return 0;
 }
 
 static const SLParsedFile* _Nullable FindLoaderFileByMirSource(
@@ -5818,6 +6308,7 @@ static const SLImportSymbolRef* _Nullable FindImportFunctionSymbolBySlice(
 }
 
 static const SLMirResolvedDecl* _Nullable FindResolvedImportValueBySlice(
+    const SLPackageLoader*      loader,
     const SLMirResolvedDeclMap* map,
     const SLPackage*            pkg,
     const char*                 src,
@@ -5828,11 +6319,12 @@ static const SLMirResolvedDecl* _Nullable FindResolvedImportValueBySlice(
     if (sym == NULL || sym->importIndex >= pkg->importLen) {
         return NULL;
     }
-    depPkg = pkg->imports[sym->importIndex].target;
+    depPkg = EffectiveMirImportTargetPackage(loader, &pkg->imports[sym->importIndex]);
     return depPkg != NULL ? FindMirResolvedValueByCStr(map, depPkg, sym->sourceName) : NULL;
 }
 
 static const SLMirResolvedDecl* _Nullable FindResolvedImportFunctionBySlice(
+    const SLPackageLoader*      loader,
     const SLMirResolvedDeclMap* map,
     const SLPackage*            pkg,
     const char*                 src,
@@ -5843,7 +6335,7 @@ static const SLMirResolvedDecl* _Nullable FindResolvedImportFunctionBySlice(
     if (sym == NULL || sym->importIndex >= pkg->importLen) {
         return NULL;
     }
-    depPkg = pkg->imports[sym->importIndex].target;
+    depPkg = EffectiveMirImportTargetPackage(loader, &pkg->imports[sym->importIndex]);
     return depPkg != NULL
              ? FindMirResolvedDeclByCStr(map, depPkg, sym->sourceName, SLMirDeclKind_FN)
              : NULL;
@@ -6120,14 +6612,10 @@ static int ResolvePackageMirProgram(
     SLMirFunction* funcs = NULL;
     uint32_t       instOutLen = 0;
     uint32_t       funcIndex;
-    int            allowWasmMinPlatform = 0;
     if (loader == NULL || declMap == NULL || arena == NULL || program == NULL || outProgram == NULL)
     {
         return -1;
     }
-    allowWasmMinPlatform =
-        loader->platformTarget != NULL
-        && StrEq(loader->platformTarget, SL_WASM_MIN_PLATFORM_TARGET);
     *outProgram = *program;
     insts = (SLMirInst*)SLArenaAlloc(
         arena, sizeof(SLMirInst) * program->instLen, (uint32_t)_Alignof(SLMirInst));
@@ -6175,21 +6663,13 @@ static int ResolvePackageMirProgram(
                             const SLMirInst*   recvInst = &program->insts[argStart];
                             const SLImportRef* imp = FindImportByAliasSlice(
                                 ownerPkg, ownerFile->source, recvInst->start, recvInst->end);
-                            if (allowWasmMinPlatform && imp != NULL && imp->target != NULL
-                                && StrEq(imp->target->name, "platform")
-                                && (SliceEqCStr(ownerFile->source, inst->start, inst->end, "exit")
-                                    || SliceEqCStr(
-                                        ownerFile->source, inst->start, inst->end, "console_log")))
+                            if (imp == NULL || EffectiveMirImportTargetPackage(loader, imp) == NULL)
                             {
-                                omit[argStart - fn->instStart] = 1u;
-                                continue;
-                            }
-                            if (imp == NULL || imp->target == NULL) {
                                 continue;
                             }
                             target = FindMirResolvedDeclBySlice(
                                 declMap,
-                                imp->target,
+                                EffectiveMirImportTargetPackage(loader, imp),
                                 ownerFile->source,
                                 inst->start,
                                 inst->end,
@@ -6209,7 +6689,12 @@ static int ResolvePackageMirProgram(
                             SLMirDeclKind_FN);
                         if (target == NULL) {
                             target = FindResolvedImportFunctionBySlice(
-                                declMap, ownerPkg, ownerFile->source, inst->start, inst->end);
+                                loader,
+                                declMap,
+                                ownerPkg,
+                                ownerFile->source,
+                                inst->start,
+                                inst->end);
                         }
                         if (target == NULL) {
                             continue;
@@ -6224,11 +6709,15 @@ static int ResolvePackageMirProgram(
                     }
                     imp = FindImportByAliasSlice(
                         ownerPkg, ownerFile->source, recvInst->start, recvInst->end);
-                    if (imp == NULL || imp->target == NULL) {
+                    if (imp == NULL || EffectiveMirImportTargetPackage(loader, imp) == NULL) {
                         continue;
                     }
                     target = FindMirResolvedValueBySlice(
-                        declMap, imp->target, ownerFile->source, inst->start, inst->end);
+                        declMap,
+                        EffectiveMirImportTargetPackage(loader, imp),
+                        ownerFile->source,
+                        inst->start,
+                        inst->end);
                     if (target == NULL) {
                         continue;
                     }
@@ -6248,7 +6737,7 @@ static int ResolvePackageMirProgram(
                         declMap, ownerPkg, ownerFile->source, inst.start, inst.end);
                     if (target == NULL) {
                         target = FindResolvedImportValueBySlice(
-                            declMap, ownerPkg, ownerFile->source, inst.start, inst.end);
+                            loader, declMap, ownerPkg, ownerFile->source, inst.start, inst.end);
                     }
                     if (target != NULL) {
                         inst.op = SLMirOp_CALL_FN;
@@ -6264,7 +6753,7 @@ static int ResolvePackageMirProgram(
                             SLMirDeclKind_FN);
                         if (target == NULL) {
                             target = FindResolvedImportFunctionBySlice(
-                                declMap, ownerPkg, ownerFile->source, inst.start, inst.end);
+                                loader, declMap, ownerPkg, ownerFile->source, inst.start, inst.end);
                         }
                         if (target != NULL) {
                             uint32_t constIndex = UINT32_MAX;
@@ -6296,49 +6785,12 @@ static int ResolvePackageMirProgram(
                                 const SLMirInst*   recvInst = &program->insts[argStart];
                                 const SLImportRef* imp = FindImportByAliasSlice(
                                     ownerPkg, ownerFile->source, recvInst->start, recvInst->end);
-                                if (allowWasmMinPlatform && imp != NULL && imp->target != NULL
-                                    && StrEq(imp->target->name, "platform"))
+                                if (imp != NULL
+                                    && EffectiveMirImportTargetPackage(loader, imp) != NULL)
                                 {
-                                    uint32_t hostTarget = SLMirHostTarget_INVALID;
-                                    uint32_t hostIndex = UINT32_MAX;
-                                    if (SliceEqCStr(
-                                            ownerFile->source, inst.start, inst.end, "exit"))
-                                    {
-                                        hostTarget = SLMirHostTarget_PLATFORM_EXIT;
-                                    } else if (
-                                        SliceEqCStr(
-                                            ownerFile->source, inst.start, inst.end, "console_log"))
-                                    {
-                                        hostTarget = SLMirHostTarget_PLATFORM_CONSOLE_LOG;
-                                    }
-                                    if (hostTarget != SLMirHostTarget_INVALID
-                                        && EnsureMirHostRef(
-                                               arena,
-                                               outProgram,
-                                               SLMirHost_GENERIC,
-                                               0u,
-                                               hostTarget,
-                                               inst.start,
-                                               inst.end,
-                                               &hostIndex)
-                                               != 0)
-                                    {
-                                        return -1;
-                                    }
-                                    if (hostTarget != SLMirHostTarget_INVALID) {
-                                        inst.op = SLMirOp_CALL_HOST;
-                                        inst.tok =
-                                            (uint16_t)((SLMirCallArgCountFromTok(inst.tok) - 1u)
-                                                       | (inst.tok & SLMirCallArgFlag_SPREAD_LAST));
-                                        inst.aux = hostIndex;
-                                        insts[instOutLen++] = inst;
-                                        continue;
-                                    }
-                                }
-                                if (imp != NULL && imp->target != NULL) {
                                     target = FindMirResolvedDeclBySlice(
                                         declMap,
-                                        imp->target,
+                                        EffectiveMirImportTargetPackage(loader, imp),
                                         ownerFile->source,
                                         inst.start,
                                         inst.end,
@@ -6362,7 +6814,12 @@ static int ResolvePackageMirProgram(
                                 SLMirDeclKind_FN);
                             if (target == NULL) {
                                 target = FindResolvedImportFunctionBySlice(
-                                    declMap, ownerPkg, ownerFile->source, inst.start, inst.end);
+                                    loader,
+                                    declMap,
+                                    ownerPkg,
+                                    ownerFile->source,
+                                    inst.start,
+                                    inst.end);
                             }
                             if (target != NULL) {
                                 inst.op = SLMirOp_CALL_FN;
@@ -6377,9 +6834,13 @@ static int ResolvePackageMirProgram(
                     if (recvInst->op == SLMirOp_LOAD_IDENT) {
                         imp = FindImportByAliasSlice(
                             ownerPkg, ownerFile->source, recvInst->start, recvInst->end);
-                        if (imp != NULL && imp->target != NULL) {
+                        if (imp != NULL && EffectiveMirImportTargetPackage(loader, imp) != NULL) {
                             target = FindMirResolvedValueBySlice(
-                                declMap, imp->target, ownerFile->source, inst.start, inst.end);
+                                declMap,
+                                EffectiveMirImportTargetPackage(loader, imp),
+                                ownerFile->source,
+                                inst.start,
+                                inst.end);
                             if (target != NULL) {
                                 inst.op = SLMirOp_CALL_FN;
                                 inst.tok = 0;
@@ -8339,16 +8800,22 @@ static void InferMirStraightLineLocalTypes(SLArena* arena, SLMirProgram* program
 static int BuildPackageMirProgram(
     const SLPackageLoader* loader,
     const SLPackage*       entryPkg,
+    int                    includeSelectedPlatform,
     SLArena*               arena,
     SLMirProgram*          outProgram,
+    SLForeignLinkageInfo* _Nullable outForeignLinkage,
     SLDiag* _Nullable diag) {
     SLMirProgramBuilder  builder;
     SLMirResolvedDeclMap declMap = { 0 };
     uint32_t*            topoOrder = NULL;
     uint32_t             topoOrderLen = 0;
     uint32_t             orderIndex;
+    int                  autoIncludeSelectedPlatformPanicOnly = 0;
     if (diag != NULL) {
         *diag = (SLDiag){ 0 };
+    }
+    if (outForeignLinkage != NULL) {
+        *outForeignLinkage = (SLForeignLinkageInfo){ 0 };
     }
     if (loader == NULL || entryPkg == NULL || arena == NULL || outProgram == NULL) {
         return -1;
@@ -8357,19 +8824,28 @@ static int BuildPackageMirProgram(
     if (topoOrder == NULL && loader->packageLen != 0u) {
         return -1;
     }
-    if (BuildEntryPackageMirOrder(loader, entryPkg, topoOrder, loader->packageLen, &topoOrderLen)
+    if (BuildEntryPackageMirOrder(
+            loader, entryPkg, includeSelectedPlatform, topoOrder, loader->packageLen, &topoOrderLen)
         != 0)
     {
         free(topoOrder);
         return -1;
     }
+    autoIncludeSelectedPlatformPanicOnly =
+        includeSelectedPlatform && !PackageUsesPlatformImport(loader);
     SLMirProgramBuilderInit(&builder, arena);
     for (orderIndex = 0; orderIndex < topoOrderLen; orderIndex++) {
         const SLPackage* pkg = &loader->packages[topoOrder[orderIndex]];
         uint32_t         fileIndex;
         for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
-            if (AppendMirDeclsFromFile(&builder, arena, pkg, &pkg->files[fileIndex], &declMap) != 0)
-            {
+            int rc;
+            if (autoIncludeSelectedPlatformPanicOnly && loader->selectedPlatformPkg == pkg) {
+                rc = AppendMirSelectedPlatformPanicDeclsFromFile(
+                    &builder, arena, pkg, &pkg->files[fileIndex], &declMap);
+            } else {
+                rc = AppendMirDeclsFromFile(&builder, arena, pkg, &pkg->files[fileIndex], &declMap);
+            }
+            if (rc != 0) {
                 free(declMap.v);
                 free(topoOrder);
                 return -1;
@@ -8432,6 +8908,16 @@ static int BuildPackageMirProgram(
     InferMirStraightLineLocalTypes(arena, outProgram);
     SpecializeMirDirectFunctionFieldStores(arena, outProgram);
     EnrichMirFunctionRefRepresentatives(loader, outProgram);
+    if (outForeignLinkage != NULL
+        && BuildMirForeignLinkageInfo(loader, &declMap, outForeignLinkage, diag) != 0)
+    {
+        free(declMap.v);
+        free(topoOrder);
+        if (diag != NULL && diag->code != SLDiag_NONE) {
+            return -1;
+        }
+        return ErrorSimple("out of memory");
+    }
     free(declMap.v);
     free(topoOrder);
     return SLMirValidateProgram(outProgram, diag);
@@ -8454,7 +8940,7 @@ static int DumpMIR(const char* entryPath, const char* _Nullable platformTarget) 
         SLArenaDispose(&arena);
         return -1;
     }
-    if (BuildPackageMirProgram(&loader, entryPkg, &arena, &program, &diag) != 0) {
+    if (BuildPackageMirProgram(&loader, entryPkg, 0, &arena, &program, NULL, &diag) != 0) {
         if (diag.code != SLDiag_NONE && entryPkg->fileLen == 1 && entryPkg->files[0].source != NULL)
         {
             (void)PrintSLDiagLineCol(entryPkg->files[0].path, entryPkg->files[0].source, &diag, 0);
@@ -8862,6 +9348,493 @@ static int FnNodeHasAnytypeParam(const SLParsedFile* file, int32_t nodeId) {
     return 0;
 }
 
+static int FnNodeHasContextClause(const SLAst* ast, int32_t nodeId) {
+    int32_t child = ASTFirstChild(ast, nodeId);
+    while (child >= 0) {
+        if (ast->nodes[child].kind == SLAst_CONTEXT_CLAUSE) {
+            return 1;
+        }
+        child = ASTNextSibling(ast, child);
+    }
+    return 0;
+}
+
+static int DirectiveNameEq(const SLParsedFile* file, int32_t nodeId, const char* name) {
+    const SLAstNode* n =
+        nodeId >= 0 && (uint32_t)nodeId < file->ast.len ? &file->ast.nodes[nodeId] : NULL;
+    size_t len = strlen(name);
+    return n != NULL && n->kind == SLAst_DIRECTIVE && n->dataEnd >= n->dataStart
+        && (size_t)(n->dataEnd - n->dataStart) == len
+        && memcmp(file->source + n->dataStart, name, len) == 0;
+}
+
+static uint32_t DirectiveArgCount(const SLAst* ast, int32_t nodeId) {
+    uint32_t count = 0;
+    int32_t  child = ASTFirstChild(ast, nodeId);
+    while (child >= 0) {
+        count++;
+        child = ASTNextSibling(ast, child);
+    }
+    return count;
+}
+
+static int32_t DirectiveArgAt(const SLAst* ast, int32_t nodeId, uint32_t index) {
+    uint32_t i = 0;
+    int32_t  child = ASTFirstChild(ast, nodeId);
+    while (child >= 0) {
+        if (i == index) {
+            return child;
+        }
+        i++;
+        child = ASTNextSibling(ast, child);
+    }
+    return -1;
+}
+
+static int FindAttachedDirectiveRun(
+    const SLAst* ast, int32_t declNodeId, int32_t* outFirstDirective, int32_t* outLastDirective) {
+    int32_t child;
+    int32_t first = -1;
+    int32_t last = -1;
+    if (ast == NULL || outFirstDirective == NULL || outLastDirective == NULL) {
+        return -1;
+    }
+    child = ASTFirstChild(ast, ast->root);
+    while (child >= 0) {
+        const SLAstNode* n = &ast->nodes[child];
+        if (n->kind == SLAst_DIRECTIVE) {
+            if (first < 0) {
+                first = child;
+            }
+            last = child;
+        } else {
+            if (child == declNodeId) {
+                *outFirstDirective = first;
+                *outLastDirective = last;
+                return 0;
+            }
+            first = -1;
+            last = -1;
+        }
+        child = ASTNextSibling(ast, child);
+    }
+    *outFirstDirective = -1;
+    *outLastDirective = -1;
+    return -1;
+}
+
+static uint32_t DeclTextSourceStart(const SLParsedFile* file, int32_t nodeId) {
+    int32_t firstDirective = -1;
+    int32_t lastDirective = -1;
+    if (FindAttachedDirectiveRun(&file->ast, nodeId, &firstDirective, &lastDirective) == 0
+        && firstDirective >= 0)
+    {
+        return file->ast.nodes[firstDirective].start;
+    }
+    return file->ast.nodes[nodeId].start;
+}
+
+static int AppendDirectiveRunForDecl(
+    SLStringBuilder* b, const SLParsedFile* file, int32_t nodeId, int omitExportDirective) {
+    int32_t firstDirective = -1;
+    int32_t lastDirective = -1;
+    int32_t child;
+    int     emittedAny = 0;
+    if (FindAttachedDirectiveRun(&file->ast, nodeId, &firstDirective, &lastDirective) != 0
+        || firstDirective < 0)
+    {
+        return 0;
+    }
+    child = firstDirective;
+    while (child >= 0) {
+        const SLAstNode* n = &file->ast.nodes[child];
+        if (n->kind != SLAst_DIRECTIVE) {
+            break;
+        }
+        if (!(omitExportDirective && DirectiveNameEq(file, child, "export"))) {
+            if (SBAppendSlice(b, file->source, n->start, n->end) != 0 || SBAppendCStr(b, "\n") != 0)
+            {
+                return -1;
+            }
+            emittedAny = 1;
+        }
+        if (child == lastDirective) {
+            break;
+        }
+        child = ASTNextSibling(&file->ast, child);
+    }
+    (void)emittedAny;
+    return 0;
+}
+
+static char* _Nullable BuildDeclTextForNode(
+    const SLParsedFile* file, int32_t nodeId, int isPubSurface) {
+    const SLAstNode* n = &file->ast.nodes[nodeId];
+    uint32_t         declStart = n->start;
+    uint32_t         declEnd = n->end;
+    SLStringBuilder  b = { 0 };
+
+    if (!isPubSurface) {
+        return DupSlice(file->source, DeclTextSourceStart(file, nodeId), n->end);
+    }
+
+    if (AppendDirectiveRunForDecl(&b, file, nodeId, 1) != 0) {
+        free(b.v);
+        return NULL;
+    }
+    if ((n->flags & SLAstFlag_PUB) != 0 && declStart + 3u <= declEnd
+        && memcmp(file->source + declStart, "pub", 3u) == 0)
+    {
+        declStart += 3u;
+        while (declStart < declEnd && IsAsciiSpaceChar(file->source[declStart])) {
+            declStart++;
+        }
+    }
+    if (n->kind == SLAst_FN && FnNodeHasBody(&file->ast, nodeId)
+        && !FnNodeHasAnytypeParam(file, nodeId))
+    {
+        int32_t body = ASTFirstChild(&file->ast, nodeId);
+        while (body >= 0) {
+            if (file->ast.nodes[body].kind == SLAst_BLOCK) {
+                declEnd = file->ast.nodes[body].start;
+                break;
+            }
+            body = ASTNextSibling(&file->ast, body);
+        }
+        while (declEnd > declStart && IsAsciiSpaceChar(file->source[declEnd - 1u])) {
+            declEnd--;
+        }
+        if (SBAppendSlice(&b, file->source, declStart, declEnd) != 0 || SBAppendCStr(&b, ";") != 0)
+        {
+            free(b.v);
+            return NULL;
+        }
+    } else if (SBAppendSlice(&b, file->source, declStart, declEnd) != 0) {
+        free(b.v);
+        return NULL;
+    }
+    return SBFinish(&b, NULL);
+}
+
+static int PackageFnDeclCountByNode(
+    const SLPackage* pkg, const SLParsedFile* file, int32_t nodeId) {
+    const SLAstNode* target = &file->ast.nodes[nodeId];
+    uint32_t         fileIndex;
+    uint32_t         count = 0;
+    for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+        const SLParsedFile* scanFile = &pkg->files[fileIndex];
+        int32_t             child = ASTFirstChild(&scanFile->ast, scanFile->ast.root);
+        while (child >= 0) {
+            const SLAstNode* n = &scanFile->ast.nodes[child];
+            if (n->kind == SLAst_FN && n->dataEnd > n->dataStart
+                && SliceEqSlice(
+                    scanFile->source,
+                    n->dataStart,
+                    n->dataEnd,
+                    file->source,
+                    target->dataStart,
+                    target->dataEnd))
+            {
+                count++;
+            }
+            child = ASTNextSibling(&scanFile->ast, child);
+        }
+    }
+    return (int)count;
+}
+
+static int VarLikeNodeHasInitializer(const SLAst* ast, int32_t nodeId) {
+    int32_t firstChild = ASTFirstChild(ast, nodeId);
+    int32_t afterNames =
+        firstChild >= 0 && ast->nodes[firstChild].kind == SLAst_NAME_LIST
+            ? ASTNextSibling(ast, firstChild)
+            : firstChild;
+    if (afterNames < 0) {
+        return 0;
+    }
+    if ((ast->nodes[afterNames].kind == SLAst_TYPE_NAME
+         || ast->nodes[afterNames].kind == SLAst_TYPE_PTR
+         || ast->nodes[afterNames].kind == SLAst_TYPE_REF
+         || ast->nodes[afterNames].kind == SLAst_TYPE_MUTREF
+         || ast->nodes[afterNames].kind == SLAst_TYPE_ARRAY
+         || ast->nodes[afterNames].kind == SLAst_TYPE_VARRAY
+         || ast->nodes[afterNames].kind == SLAst_TYPE_SLICE
+         || ast->nodes[afterNames].kind == SLAst_TYPE_MUTSLICE
+         || ast->nodes[afterNames].kind == SLAst_TYPE_OPTIONAL
+         || ast->nodes[afterNames].kind == SLAst_TYPE_FN
+         || ast->nodes[afterNames].kind == SLAst_TYPE_ANON_STRUCT
+         || ast->nodes[afterNames].kind == SLAst_TYPE_ANON_UNION
+         || ast->nodes[afterNames].kind == SLAst_TYPE_TUPLE))
+    {
+        return ASTNextSibling(ast, afterNames) >= 0;
+    }
+    return 1;
+}
+
+static int VarLikeNodeUsesGroupedNames(const SLAst* ast, int32_t nodeId) {
+    int32_t firstChild = ASTFirstChild(ast, nodeId);
+    return firstChild >= 0 && ast->nodes[firstChild].kind == SLAst_NAME_LIST;
+}
+
+static int ValidateDirectiveRunOnDecl(
+    const SLPackage*    pkg,
+    const SLParsedFile* file,
+    const char* _Nullable platformTarget,
+    int32_t firstDirective,
+    int32_t lastDirective,
+    int32_t declNodeId) {
+    const SLAstNode* decl = &file->ast.nodes[declNodeId];
+    int32_t          child = firstDirective;
+    int32_t          cImportNode = -1;
+    int32_t          wasmImportNode = -1;
+    int32_t          exportNode = -1;
+    int              hasForeignFnDirective = 0;
+
+    while (child >= 0) {
+        const SLAstNode* dir = &file->ast.nodes[child];
+        uint32_t         argCount = DirectiveArgCount(&file->ast, child);
+        int32_t          arg0;
+        int32_t          arg1;
+        if (dir->kind != SLAst_DIRECTIVE) {
+            break;
+        }
+        if (DirectiveNameEq(file, child, "c_import")) {
+            if (cImportNode >= 0 || wasmImportNode >= 0 || exportNode >= 0) {
+                return Errorf(
+                    file->path, file->source, dir->start, dir->end, "duplicate foreign directive");
+            }
+            if (decl->kind != SLAst_FN && decl->kind != SLAst_VAR && decl->kind != SLAst_CONST) {
+                return Errorf(
+                    file->path,
+                    file->source,
+                    dir->start,
+                    dir->end,
+                    "@c_import applies only to top-level fn, var, or const declarations");
+            }
+            if (argCount != 1u) {
+                return Errorf(
+                    file->path,
+                    file->source,
+                    dir->start,
+                    dir->end,
+                    "@c_import expects 1 string argument");
+            }
+            arg0 = DirectiveArgAt(&file->ast, child, 0u);
+            if (arg0 < 0 || file->ast.nodes[arg0].kind != SLAst_STRING) {
+                return Errorf(
+                    file->path,
+                    file->source,
+                    dir->start,
+                    dir->end,
+                    "@c_import expects string arguments");
+            }
+            cImportNode = child;
+            hasForeignFnDirective = decl->kind == SLAst_FN;
+        } else if (DirectiveNameEq(file, child, "wasm_import")) {
+            if (cImportNode >= 0 || wasmImportNode >= 0 || exportNode >= 0) {
+                return Errorf(
+                    file->path, file->source, dir->start, dir->end, "duplicate foreign directive");
+            }
+            if (decl->kind != SLAst_FN && decl->kind != SLAst_VAR && decl->kind != SLAst_CONST) {
+                return Errorf(
+                    file->path,
+                    file->source,
+                    dir->start,
+                    dir->end,
+                    "@wasm_import applies only to top-level fn, var, or const declarations");
+            }
+            if (argCount != 2u) {
+                return Errorf(
+                    file->path,
+                    file->source,
+                    dir->start,
+                    dir->end,
+                    "@wasm_import expects 2 string arguments");
+            }
+            arg0 = DirectiveArgAt(&file->ast, child, 0u);
+            arg1 = DirectiveArgAt(&file->ast, child, 1u);
+            if (arg0 < 0 || arg1 < 0 || file->ast.nodes[arg0].kind != SLAst_STRING
+                || file->ast.nodes[arg1].kind != SLAst_STRING)
+            {
+                return Errorf(
+                    file->path,
+                    file->source,
+                    dir->start,
+                    dir->end,
+                    "@wasm_import expects string arguments");
+            }
+            wasmImportNode = child;
+            hasForeignFnDirective = decl->kind == SLAst_FN;
+        } else if (DirectiveNameEq(file, child, "export")) {
+            if (cImportNode >= 0 || wasmImportNode >= 0 || exportNode >= 0) {
+                return Errorf(
+                    file->path, file->source, dir->start, dir->end, "duplicate foreign directive");
+            }
+            if (decl->kind != SLAst_FN || !IsPubDeclNode(decl)
+                || !FnNodeHasBody(&file->ast, declNodeId))
+            {
+                return Errorf(
+                    file->path,
+                    file->source,
+                    dir->start,
+                    dir->end,
+                    "@export applies only to pub fn definitions");
+            }
+            if (argCount != 1u) {
+                return Errorf(
+                    file->path,
+                    file->source,
+                    dir->start,
+                    dir->end,
+                    "@export expects 1 string argument");
+            }
+            arg0 = DirectiveArgAt(&file->ast, child, 0u);
+            if (arg0 < 0 || file->ast.nodes[arg0].kind != SLAst_STRING) {
+                return Errorf(
+                    file->path,
+                    file->source,
+                    dir->start,
+                    dir->end,
+                    "@export expects a string argument");
+            }
+            exportNode = child;
+            hasForeignFnDirective = 1;
+        } else {
+            return Errorf(file->path, file->source, dir->start, dir->end, "unknown directive");
+        }
+        if (child == lastDirective) {
+            break;
+        }
+        child = ASTNextSibling(&file->ast, child);
+    }
+
+    if ((cImportNode >= 0 || wasmImportNode >= 0) && decl->kind == SLAst_FN
+        && PackageFnDeclCountByNode(pkg, file, declNodeId) != 1)
+    {
+        return Errorf(
+            file->path,
+            file->source,
+            decl->dataStart,
+            decl->dataEnd,
+            "foreign-linkage directives are invalid on overloaded functions");
+    }
+    if (exportNode >= 0 && PackageFnDeclCountByNode(pkg, file, declNodeId) != 1) {
+        return Errorf(
+            file->path,
+            file->source,
+            decl->dataStart,
+            decl->dataEnd,
+            "foreign-linkage directives are invalid on overloaded functions");
+    }
+    if (hasForeignFnDirective && FnNodeHasContextClause(&file->ast, declNodeId)) {
+        return Errorf(
+            file->path,
+            file->source,
+            decl->start,
+            decl->end,
+            "context is not supported on foreign-linkage functions");
+    }
+    if ((cImportNode >= 0 || wasmImportNode >= 0) && decl->kind == SLAst_FN
+        && FnNodeHasBody(&file->ast, declNodeId))
+    {
+        return Errorf(
+            file->path,
+            file->source,
+            decl->start,
+            decl->end,
+            "foreign imports must be declarations only");
+    }
+    if ((cImportNode >= 0 || wasmImportNode >= 0)
+        && (decl->kind == SLAst_VAR || decl->kind == SLAst_CONST))
+    {
+        if (VarLikeNodeUsesGroupedNames(&file->ast, declNodeId)) {
+            return Errorf(
+                file->path,
+                file->source,
+                decl->start,
+                decl->end,
+                "foreign imports do not support grouped var/const declarations");
+        }
+        if (VarLikeNodeHasInitializer(&file->ast, declNodeId)) {
+            return Errorf(
+                file->path,
+                file->source,
+                decl->start,
+                decl->end,
+                "foreign imports must be declarations only");
+        }
+    }
+    if ((cImportNode >= 0 || wasmImportNode >= 0) && platformTarget != NULL
+        && StrEq(platformTarget, SL_EVAL_PLATFORM_TARGET))
+    {
+        return Errorf(
+            file->path,
+            file->source,
+            decl->start,
+            decl->end,
+            "foreign imports are not supported for platform %s",
+            platformTarget);
+    }
+    return 0;
+}
+
+static int ValidatePackageForeignDirectives(
+    const SLPackage* pkg, const char* _Nullable platformTarget) {
+    uint32_t fileIndex;
+    for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+        const SLParsedFile* file = &pkg->files[fileIndex];
+        int32_t             child = ASTFirstChild(&file->ast, file->ast.root);
+        int32_t             firstDirective = -1;
+        int32_t             lastDirective = -1;
+        while (child >= 0) {
+            const SLAstNode* n = &file->ast.nodes[child];
+            if (n->kind == SLAst_DIRECTIVE) {
+                if (firstDirective < 0) {
+                    firstDirective = child;
+                }
+                lastDirective = child;
+            } else {
+                if (firstDirective >= 0
+                    && ValidateDirectiveRunOnDecl(
+                           pkg, file, platformTarget, firstDirective, lastDirective, child)
+                           != 0)
+                {
+                    return -1;
+                }
+                firstDirective = -1;
+                lastDirective = -1;
+            }
+            child = ASTNextSibling(&file->ast, child);
+        }
+    }
+    return 0;
+}
+
+static int PackageUsesWasmImportDirective(const SLPackage* pkg) {
+    uint32_t fileIndex;
+    for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+        const SLParsedFile* file = &pkg->files[fileIndex];
+        int32_t             child = ASTFirstChild(&file->ast, file->ast.root);
+        while (child >= 0) {
+            if (DirectiveNameEq(file, child, "wasm_import")) {
+                return 1;
+            }
+            child = ASTNextSibling(&file->ast, child);
+        }
+    }
+    return 0;
+}
+
+static int LoaderUsesWasmImportDirective(const SLPackageLoader* loader) {
+    uint32_t i;
+    for (i = 0; i < loader->packageLen; i++) {
+        if (PackageUsesWasmImportDirective(&loader->packages[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static char* _Nullable DefaultImportAlias(const char* importPath) {
     const char* slash = strrchr(importPath, '/');
     const char* name = importPath;
@@ -9040,7 +10013,13 @@ static int AddPackageFile(
     return 0;
 }
 
-static int AddDeclText(SLPackage* pkg, char* text, uint32_t fileIndex, int32_t nodeId) {
+static int AddDeclText(
+    SLPackage* pkg,
+    char*      text,
+    uint32_t   fileIndex,
+    int32_t    nodeId,
+    uint32_t   sourceStart,
+    uint32_t   sourceEnd) {
     SLDeclText* t;
     if (EnsureCap(
             (void**)&pkg->declTexts, &pkg->declTextCap, pkg->declTextLen + 1u, sizeof(SLDeclText))
@@ -9052,6 +10031,8 @@ static int AddDeclText(SLPackage* pkg, char* text, uint32_t fileIndex, int32_t n
     t->text = text;
     t->fileIndex = fileIndex;
     t->nodeId = nodeId;
+    t->sourceStart = sourceStart;
+    t->sourceEnd = sourceEnd;
     return 0;
 }
 
@@ -9216,8 +10197,7 @@ static int AddDeclFromNode(
                 return Errorf(file->path, file->source, n->start, n->end, "invalid declaration");
             }
             name = DupSlice(file->source, nameAst->dataStart, nameAst->dataEnd);
-            declText =
-                isPub ? DupPubDeclText(file, nodeId) : DupSlice(file->source, n->start, n->end);
+            declText = BuildDeclTextForNode(file, nodeId, isPub);
             if (name == NULL || declText == NULL) {
                 free(name);
                 free(declText);
@@ -9281,8 +10261,7 @@ static int AddDeclFromNode(
     }
     {
         char* name = DupSlice(file->source, n->dataStart, n->dataEnd);
-        char* declText =
-            isPub ? DupPubDeclText(file, nodeId) : DupSlice(file->source, n->start, n->end);
+        char* declText = BuildDeclTextForNode(file, nodeId, isPub);
         if (name == NULL || declText == NULL) {
             free(name);
             free(declText);
@@ -9586,12 +10565,13 @@ static int ProcessParsedFile(SLPackage* pkg, uint32_t fileIndex) {
                 }
                 importChild = ASTNextSibling(ast, importChild);
             }
-        } else {
-            char* declText = DupSlice(file->source, n->start, n->end);
+        } else if (n->kind != SLAst_DIRECTIVE) {
+            char*    declText = BuildDeclTextForNode(file, child, 0);
+            uint32_t sourceStart = DeclTextSourceStart(file, child);
             if (declText == NULL) {
                 return ErrorSimple("out of memory");
             }
-            if (AddDeclText(pkg, declText, fileIndex, child) != 0) {
+            if (AddDeclText(pkg, declText, fileIndex, child, sourceStart, n->end) != 0) {
                 free(declText);
                 return ErrorSimple("out of memory");
             }
@@ -10543,6 +11523,7 @@ static int LoadSelectedPlatformTargetPackage(
         if (LoadPackageRecursive(loader, resolvedDir, outPtr) != 0) {
             rc = ErrorSimple("failed to resolve platform target package %s", importPath);
         } else {
+            loader->selectedPlatformPkg = *outPtr;
             rc = 0;
         }
     }
@@ -10684,6 +11665,9 @@ static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SL
         }
     }
 
+    if (ValidatePackageForeignDirectives(pkg, loader->platformTarget) != 0) {
+        return -1;
+    }
     if (ValidatePubFnDefinitions(pkg) != 0) {
         return -1;
     }
@@ -10739,6 +11723,9 @@ static int LoadSingleFilePackage(
         }
     }
 
+    if (ValidatePackageForeignDirectives(pkg, loader->platformTarget) != 0) {
+        return -1;
+    }
     if (ValidatePubFnDefinitions(pkg) != 0) {
         return -1;
     }
@@ -11729,6 +12716,7 @@ static int RewriteDeclTextForNamedImports(
     uint32_t         shadowLen = 0;
     uint32_t         shadowCap = 0;
     uint32_t         mark = 0;
+    uint32_t         baseStart;
     int32_t          child;
     int              rc = -1;
 
@@ -11740,6 +12728,7 @@ static int RewriteDeclTextForNamedImports(
     if (nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
         return -1;
     }
+    baseStart = DeclTextSourceStart(file, nodeId);
     n = &file->ast.nodes[nodeId];
 
     shadowCounts = (uint8_t*)calloc(pkg->importSymbolLen, sizeof(uint8_t));
@@ -11826,13 +12815,7 @@ static int RewriteDeclTextForNamedImports(
         default: break;
     }
 
-    if (ApplyTextRewrites(
-            text,
-            (uint32_t)strlen(text),
-            file->ast.nodes[nodeId].start,
-            rewrites,
-            rewriteLen,
-            outText)
+    if (ApplyTextRewrites(text, (uint32_t)strlen(text), baseStart, rewrites, rewriteLen, outText)
         != 0)
     {
         goto done;
@@ -12512,14 +13495,9 @@ static int BuildCombinedPackageSource(
         char*               rewritten = NULL;
         uint32_t            combinedStart;
         uint32_t            combinedEnd;
-        uint32_t            sourceStart = 0;
-        uint32_t            sourceEnd = 0;
+        uint32_t            sourceStart = decl->sourceStart;
+        uint32_t            sourceEnd = decl->sourceEnd;
         uint32_t            rewrittenLen;
-        if (decl->nodeId >= 0 && (uint32_t)decl->nodeId < file->ast.len) {
-            const SLAstNode* n = &file->ast.nodes[decl->nodeId];
-            sourceStart = n->start;
-            sourceEnd = n->end;
-        }
         if (RewriteDeclTextForNamedImports(pkg, file, decl->nodeId, decl->text, &namedRewritten)
             != 0)
         {
@@ -12978,16 +13956,25 @@ static int GeneratePackage(
     char*                   source = NULL;
     uint32_t                sourceLen = 0;
     SLMirProgram            mirProgram = { 0 };
+    SLForeignLinkageInfo    foreignLinkage = { 0 };
     SLCodegenArtifact       artifact = { 0 };
     SLDiag                  diag = { 0 };
     SLCodegenUnit           unit;
     const SLCodegenBackend* backend;
+    const char*             effectivePlatformTarget = platformTarget;
+    int                     mirIncludeSelectedPlatform = 0;
+    int                     retriedWithImplicitPlatformPanic = 0;
     int                     needsMir = 0;
     (void)cacheDirArg;
 
     memset(&mirArena, 0, sizeof(mirArena));
+    if (StrEq(backendName, "wasm")
+        && (effectivePlatformTarget == NULL || effectivePlatformTarget[0] == '\0'))
+    {
+        effectivePlatformTarget = SL_WASM_MIN_PLATFORM_TARGET;
+    }
 
-    if (LoadAndCheckPackage(entryPath, platformTarget, &loader, &entryPkg) != 0) {
+    if (LoadAndCheckPackage(entryPath, effectivePlatformTarget, &loader, &entryPkg) != 0) {
         return -1;
     }
 
@@ -13022,15 +14009,27 @@ static int GeneratePackage(
     unit.packageName = entryPkg->name;
     unit.source = source;
     unit.sourceLen = sourceLen;
-    unit.platformTarget = platformTarget;
+    unit.platformTarget = effectivePlatformTarget;
     unit.mirProgram = NULL;
-    unit.usesPlatform = 0;
+    unit.foreignLinkage = NULL;
+    unit.usesPlatform = PackageHasPlatformImport(entryPkg) ? 1u : 0u;
 
     needsMir = StrEq(backendName, "wasm");
+    mirIncludeSelectedPlatform = PackageUsesPlatformImport(&loader) ? 1 : 0;
     if (needsMir) {
+    rebuild_mir:
         SLArenaInit(&mirArena, mirArenaStorage, sizeof(mirArenaStorage));
         SLArenaSetAllocator(&mirArena, NULL, CodegenArenaGrow, CodegenArenaFree);
-        if (BuildPackageMirProgram(&loader, entryPkg, &mirArena, &mirProgram, &diag) != 0) {
+        if (BuildPackageMirProgram(
+                &loader,
+                entryPkg,
+                mirIncludeSelectedPlatform,
+                &mirArena,
+                &mirProgram,
+                &foreignLinkage,
+                &diag)
+            != 0)
+        {
             if (diag.code != SLDiag_NONE && entryPkg->fileLen == 1
                 && entryPkg->files[0].source != NULL)
             {
@@ -13045,6 +14044,7 @@ static int GeneratePackage(
             return -1;
         }
         unit.mirProgram = &mirProgram;
+        unit.foreignLinkage = &foreignLinkage;
         unit.usesPlatform = PackageUsesPlatformImport(&loader) ? 1u : 0u;
     }
 
@@ -13053,6 +14053,25 @@ static int GeneratePackage(
     codegenOptions.arenaFree = CodegenArenaFree;
 
     if (backend->emit(backend, &unit, &codegenOptions, &artifact, &diag) != 0) {
+        if (needsMir && !retriedWithImplicitPlatformPanic && !mirIncludeSelectedPlatform
+            && effectivePlatformTarget != NULL
+            && StrEq(effectivePlatformTarget, SL_WASM_MIN_PLATFORM_TARGET)
+            && diag.code == SLDiag_WASM_BACKEND_UNSUPPORTED_MIR && diag.detail != NULL
+            && StrEq(
+                diag.detail, "selected platform does not provide imported panic for direct Wasm"))
+        {
+            if (artifact.data != NULL) {
+                free(artifact.data);
+                artifact = (SLCodegenArtifact){ 0 };
+            }
+            FreeForeignLinkageInfo(&foreignLinkage);
+            memset(&mirProgram, 0, sizeof(mirProgram));
+            SLArenaDispose(&mirArena);
+            diag = (SLDiag){ 0 };
+            mirIncludeSelectedPlatform = 1;
+            retriedWithImplicitPlatformPanic = 1;
+            goto rebuild_mir;
+        }
         if (diag.code != SLDiag_NONE) {
             int diagStatus;
             if (entryPkg->fileLen == 1 && entryPkg->importLen == 0) {
@@ -13063,6 +14082,7 @@ static int GeneratePackage(
             }
             if (!(diagStatus == 0 && artifact.data != NULL)) {
                 free(source);
+                FreeForeignLinkageInfo(&foreignLinkage);
                 FreeLoader(&loader);
                 SLArenaDispose(&mirArena);
                 return -1;
@@ -13087,6 +14107,7 @@ static int GeneratePackage(
 
     free(artifact.data);
     free(source);
+    FreeForeignLinkageInfo(&foreignLinkage);
     FreeLoader(&loader);
     SLArenaDispose(&mirArena);
     return 0;
@@ -13714,7 +14735,8 @@ static int EmitPackageArtifact(
     unit.sourceLen = sourceLen;
     unit.platformTarget = loader->platformTarget;
     unit.mirProgram = NULL;
-    unit.usesPlatform = 0;
+    unit.foreignLinkage = NULL;
+    unit.usesPlatform = PackageHasPlatformImport(pkg) ? 1u : 0u;
     headerGuard = BuildPackageMacro(artifact->key, "_H");
     implMacro = BuildPackageMacro(artifact->key, "_IMPL");
     if (headerGuard == NULL || implMacro == NULL) {
@@ -14502,6 +15524,12 @@ static int CompileProgram(
             loader.platformTarget);
         goto end;
     }
+    if (LoaderUsesWasmImportDirective(&loader)) {
+        ErrorSimple(
+            "native C compilation does not support @wasm_import; use `slc genpkg:c` or a Wasm "
+            "toolchain");
+        goto end;
+    }
     if (ResolveLibDir(&libDir) != 0) {
         goto end;
     }
@@ -14717,10 +15745,11 @@ int main(int argc, char* argv[]) {
     const char* mode = "lex";
     const char* filename = NULL;
     const char* outFilename = NULL;
-    const char* platformTarget = SL_DEFAULT_PLATFORM_TARGET;
+    const char* platformTarget = NULL;
     const char* cacheDirArg = NULL;
     char        backendName[32];
     int         genpkgMode;
+    int         hasPlatformTarget = 0;
     char*       source;
     uint32_t    sourceLen;
     int         argi = 1;
@@ -14737,6 +15766,7 @@ int main(int argc, char* argv[]) {
                 return 2;
             }
             platformTarget = argv[argi + 1];
+            hasPlatformTarget = 1;
             argi += 2;
             continue;
         }
@@ -14752,14 +15782,19 @@ int main(int argc, char* argv[]) {
         break;
     }
 
-    if (!IsValidPlatformTargetName(platformTarget)) {
+    if (platformTarget != NULL && !IsValidPlatformTargetName(platformTarget)) {
         fprintf(stderr, "invalid platform target: %s\n", platformTarget);
         return 2;
     }
 
     if (argc - argi >= 1 && StrEq(argv[argi], "compile")) {
         if (argc - argi == 2) {
-            return CompileProgram(argv[argi + 1], "a.out", platformTarget, cacheDirArg) == 0
+            return CompileProgram(
+                       argv[argi + 1],
+                       "a.out",
+                       hasPlatformTarget ? platformTarget : SL_DEFAULT_PLATFORM_TARGET,
+                       cacheDirArg)
+                        == 0
                      ? 0
                      : 1;
         }
@@ -14767,7 +15802,12 @@ int main(int argc, char* argv[]) {
             PrintUsage(argv[0]);
             return 2;
         }
-        return CompileProgram(argv[argi + 1], argv[argi + 3], platformTarget, cacheDirArg) == 0
+        return CompileProgram(
+                   argv[argi + 1],
+                   argv[argi + 3],
+                   hasPlatformTarget ? platformTarget : SL_DEFAULT_PLATFORM_TARGET,
+                   cacheDirArg)
+                    == 0
                  ? 0
                  : 1;
     }
@@ -14777,7 +15817,10 @@ int main(int argc, char* argv[]) {
             return 2;
         }
         {
-            int runRc = RunProgram(argv[argi + 1], platformTarget, cacheDirArg);
+            int runRc = RunProgram(
+                argv[argi + 1],
+                hasPlatformTarget ? platformTarget : SL_DEFAULT_PLATFORM_TARGET,
+                cacheDirArg);
             if (runRc < 0) {
                 return 1;
             }
@@ -14808,7 +15851,13 @@ int main(int argc, char* argv[]) {
         return 2;
     }
     if (genpkgMode == 1) {
-        return GeneratePackage(filename, backendName, outFilename, platformTarget, cacheDirArg) == 0
+        const char* genpkgPlatformTarget = hasPlatformTarget ? platformTarget : NULL;
+        if (!hasPlatformTarget && StrEq(backendName, "c")) {
+            genpkgPlatformTarget = SL_DEFAULT_PLATFORM_TARGET;
+        }
+        return GeneratePackage(
+                   filename, backendName, outFilename, genpkgPlatformTarget, cacheDirArg)
+                    == 0
                  ? 0
                  : 1;
     }
@@ -14820,14 +15869,21 @@ int main(int argc, char* argv[]) {
             fprintf(stderr, "unexpected output argument for mode checkpkg\n");
             return 2;
         }
-        return CheckPackageDir(filename, platformTarget) == 0 ? 0 : 1;
+        return CheckPackageDir(
+                   filename, hasPlatformTarget ? platformTarget : SL_DEFAULT_PLATFORM_TARGET)
+                    == 0
+                 ? 0
+                 : 1;
     }
     if (mode[0] == 'm' && mode[1] == 'i' && mode[2] == 'r' && mode[3] == '\0') {
         if (outFilename != NULL) {
             fprintf(stderr, "unexpected output argument for mode mir\n");
             return 2;
         }
-        return DumpMIR(filename, platformTarget) == 0 ? 0 : 1;
+        return DumpMIR(filename, hasPlatformTarget ? platformTarget : SL_DEFAULT_PLATFORM_TARGET)
+                    == 0
+                 ? 0
+                 : 1;
     }
 
     if (outFilename != NULL) {

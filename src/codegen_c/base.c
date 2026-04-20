@@ -448,6 +448,18 @@ int SliceStructPtrDepth(const SLTypeRef* t) {
     return stars;
 }
 
+static int TypeRefIsBorrowedStrValueC(const SLTypeRef* t) {
+    return t != NULL && t->valid && t->containerKind == SLTypeContainer_SCALAR
+        && t->containerPtrDepth == 0 && t->ptrDepth == 1 && t->readOnly != 0
+        && IsStrBaseName(t->baseName);
+}
+
+static int TypeRefIsPointerBackedStrC(const SLTypeRef* t) {
+    return t != NULL && t->valid && t->containerKind == SLTypeContainer_SCALAR
+        && t->containerPtrDepth == 0 && IsStrBaseName(t->baseName)
+        && !TypeRefIsBorrowedStrValueC(t);
+}
+
 const SLAstNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId);
 
 int ParseArrayLenLiteral(const char* src, uint32_t start, uint32_t end, uint32_t* outLen) {
@@ -1839,7 +1851,7 @@ int EmitTypeNameStringLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* _Nulla
     {
         return -1;
     }
-    return EmitStringLiteralRef(c, literalId, 0);
+    return EmitStringLiteralValue(c, literalId, 0);
 }
 
 int EmitTypeTagKindLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* t) {
@@ -4959,6 +4971,12 @@ int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
                 t->containerKind == SLTypeContainer_SLICE_MUT ? "__sl_slice_mut" : "__sl_slice_ro";
             stars = 0;
         }
+    } else if (TypeRefIsBorrowedStrValueC(t)) {
+        base = t->baseName;
+        stars = 0;
+    } else if (TypeRefIsPointerBackedStrC(t)) {
+        base = t->baseName;
+        stars = t->ptrDepth > 0 ? t->ptrDepth : 1;
     } else {
         if (t->baseName == NULL) {
             return BufAppendCStr(&c->out, "void");
@@ -5051,6 +5069,24 @@ int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) {
             || BufAppendChar(&c->out, ' ') != 0)
         {
             return -1;
+        }
+        return BufAppendCStr(&c->out, name);
+    }
+    if (TypeRefIsBorrowedStrValueC(src)) {
+        if (BufAppendCStr(&c->out, src->baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
+            return -1;
+        }
+        return BufAppendCStr(&c->out, name);
+    }
+    if (TypeRefIsPointerBackedStrC(src)) {
+        int stars = src->ptrDepth > 0 ? src->ptrDepth : 1;
+        if (BufAppendCStr(&c->out, src->baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
+            return -1;
+        }
+        for (i = 0; i < stars; i++) {
+            if (BufAppendChar(&c->out, '*') != 0) {
+                return -1;
+            }
         }
         return BufAppendCStr(&c->out, name);
     }
@@ -5166,6 +5202,24 @@ int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
             || BufAppendChar(&c->out, ' ') != 0)
         {
             return -1;
+        }
+        return BufAppendCStr(&c->out, name);
+    }
+    if (TypeRefIsBorrowedStrValueC(src)) {
+        if (BufAppendCStr(&c->out, src->baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
+            return -1;
+        }
+        return BufAppendCStr(&c->out, name);
+    }
+    if (TypeRefIsPointerBackedStrC(src)) {
+        int stars = src->ptrDepth > 0 ? src->ptrDepth : 1;
+        if (BufAppendCStr(&c->out, src->baseName) != 0 || BufAppendChar(&c->out, ' ') != 0) {
+            return -1;
+        }
+        for (i = 0; i < stars; i++) {
+            if (BufAppendChar(&c->out, '*') != 0) {
+                return -1;
+            }
         }
         return BufAppendCStr(&c->out, name);
     }

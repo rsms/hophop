@@ -4,7 +4,7 @@
 #include <string.h>
 
 #define UNLIKELY   __sl_unlikely
-#define panic(msg_lit) __sl_panic(__sl_strlit(msg_lit), __FILE__, __LINE__)
+#define panic(msg_lit) __sl_panic(__sl_strlitp(msg_lit), __FILE__, __LINE__)
 
 #ifndef NDEBUG
     #define debugassert(cond) (UNLIKELY(!(cond)) ? panic("Assertion failure: " #cond) : ((void)0))
@@ -69,35 +69,34 @@ static void* platform_mem_allocator_impl(
 
 static void platform_log_handler(
     __sl_Logger*  self,
-    __sl_str*     message,
+    __sl_str      message,
     __sl_LogLevel level,
     __sl_LogFlags flags) {
-    size_t n = message != NULL ? (size_t)message->len : 0u;
+    size_t n = (size_t)message.len;
     FILE*  out = (level >= __sl_LogLevel_Error) ? stderr : stdout;
 
     if (self != NULL && level < self->min_level) {
         return;
     }
 
-    if (self != NULL && (flags & __sl_LogFlag_Prefix) && self->prefix != NULL &&
-        self->prefix->len > 0) {
-        fprintf(out, "%.*s", (int)self->prefix->len, (const char*)self->prefix->ptr);
+    if (self != NULL && (flags & __sl_LogFlag_Prefix) && self->prefix.len > 0) {
+        fprintf(out, "%.*s", (int)self->prefix.len, (const char*)self->prefix.ptr);
     }
-    if (message != NULL) {
-        fprintf(out, "%.*s", (int)n, (const char*)message->ptr);
+    if (n > 0u) {
+        fprintf(out, "%.*s", (int)n, (const char*)message.ptr);
     }
     fputc('\n', out);
     fflush(out);
 }
 
 __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 line) {
-    __sl_u32      message_len;
+    __sl_uint     message_len;
     const __sl_u8 empty[] = "";
     (void)file;
     (void)line;
 
     if (msg == NULL) {
-        msg = __sl_strlit("panic: null message");
+        msg = __sl_strlitp("panic: null message");
     }
     message_len = msg->len;
 
@@ -113,15 +112,16 @@ __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 li
     abort();
 }
 
+__sl_noreturn void platform__panic(__sl_str message, __sl_i32 flags) {
+    (void)flags;
+    __sl_panic(&message, "", 0);
+}
+
 __sl_noreturn void platform__exit(__sl_i32 status) {
     exit(status);
 }
 
-void platform__console_log(__sl_str* message, __sl_i32 flags) {
-    if (message == NULL) {
-        static __sl_str empty = { (__sl_u8*)(uintptr_t)0, 0 };
-        message = &empty;
-    }
+void platform__console_log(__sl_str message, __sl_i32 flags) {
     platform_log_handler(&gMainContext.log, message, __sl_LogLevel_Info, (__sl_LogFlags)flags);
 }
 
@@ -134,7 +134,7 @@ static __sl_Context   gMainContext = {
             .handler = platform_log_handler,
             .min_level = __sl_LogLevel_Info,
             .flags = __sl_LogFlag_Level,
-            .prefix = (__sl_str*)0,
+            .prefix = (__sl_str){ (__sl_u8*)(uintptr_t)0, 0 },
         },
 };
 
