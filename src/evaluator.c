@@ -2849,9 +2849,9 @@ static int SLEvalResolveCallMirPre(
 static int SLEvalEvalTopVar(
     SLEvalProgram* p, uint32_t topVarIndex, SLCTFEValue* outValue, int* outIsConst);
 static int SLEvalInvokeFunction(
-    SLEvalProgram*       p,
-    int32_t              fnIndex,
-    const SLCTFEValue*   args,
+    SLEvalProgram* p,
+    int32_t        fnIndex,
+    const SLCTFEValue* _Nullable args,
     uint32_t             argCount,
     const SLEvalContext* callContext,
     SLCTFEValue*         outValue,
