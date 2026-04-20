@@ -141,6 +141,13 @@ This is why `fmt_canonical` can legitimately contain both:
 - Parenthesized tuple returns normalize to expression-list form:
   - `return (a, b, c)` -> `return a, b, c`
 
+## Redundant literal casts
+
+- Redundant numeric literal casts are removed when the surrounding syntax fixes the same target type.
+- Current supported contexts include typed `var` initializers, typed returns, matching binary operands, and direct call arguments whose resolved parameter type exactly matches the cast target.
+- Variadic direct-call tails are also simplified when the variadic element type exactly matches the cast target.
+- Unresolved or ambiguous call targets are left unchanged.
+
 ## Expression operator spacing
 
 Most binary operators render with spaces, but there is an intentional compatibility quirk:

@@ -407,7 +407,12 @@ typedef struct {
     uint32_t commentLen;
 } SLParseExtras;
 
+typedef int (*SLFormatCanDropLiteralCastFn)(
+    void* _Nullable ctx, const SLAst* ast, SLStrView src, int32_t castNodeId);
+
 typedef struct {
+    void* _Nullable ctx;
+    SLFormatCanDropLiteralCastFn _Nullable canDropLiteralCast;
     uint32_t flags;
     uint32_t indentWidth;
 } SLFormatOptions;

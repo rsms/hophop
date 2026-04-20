@@ -171,6 +171,28 @@ typedef struct {
     uint64_t         objMtimeNs;
 } SLPackageArtifact;
 
+typedef enum {
+    SLFmtNumericType_INVALID = 0,
+    SLFmtNumericType_I8,
+    SLFmtNumericType_I16,
+    SLFmtNumericType_I32,
+    SLFmtNumericType_I64,
+    SLFmtNumericType_INT,
+    SLFmtNumericType_U8,
+    SLFmtNumericType_U16,
+    SLFmtNumericType_U32,
+    SLFmtNumericType_U64,
+    SLFmtNumericType_UINT,
+    SLFmtNumericType_F32,
+    SLFmtNumericType_F64,
+} SLFmtNumericType;
+
+typedef struct {
+    const SLPackageLoader* loader;
+    const SLPackage*       pkg;
+    const SLParsedFile*    file;
+} SLFmtLiteralCastCtx;
+
 typedef struct {
     SLImportRef* imp;
     char*        oldAlias;
@@ -197,21 +219,33 @@ static const SLImportRef* _Nullable FindImportByAliasSlice(
 static int IsAsciiSpaceChar(char c);
 static int IsIdentStartChar(unsigned char c);
 static int IsIdentContinueChar(unsigned char c);
+static int SliceEqCStr(const char* s, uint32_t start, uint32_t end, const char* cstr);
 static int ResolveLibDir(char** outLibDir);
+static char* _Nullable DirNameDup(const char* path);
+static char* _Nullable CanonicalizePath(const char* path);
 static int BuildCachedPackageArtifacts(
     SLPackageLoader* loader,
     const char* _Nullable cacheDirArg,
     const char*         libDir,
     SLPackageArtifact** outArtifacts,
     uint32_t*           outArtifactLen);
+static const SLPackage* _Nullable EffectiveMirImportTargetPackage(
+    const SLPackageLoader* loader, const SLImportRef* imp);
 static int IsTypeDeclKind(SLAstKind kind);
+static const SLImportSymbolRef* _Nullable FindImportFunctionSymbolBySlice(
+    const SLPackage* pkg, const char* src, uint32_t start, uint32_t end);
 static const SLParsedFile* _Nullable FindLoaderFileByMirSource(
     const SLPackageLoader* loader,
     const SLMirProgram*    program,
     uint32_t               sourceRef,
     const SLPackage** _Nullable outPkg);
-void FreeLoader(SLPackageLoader* loader);
-int  LoadAndCheckPackage(
+void       FreeLoader(SLPackageLoader* loader);
+static int LoadPackageForFmt(
+    const char* entryPath,
+    const char* _Nullable platformTarget,
+    SLPackageLoader* outLoader,
+    SLPackage**      outEntryPkg);
+int LoadAndCheckPackage(
     const char* entryPath,
     const char* _Nullable platformTarget,
     SLPackageLoader* outLoader,
@@ -238,6 +272,123 @@ static int ASTNextSibling(const SLAst* ast, int32_t nodeId) {
         return -1;
     }
     return ast->nodes[nodeId].nextSibling;
+}
+
+static int32_t ASTFindParent(const SLAst* ast, int32_t childNodeId) {
+    uint32_t i;
+    if (ast == NULL || childNodeId < 0 || (uint32_t)childNodeId >= ast->len) {
+        return -1;
+    }
+    for (i = 0; i < ast->len; i++) {
+        int32_t child = ast->nodes[i].firstChild;
+        while (child >= 0) {
+            if (child == childNodeId) {
+                return (int32_t)i;
+            }
+            child = ast->nodes[child].nextSibling;
+        }
+    }
+    return -1;
+}
+
+static SLFmtNumericType SLFmtNumericTypeFromSlice(const char* src, uint32_t start, uint32_t end) {
+    if (src == NULL || end <= start) {
+        return SLFmtNumericType_INVALID;
+    }
+    if (SliceEqCStr(src, start, end, "i8")) {
+        return SLFmtNumericType_I8;
+    }
+    if (SliceEqCStr(src, start, end, "i16")) {
+        return SLFmtNumericType_I16;
+    }
+    if (SliceEqCStr(src, start, end, "i32")) {
+        return SLFmtNumericType_I32;
+    }
+    if (SliceEqCStr(src, start, end, "i64")) {
+        return SLFmtNumericType_I64;
+    }
+    if (SliceEqCStr(src, start, end, "int")) {
+        return SLFmtNumericType_INT;
+    }
+    if (SliceEqCStr(src, start, end, "u8")) {
+        return SLFmtNumericType_U8;
+    }
+    if (SliceEqCStr(src, start, end, "u16")) {
+        return SLFmtNumericType_U16;
+    }
+    if (SliceEqCStr(src, start, end, "u32")) {
+        return SLFmtNumericType_U32;
+    }
+    if (SliceEqCStr(src, start, end, "u64")) {
+        return SLFmtNumericType_U64;
+    }
+    if (SliceEqCStr(src, start, end, "uint")) {
+        return SLFmtNumericType_UINT;
+    }
+    if (SliceEqCStr(src, start, end, "f32")) {
+        return SLFmtNumericType_F32;
+    }
+    if (SliceEqCStr(src, start, end, "f64")) {
+        return SLFmtNumericType_F64;
+    }
+    return SLFmtNumericType_INVALID;
+}
+
+static SLFmtNumericType SLFmtNumericTypeFromTypeNode(const SLParsedFile* file, int32_t typeNodeId) {
+    const SLAstNode* typeNode;
+    if (file == NULL || typeNodeId < 0 || (uint32_t)typeNodeId >= file->ast.len) {
+        return SLFmtNumericType_INVALID;
+    }
+    typeNode = &file->ast.nodes[typeNodeId];
+    if (typeNode->kind != SLAst_TYPE_NAME) {
+        return SLFmtNumericType_INVALID;
+    }
+    return SLFmtNumericTypeFromSlice(file->source, typeNode->dataStart, typeNode->dataEnd);
+}
+
+static int SLFmtNumericTypeIsInteger(SLFmtNumericType t) {
+    switch (t) {
+        case SLFmtNumericType_I8:
+        case SLFmtNumericType_I16:
+        case SLFmtNumericType_I32:
+        case SLFmtNumericType_I64:
+        case SLFmtNumericType_INT:
+        case SLFmtNumericType_U8:
+        case SLFmtNumericType_U16:
+        case SLFmtNumericType_U32:
+        case SLFmtNumericType_U64:
+        case SLFmtNumericType_UINT: return 1;
+        default:                    return 0;
+    }
+}
+
+static SLFmtNumericType SLFmtLiteralCastTargetType(
+    const SLAst* ast, SLStrView src, int32_t castNodeId) {
+    int32_t exprNodeId;
+    int32_t typeNodeId;
+    if (ast == NULL || castNodeId < 0 || (uint32_t)castNodeId >= ast->len
+        || ast->nodes[castNodeId].kind != SLAst_CAST)
+    {
+        return SLFmtNumericType_INVALID;
+    }
+    exprNodeId = ASTFirstChild(ast, castNodeId);
+    typeNodeId = exprNodeId >= 0 ? ASTNextSibling(ast, exprNodeId) : -1;
+    if (exprNodeId < 0 || typeNodeId < 0) {
+        return SLFmtNumericType_INVALID;
+    }
+    if (ast->nodes[exprNodeId].kind == SLAst_INT) {
+        SLFmtNumericType t = SLFmtNumericTypeFromSlice(
+            src.ptr, ast->nodes[typeNodeId].dataStart, ast->nodes[typeNodeId].dataEnd);
+        return SLFmtNumericTypeIsInteger(t) ? t : SLFmtNumericType_INVALID;
+    }
+    if (ast->nodes[exprNodeId].kind == SLAst_FLOAT) {
+        SLFmtNumericType t = SLFmtNumericTypeFromSlice(
+            src.ptr, ast->nodes[typeNodeId].dataStart, ast->nodes[typeNodeId].dataEnd);
+        return (t == SLFmtNumericType_F32 || t == SLFmtNumericType_F64)
+                 ? t
+                 : SLFmtNumericType_INVALID;
+    }
+    return SLFmtNumericType_INVALID;
 }
 
 static const char* DisplayPath(const char* path) {
@@ -1672,6 +1823,517 @@ static void SLFmtCheckPrintEscapedLine(const char* s, uint32_t start, uint32_t e
     fputc('"', stdout);
 }
 
+typedef struct {
+    const SLPackage*    pkg;
+    const SLParsedFile* file;
+    int32_t             nodeId;
+} SLFmtFnCandidate;
+
+typedef struct {
+    uint32_t nameStart;
+    uint32_t nameEnd;
+    int32_t  typeNodeId;
+} SLFmtFnParam;
+
+static int StrSliceEqSlice(
+    const char* a, uint32_t aStart, uint32_t aEnd, const char* b, uint32_t bStart, uint32_t bEnd) {
+    uint32_t len = aEnd - aStart;
+    return len == (bEnd - bStart) && (len == 0 || memcmp(a + aStart, b + bStart, len) == 0);
+}
+
+static int SLFmtFindFileByPath(
+    const SLPackageLoader* loader,
+    const char*            canonicalPath,
+    const SLPackage**      outPkg,
+    const SLParsedFile**   outFile) {
+    uint32_t pkgIndex;
+    if (outPkg != NULL) {
+        *outPkg = NULL;
+    }
+    if (outFile != NULL) {
+        *outFile = NULL;
+    }
+    if (loader == NULL || canonicalPath == NULL) {
+        return 0;
+    }
+    for (pkgIndex = 0; pkgIndex < loader->packageLen; pkgIndex++) {
+        const SLPackage* pkg = &loader->packages[pkgIndex];
+        uint32_t         fileIndex;
+        for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+            if (pkg->files[fileIndex].path != NULL
+                && StrEq(pkg->files[fileIndex].path, canonicalPath))
+            {
+                if (outPkg != NULL) {
+                    *outPkg = pkg;
+                }
+                if (outFile != NULL) {
+                    *outFile = &pkg->files[fileIndex];
+                }
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int SLFmtAddFnCandidate(
+    SLFmtFnCandidate*   candidates,
+    uint32_t            cap,
+    uint32_t*           len,
+    const SLPackage*    pkg,
+    const SLParsedFile* file,
+    int32_t             nodeId) {
+    uint32_t i;
+    if (candidates == NULL || len == NULL || pkg == NULL || file == NULL || nodeId < 0) {
+        return -1;
+    }
+    for (i = 0; i < *len; i++) {
+        if (candidates[i].file == file && candidates[i].nodeId == nodeId) {
+            return 0;
+        }
+    }
+    if (*len >= cap) {
+        return -1;
+    }
+    candidates[*len] = (SLFmtFnCandidate){
+        .pkg = pkg,
+        .file = file,
+        .nodeId = nodeId,
+    };
+    (*len)++;
+    return 0;
+}
+
+static int SLFmtCollectFunctionCandidatesFromDecls(
+    const SLPackage*    pkg,
+    const SLSymbolDecl* decls,
+    uint32_t            declLen,
+    const char*         name,
+    SLFmtFnCandidate*   candidates,
+    uint32_t            cap,
+    uint32_t*           len) {
+    uint32_t i;
+    if (pkg == NULL || decls == NULL || name == NULL) {
+        return 0;
+    }
+    for (i = 0; i < declLen; i++) {
+        const SLSymbolDecl* decl = &decls[i];
+        if (decl->kind != SLAst_FN || !StrEq(decl->name, name) || decl->fileIndex >= pkg->fileLen) {
+            continue;
+        }
+        if (SLFmtAddFnCandidate(
+                candidates, cap, len, pkg, &pkg->files[decl->fileIndex], decl->nodeId)
+            != 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int SLFmtCollectFunctionCandidatesBySlice(
+    const SLPackage*    pkg,
+    const SLSymbolDecl* decls,
+    uint32_t            declLen,
+    const char*         src,
+    uint32_t            start,
+    uint32_t            end,
+    SLFmtFnCandidate*   candidates,
+    uint32_t            cap,
+    uint32_t*           len) {
+    uint32_t i;
+    for (i = 0; i < declLen; i++) {
+        const SLSymbolDecl* decl = &decls[i];
+        if (decl->kind != SLAst_FN || decl->fileIndex >= pkg->fileLen) {
+            continue;
+        }
+        if (strlen(decl->name) != (size_t)(end - start)
+            || memcmp(decl->name, src + start, (size_t)(end - start)) != 0)
+        {
+            continue;
+        }
+        if (SLFmtAddFnCandidate(
+                candidates, cap, len, pkg, &pkg->files[decl->fileIndex], decl->nodeId)
+            != 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int SLFmtCollectFnParams(
+    const SLParsedFile* file,
+    int32_t             fnNodeId,
+    SLFmtFnParam*       params,
+    uint32_t            cap,
+    uint32_t*           len,
+    int*                outHasVariadic) {
+    int32_t child;
+    if (len != NULL) {
+        *len = 0;
+    }
+    if (outHasVariadic != NULL) {
+        *outHasVariadic = 0;
+    }
+    if (file == NULL || params == NULL || len == NULL || fnNodeId < 0
+        || (uint32_t)fnNodeId >= file->ast.len || file->ast.nodes[fnNodeId].kind != SLAst_FN)
+    {
+        return 0;
+    }
+    child = ASTFirstChild(&file->ast, fnNodeId);
+    while (child >= 0 && file->ast.nodes[child].kind == SLAst_PARAM) {
+        const SLAstNode* paramNode = &file->ast.nodes[child];
+        int32_t          typeNodeId = ASTFirstChild(&file->ast, child);
+        if (*len >= cap || typeNodeId < 0) {
+            return 0;
+        }
+        params[*len] = (SLFmtFnParam){
+            .nameStart = paramNode->dataStart,
+            .nameEnd = paramNode->dataEnd,
+            .typeNodeId = typeNodeId,
+        };
+        if (outHasVariadic != NULL && (paramNode->flags & SLAstFlag_PARAM_VARIADIC) != 0) {
+            *outHasVariadic = 1;
+        }
+        (*len)++;
+        child = ASTNextSibling(&file->ast, child);
+    }
+    return 1;
+}
+
+static int SLFmtMapArgToParamTypeNode(
+    const SLParsedFile* callFile,
+    int32_t             callNodeId,
+    int32_t             targetArgNodeId,
+    const SLParsedFile* fnFile,
+    int32_t             fnNodeId,
+    int32_t*            outTypeNodeId) {
+    SLFmtFnParam params[128];
+    int32_t      argNodes[128];
+    uint32_t     paramCount = 0;
+    uint32_t     fixedCount;
+    uint32_t     argCount = 0;
+    uint32_t     targetArgIndex = UINT32_MAX;
+    uint32_t     firstNamedIndex = UINT32_MAX;
+    uint32_t     i;
+    int          hasVariadic = 0;
+    int32_t      cur;
+
+    if (outTypeNodeId != NULL) {
+        *outTypeNodeId = -1;
+    }
+    if (callFile == NULL || fnFile == NULL || outTypeNodeId == NULL || callNodeId < 0
+        || (uint32_t)callNodeId >= callFile->ast.len)
+    {
+        return 0;
+    }
+    if (!SLFmtCollectFnParams(fnFile, fnNodeId, params, 128u, &paramCount, &hasVariadic)
+        || hasVariadic)
+    {
+        return 0;
+    }
+    fixedCount = hasVariadic ? (paramCount > 0 ? paramCount - 1u : 0u) : paramCount;
+    cur = ASTFirstChild(&callFile->ast, callNodeId);
+    cur = cur >= 0 ? ASTNextSibling(&callFile->ast, cur) : -1;
+    while (cur >= 0) {
+        const SLAstNode* argNode = &callFile->ast.nodes[cur];
+        if (argCount >= 128u || (argNode->flags & SLAstFlag_CALL_ARG_SPREAD) != 0) {
+            return 0;
+        }
+        argNodes[argCount] = cur;
+        if (cur == targetArgNodeId) {
+            targetArgIndex = argCount;
+        }
+        if (firstNamedIndex == UINT32_MAX && argNode->kind == SLAst_CALL_ARG
+            && argNode->dataEnd > argNode->dataStart)
+        {
+            firstNamedIndex = argCount;
+        }
+        argCount++;
+        cur = ASTNextSibling(&callFile->ast, cur);
+    }
+    if (targetArgIndex == UINT32_MAX) {
+        return 0;
+    }
+    if ((!hasVariadic && argCount != paramCount) || (hasVariadic && argCount < fixedCount)) {
+        return 0;
+    }
+    if (firstNamedIndex == UINT32_MAX) {
+        *outTypeNodeId =
+            targetArgIndex < fixedCount
+                ? params[targetArgIndex].typeNodeId
+                : params[fixedCount].typeNodeId;
+        return 1;
+    }
+    if (targetArgIndex < firstNamedIndex) {
+        *outTypeNodeId =
+            targetArgIndex < fixedCount
+                ? params[targetArgIndex].typeNodeId
+                : params[fixedCount].typeNodeId;
+        return 1;
+    }
+    for (i = firstNamedIndex; i < argCount; i++) {
+        const SLAstNode* argNode = &callFile->ast.nodes[argNodes[i]];
+        uint32_t         p;
+        if (i >= fixedCount) {
+            if (!hasVariadic) {
+                return 0;
+            }
+            if (argNode->kind == SLAst_CALL_ARG && argNode->dataEnd > argNode->dataStart) {
+                return 0;
+            }
+            if (i == targetArgIndex) {
+                *outTypeNodeId = params[fixedCount].typeNodeId;
+                return 1;
+            }
+            continue;
+        }
+        if (argNode->kind != SLAst_CALL_ARG || argNode->dataEnd <= argNode->dataStart) {
+            return 0;
+        }
+        for (p = firstNamedIndex; p < fixedCount; p++) {
+            if (StrSliceEqSlice(
+                    callFile->source,
+                    argNode->dataStart,
+                    argNode->dataEnd,
+                    fnFile->source,
+                    params[p].nameStart,
+                    params[p].nameEnd))
+            {
+                if (i == targetArgIndex) {
+                    *outTypeNodeId = params[p].typeNodeId;
+                    return 1;
+                }
+                break;
+            }
+        }
+        if (p == fixedCount) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static int SLFmtResolveCallTarget(
+    const SLFmtLiteralCastCtx* ctx,
+    const SLParsedFile*        callFile,
+    int32_t                    callNodeId,
+    char*                      nameBuf,
+    size_t                     nameBufCap,
+    const SLPackage**          outTargetPkg,
+    uint32_t*                  outNameStart,
+    uint32_t*                  outNameEnd,
+    const char**               outNameCStr) {
+    const SLAstNode* calleeNode;
+    int32_t          calleeNodeId;
+    if (outTargetPkg != NULL) {
+        *outTargetPkg = NULL;
+    }
+    if (outNameStart != NULL) {
+        *outNameStart = 0;
+    }
+    if (outNameEnd != NULL) {
+        *outNameEnd = 0;
+    }
+    if (outNameCStr != NULL) {
+        *outNameCStr = NULL;
+    }
+    if (ctx == NULL || ctx->pkg == NULL || callFile == NULL || ctx->loader == NULL || callNodeId < 0
+        || (uint32_t)callNodeId >= callFile->ast.len)
+    {
+        return 0;
+    }
+    calleeNodeId = ASTFirstChild(&callFile->ast, callNodeId);
+    if (calleeNodeId < 0 || (uint32_t)calleeNodeId >= callFile->ast.len) {
+        return 0;
+    }
+    calleeNode = &callFile->ast.nodes[calleeNodeId];
+    if (calleeNode->kind == SLAst_IDENT) {
+        const SLImportSymbolRef* sym = FindImportFunctionSymbolBySlice(
+            ctx->pkg, callFile->source, calleeNode->dataStart, calleeNode->dataEnd);
+        if (sym != NULL && sym->importIndex < ctx->pkg->importLen) {
+            const SLPackage* targetPkg = EffectiveMirImportTargetPackage(
+                ctx->loader, &ctx->pkg->imports[sym->importIndex]);
+            if (targetPkg == NULL || outTargetPkg == NULL || outNameCStr == NULL) {
+                return 0;
+            }
+            *outTargetPkg = targetPkg;
+            *outNameCStr = sym->sourceName;
+            return 1;
+        }
+        if (outTargetPkg == NULL || outNameStart == NULL || outNameEnd == NULL) {
+            return 0;
+        }
+        *outTargetPkg = ctx->pkg;
+        *outNameStart = calleeNode->dataStart;
+        *outNameEnd = calleeNode->dataEnd;
+        return 1;
+    }
+    if (calleeNode->kind == SLAst_FIELD_EXPR) {
+        int32_t recvNodeId = ASTFirstChild(&callFile->ast, calleeNodeId);
+        if (recvNodeId >= 0 && (uint32_t)recvNodeId < callFile->ast.len
+            && callFile->ast.nodes[recvNodeId].kind == SLAst_IDENT)
+        {
+            const SLAstNode*   recvNode = &callFile->ast.nodes[recvNodeId];
+            const SLImportRef* imp = FindImportByAliasSlice(
+                ctx->pkg, callFile->source, recvNode->dataStart, recvNode->dataEnd);
+            size_t len;
+            if (imp == NULL || imp->target == NULL || outTargetPkg == NULL || outNameCStr == NULL
+                || nameBuf == NULL || nameBufCap == 0)
+            {
+                return 0;
+            }
+            len = (size_t)(calleeNode->dataEnd - calleeNode->dataStart);
+            if (len + 1u > nameBufCap) {
+                return 0;
+            }
+            memcpy(nameBuf, callFile->source + calleeNode->dataStart, len);
+            nameBuf[len] = '\0';
+            *outTargetPkg = imp->target;
+            *outNameCStr = nameBuf;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int SLFmtCanDropLiteralCastViaPackage(
+    void* _Nullable opaqueCtx, const SLAst* ast, SLStrView src, int32_t castNodeId) {
+    const SLFmtLiteralCastCtx* ctx = (const SLFmtLiteralCastCtx*)opaqueCtx;
+    SLParsedFile               callFile = { 0 };
+    SLFmtFnCandidate           candidates[64];
+    uint32_t                   candidateLen = 0;
+    const SLPackage*           targetPkg = NULL;
+    const char*                targetNameCStr = NULL;
+    uint32_t                   targetNameStart = 0;
+    uint32_t                   targetNameEnd = 0;
+    char                       targetNameBuf[256];
+    SLFmtNumericType           castType;
+    int32_t                    parentNodeId;
+    int32_t                    callNodeId;
+    int32_t                    argNodeId;
+    uint32_t                   i;
+    int                        sawMappedCandidate = 0;
+
+    if (ctx == NULL || ctx->pkg == NULL || ctx->loader == NULL || ast == NULL || src.ptr == NULL) {
+        return 0;
+    }
+    callFile.source = (char*)src.ptr;
+    callFile.sourceLen = src.len;
+    callFile.ast = *ast;
+    castType = SLFmtLiteralCastTargetType(ast, src, castNodeId);
+    if (castType == SLFmtNumericType_INVALID) {
+        return 0;
+    }
+    parentNodeId = ASTFindParent(ast, castNodeId);
+    if (parentNodeId < 0) {
+        return 0;
+    }
+    if (ast->nodes[parentNodeId].kind == SLAst_CALL_ARG) {
+        argNodeId = parentNodeId;
+        callNodeId = ASTFindParent(ast, parentNodeId);
+    } else if (ast->nodes[parentNodeId].kind == SLAst_CALL) {
+        argNodeId = castNodeId;
+        callNodeId = parentNodeId;
+    } else {
+        return 0;
+    }
+    if (callNodeId < 0 || ast->nodes[callNodeId].kind != SLAst_CALL) {
+        return 0;
+    }
+    if (!SLFmtResolveCallTarget(
+            ctx,
+            &callFile,
+            callNodeId,
+            targetNameBuf,
+            sizeof(targetNameBuf),
+            &targetPkg,
+            &targetNameStart,
+            &targetNameEnd,
+            &targetNameCStr))
+    {
+        return 0;
+    }
+    if (targetNameCStr != NULL) {
+        if (SLFmtCollectFunctionCandidatesFromDecls(
+                targetPkg,
+                targetPkg->pubDecls,
+                targetPkg->pubDeclLen,
+                targetNameCStr,
+                candidates,
+                64u,
+                &candidateLen)
+            != 0)
+        {
+            return 0;
+        }
+        if (targetPkg == ctx->pkg
+            && SLFmtCollectFunctionCandidatesFromDecls(
+                   targetPkg,
+                   targetPkg->decls,
+                   targetPkg->declLen,
+                   targetNameCStr,
+                   candidates,
+                   64u,
+                   &candidateLen)
+                   != 0)
+        {
+            return 0;
+        }
+    } else {
+        if (SLFmtCollectFunctionCandidatesBySlice(
+                targetPkg,
+                targetPkg->pubDecls,
+                targetPkg->pubDeclLen,
+                callFile.source,
+                targetNameStart,
+                targetNameEnd,
+                candidates,
+                64u,
+                &candidateLen)
+            != 0)
+        {
+            return 0;
+        }
+        if (targetPkg == ctx->pkg
+            && SLFmtCollectFunctionCandidatesBySlice(
+                   targetPkg,
+                   targetPkg->decls,
+                   targetPkg->declLen,
+                   callFile.source,
+                   targetNameStart,
+                   targetNameEnd,
+                   candidates,
+                   64u,
+                   &candidateLen)
+                   != 0)
+        {
+            return 0;
+        }
+    }
+    for (i = 0; i < candidateLen; i++) {
+        int32_t          paramTypeNodeId = -1;
+        SLFmtNumericType paramType;
+        if (!SLFmtMapArgToParamTypeNode(
+                &callFile,
+                callNodeId,
+                argNodeId,
+                candidates[i].file,
+                candidates[i].nodeId,
+                &paramTypeNodeId))
+        {
+            continue;
+        }
+        sawMappedCandidate = 1;
+        paramType = SLFmtNumericTypeFromTypeNode(candidates[i].file, paramTypeNodeId);
+        if (paramType == SLFmtNumericType_INVALID || paramType != castType) {
+            return 0;
+        }
+    }
+    return sawMappedCandidate;
+}
+
 static void SLFmtCheckPrintIssue(
     const char*           filename,
     uint32_t              lineNo,
@@ -1802,17 +2464,66 @@ static void SLFmtCheckReport(
     free(expectedLines);
 }
 
-static int FormatOneFile(const char* filename, int checkOnly, int* outChanged) {
-    char*     source = NULL;
-    uint32_t  sourceLen = 0;
-    uint64_t  arenaCap64;
-    size_t    arenaCap;
-    void*     arenaMem = NULL;
-    SLArena   arena;
-    SLDiag    diag = { 0 };
-    SLStrView formatted = { 0 };
-    int       changed = 0;
-    int       rc = -1;
+static int ASTHasCallLiteralCast(const SLAst* ast) {
+    uint32_t i;
+    if (ast == NULL || ast->nodes == NULL) {
+        return 0;
+    }
+    for (i = 0; i < ast->len; i++) {
+        int32_t parentNodeId;
+        if (ast->nodes[i].kind != SLAst_CAST) {
+            continue;
+        }
+        parentNodeId = ASTFindParent(ast, (int32_t)i);
+        if (parentNodeId < 0) {
+            continue;
+        }
+        if (ast->nodes[parentNodeId].kind == SLAst_CALL) {
+            return 1;
+        }
+        if (ast->nodes[parentNodeId].kind == SLAst_CALL_ARG) {
+            int32_t callNodeId = ASTFindParent(ast, parentNodeId);
+            if (callNodeId >= 0 && ast->nodes[callNodeId].kind == SLAst_CALL) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int SourceNeedsPackageLiteralCastRewrite(
+    SLArena* arena, const char* source, uint32_t sourceLen) {
+    SLAst          ast = { 0 };
+    SLParseOptions parseOptions = { 0 };
+    if (arena == NULL || source == NULL) {
+        return 0;
+    }
+    if (SLParse(arena, (SLStrView){ source, sourceLen }, &parseOptions, &ast, NULL, NULL) != 0) {
+        return 0;
+    }
+    return ASTHasCallLiteralCast(&ast);
+}
+
+static int FormatOneFile(
+    const char* filename, const char* _Nullable platformTarget, int checkOnly, int* outChanged) {
+    char*               source = NULL;
+    uint32_t            sourceLen = 0;
+    uint64_t            arenaCap64;
+    size_t              arenaCap;
+    void*               arenaMem = NULL;
+    SLArena             arena;
+    SLDiag              diag = { 0 };
+    SLStrView           formatted = { 0 };
+    SLFormatOptions     formatOptions = { 0 };
+    SLFmtLiteralCastCtx fmtCastCtx = { 0 };
+    SLPackageLoader     fmtLoader = { 0 };
+    char*               canonicalPath = NULL;
+    char*               packagePath = NULL;
+    SLPackage*          fmtEntryPkg = NULL;
+    const SLPackage*    fmtPkg = NULL;
+    const SLParsedFile* fmtFile = NULL;
+    int                 changed = 0;
+    int                 rc = -1;
 
     *outChanged = 0;
     if (ReadFile(filename, &source, &sourceLen) != 0) {
@@ -1833,7 +2544,39 @@ static int FormatOneFile(const char* filename, int checkOnly, int* outChanged) {
     SLArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
     SLArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
 
-    if (SLFormat(&arena, (SLStrView){ source, sourceLen }, NULL, &formatted, &diag) != 0) {
+    if (SourceNeedsPackageLiteralCastRewrite(&arena, source, sourceLen)) {
+        canonicalPath = CanonicalizePath(filename);
+        packagePath = canonicalPath != NULL ? DirNameDup(canonicalPath) : NULL;
+        if (packagePath != NULL
+            && LoadPackageForFmt(
+                   packagePath,
+                   (platformTarget != NULL && platformTarget[0] != '\0')
+                       ? platformTarget
+                       : SL_DEFAULT_PLATFORM_TARGET,
+                   &fmtLoader,
+                   &fmtEntryPkg)
+                   == 0
+            && fmtEntryPkg != NULL
+            && SLFmtFindFileByPath(&fmtLoader, canonicalPath, &fmtPkg, &fmtFile))
+        {
+            fmtCastCtx.loader = &fmtLoader;
+            fmtCastCtx.pkg = fmtPkg;
+            fmtCastCtx.file = fmtFile;
+            formatOptions.ctx = &fmtCastCtx;
+            formatOptions.canDropLiteralCast = SLFmtCanDropLiteralCastViaPackage;
+        } else {
+            FreeLoader(&fmtLoader);
+        }
+    }
+
+    if (SLFormat(
+            &arena,
+            (SLStrView){ source, sourceLen },
+            formatOptions.canDropLiteralCast != NULL ? &formatOptions : NULL,
+            &formatted,
+            &diag)
+        != 0)
+    {
         (void)PrintSLDiagLineCol(filename, source, &diag, 0);
         goto done;
     }
@@ -1855,6 +2598,9 @@ static int FormatOneFile(const char* filename, int checkOnly, int* outChanged) {
     rc = 0;
 
 done:
+    FreeLoader(&fmtLoader);
+    free(packagePath);
+    free(canonicalPath);
     if (arenaMem != NULL) {
         SLArenaDispose(&arena);
         free(arenaMem);
@@ -1876,7 +2622,7 @@ static int AddFmtPath(char*** outFiles, uint32_t* outLen, uint32_t* outCap, cons
     return 0;
 }
 
-static int RunFmtCommand(int argc, const char* const* argv) {
+static int RunFmtCommand(int argc, const char* const* argv, const char* _Nullable platformTarget) {
     int      checkOnly = 0;
     char**   files = NULL;
     uint32_t fileLen = 0;
@@ -1955,7 +2701,7 @@ static int RunFmtCommand(int argc, const char* const* argv) {
     }
     for (i = 0; i < fileLen; i++) {
         int changed = 0;
-        if (FormatOneFile(files[i], checkOnly, &changed) != 0) {
+        if (FormatOneFile(files[i], platformTarget, checkOnly, &changed) != 0) {
             hadError = 1;
             continue;
         }
@@ -13676,6 +14422,85 @@ void FreeLoader(SLPackageLoader* loader) {
     memset(loader, 0, sizeof(*loader));
 }
 
+static int LoadPackageForFmt(
+    const char* entryPath,
+    const char* _Nullable platformTarget,
+    SLPackageLoader* outLoader,
+    SLPackage**      outEntryPkg) {
+    char*           canonical = CanonicalizePath(entryPath);
+    struct stat     st;
+    char*           pkgDir = NULL;
+    char*           rootDir;
+    SLPackageLoader loader;
+    SLPackage*      entryPkg = NULL;
+    memset(outLoader, 0, sizeof(*outLoader));
+    *outEntryPkg = NULL;
+    if (canonical == NULL) {
+        return -1;
+    }
+    if (stat(canonical, &st) != 0) {
+        free(canonical);
+        return -1;
+    }
+    if (S_ISDIR(st.st_mode)) {
+        rootDir = DirNameDup(canonical);
+    } else if (S_ISREG(st.st_mode) && HasSuffix(canonical, ".sl")) {
+        pkgDir = DirNameDup(canonical);
+        if (pkgDir == NULL) {
+            free(canonical);
+            return -1;
+        }
+        rootDir = DirNameDup(pkgDir);
+    } else {
+        free(canonical);
+        return -1;
+    }
+    if (rootDir == NULL) {
+        free(pkgDir);
+        free(canonical);
+        return -1;
+    }
+    memset(&loader, 0, sizeof(loader));
+    loader.rootDir = rootDir;
+    loader.platformTarget = DupCStr(
+        (platformTarget != NULL && platformTarget[0] != '\0')
+            ? platformTarget
+            : SL_DEFAULT_PLATFORM_TARGET);
+    if (loader.platformTarget == NULL) {
+        free(pkgDir);
+        free(canonical);
+        FreeLoader(&loader);
+        return -1;
+    }
+    if (pkgDir != NULL) {
+        if (LoadSingleFilePackage(&loader, canonical, &entryPkg) != 0) {
+            free(pkgDir);
+            free(canonical);
+            FreeLoader(&loader);
+            return -1;
+        }
+    } else if (LoadPackageRecursive(&loader, canonical, &entryPkg) != 0) {
+        free(canonical);
+        FreeLoader(&loader);
+        return -1;
+    }
+    free(pkgDir);
+    if (entryPkg == NULL || entryPkg->dirPath == NULL) {
+        free(canonical);
+        FreeLoader(&loader);
+        return -1;
+    }
+    if (LoadSelectedPlatformTargetPackage(&loader, entryPkg->dirPath, NULL) != 0) {
+        free(canonical);
+        FreeLoader(&loader);
+        return -1;
+    }
+    free(canonical);
+    *outLoader = loader;
+    *outEntryPkg = entryPkg;
+    return 0;
+}
+
 int LoadAndCheckPackage(
     const char* entryPath,
     const char* _Nullable platformTarget,
@@ -15828,7 +16653,10 @@ int main(int argc, char* argv[]) {
         }
     }
     if (argc - argi >= 1 && StrEq(argv[argi], "fmt")) {
-        return RunFmtCommand(argc - argi - 1, (const char* const*)&argv[argi + 1]);
+        return RunFmtCommand(
+            argc - argi - 1,
+            (const char* const*)&argv[argi + 1],
+            hasPlatformTarget ? platformTarget : SL_DEFAULT_PLATFORM_TARGET);
     }
 
     if (argc - argi == 1) {

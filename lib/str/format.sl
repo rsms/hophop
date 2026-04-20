@@ -37,7 +37,7 @@ fn fmt_write_i64(buf *[u8], payloadCap, oi uint, x i64) uint {
 	if x < 0 {
 		oi = fmt_write_byte(buf, payloadCap, oi, byte: '-')
 		if x == -9223372036854775808 {
-			return fmt_write_u64(buf, payloadCap, oi, x: 9223372036854775808 as u64)
+			return fmt_write_u64(buf, payloadCap, oi, x: 9223372036854775808)
 		}
 		return fmt_write_u64(buf, payloadCap, oi, x: (-x) as u64)
 	}

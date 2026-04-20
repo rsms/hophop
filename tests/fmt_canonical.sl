@@ -172,6 +172,12 @@ fn use_context(x int) int context AppContext {
 
 fn declarations_only(a int) int
 
+fn fmt_literal_cast_call_targets(a u64, b i32, c f64)
+
+fn fmt_literal_cast_calls() {
+	_ = fmt_literal_cast_call_targets(1, b: 2, c: 3.5)
+}
+
 // Struct & union literals should have their "linebreak or comma" forms preserved
 fn preserve_line_form() {
 	var a Example = { pos: { x: 1, y: 2 }, size: { w: 3, h: 4 }, value: { i: 5 } }

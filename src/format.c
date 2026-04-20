@@ -25,6 +25,22 @@ enum {
     SLFmtFlag_DROP_REDUNDANT_LITERAL_CAST = 0x4000u,
 };
 
+typedef enum {
+    SLFmtNumericType_INVALID = 0,
+    SLFmtNumericType_I8,
+    SLFmtNumericType_I16,
+    SLFmtNumericType_I32,
+    SLFmtNumericType_I64,
+    SLFmtNumericType_INT,
+    SLFmtNumericType_U8,
+    SLFmtNumericType_U16,
+    SLFmtNumericType_U32,
+    SLFmtNumericType_U64,
+    SLFmtNumericType_UINT,
+    SLFmtNumericType_F32,
+    SLFmtNumericType_F64,
+} SLFmtNumericType;
+
 static int SLFmtBufReserve(SLFmtBuf* b, uint32_t extra) {
     char*    p;
     uint32_t need;
@@ -69,6 +85,7 @@ static int SLFmtBufAppendChar(SLFmtBuf* b, char c) {
 
 static int     SLFmtWriteChar(SLFmtCtx* c, char ch);
 static int32_t SLFmtFindEnclosingFnNode(const SLAst* ast, int32_t nodeId);
+static int32_t SLFmtFindParentNode(const SLAst* ast, int32_t childNodeId);
 
 static uint32_t SLFmtCStrLen(const char* s) {
     const char* p = s;
@@ -268,40 +285,89 @@ static int SLFmtIsTypeNodeKindRaw(SLAstKind kind) {
         || kind == SLAst_TYPE_TUPLE;
 }
 
-static int SLFmtIsBuiltinIntegerTypeName(SLStrView src, uint32_t start, uint32_t end) {
-    return SLFmtSliceEqLiteral(src, start, end, "i8") || SLFmtSliceEqLiteral(src, start, end, "i16")
-        || SLFmtSliceEqLiteral(src, start, end, "i32")
-        || SLFmtSliceEqLiteral(src, start, end, "i64")
-        || SLFmtSliceEqLiteral(src, start, end, "int") || SLFmtSliceEqLiteral(src, start, end, "u8")
-        || SLFmtSliceEqLiteral(src, start, end, "u16")
-        || SLFmtSliceEqLiteral(src, start, end, "u32")
-        || SLFmtSliceEqLiteral(src, start, end, "u64")
-        || SLFmtSliceEqLiteral(src, start, end, "uint");
+static SLFmtNumericType SLFmtNumericTypeFromName(SLStrView src, uint32_t start, uint32_t end) {
+    if (SLFmtSliceEqLiteral(src, start, end, "i8")) {
+        return SLFmtNumericType_I8;
+    }
+    if (SLFmtSliceEqLiteral(src, start, end, "i16")) {
+        return SLFmtNumericType_I16;
+    }
+    if (SLFmtSliceEqLiteral(src, start, end, "i32")) {
+        return SLFmtNumericType_I32;
+    }
+    if (SLFmtSliceEqLiteral(src, start, end, "i64")) {
+        return SLFmtNumericType_I64;
+    }
+    if (SLFmtSliceEqLiteral(src, start, end, "int")) {
+        return SLFmtNumericType_INT;
+    }
+    if (SLFmtSliceEqLiteral(src, start, end, "u8")) {
+        return SLFmtNumericType_U8;
+    }
+    if (SLFmtSliceEqLiteral(src, start, end, "u16")) {
+        return SLFmtNumericType_U16;
+    }
+    if (SLFmtSliceEqLiteral(src, start, end, "u32")) {
+        return SLFmtNumericType_U32;
+    }
+    if (SLFmtSliceEqLiteral(src, start, end, "u64")) {
+        return SLFmtNumericType_U64;
+    }
+    if (SLFmtSliceEqLiteral(src, start, end, "uint")) {
+        return SLFmtNumericType_UINT;
+    }
+    if (SLFmtSliceEqLiteral(src, start, end, "f32")) {
+        return SLFmtNumericType_F32;
+    }
+    if (SLFmtSliceEqLiteral(src, start, end, "f64")) {
+        return SLFmtNumericType_F64;
+    }
+    return SLFmtNumericType_INVALID;
 }
 
-static int SLFmtIsBuiltinIntegerTypeNode(const SLAst* ast, SLStrView src, int32_t nodeId) {
+static SLFmtNumericType SLFmtNumericTypeFromTypeNode(
+    const SLAst* ast, SLStrView src, int32_t nodeId) {
     const SLAstNode* n;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
-        return 0;
+        return SLFmtNumericType_INVALID;
     }
     n = &ast->nodes[nodeId];
     if (n->kind != SLAst_TYPE_NAME) {
-        return 0;
+        return SLFmtNumericType_INVALID;
     }
-    return SLFmtIsBuiltinIntegerTypeName(src, n->dataStart, n->dataEnd);
+    return SLFmtNumericTypeFromName(src, n->dataStart, n->dataEnd);
 }
 
-static int SLFmtCanElideLiteralCast(
+static SLFmtNumericType SLFmtCastLiteralNumericType(
     const SLAst* ast, SLStrView src, int32_t exprNodeId, int32_t typeNodeId) {
     if (exprNodeId < 0 || typeNodeId < 0 || (uint32_t)exprNodeId >= ast->len
         || (uint32_t)typeNodeId >= ast->len)
     {
-        return 0;
+        return SLFmtNumericType_INVALID;
     }
-    if (ast->nodes[exprNodeId].kind != SLAst_INT) {
-        return 0;
+    if (ast->nodes[exprNodeId].kind == SLAst_INT) {
+        SLFmtNumericType t = SLFmtNumericTypeFromTypeNode(ast, src, typeNodeId);
+        switch (t) {
+            case SLFmtNumericType_I8:
+            case SLFmtNumericType_I16:
+            case SLFmtNumericType_I32:
+            case SLFmtNumericType_I64:
+            case SLFmtNumericType_INT:
+            case SLFmtNumericType_U8:
+            case SLFmtNumericType_U16:
+            case SLFmtNumericType_U32:
+            case SLFmtNumericType_U64:
+            case SLFmtNumericType_UINT: return t;
+            default:                    return SLFmtNumericType_INVALID;
+        }
     }
-    return SLFmtIsBuiltinIntegerTypeNode(ast, src, typeNodeId);
+    if (ast->nodes[exprNodeId].kind == SLAst_FLOAT) {
+        SLFmtNumericType t = SLFmtNumericTypeFromTypeNode(ast, src, typeNodeId);
+        return (t == SLFmtNumericType_F32 || t == SLFmtNumericType_F64)
+                 ? t
+                 : SLFmtNumericType_INVALID;
+    }
+    return SLFmtNumericType_INVALID;
 }
 
 static int SLFmtBinaryOpSharesOperandType(uint16_t op) {
@@ -330,6 +396,192 @@ static int SLFmtTypeNodesEqualBySource(
     a = &ast->nodes[aTypeNodeId];
     b = &ast->nodes[bTypeNodeId];
     return SLFmtSlicesEqual(src, a->start, a->end, b->start, b->end);
+}
+
+static int SLFmtMapCallArgToParamTypeNode(
+    const SLAst* ast,
+    SLStrView    src,
+    int32_t      callNodeId,
+    int32_t      targetArgNodeId,
+    int32_t      fnNodeId,
+    int32_t*     outTypeNodeId) {
+    int32_t  paramNodeIds[128];
+    int32_t  paramTypeNodeIds[128];
+    int32_t  argNodes[128];
+    uint32_t paramCount = 0;
+    uint32_t fixedCount;
+    uint32_t argCount = 0;
+    uint32_t targetArgIndex = UINT32_MAX;
+    uint32_t firstNamedIndex = UINT32_MAX;
+    uint32_t i;
+    int      hasVariadic = 0;
+    int32_t  cur;
+    if (outTypeNodeId != NULL) {
+        *outTypeNodeId = -1;
+    }
+    if (ast == NULL || outTypeNodeId == NULL || callNodeId < 0 || fnNodeId < 0
+        || (uint32_t)callNodeId >= ast->len)
+    {
+        return 0;
+    }
+    cur = SLFmtFirstChild(ast, fnNodeId);
+    while (cur >= 0 && ast->nodes[cur].kind == SLAst_PARAM) {
+        int32_t typeNodeId = SLFmtFirstChild(ast, cur);
+        if (paramCount >= 128u || typeNodeId < 0) {
+            return 0;
+        }
+        paramNodeIds[paramCount] = cur;
+        paramTypeNodeIds[paramCount] = typeNodeId;
+        if ((ast->nodes[cur].flags & SLAstFlag_PARAM_VARIADIC) != 0) {
+            hasVariadic = 1;
+        }
+        paramCount++;
+        cur = SLFmtNextSibling(ast, cur);
+    }
+    fixedCount = hasVariadic ? (paramCount > 0 ? paramCount - 1u : 0u) : paramCount;
+    cur = SLFmtFirstChild(ast, callNodeId);
+    cur = cur >= 0 ? SLFmtNextSibling(ast, cur) : -1;
+    while (cur >= 0) {
+        const SLAstNode* argNode = &ast->nodes[cur];
+        if (argCount >= 128u || (argNode->flags & SLAstFlag_CALL_ARG_SPREAD) != 0) {
+            return 0;
+        }
+        argNodes[argCount] = cur;
+        if (cur == targetArgNodeId) {
+            targetArgIndex = argCount;
+        }
+        if (firstNamedIndex == UINT32_MAX && argNode->kind == SLAst_CALL_ARG
+            && argNode->dataEnd > argNode->dataStart)
+        {
+            firstNamedIndex = argCount;
+        }
+        argCount++;
+        cur = SLFmtNextSibling(ast, cur);
+    }
+    if (targetArgIndex == UINT32_MAX) {
+        return 0;
+    }
+    if ((!hasVariadic && argCount != paramCount) || (hasVariadic && argCount < fixedCount)) {
+        return 0;
+    }
+    if (firstNamedIndex == UINT32_MAX) {
+        *outTypeNodeId =
+            targetArgIndex < fixedCount
+                ? paramTypeNodeIds[targetArgIndex]
+                : paramTypeNodeIds[fixedCount];
+        return 1;
+    }
+    if (targetArgIndex < firstNamedIndex) {
+        *outTypeNodeId =
+            targetArgIndex < fixedCount
+                ? paramTypeNodeIds[targetArgIndex]
+                : paramTypeNodeIds[fixedCount];
+        return 1;
+    }
+    for (i = firstNamedIndex; i < argCount; i++) {
+        const SLAstNode* argNode = &ast->nodes[argNodes[i]];
+        uint32_t         p;
+        if (i >= fixedCount) {
+            if (!hasVariadic) {
+                return 0;
+            }
+            if (argNode->kind == SLAst_CALL_ARG && argNode->dataEnd > argNode->dataStart) {
+                return 0;
+            }
+            if (i == targetArgIndex) {
+                *outTypeNodeId = paramTypeNodeIds[fixedCount];
+                return 1;
+            }
+            continue;
+        }
+        if (argNode->kind != SLAst_CALL_ARG || argNode->dataEnd <= argNode->dataStart) {
+            return 0;
+        }
+        for (p = firstNamedIndex; p < fixedCount; p++) {
+            const SLAstNode* paramNode = &ast->nodes[paramNodeIds[p]];
+            if (paramNode != NULL
+                && SLFmtSlicesEqual(
+                    src,
+                    argNode->dataStart,
+                    argNode->dataEnd,
+                    paramNode->dataStart,
+                    paramNode->dataEnd))
+            {
+                if (i == targetArgIndex) {
+                    *outTypeNodeId = paramTypeNodeIds[p];
+                    return 1;
+                }
+                break;
+            }
+        }
+        if (p == fixedCount) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static int SLFmtCanDropLiteralCastFromLocalCall(
+    const SLAst* ast, SLStrView src, int32_t castNodeId, int32_t castTypeNodeId) {
+    int32_t          parentNodeId;
+    int32_t          argNodeId;
+    int32_t          callNodeId;
+    int32_t          calleeNodeId;
+    const SLAstNode* calleeNode;
+    int32_t          cur;
+    int              sawMappedCandidate = 0;
+    if (ast == NULL || castNodeId < 0 || castTypeNodeId < 0 || (uint32_t)castNodeId >= ast->len) {
+        return 0;
+    }
+    parentNodeId = SLFmtFindParentNode(ast, castNodeId);
+    if (parentNodeId < 0) {
+        return 0;
+    }
+    if (ast->nodes[parentNodeId].kind == SLAst_CALL_ARG) {
+        argNodeId = parentNodeId;
+        callNodeId = SLFmtFindParentNode(ast, parentNodeId);
+    } else if (ast->nodes[parentNodeId].kind == SLAst_CALL) {
+        argNodeId = castNodeId;
+        callNodeId = parentNodeId;
+    } else {
+        return 0;
+    }
+    if (callNodeId < 0 || ast->nodes[callNodeId].kind != SLAst_CALL) {
+        return 0;
+    }
+    calleeNodeId = SLFmtFirstChild(ast, callNodeId);
+    if (calleeNodeId < 0 || (uint32_t)calleeNodeId >= ast->len) {
+        return 0;
+    }
+    calleeNode = &ast->nodes[calleeNodeId];
+    if (calleeNode->kind != SLAst_IDENT) {
+        return 0;
+    }
+    cur = SLFmtFirstChild(ast, ast->root);
+    while (cur >= 0) {
+        if (ast->nodes[cur].kind == SLAst_FN
+            && SLFmtSlicesEqual(
+                src,
+                ast->nodes[cur].dataStart,
+                ast->nodes[cur].dataEnd,
+                calleeNode->dataStart,
+                calleeNode->dataEnd))
+        {
+            int32_t targetTypeNodeId = -1;
+            if (!SLFmtMapCallArgToParamTypeNode(
+                    ast, src, callNodeId, argNodeId, cur, &targetTypeNodeId))
+            {
+                cur = SLFmtNextSibling(ast, cur);
+                continue;
+            }
+            sawMappedCandidate = 1;
+            if (!SLFmtTypeNodesEqualBySource(ast, src, castTypeNodeId, targetTypeNodeId)) {
+                return 0;
+            }
+        }
+        cur = SLFmtNextSibling(ast, cur);
+    }
+    return sawMappedCandidate;
 }
 
 static void SLFmtGetCastParts(
@@ -555,7 +807,8 @@ static int32_t SLFmtInferExprTypeNode(
     return -1;
 }
 
-static int SLFmtCanDropRedundantLiteralCast(const SLAst* ast, SLStrView src, int32_t castNodeId) {
+static int SLFmtCanDropRedundantLiteralCast(
+    const SLAst* ast, SLStrView src, const SLFormatOptions* _Nullable options, int32_t castNodeId) {
     const SLAstNode* castNode;
     int32_t          castExprNodeId = -1;
     int32_t          castTypeNodeId = -1;
@@ -568,7 +821,9 @@ static int SLFmtCanDropRedundantLiteralCast(const SLAst* ast, SLStrView src, int
         return 0;
     }
     SLFmtGetCastParts(ast, castNodeId, &castExprNodeId, &castTypeNodeId);
-    if (!SLFmtCanElideLiteralCast(ast, src, castExprNodeId, castTypeNodeId)) {
+    if (SLFmtCastLiteralNumericType(ast, src, castExprNodeId, castTypeNodeId)
+        == SLFmtNumericType_INVALID)
+    {
         return 0;
     }
     parentNodeId = SLFmtFindParentNode(ast, castNodeId);
@@ -618,7 +873,14 @@ static int SLFmtCanDropRedundantLiteralCast(const SLAst* ast, SLStrView src, int
             otherTypeNodeId = SLFmtInferExprTypeNode(ast, src, otherNodeId, castNode->start);
             return SLFmtTypeNodesEqualBySource(ast, src, castTypeNodeId, otherTypeNodeId);
         }
-        default: return 0;
+        default:
+            if (SLFmtCanDropLiteralCastFromLocalCall(ast, src, castNodeId, castTypeNodeId)) {
+                return 1;
+            }
+            if (options != NULL && options->canDropLiteralCast != NULL) {
+                return options->canDropLiteralCast(options->ctx, ast, src, castNodeId);
+            }
+            return 0;
     }
 }
 
@@ -647,7 +909,9 @@ static void SLFmtRewriteVarTypeFromLiteralCast(
         return;
     }
     SLFmtGetCastParts(ast, initNodeId, &castExprNodeId, &castTypeNodeId);
-    if (!SLFmtCanElideLiteralCast(ast, src, castExprNodeId, castTypeNodeId)) {
+    if (SLFmtCastLiteralNumericType(ast, src, castExprNodeId, castTypeNodeId)
+        == SLFmtNumericType_INVALID)
+    {
         return;
     }
     *ioTypeNodeId = castTypeNodeId;
@@ -914,7 +1178,8 @@ static int SLFmtRewriteBinaryCastParens(const SLAst* ast, int32_t nodeId) {
     return 0;
 }
 
-static int SLFmtRewriteRedundantLiteralCast(const SLAst* ast, SLStrView src, int32_t nodeId) {
+static int SLFmtRewriteRedundantLiteralCast(
+    const SLAst* ast, SLStrView src, const SLFormatOptions* _Nullable options, int32_t nodeId) {
     const SLAstNode* node;
     SLAstNode*       mutNode;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
@@ -924,7 +1189,7 @@ static int SLFmtRewriteRedundantLiteralCast(const SLAst* ast, SLStrView src, int
     if (node->kind != SLAst_CAST) {
         return 0;
     }
-    if (!SLFmtCanDropRedundantLiteralCast(ast, src, nodeId)) {
+    if (!SLFmtCanDropRedundantLiteralCast(ast, src, options, nodeId)) {
         return 0;
     }
     mutNode = (SLAstNode*)&ast->nodes[nodeId];
@@ -958,7 +1223,8 @@ static int SLFmtRewriteReturnParens(const SLAst* ast, int32_t nodeId) {
     return 0;
 }
 
-static int SLFmtRewriteAst(const SLAst* ast, SLStrView src) {
+static int SLFmtRewriteAst(
+    const SLAst* ast, SLStrView src, const SLFormatOptions* _Nullable options) {
     uint32_t i;
     if (ast == NULL || ast->nodes == NULL) {
         return -1;
@@ -968,7 +1234,7 @@ static int SLFmtRewriteAst(const SLAst* ast, SLStrView src) {
         if (SLFmtRewriteCallArgShorthand(ast, src, nodeId) != 0
             || SLFmtRewriteCompoundFieldShorthand(ast, src, nodeId) != 0
             || SLFmtRewriteContextBindShorthand(ast, src, nodeId) != 0
-            || SLFmtRewriteRedundantLiteralCast(ast, src, nodeId) != 0
+            || SLFmtRewriteRedundantLiteralCast(ast, src, options, nodeId) != 0
             || SLFmtRewriteBinaryCastParens(ast, nodeId) != 0
             || SLFmtRewriteReturnParens(ast, nodeId) != 0)
         {
@@ -4926,7 +5192,7 @@ int SLFormat(
     if (SLParse(arena, src, &parseOptions, &ast, &extras, diag) != 0) {
         return -1;
     }
-    if (SLFmtRewriteAst(&ast, src) != 0) {
+    if (SLFmtRewriteAst(&ast, src, options) != 0) {
         if (diag != NULL) {
             diag->code = SLDiag_ARENA_OOM;
             diag->type = SLDiagTypeOfCode(SLDiag_ARENA_OOM);

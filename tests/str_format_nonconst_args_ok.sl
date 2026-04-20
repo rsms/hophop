@@ -17,7 +17,7 @@ fn out_eq(out *[u8], n uint, want &str) bool {
 fn main() {
 	var out [u8 128]
 	var a   i64  = 42
-	var b   f64  = 3.5 as f64
+	var b   f64  = 3.5
 	var s   &str = "hi"
 	var n   uint = format(buf: out, "i={i}, f={f}, s={s}", a, b, s)
 	assert out_eq(out, n, want: "i=42, f=3.5, s=hi")
