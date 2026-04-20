@@ -234,6 +234,8 @@ def map_type_expr(type_expr: str, known_types: set[str]) -> str:
         die(f"array type cannot be used as a plain type expression: {type_expr!r}")
     base, ops = split_ptr_ref_type(type_expr)
     c_base = map_base_type(base, known_types)
+    if base == "str" and ops == "&":
+        return c_base
     return c_base + ("*" * len(ops))
 
 

@@ -21,6 +21,7 @@ contexts:
     main:
       - include: strings
       - include: numbers
+      - include: directives
       - include: declarations
       - include: keywords
       - include: builtins
@@ -161,8 +162,14 @@ contexts:
             1: storage.modifier.slang
             2: variable.other.definition.slang
 
+    directives:
+      - match: '(@)({{ident}})\b'
+        captures:
+            1: punctuation.definition.directive.slang
+            2: keyword.directive.slang
+
     keywords:
-      - match: '\b(import|pub|struct|union|enum|fn|var|const|if|else|for|switch|case|default|break|continue|return|defer|assert|new|as|with)\b'
+      - match: '\b(import|pub|struct|union|enum|fn|var|const|if|else|for|in|switch|case|default|break|continue|return|defer|assert|new|as|with)\b'
         scope: keyword.control.slang
       - match: '\b(context)\b(?=\s+{{ident}}\b)'
         scope: keyword.control.slang
@@ -170,7 +177,7 @@ contexts:
         scope: keyword.control.slang
 
     builtins:
-      - match: '\b(u8|u16|u32|u64|i8|i16|i32|i64|uint|int|rune|f32|f64|bool|str|type|anytype)\b'
+      - match: '\b(u8|u16|u32|u64|i8|i16|i32|i64|uint|int|rune|f32|f64|bool|str|rawptr|type|anytype)\b'
         scope: support.type.builtin.slang
       - match: '\b(len|typeof|sizeof|panic|print|copy)\b'
         scope: support.function.builtin.slang
