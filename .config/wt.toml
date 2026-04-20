@@ -1,2 +1,2 @@
 [pre-merge]
-test = "./build.sh test"
+test = "./build.sh clean test"
