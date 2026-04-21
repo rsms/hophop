@@ -567,6 +567,10 @@ def slc_case_args(ctx: RunContext, case: Dict[str, Any]) -> List[str]:
         args.append(mode)
     if case.get("platform") is not None and mode_uses_platform_flag(mode):
         args.extend(["--platform", str(case["platform"])])
+    if case.get("arch") is not None and mode_uses_platform_flag(mode):
+        args.extend(["--arch", str(case["arch"])])
+    if bool(case.get("testing", False)) and mode_uses_platform_flag(mode):
+        args.append("--testing")
     args.append(str(case["input"]))
     return args
 
@@ -655,7 +659,7 @@ def kind_slc_stdout_eq(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str
 
 
 def kind_slc_ok(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
-    cp = run_cmd(slc_args(ctx, str(case["mode"]), str(case["input"])))
+    cp = run_cmd(slc_case_args(ctx, case))
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"unexpected failure (exit {cp.returncode})\nstderr:\n{cp.stderr}")
@@ -672,7 +676,9 @@ def kind_slc_ok_tmp(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     temp_input = temp_dir / source_path.name
     try:
         shutil.copyfile(source_path, temp_input)
-        cp = run_cmd(slc_args(ctx, str(case["mode"]), str(temp_input)))
+        temp_case = dict(case)
+        temp_case["input"] = str(temp_input)
+        cp = run_cmd(slc_case_args(ctx, temp_case))
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
     stderr = strip_warning_diagnostics(cp.stderr)
@@ -707,7 +713,7 @@ def kind_slc_fail_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, s
 
 
 def kind_slc_ok_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
-    cp = run_cmd(slc_args(ctx, str(case["mode"]), str(case["input"])))
+    cp = run_cmd(slc_case_args(ctx, case))
     if cp.returncode != 0:
         return fail(f"unexpected failure (exit {cp.returncode})\nstderr:\n{cp.stderr}")
     if cp.stdout:
@@ -727,7 +733,7 @@ def kind_slc_ok_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str
 
 
 def kind_slc_fail_no_stdout(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
-    cp = run_cmd(slc_args(ctx, str(case["mode"]), str(case["input"])))
+    cp = run_cmd(slc_case_args(ctx, case))
     if cp.returncode == 0:
         return fail("expected failure but command succeeded")
     if cp.stdout:
@@ -799,29 +805,37 @@ def kind_slc_fmt(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple
     return ok()
 
 
-def run_compile(ctx: RunContext, input_path: str, output_path: Path) -> subprocess.CompletedProcess[str]:
-    return run_cmd([str(ctx.slc), "compile", input_path, "-o", str(output_path)])
+def compile_case_args(
+    ctx: RunContext, case: Dict[str, Any], input_path: str, output_path: Path
+) -> List[str]:
+    args = [str(ctx.slc), "compile"]
+    if case.get("platform") is not None:
+        args.extend(["--platform", str(case["platform"])])
+    if case.get("arch") is not None:
+        args.extend(["--arch", str(case["arch"])])
+    if bool(case.get("testing", False)):
+        args.append("--testing")
+    args.extend([input_path, "-o", str(output_path)])
+    return args
+
+
+def run_compile(
+    ctx: RunContext, case: Dict[str, Any], input_path: str, output_path: Path
+) -> subprocess.CompletedProcess[str]:
+    return run_cmd(compile_case_args(ctx, case, input_path, output_path))
 
 
 def run_compile_with_cache(
-    ctx: RunContext, input_path: str, output_path: Path, cache_dir: Path
+    ctx: RunContext, case: Dict[str, Any], input_path: str, output_path: Path, cache_dir: Path
 ) -> subprocess.CompletedProcess[str]:
-    return run_cmd(
-        [
-            str(ctx.slc),
-            "compile",
-            "--cache-dir",
-            str(cache_dir),
-            input_path,
-            "-o",
-            str(output_path),
-        ]
-    )
+    args = compile_case_args(ctx, case, input_path, output_path)
+    args[2:2] = ["--cache-dir", str(cache_dir)]
+    return run_cmd(args)
 
 
 def kind_compile_only(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     exe = work_dir / "program"
-    cp = run_compile(ctx, str(case["input"]), exe)
+    cp = run_compile(ctx, case, str(case["input"]), exe)
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"compile failed (exit {cp.returncode})\nstderr:\n{cp.stderr}")
@@ -841,7 +855,7 @@ def kind_compile_cache_reuse(
     cache_dir = work_dir / "cache"
     cache_pkg_dir = cache_dir / "v1" / "pkg"
 
-    cp1 = run_compile_with_cache(ctx, str(case["input"]), exe, cache_dir)
+    cp1 = run_compile_with_cache(ctx, case, str(case["input"]), exe, cache_dir)
     stderr1 = strip_warning_diagnostics(cp1.stderr)
     if cp1.returncode != 0:
         return fail(f"compile failed (first run, exit {cp1.returncode})\nstderr:\n{cp1.stderr}")
@@ -859,7 +873,7 @@ def kind_compile_cache_reuse(
 
     time.sleep(1.1)
 
-    cp2 = run_compile_with_cache(ctx, str(case["input"]), exe, cache_dir)
+    cp2 = run_compile_with_cache(ctx, case, str(case["input"]), exe, cache_dir)
     stderr2 = strip_warning_diagnostics(cp2.stderr)
     if cp2.returncode != 0:
         return fail(f"compile failed (second run, exit {cp2.returncode})\nstderr:\n{cp2.stderr}")
@@ -884,7 +898,7 @@ def kind_compile_cache_reuse(
 
 def kind_compile_and_run(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     exe = work_dir / "program"
-    cp = run_compile(ctx, str(case["input"]), exe)
+    cp = run_compile(ctx, case, str(case["input"]), exe)
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"compile failed (exit {cp.returncode})\nstderr:\n{cp.stderr}")
@@ -921,11 +935,20 @@ def kind_compile_and_run(ctx: RunContext, case: Dict[str, Any], work_dir: Path) 
 
 
 def run_slc_run_cmd(
-    ctx: RunContext, input_path: str, platform: Optional[str], env: Optional[Dict[str, str]] = None
+    ctx: RunContext,
+    input_path: str,
+    platform: Optional[str],
+    arch: Optional[str] = None,
+    testing: bool = False,
+    env: Optional[Dict[str, str]] = None,
 ) -> subprocess.CompletedProcess[str]:
     args = [str(ctx.slc), "run"]
     if platform:
         args.extend(["--platform", platform])
+    if arch:
+        args.extend(["--arch", arch])
+    if testing:
+        args.append("--testing")
     args.append(input_path)
     return run_cmd(args, env=env)
 
@@ -936,7 +959,8 @@ def kind_eval_run_expectation(ctx: RunContext, case: Dict[str, Any]) -> tuple[bo
         return fail(f"invalid eval_expect value {eval_expect!r}; expected 'pass' or 'fail'")
 
     input_path = str(case["input"])
-    cp = run_slc_run_cmd(ctx, input_path, "cli-eval")
+    arch = str(case["arch"]) if case.get("arch") is not None else None
+    cp = run_slc_run_cmd(ctx, input_path, "cli-eval", arch, bool(case.get("testing", False)))
     default_expect_nonzero = bool(case.get("expect_nonzero", False))
     default_expect_exit = int(case.get("expect_exit", 0))
     if eval_expect == "fail":
@@ -963,11 +987,12 @@ def kind_eval_run_expectation(ctx: RunContext, case: Dict[str, Any]) -> tuple[bo
 
 def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     platform = str(case["platform"]) if case.get("platform") is not None else None
+    arch = str(case["arch"]) if case.get("arch") is not None else None
     try:
         env = case_env(case)
     except ValueError as e:
         return fail(str(e))
-    cp = run_slc_run_cmd(ctx, str(case["input"]), platform, env)
+    cp = run_slc_run_cmd(ctx, str(case["input"]), platform, arch, bool(case.get("testing", False)), env)
     stderr = strip_warning_diagnostics(cp.stderr)
     expect_nonzero = bool(case.get("expect_nonzero", False))
     expect_exit = int(case.get("expect_exit", 0))
@@ -1014,8 +1039,20 @@ def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     return ok()
 
 
-def run_genpkg_mode(ctx: RunContext, mode: str, input_path: str) -> subprocess.CompletedProcess[str]:
-    return run_cmd([str(ctx.slc), mode, input_path])
+def genpkg_case_args(ctx: RunContext, case: Dict[str, Any], mode: str) -> List[str]:
+    args = [str(ctx.slc), mode]
+    if case.get("platform") is not None:
+        args.extend(["--platform", str(case["platform"])])
+    if case.get("arch") is not None:
+        args.extend(["--arch", str(case["arch"])])
+    if bool(case.get("testing", False)):
+        args.append("--testing")
+    args.append(str(case["input"]))
+    return args
+
+
+def run_genpkg_mode(ctx: RunContext, case: Dict[str, Any], mode: str) -> subprocess.CompletedProcess[str]:
+    return run_cmd(genpkg_case_args(ctx, case, mode))
 
 
 def kind_slc_cli(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
@@ -1199,7 +1236,7 @@ def compile_harness(ctx: RunContext, work_dir: Path, header_path: Path, harness_
 
 def kind_genpkg_text_check(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     mode = str(case.get("mode", "genpkg:c"))
-    cp = run_genpkg_mode(ctx, mode, str(case["input"]))
+    cp = run_genpkg_mode(ctx, case, mode)
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"{mode} failed (exit {cp.returncode})\nstderr:\n{cp.stderr}")
@@ -1210,7 +1247,7 @@ def kind_genpkg_text_check(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool,
 
 def kind_genpkg_compile(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     mode = str(case.get("mode", "genpkg:c"))
-    cp = run_genpkg_mode(ctx, mode, str(case["input"]))
+    cp = run_genpkg_mode(ctx, case, mode)
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"{mode} failed (exit {cp.returncode})\nstderr:\n{cp.stderr}")
@@ -1234,10 +1271,8 @@ def kind_genpkg_compile(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -
 def kind_genpkg_wasm_check(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     output_path = work_dir / "out.wasm"
     mode = str(case.get("mode", "genpkg:wasm"))
-    args = [str(ctx.slc), mode]
-    if case.get("platform") is not None:
-        args.extend(["--platform", str(case["platform"])])
-    args.extend([str(case["input"]), str(output_path)])
+    args = genpkg_case_args(ctx, case, mode)
+    args.append(str(output_path))
     cp = run_cmd(args)
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:

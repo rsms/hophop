@@ -1,0 +1,1 @@
+tests/filename_build_tags_testing/main.sl:3:9: error: SL2002: unknown identifier 'helper'

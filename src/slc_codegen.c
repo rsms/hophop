@@ -69,6 +69,8 @@ int GeneratePackage(
     const char* backendName,
     const char* _Nullable outFilename,
     const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
     const char* _Nullable cacheDirArg) {
     uint8_t                 mirArenaStorage[4096];
     SLArena                 mirArena;
@@ -95,7 +97,10 @@ int GeneratePackage(
         effectivePlatformTarget = SL_WASM_MIN_PLATFORM_TARGET;
     }
 
-    if (LoadAndCheckPackage(entryPath, effectivePlatformTarget, &loader, &entryPkg) != 0) {
+    if (LoadAndCheckPackage(
+            entryPath, effectivePlatformTarget, archTarget, testingBuild, &loader, &entryPkg)
+        != 0)
+    {
         return -1;
     }
 
@@ -602,7 +607,9 @@ static int BuildToolchainSignature(
     }
     if (SBAppendCStr(&b, ";source_hash=") != 0 || SBAppendCStr(&b, SL_SOURCE_HASH) != 0
         || SBAppendCStr(&b, ";backend=c;platform=") != 0
-        || SBAppendCStr(&b, loader->platformTarget) != 0
+        || SBAppendCStr(&b, loader->platformTarget) != 0 || SBAppendCStr(&b, ";arch=") != 0
+        || SBAppendCStr(&b, loader->archTarget) != 0 || SBAppendCStr(&b, ";testing=") != 0
+        || SBAppendCStr(&b, loader->testingBuild ? "1" : "0") != 0
         || SBAppendCStr(&b, ";cc=cc;-std=c11;-g;-w;lib=") != 0 || SBAppendCStr(&b, libDir) != 0)
     {
         free(b.v);
@@ -1653,6 +1660,8 @@ int CompileProgram(
     const char* entryPath,
     const char* outExe,
     const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
     const char* _Nullable cacheDirArg) {
     SLPackageLoader    loader = { 0 };
     SLPackage*         entryPkg = NULL;
@@ -1682,7 +1691,9 @@ int CompileProgram(
         return ErrorCBackendDisabled();
     }
 
-    if (LoadAndCheckPackage(entryPath, platformTarget, &loader, &entryPkg) != 0) {
+    if (LoadAndCheckPackage(entryPath, platformTarget, archTarget, testingBuild, &loader, &entryPkg)
+        != 0)
+    {
         goto end;
     }
     loaderReady = 1;
@@ -1814,6 +1825,8 @@ end:
 static int RunProgramC(
     const char* entryPath,
     const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
     const char* _Nullable cacheDirArg) {
     const char* tmpBase = getenv("TMPDIR");
     char        exeTemplate[PATH_MAX];
@@ -1835,7 +1848,10 @@ static int RunProgramC(
     close(fd);
     unlink(exeTemplate);
 
-    if (CompileProgram(entryPath, exeTemplate, platformTarget, cacheDirArg) != 0) {
+    if (CompileProgram(
+            entryPath, exeTemplate, platformTarget, archTarget, testingBuild, cacheDirArg)
+        != 0)
+    {
         unlink(exeTemplate);
         return -1;
     }
@@ -1848,6 +1864,8 @@ static int RunProgramC(
 static int RunProgramWasmMin(
     const char* entryPath,
     const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
     const char* _Nullable cacheDirArg) {
     const char* tmpBase = getenv("TMPDIR");
     char        wasmTemplate[PATH_MAX];
@@ -1873,7 +1891,10 @@ static int RunProgramWasmMin(
     }
     close(fd);
 
-    if (GeneratePackage(entryPath, "wasm", wasmTemplate, platformTarget, cacheDirArg) != 0) {
+    if (GeneratePackage(
+            entryPath, "wasm", wasmTemplate, platformTarget, archTarget, testingBuild, cacheDirArg)
+        != 0)
+    {
         unlink(wasmTemplate);
         return -1;
     }
@@ -1900,6 +1921,8 @@ static int RunProgramWasmMin(
 static int RunProgramPlaybit(
     const char* entryPath,
     const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
     const char* _Nullable cacheDirArg) {
     const char* tmpBase = getenv("TMPDIR");
     char        wasmTemplate[PATH_MAX];
@@ -1926,7 +1949,10 @@ static int RunProgramPlaybit(
     }
     close(fd);
 
-    if (GeneratePackage(entryPath, "wasm", wasmTemplate, platformTarget, cacheDirArg) != 0) {
+    if (GeneratePackage(
+            entryPath, "wasm", wasmTemplate, platformTarget, archTarget, testingBuild, cacheDirArg)
+        != 0)
+    {
         unlink(wasmTemplate);
         return -1;
     }
@@ -1953,20 +1979,22 @@ static int RunProgramPlaybit(
 int RunProgram(
     const char* entryPath,
     const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
     const char* _Nullable cacheDirArg) {
     if (IsEvalPlatformTarget(platformTarget)) {
-        return RunProgramEval(entryPath, platformTarget);
+        return RunProgramEval(entryPath, platformTarget, archTarget, testingBuild);
     }
     if (IsWasmMinPlatformTarget(platformTarget)) {
-        return RunProgramWasmMin(entryPath, platformTarget, cacheDirArg);
+        return RunProgramWasmMin(entryPath, platformTarget, archTarget, testingBuild, cacheDirArg);
     }
     if (IsPlaybitPlatformTarget(platformTarget)) {
-        return RunProgramPlaybit(entryPath, platformTarget, cacheDirArg);
+        return RunProgramPlaybit(entryPath, platformTarget, archTarget, testingBuild, cacheDirArg);
     }
     if (!HasCBackendBuild()) {
         return ErrorCBackendDisabled();
     }
-    return RunProgramC(entryPath, platformTarget, cacheDirArg);
+    return RunProgramC(entryPath, platformTarget, archTarget, testingBuild, cacheDirArg);
 }
 
 SL_API_END

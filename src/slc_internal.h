@@ -103,6 +103,8 @@ typedef struct SLPackage {
 typedef struct SLPackageLoader {
     char* _Nullable rootDir;
     char* _Nullable platformTarget;
+    char* _Nullable archTarget;
+    int testingBuild;
     struct SLPackage* _Nullable selectedPlatformPkg;
     SLPackage* _Nullable packages;
     uint32_t packageLen;
@@ -178,6 +180,16 @@ typedef struct {
 #define SL_PLAYBIT_PLATFORM_TARGET  "playbit"
 #define SL_PLAYBIT_ENTRY_HOOK_NAME  "sl_entry_main"
 #define SL_EVAL_CALL_MAX_DEPTH      128u
+
+#if defined(__wasm32__)
+    #define SL_DEFAULT_ARCH_TARGET "wasm32"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    #define SL_DEFAULT_ARCH_TARGET "aarch64"
+#elif defined(__x86_64__) || defined(_M_X64)
+    #define SL_DEFAULT_ARCH_TARGET "x86_64"
+#else
+    #define SL_DEFAULT_ARCH_TARGET "unknown"
+#endif
 
 const char* DisplayPath(const char* path);
 int         ASTFirstChild(const SLAst* ast, int32_t nodeId);
@@ -281,11 +293,17 @@ int  LoadPackageForFmt(
 int LoadAndCheckPackage(
     const char* entryPath,
     const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int              testingBuild,
     SLPackageLoader* outLoader,
     SLPackage**      outEntryPkg);
-int     FindPackageIndex(const SLPackageLoader* loader, const SLPackage* pkg);
-int     ValidateEntryMainSignature(const SLPackage* _Nullable entryPkg);
-int     CheckPackageDir(const char* entryPath, const char* _Nullable platformTarget);
+int FindPackageIndex(const SLPackageLoader* loader, const SLPackage* pkg);
+int ValidateEntryMainSignature(const SLPackage* _Nullable entryPkg);
+int CheckPackageDir(
+    const char* entryPath,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild);
 int     IsAsciiSpaceChar(unsigned char c);
 int     IsTypeDeclKind(SLAstKind kind);
 int     DirectiveNameEq(const SLParsedFile* file, int32_t nodeId, const char* name);
@@ -322,20 +340,32 @@ int  BuildPackageMirProgram(
     SLMirProgram*          outProgram,
     SLForeignLinkageInfo* _Nullable outForeignLinkage,
     SLDiag* _Nullable diag);
-int DumpMIR(const char* entryPath, const char* _Nullable platformTarget);
+int DumpMIR(
+    const char* entryPath,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild);
 
 int GeneratePackage(
     const char* entryPath,
     const char* backendName,
     const char* _Nullable outFilename,
     const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
     const char* _Nullable cacheDirArg);
 int CompileProgram(
     const char* entryPath,
     const char* outExe,
     const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
     const char* _Nullable cacheDirArg);
 int RunProgram(
-    const char* entryPath, const char* _Nullable platformTarget, const char* _Nullable cacheDirArg);
+    const char* entryPath,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
+    const char* _Nullable cacheDirArg);
 
 SL_API_END

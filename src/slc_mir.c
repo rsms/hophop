@@ -8364,7 +8364,11 @@ int BuildPackageMirProgram(
     return SLMirValidateProgram(outProgram, diag);
 }
 
-int DumpMIR(const char* entryPath, const char* _Nullable platformTarget) {
+int DumpMIR(
+    const char* entryPath,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild) {
     uint8_t         arenaStorage[4096];
     SLArena         arena;
     SLPackageLoader loader = { 0 };
@@ -8378,7 +8382,9 @@ int DumpMIR(const char* entryPath, const char* _Nullable platformTarget) {
     SLArenaInit(&arena, arenaStorage, sizeof(arenaStorage));
     SLArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
 
-    if (LoadAndCheckPackage(entryPath, platformTarget, &loader, &entryPkg) != 0) {
+    if (LoadAndCheckPackage(entryPath, platformTarget, archTarget, testingBuild, &loader, &entryPkg)
+        != 0)
+    {
         SLArenaDispose(&arena);
         return -1;
     }

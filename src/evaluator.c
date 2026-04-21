@@ -13536,7 +13536,11 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
     return 0;
 }
 
-int RunProgramEval(const char* entryPath, const char* _Nullable platformTarget) {
+int RunProgramEval(
+    const char* entryPath,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild) {
     SLPackageLoader loader;
     SLPackage*      entryPkg;
     SLEvalProgram   program;
@@ -13550,7 +13554,9 @@ int RunProgramEval(const char* entryPath, const char* _Nullable platformTarget) 
     int             didReturn = 0;
     int             rc = -1;
 
-    if (LoadAndCheckPackage(entryPath, platformTarget, &loader, &entryPkg) != 0) {
+    if (LoadAndCheckPackage(entryPath, platformTarget, archTarget, testingBuild, &loader, &entryPkg)
+        != 0)
+    {
         return -1;
     }
     if (ValidateEntryMainSignature(entryPkg) != 0) {

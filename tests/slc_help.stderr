@@ -1,14 +1,14 @@
 usage:
     slc --version
-    slc run [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile>
+    slc run [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
     slc fmt [--check] [<file-or-dir> ...]
-    slc compile [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile> [-o <output>]
-    slc genpkg[:backend] [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile> [out]
+    slc compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile> [-o <output>]
+    slc genpkg[:backend] [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile> [out]
     slc check <srcfile>
-    slc checkpkg [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile>
+    slc checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
     slc lex <srcfile>
     slc ast <srcfile>
-    slc mir [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile>
+    slc mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
     slc --version
     slc --help
 

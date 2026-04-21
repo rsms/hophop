@@ -1,0 +1,1 @@
+error: invalid filename build tag in tests/filename_build_tags_space_bad/file[wasm 32].sl: invalid tag character

@@ -98,17 +98,19 @@ static void PrintUsage(const char* argv0) {
         stderr,
         "usage:\n"
         "    %s --version\n"
-        "    %s run [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile>\n"
+        "    %s run [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>\n"
         "    %s fmt [--check] [<file-or-dir> ...]\n"
-        "    %s compile [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile> "
+        "    %s compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile> "
         "[-o <output>]\n"
-        "    %s genpkg[:backend] [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile> "
+        "    %s genpkg[:backend] [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "<pkgdir|srcfile> "
         "[out]\n"
         "    %s check <srcfile>\n"
-        "    %s checkpkg [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile>\n"
+        "    %s checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "<pkgdir|srcfile>\n"
         "    %s lex <srcfile>\n"
         "    %s ast <srcfile>\n"
-        "    %s mir [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile>\n"
+        "    %s mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>\n"
         "    %s --version\n"
         "    %s --help\n"
         "\n"
@@ -142,7 +144,9 @@ static int ParseSharedCommandOptions(
     char*        argv[],
     int          argi,
     const char** outPlatformTarget,
+    const char** outArchTarget,
     const char** outCacheDirArg,
+    int* _Nullable outTestingBuild,
     int* _Nullable outHasPlatformTarget) {
     while (argi < argc) {
         if (StrEq(argv[argi], "--platform")) {
@@ -156,12 +160,27 @@ static int ParseSharedCommandOptions(
             argi += 2;
             continue;
         }
+        if (StrEq(argv[argi], "--arch")) {
+            if (argi + 1 >= argc) {
+                return -1;
+            }
+            *outArchTarget = argv[argi + 1];
+            argi += 2;
+            continue;
+        }
         if (StrEq(argv[argi], "--cache-dir")) {
             if (argi + 1 >= argc) {
                 return -1;
             }
             *outCacheDirArg = argv[argi + 1];
             argi += 2;
+            continue;
+        }
+        if (StrEq(argv[argi], "--testing")) {
+            if (outTestingBuild != NULL) {
+                *outTestingBuild = 1;
+            }
+            argi++;
             continue;
         }
         break;
@@ -174,6 +193,14 @@ static int ValidatePlatformTargetOrUsage(const char* platformTarget) {
         return 0;
     }
     fprintf(stderr, "invalid platform target: %s\n", platformTarget);
+    return 2;
+}
+
+static int ValidateArchTargetOrUsage(const char* archTarget) {
+    if (IsValidPlatformTargetName(archTarget)) {
+        return 0;
+    }
+    fprintf(stderr, "invalid arch target: %s\n", archTarget);
     return 2;
 }
 
@@ -199,10 +226,12 @@ int main(int argc, char* argv[]) {
     const char* filename = NULL;
     const char* outFilename = NULL;
     const char* platformTarget = NULL;
+    const char* archTarget = NULL;
     const char* cacheDirArg = NULL;
     char        backendName[32];
     int         genpkgMode;
     int         hasPlatformTarget = 0;
+    int         testingBuild = 0;
     char*       source;
     uint32_t    sourceLen;
     int         argi;
@@ -233,7 +262,8 @@ int main(int argc, char* argv[]) {
 
     if (StrEq(mode, "compile")) {
         platformTarget = SL_DEFAULT_PLATFORM_TARGET;
-        argi = ParseSharedCommandOptions(argc, argv, 2, &platformTarget, &cacheDirArg, NULL);
+        argi = ParseSharedCommandOptions(
+            argc, argv, 2, &platformTarget, &archTarget, &cacheDirArg, &testingBuild, NULL);
         if (argi < 0) {
             PrintUsage(argv[0]);
             return 2;
@@ -241,18 +271,37 @@ int main(int argc, char* argv[]) {
         if (ValidatePlatformTargetOrUsage(platformTarget) != 0) {
             return 2;
         }
+        if (ValidateArchTargetOrUsage(archTarget != NULL ? archTarget : SL_DEFAULT_ARCH_TARGET)
+            != 0)
+        {
+            return 2;
+        }
         if (argc - argi == 1) {
-            return CompileProgram(argv[argi], "a.out", platformTarget, cacheDirArg) == 0 ? 0 : 1;
+            return CompileProgram(
+                       argv[argi], "a.out", platformTarget, archTarget, testingBuild, cacheDirArg)
+                        == 0
+                     ? 0
+                     : 1;
         }
         if (argc - argi != 3 || !StrEq(argv[argi + 1], "-o")) {
             PrintUsage(argv[0]);
             return 2;
         }
-        return CompileProgram(argv[argi], argv[argi + 2], platformTarget, cacheDirArg) == 0 ? 0 : 1;
+        return CompileProgram(
+                   argv[argi],
+                   argv[argi + 2],
+                   platformTarget,
+                   archTarget,
+                   testingBuild,
+                   cacheDirArg)
+                    == 0
+                 ? 0
+                 : 1;
     }
     if (StrEq(mode, "run")) {
         platformTarget = SL_EVAL_PLATFORM_TARGET;
-        argi = ParseSharedCommandOptions(argc, argv, 2, &platformTarget, &cacheDirArg, NULL);
+        argi = ParseSharedCommandOptions(
+            argc, argv, 2, &platformTarget, &archTarget, &cacheDirArg, &testingBuild, NULL);
         if (argi < 0 || argc - argi != 1) {
             PrintUsage(argv[0]);
             return 2;
@@ -260,8 +309,14 @@ int main(int argc, char* argv[]) {
         if (ValidatePlatformTargetOrUsage(platformTarget) != 0) {
             return 2;
         }
+        if (ValidateArchTargetOrUsage(archTarget != NULL ? archTarget : SL_DEFAULT_ARCH_TARGET)
+            != 0)
         {
-            int runRc = RunProgram(argv[argi], platformTarget, cacheDirArg);
+            return 2;
+        }
+        {
+            int runRc = RunProgram(
+                argv[argi], platformTarget, archTarget, testingBuild, cacheDirArg);
             if (runRc < 0) {
                 return 1;
             }
@@ -275,7 +330,14 @@ int main(int argc, char* argv[]) {
     argi = 2;
     if (StrEq(mode, "checkpkg") || StrEq(mode, "mir")) {
         argi = ParseSharedCommandOptions(
-            argc, argv, argi, &platformTarget, &cacheDirArg, &hasPlatformTarget);
+            argc,
+            argv,
+            argi,
+            &platformTarget,
+            &archTarget,
+            &cacheDirArg,
+            &testingBuild,
+            &hasPlatformTarget);
         if (argi < 0 || argc - argi != 1) {
             PrintUsage(argv[0]);
             return 2;
@@ -286,6 +348,11 @@ int main(int argc, char* argv[]) {
         if (ValidatePlatformTargetOrUsage(platformTarget) != 0) {
             return 2;
         }
+        if (ValidateArchTargetOrUsage(archTarget != NULL ? archTarget : SL_DEFAULT_ARCH_TARGET)
+            != 0)
+        {
+            return 2;
+        }
     } else if (StrEq(mode, "check") || StrEq(mode, "lex") || StrEq(mode, "ast")) {
         if (argc != 3) {
             PrintUsage(argv[0]);
@@ -293,9 +360,19 @@ int main(int argc, char* argv[]) {
         }
     } else {
         argi = ParseSharedCommandOptions(
-            argc, argv, argi, &platformTarget, &cacheDirArg, &hasPlatformTarget);
+            argc,
+            argv,
+            argi,
+            &platformTarget,
+            &archTarget,
+            &cacheDirArg,
+            &testingBuild,
+            &hasPlatformTarget);
         if (argi < 0) {
             PrintUsage(argv[0]);
+            return 2;
+        }
+        if (archTarget != NULL && ValidateArchTargetOrUsage(archTarget) != 0) {
             return 2;
         }
     }
@@ -327,7 +404,13 @@ int main(int argc, char* argv[]) {
             genpkgPlatformTarget = SL_DEFAULT_PLATFORM_TARGET;
         }
         return GeneratePackage(
-                   filename, backendName, outFilename, genpkgPlatformTarget, cacheDirArg)
+                   filename,
+                   backendName,
+                   outFilename,
+                   genpkgPlatformTarget,
+                   archTarget,
+                   testingBuild,
+                   cacheDirArg)
                     == 0
                  ? 0
                  : 1;
@@ -341,7 +424,10 @@ int main(int argc, char* argv[]) {
             return 2;
         }
         return CheckPackageDir(
-                   filename, hasPlatformTarget ? platformTarget : SL_DEFAULT_PLATFORM_TARGET)
+                   filename,
+                   hasPlatformTarget ? platformTarget : SL_DEFAULT_PLATFORM_TARGET,
+                   archTarget,
+                   testingBuild)
                     == 0
                  ? 0
                  : 1;
@@ -351,7 +437,11 @@ int main(int argc, char* argv[]) {
             fprintf(stderr, "unexpected output argument for mode mir\n");
             return 2;
         }
-        return DumpMIR(filename, hasPlatformTarget ? platformTarget : SL_DEFAULT_PLATFORM_TARGET)
+        return DumpMIR(
+                   filename,
+                   hasPlatformTarget ? platformTarget : SL_DEFAULT_PLATFORM_TARGET,
+                   archTarget,
+                   testingBuild)
                     == 0
                  ? 0
                  : 1;

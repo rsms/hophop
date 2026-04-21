@@ -2401,6 +2401,175 @@ static char* _Nullable ResolveLibImportDirFromExe(const char* importPath) {
 
 static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SLPackage** outPkg);
 
+static void FreeStringList(char** _Nullable items, uint32_t len) {
+    uint32_t i;
+    if (items == NULL) {
+        return;
+    }
+    for (i = 0; i < len; i++) {
+        free(items[i]);
+    }
+    free(items);
+}
+
+static int IsBuildTagChar(unsigned char c) {
+    return IsIdentContinueChar(c) || c == '-' || c == '.';
+}
+
+static int BuildTagSliceIsActive(
+    const SLPackageLoader* loader, const char* tagStart, size_t tagLen) {
+    if (loader == NULL || tagStart == NULL || tagLen == 0) {
+        return 0;
+    }
+    if (loader->archTarget != NULL && strlen(loader->archTarget) == tagLen
+        && memcmp(loader->archTarget, tagStart, tagLen) == 0)
+    {
+        return 1;
+    }
+    if (loader->platformTarget != NULL && strlen(loader->platformTarget) == tagLen
+        && memcmp(loader->platformTarget, tagStart, tagLen) == 0)
+    {
+        return 1;
+    }
+    return loader->testingBuild && tagLen == 7u && memcmp(tagStart, "testing", 7u) == 0;
+}
+
+static int FilenameBuildTagsMatch(
+    const SLPackageLoader* loader, const char* filePath, int* outMatch) {
+    const char* base = strrchr(filePath, '/');
+    size_t      baseLen;
+    size_t      stemLen;
+    size_t      openIndex = (size_t)-1;
+    size_t      i;
+    size_t      tagStart;
+    size_t      tagEnd;
+
+    *outMatch = 0;
+    base = base != NULL ? base + 1 : filePath;
+    baseLen = strlen(base);
+    if (baseLen < 4u || !HasSuffix(base, ".sl")) {
+        return ErrorSimple(
+            "invalid filename build tag in %s: expected .sl file", DisplayPath(filePath));
+    }
+    stemLen = baseLen - 3u;
+
+    for (i = 0; i < stemLen; i++) {
+        if (base[i] == '[') {
+            if (openIndex != (size_t)-1) {
+                return ErrorSimple(
+                    "invalid filename build tag in %s: nested '['", DisplayPath(filePath));
+            }
+            openIndex = i;
+        } else if (base[i] == ']') {
+            if (openIndex == (size_t)-1) {
+                return ErrorSimple(
+                    "invalid filename build tag in %s: unexpected ']'", DisplayPath(filePath));
+            }
+            if (i != stemLen - 1u) {
+                return ErrorSimple(
+                    "invalid filename build tag in %s: tag suffix must precede .sl",
+                    DisplayPath(filePath));
+            }
+        }
+    }
+
+    if (openIndex == (size_t)-1) {
+        *outMatch = 1;
+        return 0;
+    }
+    if (stemLen == 0 || base[stemLen - 1u] != ']') {
+        return ErrorSimple(
+            "invalid filename build tag in %s: missing closing ']'", DisplayPath(filePath));
+    }
+
+    tagStart = openIndex + 1u;
+    tagEnd = stemLen - 1u;
+    if (tagStart == tagEnd) {
+        return ErrorSimple(
+            "invalid filename build tag in %s: empty tag list", DisplayPath(filePath));
+    }
+
+    i = tagStart;
+    *outMatch = 1;
+    while (i < tagEnd) {
+        size_t atomStart = i;
+        size_t atomEnd;
+        int    negated = 0;
+        int    active;
+        if (base[i] == '!') {
+            negated = 1;
+            i++;
+            atomStart = i;
+            if (i < tagEnd && base[i] == '!') {
+                return ErrorSimple(
+                    "invalid filename build tag in %s: duplicate '!'", DisplayPath(filePath));
+            }
+        }
+        atomEnd = i;
+        while (atomEnd < tagEnd && base[atomEnd] != ',') {
+            atomEnd++;
+        }
+        if (atomStart == atomEnd) {
+            return ErrorSimple(
+                "invalid filename build tag in %s: empty tag", DisplayPath(filePath));
+        }
+        for (i = atomStart; i < atomEnd; i++) {
+            unsigned char c = (unsigned char)base[i];
+            if (c == '[' || c == ']') {
+                return ErrorSimple(
+                    "invalid filename build tag in %s: nested bracket", DisplayPath(filePath));
+            }
+            if (!IsBuildTagChar(c)) {
+                return ErrorSimple(
+                    "invalid filename build tag in %s: invalid tag character",
+                    DisplayPath(filePath));
+            }
+        }
+        active = BuildTagSliceIsActive(loader, base + atomStart, atomEnd - atomStart);
+        if ((active && negated) || (!active && !negated)) {
+            *outMatch = 0;
+        }
+        if (atomEnd < tagEnd) {
+            i = atomEnd + 1u;
+            if (i == tagEnd) {
+                return ErrorSimple(
+                    "invalid filename build tag in %s: empty tag", DisplayPath(filePath));
+            }
+        } else {
+            i = atomEnd;
+        }
+    }
+
+    return 0;
+}
+
+static int FilterPackageFilesByBuildTags(
+    const SLPackageLoader* loader, const char* dirPath, char** filePaths, uint32_t* fileCount) {
+    uint32_t readIndex;
+    uint32_t writeIndex = 0;
+    for (readIndex = 0; readIndex < *fileCount; readIndex++) {
+        int match = 0;
+        if (FilenameBuildTagsMatch(loader, filePaths[readIndex], &match) != 0) {
+            return -1;
+        }
+        if (match) {
+            filePaths[writeIndex] = filePaths[readIndex];
+            if (writeIndex != readIndex) {
+                filePaths[readIndex] = NULL;
+            }
+            writeIndex++;
+        } else {
+            free(filePaths[readIndex]);
+            filePaths[readIndex] = NULL;
+        }
+    }
+    if (writeIndex == 0) {
+        return ErrorSimple("no matching .sl files found in %s", DisplayPath(dirPath));
+    }
+    *fileCount = writeIndex;
+    return 0;
+}
+
 static int FindImportIndexByPath(const SLPackage* pkg, const char* importPath) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
@@ -2714,6 +2883,10 @@ static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SL
     if (ListSLFiles(pkg->dirPath, &filePaths, &fileCount) != 0) {
         return -1;
     }
+    if (FilterPackageFilesByBuildTags(loader, pkg->dirPath, filePaths, &fileCount) != 0) {
+        FreeStringList(filePaths, fileCount);
+        return -1;
+    }
 
     for (i = 0; i < fileCount; i++) {
         char*    source = NULL;
@@ -2721,23 +2894,23 @@ static int LoadPackageRecursive(SLPackageLoader* loader, const char* dirPath, SL
         SLAst    ast;
         void*    arenaMem = NULL;
         if (ReadFile(filePaths[i], &source, &sourceLen) != 0) {
+            FreeStringList(filePaths, fileCount);
             return -1;
         }
         if (ParseSourceEx(filePaths[i], source, sourceLen, &ast, &arenaMem, NULL, 1) != 0) {
             free(source);
+            FreeStringList(filePaths, fileCount);
             return -1;
         }
         if (AddPackageFile(pkg, filePaths[i], source, sourceLen, ast, arenaMem) != 0) {
             free(source);
             free(arenaMem);
+            FreeStringList(filePaths, fileCount);
             return ErrorSimple("out of memory");
         }
     }
 
-    for (i = 0; i < fileCount; i++) {
-        free(filePaths[i]);
-    }
-    free(filePaths);
+    FreeStringList(filePaths, fileCount);
 
     for (i = 0; i < pkg->fileLen; i++) {
         if (ProcessParsedFile(pkg, i) != 0) {
@@ -4851,6 +5024,7 @@ void FreeLoader(SLPackageLoader* loader) {
     free(loader->packages);
     free(loader->rootDir);
     free(loader->platformTarget);
+    free(loader->archTarget);
     memset(loader, 0, sizeof(*loader));
 }
 
@@ -4898,7 +5072,8 @@ int LoadPackageForFmt(
         (platformTarget != NULL && platformTarget[0] != '\0')
             ? platformTarget
             : SL_DEFAULT_PLATFORM_TARGET);
-    if (loader.platformTarget == NULL) {
+    loader.archTarget = SLCDupCStr(SL_DEFAULT_ARCH_TARGET);
+    if (loader.platformTarget == NULL || loader.archTarget == NULL) {
         free(pkgDir);
         free(canonical);
         FreeLoader(&loader);
@@ -4936,6 +5111,8 @@ int LoadPackageForFmt(
 int LoadAndCheckPackage(
     const char* entryPath,
     const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int              testingBuild,
     SLPackageLoader* outLoader,
     SLPackage**      outEntryPkg) {
     char*           canonical = CanonicalizePath(entryPath);
@@ -4981,7 +5158,10 @@ int LoadAndCheckPackage(
         (platformTarget != NULL && platformTarget[0] != '\0')
             ? platformTarget
             : SL_DEFAULT_PLATFORM_TARGET);
-    if (loader.platformTarget == NULL) {
+    loader.archTarget = SLCDupCStr(
+        (archTarget != NULL && archTarget[0] != '\0') ? archTarget : SL_DEFAULT_ARCH_TARGET);
+    loader.testingBuild = testingBuild;
+    if (loader.platformTarget == NULL || loader.archTarget == NULL) {
         free(pkgDir);
         free(canonical);
         FreeLoader(&loader);
@@ -5085,10 +5265,16 @@ int ValidateEntryMainSignature(const SLPackage* _Nullable entryPkg) {
     return 0;
 }
 
-int CheckPackageDir(const char* entryPath, const char* _Nullable platformTarget) {
+int CheckPackageDir(
+    const char* entryPath,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild) {
     SLPackageLoader loader;
     SLPackage*      entryPkg = NULL;
-    if (LoadAndCheckPackage(entryPath, platformTarget, &loader, &entryPkg) != 0) {
+    if (LoadAndCheckPackage(entryPath, platformTarget, archTarget, testingBuild, &loader, &entryPkg)
+        != 0)
+    {
         return -1;
     }
     (void)entryPkg;
