@@ -1,1 +1,1 @@
-tests/rune_literal_range_i16_bad.sl:3:14: SL2004: type mismatch: constant value 0x10000 is out of range for i16
+tests/rune_literal_range_i16_bad.sl:3:14: error: SL2004: type mismatch: constant value 0x10000 is out of range for i16

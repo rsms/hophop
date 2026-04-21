@@ -1,1 +1,1 @@
-tests/rawptr_cast_to_int_bad.sl:3:22: SL2004: type mismatch: cannot cast rawptr to int
+tests/rawptr_cast_to_int_bad.sl:3:22: error: SL2004: type mismatch: cannot cast rawptr to int

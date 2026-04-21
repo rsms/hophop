@@ -1,1 +1,1 @@
-tests/rune_literal_multiple_bad.sl:2:11: SL1015: rune literal must contain exactly one Unicode code point
+tests/rune_literal_multiple_bad.sl:2:11: error: SL1015: rune literal must contain exactly one Unicode code point

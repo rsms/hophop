@@ -1,1 +1,1 @@
-tests/ast_bad_mutref_slice_type.sl:2:14: SL1007: expected type
+tests/ast_bad_mutref_slice_type.sl:2:14: error: SL1007: expected type

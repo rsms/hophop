@@ -1,1 +1,1 @@
-tests/comparison_hook_bad_signature.sl:2:1: SL2049: invalid comparison hook signature
+tests/comparison_hook_bad_signature.sl:2:1: error: SL2049: invalid comparison hook signature

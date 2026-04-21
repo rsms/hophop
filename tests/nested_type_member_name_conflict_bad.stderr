@@ -1,1 +1,1 @@
-tests/nested_type_member_name_conflict_bad.sl:3:2: SL2001: duplicate symbol
+tests/nested_type_member_name_conflict_bad.sl:3:2: error: SL2001: duplicate symbol

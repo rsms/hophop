@@ -1,1 +1,2 @@
-tests/unused_parameter_warning_ok.sl:2:14: SL2095: parameter 'x' is unused
+tests/unused_parameter_warning_ok.sl:2:14: warning: SL2095: parameter 'x' is unused
+tests/unused_parameter_warning_ok.sl:2:14: hint: SL2095: rename parameter to '_' to silence this warning

@@ -1,1 +1,1 @@
-tests/compound_literal_ambiguous_bad.sl:22:14: SL2038: compound literal type inference is ambiguous
+tests/compound_literal_ambiguous_bad.sl:22:14: error: SL2038: compound literal type inference is ambiguous

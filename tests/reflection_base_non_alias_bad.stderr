@@ -1,1 +1,1 @@
-tests/reflection_base_non_alias_bad.sl:3:2: SL2004: type mismatch
+tests/reflection_base_non_alias_bad.sl:3:2: error: SL2004: type mismatch

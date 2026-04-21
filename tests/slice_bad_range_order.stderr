@@ -1,1 +1,1 @@
-tests/slice_bad_range_order.sl:4:17: SL2004: type mismatch
+tests/slice_bad_range_order.sl:4:17: error: SL2004: type mismatch

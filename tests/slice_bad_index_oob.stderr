@@ -1,1 +1,1 @@
-tests/slice_bad_index_oob.sl:4:11: SL2004: type mismatch
+tests/slice_bad_index_oob.sl:4:11: error: SL2004: type mismatch

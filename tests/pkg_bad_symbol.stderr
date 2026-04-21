@@ -1,1 +1,1 @@
-tests/pkg_bad_symbol/app/main.sl:5:9: SL0000: unknown imported symbol
+tests/pkg_bad_symbol/app/main.sl:5:9: error: SL0000: unknown imported symbol

@@ -495,7 +495,7 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
                                             1 },
     [SLDiag_UNUSED_PARAMETER] = { "SL2095",
                                   "parameter '%s' is unused",
-                                  NULL,
+                                  "rename parameter to '_' to silence this warning",
                                   SLDiagType_WARNING,
                                   1 },
     [SLDiag_UNUSED_PARAMETER_NEVER_READ] = { "SL2096",

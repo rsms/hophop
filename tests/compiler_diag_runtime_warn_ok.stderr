@@ -1,1 +1,1 @@
-tests/compiler_diag_runtime_warn_ok.sl:5:1: SL2076: consteval warning: heads up runtime
+tests/compiler_diag_runtime_warn_ok.sl:5:1: warning: SL2076: consteval warning: heads up runtime

@@ -1,1 +1,1 @@
-tests/import_invalid_path_dot.sl:2:1: SL2020: invalid import path (cannot import itself)
+tests/import_invalid_path_dot.sl:2:1: error: SL2020: invalid import path (cannot import itself)

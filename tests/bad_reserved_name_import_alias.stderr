@@ -1,1 +1,2 @@
-tests/bad_reserved_name_import_alias.sl:2:36: SL2008: identifier prefix '__sl_' is reserved
+tests/bad_reserved_name_import_alias.sl:2:36: error: SL2008: identifier prefix '__sl_' is reserved
+tests/bad_reserved_name_import_alias.sl:2:36: hint: SL2008: rename symbol to avoid '__sl_' prefix

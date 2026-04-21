@@ -1,1 +1,1 @@
-tests/switch_nonexhaustive_enum_multi_bad.sl:10:2: SL2061: missing cases in switch of type Shape: Rectangle, Octagon, Triangle
+tests/switch_nonexhaustive_enum_multi_bad.sl:10:2: error: SL2061: missing cases in switch of type Shape: Rectangle, Octagon, Triangle

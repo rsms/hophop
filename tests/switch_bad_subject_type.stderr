@@ -1,1 +1,1 @@
-tests/switch_bad_subject_type.sl:4:8: SL2004: type mismatch
+tests/switch_bad_subject_type.sl:4:8: error: SL2004: type mismatch

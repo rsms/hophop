@@ -1,1 +1,1 @@
-tests/context_unknown_with_field_bad.sl:13:13: SL2032: unknown context field in with clause
+tests/context_unknown_with_field_bad.sl:13:13: error: SL2032: unknown context field in with clause

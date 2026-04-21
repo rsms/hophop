@@ -1,1 +1,2 @@
-tests/bad_reserved_name_enum_item.sl:2:14: SL2008: identifier prefix '__sl_' is reserved
+tests/bad_reserved_name_enum_item.sl:2:14: error: SL2008: identifier prefix '__sl_' is reserved
+tests/bad_reserved_name_enum_item.sl:2:14: hint: SL2008: rename symbol to avoid '__sl_' prefix

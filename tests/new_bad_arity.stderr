@@ -1,1 +1,1 @@
-tests/new_bad_arity.sl:5:32: SL1007: expected type
+tests/new_bad_arity.sl:5:32: error: SL1007: expected type

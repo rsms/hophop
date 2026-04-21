@@ -1,1 +1,1 @@
-tests/topconst_const_typed_mismatch_unused_bad.sl:2:15: SL2004: type mismatch: cannot use expression of type bool as i32
+tests/topconst_const_typed_mismatch_unused_bad.sl:2:15: error: SL2004: type mismatch: cannot use expression of type bool as i32

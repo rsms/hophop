@@ -1,1 +1,1 @@
-tests/variadic_fn_type_distinct_bad.sl:6:24: SL2004: type mismatch
+tests/variadic_fn_type_distinct_bad.sl:6:24: error: SL2004: type mismatch

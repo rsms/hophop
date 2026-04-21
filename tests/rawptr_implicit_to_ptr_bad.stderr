@@ -1,1 +1,1 @@
-tests/rawptr_implicit_to_ptr_bad.sl:3:22: SL2004: type mismatch: cannot use 'opaque' of type rawptr as *int
+tests/rawptr_implicit_to_ptr_bad.sl:3:22: error: SL2004: type mismatch: cannot use 'opaque' of type rawptr as *int

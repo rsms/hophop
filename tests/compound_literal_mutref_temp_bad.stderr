@@ -1,1 +1,1 @@
-tests/compound_literal_mutref_temp_bad.sl:10:8: SL2043: cannot bind compound literal temporary to mutable reference
+tests/compound_literal_mutref_temp_bad.sl:10:8: error: SL2043: cannot bind compound literal temporary to mutable reference

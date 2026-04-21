@@ -1,1 +1,1 @@
-tests/anytype_invalid_position_bad.sl:3:8: SL2079: anytype is only allowed in function parameter positions
+tests/anytype_invalid_position_bad.sl:3:8: error: SL2079: anytype is only allowed in function parameter positions

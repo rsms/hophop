@@ -1,1 +1,1 @@
-tests/const_block_assert_fail_bad.sl:9:19: SL2083: const block failed compile-time evaluation: assert condition evaluated to false during const evaluation
+tests/const_block_assert_fail_bad.sl:9:19: error: SL2083: const block failed compile-time evaluation: assert condition evaluated to false during const evaluation

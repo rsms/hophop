@@ -1,1 +1,1 @@
-tests/single_file_diag_remap_bad.sl:3:10: SL2003: unknown type
+tests/single_file_diag_remap_bad.sl:3:10: error: SL2003: unknown type

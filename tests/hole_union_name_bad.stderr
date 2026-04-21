@@ -1,1 +1,1 @@
-tests/hole_union_name_bad.sl:2:7: SL2007: identifier '_' is reserved
+tests/hole_union_name_bad.sl:2:7: error: SL2007: identifier '_' is reserved

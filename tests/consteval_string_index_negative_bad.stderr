@@ -1,1 +1,1 @@
-tests/consteval_string_index_negative_bad.sl:9:23: SL2083: const block failed compile-time evaluation: index is negative in const evaluation
+tests/consteval_string_index_negative_bad.sl:9:23: error: SL2083: const block failed compile-time evaluation: index is negative in const evaluation

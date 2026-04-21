@@ -116,7 +116,7 @@
 {"id": "SL2092", "name": "UNUSED_FUNCTION", "category": "semantic", "message": "function '{s}' is unused", "type": "warning"}
 {"id": "SL2093", "name": "UNUSED_VARIABLE", "category": "semantic", "message": "variable '{s}' is unused", "type": "warning", "hint": "rename variable to '_' to silence this warning"}
 {"id": "SL2094", "name": "UNUSED_VARIABLE_NEVER_READ", "category": "semantic", "message": "variable '{s}' is never read", "type": "warning", "hint": "rename variable to '_' to silence this warning"}
-{"id": "SL2095", "name": "UNUSED_PARAMETER", "category": "semantic", "message": "parameter '{s}' is unused", "type": "warning"}
+{"id": "SL2095", "name": "UNUSED_PARAMETER", "category": "semantic", "message": "parameter '{s}' is unused", "type": "warning", "hint": "rename parameter to '_' to silence this warning"}
 {"id": "SL2096", "name": "UNUSED_PARAMETER_NEVER_READ", "category": "semantic", "message": "parameter '{s}' is never read", "type": "warning"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL3002", "name": "WASM_BACKEND_UNSUPPORTED_MIR", "category": "codegen", "message": "Wasm backend does not support this MIR"}

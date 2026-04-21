@@ -1,1 +1,2 @@
-tests/unused_variable_never_read_warning_ok.sl:3:6: SL2094: variable 'x' is never read
+tests/unused_variable_never_read_warning_ok.sl:3:6: warning: SL2094: variable 'x' is never read
+tests/unused_variable_never_read_warning_ok.sl:3:6: hint: SL2094: rename variable to '_' to silence this warning

@@ -1,1 +1,1 @@
-tests/topconst_const_fn_call_assert_bad.sl:10:13: SL2054: array length must be a const integer expression: assert condition evaluated to false during const evaluation
+tests/topconst_const_fn_call_assert_bad.sl:10:13: error: SL2054: array length must be a const integer expression: assert condition evaluated to false during const evaluation

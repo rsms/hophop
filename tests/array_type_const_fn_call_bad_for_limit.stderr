@@ -1,1 +1,1 @@
-tests/array_type_const_fn_call_bad_for_limit.sl:9:13: SL2054: array length must be a const integer expression: for-loop exceeded const-eval iteration limit
+tests/array_type_const_fn_call_bad_for_limit.sl:9:13: error: SL2054: array length must be a const integer expression: for-loop exceeded const-eval iteration limit

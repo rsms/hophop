@@ -1,1 +1,1 @@
-tests/consteval_diag_warn_dedup.sl:9:2: SL2076: consteval warning: heads up
+tests/consteval_diag_warn_dedup.sl:9:2: warning: SL2076: consteval warning: heads up

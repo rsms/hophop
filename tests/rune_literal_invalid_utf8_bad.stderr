@@ -1,1 +1,1 @@
-tests/rune_literal_invalid_utf8_bad.sl:2:12: SL1018: rune literal must decode to valid UTF-8
+tests/rune_literal_invalid_utf8_bad.sl:2:12: error: SL1018: rune literal must decode to valid UTF-8

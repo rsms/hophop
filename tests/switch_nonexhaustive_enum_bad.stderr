@@ -1,1 +1,1 @@
-tests/switch_nonexhaustive_enum_bad.sl:8:2: SL2061: missing cases in switch of type E: B
+tests/switch_nonexhaustive_enum_bad.sl:8:2: error: SL2061: missing cases in switch of type E: B

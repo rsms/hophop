@@ -1,1 +1,1 @@
-tests/nested_type_unknown_member_bad.sl:9:8: SL2003: unknown type
+tests/nested_type_unknown_member_bad.sl:9:8: error: SL2003: unknown type

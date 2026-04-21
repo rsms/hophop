@@ -1,1 +1,1 @@
-tests/slp27_const_numeric_invalid_position_bad.sl:3:8: SL2085: const_int and const_float are only allowed in const declarations, const parameters, function returns, and cast targets
+tests/slp27_const_numeric_invalid_position_bad.sl:3:8: error: SL2085: const_int and const_float are only allowed in const declarations, const parameters, function returns, and cast targets

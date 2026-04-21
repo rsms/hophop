@@ -199,7 +199,7 @@ static void TypecheckDiagSink(void* ctx, const SLDiag* diag) {
     if (spec->suppressUnusedWarnings && IsUnusedWarningDiag(diag->code)) {
         return;
     }
-    (void)EmitCheckDiag(spec, diag, 0, 1);
+    (void)EmitCheckDiag(spec, diag, 1, 1);
 }
 
 static int CheckSourceWithSpec(const SLCheckRunSpec* spec) {

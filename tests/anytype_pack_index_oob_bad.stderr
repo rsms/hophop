@@ -1,1 +1,1 @@
-tests/anytype_pack_index_oob_bad.sl:3:11: SL2081: anytype pack index is out of bounds
+tests/anytype_pack_index_oob_bad.sl:3:11: error: SL2081: anytype pack index is out of bounds

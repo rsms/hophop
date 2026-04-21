@@ -1,1 +1,1 @@
-tests/param_runs_missing_type.sl:2:23: SL1008: parameter 'c' is missing type
+tests/param_runs_missing_type.sl:2:23: error: SL1008: parameter 'c' is missing type

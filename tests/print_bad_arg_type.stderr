@@ -1,1 +1,1 @@
-tests/print_bad_arg_type.sl:3:8: SL2004: type mismatch
+tests/print_bad_arg_type.sl:3:8: error: SL2004: type mismatch

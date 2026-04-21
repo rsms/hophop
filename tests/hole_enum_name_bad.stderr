@@ -1,1 +1,1 @@
-tests/hole_enum_name_bad.sl:2:6: SL2007: identifier '_' is reserved
+tests/hole_enum_name_bad.sl:2:6: error: SL2007: identifier '_' is reserved

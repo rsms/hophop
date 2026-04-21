@@ -1,1 +1,1 @@
-tests/const_param_grouped_name_bad.sl:2:17: SL1019: grouped-name form is invalid for const parameter; rewrite as separate const parameters
+tests/const_param_grouped_name_bad.sl:2:17: error: SL1019: grouped-name form is invalid for const parameter; rewrite as separate const parameters

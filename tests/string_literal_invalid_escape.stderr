@@ -1,1 +1,1 @@
-tests/string_literal_invalid_escape.sl:2:12: SL1009: invalid string escape sequence
+tests/string_literal_invalid_escape.sl:2:12: error: SL1009: invalid string escape sequence

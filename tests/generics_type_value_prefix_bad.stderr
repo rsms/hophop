@@ -1,1 +1,1 @@
-tests/generics_type_value_prefix_bad.sl:7:18: SL2002: unknown identifier 'Vector'
+tests/generics_type_value_prefix_bad.sl:7:18: error: SL2002: unknown identifier 'Vector'

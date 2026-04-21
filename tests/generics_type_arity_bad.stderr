@@ -1,1 +1,1 @@
-tests/generics_type_arity_bad.sl:7:8: SL2004: type mismatch
+tests/generics_type_arity_bad.sl:7:8: error: SL2004: type mismatch

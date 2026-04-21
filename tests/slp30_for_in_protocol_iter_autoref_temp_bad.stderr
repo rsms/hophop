@@ -1,1 +1,1 @@
-tests/slp30_for_in_protocol_iter_autoref_temp_bad.sl:25:11: SL2086: for-in source must support sequence iteration or iterator protocol
+tests/slp30_for_in_protocol_iter_autoref_temp_bad.sl:25:11: error: SL2086: for-in source must support sequence iteration or iterator protocol

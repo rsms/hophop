@@ -79,7 +79,7 @@ int Errorf(
     if (source != NULL) {
         DiagOffsetToLineCol(source, start, &line, &col);
     }
-    fprintf(stderr, "%s:%u:%u: %s: ", DisplayPath(file), line, col, "SL0000");
+    fprintf(stderr, "%s:%u:%u: error: %s: ", DisplayPath(file), line, col, "SL0000");
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -101,7 +101,7 @@ int ErrorDiagf(
     if (source != NULL) {
         DiagOffsetToLineCol(source, start, &line, &col);
     }
-    fprintf(stderr, "%s:%u:%u: %s: ", DisplayPath(file), line, col, DiagIdOrFallback(code));
+    fprintf(stderr, "%s:%u:%u: error: %s: ", DisplayPath(file), line, col, DiagIdOrFallback(code));
     va_start(ap, code);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -372,6 +372,8 @@ static int PrintSLDiagEx(
     const char* msg = SLDiagMessage(diag->code);
     uint8_t     argCount = SLDiagArgCount(diag->code);
     const char* diagId = DiagIdOrFallback(diag->code);
+    const char* severity = diag->type == SLDiagType_WARNING ? "warning" : "error";
+    const char* hint;
     uint32_t    sourceLen = source != NULL ? (uint32_t)strlen(source) : 0u;
     uint32_t    spanStart = diag->start;
     uint32_t    spanEnd = diag->end;
@@ -403,7 +405,7 @@ static int PrintSLDiagEx(
         DiagOffsetToLineCol(source, diag->start, &locA, &locB);
     }
 
-    fprintf(stderr, "%s:%u:%u: %s: ", DisplayPath(filename), locA, locB, diagId);
+    fprintf(stderr, "%s:%u:%u: %s: %s: ", DisplayPath(filename), locA, locB, severity, diagId);
 
     if (useIdentifierWording && diag->code == SLDiag_UNKNOWN_SYMBOL && source != NULL
         && spanEnd > spanStart)
@@ -450,14 +452,13 @@ static int PrintSLDiagEx(
     }
     fputc('\n', stderr);
 
-    if (includeHint) {
-        const char* hint =
-            (diag->hintOverride != NULL && diag->hintOverride[0] != '\0')
-                ? diag->hintOverride
-                : SLDiagHint(diag->code);
-        if (hint != NULL) {
-            fprintf(stderr, "  tip: %s\n", hint);
-        }
+    (void)includeHint;
+    hint = (diag->hintOverride != NULL && diag->hintOverride[0] != '\0')
+             ? diag->hintOverride
+             : SLDiagHint(diag->code);
+    if (hint != NULL) {
+        fprintf(
+            stderr, "%s:%u:%u: hint: %s: %s\n", DisplayPath(filename), locA, locB, diagId, hint);
     }
     return diag->type == SLDiagType_WARNING ? 0 : -1;
 }

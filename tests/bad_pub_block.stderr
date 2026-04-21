@@ -1,1 +1,1 @@
-tests/bad_pub_block.sl:2:5: SL1005: expected declaration
+tests/bad_pub_block.sl:2:5: error: SL1005: expected declaration
