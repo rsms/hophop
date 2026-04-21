@@ -171,6 +171,50 @@ int SLTCValidateConstDiagUses(SLTypeCheckCtx* c) {
     return 0;
 }
 
+int SLTCRecordCallTarget(SLTypeCheckCtx* c, int32_t callNode, int32_t targetFnIndex) {
+    uint32_t i;
+    if (c == NULL || callNode < 0 || targetFnIndex < 0 || (uint32_t)callNode >= c->ast->len
+        || (uint32_t)targetFnIndex >= c->funcLen)
+    {
+        return -1;
+    }
+    for (i = 0; i < c->callTargetLen; i++) {
+        SLTCCallTarget* target = &c->callTargets[i];
+        if (target->callNode == callNode && target->ownerFnIndex == c->currentFunctionIndex) {
+            target->targetFnIndex = targetFnIndex;
+            return 0;
+        }
+    }
+    if (c->callTargetLen >= c->callTargetCap || c->callTargets == NULL) {
+        return SLTCFailNode(c, callNode, SLDiag_ARENA_OOM);
+    }
+    c->callTargets[c->callTargetLen++] = (SLTCCallTarget){
+        .callNode = callNode,
+        .ownerFnIndex = c->currentFunctionIndex,
+        .targetFnIndex = targetFnIndex,
+    };
+    return 0;
+}
+
+int SLTCFindCallTarget(
+    const SLTypeCheckCtx* c, int32_t ownerFnIndex, int32_t callNode, int32_t* outTargetFnIndex) {
+    uint32_t i;
+    if (outTargetFnIndex != NULL) {
+        *outTargetFnIndex = -1;
+    }
+    if (c == NULL || callNode < 0 || outTargetFnIndex == NULL) {
+        return 0;
+    }
+    for (i = 0; i < c->callTargetLen; i++) {
+        const SLTCCallTarget* target = &c->callTargets[i];
+        if (target->callNode == callNode && target->ownerFnIndex == ownerFnIndex) {
+            *outTargetFnIndex = target->targetFnIndex;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static SLTCLocalUse* _Nullable SLTCGetLocalUseByIndex(SLTypeCheckCtx* c, int32_t localIdx) {
     uint32_t useIdx;
     if (c == NULL || localIdx < 0 || (uint32_t)localIdx >= c->localLen || c->locals == NULL

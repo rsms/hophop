@@ -228,6 +228,8 @@ typedef struct {
     uint32_t activePackElemCount;
     uint32_t fmtTempCounter;
     SLConstEvalSession* _Nullable constEval;
+    uint32_t activeTcFuncIndex;
+    int32_t  activeTcNamedTypeIndex;
 } SLCBackendC;
 
 enum {
@@ -483,6 +485,25 @@ const char* _Nullable ConstEvalBuiltinCName(SLConstEvalBuiltinKind builtin);
 int ParseTypeRefFromConstEvalTypeId(SLCBackendC* c, int32_t typeId, SLTypeRef* outType);
 
 int ParseTypeRefFromConstEvalTypeTag(SLCBackendC* c, uint64_t typeTag, SLTypeRef* outType);
+
+char* _Nullable BuildTemplateNamedTypeCName(
+    SLCBackendC* c, const char* baseCName, uint32_t tcNamedIndex);
+
+int CollectTemplateInstanceNamedTypes(SLCBackendC* c);
+
+int CodegenCNodeHasTypeParams(const SLCBackendC* c, int32_t nodeId);
+
+int CodegenCPushActiveFunctionTypeContext(SLCBackendC* c, uint32_t tcFuncIndex);
+
+int CodegenCPushActiveNamedTypeContext(SLCBackendC* c, uint32_t tcNamedIndex);
+
+void CodegenCPopActiveTypeContext(
+    SLCBackendC* c,
+    uint32_t     savedFuncIndex,
+    int32_t      savedNamedTypeIndex,
+    uint32_t     savedArgStart,
+    uint16_t     savedArgCount,
+    int32_t      savedDeclNode);
 
 int AddNodeRef(SLCBackendC* c, SLNodeRef** arr, uint32_t* len, uint32_t* cap, int32_t nodeId);
 

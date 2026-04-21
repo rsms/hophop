@@ -23,6 +23,7 @@
 #include "mir_lower_pkg.h"
 #include "mir_lower_stmt.h"
 #include "slc_internal.h"
+#include "typecheck/internal.h"
 
 SL_API_BEGIN
 
@@ -84,6 +85,31 @@ typedef struct {
     uint32_t cap;
 } SLMirResolvedDeclMap;
 
+typedef struct {
+    const SLPackage*    pkg;
+    const SLParsedFile* file;
+    uint32_t            tcFnIndex;
+    uint32_t            mirFnIndex;
+} SLMirTcFunctionDecl;
+
+typedef struct {
+    SLMirTcFunctionDecl* _Nullable v;
+    uint32_t len;
+    uint32_t cap;
+} SLMirTcFunctionMap;
+
+static const SLSymbolDecl* _Nullable FindPackageTypeDeclBySlice(
+    const SLPackage* pkg, const char* src, uint32_t start, uint32_t end);
+static int PatchMirFunctionTypeRefsFromTC(
+    SLArena*               arena,
+    const SLPackageLoader* loader,
+    SLMirProgramBuilder*   builder,
+    const SLPackage*       pkg,
+    const SLParsedFile*    file,
+    const SLTypeCheckCtx*  tc,
+    uint32_t               tcFnIndex,
+    uint32_t               mirFnIndex);
+
 static int AddMirResolvedDecl(
     SLMirResolvedDeclMap* map,
     const SLPackage*      pkg,
@@ -108,6 +134,522 @@ static int AddMirResolvedDecl(
         .functionIndex = functionIndex,
         .kind = (uint8_t)kind,
     };
+    return 0;
+}
+
+static int AddMirTcFunctionDecl(
+    SLMirTcFunctionMap* map,
+    const SLPackage*    pkg,
+    const SLParsedFile* file,
+    uint32_t            tcFnIndex,
+    uint32_t            mirFnIndex) {
+    uint32_t i;
+    if (map == NULL || pkg == NULL || file == NULL || tcFnIndex == UINT32_MAX
+        || mirFnIndex == UINT32_MAX)
+    {
+        return -1;
+    }
+    for (i = 0; i < map->len; i++) {
+        if (map->v[i].pkg == pkg && map->v[i].file == file && map->v[i].tcFnIndex == tcFnIndex) {
+            map->v[i].mirFnIndex = mirFnIndex;
+            return 0;
+        }
+    }
+    if (EnsureCap((void**)&map->v, &map->cap, map->len + 1u, sizeof(SLMirTcFunctionDecl)) != 0) {
+        return -1;
+    }
+    map->v[map->len++] = (SLMirTcFunctionDecl){
+        .pkg = pkg,
+        .file = file,
+        .tcFnIndex = tcFnIndex,
+        .mirFnIndex = mirFnIndex,
+    };
+    return 0;
+}
+
+static int FindMirTcFunctionDecl(
+    const SLMirTcFunctionMap* map,
+    const SLPackage*          pkg,
+    const SLParsedFile*       file,
+    uint32_t                  tcFnIndex,
+    uint32_t* _Nonnull outMirFnIndex) {
+    uint32_t i;
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = UINT32_MAX;
+    }
+    if (map == NULL || pkg == NULL || file == NULL || outMirFnIndex == NULL) {
+        return 0;
+    }
+    for (i = 0; i < map->len; i++) {
+        if (map->v[i].pkg == pkg && map->v[i].file == file && map->v[i].tcFnIndex == tcFnIndex) {
+            *outMirFnIndex = map->v[i].mirFnIndex;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int FindMirTcFunctionByMirIndex(
+    const SLMirTcFunctionMap* map,
+    const SLPackage*          pkg,
+    const SLParsedFile*       file,
+    uint32_t                  mirFnIndex,
+    uint32_t* _Nonnull outTcFnIndex) {
+    uint32_t i;
+    if (outTcFnIndex != NULL) {
+        *outTcFnIndex = UINT32_MAX;
+    }
+    if (map == NULL || pkg == NULL || file == NULL || outTcFnIndex == NULL) {
+        return 0;
+    }
+    for (i = 0; i < map->len; i++) {
+        if (map->v[i].pkg == pkg && map->v[i].file == file && map->v[i].mirFnIndex == mirFnIndex) {
+            *outTcFnIndex = map->v[i].tcFnIndex;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int32_t FindTypecheckFunctionByDeclNode(
+    const SLTypeCheckCtx* tc, int32_t declNode, int wantTemplateInstance) {
+    uint32_t i;
+    if (tc == NULL || declNode < 0) {
+        return -1;
+    }
+    for (i = 0; i < tc->funcLen; i++) {
+        const SLTCFunction* fn = &tc->funcs[i];
+        int isInstance = (fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) != 0 ? 1 : 0;
+        if (fn->declNode == declNode && isInstance == wantTemplateInstance) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static int MirNameIsBuiltinTypeValue(const char* src, uint32_t start, uint32_t end) {
+    return SliceEqCStr(src, start, end, "bool") || SliceEqCStr(src, start, end, "str")
+        || SliceEqCStr(src, start, end, "type") || SliceEqCStr(src, start, end, "u8")
+        || SliceEqCStr(src, start, end, "u16") || SliceEqCStr(src, start, end, "u32")
+        || SliceEqCStr(src, start, end, "u64") || SliceEqCStr(src, start, end, "i8")
+        || SliceEqCStr(src, start, end, "i16") || SliceEqCStr(src, start, end, "i32")
+        || SliceEqCStr(src, start, end, "i64") || SliceEqCStr(src, start, end, "usize")
+        || SliceEqCStr(src, start, end, "isize") || SliceEqCStr(src, start, end, "rawptr")
+        || SliceEqCStr(src, start, end, "f32") || SliceEqCStr(src, start, end, "f64")
+        || SliceEqCStr(src, start, end, "int") || SliceEqCStr(src, start, end, "uint");
+}
+
+static int MirTypecheckFunctionHasTypeParamName(
+    const SLTypeCheckCtx* tc, uint32_t tcFnIndex, const char* src, uint32_t start, uint32_t end) {
+    const SLTCFunction* fn;
+    int32_t             declNode;
+    int32_t             child;
+    if (tc == NULL || src == NULL || tcFnIndex >= tc->funcLen) {
+        return 0;
+    }
+    fn = &tc->funcs[tcFnIndex];
+    declNode = fn->declNode;
+    if (declNode < 0 || (uint32_t)declNode >= tc->ast->len) {
+        return 0;
+    }
+    child = tc->ast->nodes[declNode].firstChild;
+    while (child >= 0) {
+        const SLAstNode* n = &tc->ast->nodes[child];
+        if (n->kind == SLAst_TYPE_PARAM
+            && SLNameEqSlice(tc->src, n->dataStart, n->dataEnd, start, end))
+        {
+            return 1;
+        }
+        child = n->nextSibling;
+    }
+    return 0;
+}
+
+static int MirNameIsTypeValue(
+    const SLPackage*      pkg,
+    const SLTypeCheckCtx* tc,
+    uint32_t              tcFnIndex,
+    const char*           src,
+    uint32_t              start,
+    uint32_t              end) {
+    if (src == NULL || end <= start) {
+        return 0;
+    }
+    if (MirNameIsBuiltinTypeValue(src, start, end)) {
+        return 1;
+    }
+    if (pkg != NULL && FindPackageTypeDeclBySlice(pkg, src, start, end) != NULL) {
+        return 1;
+    }
+    return MirTypecheckFunctionHasTypeParamName(tc, tcFnIndex, src, start, end);
+}
+
+static int MirBuiltinTypeRefFromTC(
+    const SLTypeCheckCtx* tc, int32_t typeId, SLMirTypeRef* outTypeRef) {
+    const SLTCType* t;
+    if (tc == NULL || outTypeRef == NULL || typeId < 0 || (uint32_t)typeId >= tc->typeLen) {
+        return 0;
+    }
+    t = &tc->types[typeId];
+    if (t->kind != SLTCType_BUILTIN) {
+        return 0;
+    }
+    *outTypeRef = (SLMirTypeRef){ .astNode = UINT32_MAX, .sourceRef = UINT32_MAX };
+    switch (t->builtin) {
+        case SLBuiltin_BOOL:
+            outTypeRef->flags = SLMirTypeScalar_I32;
+            outTypeRef->aux = SLMirTypeAuxMakeScalarInt(SLMirIntKind_BOOL);
+            return 1;
+        case SLBuiltin_U8:
+            outTypeRef->flags = SLMirTypeScalar_I32;
+            outTypeRef->aux = SLMirTypeAuxMakeScalarInt(SLMirIntKind_U8);
+            return 1;
+        case SLBuiltin_I8:
+            outTypeRef->flags = SLMirTypeScalar_I32;
+            outTypeRef->aux = SLMirTypeAuxMakeScalarInt(SLMirIntKind_I8);
+            return 1;
+        case SLBuiltin_U16:
+            outTypeRef->flags = SLMirTypeScalar_I32;
+            outTypeRef->aux = SLMirTypeAuxMakeScalarInt(SLMirIntKind_U16);
+            return 1;
+        case SLBuiltin_I16:
+            outTypeRef->flags = SLMirTypeScalar_I32;
+            outTypeRef->aux = SLMirTypeAuxMakeScalarInt(SLMirIntKind_I16);
+            return 1;
+        case SLBuiltin_U32:
+            outTypeRef->flags = SLMirTypeScalar_I32;
+            outTypeRef->aux = SLMirTypeAuxMakeScalarInt(SLMirIntKind_U32);
+            return 1;
+        case SLBuiltin_I32:
+        case SLBuiltin_USIZE:
+        case SLBuiltin_ISIZE:
+            outTypeRef->flags = SLMirTypeScalar_I32;
+            outTypeRef->aux = SLMirTypeAuxMakeScalarInt(SLMirIntKind_I32);
+            return 1;
+        case SLBuiltin_U64:
+        case SLBuiltin_I64:    outTypeRef->flags = SLMirTypeScalar_I64; return 1;
+        case SLBuiltin_F32:    outTypeRef->flags = SLMirTypeScalar_F32; return 1;
+        case SLBuiltin_F64:    outTypeRef->flags = SLMirTypeScalar_F64; return 1;
+        case SLBuiltin_TYPE:
+        case SLBuiltin_RAWPTR: outTypeRef->flags = SLMirTypeFlag_OPAQUE_PTR; return 1;
+        default:               return 0;
+    }
+}
+
+static int MirAstNodeIsTypeNodeForSearch(SLAstKind kind) {
+    return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
+        || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
+        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
+        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_TUPLE || kind == SLAst_TYPE_ANON_STRUCT
+        || kind == SLAst_TYPE_ANON_UNION;
+}
+
+static int32_t MirFunctionTypeParamIndexByTypeNode(
+    const SLAst* ast, SLStrView src, int32_t fnNode, int32_t typeNode) {
+    int32_t child;
+    int32_t index = 0;
+    if (ast == NULL || fnNode < 0 || typeNode < 0 || (uint32_t)fnNode >= ast->len
+        || (uint32_t)typeNode >= ast->len || ast->nodes[typeNode].kind != SLAst_TYPE_NAME
+        || ast->nodes[typeNode].firstChild >= 0)
+    {
+        return -1;
+    }
+    child = ast->nodes[fnNode].firstChild;
+    while (child >= 0) {
+        if (ast->nodes[child].kind == SLAst_TYPE_PARAM) {
+            if (SLNameEqSlice(
+                    src,
+                    ast->nodes[child].dataStart,
+                    ast->nodes[child].dataEnd,
+                    ast->nodes[typeNode].dataStart,
+                    ast->nodes[typeNode].dataEnd))
+            {
+                return index;
+            }
+            index++;
+        }
+        child = ast->nodes[child].nextSibling;
+    }
+    return -1;
+}
+
+static int EnsureMirBuilderTypeRefFromTC(
+    SLMirProgramBuilder*  builder,
+    const SLTypeCheckCtx* tc,
+    uint32_t              sourceRef,
+    int32_t               typeId,
+    uint32_t*             outTypeRef) {
+    uint32_t     i;
+    SLMirTypeRef typeRef = { 0 };
+    if (outTypeRef != NULL) {
+        *outTypeRef = UINT32_MAX;
+    }
+    if (builder == NULL || tc == NULL || outTypeRef == NULL || typeId < 0) {
+        return 0;
+    }
+    typeId = SLTCResolveAliasBaseType((SLTypeCheckCtx*)tc, typeId);
+    if (typeId < 0 || (uint32_t)typeId >= tc->typeLen) {
+        return 0;
+    }
+    if (MirBuiltinTypeRefFromTC(tc, typeId, &typeRef)) {
+        return SLMirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
+    }
+    for (i = 0; i < tc->ast->len; i++) {
+        int32_t resolved = -1;
+        if (!MirAstNodeIsTypeNodeForSearch(tc->ast->nodes[i].kind)) {
+            continue;
+        }
+        if (SLTCResolveTypeNode((SLTypeCheckCtx*)tc, (int32_t)i, &resolved) == 0
+            && resolved == typeId)
+        {
+            typeRef = (SLMirTypeRef){ .astNode = i, .sourceRef = sourceRef };
+            return SLMirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
+        }
+    }
+    return 0;
+}
+
+static int EnsureMirBuilderBuiltinTypeRefFromTC(
+    SLMirProgramBuilder* builder, const SLTypeCheckCtx* tc, int32_t typeId, uint32_t* outTypeRef) {
+    SLMirTypeRef typeRef = { 0 };
+    if (outTypeRef != NULL) {
+        *outTypeRef = UINT32_MAX;
+    }
+    if (builder == NULL || tc == NULL || outTypeRef == NULL || typeId < 0) {
+        return 0;
+    }
+    typeId = SLTCResolveAliasBaseType((SLTypeCheckCtx*)tc, typeId);
+    if (typeId < 0 || (uint32_t)typeId >= tc->typeLen) {
+        return 0;
+    }
+    if (!MirBuiltinTypeRefFromTC(tc, typeId, &typeRef)) {
+        return 0;
+    }
+    return SLMirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
+}
+
+static int32_t MirFindTCNamedTypeIndex(const SLTypeCheckCtx* tc, int32_t typeId) {
+    uint32_t i;
+    if (tc == NULL || typeId < 0) {
+        return -1;
+    }
+    for (i = 0; i < tc->namedTypeLen; i++) {
+        if (tc->namedTypes[i].typeId == typeId) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static int MirBuiltinTypeNodeMatchesTC(const SLTypeCheckCtx* tc, int32_t typeId, int32_t nodeId) {
+    const SLAstNode* n;
+    if (tc == NULL || typeId < 0 || (uint32_t)typeId >= tc->typeLen || nodeId < 0
+        || (uint32_t)nodeId >= tc->ast->len || tc->types[typeId].kind != SLTCType_BUILTIN)
+    {
+        return 0;
+    }
+    n = &tc->ast->nodes[nodeId];
+    if (n->kind != SLAst_TYPE_NAME || n->firstChild >= 0) {
+        return 0;
+    }
+    switch (tc->types[typeId].builtin) {
+        case SLBuiltin_BOOL: return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "bool");
+        case SLBuiltin_U8:   return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u8");
+        case SLBuiltin_U16:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u16");
+        case SLBuiltin_U32:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u32");
+        case SLBuiltin_U64:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u64");
+        case SLBuiltin_I8:   return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "i8");
+        case SLBuiltin_I16:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "i16");
+        case SLBuiltin_I32:
+            return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "i32")
+                || SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "int");
+        case SLBuiltin_I64:    return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "i64");
+        case SLBuiltin_USIZE:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "usize");
+        case SLBuiltin_ISIZE:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "isize");
+        case SLBuiltin_TYPE:   return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "type");
+        case SLBuiltin_RAWPTR: return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "rawptr");
+        case SLBuiltin_F32:    return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "f32");
+        case SLBuiltin_F64:    return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "f64");
+        default:               return 0;
+    }
+}
+
+static int MirTypeNodeMatchesTCType(const SLTypeCheckCtx* tc, int32_t typeId, int32_t nodeId) {
+    int32_t  namedIndex;
+    int32_t  child;
+    uint16_t argIndex;
+    if (tc == NULL || typeId < 0 || (uint32_t)typeId >= tc->typeLen || nodeId < 0
+        || (uint32_t)nodeId >= tc->ast->len)
+    {
+        return 0;
+    }
+    if (tc->types[typeId].kind == SLTCType_BUILTIN) {
+        return MirBuiltinTypeNodeMatchesTC(tc, typeId, nodeId);
+    }
+    if (tc->types[typeId].kind != SLTCType_NAMED) {
+        return 0;
+    }
+    if (tc->ast->nodes[nodeId].kind != SLAst_TYPE_NAME) {
+        return 0;
+    }
+    if (!SLNameEqSlice(
+            tc->src,
+            tc->types[typeId].nameStart,
+            tc->types[typeId].nameEnd,
+            tc->ast->nodes[nodeId].dataStart,
+            tc->ast->nodes[nodeId].dataEnd))
+    {
+        return 0;
+    }
+    namedIndex = MirFindTCNamedTypeIndex(tc, typeId);
+    if (namedIndex < 0) {
+        return tc->ast->nodes[nodeId].firstChild < 0;
+    }
+    child = tc->ast->nodes[nodeId].firstChild;
+    for (argIndex = 0; argIndex < tc->namedTypes[(uint32_t)namedIndex].templateArgCount; argIndex++)
+    {
+        if (child < 0
+            || !MirTypeNodeMatchesTCType(
+                tc,
+                tc->genericArgTypes
+                    [tc->namedTypes[(uint32_t)namedIndex].templateArgStart + argIndex],
+                child))
+        {
+            return 0;
+        }
+        child = tc->ast->nodes[child].nextSibling;
+    }
+    return child < 0;
+}
+
+static int EnsureMirBuilderNamedTypeRefFromTC(
+    SLMirProgramBuilder*  builder,
+    const SLTypeCheckCtx* tc,
+    uint32_t              sourceRef,
+    int32_t               typeId,
+    uint32_t*             outTypeRef) {
+    uint32_t     i;
+    SLMirTypeRef typeRef = { 0 };
+    if (outTypeRef != NULL) {
+        *outTypeRef = UINT32_MAX;
+    }
+    if (builder == NULL || tc == NULL || outTypeRef == NULL || typeId < 0
+        || (uint32_t)typeId >= tc->typeLen || tc->types[typeId].kind != SLTCType_NAMED)
+    {
+        return 0;
+    }
+    for (i = 0; i < tc->ast->len; i++) {
+        if (!MirAstNodeIsTypeNodeForSearch(tc->ast->nodes[i].kind)) {
+            continue;
+        }
+        if (MirTypeNodeMatchesTCType(tc, typeId, (int32_t)i)) {
+            typeRef = (SLMirTypeRef){ .astNode = i, .sourceRef = sourceRef };
+            return SLMirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
+        }
+    }
+    return 0;
+}
+
+static int PatchMirFunctionTypeRefsFromTC(
+    SLArena*               arena,
+    const SLPackageLoader* loader,
+    SLMirProgramBuilder*   builder,
+    const SLPackage*       pkg,
+    const SLParsedFile*    file,
+    const SLTypeCheckCtx*  tc,
+    uint32_t               tcFnIndex,
+    uint32_t               mirFnIndex) {
+    uint32_t sourceRef;
+    uint32_t localStart;
+    uint32_t paramCount;
+    uint32_t tcParamCount;
+    uint32_t tcParamTypeStart;
+    uint32_t tcTemplateArgStart;
+    uint16_t tcTemplateArgCount;
+    int16_t  tcTemplateRootFuncIndex;
+    uint32_t tcNameStart;
+    uint32_t tcNameEnd;
+    int32_t  tcReturnType;
+    uint32_t typeRef = UINT32_MAX;
+    uint32_t i;
+    (void)arena;
+    (void)loader;
+    (void)pkg;
+    (void)file;
+    if (builder == NULL || tc == NULL || tcFnIndex >= tc->funcLen || mirFnIndex >= builder->funcLen)
+    {
+        return 0;
+    }
+    tcReturnType = tc->funcs[tcFnIndex].returnType;
+    tcParamCount = tc->funcs[tcFnIndex].paramCount;
+    tcParamTypeStart = tc->funcs[tcFnIndex].paramTypeStart;
+    tcTemplateArgStart = tc->funcs[tcFnIndex].templateArgStart;
+    tcTemplateArgCount = tc->funcs[tcFnIndex].templateArgCount;
+    tcTemplateRootFuncIndex = tc->funcs[tcFnIndex].templateRootFuncIndex;
+    tcNameStart = tc->funcs[tcFnIndex].nameStart;
+    tcNameEnd = tc->funcs[tcFnIndex].nameEnd;
+    sourceRef = builder->funcs[mirFnIndex].sourceRef;
+    localStart = builder->funcs[mirFnIndex].localStart;
+    paramCount = builder->funcs[mirFnIndex].paramCount;
+    if (tcTemplateArgCount > 0 && builder->funcs[mirFnIndex].typeRef < builder->typeLen) {
+        const SLMirTypeRef* retTypeRef = &builder->types[builder->funcs[mirFnIndex].typeRef];
+        if (retTypeRef->astNode < tc->ast->len) {
+            int32_t paramIndex = MirFunctionTypeParamIndexByTypeNode(
+                tc->ast, tc->src, tc->funcs[tcFnIndex].declNode, (int32_t)retTypeRef->astNode);
+            if (paramIndex >= 0 && (uint32_t)paramIndex < tcTemplateArgCount) {
+                tcReturnType = tc->genericArgTypes[tcTemplateArgStart + (uint32_t)paramIndex];
+            }
+        }
+    }
+    if (EnsureMirBuilderBuiltinTypeRefFromTC(builder, tc, tcReturnType, &typeRef) < 0) {
+        return -1;
+    }
+    if (typeRef == UINT32_MAX
+        && EnsureMirBuilderNamedTypeRefFromTC(builder, tc, sourceRef, tcReturnType, &typeRef) < 0)
+    {
+        return -1;
+    }
+    if (typeRef != UINT32_MAX) {
+        builder->funcs[mirFnIndex].typeRef = typeRef;
+    }
+    for (i = 0; i < tcParamCount && i < paramCount; i++) {
+        uint32_t localIndex = localStart + i;
+        if (localIndex >= builder->localLen) {
+            return -1;
+        }
+        typeRef = UINT32_MAX;
+        {
+            int32_t tcParamType = tc->funcParamTypes[tcParamTypeStart + i];
+            if (tcTemplateArgCount > 0 && builder->locals[localIndex].typeRef < builder->typeLen) {
+                const SLMirTypeRef* localTypeRef =
+                    &builder->types[builder->locals[localIndex].typeRef];
+                if (localTypeRef->astNode < tc->ast->len) {
+                    int32_t paramIndex = MirFunctionTypeParamIndexByTypeNode(
+                        tc->ast,
+                        tc->src,
+                        tc->funcs[tcFnIndex].declNode,
+                        (int32_t)localTypeRef->astNode);
+                    if (paramIndex >= 0 && (uint32_t)paramIndex < tcTemplateArgCount) {
+                        tcParamType =
+                            tc->genericArgTypes[tcTemplateArgStart + (uint32_t)paramIndex];
+                    }
+                }
+            }
+            if (EnsureMirBuilderBuiltinTypeRefFromTC(builder, tc, tcParamType, &typeRef) < 0) {
+                return -1;
+            }
+            if (typeRef == UINT32_MAX
+                && EnsureMirBuilderNamedTypeRefFromTC(builder, tc, sourceRef, tcParamType, &typeRef)
+                       < 0)
+            {
+                return -1;
+            }
+        }
+        if (typeRef == UINT32_MAX) {
+            continue;
+        }
+        builder->locals[localIndex].typeRef = typeRef;
+    }
     return 0;
 }
 
@@ -415,6 +957,21 @@ static const SLMirResolvedDecl* _Nullable FindMirResolvedValueByCStr(
     return FindMirResolvedDeclByCStr(map, pkg, name, SLMirDeclKind_VAR);
 }
 
+static int MirAstDeclHasTypeParams(const SLAst* ast, int32_t nodeId) {
+    int32_t child;
+    if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
+        return 0;
+    }
+    child = ast->nodes[nodeId].firstChild;
+    while (child >= 0) {
+        if (ast->nodes[child].kind == SLAst_TYPE_PARAM) {
+            return 1;
+        }
+        child = ast->nodes[child].nextSibling;
+    }
+    return 0;
+}
+
 static int AppendMirDeclsFromFile(
     const SLPackageLoader* loader,
     const SLPackage*       entryPkg,
@@ -422,8 +979,10 @@ static int AppendMirDeclsFromFile(
     SLArena*               arena,
     const SLPackage*       pkg,
     const SLParsedFile*    file,
-    SLMirResolvedDeclMap* _Nullable declMap) {
-    int32_t child = ASTFirstChild(&file->ast, file->ast.root);
+    SLMirResolvedDeclMap* _Nullable declMap,
+    SLMirTcFunctionMap* _Nullable tcFnMap) {
+    int32_t         child = ASTFirstChild(&file->ast, file->ast.root);
+    SLTypeCheckCtx* tc = file->hasTypecheckCtx ? (SLTypeCheckCtx*)file->typecheckCtx : NULL;
     while (child >= 0) {
         const SLAstNode* n = &file->ast.nodes[child];
         if (n->kind == SLAst_FN) {
@@ -434,6 +993,10 @@ static int AppendMirDeclsFromFile(
             int          supported = 0;
             SLStrView    src = { file->source, file->sourceLen };
             const SLAst* ast = &file->ast;
+            if (MirAstDeclHasTypeParams(ast, child)) {
+                child = ASTNextSibling(ast, child);
+                continue;
+            }
             bodyNode = FindFunctionBodyNode(file, child);
             if (bodyNode >= 0) {
                 if (SLMirLowerAppendSimpleFunction(
@@ -465,6 +1028,16 @@ static int AppendMirDeclsFromFile(
                            != 0)
                 {
                     return ErrorSimple("out of memory");
+                }
+                if (tcFnMap != NULL && tc != NULL) {
+                    int32_t tcFnIndex = FindTypecheckFunctionByDeclNode(tc, child, 0);
+                    if (tcFnIndex >= 0
+                        && AddMirTcFunctionDecl(
+                               tcFnMap, pkg, file, (uint32_t)tcFnIndex, outFunctionIndex)
+                               != 0)
+                    {
+                        return ErrorSimple("out of memory");
+                    }
                 }
             } else if (
                 loader != NULL && entryPkg != NULL && loader->selectedPlatformPkg == pkg
@@ -622,6 +1195,71 @@ static int AppendMirDeclsFromFile(
             }
         }
         child = ASTNextSibling(&file->ast, child);
+    }
+    return 0;
+}
+
+static int AppendMirTemplateInstancesFromFile(
+    const SLPackageLoader* loader,
+    SLMirProgramBuilder*   builder,
+    SLArena*               arena,
+    const SLPackage*       pkg,
+    const SLParsedFile*    file,
+    SLMirTcFunctionMap*    tcFnMap) {
+    SLTypeCheckCtx* tc =
+        file != NULL && file->hasTypecheckCtx ? (SLTypeCheckCtx*)file->typecheckCtx : NULL;
+    uint32_t i;
+    if (loader == NULL || builder == NULL || arena == NULL || pkg == NULL || file == NULL
+        || tcFnMap == NULL || tc == NULL)
+    {
+        return 0;
+    }
+    for (i = 0; i < tc->funcLen; i++) {
+        const SLTCFunction* fn = &tc->funcs[i];
+        uint32_t            outFunctionIndex = UINT32_MAX;
+        int32_t             bodyNode;
+        SLDiag              diag = { 0 };
+        int                 supported = 0;
+        if ((fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0 || fn->defNode < 0) {
+            continue;
+        }
+        if (i >= tc->funcUsedCap || tc->funcUsed[i] == 0u) {
+            continue;
+        }
+        if (FindMirTcFunctionDecl(tcFnMap, pkg, file, i, &outFunctionIndex)) {
+            continue;
+        }
+        bodyNode = FindFunctionBodyNode(file, fn->defNode);
+        if (bodyNode < 0) {
+            continue;
+        }
+        if (SLMirLowerAppendSimpleFunction(
+                builder,
+                arena,
+                &file->ast,
+                (SLStrView){ file->source, file->sourceLen },
+                fn->declNode,
+                bodyNode,
+                &outFunctionIndex,
+                &supported,
+                &diag)
+            != 0)
+        {
+            return PrintSLDiagLineCol(file->path, file->source, &diag, 0);
+        }
+        if (!supported) {
+            return ErrorMirUnsupported(
+                file, &file->ast.nodes[fn->declNode], "function body", &diag);
+        }
+        if (PatchMirFunctionTypeRefsFromTC(
+                arena, loader, builder, pkg, file, tc, i, outFunctionIndex)
+            != 0)
+        {
+            return ErrorSimple("out of memory");
+        }
+        if (AddMirTcFunctionDecl(tcFnMap, pkg, file, i, outFunctionIndex) != 0) {
+            return ErrorSimple("out of memory");
+        }
     }
     return 0;
 }
@@ -4748,6 +5386,7 @@ static int EnsureMirHostRef(
 static int ResolvePackageMirProgram(
     const SLPackageLoader*      loader,
     const SLMirResolvedDeclMap* declMap,
+    const SLMirTcFunctionMap*   tcFnMap,
     SLArena*                    arena,
     const SLMirProgram*         program,
     SLMirProgram*               outProgram) {
@@ -4772,10 +5411,19 @@ static int ResolvePackageMirProgram(
         const SLPackage*     ownerPkg = NULL;
         const SLParsedFile*  ownerFile = FindLoaderFileByMirSource(
             loader, program, fn->sourceRef, &ownerPkg);
+        SLTypeCheckCtx* ownerTc =
+            ownerFile != NULL && ownerFile->hasTypecheckCtx
+                ? (SLTypeCheckCtx*)ownerFile->typecheckCtx
+                : NULL;
+        uint32_t ownerTcFnIndex = UINT32_MAX;
         uint8_t* omit = NULL;
         uint32_t localIndex;
         funcs[funcIndex] = *fn;
         funcs[funcIndex].instStart = instOutLen;
+        if (ownerPkg != NULL && ownerFile != NULL && tcFnMap != NULL) {
+            (void)FindMirTcFunctionByMirIndex(
+                tcFnMap, ownerPkg, ownerFile, funcIndex, &ownerTcFnIndex);
+        }
         if (fn->instLen != 0u) {
             omit = (uint8_t*)calloc(fn->instLen, sizeof(uint8_t));
             if (omit == NULL) {
@@ -4924,13 +5572,57 @@ static int ResolvePackageMirProgram(
                             inst.op = SLMirOp_PUSH_CONST;
                             inst.tok = 0u;
                             inst.aux = constIndex;
+                        } else if (
+                            MirNameIsTypeValue(
+                                ownerPkg,
+                                ownerTc,
+                                ownerTcFnIndex,
+                                ownerFile->source,
+                                inst.start,
+                                inst.end))
+                        {
+                            uint32_t constIndex = UINT32_MAX;
+                            if (EnsureMirIntConst(arena, outProgram, 0, &constIndex) != 0) {
+                                free(omit);
+                                return -1;
+                            }
+                            inst.op = SLMirOp_PUSH_CONST;
+                            inst.tok = 0u;
+                            inst.aux = constIndex;
                         }
                     }
                 } else if (inst.op == SLMirOp_CALL && inst.aux < program->symbolLen) {
                     const SLMirSymbolRef*    sym = &program->symbols[inst.aux];
                     const SLMirResolvedDecl* target = NULL;
                     if (sym->kind == SLMirSymbol_CALL) {
-                        if ((sym->flags & SLMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u) {
+                        int32_t  targetTcFn = -1;
+                        uint32_t targetMirFn = UINT32_MAX;
+                        if (SliceEqCStr(ownerFile->source, inst.start, inst.end, "typeof")) {
+                            uint32_t constIndex = UINT32_MAX;
+                            if (EnsureMirIntConst(arena, outProgram, 0, &constIndex) != 0) {
+                                free(omit);
+                                return -1;
+                            }
+                            inst.op = SLMirOp_PUSH_CONST;
+                            inst.tok = 0u;
+                            inst.aux = constIndex;
+                        } else if (
+                            ownerTc != NULL && ownerTcFnIndex != UINT32_MAX
+                            && sym->target < ownerTc->ast->len
+                            && SLTCFindCallTarget(
+                                ownerTc, (int32_t)ownerTcFnIndex, (int32_t)sym->target, &targetTcFn)
+                            && targetTcFn >= 0 && (uint32_t)targetTcFn < ownerTc->funcLen
+                            && (ownerTc->funcs[targetTcFn].flags
+                                & SLTCFunctionFlag_TEMPLATE_INSTANCE)
+                                   != 0
+                            && FindMirTcFunctionDecl(
+                                tcFnMap, ownerPkg, ownerFile, (uint32_t)targetTcFn, &targetMirFn))
+                        {
+                            inst.op = SLMirOp_CALL_FN;
+                            inst.tok = (uint16_t)(SLMirCallArgCountFromTok(inst.tok)
+                                                  | (inst.tok & SLMirCallArgFlag_SPREAD_LAST));
+                            inst.aux = targetMirFn;
+                        } else if ((sym->flags & SLMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u) {
                             uint32_t argc = SLMirCallArgCountFromTok(inst.tok);
                             uint32_t argStart = UINT32_MAX;
                             if (argc != 0u
@@ -6312,6 +7004,9 @@ static void EnrichMirTypeFlags(const SLPackageLoader* loader, SLMirProgram* prog
         SLMirTypeRef*       typeRef = (SLMirTypeRef*)&program->types[i];
         const SLParsedFile* file = FindLoaderFileByMirSource(
             loader, program, typeRef->sourceRef, NULL);
+        if (typeRef->astNode == UINT32_MAX && typeRef->sourceRef == UINT32_MAX) {
+            continue;
+        }
         typeRef->flags =
             (typeRef->flags
              & ~(SLMirTypeFlag_SCALAR_MASK | SLMirTypeFlag_STR_REF | SLMirTypeFlag_STR_PTR
@@ -6413,7 +7108,9 @@ static int EnsureMirAggregateFieldRef(
 static int EnsureMirAggregateFieldsForType(
     const SLPackageLoader* loader, SLArena* arena, SLMirProgram* program, uint32_t ownerTypeRef) {
     const SLParsedFile* file = NULL;
+    const SLParsedFile* ownerFile = NULL;
     const SLAstNode*    declNode;
+    const SLAstNode*    ownerNode = NULL;
     uint32_t            ownerSourceRef = UINT32_MAX;
     int32_t             childNode;
     if (loader == NULL || arena == NULL || program == NULL || ownerTypeRef >= program->typeLen) {
@@ -6421,6 +7118,11 @@ static int EnsureMirAggregateFieldsForType(
     }
     declNode = ResolveMirAggregateDeclNode(
         loader, program, &program->types[ownerTypeRef], &file, &ownerSourceRef);
+    ownerFile = FindLoaderFileByMirSource(
+        loader, program, program->types[ownerTypeRef].sourceRef, NULL);
+    if (ownerFile != NULL && program->types[ownerTypeRef].astNode < ownerFile->ast.len) {
+        ownerNode = &ownerFile->ast.nodes[program->types[ownerTypeRef].astNode];
+    }
     if (declNode == NULL || file == NULL) {
         return 0;
     }
@@ -6431,6 +7133,7 @@ static int EnsureMirAggregateFieldsForType(
         uint32_t         fieldTypeRef = UINT32_MAX;
         uint32_t         fieldRef = UINT32_MAX;
         int32_t          typeNode = fieldNode->firstChild;
+        uint32_t         typeSourceRef = ownerSourceRef;
         if (fieldNode->kind != SLAst_FIELD) {
             childNode = fieldNode->nextSibling;
             continue;
@@ -6438,8 +7141,31 @@ static int EnsureMirAggregateFieldsForType(
         if (typeNode < 0 || (uint32_t)typeNode >= file->ast.len) {
             return -1;
         }
+        if (ownerFile != NULL && ownerNode != NULL && ownerNode->kind == SLAst_TYPE_NAME
+            && file->ast.nodes[typeNode].kind == SLAst_TYPE_NAME)
+        {
+            int32_t typeParamNode = declNode->firstChild;
+            int32_t typeArgNode = ownerNode->firstChild;
+            while (typeParamNode >= 0 && typeArgNode >= 0) {
+                const SLAstNode* param = &file->ast.nodes[typeParamNode];
+                if (param->kind == SLAst_TYPE_PARAM
+                    && SLNameEqSlice(
+                        (SLStrView){ file->source, file->sourceLen },
+                        param->dataStart,
+                        param->dataEnd,
+                        file->ast.nodes[typeNode].dataStart,
+                        file->ast.nodes[typeNode].dataEnd))
+                {
+                    typeNode = typeArgNode;
+                    typeSourceRef = program->types[ownerTypeRef].sourceRef;
+                    break;
+                }
+                typeParamNode = param->nextSibling;
+                typeArgNode = ownerFile->ast.nodes[typeArgNode].nextSibling;
+            }
+        }
         if (EnsureMirAstTypeRef(
-                arena, loader, program, (uint32_t)typeNode, ownerSourceRef, &fieldTypeRef)
+                arena, loader, program, (uint32_t)typeNode, typeSourceRef, &fieldTypeRef)
             != 0)
         {
             return -1;
@@ -6950,6 +7676,24 @@ static void RewriteMirAggregateMake(SLMirProgram* program) {
             uint32_t   typeRef = UINT32_MAX;
             uint32_t   scanPc;
             int32_t    depth = 1;
+            if (inst->op == SLMirOp_AGG_ZERO && fn->typeRef < program->typeLen
+                && SLMirTypeRefIsAggregate(&program->types[fn->typeRef]))
+            {
+                for (scanPc = pc + 1u; scanPc < fn->instLen; scanPc++) {
+                    SLMirInst* next = (SLMirInst*)&program->insts[fn->instStart + scanPc];
+                    if (next->op == SLMirOp_LOCAL_STORE) {
+                        break;
+                    }
+                    if (next->op == SLMirOp_COERCE && next->aux == inst->aux) {
+                        next->aux = fn->typeRef;
+                        continue;
+                    }
+                    if (next->op == SLMirOp_RETURN) {
+                        inst->aux = fn->typeRef;
+                        break;
+                    }
+                }
+            }
             if (inst->op != SLMirOp_AGG_MAKE) {
                 continue;
             }
@@ -6961,6 +7705,12 @@ static void RewriteMirAggregateMake(SLMirProgram* program) {
                         && SLMirTypeRefIsAggregate(&program->types[next->aux]))
                     {
                         typeRef = next->aux;
+                        break;
+                    }
+                    if (next->op == SLMirOp_RETURN && fn->typeRef < program->typeLen
+                        && SLMirTypeRefIsAggregate(&program->types[fn->typeRef]))
+                    {
+                        typeRef = fn->typeRef;
                         break;
                     }
                     if (next->op == SLMirOp_LOCAL_STORE && next->aux < fn->localCount) {
@@ -7101,17 +7851,22 @@ static void InferMirStraightLineLocalTypes(SLArena* arena, SLMirProgram* program
                         if ((localTypes[inst->aux] != MirInferredType_NONE
                              && localTypes[inst->aux] != MirInferredType_AGG)
                             || (localTypeRefs[inst->aux] != UINT32_MAX && typeRef != UINT32_MAX
-                                && localTypeRefs[inst->aux] != typeRef))
+                                && localTypeRefs[inst->aux] != typeRef
+                                && (localTypeRefs[inst->aux] >= program->typeLen
+                                    || typeRef >= program->typeLen
+                                    || !SLMirTypeRefIsAggregate(
+                                        &program->types[localTypeRefs[inst->aux]])
+                                    || !SLMirTypeRefIsAggregate(&program->types[typeRef]))))
                         {
                             supported = 0;
                             break;
                         }
                         localTypes[inst->aux] = MirInferredType_AGG;
-                        if (localTypeRefs[inst->aux] == UINT32_MAX) {
+                        if (typeRef != UINT32_MAX) {
                             localTypeRefs[inst->aux] = typeRef;
                         }
                         local = (SLMirLocal*)&program->locals[fn->localStart + inst->aux];
-                        if (local->typeRef == UINT32_MAX && typeRef != UINT32_MAX) {
+                        if (typeRef != UINT32_MAX) {
                             local->typeRef = typeRef;
                         }
                         break;
@@ -7153,21 +7908,48 @@ static void InferMirStraightLineLocalTypes(SLArena* arena, SLMirProgram* program
                     stackLen--;
                     break;
                 case SLMirOp_UNARY:
-                    if (stackLen == 0u || stackTypes[stackLen - 1u] != MirInferredType_I32) {
-                        supported = 0;
-                        break;
-                    }
-                    stackTypes[stackLen - 1u] = MirInferredType_I32;
-                    break;
-                case SLMirOp_BINARY:
-                    if (stackLen < 2u || stackTypes[stackLen - 1u] != MirInferredType_I32
-                        || stackTypes[stackLen - 2u] != MirInferredType_I32)
+                    if (stackLen == 0u
+                        || (stackTypes[stackLen - 1u] != MirInferredType_I32
+                            && stackTypes[stackLen - 1u] != MirInferredType_I64
+                            && stackTypes[stackLen - 1u] != MirInferredType_F32
+                            && stackTypes[stackLen - 1u] != MirInferredType_F64))
                     {
                         supported = 0;
                         break;
                     }
-                    stackLen--;
-                    stackTypes[stackLen - 1u] = MirInferredType_I32;
+                    break;
+                case SLMirOp_BINARY:
+                    if (stackLen < 2u) {
+                        supported = 0;
+                        break;
+                    }
+                    {
+                        MirInferredType rhsType = stackTypes[stackLen - 1u];
+                        MirInferredType lhsType = stackTypes[stackLen - 2u];
+                        if (lhsType != rhsType
+                            || (lhsType != MirInferredType_I32 && lhsType != MirInferredType_I64
+                                && lhsType != MirInferredType_F32 && lhsType != MirInferredType_F64
+                                && lhsType != MirInferredType_OPAQUE_PTR))
+                        {
+                            supported = 0;
+                            break;
+                        }
+                        stackLen--;
+                        switch ((SLTokenKind)inst->tok) {
+                            case SLTok_EQ:
+                            case SLTok_NEQ:
+                            case SLTok_LT:
+                            case SLTok_GT:
+                            case SLTok_LTE:
+                            case SLTok_GTE:
+                            case SLTok_LOGICAL_AND:
+                            case SLTok_LOGICAL_OR:
+                                stackTypes[stackLen - 1u] = MirInferredType_I32;
+                                stackTypeRefs[stackLen - 1u] = UINT32_MAX;
+                                break;
+                            default: stackTypes[stackLen - 1u] = lhsType; break;
+                        }
+                    }
                     break;
                 case SLMirOp_CAST:
                 case SLMirOp_COERCE:
@@ -7392,6 +8174,7 @@ int BuildPackageMirProgram(
     SLDiag* _Nullable diag) {
     SLMirProgramBuilder  builder;
     SLMirResolvedDeclMap declMap = { 0 };
+    SLMirTcFunctionMap   tcFnMap = { 0 };
     uint32_t*            topoOrder = NULL;
     uint32_t             topoOrderLen = 0;
     uint32_t             orderIndex;
@@ -7431,9 +8214,32 @@ int BuildPackageMirProgram(
                     &builder, arena, pkg, &pkg->files[fileIndex], &declMap);
             } else {
                 rc = AppendMirDeclsFromFile(
-                    loader, entryPkg, &builder, arena, pkg, &pkg->files[fileIndex], &declMap);
+                    loader,
+                    entryPkg,
+                    &builder,
+                    arena,
+                    pkg,
+                    &pkg->files[fileIndex],
+                    &declMap,
+                    &tcFnMap);
             }
             if (rc != 0) {
+                free(tcFnMap.v);
+                free(declMap.v);
+                free(topoOrder);
+                return -1;
+            }
+        }
+    }
+    for (orderIndex = 0; orderIndex < topoOrderLen; orderIndex++) {
+        const SLPackage* pkg = &loader->packages[topoOrder[orderIndex]];
+        uint32_t         fileIndex;
+        for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+            if (AppendMirTemplateInstancesFromFile(
+                    loader, &builder, arena, pkg, &pkg->files[fileIndex], &tcFnMap)
+                != 0)
+            {
+                free(tcFnMap.v);
                 free(declMap.v);
                 free(topoOrder);
                 return -1;
@@ -7454,6 +8260,7 @@ int BuildPackageMirProgram(
                     &declMap)
                 != 0)
             {
+                free(tcFnMap.v);
                 free(declMap.v);
                 free(topoOrder);
                 return -1;
@@ -7463,56 +8270,67 @@ int BuildPackageMirProgram(
     SLMirProgramBuilderFinish(&builder, outProgram);
     EnrichMirTypeFlags(loader, outProgram);
     if (EnrichMirOpaquePtrPointees(loader, arena, outProgram) != 0) {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         return -1;
     }
     if (EnrichMirAggSliceElemTypes(loader, arena, outProgram) != 0) {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         return -1;
     }
     if (EnrichMirAggregateFields(loader, arena, outProgram) != 0) {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         return -1;
     }
     if (EnrichMirVArrayCountFields(loader, outProgram) != 0) {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         return -1;
     }
-    if (ResolvePackageMirProgram(loader, &declMap, arena, outProgram, outProgram) != 0) {
+    if (ResolvePackageMirProgram(loader, &declMap, &tcFnMap, arena, outProgram, outProgram) != 0) {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         return -1;
     }
     if (RewriteMirWasmPrintHostcalls(loader, &declMap, arena, outProgram) != 0) {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         return -1;
     }
     if (RewriteMirFuncFieldCalls(loader, arena, outProgram) != 0) {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         return -1;
     }
     if (RewriteMirVarSizeAllocCounts(loader, arena, outProgram) != 0) {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         return -1;
     }
     if (RewriteMirDynamicSliceAllocCounts(loader, arena, outProgram) != 0) {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         return -1;
     }
     if (RewriteMirAllocNewAllocExprs(loader, arena, outProgram) != 0) {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         return -1;
     }
     if (RewriteMirAllocNewInitExprs(loader, arena, outProgram) != 0) {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         return -1;
@@ -7524,6 +8342,7 @@ int BuildPackageMirProgram(
     if (outForeignLinkage != NULL
         && BuildMirForeignLinkageInfo(loader, &declMap, outForeignLinkage, diag) != 0)
     {
+        free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
         if (diag != NULL && diag->code != SLDiag_NONE) {
@@ -7531,6 +8350,7 @@ int BuildPackageMirProgram(
         }
         return ErrorSimple("out of memory");
     }
+    free(tcFnMap.v);
     free(declMap.v);
     free(topoOrder);
     return SLMirValidateProgram(outProgram, diag);

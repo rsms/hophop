@@ -15,6 +15,10 @@ typedef struct {
     uint32_t sourceLen;
     void* _Nullable arenaMem;
     SLAst ast;
+    void* _Nullable typecheckArenaMem;
+    SLArena typecheckArena;
+    void* _Nullable typecheckCtx;
+    int hasTypecheckCtx;
 } SLParsedFile;
 
 struct SLPackage;

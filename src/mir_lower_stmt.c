@@ -1301,6 +1301,17 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
         return SLMirStmtLowerAppendInst(
             c, SLMirOp_CTX_SET, 0, (uint32_t)exprNode, expr->start, expr->end, NULL);
     }
+    if (expr->kind == SLAst_TYPE_VALUE) {
+        int32_t          typeNode = expr->firstChild;
+        const SLAstNode* type =
+            typeNode >= 0 && (uint32_t)typeNode < c->ast->len ? &c->ast->nodes[typeNode] : NULL;
+        if (type == NULL || type->kind != SLAst_TYPE_NAME) {
+            c->supported = 0;
+            return 0;
+        }
+        return SLMirStmtLowerAppendLoadValueBySlice(
+            c, type->dataStart, type->dataEnd, expr->start, expr->end);
+    }
     if (expr->kind == SLAst_TUPLE_EXPR) {
         elemCount = SLMirStmtLowerAstListCount(c->ast, exprNode);
         if (elemCount == 0u) {

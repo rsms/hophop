@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "../typecheck/internal.h"
 
 SL_API_BEGIN
 typedef enum {
@@ -991,6 +992,153 @@ int EmitStructOrUnionDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int is
     return 0;
 }
 
+static int EmitTemplateInstanceStructOrUnionDecl(
+    SLCBackendC* c, uint32_t tcNamedIndex, uint32_t depth, int forwardOnly) {
+    SLTypeCheckCtx*      tc;
+    const SLTCNamedType* nt;
+    const SLAstNode*     decl;
+    const SLNameMap*     rootMap;
+    char*                cName;
+    uint32_t             savedArgStart;
+    uint16_t             savedArgCount;
+    int32_t              savedDeclNode;
+    uint32_t             savedFuncIndex;
+    int32_t              savedNamedTypeIndex;
+    int32_t              fieldNode;
+    if (c == NULL || c->constEval == NULL) {
+        return 0;
+    }
+    tc = &c->constEval->tc;
+    if (tcNamedIndex >= tc->namedTypeLen) {
+        return -1;
+    }
+    nt = &tc->namedTypes[tcNamedIndex];
+    if (nt->templateRootNamedIndex < 0 || nt->templateArgCount == 0 || nt->typeId < 0
+        || (uint32_t)nt->typeId >= tc->typeLen)
+    {
+        return 0;
+    }
+    {
+        uint16_t argIndex;
+        for (argIndex = 0; argIndex < nt->templateArgCount; argIndex++) {
+            int32_t argType = tc->genericArgTypes[nt->templateArgStart + argIndex];
+            if (argType >= 0 && (uint32_t)argType < tc->typeLen
+                && tc->types[argType].kind == SLTCType_TYPE_PARAM)
+            {
+                return 0;
+            }
+        }
+    }
+    decl = NodeAt(c, nt->declNode);
+    if (decl == NULL || (decl->kind != SLAst_STRUCT && decl->kind != SLAst_UNION)) {
+        return 0;
+    }
+    rootMap = FindTypeDeclMapByNode(c, nt->declNode);
+    if (rootMap == NULL) {
+        return -1;
+    }
+    cName = BuildTemplateNamedTypeCName(c, rootMap->cName, tcNamedIndex);
+    if (cName == NULL) {
+        return -1;
+    }
+    EmitIndent(c, depth);
+    if (forwardOnly) {
+        if (BufAppendCStr(&c->out, "typedef ") != 0
+            || BufAppendCStr(&c->out, decl->kind == SLAst_UNION ? "union " : "struct ") != 0
+            || BufAppendCStr(&c->out, cName) != 0 || BufAppendChar(&c->out, ' ') != 0
+            || BufAppendCStr(&c->out, cName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
+        return 0;
+    }
+    if (BufAppendCStr(&c->out, "typedef ") != 0
+        || BufAppendCStr(&c->out, decl->kind == SLAst_UNION ? "union " : "struct ") != 0
+        || BufAppendCStr(&c->out, cName) != 0 || BufAppendCStr(&c->out, " {\n") != 0)
+    {
+        return -1;
+    }
+    savedArgStart = tc->activeGenericArgStart;
+    savedArgCount = tc->activeGenericArgCount;
+    savedDeclNode = tc->activeGenericDeclNode;
+    savedFuncIndex = c->activeTcFuncIndex;
+    savedNamedTypeIndex = c->activeTcNamedTypeIndex;
+    if (CodegenCPushActiveNamedTypeContext(c, tcNamedIndex) != 0) {
+        return -1;
+    }
+    fieldNode = AstFirstChild(&c->ast, nt->declNode);
+    while (fieldNode >= 0) {
+        const SLAstNode* field = NodeAt(c, fieldNode);
+        int32_t          typeNode;
+        SLTypeRef        fieldType;
+        char*            fieldName;
+        if (field == NULL || field->kind != SLAst_FIELD) {
+            fieldNode = AstNextSibling(&c->ast, fieldNode);
+            continue;
+        }
+        typeNode = AstFirstChild(&c->ast, fieldNode);
+        if (typeNode < 0 || ParseTypeRef(c, typeNode, &fieldType) != 0) {
+            CodegenCPopActiveTypeContext(
+                c,
+                savedFuncIndex,
+                savedNamedTypeIndex,
+                savedArgStart,
+                savedArgCount,
+                savedDeclNode);
+            return -1;
+        }
+        fieldName = DupSlice(c, c->unit->source, field->dataStart, field->dataEnd);
+        if (fieldName == NULL) {
+            CodegenCPopActiveTypeContext(
+                c,
+                savedFuncIndex,
+                savedNamedTypeIndex,
+                savedArgStart,
+                savedArgCount,
+                savedDeclNode);
+            return -1;
+        }
+        EmitIndent(c, depth + 1u);
+        if (EmitTypeRefWithName(c, &fieldType, fieldName) != 0
+            || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            CodegenCPopActiveTypeContext(
+                c,
+                savedFuncIndex,
+                savedNamedTypeIndex,
+                savedArgStart,
+                savedArgCount,
+                savedDeclNode);
+            return -1;
+        }
+        fieldNode = AstNextSibling(&c->ast, fieldNode);
+    }
+    CodegenCPopActiveTypeContext(
+        c, savedFuncIndex, savedNamedTypeIndex, savedArgStart, savedArgCount, savedDeclNode);
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "} ") != 0 || BufAppendCStr(&c->out, cName) != 0
+        || BufAppendCStr(&c->out, ";\n") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int EmitTemplateInstanceTypeDecls(SLCBackendC* c, uint32_t depth, int forwardOnly) {
+    SLTypeCheckCtx* tc;
+    uint32_t        i;
+    if (c == NULL || c->constEval == NULL) {
+        return 0;
+    }
+    tc = &c->constEval->tc;
+    for (i = 0; i < tc->namedTypeLen; i++) {
+        if (EmitTemplateInstanceStructOrUnionDecl(c, i, depth, forwardOnly) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int EmitForwardTypeDecls(SLCBackendC* c) {
     uint32_t i;
     int      emittedAny = 0;
@@ -1001,6 +1149,9 @@ int EmitForwardTypeDecls(SLCBackendC* c) {
         if (n == NULL
             || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION && n->kind != SLAst_ENUM))
         {
+            continue;
+        }
+        if (CodegenCNodeHasTypeParams(c, nodeId)) {
             continue;
         }
         if (!ShouldEmitDeclNode(c, nodeId)) {
@@ -1064,6 +1215,9 @@ int EmitForwardTypeDecls(SLCBackendC* c) {
         {
             continue;
         }
+        if (CodegenCNodeHasTypeParams(c, nodeId)) {
+            continue;
+        }
         if (!ShouldEmitDeclNode(c, nodeId)) {
             continue;
         }
@@ -1115,6 +1269,9 @@ int EmitForwardTypeDecls(SLCBackendC* c) {
             }
         }
         emittedAny = 1;
+    }
+    if (EmitTemplateInstanceTypeDecls(c, 0, 1) != 0) {
+        return -1;
     }
     if (emittedAny && BufAppendChar(&c->out, '\n') != 0) {
         return -1;
@@ -1315,12 +1472,17 @@ int EmitFnDeclOrDef(
     char**           savedActivePackElemNames = c->activePackElemNames;
     SLTypeRef*       savedActivePackElemTypes = c->activePackElemTypes;
     uint32_t         savedActivePackElemCount = c->activePackElemCount;
-    SLTypeRef        fnReturnType;
-    SLTypeRef        fnContextType;
-    SLTypeRef        fnSemanticContextType;
-    SLTypeRef        fnContextParamType;
-    SLTypeRef        fnContextLocalType;
-    int              forceStatic = 0;
+    uint32_t         savedTcFuncIndex = c->activeTcFuncIndex;
+    int32_t          savedTcNamedTypeIndex = c->activeTcNamedTypeIndex;
+    uint32_t  savedTcArgStart = c->constEval != NULL ? c->constEval->tc.activeGenericArgStart : 0;
+    uint16_t  savedTcArgCount = c->constEval != NULL ? c->constEval->tc.activeGenericArgCount : 0;
+    int32_t   savedTcDeclNode = c->constEval != NULL ? c->constEval->tc.activeGenericDeclNode : -1;
+    SLTypeRef fnReturnType;
+    SLTypeRef fnContextType;
+    SLTypeRef fnSemanticContextType;
+    SLTypeRef fnContextParamType;
+    SLTypeRef fnContextLocalType;
+    int       forceStatic = 0;
 
     (void)isPrivate;
 
@@ -1484,7 +1646,9 @@ int EmitFnDeclOrDef(
     c->currentContextType = fnSemanticContextType;
     c->hasCurrentContext = hasFnContext;
     c->currentFunctionIsMain = !hasFnContext && isMainFn;
-    if (BufAppendChar(&c->out, ' ') != 0 || EmitBlockInline(c, bodyNode, depth) != 0) {
+    if ((fnSig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0
+        && CodegenCPushActiveFunctionTypeContext(c, fnSig->tcFuncIndex) != 0)
+    {
         c->currentReturnType = savedReturnType;
         c->hasCurrentReturnType = savedHasReturnType;
         c->currentContextType = savedContextType;
@@ -1496,6 +1660,32 @@ int EmitFnDeclOrDef(
         c->activePackElemCount = savedActivePackElemCount;
         return -1;
     }
+    if (BufAppendChar(&c->out, ' ') != 0 || EmitBlockInline(c, bodyNode, depth) != 0) {
+        CodegenCPopActiveTypeContext(
+            c,
+            savedTcFuncIndex,
+            savedTcNamedTypeIndex,
+            savedTcArgStart,
+            savedTcArgCount,
+            savedTcDeclNode);
+        c->currentReturnType = savedReturnType;
+        c->hasCurrentReturnType = savedHasReturnType;
+        c->currentContextType = savedContextType;
+        c->hasCurrentContext = savedHasContext;
+        c->currentFunctionIsMain = savedCurrentFunctionIsMain;
+        c->activePackParamName = savedActivePackParamName;
+        c->activePackElemNames = savedActivePackElemNames;
+        c->activePackElemTypes = savedActivePackElemTypes;
+        c->activePackElemCount = savedActivePackElemCount;
+        return -1;
+    }
+    CodegenCPopActiveTypeContext(
+        c,
+        savedTcFuncIndex,
+        savedTcNamedTypeIndex,
+        savedTcArgStart,
+        savedTcArgCount,
+        savedTcDeclNode);
     c->currentReturnType = savedReturnType;
     c->hasCurrentReturnType = savedHasReturnType;
     c->currentContextType = savedContextType;
@@ -1861,9 +2051,15 @@ int EmitDeclNode(
     }
 
     switch (n->kind) {
-        case SLAst_STRUCT: return EmitStructOrUnionDecl(c, nodeId, depth, 0);
-        case SLAst_UNION:  return EmitStructOrUnionDecl(c, nodeId, depth, 1);
-        case SLAst_ENUM:   return EmitEnumDecl(c, nodeId, depth);
+        case SLAst_STRUCT:
+            return CodegenCNodeHasTypeParams(c, nodeId)
+                     ? 0
+                     : EmitStructOrUnionDecl(c, nodeId, depth, 0);
+        case SLAst_UNION:
+            return CodegenCNodeHasTypeParams(c, nodeId)
+                     ? 0
+                     : EmitStructOrUnionDecl(c, nodeId, depth, 1);
+        case SLAst_ENUM: return EmitEnumDecl(c, nodeId, depth);
         case SLAst_TYPE_ALIAS:
             return EmitTypeAliasDecl(c, nodeId, depth, declarationOnly, isPrivate);
         case SLAst_FN: {
@@ -1879,6 +2075,9 @@ int EmitDeclNode(
                 importedBeforeOwnOffset = 1;
             }
             if (nSigs == 0) {
+                if (CodegenCNodeHasTypeParams(c, nodeId)) {
+                    return 0;
+                }
                 if (importedBeforeOwnOffset) {
                     return 0;
                 }
@@ -1981,6 +2180,9 @@ int EmitHeader(SLCBackendC* c) {
         return -1;
     }
     if (EmitAnonTypeDecls(c) != 0) {
+        return -1;
+    }
+    if (EmitTemplateInstanceTypeDecls(c, 0, 0) != 0) {
         return -1;
     }
     if (EmitFnTypeAliasDecls(c) != 0) {
@@ -2295,6 +2497,8 @@ int EmitCBackend(
     c.options = options;
     c.diag = diag;
     c.activeCallWithNode = -1;
+    c.activeTcFuncIndex = UINT32_MAX;
+    c.activeTcNamedTypeIndex = -1;
     TypeRefSetInvalid(&c.currentContextType);
 
     if (diag != NULL) {

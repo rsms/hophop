@@ -100,6 +100,7 @@ static int SLEvalStringValueFromArrayBytes(
     SLArena* arena, const SLCTFEValue* inValue, int32_t targetTypeCode, SLCTFEValue* outValue);
 
 static int SLEvalTypeNodeIsAnytype(const SLParsedFile* file, int32_t typeNode);
+static int SLEvalTypeNodeIsTemplateParamName(const SLParsedFile* file, int32_t typeNode);
 
 static int ParseSliceU64(const char* s, uint32_t start, uint32_t end, uint64_t* outValue) {
     uint64_t v = 0;
@@ -676,6 +677,16 @@ typedef struct {
     SLEvalAggregate* _Nullable payload;
 } SLEvalTaggedEnum;
 
+typedef struct {
+    const SLParsedFile* activeTemplateParamFile;
+    uint32_t            activeTemplateParamNameStart;
+    uint32_t            activeTemplateParamNameEnd;
+    const SLParsedFile* activeTemplateTypeFile;
+    int32_t             activeTemplateTypeNode;
+    SLCTFEValue         activeTemplateTypeValue;
+    uint8_t             hasActiveTemplateTypeValue;
+} SLEvalTemplateBindingState;
+
 typedef struct SLEvalReflectedType SLEvalReflectedType;
 struct SLEvalReflectedType {
     uint8_t             kind;
@@ -736,32 +747,49 @@ struct SLEvalProgram {
     uint32_t        callStack[SL_EVAL_CALL_MAX_DEPTH];
     SLEvalContext   rootContext;
     const SLEvalContext* _Nullable currentContext;
-    int exitCalled;
-    int exitCode;
+    const SLParsedFile* activeTemplateParamFile;
+    uint32_t            activeTemplateParamNameStart;
+    uint32_t            activeTemplateParamNameEnd;
+    const SLParsedFile* activeTemplateTypeFile;
+    int32_t             activeTemplateTypeNode;
+    SLCTFEValue         activeTemplateTypeValue;
+    uint8_t             hasActiveTemplateTypeValue;
+    const SLParsedFile* expectedCallExprFile;
+    int32_t             expectedCallExprNode;
+    const SLParsedFile* expectedCallTypeFile;
+    int32_t             expectedCallTypeNode;
+    const SLParsedFile* activeCallExpectedTypeFile;
+    int32_t             activeCallExpectedTypeNode;
+    int                 exitCalled;
+    int                 exitCode;
 };
 
 typedef struct SLEvalMirExecCtx {
-    SLEvalProgram*           p;
-    uint32_t*                evalToMir;
-    uint32_t                 evalToMirLen;
-    uint32_t*                mirToEval;
-    uint32_t                 mirToEvalLen;
-    const SLParsedFile**     sourceFiles;
-    uint32_t                 sourceFileCap;
-    const SLParsedFile*      savedFiles[SL_EVAL_CALL_MAX_DEPTH];
-    uint8_t                  pushedFrames[SL_EVAL_CALL_MAX_DEPTH];
-    struct SLEvalMirExecCtx* savedMirExecCtxs[SL_EVAL_CALL_MAX_DEPTH];
-    uint32_t                 savedFileLen;
-    uint32_t                 rootMirFnIndex;
-    const SLMirProgram*      mirProgram;
-    const SLMirFunction*     mirFunction;
-    const SLCTFEValue*       mirLocals;
-    uint32_t                 mirLocalCount;
-    const SLMirProgram*      savedMirPrograms[SL_EVAL_CALL_MAX_DEPTH];
-    const SLMirFunction*     savedMirFunctions[SL_EVAL_CALL_MAX_DEPTH];
-    const SLCTFEValue*       savedMirLocals[SL_EVAL_CALL_MAX_DEPTH];
-    uint32_t                 savedMirLocalCounts[SL_EVAL_CALL_MAX_DEPTH];
-    uint32_t                 mirFrameDepth;
+    SLEvalProgram*             p;
+    uint32_t*                  evalToMir;
+    uint32_t                   evalToMirLen;
+    uint32_t*                  mirToEval;
+    uint32_t                   mirToEvalLen;
+    const SLParsedFile**       sourceFiles;
+    uint32_t                   sourceFileCap;
+    const SLParsedFile*        savedFiles[SL_EVAL_CALL_MAX_DEPTH];
+    uint8_t                    pushedFrames[SL_EVAL_CALL_MAX_DEPTH];
+    struct SLEvalMirExecCtx*   savedMirExecCtxs[SL_EVAL_CALL_MAX_DEPTH];
+    uint32_t                   savedFileLen;
+    uint32_t                   rootMirFnIndex;
+    const SLMirProgram*        mirProgram;
+    const SLMirFunction*       mirFunction;
+    const SLCTFEValue*         mirLocals;
+    uint32_t                   mirLocalCount;
+    const SLMirProgram*        savedMirPrograms[SL_EVAL_CALL_MAX_DEPTH];
+    const SLMirFunction*       savedMirFunctions[SL_EVAL_CALL_MAX_DEPTH];
+    const SLCTFEValue*         savedMirLocals[SL_EVAL_CALL_MAX_DEPTH];
+    uint32_t                   savedMirLocalCounts[SL_EVAL_CALL_MAX_DEPTH];
+    uint32_t                   mirFrameDepth;
+    SLEvalTemplateBindingState savedTemplateBindings[SL_EVAL_CALL_MAX_DEPTH];
+    uint8_t                    restoresTemplateBinding[SL_EVAL_CALL_MAX_DEPTH];
+    SLEvalTemplateBindingState pendingTemplateBinding;
+    uint8_t                    hasPendingTemplateBinding;
 } SLEvalMirExecCtx;
 
 static void SLEvalValueSetNull(SLCTFEValue* value) {
@@ -1557,6 +1585,10 @@ static int SLEvalCoerceValueToTypeNode(
         return -1;
     }
     if (SLEvalTypeNodeIsAnytype(typeFile, typeNode)) {
+        SLEvalAnnotateUntypedLiteralValue(inOutValue);
+        return 0;
+    }
+    if (SLEvalTypeNodeIsTemplateParamName(typeFile, typeNode)) {
         SLEvalAnnotateUntypedLiteralValue(inOutValue);
         return 0;
     }
@@ -3491,6 +3523,11 @@ static int SLEvalZeroInitTypeNode(
             while (dot < typeNameNode->dataEnd && file->source[dot] != '.') {
                 dot++;
             }
+            if (SLEvalTypeNodeIsTemplateParamName(file, typeNode)) {
+                SLEvalValueSetNull(outValue);
+                *outIsConst = 1;
+                return 0;
+            }
             if (dot < typeNameNode->dataEnd) {
                 enumNode = SLEvalFindNamedEnumDecl(
                     p, file, typeNameNode->dataStart, dot, &enumFile);
@@ -5036,6 +5073,42 @@ static int SLEvalTypeNodeIsAnytype(const SLParsedFile* file, int32_t typeNode) {
         && SliceEqCStr(file->source, n->dataStart, n->dataEnd, "anytype");
 }
 
+static int SLEvalTypeNodeIsTemplateParamName(const SLParsedFile* file, int32_t typeNode) {
+    const SLAstNode* n;
+    int32_t          declNode;
+    if (file == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len) {
+        return 0;
+    }
+    n = &file->ast.nodes[typeNode];
+    if (n->kind != SLAst_TYPE_NAME || n->firstChild >= 0) {
+        return 0;
+    }
+    declNode = ASTFirstChild(&file->ast, file->ast.root);
+    while (declNode >= 0) {
+        const SLAstNode* decl = &file->ast.nodes[declNode];
+        if ((decl->kind == SLAst_FN || decl->kind == SLAst_STRUCT) && decl->start <= n->start
+            && decl->end >= n->end)
+        {
+            int32_t child = ASTFirstChild(&file->ast, declNode);
+            while (child >= 0 && file->ast.nodes[child].kind == SLAst_TYPE_PARAM) {
+                if (SliceEqSlice(
+                        file->source,
+                        n->dataStart,
+                        n->dataEnd,
+                        file->source,
+                        file->ast.nodes[child].dataStart,
+                        file->ast.nodes[child].dataEnd))
+                {
+                    return 1;
+                }
+                child = ASTNextSibling(&file->ast, child);
+            }
+        }
+        declNode = ASTNextSibling(&file->ast, declNode);
+    }
+    return 0;
+}
+
 static int SLEvalValueMatchesExpectedTypeNode(
     const SLEvalProgram* p,
     const SLParsedFile*  typeFile,
@@ -5054,6 +5127,9 @@ static int SLEvalValueMatchesExpectedTypeNode(
         return 0;
     }
     if (SLEvalTypeNodeIsAnytype(typeFile, typeNode)) {
+        return 1;
+    }
+    if (SLEvalTypeNodeIsTemplateParamName(typeFile, typeNode)) {
         return 1;
     }
     if (SLEvalAggregateDistanceToType(p, value, typeFile, typeNode, &structDistance)) {
@@ -5367,6 +5443,203 @@ static int32_t SLEvalFunctionReturnTypeNode(const SLEvalFunction* fn) {
     return -1;
 }
 
+static void SLEvalSaveTemplateBinding(
+    const SLEvalProgram* p, SLEvalTemplateBindingState* outState) {
+    if (p == NULL || outState == NULL) {
+        return;
+    }
+    outState->activeTemplateParamFile = p->activeTemplateParamFile;
+    outState->activeTemplateParamNameStart = p->activeTemplateParamNameStart;
+    outState->activeTemplateParamNameEnd = p->activeTemplateParamNameEnd;
+    outState->activeTemplateTypeFile = p->activeTemplateTypeFile;
+    outState->activeTemplateTypeNode = p->activeTemplateTypeNode;
+    outState->activeTemplateTypeValue = p->activeTemplateTypeValue;
+    outState->hasActiveTemplateTypeValue = p->hasActiveTemplateTypeValue;
+}
+
+static void SLEvalRestoreTemplateBinding(
+    SLEvalProgram* p, const SLEvalTemplateBindingState* state) {
+    if (p == NULL || state == NULL) {
+        return;
+    }
+    p->activeTemplateParamFile = state->activeTemplateParamFile;
+    p->activeTemplateParamNameStart = state->activeTemplateParamNameStart;
+    p->activeTemplateParamNameEnd = state->activeTemplateParamNameEnd;
+    p->activeTemplateTypeFile = state->activeTemplateTypeFile;
+    p->activeTemplateTypeNode = state->activeTemplateTypeNode;
+    p->activeTemplateTypeValue = state->activeTemplateTypeValue;
+    p->hasActiveTemplateTypeValue = state->hasActiveTemplateTypeValue;
+}
+
+static int32_t SLEvalFunctionFirstTypeParamNode(const SLEvalFunction* fn) {
+    const SLAst* ast;
+    int32_t      child;
+    if (fn == NULL || fn->file == NULL) {
+        return -1;
+    }
+    ast = &fn->file->ast;
+    if (fn->fnNode < 0 || (uint32_t)fn->fnNode >= ast->len) {
+        return -1;
+    }
+    child = ASTFirstChild(ast, fn->fnNode);
+    while (child >= 0) {
+        if (ast->nodes[child].kind == SLAst_TYPE_PARAM) {
+            return child;
+        }
+        child = ASTNextSibling(ast, child);
+    }
+    return -1;
+}
+
+static int SLEvalBindActiveTemplateTypeValue(
+    SLEvalProgram*        p,
+    const SLEvalFunction* fn,
+    int32_t               typeParamNode,
+    const SLCTFEValue*    typeValue,
+    const SLParsedFile* _Nullable typeFile,
+    int32_t typeNode) {
+    const SLAstNode* param;
+    if (p == NULL || fn == NULL || fn->file == NULL || typeValue == NULL
+        || typeValue->kind != SLCTFEValue_TYPE || typeParamNode < 0
+        || (uint32_t)typeParamNode >= fn->file->ast.len)
+    {
+        return 0;
+    }
+    param = &fn->file->ast.nodes[typeParamNode];
+    p->activeTemplateParamFile = fn->file;
+    p->activeTemplateParamNameStart = param->dataStart;
+    p->activeTemplateParamNameEnd = param->dataEnd;
+    p->activeTemplateTypeFile = typeFile;
+    p->activeTemplateTypeNode = typeNode;
+    p->activeTemplateTypeValue = *typeValue;
+    p->hasActiveTemplateTypeValue = 1u;
+    return 1;
+}
+
+static int SLEvalBindActiveTemplateForMirCall(
+    SLEvalProgram* p,
+    const SLMirProgram* _Nullable program,
+    const SLMirFunction* _Nullable function,
+    const SLMirInst* _Nullable inst,
+    const SLEvalFunction* fn,
+    const SLCTFEValue* _Nullable args,
+    uint32_t argCount) {
+    int32_t  returnTypeNode;
+    uint32_t typeArgIndex;
+    if (p == NULL || fn == NULL) {
+        return 0;
+    }
+    for (typeArgIndex = 0; typeArgIndex < argCount; typeArgIndex++) {
+        if (args != NULL && args[typeArgIndex].kind == SLCTFEValue_TYPE) {
+            int32_t typeParamNode = SLEvalFunctionFirstTypeParamNode(fn);
+            return SLEvalBindActiveTemplateTypeValue(
+                p, fn, typeParamNode, &args[typeArgIndex], NULL, -1);
+        }
+    }
+    returnTypeNode = SLEvalFunctionReturnTypeNode(fn);
+    if (program != NULL && function != NULL && inst != NULL && returnTypeNode >= 0
+        && SLEvalTypeNodeIsTemplateParamName(fn->file, returnTypeNode)
+        && p->currentMirExecCtx != NULL)
+    {
+        uint32_t instIndex = UINT32_MAX;
+        if (program->insts != NULL && inst >= program->insts
+            && inst < program->insts + program->instLen)
+        {
+            instIndex = (uint32_t)(inst - program->insts);
+        }
+        if (instIndex != UINT32_MAX && instIndex + 1u < program->instLen
+            && program->insts[instIndex + 1u].op == SLMirOp_LOCAL_STORE)
+        {
+            uint32_t localSlot = program->insts[instIndex + 1u].aux;
+            if (localSlot < function->localCount
+                && function->localStart + localSlot < program->localLen)
+            {
+                const SLMirLocal* local = &program->locals[function->localStart + localSlot];
+                if (local->typeRef < program->typeLen
+                    && program->types[local->typeRef].sourceRef
+                           < p->currentMirExecCtx->sourceFileCap)
+                {
+                    const SLParsedFile* typeFile =
+                        p->currentMirExecCtx->sourceFiles[program->types[local->typeRef].sourceRef];
+                    SLCTFEValue typeValue;
+                    memset(&typeValue, 0, sizeof(typeValue));
+                    if (typeFile != NULL
+                        && SLEvalTypeValueFromTypeNode(
+                               p,
+                               typeFile,
+                               (int32_t)program->types[local->typeRef].astNode,
+                               &typeValue)
+                               > 0)
+                    {
+                        return SLEvalBindActiveTemplateTypeValue(
+                            p,
+                            fn,
+                            returnTypeNode,
+                            &typeValue,
+                            typeFile,
+                            (int32_t)program->types[local->typeRef].astNode);
+                    }
+                }
+            }
+        }
+    }
+    if (returnTypeNode >= 0 && SLEvalTypeNodeIsTemplateParamName(fn->file, returnTypeNode)
+        && p->activeCallExpectedTypeFile != NULL && p->activeCallExpectedTypeNode >= 0)
+    {
+        SLCTFEValue typeValue;
+        memset(&typeValue, 0, sizeof(typeValue));
+        if (SLEvalTypeValueFromTypeNode(
+                p, p->activeCallExpectedTypeFile, p->activeCallExpectedTypeNode, &typeValue)
+            > 0)
+        {
+            return SLEvalBindActiveTemplateTypeValue(
+                p,
+                fn,
+                returnTypeNode,
+                &typeValue,
+                p->activeCallExpectedTypeFile,
+                p->activeCallExpectedTypeNode);
+        }
+    }
+    return 0;
+}
+
+static int SLEvalFindExpectedTypeForCallExpr(
+    const SLParsedFile* _Nullable file,
+    int32_t                        callNode,
+    const SLParsedFile* _Nullable* outTypeFile,
+    int32_t*                       outTypeNode) {
+    uint32_t i;
+    if (outTypeFile != NULL) {
+        *outTypeFile = NULL;
+    }
+    if (outTypeNode != NULL) {
+        *outTypeNode = -1;
+    }
+    if (file == NULL || callNode < 0 || outTypeFile == NULL || outTypeNode == NULL) {
+        return 0;
+    }
+    for (i = 0; i < file->ast.len; i++) {
+        const SLAstNode* n = &file->ast.nodes[i];
+        int32_t          typeNode;
+        int32_t          initNode;
+        if (n->kind != SLAst_VAR && n->kind != SLAst_CONST) {
+            continue;
+        }
+        typeNode = ASTFirstChild(&file->ast, (int32_t)i);
+        if (typeNode < 0 || !IsFnReturnTypeNodeKind(file->ast.nodes[typeNode].kind)) {
+            continue;
+        }
+        initNode = ASTNextSibling(&file->ast, typeNode);
+        if (initNode == callNode) {
+            *outTypeFile = file;
+            *outTypeNode = typeNode;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int SLEvalClassifySimpleTypeNode(
     const SLEvalProgram* p,
     const SLParsedFile*  file,
@@ -5550,6 +5823,10 @@ static int SLEvalScoreFunctionCandidate(
             fn, fn->isVariadic && i >= fixedCount ? fixedCount : i);
         if (paramTypeNode < 0) {
             return 0;
+        }
+        if (SLEvalTypeNodeIsTemplateParamName(fn->file, paramTypeNode)) {
+            score += 1;
+            continue;
         }
         if (fn->file->ast.nodes[paramTypeNode].kind == SLAst_TYPE_NAME
             && SliceEqCStr(
@@ -5954,6 +6231,42 @@ static int SLEvalCompareValues(
             *outCmp = lhsTypeCode < rhsTypeCode ? -1 : (lhsTypeCode > rhsTypeCode ? 1 : 0);
             *outHandled = 1;
             return 0;
+        }
+        {
+            SLEvalReflectedType* lhsType = SLEvalValueAsReflectedType(lhsValue);
+            SLEvalReflectedType* rhsType = SLEvalValueAsReflectedType(rhsValue);
+            if (lhsType != NULL && rhsType != NULL) {
+                if (lhsType->kind != rhsType->kind || lhsType->namedKind != rhsType->namedKind
+                    || lhsType->file != rhsType->file || lhsType->nodeId != rhsType->nodeId
+                    || lhsType->arrayLen != rhsType->arrayLen)
+                {
+                    *outCmp = 1;
+                    *outHandled = 1;
+                    return 0;
+                }
+                if (lhsType->kind == SLEvalReflectType_PTR
+                    || lhsType->kind == SLEvalReflectType_SLICE
+                    || lhsType->kind == SLEvalReflectType_ARRAY)
+                {
+                    int elemCmp = 0;
+                    int elemHandled = 0;
+                    if (SLEvalCompareValues(
+                            p, &lhsType->elemType, &rhsType->elemType, &elemCmp, &elemHandled)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                    if (!elemHandled) {
+                        return 0;
+                    }
+                    *outCmp = elemCmp;
+                    *outHandled = 1;
+                    return 0;
+                }
+                *outCmp = 0;
+                *outHandled = 1;
+                return 0;
+            }
         }
     }
     {
@@ -6938,8 +7251,38 @@ static int SLEvalExecExprWithTypeNode(
     if (ast->nodes[exprNode].kind == SLAst_NEW) {
         return SLEvalEvalNewExpr(p, exprNode, outValue, outIsConst);
     }
-    if (SLEvalExecExprCb(p, exprNode, outValue, outIsConst) != 0) {
-        return -1;
+    if (ast->nodes[exprNode].kind == SLAst_CALL && typeFile != NULL && typeNode >= 0) {
+        const SLParsedFile* savedExprFile = p->expectedCallExprFile;
+        int32_t             savedExprNode = p->expectedCallExprNode;
+        const SLParsedFile* savedTypeFile = p->expectedCallTypeFile;
+        int32_t             savedTypeNode = p->expectedCallTypeNode;
+        const SLParsedFile* savedActiveExpectedTypeFile = p->activeCallExpectedTypeFile;
+        int32_t             savedActiveExpectedTypeNode = p->activeCallExpectedTypeNode;
+        p->expectedCallExprFile = p->currentFile;
+        p->expectedCallExprNode = exprNode;
+        p->expectedCallTypeFile = typeFile;
+        p->expectedCallTypeNode = typeNode;
+        p->activeCallExpectedTypeFile = typeFile;
+        p->activeCallExpectedTypeNode = typeNode;
+        if (SLEvalExecExprCb(p, exprNode, outValue, outIsConst) != 0) {
+            p->expectedCallExprFile = savedExprFile;
+            p->expectedCallExprNode = savedExprNode;
+            p->expectedCallTypeFile = savedTypeFile;
+            p->expectedCallTypeNode = savedTypeNode;
+            p->activeCallExpectedTypeFile = savedActiveExpectedTypeFile;
+            p->activeCallExpectedTypeNode = savedActiveExpectedTypeNode;
+            return -1;
+        }
+        p->expectedCallExprFile = savedExprFile;
+        p->expectedCallExprNode = savedExprNode;
+        p->expectedCallTypeFile = savedTypeFile;
+        p->expectedCallTypeNode = savedTypeNode;
+        p->activeCallExpectedTypeFile = savedActiveExpectedTypeFile;
+        p->activeCallExpectedTypeNode = savedActiveExpectedTypeNode;
+    } else {
+        if (SLEvalExecExprCb(p, exprNode, outValue, outIsConst) != 0) {
+            return -1;
+        }
     }
     if (*outIsConst && typeFile != NULL && typeNode >= 0
         && SLEvalCoerceValueToTypeNode(p, typeFile, typeNode, outValue) != 0)
@@ -7891,7 +8234,6 @@ static int SLEvalMirAdjustCallArgs(
     int32_t               argNode;
     int32_t               firstArgNode;
     const SLEvalFunction* calleeFn;
-    (void)program;
     (void)function;
     (void)diag;
     if (p == NULL || inst == NULL || args == NULL || p->currentFile == NULL) {
@@ -7970,6 +8312,24 @@ static int SLEvalMirAdjustCallArgs(
         args + receiverArgCount,
         argCount - receiverArgCount,
         receiverArgCount);
+    if (program != NULL && calleeFunctionIndex < program->funcLen
+        && !p->currentMirExecCtx->hasPendingTemplateBinding)
+    {
+        const SLMirFunction*       calleeMirFn = &program->funcs[calleeFunctionIndex];
+        SLEvalTemplateBindingState savedBinding;
+        uint32_t                   directArgCount = argCount - receiverArgCount;
+        if ((calleeMirFn->flags & SLMirFunctionFlag_VARIADIC) == 0u
+            && directArgCount == calleeMirFn->paramCount)
+        {
+            SLEvalSaveTemplateBinding(p, &savedBinding);
+            if (SLEvalBindActiveTemplateForMirCall(
+                    p, program, function, inst, calleeFn, args + receiverArgCount, directArgCount))
+            {
+                p->currentMirExecCtx->pendingTemplateBinding = savedBinding;
+                p->currentMirExecCtx->hasPendingTemplateBinding = 1u;
+            }
+        }
+    }
     return 0;
 }
 
@@ -8958,6 +9318,7 @@ static int SLEvalMirEnterFunction(
     void* ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag) {
     SLEvalMirExecCtx* c = (SLEvalMirExecCtx*)ctx;
     uint8_t           pushed = 0;
+    uint32_t          frameIndex;
     if (c == NULL || c->p == NULL || sourceRef >= c->sourceFileCap
         || c->savedFileLen >= SL_EVAL_CALL_MAX_DEPTH)
     {
@@ -9002,10 +9363,17 @@ static int SLEvalMirEnterFunction(
             pushed = 1;
         }
     }
+    frameIndex = c->savedFileLen;
     c->savedMirExecCtxs[c->savedFileLen] = c->p->currentMirExecCtx;
     c->p->currentMirExecCtx = c;
     c->savedFiles[c->savedFileLen++] = c->p->currentFile;
     c->pushedFrames[c->savedFileLen - 1u] = pushed;
+    c->restoresTemplateBinding[frameIndex] = 0u;
+    if (c->hasPendingTemplateBinding) {
+        c->savedTemplateBindings[frameIndex] = c->pendingTemplateBinding;
+        c->restoresTemplateBinding[frameIndex] = 1u;
+        c->hasPendingTemplateBinding = 0u;
+    }
     if (c->sourceFiles[sourceRef] != NULL) {
         c->p->currentFile = c->sourceFiles[sourceRef];
     }
@@ -9014,11 +9382,17 @@ static int SLEvalMirEnterFunction(
 
 static void SLEvalMirLeaveFunction(void* ctx) {
     SLEvalMirExecCtx* c = (SLEvalMirExecCtx*)ctx;
+    uint32_t          frameIndex;
     if (c == NULL || c->p == NULL || c->savedFileLen == 0) {
         return;
     }
-    if (c->pushedFrames[c->savedFileLen - 1u] && c->p->callDepth > 0) {
+    frameIndex = c->savedFileLen - 1u;
+    if (c->pushedFrames[frameIndex] && c->p->callDepth > 0) {
         c->p->callDepth--;
+    }
+    if (c->restoresTemplateBinding[frameIndex]) {
+        SLEvalRestoreTemplateBinding(c->p, &c->savedTemplateBindings[frameIndex]);
+        c->restoresTemplateBinding[frameIndex] = 0u;
     }
     c->p->currentMirExecCtx = c->savedMirExecCtxs[c->savedFileLen - 1u];
     c->p->currentFile = c->savedFiles[--c->savedFileLen];
@@ -10581,11 +10955,18 @@ static int SLEvalInvokeFunctionRef(
     if (fn->isBuiltinPackageFn) {
         return 0;
     }
-    if (SLEvalInvokeFunction(
-            p, (int32_t)fnIndex, args, argCount, p->currentContext, outValue, &didReturn)
-        != 0)
     {
-        return -1;
+        SLEvalTemplateBindingState savedBinding;
+        SLEvalSaveTemplateBinding(p, &savedBinding);
+        (void)SLEvalBindActiveTemplateForMirCall(p, NULL, NULL, NULL, fn, args, argCount);
+        if (SLEvalInvokeFunction(
+                p, (int32_t)fnIndex, args, argCount, p->currentContext, outValue, &didReturn)
+            != 0)
+        {
+            SLEvalRestoreTemplateBinding(p, &savedBinding);
+            return -1;
+        }
+        SLEvalRestoreTemplateBinding(p, &savedBinding);
     }
     if (!didReturn) {
         if (fn->hasReturnType) {
@@ -10845,6 +11226,22 @@ static int SLEvalResolveIdent(
         return 0;
     }
     if (SLEvalMirLookupLocalValue(p, nameStart, nameEnd, outValue)) {
+        *outIsConst = 1;
+        return 0;
+    }
+    if (p->activeTemplateParamFile != NULL && p->hasActiveTemplateTypeValue
+        && (p->activeTemplateParamFile == p->currentFile
+            || p->activeTemplateParamFile->source == p->currentFile->source)
+        && SliceEqSlice(
+            p->currentFile->source,
+            nameStart,
+            nameEnd,
+            p->activeTemplateParamFile->source,
+            p->activeTemplateParamNameStart,
+            p->activeTemplateParamNameEnd)
+        && p->activeTemplateTypeValue.kind == SLCTFEValue_TYPE)
+    {
+        *outValue = p->activeTemplateTypeValue;
         *outIsConst = 1;
         return 0;
     }
@@ -11216,11 +11613,29 @@ static int SLEvalResolveCallMir(
         }
     }
     if (argCount == 1 && isTypeOf) {
-        int32_t typeCode = SLEvalTypeCode_INVALID;
+        int32_t          typeCode = SLEvalTypeCode_INVALID;
+        SLEvalAggregate* agg = SLEvalValueAsAggregate(SLEvalValueTargetOrSelf(&args[0]));
         if (args[0].kind == SLCTFEValue_TYPE) {
             SLEvalValueSetSimpleTypeValue(outValue, SLEvalTypeCode_TYPE);
             *outIsConst = 1;
             return 0;
+        }
+        if (agg != NULL && agg->file != NULL && agg->nodeId >= 0
+            && (uint32_t)agg->nodeId < agg->file->ast.len)
+        {
+            uint8_t namedKind = 0;
+            switch (agg->file->ast.nodes[agg->nodeId].kind) {
+                case SLAst_STRUCT: namedKind = SLEvalTypeKind_STRUCT; break;
+                case SLAst_UNION:  namedKind = SLEvalTypeKind_UNION; break;
+                case SLAst_ENUM:   namedKind = SLEvalTypeKind_ENUM; break;
+                default:           break;
+            }
+            if (namedKind != 0
+                && SLEvalMakeNamedTypeValue(p, agg->file, agg->nodeId, namedKind, outValue) > 0)
+            {
+                *outIsConst = 1;
+                return 0;
+            }
         }
         if (SLEvalTypeCodeFromValue(&args[0], &typeCode)) {
             SLEvalValueSetSimpleTypeValue(outValue, typeCode);
@@ -11356,8 +11771,44 @@ static int SLEvalResolveCallMir(
             return -1;
         }
         if (calleeIsConst && SLEvalValueIsInvokableFunctionRef(&calleeValue)) {
-            int invoked = SLEvalInvokeFunctionRef(
+            const SLParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
+            int32_t             savedExpectedTypeNode = p->activeCallExpectedTypeNode;
+            int                 invoked;
+            if (program != NULL && function != NULL && inst != NULL
+                && p->activeCallExpectedTypeFile == NULL && p->currentMirExecCtx != NULL)
+            {
+                uint32_t instIndex = UINT32_MAX;
+                if (program->insts != NULL && inst >= program->insts
+                    && inst < program->insts + program->instLen)
+                {
+                    instIndex = (uint32_t)(inst - program->insts);
+                }
+                if (instIndex != UINT32_MAX && instIndex + 1u < program->instLen
+                    && program->insts[instIndex + 1u].op == SLMirOp_LOCAL_STORE)
+                {
+                    uint32_t localSlot = program->insts[instIndex + 1u].aux;
+                    if (localSlot < function->localCount
+                        && function->localStart + localSlot < program->localLen)
+                    {
+                        const SLMirLocal* local =
+                            &program->locals[function->localStart + localSlot];
+                        if (local->typeRef < program->typeLen
+                            && program->types[local->typeRef].sourceRef
+                                   < p->currentMirExecCtx->sourceFileCap)
+                        {
+                            p->activeCallExpectedTypeFile =
+                                p->currentMirExecCtx
+                                    ->sourceFiles[program->types[local->typeRef].sourceRef];
+                            p->activeCallExpectedTypeNode =
+                                (int32_t)program->types[local->typeRef].astNode;
+                        }
+                    }
+                }
+            }
+            invoked = SLEvalInvokeFunctionRef(
                 p, &calleeValue, args, argCount, outValue, outIsConst);
+            p->activeCallExpectedTypeFile = savedExpectedTypeFile;
+            p->activeCallExpectedTypeNode = savedExpectedTypeNode;
             if (invoked < 0) {
                 return -1;
             }
@@ -11431,10 +11882,18 @@ static int SLEvalResolveCallMir(
         }
     }
 
-    if (SLEvalInvokeFunction(p, fnIndex, args, argCount, p->currentContext, outValue, &didReturn)
-        != 0)
     {
-        return -1;
+        SLEvalTemplateBindingState savedBinding;
+        SLEvalSaveTemplateBinding(p, &savedBinding);
+        (void)SLEvalBindActiveTemplateForMirCall(p, program, function, inst, fn, args, argCount);
+        if (SLEvalInvokeFunction(
+                p, fnIndex, args, argCount, p->currentContext, outValue, &didReturn)
+            != 0)
+        {
+            SLEvalRestoreTemplateBinding(p, &savedBinding);
+            return -1;
+        }
+        SLEvalRestoreTemplateBinding(p, &savedBinding);
     }
     if (!didReturn) {
         if (fn->hasReturnType) {
@@ -12220,6 +12679,27 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                 return 0;
             }
             SLEvalAnnotateValueTypeFromExpr(p->currentFile, ast, argExprNode, &argValue);
+            {
+                SLEvalAggregate* agg = SLEvalValueAsAggregate(SLEvalValueTargetOrSelf(&argValue));
+                if (agg != NULL && agg->file != NULL && agg->nodeId >= 0
+                    && (uint32_t)agg->nodeId < agg->file->ast.len)
+                {
+                    uint8_t namedKind = 0;
+                    switch (agg->file->ast.nodes[agg->nodeId].kind) {
+                        case SLAst_STRUCT: namedKind = SLEvalTypeKind_STRUCT; break;
+                        case SLAst_UNION:  namedKind = SLEvalTypeKind_UNION; break;
+                        case SLAst_ENUM:   namedKind = SLEvalTypeKind_ENUM; break;
+                        default:           break;
+                    }
+                    if (namedKind != 0
+                        && SLEvalMakeNamedTypeValue(p, agg->file, agg->nodeId, namedKind, outValue)
+                               > 0)
+                    {
+                        *outIsConst = 1;
+                        return 0;
+                    }
+                }
+            }
             if (!SLEvalTypeCodeFromValue(&argValue, &typeCode)) {
                 *outIsConst = 0;
                 return 0;
@@ -12246,8 +12726,30 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                     return collectRc < 0 ? -1 : 0;
                 }
                 {
-                    int invoked = SLEvalInvokeFunctionRef(
+                    const SLParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
+                    int32_t             savedExpectedTypeNode = p->activeCallExpectedTypeNode;
+                    const SLParsedFile* inferredExpectedTypeFile = NULL;
+                    int32_t             inferredExpectedTypeNode = -1;
+                    int                 invoked;
+                    if (p->expectedCallExprFile == p->currentFile
+                        && p->expectedCallExprNode == exprNode)
+                    {
+                        p->activeCallExpectedTypeFile = p->expectedCallTypeFile;
+                        p->activeCallExpectedTypeNode = p->expectedCallTypeNode;
+                    } else if (
+                        SLEvalFindExpectedTypeForCallExpr(
+                            p->currentFile,
+                            exprNode,
+                            &inferredExpectedTypeFile,
+                            &inferredExpectedTypeNode))
+                    {
+                        p->activeCallExpectedTypeFile = inferredExpectedTypeFile;
+                        p->activeCallExpectedTypeNode = inferredExpectedTypeNode;
+                    }
+                    invoked = SLEvalInvokeFunctionRef(
                         p, &calleeValue, args, argCount, outValue, outIsConst);
+                    p->activeCallExpectedTypeFile = savedExpectedTypeFile;
+                    p->activeCallExpectedTypeNode = savedExpectedTypeNode;
                     if (invoked < 0) {
                         return -1;
                     }
@@ -12422,18 +12924,32 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                         return 0;
                     }
 
-                    if (SLEvalResolveCall(
-                            p,
-                            callee->dataStart,
-                            callee->dataEnd,
-                            args,
-                            extraArgCount + 1u,
-                            outValue,
-                            outIsConst,
-                            NULL)
-                        != 0)
                     {
-                        return -1;
+                        const SLParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
+                        int32_t             savedExpectedTypeNode = p->activeCallExpectedTypeNode;
+                        if (p->expectedCallExprFile == p->currentFile
+                            && p->expectedCallExprNode == exprNode)
+                        {
+                            p->activeCallExpectedTypeFile = p->expectedCallTypeFile;
+                            p->activeCallExpectedTypeNode = p->expectedCallTypeNode;
+                        }
+                        if (SLEvalResolveCall(
+                                p,
+                                callee->dataStart,
+                                callee->dataEnd,
+                                args,
+                                extraArgCount + 1u,
+                                outValue,
+                                outIsConst,
+                                NULL)
+                            != 0)
+                        {
+                            p->activeCallExpectedTypeFile = savedExpectedTypeFile;
+                            p->activeCallExpectedTypeNode = savedExpectedTypeNode;
+                            return -1;
+                        }
+                        p->activeCallExpectedTypeFile = savedExpectedTypeFile;
+                        p->activeCallExpectedTypeNode = savedExpectedTypeNode;
                     }
                     if (!*outIsConst && p->currentExecCtx != NULL
                         && p->currentExecCtx->nonConstReason == NULL)
@@ -12632,8 +13148,30 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                     return -1;
                 }
                 if (calleeIsConst && SLEvalValueIsInvokableFunctionRef(&calleeValue)) {
-                    int invoked = SLEvalInvokeFunctionRef(
+                    const SLParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
+                    int32_t             savedExpectedTypeNode = p->activeCallExpectedTypeNode;
+                    const SLParsedFile* inferredExpectedTypeFile = NULL;
+                    int32_t             inferredExpectedTypeNode = -1;
+                    int                 invoked;
+                    if (p->expectedCallExprFile == p->currentFile
+                        && p->expectedCallExprNode == exprNode)
+                    {
+                        p->activeCallExpectedTypeFile = p->expectedCallTypeFile;
+                        p->activeCallExpectedTypeNode = p->expectedCallTypeNode;
+                    } else if (
+                        SLEvalFindExpectedTypeForCallExpr(
+                            p->currentFile,
+                            exprNode,
+                            &inferredExpectedTypeFile,
+                            &inferredExpectedTypeNode))
+                    {
+                        p->activeCallExpectedTypeFile = inferredExpectedTypeFile;
+                        p->activeCallExpectedTypeNode = inferredExpectedTypeNode;
+                    }
+                    invoked = SLEvalInvokeFunctionRef(
                         p, &calleeValue, args, argCount, outValue, outIsConst);
+                    p->activeCallExpectedTypeFile = savedExpectedTypeFile;
+                    p->activeCallExpectedTypeNode = savedExpectedTypeNode;
                     if (invoked < 0) {
                         return -1;
                     }
@@ -12647,18 +13185,32 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                     p->currentExecCtx->nonConstEnd = savedEnd;
                 }
             }
-            if (SLEvalResolveCall(
-                    p,
-                    ast->nodes[calleeNode].dataStart,
-                    ast->nodes[calleeNode].dataEnd,
-                    args,
-                    argCount,
-                    outValue,
-                    outIsConst,
-                    NULL)
-                != 0)
             {
-                return -1;
+                const SLParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
+                int32_t             savedExpectedTypeNode = p->activeCallExpectedTypeNode;
+                if (p->expectedCallExprFile == p->currentFile
+                    && p->expectedCallExprNode == exprNode)
+                {
+                    p->activeCallExpectedTypeFile = p->expectedCallTypeFile;
+                    p->activeCallExpectedTypeNode = p->expectedCallTypeNode;
+                }
+                if (SLEvalResolveCall(
+                        p,
+                        ast->nodes[calleeNode].dataStart,
+                        ast->nodes[calleeNode].dataEnd,
+                        args,
+                        argCount,
+                        outValue,
+                        outIsConst,
+                        NULL)
+                    != 0)
+                {
+                    p->activeCallExpectedTypeFile = savedExpectedTypeFile;
+                    p->activeCallExpectedTypeNode = savedExpectedTypeNode;
+                    return -1;
+                }
+                p->activeCallExpectedTypeFile = savedExpectedTypeFile;
+                p->activeCallExpectedTypeNode = savedExpectedTypeNode;
             }
             if (!*outIsConst && p->currentExecCtx != NULL
                 && p->currentExecCtx->nonConstReason == NULL)

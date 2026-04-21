@@ -27,12 +27,12 @@ functions
   #0 name="mk" [89,91] source=#0 type=#0 params=0 temps=0 locals=#0+0 insts=#0+8
     locals
     insts
-      0: AGG_ZERO aux=1 span=[109,127]
+      0: AGG_ZERO span=[109,127]
       1: PUSH_CONST const=#0 span=[118,119]
       2: AGG_SET span=[115,116]
       3: PUSH_CONST const=#1 span=[124,125]
       4: AGG_SET aux=1 span=[121,122]
-      5: COERCE type=#1 span=[109,127]
+      5: COERCE type=#0 span=[109,127]
       6: RETURN span=[102,127]
       7: RETURN_VOID span=[99,129]
   #1 name="main" [134,138] source=#0 type=#4294967295 params=0 temps=0 locals=#0+1 insts=#8+8

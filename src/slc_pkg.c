@@ -22,6 +22,7 @@
 #include "mir_lower_pkg.h"
 #include "mir_lower_stmt.h"
 #include "slc_internal.h"
+#include "typecheck/internal.h"
 
 SL_API_BEGIN
 
@@ -1052,6 +1053,7 @@ static int AddPackageFile(
         return -1;
     }
     f = &pkg->files[pkg->fileLen++];
+    memset(f, 0, sizeof(*f));
     f->path = SLCDupCStr(filePath);
     f->source = source;
     f->sourceLen = sourceLen;
@@ -4679,6 +4681,50 @@ static int CheckLoadedPackage(SLPackageLoader* loader, SLPackage* pkg, int suppr
     }
     CombinedSourceMapFree(&sourceMap);
     free(source);
+    if (pkg->fileLen == 1 && pkg->files[0].source != NULL) {
+        uint64_t           tcArenaCap64;
+        uint32_t           tcArenaCap;
+        SLTypeCheckCtx*    tcCtx;
+        SLDiag             tcDiag = { 0 };
+        SLTypeCheckOptions tcOptions = { 0 };
+        tcArenaCap64 = (uint64_t)pkg->files[0].sourceLen * 256u + 1024u * 1024u;
+        if (tcArenaCap64 > UINT32_MAX) {
+            return ErrorSimple("typecheck arena too large");
+        }
+        tcArenaCap = (uint32_t)tcArenaCap64;
+        pkg->files[0].typecheckArenaMem = malloc(tcArenaCap);
+        if (pkg->files[0].typecheckArenaMem == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        SLArenaInit(&pkg->files[0].typecheckArena, pkg->files[0].typecheckArenaMem, tcArenaCap);
+        SLArenaSetAllocator(
+            &pkg->files[0].typecheckArena, NULL, CodegenArenaGrow, CodegenArenaFree);
+        tcCtx = (SLTypeCheckCtx*)SLArenaAlloc(
+            &pkg->files[0].typecheckArena,
+            sizeof(SLTypeCheckCtx),
+            (uint32_t)_Alignof(SLTypeCheckCtx));
+        if (tcCtx == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        if (SLTCBuildCheckedContext(
+                &pkg->files[0].typecheckArena,
+                &pkg->files[0].ast,
+                (SLStrView){ pkg->files[0].source, pkg->files[0].sourceLen },
+                &tcOptions,
+                &tcDiag,
+                tcCtx)
+            != 0)
+        {
+            SLArenaDispose(&pkg->files[0].typecheckArena);
+            free(pkg->files[0].typecheckArenaMem);
+            pkg->files[0].typecheckArenaMem = NULL;
+            pkg->files[0].typecheckCtx = NULL;
+            pkg->files[0].hasTypecheckCtx = 0;
+        } else {
+            pkg->files[0].typecheckCtx = tcCtx;
+            pkg->files[0].hasTypecheckCtx = 1;
+        }
+    }
     pkg->checked = 1;
     return 0;
 }
@@ -4691,6 +4737,10 @@ static void FreePackage(SLPackage* pkg) {
         free(pkg->files[i].path);
         free(pkg->files[i].source);
         free(pkg->files[i].arenaMem);
+        if (pkg->files[i].typecheckArenaMem != NULL) {
+            SLArenaDispose(&pkg->files[i].typecheckArena);
+        }
+        free(pkg->files[i].typecheckArenaMem);
     }
     free(pkg->files);
     for (i = 0; i < pkg->importLen; i++) {

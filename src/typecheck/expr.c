@@ -2062,6 +2062,9 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
                 if (SLTCValidateCallContextRequirements(c, c->funcs[resolvedFn].contextType) != 0) {
                     return -1;
                 }
+                if (SLTCRecordCallTarget(c, nodeId, resolvedFn) != 0) {
+                    return -1;
+                }
                 SLTCMarkFunctionUsed(c, resolvedFn);
                 *outType =
                     dependentStatus == 1 ? dependentReturnType : c->funcs[resolvedFn].returnType;
@@ -2374,6 +2377,9 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
                 if (SLTCValidateCallContextRequirements(c, c->funcs[resolvedFn].contextType) != 0) {
                     return -1;
                 }
+                if (SLTCRecordCallTarget(c, nodeId, resolvedFn) != 0) {
+                    return -1;
+                }
                 SLTCMarkFunctionUsed(c, resolvedFn);
                 *outType =
                     dependentStatus == 1 ? dependentReturnType : c->funcs[resolvedFn].returnType;
@@ -2443,6 +2449,9 @@ typed_call_from_callee_type: {
     {
         const SLTCFunction* fn = &c->funcs[c->types[calleeType].funcIndex];
         fnIndexForDependent = c->types[calleeType].funcIndex;
+        if (SLTCRecordCallTarget(c, nodeId, fnIndexForDependent) != 0) {
+            return -1;
+        }
         if (fn->paramCount == fnParamCount
             && (((fn->flags & SLTCFunctionFlag_VARIADIC) != 0) == (fnIsVariadic != 0)))
         {

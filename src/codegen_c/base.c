@@ -1373,10 +1373,168 @@ const SLNameMap* _Nullable FindNameByCName(const SLCBackendC* c, const char* cNa
     return NULL;
 }
 
+static int32_t CodegenCFindNamedTypeIndexByTypeId(const SLTypeCheckCtx* tc, int32_t typeId) {
+    uint32_t i;
+    if (tc == NULL || typeId < 0) {
+        return -1;
+    }
+    for (i = 0; i < tc->namedTypeLen; i++) {
+        if (tc->namedTypes[i].typeId == typeId) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static int CodegenCTypeIdContainsTypeParam(const SLTypeCheckCtx* tc, int32_t typeId) {
+    int32_t  namedIndex;
+    uint16_t i;
+    if (tc == NULL || typeId < 0 || (uint32_t)typeId >= tc->typeLen) {
+        return 0;
+    }
+    if (tc->types[typeId].kind == SLTCType_TYPE_PARAM) {
+        return 1;
+    }
+    namedIndex = CodegenCFindNamedTypeIndexByTypeId(tc, typeId);
+    if (namedIndex >= 0) {
+        const SLTCNamedType* nt = &tc->namedTypes[(uint32_t)namedIndex];
+        for (i = 0; i < nt->templateArgCount; i++) {
+            if (CodegenCTypeIdContainsTypeParam(tc, tc->genericArgTypes[nt->templateArgStart + i]))
+            {
+                return 1;
+            }
+        }
+    }
+    if (tc->types[typeId].baseType >= 0) {
+        return CodegenCTypeIdContainsTypeParam(tc, tc->types[typeId].baseType);
+    }
+    return 0;
+}
+
+int CodegenCNodeHasTypeParams(const SLCBackendC* c, int32_t nodeId) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    int32_t          child;
+    if (n == NULL || !IsDeclKind(n->kind)) {
+        return 0;
+    }
+    child = AstFirstChild(&c->ast, nodeId);
+    while (child >= 0) {
+        const SLAstNode* ch = NodeAt(c, child);
+        if (ch != NULL && ch->kind == SLAst_TYPE_PARAM) {
+            return 1;
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    return 0;
+}
+
+int CodegenCPushActiveFunctionTypeContext(SLCBackendC* c, uint32_t tcFuncIndex) {
+    SLTypeCheckCtx*     tc;
+    const SLTCFunction* fn;
+    if (c == NULL || c->constEval == NULL || tcFuncIndex == UINT32_MAX) {
+        return 0;
+    }
+    tc = &c->constEval->tc;
+    if (tcFuncIndex >= tc->funcLen) {
+        return -1;
+    }
+    fn = &tc->funcs[tcFuncIndex];
+    c->activeTcFuncIndex = tcFuncIndex;
+    c->activeTcNamedTypeIndex = -1;
+    tc->activeGenericArgStart = fn->templateArgStart;
+    tc->activeGenericArgCount = fn->templateArgCount;
+    tc->activeGenericDeclNode = fn->templateArgCount > 0 ? fn->declNode : -1;
+    return 0;
+}
+
+int CodegenCPushActiveNamedTypeContext(SLCBackendC* c, uint32_t tcNamedIndex) {
+    SLTypeCheckCtx*      tc;
+    const SLTCNamedType* nt;
+    if (c == NULL || c->constEval == NULL) {
+        return 0;
+    }
+    tc = &c->constEval->tc;
+    if (tcNamedIndex >= tc->namedTypeLen) {
+        return -1;
+    }
+    nt = &tc->namedTypes[tcNamedIndex];
+    c->activeTcFuncIndex = UINT32_MAX;
+    c->activeTcNamedTypeIndex = (int32_t)tcNamedIndex;
+    tc->activeGenericArgStart = nt->templateArgStart;
+    tc->activeGenericArgCount = nt->templateArgCount;
+    tc->activeGenericDeclNode = nt->templateArgCount > 0 ? nt->declNode : -1;
+    return 0;
+}
+
+void CodegenCPopActiveTypeContext(
+    SLCBackendC* c,
+    uint32_t     savedFuncIndex,
+    int32_t      savedNamedTypeIndex,
+    uint32_t     savedArgStart,
+    uint16_t     savedArgCount,
+    int32_t      savedDeclNode) {
+    if (c == NULL) {
+        return;
+    }
+    c->activeTcFuncIndex = savedFuncIndex;
+    c->activeTcNamedTypeIndex = savedNamedTypeIndex;
+    if (c->constEval != NULL) {
+        SLTypeCheckCtx* tc = &c->constEval->tc;
+        tc->activeGenericArgStart = savedArgStart;
+        tc->activeGenericArgCount = savedArgCount;
+        tc->activeGenericDeclNode = savedDeclNode;
+    }
+}
+
 int ResolveTypeValueNameExprTypeRef(
     SLCBackendC* c, uint32_t start, uint32_t end, SLTypeRef* outTypeRef) {
     const SLNameMap* map;
     const char*      resolvedTypeName;
+    if (c != NULL && c->constEval != NULL
+        && (c->activeTcFuncIndex != UINT32_MAX || c->activeTcNamedTypeIndex >= 0))
+    {
+        SLTypeCheckCtx* tc = &c->constEval->tc;
+        uint32_t        paramArgStart = tc->activeGenericArgStart;
+        uint32_t        concreteArgStart = tc->activeGenericArgStart;
+        uint16_t        i;
+        uint16_t        argCount = tc->activeGenericArgCount;
+        if (c->activeTcFuncIndex != UINT32_MAX) {
+            const SLTCFunction* fn = &tc->funcs[c->activeTcFuncIndex];
+            concreteArgStart = fn->templateArgStart;
+            argCount = fn->templateArgCount;
+            if (fn->templateRootFuncIndex >= 0) {
+                paramArgStart = tc->funcs[(uint32_t)fn->templateRootFuncIndex].templateArgStart;
+            }
+        } else if (c->activeTcNamedTypeIndex >= 0) {
+            const SLTCNamedType* nt = &tc->namedTypes[(uint32_t)c->activeTcNamedTypeIndex];
+            concreteArgStart = nt->templateArgStart;
+            argCount = nt->templateArgCount;
+            if (nt->templateRootNamedIndex >= 0) {
+                paramArgStart =
+                    tc->namedTypes[(uint32_t)nt->templateRootNamedIndex].templateArgStart;
+            }
+        }
+        for (i = 0; i < argCount; i++) {
+            int32_t paramTypeId = tc->genericArgTypes[paramArgStart + i];
+            if (paramTypeId >= 0 && (uint32_t)paramTypeId < tc->typeLen
+                && tc->types[paramTypeId].kind == SLTCType_TYPE_PARAM && end >= start
+                && tc->types[paramTypeId].nameEnd >= tc->types[paramTypeId].nameStart
+                && end - start == tc->types[paramTypeId].nameEnd - tc->types[paramTypeId].nameStart
+                && memcmp(
+                       c->unit->source + start,
+                       c->unit->source + tc->types[paramTypeId].nameStart,
+                       end - start)
+                       == 0)
+            {
+                int32_t concreteTypeId = tc->genericArgTypes[concreteArgStart + i];
+                if (ParseTypeRefFromConstEvalTypeId(c, concreteTypeId, outTypeRef) == 0
+                    && outTypeRef->valid)
+                {
+                    return 1;
+                }
+            }
+        }
+    }
     if (SliceEq(c->unit->source, start, end, "bool")) {
         TypeRefSetScalar(outTypeRef, "__sl_bool");
         return 1;
@@ -1654,7 +1812,17 @@ int ResolveReflectedTypeValueExprTypeRef(SLCBackendC* c, int32_t exprNode, SLTyp
         return ResolveTypeValueNameExprTypeRef(c, n->dataStart, n->dataEnd, outTypeRef);
     }
     if (n->kind == SLAst_TYPE_NAME) {
+        if (AstFirstChild(&c->ast, exprNode) >= 0) {
+            return ParseTypeRef(c, exprNode, outTypeRef) == 0 && outTypeRef->valid;
+        }
         return ResolveTypeValueNameExprTypeRef(c, n->dataStart, n->dataEnd, outTypeRef);
+    }
+    if (n->kind == SLAst_TYPE_VALUE) {
+        int32_t typeNode = AstFirstChild(&c->ast, exprNode);
+        if (typeNode < 0) {
+            return 0;
+        }
+        return ParseTypeRef(c, typeNode, outTypeRef) == 0 && outTypeRef->valid;
     }
     if (n->kind == SLAst_CALL) {
         int32_t          calleeNode = AstFirstChild(&c->ast, exprNode);
@@ -2076,6 +2244,26 @@ int ParseTypeRefFromConstEvalTypeId(SLCBackendC* c, int32_t typeId, SLTypeRef* o
             uint32_t         nameEnd = info.nameEnd;
             const SLAstNode* decl = NULL;
             const char*      name;
+            int32_t namedIndex = CodegenCFindNamedTypeIndexByTypeId(&c->constEval->tc, typeId);
+            if (namedIndex >= 0) {
+                const SLTCNamedType* nt = &c->constEval->tc.namedTypes[(uint32_t)namedIndex];
+                if (nt->templateRootNamedIndex >= 0 && nt->templateArgCount > 0) {
+                    const SLNameMap* map;
+                    char*            cName;
+                    map = FindTypeDeclMapByNode(c, nt->declNode);
+                    if (map == NULL) {
+                        TypeRefSetInvalid(outType);
+                        return -1;
+                    }
+                    cName = BuildTemplateNamedTypeCName(c, map->cName, (uint32_t)namedIndex);
+                    if (cName == NULL) {
+                        TypeRefSetInvalid(outType);
+                        return -1;
+                    }
+                    TypeRefSetScalar(outType, cName);
+                    return 0;
+                }
+            }
             if (nameEnd <= nameStart && info.declNode >= 0) {
                 decl = NodeAt(c, info.declNode);
                 if (decl != NULL && decl->dataEnd > decl->dataStart) {
@@ -2391,6 +2579,87 @@ const char* _Nullable TupleFieldName(SLCBackendC* c, uint32_t index) {
     return BufFinish(&b);
 }
 
+static int ParseTypeRefFromActiveTypecheck(
+    SLCBackendC* c, int32_t nodeId, SLTypeRef* outType, int* outHandled) {
+    int32_t          typeId = -1;
+    const SLAstNode* n;
+    if (outHandled != NULL) {
+        *outHandled = 0;
+    }
+    if (c == NULL || outType == NULL || outHandled == NULL || c->constEval == NULL || nodeId < 0
+        || (uint32_t)nodeId >= c->ast.len)
+    {
+        return 0;
+    }
+    if (c->activeTcFuncIndex == UINT32_MAX && c->activeTcNamedTypeIndex < 0
+        && AstFirstChild(&c->ast, nodeId) < 0)
+    {
+        return 0;
+    }
+    n = NodeAt(c, nodeId);
+    if (n != NULL && n->kind == SLAst_TYPE_NAME && AstFirstChild(&c->ast, nodeId) < 0
+        && (c->activeTcFuncIndex != UINT32_MAX || c->activeTcNamedTypeIndex >= 0))
+    {
+        SLTypeCheckCtx* tc = &c->constEval->tc;
+        uint32_t        paramArgStart = tc->activeGenericArgStart;
+        uint32_t        concreteArgStart = tc->activeGenericArgStart;
+        uint16_t        argCount = tc->activeGenericArgCount;
+        uint16_t        i;
+        if (c->activeTcFuncIndex != UINT32_MAX) {
+            const SLTCFunction* fn = &tc->funcs[c->activeTcFuncIndex];
+            concreteArgStart = fn->templateArgStart;
+            argCount = fn->templateArgCount;
+            if (fn->templateRootFuncIndex >= 0) {
+                paramArgStart = tc->funcs[(uint32_t)fn->templateRootFuncIndex].templateArgStart;
+            }
+        } else {
+            const SLTCNamedType* nt = &tc->namedTypes[(uint32_t)c->activeTcNamedTypeIndex];
+            concreteArgStart = nt->templateArgStart;
+            argCount = nt->templateArgCount;
+            if (nt->templateRootNamedIndex >= 0) {
+                paramArgStart =
+                    tc->namedTypes[(uint32_t)nt->templateRootNamedIndex].templateArgStart;
+            }
+        }
+        for (i = 0; i < argCount; i++) {
+            int32_t paramTypeId = tc->genericArgTypes[paramArgStart + i];
+            if (paramTypeId >= 0 && (uint32_t)paramTypeId < tc->typeLen
+                && tc->types[paramTypeId].kind == SLTCType_TYPE_PARAM && n->dataEnd >= n->dataStart
+                && tc->types[paramTypeId].nameEnd >= tc->types[paramTypeId].nameStart
+                && n->dataEnd - n->dataStart
+                       == tc->types[paramTypeId].nameEnd - tc->types[paramTypeId].nameStart
+                && memcmp(
+                       c->unit->source + n->dataStart,
+                       c->unit->source + tc->types[paramTypeId].nameStart,
+                       n->dataEnd - n->dataStart)
+                       == 0)
+            {
+                int32_t concreteTypeId = tc->genericArgTypes[concreteArgStart + i];
+                if (ParseTypeRefFromConstEvalTypeId(c, concreteTypeId, outType) != 0
+                    || !outType->valid)
+                {
+                    return -1;
+                }
+                *outHandled = 1;
+                return 0;
+            }
+        }
+    }
+    if (SLTCResolveTypeNode(&c->constEval->tc, nodeId, &typeId) != 0) {
+        return 0;
+    }
+    if (typeId < 0 || (uint32_t)typeId >= c->constEval->tc.typeLen
+        || c->constEval->tc.types[typeId].kind == SLTCType_TYPE_PARAM)
+    {
+        return 0;
+    }
+    if (ParseTypeRefFromConstEvalTypeId(c, typeId, outType) != 0 || !outType->valid) {
+        return -1;
+    }
+    *outHandled = 1;
+    return 0;
+}
+
 int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
     const SLAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
@@ -2400,6 +2669,14 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
     switch (n->kind) {
         case SLAst_TYPE_NAME: {
             SLTypeRef reflectedType;
+            int       handled = 0;
+            if (ParseTypeRefFromActiveTypecheck(c, nodeId, outType, &handled) != 0) {
+                return -1;
+            }
+            if (handled) {
+                NormalizeCoreRuntimeTypeName(outType);
+                return 0;
+            }
             if (SliceEq(c->unit->source, n->dataStart, n->dataEnd, "rawptr")) {
                 TypeRefSetScalar(outType, "void");
                 outType->ptrDepth = 1;
@@ -3659,6 +3936,9 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
     }
 
     if (n->kind == SLAst_FN) {
+        if (CodegenCNodeHasTypeParams(c, nodeId)) {
+            return 0;
+        }
         int32_t    child = AstFirstChild(&c->ast, nodeId);
         SLTypeRef  returnType;
         SLTypeRef* paramTypes = NULL;
@@ -3804,6 +4084,9 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
     }
 
     if (n->kind == SLAst_STRUCT || n->kind == SLAst_UNION) {
+        if (CodegenCNodeHasTypeParams(c, nodeId)) {
+            return 0;
+        }
         int32_t child = AstFirstChild(&c->ast, nodeId);
         while (child >= 0) {
             const SLAstNode* field = NodeAt(c, child);
@@ -3871,6 +4154,18 @@ char* _Nullable BuildTemplateInstanceCName(
     return BufFinish(&b);
 }
 
+char* _Nullable BuildTemplateNamedTypeCName(
+    SLCBackendC* c, const char* baseCName, uint32_t tcNamedIndex) {
+    SLBuf b = { 0 };
+    b.arena = &c->arena;
+    if (BufAppendCStr(&b, baseCName) != 0 || BufAppendCStr(&b, "__tn") != 0
+        || BufAppendU32(&b, tcNamedIndex) != 0)
+    {
+        return NULL;
+    }
+    return BufFinish(&b);
+}
+
 char* _Nullable DupParamNameFromSpanOrDefault(
     SLCBackendC* c, uint32_t start, uint32_t end, uint32_t index) {
     if (end > start) {
@@ -3932,6 +4227,11 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
         if ((fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0) {
             continue;
         }
+        if (CodegenCTypeIdContainsTypeParam(tc, fn->returnType)
+            || (fn->contextType >= 0 && CodegenCTypeIdContainsTypeParam(tc, fn->contextType)))
+        {
+            continue;
+        }
         nodeId = fn->defNode >= 0 ? fn->defNode : fn->declNode;
         fnNode = NodeAt(c, nodeId);
         if (fnNode == NULL || fnNode->kind != SLAst_FN) {
@@ -3963,6 +4263,10 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
             uint32_t nameEnd = tc->funcParamNameEnds[fn->paramTypeStart + p];
             if ((tc->funcParamFlags[fn->paramTypeStart + p] & SLTCFuncParamFlag_CONST) != 0) {
                 pflags |= SLCCGParamFlag_CONST;
+            }
+            if (CodegenCTypeIdContainsTypeParam(tc, typeId)) {
+                paramLen = 0;
+                break;
             }
             if (isVariadic && p + 1u == fn->paramCount && typeId >= 0
                 && (uint32_t)typeId < tc->typeLen && tc->types[typeId].kind == SLTCType_PACK)
@@ -4110,6 +4414,137 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
     return 0;
 }
 
+int CollectTemplateInstanceNamedTypes(SLCBackendC* c) {
+    SLTypeCheckCtx* tc;
+    uint32_t        i;
+    if (c == NULL || c->constEval == NULL) {
+        return 0;
+    }
+    tc = &c->constEval->tc;
+    for (i = 0; i < tc->namedTypeLen; i++) {
+        const SLTCNamedType* nt = &tc->namedTypes[i];
+        const SLAstNode*     decl;
+        const SLNameMap*     rootMap;
+        char*                cName;
+        int32_t              fieldNode;
+        uint32_t             savedArgStart = tc->activeGenericArgStart;
+        uint16_t             savedArgCount = tc->activeGenericArgCount;
+        int32_t              savedDeclNode = tc->activeGenericDeclNode;
+        uint32_t             savedFuncIndex = c->activeTcFuncIndex;
+        int32_t              savedNamedTypeIndex = c->activeTcNamedTypeIndex;
+        if (nt->templateRootNamedIndex < 0 || nt->templateArgCount == 0) {
+            continue;
+        }
+        if (nt->typeId < 0 || (uint32_t)nt->typeId >= tc->typeLen) {
+            continue;
+        }
+        if (CodegenCTypeIdContainsTypeParam(tc, nt->typeId)) {
+            continue;
+        }
+        decl = NodeAt(c, nt->declNode);
+        if (decl == NULL || (decl->kind != SLAst_STRUCT && decl->kind != SLAst_UNION)) {
+            continue;
+        }
+        rootMap = FindTypeDeclMapByNode(c, nt->declNode);
+        if (rootMap == NULL) {
+            return -1;
+        }
+        cName = BuildTemplateNamedTypeCName(c, rootMap->cName, i);
+        if (cName == NULL) {
+            return -1;
+        }
+        if (AddNameLiteral(c, cName, decl->kind, 0, 0) != 0) {
+            return -1;
+        }
+        if (CodegenCPushActiveNamedTypeContext(c, i) != 0) {
+            return -1;
+        }
+        fieldNode = AstFirstChild(&c->ast, nt->declNode);
+        while (fieldNode >= 0) {
+            const SLAstNode* field = NodeAt(c, fieldNode);
+            int32_t          typeNode;
+            int32_t          defaultExprNode;
+            SLTypeRef        fieldType;
+            char*            fieldName;
+            char*            lenFieldName = NULL;
+            int              isDependent = 0;
+            int              isEmbedded = 0;
+            if (field == NULL || field->kind != SLAst_FIELD) {
+                fieldNode = AstNextSibling(&c->ast, fieldNode);
+                continue;
+            }
+            typeNode = AstFirstChild(&c->ast, fieldNode);
+            defaultExprNode = typeNode >= 0 ? AstNextSibling(&c->ast, typeNode) : -1;
+            isEmbedded = (field->flags & SLAstFlag_FIELD_EMBEDDED) != 0;
+            if (typeNode < 0 || ParseTypeRef(c, typeNode, &fieldType) != 0) {
+                CodegenCPopActiveTypeContext(
+                    c,
+                    savedFuncIndex,
+                    savedNamedTypeIndex,
+                    savedArgStart,
+                    savedArgCount,
+                    savedDeclNode);
+                return -1;
+            }
+            if (typeNode >= 0 && NodeAt(c, typeNode) != NULL
+                && NodeAt(c, typeNode)->kind == SLAst_TYPE_VARRAY)
+            {
+                lenFieldName = DupSlice(
+                    c,
+                    c->unit->source,
+                    NodeAt(c, typeNode)->dataStart,
+                    NodeAt(c, typeNode)->dataEnd);
+                isDependent = 1;
+                if (lenFieldName == NULL) {
+                    CodegenCPopActiveTypeContext(
+                        c,
+                        savedFuncIndex,
+                        savedNamedTypeIndex,
+                        savedArgStart,
+                        savedArgCount,
+                        savedDeclNode);
+                    return -1;
+                }
+            }
+            fieldName = DupSlice(c, c->unit->source, field->dataStart, field->dataEnd);
+            if (fieldName == NULL) {
+                CodegenCPopActiveTypeContext(
+                    c,
+                    savedFuncIndex,
+                    savedNamedTypeIndex,
+                    savedArgStart,
+                    savedArgCount,
+                    savedDeclNode);
+                return -1;
+            }
+            if (AddFieldInfo(
+                    c,
+                    cName,
+                    fieldName,
+                    lenFieldName,
+                    defaultExprNode,
+                    isDependent,
+                    isEmbedded,
+                    fieldType)
+                != 0)
+            {
+                CodegenCPopActiveTypeContext(
+                    c,
+                    savedFuncIndex,
+                    savedNamedTypeIndex,
+                    savedArgStart,
+                    savedArgCount,
+                    savedDeclNode);
+                return -1;
+            }
+            fieldNode = AstNextSibling(&c->ast, fieldNode);
+        }
+        CodegenCPopActiveTypeContext(
+            c, savedFuncIndex, savedNamedTypeIndex, savedArgStart, savedArgCount, savedDeclNode);
+    }
+    return 0;
+}
+
 int CollectFnAndFieldInfo(SLCBackendC* c) {
     uint32_t i;
     for (i = 0; i < c->pubDeclLen; i++) {
@@ -4123,6 +4558,9 @@ int CollectFnAndFieldInfo(SLCBackendC* c) {
         }
     }
     if (CollectTemplateInstanceFnSigs(c) != 0) {
+        return -1;
+    }
+    if (CollectTemplateInstanceNamedTypes(c) != 0) {
         return -1;
     }
     return 0;

@@ -202,6 +202,12 @@ typedef struct {
 } SLTCConstDiagUse;
 
 typedef struct {
+    int32_t callNode;
+    int32_t ownerFnIndex;
+    int32_t targetFnIndex;
+} SLTCCallTarget;
+
+typedef struct {
     SLArena*     arena;
     const SLAst* ast;
     SLStrView    src;
@@ -284,6 +290,9 @@ typedef struct {
     uint32_t          constDiagUseCap;
     uint8_t*          constDiagFnInvoked;
     uint32_t          constDiagFnInvokedCap;
+    SLTCCallTarget*   callTargets;
+    uint32_t          callTargetLen;
+    uint32_t          callTargetCap;
 
     int32_t  currentContextType;
     int      hasImplicitMainRootContext;
@@ -635,6 +644,9 @@ void SLTCUnmarkLocalRead(SLTypeCheckCtx* c, int32_t localIdx);
 void SLTCSetLocalUsageKind(SLTypeCheckCtx* c, int32_t localIdx, uint8_t kind);
 void SLTCSetLocalUsageSuppress(SLTypeCheckCtx* c, int32_t localIdx, int suppress);
 int  SLTCEmitUnusedSymbolWarnings(SLTypeCheckCtx* c);
+int  SLTCRecordCallTarget(SLTypeCheckCtx* c, int32_t callNode, int32_t targetFnIndex);
+int  SLTCFindCallTarget(
+    const SLTypeCheckCtx* c, int32_t ownerFnIndex, int32_t callNode, int32_t* outTargetFnIndex);
 void SLTCOffsetToLineCol(
     const char* src, uint32_t srcLen, uint32_t offset, uint32_t* outLine, uint32_t* outColumn);
 int SLTCLineColToOffset(

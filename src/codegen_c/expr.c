@@ -769,6 +769,30 @@ int ExprNeedsExpectedType(const SLCBackendC* c, int32_t exprNode) {
     return 0;
 }
 
+int ExprCanRetryWithExpectedType(const SLCBackendC* c, int32_t exprNode) {
+    const SLAstNode* n = NodeAt(c, exprNode);
+    if (n == NULL) {
+        return 0;
+    }
+    if (n->kind == SLAst_CALL_ARG) {
+        int32_t inner = AstFirstChild(&c->ast, exprNode);
+        return ExprCanRetryWithExpectedType(c, inner);
+    }
+    if (n->kind == SLAst_INT || n->kind == SLAst_RUNE || n->kind == SLAst_FLOAT) {
+        return 1;
+    }
+    if (n->kind == SLAst_UNARY
+        && ((SLTokenKind)n->op == SLTok_ADD || (SLTokenKind)n->op == SLTok_SUB))
+    {
+        int32_t          inner = AstFirstChild(&c->ast, exprNode);
+        const SLAstNode* innerNode = NodeAt(c, inner);
+        return innerNode != NULL
+            && (innerNode->kind == SLAst_INT || innerNode->kind == SLAst_RUNE
+                || innerNode->kind == SLAst_FLOAT);
+    }
+    return 0;
+}
+
 int32_t UnwrapCallArgExprNode(const SLCBackendC* c, int32_t argNode) {
     const SLAstNode* n = NodeAt(c, argNode);
     if (n == NULL) {
@@ -939,6 +963,46 @@ void GatherCallCandidatesByPkgMethod(
     }
     *outCandidateLen = candidateLen;
     *outNameFound = nameFound;
+}
+
+static const SLFnSig* _Nullable FindSingleTemplateInstanceCandidate(
+    const SLFnSig* const* candidates, uint32_t candidateLen, uint32_t argCount) {
+    const SLFnSig* single = NULL;
+    uint32_t       i;
+    if (candidates == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < candidateLen; i++) {
+        const SLFnSig* sig = candidates[i];
+        if (sig == NULL || (sig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) == 0 || sig->isVariadic != 0
+            || sig->paramLen != argCount)
+        {
+            continue;
+        }
+        if (single != NULL) {
+            return NULL;
+        }
+        single = sig;
+    }
+    return single;
+}
+
+static void BindPositionalTemplateInstanceFallback(
+    const SLFnSig* sig, const int32_t* argNodes, uint32_t argCount, SLCCallBinding* outBinding) {
+    uint32_t i;
+    if (outBinding == NULL) {
+        return;
+    }
+    memset(outBinding, 0, sizeof(*outBinding));
+    outBinding->isVariadic = 0;
+    outBinding->fixedCount = argCount;
+    outBinding->fixedInputCount = argCount;
+    outBinding->spreadArgIndex = UINT32_MAX;
+    for (i = 0; i < argCount; i++) {
+        outBinding->fixedMappedArgNodes[i] = argNodes[i];
+        outBinding->argParamIndices[i] = (int32_t)i;
+        outBinding->argExpectedTypes[i] = sig->paramTypes[i];
+    }
 }
 
 int MapCallArgsToParams(
@@ -1300,8 +1364,17 @@ int ResolveCallTargetFromCandidates(
                 }
             }
             if (TypeRefAssignableCost(c, &paramType, &argType, &cost) != 0) {
-                viable = 0;
-                break;
+                if (ExprCanRetryWithExpectedType(c, argNodes[p])
+                    && InferExprTypeExpected(c, argNodes[p], &paramType, &argType) == 0
+                    && argType.valid && TypeRefAssignableCost(c, &paramType, &argType, &cost) == 0)
+                {
+                    if (cost < 255u) {
+                        cost++;
+                    }
+                } else {
+                    viable = 0;
+                    break;
+                }
             }
             costs[p] = cost;
             total += cost;
@@ -3198,6 +3271,23 @@ int InferExprType_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTyp
                     *outType = resolved->returnType;
                     return 0;
                 }
+                {
+                    const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+                    uint32_t       candidateLen = 0;
+                    const SLFnSig* single = NULL;
+                    int            nameFound = 0;
+                    GatherCallCandidatesBySlice(
+                        c, cn->dataStart, cn->dataEnd, candidates, &candidateLen, &nameFound);
+                    if (candidateLen > (uint32_t)(sizeof(candidates) / sizeof(candidates[0]))) {
+                        candidateLen = (uint32_t)(sizeof(candidates) / sizeof(candidates[0]));
+                    }
+                    single = FindSingleTemplateInstanceCandidate(
+                        candidates, candidateLen, argCount);
+                    if (single != NULL) {
+                        *outType = single->returnType;
+                        return 0;
+                    }
+                }
             }
         } else if (
             field != NULL && field->type.valid
@@ -3636,6 +3726,7 @@ int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
         case SLAst_BINARY:            return InferExprType_BINARY(c, nodeId, n, outType);
         case SLAst_TUPLE_EXPR:        return InferExprType_TUPLE_EXPR(c, nodeId, n, outType);
         case SLAst_CALL_ARG:          return InferExprType_CALL_ARG(c, nodeId, n, outType);
+        case SLAst_TYPE_VALUE:        TypeRefSetScalar(outType, "__sl_type"); return 0;
         default:                      TypeRefSetInvalid(outType); return 0;
     }
 }
@@ -8987,6 +9078,29 @@ int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                             }
                         }
                     }
+                    {
+                        const SLFnSig* candidates[SLCCG_MAX_CALL_CANDIDATES];
+                        uint32_t       candidateLen = 0;
+                        const SLFnSig* single = NULL;
+                        int            nameFound = 0;
+                        GatherCallCandidatesBySlice(
+                            c,
+                            callee->dataStart,
+                            callee->dataEnd,
+                            candidates,
+                            &candidateLen,
+                            &nameFound);
+                        if (candidateLen > (uint32_t)(sizeof(candidates) / sizeof(candidates[0]))) {
+                            candidateLen = (uint32_t)(sizeof(candidates) / sizeof(candidates[0]));
+                        }
+                        single = FindSingleTemplateInstanceCandidate(
+                            candidates, candidateLen, argCount);
+                        if (single != NULL) {
+                            BindPositionalTemplateInstanceFallback(
+                                single, argNodes, argCount, &binding);
+                            return EmitResolvedCall(c, nodeId, single->cName, single, &binding, 0);
+                        }
+                    }
                 }
             }
         }
@@ -9666,6 +9780,15 @@ int EmitExpr(SLCBackendC* c, int32_t nodeId) {
         case SLAst_UNWRAP:            rc = EmitExpr_UNWRAP(c, nodeId, n); break;
         case SLAst_TUPLE_EXPR:        rc = EmitExpr_TUPLE_EXPR(c, nodeId, n); break;
         case SLAst_CALL_ARG:          rc = EmitExpr_CALL_ARG(c, nodeId, n); break;
+        case SLAst_TYPE_VALUE:        {
+            SLTypeRef reflectedType;
+            if (!ResolveReflectedTypeValueExprTypeRef(c, nodeId, &reflectedType)) {
+                rc = -1;
+                break;
+            }
+            rc = EmitTypeTagLiteralFromTypeRef(c, &reflectedType);
+            break;
+        }
         default:
             /* Unsupported AST kind in expression context. */
             rc = -1;

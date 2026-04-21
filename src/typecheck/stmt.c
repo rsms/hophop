@@ -1869,6 +1869,8 @@ int SLTCBuildCheckedContext(
         arena, sizeof(SLTCConstDiagUse) * capBase, (uint32_t)_Alignof(SLTCConstDiagUse));
     c.constDiagFnInvoked = (uint8_t*)SLArenaAlloc(
         arena, sizeof(uint8_t) * capBase, (uint32_t)_Alignof(uint8_t));
+    c.callTargets = (SLTCCallTarget*)SLArenaAlloc(
+        arena, sizeof(SLTCCallTarget) * capBase * 8u, (uint32_t)_Alignof(SLTCCallTarget));
     c.constEvalValues = (SLCTFEValue*)SLArenaAlloc(
         arena, sizeof(SLCTFEValue) * ast->len, (uint32_t)_Alignof(SLCTFEValue));
     c.constEvalState = (uint8_t*)SLArenaAlloc(
@@ -1884,7 +1886,8 @@ int SLTCBuildCheckedContext(
         || c.scratchParamTypes == NULL || c.scratchParamFlags == NULL || c.locals == NULL
         || c.localUses == NULL || c.constEvalValues == NULL || c.constEvalState == NULL
         || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL || c.variantNarrows == NULL
-        || c.warningDedup == NULL || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL)
+        || c.warningDedup == NULL || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL
+        || c.callTargets == NULL)
     {
         SLTCSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
@@ -1915,6 +1918,8 @@ int SLTCBuildCheckedContext(
     c.constDiagUseLen = 0;
     c.constDiagUseCap = capBase;
     c.constDiagFnInvokedCap = capBase;
+    c.callTargetLen = 0;
+    c.callTargetCap = capBase * 8u;
     c.currentContextType = -1;
     c.hasImplicitMainRootContext = 0;
     c.implicitMainContextType = -1;
