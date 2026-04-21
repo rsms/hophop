@@ -9287,9 +9287,13 @@ static int SLEvalMirHostCall(
         *outIsConst = 1;
         return 0;
     }
-    if (hostId == SL_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG && argCount == 2u
-        && args[0].kind == SLCTFEValue_STRING)
-    {
+    if (hostId == SL_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG && argCount == 2u) {
+        int64_t flags = 0;
+        if (args[0].kind != SLCTFEValue_STRING || SLCTFEValueToInt64(&args[1], &flags) != 0) {
+            *outIsConst = 0;
+            return 0;
+        }
+        (void)flags;
         if (args[0].s.len > 0 && args[0].s.bytes != NULL) {
             if (fwrite(args[0].s.bytes, 1, args[0].s.len, stdout) != args[0].s.len) {
                 return ErrorSimple("failed to write console_log output");

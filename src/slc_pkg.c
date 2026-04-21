@@ -2584,6 +2584,19 @@ static int LoadSelectedPlatformTargetPackage(
     return rc;
 }
 
+static int IsSelectedPlatformImportPath(
+    const SLPackageLoader* loader, const char* _Nullable importPath) {
+    size_t prefixLen = 9u;
+    if (loader == NULL || loader->platformTarget == NULL || importPath == NULL) {
+        return 0;
+    }
+    if (StrEq(importPath, "platform")) {
+        return 1;
+    }
+    return strncmp(importPath, "platform/", prefixLen) == 0
+        && StrEq(importPath + prefixLen, loader->platformTarget);
+}
+
 static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage* pkg) {
     uint32_t i;
     int      pkgIndex;
@@ -2602,6 +2615,12 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
     }
     for (i = 0; i < pkg->importLen; i++) {
         char* resolvedDir;
+        if (loader->selectedPlatformPkg != NULL
+            && IsSelectedPlatformImportPath(loader, pkg->imports[i].path))
+        {
+            pkg->imports[i].target = loader->selectedPlatformPkg;
+            continue;
+        }
         resolvedDir = JoinPath(loader->rootDir, pkg->imports[i].path);
         if (resolvedDir != NULL && !IsDirectoryPath(resolvedDir)) {
             char* localResolved = JoinPath(pkg->dirPath, pkg->imports[i].path);
@@ -4283,7 +4302,8 @@ static int AppendAliasedPubDecls(
     const char*      alias,
     const SLImportRef* _Nullable imports,
     uint32_t importLen,
-    int      includePrivateDecls) {
+    int      includePrivateDecls,
+    int      forceFunctionDeclsOnly) {
     SLIdentMap* maps = NULL;
     uint32_t    mapLen = 0;
     uint32_t    declLen = includePrivateDecls ? sourcePkg->declLen : 0u;
@@ -4317,15 +4337,33 @@ static int AppendAliasedPubDecls(
     }
 
     for (j = 0; j < sourcePkg->pubDeclLen; j++) {
-        char* rewritten = NULL;
+        char*       declText = sourcePkg->pubDecls[j].declText;
+        char*       declTextCopy = NULL;
+        const char* rewriteSource = declText;
+        uint32_t    rewriteSourceLen;
+        char*       rewritten = NULL;
+        if (forceFunctionDeclsOnly && sourcePkg->pubDecls[j].kind == SLAst_FN) {
+            const char* bodyStart = strchr(declText, '{');
+            if (bodyStart != NULL) {
+                size_t declLenNoBody = (size_t)(bodyStart - declText);
+                while (declLenNoBody > 0u && IsAsciiSpaceChar(declText[declLenNoBody - 1u])) {
+                    declLenNoBody--;
+                }
+                declTextCopy = (char*)malloc(declLenNoBody + 2u);
+                if (declTextCopy == NULL) {
+                    rc = ErrorSimple("out of memory");
+                    goto done;
+                }
+                memcpy(declTextCopy, declText, declLenNoBody);
+                declTextCopy[declLenNoBody] = ';';
+                declTextCopy[declLenNoBody + 1u] = '\0';
+                rewriteSource = declTextCopy;
+            }
+        }
+        rewriteSourceLen = (uint32_t)strlen(rewriteSource);
         rc = RewriteText(
-            sourcePkg->pubDecls[j].declText,
-            (uint32_t)strlen(sourcePkg->pubDecls[j].declText),
-            imports,
-            importLen,
-            maps,
-            mapLen,
-            &rewritten);
+            rewriteSource, rewriteSourceLen, imports, importLen, maps, mapLen, &rewritten);
+        free(declTextCopy);
         if (rc != 0) {
             goto done;
         }
@@ -4336,22 +4374,33 @@ static int AppendAliasedPubDecls(
         free(rewritten);
     }
     for (j = 0; j < declLen; j++) {
-        char* rewritten = NULL;
+        const SLSymbolDecl* decl = &sourcePkg->decls[j];
+        const SLParsedFile* file = &sourcePkg->files[decl->fileIndex];
+        char*               namedRewritten = NULL;
+        char*               rewritten = NULL;
+        rc = RewriteDeclTextForNamedImports(
+            sourcePkg, file, decl->nodeId, decl->declText, &namedRewritten);
+        if (rc != 0) {
+            goto done;
+        }
         rc = RewriteText(
-            sourcePkg->decls[j].declText,
-            (uint32_t)strlen(sourcePkg->decls[j].declText),
+            namedRewritten,
+            (uint32_t)strlen(namedRewritten),
             imports,
             importLen,
             maps,
             mapLen,
             &rewritten);
         if (rc != 0) {
+            free(namedRewritten);
             goto done;
         }
         if (rewritten == NULL || SBAppendCStr(b, rewritten) != 0 || SBAppendCStr(b, "\n") != 0) {
+            free(namedRewritten);
             free(rewritten);
             goto done;
         }
+        free(namedRewritten);
         free(rewritten);
     }
     if (SBAppendCStr(b, "\n") != 0) {
@@ -4430,6 +4479,7 @@ static int PackageNeedsPrivateDeclSurface(const SLPackage* pkg) {
 
 static int AppendImportedPackageSurface(
     SLStringBuilder*         b,
+    const SLPackageLoader*   loader,
     const SLPackage*         dep,
     const char*              alias,
     int                      includePrivateImportDecls,
@@ -4455,7 +4505,15 @@ static int AppendImportedPackageSurface(
             return ErrorSimple("internal error: unresolved import");
         }
         if (!HasEmittedImportSurface(*emitted, *emittedLen, subDep, dep->imports[j].alias)
-            && AppendAliasedPubDecls(b, subDep, dep->imports[j].alias, NULL, 0, 0) != 0)
+            && AppendAliasedPubDecls(
+                   b,
+                   subDep,
+                   dep->imports[j].alias,
+                   NULL,
+                   0,
+                   0,
+                   IsSelectedPlatformImportPath(loader, dep->imports[j].path))
+                   != 0)
         {
             return -1;
         }
@@ -4471,8 +4529,18 @@ static int AppendImportedPackageSurface(
             (*emittedLen)++;
         }
     }
-    includePrivateDecls = includePrivateImportDecls ? PackageNeedsPrivateDeclSurface(dep) : 0;
-    if (AppendAliasedPubDecls(b, dep, alias, dep->imports, dep->importLen, includePrivateDecls)
+    includePrivateDecls =
+        (loader != NULL && dep == loader->selectedPlatformPkg)
+            ? 0
+            : (includePrivateImportDecls ? PackageNeedsPrivateDeclSurface(dep) : 0);
+    if (AppendAliasedPubDecls(
+            b,
+            dep,
+            alias,
+            dep->imports,
+            dep->importLen,
+            includePrivateDecls,
+            loader != NULL && dep == loader->selectedPlatformPkg)
         != 0)
     {
         return -1;
@@ -4527,6 +4595,7 @@ int BuildCombinedPackageSource(
         const SLPackage* dep = pkg->imports[i].target;
         if (AppendImportedPackageSurface(
                 &b,
+                loader,
                 dep,
                 pkg->imports[i].alias,
                 includePrivateImportDecls,

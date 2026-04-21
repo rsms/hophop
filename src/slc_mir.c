@@ -1326,8 +1326,16 @@ static int IsPlatformImportPath(const char* _Nullable path) {
     return path != NULL && (StrEq(path, "platform") || strncmp(path, "platform/", 9u) == 0);
 }
 
-static int IsPlatformBaseImportPath(const char* _Nullable path) {
-    return path != NULL && StrEq(path, "platform");
+static int IsSelectedPlatformImportPath(const SLPackageLoader* loader, const char* _Nullable path) {
+    size_t prefixLen = 9u;
+    if (loader == NULL || loader->platformTarget == NULL || path == NULL) {
+        return 0;
+    }
+    if (StrEq(path, "platform")) {
+        return 1;
+    }
+    return strncmp(path, "platform/", prefixLen) == 0
+        && StrEq(path + prefixLen, loader->platformTarget);
 }
 
 int PackageHasPlatformImport(const SLPackage* _Nullable pkg) {
@@ -1356,7 +1364,7 @@ static const SLPackage* _Nullable EffectiveMirImportTargetPackage(
         return NULL;
     }
     if (loader != NULL && loader->selectedPlatformPkg != NULL
-        && IsPlatformBaseImportPath(imp->path))
+        && IsSelectedPlatformImportPath(loader, imp->path))
     {
         return loader->selectedPlatformPkg;
     }

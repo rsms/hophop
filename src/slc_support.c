@@ -1487,8 +1487,17 @@ static int IsPlatformImportPathFmt(const char* _Nullable path) {
     return path != NULL && (StrEq(path, "platform") || strncmp(path, "platform/", 9u) == 0);
 }
 
-static int IsPlatformBaseImportPathFmt(const char* _Nullable path) {
-    return path != NULL && StrEq(path, "platform");
+static int IsSelectedPlatformImportPathFmt(
+    const SLPackageLoader* loader, const char* _Nullable path) {
+    size_t prefixLen = 9u;
+    if (loader == NULL || loader->platformTarget == NULL || path == NULL) {
+        return 0;
+    }
+    if (StrEq(path, "platform")) {
+        return 1;
+    }
+    return strncmp(path, "platform/", prefixLen) == 0
+        && StrEq(path + prefixLen, loader->platformTarget);
 }
 
 static const SLPackage* _Nullable EffectiveFmtImportTargetPackage(
@@ -1497,7 +1506,7 @@ static const SLPackage* _Nullable EffectiveFmtImportTargetPackage(
         return NULL;
     }
     if (loader != NULL && loader->selectedPlatformPkg != NULL
-        && IsPlatformBaseImportPathFmt(imp->path))
+        && IsSelectedPlatformImportPathFmt(loader, imp->path))
     {
         return loader->selectedPlatformPkg;
     }

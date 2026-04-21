@@ -529,6 +529,26 @@ static int SLEvalMirRewriteQualifiedHostCallForNode(
         *outRewritten = 1;
         return 1;
     }
+    if (targetPkg != NULL && StrEq(targetPkg->name, "platform")
+        && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "console_log")
+        && SLMirCallArgCountFromTok(ins->tok) == 3u)
+    {
+        SLMirHostRef host = { 0 };
+        uint32_t     hostIndex = UINT32_MAX;
+        host.nameStart = symbol->nameStart;
+        host.nameEnd = symbol->nameEnd;
+        host.kind = SLMirHost_GENERIC;
+        host.flags = 0;
+        host.target = SL_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG;
+        if (SLMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
+            return -1;
+        }
+        ins->op = SLMirOp_CALL_HOST;
+        ins->aux = hostIndex;
+        ins->tok |= SLMirCallArgFlag_RECEIVER_ARG0;
+        *outRewritten = 1;
+        return 1;
+    }
     return 0;
 }
 
