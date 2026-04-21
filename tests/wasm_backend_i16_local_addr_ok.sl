@@ -4,6 +4,6 @@ fn main() {
 	var p *i16 = &x
 
 	assert *p == 7
-	*p = 9 as i16
+	*p = 9
 	assert x == 9
 }

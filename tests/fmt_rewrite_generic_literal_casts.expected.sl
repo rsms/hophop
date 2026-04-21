@@ -16,12 +16,12 @@ fn first[T](x, y T) T {
 }
 
 fn main() {
-	var v1 Vector[i64] = Vector[i64]{ x: -1 as i64, y: 4 }
-	var v2 Vector[i64] = Vector[i64]{ x: 5, y: -2 }
-	var sum            = add(v1, b: v2)
-	var doubled        = v1.scale(k: 2)
-	var chain          = v1.scale(k: 2).add(v2).add(sum)
-	var keep           = first(1 as i8, _: 2)
+	var v1      = Vector[i64]{ x: -1 as i64, y: 4 }
+	var v2      = Vector[i64]{ x: 5, y: -2 }
+	var sum     = add(v1, b: v2)
+	var doubled = v1.scale(k: 2)
+	var chain   = v1.scale(k: 2).add(v2).add(sum)
+	var keep    = first(1 as i8, _: 2)
 	assert sum.x == 4
 	assert doubled.x == -2
 	assert chain.y == 8

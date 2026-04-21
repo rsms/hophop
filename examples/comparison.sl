@@ -123,7 +123,7 @@ fn array_and_slice_examples() {
 
 	var sx &[int] = ax[:]
 	var sy &[int] = ay[:]
-	var sz &[int] = sx
+	var sz        = sx
 
 	// Slice refs compare by address (identity).
 	assert sx == sz

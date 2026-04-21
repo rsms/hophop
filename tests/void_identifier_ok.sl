@@ -4,6 +4,6 @@ struct void {
 }
 
 fn main() {
-	var v void = void{ x: 7 }
+	var v = void{ x: 7 }
 	assert v.x == 7
 }

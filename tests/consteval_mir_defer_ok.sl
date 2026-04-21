@@ -1,6 +1,6 @@
 // Verifies const-eval MIR defer is accepted.
 fn next(x int) int {
-	var y int = x
+	var y = x
 	defer y += 3
 	return y
 }

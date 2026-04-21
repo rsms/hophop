@@ -53,7 +53,7 @@ fn classify(x int) int {
 }
 
 fn defer_value(x int) int {
-	var y int = x
+	var y = x
 	defer y += 1
 	return y
 }

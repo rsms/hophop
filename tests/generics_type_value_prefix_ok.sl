@@ -7,6 +7,6 @@ fn is_vector_i32(t type) bool {
 }
 
 fn main() {
-	var v Vector[i32] = Vector[i32]{ x: 1 }
+	var v = Vector[i32]{ x: 1 }
 	assert is_vector_i32(typeof(v))
 }

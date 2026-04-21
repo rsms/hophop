@@ -10,6 +10,6 @@ struct Outer {
 }
 
 fn main() {
-	var o Outer = Outer{ a: Inner{ x: 1, y: 2 } }
+	var o = Outer{ a: Inner{ x: 1, y: 2 } }
 	assert o.a.x == 1
 }

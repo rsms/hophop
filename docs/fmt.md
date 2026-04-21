@@ -155,10 +155,16 @@ This is why `fmt_canonical` can legitimately contain both:
 ## Redundant literal casts
 
 - Redundant numeric literal casts are removed when the surrounding syntax fixes the same target type.
-- Current supported contexts include typed `var` initializers, typed returns, matching binary operands including numeric comparisons, direct call arguments whose resolved parameter type exactly matches the cast target, and local field/call chains whose concrete type can be recovered from same-file generic declarations.
+- Current supported contexts include typed `var` initializers, typed returns, assignment RHS expressions whose target type can be inferred, matching binary operands including numeric comparisons, direct call arguments whose resolved parameter type exactly matches the cast target, and local field/call chains whose concrete type can be recovered from same-file generic declarations.
 - Variadic direct-call tails are also simplified when the variadic element type exactly matches the cast target.
 - Generic call-argument casts are only removed when the parameter type can be determined independently of the cast being removed. If the cast is what makes generic inference work, the formatter preserves it.
 - Unresolved or ambiguous call targets are left unchanged.
+
+## Redundant var declaration types
+
+- Redundant single-name `var` declaration types are removed when the initializer independently fixes the same type.
+- Current supported initializer contexts include explicit compound literals and local identifiers whose concrete type can be recovered from same-file declarations.
+- Initializers that rely on the declaration type, such as untyped compound literals, `null`, and literal casts, keep the explicit `var` type.
 
 ## Expression operator spacing
 

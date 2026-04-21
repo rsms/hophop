@@ -14,6 +14,10 @@ fn g(v i16){
 var y i16=4 as i16*9 as i16
 _ = v+4 as i16
 var z = 3 as u32
+var assign i16=7
+assign=8 as i16
+var p *i16=&assign
+*p=9 as i16
 }
 
 fn takes_pair(a i32, b f64) {

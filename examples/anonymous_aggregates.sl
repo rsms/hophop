@@ -45,7 +45,7 @@ fn move_to(e Example, p struct {
 	y i32
 }) Example {
 	// Function params are passed by value by default, so we return the updated copy.
-	var out Example = e
+	var out = e
 	out.pos = p
 	return out
 }
@@ -54,7 +54,7 @@ fn set_value(e Example, v union {
 	i i32
 	f f64
 }) Example {
-	var out Example = e
+	var out = e
 	out.value = v
 	return out
 }

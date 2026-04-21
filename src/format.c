@@ -391,6 +391,8 @@ static int SLFmtBinaryOpSharesOperandType(uint16_t op) {
     }
 }
 
+static int SLFmtIsAssignmentOp(SLTokenKind kind);
+
 static int SLFmtTypeNodesEqualBySource(
     const SLAst* ast, SLStrView src, int32_t aTypeNodeId, int32_t bTypeNodeId) {
     const SLAstNode* a;
@@ -920,6 +922,30 @@ static int SLFmtInferExprTypeEx(
             && SLFmtFindFieldTypeOnLocalNamedType(
                    ast, src, &baseType, n->dataStart, n->dataEnd, outType);
     }
+    if (n->kind == SLAst_UNARY && n->op == SLTok_MUL) {
+        SLFmtInferredType targetType;
+        int32_t           targetNodeId = SLFmtFirstChild(ast, exprNodeId);
+        int32_t           targetTypeNodeId;
+        const SLAstNode*  targetTypeNode;
+        SLFmtInferredTypeInit(&targetType);
+        if (targetNodeId < 0
+            || !SLFmtInferExprTypeEx(ast, src, targetNodeId, beforePos, depth + 1u, &targetType))
+        {
+            return 0;
+        }
+        targetTypeNodeId = targetType.typeNodeId;
+        if (targetTypeNodeId < 0 || (uint32_t)targetTypeNodeId >= ast->len) {
+            return 0;
+        }
+        targetTypeNode = &ast->nodes[targetTypeNodeId];
+        if (targetTypeNode->kind != SLAst_TYPE_PTR && targetTypeNode->kind != SLAst_TYPE_REF
+            && targetTypeNode->kind != SLAst_TYPE_MUTREF)
+        {
+            return 0;
+        }
+        return SLFmtInferredTypeSet(
+            outType, SLFmtFirstChild(ast, targetTypeNodeId), &targetType.env);
+    }
     if (n->kind == SLAst_CALL) {
         int32_t  calleeNodeId = SLFmtFirstChild(ast, exprNodeId);
         uint32_t calleeNameStart;
@@ -1042,6 +1068,13 @@ static int SLFmtCanDropRedundantLiteralCast(
             int32_t           rhsNodeId = lhsNodeId >= 0 ? SLFmtNextSibling(ast, lhsNodeId) : -1;
             int32_t           otherNodeId = -1;
             SLFmtInferredType otherType;
+            if (rhsNodeId == castNodeId
+                && SLFmtIsAssignmentOp((SLTokenKind)ast->nodes[parentNodeId].op))
+            {
+                SLFmtInferredTypeInit(&otherType);
+                return SLFmtInferExprTypeEx(ast, src, lhsNodeId, castNode->start, 0u, &otherType)
+                    && SLFmtInferredTypeMatchesNode(ast, src, &otherType, castTypeNodeId);
+            }
             if (!SLFmtBinaryOpSharesOperandType(ast->nodes[parentNodeId].op)) {
                 return 0;
             }
@@ -1100,6 +1133,39 @@ static void SLFmtRewriteVarTypeFromLiteralCast(
     }
     *ioTypeNodeId = castTypeNodeId;
     *ioInitNodeId = castExprNodeId;
+}
+
+static void SLFmtRewriteRedundantVarType(
+    const SLAst* ast,
+    SLStrView    src,
+    const char*  kw,
+    uint32_t     nameCount,
+    uint32_t     declStart,
+    int32_t*     ioTypeNodeId,
+    int32_t*     ioInitNodeId) {
+    SLFmtInferredType initType;
+    int32_t           typeNodeId;
+    int32_t           initNodeId;
+    if (ioTypeNodeId == NULL || ioInitNodeId == NULL || !SLFmtKeywordIsVar(kw) || nameCount != 1u) {
+        return;
+    }
+    typeNodeId = *ioTypeNodeId;
+    initNodeId = *ioInitNodeId;
+    if (typeNodeId < 0 || initNodeId < 0 || (uint32_t)typeNodeId >= ast->len
+        || (uint32_t)initNodeId >= ast->len)
+    {
+        return;
+    }
+    if (ast->nodes[initNodeId].kind == SLAst_CAST || ast->nodes[initNodeId].kind == SLAst_CALL) {
+        return;
+    }
+    SLFmtInferredTypeInit(&initType);
+    if (!SLFmtInferExprTypeEx(ast, src, initNodeId, declStart, 0u, &initType)) {
+        return;
+    }
+    if (SLFmtInferredTypeMatchesNode(ast, src, &initType, typeNodeId)) {
+        *ioTypeNodeId = -1;
+    }
 }
 
 static int32_t SLFmtFindEnclosingFnNode(const SLAst* ast, int32_t nodeId) {
@@ -3524,6 +3590,7 @@ static int SLFmtEmitAlignedVarOrConstGroup(
             initNode = SLFmtNextSibling(c->ast, typeNode);
         }
         SLFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, 1u, &typeNode, &initNode);
+        SLFmtRewriteRedundantVarType(c->ast, c->src, kw, 1u, n->start, &typeNode, &initNode);
         rows[i].typeNode = typeNode;
         rows[i].initNode = initNode;
         rows[i].hasType = (uint8_t)(typeNode >= 0);
@@ -4141,6 +4208,8 @@ static int SLFmtEmitVarLike(SLFmtCtx* c, int32_t nodeId, const char* kw) {
             init = afterNames;
         }
         SLFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, nameCount, &type, &init);
+        SLFmtRewriteRedundantVarType(
+            c->ast, c->src, kw, nameCount, c->ast->nodes[nodeId].start, &type, &init);
         if (SLFmtWriteCStr(c, kw) != 0 || SLFmtWriteChar(c, ' ') != 0) {
             return -1;
         }
@@ -4189,6 +4258,7 @@ static int SLFmtEmitVarLike(SLFmtCtx* c, int32_t nodeId, const char* kw) {
             init = SLFmtNextSibling(c->ast, type);
         }
         SLFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, 1u, &type, &init);
+        SLFmtRewriteRedundantVarType(c->ast, c->src, kw, 1u, n->start, &type, &init);
         if (SLFmtWriteCStr(c, kw) != 0 || SLFmtWriteChar(c, ' ') != 0
             || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
         {

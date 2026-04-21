@@ -54,7 +54,7 @@ fn arena_alloc_impl(self *builtin.Allocator, addr rawptr, align, curSize uint, n
 		return null
 	}
 
-	var newSize uint = *newSizeInOut
+	var newSize = *newSizeInOut
 	if newSize == 0 {
 		return null
 	}
