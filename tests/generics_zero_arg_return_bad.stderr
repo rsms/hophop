@@ -1,0 +1,1 @@
+tests/generics_zero_arg_return_bad.sl:1:1: SL2004: type mismatch

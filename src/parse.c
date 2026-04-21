@@ -45,6 +45,9 @@ typedef struct {
     SLFeatures features;
 } SLParser;
 
+static int SLPParseExpr(SLParser* p, int minPrec, int32_t* out);
+static int SLPParseType(SLParser* p, int32_t* out);
+
 static const SLToken* SLPPeek(SLParser* p) {
     if (p->pos >= p->tokLen) {
         return &p->tok[p->tokLen - 1];
@@ -325,7 +328,88 @@ static int SLPParseTypeName(SLParser* p, int32_t* out) {
     }
     p->nodes[n].dataStart = first->start;
     p->nodes[n].dataEnd = last->end;
+    if (SLPMatch(p, SLTok_LBRACK)) {
+        const SLToken* lb = SLPPrev(p);
+        const SLToken* rb;
+        p->nodes[n].end = lb->end;
+        for (;;) {
+            int32_t argType;
+            if (SLPParseType(p, &argType) != 0) {
+                return -1;
+            }
+            if (SLPAddChild(p, n, argType) != 0) {
+                return -1;
+            }
+            if (!SLPMatch(p, SLTok_COMMA)) {
+                break;
+            }
+        }
+        if (SLPExpect(p, SLTok_RBRACK, SLDiag_EXPECTED_TYPE, &rb) != 0) {
+            return -1;
+        }
+        p->nodes[n].end = rb->end;
+    }
     *out = n;
+    return 0;
+}
+
+static int SLPParseTypeParamList(SLParser* p, int32_t ownerNode) {
+    uint32_t       savedPos = p->pos;
+    uint32_t       savedNodeLen = p->nodeLen;
+    int32_t        lastChild = -1;
+    const SLToken* rb;
+    int            sawAny = 0;
+    if (ownerNode >= 0 && (uint32_t)ownerNode < p->nodeLen) {
+        int32_t child = p->nodes[ownerNode].firstChild;
+        while (child >= 0) {
+            lastChild = child;
+            child = p->nodes[child].nextSibling;
+        }
+    }
+    if (!SLPMatch(p, SLTok_LBRACK)) {
+        return 0;
+    }
+    for (;;) {
+        const SLToken* name;
+        int32_t        paramNode;
+        if (!SLPAt(p, SLTok_IDENT)) {
+            p->pos = savedPos;
+            p->nodeLen = savedNodeLen;
+            if (lastChild >= 0) {
+                p->nodes[lastChild].nextSibling = -1;
+            } else if (ownerNode >= 0 && (uint32_t)ownerNode < p->nodeLen) {
+                p->nodes[ownerNode].firstChild = -1;
+            }
+            return 0;
+        }
+        sawAny = 1;
+        if (SLPExpectDeclName(p, &name, 0) != 0) {
+            return -1;
+        }
+        paramNode = SLPNewNode(p, SLAst_TYPE_PARAM, name->start, name->end);
+        if (paramNode < 0) {
+            return -1;
+        }
+        p->nodes[paramNode].dataStart = name->start;
+        p->nodes[paramNode].dataEnd = name->end;
+        if (SLPAddChild(p, ownerNode, paramNode) != 0) {
+            return -1;
+        }
+        if (!SLPMatch(p, SLTok_COMMA)) {
+            break;
+        }
+    }
+    if (!sawAny || SLPExpect(p, SLTok_RBRACK, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+        p->pos = savedPos;
+        p->nodeLen = savedNodeLen;
+        if (lastChild >= 0) {
+            p->nodes[lastChild].nextSibling = -1;
+        } else if (ownerNode >= 0 && (uint32_t)ownerNode < p->nodeLen) {
+            p->nodes[ownerNode].firstChild = -1;
+        }
+        return 0;
+    }
+    p->nodes[ownerNode].end = rb->end;
     return 0;
 }
 
@@ -1106,6 +1190,27 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
 
     if (SLPAt(p, SLTok_LBRACE)) {
         return SLPParseCompoundLiteralTail(p, -1, out);
+    }
+
+    if (SLPAt(p, SLTok_TYPE) && (p->pos + 1u) < p->tokLen
+        && SLPIsTypeStart(p->tok[p->pos + 1u].kind))
+    {
+        int32_t typeNode;
+        p->pos++;
+        t = SLPPrev(p);
+        n = SLPNewNode(p, SLAst_TYPE_VALUE, t->start, t->end);
+        if (n < 0) {
+            return -1;
+        }
+        if (SLPParseType(p, &typeNode) != 0) {
+            return -1;
+        }
+        p->nodes[n].end = p->nodes[typeNode].end;
+        if (SLPAddChild(p, n, typeNode) != 0) {
+            return -1;
+        }
+        *out = n;
+        return 0;
     }
 
     if (SLPMatch(p, SLTok_IDENT) || SLPMatch(p, SLTok_CONTEXT) || SLPMatch(p, SLTok_TYPE)) {
@@ -3113,6 +3218,9 @@ static int SLPParseAggregateDecl(SLParser* p, int32_t* out) {
     }
     p->nodes[n].dataStart = name->start;
     p->nodes[n].dataEnd = name->end;
+    if (SLPParseTypeParamList(p, n) != 0) {
+        return -1;
+    }
 
     if (kw->kind == SLTok_ENUM) {
         int32_t underType;
@@ -3194,17 +3302,18 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
     if (SLPExpectFnName(p, &name) != 0) {
         return -1;
     }
-
-    if (SLPExpect(p, SLTok_LPAREN, SLDiag_UNEXPECTED_TOKEN, &t) != 0) {
-        return -1;
-    }
-
     fn = SLPNewNode(p, SLAst_FN, kw->start, name->end);
     if (fn < 0) {
         return -1;
     }
     p->nodes[fn].dataStart = name->start;
     p->nodes[fn].dataEnd = name->end;
+    if (SLPParseTypeParamList(p, fn) != 0) {
+        return -1;
+    }
+    if (SLPExpect(p, SLTok_LPAREN, SLDiag_UNEXPECTED_TOKEN, &t) != 0) {
+        return -1;
+    }
 
     if (!SLPAt(p, SLTok_RPAREN)) {
         for (;;) {
@@ -3296,16 +3405,19 @@ static int SLPParseTypeAliasDecl(SLParser* p, int32_t* out) {
     if (SLPExpectDeclName(p, &name, 0) != 0) {
         return -1;
     }
-    if (SLPParseType(p, &targetType) != 0) {
-        return -1;
-    }
-
-    n = SLPNewNode(p, SLAst_TYPE_ALIAS, kw->start, p->nodes[targetType].end);
+    n = SLPNewNode(p, SLAst_TYPE_ALIAS, kw->start, name->end);
     if (n < 0) {
         return -1;
     }
     p->nodes[n].dataStart = name->start;
     p->nodes[n].dataEnd = name->end;
+    if (SLPParseTypeParamList(p, n) != 0) {
+        return -1;
+    }
+    if (SLPParseType(p, &targetType) != 0) {
+        return -1;
+    }
+    p->nodes[n].end = p->nodes[targetType].end;
     if (SLPAddChild(p, n, targetType) != 0) {
         return -1;
     }
@@ -3510,6 +3622,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_PUB:               return "PUB";
         case SLAst_FN:                return "FN";
         case SLAst_PARAM:             return "PARAM";
+        case SLAst_TYPE_PARAM:        return "TYPE_PARAM";
         case SLAst_CONTEXT_CLAUSE:    return "CONTEXT_CLAUSE";
         case SLAst_TYPE_NAME:         return "TYPE_NAME";
         case SLAst_TYPE_PTR:          return "TYPE_PTR";
@@ -3549,6 +3662,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_NAME_LIST:         return "NAME_LIST";
         case SLAst_EXPR_LIST:         return "EXPR_LIST";
         case SLAst_TUPLE_EXPR:        return "TUPLE_EXPR";
+        case SLAst_TYPE_VALUE:        return "TYPE_VALUE";
         case SLAst_IDENT:             return "IDENT";
         case SLAst_INT:               return "INT";
         case SLAst_FLOAT:             return "FLOAT";

@@ -5,6 +5,18 @@ import "math/basic" as math { Add as Sum, Sub }
 
 type IntVec [int .n]
 
+type Ptr[T] *T
+
+struct GenericPair[A, B] {
+	left  A
+	right B
+}
+
+enum GenericTag[T] int {
+	None = 0
+	Some = 1
+}
+
 struct Pair {
 	anne     int // comment
 	beatrice int // comment
@@ -73,6 +85,8 @@ struct Example {
 
 fn metrics(value int) int
 
+fn generic_identity[T](x T) T
+
 fn add(a, b int) int {
 	return a + b
 }
@@ -90,6 +104,8 @@ fn shorthand_examples(y int) {
 	_ = add(1, y: (y))
 	_ = Foo{ x: 1, y }
 	_ = Foo{ x: 1, y: (y) }
+	_ = GenericPair[i32, i32]{ left: 1, right: 2 }
+	_ = typeof(GenericPair[i32, i32]{ left: 1, right: 2 }) == type GenericPair[i32, i32]
 }
 
 fn use_context(x int) int context AppContext {
@@ -186,7 +202,7 @@ fn fmt_literal_cast_comparisons(z, w i64, x i32) {
 	assert 3 <= z
 	assert z > 4
 	assert 5 >= z
-	assert current_i32() == 0 as i32
+	assert current_i32() == 0
 	assert x == 0
 	assert 0 == x
 	assert x < 1

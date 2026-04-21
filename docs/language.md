@@ -116,10 +116,12 @@ DeclName        = Ident | "_" .
 DeclNameList    = DeclName { "," DeclName } .
 TopDeclNameList = Ident { "," Ident } .
 
-StructDecl      = "struct" Ident "{" [ StructFieldDeclList ] "}" .
-UnionDecl       = "union" Ident "{" [ FieldDeclList ] "}" .
-EnumDecl        = "enum" Ident Type "{" [ EnumItemList ] "}" .
-TypeAliasDecl   = "type" Ident Type .
+TypeParamList   = "[" Ident { "," Ident } "]" .
+
+StructDecl      = "struct" Ident [ TypeParamList ] "{" [ StructFieldDeclList ] "}" .
+UnionDecl       = "union" Ident [ TypeParamList ] "{" [ FieldDeclList ] "}" .
+EnumDecl        = "enum" Ident [ TypeParamList ] Type "{" [ EnumItemList ] "}" .
+TypeAliasDecl   = "type" Ident [ TypeParamList ] Type .
 FieldSep        = "," | ";" .
 AnonFieldSep    = ";" .
 
@@ -134,7 +136,8 @@ FieldDefault    = "=" Expr .
 EnumItem        = Ident [ EnumPayload ] [ "=" Expr ] .
 EnumPayload     = "{" [ FieldDeclList ] "}" .
 
-FnDeclOrDef     = "fn" FnName "(" [ ParamList ] ")" [ FnResultClause ] [ ContextClause ] [ Block ] .
+FnDeclOrDef     = "fn" FnName [ TypeParamList ] "(" [ ParamList ] ")" [ FnResultClause ]
+                [ ContextClause ] [ Block ] .
 FnName          = Ident | "sizeof" .
 ParamList       = ParamGroup { "," ParamGroup } .
 ParamGroup      = "const" ( ( Ident | "_" ) Type | ( Ident | "_" ) "..." Type )
@@ -162,7 +165,8 @@ FnTypeParam     = "const" ( Type | Ident Type | "..." Type )
                 | Type | ( Ident { "," Ident } Type ) | "..." Type .
 AnonStructType  = [ "struct" ] "{" [ AnonFieldDeclList ] "}" .
 AnonUnionType   = "union" "{" [ AnonFieldDeclList ] "}" .
-TypeName        = Ident { "." Ident } .
+TypeArgList     = "[" Type { "," Type } "]" .
+TypeName        = Ident { "." Ident } [ TypeArgList ] .
 
 Block           = "{" [ StmtList ] "}" .
 StmtList        = Stmt { ";" Stmt } [ ";" ] .
@@ -223,8 +227,10 @@ CastSuffix      = "as" Type .
 UnwrapSuffix    = "!" .
 
 PrimaryExpr     = Ident | "context" | IntLit | FloatLit | StringLit | RuneLit | BoolLit | "null"
+                | TypeValueExpr
                 | CompoundLit | NewExpr | "sizeof" "(" ( Type | Expr ) ")" | "(" Expr ")"
                 | TupleExpr .
+TypeValueExpr   = "type" Type .
 TupleExpr       = "(" Expr "," Expr { "," Expr } ")" .
 NewExpr         = "new" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "with" Expr ] .
 CompoundLit     = [ TypeName ] "{" [ FieldInitList ] "}" .
@@ -238,6 +244,7 @@ FieldInit       = Ident { "." Ident } ":" Expr .
   2. if that parse fails, backtrack and parse the segment as `Type`
 - [SYN-DISAMBIG-002][Stable] Function-type parameter segments are parsed left-to-right with the above backtracking rule.
 - [SYN-DISAMBIG-003][Stable] `context` is always lexed as keyword token `CONTEXT`; when accepted as a primary expression it is represented as identifier-like operand, never as a bindable identifier declaration name.
+- [SYN-DISAMBIG-004][Provisional] After a declaration name in `struct`, `union`, `enum`, `type`, or `fn`, a following `[` starts a type-parameter list only when the bracket contents parse as identifiers separated by commas. Otherwise the declaration continues without type parameters.
 - [SYN-DISAMBIG-005][Stable] In statement context (`Stmt`), leading `{` is parsed unconditionally as `Block`.
 - [SYN-DISAMBIG-006][Stable] `ExprStmt` in statement context MUST NOT consume unparenthesized brace-leading compound-literal forms (`{ ... }`). If a compound-literal expression statement is intended, it MUST be parenthesized (`({ ... })`).
 - [SYN-DIR-001][Provisional] A top-level directive run attaches to the immediately following top-level declaration.
@@ -349,6 +356,12 @@ fn f() {
 - [TYPE-CONSTR-012][Provisional] `anytype` participates in function type identity (for example, `fn(anytype)` is distinct from `fn(i32)`).
 - [TYPE-CONSTR-013][Provisional] Variadic function types ending in `...anytype` are distinct from variadic function types ending in concrete `...T`.
 - [TYPE-CONSTR-014][Provisional] `const_int` and `const_float` type names are valid only in function return types, `const` parameter types, `const` declaration explicit types, and `as` cast targets.
+- [TYPE-GENERIC-001][Provisional] Named `struct`, `union`, `enum`, `type`, and `fn` declarations MAY declare type parameters with `[...]` after the declaration name.
+- [TYPE-GENERIC-002][Provisional] Type parameters denote compile-time values of builtin metatype `type` within the generic declaration body.
+- [TYPE-GENERIC-003][Provisional] Generic named types are instantiated only in type positions, using `TypeName[TypeArgs...]`.
+- [TYPE-GENERIC-004][Provisional] Generic named types used in explicit compound-literal type prefixes MUST include all required type arguments; bare `Vector{ ... }` is invalid when `Vector` is generic.
+- [TYPE-GENERIC-005][Provisional] Generic function calls do not admit explicit type-argument syntax. `f[T](x)` is not a generic call form.
+- [TYPE-GENERIC-006][Provisional] A generic function declaration is invalid if it has zero ordinary parameters and any declared type parameter appears in the return type.
 
 ### 5.1.1 Textual types (`str` and `rune`)
 - [TYPE-TEXT-001][Stable] `str` denotes textual byte sequences constrained to valid UTF-8.
@@ -509,6 +522,11 @@ fn f() {
 - [EXPR-INDEX-001][Provisional] In const-evaluated execution paths, element indexing `x[i]` over const-evaluable string/slice-like values produces a const byte value when `i` is const-evaluable and in bounds.
 - [EXPR-SLICE-001][Provisional] Slice-range expressions over sequence-like values preserve the source sequence family and mutability/view shape rather than converting through a different container kind.
   - examples: `*[T][a:b] -> *[T]`, `&[T][a:b] -> &[T]`, `(*str)[a:b] -> *str`, `(&str)[a:b] -> &str`
+
+### 6.3.1 Type values in expression context
+- [EXPR-TYPEVALUE-001][Provisional] `type T` forms a type-value expression of metatype `type`.
+- [EXPR-TYPEVALUE-002][Provisional] `type` prefix is required when an expression-context type value would otherwise collide with ordinary postfix expression grammar, including instantiated generic named types (`type Vector[i32]`) and constructed types (`type &[i32]`).
+- [EXPR-TYPEVALUE-003][Provisional] Simple builtin or named type value expressions that are already unambiguous, such as `i64`, remain valid without the `type` prefix.
 
 ### 6.4 Compound literals
 - [EXPR-COMPOUND-001][Stable] Compound literals are named-field only.

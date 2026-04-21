@@ -1782,6 +1782,16 @@ int SLTCResolveReflectedTypeValueExpr(SLTypeCheckCtx* c, int32_t exprNode, int32
         *outTypeId = typeId;
         return 0;
     }
+    if (n->kind == SLAst_TYPE_VALUE) {
+        int32_t typeNode = SLAstFirstChild(c->ast, exprNode);
+        if (typeNode < 0) {
+            return 1;
+        }
+        if (SLTCResolveTypeNode(c, typeNode, outTypeId) != 0) {
+            return -1;
+        }
+        return 0;
+    }
     if (SLTCIsTypeNodeKind(n->kind)) {
         if (SLTCResolveTypeNode(c, exprNode, outTypeId) != 0) {
             return -1;

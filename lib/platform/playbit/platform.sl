@@ -416,7 +416,7 @@ fn log_write_impl(message &str, flags u32) Err {
 	buf.len = len(bytes)
 	var bufv *Buf = &buf
 	var arg1 u64  = bufv as u64
-	return pb_syscall(1, op: 32, arg1, arg2: 1 as u64, arg3: flags as u64, arg4: 0 as u64, arg5: 0 as u64, arg6: 0 as u64) as Err
+	return pb_syscall(1, op: 32, arg1, arg2: 1, arg3: flags as u64, arg4: 0, arg5: 0, arg6: 0) as Err
 }
 
 pub fn exit(status i32) {
@@ -472,7 +472,7 @@ pub fn handle_duplicate(handle Handle, rights Rights, name HandleName) Handle {
 
 pub fn handle_list(handles *HandleInfo, handlesCap u32, flags, predicate u64) i32 {
 	var arg1 u64 = handles as u64
-	return pb_syscall(0, op: 77, arg1, arg2: handlesCap as u64, arg3: 16 as u64, arg4: flags, arg5: predicate, arg6: 0 as u64) as i32
+	return pb_syscall(0, op: 77, arg1, arg2: handlesCap as u64, arg3: 16, arg4: flags, arg5: predicate, arg6: 0) as i32
 }
 
 pub fn object_observe(handle Handle, signals Signals, flags u32) Err {
@@ -502,7 +502,7 @@ pub fn event_poll(buffer *[u8], deadline, leeway u64) i32 {
 		ptr = &buffer[0]
 	}
 	var arg1 u64 = ptr as u64
-	return pb_syscall_async(0, op: 58, arg1, arg2: len(buffer) as u64, arg3: deadline, arg4: leeway, arg5: 0 as u64, arg6: 0 as u64) as i32
+	return pb_syscall_async(0, op: 58, arg1, arg2: len(buffer) as u64, arg3: deadline, arg4: leeway, arg5: 0, arg6: 0) as i32
 }
 
 pub fn thread_start(parentThread Handle, flags u64, config *ThreadConfig) Handle {

@@ -54,6 +54,9 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/slc check examples/anytype.sl`
 - Type aliases (nominal alias + overload selection): `examples/type_alias.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/type_alias.sl`
+- Generics (generic named types, inferred generic functions, receiver sugar, `type`-prefixed checks):
+  `examples/generics.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/generics.sl`
 - Reflection (`type`, `typeof`, `kind`, `base`): `examples/reflection.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/reflection.sl`
 - Overload dispatch (same-name overloads): `examples/function_groups.sl`

@@ -25,6 +25,7 @@ typedef enum {
     SLTCType_FUNCTION,
     SLTCType_TUPLE,
     SLTCType_PACK,
+    SLTCType_TYPE_PARAM,
     SLTCType_ANYTYPE,
     SLTCType_OPTIONAL,
     SLTCType_NULL,
@@ -95,6 +96,9 @@ typedef struct {
     int32_t  typeId;
     int32_t  declNode;
     int32_t  ownerTypeId;
+    uint32_t templateArgStart;
+    uint16_t templateArgCount;
+    int16_t  templateRootNamedIndex;
 } SLTCNamedType;
 
 typedef struct {
@@ -107,6 +111,9 @@ typedef struct {
     int32_t  declNode;
     int32_t  defNode;
     int32_t  funcTypeId;
+    uint32_t templateArgStart;
+    uint16_t templateArgCount;
+    int16_t  templateRootFuncIndex;
     uint16_t flags;
 } SLTCFunction;
 
@@ -226,6 +233,10 @@ typedef struct {
     uint32_t  funcParamLen;
     uint32_t  funcParamCap;
 
+    int32_t* genericArgTypes;
+    uint32_t genericArgLen;
+    uint32_t genericArgCap;
+
     int32_t* scratchParamTypes;
     uint8_t* scratchParamFlags;
     uint32_t scratchParamCap;
@@ -274,14 +285,18 @@ typedef struct {
     uint8_t*          constDiagFnInvoked;
     uint32_t          constDiagFnInvokedCap;
 
-    int32_t currentContextType;
-    int     hasImplicitMainRootContext;
-    int32_t implicitMainContextType;
-    int32_t activeCallWithNode;
-    int32_t currentFunctionIndex;
-    int     currentFunctionIsCompareHook;
-    int32_t activeTypeParamFnNode;
-    int32_t currentTypeOwnerTypeId;
+    int32_t  currentContextType;
+    int      hasImplicitMainRootContext;
+    int32_t  implicitMainContextType;
+    int32_t  activeExpectedCallType;
+    int32_t  activeCallWithNode;
+    int32_t  currentFunctionIndex;
+    int      currentFunctionIsCompareHook;
+    int32_t  activeTypeParamFnNode;
+    int32_t  currentTypeOwnerTypeId;
+    uint32_t activeGenericArgStart;
+    uint16_t activeGenericArgCount;
+    int32_t  activeGenericDeclNode;
     SLTCConstEvalCtx* _Nullable activeConstEvalCtx;
     uint8_t compilerDiagPathProven;
     uint8_t allowAnytypeParamType;
@@ -349,7 +364,23 @@ enum {
     SLTCTypeTagKind_TUPLE = 12,
 };
 
-int32_t SLTCFindNamedTypeIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
+int32_t  SLTCFindNamedTypeIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
+uint16_t SLTCDeclTypeParamCount(SLTypeCheckCtx* c, int32_t declNode);
+int32_t  SLTCDeclTypeParamIndex(
+    SLTypeCheckCtx* c, int32_t declNode, uint32_t nameStart, uint32_t nameEnd);
+int SLTCAppendDeclTypeParamPlaceholders(
+    SLTypeCheckCtx* c, int32_t declNode, uint32_t* outStart, uint16_t* outCount);
+int32_t SLTCInstantiateNamedType(
+    SLTypeCheckCtx* c, int32_t rootTypeId, const int32_t* argTypes, uint16_t argCount);
+int32_t SLTCSubstituteType(
+    SLTypeCheckCtx* c,
+    int32_t         typeId,
+    const int32_t*  paramTypes,
+    const int32_t*  argTypes,
+    uint16_t        argCount,
+    uint32_t        errStart,
+    uint32_t        errEnd);
+int SLTCEnsureNamedTypeFieldsResolved(SLTypeCheckCtx* c, int32_t typeId);
 
 typedef enum {
     SLTCCompilerDiagOp_NONE = 0,

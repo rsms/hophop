@@ -1,0 +1,69 @@
+// generic named types and generic functions:
+// - explicit type arguments for named types
+// - inferred generic function calls
+// - receiver-call sugar over generic receiver-first functions
+// - expected-result inference for non-zero-arg generic-return functions
+// - `type`-prefixed instantiated type values in expression context
+// - explicit type-directed construction with `T type`
+struct Vector[T] {
+	x, y T
+}
+
+struct Factory {}
+
+fn add[T](a, b Vector[T]) Vector[T] {
+	return { x: a.x + b.x, y: a.y + b.y }
+}
+
+fn scale[T](self Vector[T], k T) Vector[T] {
+	return { x: self.x * k, y: self.y * k }
+}
+
+fn first[T](x, _ T) T {
+	return x
+}
+
+fn zero[T](self Factory) T {
+	assert typeof(self) == type Factory
+	if T == i64 {
+		return 0 as i64
+	}
+	return 1 as i64
+}
+
+fn make_pair_of[T](typ type, x, y T) Vector[T] {
+	assert typ == type T
+	return Vector[T]{ x, y }
+}
+
+fn main() {
+	var v1 Vector[i64] = Vector[i64]{ x: -1 as i64, y: 4 }
+	var v2 Vector[i64] = Vector[i64]{ x: 5, y: -2 }
+
+	var sum     = add(v1, b: v2)
+	var doubled = v1.scale(k: 2)
+	var chain   = v1.scale(k: 2).add(v2).add(sum)
+
+	var inferred_int = first(1, _: 2)
+	var inferred_i8  = first(1 as i8, _: 2)
+
+	var f Factory = {}
+	var z i64     = f.zero()
+
+	var ints = make_pair_of(typ: i32, x: 3 as i32, y: 4 as i32)
+
+	assert typeof(sum) == type Vector[i64]
+	assert typeof(doubled) == type Vector[i64]
+	assert typeof(chain) == type Vector[i64]
+	assert typeof(inferred_int) == int
+	assert typeof(inferred_i8) == i8
+	assert typeof(ints) == type Vector[i32]
+
+	assert sum.x == 4
+	assert sum.y == 2
+	assert doubled.x == -2
+	assert doubled.y == 8
+	assert chain.x == 7
+	assert chain.y == 8
+	assert z == 0
+}

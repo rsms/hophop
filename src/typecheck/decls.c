@@ -2,6 +2,80 @@
 
 SL_API_BEGIN
 
+static int SLTCTypeContainsAnyParamRec(
+    SLTypeCheckCtx* c,
+    int32_t         typeId,
+    const int32_t*  paramTypes,
+    uint16_t        paramCount,
+    uint32_t        depth) {
+    uint16_t i;
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || depth > c->typeLen) {
+        return 0;
+    }
+    for (i = 0; i < paramCount; i++) {
+        if (paramTypes[i] == typeId) {
+            return 1;
+        }
+    }
+    switch (c->types[typeId].kind) {
+        case SLTCType_PTR:
+        case SLTCType_REF:
+        case SLTCType_ARRAY:
+        case SLTCType_SLICE:
+        case SLTCType_OPTIONAL:
+        case SLTCType_ALIAS:
+            return SLTCTypeContainsAnyParamRec(
+                c, c->types[typeId].baseType, paramTypes, paramCount, depth + 1u);
+        case SLTCType_TUPLE:
+        case SLTCType_PACK:
+        case SLTCType_FUNCTION: {
+            uint32_t j;
+            if (c->types[typeId].kind == SLTCType_FUNCTION
+                && SLTCTypeContainsAnyParamRec(
+                    c, c->types[typeId].baseType, paramTypes, paramCount, depth + 1u))
+            {
+                return 1;
+            }
+            for (j = 0; j < c->types[typeId].fieldCount; j++) {
+                if (SLTCTypeContainsAnyParamRec(
+                        c,
+                        c->funcParamTypes[c->types[typeId].fieldStart + j],
+                        paramTypes,
+                        paramCount,
+                        depth + 1u))
+                {
+                    return 1;
+                }
+            }
+            return 0;
+        }
+        case SLTCType_NAMED: {
+            uint32_t ni;
+            for (ni = 0; ni < c->namedTypeLen; ni++) {
+                const SLTCNamedType* nt = &c->namedTypes[ni];
+                uint16_t             j;
+                if (nt->typeId != typeId) {
+                    continue;
+                }
+                for (j = 0; j < nt->templateArgCount; j++) {
+                    if (SLTCTypeContainsAnyParamRec(
+                            c,
+                            c->genericArgTypes[nt->templateArgStart + j],
+                            paramTypes,
+                            paramCount,
+                            depth + 1u))
+                    {
+                        return 1;
+                    }
+                }
+                break;
+            }
+            return 0;
+        }
+        default: return 0;
+    }
+}
+
 int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
     const SLTCNamedType* nt = &c->namedTypes[namedIndex];
     int32_t              declNode = nt->declNode;
@@ -15,12 +89,26 @@ int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
     uint32_t             fieldOrdinal = 0;
     int                  sawDependent = 0;
     int                  sawEmbedded = 0;
+    uint32_t             savedActiveGenericArgStart = c->activeGenericArgStart;
+    uint16_t             savedActiveGenericArgCount = c->activeGenericArgCount;
+    int32_t              savedActiveGenericDeclNode = c->activeGenericDeclNode;
+    int skipDefaultChecks = nt->templateArgCount > 0 && nt->templateRootNamedIndex < 0;
+
+    c->activeGenericArgStart = nt->templateArgStart;
+    c->activeGenericArgCount = nt->templateArgCount;
+    c->activeGenericDeclNode = nt->templateArgCount > 0 ? declNode : -1;
 
     if (kind == SLAst_TYPE_ALIAS) {
+        c->activeGenericArgStart = savedActiveGenericArgStart;
+        c->activeGenericArgCount = savedActiveGenericArgCount;
+        c->activeGenericDeclNode = savedActiveGenericDeclNode;
         return 0;
     }
 
     child = SLAstFirstChild(c->ast, declNode);
+    while (child >= 0 && c->ast->nodes[child].kind == SLAst_TYPE_PARAM) {
+        child = SLAstNextSibling(c->ast, child);
+    }
     if (kind == SLAst_ENUM && child >= 0
         && (c->ast->nodes[child].kind == SLAst_TYPE_NAME
             || c->ast->nodes[child].kind == SLAst_TYPE_PTR
@@ -75,6 +163,10 @@ int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
 
     while (child >= 0) {
         const SLAstNode* n = &c->ast->nodes[child];
+        if (n->kind == SLAst_TYPE_PARAM) {
+            child = SLAstNextSibling(c->ast, child);
+            continue;
+        }
         if (n->kind == SLAst_FIELD
             && (kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM))
         {
@@ -225,7 +317,7 @@ int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
 
             if (kind == SLAst_STRUCT || kind == SLAst_UNION) {
                 int32_t defaultNode = typeNode >= 0 ? SLAstNextSibling(c->ast, typeNode) : -1;
-                if (defaultNode >= 0) {
+                if (defaultNode >= 0 && !skipDefaultChecks) {
                     int32_t        defaultType;
                     const int32_t* savedDefaultFieldNodes = c->defaultFieldNodes;
                     const int32_t* savedDefaultFieldTypes = c->defaultFieldTypes;
@@ -295,6 +387,69 @@ int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
         c->types[nt->typeId].fieldStart = fieldStart;
     }
     c->types[nt->typeId].fieldCount = (uint16_t)fieldCount;
+    c->activeGenericArgStart = savedActiveGenericArgStart;
+    c->activeGenericArgCount = savedActiveGenericArgCount;
+    c->activeGenericDeclNode = savedActiveGenericDeclNode;
+    return 0;
+}
+
+static int SLTCResolveNamedTypeInstanceFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
+    const SLTCNamedType* nt = &c->namedTypes[namedIndex];
+    const SLTCNamedType* rootNt;
+    const SLTCType*      rootType;
+    uint16_t             i;
+    uint32_t             fieldStart;
+    if (nt->templateRootNamedIndex < 0) {
+        return SLTCResolveNamedTypeFields(c, namedIndex);
+    }
+    rootNt = &c->namedTypes[(uint32_t)nt->templateRootNamedIndex];
+    if (SLTCEnsureNamedTypeFieldsResolved(c, rootNt->typeId) != 0) {
+        return -1;
+    }
+    rootType = &c->types[rootNt->typeId];
+    if (c->fieldLen + rootType->fieldCount > c->fieldCap) {
+        return SLTCFailNode(c, nt->declNode, SLDiag_ARENA_OOM);
+    }
+    fieldStart = c->fieldLen;
+    for (i = 0; i < rootType->fieldCount; i++) {
+        SLTCField field = c->fields[rootType->fieldStart + i];
+        field.typeId = SLTCSubstituteType(
+            c,
+            field.typeId,
+            &c->genericArgTypes[rootNt->templateArgStart],
+            &c->genericArgTypes[nt->templateArgStart],
+            nt->templateArgCount,
+            field.nameStart,
+            field.nameEnd);
+        if (field.typeId < 0) {
+            return -1;
+        }
+        c->fields[c->fieldLen++] = field;
+    }
+    c->types[nt->typeId].fieldStart = fieldStart;
+    c->types[nt->typeId].fieldCount = rootType->fieldCount;
+    if ((rootType->flags & SLTCTypeFlag_VARSIZE) != 0) {
+        c->types[nt->typeId].flags |= SLTCTypeFlag_VARSIZE;
+    }
+    return 0;
+}
+
+int SLTCEnsureNamedTypeFieldsResolved(SLTypeCheckCtx* c, int32_t typeId) {
+    uint32_t i;
+    for (i = 0; i < c->namedTypeLen; i++) {
+        const SLTCNamedType* nt = &c->namedTypes[i];
+        if (nt->typeId != typeId) {
+            continue;
+        }
+        if (c->types[typeId].fieldCount == 0 && c->ast->nodes[nt->declNode].kind != SLAst_TYPE_ALIAS
+            && c->ast->nodes[nt->declNode].kind != SLAst_ENUM)
+        {
+            return nt->templateRootNamedIndex >= 0
+                     ? SLTCResolveNamedTypeInstanceFields(c, i)
+                     : SLTCResolveNamedTypeFields(c, i);
+        }
+        return 0;
+    }
     return 0;
 }
 
@@ -303,7 +458,24 @@ int SLTCResolveAllNamedTypeFields(SLTypeCheckCtx* c) {
     for (i = 0; i < c->namedTypeLen; i++) {
         int32_t savedOwnerTypeId = c->currentTypeOwnerTypeId;
         c->currentTypeOwnerTypeId = c->namedTypes[i].typeId;
+        if (c->namedTypes[i].templateRootNamedIndex >= 0) {
+            c->currentTypeOwnerTypeId = savedOwnerTypeId;
+            continue;
+        }
         if (SLTCResolveNamedTypeFields(c, i) != 0) {
+            c->currentTypeOwnerTypeId = savedOwnerTypeId;
+            return -1;
+        }
+        c->currentTypeOwnerTypeId = savedOwnerTypeId;
+    }
+    for (i = 0; i < c->namedTypeLen; i++) {
+        int32_t savedOwnerTypeId = c->currentTypeOwnerTypeId;
+        c->currentTypeOwnerTypeId = c->namedTypes[i].typeId;
+        if (c->namedTypes[i].templateRootNamedIndex < 0) {
+            c->currentTypeOwnerTypeId = savedOwnerTypeId;
+            continue;
+        }
+        if (SLTCResolveNamedTypeInstanceFields(c, i) != 0) {
             c->currentTypeOwnerTypeId = savedOwnerTypeId;
             return -1;
         }
@@ -315,16 +487,29 @@ int SLTCResolveAllNamedTypeFields(SLTypeCheckCtx* c) {
 int SLTCResolveAllTypeAliases(SLTypeCheckCtx* c) {
     uint32_t i;
     for (i = 0; i < c->namedTypeLen; i++) {
-        int32_t typeId = c->namedTypes[i].typeId;
-        int32_t savedOwnerTypeId = c->currentTypeOwnerTypeId;
+        int32_t  typeId = c->namedTypes[i].typeId;
+        int32_t  savedOwnerTypeId = c->currentTypeOwnerTypeId;
+        uint32_t savedActiveGenericArgStart = c->activeGenericArgStart;
+        uint16_t savedActiveGenericArgCount = c->activeGenericArgCount;
+        int32_t  savedActiveGenericDeclNode = c->activeGenericDeclNode;
         c->currentTypeOwnerTypeId = c->namedTypes[i].ownerTypeId;
+        c->activeGenericArgStart = c->namedTypes[i].templateArgStart;
+        c->activeGenericArgCount = c->namedTypes[i].templateArgCount;
+        c->activeGenericDeclNode =
+            c->namedTypes[i].templateArgCount > 0 ? c->namedTypes[i].declNode : -1;
         if (typeId >= 0 && (uint32_t)typeId < c->typeLen && c->types[typeId].kind == SLTCType_ALIAS
             && SLTCResolveAliasTypeId(c, typeId) != 0)
         {
             c->currentTypeOwnerTypeId = savedOwnerTypeId;
+            c->activeGenericArgStart = savedActiveGenericArgStart;
+            c->activeGenericArgCount = savedActiveGenericArgCount;
+            c->activeGenericDeclNode = savedActiveGenericDeclNode;
             return -1;
         }
         c->currentTypeOwnerTypeId = savedOwnerTypeId;
+        c->activeGenericArgStart = savedActiveGenericArgStart;
+        c->activeGenericArgCount = savedActiveGenericArgCount;
+        c->activeGenericDeclNode = savedActiveGenericDeclNode;
     }
     return 0;
 }
@@ -443,6 +628,10 @@ int SLTCReadFunctionSig(
 
     while (child >= 0) {
         const SLAstNode* n = &c->ast->nodes[child];
+        if (n->kind == SLAst_TYPE_PARAM) {
+            child = SLAstNextSibling(c->ast, child);
+            continue;
+        }
         if (n->kind == SLAst_PARAM) {
             int32_t typeNode = SLAstFirstChild(c->ast, child);
             int32_t typeId;
@@ -543,11 +732,16 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
     int32_t          returnType = -1;
     int32_t          contextType = -1;
     uint32_t         paramCount = 0;
+    uint32_t         genericArgStart = c->genericArgLen;
+    uint16_t         genericArgCount = 0;
     int              isVariadic = 0;
     int              hasAnytype = 0;
     int              hasAnyPack = 0;
     int              hasBody = 0;
     int32_t          savedActiveTypeParamFnNode = c->activeTypeParamFnNode;
+    uint32_t         savedActiveGenericArgStart = c->activeGenericArgStart;
+    uint16_t         savedActiveGenericArgCount = c->activeGenericArgCount;
+    int32_t          savedActiveGenericDeclNode = c->activeGenericDeclNode;
 
     if (n->kind == SLAst_PUB) {
         int32_t ch = SLAstFirstChild(c->ast, nodeId);
@@ -564,15 +758,27 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
         return 0;
     }
 
+    if (SLTCAppendDeclTypeParamPlaceholders(c, nodeId, &genericArgStart, &genericArgCount) != 0) {
+        return -1;
+    }
     c->activeTypeParamFnNode = nodeId;
+    c->activeGenericArgStart = genericArgStart;
+    c->activeGenericArgCount = genericArgCount;
+    c->activeGenericDeclNode = genericArgCount > 0 ? nodeId : -1;
     if (SLTCReadFunctionSig(
             c, nodeId, &returnType, &paramCount, &isVariadic, &contextType, &hasBody)
         != 0)
     {
         c->activeTypeParamFnNode = savedActiveTypeParamFnNode;
+        c->activeGenericArgStart = savedActiveGenericArgStart;
+        c->activeGenericArgCount = savedActiveGenericArgCount;
+        c->activeGenericDeclNode = savedActiveGenericDeclNode;
         return -1;
     }
     c->activeTypeParamFnNode = savedActiveTypeParamFnNode;
+    c->activeGenericArgStart = savedActiveGenericArgStart;
+    c->activeGenericArgCount = savedActiveGenericArgCount;
+    c->activeGenericDeclNode = savedActiveGenericDeclNode;
     {
         uint32_t p;
         for (p = 0; p < paramCount; p++) {
@@ -604,6 +810,12 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
                 return SLTCFailNode(c, nodeId, SLDiag_INVALID_COMPARISON_HOOK_SIGNATURE);
             }
         }
+    }
+    if (genericArgCount > 0 && paramCount == 0
+        && SLTCTypeContainsAnyParamRec(
+            c, returnType, &c->genericArgTypes[genericArgStart], genericArgCount, 0u))
+    {
+        return SLTCFailSpan(c, SLDiag_TYPE_MISMATCH, n->start, n->end);
     }
 
     {
@@ -663,11 +875,14 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
         f->declNode = nodeId;
         f->defNode = hasBody ? nodeId : -1;
         f->funcTypeId = -1;
+        f->templateArgStart = genericArgStart;
+        f->templateArgCount = genericArgCount;
+        f->templateRootFuncIndex = -1;
         f->flags = 0;
         if (isVariadic) {
             f->flags |= SLTCFunctionFlag_VARIADIC;
         }
-        if (hasAnytype) {
+        if (hasAnytype || genericArgCount > 0) {
             f->flags |= SLTCFunctionFlag_TEMPLATE;
         }
         if (hasAnyPack) {
@@ -923,6 +1138,9 @@ int SLTCVariantNarrowFind(
 
 int32_t SLTCEnumDeclFirstVariantNode(SLTypeCheckCtx* c, int32_t enumDeclNode) {
     int32_t child = SLAstFirstChild(c->ast, enumDeclNode);
+    while (child >= 0 && c->ast->nodes[child].kind == SLAst_TYPE_PARAM) {
+        child = SLAstNextSibling(c->ast, child);
+    }
     if (child >= 0 && SLTCIsTypeNodeKind(c->ast->nodes[child].kind)) {
         child = SLAstNextSibling(c->ast, child);
     }
@@ -1187,6 +1405,11 @@ int SLTCFieldLookup(
             || (c->types[typeId].kind != SLTCType_NAMED
                 && c->types[typeId].kind != SLTCType_ANON_STRUCT
                 && c->types[typeId].kind != SLTCType_ANON_UNION))
+        {
+            return -1;
+        }
+        if (c->types[typeId].kind == SLTCType_NAMED
+            && SLTCEnsureNamedTypeFieldsResolved(c, typeId) != 0)
         {
             return -1;
         }

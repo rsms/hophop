@@ -2,6 +2,8 @@
 
 SL_API_BEGIN
 
+static int32_t SLTCFindNamedTypeIndexByTypeId(SLTypeCheckCtx* c, int32_t typeId);
+
 void SLTCSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
@@ -497,6 +499,25 @@ void SLTCFormatTypeRec(SLTypeCheckCtx* c, int32_t typeId, SLTCTextBuf* b, uint32
             } else {
                 SLTCTextBufAppendCStr(b, "<unnamed>");
             }
+            {
+                int32_t namedIndex = SLTCFindNamedTypeIndexByTypeId(c, typeId);
+                if (namedIndex >= 0 && c->namedTypes[(uint32_t)namedIndex].templateArgCount > 0) {
+                    uint16_t i;
+                    SLTCTextBufAppendChar(b, '[');
+                    for (i = 0; i < c->namedTypes[(uint32_t)namedIndex].templateArgCount; i++) {
+                        if (i > 0) {
+                            SLTCTextBufAppendCStr(b, ", ");
+                        }
+                        SLTCFormatTypeRec(
+                            c,
+                            c->genericArgTypes
+                                [c->namedTypes[(uint32_t)namedIndex].templateArgStart + i],
+                            b,
+                            depth + 1u);
+                    }
+                    SLTCTextBufAppendChar(b, ']');
+                }
+            }
             return;
         case SLTCType_PTR:
             SLTCTextBufAppendChar(b, '*');
@@ -546,6 +567,13 @@ void SLTCFormatTypeRec(SLTypeCheckCtx* c, int32_t typeId, SLTCTextBuf* b, uint32
             SLTCTextBufAppendChar(b, ')');
             return;
         }
+        case SLTCType_TYPE_PARAM:
+            if (t->nameEnd > t->nameStart && t->nameEnd <= c->src.len) {
+                SLTCTextBufAppendSlice(b, c->src, t->nameStart, t->nameEnd);
+            } else {
+                SLTCTextBufAppendCStr(b, "<type-param>");
+            }
+            return;
         case SLTCType_ANYTYPE:       SLTCTextBufAppendCStr(b, "anytype"); return;
         case SLTCType_UNTYPED_INT:   SLTCTextBufAppendCStr(b, "const_int"); return;
         case SLTCType_UNTYPED_FLOAT: SLTCTextBufAppendCStr(b, "const_float"); return;
@@ -1278,11 +1306,23 @@ int32_t SLTCResolveTypeNamePath(
 int32_t SLTCResolveTypeValueName(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
     int32_t builtinType = SLTCFindBuiltinType(c, start, end);
     int32_t typeId;
+    if (c != NULL && c->activeGenericDeclNode >= 0) {
+        int32_t idx = SLTCDeclTypeParamIndex(c, c->activeGenericDeclNode, start, end);
+        if (idx >= 0 && (uint32_t)idx < c->activeGenericArgCount) {
+            return c->genericArgTypes[c->activeGenericArgStart + (uint32_t)idx];
+        }
+    }
     if (builtinType >= 0) {
         return builtinType;
     }
     typeId = SLTCResolveTypeNamePath(c, start, end, c->currentTypeOwnerTypeId);
     if (typeId >= 0) {
+        int32_t namedIndex = SLTCFindNamedTypeIndexByTypeId(c, typeId);
+        if (namedIndex >= 0 && c->namedTypes[(uint32_t)namedIndex].templateArgCount > 0
+            && c->namedTypes[(uint32_t)namedIndex].templateRootNamedIndex < 0)
+        {
+            return -1;
+        }
         return typeId;
     }
     return -1;

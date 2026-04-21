@@ -13,5 +13,5 @@ fn example(z i64, x i32) {
 	assert 5 >= z
 	assert x == 0
 	assert 0 == x
-	assert current_i32() == 0 as i32
+	assert current_i32() == 0
 }

@@ -468,6 +468,11 @@ int SLTCTypeCompoundLit(SLTypeCheckCtx* c, int32_t nodeId, int32_t expectedType,
                 ? SLDiag_COMPOUND_TYPE_REQUIRED
                 : SLDiag_COMPOUND_INFER_NON_AGGREGATE);
     }
+    if (c->types[targetAggregateType].kind == SLTCType_NAMED
+        && SLTCEnsureNamedTypeFieldsResolved(c, targetAggregateType) != 0)
+    {
+        return -1;
+    }
     if (isEnumVariantLiteral) {
         if (!SLTCIsNamedDeclKind(c, targetAggregateType, SLAst_ENUM)) {
             return SLTCFailNode(c, nodeId, SLDiag_COMPOUND_TYPE_REQUIRED);
@@ -612,6 +617,15 @@ int SLTCTypeExprExpected(
             return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
         }
         return SLTCTypeExprExpected(c, inner, expectedType, outType);
+    }
+
+    if (n->kind == SLAst_CALL || n->kind == SLAst_CALL_WITH_CONTEXT) {
+        int32_t savedExpectedCallType = c->activeExpectedCallType;
+        int     rc;
+        c->activeExpectedCallType = expectedType;
+        rc = SLTCTypeExpr(c, nodeId, outType);
+        c->activeExpectedCallType = savedExpectedCallType;
+        return rc;
     }
 
     if (n->kind == SLAst_COMPOUND_LIT) {
@@ -1052,6 +1066,21 @@ int SLTCTypeExpr_IDENT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, in
         return 0;
     }
     return SLTCFailSpan(c, SLDiag_UNKNOWN_SYMBOL, n->dataStart, n->dataEnd);
+}
+
+int SLTCTypeExpr_TYPE_VALUE(
+    SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
+    int32_t typeNode = SLAstFirstChild(c->ast, nodeId);
+    int32_t ignoredType;
+    (void)n;
+    if (typeNode < 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
+    }
+    if (SLTCResolveTypeNode(c, typeNode, &ignoredType) != 0) {
+        return -1;
+    }
+    *outType = c->typeType;
+    return 0;
 }
 
 int SLTCTypeExpr_INT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType) {
@@ -3196,6 +3225,7 @@ int SLTCTypeExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
 
     switch (n->kind) {
         case SLAst_IDENT:             return SLTCTypeExpr_IDENT(c, nodeId, n, outType);
+        case SLAst_TYPE_VALUE:        return SLTCTypeExpr_TYPE_VALUE(c, nodeId, n, outType);
         case SLAst_INT:               return SLTCTypeExpr_INT(c, nodeId, n, outType);
         case SLAst_FLOAT:             return SLTCTypeExpr_FLOAT(c, nodeId, n, outType);
         case SLAst_STRING:            return SLTCTypeExpr_STRING(c, nodeId, n, outType);

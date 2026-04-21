@@ -1641,6 +1641,9 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
     int32_t             savedFunctionIndex = c->currentFunctionIndex;
     int                 savedFunctionIsCompareHook = c->currentFunctionIsCompareHook;
     int32_t             savedActiveTypeParamFnNode = c->activeTypeParamFnNode;
+    uint32_t            savedActiveGenericArgStart = c->activeGenericArgStart;
+    uint16_t            savedActiveGenericArgCount = c->activeGenericArgCount;
+    int32_t             savedActiveGenericDeclNode = c->activeGenericDeclNode;
     int                 isEqualHook = 0;
 
     if (nodeId < 0) {
@@ -1657,6 +1660,9 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
     c->currentFunctionIsCompareHook = SLTCIsComparisonHookName(
         c, fn->nameStart, fn->nameEnd, &isEqualHook);
     c->activeTypeParamFnNode = nodeId;
+    c->activeGenericArgStart = fn->templateArgStart;
+    c->activeGenericArgCount = fn->templateArgCount;
+    c->activeGenericDeclNode = fn->templateArgCount > 0 ? fn->declNode : -1;
 
     child = SLAstFirstChild(c->ast, nodeId);
     while (child >= 0) {
@@ -1704,6 +1710,9 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
         c->currentFunctionIndex = savedFunctionIndex;
         c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;
         c->activeTypeParamFnNode = savedActiveTypeParamFnNode;
+        c->activeGenericArgStart = savedActiveGenericArgStart;
+        c->activeGenericArgCount = savedActiveGenericArgCount;
+        c->activeGenericDeclNode = savedActiveGenericDeclNode;
         return 0;
     }
 
@@ -1720,6 +1729,9 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
             c->currentFunctionIndex = savedFunctionIndex;
             c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;
             c->activeTypeParamFnNode = savedActiveTypeParamFnNode;
+            c->activeGenericArgStart = savedActiveGenericArgStart;
+            c->activeGenericArgCount = savedActiveGenericArgCount;
+            c->activeGenericDeclNode = savedActiveGenericDeclNode;
             c->currentContextType = savedContextType;
             c->hasImplicitMainRootContext = savedImplicitRoot;
             c->implicitMainContextType = savedImplicitMainContextType;
@@ -1740,6 +1752,9 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
             c->currentFunctionIndex = savedFunctionIndex;
             c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;
             c->activeTypeParamFnNode = savedActiveTypeParamFnNode;
+            c->activeGenericArgStart = savedActiveGenericArgStart;
+            c->activeGenericArgCount = savedActiveGenericArgCount;
+            c->activeGenericDeclNode = savedActiveGenericDeclNode;
             c->currentContextType = savedContextType;
             c->hasImplicitMainRootContext = savedImplicitRoot;
             c->implicitMainContextType = savedImplicitMainContextType;
@@ -1757,6 +1772,9 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
         c->currentFunctionIndex = savedFunctionIndex;
         c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;
         c->activeTypeParamFnNode = savedActiveTypeParamFnNode;
+        c->activeGenericArgStart = savedActiveGenericArgStart;
+        c->activeGenericArgCount = savedActiveGenericArgCount;
+        c->activeGenericDeclNode = savedActiveGenericDeclNode;
         c->currentContextType = savedContextType;
         c->hasImplicitMainRootContext = savedImplicitRoot;
         c->implicitMainContextType = savedImplicitMainContextType;
@@ -1833,6 +1851,8 @@ int SLTCBuildCheckedContext(
         arena, sizeof(uint32_t) * capBase * 8u, (uint32_t)_Alignof(uint32_t));
     c.funcParamFlags = (uint8_t*)SLArenaAlloc(
         arena, sizeof(uint8_t) * capBase * 8u, (uint32_t)_Alignof(uint8_t));
+    c.genericArgTypes = (int32_t*)SLArenaAlloc(
+        arena, sizeof(int32_t) * capBase * 16u, (uint32_t)_Alignof(int32_t));
     c.scratchParamTypes = (int32_t*)SLArenaAlloc(
         arena, sizeof(int32_t) * capBase, (uint32_t)_Alignof(int32_t));
     c.scratchParamFlags = (uint8_t*)SLArenaAlloc(
@@ -1860,11 +1880,11 @@ int SLTCBuildCheckedContext(
 
     if (c.types == NULL || c.fields == NULL || c.namedTypes == NULL || c.funcs == NULL
         || c.funcUsed == NULL || c.funcParamTypes == NULL || c.funcParamNameStarts == NULL
-        || c.funcParamNameEnds == NULL || c.funcParamFlags == NULL || c.scratchParamTypes == NULL
-        || c.scratchParamFlags == NULL || c.locals == NULL || c.localUses == NULL
-        || c.constEvalValues == NULL || c.constEvalState == NULL || c.topVarLikeTypes == NULL
-        || c.topVarLikeTypeState == NULL || c.variantNarrows == NULL || c.warningDedup == NULL
-        || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL)
+        || c.funcParamNameEnds == NULL || c.funcParamFlags == NULL || c.genericArgTypes == NULL
+        || c.scratchParamTypes == NULL || c.scratchParamFlags == NULL || c.locals == NULL
+        || c.localUses == NULL || c.constEvalValues == NULL || c.constEvalState == NULL
+        || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL || c.variantNarrows == NULL
+        || c.warningDedup == NULL || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL)
     {
         SLTCSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
         return -1;
@@ -1881,6 +1901,8 @@ int SLTCBuildCheckedContext(
     c.funcUsedCap = capBase;
     c.funcParamLen = 0;
     c.funcParamCap = capBase * 8u;
+    c.genericArgLen = 0;
+    c.genericArgCap = capBase * 16u;
     c.scratchParamCap = capBase;
     c.localLen = 0;
     c.localCap = capBase * 4u;
@@ -1896,11 +1918,15 @@ int SLTCBuildCheckedContext(
     c.currentContextType = -1;
     c.hasImplicitMainRootContext = 0;
     c.implicitMainContextType = -1;
+    c.activeExpectedCallType = -1;
     c.activeCallWithNode = -1;
     c.currentFunctionIndex = -1;
     c.currentFunctionIsCompareHook = 0;
     c.activeTypeParamFnNode = -1;
     c.currentTypeOwnerTypeId = -1;
+    c.activeGenericArgStart = 0;
+    c.activeGenericArgCount = 0;
+    c.activeGenericDeclNode = -1;
     c.activeConstEvalCtx = NULL;
     c.compilerDiagPathProven = 1;
     c.allowAnytypeParamType = 0;

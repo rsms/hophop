@@ -78,6 +78,17 @@ This includes:
 
 Empty braces remain `{}`.
 
+## Generic syntax formatting
+
+- Declaration type-parameter lists render tight with comma-space separators:
+  `struct Pair[A, B]`, `fn id[T](x T) T`, `type Ptr[T] *T`.
+- Instantiated generic named types render the same way in type positions:
+  `Pair[i32, i32]`, `&[Vector[i64]]`.
+- Expression-context type values preserve the explicit `type` prefix:
+  `typeof(x) == type Pair[i32, i32]`.
+- Formatter output must preserve the language rule that function calls do not have explicit generic
+  type arguments; syntax like `f[T](x)` is only round-tripped as ordinary postfix syntax.
+
 ## Alignment rules by construct
 
 ### Struct/union fields
@@ -144,8 +155,9 @@ This is why `fmt_canonical` can legitimately contain both:
 ## Redundant literal casts
 
 - Redundant numeric literal casts are removed when the surrounding syntax fixes the same target type.
-- Current supported contexts include typed `var` initializers, typed returns, matching binary operands including numeric comparisons, and direct call arguments whose resolved parameter type exactly matches the cast target.
+- Current supported contexts include typed `var` initializers, typed returns, matching binary operands including numeric comparisons, direct call arguments whose resolved parameter type exactly matches the cast target, and local field/call chains whose concrete type can be recovered from same-file generic declarations.
 - Variadic direct-call tails are also simplified when the variadic element type exactly matches the cast target.
+- Generic call-argument casts are only removed when the parameter type can be determined independently of the cast being removed. If the cast is what makes generic inference work, the formatter preserves it.
 - Unresolved or ambiguous call targets are left unchanged.
 
 ## Expression operator spacing
