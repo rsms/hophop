@@ -5481,6 +5481,23 @@ static int EnsureMirHostRef(
     return 0;
 }
 
+static int FindMirStaticCallTarget(
+    const SLMirTcFunctionMap* tcFnMap,
+    const SLPackage*          ownerPkg,
+    const SLParsedFile*       ownerFile,
+    SLTypeCheckCtx*           ownerTc,
+    uint32_t                  ownerTcFnIndex,
+    const SLMirSymbolRef*     sym,
+    uint32_t* _Nonnull outTargetMirFn);
+
+static int ClassifyMirFuncFieldCall(
+    const SLPackageLoader* loader,
+    const SLMirProgram*    program,
+    const SLMirFunction*   fn,
+    uint32_t               localIndex,
+    uint32_t* _Nullable outInsertAfterPc,
+    uint32_t* _Nullable outImplFieldRef);
+
 static int ResolvePackageMirProgram(
     const SLPackageLoader*      loader,
     const SLMirResolvedDeclMap* declMap,
@@ -5693,7 +5710,6 @@ static int ResolvePackageMirProgram(
                     const SLMirSymbolRef*    sym = &program->symbols[inst.aux];
                     const SLMirResolvedDecl* target = NULL;
                     if (sym->kind == SLMirSymbol_CALL) {
-                        int32_t  targetTcFn = -1;
                         uint32_t targetMirFn = UINT32_MAX;
                         if (SliceEqCStr(ownerFile->source, inst.start, inst.end, "typeof")) {
                             uint32_t constIndex = UINT32_MAX;
@@ -5704,22 +5720,6 @@ static int ResolvePackageMirProgram(
                             inst.op = SLMirOp_PUSH_CONST;
                             inst.tok = 0u;
                             inst.aux = constIndex;
-                        } else if (
-                            ownerTc != NULL && ownerTcFnIndex != UINT32_MAX
-                            && sym->target < ownerTc->ast->len
-                            && SLTCFindCallTarget(
-                                ownerTc, (int32_t)ownerTcFnIndex, (int32_t)sym->target, &targetTcFn)
-                            && targetTcFn >= 0 && (uint32_t)targetTcFn < ownerTc->funcLen
-                            && (ownerTc->funcs[targetTcFn].flags
-                                & SLTCFunctionFlag_TEMPLATE_INSTANCE)
-                                   != 0
-                            && FindMirTcFunctionDecl(
-                                tcFnMap, ownerPkg, ownerFile, (uint32_t)targetTcFn, &targetMirFn))
-                        {
-                            inst.op = SLMirOp_CALL_FN;
-                            inst.tok = (uint16_t)(SLMirCallArgCountFromTok(inst.tok)
-                                                  | (inst.tok & SLMirCallArgFlag_SPREAD_LAST));
-                            inst.aux = targetMirFn;
                         } else if ((sym->flags & SLMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u) {
                             uint32_t argc = SLMirCallArgCountFromTok(inst.tok);
                             uint32_t argStart = UINT32_MAX;
@@ -5751,26 +5751,58 @@ static int ResolvePackageMirProgram(
                                     }
                                 }
                             }
+                            if (target == NULL
+                                && !ClassifyMirFuncFieldCall(
+                                    loader, program, fn, localIndex, NULL, NULL)
+                                && FindMirStaticCallTarget(
+                                    tcFnMap,
+                                    ownerPkg,
+                                    ownerFile,
+                                    ownerTc,
+                                    ownerTcFnIndex,
+                                    sym,
+                                    &targetMirFn))
+                            {
+                                inst.op = SLMirOp_CALL_FN;
+                                inst.tok = (uint16_t)(SLMirCallArgCountFromTok(inst.tok)
+                                                      | (inst.tok & SLMirCallArgFlag_SPREAD_LAST));
+                                inst.aux = targetMirFn;
+                            }
                         } else {
-                            target = FindMirResolvedDeclBySlice(
-                                declMap,
-                                ownerPkg,
-                                ownerFile->source,
-                                inst.start,
-                                inst.end,
-                                SLMirDeclKind_FN);
-                            if (target == NULL) {
-                                target = FindResolvedImportFunctionBySlice(
-                                    loader,
+                            if (FindMirStaticCallTarget(
+                                    tcFnMap,
+                                    ownerPkg,
+                                    ownerFile,
+                                    ownerTc,
+                                    ownerTcFnIndex,
+                                    sym,
+                                    &targetMirFn))
+                            {
+                                inst.op = SLMirOp_CALL_FN;
+                                inst.tok = (uint16_t)(SLMirCallArgCountFromTok(inst.tok)
+                                                      | (inst.tok & SLMirCallArgFlag_SPREAD_LAST));
+                                inst.aux = targetMirFn;
+                            } else {
+                                target = FindMirResolvedDeclBySlice(
                                     declMap,
                                     ownerPkg,
                                     ownerFile->source,
                                     inst.start,
-                                    inst.end);
-                            }
-                            if (target != NULL) {
-                                inst.op = SLMirOp_CALL_FN;
-                                inst.aux = target->functionIndex;
+                                    inst.end,
+                                    SLMirDeclKind_FN);
+                                if (target == NULL) {
+                                    target = FindResolvedImportFunctionBySlice(
+                                        loader,
+                                        declMap,
+                                        ownerPkg,
+                                        ownerFile->source,
+                                        inst.start,
+                                        inst.end);
+                                }
+                                if (target != NULL) {
+                                    inst.op = SLMirOp_CALL_FN;
+                                    inst.aux = target->functionIndex;
+                                }
                             }
                         }
                     }
@@ -5828,6 +5860,33 @@ static int ResolvePackageMirProgram(
     outProgram->instLen = instOutLen;
     outProgram->funcs = funcs;
     return 0;
+}
+
+static int FindMirStaticCallTarget(
+    const SLMirTcFunctionMap* tcFnMap,
+    const SLPackage*          ownerPkg,
+    const SLParsedFile*       ownerFile,
+    SLTypeCheckCtx*           ownerTc,
+    uint32_t                  ownerTcFnIndex,
+    const SLMirSymbolRef*     sym,
+    uint32_t* _Nonnull outTargetMirFn) {
+    int32_t targetTcFn = -1;
+    if (outTargetMirFn != NULL) {
+        *outTargetMirFn = UINT32_MAX;
+    }
+    if (tcFnMap == NULL || ownerPkg == NULL || ownerFile == NULL || ownerTc == NULL
+        || ownerTcFnIndex == UINT32_MAX || sym == NULL || outTargetMirFn == NULL
+        || sym->target >= ownerTc->ast->len)
+    {
+        return 0;
+    }
+    if (!SLTCFindCallTarget(ownerTc, (int32_t)ownerTcFnIndex, (int32_t)sym->target, &targetTcFn)
+        || targetTcFn < 0 || (uint32_t)targetTcFn >= ownerTc->funcLen)
+    {
+        return 0;
+    }
+    return FindMirTcFunctionDecl(
+        tcFnMap, ownerPkg, ownerFile, (uint32_t)targetTcFn, outTargetMirFn);
 }
 
 static uint32_t FindMirFuncRefFieldByName(

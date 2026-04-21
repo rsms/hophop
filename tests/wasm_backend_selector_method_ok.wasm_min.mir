@@ -1,0 +1,32 @@
+mir
+  dynamic_resolution=no
+  insts=8 consts=1 sources=1 funcs=2 locals=2 fields=0 types=3 hosts=0 symbols=1
+sources
+  #0 len=71
+types
+  #0 astNode=5 source=#0 flags=1
+  #1 astNode=9 source=#0 flags=1
+  #2 astNode=12 source=#0 flags=1
+hosts
+symbols
+  #0 CALL target=16 name="init" [62,66] flags=1
+fields
+consts
+  #0 INT value=0
+functions
+  #0 name="init" [15,19] source=#0 type=#4294967295 params=1 temps=0 locals=#0+1 insts=#0+1
+    locals
+      #0 name="_" [20,21] type=#0 flags=3
+    insts
+      0: RETURN_VOID span=[25,27]
+  #1 name="main" [32,36] source=#0 type=#4294967295 params=0 temps=0 locals=#1+1 insts=#1+7
+    locals
+      #0 name="a" [46,47] type=#1 flags=2
+    insts
+      0: PUSH_CONST const=#0 span=[52,53]
+      1: COERCE type=#2 span=[52,58]
+      2: LOCAL_STORE local=#0 "a" [46,47] span=[42,58]
+      3: LOCAL_LOAD local=#0 "a" [46,47] span=[60,61]
+      4: CALL_FN fn=#0 argc=1 span=[62,66]
+      5: DROP span=[60,68]
+      6: RETURN_VOID span=[39,70]
