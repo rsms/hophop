@@ -637,6 +637,12 @@ void SLTCSetDiagWithArg(
     uint32_t   argStart,
     uint32_t   argEnd);
 int SLTCFailSpan(SLTypeCheckCtx* c, SLDiagCode code, uint32_t start, uint32_t end);
+int SLTCFailDuplicateDefinition(
+    SLTypeCheckCtx* c,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    uint32_t        otherStart,
+    uint32_t        otherEnd);
 int SLTCFailNode(SLTypeCheckCtx* c, int32_t nodeId, SLDiagCode code);
 const char* _Nullable SLTCAllocCStringBytes(SLTypeCheckCtx* c, const uint8_t* bytes, uint32_t len);
 int  SLTCStrEqNullable(const char* _Nullable a, const char* _Nullable b);

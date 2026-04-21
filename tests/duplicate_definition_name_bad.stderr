@@ -1,0 +1,2 @@
+tests/duplicate_definition_name_bad.sl:3:8: error: SL2001: duplicate definition 'Foo'
+tests/duplicate_definition_name_bad.sl:1:8: hint: SL2001: other declaration of 'Foo'

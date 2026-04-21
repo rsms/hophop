@@ -170,7 +170,12 @@ int SLTCResolveAnonAggregateTypeNode(
                     field->dataStart,
                     field->dataEnd))
             {
-                return SLTCFailSpan(c, SLDiag_DUPLICATE_SYMBOL, field->dataStart, field->dataEnd);
+                return SLTCFailDuplicateDefinition(
+                    c,
+                    field->dataStart,
+                    field->dataEnd,
+                    fieldSigs[i].nameStart,
+                    fieldSigs[i].nameEnd);
             }
         }
         typeNode = SLAstFirstChild(c->ast, fieldNode);
@@ -895,6 +900,7 @@ int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, int
     const SLAstNode* node = &c->ast->nodes[nodeId];
     SLTCType         t;
     int32_t          typeId;
+    int32_t          dupNamedIndex;
     uint32_t         idx;
     uint32_t         templateArgStart = 0;
     uint16_t         templateArgCount = 0;
@@ -903,8 +909,14 @@ int SLTCAddNamedType(SLTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, int
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_TYPE);
     }
 
-    if (SLTCFindNamedTypeIndexOwned(c, ownerTypeId, node->dataStart, node->dataEnd) >= 0) {
-        return SLTCFailSpan(c, SLDiag_DUPLICATE_SYMBOL, node->dataStart, node->dataEnd);
+    dupNamedIndex = SLTCFindNamedTypeIndexOwned(c, ownerTypeId, node->dataStart, node->dataEnd);
+    if (dupNamedIndex >= 0) {
+        return SLTCFailDuplicateDefinition(
+            c,
+            node->dataStart,
+            node->dataEnd,
+            c->namedTypes[(uint32_t)dupNamedIndex].nameStart,
+            c->namedTypes[(uint32_t)dupNamedIndex].nameEnd);
     }
 
     t.kind = node->kind == SLAst_TYPE_ALIAS ? SLTCType_ALIAS : SLTCType_NAMED;

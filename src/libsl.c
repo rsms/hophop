@@ -17,6 +17,8 @@ static void SLSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t en
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->relatedStart = 0;
+    diag->relatedEnd = 0;
     diag->detail = NULL;
     diag->hintOverride = NULL;
 }
@@ -31,6 +33,8 @@ void SLDiagClear(SLDiag* _Nullable diag) {
     diag->end = 0;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->relatedStart = 0;
+    diag->relatedEnd = 0;
     diag->detail = NULL;
     diag->hintOverride = NULL;
 }

@@ -14,6 +14,8 @@ void SLTCSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->relatedStart = 0;
+    diag->relatedEnd = 0;
     diag->detail = NULL;
     diag->hintOverride = NULL;
 }
@@ -34,12 +36,43 @@ void SLTCSetDiagWithArg(
     diag->end = end;
     diag->argStart = argStart;
     diag->argEnd = argEnd;
+    diag->relatedStart = 0;
+    diag->relatedEnd = 0;
     diag->detail = NULL;
     diag->hintOverride = NULL;
 }
 
 int SLTCFailSpan(SLTypeCheckCtx* c, SLDiagCode code, uint32_t start, uint32_t end) {
     SLTCSetDiag(c->diag, code, start, end);
+    return -1;
+}
+
+int SLTCFailDuplicateDefinition(
+    SLTypeCheckCtx* c,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    uint32_t        otherStart,
+    uint32_t        otherEnd) {
+    const char prefix[] = "other declaration of '";
+    const char suffix[] = "'";
+    uint32_t   nameLen = (nameEnd > nameStart && nameEnd <= c->src.len) ? nameEnd - nameStart : 0;
+    uint32_t hintLen = (uint32_t)(sizeof(prefix) - 1u) + nameLen + (uint32_t)(sizeof(suffix) - 1u);
+    char*    hint;
+    SLTCSetDiagWithArg(c->diag, SLDiag_DUPLICATE_SYMBOL, nameStart, nameEnd, nameStart, nameEnd);
+    if (c->diag == NULL) {
+        return -1;
+    }
+    c->diag->relatedStart = otherStart;
+    c->diag->relatedEnd = otherEnd;
+    hint = (char*)SLArenaAlloc(c->arena, hintLen + 1u, 1u);
+    if (hint != NULL) {
+        memcpy(hint, prefix, sizeof(prefix) - 1u);
+        if (nameLen > 0) {
+            memcpy(hint + sizeof(prefix) - 1u, c->src.ptr + nameStart, nameLen);
+        }
+        memcpy(hint + sizeof(prefix) - 1u + nameLen, suffix, sizeof(suffix));
+        c->diag->hintOverride = hint;
+    }
     return -1;
 }
 

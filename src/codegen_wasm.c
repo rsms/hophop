@@ -195,6 +195,8 @@ static void WasmSetDiag(SLDiag* _Nullable diag, SLDiagCode code, uint32_t start,
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->relatedStart = 0;
+    diag->relatedEnd = 0;
     diag->detail = NULL;
     diag->hintOverride = NULL;
 }

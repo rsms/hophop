@@ -21,7 +21,7 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_INVALID_UTF8_RUNE,      /* SL1018: rune literal must decode to valid UTF-8 */
     SLDiag_CONST_PARAM_GROUPED_NAME_INVALID, /* SL1019: grouped-name form is invalid for const
                                                 parameter; rewrite as separate const parameters */
-    SLDiag_DUPLICATE_SYMBOL,                 /* SL2001: duplicate symbol */
+    SLDiag_DUPLICATE_SYMBOL,                 /* SL2001: duplicate definition '{s}' */
     SLDiag_UNKNOWN_SYMBOL,                   /* SL2002: unknown symbol */
     SLDiag_UNKNOWN_TYPE,                     /* SL2003: unknown type */
     SLDiag_TYPE_MISMATCH,                    /* SL2004: type mismatch */

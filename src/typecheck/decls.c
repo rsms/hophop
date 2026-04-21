@@ -298,8 +298,16 @@ int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
             }
 
             if (kind == SLAst_STRUCT || kind == SLAst_UNION) {
-                if (SLTCFindNamedTypeIndexOwned(c, nt->typeId, n->dataStart, n->dataEnd) >= 0) {
-                    return SLTCFailSpan(c, SLDiag_DUPLICATE_SYMBOL, n->dataStart, n->dataEnd);
+                int32_t dupTypeIndex = SLTCFindNamedTypeIndexOwned(
+                    c, nt->typeId, n->dataStart, n->dataEnd);
+                if (dupTypeIndex >= 0) {
+                    const SLTCNamedType* dupType = &c->namedTypes[(uint32_t)dupTypeIndex];
+                    if (dupType->nameStart > n->dataStart) {
+                        return SLTCFailDuplicateDefinition(
+                            c, dupType->nameStart, dupType->nameEnd, n->dataStart, n->dataEnd);
+                    }
+                    return SLTCFailDuplicateDefinition(
+                        c, n->dataStart, n->dataEnd, dupType->nameStart, dupType->nameEnd);
                 }
             }
 
@@ -311,7 +319,12 @@ int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
                         n->dataStart,
                         n->dataEnd))
                 {
-                    return SLTCFailSpan(c, SLDiag_DUPLICATE_SYMBOL, n->dataStart, n->dataEnd);
+                    return SLTCFailDuplicateDefinition(
+                        c,
+                        n->dataStart,
+                        n->dataEnd,
+                        pendingFields[i].nameStart,
+                        pendingFields[i].nameEnd);
                 }
             }
 
@@ -844,7 +857,9 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
             }
             if (hasBody) {
                 if (f->defNode >= 0) {
-                    return SLTCFailSpan(c, SLDiag_DUPLICATE_SYMBOL, n->dataStart, n->dataEnd);
+                    const SLAstNode* defNode = &c->ast->nodes[f->defNode];
+                    return SLTCFailDuplicateDefinition(
+                        c, n->dataStart, n->dataEnd, defNode->dataStart, defNode->dataEnd);
                 }
                 f->defNode = nodeId;
             }

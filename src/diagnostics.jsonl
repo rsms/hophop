@@ -26,7 +26,7 @@
 {"id": "SL1017", "name": "INVALID_RUNE_CODEPOINT", "category": "syntactic", "message": "invalid Unicode code point in rune literal"}
 {"id": "SL1018", "name": "INVALID_UTF8_RUNE", "category": "syntactic", "message": "rune literal must decode to valid UTF-8"}
 {"id": "SL1019", "name": "CONST_PARAM_GROUPED_NAME_INVALID", "category": "syntactic", "message": "grouped-name form is invalid for const parameter; rewrite as separate const parameters"}
-{"id": "SL2001", "name": "DUPLICATE_SYMBOL", "category": "semantic", "message": "duplicate symbol"}
+{"id": "SL2001", "name": "DUPLICATE_SYMBOL", "category": "semantic", "message": "duplicate definition '{s}'"}
 {"id": "SL2002", "name": "UNKNOWN_SYMBOL", "category": "semantic", "message": "unknown symbol"}
 {"id": "SL2003", "name": "UNKNOWN_TYPE", "category": "semantic", "message": "unknown type"}
 {"id": "SL2004", "name": "TYPE_MISMATCH", "category": "semantic", "message": "type mismatch"}

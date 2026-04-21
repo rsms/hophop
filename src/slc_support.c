@@ -381,6 +381,8 @@ static int PrintSLDiagEx(
     uint32_t    argEnd = diag->argEnd;
     uint32_t    locA = diag->start;
     uint32_t    locB = diag->end;
+    uint32_t    hintLocA = diag->start;
+    uint32_t    hintLocB = diag->end;
     if (source != NULL) {
         if (spanStart > sourceLen) {
             spanStart = sourceLen;
@@ -403,6 +405,12 @@ static int PrintSLDiagEx(
     }
     if (useLineCol && source != NULL) {
         DiagOffsetToLineCol(source, diag->start, &locA, &locB);
+        if (diag->relatedEnd > diag->relatedStart) {
+            DiagOffsetToLineCol(source, diag->relatedStart, &hintLocA, &hintLocB);
+        } else {
+            hintLocA = locA;
+            hintLocB = locB;
+        }
     }
 
     fprintf(stderr, "%s:%u:%u: %s: %s: ", DisplayPath(filename), locA, locB, severity, diagId);
@@ -458,7 +466,13 @@ static int PrintSLDiagEx(
              : SLDiagHint(diag->code);
     if (hint != NULL) {
         fprintf(
-            stderr, "%s:%u:%u: hint: %s: %s\n", DisplayPath(filename), locA, locB, diagId, hint);
+            stderr,
+            "%s:%u:%u: hint: %s: %s\n",
+            DisplayPath(filename),
+            hintLocA,
+            hintLocB,
+            diagId,
+            hint);
     }
     return diag->type == SLDiagType_WARNING ? 0 : -1;
 }

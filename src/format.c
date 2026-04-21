@@ -6073,6 +6073,8 @@ int SLFormat(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->relatedStart = 0;
+            diag->relatedEnd = 0;
             diag->detail = NULL;
             diag->hintOverride = NULL;
         }
@@ -6103,6 +6105,8 @@ int SLFormat(
                 diag->end = 0;
                 diag->argStart = 0;
                 diag->argEnd = 0;
+                diag->relatedStart = 0;
+                diag->relatedEnd = 0;
                 diag->detail = NULL;
                 diag->hintOverride = NULL;
             }
@@ -6119,6 +6123,8 @@ int SLFormat(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->relatedStart = 0;
+            diag->relatedEnd = 0;
             diag->detail = NULL;
             diag->hintOverride = NULL;
         }
@@ -6133,6 +6139,8 @@ int SLFormat(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->relatedStart = 0;
+            diag->relatedEnd = 0;
             diag->detail = NULL;
             diag->hintOverride = NULL;
         }
