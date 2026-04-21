@@ -60,8 +60,9 @@ fn main() {
 	values[5] = 6
 	assert sum_even_doubles(values[:]) == 24
 
-	var e2 = Entry{ value: 20 }
-	var e1 = Entry{ value: 10, next: &e2 }
+	var e2          = Entry{ value: 20 }
+	var e1          = Entry{ value: 10, next: &e2 }
+	var none *Entry = (null as rawptr) as *Entry
 	assert head_value(&e1) == 10
-	assert head_value(null as *Entry) == null
+	assert head_value(none) == null
 }

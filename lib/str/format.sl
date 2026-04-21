@@ -113,7 +113,7 @@ fn fmt_write_s_any(buf *[u8], payloadCap, oi uint, v anytype) uint {
 	if t == typeof("" as &str) {
 		var text = v as &str
 		return fmt_write_text(buf, payloadCap, oi, text)
-	} else if t == typeof(null as *str) {
+	} else if t == type *str {
 		var text = v as *str
 		return fmt_write_text(buf, payloadCap, oi, text)
 	}
@@ -227,7 +227,7 @@ pub fn format(buf *[u8], const fmt &str, args ...anytype) uint {
 				if t == typeof("" as &str) {
 					var text = args[ai] as &str
 					oi = fmt_write_text(buf, payloadCap, oi, text)
-				} else if t == typeof(null as *str) {
+				} else if t == type *str {
 					var text = args[ai] as *str
 					oi = fmt_write_text(buf, payloadCap, oi, text)
 				} else {

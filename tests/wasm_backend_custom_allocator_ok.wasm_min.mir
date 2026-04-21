@@ -1,11 +1,11 @@
 mir
   dynamic_resolution=no
-  insts=72 consts=13 sources=1 funcs=2 locals=12 fields=8 types=18 hosts=0 symbols=2
+  insts=72 consts=13 sources=1 funcs=2 locals=12 fields=12 types=21 hosts=0 symbols=2
 sources
   #0 len=622
 types
   #0 astNode=22 source=#0 flags=1048576
-  #1 astNode=9 source=#0 flags=1
+  #1 astNode=9 source=#0 flags=1048577
   #2 astNode=12 source=#0 flags=1048576
   #3 astNode=15 source=#0 flags=1
   #4 astNode=16 source=#0 flags=1
@@ -13,15 +13,18 @@ types
   #6 astNode=21 source=#0 flags=1
   #7 astNode=26 source=#0 flags=1048577
   #8 astNode=49 source=#0 flags=524288
-  #9 astNode=57 source=#0 flags=1
+  #9 astNode=57 source=#0 flags=1048577
   #10 astNode=67 source=#0 flags=2049
   #11 astNode=83 source=#0 flags=1
   #12 astNode=86 source=#0 flags=262145
-  #13 astNode=27 source=#0 flags=524288
-  #14 astNode=2 source=#0
-  #15 astNode=4 source=#0 flags=1
-  #16 astNode=70 source=#0 flags=1
-  #17 astNode=90 source=#0 flags=1
+  #13 astNode=10 source=#0 flags=524288
+  #14 astNode=27 source=#0 flags=524288
+  #15 astNode=2 source=#0 flags=524288
+  #16 astNode=4 source=#0 flags=1048577
+  #17 astNode=58 source=#0 flags=524288
+  #18 astNode=5 source=#0 flags=524288
+  #19 astNode=70 source=#0 flags=1
+  #20 astNode=90 source=#0 flags=1
 hosts
 symbols
   #0 CALL target=33 name="impl" [264,268] flags=1
@@ -31,10 +34,14 @@ fields
   #1 ownerType=#4294967295 type=#4294967295 name="mem" [272,275]
   #2 ownerType=#4294967295 type=#4294967295 name="mem" [359,362]
   #3 ownerType=#4294967295 type=#4294967295 name="impl" [405,409]
-  #4 ownerType=#13 type=#14 name="Allocator" [77,86]
-  #5 ownerType=#13 type=#15 name="mem" [88,91]
-  #6 ownerType=#8 type=#14 name="Allocator" [77,86]
-  #7 ownerType=#8 type=#15 name="mem" [88,91]
+  #4 ownerType=#13 type=#12 name="n(xs" [571,575]
+  #5 ownerType=#14 type=#15 name="Allocator" [77,86]
+  #6 ownerType=#14 type=#16 name="mem" [88,91]
+  #7 ownerType=#17 type=#12 name="n(xs" [571,575]
+  #8 ownerType=#18 type=#12 name="n(xs" [571,575]
+  #9 ownerType=#8 type=#15 name="Allocator" [77,86]
+  #10 ownerType=#8 type=#16 name="mem" [88,91]
+  #11 ownerType=#15 type=#12 name="n(xs" [571,575]
 consts
   #0 INT value=7
   #1 INT value=7

@@ -415,8 +415,10 @@ fn f() {
 - [TYPE-INFER-002][Stable] For `var` inference, `const_int` defaults to `int` and `const_float` defaults to `f64`.
 - [TYPE-INFER-003][Stable] Inference from `null` or no-value expressions is invalid.
 - [TYPE-INFER-004][Stable] Rune literals infer type `const_int`.
-- [TYPE-ZERO-001][Stable] `var x T` zero-initializes `x`.
+- [TYPE-ZERO-001][Stable] `var x T` zero-initializes `x`, except direct pointer/reference locals (`*T` and `&T`) are uninitialized until assigned and cannot be read, dereferenced, returned, passed, or otherwise used before definite assignment.
 - [TYPE-ZERO-002][Stable] For enum types, `var x EnumType` is valid only when one variant has effective tag value `0`.
+- [TYPE-ZERO-003][Stable] Definite assignment for direct pointer/reference locals is flow-sensitive across `if` and `switch`; a value assigned only on some continuing control-flow paths is considered may-be-uninitialized. Assignments inside loop bodies do not definitely initialize the local after the loop. Parameters and `for ... in` bindings are initialized on entry.
+- [TYPE-ZERO-004][Stable] Top-level variables of type `*T` or `&T` require an explicit initializer. `rawptr` keeps normal zero initialization and is not tracked by pointer/reference definite assignment.
 - [TYPE-INFER-005][Stable] Grouped declarations infer and/or check per position (`var a, b = 1, 2`; `var a, b T = x, y`). Initializer arity must match declaration arity, except a single tuple-typed RHS may be decomposed positionally.
 
 ## 6. Expressions and Operators
@@ -432,6 +434,7 @@ fn f() {
 - [EXPR-CAST-001][Stable] `as` is explicit cast syntax.
 - [EXPR-CAST-002][Stable] A cast expression is well-typed only when source expression typing succeeds, target type resolution succeeds, and the cast pair is explicitly permitted.
 - [EXPR-CAST-003][Stable] `rawptr` may be created only from `null`, another `rawptr`, or an explicit cast from a pointer/reference type; casts from `rawptr` are permitted only to `rawptr` or pointer/reference types.
+- [EXPR-CAST-004][Stable] Direct casts from `null` are permitted only to optional types and `rawptr`; typed null pointers/references require an explicit raw pointer bridge such as `(null as rawptr) as *T`.
 - [EXPR-UNWRAP-001][Stable] `x!` requires `x : ?T` and yields `T`.
 - [EXPR-UNWRAP-002][Stable] Unwrapping `null` is a runtime trap (panic), never undefined behavior.
 - [EXPR-ADD-001][Provisional] String `+` currently supports compile-time concatenation only for non-parenthesized literal chains (e.g. `"a" + "b" + "c"`). Other string `+` forms are invalid in `Reference-slc`.
@@ -537,9 +540,10 @@ fn f() {
 - [EXPR-COMPOUND-006][Stable] Omitted fields are allowed:
   - struct fields without explicit initializer and without field-default evaluate to zero-value
   - struct fields with declaration default evaluate to their default expression unless suppressed by explicit direct-field initializer
+  - embedded struct fields may have declaration defaults; promoted fields from the embedded value are visible to later defaults
   - union literals may initialize at most one field explicitly; with zero explicit fields the union is zero-initialized.
 - [EXPR-COMPOUND-007][Stable] Explicit initializers take precedence over defaults for the same direct field.
-- [EXPR-COMPOUND-008][Stable] Default-suppression matching is by direct field name; dotted subfield initializer paths do not suppress defaults of containing direct fields.
+- [EXPR-COMPOUND-008][Stable] Default-suppression matching is by direct field name; dotted subfield initializer paths and promoted-field initializer paths do not suppress defaults of containing direct fields. These explicit initializers are applied over the containing default value.
 - [EXPR-COMPOUND-009][Stable] Tagged-enum payload construction is via explicit variant type in the literal type position: `Enum.Variant{ ... }`.
 - [EXPR-COMPOUND-010][Stable] `Enum.Variant{ ... }` type-checks against payload fields of that exact variant only.
 
@@ -641,6 +645,7 @@ fn f() {
   - `new [T n]`
   - each with optional `with allocExpr`
 - [BI-NEW-002][Stable] Without explicit allocator, effective context MUST provide `mem` compatible with `*Allocator`.
+- [BI-NEW-002A][Stable] The explicit allocator, or effective context `mem`, MUST be non-null and have a valid allocator implementation.
 - [BI-NEW-003][Stable] `n` in `new [T n]` MUST be integer-typed; constant negative values are invalid.
 - [BI-NEW-004][Stable] Variable-size element types require initializer in non-count form.
 - [BI-NEW-005][Stable] Static result typing:
@@ -787,7 +792,7 @@ This section is non-core and documents current reference behavior.
 - [REF-IMPL-010][Provisional] Current const-eval supports:
   - const-evaluable function calls with local declarations, `if`, `for`, `switch`, `assert`, `defer`, `break`, `continue`
   - `sizeof(Type)` and `sizeof(expr)` (including identifiers resolved from const-eval local/param bindings)
-  - casts among numeric/bool forms, `string -> bool`, and `null -> bool/numeric/pointer-like`
+  - casts among numeric/bool forms, `string -> bool`, and `null -> rawptr` / `null -> ?T`
 - [REF-IMPL-011][Provisional] Cast forms outside [REF-IMPL-010] may typecheck by [EXPR-CAST-002] but still be non-const-evaluable in `Reference-slc`.
 
 ## 15. Evolution Policy

@@ -116,10 +116,6 @@ const LOCAL_ELEM_SIZE = expect_i(local_elem_size(), want: INT_SIZE)
 
 const LOCAL_INFER_ELEM_SIZE = expect_i(local_infer_elem_size(), want: INT_SIZE)
 
-const ZERO_FROM_NULL int = null as int
-
-const ZERO_FROM_NULL_OK = expect_i(ZERO_FROM_NULL, want: 0)
-
 const NONE ?*int = null
 
 fn main() {

@@ -1,61 +1,58 @@
 mir
   dynamic_resolution=no
-  insts=28 consts=5 sources=1 funcs=1 locals=5 fields=0 types=9 hosts=0 symbols=0
+  insts=27 consts=4 sources=1 funcs=1 locals=5 fields=0 types=8 hosts=0 symbols=0
 sources
-  #0 len=310
+  #0 len=271
 types
-  #0 astNode=4 source=#0 flags=1
-  #1 astNode=8 source=#0 flags=1
-  #2 astNode=11 source=#0 flags=1
-  #3 astNode=14 source=#0 flags=2099201
-  #4 astNode=21 source=#0 flags=2228225
-  #5 astNode=31 source=#0 flags=2359297
-  #6 astNode=18 source=#0 flags=1
-  #7 astNode=27 source=#0 flags=1
-  #8 astNode=36 source=#0 flags=1
+  #0 astNode=6 source=#0 flags=1
+  #1 astNode=9 source=#0 flags=2099201
+  #2 astNode=16 source=#0 flags=2228225
+  #3 astNode=26 source=#0 flags=2359297
+  #4 astNode=13 source=#0 flags=1
+  #5 astNode=22 source=#0 flags=1
+  #6 astNode=31 source=#0 flags=1
+  #7 astNode=4294967295 source=#0 flags=1048576
 hosts
 symbols
 fields
 consts
-  #0 NULL
-  #1 INT value=4
+  #0 INT value=4
+  #1 NULL
   #2 NULL
   #3 NULL
-  #4 NULL
 functions
-  #0 name="main" [63,67] source=#0 type=#4294967295 params=0 temps=0 locals=#0+5 insts=#0+28
+  #0 name="main" [41,45] source=#0 type=#4294967295 params=0 temps=0 locals=#0+5 insts=#0+27
     locals
-      #0 name="ma" [77,79] type=#0 flags=2
-      #1 name="n" [117,118] type=#2 flags=2
-      #2 name="p" [140,141] type=#3 flags=2
-      #3 name="q" [177,178] type=#4 flags=2
-      #4 name="r" [218,219] type=#5 flags=2
+      #0 name="ma" [55,57] type=#7 flags=2
+      #1 name="n" [86,87] type=#0 flags=2
+      #2 name="p" [107,108] type=#1 flags=2
+      #3 name="q" [142,143] type=#2 flags=2
+      #4 name="r" [181,182] type=#3 flags=2
     insts
-      0: PUSH_CONST const=#0 span=[93,97]
-      1: COERCE type=#1 span=[93,111]
-      2: LOCAL_STORE local=#0 "ma" [77,79] span=[73,111]
-      3: PUSH_CONST const=#1 span=[133,134]
-      4: LOCAL_STORE local=#1 "n" [117,118] span=[113,134]
-      5: LOCAL_LOAD local=#0 "ma" [77,79] span=[169,171]
-      6: ALLOC_NEW tok=128 aux=17 span=[156,171]
-      7: LOCAL_STORE local=#2 "p" [140,141] span=[136,171]
-      8: LOCAL_LOAD local=#0 "ma" [77,79] span=[210,212]
-      9: ALLOC_NEW tok=192 aux=26 span=[193,212]
-      10: LOCAL_STORE local=#3 "q" [177,178] span=[173,212]
-      11: LOCAL_LOAD local=#1 "n" [117,118] span=[243,244]
-      12: LOCAL_LOAD local=#0 "ma" [77,79] span=[251,253]
-      13: ALLOC_NEW tok=192 aux=35 span=[234,253]
-      14: LOCAL_STORE local=#4 "r" [218,219] span=[214,253]
-      15: LOCAL_LOAD local=#2 "p" [140,141] span=[262,263]
-      16: PUSH_CONST const=#2 span=[267,271]
-      17: BINARY op=EQ span=[262,271]
-      18: ASSERT span=[255,271]
-      19: LOCAL_LOAD local=#3 "q" [177,178] span=[280,281]
-      20: PUSH_CONST const=#3 span=[285,289]
-      21: BINARY op=EQ span=[280,289]
-      22: ASSERT span=[273,289]
-      23: LOCAL_LOAD local=#4 "r" [218,219] span=[298,299]
-      24: PUSH_CONST const=#4 span=[303,307]
-      25: BINARY op=EQ span=[298,307]
-      26: ASSERT span=[291,307]
-      27: RETURN_VOID span=[70,309]
+      0: CTX_GET field=MEM span=[69,80]
+      1: LOCAL_STORE local=#0 "ma" [55,57] span=[51,80]
+      2: PUSH_CONST const=#0 span=[100,101]
+      3: LOCAL_STORE local=#1 "n" [86,87] span=[82,101]
+      4: LOCAL_LOAD local=#0 "ma" [55,57] span=[134,136]
+      5: ALLOC_NEW tok=128 aux=12 span=[121,136]
+      6: LOCAL_STORE local=#2 "p" [107,108] span=[103,136]
+      7: LOCAL_LOAD local=#0 "ma" [55,57] span=[173,175]
+      8: ALLOC_NEW tok=192 aux=21 span=[156,175]
+      9: LOCAL_STORE local=#3 "q" [142,143] span=[138,175]
+      10: LOCAL_LOAD local=#1 "n" [86,87] span=[204,205]
+      11: LOCAL_LOAD local=#0 "ma" [55,57] span=[212,214]
+      12: ALLOC_NEW tok=192 aux=30 span=[195,214]
+      13: LOCAL_STORE local=#4 "r" [181,182] span=[177,214]
+      14: LOCAL_LOAD local=#2 "p" [107,108] span=[223,224]
+      15: PUSH_CONST const=#1 span=[228,232]
+      16: BINARY op=NEQ span=[223,232]
+      17: ASSERT span=[216,232]
+      18: LOCAL_LOAD local=#3 "q" [142,143] span=[241,242]
+      19: PUSH_CONST const=#2 span=[246,250]
+      20: BINARY op=NEQ span=[241,250]
+      21: ASSERT span=[234,250]
+      22: LOCAL_LOAD local=#4 "r" [181,182] span=[259,260]
+      23: PUSH_CONST const=#3 span=[264,268]
+      24: BINARY op=NEQ span=[259,268]
+      25: ASSERT span=[252,268]
+      26: RETURN_VOID span=[48,270]

@@ -76,11 +76,12 @@ typedef struct {
     SLWasmBuf       data;
     SLWasmStringRef assertPanic;
     SLWasmStringRef allocNullPanic;
+    SLWasmStringRef invalidAllocatorPanic;
     uint32_t        rootAllocatorOffset;
     uint8_t         hasAssertPanicString;
     uint8_t         hasAllocNullPanicString;
+    uint8_t         hasInvalidAllocatorPanicString;
     uint8_t         hasRootAllocator;
-    uint8_t         _reserved[1];
 } SLWasmStringLayout;
 
 typedef struct {
@@ -316,6 +317,8 @@ static bool WasmProgramHasAssert(
     const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions);
 static bool WasmProgramHasAllocNullPanic(
     const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions);
+static bool WasmProgramHasInvalidAllocatorPanic(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions);
 
 typedef struct {
     const SLForeignLinkageEntry* _Nullable entries;
@@ -397,7 +400,8 @@ static int WasmBuildReachableFunctionSet(
     }
     if (foreign != NULL && foreign->entries != NULL
         && (WasmProgramHasAssert(program, imports->reachableFunctions)
-            || WasmProgramHasAllocNullPanic(program, imports->reachableFunctions)))
+            || WasmProgramHasAllocNullPanic(program, imports->reachableFunctions)
+            || WasmProgramHasInvalidAllocatorPanic(program, imports->reachableFunctions)))
     {
         for (i = 0; i < foreign->len; i++) {
             if (foreign->entries[i].kind == SLForeignLinkage_WASM_IMPORT_FN
@@ -741,6 +745,28 @@ static bool WasmProgramHasAllocNullPanic(
             }
             typeRef = program->locals[fn->localStart + nextInst->aux].typeRef;
             if (typeRef < program->typeLen && !SLMirTypeRefIsOptional(&program->types[typeRef])) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool WasmProgramHasInvalidAllocatorPanic(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions) {
+    uint32_t funcIndex;
+    if (program == NULL) {
+        return false;
+    }
+    for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
+        const SLMirFunction* fn = &program->funcs[funcIndex];
+        uint32_t             pc;
+        if (reachableFunctions != NULL && reachableFunctions[funcIndex] == 0u) {
+            continue;
+        }
+        for (pc = 0; pc < fn->instLen; pc++) {
+            const SLMirInst* inst = &program->insts[fn->instStart + pc];
+            if (inst->op == SLMirOp_ALLOC_NEW && (inst->tok & SLAstFlag_NEW_HAS_ALLOC) != 0u) {
                 return true;
             }
         }
@@ -1414,7 +1440,8 @@ static int WasmAnalyzeImports(
         }
     }
     if ((WasmProgramHasAssert(unit->mirProgram, imports->reachableFunctions)
-         || WasmProgramHasAllocNullPanic(unit->mirProgram, imports->reachableFunctions))
+         || WasmProgramHasAllocNullPanic(unit->mirProgram, imports->reachableFunctions)
+         || WasmProgramHasInvalidAllocatorPanic(unit->mirProgram, imports->reachableFunctions))
         && !imports->hasPlatformPanicImport)
     {
         WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, 0, 0);
@@ -1445,6 +1472,7 @@ static int WasmBuildStringLayout(
     SLDiag* _Nullable diag) {
     static const char panicMessage[] = "assertion failed";
     static const char allocPanicMessage[] = "unwrap: null value";
+    static const char invalidAllocatorPanicMessage[] = "invalid allocator";
     uint32_t          i;
     uint32_t          allocSize = 0;
     if (unit == NULL || unit->mirProgram == NULL || options == NULL || strings == NULL) {
@@ -1529,6 +1557,22 @@ static int WasmBuildStringLayout(
         strings->allocNullPanic.dataOffset = strings->data.len;
         strings->allocNullPanic.len = (uint32_t)(sizeof(allocPanicMessage) - 1u);
         if (WasmAppendBytes(&strings->data, allocPanicMessage, strings->allocNullPanic.len) != 0
+            || WasmAppendByte(&strings->data, 0u) != 0)
+        {
+            WasmSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+            return -1;
+        }
+    }
+    if (imports != NULL && imports->hasPlatformPanicImport
+        && WasmProgramHasInvalidAllocatorPanic(unit->mirProgram, imports->reachableFunctions))
+    {
+        strings->hasInvalidAllocatorPanicString = 1u;
+        strings->invalidAllocatorPanic.objectOffset = UINT32_MAX;
+        strings->invalidAllocatorPanic.dataOffset = strings->data.len;
+        strings->invalidAllocatorPanic.len = (uint32_t)(sizeof(invalidAllocatorPanicMessage) - 1u);
+        if (WasmAppendBytes(
+                &strings->data, invalidAllocatorPanicMessage, strings->invalidAllocatorPanic.len)
+                != 0
             || WasmAppendByte(&strings->data, 0u) != 0)
         {
             WasmSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
@@ -2103,6 +2147,27 @@ static int WasmRequireAllocatorValue(
         diag->detail = detail;
     }
     return -1;
+}
+
+static int WasmEmitInvalidAllocatorTrap(
+    SLWasmBuf* _Nonnull body,
+    const SLWasmImportLayout* _Nullable imports,
+    const SLWasmStringLayout* _Nullable strings) {
+    if (imports != NULL && strings != NULL && imports->hasPlatformPanicImport
+        && strings->hasInvalidAllocatorPanicString)
+    {
+        if (WasmEmitPlatformPanicCall(
+                body,
+                imports,
+                (int32_t)strings->invalidAllocatorPanic.dataOffset,
+                (int32_t)strings->invalidAllocatorPanic.len,
+                0)
+            != 0)
+        {
+            return -1;
+        }
+    }
+    return WasmAppendByte(body, 0x00u);
 }
 
 static int WasmRequirePointerValue(
@@ -2845,10 +2910,11 @@ static int WasmTempOffsetForPc(
     return -1;
 }
 
-static int WasmFindAggregateField(
+static int WasmFindAggregateFieldDepth(
     const SLMirProgram* program,
     uint32_t            ownerTypeRef,
     const SLMirField*   fieldRef,
+    uint32_t            depth,
     uint32_t*           outFieldIndex,
     uint32_t*           outOffset) {
     uint32_t offset = 0u;
@@ -2859,7 +2925,7 @@ static int WasmFindAggregateField(
     if (outOffset != NULL) {
         *outOffset = UINT32_MAX;
     }
-    if (program == NULL || fieldRef == NULL) {
+    if (program == NULL || fieldRef == NULL || depth > 16u) {
         return 0;
     }
     for (i = 0; i < program->fieldLen; i++) {
@@ -2900,7 +2966,59 @@ static int WasmFindAggregateField(
         }
         offset = fieldOffset + (uint32_t)fieldSize;
     }
+    offset = 0u;
+    for (i = 0; i < program->fieldLen; i++) {
+        int      fieldSize;
+        int      fieldAlign;
+        uint32_t fieldOffset;
+        uint32_t nestedFieldIndex = UINT32_MAX;
+        uint32_t nestedOffset = UINT32_MAX;
+        if (program->fields[i].ownerTypeRef != ownerTypeRef) {
+            continue;
+        }
+        fieldSize = WasmTypeByteSize(program, program->fields[i].typeRef);
+        fieldAlign = WasmTypeByteAlign(program, program->fields[i].typeRef);
+        if ((fieldSize <= 0 || fieldAlign <= 0)
+            && WasmFieldIsEmbeddedAllocator(program, &program->fields[i]))
+        {
+            fieldSize = 4;
+            fieldAlign = 4;
+        }
+        if (fieldSize < 0 || fieldAlign <= 0) {
+            return 0;
+        }
+        fieldOffset = (offset + ((uint32_t)fieldAlign - 1u)) & ~((uint32_t)fieldAlign - 1u);
+        if (program->fields[i].typeRef < program->typeLen
+            && SLMirTypeRefIsAggregate(&program->types[program->fields[i].typeRef])
+            && WasmFindAggregateFieldDepth(
+                program,
+                program->fields[i].typeRef,
+                fieldRef,
+                depth + 1u,
+                &nestedFieldIndex,
+                &nestedOffset))
+        {
+            if (outFieldIndex != NULL) {
+                *outFieldIndex = nestedFieldIndex;
+            }
+            if (outOffset != NULL) {
+                *outOffset = fieldOffset + nestedOffset;
+            }
+            return 1;
+        }
+        offset = fieldOffset + (uint32_t)fieldSize;
+    }
     return 0;
+}
+
+static int WasmFindAggregateField(
+    const SLMirProgram* program,
+    uint32_t            ownerTypeRef,
+    const SLMirField*   fieldRef,
+    uint32_t*           outFieldIndex,
+    uint32_t*           outOffset) {
+    return WasmFindAggregateFieldDepth(
+        program, ownerTypeRef, fieldRef, 0u, outFieldIndex, outOffset);
 }
 
 static uint8_t WasmAddressTypeFromTypeRef(const SLMirProgram* program, uint32_t typeRefIndex) {
@@ -3739,6 +3857,8 @@ static int WasmEmitFunctionRange(
                     || ((WasmTypeKindIsPointer(valueType) || WasmTypeKindIsArrayView(valueType))
                         && (WasmTypeKindIsPointer(targetType)
                             || WasmTypeKindIsArrayView(targetType)))
+                    || ((WasmTypeKindIsPointer(valueType) || WasmTypeKindIsArrayView(valueType))
+                        && targetType == SLWasmType_I32)
                     || (valueType == SLWasmType_STR_REF && targetType == SLWasmType_STR_PTR)
                     || (valueType == SLWasmType_AGG_REF && targetType == SLWasmType_AGG_REF))
                 {
@@ -5426,35 +5546,8 @@ static int WasmEmitFunctionRange(
                         {
                             return -1;
                         }
-                        if (isOptional) {
-                            if (WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
-                                || WasmAppendByte(body, 0x21u) != 0
-                                || WasmAppendULEB(body, state->scratch0Local) != 0
-                                || WasmAppendByte(body, 0x41u) != 0
-                                || WasmAppendSLEB32(body, 0) != 0
-                                || WasmAppendByte(body, 0x21u) != 0
-                                || WasmAppendULEB(body, state->scratch1Local) != 0)
-                            {
-                                return -1;
-                            }
-                        } else {
-                            if (imports->hasPlatformPanicImport && strings != NULL
-                                && strings->hasAllocNullPanicString)
-                            {
-                                if (WasmEmitPlatformPanicCall(
-                                        body,
-                                        imports,
-                                        (int32_t)strings->allocNullPanic.dataOffset,
-                                        (int32_t)strings->allocNullPanic.len,
-                                        0)
-                                    != 0)
-                                {
-                                    return -1;
-                                }
-                            }
-                            if (WasmAppendByte(body, 0x00u) != 0) {
-                                return -1;
-                            }
+                        if (WasmEmitInvalidAllocatorTrap(body, imports, strings) != 0) {
+                            return -1;
                         }
                         if (WasmAppendByte(body, 0x05u) != 0) {
                             return -1;
@@ -5608,31 +5701,8 @@ static int WasmEmitFunctionRange(
                         {
                             return -1;
                         }
-                        if (isOptional) {
-                            if (WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
-                                || WasmAppendByte(body, 0x21u) != 0
-                                || WasmAppendULEB(body, state->scratch0Local) != 0)
-                            {
-                                return -1;
-                            }
-                        } else {
-                            if (imports->hasPlatformPanicImport && strings != NULL
-                                && strings->hasAllocNullPanicString)
-                            {
-                                if (WasmEmitPlatformPanicCall(
-                                        body,
-                                        imports,
-                                        (int32_t)strings->allocNullPanic.dataOffset,
-                                        (int32_t)strings->allocNullPanic.len,
-                                        0)
-                                    != 0)
-                                {
-                                    return -1;
-                                }
-                            }
-                            if (WasmAppendByte(body, 0x00u) != 0) {
-                                return -1;
-                            }
+                        if (WasmEmitInvalidAllocatorTrap(body, imports, strings) != 0) {
+                            return -1;
                         }
                         if (WasmAppendByte(body, 0x05u) != 0
                             || WasmEmitAddrFromFrame(body, state, state->allocCallTempOffset, 0u)
@@ -5748,31 +5818,8 @@ static int WasmEmitFunctionRange(
                     {
                         return -1;
                     }
-                    if (isOptional) {
-                        if (WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
-                            || WasmAppendByte(body, 0x21u) != 0
-                            || WasmAppendULEB(body, state->scratch0Local) != 0)
-                        {
-                            return -1;
-                        }
-                    } else {
-                        if (imports->hasPlatformPanicImport && strings != NULL
-                            && strings->hasAllocNullPanicString)
-                        {
-                            if (WasmEmitPlatformPanicCall(
-                                    body,
-                                    imports,
-                                    (int32_t)strings->allocNullPanic.dataOffset,
-                                    (int32_t)strings->allocNullPanic.len,
-                                    0)
-                                != 0)
-                            {
-                                return -1;
-                            }
-                        }
-                        if (WasmAppendByte(body, 0x00u) != 0) {
-                            return -1;
-                        }
+                    if (WasmEmitInvalidAllocatorTrap(body, imports, strings) != 0) {
+                        return -1;
                     }
                     if (WasmAppendByte(body, 0x05u) != 0
                         || WasmEmitAddrFromFrame(body, state, state->allocCallTempOffset, 0u) != 0

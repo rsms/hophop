@@ -3165,25 +3165,109 @@ static int ResolveMirAggregateTypeRefForTypeNode(
     return 1;
 }
 
+static int FindMirFieldByOwnerAndSlicePromotedDepth(
+    const SLPackageLoader* loader,
+    const SLMirProgram*    program,
+    uint32_t               ownerTypeRef,
+    uint32_t               sourceRef,
+    uint32_t               nameStart,
+    uint32_t               nameEnd,
+    uint32_t               depth,
+    uint32_t*              outFieldIndex) {
+    const SLParsedFile* typeFile = NULL;
+    const SLAstNode*    structNode;
+    uint32_t            typeSourceRef = UINT32_MAX;
+    int32_t             fieldNode;
+    if (FindMirFieldByOwnerAndSlice(
+            program, ownerTypeRef, sourceRef, nameStart, nameEnd, outFieldIndex))
+    {
+        return 1;
+    }
+    if (depth > 16u || ownerTypeRef >= program->typeLen) {
+        return 0;
+    }
+    structNode = ResolveMirAggregateDeclNode(
+        loader, program, &program->types[ownerTypeRef], &typeFile, &typeSourceRef);
+    if (structNode == NULL || typeFile == NULL || structNode->kind != SLAst_STRUCT) {
+        return 0;
+    }
+    fieldNode = structNode->firstChild;
+    while (fieldNode >= 0) {
+        const SLAstNode* fieldDecl = &typeFile->ast.nodes[fieldNode];
+        uint32_t         embeddedFieldIndex = UINT32_MAX;
+        uint32_t         embeddedTypeRef;
+        if (fieldDecl->kind != SLAst_FIELD) {
+            fieldNode = fieldDecl->nextSibling;
+            continue;
+        }
+        if ((fieldDecl->flags & SLAstFlag_FIELD_EMBEDDED) == 0u
+            || !FindMirFieldByOwnerAndSlice(
+                program,
+                ownerTypeRef,
+                typeSourceRef,
+                fieldDecl->dataStart,
+                fieldDecl->dataEnd,
+                &embeddedFieldIndex))
+        {
+            fieldNode = fieldDecl->nextSibling;
+            continue;
+        }
+        embeddedTypeRef = program->fields[embeddedFieldIndex].typeRef;
+        if (FindMirFieldByOwnerAndSlicePromotedDepth(
+                loader,
+                program,
+                embeddedTypeRef,
+                sourceRef,
+                nameStart,
+                nameEnd,
+                depth + 1u,
+                outFieldIndex))
+        {
+            return 1;
+        }
+        fieldNode = fieldDecl->nextSibling;
+    }
+    return 0;
+}
+
+static int FindMirFieldByOwnerAndSlicePromoted(
+    const SLPackageLoader* loader,
+    const SLMirProgram*    program,
+    uint32_t               ownerTypeRef,
+    uint32_t               sourceRef,
+    uint32_t               nameStart,
+    uint32_t               nameEnd,
+    uint32_t*              outFieldIndex) {
+    if (outFieldIndex != NULL) {
+        *outFieldIndex = UINT32_MAX;
+    }
+    if (loader == NULL || program == NULL || outFieldIndex == NULL) {
+        return 0;
+    }
+    return FindMirFieldByOwnerAndSlicePromotedDepth(
+        loader, program, ownerTypeRef, sourceRef, nameStart, nameEnd, 0u, outFieldIndex);
+}
+
 static int LowerMirHeapInitValueBySlice(
-    const SLMirProgram*  program,
-    const SLMirFunction* fn,
-    const SLParsedFile*  fnFile,
-    const SLParsedFile*  exprFile,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    uint32_t             start,
-    uint32_t             end,
-    uint32_t             currentLocalIndex,
-    uint32_t             currentOwnerTypeRef,
-    SLMirInst*           outInsts,
-    uint32_t             outCap,
-    uint32_t*            outLen,
-    uint32_t*            outTypeRef) {
+    const SLPackageLoader* loader,
+    const SLMirProgram*    program,
+    const SLMirFunction*   fn,
+    const SLParsedFile*    fnFile,
+    const SLParsedFile*    exprFile,
+    uint32_t               nameStart,
+    uint32_t               nameEnd,
+    uint32_t               start,
+    uint32_t               end,
+    uint32_t               currentLocalIndex,
+    uint32_t               currentOwnerTypeRef,
+    SLMirInst*             outInsts,
+    uint32_t               outCap,
+    uint32_t*              outLen,
+    uint32_t*              outTypeRef) {
     uint32_t localIndex = UINT32_MAX;
     uint32_t fieldIndex = UINT32_MAX;
-    if (outLen == NULL || outTypeRef == NULL || program == NULL || fn == NULL || exprFile == NULL
-        || nameEnd < nameStart)
+    if (outLen == NULL || outTypeRef == NULL || loader == NULL || program == NULL || fn == NULL
+        || exprFile == NULL || nameEnd < nameStart)
     {
         return 0;
     }
@@ -3211,7 +3295,8 @@ static int LowerMirHeapInitValueBySlice(
         return 1;
     }
     if (currentOwnerTypeRef != UINT32_MAX
-        && FindMirFieldByOwnerAndSlice(
+        && FindMirFieldByOwnerAndSlicePromoted(
+            loader,
             program,
             currentOwnerTypeRef,
             FindMirSourceRefByText(program, exprFile->source, exprFile->sourceLen),
@@ -3328,7 +3413,8 @@ static int LowerMirHeapInitCompoundLiteral(
         }
         if (memchr(exprFile->source + field->dataStart, '.', field->dataEnd - field->dataStart)
                 != NULL
-            || !FindMirFieldByOwnerAndSlice(
+            || !FindMirFieldByOwnerAndSlicePromoted(
+                loader,
                 program,
                 ownerTypeRef,
                 exprSourceRef,
@@ -3362,6 +3448,7 @@ static int LowerMirHeapInitCompoundLiteral(
             }
         } else if ((field->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) != 0u) {
             if (!LowerMirHeapInitValueBySlice(
+                    loader,
                     program,
                     fn,
                     fnFile,
@@ -3529,6 +3616,7 @@ static int LowerMirHeapInitValueExpr(
         }
         case SLAst_IDENT:
             return LowerMirHeapInitValueBySlice(
+                loader,
                 program,
                 fn,
                 fnFile,
@@ -3659,7 +3747,8 @@ static int LowerMirHeapInitValueExpr(
             }
             ownerTypeRef = MirInitOwnerTypeRefForType(program, baseTypeRef);
             if (ownerTypeRef == UINT32_MAX
-                || !FindMirFieldByOwnerAndSlice(
+                || !FindMirFieldByOwnerAndSlicePromoted(
+                    loader,
                     program,
                     ownerTypeRef,
                     FindMirSourceRefByText(program, exprFile->source, exprFile->sourceLen),
@@ -4059,6 +4148,7 @@ static int LowerMirAllocNewPostInitInsts(
                 }
             } else if ((field->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) != 0u) {
                 if (!LowerMirHeapInitValueBySlice(
+                        loader,
                         program,
                         fn,
                         fnFile,
@@ -6509,6 +6599,26 @@ static const SLSymbolDecl* _Nullable FindPackageTypeDeclBySlice(
     return NULL;
 }
 
+static const SLImportSymbolRef* _Nullable FindImportTypeSymbolBySlice(
+    const SLPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+    uint32_t i;
+    if (pkg == NULL || src == NULL || end <= start) {
+        return NULL;
+    }
+    for (i = 0; i < pkg->importSymbolLen; i++) {
+        const SLImportSymbolRef* sym = &pkg->importSymbols[i];
+        size_t                   nameLen;
+        if (!sym->isType) {
+            continue;
+        }
+        nameLen = strlen(sym->localName);
+        if (nameLen == (size_t)(end - start) && memcmp(sym->localName, src + start, nameLen) == 0) {
+            return sym;
+        }
+    }
+    return NULL;
+}
+
 static const SLAstNode* _Nullable ResolveMirTypeAliasTargetNode(
     const SLPackageLoader* loader,
     const SLMirProgram*    program,
@@ -6638,12 +6748,13 @@ static const SLAstNode* _Nullable ResolveMirAggregateDeclNode(
     const SLMirTypeRef*    typeRef,
     const SLParsedFile** _Nullable outFile,
     uint32_t* _Nullable outSourceRef) {
-    const SLPackage*    pkg = NULL;
-    const SLParsedFile* file;
-    const SLAstNode*    node;
-    const SLSymbolDecl* decl;
-    const SLParsedFile* declFile;
-    uint32_t            sourceRef;
+    const SLPackage*         pkg = NULL;
+    const SLParsedFile*      file;
+    const SLAstNode*         node;
+    const SLSymbolDecl*      decl;
+    const SLImportSymbolRef* importSym;
+    const SLParsedFile*      declFile;
+    uint32_t                 sourceRef;
     if (outFile != NULL) {
         *outFile = NULL;
     }
@@ -6671,23 +6782,53 @@ static const SLAstNode* _Nullable ResolveMirAggregateDeclNode(
         return NULL;
     }
     decl = FindPackageTypeDeclBySlice(pkg, file->source, node->dataStart, node->dataEnd);
-    if (decl == NULL || decl->nodeId < 0 || (uint32_t)decl->fileIndex >= pkg->fileLen) {
+    if (decl != NULL) {
+        if (decl->nodeId < 0 || (uint32_t)decl->fileIndex >= pkg->fileLen) {
+            return NULL;
+        }
+        declFile = &pkg->files[decl->fileIndex];
+        if ((decl->kind != SLAst_STRUCT && decl->kind != SLAst_UNION)
+            || (uint32_t)decl->nodeId >= declFile->ast.len)
+        {
+            return NULL;
+        }
+        sourceRef = FindMirSourceRefByFile(program, declFile, typeRef->sourceRef);
+        if (outFile != NULL) {
+            *outFile = declFile;
+        }
+        if (outSourceRef != NULL) {
+            *outSourceRef = sourceRef;
+        }
+        return &declFile->ast.nodes[decl->nodeId];
+    }
+    importSym = FindImportTypeSymbolBySlice(pkg, file->source, node->dataStart, node->dataEnd);
+    if (importSym == NULL || importSym->importIndex >= pkg->importLen) {
         return NULL;
     }
-    declFile = &pkg->files[decl->fileIndex];
-    if ((decl->kind != SLAst_STRUCT && decl->kind != SLAst_UNION)
-        || (uint32_t)decl->nodeId >= declFile->ast.len)
     {
-        return NULL;
+        const SLPackage* targetPkg = EffectiveMirImportTargetPackage(
+            loader, &pkg->imports[importSym->importIndex]);
+        if (targetPkg == NULL || importSym->exportNodeId < 0
+            || importSym->exportFileIndex >= targetPkg->fileLen)
+        {
+            return NULL;
+        }
+        declFile = &targetPkg->files[importSym->exportFileIndex];
+        if ((uint32_t)importSym->exportNodeId >= declFile->ast.len
+            || (declFile->ast.nodes[importSym->exportNodeId].kind != SLAst_STRUCT
+                && declFile->ast.nodes[importSym->exportNodeId].kind != SLAst_UNION))
+        {
+            return NULL;
+        }
+        sourceRef = FindMirSourceRefByFile(program, declFile, typeRef->sourceRef);
+        if (outFile != NULL) {
+            *outFile = declFile;
+        }
+        if (outSourceRef != NULL) {
+            *outSourceRef = sourceRef;
+        }
+        return &declFile->ast.nodes[importSym->exportNodeId];
     }
-    sourceRef = FindMirSourceRefByFile(program, declFile, typeRef->sourceRef);
-    if (outFile != NULL) {
-        *outFile = declFile;
-    }
-    if (outSourceRef != NULL) {
-        *outSourceRef = sourceRef;
-    }
-    return &declFile->ast.nodes[decl->nodeId];
 }
 
 static uint32_t ClassifyMirTypeFlags(
@@ -7124,6 +7265,11 @@ static int EnsureMirAggregateFieldsForType(
     if (loader == NULL || arena == NULL || program == NULL || ownerTypeRef >= program->typeLen) {
         return -1;
     }
+    if (program->types[ownerTypeRef].flags != 0u
+        && !SLMirTypeRefIsAggregate(&program->types[ownerTypeRef]))
+    {
+        return 0;
+    }
     declNode = ResolveMirAggregateDeclNode(
         loader, program, &program->types[ownerTypeRef], &file, &ownerSourceRef);
     ownerFile = FindLoaderFileByMirSource(
@@ -7131,7 +7277,17 @@ static int EnsureMirAggregateFieldsForType(
     if (ownerFile != NULL && program->types[ownerTypeRef].astNode < ownerFile->ast.len) {
         ownerNode = &ownerFile->ast.nodes[program->types[ownerTypeRef].astNode];
     }
-    if (declNode == NULL || file == NULL) {
+    if (declNode == NULL || file == NULL
+        || (declNode->kind != SLAst_STRUCT && declNode->kind != SLAst_UNION
+            && declNode->kind != SLAst_TYPE_ANON_STRUCT && declNode->kind != SLAst_TYPE_ANON_UNION))
+    {
+        return 0;
+    }
+    if (ownerNode == NULL
+        || (ownerNode->kind != SLAst_TYPE_NAME && ownerNode->kind != SLAst_TYPE_ANON_STRUCT
+            && ownerNode->kind != SLAst_TYPE_ANON_UNION && ownerNode->kind != SLAst_STRUCT
+            && ownerNode->kind != SLAst_UNION))
+    {
         return 0;
     }
     ((SLMirTypeRef*)&program->types[ownerTypeRef])->flags |= SLMirTypeFlag_AGGREGATE;

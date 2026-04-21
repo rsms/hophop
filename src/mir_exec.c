@@ -244,6 +244,8 @@ static int SLMirConstToValue(const SLMirConst* _Nonnull in, SLMirExecValue* _Non
         case SLMirConst_TYPE:
             out->kind = SLCTFEValue_TYPE;
             out->typeTag = in->bits;
+            out->s.bytes = (const uint8_t*)in->bytes.ptr;
+            out->s.len = in->bytes.len;
             return 1;
         case SLMirConst_FUNCTION: SLMirValueSetFunctionRef(out, (uint32_t)in->bits); return 1;
         case SLMirConst_NULL:     out->kind = SLCTFEValue_NULL; return 1;

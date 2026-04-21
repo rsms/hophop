@@ -136,14 +136,19 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_FOR_IN_ITERATOR_AMBIGUOUS, /* SL2089: ambiguous __iterator overload for for-in source */
     SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD, /* SL2090: no compatible next_value overload for
                                                    this for-in loop form */
-    SLDiag_FOR_IN_ADVANCE_NON_BOOL,      /* SL2091: for-in next_value overload must return ?T */
-    SLDiag_UNUSED_FUNCTION,              /* SL2092: function '{s}' is unused */
-    SLDiag_UNUSED_VARIABLE,              /* SL2093: variable '{s}' is unused */
-    SLDiag_UNUSED_VARIABLE_NEVER_READ,   /* SL2094: variable '{s}' is never read */
-    SLDiag_UNUSED_PARAMETER,             /* SL2095: parameter '{s}' is unused */
-    SLDiag_UNUSED_PARAMETER_NEVER_READ,  /* SL2096: parameter '{s}' is never read */
-    SLDiag_CODEGEN_INTERNAL,             /* SL3001: internal codegen error */
-    SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, /* SL3002: Wasm backend does not support this MIR */
+    SLDiag_FOR_IN_ADVANCE_NON_BOOL,     /* SL2091: for-in next_value overload must return ?T */
+    SLDiag_UNUSED_FUNCTION,             /* SL2092: function '{s}' is unused */
+    SLDiag_UNUSED_VARIABLE,             /* SL2093: variable '{s}' is unused */
+    SLDiag_UNUSED_VARIABLE_NEVER_READ,  /* SL2094: variable '{s}' is never read */
+    SLDiag_UNUSED_PARAMETER,            /* SL2095: parameter '{s}' is unused */
+    SLDiag_UNUSED_PARAMETER_NEVER_READ, /* SL2096: parameter '{s}' is never read */
+    SLDiag_LOCAL_PTR_REF_UNINIT, /* SL2097: pointer/reference variable '{s}' is not initialized */
+    SLDiag_LOCAL_PTR_REF_MAYBE_UNINIT,        /* SL2098: pointer/reference variable '{s}' may be
+                                                 uninitialized */
+    SLDiag_TOPLEVEL_PTR_REF_INIT_REQUIRED,    /* SL2099: top-level pointer/reference variable '{s}'
+                                                 requires initializer */
+    SLDiag_CODEGEN_INTERNAL,                  /* SL3001: internal codegen error */
+    SLDiag_WASM_BACKEND_UNSUPPORTED_MIR,      /* SL3002: Wasm backend does not support this MIR */
     SLDiag_WASM_BACKEND_UNSUPPORTED_HOSTCALL, /* SL3003: Wasm backend does not support this hostcall
                                                */
     SLDiag_WASM_BACKEND_PLATFORM_REQUIRED,    /* SL3004: Wasm backend requires a platform target for

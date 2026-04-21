@@ -120,9 +120,9 @@ new [T N] with alloc
 
 `new` allocates memory from a memory allocator.
 
-- `alloc` must be convertible to `*Allocator`.
+- `alloc` must be convertible to `*Allocator` and must be non-null with a valid `impl`.
 - Contextual forms (`new T`, `new [T N]`) use allocator capability `mem` from effective context.
-- Effective context `mem` must be assignable to `*Allocator`.
+- Effective context `mem` must be assignable to `*Allocator` and must be non-null with a valid `impl`.
 - `T` is the allocated element type.
 - If `N` is provided, storage for a sequence of `T` is allocated.
 - If `N` is a positive compile-time constant, result type is a fixed-size array pointer (`*[T N]`).

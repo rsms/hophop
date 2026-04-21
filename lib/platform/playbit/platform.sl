@@ -407,7 +407,7 @@ fn pb_syscall_async(handle i32, op u32, arg1, arg2, arg3, arg4, arg5, arg6 u64) 
 
 fn log_write_impl(message &str, flags u32) Err {
 	var bytes &[u8] = message
-	var data  *u8   = null as *u8
+	var data  *u8   = (null as rawptr) as *u8
 	if len(bytes) > 0 {
 		data = &bytes[0]
 	}
@@ -450,7 +450,7 @@ pub fn thread_exit_status(thread Handle) i32 {
 
 pub fn thread_log_write(thread Handle, message &str, flags u32) Err {
 	var bytes &[u8] = message
-	var data  *u8   = null as *u8
+	var data  *u8   = (null as rawptr) as *u8
 	if len(bytes) > 0 {
 		data = &bytes[0]
 	}
@@ -497,7 +497,7 @@ pub fn clock_read_info(clock Handle, info *ClockInfo) Err {
 }
 
 pub fn event_poll(buffer *[u8], deadline, leeway u64) i32 {
-	var ptr *u8 = null as *u8
+	var ptr *u8 = (null as rawptr) as *u8
 	if len(buffer) > 0 {
 		ptr = &buffer[0]
 	}
@@ -517,7 +517,7 @@ pub fn window_info_get(window Handle, info *WindowInfo) Err {
 
 pub fn window_set_title(window Handle, title &str) Err {
 	var bytes &[u8] = title
-	var data  *u8   = null as *u8
+	var data  *u8   = (null as rawptr) as *u8
 	if len(bytes) > 0 {
 		data = &bytes[0]
 	}

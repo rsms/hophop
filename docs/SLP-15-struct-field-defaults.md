@@ -24,14 +24,13 @@ layout explicit.
 ## Syntax
 
 ```ebnf
-StructFieldDecl  = FieldDecl [FieldDefault] | EmbeddedFieldDecl ;
+StructFieldDecl  = FieldDecl [FieldDefault] | EmbeddedFieldDecl [FieldDefault] ;
 FieldDefault     = "=" Expr ;
 ```
 
 Constraints:
 
-- Defaults apply to named fields only.
-- Embedded fields cannot have defaults.
+- Defaults apply to named and embedded struct fields.
 
 
 ## Semantics
@@ -60,12 +59,17 @@ earlier fields.
 
 Defaults are ordinary expressions and may call functions. SLP-15 does not add purity restrictions.
 
+### 5. Embedded fields
+
+An embedded field default is evaluated as the embedded field value. Promoted fields from an
+earlier embedded field are visible to later defaults, and explicit promoted-field initializers
+override values supplied by the embedded default.
+
 
 ## Diagnostics
 
 - `field_default_forward_ref`: default for `'{s}'` references later field `'{s}'`
 - `field_default_type_mismatch`: default expression type mismatch for field `'{s}'`
-- `field_default_on_embedded`: embedded field cannot have default
 
 
 ## Implementation notes
@@ -80,10 +84,11 @@ Defaults are ordinary expressions and may call functions. SLP-15 does not add pu
 1. Positive:
    - simple literal omitting defaulted field
    - chained defaults referencing earlier fields
+   - embedded field default with promoted-field references
 2. Negative:
    - forward reference in default
    - default type mismatch
-   - embedded field default
+   - embedded field default type mismatch
 
 
 ## Non-goals

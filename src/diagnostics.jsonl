@@ -118,6 +118,9 @@
 {"id": "SL2094", "name": "UNUSED_VARIABLE_NEVER_READ", "category": "semantic", "message": "variable '{s}' is never read", "type": "warning", "hint": "rename variable to '_' to silence this warning"}
 {"id": "SL2095", "name": "UNUSED_PARAMETER", "category": "semantic", "message": "parameter '{s}' is unused", "type": "warning", "hint": "rename parameter to '_' to silence this warning"}
 {"id": "SL2096", "name": "UNUSED_PARAMETER_NEVER_READ", "category": "semantic", "message": "parameter '{s}' is never read", "type": "warning"}
+{"id": "SL2097", "name": "LOCAL_PTR_REF_UNINIT", "category": "semantic", "message": "pointer/reference variable '{s}' is not initialized"}
+{"id": "SL2098", "name": "LOCAL_PTR_REF_MAYBE_UNINIT", "category": "semantic", "message": "pointer/reference variable '{s}' may be uninitialized"}
+{"id": "SL2099", "name": "TOPLEVEL_PTR_REF_INIT_REQUIRED", "category": "semantic", "message": "top-level pointer/reference variable '{s}' requires initializer"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL3002", "name": "WASM_BACKEND_UNSUPPORTED_MIR", "category": "codegen", "message": "Wasm backend does not support this MIR"}
 {"id": "SL3003", "name": "WASM_BACKEND_UNSUPPORTED_HOSTCALL", "category": "codegen", "message": "Wasm backend does not support this hostcall"}

@@ -1,0 +1,1 @@
+tests/struct_field_defaults_embedded_forward_ref_bad.sl:7:14: error: SL2045: field default references later field 'y'

@@ -15,8 +15,8 @@ fn main() {
 	var c Counter
 	c.value = 21
 
-	var msg = "hi"
-	var ma  = null as *Allocator
+	var msg           = "hi"
+	var ma *Allocator = context.mem
 
 	assert c.doubled() == doubled(c)
 	assert c.add(7) == add(c, d: 7)
@@ -25,6 +25,6 @@ fn main() {
 	var p ?*i32     = new i32 with ma
 	var q ?*[i32 4] = new [i32 4] with ma
 
-	assert p == null
-	assert q == null
+	assert p != null
+	assert q != null
 }

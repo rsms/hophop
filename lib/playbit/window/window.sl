@@ -25,7 +25,7 @@ pub fn close(window i32) i32 {
 
 pub fn open(title &str, width, height f32) i32 {
 	var bytes &[u8] = title
-	var data  *u8   = null as *u8
+	var data  *u8   = (null as rawptr) as *u8
 	if len(bytes) > 0 {
 		data = &bytes[0]
 	}

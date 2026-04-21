@@ -16,18 +16,20 @@ pub struct ArenaAllocator {
 }
 
 fn alloc_block(arena *ArenaAllocator, minSize, align uint) *ArenaBlock {
-	var payload_size = arena.block_size
+	var payload_size             = arena.block_size
+	var none  *ArenaBlock        = (null as rawptr) as *ArenaBlock
+	var noMem *builtin.Allocator = (null as rawptr) as *builtin.Allocator
 	if payload_size < minSize {
 		payload_size = minSize
 	}
 
-	if arena.mem == null as *builtin.Allocator {
-		return null as *ArenaBlock
+	if arena.mem == noMem {
+		return none
 	}
 
 	var payload_addr = arena.mem.impl(arena.mem, addr: null, align, curSize: 0, newSizeInOut: &payload_size, flags: 0)
 	if payload_addr == null {
-		return null as *ArenaBlock
+		return none
 	}
 
 	var block *ArenaBlock = new ArenaBlock with arena.mem
@@ -41,8 +43,9 @@ fn alloc_block(arena *ArenaAllocator, minSize, align uint) *ArenaBlock {
 }
 
 fn arena_alloc_impl(self *builtin.Allocator, addr rawptr, align, curSize uint, newSizeInOut *uint, flags u32) rawptr {
-	var arena = self as *ArenaAllocator
-	if newSizeInOut == null as *uint {
+	var arena        = self as *ArenaAllocator
+	var noSize *uint = (null as rawptr) as *uint
+	if newSizeInOut == noSize {
 		return null
 	}
 
@@ -59,16 +62,18 @@ fn arena_alloc_impl(self *builtin.Allocator, addr rawptr, align, curSize uint, n
 		return null
 	}
 
-	var block = alloc_block(arena, minSize: newSize, align)
-	if block == null as *ArenaBlock {
+	var block            = alloc_block(arena, minSize: newSize, align)
+	var none *ArenaBlock = (null as rawptr) as *ArenaBlock
+	if block == none {
 		return null
 	}
 	return block.addr
 }
 
 pub fn init(self *ArenaAllocator, source *builtin.Allocator, block_size uint) {
+	var none *ArenaBlock = (null as rawptr) as *ArenaBlock
 	self.mem = source
-	self.head = null as *ArenaBlock
+	self.head = none
 	self.block_size = block_size
 	if self.block_size == 0 {
 		self.block_size = 4096
@@ -77,7 +82,8 @@ pub fn init(self *ArenaAllocator, source *builtin.Allocator, block_size uint) {
 }
 
 fn free_block_chain(source *builtin.Allocator, block *ArenaBlock) {
-	if block == null as *ArenaBlock {
+	var none *ArenaBlock = (null as rawptr) as *ArenaBlock
+	if block == none {
 		return
 	}
 
@@ -89,11 +95,13 @@ fn free_block_chain(source *builtin.Allocator, block *ArenaBlock) {
 }
 
 pub fn free_all(self *ArenaAllocator) {
-	if self.mem == null as *builtin.Allocator {
-		self.head = null as *ArenaBlock
+	var none  *ArenaBlock        = (null as rawptr) as *ArenaBlock
+	var noMem *builtin.Allocator = (null as rawptr) as *builtin.Allocator
+	if self.mem == noMem {
+		self.head = none
 		return
 	}
 
 	free_block_chain(self.mem, block: self.head)
-	self.head = null as *ArenaBlock
+	self.head = none
 }

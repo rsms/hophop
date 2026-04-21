@@ -1,9 +1,9 @@
-// Verifies struct field defaults embedded is rejected.
+// Verifies embedded struct field defaults still require assignable values.
 struct Base {
 	x i32
 }
 
 struct Bad {
-	Base = Base{ x: 1 }
+	Base = 1
 	y i32
 }

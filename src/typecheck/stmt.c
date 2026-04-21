@@ -138,6 +138,106 @@ int SLTCBlockTerminates(SLTypeCheckCtx* c, int32_t blockNode) {
     }
 }
 
+static int SLTCSnapshotLocalInitStates(SLTypeCheckCtx* c, uint8_t** outStates) {
+    uint32_t i;
+    uint8_t* states;
+    *outStates = NULL;
+    if (c->localLen == 0) {
+        return 0;
+    }
+    states = (uint8_t*)SLArenaAlloc(c->arena, c->localLen * sizeof(uint8_t), 1);
+    if (states == NULL) {
+        return SLTCFailSpan(c, SLDiag_ARENA_OOM, 0, 0);
+    }
+    for (i = 0; i < c->localLen; i++) {
+        states[i] = c->locals[i].initState;
+    }
+    *outStates = states;
+    return 0;
+}
+
+static void SLTCRestoreLocalInitStates(
+    SLTypeCheckCtx* c, const uint8_t* states, uint32_t stateLen) {
+    uint32_t i;
+    uint32_t len = c->localLen < stateLen ? c->localLen : stateLen;
+    if (states == NULL) {
+        return;
+    }
+    for (i = 0; i < len; i++) {
+        c->locals[i].initState = states[i];
+    }
+}
+
+static uint8_t SLTCMergeLocalInitState(uint8_t a, uint8_t b) {
+    if (a == SLTCLocalInit_UNTRACKED || b == SLTCLocalInit_UNTRACKED) {
+        return SLTCLocalInit_UNTRACKED;
+    }
+    if (a == b) {
+        return a;
+    }
+    return SLTCLocalInit_MAYBE;
+}
+
+static void SLTCMergeLocalInitStates(
+    SLTypeCheckCtx* c, const uint8_t* a, const uint8_t* b, uint32_t stateLen) {
+    uint32_t i;
+    uint32_t len = c->localLen < stateLen ? c->localLen : stateLen;
+    if (a == NULL || b == NULL) {
+        return;
+    }
+    for (i = 0; i < len; i++) {
+        c->locals[i].initState = SLTCMergeLocalInitState(a[i], b[i]);
+    }
+}
+
+static void SLTCMergeLocalInitStateBuffers(uint8_t* dst, const uint8_t* src, uint32_t stateLen) {
+    uint32_t i;
+    if (dst == NULL || src == NULL) {
+        return;
+    }
+    for (i = 0; i < stateLen; i++) {
+        dst[i] = SLTCMergeLocalInitState(dst[i], src[i]);
+    }
+}
+
+static int SLTCStmtTerminates(SLTypeCheckCtx* c, int32_t nodeId) {
+    const SLAstNode* n;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[nodeId];
+    switch (n->kind) {
+        case SLAst_RETURN:
+        case SLAst_BREAK:
+        case SLAst_CONTINUE: return 1;
+        case SLAst_BLOCK:    return SLTCBlockTerminates(c, nodeId);
+        default:             return 0;
+    }
+}
+
+static int SLTCStmtExitsSwitchWithoutContinuing(SLTypeCheckCtx* c, int32_t nodeId) {
+    int32_t child;
+    int32_t last = -1;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    switch (c->ast->nodes[nodeId].kind) {
+        case SLAst_RETURN:
+        case SLAst_CONTINUE: return 1;
+        case SLAst_BLOCK:    break;
+        default:             return 0;
+    }
+    child = SLAstFirstChild(c->ast, nodeId);
+    while (child >= 0) {
+        last = child;
+        child = SLAstNextSibling(c->ast, child);
+    }
+    if (last < 0) {
+        return 0;
+    }
+    return SLTCStmtExitsSwitchWithoutContinuing(c, last);
+}
+
 int SLTCTypeBlock(
     SLTypeCheckCtx* c, int32_t blockNode, int32_t returnType, int loopDepth, int switchDepth) {
     uint32_t       savedLocalLen = c->localLen;
@@ -878,6 +978,7 @@ static int SLTCTypeForInStmt(
             return -1;
         }
         SLTCMarkLocalWrite(c, (int32_t)c->localLen - 1);
+        SLTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
     }
     if (!valueDiscard) {
         const SLAstNode* valueName = &c->ast->nodes[valueNode];
@@ -890,16 +991,25 @@ static int SLTCTypeForInStmt(
             return -1;
         }
         SLTCMarkLocalWrite(c, (int32_t)c->localLen - 1);
+        SLTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
     }
 
     {
-        uint8_t savedDiagPath = c->compilerDiagPathProven;
+        uint8_t* beforeBodyStates;
+        uint32_t beforeBodyStateLen = c->localLen;
+        uint8_t  savedDiagPath = c->compilerDiagPathProven;
+        if (SLTCSnapshotLocalInitStates(c, &beforeBodyStates) != 0) {
+            c->localLen = savedLocalLen;
+            return -1;
+        }
         c->compilerDiagPathProven = 0;
         if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth + 1, switchDepth) != 0) {
             c->compilerDiagPathProven = savedDiagPath;
+            SLTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
             return -1;
         }
         c->compilerDiagPathProven = savedDiagPath;
+        SLTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
     }
     c->localLen = savedLocalLen;
     return 0;
@@ -927,38 +1037,79 @@ int SLTCTypeForStmt(
         return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
     }
 
-    for (i = 0; i < count - 1; i++) {
-        const SLAstNode* n = &c->ast->nodes[nodes[i]];
-        if (n->kind == SLAst_VAR || n->kind == SLAst_CONST) {
-            if (SLTCTypeVarLike(c, nodes[i]) != 0) {
-                return -1;
-            }
-        } else {
-            int32_t t;
-            if (SLTCTypeExpr(c, nodes[i], &t) != 0) {
-                return -1;
-            }
-            if (i == 1 && count == 4 && !SLTCIsBoolType(c, t)) {
-                return SLTCFailNode(c, nodes[i], SLDiag_EXPECTED_BOOL);
-            }
-            if (i == 0 && count == 2 && !SLTCIsBoolType(c, t)) {
-                return SLTCFailNode(c, nodes[i], SLDiag_EXPECTED_BOOL);
-            }
-        }
-    }
-
     if (c->ast->nodes[nodes[count - 1]].kind != SLAst_BLOCK) {
         return SLTCFailNode(c, nodes[count - 1], SLDiag_UNEXPECTED_TOKEN);
     }
 
+    if (count == 2 || count == 4) {
+        int     condIndex = count == 2 ? 0 : 1;
+        int32_t condType;
+        if (count == 4) {
+            const SLAstNode* initNode = &c->ast->nodes[nodes[0]];
+            if (initNode->kind == SLAst_VAR || initNode->kind == SLAst_CONST) {
+                if (SLTCTypeVarLike(c, nodes[0]) != 0) {
+                    c->localLen = savedLocalLen;
+                    return -1;
+                }
+            } else {
+                int32_t initType;
+                if (SLTCTypeExpr(c, nodes[0], &initType) != 0) {
+                    c->localLen = savedLocalLen;
+                    return -1;
+                }
+            }
+        }
+        if (SLTCTypeExpr(c, nodes[condIndex], &condType) != 0) {
+            c->localLen = savedLocalLen;
+            return -1;
+        }
+        if (!SLTCIsBoolType(c, condType)) {
+            c->localLen = savedLocalLen;
+            return SLTCFailNode(c, nodes[condIndex], SLDiag_EXPECTED_BOOL);
+        }
+    } else {
+        for (i = 0; i < count - 1; i++) {
+            const SLAstNode* n = &c->ast->nodes[nodes[i]];
+            if (n->kind == SLAst_VAR || n->kind == SLAst_CONST) {
+                if (SLTCTypeVarLike(c, nodes[i]) != 0) {
+                    c->localLen = savedLocalLen;
+                    return -1;
+                }
+            } else {
+                int32_t t;
+                if (SLTCTypeExpr(c, nodes[i], &t) != 0) {
+                    c->localLen = savedLocalLen;
+                    return -1;
+                }
+            }
+        }
+    }
+
     {
-        uint8_t savedDiagPath = c->compilerDiagPathProven;
+        uint8_t* beforeBodyStates;
+        uint32_t beforeBodyStateLen = c->localLen;
+        uint8_t  savedDiagPath = c->compilerDiagPathProven;
+        if (SLTCSnapshotLocalInitStates(c, &beforeBodyStates) != 0) {
+            c->localLen = savedLocalLen;
+            return -1;
+        }
         c->compilerDiagPathProven = 0;
         if (SLTCTypeBlock(c, nodes[count - 1], returnType, loopDepth + 1, switchDepth) != 0) {
             c->compilerDiagPathProven = savedDiagPath;
+            SLTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
+            c->localLen = savedLocalLen;
             return -1;
         }
         c->compilerDiagPathProven = savedDiagPath;
+        SLTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
+        if (count == 4) {
+            int32_t postType;
+            if (SLTCTypeExpr(c, nodes[2], &postType) != 0) {
+                c->localLen = savedLocalLen;
+                return -1;
+            }
+            SLTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
+        }
     }
 
     c->localLen = savedLocalLen;
@@ -980,6 +1131,10 @@ int SLTCTypeSwitchStmt(
     int              boolCoveredTrue = 0;
     int              boolCoveredFalse = 0;
     int              hasDefault = 0;
+    uint8_t*         preSwitchStates = NULL;
+    uint8_t*         mergedSwitchStates = NULL;
+    uint32_t         switchStateLen = 0;
+    int              hasMergedSwitchState = 0;
     int              i;
 
     if (sw->flags == 1) {
@@ -1030,6 +1185,11 @@ int SLTCTypeSwitchStmt(
         child = SLAstNextSibling(c->ast, child);
     }
 
+    switchStateLen = c->localLen;
+    if (SLTCSnapshotLocalInitStates(c, &preSwitchStates) != 0) {
+        return -1;
+    }
+
     while (child >= 0) {
         const SLAstNode* clause = &c->ast->nodes[child];
         if (clause->kind == SLAst_CASE) {
@@ -1041,6 +1201,7 @@ int SLTCTypeSwitchStmt(
             int      singleVariantLabel = 0;
             uint32_t singleVariantStart = 0;
             uint32_t singleVariantEnd = 0;
+            SLTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
             while (caseChild >= 0) {
                 int32_t next = SLAstNextSibling(c->ast, caseChild);
                 int32_t labelExprNode;
@@ -1137,6 +1298,7 @@ int SLTCTypeSwitchStmt(
                             c->variantNarrowLen = savedVariantNarrowLen;
                             return -1;
                         }
+                        SLTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
                         if (SLTCVariantNarrowPush(
                                 c,
                                 (int32_t)c->localLen - 1,
@@ -1176,6 +1338,7 @@ int SLTCTypeSwitchStmt(
                 c->variantNarrowLen = savedVariantNarrowLen;
                 return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
             }
+            SLTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
             if (sw->flags == 1 && subjectEnumType >= 0 && subjectLocalIdx >= 0 && labelCount == 1
                 && singleVariantLabel)
             {
@@ -1199,11 +1362,26 @@ int SLTCTypeSwitchStmt(
                 }
                 c->compilerDiagPathProven = savedDiagPath;
             }
+            if (!SLTCStmtExitsSwitchWithoutContinuing(c, bodyNode)) {
+                uint8_t* caseStates;
+                if (SLTCSnapshotLocalInitStates(c, &caseStates) != 0) {
+                    c->localLen = savedLocalLen;
+                    c->variantNarrowLen = savedVariantNarrowLen;
+                    return -1;
+                }
+                if (!hasMergedSwitchState) {
+                    mergedSwitchStates = caseStates;
+                    hasMergedSwitchState = 1;
+                } else {
+                    SLTCMergeLocalInitStateBuffers(mergedSwitchStates, caseStates, switchStateLen);
+                }
+            }
             c->localLen = savedLocalLen;
             c->variantNarrowLen = savedVariantNarrowLen;
         } else if (clause->kind == SLAst_DEFAULT) {
             int32_t bodyNode = SLAstFirstChild(c->ast, child);
             hasDefault = 1;
+            SLTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
             if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != SLAst_BLOCK) {
                 return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
             }
@@ -1216,48 +1394,79 @@ int SLTCTypeSwitchStmt(
                 }
                 c->compilerDiagPathProven = savedDiagPath;
             }
+            if (!SLTCStmtExitsSwitchWithoutContinuing(c, bodyNode)) {
+                uint8_t* caseStates;
+                if (SLTCSnapshotLocalInitStates(c, &caseStates) != 0) {
+                    return -1;
+                }
+                if (!hasMergedSwitchState) {
+                    mergedSwitchStates = caseStates;
+                    hasMergedSwitchState = 1;
+                } else {
+                    SLTCMergeLocalInitStateBuffers(mergedSwitchStates, caseStates, switchStateLen);
+                }
+            }
         } else {
             return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
         }
         child = SLAstNextSibling(c->ast, child);
     }
 
-    if (sw->flags == 1 && !hasDefault) {
-        if (subjectEnumType >= 0) {
-            int hasMissing = 0;
-            for (i = 0; i < (int)enumVariantCount; i++) {
-                if (!enumCovered[i]) {
-                    hasMissing = 1;
-                    break;
+    {
+        int switchIsExhaustive = hasDefault;
+        if (sw->flags == 1 && !hasDefault) {
+            if (subjectEnumType >= 0) {
+                int hasMissing = 0;
+                for (i = 0; i < (int)enumVariantCount; i++) {
+                    if (!enumCovered[i]) {
+                        hasMissing = 1;
+                        break;
+                    }
                 }
+                if (hasMissing) {
+                    return SLTCFailSwitchMissingCases(
+                        c,
+                        nodeId,
+                        subjectType,
+                        subjectEnumType,
+                        enumVariantCount,
+                        enumVariantStarts,
+                        enumVariantEnds,
+                        enumCovered,
+                        boolCoveredTrue,
+                        boolCoveredFalse);
+                }
+                switchIsExhaustive = 1;
+            } else if (SLTCIsBoolType(c, subjectType)) {
+                if (!boolCoveredTrue || !boolCoveredFalse) {
+                    return SLTCFailSwitchMissingCases(
+                        c,
+                        nodeId,
+                        subjectType,
+                        subjectEnumType,
+                        enumVariantCount,
+                        enumVariantStarts,
+                        enumVariantEnds,
+                        enumCovered,
+                        boolCoveredTrue,
+                        boolCoveredFalse);
+                }
+                switchIsExhaustive = 1;
             }
-            if (hasMissing) {
-                return SLTCFailSwitchMissingCases(
-                    c,
-                    nodeId,
-                    subjectType,
-                    subjectEnumType,
-                    enumVariantCount,
-                    enumVariantStarts,
-                    enumVariantEnds,
-                    enumCovered,
-                    boolCoveredTrue,
-                    boolCoveredFalse);
+        }
+
+        if (!switchIsExhaustive) {
+            if (hasMergedSwitchState) {
+                SLTCMergeLocalInitStateBuffers(mergedSwitchStates, preSwitchStates, switchStateLen);
+            } else {
+                mergedSwitchStates = preSwitchStates;
+                hasMergedSwitchState = 1;
             }
-        } else if (SLTCIsBoolType(c, subjectType)) {
-            if (!boolCoveredTrue || !boolCoveredFalse) {
-                return SLTCFailSwitchMissingCases(
-                    c,
-                    nodeId,
-                    subjectType,
-                    subjectEnumType,
-                    enumVariantCount,
-                    enumVariantStarts,
-                    enumVariantEnds,
-                    enumCovered,
-                    boolCoveredTrue,
-                    boolCoveredFalse);
-            }
+        }
+        if (hasMergedSwitchState) {
+            SLTCRestoreLocalInitStates(c, mergedSwitchStates, switchStateLen);
+        } else {
+            SLTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
         }
     }
 
@@ -1333,7 +1542,7 @@ int SLTCTypeMultiAssignStmt(SLTypeCheckCtx* c, int32_t nodeId) {
         }
         {
             int32_t lhsType;
-            if (SLTCTypeExpr(c, lhsNode, &lhsType) != 0) {
+            if (SLTCTypeAssignTargetExpr(c, lhsNode, 1, &lhsType) != 0) {
                 return -1;
             }
             if (!SLTCExprIsAssignable(c, lhsNode)) {
@@ -1345,14 +1554,7 @@ int SLTCTypeMultiAssignStmt(SLTypeCheckCtx* c, int32_t nodeId) {
             if (!SLTCCanAssign(c, lhsType, rhsType)) {
                 return SLTCFailTypeMismatchDetail(c, lhsNode, lhsNode, rhsType, lhsType);
             }
-            if (c->ast->nodes[lhsNode].kind == SLAst_IDENT) {
-                int32_t localIdx = SLTCLocalFind(
-                    c, c->ast->nodes[lhsNode].dataStart, c->ast->nodes[lhsNode].dataEnd);
-                if (localIdx >= 0) {
-                    SLTCMarkLocalWrite(c, localIdx);
-                    SLTCUnmarkLocalRead(c, localIdx);
-                }
-            }
+            SLTCMarkDirectIdentLocalWrite(c, lhsNode, 1);
         }
     }
     return 0;
@@ -1498,75 +1700,126 @@ int SLTCTypeStmt(
                 condIsConst = diagCondIsConst;
             }
             hasNarrow = SLTCGetOptionalCondNarrow(c, cond, &thenIsSome, &narrow);
-            if (condIsConst) {
-                int32_t branchNode = condConstValue ? thenNode : elseNode;
-                uint8_t branchDiagPath = condConstValue ? thenDiagPath : elseDiagPath;
-                c->compilerDiagPathProven = branchDiagPath;
-                if (hasNarrow) {
-                    int32_t origType = c->locals[narrow.localIdx].typeId;
-                    int32_t trueType = thenIsSome ? narrow.innerType : c->typeNull;
-                    int32_t falseType = thenIsSome ? c->typeNull : narrow.innerType;
-                    c->locals[narrow.localIdx].typeId = condConstValue ? trueType : falseType;
-                    if (branchNode >= 0
+            {
+                uint8_t* preInitStates;
+                uint32_t initStateLen = c->localLen;
+                if (SLTCSnapshotLocalInitStates(c, &preInitStates) != 0) {
+                    return -1;
+                }
+                if (condIsConst) {
+                    int32_t branchNode = condConstValue ? thenNode : elseNode;
+                    uint8_t branchDiagPath = condConstValue ? thenDiagPath : elseDiagPath;
+                    c->compilerDiagPathProven = branchDiagPath;
+                    if (hasNarrow) {
+                        int32_t origType = c->locals[narrow.localIdx].typeId;
+                        int32_t trueType = thenIsSome ? narrow.innerType : c->typeNull;
+                        int32_t falseType = thenIsSome ? c->typeNull : narrow.innerType;
+                        c->locals[narrow.localIdx].typeId = condConstValue ? trueType : falseType;
+                        if (branchNode >= 0
+                            && SLTCTypeStmt(c, branchNode, returnType, loopDepth, switchDepth) != 0)
+                        {
+                            c->locals[narrow.localIdx].typeId = origType;
+                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            c->compilerDiagPathProven = savedDiagPath;
+                            return -1;
+                        }
+                        c->locals[narrow.localIdx].typeId = origType;
+                    } else if (
+                        branchNode >= 0
                         && SLTCTypeStmt(c, branchNode, returnType, loopDepth, switchDepth) != 0)
                     {
-                        c->locals[narrow.localIdx].typeId = origType;
+                        SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                         c->compilerDiagPathProven = savedDiagPath;
                         return -1;
                     }
-                    c->locals[narrow.localIdx].typeId = origType;
-                } else if (
-                    branchNode >= 0
-                    && SLTCTypeStmt(c, branchNode, returnType, loopDepth, switchDepth) != 0)
-                {
                     c->compilerDiagPathProven = savedDiagPath;
-                    return -1;
+                    return 0;
+                }
+                {
+                    uint8_t* thenInitStates;
+                    uint8_t* elseInitStates = preInitStates;
+                    int      thenContinues;
+                    int      elseContinues = 1;
+                    if (hasNarrow) {
+                        /*
+                         * Apply branch narrowing:
+                         *   x == null / !x  -> then: x is null;  else: x is T
+                         *   x != null / x   -> then: x is T;     else: x is null
+                         */
+                        int32_t origType = c->locals[narrow.localIdx].typeId;
+                        int32_t trueType = thenIsSome ? narrow.innerType : c->typeNull;
+                        int32_t falseType = thenIsSome ? c->typeNull : narrow.innerType;
+                        c->locals[narrow.localIdx].typeId = trueType;
+                        c->compilerDiagPathProven = thenDiagPath;
+                        if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
+                            c->locals[narrow.localIdx].typeId = origType;
+                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            c->compilerDiagPathProven = savedDiagPath;
+                            return -1;
+                        }
+                        c->locals[narrow.localIdx].typeId = origType;
+                        thenContinues = !SLTCStmtTerminates(c, thenNode);
+                        if (SLTCSnapshotLocalInitStates(c, &thenInitStates) != 0) {
+                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            c->compilerDiagPathProven = savedDiagPath;
+                            return -1;
+                        }
+                        SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                        c->locals[narrow.localIdx].typeId = falseType;
+                        c->compilerDiagPathProven = elseDiagPath;
+                        if (elseNode >= 0
+                            && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
+                        {
+                            c->locals[narrow.localIdx].typeId = origType;
+                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            c->compilerDiagPathProven = savedDiagPath;
+                            return -1;
+                        }
+                        c->locals[narrow.localIdx].typeId = origType;
+                    } else {
+                        c->compilerDiagPathProven = thenDiagPath;
+                        if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
+                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            c->compilerDiagPathProven = savedDiagPath;
+                            return -1;
+                        }
+                        thenContinues = !SLTCStmtTerminates(c, thenNode);
+                        if (SLTCSnapshotLocalInitStates(c, &thenInitStates) != 0) {
+                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            c->compilerDiagPathProven = savedDiagPath;
+                            return -1;
+                        }
+                        SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                        c->compilerDiagPathProven = elseDiagPath;
+                        if (elseNode >= 0
+                            && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
+                        {
+                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            c->compilerDiagPathProven = savedDiagPath;
+                            return -1;
+                        }
+                    }
+                    if (elseNode >= 0) {
+                        elseContinues = !SLTCStmtTerminates(c, elseNode);
+                        if (SLTCSnapshotLocalInitStates(c, &elseInitStates) != 0) {
+                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            c->compilerDiagPathProven = savedDiagPath;
+                            return -1;
+                        }
+                    }
+                    if (thenContinues && elseContinues) {
+                        SLTCMergeLocalInitStates(c, thenInitStates, elseInitStates, initStateLen);
+                    } else if (thenContinues) {
+                        SLTCRestoreLocalInitStates(c, thenInitStates, initStateLen);
+                    } else if (elseContinues) {
+                        SLTCRestoreLocalInitStates(c, elseInitStates, initStateLen);
+                    } else {
+                        SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                    }
                 }
                 c->compilerDiagPathProven = savedDiagPath;
                 return 0;
             }
-            if (hasNarrow) {
-                /*
-                 * Apply branch narrowing:
-                 *   x == null / !x  -> then: x is null;  else: x is T
-                 *   x != null / x   -> then: x is T;     else: x is null
-                 */
-                int32_t origType = c->locals[narrow.localIdx].typeId;
-                int32_t trueType = thenIsSome ? narrow.innerType : c->typeNull;
-                int32_t falseType = thenIsSome ? c->typeNull : narrow.innerType;
-                c->locals[narrow.localIdx].typeId = trueType;
-                c->compilerDiagPathProven = thenDiagPath;
-                if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
-                    c->locals[narrow.localIdx].typeId = origType;
-                    c->compilerDiagPathProven = savedDiagPath;
-                    return -1;
-                }
-                c->locals[narrow.localIdx].typeId = falseType;
-                c->compilerDiagPathProven = elseDiagPath;
-                if (elseNode >= 0
-                    && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
-                {
-                    c->locals[narrow.localIdx].typeId = origType;
-                    c->compilerDiagPathProven = savedDiagPath;
-                    return -1;
-                }
-                c->locals[narrow.localIdx].typeId = origType;
-            } else {
-                c->compilerDiagPathProven = thenDiagPath;
-                if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
-                    c->compilerDiagPathProven = savedDiagPath;
-                    return -1;
-                }
-                c->compilerDiagPathProven = elseDiagPath;
-                if (elseNode >= 0
-                    && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
-                {
-                    c->compilerDiagPathProven = savedDiagPath;
-                    return -1;
-                }
-            }
-            c->compilerDiagPathProven = savedDiagPath;
-            return 0;
         }
         case SLAst_FOR:    return SLTCTypeForStmt(c, nodeId, returnType, loopDepth, switchDepth);
         case SLAst_SWITCH: return SLTCTypeSwitchStmt(c, nodeId, returnType, loopDepth, switchDepth);
@@ -1691,6 +1944,7 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
             if (!SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")) {
                 addedLocal = 1;
                 SLTCSetLocalUsageKind(c, (int32_t)c->localLen - 1, SLTCLocalUseKind_PARAM);
+                SLTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
             }
             if (addedLocal && (n->flags & SLAstFlag_PARAM_VARIADIC) != 0
                 && (paramType == c->typeAnytype
@@ -1761,6 +2015,7 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
             return -1;
         }
         SLTCSetLocalUsageSuppress(c, (int32_t)c->localLen - 1, 1);
+        SLTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
         c->currentContextType = fn->contextType;
     } else if (SLTCIsMainFunction(c, fn)) {
         c->implicitMainContextType = SLTCResolveImplicitMainContextType(c);

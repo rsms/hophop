@@ -1,0 +1,1 @@
+tests/top_ref_missing_init_bad.sl:1:1: error: SL2099: top-level pointer/reference variable 'r' requires initializer

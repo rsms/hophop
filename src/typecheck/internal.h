@@ -134,13 +134,21 @@ typedef struct {
     int32_t  typeId;
     int32_t  initExprNode;
     uint16_t flags;
-    uint16_t _reserved;
+    uint8_t  initState;
+    uint8_t  _reserved;
     uint32_t useIndex;
 } SLTCLocal;
 
 enum {
     SLTCLocalFlag_CONST = 1u << 0,
     SLTCLocalFlag_ANYPACK = 1u << 1,
+};
+
+enum {
+    SLTCLocalInit_UNTRACKED = 0,
+    SLTCLocalInit_UNINIT = 1,
+    SLTCLocalInit_INIT = 2,
+    SLTCLocalInit_MAYBE = 3,
 };
 
 enum {
@@ -641,6 +649,11 @@ void SLTCMarkFunctionUsed(SLTypeCheckCtx* c, int32_t fnIndex);
 void SLTCMarkLocalRead(SLTypeCheckCtx* c, int32_t localIdx);
 void SLTCMarkLocalWrite(SLTypeCheckCtx* c, int32_t localIdx);
 void SLTCUnmarkLocalRead(SLTypeCheckCtx* c, int32_t localIdx);
+void SLTCMarkLocalInitialized(SLTypeCheckCtx* c, int32_t localIdx);
+int  SLTCCheckLocalInitialized(SLTypeCheckCtx* c, int32_t localIdx, uint32_t start, uint32_t end);
+int  SLTCTypeIsTrackedPtrRef(SLTypeCheckCtx* c, int32_t typeId);
+int  SLTCFailTopLevelPtrRefMissingInitializer(
+    SLTypeCheckCtx* c, uint32_t start, uint32_t end, uint32_t nameStart, uint32_t nameEnd);
 void SLTCSetLocalUsageKind(SLTypeCheckCtx* c, int32_t localIdx, uint8_t kind);
 void SLTCSetLocalUsageSuppress(SLTypeCheckCtx* c, int32_t localIdx, int suppress);
 int  SLTCEmitUnusedSymbolWarnings(SLTypeCheckCtx* c);
@@ -1286,15 +1299,18 @@ int SLTCInferAnonStructTypeFromCompound(
     SLTypeCheckCtx* c, int32_t nodeId, int32_t firstField, int32_t* outType);
 int SLTCTypeCompoundLit(SLTypeCheckCtx* c, int32_t nodeId, int32_t expectedType, int32_t* outType);
 int SLTCTypeExprExpected(SLTypeCheckCtx* c, int32_t nodeId, int32_t expectedType, int32_t* outType);
-int SLTCExprIsAssignable(SLTypeCheckCtx* c, int32_t exprNode);
-int SLTCExprIsConstAssignTarget(SLTypeCheckCtx* c, int32_t exprNode);
-int SLTCTypeExpr_IDENT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
-int SLTCTypeExpr_INT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
-int SLTCTypeExpr_FLOAT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
-int SLTCTypeExpr_STRING(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
-int SLTCTypeExpr_RUNE(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
-int SLTCTypeExpr_BOOL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
-int SLTCTypeExpr_COMPOUND_LIT(
+int SLTCTypeAssignTargetExpr(
+    SLTypeCheckCtx* c, int32_t nodeId, int skipDirectIdentRead, int32_t* outType);
+void SLTCMarkDirectIdentLocalWrite(SLTypeCheckCtx* c, int32_t nodeId, int markInitialized);
+int  SLTCExprIsAssignable(SLTypeCheckCtx* c, int32_t exprNode);
+int  SLTCExprIsConstAssignTarget(SLTypeCheckCtx* c, int32_t exprNode);
+int  SLTCTypeExpr_IDENT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
+int  SLTCTypeExpr_INT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
+int  SLTCTypeExpr_FLOAT(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
+int  SLTCTypeExpr_STRING(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
+int  SLTCTypeExpr_RUNE(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
+int  SLTCTypeExpr_BOOL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
+int  SLTCTypeExpr_COMPOUND_LIT(
     SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
 int SLTCTypeExpr_CALL_WITH_CONTEXT(
     SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);

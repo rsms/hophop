@@ -1,0 +1,1 @@
+tests/local_ptr_maybe_uninit_bad.sl:6:10: error: SL2098: pointer/reference variable 'x' may be uninitialized

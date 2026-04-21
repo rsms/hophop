@@ -1,0 +1,49 @@
+var top_raw rawptr
+
+var top_ptr *int = (null as rawptr) as *int
+
+fn ptr_assign_ok(y *int) int {
+	var x *int
+	x = y
+	return *x
+}
+
+fn ref_assign_ok(y &int) int {
+	var x &int
+	x = y
+	return *x
+}
+
+fn if_both_ok(cond bool, a, b *int) int {
+	var x *int
+	if cond {
+		x = a
+	} else {
+		x = b
+	}
+	return *x
+}
+
+fn switch_exhaustive_ok(cond bool, a, b *int) int {
+	var x *int
+	switch cond {
+		case true  { x = a }
+		case false { x = b }
+	}
+	return *x
+}
+
+fn rawptr_zero_ok() rawptr {
+	var p rawptr
+	return p
+}
+
+fn main() {
+	var i = 1
+	var p = &i
+	assert ptr_assign_ok(p) == 1
+	assert ref_assign_ok(p) == 1
+	assert if_both_ok(true, a: p, b: p) == 1
+	assert switch_exhaustive_ok(false, a: p, b: p) == 1
+	assert rawptr_zero_ok() == null
+}

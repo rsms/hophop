@@ -327,11 +327,6 @@ int SLTCResolveNamedTypeFields(SLTypeCheckCtx* c, uint32_t namedIndex) {
                     if (kind != SLAst_STRUCT) {
                         return SLTCFailNode(c, defaultNode, SLDiag_TYPE_MISMATCH);
                     }
-                    if (isEmbedded) {
-                        return SLTCFailSpan(
-                            c, SLDiag_FIELD_DEFAULT_ON_EMBEDDED, n->dataStart, n->dataEnd);
-                    }
-
                     c->defaultFieldNodes = fieldNodes;
                     c->defaultFieldTypes = fieldTypesForDefaults;
                     c->defaultFieldCount = pendingCap;
@@ -1012,6 +1007,22 @@ int SLTCTypeTopLevelVarLikeNode(
             c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
             return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
         }
+        if (c->ast->nodes[nodeId].kind == SLAst_VAR && initNode < 0
+            && SLTCTypeIsTrackedPtrRef(c, resolvedType))
+        {
+            uint32_t nameStart = c->ast->nodes[nodeId].dataStart;
+            uint32_t nameEnd = c->ast->nodes[nodeId].dataEnd;
+            if (parts.grouped && parts.nameListNode >= 0) {
+                int32_t nameNode = SLTCListItemAt(c->ast, parts.nameListNode, (uint32_t)nameIndex);
+                if (nameNode >= 0) {
+                    nameStart = c->ast->nodes[nameNode].dataStart;
+                    nameEnd = c->ast->nodes[nameNode].dataEnd;
+                }
+            }
+            c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_UNSEEN;
+            return SLTCFailTopLevelPtrRefMissingInitializer(
+                c, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end, nameStart, nameEnd);
+        }
         c->topVarLikeTypes[nodeId] = resolvedType;
         c->topVarLikeTypeState[nodeId] = SLTCTopVarLikeType_READY;
         *outType = resolvedType;
@@ -1091,6 +1102,12 @@ int SLTCLocalAdd(
     c->locals[localIdx].typeId = typeId;
     c->locals[localIdx].initExprNode = initExprNode;
     c->locals[localIdx].flags = isConst ? SLTCLocalFlag_CONST : 0;
+    if (SLTCTypeIsTrackedPtrRef(c, typeId)) {
+        c->locals[localIdx].initState =
+            initExprNode >= 0 ? SLTCLocalInit_INIT : SLTCLocalInit_UNINIT;
+    } else {
+        c->locals[localIdx].initState = SLTCLocalInit_UNTRACKED;
+    }
     c->locals[localIdx]._reserved = 0;
     c->locals[localIdx].useIndex = useIdx;
     c->localUses[useIdx].nameStart = nameStart;

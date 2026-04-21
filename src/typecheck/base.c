@@ -273,6 +273,52 @@ void SLTCMarkLocalWrite(SLTypeCheckCtx* c, int32_t localIdx) {
     }
 }
 
+int SLTCTypeIsTrackedPtrRef(SLTypeCheckCtx* c, int32_t typeId) {
+    int32_t resolvedType;
+    if (c == NULL || typeId < 0) {
+        return 0;
+    }
+    resolvedType = SLTCResolveAliasBaseType(c, typeId);
+    if (resolvedType < 0 || (uint32_t)resolvedType >= c->typeLen) {
+        return 0;
+    }
+    return c->types[resolvedType].kind == SLTCType_PTR
+        || c->types[resolvedType].kind == SLTCType_REF;
+}
+
+void SLTCMarkLocalInitialized(SLTypeCheckCtx* c, int32_t localIdx) {
+    if (c == NULL || localIdx < 0 || (uint32_t)localIdx >= c->localLen || c->locals == NULL) {
+        return;
+    }
+    if (c->locals[localIdx].initState != SLTCLocalInit_UNTRACKED) {
+        c->locals[localIdx].initState = SLTCLocalInit_INIT;
+    }
+}
+
+int SLTCCheckLocalInitialized(SLTypeCheckCtx* c, int32_t localIdx, uint32_t start, uint32_t end) {
+    SLTCLocal* local;
+    SLDiagCode code;
+    if (c == NULL || localIdx < 0 || (uint32_t)localIdx >= c->localLen || c->locals == NULL) {
+        return 0;
+    }
+    local = &c->locals[localIdx];
+    if (local->initState == SLTCLocalInit_UNTRACKED || local->initState == SLTCLocalInit_INIT) {
+        return 0;
+    }
+    code = local->initState == SLTCLocalInit_MAYBE
+             ? SLDiag_LOCAL_PTR_REF_MAYBE_UNINIT
+             : SLDiag_LOCAL_PTR_REF_UNINIT;
+    SLTCSetDiagWithArg(c->diag, code, start, end, local->nameStart, local->nameEnd);
+    return -1;
+}
+
+int SLTCFailTopLevelPtrRefMissingInitializer(
+    SLTypeCheckCtx* c, uint32_t start, uint32_t end, uint32_t nameStart, uint32_t nameEnd) {
+    SLTCSetDiagWithArg(
+        c->diag, SLDiag_TOPLEVEL_PTR_REF_INIT_REQUIRED, start, end, nameStart, nameEnd);
+    return -1;
+}
+
 void SLTCUnmarkLocalRead(SLTypeCheckCtx* c, int32_t localIdx) {
     SLTCLocalUse* use = SLTCGetLocalUseByIndex(c, localIdx);
     if (use == NULL || use->readCount == 0) {

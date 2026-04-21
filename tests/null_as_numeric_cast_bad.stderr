@@ -1,0 +1,1 @@
+tests/null_as_numeric_cast_bad.sl:3:14: error: SL2004: type mismatch: cannot cast null to int

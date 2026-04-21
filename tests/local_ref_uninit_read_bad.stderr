@@ -1,0 +1,1 @@
+tests/local_ref_uninit_read_bad.sl:3:10: error: SL2097: pointer/reference variable 'x' is not initialized

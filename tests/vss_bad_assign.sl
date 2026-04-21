@@ -7,7 +7,8 @@ struct Packet {
 }
 
 fn main() i32 {
-	var p *Packet = null as *Packet
-	p.payload = null as *u8
+	var p    *Packet = (null as rawptr) as *Packet
+	var none *u8     = (null as rawptr) as *u8
+	p.payload = none
 	return 0
 }

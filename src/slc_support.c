@@ -706,6 +706,8 @@ void RemapCombinedDiag(
                 || diagOut->code == SLDiag_UNUSED_VARIABLE_NEVER_READ
                 || diagOut->code == SLDiag_UNUSED_PARAMETER
                 || diagOut->code == SLDiag_UNUSED_PARAMETER_NEVER_READ
+                || diagOut->code == SLDiag_LOCAL_PTR_REF_UNINIT
+                || diagOut->code == SLDiag_LOCAL_PTR_REF_MAYBE_UNINIT
                 || diagOut->code == SLDiag_CONST_PARAM_ARG_NOT_CONST
                 || diagOut->code == SLDiag_CONST_PARAM_SPREAD_NOT_CONST)
             && diagOut->argEnd > diagOut->argStart)

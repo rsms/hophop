@@ -678,22 +678,33 @@ static int SLEvalMirLowerFunction(
         return -1;
     }
     (void)sourceRefIndex;
-    if (SLMirLowerAppendSimpleFunction(
+    {
+        SLEvalMirLowerConstCtx lowerConstCtx;
+        SLMirLowerOptions      lowerOptions;
+        memset(&lowerConstCtx, 0, sizeof(lowerConstCtx));
+        memset(&lowerOptions, 0, sizeof(lowerOptions));
+        lowerConstCtx.p = c->p;
+        lowerConstCtx.file = fn->file;
+        lowerOptions.lowerConstExpr = SLEvalMirLowerConstExpr;
+        lowerOptions.lowerConstExprCtx = &lowerConstCtx;
+        if (SLMirLowerAppendSimpleFunctionWithOptions(
             &c->builder,
             c->p->arena,
             &fn->file->ast,
             (SLStrView){ fn->file->source, fn->file->sourceLen },
             fn->fnNode,
             fn->bodyNode,
+            &lowerOptions,
             &mirFnIndex,
             &supported,
             c->diag)
-        != 0)
-    {
-        if (c->loweringFns != NULL) {
-            c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+            != 0)
+        {
+            if (c->loweringFns != NULL) {
+                c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+            }
+            return -1;
         }
-        return -1;
     }
     if (!supported) {
         if (c->loweringFns != NULL) {

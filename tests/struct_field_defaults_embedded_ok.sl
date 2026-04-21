@@ -1,0 +1,36 @@
+// Verifies embedded struct field defaults are accepted and act like inlined defaults.
+struct Vec2 {
+	x, y i32
+}
+
+struct NonZeroVec3 {
+	Vec2 = { x: 1, y: 1 }
+	z i32 = 1
+}
+
+struct Foo {
+	a i32 = 1
+	b i32 = 2
+}
+
+struct MyFoo {
+	Foo = { b: 3 }
+	sum i32 = a + b
+}
+
+fn main() {
+	var v = NonZeroVec3{}
+	assert (v.x == 1)
+	assert (v.y == 1)
+	assert (v.z == 1)
+
+	var foo = MyFoo{}
+	assert (foo.a == 1)
+	assert (foo.b == 3)
+	assert (foo.sum == 4)
+
+	var foo2 = MyFoo{ a: 9 }
+	assert (foo2.a == 9)
+	assert (foo2.b == 3)
+	assert (foo2.sum == 12)
+}

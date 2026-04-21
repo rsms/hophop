@@ -1,7 +1,8 @@
 // Verifies new selector non-optional panics.
-import "std/testing"
+import "std/testing" { FailingAllocator }
 
 fn main() {
-	var ma *Allocator = null as *Allocator
-	var _p *i32       = new i32 with ma
+	var ma            = FailingAllocator{}
+	var a  *Allocator = &ma
+	var _p *i32       = new i32 with a
 }

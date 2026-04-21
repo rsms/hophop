@@ -235,11 +235,8 @@ static inline void* __sl_new(__sl_Allocator* ma, __sl_uint size, __sl_uint align
         __sl_panic(__sl_strlitp("invalid alignment"), "", 0);
     }
 
-    // TODO FIXME: make ma or ma->impl being NULL an error. For now we return NULL in that case,
-    // as if allocation failed, since several tests makes this assumption.
     if __sl_unlikely (ma == NULL || ma->impl == NULL) {
-        // __sl_panic(__sl_strlit("ma.impl is null"), "", 0);
-        return NULL;
+        __sl_panic(__sl_strlitp("invalid allocator"), "", 0);
     }
 
     return ma->impl(ma, NULL, align, 0, &newSize, 0);
