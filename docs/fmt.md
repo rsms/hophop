@@ -144,7 +144,7 @@ This is why `fmt_canonical` can legitimately contain both:
 ## Redundant literal casts
 
 - Redundant numeric literal casts are removed when the surrounding syntax fixes the same target type.
-- Current supported contexts include typed `var` initializers, typed returns, matching binary operands, and direct call arguments whose resolved parameter type exactly matches the cast target.
+- Current supported contexts include typed `var` initializers, typed returns, matching binary operands including numeric comparisons, and direct call arguments whose resolved parameter type exactly matches the cast target.
 - Variadic direct-call tails are also simplified when the variadic element type exactly matches the cast target.
 - Unresolved or ambiguous call targets are left unchanged.
 

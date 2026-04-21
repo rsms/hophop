@@ -178,6 +178,24 @@ fn fmt_literal_cast_calls() {
 	_ = fmt_literal_cast_call_targets(1, b: 2, c: 3.5)
 }
 
+fn fmt_literal_cast_comparisons(z, w i64, x i32) {
+	assert z == 0
+	assert 0 == z
+	assert z != 1
+	assert z < 2
+	assert 3 <= z
+	assert z > 4
+	assert 5 >= z
+	assert current_i32() == 0 as i32
+	assert x == 0
+	assert 0 == x
+	assert x < 1
+	assert 2 > x
+	assert w >= 6
+}
+
+fn current_i32() i32
+
 // Struct & union literals should have their "linebreak or comma" forms preserved
 fn preserve_line_form() {
 	var a Example = { pos: { x: 1, y: 2 }, size: { w: 3, h: 4 }, value: { i: 5 } }

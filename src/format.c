@@ -379,7 +379,13 @@ static int SLFmtBinaryOpSharesOperandType(uint16_t op) {
         case SLTok_MOD:
         case SLTok_AND:
         case SLTok_OR:
-        case SLTok_XOR: return 1;
+        case SLTok_XOR:
+        case SLTok_EQ:
+        case SLTok_NEQ:
+        case SLTok_LT:
+        case SLTok_GT:
+        case SLTok_LTE:
+        case SLTok_GTE: return 1;
         default:        return 0;
     }
 }

@@ -5,10 +5,10 @@ fn main() {
 	var c rune = '©'
 	var b rune = '本'
 
-	assert a == 0x0061 as rune
-	assert n == 0x000A as rune
-	assert c == 0x00A9 as rune
-	assert b == 0x672C as rune
+	assert a == 0x0061
+	assert n == 0x000A
+	assert c == 0x00A9
+	assert b == 0x672C
 
 	var x i64 = 'अ'
 	var y u32 = 'अ'
@@ -17,10 +17,10 @@ fn main() {
 	var i i8  = 'A'
 	var q u8  = 'å'
 
-	assert x == 0x0905 as i64
-	assert y == 0x0905 as u32
-	assert z == 0x0905 as i32
-	assert u == 0x0905 as u16
-	assert i == 0x41 as i8
-	assert q == 0xE5 as u8
+	assert x == 0x0905
+	assert y == 0x0905
+	assert z == 0x0905
+	assert u == 0x0905
+	assert i == 0x41
+	assert q == 0xE5
 }

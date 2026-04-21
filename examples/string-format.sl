@@ -27,18 +27,18 @@ fn main() {
 	// - if len(buf) > 0, write at most len(buf)-1 payload bytes and trailing NUL
 	var tiny [u8 8]
 	var tn   uint = format(buf: tiny, "abcdefghi")
-	assert tn == 9 as uint
-	assert tiny[0] == 'a' as u8
-	assert tiny[1] == 'b' as u8
-	assert tiny[2] == 'c' as u8
-	assert tiny[3] == 'd' as u8
-	assert tiny[4] == 'e' as u8
-	assert tiny[5] == 'f' as u8
-	assert tiny[6] == 'g' as u8
+	assert tn == 9
+	assert tiny[0] == 'a'
+	assert tiny[1] == 'b'
+	assert tiny[2] == 'c'
+	assert tiny[3] == 'd'
+	assert tiny[4] == 'e'
+	assert tiny[5] == 'f'
+	assert tiny[6] == 'g'
 	assert tiny[7] == 0
 
 	// Zero-capacity buffer: writes nothing, still returns full logical length.
 	var zero [u8 0]
 	var zn   uint = format(buf: zero, "abcdef")
-	assert zn == 6 as uint
+	assert zn == 6
 }

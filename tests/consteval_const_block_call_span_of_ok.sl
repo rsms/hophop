@@ -4,7 +4,7 @@ import "reflect"
 
 fn require_non_zero(const value i64, const span reflect.Span) i64 {
 	const {
-		if value == 0 as i64 {
+		if value == 0 {
 			compiler.error_at(span, "value must be non-zero")
 		}
 	}
@@ -13,7 +13,7 @@ fn require_non_zero(const value i64, const span reflect.Span) i64 {
 
 fn warn_if_small(const value i64, const span reflect.Span) {
 	const {
-		if value < 16 as i64 {
+		if value < 16 {
 			compiler.warn_at(span, "value is unusually small")
 		}
 	}
@@ -28,5 +28,5 @@ fn checked_buffer_size() i64 {
 }
 
 fn main() {
-	assert BUFFER_SIZE == 64 as i64
+	assert BUFFER_SIZE == 64
 }

@@ -10,7 +10,7 @@ const RESULT bool = eval_result()
 
 fn eval_result() bool {
 	const x i64 = 64
-	return pass_through(x < 16 as i64)
+	return pass_through(x < 16)
 }
 
 fn main() {
