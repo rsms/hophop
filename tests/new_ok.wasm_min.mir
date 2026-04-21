@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=9 consts=0 sources=1 funcs=1 locals=3 fields=0 types=5 hosts=0 symbols=0
 sources
-  #0 len=148
+  #0 len=154
 types
   #0 astNode=6 source=#0 flags=2049
   #1 astNode=12 source=#0 flags=131073
@@ -18,14 +18,14 @@ functions
     locals
       #0 name="ma" [46,48] type=#4 flags=2
       #1 name="_p" [77,79] type=#0 flags=2
-      #2 name="_q" [112,114] type=#1 flags=2
+      #2 name="_q" [115,117] type=#1 flags=2
     insts
       0: CTX_GET field=MEM span=[60,71]
       1: LOCAL_STORE local=#0 "ma" [46,48] span=[42,71]
-      2: LOCAL_LOAD local=#0 "ma" [46,48] span=[104,106]
-      3: ALLOC_NEW tok=128 aux=8 span=[91,106]
-      4: LOCAL_STORE local=#1 "_p" [77,79] span=[73,106]
-      5: LOCAL_LOAD local=#0 "ma" [46,48] span=[143,145]
-      6: ALLOC_NEW tok=192 aux=16 span=[126,145]
-      7: LOCAL_STORE local=#2 "_q" [112,114] span=[108,145]
-      8: RETURN_VOID span=[39,147]
+      2: LOCAL_LOAD local=#0 "ma" [46,48] span=[107,109]
+      3: ALLOC_NEW tok=128 aux=8 span=[91,109]
+      4: LOCAL_STORE local=#1 "_p" [77,79] span=[73,109]
+      5: LOCAL_LOAD local=#0 "ma" [46,48] span=[149,151]
+      6: ALLOC_NEW tok=192 aux=16 span=[129,151]
+      7: LOCAL_STORE local=#2 "_q" [115,117] span=[111,151]
+      8: RETURN_VOID span=[39,153]

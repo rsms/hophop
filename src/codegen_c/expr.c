@@ -7288,6 +7288,23 @@ int32_t ActiveCallOverlayNode(const SLCBackendC* c) {
     return -1;
 }
 
+int32_t ActiveCallDirectContextNode(const SLCBackendC* c) {
+    if (c->activeCallWithNode < 0 || (uint32_t)c->activeCallWithNode >= c->ast.len) {
+        return -1;
+    }
+    {
+        int32_t callNode = AstFirstChild(&c->ast, c->activeCallWithNode);
+        int32_t child = callNode >= 0 ? AstNextSibling(&c->ast, callNode) : -1;
+        if (child >= 0) {
+            const SLAstNode* n = NodeAt(c, child);
+            if (n != NULL && n->kind != SLAst_CONTEXT_OVERLAY) {
+                return child;
+            }
+        }
+    }
+    return -1;
+}
+
 int32_t FindActiveOverlayBindByName(const SLCBackendC* c, const char* fieldName) {
     int32_t overlayNode = ActiveCallOverlayNode(c);
     int32_t child = overlayNode >= 0 ? AstFirstChild(&c->ast, overlayNode) : -1;
@@ -7430,11 +7447,18 @@ int EmitEffectiveContextFieldValue(
 int EmitContextArgForSig(SLCBackendC* c, const SLFnSig* sig) {
     uint32_t i;
     uint32_t fieldCount = 0;
+    int32_t  directContextNode = ActiveCallDirectContextNode(c);
     if (sig == NULL || !sig->hasContext) {
         return 0;
     }
     if (!sig->contextType.valid || sig->contextType.baseName == NULL) {
         return -1;
+    }
+    if (directContextNode >= 0) {
+        SLTypeRef contextParamType = sig->contextType;
+        contextParamType.ptrDepth++;
+        contextParamType.readOnly = 0;
+        return EmitExprCoerced(c, directContextNode, &contextParamType);
     }
 
     for (i = 0; i < c->fieldInfoLen; i++) {

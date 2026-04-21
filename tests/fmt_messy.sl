@@ -22,7 +22,7 @@ _=add(1,y:y)
 _=add(1,y:(y))
 _=Foo{x:1,y:y}
 _=Foo{x:1,y:(y)}
-_=add(1,2) with {mem:context.mem}
-_=add(1,2) with {mem:(context).mem}
+_=add(1,2) context {mem:context.mem}
+_=add(1,2) context {mem:(context).mem}
 _=y<(16 as i64)
 }

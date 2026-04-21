@@ -1091,6 +1091,7 @@ int     SLTCCurrentContextFieldType(
 int SLTCCurrentContextFieldTypeByLiteral(
     SLTypeCheckCtx* c, const char* fieldName, int32_t* outType);
 int32_t SLTCContextFindOverlayNode(SLTypeCheckCtx* c);
+int32_t SLTCContextFindDirectNode(SLTypeCheckCtx* c);
 int32_t SLTCContextFindOverlayBindMatch(
     SLTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, const char* _Nullable fieldName);
 int32_t SLTCContextFindOverlayBindByLiteral(SLTypeCheckCtx* c, const char* fieldName);

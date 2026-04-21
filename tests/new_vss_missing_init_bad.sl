@@ -9,7 +9,7 @@ struct Packet {
 
 fn main() {
 	var ma             = context.mem
-	var packet *Packet = new Packet with ma
+	var packet *Packet = new Packet context ma
 	_ = packet
 	_ = ma
 }

@@ -6,7 +6,7 @@ struct Pair {
 
 fn main() {
 	var ma      = context.mem
-	var p *Pair = new Pair{ x: 1, y: 2 } with ma
+	var p *Pair = new Pair{ x: 1, y: 2 } context ma
 	assert p.x == 1
 	assert p.y == 2
 }

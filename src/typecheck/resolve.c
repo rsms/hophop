@@ -2520,6 +2520,20 @@ int32_t SLTCContextFindOverlayNode(SLTypeCheckCtx* c) {
     return -1;
 }
 
+int32_t SLTCContextFindDirectNode(SLTypeCheckCtx* c) {
+    if (c->activeCallWithNode < 0 || (uint32_t)c->activeCallWithNode >= c->ast->len) {
+        return -1;
+    }
+    {
+        int32_t callNode = SLAstFirstChild(c->ast, c->activeCallWithNode);
+        int32_t child = callNode >= 0 ? SLAstNextSibling(c->ast, callNode) : -1;
+        if (child >= 0 && c->ast->nodes[child].kind != SLAst_CONTEXT_OVERLAY) {
+            return child;
+        }
+    }
+    return -1;
+}
+
 int32_t SLTCContextFindOverlayBindMatch(
     SLTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, const char* _Nullable fieldName) {
     int32_t overlayNode = SLTCContextFindOverlayNode(c);
@@ -2584,7 +2598,19 @@ int SLTCGetEffectiveContextFieldTypeByLiteral(
 
 int SLTCValidateCurrentCallOverlay(SLTypeCheckCtx* c) {
     int32_t overlayNode = SLTCContextFindOverlayNode(c);
+    int32_t directNode = SLTCContextFindDirectNode(c);
     int32_t bind = overlayNode >= 0 ? SLAstFirstChild(c->ast, overlayNode) : -1;
+    if (directNode >= 0) {
+        int32_t t;
+        int32_t savedActive = c->activeCallWithNode;
+        c->activeCallWithNode = -1;
+        if (SLTCTypeExpr(c, directNode, &t) != 0) {
+            c->activeCallWithNode = savedActive;
+            return -1;
+        }
+        c->activeCallWithNode = savedActive;
+        return 0;
+    }
     if (overlayNode >= 0 && c->currentContextType < 0 && !c->hasImplicitMainRootContext) {
         return SLTCFailSpan(
             c,
@@ -2634,8 +2660,32 @@ int SLTCValidateCurrentCallOverlay(SLTypeCheckCtx* c) {
 
 int SLTCValidateCallContextRequirements(SLTypeCheckCtx* c, int32_t requiredContextType) {
     int32_t  typeId = requiredContextType;
+    int32_t  directNode = SLTCContextFindDirectNode(c);
     uint32_t i;
     if (requiredContextType < 0) {
+        return 0;
+    }
+    if (directNode >= 0) {
+        int32_t expectedContextRef = SLTCInternRefType(
+            c,
+            requiredContextType,
+            1,
+            c->ast->nodes[directNode].start,
+            c->ast->nodes[directNode].end);
+        int32_t gotType;
+        int32_t savedActive = c->activeCallWithNode;
+        if (expectedContextRef < 0) {
+            return -1;
+        }
+        c->activeCallWithNode = -1;
+        if (SLTCTypeExpr(c, directNode, &gotType) != 0) {
+            c->activeCallWithNode = savedActive;
+            return -1;
+        }
+        c->activeCallWithNode = savedActive;
+        if (!SLTCCanAssign(c, expectedContextRef, gotType)) {
+            return SLTCFailNode(c, directNode, SLDiag_CONTEXT_CLAUSE_MISMATCH);
+        }
         return 0;
     }
     while (typeId >= 0 && (uint32_t)typeId < c->typeLen && c->types[typeId].kind == SLTCType_ALIAS)

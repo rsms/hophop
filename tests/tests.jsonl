@@ -203,6 +203,7 @@
 {"id":"check:tests/var_infer_null_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/var_infer_null_bad.sl","expect_stderr":"tests/var_infer_null_bad.stderr"}
 {"id":"check:tests/var_infer_void_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/var_infer_void_bad.sl","expect_stderr":"tests/var_infer_void_bad.stderr"}
 {"id":"check:tests/void_identifier_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/void_identifier_ok.sl"}
+{"id":"check:tests/with_identifier_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/with_identifier_ok.sl"}
 {"id":"check:tests/enum_member_unqualified_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/enum_member_unqualified_bad.sl","expect_stderr":"tests/enum_member_unqualified_bad.stderr"}
 {"id":"check:tests/enum_member_unknown_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/enum_member_unknown_bad.sl","expect_stderr":"tests/enum_member_unknown_bad.stderr"}
 {"id":"check:tests/bad_type_mismatch.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/bad_type_mismatch.sl","expect_stderr":"tests/bad_type_mismatch.stderr"}

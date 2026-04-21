@@ -2,6 +2,6 @@
 fn main() i32 {
 	var ma Allocator
 	var t  i32
-	var p  *i32 = new t with &ma
+	var p  *i32 = new t context &ma
 	return p as i32
 }

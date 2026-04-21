@@ -32,7 +32,7 @@ fn alloc_block(arena *ArenaAllocator, minSize, align uint) *ArenaBlock {
 		return none
 	}
 
-	var block *ArenaBlock = new ArenaBlock with arena.mem
+	var block *ArenaBlock = new ArenaBlock context arena.mem
 	block.next = arena.head
 	block.addr = payload_addr
 	block.size = payload_size

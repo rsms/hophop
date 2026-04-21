@@ -56,7 +56,7 @@ Implemented core includes:
 - references, pointers, arrays, slices
 - optional types (`?T`)
 - variable-size structs
-- typed contexts/capabilities (`context`, `with`)
+- typed contexts/capabilities (`context`)
 
 ## Feature Proposals (SLP)
 

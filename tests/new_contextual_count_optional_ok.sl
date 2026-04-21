@@ -12,5 +12,5 @@ fn allocs(n uint) context Ctx {
 
 fn main() {
 	var ma = context.mem
-	allocs(4) with { mem: ma }
+	allocs(4) context { mem: ma }
 }

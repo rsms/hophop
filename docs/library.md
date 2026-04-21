@@ -114,8 +114,8 @@ fn copy(dst *[anytype], src &[anytype]) uint
 ```sl
 new T
 new [T N]
-new T with alloc
-new [T N] with alloc
+new T context alloc
+new [T N] context alloc
 ```
 
 `new` allocates memory from a memory allocator.

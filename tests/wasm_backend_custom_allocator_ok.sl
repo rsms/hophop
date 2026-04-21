@@ -15,12 +15,12 @@ fn main() {
 
 	var a *Allocator = &ma
 	a.impl = custom_alloc_impl
-	var p *i32 = new i32 with a
+	var p *i32 = new i32 context a
 	*p = 7
 	assert *p == 7
 
 	var n  uint   = 3
-	var xs *[i32] = new [i32 n] with a
+	var xs *[i32] = new [i32 n] context a
 	xs[0] = 1
 	xs[2] = 9
 	assert len(xs) == 3

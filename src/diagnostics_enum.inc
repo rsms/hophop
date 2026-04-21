@@ -51,11 +51,10 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_CONTEXT_REQUIRED,          /* SL2029: context is required here */
     SLDiag_CONTEXT_MISSING_FIELD,     /* SL2030: required context field is missing */
     SLDiag_CONTEXT_TYPE_MISMATCH,     /* SL2031: context field type mismatch */
-    SLDiag_CONTEXT_UNKNOWN_FIELD,     /* SL2032: unknown context field in with clause */
-    SLDiag_CONTEXT_DUPLICATE_FIELD,   /* SL2033: duplicate context field in with clause */
+    SLDiag_CONTEXT_UNKNOWN_FIELD,     /* SL2032: unknown context field in context clause */
+    SLDiag_CONTEXT_DUPLICATE_FIELD,   /* SL2033: duplicate context field in context clause */
     SLDiag_CONTEXT_CLAUSE_MISMATCH,   /* SL2034: function context clause mismatch */
-    SLDiag_WITH_CONTEXT_ON_NON_CALL,  /* SL2035: 'with' context clause can only be applied to a call
-                                       */
+    SLDiag_WITH_CONTEXT_ON_NON_CALL,  /* SL2035: 'context' clause can only be applied to a call */
     SLDiag_COMPOUND_TYPE_REQUIRED, /* SL2036: compound literal requires an explicit aggregate type
                                     */
     SLDiag_COMPOUND_INFER_NO_CONTEXT, /* SL2037: cannot infer compound literal type from context */

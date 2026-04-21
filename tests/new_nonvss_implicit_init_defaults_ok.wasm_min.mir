@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=51 consts=6 sources=1 funcs=1 locals=3 fields=8 types=7 hosts=0 symbols=0
 sources
-  #0 len=269
+  #0 len=275
 types
   #0 astNode=15 source=#0 flags=1048577
   #1 astNode=21 source=#0 flags=1048577
@@ -14,10 +14,10 @@ types
 hosts
 symbols
 fields
-  #0 ownerType=#4294967295 type=#4294967295 name="a" [209,210]
-  #1 ownerType=#4294967295 type=#4294967295 name="b" [226,227]
-  #2 ownerType=#4294967295 type=#4294967295 name="a" [243,244]
-  #3 ownerType=#4294967295 type=#4294967295 name="b" [260,261]
+  #0 ownerType=#4294967295 type=#4294967295 name="a" [215,216]
+  #1 ownerType=#4294967295 type=#4294967295 name="b" [232,233]
+  #2 ownerType=#4294967295 type=#4294967295 name="a" [249,250]
+  #3 ownerType=#4294967295 type=#4294967295 name="b" [266,267]
   #4 ownerType=#2 type=#3 name="a" [81,82]
   #5 ownerType=#2 type=#4 name="b" [92,93]
   #6 ownerType=#5 type=#3 name="a" [81,82]
@@ -34,13 +34,13 @@ functions
     locals
       #0 name="ma" [126,128] type=#6 flags=2
       #1 name="p" [149,150] type=#0 flags=2
-      #2 name="q" [175,176] type=#1 flags=2
+      #2 name="q" [178,179] type=#1 flags=2
     insts
       0: CTX_GET field=MEM span=[131,142]
       1: LOCAL_STORE local=#0 "ma" [126,128] span=[122,142]
-      2: LOCAL_LOAD local=#0 "ma" [126,128] span=[167,169]
-      3: ALLOC_NEW tok=128 aux=17 span=[156,169]
-      4: LOCAL_STORE local=#1 "p" [149,150] span=[145,169]
+      2: LOCAL_LOAD local=#0 "ma" [126,128] span=[170,172]
+      3: ALLOC_NEW tok=128 aux=17 span=[156,172]
+      4: LOCAL_STORE local=#1 "p" [149,150] span=[145,172]
       5: LOCAL_LOAD local=#1 "p" [149,150] span=[81,90]
       6: PUSH_CONST const=#0 span=[89,90]
       7: AGG_SET aux=4 span=[81,90]
@@ -52,38 +52,38 @@ functions
       13: BINARY op=ADD span=[100,105]
       14: AGG_SET aux=5 span=[92,105]
       15: DROP span=[92,105]
-      16: LOCAL_LOAD local=#0 "ma" [126,128] span=[195,197]
-      17: ALLOC_NEW tok=128 aux=23 span=[182,197]
-      18: LOCAL_STORE local=#2 "q" [175,176] span=[171,197]
-      19: LOCAL_LOAD local=#2 "q" [175,176] span=[81,90]
+      16: LOCAL_LOAD local=#0 "ma" [126,128] span=[201,203]
+      17: ALLOC_NEW tok=128 aux=23 span=[185,203]
+      18: LOCAL_STORE local=#2 "q" [178,179] span=[174,203]
+      19: LOCAL_LOAD local=#2 "q" [178,179] span=[81,90]
       20: PUSH_CONST const=#0 span=[89,90]
       21: AGG_SET aux=6 span=[81,90]
       22: DROP span=[81,90]
-      23: LOCAL_LOAD local=#2 "q" [175,176] span=[92,105]
-      24: LOCAL_LOAD local=#2 "q" [175,176] span=[100,101]
+      23: LOCAL_LOAD local=#2 "q" [178,179] span=[92,105]
+      24: LOCAL_LOAD local=#2 "q" [178,179] span=[100,101]
       25: AGG_GET field=#6 "a" [81,82] span=[100,101]
       26: PUSH_CONST const=#5 span=[104,105]
       27: BINARY op=ADD span=[100,105]
       28: AGG_SET aux=7 span=[92,105]
       29: DROP span=[92,105]
-      30: LOCAL_LOAD local=#1 "p" [149,150] span=[207,208]
-      31: AGG_GET field=#0 "a" [209,210] span=[209,210]
-      32: PUSH_CONST const=#0 span=[214,215]
-      33: BINARY op=EQ span=[207,215]
-      34: ASSERT span=[200,215]
-      35: LOCAL_LOAD local=#1 "p" [149,150] span=[224,225]
-      36: AGG_GET field=#1 "b" [226,227] span=[226,227]
-      37: PUSH_CONST const=#1 span=[231,232]
-      38: BINARY op=EQ span=[224,232]
-      39: ASSERT span=[217,232]
-      40: LOCAL_LOAD local=#2 "q" [175,176] span=[241,242]
-      41: AGG_GET field=#2 "a" [243,244] span=[243,244]
-      42: PUSH_CONST const=#2 span=[248,249]
-      43: BINARY op=EQ span=[241,249]
-      44: ASSERT span=[234,249]
-      45: LOCAL_LOAD local=#2 "q" [175,176] span=[258,259]
-      46: AGG_GET field=#3 "b" [260,261] span=[260,261]
-      47: PUSH_CONST const=#3 span=[265,266]
-      48: BINARY op=EQ span=[258,266]
-      49: ASSERT span=[251,266]
-      50: RETURN_VOID span=[119,268]
+      30: LOCAL_LOAD local=#1 "p" [149,150] span=[213,214]
+      31: AGG_GET field=#0 "a" [215,216] span=[215,216]
+      32: PUSH_CONST const=#0 span=[220,221]
+      33: BINARY op=EQ span=[213,221]
+      34: ASSERT span=[206,221]
+      35: LOCAL_LOAD local=#1 "p" [149,150] span=[230,231]
+      36: AGG_GET field=#1 "b" [232,233] span=[232,233]
+      37: PUSH_CONST const=#1 span=[237,238]
+      38: BINARY op=EQ span=[230,238]
+      39: ASSERT span=[223,238]
+      40: LOCAL_LOAD local=#2 "q" [178,179] span=[247,248]
+      41: AGG_GET field=#2 "a" [249,250] span=[249,250]
+      42: PUSH_CONST const=#2 span=[254,255]
+      43: BINARY op=EQ span=[247,255]
+      44: ASSERT span=[240,255]
+      45: LOCAL_LOAD local=#2 "q" [178,179] span=[264,265]
+      46: AGG_GET field=#3 "b" [266,267] span=[266,267]
+      47: PUSH_CONST const=#3 span=[271,272]
+      48: BINARY op=EQ span=[264,272]
+      49: ASSERT span=[257,272]
+      50: RETURN_VOID span=[119,274]

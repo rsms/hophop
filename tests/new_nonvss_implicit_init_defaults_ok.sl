@@ -7,8 +7,8 @@ struct S {
 fn main() {
 	var ma = context.mem
 
-	var p *S = new S with ma
-	var q *S = new S{} with ma
+	var p *S = new S context ma
+	var q *S = new S{} context ma
 
 	assert p.a == 7
 	assert p.b == 9

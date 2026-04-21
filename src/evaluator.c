@@ -2141,6 +2141,9 @@ static int SLEvalBuildContextOverlay(
     if (overlayNode < 0 || (uint32_t)overlayNode >= ast->len) {
         return 1;
     }
+    if (ast->nodes[overlayNode].kind != SLAst_CONTEXT_OVERLAY) {
+        return 0;
+    }
     bindNode = ASTFirstChild(ast, overlayNode);
     while (bindNode >= 0) {
         const SLAstNode* bind = &ast->nodes[bindNode];

@@ -60,11 +60,11 @@ input.sl:24:1: internal whitespace differs
   current : "_=Foo{x:1,y:(y)}"
   expected: "\t_ = Foo{ x: 1, y: (y) }"
 input.sl:25:1: line content differs
-  current : "_=add(1,2) with {mem:context.mem}"
-  expected: "\t_ = add(1, 2) with { mem }"
+  current : "_=add(1,2) context {mem:context.mem}"
+  expected: "\t_ = add(1, 2) context { mem }"
 input.sl:26:1: internal whitespace differs
-  current : "_=add(1,2) with {mem:(context).mem}"
-  expected: "\t_ = add(1, 2) with { mem: (context).mem }"
+  current : "_=add(1,2) context {mem:(context).mem}"
+  expected: "\t_ = add(1, 2) context { mem: (context).mem }"
 input.sl:27:1: line content differs
   current : "_=y<(16 as i64)"
   expected: "\t_ = y < 16 as i64"

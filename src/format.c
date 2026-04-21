@@ -2471,7 +2471,7 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
             if (callNode >= 0 && SLFmtEmitExpr(c, callNode, 0) != 0) {
                 return -1;
             }
-            if (SLFmtWriteCStr(c, " with ") != 0) {
+            if (SLFmtWriteCStr(c, " context ") != 0) {
                 return -1;
             }
             if ((n->flags & SLAstFlag_CALL_WITH_CONTEXT_PASSTHROUGH) != 0) {
@@ -2627,7 +2627,7 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
                 }
             }
             if (alloc >= 0) {
-                if (SLFmtWriteCStr(c, " with ") != 0 || SLFmtEmitExpr(c, alloc, 0) != 0) {
+                if (SLFmtWriteCStr(c, " context ") != 0 || SLFmtEmitExpr(c, alloc, 0) != 0) {
                     return -1;
                 }
             }

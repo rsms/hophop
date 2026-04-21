@@ -20,7 +20,7 @@ fn main() {
 	var ma = context.mem
 
 	// VSS: initializer is required so runtime allocation size can be computed.
-	var packet *Packet = new Packet{ payloadLen: 3, sampleLen: 2, name.len: 4 } with ma
+	var packet *Packet = new Packet{ payloadLen: 3, sampleLen: 2, name.len: 4 } context ma
 	assert packet.payloadLen == 3
 	assert packet.sampleLen == 2
 	assert packet.name.len == 4
@@ -28,10 +28,10 @@ fn main() {
 	assert packet.samples[0] == 0
 
 	// This would be an error:
-	// var bad *Packet = new Packet with ma
+	// var bad *Packet = new Packet context ma
 	// non-VSS: `new T` is equivalent to `new T{}`
-	var a *PlainStruct = new PlainStruct with ma
-	var b *PlainStruct = new PlainStruct{} with ma
+	var a *PlainStruct = new PlainStruct context ma
+	var b *PlainStruct = new PlainStruct{} context ma
 	assert a.name == "anon"
 	assert a.x == 7
 	assert a.y == 9
@@ -39,7 +39,7 @@ fn main() {
 	assert b.x == 7
 	assert b.y == 9
 
-	var c *PlainStruct = new PlainStruct{ name: "Monz", y: 2 } with ma
+	var c *PlainStruct = new PlainStruct{ name: "Monz", y: 2 } context ma
 	assert c.name == "Monz"
 	assert c.x == 7
 	assert c.y == 2

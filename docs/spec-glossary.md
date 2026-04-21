@@ -19,8 +19,8 @@ This glossary defines terms used normatively in [`docs/language.md`](./language.
 - `Object-representation equality`: Equality defined over raw bytes of a value representation.
 - `Embedded base`: First struct field declared by type name only, enabling field promotion and upcast relations.
 - `Struct-compatible`: A type that, after alias resolution, is a named struct type or an anonymous struct type.
-- `Effective context`: Context visible to a call after applying implicit forwarding and optional `with { ... }` overlay.
-- `Context overlay`: Call-site field bindings provided by `with { ... }`.
+- `Effective context`: Context visible to a call after applying implicit forwarding and optional `context { ... }` overlay.
+- `Context overlay`: Call-site field bindings provided by `context { ... }`.
 - `Context requirement`: Field set declared by callee `context Type`; each required field must be present and assignable in effective context.
 - `Loader root`: Base directory used to resolve normalized import paths in package loading mode.
 - `Function overload set`: All visible functions sharing the same call name.

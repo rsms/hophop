@@ -8,5 +8,5 @@ fn a() context NeedCtx {
 }
 
 fn main() {
-	a() with { mem }
+	a() context { mem }
 }

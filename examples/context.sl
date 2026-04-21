@@ -2,8 +2,8 @@
 // Demonstrates:
 // - function context clauses
 // - implicit context forwarding
-// - explicit pass-through (`with context`)
-// - call-local overlays (`with { ... }`)
+// - explicit pass-through (`context context`)
+// - call-local overlays (`context { ... }`)
 // - contextual built-ins (`new T` and `print(...)`)
 // Context types can be named as they are simply struct types
 struct AppContext {
@@ -32,11 +32,11 @@ fn run_once() i32 context AppContext {
 
 	announce("implicit")
 
-	announce("explicit") with context
+	announce("explicit") context context
 
 	// Call-local overlay, with explicit and shorthand binds.
-	var p2 *i32 = alloc_value() with { mem }
-	announce("overlay") with { log, mem }
+	var p2 *i32 = alloc_value() context { mem }
+	announce("overlay") context { log, mem }
 
 	assert *p == 42
 	assert *p2 == 42
@@ -45,10 +45,10 @@ fn run_once() i32 context AppContext {
 
 fn main() {
 	// `main` can supply call-local capabilities explicitly.
-	var a = run_once() with { mem, log }
-	var b = run_once() with { mem, log }
+	var a = run_once() context { mem, log }
+	var b = run_once() context { mem, log }
 
 	assert a == 84
 	assert b == 84
 } // Ordinary calls auto-forward current context.
-// Explicit pass-through (equivalent to omitting `with`).
+// Explicit pass-through (equivalent to omitting `context context`).

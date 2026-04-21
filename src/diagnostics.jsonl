@@ -53,10 +53,10 @@
 {"id": "SL2029", "name": "CONTEXT_REQUIRED", "category": "semantic", "message": "context is required here"}
 {"id": "SL2030", "name": "CONTEXT_MISSING_FIELD", "category": "semantic", "message": "required context field is missing"}
 {"id": "SL2031", "name": "CONTEXT_TYPE_MISMATCH", "category": "semantic", "message": "context field type mismatch"}
-{"id": "SL2032", "name": "CONTEXT_UNKNOWN_FIELD", "category": "semantic", "message": "unknown context field in with clause"}
-{"id": "SL2033", "name": "CONTEXT_DUPLICATE_FIELD", "category": "semantic", "message": "duplicate context field in with clause"}
+{"id": "SL2032", "name": "CONTEXT_UNKNOWN_FIELD", "category": "semantic", "message": "unknown context field in context clause"}
+{"id": "SL2033", "name": "CONTEXT_DUPLICATE_FIELD", "category": "semantic", "message": "duplicate context field in context clause"}
 {"id": "SL2034", "name": "CONTEXT_CLAUSE_MISMATCH", "category": "semantic", "message": "function context clause mismatch"}
-{"id": "SL2035", "name": "WITH_CONTEXT_ON_NON_CALL", "category": "semantic", "message": "'with' context clause can only be applied to a call"}
+{"id": "SL2035", "name": "WITH_CONTEXT_ON_NON_CALL", "category": "semantic", "message": "'context' clause can only be applied to a call"}
 {"id": "SL2036", "name": "COMPOUND_TYPE_REQUIRED", "category": "semantic", "message": "compound literal requires an explicit aggregate type"}
 {"id": "SL2037", "name": "COMPOUND_INFER_NO_CONTEXT", "category": "semantic", "message": "cannot infer compound literal type from context"}
 {"id": "SL2038", "name": "COMPOUND_INFER_AMBIGUOUS", "category": "semantic", "message": "compound literal type inference is ambiguous"}

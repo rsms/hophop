@@ -196,7 +196,6 @@ typedef enum {
     SLTok_IN,
     SLTok_AS,
     SLTok_CONTEXT,
-    SLTok_WITH,
     SLTok_ANYTYPE,
 
     SLTok_LPAREN,

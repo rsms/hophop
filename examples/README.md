@@ -40,7 +40,7 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/slc check examples/allocator.sl`
 - Arena allocator with `import "mem"` and `free_all`: `examples/arena_allocator.sl`
   - Check: `./_build/macos-aarch64-debug/slc checkpkg examples/arena_allocator.sl`
-- SLP-12 typed contexts/capabilities (`context`, `with { ... }`, `with context`):
+- SLP-12 typed contexts/capabilities (`context`, `context { ... }`, `context context`):
   `examples/context.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/context.sl`
 - Struct composition (embedded fields, promoted selectors): `examples/struct_composition.sl`

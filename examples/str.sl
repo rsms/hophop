@@ -45,5 +45,5 @@ fn run() context AppContext {
 }
 
 fn main() {
-	run() with { mem, log }
+	run() context { mem, log }
 }

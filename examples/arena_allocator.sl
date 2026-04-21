@@ -11,11 +11,11 @@ fn arena_init(self *ArenaAllocator, source *Allocator, block_size uint) {
 fn arena_free_all(self *ArenaAllocator) {}
 
 fn fill_values(arena *ArenaAllocator) i32 {
-	var p *i32 = new i32 with arena.mem
+	var p *i32 = new i32 context arena.mem
 	*p = 10
 
 	var n  uint   = 4
-	var xs *[i32] = new [i32 n] with arena.mem
+	var xs *[i32] = new [i32 n] context arena.mem
 	xs[0] = 1
 	xs[1] = 2
 	xs[2] = 3

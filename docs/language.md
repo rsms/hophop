@@ -52,7 +52,7 @@ See also:
 
 ### 2.3 Keywords
 - [LEX-KW-001][Stable] Keywords:
-  `import pub struct union enum fn var const type if else for switch case default break continue return defer assert sizeof true false in as null new context with`.
+  `import pub struct union enum fn var const type if else for switch case default break continue return defer assert sizeof true false in as null new context`.
 - [LEX-KW-002][Stable] `mut` is reserved legacy syntax and MUST be rejected in type positions.
 
 ### 2.4 Literals
@@ -211,13 +211,13 @@ AddExpr         = MulExpr { ( "+" | "-" ) MulExpr } .
 MulExpr         = UnaryExpr { ( "*" | "/" | "%" ) UnaryExpr } .
 UnaryExpr       = ( ( "+" | "-" | "!" | "*" | "&" ) UnaryExpr ) | PostfixExpr .
 PostfixExpr     = PrimaryExpr { PostfixSuffix } .
-PostfixSuffix   = CallWithContextSuffix | IndexSuffix | SelectorSuffix | CastSuffix | UnwrapSuffix .
-CallWithContextSuffix = CallSuffix [ WithContextClause ] .
+PostfixSuffix   = CallContextSuffix | IndexSuffix | SelectorSuffix | CastSuffix | UnwrapSuffix .
+CallContextSuffix = CallSuffix [ ContextClause ] .
 CallSuffix      = "(" [ CallArgList ] ")" .
 CallArgList     = CallArg { "," CallArg } .
 CallArg         = [ Ident ":" ] Expr [ "..." ] .
 ExprList        = Expr { "," Expr } .
-WithContextClause = "with" ( "context" | ContextOverlay ) .
+ContextClause   = "context" ( "context" | ContextOverlay | Expr ) .
 ContextOverlay  = "{" [ ContextBindList ] "}" .
 ContextBindList = ContextBind { "," ContextBind } [ "," ] .
 ContextBind     = Ident [ ":" Expr ] .
@@ -232,7 +232,7 @@ PrimaryExpr     = Ident | "context" | IntLit | FloatLit | StringLit | RuneLit | 
                 | TupleExpr .
 TypeValueExpr   = "type" Type .
 TupleExpr       = "(" Expr "," Expr { "," Expr } ")" .
-NewExpr         = "new" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "with" Expr ] .
+NewExpr         = "new" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "context" Expr ] .
 CompoundLit     = [ TypeName ] "{" [ FieldInitList ] "}" .
 FieldInitList   = FieldInit { "," FieldInit } [ "," ] .
 FieldInit       = Ident { "." Ident } ":" Expr .
@@ -606,9 +606,10 @@ fn f() {
   - valid as primary expression operand where a current function context or implicit main root context exists
   - invalid as a declaration/binding name
   - unresolved (unknown symbol) outside a context-bearing scope
-- [CTX-CALL-001][Stable] Calls without `with` forward effective current context automatically.
-- [CTX-CALL-002][Stable] `with context` is explicit pass-through and equivalent to omission.
-- [CTX-CALL-003][Stable] `with { ... }` creates call-local context overlay.
+- [CTX-CALL-001][Stable] Calls without `context` clause forward effective current context automatically.
+- [CTX-CALL-002][Stable] `context context` is explicit pass-through and equivalent to omission.
+- [CTX-CALL-003][Stable] `context { ... }` creates call-local context overlay.
+- [CTX-CALL-003A][Stable] `context expr` passes an explicit context expression.
 - [CTX-CALL-004][Stable] Overlay bind shorthand `name` means `name = context.name`.
 - [CTX-CALL-005][Stable] Overlay duplicate field names are invalid.
 - [CTX-CALL-006][Stable] Callee context requirements are structural-by-field: each required field name/type must be provided by effective context.
@@ -643,7 +644,7 @@ fn f() {
   - `new T`
   - `new T{...}`
   - `new [T n]`
-  - each with optional `with allocExpr`
+  - each with optional `context allocExpr`
 - [BI-NEW-002][Stable] Without explicit allocator, effective context MUST provide `mem` compatible with `*Allocator`.
 - [BI-NEW-002A][Stable] The explicit allocator, or effective context `mem`, MUST be non-null and have a valid allocator implementation.
 - [BI-NEW-003][Stable] `n` in `new [T n]` MUST be integer-typed; constant negative values are invalid.

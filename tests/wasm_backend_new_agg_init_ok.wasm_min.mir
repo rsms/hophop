@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=24 consts=3 sources=1 funcs=1 locals=2 fields=4 types=5 hosts=0 symbols=0
 sources
-  #0 len=219
+  #0 len=222
 types
   #0 astNode=11 source=#0 flags=1048577
   #1 astNode=12 source=#0 flags=524288
@@ -12,8 +12,8 @@ types
 hosts
 symbols
 fields
-  #0 ownerType=#4294967295 type=#4294967295 name="x" [193,194]
-  #1 ownerType=#4294967295 type=#4294967295 name="y" [210,211]
+  #0 ownerType=#4294967295 type=#4294967295 name="x" [196,197]
+  #1 ownerType=#4294967295 type=#4294967295 name="y" [213,214]
   #2 ownerType=#1 type=#2 name="x" [82,83]
   #3 ownerType=#1 type=#3 name="y" [89,90]
 consts
@@ -28,9 +28,9 @@ functions
     insts
       0: CTX_GET field=MEM span=[125,136]
       1: LOCAL_STORE local=#0 "ma" [115,117] span=[111,136]
-      2: LOCAL_LOAD local=#0 "ma" [115,117] span=[180,182]
-      3: ALLOC_NEW tok=128 aux=13 span=[152,182]
-      4: LOCAL_STORE local=#1 "p" [142,143] span=[138,182]
+      2: LOCAL_LOAD local=#0 "ma" [115,117] span=[183,185]
+      3: ALLOC_NEW tok=128 aux=13 span=[152,185]
+      4: LOCAL_STORE local=#1 "p" [142,143] span=[138,185]
       5: LOCAL_LOAD local=#1 "p" [142,143] span=[162,166]
       6: PUSH_CONST const=#0 span=[165,166]
       7: AGG_SET aux=2 span=[162,166]
@@ -39,14 +39,14 @@ functions
       10: PUSH_CONST const=#1 span=[171,172]
       11: AGG_SET aux=3 span=[168,172]
       12: DROP span=[168,172]
-      13: LOCAL_LOAD local=#1 "p" [142,143] span=[191,192]
-      14: AGG_GET field=#0 "x" [193,194] span=[193,194]
-      15: PUSH_CONST const=#0 span=[198,199]
-      16: BINARY op=EQ span=[191,199]
-      17: ASSERT span=[184,199]
-      18: LOCAL_LOAD local=#1 "p" [142,143] span=[208,209]
-      19: AGG_GET field=#1 "y" [210,211] span=[210,211]
-      20: PUSH_CONST const=#1 span=[215,216]
-      21: BINARY op=EQ span=[208,216]
-      22: ASSERT span=[201,216]
-      23: RETURN_VOID span=[108,218]
+      13: LOCAL_LOAD local=#1 "p" [142,143] span=[194,195]
+      14: AGG_GET field=#0 "x" [196,197] span=[196,197]
+      15: PUSH_CONST const=#0 span=[201,202]
+      16: BINARY op=EQ span=[194,202]
+      17: ASSERT span=[187,202]
+      18: LOCAL_LOAD local=#1 "p" [142,143] span=[211,212]
+      19: AGG_GET field=#1 "y" [213,214] span=[213,214]
+      20: PUSH_CONST const=#1 span=[218,219]
+      21: BINARY op=EQ span=[211,219]
+      22: ASSERT span=[204,219]
+      23: RETURN_VOID span=[108,221]

@@ -1,4 +1,4 @@
-// Verifies context unknown with field is rejected.
+// Verifies unknown context field is rejected.
 struct Allocator {
 	impl fn(*Allocator, rawptr, uint, uint, *uint, u32) rawptr
 }
@@ -10,5 +10,5 @@ struct Ctx {
 fn f() context Ctx {}
 
 fn g() context Ctx {
-	f() with { nope: context.mem }
+	f() context { nope: context.mem }
 }

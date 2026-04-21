@@ -1149,7 +1149,7 @@ static int SLPParseNewExpr(SLParser* p, int32_t* out) {
         }
     }
 
-    if (SLPMatch(p, SLTok_WITH)) {
+    if (SLPMatch(p, SLTok_CONTEXT)) {
         if (SLPParseExpr(p, 1, &allocNode) != 0) {
             return -1;
         }
@@ -1460,7 +1460,7 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
             continue;
         }
 
-        if (SLPMatch(p, SLTok_WITH)) {
+        if (SLPMatch(p, SLTok_CONTEXT)) {
             int32_t        withNode;
             const SLToken* withTok = SLPPrev(p);
             if (p->nodes[*expr].kind != SLAst_CALL) {
@@ -1479,7 +1479,7 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
                 p->nodes[withNode].end = kw->end;
                 *expr = withNode;
                 continue;
-            } else {
+            } else if (SLPAt(p, SLTok_LBRACE)) {
                 const SLToken* lb;
                 const SLToken* rb;
                 int32_t        overlayNode;
@@ -1533,6 +1533,17 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
                     return -1;
                 }
                 p->nodes[withNode].end = rb->end;
+                *expr = withNode;
+                continue;
+            } else {
+                int32_t contextExpr;
+                if (SLPParseExpr(p, 1, &contextExpr) != 0) {
+                    return -1;
+                }
+                if (SLPAddChild(p, withNode, contextExpr) != 0) {
+                    return -1;
+                }
+                p->nodes[withNode].end = p->nodes[contextExpr].end;
                 *expr = withNode;
                 continue;
             }

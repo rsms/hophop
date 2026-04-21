@@ -10,7 +10,7 @@ fn free_all(self *mem.ArenaAllocator) {
 }
 
 fn takes_allocator(ma *Allocator) *i32 {
-	var p *i32 = new i32 with ma
+	var p *i32 = new i32 context ma
 	*p = 7
 	return p
 }
@@ -32,7 +32,7 @@ fn main() {
 	var p *i32 = takes_allocator(&arena)
 	assert *p == 7
 
-	var xs *[i32] = contextual_alloc() with { mem: &arena }
+	var xs *[i32] = contextual_alloc() context { mem: &arena }
 	assert len(xs) == 4
 	assert xs[0] == 1
 	assert xs[3] == 9

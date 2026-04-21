@@ -1,1 +1,1 @@
-tests/context_with_equals_bad.sl:7:15: error: SL1004: unexpected token
+tests/context_with_equals_bad.sl:7:18: error: SL1004: unexpected token

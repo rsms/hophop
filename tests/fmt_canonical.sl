@@ -177,10 +177,10 @@ fn use_context(x int) int context AppContext {
 	sum = sum * 2 << (x - 1) / 3 // mixed precedence levels
 
 	sum = sizeof(int) + sizeof(sum)
-	sum = sum + (new [int len(arr)] with context.alloc) as int
-	_ = add(sum, 1) with context
-	_ = add(sum, 1) with { alloc }
-	_ = add(sum, 1) with { alloc: (context).alloc }
+	sum = sum + (new [int len(arr)] context context.alloc) as int
+	_ = add(sum, 1) context context
+	_ = add(sum, 1) context { alloc }
+	_ = add(sum, 1) context { alloc: (context).alloc }
 	_ = Foo{ x: 1, y: 2 }.x
 	_ = (&arr[0])!
 	return sum

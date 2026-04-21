@@ -16,9 +16,13 @@ fn log(msg &str) context Ctx {
 fn caller() context Ctx {
 	var p *i32 = alloc()
 
-	var p2 *i32 = alloc() with { mem, temp_mem, log }
+	var p2 *i32 = alloc() context { mem, temp_mem, log }
 
-	var p3 ?*i32 = new i32 with context.mem
+	var p3 ?*i32 = new i32 context context.mem
 
-	log("ok") with context
+	log("ok") context context
+}
+
+fn caller_direct(ctx *Ctx) context Ctx {
+	log("direct") context ctx
 }
