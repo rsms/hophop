@@ -19,7 +19,7 @@ clean=0   # clean up from any previous builds
 asan=     # enable address sanitizer (default: value of debug)
 ubsan=1   # enable undefined-behavior sanitizer
 format=   # run clang-format on the source (default: on if clang-format is found and debug=1)
-test=0    # run tests after successful build
+test=0    # run tests after successful build (implies 'clean')
 cc=clang  # compiler to use (also used for linking)
 release=0 # compatibility alias for debug=0
 analyze=0 # run clang analyzer on source code and exit
@@ -46,6 +46,7 @@ done
 [ "${release:-}" = 1 ] && debug=0
 asan=${asan:-$debug} # enable by default in debug builds
 mode=debug; [ $debug = 0 ] && mode=release
+[ $test = 0 ] || clean=1  # 'test' implies 'clean'
 build_dir=_build/$sys-$arch-$mode
 diag_json=src/diagnostics.jsonl
 diag_tool=tools/gen_diagnostics.py
