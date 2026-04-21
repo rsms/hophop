@@ -192,7 +192,7 @@ Behavior:
 ### `print`
 
 ```sl
-fn print(message str)
+fn print(message &str)
 ```
 
 `print` writes a UTF-8 message to standard output.
@@ -235,12 +235,27 @@ Operation semantics:
 Allocation is provided by `Allocator` via `new`, with the platform setting
 `context.mem` before `sl_main`.
 
-Concrete default platform implementation used by `slc compile`/`slc run`:
+Concrete default platform implementation used by `slc compile`:
 - `lib/platform/cli-libc/platform.c`
 
+`slc run` defaults to the evaluator host (`cli-eval`) unless `--platform` is provided.
 Selected platform targets may provide the platform surface in SL using foreign-linkage directives.
 The `wasm-min` target does this in `lib/platform/wasm-min/platform.sl` with `@wasm_import(...)`
 declarations for `exit`, `console_log`, and `panic`.
+
+For `--platform playbit`, the raw runtime ABI lives in `lib/platform/playbit/platform.sl`.
+That package stays close to Playbit syscalls.
+
+Most Playbit programs should import the thin convenience packages under `lib/playbit/` instead:
+
+- `playbit/console`
+- `playbit/event`
+- `playbit/handle`
+- `playbit/object`
+- `playbit/signal`
+- `playbit/thread`
+- `playbit/time`
+- `playbit/window`
 
 ### Draft delta (SLP-17, not implemented)
 

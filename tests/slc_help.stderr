@@ -1,0 +1,16 @@
+usage:
+    slc --version
+    slc run [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile>
+    slc fmt [--check] [<file-or-dir> ...]
+    slc compile [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile> [-o <output>]
+    slc genpkg[:backend] [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile> [out]
+    slc check <srcfile>
+    slc checkpkg [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile>
+    slc lex <srcfile>
+    slc ast <srcfile>
+    slc mir [--platform <target>] [--cache-dir <dir>] <pkgdir|srcfile>
+    slc --version
+    slc --help
+
+<target> is one of: cli-libc (default), cli-eval, wasm-min, playbit
+`slc run` defaults to cli-eval when --platform is omitted

@@ -310,6 +310,7 @@ So today:
 - The evaluator now runs that MIR function-body path directly for supported function bodies.
 - That MIR lowering path now keeps “already has a MIR function index” separate from “still lowering”, so direct recursive calls can lower to `CALL_FN` instead of forcing the whole function back to the AST runtime path.
 - That evaluator-side MIR path now also lowers unambiguous plain direct calls into same-program `CALL_FN` edges. The remaining fallback cases are still variadic, ambiguous, and true receiver-style calls. Supported builtin/package calls that already have explicit MIR rewrites include `print(...)`, `copy(dst, src)`, `concat(...)`, `free(...)`, and `platform.exit(...)`.
+- The checked package MIR pipeline now also rewrites plain builtin `print(...)` to `CALL_HOST` for Wasm-targeted package builds, so simple package programs no longer keep generic dynamic call resolution alive just for `print`.
 - The new per-function source identity is what makes that broader direct-call lowering possible without depending on one evaluator-global `currentFile`/source view for the whole MIR program.
 - The `SLMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
 - The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.

@@ -21,9 +21,12 @@ Common CLI flow:
 ```sh
 _build/macos-aarch64-debug/slc checkpkg <dir|file.sl>
 _build/macos-aarch64-debug/slc genpkg:c <dir|file.sl> [out.h]
-_build/macos-aarch64-debug/slc [--cache-dir <dir>] compile <dir|file.sl> [-o <exe>]
-_build/macos-aarch64-debug/slc [--cache-dir <dir>] run <dir|file.sl>
+_build/macos-aarch64-debug/slc compile [--cache-dir <dir>] <dir|file.sl> [-o <exe>]
+_build/macos-aarch64-debug/slc run [--cache-dir <dir>] <dir|file.sl>
 ```
+
+`slc run` defaults to `--platform cli-eval`. Other platform-aware commands still default to
+`cli-libc` when `--platform` is omitted.
 
 ## Read By Goal
 

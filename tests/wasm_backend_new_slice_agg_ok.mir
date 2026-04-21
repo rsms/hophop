@@ -8,7 +8,7 @@ types
   #1 astNode=9 source=#0 flags=33554433
   #2 astNode=10 source=#0 flags=524288
   #3 astNode=2 source=#0 flags=1
-  #4 astNode=13 source=#0 flags=524288
+  #4 astNode=13 source=#0
 hosts
 symbols
 fields

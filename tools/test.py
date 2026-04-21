@@ -191,7 +191,23 @@ def strip_warning_diagnostics(stderr_text: str) -> str:
     return "".join(out)
 
 
-def run_cmd(args: List[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess[str]:
+def case_env(case: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    env_field = case.get("env")
+    if env_field is None:
+        return None
+    if not isinstance(env_field, dict):
+        raise ValueError("env must be an object of string:string pairs")
+    env: Dict[str, str] = {}
+    for key, value in env_field.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError("env keys and values must be strings")
+        env[key] = value
+    return env
+
+
+def run_cmd(
+    args: List[str], cwd: Optional[Path] = None, env: Optional[Dict[str, str]] = None
+) -> subprocess.CompletedProcess[str]:
     deadline, limit_ms = current_exec_timeout()
     timeout: Optional[float] = None
     if deadline is not None and limit_ms is not None:
@@ -205,6 +221,8 @@ def run_cmd(args: List[str], cwd: Optional[Path] = None) -> subprocess.Completed
         "stderr": subprocess.PIPE,
         "text": True,
     }
+    if env is not None:
+        popen_kwargs["env"] = {**os.environ, **env}
     if os.name == "posix":
         popen_kwargs["preexec_fn"] = os.setsid
 
@@ -531,17 +549,23 @@ def sanitize_name(name: str) -> str:
 
 def slc_args(ctx: RunContext, mode: str, input_path: str) -> List[str]:
     if mode in ("", "_"):
-        return [str(ctx.slc), input_path]
+        return [str(ctx.slc), "lex", input_path]
     return [str(ctx.slc), mode, input_path]
+
+
+def mode_uses_platform_flag(mode: str) -> bool:
+    return mode in ("run", "compile", "checkpkg", "mir") or mode.startswith("genpkg")
 
 
 def slc_case_args(ctx: RunContext, case: Dict[str, Any]) -> List[str]:
     args = [str(ctx.slc)]
-    if case.get("platform") is not None:
-        args.extend(["--platform", str(case["platform"])])
     mode = str(case.get("mode", ""))
-    if mode not in ("", "_"):
+    if mode in ("", "_"):
+        mode = "lex"
+    if mode:
         args.append(mode)
+    if case.get("platform") is not None and mode_uses_platform_flag(mode):
+        args.extend(["--platform", str(case["platform"])])
     args.append(str(case["input"]))
     return args
 
@@ -784,9 +808,9 @@ def run_compile_with_cache(
     return run_cmd(
         [
             str(ctx.slc),
+            "compile",
             "--cache-dir",
             str(cache_dir),
-            "compile",
             input_path,
             "-o",
             str(output_path),
@@ -896,13 +920,13 @@ def kind_compile_and_run(ctx: RunContext, case: Dict[str, Any], work_dir: Path) 
 
 
 def run_slc_run_cmd(
-    ctx: RunContext, input_path: str, platform: Optional[str]
+    ctx: RunContext, input_path: str, platform: Optional[str], env: Optional[Dict[str, str]] = None
 ) -> subprocess.CompletedProcess[str]:
-    args = [str(ctx.slc)]
+    args = [str(ctx.slc), "run"]
     if platform:
         args.extend(["--platform", platform])
-    args.extend(["run", input_path])
-    return run_cmd(args)
+    args.append(input_path)
+    return run_cmd(args, env=env)
 
 
 def kind_eval_run_expectation(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
@@ -938,7 +962,11 @@ def kind_eval_run_expectation(ctx: RunContext, case: Dict[str, Any]) -> tuple[bo
 
 def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     platform = str(case["platform"]) if case.get("platform") is not None else None
-    cp = run_slc_run_cmd(ctx, str(case["input"]), platform)
+    try:
+        env = case_env(case)
+    except ValueError as e:
+        return fail(str(e))
+    cp = run_slc_run_cmd(ctx, str(case["input"]), platform, env)
     stderr = strip_warning_diagnostics(cp.stderr)
     expect_nonzero = bool(case.get("expect_nonzero", False))
     expect_exit = int(case.get("expect_exit", 0))
@@ -987,6 +1015,60 @@ def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
 
 def run_genpkg_mode(ctx: RunContext, mode: str, input_path: str) -> subprocess.CompletedProcess[str]:
     return run_cmd([str(ctx.slc), mode, input_path])
+
+
+def kind_slc_cli(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
+    args_field = case.get("args")
+    if not isinstance(args_field, list):
+        return fail("args must be a list")
+
+    argv0 = ctx.slc
+    argv0_basename = case.get("argv0_basename")
+    if isinstance(argv0_basename, str) and argv0_basename:
+        argv0 = work_dir / argv0_basename
+        os.symlink(ctx.slc, argv0)
+
+    try:
+        env = case_env(case)
+    except ValueError as e:
+        return fail(str(e))
+    cp = run_cmd([str(argv0), *[str(arg) for arg in args_field]], cwd=work_dir, env=env)
+    expect_exit = int(case.get("expect_exit", 0))
+    if cp.returncode != expect_exit:
+        return fail(f"unexpected exit code: expected {expect_exit}, got {cp.returncode}")
+
+    expected_stdout_path = case.get("expect_stdout")
+    expected_stderr_path = case.get("expect_stderr")
+    if case.get("stdout_empty", expected_stdout_path is None) and cp.stdout:
+        return fail(f"unexpected stdout:\n{cp.stdout}")
+    if case.get("stderr_empty", expected_stderr_path is None) and cp.stderr:
+        return fail(f"unexpected stderr:\n{cp.stderr}")
+
+    if expected_stdout_path is not None:
+        expected_stdout = read_text(str(expected_stdout_path))
+        if cp.stdout != expected_stdout:
+            diff = "".join(
+                difflib.unified_diff(
+                    expected_stdout.splitlines(True),
+                    cp.stdout.splitlines(True),
+                    fromfile=str(expected_stdout_path),
+                    tofile="actual.stdout",
+                )
+            )
+            return fail(f"stdout mismatch:\n{diff}")
+    if expected_stderr_path is not None:
+        expected_stderr = read_text(str(expected_stderr_path))
+        if cp.stderr != expected_stderr:
+            diff = "".join(
+                difflib.unified_diff(
+                    expected_stderr.splitlines(True),
+                    cp.stderr.splitlines(True),
+                    fromfile=str(expected_stderr_path),
+                    tofile="actual.stderr",
+                )
+            )
+            return fail(f"stderr mismatch:\n{diff}")
+    return ok()
 
 
 def read_uleb(data: bytes, offset: int) -> tuple[int, int]:
@@ -1151,10 +1233,10 @@ def kind_genpkg_compile(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -
 def kind_genpkg_wasm_check(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     output_path = work_dir / "out.wasm"
     mode = str(case.get("mode", "genpkg:wasm"))
-    args = [str(ctx.slc)]
+    args = [str(ctx.slc), mode]
     if case.get("platform") is not None:
         args.extend(["--platform", str(case["platform"])])
-    args.extend([mode, str(case["input"]), str(output_path)])
+    args.extend([str(case["input"]), str(output_path)])
     cp = run_cmd(args)
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
@@ -1364,10 +1446,12 @@ def expand_execution_cases(fixtures: List[TestCase]) -> List[ExecutionCase]:
     return cases
 
 
-def mode_uses_c_backend(mode: Any) -> bool:
+def mode_uses_c_backend(mode: Any, platform: Any) -> bool:
     if not isinstance(mode, str):
         return False
-    return mode == "genpkg" or mode == "genpkg:c"
+    if mode == "genpkg":
+        return platform not in ("wasm-min", "playbit")
+    return mode == "genpkg:c"
 
 
 def execution_case_supported_in_eval_only(case: ExecutionCase) -> bool:
@@ -1390,7 +1474,7 @@ def execution_case_supported_in_eval_only(case: ExecutionCase) -> bool:
     if kind == "slc_run":
         return data.get("platform") == "cli-eval"
 
-    return not mode_uses_c_backend(data.get("mode"))
+    return not mode_uses_c_backend(data.get("mode"), data.get("platform"))
 
 
 def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunResult:
@@ -1417,6 +1501,8 @@ def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunRe
                 ok_main, detail = kind_slc_ok(ctx, c)
             elif k == "slc_ok_tmp":
                 ok_main, detail = kind_slc_ok_tmp(ctx, c)
+            elif k == "slc_cli":
+                ok_main, detail = kind_slc_cli(ctx, c, work_dir)
             elif k == "slc_fail_stderr":
                 ok_main, detail = kind_slc_fail_stderr(ctx, c)
             elif k == "slc_ok_stderr":

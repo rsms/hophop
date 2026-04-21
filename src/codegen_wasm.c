@@ -114,9 +114,11 @@ typedef struct {
     uint32_t* _Nullable funcWasmIndices;
     uint32_t* _Nullable globalImportIndices;
     uint8_t* _Nullable importedFunctions;
+    uint8_t* _Nullable reachableFunctions;
     uint32_t funcWasmIndicesAllocSize;
     uint32_t globalImportIndicesAllocSize;
     uint32_t importedFunctionsAllocSize;
+    uint32_t reachableFunctionsAllocSize;
     uint8_t  hasFunctionTable;
     uint8_t  hasRootAllocThunk;
     uint8_t  hasPlatformPanicImport;
@@ -147,31 +149,32 @@ static int WasmEmitPlatformPanicCall(
 enum {
     SLWasmType_VOID = 0,
     SLWasmType_I32 = 1,
-    SLWasmType_STR_REF = 2,
-    SLWasmType_STR_PTR = 3,
-    SLWasmType_U8_PTR = 4,
-    SLWasmType_I32_PTR = 5,
-    SLWasmType_I8_PTR = 6,
-    SLWasmType_U16_PTR = 7,
-    SLWasmType_I16_PTR = 8,
-    SLWasmType_U32_PTR = 9,
-    SLWasmType_OPAQUE_PTR = 10,
-    SLWasmType_ARRAY_VIEW_U8 = 11,
-    SLWasmType_ARRAY_VIEW_I8 = 12,
-    SLWasmType_ARRAY_VIEW_U16 = 13,
-    SLWasmType_ARRAY_VIEW_I16 = 14,
-    SLWasmType_ARRAY_VIEW_U32 = 15,
-    SLWasmType_ARRAY_VIEW_I32 = 16,
-    SLWasmType_SLICE_U8 = 17,
-    SLWasmType_SLICE_I8 = 18,
-    SLWasmType_SLICE_U16 = 19,
-    SLWasmType_SLICE_I16 = 20,
-    SLWasmType_SLICE_U32 = 21,
-    SLWasmType_SLICE_I32 = 22,
-    SLWasmType_SLICE_AGG = 23,
-    SLWasmType_AGG_REF = 24,
-    SLWasmType_FUNC_REF = 25,
-    SLWasmType_FUNC_REF_PTR = 26,
+    SLWasmType_I64 = 2,
+    SLWasmType_STR_REF = 3,
+    SLWasmType_STR_PTR = 4,
+    SLWasmType_U8_PTR = 5,
+    SLWasmType_I32_PTR = 6,
+    SLWasmType_I8_PTR = 7,
+    SLWasmType_U16_PTR = 8,
+    SLWasmType_I16_PTR = 9,
+    SLWasmType_U32_PTR = 10,
+    SLWasmType_OPAQUE_PTR = 11,
+    SLWasmType_ARRAY_VIEW_U8 = 12,
+    SLWasmType_ARRAY_VIEW_I8 = 13,
+    SLWasmType_ARRAY_VIEW_U16 = 14,
+    SLWasmType_ARRAY_VIEW_I16 = 15,
+    SLWasmType_ARRAY_VIEW_U32 = 16,
+    SLWasmType_ARRAY_VIEW_I32 = 17,
+    SLWasmType_SLICE_U8 = 18,
+    SLWasmType_SLICE_I8 = 19,
+    SLWasmType_SLICE_U16 = 20,
+    SLWasmType_SLICE_I16 = 21,
+    SLWasmType_SLICE_U32 = 22,
+    SLWasmType_SLICE_I32 = 23,
+    SLWasmType_SLICE_AGG = 24,
+    SLWasmType_AGG_REF = 25,
+    SLWasmType_FUNC_REF = 26,
+    SLWasmType_FUNC_REF_PTR = 27,
 };
 
 enum {
@@ -208,16 +211,204 @@ static bool WasmSliceEqLiteral(const char* src, uint32_t start, uint32_t end, co
     return lit[i] == '\0';
 }
 
+static size_t WasmCStrLen(const char* s) {
+    size_t n = 0u;
+    if (s == NULL) {
+        return 0u;
+    }
+    while (s[n] != '\0') {
+        n++;
+    }
+    return n;
+}
+
+static const char* _Nullable WasmCopyDiagDetail(
+    const SLCodegenOptions* options, const char* prefix, SLStrView name, const char* suffix) {
+    char*    buf;
+    uint32_t allocSize = 0u;
+    size_t   prefixLen = WasmCStrLen(prefix);
+    size_t   suffixLen = WasmCStrLen(suffix);
+    size_t   totalLen = prefixLen + name.len + suffixLen;
+    if (options == NULL || options->arenaGrow == NULL) {
+        return NULL;
+    }
+    buf = (char*)options->arenaGrow(options->allocatorCtx, (uint32_t)totalLen + 1u, &allocSize);
+    if (buf == NULL) {
+        return NULL;
+    }
+    if (prefixLen != 0u) {
+        memcpy(buf, prefix, prefixLen);
+    }
+    if (name.len != 0u && name.ptr != NULL) {
+        memcpy(buf + prefixLen, name.ptr, name.len);
+    }
+    if (suffixLen != 0u) {
+        memcpy(buf + prefixLen + name.len, suffix, suffixLen);
+    }
+    buf[totalLen] = '\0';
+    return buf;
+}
+
+static const char* _Nullable WasmDynamicResolutionDetail(
+    const SLCodegenUnit*    unit,
+    const SLCodegenOptions* options,
+    uint32_t                funcIndex,
+    const SLMirInst*        inst) {
+    const SLMirProgram*   program;
+    const SLMirSymbolRef* sym;
+    const SLMirFunction*  fn;
+    const char*           src;
+    SLStrView             name = { 0 };
+    const char*           prefix = NULL;
+    const char*           suffix = " (needs MIR resolution)";
+    if (unit == NULL || inst == NULL || unit->mirProgram == NULL) {
+        return NULL;
+    }
+    program = unit->mirProgram;
+    if (funcIndex >= program->funcLen) {
+        return "MIR still needs dynamic resolution";
+    }
+    fn = &program->funcs[funcIndex];
+    if (fn->sourceRef >= program->sourceLen) {
+        return "MIR still needs dynamic resolution";
+    }
+    src = program->sources[fn->sourceRef].src.ptr;
+    if (inst->op == SLMirOp_LOAD_IDENT) {
+        name.ptr = src + inst->start;
+        name.len = inst->end >= inst->start ? inst->end - inst->start : 0u;
+        prefix = "unresolved ident ";
+        return WasmCopyDiagDetail(options, prefix, name, suffix);
+    }
+    if (inst->op != SLMirOp_CALL || inst->aux >= program->symbolLen) {
+        return "MIR still needs dynamic resolution";
+    }
+    sym = &program->symbols[inst->aux];
+    name.ptr = src + sym->nameStart;
+    name.len = sym->nameEnd >= sym->nameStart ? sym->nameEnd - sym->nameStart : 0u;
+    prefix = "unresolved call ";
+    return WasmCopyDiagDetail(options, prefix, name, suffix);
+}
+
+static const char* _Nullable WasmFunctionDetail(
+    const SLCodegenOptions* options,
+    const SLMirProgram*     program,
+    const SLMirFunction*    fn,
+    const char*             prefix,
+    const char*             suffix) {
+    SLStrView name = { 0 };
+    if (program == NULL || fn == NULL || fn->sourceRef >= program->sourceLen) {
+        return NULL;
+    }
+    name.ptr = program->sources[fn->sourceRef].src.ptr + fn->nameStart;
+    name.len = fn->nameEnd >= fn->nameStart ? fn->nameEnd - fn->nameStart : 0u;
+    return WasmCopyDiagDetail(options, prefix, name, suffix);
+}
+
 static bool WasmFunctionIsNamedMain(const SLMirProgram* program, const SLMirFunction* fn) {
     return program != NULL && fn != NULL && fn->sourceRef < program->sourceLen
         && WasmSliceEqLiteral(
                program->sources[fn->sourceRef].src.ptr, fn->nameStart, fn->nameEnd, "main");
 }
 
+static bool WasmProgramNeedsFunctionTable(const SLMirProgram* program);
+static bool WasmProgramHasAssert(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions);
+static bool WasmProgramHasAllocNullPanic(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions);
+
 typedef struct {
     const SLForeignLinkageEntry* _Nullable entries;
     uint32_t len;
 } SLWasmForeignMetadata;
+
+static int WasmBuildReachableFunctionSet(
+    const SLCodegenUnit*         unit,
+    const SLWasmForeignMetadata* foreign,
+    const SLCodegenOptions*      options,
+    SLWasmImportLayout*          imports,
+    SLDiag* _Nullable diag) {
+    const SLMirProgram* program;
+    uint32_t            allocSize = 0u;
+    uint32_t*           queue = NULL;
+    uint32_t            queueAllocSize = 0u;
+    uint32_t            readIndex = 0u;
+    uint32_t            writeIndex = 0u;
+    uint32_t            i;
+    if (unit == NULL || unit->mirProgram == NULL || options == NULL || options->arenaGrow == NULL
+        || imports == NULL)
+    {
+        return -1;
+    }
+    program = unit->mirProgram;
+    if (program->funcLen == 0u) {
+        return 0;
+    }
+    imports->reachableFunctions = (uint8_t*)options->arenaGrow(
+        options->allocatorCtx, program->funcLen, &allocSize);
+    imports->reachableFunctionsAllocSize = allocSize;
+    if (imports->reachableFunctions == NULL
+        || imports->reachableFunctionsAllocSize < program->funcLen)
+    {
+        WasmSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        return -1;
+    }
+    memset(imports->reachableFunctions, 0, program->funcLen);
+    if (WasmProgramNeedsFunctionTable(program)) {
+        memset(imports->reachableFunctions, 1, program->funcLen);
+        return 0;
+    }
+    queue = (uint32_t*)options->arenaGrow(
+        options->allocatorCtx, program->funcLen * (uint32_t)sizeof(*queue), &queueAllocSize);
+    if (queue == NULL || queueAllocSize < program->funcLen * sizeof(*queue)) {
+        WasmSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        return -1;
+    }
+    for (i = 0; i < program->funcLen; i++) {
+        if (WasmFunctionIsNamedMain(program, &program->funcs[i])) {
+            imports->reachableFunctions[i] = 1u;
+            queue[writeIndex++] = i;
+        }
+    }
+    if (foreign != NULL && foreign->entries != NULL) {
+        for (i = 0; i < foreign->len; i++) {
+            if (foreign->entries[i].kind == SLForeignLinkage_EXPORT_FN
+                && foreign->entries[i].functionIndex < program->funcLen
+                && imports->reachableFunctions[foreign->entries[i].functionIndex] == 0u)
+            {
+                imports->reachableFunctions[foreign->entries[i].functionIndex] = 1u;
+                queue[writeIndex++] = foreign->entries[i].functionIndex;
+            }
+        }
+    }
+    while (readIndex < writeIndex) {
+        uint32_t             functionIndex = queue[readIndex++];
+        const SLMirFunction* fn = &program->funcs[functionIndex];
+        uint32_t             pc;
+        for (pc = 0u; pc < fn->instLen; pc++) {
+            const SLMirInst* inst = &program->insts[fn->instStart + pc];
+            if (inst->op == SLMirOp_CALL_FN && inst->aux < program->funcLen
+                && imports->reachableFunctions[inst->aux] == 0u)
+            {
+                imports->reachableFunctions[inst->aux] = 1u;
+                queue[writeIndex++] = inst->aux;
+            }
+        }
+    }
+    if (foreign != NULL && foreign->entries != NULL
+        && (WasmProgramHasAssert(program, imports->reachableFunctions)
+            || WasmProgramHasAllocNullPanic(program, imports->reachableFunctions)))
+    {
+        for (i = 0; i < foreign->len; i++) {
+            if (foreign->entries[i].kind == SLForeignLinkage_WASM_IMPORT_FN
+                && (foreign->entries[i].flags & SLForeignLinkageFlag_PLATFORM_PANIC) != 0u
+                && foreign->entries[i].functionIndex < program->funcLen)
+            {
+                imports->reachableFunctions[foreign->entries[i].functionIndex] = 1u;
+            }
+        }
+    }
+    return 0;
+}
 
 static const SLForeignLinkageEntry* _Nullable WasmFindForeignEntryByFunctionIndex(
     const SLWasmForeignMetadata* meta, uint32_t functionIndex, SLForeignLinkageKind kind) {
@@ -275,6 +466,12 @@ static void WasmFreeImportLayout(
     if (imports->importedFunctions != NULL) {
         options->arenaFree(
             options->allocatorCtx, imports->importedFunctions, imports->importedFunctionsAllocSize);
+    }
+    if (imports->reachableFunctions != NULL) {
+        options->arenaFree(
+            options->allocatorCtx,
+            imports->reachableFunctions,
+            imports->reachableFunctionsAllocSize);
     }
     *imports = (SLWasmImportLayout){ 0 };
 }
@@ -382,6 +579,23 @@ static int WasmAppendSLEB32(SLWasmBuf* b, int32_t v) {
     return 0;
 }
 
+static int WasmAppendSLEB64(SLWasmBuf* b, int64_t v) {
+    int more = 1;
+    while (more) {
+        uint8_t byte = (uint8_t)(v & 0x7f);
+        int64_t sign = byte & 0x40u;
+        v >>= 7;
+        more = !((v == 0 && sign == 0) || (v == -1 && sign != 0));
+        if (more) {
+            byte |= 0x80u;
+        }
+        if (WasmAppendByte(b, byte) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int WasmAppendU32LE(SLWasmBuf* b, uint32_t v) {
     uint8_t bytes[4];
     bytes[0] = (uint8_t)(v & 0xffu);
@@ -446,36 +660,64 @@ static bool WasmIsWasmMinPlatform(const SLCodegenUnit* unit) {
         && WasmStrEq(unit->platformTarget, "wasm-min");
 }
 
-static bool WasmProgramHasAssert(const SLMirProgram* program) {
-    uint32_t i;
+static bool WasmIsPlaybitPlatform(const SLCodegenUnit* unit) {
+    return unit != NULL && unit->platformTarget != NULL
+        && WasmStrEq(unit->platformTarget, "playbit");
+}
+
+static bool WasmSupportsPlatformImports(const SLCodegenUnit* unit) {
+    return WasmIsWasmMinPlatform(unit) || WasmIsPlaybitPlatform(unit);
+}
+
+static bool WasmProgramHasAssert(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions) {
+    uint32_t funcIndex;
     if (program == NULL) {
         return false;
     }
-    for (i = 0; i < program->instLen; i++) {
-        if (program->insts[i].op == SLMirOp_ASSERT) {
-            return true;
+    for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
+        const SLMirFunction* fn;
+        uint32_t             pc;
+        if (reachableFunctions != NULL && reachableFunctions[funcIndex] == 0u) {
+            continue;
+        }
+        fn = &program->funcs[funcIndex];
+        for (pc = 0; pc < fn->instLen; pc++) {
+            if (program->insts[fn->instStart + pc].op == SLMirOp_ASSERT) {
+                return true;
+            }
         }
     }
     return false;
 }
 
-static bool WasmProgramNeedsRootAllocator(const SLMirProgram* program) {
-    uint32_t i;
+static bool WasmProgramNeedsRootAllocator(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions) {
+    uint32_t funcIndex;
     if (program == NULL) {
         return false;
     }
-    for (i = 0; i < program->instLen; i++) {
-        if (program->insts[i].op == SLMirOp_CTX_GET
-            && (program->insts[i].aux == SLMirContextField_MEM
-                || program->insts[i].aux == SLMirContextField_TEMP_MEM))
-        {
-            return true;
+    for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
+        const SLMirFunction* fn;
+        uint32_t             pc;
+        if (reachableFunctions != NULL && reachableFunctions[funcIndex] == 0u) {
+            continue;
+        }
+        fn = &program->funcs[funcIndex];
+        for (pc = 0; pc < fn->instLen; pc++) {
+            const SLMirInst* inst = &program->insts[fn->instStart + pc];
+            if (inst->op == SLMirOp_CTX_GET
+                && (inst->aux == SLMirContextField_MEM || inst->aux == SLMirContextField_TEMP_MEM))
+            {
+                return true;
+            }
         }
     }
     return false;
 }
 
-static bool WasmProgramHasAllocNullPanic(const SLMirProgram* program) {
+static bool WasmProgramHasAllocNullPanic(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions) {
     uint32_t funcIndex;
     if (program == NULL) {
         return false;
@@ -483,6 +725,9 @@ static bool WasmProgramHasAllocNullPanic(const SLMirProgram* program) {
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
         const SLMirFunction* fn = &program->funcs[funcIndex];
         uint32_t             pc;
+        if (reachableFunctions != NULL && reachableFunctions[funcIndex] == 0u) {
+            continue;
+        }
         for (pc = 0; pc + 1u < fn->instLen; pc++) {
             const SLMirInst* allocInst = &program->insts[fn->instStart + pc];
             const SLMirInst* nextInst = &program->insts[fn->instStart + pc + 1u];
@@ -523,8 +768,10 @@ static bool WasmProgramNeedsFunctionTable(const SLMirProgram* program) {
     return false;
 }
 
-static bool WasmProgramNeedsFrameMemory(const SLMirProgram* program);
-static bool WasmProgramNeedsHeapMemory(const SLMirProgram* program);
+static bool WasmProgramNeedsFrameMemory(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions);
+static bool WasmProgramNeedsHeapMemory(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions);
 static bool WasmFunctionNeedsIndirectScratch(const SLMirProgram* program, const SLMirFunction* fn);
 static int  WasmEmitAddrFromFrame(
     SLWasmBuf* body, const SLWasmEmitState* state, uint32_t offset, uint16_t addend);
@@ -548,6 +795,7 @@ static int  WasmTempOffsetForPc(
 static uint8_t WasmTypeKindSlotCount(uint8_t typeKind) {
     switch (typeKind) {
         case SLWasmType_I32:
+        case SLWasmType_I64:
         case SLWasmType_STR_PTR:
         case SLWasmType_U8_PTR:
         case SLWasmType_I32_PTR:
@@ -695,6 +943,10 @@ static bool WasmTypeKindFromMirType(
         *outTypeKind = SLWasmType_I32_PTR;
         return true;
     }
+    if (SLMirTypeRefScalarKind(typeRef) == SLMirTypeScalar_I64) {
+        *outTypeKind = SLWasmType_I64;
+        return true;
+    }
     if (SLMirTypeRefScalarKind(typeRef) == SLMirTypeScalar_I32) {
         *outTypeKind = SLWasmType_I32;
         return true;
@@ -728,8 +980,78 @@ static bool WasmTypeKindIsSlice(uint8_t typeKind) {
 }
 
 static bool WasmTypeKindIsRawSingleSlot(uint8_t typeKind) {
-    return typeKind == SLWasmType_I32 || WasmTypeKindIsPointer(typeKind)
-        || WasmTypeKindIsArrayView(typeKind) || typeKind == SLWasmType_FUNC_REF;
+    return typeKind == SLWasmType_I32 || typeKind == SLWasmType_I64
+        || WasmTypeKindIsPointer(typeKind) || WasmTypeKindIsArrayView(typeKind)
+        || typeKind == SLWasmType_FUNC_REF;
+}
+
+static bool WasmI32LikeValueUsesUnsignedExtend(
+    const SLMirProgram* program, uint8_t valueTypeKind, uint32_t valueTypeRef) {
+    const SLMirTypeRef* typeRef;
+    if (WasmTypeKindIsPointer(valueTypeKind) || WasmTypeKindIsArrayView(valueTypeKind)) {
+        return true;
+    }
+    if (program == NULL || valueTypeRef == UINT32_MAX || valueTypeRef >= program->typeLen) {
+        return false;
+    }
+    typeRef = &program->types[valueTypeRef];
+    if (SLMirTypeRefScalarKind(typeRef) != SLMirTypeScalar_I32) {
+        return false;
+    }
+    switch (SLMirTypeRefIntKind(typeRef)) {
+        case SLMirIntKind_U8:
+        case SLMirIntKind_U16:
+        case SLMirIntKind_U32: return true;
+        default:               return false;
+    }
+}
+
+static bool WasmValueKindCompatibleWithLocal(
+    uint8_t  expectedTypeKind,
+    uint8_t  actualTypeKind,
+    uint32_t expectedTypeRef,
+    uint32_t actualTypeRef) {
+    (void)expectedTypeRef;
+    (void)actualTypeRef;
+    if (actualTypeKind == expectedTypeKind) {
+        return true;
+    }
+    if (actualTypeKind == SLWasmType_STR_REF && expectedTypeKind == SLWasmType_STR_PTR) {
+        return true;
+    }
+    if (actualTypeKind == SLWasmType_I32 && WasmTypeKindIsPointer(expectedTypeKind)) {
+        return true;
+    }
+    if (actualTypeKind == SLWasmType_STR_REF && expectedTypeKind == SLWasmType_SLICE_U8) {
+        return true;
+    }
+    return false;
+}
+
+static int WasmAdaptCallArgValue(
+    SLWasmBuf*          body,
+    const SLMirProgram* program,
+    uint8_t             expectedTypeKind,
+    uint8_t             actualTypeKind,
+    uint32_t            actualTypeRef) {
+    if (actualTypeKind == expectedTypeKind) {
+        return 0;
+    }
+    if ((actualTypeKind == SLWasmType_I32 || WasmTypeKindIsPointer(actualTypeKind)
+         || WasmTypeKindIsArrayView(actualTypeKind))
+        && expectedTypeKind == SLWasmType_I64)
+    {
+        return WasmAppendByte(
+            body,
+            WasmI32LikeValueUsesUnsignedExtend(program, actualTypeKind, actualTypeRef)
+                ? 0xadu
+                : 0xacu);
+    }
+    return -1;
+}
+
+static uint8_t WasmTypeKindWasmValueType(uint8_t typeKind) {
+    return typeKind == SLWasmType_I64 ? 0x7eu : 0x7fu;
 }
 
 static uint32_t WasmTypeKindElementSize(uint8_t typeKind) {
@@ -903,6 +1225,7 @@ static uint32_t WasmAllocatedByteAlignForType(
 
 static uint32_t WasmFrameSlotSize(uint8_t typeKind) {
     switch (typeKind) {
+        case SLWasmType_I64:            return 8u;
         case SLWasmType_STR_REF:
         case SLWasmType_SLICE_U8:
         case SLWasmType_SLICE_I8:
@@ -939,17 +1262,25 @@ static int WasmAnalyzeImports(
     const SLCodegenOptions*      options,
     SLWasmImportLayout*          imports,
     SLDiag* _Nullable diag) {
+    uint8_t* _Nullable reachableFunctions = NULL;
+    uint32_t reachableFunctionsAllocSize = 0u;
     uint32_t i;
     if (imports == NULL) {
         return -1;
     }
+    reachableFunctions = imports->reachableFunctions;
+    reachableFunctionsAllocSize = imports->reachableFunctionsAllocSize;
     *imports = (SLWasmImportLayout){ 0 };
+    imports->reachableFunctions = reachableFunctions;
+    imports->reachableFunctionsAllocSize = reachableFunctionsAllocSize;
     if (unit == NULL || unit->mirProgram == NULL) {
         return -1;
     }
     imports->platformPanicFuncIndex = UINT32_MAX;
-    imports->needsFrameGlobal = WasmProgramNeedsFrameMemory(unit->mirProgram) ? 1u : 0u;
-    imports->needsHeapGlobal = WasmProgramNeedsHeapMemory(unit->mirProgram) ? 1u : 0u;
+    imports->needsFrameGlobal =
+        WasmProgramNeedsFrameMemory(unit->mirProgram, imports->reachableFunctions) ? 1u : 0u;
+    imports->needsHeapGlobal =
+        WasmProgramNeedsHeapMemory(unit->mirProgram, imports->reachableFunctions) ? 1u : 0u;
     if (unit->mirProgram->funcLen != 0u) {
         uint32_t allocSize = 0;
         uint32_t funcBytes =
@@ -989,16 +1320,28 @@ static int WasmAnalyzeImports(
             imports->globalImportIndices[i] = UINT32_MAX;
         }
     }
-    imports->hasRootAllocThunk = WasmProgramNeedsRootAllocator(unit->mirProgram) ? 1u : 0u;
+    imports->hasRootAllocThunk =
+        WasmProgramNeedsRootAllocator(unit->mirProgram, imports->reachableFunctions) ? 1u : 0u;
     imports->hasFunctionTable =
         (imports->hasRootAllocThunk || WasmProgramNeedsFunctionTable(unit->mirProgram)) ? 1u : 0u;
-    for (i = 0; i < unit->mirProgram->hostLen; i++) {
-        const SLMirHostRef* host = &unit->mirProgram->hosts[i];
-        WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_HOSTCALL, host->nameStart, host->nameEnd);
-        if (diag != NULL) {
-            diag->detail = "host calls are not supported in this Wasm mode";
+    for (i = 0; i < unit->mirProgram->funcLen; i++) {
+        const SLMirFunction* fn;
+        uint32_t             pc;
+        if (imports->reachableFunctions != NULL && imports->reachableFunctions[i] == 0u) {
+            continue;
         }
-        return -1;
+        fn = &unit->mirProgram->funcs[i];
+        for (pc = 0u; pc < fn->instLen; pc++) {
+            const SLMirInst* inst = &unit->mirProgram->insts[fn->instStart + pc];
+            if (inst->op != SLMirOp_CALL_HOST) {
+                continue;
+            }
+            WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_HOSTCALL, inst->start, inst->end);
+            if (diag != NULL) {
+                diag->detail = "host calls are not supported in this Wasm mode";
+            }
+            return -1;
+        }
     }
     if (foreign != NULL && foreign->entries != NULL) {
         for (i = 0; i < foreign->len; i++) {
@@ -1007,7 +1350,10 @@ static int WasmAnalyzeImports(
                 WasmSetDiag(diag, SLDiag_WASM_BACKEND_INTERNAL, entry->start, entry->end);
                 return -1;
             }
-            if (entry->kind == SLForeignLinkage_WASM_IMPORT_FN) {
+            if (entry->kind == SLForeignLinkage_WASM_IMPORT_FN
+                && (imports->reachableFunctions == NULL
+                    || imports->reachableFunctions[entry->functionIndex] != 0u))
+            {
                 imports->importedFunctions[entry->functionIndex] = 1u;
                 if ((entry->flags & SLForeignLinkageFlag_PLATFORM_PANIC) != 0u) {
                     imports->hasPlatformPanicImport = 1u;
@@ -1016,6 +1362,11 @@ static int WasmAnalyzeImports(
                 entry->kind == SLForeignLinkage_WASM_IMPORT_CONST
                 || entry->kind == SLForeignLinkage_WASM_IMPORT_VAR)
             {
+                if (imports->reachableFunctions != NULL
+                    && imports->reachableFunctions[entry->functionIndex] == 0u)
+                {
+                    continue;
+                }
                 uint8_t globalType = 0;
                 if (!WasmTypeKindFromMirType(
                         unit->mirProgram,
@@ -1036,6 +1387,9 @@ static int WasmAnalyzeImports(
         }
     }
     for (i = 0; i < unit->mirProgram->funcLen; i++) {
+        if (imports->reachableFunctions != NULL && imports->reachableFunctions[i] == 0u) {
+            continue;
+        }
         if (imports->importedFunctions != NULL && imports->importedFunctions[i] != 0u) {
             imports->funcWasmIndices[i] = imports->importFuncCount++;
             if (imports->hasPlatformPanicImport) {
@@ -1048,11 +1402,15 @@ static int WasmAnalyzeImports(
         }
     }
     for (i = 0; i < unit->mirProgram->funcLen; i++) {
+        if (imports->reachableFunctions != NULL && imports->reachableFunctions[i] == 0u) {
+            continue;
+        }
         if (imports->importedFunctions == NULL || imports->importedFunctions[i] == 0u) {
             imports->funcWasmIndices[i] = imports->importFuncCount + imports->definedFuncCount++;
         }
     }
-    if ((WasmProgramHasAssert(unit->mirProgram) || WasmProgramHasAllocNullPanic(unit->mirProgram))
+    if ((WasmProgramHasAssert(unit->mirProgram, imports->reachableFunctions)
+         || WasmProgramHasAllocNullPanic(unit->mirProgram, imports->reachableFunctions))
         && !imports->hasPlatformPanicImport)
     {
         WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, 0, 0);
@@ -1127,7 +1485,7 @@ static int WasmBuildStringLayout(
             return -1;
         }
     }
-    if (WasmProgramNeedsRootAllocator(unit->mirProgram)) {
+    if (WasmProgramNeedsRootAllocator(unit->mirProgram, imports->reachableFunctions)) {
         while (strings->data.len < 4u) {
             if (WasmAppendByte(&strings->data, 0u) != 0) {
                 WasmSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
@@ -1146,7 +1504,7 @@ static int WasmBuildStringLayout(
         strings->rootAllocatorOffset = UINT32_MAX;
     }
     if (imports != NULL && imports->hasPlatformPanicImport
-        && WasmProgramHasAssert(unit->mirProgram))
+        && WasmProgramHasAssert(unit->mirProgram, imports->reachableFunctions))
     {
         strings->hasAssertPanicString = 1u;
         strings->assertPanic.objectOffset = UINT32_MAX;
@@ -1160,7 +1518,7 @@ static int WasmBuildStringLayout(
         }
     }
     if (imports != NULL && imports->hasPlatformPanicImport
-        && WasmProgramHasAllocNullPanic(unit->mirProgram))
+        && WasmProgramHasAllocNullPanic(unit->mirProgram, imports->reachableFunctions))
     {
         strings->hasAllocNullPanicString = 1u;
         strings->allocNullPanic.objectOffset = UINT32_MAX;
@@ -1280,12 +1638,16 @@ static bool WasmFunctionNeedsFrameMemory(const SLMirProgram* program, const SLMi
     return false;
 }
 
-static bool WasmProgramNeedsFrameMemory(const SLMirProgram* program) {
+static bool WasmProgramNeedsFrameMemory(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions) {
     uint32_t i;
     if (program == NULL) {
         return false;
     }
     for (i = 0; i < program->funcLen; i++) {
+        if (reachableFunctions != NULL && reachableFunctions[i] == 0u) {
+            continue;
+        }
         if (WasmFunctionNeedsFrameMemory(program, &program->funcs[i])) {
             return true;
         }
@@ -1293,14 +1655,23 @@ static bool WasmProgramNeedsFrameMemory(const SLMirProgram* program) {
     return false;
 }
 
-static bool WasmProgramNeedsHeapMemory(const SLMirProgram* program) {
-    uint32_t i;
+static bool WasmProgramNeedsHeapMemory(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions) {
+    uint32_t funcIndex;
     if (program == NULL) {
         return false;
     }
-    for (i = 0; i < program->instLen; i++) {
-        if (program->insts[i].op == SLMirOp_ALLOC_NEW) {
-            return true;
+    for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
+        const SLMirFunction* fn;
+        uint32_t             pc;
+        if (reachableFunctions != NULL && reachableFunctions[funcIndex] == 0u) {
+            continue;
+        }
+        fn = &program->funcs[funcIndex];
+        for (pc = 0; pc < fn->instLen; pc++) {
+            if (program->insts[fn->instStart + pc].op == SLMirOp_ALLOC_NEW) {
+                return true;
+            }
         }
     }
     return false;
@@ -1369,7 +1740,11 @@ static uint32_t WasmFindFunctionValueTypeRef(const SLMirProgram* program, uint32
 }
 
 static int WasmBuildFunctionSignatures(
-    const SLMirProgram* program, SLWasmFnSig* sigs, SLDiag* _Nullable diag) {
+    const SLMirProgram*     program,
+    const SLCodegenOptions* options,
+    const uint8_t* _Nullable reachableFunctions,
+    SLWasmFnSig* sigs,
+    SLDiag* _Nullable diag) {
     uint32_t i;
     if (program == NULL || sigs == NULL) {
         return -1;
@@ -1381,6 +1756,9 @@ static int WasmBuildFunctionSignatures(
         memset(sig, 0, sizeof(*sig));
         sig->typeIndex = i;
         sig->logicalResultTypeRef = fn->typeRef;
+        if (reachableFunctions != NULL && reachableFunctions[i] == 0u) {
+            continue;
+        }
         if (fn->paramCount > sizeof(sig->logicalParamKinds)) {
             WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, fn->nameStart, fn->nameEnd);
             if (diag != NULL) {
@@ -1402,8 +1780,17 @@ static int WasmBuildFunctionSignatures(
                 WasmSetDiag(
                     diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, local->nameStart, local->nameEnd);
                 if (diag != NULL) {
-                    diag->detail = "only scalar, pointer-like, array-view, slice, and &str "
-                                   "parameters are supported";
+                    diag->detail = WasmFunctionDetail(
+                        options,
+                        program,
+                        fn,
+                        "unsupported parameter type in ",
+                        ": only scalar, pointer-like, array-view, slice, and &str parameters are "
+                        "supported");
+                    if (diag->detail == NULL) {
+                        diag->detail = "only scalar, pointer-like, array-view, slice, and &str "
+                                       "parameters are supported";
+                    }
                 }
                 return -1;
             }
@@ -1421,15 +1808,23 @@ static int WasmBuildFunctionSignatures(
                 sig->wasmParamTypes[sig->wasmParamCount++] = 0x7fu;
                 sig->wasmParamTypes[sig->wasmParamCount++] = 0x7fu;
             } else {
-                sig->wasmParamTypes[sig->wasmParamCount++] = 0x7fu;
+                sig->wasmParamTypes[sig->wasmParamCount++] = WasmTypeKindWasmValueType(paramType);
             }
         }
         sig->logicalParamCount = (uint8_t)fn->paramCount;
         if (!WasmTypeKindFromMirType(program, fn->typeRef, &sig->logicalResultKind)) {
             WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, fn->nameStart, fn->nameEnd);
             if (diag != NULL) {
-                diag->detail =
-                    "only void, scalar, pointer-like, slice, and &str returns are supported";
+                diag->detail = WasmFunctionDetail(
+                    options,
+                    program,
+                    fn,
+                    "unsupported return type in ",
+                    ": only void, scalar, pointer-like, slice, and &str returns are supported");
+                if (diag->detail == NULL) {
+                    diag->detail =
+                        "only void, scalar, pointer-like, slice, and &str returns are supported";
+                }
             }
             return -1;
         }
@@ -1451,7 +1846,7 @@ static int WasmBuildFunctionSignatures(
             sig->wasmResultTypes[0] = 0x7fu;
             sig->wasmResultTypes[1] = 0x7fu;
         } else if (sig->logicalResultKind != SLWasmType_VOID) {
-            sig->wasmResultTypes[0] = 0x7fu;
+            sig->wasmResultTypes[0] = WasmTypeKindWasmValueType(sig->logicalResultKind);
         }
         for (j = 0; j < i; j++) {
             if (WasmSigSameShape(sig, &sigs[j])) {
@@ -1615,6 +2010,13 @@ static int WasmPrepareFunctionState(
             WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, fn->nameStart, fn->nameEnd);
             return -1;
         }
+        if (resultKind == SLWasmType_I64) {
+            WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, fn->nameStart, fn->nameEnd);
+            if (diag != NULL) {
+                diag->detail = "i64 returns are not supported in frame-using Wasm functions";
+            }
+            return -1;
+        }
         state->hiddenLocalStart =
             (uint16_t)(state->wasmParamValueCount + (WasmTypeKindUsesSRet(resultKind) ? 1u : 0u));
         state->frameBaseLocal = state->hiddenLocalStart;
@@ -1702,6 +2104,14 @@ static int WasmEmitI32Load(SLWasmBuf* body) {
 
 static int WasmEmitI32Store(SLWasmBuf* body) {
     return WasmAppendByte(body, 0x36u) != 0 || WasmAppendMemArg(body, 2u, 0u) != 0 ? -1 : 0;
+}
+
+static int WasmEmitI64Load(SLWasmBuf* body) {
+    return WasmAppendByte(body, 0x29u) != 0 || WasmAppendMemArg(body, 3u, 0u) != 0 ? -1 : 0;
+}
+
+static int WasmEmitI64Store(SLWasmBuf* body) {
+    return WasmAppendByte(body, 0x37u) != 0 || WasmAppendMemArg(body, 3u, 0u) != 0 ? -1 : 0;
 }
 
 static int WasmEmitU8Load(SLWasmBuf* body) {
@@ -2099,6 +2509,9 @@ static int WasmTypeByteSize(const SLMirProgram* program, uint32_t typeRefIndex) 
     if (SLMirTypeRefScalarKind(typeRef) == SLMirTypeScalar_I32) {
         return (int)WasmScalarByteWidth((uint8_t)SLMirTypeRefIntKind(typeRef));
     }
+    if (SLMirTypeRefScalarKind(typeRef) == SLMirTypeScalar_I64) {
+        return 8;
+    }
     return -1;
 }
 
@@ -2112,6 +2525,9 @@ static int WasmTypeByteAlign(const SLMirProgram* program, uint32_t typeRefIndex)
     if (SLMirTypeRefIsVArrayView(typeRef)) {
         uint32_t elemSize = WasmIntKindByteWidth(SLMirTypeRefIntKind(typeRef));
         return elemSize >= 4u ? 4 : (int)elemSize;
+    }
+    if (SLMirTypeRefScalarKind(typeRef) == SLMirTypeScalar_I64) {
+        return 8;
     }
     if (size <= 0) {
         return -1;
@@ -2728,6 +3144,30 @@ static int WasmEmitBinaryI32(
     return WasmAppendByte(body, opcode);
 }
 
+static int WasmEmitBinaryI64(
+    SLWasmBuf* body, uint16_t tok, uint32_t start, uint32_t end, SLDiag* diag) {
+    uint8_t opcode = 0;
+    switch ((SLTokenKind)tok) {
+        case SLTok_ADD: opcode = 0x7cu; break;
+        case SLTok_SUB: opcode = 0x7du; break;
+        case SLTok_MUL: opcode = 0x7eu; break;
+        case SLTok_AND: opcode = 0x83u; break;
+        case SLTok_EQ:  opcode = 0x51u; break;
+        case SLTok_NEQ: opcode = 0x52u; break;
+        case SLTok_LT:  opcode = 0x55u; break;
+        case SLTok_GT:  opcode = 0x57u; break;
+        case SLTok_LTE: opcode = 0x59u; break;
+        case SLTok_GTE: opcode = 0x5bu; break;
+        default:
+            WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, start, end);
+            if (diag != NULL) {
+                diag->detail = "unsupported i64 binary op";
+            }
+            return -1;
+    }
+    return WasmAppendByte(body, opcode);
+}
+
 static int WasmEmitUnaryI32(
     SLWasmBuf* body, uint16_t tok, uint32_t start, uint32_t end, SLDiag* diag) {
     switch ((SLTokenKind)tok) {
@@ -2744,6 +3184,27 @@ static int WasmEmitUnaryI32(
             WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, start, end);
             if (diag != NULL) {
                 diag->detail = "unsupported i32 unary op";
+            }
+            return -1;
+    }
+}
+
+static int WasmEmitUnaryI64(
+    SLWasmBuf* body, uint16_t tok, uint32_t start, uint32_t end, SLDiag* diag) {
+    switch ((SLTokenKind)tok) {
+        case SLTok_ADD: return 0;
+        case SLTok_NOT: return WasmAppendByte(body, 0x50u);
+        case SLTok_SUB:
+            if (WasmAppendByte(body, 0x42u) != 0 || WasmAppendSLEB64(body, 0) != 0
+                || WasmAppendByte(body, 0x7du) != 0)
+            {
+                return -1;
+            }
+            return 0;
+        default:
+            WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, start, end);
+            if (diag != NULL) {
+                diag->detail = "unsupported i64 unary op";
             }
             return -1;
     }
@@ -3038,10 +3499,21 @@ static int WasmEmitFunctionRange(
             case SLMirOp_UNARY: {
                 uint8_t  operandType = 0;
                 uint32_t operandTypeRef = UINT32_MAX;
-                if (WasmStackPopEx(state, &operandType, &operandTypeRef) != 0
-                    || WasmRequireI32Value(
-                           operandType, diag, inst->start, inst->end, "unsupported unary operand")
-                           != 0
+                if (WasmStackPopEx(state, &operandType, &operandTypeRef) != 0) {
+                    return -1;
+                }
+                if (operandType == SLWasmType_I64) {
+                    uint8_t resultType = inst->tok == SLTok_NOT ? SLWasmType_I32 : SLWasmType_I64;
+                    if (WasmEmitUnaryI64(body, inst->tok, inst->start, inst->end, diag) != 0
+                        || WasmStackPushEx(state, resultType, UINT32_MAX) != 0)
+                    {
+                        return -1;
+                    }
+                    break;
+                }
+                if (WasmRequireI32Value(
+                        operandType, diag, inst->start, inst->end, "unsupported unary operand")
+                        != 0
                     || WasmEmitUnaryI32(body, inst->tok, inst->start, inst->end, diag) != 0
                     || WasmStackPushEx(state, SLWasmType_I32, UINT32_MAX) != 0)
                 {
@@ -3062,8 +3534,24 @@ static int WasmEmitFunctionRange(
                 if ((inst->tok == SLTok_EQ || inst->tok == SLTok_NEQ) && lhsType == rhsType
                     && WasmTypeKindIsRawSingleSlot(lhsType))
                 {
-                    if (WasmEmitBinaryI32(body, inst->tok, inst->start, inst->end, diag) != 0
-                        || WasmStackPushEx(state, SLWasmType_I32, UINT32_MAX) != 0)
+                    uint8_t resultType = SLWasmType_I32;
+                    int rc = lhsType == SLWasmType_I64
+                               ? WasmEmitBinaryI64(body, inst->tok, inst->start, inst->end, diag)
+                               : WasmEmitBinaryI32(body, inst->tok, inst->start, inst->end, diag);
+                    if (rc != 0 || WasmStackPushEx(state, resultType, UINT32_MAX) != 0) {
+                        return -1;
+                    }
+                    break;
+                }
+                if (lhsType == rhsType && lhsType == SLWasmType_I64) {
+                    uint8_t resultType =
+                        (inst->tok == SLTok_EQ || inst->tok == SLTok_NEQ || inst->tok == SLTok_LT
+                         || inst->tok == SLTok_GT || inst->tok == SLTok_LTE
+                         || inst->tok == SLTok_GTE)
+                            ? SLWasmType_I32
+                            : SLWasmType_I64;
+                    if (WasmEmitBinaryI64(body, inst->tok, inst->start, inst->end, diag) != 0
+                        || WasmStackPushEx(state, resultType, UINT32_MAX) != 0)
                     {
                         return -1;
                     }
@@ -3175,6 +3663,7 @@ static int WasmEmitFunctionRange(
                     return -1;
                 }
                 if ((valueType == SLWasmType_I32 && targetType == SLWasmType_I32)
+                    || (valueType == SLWasmType_I64 && targetType == SLWasmType_I64)
                     || (valueType == SLWasmType_I32
                         && (WasmTypeKindIsPointer(targetType)
                             || WasmTypeKindIsArrayView(targetType)))
@@ -3185,6 +3674,30 @@ static int WasmEmitFunctionRange(
                     || (valueType == SLWasmType_AGG_REF && targetType == SLWasmType_AGG_REF))
                 {
                     if (WasmStackPushEx(state, targetType, inst->aux) != 0) {
+                        return -1;
+                    }
+                    break;
+                }
+                if ((valueType == SLWasmType_I32 || WasmTypeKindIsPointer(valueType)
+                     || WasmTypeKindIsArrayView(valueType))
+                    && targetType == SLWasmType_I64)
+                {
+                    if (WasmAppendByte(
+                            body,
+                            WasmI32LikeValueUsesUnsignedExtend(program, valueType, valueTypeRef)
+                                ? 0xadu
+                                : 0xacu)
+                            != 0
+                        || WasmStackPushEx(state, targetType, inst->aux) != 0)
+                    {
+                        return -1;
+                    }
+                    break;
+                }
+                if (valueType == SLWasmType_I64 && targetType == SLWasmType_I32) {
+                    if (WasmAppendByte(body, 0xa7u) != 0
+                        || WasmStackPushEx(state, targetType, inst->aux) != 0)
+                    {
                         return -1;
                     }
                     break;
@@ -3248,11 +3761,17 @@ static int WasmEmitFunctionRange(
                     } else if (WasmTypeKindIsRawSingleSlot(state->localKinds[inst->aux])) {
                         if (WasmEmitAddrFromFrame(body, state, state->frameOffsets[inst->aux], 0u)
                                 != 0
-                            || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
+                            || (state->localKinds[inst->aux] == SLWasmType_I64
+                                    ? (WasmAppendByte(body, 0x42u) != 0
+                                       || WasmAppendSLEB64(body, 0) != 0)
+                                    : (WasmAppendByte(body, 0x41u) != 0
+                                       || WasmAppendSLEB32(body, 0) != 0))
                             || (state->localKinds[inst->aux] == SLWasmType_I32
                                     ? WasmEmitTypedStore(
                                           body, WasmLocalAddressTypeKind(state, inst->aux))
-                                    : WasmEmitI32Store(body))
+                                    : (state->localKinds[inst->aux] == SLWasmType_I64
+                                           ? WasmEmitI64Store(body)
+                                           : WasmEmitI32Store(body)))
                                    != 0)
                         {
                             return -1;
@@ -3284,7 +3803,9 @@ static int WasmEmitFunctionRange(
                     break;
                 }
                 if (WasmTypeKindIsRawSingleSlot(state->localKinds[inst->aux])) {
-                    if (WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
+                    if ((state->localKinds[inst->aux] == SLWasmType_I64
+                             ? (WasmAppendByte(body, 0x42u) != 0 || WasmAppendSLEB64(body, 0) != 0)
+                             : (WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0))
                         || WasmAppendByte(body, 0x21u) != 0
                         || WasmAppendULEB(body, state->wasmValueIndex[inst->aux]) != 0)
                     {
@@ -3343,7 +3864,9 @@ static int WasmEmitFunctionRange(
                             || (state->localKinds[inst->aux] == SLWasmType_I32
                                     ? WasmEmitTypedLoad(
                                           body, WasmLocalAddressTypeKind(state, inst->aux))
-                                    : WasmEmitI32Load(body))
+                                    : (state->localKinds[inst->aux] == SLWasmType_I64
+                                           ? WasmEmitI64Load(body)
+                                           : WasmEmitI32Load(body)))
                                    != 0
                             || WasmStackPushEx(
                                    state,
@@ -3418,13 +3941,11 @@ static int WasmEmitFunctionRange(
                 uint32_t valueTypeRef = UINT32_MAX;
                 if (inst->aux >= fn->localCount
                     || WasmStackPopEx(state, &valueType, &valueTypeRef) != 0
-                    || (valueType != state->localKinds[inst->aux]
-                        && !(
-                            valueType == SLWasmType_STR_REF
-                            && state->localKinds[inst->aux] == SLWasmType_STR_PTR)
-                        && !(
-                            valueType == SLWasmType_I32
-                            && WasmTypeKindIsPointer(state->localKinds[inst->aux]))))
+                    || !WasmValueKindCompatibleWithLocal(
+                        state->localKinds[inst->aux],
+                        valueType,
+                        state->localTypeRefs[inst->aux],
+                        valueTypeRef))
                 {
                     WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
                     if (diag != NULL) {
@@ -3552,7 +4073,9 @@ static int WasmEmitFunctionRange(
                             || (state->localKinds[inst->aux] == SLWasmType_I32
                                     ? WasmEmitTypedStore(
                                           body, WasmLocalAddressTypeKind(state, inst->aux))
-                                    : WasmEmitI32Store(body))
+                                    : (state->localKinds[inst->aux] == SLWasmType_I64
+                                           ? WasmEmitI64Store(body)
+                                           : WasmEmitI32Store(body)))
                                    != 0)
                         {
                             return -1;
@@ -4269,8 +4792,7 @@ static int WasmEmitFunctionRange(
                 if ((refType == SLWasmType_I32_PTR || refType == SLWasmType_U8_PTR
                      || refType == SLWasmType_I8_PTR || refType == SLWasmType_U16_PTR
                      || refType == SLWasmType_I16_PTR || refType == SLWasmType_U32_PTR)
-                    && (valueType == SLWasmType_I32
-                        || (refType == SLWasmType_I32_PTR && WasmTypeKindIsPointer(valueType))))
+                    && (valueType == SLWasmType_I32 || WasmTypeKindIsPointer(valueType)))
                 {
                     if (WasmAppendByte(body, 0x21u) != 0
                         || WasmAppendULEB(body, state->scratch1Local) != 0
@@ -5291,11 +5813,15 @@ static int WasmEmitFunctionRange(
                     return -1;
                 }
                 for (argIndex = 0; argIndex < argc; argIndex++) {
-                    uint8_t argType = 0;
-                    if (WasmStackPop(state, &argType) != 0) {
+                    uint8_t  argType = 0;
+                    uint32_t argTypeRef = UINT32_MAX;
+                    uint8_t  expectedType = calleeSig->logicalParamKinds[argc - 1u - argIndex];
+                    if (WasmStackPopEx(state, &argType, &argTypeRef) != 0) {
                         return -1;
                     }
-                    if (argType != calleeSig->logicalParamKinds[argc - 1u - argIndex]) {
+                    if (WasmAdaptCallArgValue(body, program, expectedType, argType, argTypeRef)
+                        != 0)
+                    {
                         WasmSetDiag(
                             diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
                         if (diag != NULL) {
@@ -5396,10 +5922,13 @@ static int WasmEmitFunctionRange(
                     scratchIndex = totalArgSlots;
                     for (argIndex = argc; argIndex > 0u; argIndex--) {
                         uint8_t  argType = 0;
-                        uint32_t slotCount = WasmTypeKindSlotCount(
-                            calleeSig->logicalParamKinds[argIndex - 1u]);
-                        if (WasmStackPop(state, &argType) != 0
-                            || argType != calleeSig->logicalParamKinds[argIndex - 1u])
+                        uint32_t argTypeRef = UINT32_MAX;
+                        uint8_t  expectedType = calleeSig->logicalParamKinds[argIndex - 1u];
+                        uint32_t slotCount = WasmTypeKindSlotCount(expectedType);
+                        if (WasmStackPopEx(state, &argType, &argTypeRef) != 0
+                            || WasmAdaptCallArgValue(
+                                   body, program, expectedType, argType, argTypeRef)
+                                   != 0)
                         {
                             WasmSetDiag(
                                 diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
@@ -5829,6 +6358,39 @@ static int WasmEmitFunctionRange(
     return 0;
 }
 
+static int WasmAppendLocalDecls(SLWasmBuf* body, const uint8_t* valueTypes, uint32_t valueTypeLen) {
+    uint32_t groupCount = 0u;
+    uint32_t i = 0u;
+    if (body == NULL) {
+        return -1;
+    }
+    while (i < valueTypeLen) {
+        uint8_t  valueType = valueTypes[i];
+        uint32_t runLen = 1u;
+        while (i + runLen < valueTypeLen && valueTypes[i + runLen] == valueType) {
+            runLen++;
+        }
+        groupCount++;
+        i += runLen;
+    }
+    if (WasmAppendULEB(body, groupCount) != 0) {
+        return -1;
+    }
+    i = 0u;
+    while (i < valueTypeLen) {
+        uint8_t  valueType = valueTypes[i];
+        uint32_t runLen = 1u;
+        while (i + runLen < valueTypeLen && valueTypes[i + runLen] == valueType) {
+            runLen++;
+        }
+        if (WasmAppendULEB(body, runLen) != 0 || WasmAppendByte(body, valueType) != 0) {
+            return -1;
+        }
+        i += runLen;
+    }
+    return 0;
+}
+
 static int WasmEmitFunctionBody(
     const SLMirProgram*       program,
     const SLWasmFnSig*        sigs,
@@ -5839,8 +6401,8 @@ static int WasmEmitFunctionBody(
     SLDiag* _Nullable diag) {
     const SLMirFunction* fn;
     SLWasmEmitState      state;
-    uint32_t             localDeclCount = 0;
-    uint32_t             nonParamLocalCount;
+    uint8_t              localValueTypes[512];
+    uint32_t             localValueTypeLen = 0u;
     uint8_t              resultKind = SLWasmType_VOID;
     enum {
         kWasmFunctionBodyLimit = 4u * 1024u * 1024u,
@@ -5874,18 +6436,49 @@ static int WasmEmitFunctionBody(
         return -1;
     }
 
-    nonParamLocalCount =
-        state.usesFrame ? 8u : (uint32_t)(state.wasmLocalValueCount - state.wasmParamValueCount);
-    if (nonParamLocalCount != 0u) {
-        localDeclCount = 1u;
-    }
-    if (WasmAppendULEB(body, localDeclCount) != 0) {
-        return -1;
-    }
-    if (localDeclCount != 0) {
-        if (WasmAppendULEB(body, nonParamLocalCount) != 0 || WasmAppendByte(body, 0x7fu) != 0) {
-            return -1;
+    if (state.usesFrame) {
+        for (localValueTypeLen = 0u; localValueTypeLen < 8u; localValueTypeLen++) {
+            localValueTypes[localValueTypeLen] = 0x7fu;
         }
+    } else {
+        uint32_t localIndex;
+        for (localIndex = fn->paramCount; localIndex < fn->localCount; localIndex++) {
+            uint8_t  typeKind = state.localKinds[localIndex];
+            uint32_t slotCount = WasmTypeKindSlotCount(typeKind);
+            if (slotCount == 0u || localValueTypeLen + slotCount > sizeof(localValueTypes)) {
+                WasmSetDiag(
+                    diag,
+                    SLDiag_WASM_BACKEND_UNSUPPORTED_MIR,
+                    program->locals[fn->localStart + localIndex].nameStart,
+                    program->locals[fn->localStart + localIndex].nameEnd);
+                if (diag != NULL) {
+                    diag->detail = "unsupported local value type";
+                }
+                return -1;
+            }
+            if (slotCount == 2u) {
+                localValueTypes[localValueTypeLen++] = 0x7fu;
+                localValueTypes[localValueTypeLen++] = 0x7fu;
+            } else {
+                localValueTypes[localValueTypeLen++] = WasmTypeKindWasmValueType(typeKind);
+            }
+        }
+        if (WasmFunctionNeedsIndirectScratch(program, fn)) {
+            uint32_t scratchIndex;
+            if (localValueTypeLen + 7u > sizeof(localValueTypes)) {
+                WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, fn->nameStart, fn->nameEnd);
+                if (diag != NULL) {
+                    diag->detail = "too many Wasm locals";
+                }
+                return -1;
+            }
+            for (scratchIndex = 0u; scratchIndex < 7u; scratchIndex++) {
+                localValueTypes[localValueTypeLen++] = 0x7fu;
+            }
+        }
+    }
+    if (WasmAppendLocalDecls(body, localValueTypes, localValueTypeLen) != 0) {
+        return -1;
     }
     if (state.usesFrame) {
         uint32_t paramIndex;
@@ -6122,12 +6715,17 @@ static int WasmEmitEntryWrapperBody(
     }
     if (WasmTypeKindSlotCount(sig->logicalResultKind) == 1u) {
         if (WasmAppendULEB(body, 1u) != 0 || WasmAppendULEB(body, 1u) != 0
-            || WasmAppendByte(body, 0x7fu) != 0 || WasmAppendByte(body, 0x10u) != 0
-            || WasmAppendULEB(body, mainFuncWasmIndex) != 0 || WasmAppendByte(body, 0x21u) != 0
-            || WasmAppendULEB(body, 0u) != 0 || WasmAppendByte(body, 0x41u) != 0
+            || WasmAppendByte(body, WasmTypeKindWasmValueType(sig->logicalResultKind)) != 0
+            || WasmAppendByte(body, 0x10u) != 0 || WasmAppendULEB(body, mainFuncWasmIndex) != 0
+            || WasmAppendByte(body, 0x21u) != 0 || WasmAppendULEB(body, 0u) != 0
+            || WasmAppendByte(body, 0x41u) != 0
             || WasmAppendSLEB32(body, (int32_t)entry->resultOffset) != 0
             || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, 0u) != 0
-            || WasmEmitI32Store(body) != 0 || WasmAppendByte(body, 0x0bu) != 0)
+            || (sig->logicalResultKind == SLWasmType_I64
+                    ? WasmEmitI64Store(body)
+                    : WasmEmitI32Store(body))
+                   != 0
+            || WasmAppendByte(body, 0x0bu) != 0)
         {
             return -1;
         }
@@ -6216,10 +6814,11 @@ static int EmitWasmBackend(
         WasmSetDiag(diag, SLDiag_WASM_BACKEND_INTERNAL, 0, 0);
         return -1;
     }
-    if (unit->usesPlatform && !WasmIsWasmMinPlatform(unit)) {
+    if (unit->usesPlatform && !WasmSupportsPlatformImports(unit)) {
         WasmSetDiag(diag, SLDiag_WASM_BACKEND_PLATFORM_REQUIRED, 0, 0);
         if (diag != NULL) {
-            diag->detail = "packages using import \"platform\" require --platform wasm-min";
+            diag->detail =
+                "packages using import \"platform\" require --platform wasm-min or playbit";
         }
         return -1;
     }
@@ -6234,9 +6833,23 @@ static int EmitWasmBackend(
         return -1;
     }
     if (SLMirProgramNeedsDynamicResolution(unit->mirProgram)) {
+        uint32_t         funcIndex = UINT32_MAX;
+        uint32_t         pc = UINT32_MAX;
+        const SLMirInst* inst = NULL;
         WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, 0, 0);
+        SLMirFindFirstDynamicResolutionInst(unit->mirProgram, &funcIndex, &pc, &inst);
         if (diag != NULL) {
-            diag->detail = "MIR still needs dynamic resolution";
+            diag->detail = WasmDynamicResolutionDetail(unit, options, funcIndex, inst);
+            if (diag->detail == NULL) {
+                diag->detail = "MIR still needs dynamic resolution";
+            }
+            if (funcIndex < unit->mirProgram->funcLen && pc != UINT32_MAX) {
+                const SLMirFunction* fn = &unit->mirProgram->funcs[funcIndex];
+                if (fn->sourceRef < unit->mirProgram->sourceLen && inst != NULL) {
+                    diag->start = inst->start;
+                    diag->end = inst->end;
+                }
+            }
         }
         return -1;
     }
@@ -6267,7 +6880,13 @@ static int EmitWasmBackend(
             return -1;
         }
     }
-    if (WasmBuildFunctionSignatures(unit->mirProgram, sigs, diag) != 0) {
+    if (WasmBuildReachableFunctionSet(unit, &foreign, options, &imports, diag) != 0) {
+        goto fail;
+    }
+    if (WasmBuildFunctionSignatures(
+            unit->mirProgram, options, imports.reachableFunctions, sigs, diag)
+        != 0)
+    {
         goto fail;
     }
     if (WasmAnalyzeImports(unit, &foreign, options, &imports, diag) != 0) {
@@ -6343,6 +6962,11 @@ static int EmitWasmBackend(
         for (i = 0; i < foreign.len; i++) {
             const SLForeignLinkageEntry* entry = &foreign.entries[i];
             if (entry->kind == SLForeignLinkage_WASM_IMPORT_FN) {
+                if (imports.reachableFunctions != NULL
+                    && imports.reachableFunctions[entry->functionIndex] == 0u)
+                {
+                    continue;
+                }
                 if (WasmAppendULEB(&importSec, entry->arg0.len) != 0
                     || WasmAppendBytes(&importSec, entry->arg0.bytes, entry->arg0.len) != 0
                     || WasmAppendULEB(&importSec, entry->arg1.len) != 0
@@ -6359,6 +6983,11 @@ static int EmitWasmBackend(
             if (entry->kind == SLForeignLinkage_WASM_IMPORT_CONST
                 || entry->kind == SLForeignLinkage_WASM_IMPORT_VAR)
             {
+                if (imports.reachableFunctions != NULL
+                    && imports.reachableFunctions[entry->functionIndex] == 0u)
+                {
+                    continue;
+                }
                 if (WasmAppendULEB(&importSec, entry->arg0.len) != 0
                     || WasmAppendBytes(&importSec, entry->arg0.bytes, entry->arg0.len) != 0
                     || WasmAppendULEB(&importSec, entry->arg1.len) != 0
@@ -6388,6 +7017,9 @@ static int EmitWasmBackend(
         goto oom;
     }
     for (i = 0; i < unit->mirProgram->funcLen; i++) {
+        if (imports.reachableFunctions != NULL && imports.reachableFunctions[i] == 0u) {
+            continue;
+        }
         if (imports.importedFunctions != NULL && imports.importedFunctions[i] != 0u) {
             continue;
         }
@@ -6461,12 +7093,18 @@ static int EmitWasmBackend(
 
     for (i = 0; i < unit->mirProgram->funcLen; i++) {
         const SLMirFunction* fn = &unit->mirProgram->funcs[i];
+        if (imports.reachableFunctions != NULL && imports.reachableFunctions[i] == 0u) {
+            continue;
+        }
         if (WasmFunctionIsNamedMain(unit->mirProgram, fn)) {
             exportCount++;
         }
     }
     for (i = 0; i < foreign.len; i++) {
-        if (foreign.entries[i].kind == SLForeignLinkage_EXPORT_FN) {
+        if (foreign.entries[i].kind == SLForeignLinkage_EXPORT_FN
+            && (imports.reachableFunctions == NULL
+                || imports.reachableFunctions[foreign.entries[i].functionIndex] != 0u))
+        {
             exportCount++;
         }
     }
@@ -6480,6 +7118,9 @@ static int EmitWasmBackend(
     }
     for (i = 0; i < unit->mirProgram->funcLen; i++) {
         const SLMirFunction* fn = &unit->mirProgram->funcs[i];
+        if (imports.reachableFunctions != NULL && imports.reachableFunctions[i] == 0u) {
+            continue;
+        }
         if (!WasmFunctionIsNamedMain(unit->mirProgram, fn)) {
             continue;
         }
@@ -6499,6 +7140,11 @@ static int EmitWasmBackend(
         const SLForeignLinkageEntry* entryInfo = &foreign.entries[i];
         uint32_t                     wasmFuncIndex;
         if (entryInfo->kind != SLForeignLinkage_EXPORT_FN) {
+            continue;
+        }
+        if (imports.reachableFunctions != NULL
+            && imports.reachableFunctions[entryInfo->functionIndex] == 0u)
+        {
             continue;
         }
         wasmFuncIndex =
@@ -6549,10 +7195,21 @@ static int EmitWasmBackend(
     }
     for (i = 0; i < unit->mirProgram->funcLen; i++) {
         SLWasmBuf body = { .options = options };
+        if (imports.reachableFunctions != NULL && imports.reachableFunctions[i] == 0u) {
+            continue;
+        }
         if (imports.importedFunctions != NULL && imports.importedFunctions[i] != 0u) {
             continue;
         }
         if (WasmEmitFunctionBody(unit->mirProgram, sigs, &imports, &strings, i, &body, diag) != 0) {
+            if (diag != NULL && diag->code == 0) {
+                WasmSetDiag(
+                    diag,
+                    SLDiag_WASM_BACKEND_UNSUPPORTED_MIR,
+                    unit->mirProgram->funcs[i].nameStart,
+                    unit->mirProgram->funcs[i].nameEnd);
+                diag->detail = "failed emitting Wasm function body";
+            }
             if (body.data != NULL && options->arenaFree != NULL) {
                 options->arenaFree(options->allocatorCtx, body.data, body.cap);
             }

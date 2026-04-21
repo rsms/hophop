@@ -224,6 +224,7 @@ int SLMirLowerAppendZeroInitTypeFunction(
     function.sourceRef = sourceIndex;
     function.nameStart = typeAst->start;
     function.nameEnd = typeAst->end;
+    function.typeRef = typeIndex;
     if (SLMirProgramBuilderBeginFunction(builder, &function, &functionIndex) != 0) {
         SLMirLowerPkgSetDiag(diag, SLDiag_ARENA_OOM, typeAst->start, typeAst->end);
         return -1;
@@ -332,7 +333,15 @@ int SLMirLowerAppendTopInitFunction(
     *outSupported = 0;
     if (initExprNode >= 0) {
         return SLMirLowerAppendExprAsFunction(
-            builder, arena, ast, src, initExprNode, outFunctionIndex, outSupported, diag);
+            builder,
+            arena,
+            ast,
+            src,
+            initExprNode,
+            declTypeNode,
+            outFunctionIndex,
+            outSupported,
+            diag);
     }
     if (declTypeNode >= 0) {
         return SLMirLowerAppendZeroInitTypeFunction(

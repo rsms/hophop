@@ -576,6 +576,47 @@ int SLMirProgramNeedsDynamicResolution(const SLMirProgram* program) {
     return 0;
 }
 
+int SLMirFindFirstDynamicResolutionInst(
+    const SLMirProgram* program,
+    uint32_t* _Nullable outFunctionIndex,
+    uint32_t* _Nullable outPc,
+    const SLMirInst** _Nullable outInst) {
+    uint32_t funcIndex;
+    if (outFunctionIndex != NULL) {
+        *outFunctionIndex = UINT32_MAX;
+    }
+    if (outPc != NULL) {
+        *outPc = UINT32_MAX;
+    }
+    if (outInst != NULL) {
+        *outInst = NULL;
+    }
+    if (program == NULL) {
+        return 0;
+    }
+    for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
+        const SLMirFunction* fn = &program->funcs[funcIndex];
+        uint32_t             pc;
+        for (pc = 0; pc < fn->instLen; pc++) {
+            const SLMirInst* inst = &program->insts[fn->instStart + pc];
+            if (inst->op != SLMirOp_LOAD_IDENT && inst->op != SLMirOp_CALL) {
+                continue;
+            }
+            if (outFunctionIndex != NULL) {
+                *outFunctionIndex = funcIndex;
+            }
+            if (outPc != NULL) {
+                *outPc = pc;
+            }
+            if (outInst != NULL) {
+                *outInst = inst;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void SLMirSetDiag(SLDiag* _Nullable diag, SLDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;

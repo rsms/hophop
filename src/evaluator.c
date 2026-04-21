@@ -11,105 +11,9 @@
 #include "mir_lower.h"
 #include "mir_lower_pkg.h"
 #include "mir_lower_stmt.h"
+#include "slc_internal.h"
 
 SL_API_BEGIN
-
-typedef struct {
-    char* _Nullable path;
-    char* _Nullable source;
-    uint32_t sourceLen;
-    void* _Nullable arenaMem;
-    SLAst ast;
-} SLParsedFile;
-
-struct SLPackage;
-
-typedef struct {
-    char* alias;
-    char* _Nullable bindName;
-    char* path;
-    struct SLPackage* _Nullable target;
-    uint32_t fileIndex;
-    uint32_t start;
-    uint32_t end;
-} SLImportRef;
-
-typedef struct {
-    uint32_t importIndex;
-    char*    sourceName;
-    char*    localName;
-    char* _Nullable qualifiedName;
-    uint8_t  isType;
-    uint8_t  isFunction;
-    uint8_t  useWrapper;
-    uint32_t exportFileIndex;
-    int32_t  exportNodeId;
-    char* _Nullable fnShapeKey;
-    char* _Nullable wrapperDeclText;
-    uint32_t fileIndex;
-    uint32_t start;
-    uint32_t end;
-} SLImportSymbolRef;
-
-typedef struct {
-    SLAstKind kind;
-    char*     name;
-    char*     declText;
-    int       hasBody;
-    uint32_t  fileIndex;
-    int32_t   nodeId;
-} SLSymbolDecl;
-
-typedef struct {
-    char*    text;
-    uint32_t fileIndex;
-    int32_t  nodeId;
-    uint32_t sourceStart;
-    uint32_t sourceEnd;
-} SLDeclText;
-
-typedef struct SLPackage {
-    char*      dirPath;
-    char*      name;
-    int        loadState;
-    int        checked;
-    SLFeatures features;
-
-    SLParsedFile* files;
-    uint32_t      fileLen;
-    uint32_t      fileCap;
-
-    SLImportRef* imports;
-    uint32_t     importLen;
-    uint32_t     importCap;
-
-    SLImportSymbolRef* importSymbols;
-    uint32_t           importSymbolLen;
-    uint32_t           importSymbolCap;
-
-    SLSymbolDecl* decls;
-    uint32_t      declLen;
-    uint32_t      declCap;
-
-    SLSymbolDecl* pubDecls;
-    uint32_t      pubDeclLen;
-    uint32_t      pubDeclCap;
-
-    SLDeclText* declTexts;
-    uint32_t    declTextLen;
-    uint32_t    declTextCap;
-} SLPackage;
-
-typedef struct {
-    char*      rootDir;
-    char*      platformTarget;
-    SLPackage* selectedPlatformPkg;
-    SLPackage* packages;
-    uint32_t   packageLen;
-    uint32_t   packageCap;
-} SLPackageLoader;
-
-#define SL_EVAL_CALL_MAX_DEPTH 128u
 
 enum {
     SL_EVAL_MIR_HOST_INVALID = SLMirHostTarget_INVALID,
@@ -127,8 +31,6 @@ enum {
     SL_EVAL_MIR_ITER_KIND_PROTOCOL = 2,
     SL_EVAL_MIR_ITER_MAGIC = 0x534c4954u,
 };
-
-static int SliceEqCStr(const char* s, uint32_t start, uint32_t end, const char* cstr);
 
 static int SLEvalNameEqLiteralOrPkgBuiltin(
     const char* _Nullable src,
@@ -194,83 +96,10 @@ typedef struct {
     SLCTFEValue sourceValue;
     SLCTFEValue iteratorValue;
 } SLEvalMirIteratorState;
-
-int ErrorDiagf(
-    const char* file,
-    const char* _Nullable source,
-    uint32_t   start,
-    uint32_t   end,
-    SLDiagCode code,
-    ...);
-int ErrorSimple(const char* fmt, ...);
-int PrintSLDiag(
-    const char* filename, const char* _Nullable source, const SLDiag* diag, int includeHint);
-void* _Nullable CodegenArenaGrow(void* _Nullable ctx, uint32_t minSize, uint32_t* _Nonnull outSize);
-void CodegenArenaFree(void* _Nullable ctx, void* _Nullable block, uint32_t blockSize);
-void FreeLoader(SLPackageLoader* loader);
-int  LoadAndCheckPackage(
-    const char* entryPath,
-    const char* _Nullable platformTarget,
-    SLPackageLoader* outLoader,
-    SLPackage**      outEntryPkg);
-int        ValidateEntryMainSignature(const SLPackage* entryPkg);
-int        FindPackageIndex(const SLPackageLoader* loader, const SLPackage* pkg);
 static int SLEvalStringValueFromArrayBytes(
     SLArena* arena, const SLCTFEValue* inValue, int32_t targetTypeCode, SLCTFEValue* outValue);
 
-static int StrEq(const char* a, const char* b) {
-    while (*a != '\0' && *b != '\0') {
-        if (*a != *b) {
-            return 0;
-        }
-        a++;
-        b++;
-    }
-    return *a == '\0' && *b == '\0';
-}
-
 static int SLEvalTypeNodeIsAnytype(const SLParsedFile* file, int32_t typeNode);
-
-static int SliceEqCStr(const char* s, uint32_t start, uint32_t end, const char* cstr) {
-    uint32_t i = 0;
-    if (end < start) {
-        return 0;
-    }
-    while (start + i < end) {
-        if (cstr[i] == '\0' || s[start + i] != cstr[i]) {
-            return 0;
-        }
-        i++;
-    }
-    return cstr[i] == '\0';
-}
-
-static int SliceEqSlice(
-    const char* a, uint32_t aStart, uint32_t aEnd, const char* b, uint32_t bStart, uint32_t bEnd) {
-    uint32_t i;
-    uint32_t len;
-    if (aEnd < aStart || bEnd < bStart) {
-        return 0;
-    }
-    len = aEnd - aStart;
-    if (len != (bEnd - bStart)) {
-        return 0;
-    }
-    for (i = 0; i < len; i++) {
-        if (a[aStart + i] != b[bStart + i]) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-static int IsFnReturnTypeNodeKind(SLAstKind kind) {
-    return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
-        || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
-        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
-        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_TUPLE || kind == SLAst_TYPE_ANON_STRUCT
-        || kind == SLAst_TYPE_ANON_UNION;
-}
 
 static int ParseSliceU64(const char* s, uint32_t start, uint32_t end, uint64_t* outValue) {
     uint64_t v = 0;
@@ -320,7 +149,6 @@ enum {
 typedef struct SLEvalProgram SLEvalProgram;
 typedef struct SLEvalContext SLEvalContext;
 
-static int     ASTNextSibling(const SLAst* ast, int32_t nodeId);
 static void    SLEvalValueSetRuntimeTypeCode(SLCTFEValue* value, int32_t typeCode);
 static int     SLEvalValueGetRuntimeTypeCode(const SLCTFEValue* value, int32_t* outTypeCode);
 static int32_t SLEvalFindTopConstBySlice(
@@ -727,20 +555,6 @@ static int SLEvalTypeNodeSize(
     }
 }
 
-static int ASTFirstChild(const SLAst* ast, int32_t nodeId) {
-    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
-        return -1;
-    }
-    return ast->nodes[nodeId].firstChild;
-}
-
-static int ASTNextSibling(const SLAst* ast, int32_t nodeId) {
-    if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
-        return -1;
-    }
-    return ast->nodes[nodeId].nextSibling;
-}
-
 static void DiagOffsetToLineCol(
     const char* source, uint32_t offset, uint32_t* outLine, uint32_t* outCol) {
     uint32_t i = 0;
@@ -778,36 +592,6 @@ static int32_t VarLikeInitNode(const SLParsedFile* file, int32_t varLikeNodeId) 
     return firstChild;
 }
 
-static uint32_t AstListCount(const SLAst* ast, int32_t listNode) {
-    uint32_t count = 0;
-    int32_t  child;
-    if (listNode < 0 || (uint32_t)listNode >= ast->len) {
-        return 0;
-    }
-    child = ast->nodes[listNode].firstChild;
-    while (child >= 0) {
-        count++;
-        child = ast->nodes[child].nextSibling;
-    }
-    return count;
-}
-
-static int32_t AstListItemAt(const SLAst* ast, int32_t listNode, uint32_t index) {
-    uint32_t i = 0;
-    int32_t  child;
-    if (listNode < 0 || (uint32_t)listNode >= ast->len) {
-        return -1;
-    }
-    child = ast->nodes[listNode].firstChild;
-    while (child >= 0) {
-        if (i == index) {
-            return child;
-        }
-        i++;
-        child = ast->nodes[child].nextSibling;
-    }
-    return -1;
-}
 typedef struct {
     const SLPackage*    pkg;
     const SLParsedFile* file;

@@ -17,6 +17,7 @@ int SLMirLowerAppendExprAsFunction(
     const SLAst* _Nonnull ast,
     SLStrView src,
     int32_t   nodeId,
+    int32_t   resultTypeNode,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
     SLDiag* _Nullable diag);

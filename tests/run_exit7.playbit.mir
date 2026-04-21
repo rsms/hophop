@@ -1,0 +1,22 @@
+mir
+  dynamic_resolution=no
+  insts=4 consts=1 sources=1 funcs=1 locals=0 fields=0 types=0 hosts=1 symbols=2
+sources
+  #0 len=74
+types
+hosts
+  #0 GENERIC target=PLATFORM_EXIT name="exit" [64,68]
+symbols
+  #0 IDENT target=4 name="platform" [55,63]
+  #1 CALL target=6 name="exit" [64,68] flags=1
+fields
+consts
+  #0 INT value=7
+functions
+  #0 name="main" [45,49] source=#0 type=#4294967295 params=0 temps=0 locals=#0+0 insts=#0+4
+    locals
+    insts
+      0: PUSH_CONST const=#0 span=[69,70]
+      1: CALL_HOST host=#0 argc=1 span=[64,68]
+      2: DROP span=[55,71]
+      3: RETURN_VOID span=[52,73]

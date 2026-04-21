@@ -536,6 +536,11 @@ void SLMirProgramBuilderFinish(
     const SLMirProgramBuilder* _Nonnull b, SLMirProgram* _Nonnull outProgram);
 int SLMirValidateProgram(const SLMirProgram* _Nonnull program, SLDiag* _Nullable diag);
 int SLMirProgramNeedsDynamicResolution(const SLMirProgram* _Nonnull program);
+int SLMirFindFirstDynamicResolutionInst(
+    const SLMirProgram* _Nonnull program,
+    uint32_t* _Nullable outFunctionIndex,
+    uint32_t* _Nullable outPc,
+    const SLMirInst** _Nullable outInst);
 int SLMirDumpProgram(
     const SLMirProgram* _Nonnull program,
     SLStrView src,

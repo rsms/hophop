@@ -32,6 +32,7 @@ Common optional fields:
 - `slc_fail_stderr`
 - `slc_ok_stderr`
 - `slc_fail_no_stdout`
+- `slc_cli`
 - `slc_fmt`
 - `compile_only`
 - `compile_cache_reuse`
@@ -73,6 +74,23 @@ Optional:
 
 Some negative fixtures are intentionally not formatter-compatible; those are skipped when `slc fmt --check` emits diagnostics for that file.
 
+### `slc_cli`
+
+Runs `slc` with an explicit raw argument list for CLI behavior tests.
+
+Required:
+
+- `args` (array of strings): argv entries after the executable name
+
+Optional:
+
+- `argv0_basename` (string): create a temporary symlink with this basename and invoke `slc` through it
+- `expect_exit` (int, default `0`)
+- `expect_stdout` (string): exact expected stdout file
+- `expect_stderr` (string): exact expected stderr file
+- `stdout_empty` (bool, default `true` unless `expect_stdout` is set)
+- `stderr_empty` (bool, default `true` unless `expect_stderr` is set)
+
 ### `compile_and_run`
 
 Optional:
@@ -92,6 +110,7 @@ Optional:
 Optional:
 
 - `platform` (string): `slc --platform` target override for the run
+- `env` (object): environment variables to add or override for the command
 - `expect_exit` (int, default `0`)
 - `expect_nonzero` (bool)
 - `stdout_empty` (bool, default `true`)
@@ -107,6 +126,8 @@ Optional:
 Note:
 
 - `platform: "wasm-min"` uses the bundled Node-based Wasm smoke-test runner.
+- `platform: "playbit"` shells out to `pb run <temp>.wasm` and requires a local Playbit
+  `pb` binary (or `SL_PLAYBIT_PB`).
 
 ## Codegen golden sidecars
 

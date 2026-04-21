@@ -287,6 +287,7 @@ static int SLMirLowerRewriteSymbolInst(
 static int SLMirLowerInternType(
     SLMirProgramBuilder* _Nonnull builder,
     uint32_t astNode,
+    uint32_t sourceRef,
     uint32_t flags,
     uint32_t* _Nonnull outIndex,
     SLDiag* _Nullable diag) {
@@ -297,13 +298,15 @@ static int SLMirLowerInternType(
     }
     for (i = 0; i < builder->typeLen; i++) {
         const SLMirTypeRef* existing = &builder->types[i];
-        if (existing->astNode == astNode && existing->sourceRef == 0u && existing->flags == flags) {
+        if (existing->astNode == astNode && existing->sourceRef == sourceRef
+            && existing->flags == flags)
+        {
             *outIndex = i;
             return 0;
         }
     }
     typeRef.astNode = astNode;
-    typeRef.sourceRef = 0u;
+    typeRef.sourceRef = sourceRef;
     typeRef.flags = flags;
     typeRef.aux = 0u;
     if (SLMirProgramBuilderAddType(builder, &typeRef, outIndex) != 0) {
@@ -313,17 +316,34 @@ static int SLMirLowerInternType(
     return 0;
 }
 
+static uint32_t SLMirLowerFindSourceRef(
+    const SLMirProgramBuilder* _Nonnull builder, SLStrView src) {
+    uint32_t i;
+    if (builder == NULL || src.ptr == NULL) {
+        return 0u;
+    }
+    for (i = 0; i < builder->sourceLen; i++) {
+        if (builder->sources[i].src.ptr == src.ptr && builder->sources[i].src.len == src.len) {
+            return i;
+        }
+    }
+    return 0u;
+}
+
 static int SLMirLowerRewriteTypeInst(
     SLMirProgramBuilder* _Nonnull builder,
+    SLStrView src,
     const SLMirInst* _Nonnull in,
     SLMirInst* _Nonnull out,
     SLDiag* _Nullable diag) {
     uint32_t typeIndex = 0;
+    uint32_t sourceRef = 0u;
     memcpy(out, in, sizeof(*out));
     if (in->op != SLMirOp_CAST) {
         return 0;
     }
-    if (SLMirLowerInternType(builder, in->aux, 0u, &typeIndex, diag) != 0) {
+    sourceRef = SLMirLowerFindSourceRef(builder, src);
+    if (SLMirLowerInternType(builder, in->aux, sourceRef, 0u, &typeIndex, diag) != 0) {
         return -1;
     }
     out->aux = typeIndex;
@@ -471,30 +491,22 @@ int SLMirLowerAppendInst(
     }
     if (rewriteStatus == 0) {
         memcpy(&loweredInst, in, sizeof(loweredInst));
-        rewriteStatus = SLMirLowerRewriteSymbolInst(builder, in, &loweredInst, diag);
-        if (rewriteStatus < 0) {
-            return -1;
-        }
-        if (rewriteStatus == 0) {
-            rewriteStatus = SLMirLowerRewriteTypeInst(builder, in, &loweredInst, diag);
-            if (rewriteStatus < 0) {
-                return -1;
-            }
-            if (rewriteStatus == 0) {
-                rewriteStatus = SLMirLowerRewriteHostInst(
-                    builder, src, &loweredInst, &loweredInst, diag);
-                if (rewriteStatus < 0) {
-                    return -1;
-                }
-                if (rewriteStatus == 0) {
-                    rewriteStatus = SLMirLowerRewriteFieldInst(
-                        builder, &loweredInst, &loweredInst, diag);
-                    if (rewriteStatus < 0) {
-                        return -1;
-                    }
-                }
-            }
-        }
+    }
+    rewriteStatus = SLMirLowerRewriteSymbolInst(builder, &loweredInst, &loweredInst, diag);
+    if (rewriteStatus < 0) {
+        return -1;
+    }
+    rewriteStatus = SLMirLowerRewriteTypeInst(builder, src, &loweredInst, &loweredInst, diag);
+    if (rewriteStatus < 0) {
+        return -1;
+    }
+    rewriteStatus = SLMirLowerRewriteHostInst(builder, src, &loweredInst, &loweredInst, diag);
+    if (rewriteStatus < 0) {
+        return -1;
+    }
+    rewriteStatus = SLMirLowerRewriteFieldInst(builder, &loweredInst, &loweredInst, diag);
+    if (rewriteStatus < 0) {
+        return -1;
     }
     if (SLMirProgramBuilderAppendInst(builder, &loweredInst) != 0) {
         SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, loweredInst.start, loweredInst.end);
@@ -509,12 +521,14 @@ int SLMirLowerAppendExprAsFunction(
     const SLAst* _Nonnull ast,
     SLStrView src,
     int32_t   nodeId,
+    int32_t   resultTypeNode,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
     SLDiag* _Nullable diag) {
     SLMirChunk     chunk;
     SLMirFunction  function = { 0 };
     SLMirSourceRef sourceRef = { 0 };
+    SLMirTypeRef   typeRef = { 0 };
     uint32_t       functionIndex = 0;
     uint32_t       sourceIndex = 0;
     uint32_t       i;
@@ -565,6 +579,24 @@ int SLMirLowerAppendExprAsFunction(
     function.typeRef = UINT32_MAX;
     function.nameStart = 0;
     function.nameEnd = 0;
+    if (resultTypeNode >= 0) {
+        const SLAstNode* typeNode = &ast->nodes[resultTypeNode];
+        typeRef.astNode = (uint32_t)resultTypeNode;
+        typeRef.sourceRef = sourceIndex;
+        typeRef.flags = 0;
+        typeRef.aux = 0;
+        if (SLMirProgramBuilderAddType(builder, &typeRef, &function.typeRef) != 0) {
+            if (diag != NULL) {
+                diag->code = SLDiag_ARENA_OOM;
+                diag->type = SLDiagTypeOfCode(diag->code);
+                diag->start = typeNode->start;
+                diag->end = typeNode->end;
+                diag->argStart = 0;
+                diag->argEnd = 0;
+            }
+            return -1;
+        }
+    }
     if (SLMirProgramBuilderBeginFunction(builder, &function, &functionIndex) != 0) {
         if (diag != NULL) {
             diag->code = SLDiag_ARENA_OOM;
@@ -622,7 +654,7 @@ int SLMirLowerExprAsFunction(
     }
     SLMirProgramBuilderInit(&builder, arena);
     if (SLMirLowerAppendExprAsFunction(
-            &builder, arena, ast, src, nodeId, &functionIndex, outSupported, diag)
+            &builder, arena, ast, src, nodeId, -1, &functionIndex, outSupported, diag)
         != 0)
     {
         return -1;
