@@ -6,9 +6,9 @@ struct Vector[T] {
 
 fn make[T](self Factory) T {
 	if T == i64 {
-		return 0 as i64
+		return 0
 	} else {
-		return 1 as i64
+		return 1
 	}
 }
 

@@ -10,6 +10,10 @@ fn ff()f64{
 return 3.5 as f64
 }
 
+fn generic_return[T]() T {
+return 5 as i64
+}
+
 fn g(v i16){
 var y i16=4 as i16*9 as i16
 _ = v+4 as i16

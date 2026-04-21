@@ -26,9 +26,9 @@ fn first[T](x, _ T) T {
 fn zero[T](self Factory) T {
 	assert typeof(self) == type Factory
 	if T == i64 {
-		return 0 as i64
+		return 0
 	}
-	return 1 as i64
+	return 1
 }
 
 fn make_pair_of[T](typ type, x, y T) Vector[T] {

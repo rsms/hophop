@@ -766,6 +766,16 @@ static int32_t SLFmtFindFnReturnTypeNode(const SLAst* ast, int32_t fnNodeId) {
     return -1;
 }
 
+static int SLFmtFnReturnTypeIsGenericParam(const SLAst* ast, SLStrView src, int32_t fnNodeId) {
+    SLFmtTypeEnv env;
+    int32_t      retTypeNodeId = SLFmtFindFnReturnTypeNode(ast, fnNodeId);
+    int32_t      bindingIndex = -1;
+    if (retTypeNodeId < 0 || !SLFmtTypeEnvInitFromDeclTypeParams(ast, fnNodeId, &env)) {
+        return 0;
+    }
+    return SLFmtTypeNameIsBoundParam(ast, src, retTypeNodeId, &env, &bindingIndex);
+}
+
 static int32_t SLFmtFindParentNode(const SLAst* ast, int32_t childNodeId) {
     uint32_t i;
     if (childNodeId < 0 || (uint32_t)childNodeId >= ast->len) {
@@ -1061,7 +1071,8 @@ static int SLFmtCanDropRedundantLiteralCast(
             }
             fnNodeId = SLFmtFindEnclosingFnNode(ast, parentNodeId);
             retTypeNodeId = SLFmtFindFnReturnTypeNode(ast, fnNodeId);
-            return SLFmtTypeNodesEqualBySource(ast, src, castTypeNodeId, retTypeNodeId);
+            return SLFmtTypeNodesEqualBySource(ast, src, castTypeNodeId, retTypeNodeId)
+                || SLFmtFnReturnTypeIsGenericParam(ast, src, fnNodeId);
         }
         case SLAst_BINARY: {
             int32_t           lhsNodeId = SLFmtFirstChild(ast, parentNodeId);
