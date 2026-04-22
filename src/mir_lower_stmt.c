@@ -2991,8 +2991,8 @@ static int SLMirStmtLowerFor(SLMirStmtLower* c, int32_t stmtNode) {
         }
     }
     if (initNode >= 0) {
-        if (c->ast->nodes[initNode].kind == SLAst_VAR
-            || c->ast->nodes[initNode].kind == SLAst_CONST)
+        if (c->ast->nodes[initNode].kind == SLAst_VAR || c->ast->nodes[initNode].kind == SLAst_CONST
+            || c->ast->nodes[initNode].kind == SLAst_SHORT_ASSIGN)
         {
             if (SLMirStmtLowerStmt(c, initNode) != 0 || !c->supported) {
                 c->localLen = scopeMark;
@@ -3323,6 +3323,152 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
                     || !c->supported)
                 {
                     return c->supported ? -1 : 0;
+                }
+            }
+            return 0;
+        }
+        case SLAst_SHORT_ASSIGN: {
+            int32_t  nameList = s->firstChild;
+            int32_t  rhsList = nameList >= 0 ? c->ast->nodes[nameList].nextSibling : -1;
+            uint32_t lhsCount;
+            uint32_t rhsCount;
+            uint32_t i;
+            uint32_t tempSlots[256];
+            uint32_t existingSlots[256];
+            uint8_t  existingMutable[256];
+            uint8_t  isExisting[256];
+            uint8_t  isBlank[256];
+            uint32_t tupleTempSlot = UINT32_MAX;
+            if (nameList < 0 || rhsList < 0 || c->ast->nodes[nameList].kind != SLAst_NAME_LIST
+                || c->ast->nodes[rhsList].kind != SLAst_EXPR_LIST)
+            {
+                c->supported = 0;
+                return 0;
+            }
+            lhsCount = SLMirStmtLowerAstListCount(c->ast, nameList);
+            rhsCount = SLMirStmtLowerAstListCount(c->ast, rhsList);
+            if (lhsCount == 0u || lhsCount > 256u || (rhsCount != lhsCount && rhsCount != 1u)) {
+                c->supported = 0;
+                return 0;
+            }
+            for (i = 0; i < lhsCount; i++) {
+                int32_t          nameNode = SLMirStmtLowerAstListItemAt(c->ast, nameList, i);
+                const SLAstNode* name = nameNode >= 0 ? &c->ast->nodes[nameNode] : NULL;
+                int              mutable = 0;
+                uint32_t         slot = 0;
+                if (name == NULL || name->kind != SLAst_IDENT) {
+                    c->supported = 0;
+                    return 0;
+                }
+                isBlank[i] = (uint8_t)SLMirStmtLowerNameEqLiteral(
+                    c, name->dataStart, name->dataEnd, "_");
+                isExisting[i] = 0;
+                existingSlots[i] = UINT32_MAX;
+                existingMutable[i] = 0;
+                if (!isBlank[i]
+                    && SLMirStmtLowerFindLocal(c, name->dataStart, name->dataEnd, &slot, &mutable))
+                {
+                    isExisting[i] = 1;
+                    existingSlots[i] = slot;
+                    existingMutable[i] = mutable ? 1u : 0u;
+                }
+            }
+            if (rhsCount == lhsCount) {
+                for (i = 0; i < rhsCount; i++) {
+                    int32_t rhsExpr = SLMirStmtLowerAstListItemAt(c->ast, rhsList, i);
+                    if (rhsExpr < 0
+                        || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tempSlots[i]) != 0)
+                    {
+                        return rhsExpr < 0 ? 0 : -1;
+                    }
+                    if (SLMirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
+                        return c->supported ? -1 : 0;
+                    }
+                    if (SLMirStmtLowerAppendInst(
+                            c, SLMirOp_LOCAL_STORE, 0, tempSlots[i], s->start, s->end, NULL)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                }
+            } else {
+                int32_t rhsExpr = SLMirStmtLowerAstListItemAt(c->ast, rhsList, 0u);
+                if (rhsExpr < 0
+                    || SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tupleTempSlot) != 0)
+                {
+                    return rhsExpr < 0 ? 0 : -1;
+                }
+                if (SLMirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
+                    return c->supported ? -1 : 0;
+                }
+                if (SLMirStmtLowerAppendInst(
+                        c, SLMirOp_LOCAL_STORE, 0, tupleTempSlot, s->start, s->end, NULL)
+                    != 0)
+                {
+                    return -1;
+                }
+                for (i = 0; i < lhsCount; i++) {
+                    if (SLMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tempSlots[i]) != 0) {
+                        return -1;
+                    }
+                    if (SLMirStmtLowerAppendInst(
+                            c, SLMirOp_LOCAL_LOAD, 0, tupleTempSlot, s->start, s->end, NULL)
+                            != 0
+                        || SLMirStmtLowerAppendIntConst(c, (int64_t)i, s->start, s->end) != 0
+                        || SLMirStmtLowerAppendInst(c, SLMirOp_INDEX, 0, 0, s->start, s->end, NULL)
+                               != 0
+                        || SLMirStmtLowerAppendInst(
+                               c, SLMirOp_LOCAL_STORE, 0, tempSlots[i], s->start, s->end, NULL)
+                               != 0)
+                    {
+                        return -1;
+                    }
+                }
+            }
+            for (i = 0; i < lhsCount; i++) {
+                int32_t          nameNode = SLMirStmtLowerAstListItemAt(c->ast, nameList, i);
+                const SLAstNode* name = nameNode >= 0 ? &c->ast->nodes[nameNode] : NULL;
+                uint32_t         targetSlot = UINT32_MAX;
+                if (name == NULL) {
+                    c->supported = 0;
+                    return 0;
+                }
+                if (isBlank[i]) {
+                    continue;
+                }
+                if (SLMirStmtLowerAppendInst(
+                        c, SLMirOp_LOCAL_LOAD, 0, tempSlots[i], s->start, s->end, NULL)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (isExisting[i]) {
+                    if (!existingMutable[i]) {
+                        c->supported = 0;
+                        return 0;
+                    }
+                    targetSlot = existingSlots[i];
+                } else if (
+                    SLMirStmtLowerPushLocal(
+                        c,
+                        name->dataStart,
+                        name->dataEnd,
+                        1,
+                        0,
+                        0,
+                        -1,
+                        rhsCount == lhsCount ? SLMirStmtLowerAstListItemAt(c->ast, rhsList, i)
+                                             : SLMirStmtLowerAstListItemAt(c->ast, rhsList, 0u),
+                        &targetSlot)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (SLMirStmtLowerAppendInst(
+                        c, SLMirOp_LOCAL_STORE, 0, targetSlot, s->start, s->end, NULL)
+                    != 0)
+                {
+                    return -1;
                 }
             }
             return 0;

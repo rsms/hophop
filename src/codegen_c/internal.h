@@ -1196,6 +1196,8 @@ int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int isConst)
 
 int EmitMultiAssignStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth);
 
+int EmitShortAssignStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth);
+
 int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth);
 
 int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth);

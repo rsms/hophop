@@ -2129,6 +2129,65 @@ static int SLPParseVarLikeStmt(
     return 0;
 }
 
+static int SLPIsShortAssignStart(SLParser* p) {
+    uint32_t i;
+    if (!SLPAt(p, SLTok_IDENT)) {
+        return 0;
+    }
+    i = p->pos + 1u;
+    while (
+        i + 1u < p->tokLen && p->tok[i].kind == SLTok_COMMA && p->tok[i + 1u].kind == SLTok_IDENT)
+    {
+        i += 2u;
+    }
+    return i < p->tokLen && p->tok[i].kind == SLTok_SHORT_ASSIGN;
+}
+
+static int SLPParseShortAssignStmt(SLParser* p, int requireSemi, int32_t* out) {
+    const SLToken* names[256];
+    const SLToken* firstHole = NULL;
+    const SLToken* semiTok = NULL;
+    uint32_t       nameCount = 0;
+    int32_t        nameList = -1;
+    int32_t        rhsList = -1;
+    int32_t        n;
+
+    if (SLPParseDeclNameList(
+            p, 1, names, (uint32_t)(sizeof(names) / sizeof(names[0])), &nameCount, &firstHole)
+        != 0)
+    {
+        return -1;
+    }
+    (void)firstHole;
+    if (SLPExpect(p, SLTok_SHORT_ASSIGN, SLDiag_UNEXPECTED_TOKEN, &semiTok) != 0) {
+        return -1;
+    }
+    if (SLPParseExprList(p, &rhsList) != 0) {
+        return -1;
+    }
+    if (SLPBuildNameListNode(p, names, nameCount, &nameList) != 0) {
+        return -1;
+    }
+    n = SLPNewNode(p, SLAst_SHORT_ASSIGN, p->nodes[nameList].start, p->nodes[rhsList].end);
+    if (n < 0) {
+        return -1;
+    }
+    if (SLPAddChild(p, n, nameList) != 0 || SLPAddChild(p, n, rhsList) != 0) {
+        return -1;
+    }
+    if (requireSemi) {
+        int hasSemi = SLPConsumeStmtTerminator(p, &semiTok);
+        if (hasSemi < 0) {
+            return -1;
+        }
+        if (hasSemi) {
+            p->nodes[n].end = semiTok->end;
+        }
+    }
+    *out = n;
+    return 0;
+}
+
 static int SLPParseIfStmt(SLParser* p, int32_t* out) {
     const SLToken* kw = SLPPeek(p);
     int32_t        n;
@@ -2349,6 +2408,10 @@ static int SLPParseForStmt(SLParser* p, int32_t* out) {
             p->pos++;
         } else if (SLPAt(p, SLTok_VAR)) {
             if (SLPParseVarLikeStmt(p, SLAst_VAR, 0, 1, &init) != 0) {
+                return -1;
+            }
+        } else if (SLPIsShortAssignStart(p)) {
+            if (SLPParseShortAssignStmt(p, 0, &init) != 0) {
                 return -1;
             }
         } else {
@@ -2827,6 +2890,9 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
         case SLTok_LBRACE: return SLPParseBlock(p, out);
         default:           {
             int hasSemi;
+            if (SLPIsShortAssignStart(p)) {
+                return SLPParseShortAssignStmt(p, 1, out);
+            }
             if (SLPParseExpr(p, 1, &expr) != 0) {
                 return -1;
             }
@@ -3603,6 +3669,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_DEL:               return "DEL";
         case SLAst_EXPR_STMT:         return "EXPR_STMT";
         case SLAst_MULTI_ASSIGN:      return "MULTI_ASSIGN";
+        case SLAst_SHORT_ASSIGN:      return "SHORT_ASSIGN";
         case SLAst_NAME_LIST:         return "NAME_LIST";
         case SLAst_EXPR_LIST:         return "EXPR_LIST";
         case SLAst_TUPLE_EXPR:        return "TUPLE_EXPR";

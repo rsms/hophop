@@ -10617,6 +10617,134 @@ int EmitMultiAssignStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     return BufAppendCStr(&c->out, "}\n");
 }
 
+int EmitShortAssignStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
+    int32_t   nameList = AstFirstChild(&c->ast, nodeId);
+    int32_t   rhsList = nameList >= 0 ? AstNextSibling(&c->ast, nameList) : -1;
+    uint32_t  nameCount;
+    uint32_t  rhsCount;
+    uint32_t  i;
+    uint32_t  tempId;
+    int32_t   existingLocal[256];
+    int32_t   nameNodes[256];
+    uint8_t   isBlank[256];
+    SLTypeRef rhsTypes[256];
+    if (nameList < 0 || rhsList < 0 || NodeAt(c, nameList) == NULL || NodeAt(c, rhsList) == NULL
+        || NodeAt(c, nameList)->kind != SLAst_NAME_LIST
+        || NodeAt(c, rhsList)->kind != SLAst_EXPR_LIST)
+    {
+        return -1;
+    }
+    nameCount = ListCount(&c->ast, nameList);
+    rhsCount = ListCount(&c->ast, rhsList);
+    if (nameCount == 0u || nameCount > 256u || (rhsCount != nameCount && rhsCount != 1u)) {
+        return -1;
+    }
+    tempId = ++c->fmtTempCounter;
+    if (tempId == 0u) {
+        tempId = ++c->fmtTempCounter;
+    }
+    for (i = 0; i < nameCount; i++) {
+        const SLAstNode* name;
+        nameNodes[i] = ListItemAt(&c->ast, nameList, i);
+        name = NodeAt(c, nameNodes[i]);
+        if (name == NULL || name->kind != SLAst_IDENT) {
+            return -1;
+        }
+        isBlank[i] = (uint8_t)SliceEqName(c->unit->source, name->dataStart, name->dataEnd, "_");
+        existingLocal[i] =
+            isBlank[i] ? -1 : FindLocalIndexBySlice(c, name->dataStart, name->dataEnd);
+    }
+
+    if (rhsCount == nameCount) {
+        for (i = 0; i < nameCount; i++) {
+            int32_t rhsNode = ListItemAt(&c->ast, rhsList, i);
+            if (rhsNode < 0 || InferExprType(c, rhsNode, &rhsTypes[i]) != 0 || !rhsTypes[i].valid) {
+                return -1;
+            }
+            EmitIndent(c, depth);
+            if (BufAppendCStr(&c->out, "__auto_type __sl_short_tmp") != 0
+                || BufAppendU32(&c->out, tempId) != 0 || BufAppendChar(&c->out, '_') != 0
+                || BufAppendU32(&c->out, i) != 0 || BufAppendCStr(&c->out, " = ") != 0
+                || EmitExprCoerced(c, rhsNode, &rhsTypes[i]) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+            if (existingLocal[i] < 0 && !isBlank[i]
+                && InferVarLikeDeclType(c, rhsNode, &rhsTypes[i]) != 0)
+            {
+                return -1;
+            }
+        }
+    } else {
+        int32_t               rhsNode = ListItemAt(&c->ast, rhsList, 0);
+        SLTypeRef             tupleType;
+        const SLAnonTypeInfo* tupleInfo = NULL;
+        if (rhsNode < 0 || InferExprType(c, rhsNode, &tupleType) != 0 || !tupleType.valid
+            || !TypeRefTupleInfo(c, &tupleType, &tupleInfo) || tupleInfo->fieldCount != nameCount)
+        {
+            return -1;
+        }
+        EmitIndent(c, depth);
+        if (BufAppendCStr(&c->out, "__auto_type __sl_short_tuple") != 0
+            || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " = ") != 0
+            || EmitExprCoerced(c, rhsNode, &tupleType) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
+        for (i = 0; i < nameCount; i++) {
+            const SLFieldInfo* f = &c->fieldInfos[tupleInfo->fieldStart + i];
+            rhsTypes[i] = f->type;
+            EmitIndent(c, depth);
+            if (BufAppendCStr(&c->out, "__auto_type __sl_short_tmp") != 0
+                || BufAppendU32(&c->out, tempId) != 0 || BufAppendChar(&c->out, '_') != 0
+                || BufAppendU32(&c->out, i) != 0
+                || BufAppendCStr(&c->out, " = __sl_short_tuple") != 0
+                || BufAppendU32(&c->out, tempId) != 0 || BufAppendChar(&c->out, '.') != 0
+                || BufAppendCStr(&c->out, f->fieldName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+        }
+    }
+
+    for (i = 0; i < nameCount; i++) {
+        const SLAstNode* name = NodeAt(c, nameNodes[i]);
+        char*            localName;
+        if (name == NULL) {
+            return -1;
+        }
+        if (isBlank[i]) {
+            continue;
+        }
+        if (existingLocal[i] >= 0) {
+            EmitIndent(c, depth);
+            if (AppendMappedIdentifier(c, name->dataStart, name->dataEnd) != 0
+                || BufAppendCStr(&c->out, " = __sl_short_tmp") != 0
+                || BufAppendU32(&c->out, tempId) != 0 || BufAppendChar(&c->out, '_') != 0
+                || BufAppendU32(&c->out, i) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+            continue;
+        }
+        localName = DupSlice(c, c->unit->source, name->dataStart, name->dataEnd);
+        if (localName == NULL || EnsureAnonTypeVisible(c, &rhsTypes[i], depth) != 0) {
+            return -1;
+        }
+        EmitIndent(c, depth);
+        if (EmitTypeRefWithName(c, &rhsTypes[i], localName) != 0
+            || BufAppendCStr(&c->out, " = __sl_short_tmp") != 0
+            || BufAppendU32(&c->out, tempId) != 0 || BufAppendChar(&c->out, '_') != 0
+            || BufAppendU32(&c->out, i) != 0 || BufAppendCStr(&c->out, ";\n") != 0
+            || AddLocal(c, localName, rhsTypes[i]) != 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     const SLAstNode* forNode = NodeAt(c, nodeId);
     int32_t          nodes[4];
@@ -11342,6 +11470,10 @@ int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
             if (EmitVarLikeStmt(c, init, depth + 1u, 1) != 0) {
                 return -1;
             }
+        } else if (NodeAt(c, init)->kind == SLAst_SHORT_ASSIGN) {
+            if (EmitShortAssignStmt(c, init, depth + 1u) != 0) {
+                return -1;
+            }
         } else {
             EmitIndent(c, depth + 1u);
             if (EmitExpr(c, init) != 0 || BufAppendCStr(&c->out, ";\n") != 0) {
@@ -11981,6 +12113,7 @@ int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         case SLAst_CONST:        return EmitVarLikeStmt(c, nodeId, depth, 1);
         case SLAst_CONST_BLOCK:  return 0;
         case SLAst_MULTI_ASSIGN: return EmitMultiAssignStmt(c, nodeId, depth);
+        case SLAst_SHORT_ASSIGN: return EmitShortAssignStmt(c, nodeId, depth);
         case SLAst_EXPR_STMT:    {
             int32_t expr = AstFirstChild(&c->ast, nodeId);
             if (ExprStmtAssignsContext(c, expr) && EnsureContextCow(c, depth) != 0) {

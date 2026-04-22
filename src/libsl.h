@@ -212,6 +212,7 @@ typedef enum {
     SLTok_COLON,
     SLTok_AT,
 
+    SLTok_SHORT_ASSIGN,
     SLTok_ASSIGN,
     SLTok_ADD,
     SLTok_SUB,
@@ -306,6 +307,7 @@ typedef enum {
     SLAst_DEL,
     SLAst_EXPR_STMT,
     SLAst_MULTI_ASSIGN,
+    SLAst_SHORT_ASSIGN,
     SLAst_NAME_LIST,
     SLAst_EXPR_LIST,
     SLAst_TUPLE_EXPR,

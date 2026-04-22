@@ -1,0 +1,1 @@
+tests/short_assign_top_level_bad.sl:2:1: error: SL1005: expected declaration

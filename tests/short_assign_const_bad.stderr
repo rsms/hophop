@@ -1,0 +1,1 @@
+tests/short_assign_const_bad.sl:4:2: error: SL2004: type mismatch: assignment target is const

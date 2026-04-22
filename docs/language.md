@@ -170,14 +170,15 @@ Block           = "{" [ StmtList ] "}" .
 StmtList        = Stmt { ";" Stmt } [ ";" ] .
 Stmt            = Block | VarDeclStmt | LocalConstDecl | IfStmt | ForStmt | SwitchStmt
                 | ReturnStmt | BreakStmt | ContinueStmt | DeferStmt | AssertStmt
-                | ConstBlockStmt | DelStmt | MultiAssignStmt | ExprStmt .
+                | ConstBlockStmt | DelStmt | ShortAssignStmt | MultiAssignStmt | ExprStmt .
 
 VarDeclStmt     = "var" DeclNameList ( Type [ "=" ExprList ] | "=" ExprList ) .
+ShortAssignStmt = DeclNameList ":=" ExprList .
 MultiAssignStmt = ExprList "=" ExprList .
 IfStmt          = "if" Expr Block [ "else" ( IfStmt | Block ) ] .
 ForStmt         = "for" ( Block | Expr Block | ForClause Block | ForInClause Block ) .
 ForClause       = [ ForInit ] ";" [ Expr ] ";" [ Expr ] .
-ForInit         = VarDeclStmt | Expr .
+ForInit         = VarDeclStmt | ShortAssignStmt | Expr .
 ForInClause     = ForInValueBinding "in" Expr
                 | ForInKeyBinding "," ForInValueBinding "in" Expr .
 ForInKeyBinding = [ "&" ] Ident .
@@ -425,6 +426,7 @@ fn f() {
 - [EXPR-ASSIGN-002][Stable] Compound assignment requires assignable LHS and numeric LHS type.
 - [EXPR-ASSIGN-003][Stable] Multi-assignment (`lhs1, lhs2, ... = rhs1, rhs2, ...`) requires equal arity, except a single tuple-typed RHS may be decomposed positionally. RHS expressions are evaluated before stores; then stores apply left-to-right.
 - [EXPR-ASSIGN-004][Provisional] Assigning to a `const` binding is invalid.
+- [EXPR-ASSIGN-005][Provisional] Short assignment (`name1, name2 := rhs1, rhs2`) is local statement syntax. Each non-blank name assigns to a visible local if one exists, otherwise it declares a new mutable local inferred like `var name = rhs`. `_` discards its RHS and never declares or resolves a local. Arity follows multi-assignment, including single tuple RHS decomposition, and RHS expressions are evaluated before assignments/declarations are applied left-to-right. Duplicate non-blank names in one short assignment are invalid.
 - [EXPR-CMP-001][Stable] Equality/ordering require coercion to a common comparable/ordered type, except optional-null and pointer/rawptr-vs-`null` equality special-cases.
 - [EXPR-CAST-001][Stable] `as` is explicit cast syntax.
 - [EXPR-CAST-002][Stable] A cast expression is well-typed only when source expression typing succeeds, target type resolution succeeds, and the cast pair is explicitly permitted.
