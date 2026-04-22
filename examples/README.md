@@ -49,6 +49,9 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/slc check examples/type_functions.sl`
 - Variadic functions (`...` params, forwarding, fixed+variadic calls): `examples/variadic.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/variadic.sl`
+- Named arguments (labels, shorthand, reordering, underscore positional prefix):
+  `examples/named_arguments.sl`
+  - Check: `./_build/macos-aarch64-debug/slc check examples/named_arguments.sl`
 - `anytype` and `...anytype` (duck-typed field access, `typeof` specialization, const pack checks):
   `examples/anytype.sl`
   - Check: `./_build/macos-aarch64-debug/slc check examples/anytype.sl`

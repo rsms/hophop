@@ -653,6 +653,7 @@
 {"id":"integration.examples.slp2_refs_slices.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/slp2_refs_slices.sl"}
 {"id":"integration.examples.struct_composition.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/struct_composition.sl"}
 {"id":"integration.examples.type_functions.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/type_functions.sl"}
+{"id":"integration.examples.named_arguments.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/named_arguments.sl"}
 {"id":"integration.examples.type_alias.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/type_alias.sl"}
 {"id":"integration.examples.function_groups.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/function_groups.sl"}
 {"id":"integration.examples.multi_assign.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/multi-assign.sl"}
@@ -817,6 +818,7 @@
 {"id":"coverage.cli_eval.examples.hello.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/hello.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"expect_stdout":"tests/examples_hello.stdout","eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.iterators.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/iterators.sl","platform":"cli-eval","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"coverage.cli_eval.examples.multi_assign.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/multi-assign.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
+{"id":"coverage.cli_eval.examples.named_arguments.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/named_arguments.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.optional.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/optional.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.order_independent.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/order_independent.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
 {"id":"coverage.cli_eval.examples.pointers_arrays.slc_run","suite":"coverage.cli_eval.examples","kind":"slc_run","input":"examples/pointers_arrays.sl","platform":"cli-libc","expect_exit":0,"stdout_empty":false,"stderr_empty":true,"eval_expect":"pass"}
@@ -838,6 +840,10 @@
 {"id":"check:tests/named_args_reorder_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/named_args_reorder_ok.sl"}
 {"id":"integration.runtime.named_args_reorder_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/named_args_reorder_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"check:tests/named_args_missing_name_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/named_args_missing_name_bad.sl","expect_stderr":"tests/named_args_missing_name_bad.stderr"}
+{"id":"check:tests/named_args_underscore_prefix_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/named_args_underscore_prefix_ok.sl"}
+{"id":"integration.runtime.named_args_underscore_prefix_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/named_args_underscore_prefix_ok.sl","expect_exit":0,"eval_expect":"pass"}
+{"id":"check:tests/named_args_underscore_prefix_gap_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/named_args_underscore_prefix_gap_bad.sl","expect_stderr":"tests/named_args_underscore_prefix_gap_bad.stderr"}
+{"id":"check:tests/named_args_underscore_prefix_after_named_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/named_args_underscore_prefix_after_named_bad.sl","expect_stderr":"tests/named_args_underscore_prefix_after_named_bad.stderr"}
 {"id":"check:tests/compound_literal_field_shorthand_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/compound_literal_field_shorthand_ok.sl"}
 {"id":"integration.runtime.compound_literal_field_shorthand_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/compound_literal_field_shorthand_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"check:tests/compound_literal_field_shorthand_invalid_name_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/compound_literal_field_shorthand_invalid_name_bad.sl","expect_stderr":"tests/compound_literal_field_shorthand_invalid_name_bad.stderr"}

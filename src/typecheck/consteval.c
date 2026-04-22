@@ -6348,6 +6348,8 @@ static int SLTCInvokeConstFunctionByIndex(
     const void*        savedCallBinding;
     uint32_t           savedCallPackParamNameStart;
     uint32_t           savedCallPackParamNameEnd;
+    const SLCTFEValue* invokeArgs = args;
+    SLCTFEValue        reorderedArgs[SLTC_MAX_CALL_ARGS];
     uint32_t           savedDepth;
     SLCTFEValue        retValue;
     int                didReturn = 0;
@@ -6412,6 +6414,31 @@ static int SLTCInvokeConstFunctionByIndex(
         *outIsConst = 0;
         return 0;
     }
+    if (argCount > 0 && args == NULL) {
+        return -1;
+    }
+    if (callBinding != NULL && argCount > 0) {
+        uint8_t  assigned[SLTC_MAX_CALL_ARGS];
+        uint32_t i;
+        if (argCount > SLTC_MAX_CALL_ARGS || callBinding->fixedCount != argCount
+            || callBinding->fixedInputCount != argCount
+            || callBinding->spreadArgIndex != UINT32_MAX)
+        {
+            return -1;
+        }
+        memset(assigned, 0, sizeof(assigned));
+        for (i = 0; i < argCount; i++) {
+            int32_t paramIndex = callBinding->argParamIndices[i];
+            if (paramIndex < 0 || (uint32_t)paramIndex >= argCount
+                || assigned[(uint32_t)paramIndex])
+            {
+                return -1;
+            }
+            reorderedArgs[(uint32_t)paramIndex] = args[i];
+            assigned[(uint32_t)paramIndex] = 1;
+        }
+        invokeArgs = reorderedArgs;
+    }
 
     if (argCount > 0) {
         paramBindings = (SLCTFEExecBinding*)SLArenaAlloc(
@@ -6446,39 +6473,43 @@ static int SLTCInvokeConstFunctionByIndex(
             paramBindings[paramCount]._reserved[2] = 0;
             if (c->types[paramTypeId].kind == SLTCType_OPTIONAL) {
                 SLCTFEValue wrapped;
-                if (args[paramCount].kind == SLCTFEValue_OPTIONAL) {
-                    if (args[paramCount].typeTag > 0
-                        && args[paramCount].typeTag <= (uint64_t)INT32_MAX
-                        && (uint32_t)args[paramCount].typeTag < c->typeLen
-                        && (int32_t)args[paramCount].typeTag == paramTypeId)
+                if (invokeArgs[paramCount].kind == SLCTFEValue_OPTIONAL) {
+                    if (invokeArgs[paramCount].typeTag > 0
+                        && invokeArgs[paramCount].typeTag <= (uint64_t)INT32_MAX
+                        && (uint32_t)invokeArgs[paramCount].typeTag < c->typeLen
+                        && (int32_t)invokeArgs[paramCount].typeTag == paramTypeId)
                     {
-                        wrapped = args[paramCount];
-                    } else if (args[paramCount].b == 0u) {
+                        wrapped = invokeArgs[paramCount];
+                    } else if (invokeArgs[paramCount].b == 0u) {
                         if (SLTCConstEvalSetOptionalNoneValue(c, paramTypeId, &wrapped) != 0) {
                             return -1;
                         }
-                    } else if (args[paramCount].s.bytes == NULL) {
+                    } else if (invokeArgs[paramCount].s.bytes == NULL) {
                         return -1;
                     } else if (
                         SLTCConstEvalSetOptionalSomeValue(
-                            c, paramTypeId, (const SLCTFEValue*)args[paramCount].s.bytes, &wrapped)
+                            c,
+                            paramTypeId,
+                            (const SLCTFEValue*)invokeArgs[paramCount].s.bytes,
+                            &wrapped)
                         != 0)
                     {
                         return -1;
                     }
-                } else if (args[paramCount].kind == SLCTFEValue_NULL) {
+                } else if (invokeArgs[paramCount].kind == SLCTFEValue_NULL) {
                     if (SLTCConstEvalSetOptionalNoneValue(c, paramTypeId, &wrapped) != 0) {
                         return -1;
                     }
                 } else if (
-                    SLTCConstEvalSetOptionalSomeValue(c, paramTypeId, &args[paramCount], &wrapped)
+                    SLTCConstEvalSetOptionalSomeValue(
+                        c, paramTypeId, &invokeArgs[paramCount], &wrapped)
                     != 0)
                 {
                     return -1;
                 }
                 paramBindings[paramCount].value = wrapped;
             } else {
-                paramBindings[paramCount].value = args[paramCount];
+                paramBindings[paramCount].value = invokeArgs[paramCount];
             }
             paramCount++;
         }
@@ -6551,7 +6582,7 @@ static int SLTCInvokeConstFunctionByIndex(
     }
 
     rc = SLTCTryMirConstCall(
-        evalCtx, fnIndex, args, argCount, &retValue, &didReturn, &isConst, &mirSupported);
+        evalCtx, fnIndex, invokeArgs, argCount, &retValue, &didReturn, &isConst, &mirSupported);
     evalCtx->fnDepth = savedDepth;
     evalCtx->execCtx = savedExecCtx;
     evalCtx->callArgs = savedCallArgs;

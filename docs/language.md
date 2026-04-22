@@ -506,6 +506,7 @@ fn f() {
   - fixed-only: `f(a1, ..., an)` (empty variadic tail)
   - explicit tail: `f(a1, ..., an, e1, ..., ek)` where each `ei` is assignable to `T`
   - spread tail: `f(a1, ..., an, s...)` where `s` is assignable to `[T]`
+- [EXPR-SUGAR-010A][Provisional] For fixed parameters, positional arguments are allowed through the initial positional prefix: the first positional argument, plus following parameters whose names start with `_`. After the first later parameter whose name does not start with `_`, remaining fixed arguments MUST be named. Variadic-tail arguments are governed by the variadic rules below.
 - [EXPR-SUGAR-011][Provisional] Spread marker `...` is valid only on the final call argument.
 - [EXPR-SUGAR-012][Provisional] In spread form, the spread argument MUST be unlabeled and the call MUST provide exactly one spread argument for the variadic tail.
 - [EXPR-SUGAR-013][Provisional] In explicit-tail form, variadic-tail arguments are positional only; explicit named arguments are not allowed in the variadic tail.

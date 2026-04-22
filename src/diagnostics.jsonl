@@ -121,6 +121,7 @@
 {"id": "SL2097", "name": "LOCAL_PTR_REF_UNINIT", "category": "semantic", "message": "pointer/reference variable '{s}' is not initialized"}
 {"id": "SL2098", "name": "LOCAL_PTR_REF_MAYBE_UNINIT", "category": "semantic", "message": "pointer/reference variable '{s}' may be uninitialized"}
 {"id": "SL2099", "name": "TOPLEVEL_PTR_REF_INIT_REQUIRED", "category": "semantic", "message": "top-level pointer/reference variable '{s}' requires initializer"}
+{"id": "SL2100", "name": "CALL_ARG_NAME_REQUIRED_AFTER_PARAM", "category": "semantic", "message": "call argument must be named after parameter '{s}' is reached"}
 {"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "SL3002", "name": "WASM_BACKEND_UNSUPPORTED_MIR", "category": "codegen", "message": "Wasm backend does not support this MIR"}
 {"id": "SL3003", "name": "WASM_BACKEND_UNSUPPORTED_HOSTCALL", "category": "codegen", "message": "Wasm backend does not support this hostcall"}

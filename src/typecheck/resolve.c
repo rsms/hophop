@@ -2758,6 +2758,40 @@ void SLTCCallMapErrorClear(SLTCCallMapError* err) {
     err->argEnd = 0;
 }
 
+static int SLTCParamNameStartsWithUnderscore(
+    SLTypeCheckCtx* c,
+    const uint32_t* paramNameStarts,
+    const uint32_t* paramNameEnds,
+    uint32_t        paramIndex) {
+    uint32_t start;
+    uint32_t end;
+    if (c == NULL || c->src.ptr == NULL || paramNameStarts == NULL || paramNameEnds == NULL) {
+        return 0;
+    }
+    start = paramNameStarts[paramIndex];
+    end = paramNameEnds[paramIndex];
+    return end > start && c->src.ptr[start] == '_';
+}
+
+static uint32_t SLTCPositionalCallPrefixEnd(
+    SLTypeCheckCtx* c,
+    const uint32_t* paramNameStarts,
+    const uint32_t* paramNameEnds,
+    uint32_t        paramCount,
+    uint32_t        firstPositionalArgIndex) {
+    uint32_t prefixEnd;
+    if (firstPositionalArgIndex >= paramCount) {
+        return paramCount;
+    }
+    prefixEnd = firstPositionalArgIndex + 1u;
+    while (prefixEnd < paramCount
+           && SLTCParamNameStartsWithUnderscore(c, paramNameStarts, paramNameEnds, prefixEnd))
+    {
+        prefixEnd++;
+    }
+    return prefixEnd;
+}
+
 int SLTCMapCallArgsToParams(
     SLTypeCheckCtx*        c,
     const SLTCCallArgInfo* callArgs,
@@ -2769,6 +2803,7 @@ int SLTCMapCallArgsToParams(
     int32_t*               outMappedArgExprNodes,
     SLTCCallMapError* _Nullable outError) {
     uint8_t  paramAssigned[SLTC_MAX_CALL_ARGS];
+    uint32_t positionalPrefixEnd;
     uint32_t i;
     if (paramCount > SLTC_MAX_CALL_ARGS || argCount > paramCount) {
         return -1;
@@ -2777,6 +2812,8 @@ int SLTCMapCallArgsToParams(
     for (i = 0; i < paramCount; i++) {
         outMappedArgExprNodes[i] = -1;
     }
+    positionalPrefixEnd = SLTCPositionalCallPrefixEnd(
+        c, paramNameStarts, paramNameEnds, paramCount, firstPositionalArgIndex);
 
     if (firstPositionalArgIndex < argCount) {
         const SLTCCallArgInfo* a = &callArgs[firstPositionalArgIndex];
@@ -2819,6 +2856,10 @@ int SLTCMapCallArgsToParams(
             nameStart = a->explicitNameStart;
             nameEnd = a->explicitNameEnd;
             foundName = 1;
+        } else if (i < positionalPrefixEnd) {
+            outMappedArgExprNodes[i] = a->exprNode;
+            paramAssigned[i] = 1;
+            continue;
         } else if (a->implicitNameEnd > a->implicitNameStart) {
             nameStart = a->implicitNameStart;
             nameEnd = a->implicitNameEnd;
@@ -2826,11 +2867,21 @@ int SLTCMapCallArgsToParams(
         }
         if (!foundName) {
             if (outError != NULL) {
-                outError->code = SLDiag_CALL_ARG_NAME_REQUIRED;
                 outError->start = a->start;
                 outError->end = a->end;
-                outError->argStart = 0;
-                outError->argEnd = 0;
+                if (positionalPrefixEnd == firstPositionalArgIndex + 1u) {
+                    outError->code = SLDiag_CALL_ARG_NAME_REQUIRED;
+                    outError->argStart = 0;
+                    outError->argEnd = 0;
+                } else if (positionalPrefixEnd < paramCount) {
+                    outError->code = SLDiag_CALL_ARG_NAME_REQUIRED_AFTER_PARAM;
+                    outError->argStart = paramNameStarts[positionalPrefixEnd];
+                    outError->argEnd = paramNameEnds[positionalPrefixEnd];
+                } else {
+                    outError->code = SLDiag_CALL_ARG_NAME_REQUIRED_AFTER_PARAM;
+                    outError->argStart = 0;
+                    outError->argEnd = 0;
+                }
             }
             return 1;
         }

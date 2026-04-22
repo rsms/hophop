@@ -5652,6 +5652,37 @@ static int SLEvalExprIsAnytypePackIndex(SLEvalProgram* p, const SLAst* ast, int3
     return bindingValue->kind == SLCTFEValue_ARRAY;
 }
 
+static int SLEvalParamNameStartsWithUnderscore(
+    const char* source, const uint32_t* starts, const uint32_t* ends, uint32_t index) {
+    uint32_t start;
+    uint32_t end;
+    if (source == NULL || starts == NULL || ends == NULL) {
+        return 0;
+    }
+    start = starts[index];
+    end = ends[index];
+    return end > start && source[start] == '_';
+}
+
+static uint32_t SLEvalPositionalCallPrefixEnd(
+    const char*     source,
+    const uint32_t* paramNameStarts,
+    const uint32_t* paramNameEnds,
+    uint32_t        argCount) {
+    uint32_t prefixEnd;
+    if (argCount == 0) {
+        return 0;
+    }
+    prefixEnd = 1u;
+    while (
+        prefixEnd < argCount
+        && SLEvalParamNameStartsWithUnderscore(source, paramNameStarts, paramNameEnds, prefixEnd))
+    {
+        prefixEnd++;
+    }
+    return prefixEnd;
+}
+
 static int SLEvalReorderFixedCallArgsByName(
     SLEvalProgram*        p,
     const SLEvalFunction* fn,
@@ -5664,6 +5695,7 @@ static int SLEvalReorderFixedCallArgsByName(
     uint32_t     argNameEnds[256];
     uint32_t     paramNameStarts[256];
     uint32_t     paramNameEnds[256];
+    uint8_t      argExplicitName[256];
     uint8_t      paramAssigned[256];
     SLCTFEValue  reorderedArgs[256];
     const SLAst* fnAst;
@@ -5671,6 +5703,7 @@ static int SLEvalReorderFixedCallArgsByName(
     int32_t      child;
     int32_t      argNode;
     uint32_t     i = 0;
+    uint32_t     positionalPrefixEnd;
     int          reordered = 0;
 
     if (p == NULL || fn == NULL || callAst == NULL || args == NULL || fn->file == NULL) {
@@ -5688,6 +5721,7 @@ static int SLEvalReorderFixedCallArgsByName(
 
     memset(argNameStarts, 0, sizeof(argNameStarts));
     memset(argNameEnds, 0, sizeof(argNameEnds));
+    memset(argExplicitName, 0, sizeof(argExplicitName));
     argNode = firstArgNode;
     while (argNode >= 0) {
         const SLAstNode* arg = &callAst->nodes[argNode];
@@ -5703,12 +5737,13 @@ static int SLEvalReorderFixedCallArgsByName(
             if (arg->dataEnd > arg->dataStart) {
                 argNameStarts[i] = arg->dataStart;
                 argNameEnds[i] = arg->dataEnd;
+                argExplicitName[i] = 1u;
             }
         }
         if (exprNode < 0 || (uint32_t)exprNode >= callAst->len) {
             return 0;
         }
-        if (argNameEnds[i] <= argNameStarts[i] && callAst->nodes[exprNode].kind == SLAst_IDENT) {
+        if (!argExplicitName[i] && callAst->nodes[exprNode].kind == SLAst_IDENT) {
             SLCTFEValue ignoredTypeValue;
             if (SLEvalResolveTypeValueName(
                     p,
@@ -5721,9 +5756,6 @@ static int SLEvalReorderFixedCallArgsByName(
                 argNameStarts[i] = callAst->nodes[exprNode].dataStart;
                 argNameEnds[i] = callAst->nodes[exprNode].dataEnd;
             }
-        }
-        if (argNameEnds[i] <= argNameStarts[i]) {
-            return 0;
         }
         i++;
         argNode = ASTNextSibling(callAst, argNode);
@@ -5762,23 +5794,35 @@ static int SLEvalReorderFixedCallArgsByName(
         return 0;
     }
 
+    positionalPrefixEnd = SLEvalPositionalCallPrefixEnd(
+        fn->file->source, paramNameStarts, paramNameEnds, argCount);
     for (i = 0; i < argCount; i++) {
         uint32_t j;
         uint32_t matchIndex = UINT32_MAX;
-        for (j = 0; j < argCount; j++) {
-            if (paramAssigned[j]) {
-                continue;
+        if (!argExplicitName[i] && i < positionalPrefixEnd) {
+            matchIndex = i;
+            if (paramAssigned[matchIndex]) {
+                return 0;
             }
-            if (SliceEqSlice(
-                    callSource,
-                    argNameStarts[i],
-                    argNameEnds[i],
-                    fn->file->source,
-                    paramNameStarts[j],
-                    paramNameEnds[j]))
-            {
-                matchIndex = j;
-                break;
+        } else {
+            if (argNameEnds[i] <= argNameStarts[i]) {
+                return 0;
+            }
+            for (j = 0; j < argCount; j++) {
+                if (paramAssigned[j]) {
+                    continue;
+                }
+                if (SliceEqSlice(
+                        callSource,
+                        argNameStarts[i],
+                        argNameEnds[i],
+                        fn->file->source,
+                        paramNameStarts[j],
+                        paramNameEnds[j]))
+                {
+                    matchIndex = j;
+                    break;
+                }
             }
         }
         if (matchIndex == UINT32_MAX) {

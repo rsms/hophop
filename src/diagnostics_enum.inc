@@ -142,12 +142,14 @@ SLDiag_NONE = 0, SLDiag_UNEXPECTED_CHAR, /* SL1001: unexpected character */
     SLDiag_UNUSED_PARAMETER,            /* SL2095: parameter '{s}' is unused */
     SLDiag_UNUSED_PARAMETER_NEVER_READ, /* SL2096: parameter '{s}' is never read */
     SLDiag_LOCAL_PTR_REF_UNINIT, /* SL2097: pointer/reference variable '{s}' is not initialized */
-    SLDiag_LOCAL_PTR_REF_MAYBE_UNINIT,        /* SL2098: pointer/reference variable '{s}' may be
-                                                 uninitialized */
-    SLDiag_TOPLEVEL_PTR_REF_INIT_REQUIRED,    /* SL2099: top-level pointer/reference variable '{s}'
-                                                 requires initializer */
-    SLDiag_CODEGEN_INTERNAL,                  /* SL3001: internal codegen error */
-    SLDiag_WASM_BACKEND_UNSUPPORTED_MIR,      /* SL3002: Wasm backend does not support this MIR */
+    SLDiag_LOCAL_PTR_REF_MAYBE_UNINIT,         /* SL2098: pointer/reference variable '{s}' may be
+                                                  uninitialized */
+    SLDiag_TOPLEVEL_PTR_REF_INIT_REQUIRED,     /* SL2099: top-level pointer/reference variable '{s}'
+                                                  requires initializer */
+    SLDiag_CALL_ARG_NAME_REQUIRED_AFTER_PARAM, /* SL2100: call argument must be named after
+                                                  parameter '{s}' is reached */
+    SLDiag_CODEGEN_INTERNAL,                   /* SL3001: internal codegen error */
+    SLDiag_WASM_BACKEND_UNSUPPORTED_MIR,       /* SL3002: Wasm backend does not support this MIR */
     SLDiag_WASM_BACKEND_UNSUPPORTED_HOSTCALL, /* SL3003: Wasm backend does not support this hostcall
                                                */
     SLDiag_WASM_BACKEND_PLATFORM_REQUIRED,    /* SL3004: Wasm backend requires a platform target for

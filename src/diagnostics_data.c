@@ -523,6 +523,12 @@ static const SLDiagInfo g_slDiagInfo[SLDiag__COUNT] = {
                                                 NULL,
                                                 SLDiagType_ERROR,
                                                 1 },
+    [SLDiag_CALL_ARG_NAME_REQUIRED_AFTER_PARAM] = { "SL2100",
+                                                    "call argument must be named after parameter "
+                                                    "'%s' is reached",
+                                                    NULL,
+                                                    SLDiagType_ERROR,
+                                                    1 },
     [SLDiag_CODEGEN_INTERNAL] = { "SL3001", "internal codegen error", NULL, SLDiagType_ERROR, 0 },
     [SLDiag_WASM_BACKEND_UNSUPPORTED_MIR] = { "SL3002",
                                               "Wasm backend does not support this MIR",

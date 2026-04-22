@@ -1044,6 +1044,28 @@ static void BindPositionalTemplateInstanceFallback(
     }
 }
 
+static int CGParamNameStartsWithUnderscore(const SLFnSig* sig, uint32_t paramIndex) {
+    const char* pn;
+    if (sig == NULL || sig->paramNames == NULL || paramIndex >= sig->paramLen) {
+        return 0;
+    }
+    pn = sig->paramNames[paramIndex];
+    return pn != NULL && pn[0] == '_';
+}
+
+static uint32_t CGPositionalCallPrefixEnd(
+    const SLFnSig* sig, uint32_t paramCount, uint32_t firstPositionalArgIndex) {
+    uint32_t prefixEnd;
+    if (sig == NULL || firstPositionalArgIndex >= paramCount) {
+        return paramCount;
+    }
+    prefixEnd = firstPositionalArgIndex + 1u;
+    while (prefixEnd < paramCount && CGParamNameStartsWithUnderscore(sig, prefixEnd)) {
+        prefixEnd++;
+    }
+    return prefixEnd;
+}
+
 int MapCallArgsToParams(
     const SLCBackendC*    c,
     const SLFnSig*        sig,
@@ -1054,6 +1076,7 @@ int MapCallArgsToParams(
     SLTypeRef*            outMappedArgTypes,
     const SLTypeRef*      argTypes) {
     uint8_t  assigned[SLCCG_MAX_CALL_ARGS];
+    uint32_t positionalPrefixEnd;
     uint32_t i;
     if (argCount > sig->paramLen || argCount > SLCCG_MAX_CALL_ARGS) {
         return -1;
@@ -1063,6 +1086,7 @@ int MapCallArgsToParams(
         outMappedArgNodes[i] = -1;
         TypeRefSetInvalid(&outMappedArgTypes[i]);
     }
+    positionalPrefixEnd = CGPositionalCallPrefixEnd(sig, argCount, firstPositionalArgIndex);
     if (firstPositionalArgIndex < argCount) {
         outMappedArgNodes[firstPositionalArgIndex] = callArgs[firstPositionalArgIndex].exprNode;
         outMappedArgTypes[firstPositionalArgIndex] = argTypes[firstPositionalArgIndex];
@@ -1085,6 +1109,11 @@ int MapCallArgsToParams(
         if (a->explicitNameEnd > a->explicitNameStart) {
             nameStart = a->explicitNameStart;
             nameEnd = a->explicitNameEnd;
+        } else if (i < positionalPrefixEnd) {
+            outMappedArgNodes[i] = a->exprNode;
+            outMappedArgTypes[i] = argTypes[i];
+            assigned[i] = 1;
+            continue;
         } else if (a->implicitNameEnd > a->implicitNameStart) {
             nameStart = a->implicitNameStart;
             nameEnd = a->implicitNameEnd;
