@@ -1,5 +1,5 @@
 // Verifies new selector non-optional panics.
-import "std/testing" { FailingAllocator }
+import "testing" { FailingAllocator }
 
 fn main() {
 	var ma            = FailingAllocator{}

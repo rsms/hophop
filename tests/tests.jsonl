@@ -309,6 +309,7 @@
 {"id":"checkpkg:tests/import_invalid_path_whitespace.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/import_invalid_path_whitespace.sl","expect_stderr":"tests/import_invalid_path_whitespace.stderr"}
 {"id":"checkpkg:tests/import_infer_name_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/import_infer_name_bad.sl","expect_stderr":"tests/import_infer_name_bad.stderr"}
 {"id":"checkpkg:tests/import_builtin_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/import_builtin_ok.sl"}
+{"id":"checkpkg:tests/import_std_testing_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/import_std_testing_bad.sl","expect_stderr":"tests/import_std_testing_bad.stderr"}
 {"id":"checkpkg:tests/import_core_renamed_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_no_stdout","mode":"checkpkg","input":"tests/import_core_renamed_bad.sl"}
 {"id":"checkpkg:tests/pkg_bad_symbol/app","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/pkg_bad_symbol/app","expect_stderr":"tests/pkg_bad_symbol.stderr"}
 {"id":"checkpkg:tests/pkg_cycle/a","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"checkpkg","input":"tests/pkg_cycle/a","expect_stderr":"tests/pkg_cycle.stderr"}

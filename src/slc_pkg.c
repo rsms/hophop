@@ -2565,7 +2565,7 @@ static char* _Nullable ResolveLibImportDirInRoot(const char* rootDir, const char
 static int IsLibImportPath(const char* importPath) {
     return StrEq(importPath, "builtin") || StrEq(importPath, "reflect") || StrEq(importPath, "mem")
         || StrEq(importPath, "platform") || StrEq(importPath, "compiler")
-        || StrEq(importPath, "playbit") || StrEq(importPath, "str")
+        || StrEq(importPath, "playbit") || StrEq(importPath, "str") || StrEq(importPath, "testing")
         || strncmp(importPath, "builtin/", 8u) == 0 || strncmp(importPath, "reflect/", 8u) == 0
         || strncmp(importPath, "mem/", 4u) == 0 || strncmp(importPath, "compiler/", 9u) == 0
         || strncmp(importPath, "playbit/", 8u) == 0 || strncmp(importPath, "std/", 4u) == 0

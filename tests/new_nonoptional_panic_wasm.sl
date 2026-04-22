@@ -1,5 +1,5 @@
 // Verifies Wasm new non-optional panics on allocation failure.
-import "std/testing" { FailingAllocator }
+import "testing" { FailingAllocator }
 
 fn main() {
 	var ma            = FailingAllocator{}

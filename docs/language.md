@@ -744,7 +744,7 @@ fn f() {
 - [PKG-IMPORT-010][Stable] Primary resolution base is loader root:
   - directory package mode: parent directory of entry package directory
   - single-file package mode: directory containing the entry `.sl` file
-- [PKG-IMPORT-011][Stable] For recognized library import paths (`builtin`, `reflect`, `compiler`, `mem`, `platform`, `std/*`, `platform/*`), resolver order is:
+- [PKG-IMPORT-011][Stable] For recognized library import paths (`builtin`, `reflect`, `compiler`, `mem`, `platform`, `testing`, `std/*`, `platform/*`), resolver order is:
   1. try `<loader_root>/<importPath>` first
   2. if that path is not an existing directory, search `<ancestor>/lib/<importPath>` from importing package directory upward to filesystem root and select the nearest match
   3. if still unresolved, search `<ancestor>/lib/<importPath>` from `dirname(executable_path)` upward to filesystem root and select the nearest match
