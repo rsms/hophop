@@ -1,17 +1,21 @@
-// consteval diagnostics from pure SL code
+// Verifies const-eval const block call source_location_of is accepted.
 import "builtin"
 import "compiler"
 
 fn require_non_zero(const value i64, const location builtin.SourceLocation) i64 {
-	if value == 0 {
-		compiler.error_at(location, "value must be non-zero")
+	const {
+		if value == 0 {
+			compiler.error_at(location, "value must be non-zero")
+		}
 	}
 	return value
 }
 
 fn warn_if_small(const value i64, const location builtin.SourceLocation) {
-	if value < 16 {
-		compiler.warn_at(location, "value is unusually small")
+	const {
+		if value < 16 {
+			compiler.warn_at(location, "value is unusually small")
+		}
 	}
 }
 
@@ -23,8 +27,6 @@ fn checked_buffer_size() i64 {
 	return require_non_zero(candidate, location: builtin.source_location_of(BUFFER_SIZE))
 }
 
-// Uncomment to see a compile-time error anchored to BAD_BUFFER_SIZE.
-// const BAD_BUFFER_SIZE i64 = require_non_zero(0 as i64, location: builtin.source_location_of(BAD_BUFFER_SIZE))
 fn main() {
 	assert BUFFER_SIZE == 64
 }

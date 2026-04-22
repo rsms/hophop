@@ -282,7 +282,7 @@ typedef struct {
     int32_t typeMemAllocator;
     int32_t typeUsize;
     int32_t typeRawptr;
-    int32_t typeReflectSpan;
+    int32_t typeSourceLocation;
     int32_t typeFmtValue;
     int32_t typeUntypedInt;
     int32_t typeUntypedFloat;
@@ -725,10 +725,10 @@ int32_t SLTCFindReflectKindType(SLTypeCheckCtx* c);
 int     SLTCNameEqLiteralOrPkgBuiltin(
     SLTypeCheckCtx* c, uint32_t start, uint32_t end, const char* name, const char* pkgPrefix);
 SLTCCompilerDiagOp SLTCCompilerDiagOpFromName(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
-int                SLTCIsSpanOfName(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
-int32_t            SLTCFindReflectSpanType(SLTypeCheckCtx* c);
+int                SLTCIsSourceLocationOfName(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
+int32_t            SLTCFindSourceLocationType(SLTypeCheckCtx* c);
 int32_t            SLTCFindFmtValueType(SLTypeCheckCtx* c);
-int                SLTCTypeIsReflectSpan(SLTypeCheckCtx* c, int32_t typeId);
+int                SLTCTypeIsSourceLocation(SLTypeCheckCtx* c, int32_t typeId);
 int                SLTCTypeIsFmtValue(SLTypeCheckCtx* c, int32_t typeId);
 int32_t            SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t            SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
@@ -851,21 +851,19 @@ int SLTCResolveReflectedTypeValueExpr(SLTypeCheckCtx* c, int32_t exprNode, int32
 int SLTCConstEvalTypeNameValue(
     SLTypeCheckCtx* c, int32_t typeId, SLCTFEValue* outValue, int* outIsConst);
 void SLTCConstEvalSetNullValue(SLCTFEValue* outValue);
-void SLTCConstEvalSetSpanFromOffsets(
+void SLTCConstEvalSetSourceLocationFromOffsets(
     SLTypeCheckCtx* c, uint32_t startOffset, uint32_t endOffset, SLCTFEValue* outValue);
-int SLTCConstEvalSpanOfCall(
+int SLTCConstEvalSourceLocationOfCall(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
 int SLTCConstEvalU32Arg(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outValue, int* outIsConst);
-int SLTCConstEvalPosCompound(
-    SLTCConstEvalCtx* evalCtx, int32_t nodeId, uint32_t* ioLine, uint32_t* ioColumn);
-int SLTCConstEvalSpanCompound(
+int SLTCConstEvalSourceLocationCompound(
     SLTCConstEvalCtx* evalCtx,
     int32_t           exprNode,
-    int               forceSpan,
+    int               forceSourceLocation,
     SLCTFEValue*      outValue,
     int*              outIsConst);
-int SLTCConstEvalSpanExpr(
+int SLTCConstEvalSourceLocationExpr(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFESpan* outSpan, int* outIsConst);
 int SLTCConstEvalCompilerDiagCall(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
@@ -1322,7 +1320,7 @@ int  SLTCTypeExpr_COMPOUND_LIT(
 int SLTCTypeExpr_CALL_WITH_CONTEXT(
     SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
 int SLTCTypeExpr_NEW(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int32_t* outType);
-int SLTCTypeSpanOfCall(
+int SLTCTypeSourceLocationOfCall(
     SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* callee, int32_t* outType);
 int SLTCTypeCompilerDiagCall(
     SLTypeCheckCtx*    c,

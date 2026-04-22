@@ -148,7 +148,7 @@ static int SLMirCallUsesLazyBuiltinLowering(const SLMirBuilder* b, int32_t callN
     }
     if (callee->kind == SLAst_IDENT) {
         return SLMirNameEqLiteralOrPkgBuiltin(
-                   b->src, callee->dataStart, callee->dataEnd, "span_of", "reflect")
+                   b->src, callee->dataStart, callee->dataEnd, "source_location_of", "builtin")
             || SLMirNameIsCompilerDiagBuiltin(b->src, callee->dataStart, callee->dataEnd)
             || SLMirNameIsLazyTypeBuiltin(b->src, callee->dataStart, callee->dataEnd);
     }
@@ -162,9 +162,14 @@ static int SLMirCallUsesLazyBuiltinLowering(const SLMirBuilder* b, int32_t callN
         return 0;
     }
     if (SLMirNameEqLiteral(
+            b->src, b->ast->nodes[recvNode].dataStart, b->ast->nodes[recvNode].dataEnd, "builtin")
+        && SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "source_location_of"))
+    {
+        return 1;
+    }
+    if (SLMirNameEqLiteral(
             b->src, b->ast->nodes[recvNode].dataStart, b->ast->nodes[recvNode].dataEnd, "reflect")
-        && (SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "span_of")
-            || SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "kind")
+        && (SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "kind")
             || SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "base")
             || SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "is_alias")
             || SLMirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "type_name")))

@@ -29,6 +29,14 @@ pub enum LogFlag u32 {
 
 pub type LogFlags u32
 
+pub struct SourceLocation {
+	file         &str
+	start_line   int
+	start_column int
+	end_line     int
+	end_column   int
+}
+
 pub struct Logger {
 	handler   fn(&Logger, &str, LogLevel, LogFlags)
 	min_level LogLevel

@@ -1,6 +1,6 @@
 mir
   dynamic_resolution=no
-  insts=72 consts=13 sources=1 funcs=2 locals=12 fields=12 types=21 hosts=0 symbols=2
+  insts=72 consts=13 sources=1 funcs=2 locals=12 fields=12 types=22 hosts=0 symbols=2
 sources
   #0 len=626
 types
@@ -18,13 +18,14 @@ types
   #11 astNode=83 source=#0 flags=1
   #12 astNode=86 source=#0 flags=262145
   #13 astNode=10 source=#0 flags=524288
-  #14 astNode=27 source=#0 flags=524288
-  #15 astNode=2 source=#0 flags=524288
-  #16 astNode=4 source=#0 flags=1048577
-  #17 astNode=58 source=#0 flags=524288
-  #18 astNode=5 source=#0 flags=524288
-  #19 astNode=70 source=#0 flags=1
-  #20 astNode=90 source=#0 flags=1
+  #14 astNode=98 source=#0
+  #15 astNode=27 source=#0 flags=524288
+  #16 astNode=2 source=#0 flags=524288
+  #17 astNode=4 source=#0 flags=1048577
+  #18 astNode=58 source=#0 flags=524288
+  #19 astNode=5 source=#0 flags=524288
+  #20 astNode=70 source=#0 flags=1
+  #21 astNode=90 source=#0 flags=1
 hosts
 symbols
   #0 CALL target=33 name="impl" [262,266] flags=1
@@ -34,14 +35,14 @@ fields
   #1 ownerType=#4294967295 type=#4294967295 name="mem" [270,273]
   #2 ownerType=#4294967295 type=#4294967295 name="mem" [357,360]
   #3 ownerType=#4294967295 type=#4294967295 name="impl" [403,407]
-  #4 ownerType=#13 type=#12 name="rt l" [570,574]
-  #5 ownerType=#14 type=#15 name="Allocator" [77,86]
-  #6 ownerType=#14 type=#16 name="mem" [88,91]
-  #7 ownerType=#17 type=#12 name="rt l" [570,574]
-  #8 ownerType=#18 type=#12 name="rt l" [570,574]
-  #9 ownerType=#8 type=#15 name="Allocator" [77,86]
-  #10 ownerType=#8 type=#16 name="mem" [88,91]
-  #11 ownerType=#15 type=#12 name="rt l" [570,574]
+  #4 ownerType=#13 type=#14 name=<slice [692,696]> [692,696]
+  #5 ownerType=#15 type=#16 name="Allocator" [77,86]
+  #6 ownerType=#15 type=#17 name="mem" [88,91]
+  #7 ownerType=#18 type=#14 name=<slice [692,696]> [692,696]
+  #8 ownerType=#19 type=#14 name=<slice [692,696]> [692,696]
+  #9 ownerType=#8 type=#16 name="Allocator" [77,86]
+  #10 ownerType=#8 type=#17 name="mem" [88,91]
+  #11 ownerType=#16 type=#14 name=<slice [692,696]> [692,696]
 consts
   #0 INT value=7
   #1 INT value=7

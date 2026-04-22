@@ -1097,7 +1097,7 @@ int SLTCEnsureInitialized(SLTypeCheckCtx* c) {
     c->typeMemAllocator = -1;
     c->typeUsize = -1;
     c->typeRawptr = -1;
-    c->typeReflectSpan = -1;
+    c->typeSourceLocation = -1;
     c->typeFmtValue = -1;
     c->typeUntypedInt = -1;
     c->typeUntypedFloat = -1;
@@ -1574,13 +1574,13 @@ SLTCCompilerDiagOp SLTCCompilerDiagOpFromName(SLTypeCheckCtx* c, uint32_t start,
     return SLTCCompilerDiagOp_NONE;
 }
 
-int SLTCIsSpanOfName(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
-    return SLTCNameEqLiteralOrPkgBuiltin(c, start, end, "span_of", "reflect");
+int SLTCIsSourceLocationOfName(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
+    return SLTCNameEqLiteralOrPkgBuiltin(c, start, end, "source_location_of", "builtin");
 }
 
-int32_t SLTCFindReflectSpanType(SLTypeCheckCtx* c) {
+int32_t SLTCFindSourceLocationType(SLTypeCheckCtx* c) {
     uint32_t i;
-    int32_t  direct = SLTCFindNamedTypeByLiteral(c, "reflect__Span");
+    int32_t  direct = SLTCFindNamedTypeByLiteral(c, "builtin__SourceLocation");
     if (direct >= 0) {
         return direct;
     }
@@ -1589,8 +1589,8 @@ int32_t SLTCFindReflectSpanType(SLTypeCheckCtx* c) {
         if (t->kind != SLTCType_NAMED) {
             continue;
         }
-        if (!SLNameHasPrefix(c->src, t->nameStart, t->nameEnd, "reflect")
-            || !SLNameHasSuffix(c->src, t->nameStart, t->nameEnd, "__Span"))
+        if (!SLNameHasPrefix(c->src, t->nameStart, t->nameEnd, "builtin")
+            || !SLNameHasSuffix(c->src, t->nameStart, t->nameEnd, "__SourceLocation"))
         {
             continue;
         }
@@ -1628,20 +1628,20 @@ int32_t SLTCFindFmtValueType(SLTypeCheckCtx* c) {
     return -1;
 }
 
-int SLTCTypeIsReflectSpan(SLTypeCheckCtx* c, int32_t typeId) {
-    int32_t spanType;
+int SLTCTypeIsSourceLocation(SLTypeCheckCtx* c, int32_t typeId) {
+    int32_t locationType;
     if (c == NULL || typeId < 0) {
         return 0;
     }
-    if (c->typeReflectSpan < 0) {
-        c->typeReflectSpan = SLTCFindReflectSpanType(c);
+    if (c->typeSourceLocation < 0) {
+        c->typeSourceLocation = SLTCFindSourceLocationType(c);
     }
-    spanType = c->typeReflectSpan;
-    if (spanType < 0) {
+    locationType = c->typeSourceLocation;
+    if (locationType < 0) {
         return 0;
     }
     typeId = SLTCResolveAliasBaseType(c, typeId);
-    return typeId == spanType;
+    return typeId == locationType;
 }
 
 int SLTCTypeIsFmtValue(SLTypeCheckCtx* c, int32_t typeId) {

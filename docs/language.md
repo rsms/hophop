@@ -698,14 +698,14 @@ fn f() {
 - [BI-REFLECT-006][Provisional] `ptr(t)` requires one `type` operand and returns `type` representing `*t`.
 - [BI-REFLECT-007][Provisional] `slice(t)` requires one `type` operand and returns `type` representing `[t]`.
 - [BI-REFLECT-008][Provisional] `array(t, n)` requires `type` + integer operands and returns `type` representing `[t n]`; `n` must be const-evaluable and in `0..UINT32_MAX` when materialized.
-- [BI-REFLECT-009][Provisional] `span_of(x)` and `reflect.span_of(x)` return `reflect.Span` for operand `x`.
+- [BI-SOURCELOC-001][Provisional] `source_location_of(x)` and `builtin.source_location_of(x)` return `builtin.SourceLocation` for operand `x`.
 
 ### 9.12 `compiler.error*` / `compiler.warn*`
 - [BI-CONSTEVAL-DIAG-001][Provisional] `compiler.error(message)` and `compiler.warn(message)` require one `str`-assignable argument.
-- [BI-CONSTEVAL-DIAG-002][Provisional] `compiler.error_at(span, message)` and `compiler.warn_at(span, message)` require `reflect.Span` + `str`-assignable arguments.
+- [BI-CONSTEVAL-DIAG-002][Provisional] `compiler.error_at(location, message)` and `compiler.warn_at(location, message)` require `builtin.SourceLocation` + `str`-assignable arguments.
 - [BI-CONSTEVAL-DIAG-003][Provisional] Calls are valid in ordinary code and in consteval.
 - [BI-CONSTEVAL-DIAG-004][Provisional] Outside consteval, diagnostics are emitted only on compile-time-proven execution paths.
-- [BI-CONSTEVAL-DIAG-005][Provisional] For emitted diagnostics, message must be const-evaluable `&str`; `_at` forms also require a valid const-evaluable `reflect.Span`.
+- [BI-CONSTEVAL-DIAG-005][Provisional] For emitted diagnostics, message must be const-evaluable `&str`; `_at` forms also require a valid const-evaluable `builtin.SourceLocation`.
 
 ## 10. Variable-Size Structs (VSS)
 

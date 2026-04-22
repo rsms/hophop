@@ -318,10 +318,6 @@ Planned surface (draft):
   - `ptr(T)`
   - `slice(T)`
   - `array(T, N)`
-- Source span reflection:
-  - `reflect.Pos`
-  - `reflect.Span`
-  - `reflect.span_of(x)`
 
 Sketch examples:
 
@@ -344,14 +340,23 @@ fn main() {
 
 Exact signatures and typing rules are draft and defined in `docs/SLP-18-reflection.md`.
 
+## Source Locations Package Surface (Provisional)
+
+`builtin` provides source-location reflection:
+
+- `builtin.SourceLocation`
+- `builtin.source_location_of(x)`
+
+`SourceLocation` has `file &str`, `start_line int`, `start_column int`, `end_line int`, and `end_column int` fields. `source_location_of(x)` returns the parsed source location of operand `x`; unqualified `source_location_of(x)` is accepted through the implicit builtin import.
+
 ## Compiler Diagnostics Package (Provisional)
 
 `compiler` provides compiler diagnostics hooks:
 
 - `compiler.error(message &str)`
-- `compiler.error_at(span reflect.Span, message &str)`
+- `compiler.error_at(location builtin.SourceLocation, message &str)`
 - `compiler.warn(message &str)`
-- `compiler.warn_at(span reflect.Span, message &str)`
+- `compiler.warn_at(location builtin.SourceLocation, message &str)`
 
 In consteval, these calls emit diagnostics during const evaluation. In ordinary code, they emit
 diagnostics only on compile-time-proven execution paths.

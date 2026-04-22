@@ -1,0 +1,1 @@
+tests/reflect_span_removed_bad.sl:4:13: error: SL0000: unknown imported symbol

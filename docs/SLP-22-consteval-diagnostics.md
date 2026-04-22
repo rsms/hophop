@@ -10,13 +10,13 @@ generic typechecker failures.
 Surface:
 
 ```sl
+import "builtin"
 import "compiler"
-import "reflect"
 
 compiler.error("message")
-compiler.error_at(reflect.Span{}, "message")
+compiler.error_at(builtin.SourceLocation{}, "message")
 compiler.warn("message")
-compiler.warn_at(reflect.Span{}, "message")
+compiler.warn_at(builtin.SourceLocation{}, "message")
 ```
 
 ## Motivation
@@ -48,28 +48,30 @@ Without this feature, users see lower-quality errors or backend-specific behavio
 
 ## Proposed API
 
-### `reflect` package additions
+### `builtin` package additions
 
 ```sl
-pub struct Span {
-    file  &str = current_source_file
-    start struct { line, column u32 }
-    end   struct { line, column u32 }
+pub struct SourceLocation {
+    file         &str
+    start_line   int
+    start_column int
+    end_line     int
+    end_column   int
 }
-pub fn span_of(operand &anything) Span
+pub fn source_location_of(operand type) SourceLocation
 ```
 
-`Span` can be constructed to manufacture custom spans, i.e. `Span{ start: { line: 4, column: 12 } }`, just like with any other struct type. However it is a special type in the sense that the compiler knows about it as "the source span type" and initializes it with values of the current location of use rather than zeroes. I.e. `var here Span` is the span of the `here` symbol while `var here_ish = Span{ end: { line: 0, column: 0 } }` is given a zero `end` value but a valid `file` and `start` value. `Span` can be useful default-initialized in other types, to capture the location of "instantiation" of a value. E.g. `struct Thing { span reflect.Span }; var thing Thing` here `thing.span` describes the location of the `thing` variable.
+`SourceLocation` can be constructed to manufacture custom locations, i.e. `SourceLocation{ start_line: 4, start_column: 12 }`, just like with any other struct type. However it is a special type in the sense that the compiler knows about it as "the source location type" and initializes it with values of the current location of use rather than zeroes. I.e. `var here SourceLocation` is the location of the `here` symbol while `var here_ish = SourceLocation{ end_line: 0, end_column: 0 }` is given a zero end value but a valid `file` and start value. `SourceLocation` can be useful default-initialized in other types, to capture the location of "instantiation" of a value. E.g. `struct Thing { location builtin.SourceLocation }; var thing Thing` here `thing.location` describes the location of the `thing` variable.
 
-`span_of(operand)` produces a `Span` value describing the provided named symbol. The operand can be anything material with a name: a const or variable, a function, a type and so on. It cannot be a built-in (name cannot start with `__sl_`) nor can it be a keyword (e.g. `span_of(var)` in invalid.) `span_of` is not a "real" function; the compiler detects uses of `reflect.span_of` and replaces it with an appropriate `Span`.
+`source_location_of(operand)` produces a `SourceLocation` value describing the provided named symbol. The operand can be anything material with a name: a const or variable, a function, a type and so on. It cannot be a built-in (name cannot start with `__sl_`) nor can it be a keyword (e.g. `source_location_of(var)` is invalid.) `source_location_of` is not a "real" function; the compiler detects uses of `builtin.source_location_of` and replaces it with an appropriate `SourceLocation`.
 
 ### `compiler` package (new)
 
 ```sl
 pub fn error(message &str)
-pub fn error_at(span reflect.Span, message &str)
+pub fn error_at(location builtin.SourceLocation, message &str)
 pub fn warn(message &str)
-pub fn warn_at(span reflect.Span, message &str)
+pub fn warn_at(location builtin.SourceLocation, message &str)
 ```
 
 - `message` must be const-evaluable `&str`
@@ -97,11 +99,11 @@ If a call is reachable only at runtime, it is a compile-time error to use these 
 - emits one compiler warning diagnostic
 - does not abort evaluation
 
-### 4. Span selection
+### 4. Location selection
 
 - `error`/`warn` report at current consteval call site
-- `error_at`/`warn_at` report at provided `Span`
-- `reflect.span_of(x)` returns the parsed source span of operand `x`
+- `error_at`/`warn_at` report at provided `SourceLocation`
+- `builtin.source_location_of(x)` returns the parsed source location of operand `x`
 
 ### 5. Determinism
 
@@ -143,11 +145,12 @@ fn require(cond bool, msg &str) {
 ### 2. Error anchored to argument span
 
 ```sl
+import "builtin"
 import "compiler"
 
-fn require_int(arg_span reflect.Span, is_int bool) {
+fn require_int(arg_location builtin.SourceLocation, is_int bool) {
     if !is_int {
-        compiler.error_at(arg_span, "expected integer argument")
+        compiler.error_at(arg_location, "expected integer argument")
     }
 }
 ```
@@ -181,4 +184,4 @@ fn warn_deprecated(used bool) {
 ## Open questions
 
 1. Should duplicate warnings from repeated consteval instantiations be deduplicated by default?
-    - Answer: yes, deduplicate per unique reflect.Span
+    - Answer: yes, deduplicate per unique builtin.SourceLocation

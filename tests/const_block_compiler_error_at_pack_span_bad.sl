@@ -1,10 +1,10 @@
 // Verifies const block compiler error at pack span is rejected.
+import "builtin"
 import "compiler"
-import "reflect"
 
 fn demo(args ...anytype) {
 	const {
-		compiler.error_at(reflect.span_of(args[1]), "pack boom")
+		compiler.error_at(builtin.source_location_of(args[1]), "pack boom")
 	}
 }
 

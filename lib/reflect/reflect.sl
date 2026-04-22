@@ -13,18 +13,3 @@ pub enum Kind u8 {
 	Function  = 11
 	Tuple     = 12
 }
-
-pub struct Pos {
-	line   u32
-	column u32
-}
-
-pub struct Span {
-	file  &str
-	start Pos
-	end   Pos
-}
-
-pub fn span_of(x type) Span {
-	return Span{}
-}

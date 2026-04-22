@@ -1998,7 +1998,7 @@ static int SLTCConstEvalSetOptionalSomeValue(
     return 0;
 }
 
-void SLTCConstEvalSetSpanFromOffsets(
+void SLTCConstEvalSetSourceLocationFromOffsets(
     SLTypeCheckCtx* c, uint32_t startOffset, uint32_t endOffset, SLCTFEValue* outValue) {
     SLTCConstEvalSetNullValue(outValue);
     outValue->kind = SLCTFEValue_SPAN;
@@ -2162,7 +2162,7 @@ static int SLTCConstEvalGetConcreteCallArgType(
     return 1;
 }
 
-int SLTCConstEvalSpanOfCall(
+int SLTCConstEvalSourceLocationOfCall(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
     SLTypeCheckCtx*  c;
     int32_t          calleeNode;
@@ -2182,7 +2182,7 @@ int SLTCConstEvalSpanOfCall(
         return 1;
     }
     if (callee->kind == SLAst_IDENT) {
-        if (!SLTCIsSpanOfName(c, callee->dataStart, callee->dataEnd)) {
+        if (!SLTCIsSourceLocationOfName(c, callee->dataStart, callee->dataEnd)) {
             return 1;
         }
         operandNode = SLAstNextSibling(c->ast, calleeNode);
@@ -2197,8 +2197,8 @@ int SLTCConstEvalSpanOfCall(
                 c->src,
                 c->ast->nodes[recvNode].dataStart,
                 c->ast->nodes[recvNode].dataEnd,
-                "reflect")
-            || !SLTCIsSpanOfName(c, callee->dataStart, callee->dataEnd))
+                "builtin")
+            || !SLTCIsSourceLocationOfName(c, callee->dataStart, callee->dataEnd))
         {
             return 1;
         }
@@ -2226,7 +2226,7 @@ int SLTCConstEvalSpanOfCall(
         }
         if (packStatus == 0) {
             const SLTCCallArgInfo* callArgs = (const SLTCCallArgInfo*)evalCtx->callArgs;
-            SLTCConstEvalSetSpanFromOffsets(
+            SLTCConstEvalSetSourceLocationFromOffsets(
                 c, callArgs[callArgIndex].start, callArgs[callArgIndex].end, outValue);
             *outIsConst = 1;
             return 0;
@@ -2245,11 +2245,11 @@ int SLTCConstEvalSpanOfCall(
             "__sl_"))
     {
         SLTCConstSetReasonNode(
-            evalCtx, operandNode, "span_of operand cannot reference __sl_ names");
+            evalCtx, operandNode, "source_location_of operand cannot reference __sl_ names");
         *outIsConst = 0;
         return 0;
     }
-    SLTCConstEvalSetSpanFromOffsets(
+    SLTCConstEvalSetSourceLocationFromOffsets(
         c, c->ast->nodes[operandNode].start, c->ast->nodes[operandNode].end, outValue);
     *outIsConst = 1;
     return 0;
@@ -2274,61 +2274,10 @@ int SLTCConstEvalU32Arg(
     return 0;
 }
 
-int SLTCConstEvalPosCompound(
-    SLTCConstEvalCtx* evalCtx, int32_t nodeId, uint32_t* ioLine, uint32_t* ioColumn) {
-    SLTypeCheckCtx* c;
-    int32_t         fieldNode;
-    if (evalCtx == NULL || ioLine == NULL || ioColumn == NULL) {
-        return -1;
-    }
-    c = evalCtx->tc;
-    if (c != NULL && nodeId >= 0 && (uint32_t)nodeId < c->ast->len
-        && c->ast->nodes[nodeId].kind == SLAst_CALL_ARG)
-    {
-        int32_t inner = SLAstFirstChild(c->ast, nodeId);
-        if (inner >= 0) {
-            nodeId = inner;
-        }
-    }
-    if (c == NULL || nodeId < 0 || (uint32_t)nodeId >= c->ast->len
-        || c->ast->nodes[nodeId].kind != SLAst_COMPOUND_LIT)
-    {
-        return 1;
-    }
-    fieldNode = SLAstFirstChild(c->ast, nodeId);
-    if (fieldNode >= 0 && SLTCIsTypeNodeKind(c->ast->nodes[fieldNode].kind)) {
-        fieldNode = SLAstNextSibling(c->ast, fieldNode);
-    }
-    while (fieldNode >= 0) {
-        const SLAstNode* field = &c->ast->nodes[fieldNode];
-        int32_t          valueNode = SLAstFirstChild(c->ast, fieldNode);
-        uint32_t         v = 0;
-        int              isConst = 0;
-        if (field->kind != SLAst_COMPOUND_FIELD || valueNode < 0) {
-            return 1;
-        }
-        if (SLTCConstEvalU32Arg(evalCtx, valueNode, &v, &isConst) != 0) {
-            return -1;
-        }
-        if (!isConst) {
-            return 1;
-        }
-        if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "line")) {
-            *ioLine = v;
-        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "column")) {
-            *ioColumn = v;
-        } else {
-            return 1;
-        }
-        fieldNode = SLAstNextSibling(c->ast, fieldNode);
-    }
-    return 0;
-}
-
-int SLTCConstEvalSpanCompound(
+int SLTCConstEvalSourceLocationCompound(
     SLTCConstEvalCtx* evalCtx,
     int32_t           exprNode,
-    int               forceSpan,
+    int               forceSourceLocation,
     SLCTFEValue*      outValue,
     int*              outIsConst) {
     SLTypeCheckCtx* c;
@@ -2356,11 +2305,11 @@ int SLTCConstEvalSpanCompound(
         if (SLTCResolveTypeNode(c, child, &resolvedType) != 0) {
             return -1;
         }
-        if (!SLTCTypeIsReflectSpan(c, resolvedType)) {
+        if (!SLTCTypeIsSourceLocation(c, resolvedType)) {
             return 0;
         }
         fieldNode = SLAstNextSibling(c->ast, child);
-    } else if (!forceSpan) {
+    } else if (!forceSourceLocation) {
         return 0;
     }
 
@@ -2385,12 +2334,36 @@ int SLTCConstEvalSpanCompound(
             }
             fileBytes = fileValue.s.bytes;
             fileLen = fileValue.s.len;
-        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "start")) {
-            if (SLTCConstEvalPosCompound(evalCtx, valueNode, &startLine, &startColumn) != 0) {
+        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "start_line")) {
+            int isConst = 0;
+            if (SLTCConstEvalU32Arg(evalCtx, valueNode, &startLine, &isConst) != 0) {
+                return -1;
+            }
+            if (!isConst) {
                 goto non_const;
             }
-        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "end")) {
-            if (SLTCConstEvalPosCompound(evalCtx, valueNode, &endLine, &endColumn) != 0) {
+        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "start_column")) {
+            int isConst = 0;
+            if (SLTCConstEvalU32Arg(evalCtx, valueNode, &startColumn, &isConst) != 0) {
+                return -1;
+            }
+            if (!isConst) {
+                goto non_const;
+            }
+        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "end_line")) {
+            int isConst = 0;
+            if (SLTCConstEvalU32Arg(evalCtx, valueNode, &endLine, &isConst) != 0) {
+                return -1;
+            }
+            if (!isConst) {
+                goto non_const;
+            }
+        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "end_column")) {
+            int isConst = 0;
+            if (SLTCConstEvalU32Arg(evalCtx, valueNode, &endColumn, &isConst) != 0) {
+                return -1;
+            }
+            if (!isConst) {
                 goto non_const;
             }
         } else {
@@ -2411,13 +2384,14 @@ int SLTCConstEvalSpanCompound(
     return 1;
 
 non_const:
-    SLTCConstSetReasonNode(evalCtx, exprNode, "reflect.Span literal is not const-evaluable");
+    SLTCConstSetReasonNode(
+        evalCtx, exprNode, "builtin.SourceLocation literal is not const-evaluable");
     SLTCConstEvalSetNullValue(outValue);
     *outIsConst = 0;
     return 1;
 }
 
-int SLTCConstEvalSpanExpr(
+int SLTCConstEvalSourceLocationExpr(
     SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFESpan* outSpan, int* outIsConst) {
     SLTypeCheckCtx* c;
     SLCTFEValue     v;
@@ -2443,7 +2417,7 @@ int SLTCConstEvalSpanExpr(
         exprNode = inner;
     }
     if (c->ast->nodes[exprNode].kind == SLAst_COMPOUND_LIT) {
-        handled = SLTCConstEvalSpanCompound(evalCtx, exprNode, 1, &v, &isConst);
+        handled = SLTCConstEvalSourceLocationCompound(evalCtx, exprNode, 1, &v, &isConst);
         if (handled < 0) {
             return -1;
         }
@@ -2569,7 +2543,7 @@ int SLTCConstEvalCompilerDiagCall(
         if (spanNode < 0 || msgNode < 0 || nextNode >= 0) {
             return 1;
         }
-        if (SLTCConstEvalSpanExpr(evalCtx, spanNode, &span, &spanIsConst) != 0) {
+        if (SLTCConstEvalSourceLocationExpr(evalCtx, spanNode, &span, &spanIsConst) != 0) {
             return -1;
         }
         if (!spanIsConst || span.startLine == 0 || span.startColumn == 0 || span.endLine == 0
@@ -3144,11 +3118,12 @@ int SLTCEvalConstExprNode(
         return SLTCConstEvalSizeOf(evalCtx, exprNode, outValue, outIsConst);
     }
     if (kind == SLAst_COMPOUND_LIT) {
-        int spanStatus = SLTCConstEvalSpanCompound(evalCtx, exprNode, 0, outValue, outIsConst);
-        if (spanStatus < 0) {
+        int locationStatus = SLTCConstEvalSourceLocationCompound(
+            evalCtx, exprNode, 0, outValue, outIsConst);
+        if (locationStatus < 0) {
             return -1;
         }
-        if (spanStatus > 0) {
+        if (locationStatus > 0) {
             return 0;
         }
     }
@@ -3177,7 +3152,7 @@ int SLTCEvalConstExprNode(
         int              compilerDiagStatus;
         int              directCallStatus;
         int              lenStatus;
-        int              spanOfStatus;
+        int              sourceLocationStatus;
         int              reflectStatus;
         lenStatus = SLTCConstEvalLenCall(evalCtx, exprNode, outValue, outIsConst);
         if (lenStatus == 0) {
@@ -3193,11 +3168,12 @@ int SLTCEvalConstExprNode(
         if (compilerDiagStatus < 0) {
             return -1;
         }
-        spanOfStatus = SLTCConstEvalSpanOfCall(evalCtx, exprNode, outValue, outIsConst);
-        if (spanOfStatus == 0) {
+        sourceLocationStatus = SLTCConstEvalSourceLocationOfCall(
+            evalCtx, exprNode, outValue, outIsConst);
+        if (sourceLocationStatus == 0) {
             return 0;
         }
-        if (spanOfStatus < 0) {
+        if (sourceLocationStatus < 0) {
             return -1;
         }
         if (callee != NULL && callee->kind == SLAst_IDENT
@@ -3293,10 +3269,10 @@ int SLTCEvalConstExecInferValueTypeCb(void* ctx, const SLCTFEValue* value, int32
             return *outTypeId >= 0 ? 0 : -1;
         case SLCTFEValue_TYPE: *outTypeId = c->typeType; return *outTypeId >= 0 ? 0 : -1;
         case SLCTFEValue_SPAN:
-            if (c->typeReflectSpan < 0) {
-                c->typeReflectSpan = SLTCFindReflectSpanType(c);
+            if (c->typeSourceLocation < 0) {
+                c->typeSourceLocation = SLTCFindSourceLocationType(c);
             }
-            *outTypeId = c->typeReflectSpan;
+            *outTypeId = c->typeSourceLocation;
             return *outTypeId >= 0 ? 0 : -1;
         case SLCTFEValue_NULL: *outTypeId = c->typeNull; return *outTypeId >= 0 ? 0 : -1;
         case SLCTFEValue_OPTIONAL:
@@ -5632,7 +5608,7 @@ static int SLTCMirConstCallNodeIsSpecialBuiltin(SLTypeCheckCtx* tc, int32_t call
             || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "ptr")
             || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "slice")
             || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "array")
-            || SLTCIsSpanOfName(tc, callee->dataStart, callee->dataEnd)
+            || SLTCIsSourceLocationOfName(tc, callee->dataStart, callee->dataEnd)
             || SLTCCompilerDiagOpFromName(tc, callee->dataStart, callee->dataEnd)
                    != SLTCCompilerDiagOp_NONE;
     }
@@ -5649,9 +5625,17 @@ static int SLTCMirConstCallNodeIsSpecialBuiltin(SLTypeCheckCtx* tc, int32_t call
             tc->src,
             tc->ast->nodes[recvNode].dataStart,
             tc->ast->nodes[recvNode].dataEnd,
+            "builtin")
+        && SLTCIsSourceLocationOfName(tc, callee->dataStart, callee->dataEnd))
+    {
+        return 1;
+    }
+    if (SLNameEqLiteral(
+            tc->src,
+            tc->ast->nodes[recvNode].dataStart,
+            tc->ast->nodes[recvNode].dataEnd,
             "reflect")
-        && (SLTCIsSpanOfName(tc, callee->dataStart, callee->dataEnd)
-            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "kind")
+        && (SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "kind")
             || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "base")
             || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "is_alias")
             || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "type_name")))
@@ -5800,7 +5784,7 @@ int SLTCResolveConstCallMirPre(
         return 1;
     }
 
-    status = SLTCConstEvalSpanOfCall(evalCtx, callNode, outValue, outIsConst);
+    status = SLTCConstEvalSourceLocationOfCall(evalCtx, callNode, outValue, outIsConst);
     if (status < 0) {
         return -1;
     }
@@ -6696,7 +6680,7 @@ int SLTCResolveConstCallMir(
         if (status < 0) {
             return -1;
         }
-        status = SLTCConstEvalSpanOfCall(evalCtx, callNode, outValue, outIsConst);
+        status = SLTCConstEvalSourceLocationOfCall(evalCtx, callNode, outValue, outIsConst);
         if (status == 0) {
             return 0;
         }

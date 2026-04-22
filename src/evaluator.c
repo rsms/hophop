@@ -9811,7 +9811,11 @@ static int SLEvalMirCallNodeIsLazyBuiltin(SLEvalProgram* p, int32_t callNode) {
     }
     if (callee->kind == SLAst_IDENT) {
         return SLEvalNameEqLiteralOrPkgBuiltin(
-                   p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of", "reflect")
+                   p->currentFile->source,
+                   callee->dataStart,
+                   callee->dataEnd,
+                   "source_location_of",
+                   "builtin")
             || SLEvalNameIsLazyTypeBuiltin(
                    p->currentFile->source, callee->dataStart, callee->dataEnd)
             || SLEvalNameIsCompilerDiagBuiltin(
@@ -9829,11 +9833,22 @@ static int SLEvalMirCallNodeIsLazyBuiltin(SLEvalProgram* p, int32_t callNode) {
             p->currentFile->source,
             ast->nodes[recvNode].dataStart,
             ast->nodes[recvNode].dataEnd,
+            "builtin"))
+    {
+        return SLEvalNameEqLiteralOrPkgBuiltin(
+            p->currentFile->source,
+            callee->dataStart,
+            callee->dataEnd,
+            "source_location_of",
+            "builtin");
+    }
+    if (SliceEqCStr(
+            p->currentFile->source,
+            ast->nodes[recvNode].dataStart,
+            ast->nodes[recvNode].dataEnd,
             "reflect"))
     {
         return SLEvalNameEqLiteralOrPkgBuiltin(
-                   p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of", "reflect")
-            || SLEvalNameEqLiteralOrPkgBuiltin(
                    p->currentFile->source, callee->dataStart, callee->dataEnd, "kind", "reflect")
             || SLEvalNameEqLiteralOrPkgBuiltin(
                    p->currentFile->source, callee->dataStart, callee->dataEnd, "base", "reflect")
@@ -13094,6 +13109,42 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             *outIsConst = 1;
             return 0;
         }
+        if (ast->nodes[calleeNode].kind == SLAst_IDENT
+            && SLEvalNameEqLiteralOrPkgBuiltin(
+                p->currentFile->source,
+                ast->nodes[calleeNode].dataStart,
+                ast->nodes[calleeNode].dataEnd,
+                "source_location_of",
+                "builtin"))
+        {
+            int32_t argNode = ast->nodes[calleeNode].nextSibling;
+            int32_t operandNode = argNode;
+            if (argNode < 0 || ast->nodes[argNode].nextSibling >= 0) {
+                *outIsConst = 0;
+                return 0;
+            }
+            if (ast->nodes[operandNode].kind == SLAst_CALL_ARG) {
+                operandNode = ast->nodes[operandNode].firstChild;
+            }
+            if (operandNode < 0 || (uint32_t)operandNode >= ast->len) {
+                if (p->currentExecCtx != NULL) {
+                    SLCTFEExecSetReason(
+                        p->currentExecCtx,
+                        ast->nodes[argNode].start,
+                        ast->nodes[argNode].end,
+                        "source_location_of argument is malformed");
+                }
+                *outIsConst = 0;
+                return 0;
+            }
+            SLEvalValueSetSpan(
+                p->currentFile,
+                ast->nodes[operandNode].start,
+                ast->nodes[operandNode].end,
+                outValue);
+            *outIsConst = 1;
+            return 0;
+        }
         if (calleeNode >= 0 && ast->nodes[calleeNode].kind == SLAst_FIELD_EXPR) {
             const SLAstNode* callee = &ast->nodes[calleeNode];
             int32_t          baseNode = callee->firstChild;
@@ -13147,12 +13198,15 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
             if (baseNode >= 0 && argNode >= 0 && ast->nodes[argNode].nextSibling < 0
                 && ast->nodes[baseNode].kind == SLAst_IDENT
                 && SliceEqCStr(
-                    p->currentFile->source, callee->dataStart, callee->dataEnd, "span_of")
+                    p->currentFile->source,
+                    callee->dataStart,
+                    callee->dataEnd,
+                    "source_location_of")
                 && SliceEqCStr(
                     p->currentFile->source,
                     ast->nodes[baseNode].dataStart,
                     ast->nodes[baseNode].dataEnd,
-                    "reflect"))
+                    "builtin"))
             {
                 int32_t operandNode = argNode;
                 if (ast->nodes[operandNode].kind == SLAst_CALL_ARG) {
@@ -13164,7 +13218,7 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
                             p->currentExecCtx,
                             ast->nodes[argNode].start,
                             ast->nodes[argNode].end,
-                            "reflect.span_of argument is malformed");
+                            "builtin.source_location_of argument is malformed");
                     }
                     *outIsConst = 0;
                     return 0;

@@ -1226,7 +1226,7 @@ int SLTCTypeExpr_NEW(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int3
     return SLTCTypeNewExpr(c, nodeId, outType);
 }
 
-int SLTCTypeSpanOfCall(
+int SLTCTypeSourceLocationOfCall(
     SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* callee, int32_t* outType) {
     int32_t argNode = SLAstNextSibling(c->ast, SLAstFirstChild(c->ast, nodeId));
     int32_t argType;
@@ -1242,13 +1242,13 @@ int SLTCTypeSpanOfCall(
     if (nextArgNode >= 0) {
         return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
     }
-    if (c->typeReflectSpan < 0) {
-        c->typeReflectSpan = SLTCFindReflectSpanType(c);
+    if (c->typeSourceLocation < 0) {
+        c->typeSourceLocation = SLTCFindSourceLocationType(c);
     }
-    if (c->typeReflectSpan < 0) {
+    if (c->typeSourceLocation < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
     }
-    *outType = c->typeReflectSpan;
+    *outType = c->typeSourceLocation;
     (void)callee;
     return 0;
 }
@@ -1278,7 +1278,7 @@ static int SLTCTypeEmitCompilerDiagCall(
         SLCTFESpan span;
         uint32_t   spanStartOffset = 0;
         uint32_t   spanEndOffset = 0;
-        if (SLTCConstEvalSpanExpr(&evalCtx, spanNode, &span, &spanIsConst) != 0) {
+        if (SLTCConstEvalSourceLocationExpr(&evalCtx, spanNode, &span, &spanIsConst) != 0) {
             return -1;
         }
         if (!spanIsConst || span.startLine == 0 || span.startColumn == 0 || span.endLine == 0
@@ -1356,7 +1356,7 @@ int SLTCTypeCompilerDiagCall(
         if (SLTCTypeExpr(c, arg1Node, &spanType) != 0) {
             return -1;
         }
-        if (!SLTCTypeIsReflectSpan(c, spanType)) {
+        if (!SLTCTypeIsSourceLocation(c, spanType)) {
             return SLTCFailNode(c, arg1Node, SLDiag_TYPE_MISMATCH);
         }
         msgNode = arg2Node;
@@ -1541,8 +1541,8 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
         if (diagOp != SLTCCompilerDiagOp_NONE) {
             return SLTCTypeCompilerDiagCall(c, nodeId, callee, diagOp, outType);
         }
-        if (SLTCIsSpanOfName(c, callee->dataStart, callee->dataEnd)) {
-            return SLTCTypeSpanOfCall(c, nodeId, callee, outType);
+        if (SLTCIsSourceLocationOfName(c, callee->dataStart, callee->dataEnd)) {
+            return SLTCTypeSourceLocationOfCall(c, nodeId, callee, outType);
         }
         if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "kind")) {
             int32_t argNode = SLAstNextSibling(c->ast, calleeNode);
@@ -2168,10 +2168,10 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             && c->ast->nodes[recvNode].kind == SLAst_IDENT)
         {
             const SLAstNode* recv = &c->ast->nodes[recvNode];
-            if (SLNameEqLiteral(c->src, recv->dataStart, recv->dataEnd, "reflect")
-                && SLTCIsSpanOfName(c, callee->dataStart, callee->dataEnd))
+            if (SLNameEqLiteral(c->src, recv->dataStart, recv->dataEnd, "builtin")
+                && SLTCIsSourceLocationOfName(c, callee->dataStart, callee->dataEnd))
             {
-                return SLTCTypeSpanOfCall(c, nodeId, callee, outType);
+                return SLTCTypeSourceLocationOfCall(c, nodeId, callee, outType);
             }
             if (SLNameEqLiteral(c->src, recv->dataStart, recv->dataEnd, "compiler")) {
                 SLTCCompilerDiagOp diagOp = SLTCCompilerDiagOpFromName(

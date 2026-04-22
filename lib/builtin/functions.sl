@@ -18,6 +18,10 @@ fn free() {}
 
 fn panic(message &str) {}
 
+pub fn source_location_of(x type) SourceLocation {
+	return SourceLocation{}
+}
+
 pub fn print(message &str) context PrintContext {
 	context.log.handler(&context.log, message, LogLevel.Info, 0 as LogFlags)
 }
