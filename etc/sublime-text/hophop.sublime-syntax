@@ -5,6 +5,7 @@ scope: source.hophop
 
 file_extensions:
     - hop
+    - h2
 
 first_line_match: |-
     (?xi:
