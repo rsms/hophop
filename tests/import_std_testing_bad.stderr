@@ -1,2 +1,2 @@
-error: failed to resolve package path /Users/rsms/src/slang.context-v2/std/testing
+error: failed to resolve package path {{ROOT}}/std/testing
 tests/import_std_testing_bad.sl:2:1: error: SL0000: failed to resolve import std/testing

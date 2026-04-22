@@ -23,6 +23,7 @@ Common optional fields:
 - `exec_limit` (integer): per-execution wall-clock limit in milliseconds; if exceeded, the runner kills the current test process and fails the execution
 - `expect` (string): expected output file (for stdout golden tests)
 - `expect_stderr` (string): expected stderr golden file
+- expected output files may use `{{ROOT}}` for the repository root path
 - `contains` (array of strings): required substrings in generated text
 - `not_contains` (array of strings): forbidden substrings in generated text
 - `regex_count` (array of objects): `{"pattern": "...", "count": N}` checks on generated text

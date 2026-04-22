@@ -154,8 +154,12 @@ def current_exec_timeout() -> tuple[Optional[float], Optional[int]]:
     return deadline, limit_ms
 
 
+def expand_expected_placeholders(text: str) -> str:
+    return text.replace("{{ROOT}}", ROOT.as_posix())
+
+
 def read_text(path: str) -> str:
-    return abs_path(path).read_text()
+    return expand_expected_placeholders(abs_path(path).read_text())
 
 
 def load_warning_diag_ids(path: Path) -> Set[str]:
