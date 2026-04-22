@@ -107,6 +107,7 @@
 {"id":"check:tests/generics_type_value_prefix_bad.sl","suite":"spec.lex_parse_check","kind":"slc_fail_stderr","mode":"check","input":"tests/generics_type_value_prefix_bad.sl","expect_stderr":"tests/generics_type_value_prefix_bad.stderr"}
 {"id":"check:tests/zero_init_locals_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/zero_init_locals_ok.sl"}
 {"id":"check:tests/topvar_zero_init_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"check","input":"tests/topvar_zero_init_ok.sl"}
+{"id":"checkpkg:tests/default_zero_fat_refs_ok.sl","suite":"spec.lex_parse_check","kind":"slc_ok","mode":"checkpkg","input":"tests/default_zero_fat_refs_ok.sl"}
 {"id":"checkpkg:tests/new_optional_ok.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_optional_ok.sl"}
 {"id":"checkpkg:tests/new_nonoptional_panic.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_nonoptional_panic.sl"}
 {"id":"checkpkg:tests/new_null_allocator_panic.sl","suite":"std.unit","kind":"slc_ok","mode":"checkpkg","input":"tests/new_null_allocator_panic.sl"}
@@ -394,6 +395,7 @@
 {"id":"integration.runtime.wasm_backend_new_slice_agg_ok.slc_run_platform_wasm_min","suite":"integration.runtime","kind":"slc_run","input":"tests/wasm_backend_new_slice_agg_ok.sl","platform":"wasm-min","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.wasm_backend_new_slice_ok.slc_run_platform_wasm_min","suite":"integration.runtime","kind":"slc_run","input":"tests/wasm_backend_new_slice_ok.sl","platform":"wasm-min","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.wasm_backend_new_zero_ok.slc_run_platform_wasm_min","suite":"integration.runtime","kind":"slc_run","input":"tests/wasm_backend_new_zero_ok.sl","platform":"wasm-min","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
+{"id":"integration.runtime.default_zero_fat_refs_ok.slc_run_platform_wasm_min","suite":"integration.runtime","kind":"slc_run","input":"tests/default_zero_fat_refs_ok.sl","platform":"wasm-min","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.new_selector_ok.slc_run_platform_wasm_min","suite":"integration.runtime","kind":"slc_run","input":"tests/new_selector_ok.sl","platform":"wasm-min","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.new_optional_ok.slc_run_platform_wasm_min","suite":"integration.runtime","kind":"slc_run","input":"tests/new_optional_ok.sl","platform":"wasm-min","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
 {"id":"integration.runtime.new_nonvss_implicit_init_defaults_ok.slc_run_platform_wasm_min","suite":"integration.runtime","kind":"slc_run","input":"tests/new_nonvss_implicit_init_defaults_ok.sl","platform":"wasm-min","expect_exit":0,"stdout_empty":true,"stderr_empty":true}
@@ -629,6 +631,7 @@
 {"id":"integration.runtime.slice_fn_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/slice_fn_ok.sl"}
 {"id":"integration.runtime.zero_init_locals_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/zero_init_locals_ok.sl","expect_exit":0,"eval_expect":"pass"}
 {"id":"integration.runtime.topvar_zero_init_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/topvar_zero_init_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"pass"}
+{"id":"integration.runtime.default_zero_fat_refs_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/default_zero_fat_refs_ok.sl","expect_exit":0,"run_stdout_empty":true,"run_stderr_empty":true,"eval_expect":"pass"}
 {"id":"integration.runtime.vss_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/vss_ok.sl"}
 {"id":"integration.runtime.vss_nested_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/vss_nested_ok.sl"}
 {"id":"integration.runtime.str_slice_conversion_ok.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/str_slice_conversion_ok.sl"}

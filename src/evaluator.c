@@ -3899,8 +3899,44 @@ static int SLEvalZeroInitTypeNode(
             }
             return 0;
         }
+        case SLAst_TYPE_REF: {
+            int32_t childNode = ASTFirstChild(&file->ast, typeNode);
+            if (childNode >= 0 && (uint32_t)childNode < file->ast.len) {
+                const SLAstNode* child = &file->ast.nodes[childNode];
+                if (child->kind == SLAst_TYPE_NAME
+                    && SliceEqCStr(file->source, child->dataStart, child->dataEnd, "str"))
+                {
+                    outValue->kind = SLCTFEValue_STRING;
+                    outValue->i64 = 0;
+                    outValue->f64 = 0.0;
+                    outValue->b = 0;
+                    outValue->typeTag = 0;
+                    outValue->s.bytes = NULL;
+                    outValue->s.len = 0;
+                    SLEvalValueSetRuntimeTypeCode(outValue, SLEvalTypeCode_STR_REF);
+                    *outIsConst = 1;
+                    return 0;
+                }
+                if (child->kind == SLAst_TYPE_SLICE) {
+                    int32_t      elemTypeNode = ASTFirstChild(&file->ast, childNode);
+                    SLEvalArray* array = SLEvalAllocArrayView(
+                        p, file, typeNode, elemTypeNode, NULL, 0);
+                    if (array == NULL) {
+                        return ErrorSimple("out of memory");
+                    }
+                    SLEvalValueSetArray(outValue, file, typeNode, array);
+                    *outIsConst = 1;
+                    return 0;
+                }
+            }
+            SLEvalValueSetNull(outValue);
+            if (SLEvalResolveNullCastTypeTag(file, typeNode, &nullTag)) {
+                outValue->typeTag = nullTag;
+            }
+            *outIsConst = 1;
+            return 0;
+        }
         case SLAst_TYPE_PTR:
-        case SLAst_TYPE_REF:
         case SLAst_TYPE_MUTREF:
             SLEvalValueSetNull(outValue);
             if (SLEvalResolveNullCastTypeTag(file, typeNode, &nullTag)) {

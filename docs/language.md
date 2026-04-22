@@ -416,10 +416,10 @@ fn f() {
 - [TYPE-INFER-002][Stable] For `var` inference, `const_int` defaults to `int` and `const_float` defaults to `f64`.
 - [TYPE-INFER-003][Stable] Inference from `null` or no-value expressions is invalid.
 - [TYPE-INFER-004][Stable] Rune literals infer type `const_int`.
-- [TYPE-ZERO-001][Stable] `var x T` zero-initializes `x`, except direct pointer/reference locals (`*T` and `&T`) are uninitialized until assigned and cannot be read, dereferenced, returned, passed, or otherwise used before definite assignment.
+- [TYPE-ZERO-001][Stable] `var x T` zero-initializes `x`, except direct pointer/reference locals (`*T` and `&T`) are uninitialized until assigned and cannot be read, dereferenced, returned, passed, or otherwise used before definite assignment. Direct read-only fat-reference locals `&str` and `&[T]` have valid all-zero representations and are zero-initialized to empty views.
 - [TYPE-ZERO-002][Stable] For enum types, `var x EnumType` is valid only when one variant has effective tag value `0`.
 - [TYPE-ZERO-003][Stable] Definite assignment for direct pointer/reference locals is flow-sensitive across `if` and `switch`; a value assigned only on some continuing control-flow paths is considered may-be-uninitialized. Assignments inside loop bodies do not definitely initialize the local after the loop. Parameters and `for ... in` bindings are initialized on entry.
-- [TYPE-ZERO-004][Stable] Top-level variables of type `*T` or `&T` require an explicit initializer. `rawptr` keeps normal zero initialization and is not tracked by pointer/reference definite assignment.
+- [TYPE-ZERO-004][Stable] Top-level variables of type `*T` or `&T` require an explicit initializer, except direct read-only fat references `&str` and `&[T]`. `rawptr` keeps normal zero initialization and is not tracked by pointer/reference definite assignment.
 - [TYPE-INFER-005][Stable] Grouped declarations infer and/or check per position (`var a, b = 1, 2`; `var a, b T = x, y`). Initializer arity must match declaration arity, except a single tuple-typed RHS may be decomposed positionally.
 
 ## 6. Expressions and Operators

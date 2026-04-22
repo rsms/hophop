@@ -307,7 +307,9 @@ void SLTCMarkLocalWrite(SLTypeCheckCtx* c, int32_t localIdx) {
 }
 
 int SLTCTypeIsTrackedPtrRef(SLTypeCheckCtx* c, int32_t typeId) {
-    int32_t resolvedType;
+    int32_t         resolvedType;
+    int32_t         baseType;
+    const SLTCType* type;
     if (c == NULL || typeId < 0) {
         return 0;
     }
@@ -315,8 +317,19 @@ int SLTCTypeIsTrackedPtrRef(SLTypeCheckCtx* c, int32_t typeId) {
     if (resolvedType < 0 || (uint32_t)resolvedType >= c->typeLen) {
         return 0;
     }
-    return c->types[resolvedType].kind == SLTCType_PTR
-        || c->types[resolvedType].kind == SLTCType_REF;
+    type = &c->types[resolvedType];
+    if (type->kind == SLTCType_REF && !SLTCTypeIsMutable(type)) {
+        baseType = SLTCResolveAliasBaseType(c, type->baseType);
+        if (baseType == c->typeStr) {
+            return 0;
+        }
+        if (baseType >= 0 && (uint32_t)baseType < c->typeLen
+            && c->types[baseType].kind == SLTCType_SLICE && !SLTCTypeIsMutable(&c->types[baseType]))
+        {
+            return 0;
+        }
+    }
+    return type->kind == SLTCType_PTR || type->kind == SLTCType_REF;
 }
 
 void SLTCMarkLocalInitialized(SLTypeCheckCtx* c, int32_t localIdx) {
