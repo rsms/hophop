@@ -1,0 +1,6 @@
+// Verifies HEP 3 bad value optional.
+import "hophop/feature/optional"
+
+pub fn bad(x i32) ?i32 {
+	return x
+}

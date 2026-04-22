@@ -1,0 +1,2 @@
+// Verifies bad reserved name struct.
+struct __hop_bad {}

@@ -1,1 +1,1 @@
-tests/const_missing_init_top.sl:2:1: error: SL2028: const declaration requires initializer
+tests/const_missing_init_top.hop:2:1: error: HOP2028: const declaration requires initializer

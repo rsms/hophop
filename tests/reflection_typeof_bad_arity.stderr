@@ -1,1 +1,1 @@
-tests/reflection_typeof_bad_arity.sl:3:2: error: SL2005: call arity mismatch
+tests/reflection_typeof_bad_arity.hop:3:2: error: HOP2005: call arity mismatch

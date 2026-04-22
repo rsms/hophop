@@ -1,1 +1,1 @@
-tests/type_alias_direction_bad.sl:8:2: error: SL2015: no matching overload
+tests/type_alias_direction_bad.hop:8:2: error: HOP2015: no matching overload

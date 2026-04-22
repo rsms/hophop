@@ -1,0 +1,4 @@
+// Verifies bad reserved name field.
+struct S {
+	__hop_bad i32
+}

@@ -1,0 +1,2 @@
+// Verifies bad reserved name const.
+const __hop_bad i32

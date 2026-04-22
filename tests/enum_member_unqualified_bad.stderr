@@ -1,1 +1,1 @@
-tests/enum_member_unqualified_bad.sl:8:14: error: SL2002: unknown identifier 'A'
+tests/enum_member_unqualified_bad.hop:8:14: error: HOP2002: unknown identifier 'A'

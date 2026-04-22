@@ -1,1 +1,1 @@
-tests/multi_return_destructure_arity_bad.sl:7:2: error: SL2005: call arity mismatch
+tests/multi_return_destructure_arity_bad.hop:7:2: error: HOP2005: call arity mismatch

@@ -1,0 +1,107 @@
+// Verifies HEP 30 for in protocol iterator prefer value is accepted.
+struct Counter {
+	value i32
+	keys  *[&str]
+}
+
+struct CounterIteratorValue {
+	value i32
+	done  bool
+}
+
+struct CounterIteratorRef {
+	value_ref &i32
+	done      bool
+}
+
+type CounterPair (&str, *i32)
+
+struct CounterKVIter {
+	keys  *[&str]
+	index int
+	pair  CounterPair
+	value *i32
+}
+
+fn __iterator(counter Counter) CounterIteratorValue {
+	return { value: counter.value }
+}
+
+fn __iterator(counter &Counter) CounterIteratorRef {
+	return { value_ref: &counter.value }
+}
+
+fn __iterator(counter *Counter) CounterKVIter {
+	return {
+		keys:  counter.keys,
+		value: &counter.value,
+		pair:  ("", &counter.value) as CounterPair,
+	}
+}
+
+fn next_value(it *CounterIteratorValue) ?*i32 {
+	if it.done {
+		return null
+	}
+	it.done = true
+	return &it.value
+}
+
+fn next_value(it *CounterIteratorRef) ?&i32 {
+	if it.done {
+		return null
+	}
+	it.done = true
+	return it.value_ref
+}
+
+fn next_key(it *CounterKVIter) ?&str {
+	if it.index >= len(it.keys) {
+		return null
+	}
+	var key = it.keys[it.index]
+	it.index += 1
+	return key
+}
+
+fn next_key_and_value(it *CounterKVIter) ?*CounterPair {
+	if it.index >= len(it.keys) {
+		return null
+	}
+	var key = it.keys[it.index]
+	it.index += 1
+	it.pair = (key, it.value) as CounterPair
+	return &it.pair
+}
+
+fn first(counter Counter) i32 {
+	for n in counter {
+		return n
+	}
+	return 0
+}
+
+fn first_ref(counter &Counter) i32 {
+	for &n in counter {
+		return *n
+	}
+	return 0
+}
+
+fn key_from_preferred_next_key(counter *Counter) int {
+	var sum int
+	for key, _ in counter {
+		sum += len(key)
+	}
+	return sum
+}
+
+fn main() {
+	var keys [&str 2]
+	keys[0] = "a"
+	keys[1] = "zz"
+	var counter = Counter{ value: 7, keys: keys[:] }
+	assert first(counter) == 7
+	assert first_ref(&counter) == 7
+	assert key_from_preferred_next_key(&counter) == 3
+}

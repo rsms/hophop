@@ -1,1 +1,1 @@
-tests/top_ptr_missing_init_bad.sl:1:1: error: SL2099: top-level pointer/reference variable 'p' requires initializer
+tests/top_ptr_missing_init_bad.hop:1:1: error: HOP2099: top-level pointer/reference variable 'p' requires initializer

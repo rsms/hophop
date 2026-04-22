@@ -1,1 +1,1 @@
-tests/enum_member_unknown_bad.sl:7:19: error: SL2002: unknown identifier 'B'
+tests/enum_member_unknown_bad.hop:7:19: error: HOP2002: unknown identifier 'B'

@@ -1,1 +1,1 @@
-tests/import_infer_name_bad.sl:2:1: error: SL2021: cannot infer package identifier; use 'import "a/b-c" as <name>'
+tests/import_infer_name_bad.hop:2:1: error: HOP2021: cannot infer package identifier; use 'import "a/b-c" as <name>'

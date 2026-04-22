@@ -1,1 +1,1 @@
-tests/compound_literal_infer_non_aggregate_bad.sl:3:14: error: SL2039: inferred compound literal type is not an aggregate
+tests/compound_literal_infer_non_aggregate_bad.hop:3:14: error: HOP2039: inferred compound literal type is not an aggregate

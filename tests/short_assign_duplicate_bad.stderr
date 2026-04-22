@@ -1,2 +1,2 @@
-tests/short_assign_duplicate_bad.sl:3:5: error: SL2001: duplicate definition 'x'
-tests/short_assign_duplicate_bad.sl:3:2: hint: SL2001: other declaration of 'x'
+tests/short_assign_duplicate_bad.hop:3:5: error: HOP2001: duplicate definition 'x'
+tests/short_assign_duplicate_bad.hop:3:2: hint: HOP2001: other declaration of 'x'

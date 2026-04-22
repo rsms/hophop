@@ -1,1 +1,1 @@
-tests/bad_type_mismatch.sl:3:9: error: SL2004: type mismatch
+tests/bad_type_mismatch.hop:3:9: error: HOP2004: type mismatch

@@ -1,14 +1,14 @@
-input/top.sl
-input/top.sl:2:1: line content differs
+input/top.hop
+input/top.hop:2:1: line content differs
   current : "struct Foo{ x int }"
   expected: "struct Foo {"
-input/top.sl:3:1: line content differs
+input/top.hop:3:1: line content differs
   current : ""
   expected: "\tx int"
-input/top.sl:4:1: line should be inserted
+input/top.hop:4:1: line should be inserted
   current : ""
   expected: "}"
-input/top.sl:4:1: line should be inserted
+input/top.hop:4:1: line should be inserted
   current : ""
   expected: ""
   issues: 4

@@ -1,9 +1,9 @@
 #pragma once
 #include "ctfe.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
-#define SLCTFE_EXEC_DEFAULT_FOR_LIMIT 100000u
+#define HOPCTFE_EXEC_DEFAULT_FOR_LIMIT 100000u
 
 typedef struct {
     uint32_t nameStart;
@@ -11,129 +11,129 @@ typedef struct {
     int32_t  typeId;
     int32_t  typeNode;
     uint8_t mutable;
-    uint8_t     _reserved[3];
-    SLCTFEValue value;
-} SLCTFEExecBinding;
+    uint8_t      _reserved[3];
+    HOPCTFEValue value;
+} HOPCTFEExecBinding;
 
-typedef struct SLCTFEExecEnv {
-    struct SLCTFEExecEnv* _Nullable parent;
-    SLCTFEExecBinding* _Nullable bindings;
+typedef struct HOPCTFEExecEnv {
+    struct HOPCTFEExecEnv* _Nullable parent;
+    HOPCTFEExecBinding* _Nullable bindings;
     uint32_t bindingLen;
-} SLCTFEExecEnv;
+} HOPCTFEExecEnv;
 
-typedef int (*SLCTFEExecEvalExprFn)(
+typedef int (*HOPCTFEExecEvalExprFn)(
     void* _Nullable ctx,
     int32_t exprNode,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
-typedef int (*SLCTFEExecEvalExprForTypeFn)(
+typedef int (*HOPCTFEExecEvalExprForTypeFn)(
     void* _Nullable ctx,
     int32_t exprNode,
     int32_t typeNode,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
-typedef int (*SLCTFEExecResolveTypeFn)(
+typedef int (*HOPCTFEExecResolveTypeFn)(
     void* _Nullable ctx, int32_t typeNode, int32_t* _Nonnull outTypeId);
 
-typedef int (*SLCTFEExecInferValueTypeFn)(
-    void* _Nullable ctx, const SLCTFEValue* _Nonnull value, int32_t* _Nonnull outTypeId);
+typedef int (*HOPCTFEExecInferValueTypeFn)(
+    void* _Nullable ctx, const HOPCTFEValue* _Nonnull value, int32_t* _Nonnull outTypeId);
 
-typedef int (*SLCTFEExecInferExprTypeFn)(
+typedef int (*HOPCTFEExecInferExprTypeFn)(
     void* _Nullable ctx, int32_t exprNode, int32_t* _Nonnull outTypeId);
 
-typedef int (*SLCTFEExecIsOptionalTypeFn)(
+typedef int (*HOPCTFEExecIsOptionalTypeFn)(
     void* _Nullable ctx,
     int32_t typeId,
     int32_t* _Nullable outPayloadTypeId,
     int* _Nonnull outIsOptional);
 
-typedef struct SLCTFEExecCtx SLCTFEExecCtx;
+typedef struct HOPCTFEExecCtx HOPCTFEExecCtx;
 
-typedef int (*SLCTFEExecZeroInitFn)(
+typedef int (*HOPCTFEExecZeroInitFn)(
     void* _Nullable ctx,
     int32_t typeNode,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
-typedef int (*SLCTFEExecAssignExprFn)(
+typedef int (*HOPCTFEExecAssignExprFn)(
     void* _Nullable ctx,
-    SLCTFEExecCtx* _Nonnull execCtx,
+    HOPCTFEExecCtx* _Nonnull execCtx,
     int32_t exprNode,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
-typedef int (*SLCTFEExecAssignValueExprFn)(
+typedef int (*HOPCTFEExecAssignValueExprFn)(
     void* _Nullable ctx,
-    SLCTFEExecCtx* _Nonnull execCtx,
+    HOPCTFEExecCtx* _Nonnull execCtx,
     int32_t lhsExprNode,
-    const SLCTFEValue* _Nonnull inValue,
-    SLCTFEValue* _Nonnull outValue,
+    const HOPCTFEValue* _Nonnull inValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
-typedef int (*SLCTFEExecMatchPatternFn)(
+typedef int (*HOPCTFEExecMatchPatternFn)(
     void* _Nullable ctx,
-    SLCTFEExecCtx* _Nonnull execCtx,
-    const SLCTFEValue* _Nonnull subjectValue,
+    HOPCTFEExecCtx* _Nonnull execCtx,
+    const HOPCTFEValue* _Nonnull subjectValue,
     int32_t labelExprNode,
     int* _Nonnull outMatched);
 
-typedef int (*SLCTFEExecForInIndexFn)(
+typedef int (*HOPCTFEExecForInIndexFn)(
     void* _Nullable ctx,
-    SLCTFEExecCtx* _Nonnull execCtx,
-    const SLCTFEValue* _Nonnull sourceValue,
+    HOPCTFEExecCtx* _Nonnull execCtx,
+    const HOPCTFEValue* _Nonnull sourceValue,
     uint32_t index,
     int      byRef,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
-typedef int (*SLCTFEExecForInIterFn)(
+typedef int (*HOPCTFEExecForInIterFn)(
     void* _Nullable ctx,
-    SLCTFEExecCtx* _Nonnull execCtx,
+    HOPCTFEExecCtx* _Nonnull execCtx,
     int32_t sourceNode,
-    const SLCTFEValue* _Nonnull sourceValue,
+    const HOPCTFEValue* _Nonnull sourceValue,
     uint32_t index,
     int      hasKey,
     int      keyRef,
     int      valueRef,
     int      valueDiscard,
     int* _Nonnull outHasItem,
-    SLCTFEValue* _Nonnull outKey,
+    HOPCTFEValue* _Nonnull outKey,
     int* _Nonnull outKeyIsConst,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outValueIsConst);
 
-struct SLCTFEExecCtx {
-    SLArena* _Nonnull arena;
-    const SLAst* _Nonnull ast;
-    SLStrView src;
-    SLDiag* _Nullable diag;
+struct HOPCTFEExecCtx {
+    HOPArena* _Nonnull arena;
+    const HOPAst* _Nonnull ast;
+    HOPStrView src;
+    HOPDiag* _Nullable diag;
 
-    SLCTFEExecEnv* _Nullable env;
-    SLCTFEExecEvalExprFn _Nonnull evalExpr;
+    HOPCTFEExecEnv* _Nullable env;
+    HOPCTFEExecEvalExprFn _Nonnull evalExpr;
     void* _Nullable evalExprCtx;
-    SLCTFEExecEvalExprForTypeFn _Nullable evalExprForType;
+    HOPCTFEExecEvalExprForTypeFn _Nullable evalExprForType;
     void* _Nullable evalExprForTypeCtx;
-    SLCTFEExecResolveTypeFn _Nullable resolveType;
+    HOPCTFEExecResolveTypeFn _Nullable resolveType;
     void* _Nullable resolveTypeCtx;
-    SLCTFEExecInferValueTypeFn _Nullable inferValueType;
+    HOPCTFEExecInferValueTypeFn _Nullable inferValueType;
     void* _Nullable inferValueTypeCtx;
-    SLCTFEExecInferExprTypeFn _Nullable inferExprType;
+    HOPCTFEExecInferExprTypeFn _Nullable inferExprType;
     void* _Nullable inferExprTypeCtx;
-    SLCTFEExecIsOptionalTypeFn _Nullable isOptionalType;
+    HOPCTFEExecIsOptionalTypeFn _Nullable isOptionalType;
     void* _Nullable isOptionalTypeCtx;
-    SLCTFEExecZeroInitFn _Nullable zeroInit;
+    HOPCTFEExecZeroInitFn _Nullable zeroInit;
     void* _Nullable zeroInitCtx;
-    SLCTFEExecAssignExprFn _Nullable assignExpr;
+    HOPCTFEExecAssignExprFn _Nullable assignExpr;
     void* _Nullable assignExprCtx;
-    SLCTFEExecAssignValueExprFn _Nullable assignValueExpr;
+    HOPCTFEExecAssignValueExprFn _Nullable assignValueExpr;
     void* _Nullable assignValueExprCtx;
-    SLCTFEExecMatchPatternFn _Nullable matchPattern;
+    HOPCTFEExecMatchPatternFn _Nullable matchPattern;
     void* _Nullable matchPatternCtx;
-    SLCTFEExecForInIndexFn _Nullable forInIndex;
+    HOPCTFEExecForInIndexFn _Nullable forInIndex;
     void* _Nullable forInIndexCtx;
-    SLCTFEExecForInIterFn _Nullable forInIter;
+    HOPCTFEExecForInIterFn _Nullable forInIter;
     void* _Nullable forInIterCtx;
 
     const char* _Nullable nonConstReason;
@@ -146,16 +146,16 @@ struct SLCTFEExecCtx {
     uint8_t  _reserved[3];
 };
 
-void SLCTFEExecResetReason(SLCTFEExecCtx* _Nonnull c);
-void SLCTFEExecSetReason(
-    SLCTFEExecCtx* _Nonnull c, uint32_t start, uint32_t end, const char* _Nonnull reason);
-void SLCTFEExecSetReasonNode(
-    SLCTFEExecCtx* _Nonnull c, int32_t nodeId, const char* _Nonnull reason);
+void HOPCTFEExecResetReason(HOPCTFEExecCtx* _Nonnull c);
+void HOPCTFEExecSetReason(
+    HOPCTFEExecCtx* _Nonnull c, uint32_t start, uint32_t end, const char* _Nonnull reason);
+void HOPCTFEExecSetReasonNode(
+    HOPCTFEExecCtx* _Nonnull c, int32_t nodeId, const char* _Nonnull reason);
 
-int SLCTFEExecEnvLookup(
-    const SLCTFEExecCtx* _Nonnull c,
+int HOPCTFEExecEnvLookup(
+    const HOPCTFEExecCtx* _Nonnull c,
     uint32_t nameStart,
     uint32_t nameEnd,
-    SLCTFEValue* _Nonnull outValue);
+    HOPCTFEValue* _Nonnull outValue);
 
-SL_API_END
+HOP_API_END

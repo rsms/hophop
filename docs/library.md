@@ -1,6 +1,6 @@
-# SL Library Reference
+# HopHop Library Reference
 
-This document describes the built-in library surface of SL:
+This document describes the built-in library surface of HopHop:
 - built-in non-primitive types
 - commonly used type forms (arrays, slices, pointers, references)
 - built-in functions
@@ -10,7 +10,7 @@ Primitive scalar types and full language grammar are documented in `docs/languag
 
 ## Type Forms (Arrays and Slices)
 
-```sl
+```hop
 T          // value
 [T N]      // fixed-size array value
 [T]        // unsized slice type (not by-value)
@@ -43,7 +43,7 @@ Notes:
 `str` is a specialized string type.
 Conceptually, it is a specialized form of `[u8]` where the content is UTF-8 data.
 
-```sl
+```hop
 struct str {
     ptr *u8
     len int
@@ -60,18 +60,18 @@ Properties:
 
 `rune` is a builtin alias type:
 
-```sl
+```hop
 type rune u32
 ```
 
 Rune literals (`'a'`, `'\n'`, `'本'`) produce `rune` values.
 
-### `__sl_MemAllocator`
+### `__hop_MemAllocator`
 
-`__sl_MemAllocator` is the low-level allocator capability used by `new`.
+`__hop_MemAllocator` is the low-level allocator capability used by `new`.
 The allocator callback uses signed size and alignment values:
 
-```sl
+```hop
 struct MemAllocator {
     impl fn(*MemAllocator, rawptr, int, int, *int, u32) rawptr
 }
@@ -81,14 +81,14 @@ MemAllocator implementations must zero newly allocated bytes:
 - fresh allocations are fully zeroed
 - resized allocations must zero bytes in `[oldSize, newSize)`
 
-For normal code, use `MemAllocator` (a nominal alias of `__sl_MemAllocator`).
+For normal code, use `MemAllocator` (a nominal alias of `__hop_MemAllocator`).
 
 ## Built-In Functions
 
 
 ### `len`
 
-```sl
+```hop
 fn len(x Seq) int
 ```
 
@@ -98,7 +98,7 @@ fn len(x Seq) int
 
 ### `cstr`
 
-```sl
+```hop
 fn cstr(s str) *u8
 ```
 
@@ -106,7 +106,7 @@ fn cstr(s str) *u8
 
 ### `copy`
 
-```sl
+```hop
 fn copy(dst *[anytype], src &[anytype]) int
 ```
 
@@ -126,7 +126,7 @@ fn copy(dst *[anytype], src &[anytype]) int
 
 ### `new`
 
-```sl
+```hop
 new T
 new [T N]
 new T context alloc
@@ -151,7 +151,7 @@ new [T N] context alloc
 
 ### `panic`
 
-```sl
+```hop
 fn panic(message str)
 ```
 
@@ -161,7 +161,7 @@ Exact behavior is platform-specific; it lowers to the platform panic operation.
 
 ### `fmt`
 
-```sl
+```hop
 fn fmt(format str, ...args) *str
 ```
 
@@ -182,13 +182,13 @@ fn fmt(format str, ...args) *str
 
 Import:
 
-```sl
+```hop
 import "str" { format }
 ```
 
 Signature:
 
-```sl
+```hop
 fn format(buf *[u8], const format &str, args ...anytype) int
 ```
 
@@ -198,7 +198,7 @@ Behavior:
 - Supported placeholders are `{i}`, `{f}`, `{s}` with escapes `{{` and `}}`.
 - Placeholder count must match argument count.
 - Placeholder compatibility: `{i}` integer, `{f}` float, `{s}` values assignable to `&str`.
-- Validation runs in pure-SL `const { ... }` logic at call site and fails during typecheck.
+- Validation runs in pure-HopHop `const { ... }` logic at call site and fails during typecheck.
 - Current implementation supports up to 16 variadic arguments.
 - Return value is the payload byte count that would have been written without truncation.
 - If `len(buf) > 0`, implementation writes at most `len(buf)-1` payload bytes and writes a trailing NUL byte.
@@ -206,7 +206,7 @@ Behavior:
 
 ### `print`
 
-```sl
+```hop
 fn print(message &str)
 ```
 
@@ -216,7 +216,7 @@ It is implemented by calling `context.log.handler(&context.log, message, LogLeve
 
 ### `sizeof`
 
-```sl
+```hop
 fn sizeof(type T) int
 fn sizeof(expr E) int
 ```
@@ -248,17 +248,17 @@ Operation semantics:
 - `panic`: stop execution after reporting a fatal error message.
 
 Allocation is provided by `MemAllocator` via `new`, with the platform setting
-`context.mem` before `sl_main`.
+`context.mem` before `hop_main`.
 
-Concrete default platform implementation used by `slc compile`:
+Concrete default platform implementation used by `hop compile`:
 - `lib/platform/cli-libc/platform.c`
 
-`slc run` defaults to the evaluator host (`cli-eval`) unless `--platform` is provided.
-Selected platform targets may provide the platform surface in SL using foreign-linkage directives.
-The `wasm-min` target does this in `lib/platform/wasm-min/platform.sl` with `@wasm_import(...)`
+`hop run` defaults to the evaluator host (`cli-eval`) unless `--platform` is provided.
+Selected platform targets may provide the platform surface in HopHop using foreign-linkage directives.
+The `wasm-min` target does this in `lib/platform/wasm-min/platform.hop` with `@wasm_import(...)`
 declarations for `exit`, `console_log`, and `panic`.
 
-For `--platform playbit`, the raw runtime ABI lives in `lib/platform/playbit/platform.sl`.
+For `--platform playbit`, the raw runtime ABI lives in `lib/platform/playbit/platform.hop`.
 That package stays close to Playbit syscalls.
 
 Most Playbit programs should import the thin convenience packages under `lib/playbit/` instead:
@@ -272,24 +272,24 @@ Most Playbit programs should import the thin convenience packages under `lib/pla
 - `playbit/time`
 - `playbit/window`
 
-### Draft delta (SLP-17, not implemented)
+### Draft delta (HEP-17, not implemented)
 
 Planned additions to platform library surface:
 
 - Base context in built-in `platform` package:
 
-```sl
+```hop
 pub struct Context {
     mem     *MemAllocator
     console i32
     stdin   ?i32
-    fs      ?__sl_FileSystem
+    fs      ?__hop_FileSystem
 }
 ```
 
 - Target context packages under `platform/<target>` that compose the base:
 
-```sl
+```hop
 import "platform"
 
 pub struct Context {
@@ -300,12 +300,12 @@ pub struct Context {
 
 This keeps a stable portable base (`platform.Context`) while allowing target extension.
 `main` is planned to receive the selected target context type.
-`__sl_FileSystem` is planned as a built-in type initially; future work may define
-global host types in `prelude.sl` instead.
+`__hop_FileSystem` is planned as a built-in type initially; future work may define
+global host types in `prelude.hop` instead.
 
 ## Reflection Package (Draft)
 
-`reflect` is proposed in SLP-18 as a compile-time reflection API.
+`reflect` is proposed in HEP-18 as a compile-time reflection API.
 
 Planned surface (draft):
 
@@ -321,7 +321,7 @@ Planned surface (draft):
 
 Sketch examples:
 
-```sl
+```hop
 import "reflect"
 
 type MyInt int
@@ -338,7 +338,7 @@ fn main() {
 }
 ```
 
-Exact signatures and typing rules are draft and defined in `docs/SLP-18-reflection.md`.
+Exact signatures and typing rules are draft and defined in `docs/HEP-18-reflection.md`.
 
 ## Source Locations Package Surface (Provisional)
 
@@ -363,11 +363,11 @@ diagnostics only on compile-time-proven execution paths.
 
 ## C Interop Mapping
 
-Common SL <-> C type correspondences:
+Common HopHop <-> C type correspondences:
 
 - `&T` <-> `const T*`
 - `*T` <-> `T*`
 - `*[T N]` <-> `T*`
-- `*[T]` <-> `struct { T* ptr; __sl_int len; }`
+- `*[T]` <-> `struct { T* ptr; __hop_int len; }`
 - `&[T N]` <-> `const T*`
-- `&[T]` <-> `struct { const T* ptr; __sl_int len; }`
+- `&[T]` <-> `struct { const T* ptr; __hop_int len; }`

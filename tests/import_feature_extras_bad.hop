@@ -1,0 +1,4 @@
+// Verifies import feature extras is rejected.
+import "hophop/feature/optional" as opt
+
+fn main() {}

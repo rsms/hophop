@@ -1,76 +1,78 @@
-#include "libsl-impl.h"
+#include "libhop-impl.h"
 #include "ctfe.h"
 #include "mir.h"
 #include "mir_exec.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
 typedef struct {
-    const SLMirInst*     ip;
-    uint32_t             len;
-    uint32_t             pc;
-    SLMirExecValue*      stack;
-    uint32_t             stackLen;
-    uint32_t             stackCap;
-    SLMirExecValue*      locals;
-    uint32_t             localCount;
-    SLArena*             arena;
-    const SLMirProgram*  program;
-    const SLMirFunction* function;
-    SLMirExecEnv         env;
-    uint32_t             backwardJumpCount;
-} SLMirExecRun;
+    const HOPMirInst*     ip;
+    uint32_t              len;
+    uint32_t              pc;
+    HOPMirExecValue*      stack;
+    uint32_t              stackLen;
+    uint32_t              stackCap;
+    HOPMirExecValue*      locals;
+    uint32_t              localCount;
+    HOPArena*             arena;
+    const HOPMirProgram*  program;
+    const HOPMirFunction* function;
+    HOPMirExecEnv         env;
+    uint32_t              backwardJumpCount;
+} HOPMirExecRun;
 
-#define SLMIR_EXEC_FUNCTION_REF_TAG_FLAG   (UINT64_C(1) << 57)
-#define SLMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG (UINT64_C(1) << 56)
+#define HOPMIR_EXEC_FUNCTION_REF_TAG_FLAG   (UINT64_C(1) << 57)
+#define HOPMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG (UINT64_C(1) << 56)
 
-static void SLCTFESetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end);
-static void SLCTFEValueInvalid(SLCTFEValue* v);
-static int  SLCTFEPush(SLMirExecRun* r, const SLMirExecValue* v);
-static int  SLCTFEPop(SLMirExecRun* r, SLMirExecValue* out);
-static int  SLCTFEParseIntLiteral(SLStrView src, uint32_t start, uint32_t end, int64_t* out);
-static int  SLCTFEParseFloatLiteral(
-    SLArena* arena, SLStrView src, uint32_t start, uint32_t end, double* out);
-static int SLCTFEParseBoolLiteral(SLStrView src, uint32_t start, uint32_t end, uint8_t* out);
-static int SLCTFEOptionalPayload(const SLCTFEValue* opt, const SLCTFEValue** outPayload);
-static int SLCTFEEvalUnary(SLTokenKind op, const SLCTFEValue* in, SLCTFEValue* out);
-static int SLCTFEEvalBinary(
-    SLMirExecRun*      r,
-    SLTokenKind        op,
-    const SLCTFEValue* lhs,
-    const SLCTFEValue* rhs,
-    SLCTFEValue*       out);
-static int SLCTFEEvalCast(SLMirCastTarget target, const SLCTFEValue* in, SLCTFEValue* out);
-static const SLMirLocal* SLMirGetLocalMeta(const SLMirExecRun* run, uint32_t slot);
-static int               SLMirCoerceValueForType(
-    const SLMirExecRun* run, uint32_t typeRefIndex, SLMirExecValue* inOutValue);
-static void SLMirSetReason(
-    const SLMirExecRun* _Nullable run, const SLMirInst* _Nullable ins, const char* _Nonnull reason);
+static void HOPCTFESetDiag(HOPDiag* diag, HOPDiagCode code, uint32_t start, uint32_t end);
+static void HOPCTFEValueInvalid(HOPCTFEValue* v);
+static int  HOPCTFEPush(HOPMirExecRun* r, const HOPMirExecValue* v);
+static int  HOPCTFEPop(HOPMirExecRun* r, HOPMirExecValue* out);
+static int  HOPCTFEParseIntLiteral(HOPStrView src, uint32_t start, uint32_t end, int64_t* out);
+static int  HOPCTFEParseFloatLiteral(
+    HOPArena* arena, HOPStrView src, uint32_t start, uint32_t end, double* out);
+static int HOPCTFEParseBoolLiteral(HOPStrView src, uint32_t start, uint32_t end, uint8_t* out);
+static int HOPCTFEOptionalPayload(const HOPCTFEValue* opt, const HOPCTFEValue** outPayload);
+static int HOPCTFEEvalUnary(HOPTokenKind op, const HOPCTFEValue* in, HOPCTFEValue* out);
+static int HOPCTFEEvalBinary(
+    HOPMirExecRun*      r,
+    HOPTokenKind        op,
+    const HOPCTFEValue* lhs,
+    const HOPCTFEValue* rhs,
+    HOPCTFEValue*       out);
+static int HOPCTFEEvalCast(HOPMirCastTarget target, const HOPCTFEValue* in, HOPCTFEValue* out);
+static const HOPMirLocal* HOPMirGetLocalMeta(const HOPMirExecRun* run, uint32_t slot);
+static int                HOPMirCoerceValueForType(
+    const HOPMirExecRun* run, uint32_t typeRefIndex, HOPMirExecValue* inOutValue);
+static void HOPMirSetReason(
+    const HOPMirExecRun* _Nullable run,
+    const HOPMirInst* _Nullable ins,
+    const char* _Nonnull reason);
 
-static int SLMirInitRun(
-    SLMirExecRun* _Nonnull run,
-    SLArena* _Nonnull arena,
-    SLMirChunk chunk,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
+static int HOPMirInitRun(
+    HOPMirExecRun* _Nonnull run,
+    HOPArena* _Nonnull arena,
+    HOPMirChunk chunk,
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
     uint32_t localCount,
-    const SLMirExecValue* _Nullable args,
+    const HOPMirExecValue* _Nullable args,
     uint32_t argCount,
-    const SLMirExecEnv* _Nullable env,
+    const HOPMirExecEnv* _Nullable env,
     int clearDiag,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
     if (clearDiag && env != NULL && env->diag != NULL) {
-        *env->diag = (SLDiag){ 0 };
+        *env->diag = (HOPDiag){ 0 };
     }
     if (run == NULL || arena == NULL || outValue == NULL || outIsConst == NULL) {
         if (env != NULL) {
-            SLCTFESetDiag(env->diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+            HOPCTFESetDiag(env->diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
         }
         return -1;
     }
 
-    SLCTFEValueInvalid(outValue);
+    HOPCTFEValueInvalid(outValue);
     *outIsConst = 0;
 
     memset(run, 0, sizeof(*run));
@@ -78,11 +80,11 @@ static int SLMirInitRun(
     run->len = chunk.len;
     run->pc = 0;
     run->stackCap = chunk.len + argCount + 1u;
-    run->stack = (SLMirExecValue*)SLArenaAlloc(
-        arena, sizeof(SLMirExecValue) * run->stackCap, (uint32_t)_Alignof(SLMirExecValue));
+    run->stack = (HOPMirExecValue*)HOPArenaAlloc(
+        arena, sizeof(HOPMirExecValue) * run->stackCap, (uint32_t)_Alignof(HOPMirExecValue));
     if (run->stack == NULL) {
         if (env != NULL) {
-            SLCTFESetDiag(env->diag, SLDiag_ARENA_OOM, 0, 0);
+            HOPCTFESetDiag(env->diag, HOPDiag_ARENA_OOM, 0, 0);
         }
         return -1;
     }
@@ -97,16 +99,16 @@ static int SLMirInitRun(
     }
     if (localCount != 0u) {
         uint32_t i;
-        run->locals = (SLMirExecValue*)SLArenaAlloc(
-            arena, sizeof(SLMirExecValue) * localCount, (uint32_t)_Alignof(SLMirExecValue));
+        run->locals = (HOPMirExecValue*)HOPArenaAlloc(
+            arena, sizeof(HOPMirExecValue) * localCount, (uint32_t)_Alignof(HOPMirExecValue));
         if (run->locals == NULL) {
             if (env != NULL) {
-                SLCTFESetDiag(env->diag, SLDiag_ARENA_OOM, 0, 0);
+                HOPCTFESetDiag(env->diag, HOPDiag_ARENA_OOM, 0, 0);
             }
             return -1;
         }
         for (i = 0; i < localCount; i++) {
-            SLCTFEValueInvalid(&run->locals[i]);
+            HOPCTFEValueInvalid(&run->locals[i]);
         }
         if (argCount > localCount) {
             return 0;
@@ -114,9 +116,9 @@ static int SLMirInitRun(
         for (i = 0; i < argCount; i++) {
             run->locals[i] = args[i];
             if (program != NULL && function != NULL) {
-                const SLMirLocal* local = SLMirGetLocalMeta(run, i);
+                const HOPMirLocal* local = HOPMirGetLocalMeta(run, i);
                 if (local->typeRef != UINT32_MAX) {
-                    int coerceRc = SLMirCoerceValueForType(run, local->typeRef, &run->locals[i]);
+                    int coerceRc = HOPMirCoerceValueForType(run, local->typeRef, &run->locals[i]);
                     if (coerceRc <= 0) {
                         return coerceRc < 0 ? -1 : 0;
                     }
@@ -129,8 +131,8 @@ static int SLMirInitRun(
     return 0;
 }
 
-static const SLMirLocal* SLMirGetLocalMeta(const SLMirExecRun* run, uint32_t slot) {
-    static const SLMirLocal invalidLocal = { UINT32_MAX, SLMirLocalFlag_NONE, 0u, 0u };
+static const HOPMirLocal* HOPMirGetLocalMeta(const HOPMirExecRun* run, uint32_t slot) {
+    static const HOPMirLocal invalidLocal = { UINT32_MAX, HOPMirLocalFlag_NONE, 0u, 0u };
     if (run == NULL || run->program == NULL || run->function == NULL || slot >= run->localCount
         || run->function->localStart > run->program->localLen
         || slot >= run->program->localLen - run->function->localStart)
@@ -140,8 +142,8 @@ static const SLMirLocal* SLMirGetLocalMeta(const SLMirExecRun* run, uint32_t slo
     return &run->program->locals[run->function->localStart + slot];
 }
 
-static int SLMirCoerceValueForType(
-    const SLMirExecRun* run, uint32_t typeRefIndex, SLMirExecValue* inOutValue) {
+static int HOPMirCoerceValueForType(
+    const HOPMirExecRun* run, uint32_t typeRefIndex, HOPMirExecValue* inOutValue) {
     if (run == NULL || inOutValue == NULL || typeRefIndex == UINT32_MAX) {
         return 1;
     }
@@ -160,29 +162,29 @@ static int SLMirCoerceValueForType(
     return 1;
 }
 
-static uint32_t SLMirResolveHostId(const SLMirExecRun* run, const SLMirInst* ins) {
+static uint32_t HOPMirResolveHostId(const HOPMirExecRun* run, const HOPMirInst* ins) {
     if (run == NULL || ins == NULL || run->program == NULL || run->program->hostLen == 0
         || ins->aux >= run->program->hostLen)
     {
-        return SLMirHostTarget_INVALID;
+        return HOPMirHostTarget_INVALID;
     }
     return run->program->hosts[ins->aux].target;
 }
 
-static uint32_t SLMirResolvedCallArgCount(const SLMirInst* ins) {
+static uint32_t HOPMirResolvedCallArgCount(const HOPMirInst* ins) {
     if (ins == NULL) {
         return 0;
     }
-    return SLMirCallArgCountFromTok(ins->tok);
+    return HOPMirCallArgCountFromTok(ins->tok);
 }
 
-static int SLMirResolvedCallDropsReceiverArg0(const SLMirInst* ins) {
-    return ins != NULL && SLMirCallTokDropsReceiverArg0(ins->tok);
+static int HOPMirResolvedCallDropsReceiverArg0(const HOPMirInst* ins) {
+    return ins != NULL && HOPMirCallTokDropsReceiverArg0(ins->tok);
 }
 
-static void SLMirSetReason(
-    const SLMirExecRun* _Nullable run,
-    const SLMirInst* _Nullable ins,
+static void HOPMirSetReason(
+    const HOPMirExecRun* _Nullable run,
+    const HOPMirInst* _Nullable ins,
     const char* _Nonnull reason) {
     uint32_t start = 0;
     uint32_t end = 0;
@@ -196,105 +198,105 @@ static void SLMirSetReason(
     run->env.setReason(run->env.setReasonCtx, start, end, reason);
 }
 
-static SLCTFEValue* _Nullable SLMirReferenceTarget(SLCTFEValue* value) {
-    if (value == NULL || value->kind != SLCTFEValue_REFERENCE || value->s.bytes == NULL) {
+static HOPCTFEValue* _Nullable HOPMirReferenceTarget(HOPCTFEValue* value) {
+    if (value == NULL || value->kind != HOPCTFEValue_REFERENCE || value->s.bytes == NULL) {
         return NULL;
     }
-    return (SLCTFEValue*)value->s.bytes;
+    return (HOPCTFEValue*)value->s.bytes;
 }
 
-static int SLMirEvalFunctionInternal(
-    SLArena* _Nonnull arena,
-    const SLMirProgram* _Nonnull program,
+static int HOPMirEvalFunctionInternal(
+    HOPArena* _Nonnull arena,
+    const HOPMirProgram* _Nonnull program,
     uint32_t functionIndex,
-    const SLMirExecValue* _Nullable args,
+    const HOPMirExecValue* _Nullable args,
     uint32_t argCount,
     uint16_t callFlags,
-    const SLMirExecEnv* _Nullable env,
+    const HOPMirExecEnv* _Nullable env,
     int validateProgram,
     int clearDiag,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
-static int SLMirConstToValue(const SLMirConst* _Nonnull in, SLMirExecValue* _Nonnull out) {
+static int HOPMirConstToValue(const HOPMirConst* _Nonnull in, HOPMirExecValue* _Nonnull out) {
     double f64 = 0.0;
     if (in == NULL || out == NULL) {
         return 0;
     }
-    SLCTFEValueInvalid(out);
+    HOPCTFEValueInvalid(out);
     switch (in->kind) {
-        case SLMirConst_INT:
-            out->kind = SLCTFEValue_INT;
+        case HOPMirConst_INT:
+            out->kind = HOPCTFEValue_INT;
             out->i64 = (int64_t)in->bits;
             return 1;
-        case SLMirConst_FLOAT:
-            out->kind = SLCTFEValue_FLOAT;
+        case HOPMirConst_FLOAT:
+            out->kind = HOPCTFEValue_FLOAT;
             memcpy(&f64, &in->bits, sizeof(f64));
             out->f64 = f64;
             return 1;
-        case SLMirConst_BOOL:
-            out->kind = SLCTFEValue_BOOL;
+        case HOPMirConst_BOOL:
+            out->kind = HOPCTFEValue_BOOL;
             out->b = in->bits != 0;
             return 1;
-        case SLMirConst_STRING:
-            out->kind = SLCTFEValue_STRING;
+        case HOPMirConst_STRING:
+            out->kind = HOPCTFEValue_STRING;
             out->s.bytes = (const uint8_t*)in->bytes.ptr;
             out->s.len = in->bytes.len;
             return 1;
-        case SLMirConst_TYPE:
-            out->kind = SLCTFEValue_TYPE;
+        case HOPMirConst_TYPE:
+            out->kind = HOPCTFEValue_TYPE;
             out->typeTag = in->bits;
             out->s.bytes = (const uint8_t*)in->bytes.ptr;
             out->s.len = in->bytes.len;
             return 1;
-        case SLMirConst_FUNCTION: SLMirValueSetFunctionRef(out, (uint32_t)in->bits); return 1;
-        case SLMirConst_NULL:     out->kind = SLCTFEValue_NULL; return 1;
-        default:                  return 0;
+        case HOPMirConst_FUNCTION: HOPMirValueSetFunctionRef(out, (uint32_t)in->bits); return 1;
+        case HOPMirConst_NULL:     out->kind = HOPCTFEValue_NULL; return 1;
+        default:                   return 0;
     }
 }
 
-void SLMirValueSetFunctionRef(SLMirExecValue* _Nonnull value, uint32_t functionIndex) {
+void HOPMirValueSetFunctionRef(HOPMirExecValue* _Nonnull value, uint32_t functionIndex) {
     if (value == NULL) {
         return;
     }
-    SLCTFEValueInvalid(value);
-    value->kind = SLCTFEValue_TYPE;
-    value->typeTag = SLMIR_EXEC_FUNCTION_REF_TAG_FLAG | (uint64_t)functionIndex;
+    HOPCTFEValueInvalid(value);
+    value->kind = HOPCTFEValue_TYPE;
+    value->typeTag = HOPMIR_EXEC_FUNCTION_REF_TAG_FLAG | (uint64_t)functionIndex;
 }
 
-static int SLMirValueIsFunctionRef(const SLMirExecValue* value, uint32_t* _Nullable outFnIndex) {
-    if (value == NULL || value->kind != SLCTFEValue_TYPE
-        || (value->typeTag & SLMIR_EXEC_FUNCTION_REF_TAG_FLAG) == 0)
+static int HOPMirValueIsFunctionRef(const HOPMirExecValue* value, uint32_t* _Nullable outFnIndex) {
+    if (value == NULL || value->kind != HOPCTFEValue_TYPE
+        || (value->typeTag & HOPMIR_EXEC_FUNCTION_REF_TAG_FLAG) == 0)
     {
         return 0;
     }
     if (outFnIndex != NULL) {
-        *outFnIndex = (uint32_t)(value->typeTag & ~SLMIR_EXEC_FUNCTION_REF_TAG_FLAG);
+        *outFnIndex = (uint32_t)(value->typeTag & ~HOPMIR_EXEC_FUNCTION_REF_TAG_FLAG);
     }
     return 1;
 }
 
-int SLMirValueAsFunctionRef(
-    const SLMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex) {
-    return SLMirValueIsFunctionRef(value, outFunctionIndex);
+int HOPMirValueAsFunctionRef(
+    const HOPMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex) {
+    return HOPMirValueIsFunctionRef(value, outFunctionIndex);
 }
 
-void SLMirValueSetByteRefProxy(SLMirExecValue* _Nonnull value, uint8_t* _Nullable targetByte) {
+void HOPMirValueSetByteRefProxy(HOPMirExecValue* _Nonnull value, uint8_t* _Nullable targetByte) {
     if (value == NULL) {
         return;
     }
-    SLCTFEValueInvalid(value);
-    value->kind = SLCTFEValue_INT;
+    HOPCTFEValueInvalid(value);
+    value->kind = HOPCTFEValue_INT;
     value->i64 = targetByte != NULL ? (int64_t)(*targetByte) : 0;
-    value->typeTag = SLMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG;
+    value->typeTag = HOPMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG;
     value->s.bytes = targetByte;
     value->s.len = targetByte != NULL ? 1u : 0u;
 }
 
-int SLMirValueAsByteRefProxy(
-    const SLMirExecValue* _Nonnull value, uint8_t* _Nullable* _Nullable outTargetByte) {
-    if (value == NULL || value->kind != SLCTFEValue_INT
-        || (value->typeTag & SLMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG) == 0 || value->s.bytes == NULL)
+int HOPMirValueAsByteRefProxy(
+    const HOPMirExecValue* _Nonnull value, uint8_t* _Nullable* _Nullable outTargetByte) {
+    if (value == NULL || value->kind != HOPCTFEValue_INT
+        || (value->typeTag & HOPMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG) == 0 || value->s.bytes == NULL)
     {
         return 0;
     }
@@ -304,7 +306,7 @@ int SLMirValueAsByteRefProxy(
     return 1;
 }
 
-void SLMirExecEnvDisableDynamicResolution(SLMirExecEnv* env) {
+void HOPMirExecEnvDisableDynamicResolution(HOPMirExecEnv* env) {
     if (env == NULL) {
         return;
     }
@@ -313,10 +315,10 @@ void SLMirExecEnvDisableDynamicResolution(SLMirExecEnv* env) {
     env->resolveCtx = NULL;
 }
 
-static void SLMirResolveSymbolName(
-    const SLMirExecRun* _Nonnull run,
-    const SLMirInst* _Nonnull ins,
-    SLMirSymbolKind expectedKind,
+static void HOPMirResolveSymbolName(
+    const HOPMirExecRun* _Nonnull run,
+    const HOPMirInst* _Nonnull ins,
+    HOPMirSymbolKind expectedKind,
     uint32_t* _Nonnull outStart,
     uint32_t* _Nonnull outEnd) {
     *outStart = 0;
@@ -333,9 +335,9 @@ static void SLMirResolveSymbolName(
     *outEnd = run->program->symbols[ins->aux].nameEnd;
 }
 
-static void SLMirResolveFieldName(
-    const SLMirExecRun* _Nonnull run,
-    const SLMirInst* _Nonnull ins,
+static void HOPMirResolveFieldName(
+    const HOPMirExecRun* _Nonnull run,
+    const HOPMirInst* _Nonnull ins,
     uint32_t* _Nonnull outStart,
     uint32_t* _Nonnull outEnd) {
     *outStart = 0;
@@ -349,29 +351,29 @@ static void SLMirResolveFieldName(
     *outEnd = run->program->fields[ins->aux].nameEnd;
 }
 
-static int SLMirRunLoop(
-    SLMirExecRun* _Nonnull run, SLMirExecValue* _Nonnull outValue, int* _Nonnull outIsConst) {
+static int HOPMirRunLoop(
+    HOPMirExecRun* _Nonnull run, HOPMirExecValue* _Nonnull outValue, int* _Nonnull outIsConst) {
     while (run->pc < run->len) {
-        const SLMirInst* ins = &run->ip[run->pc++];
+        const HOPMirInst* ins = &run->ip[run->pc++];
         switch (ins->op) {
-            case SLMirOp_PUSH_CONST: {
-                SLMirExecValue v;
+            case HOPMirOp_PUSH_CONST: {
+                HOPMirExecValue v;
                 if (run->program == NULL || ins->aux >= run->program->constLen) {
                     return 0;
                 }
-                if (!SLMirConstToValue(&run->program->consts[ins->aux], &v)) {
+                if (!HOPMirConstToValue(&run->program->consts[ins->aux], &v)) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_PUSH_INT: {
-                SLCTFEValue  v;
-                uint32_t     rune = 0;
-                SLRuneLitErr runeErr = { 0 };
-                v.kind = SLCTFEValue_INT;
+            case HOPMirOp_PUSH_INT: {
+                HOPCTFEValue  v;
+                uint32_t      rune = 0;
+                HOPRuneLitErr runeErr = { 0 };
+                v.kind = HOPCTFEValue_INT;
                 v.f64 = 0.0;
                 v.b = 0;
                 v.typeTag = 0;
@@ -383,34 +385,34 @@ static int SLMirRunLoop(
                 v.span.startColumn = 0;
                 v.span.endLine = 0;
                 v.span.endColumn = 0;
-                if ((SLTokenKind)ins->tok == SLTok_RUNE) {
-                    if (SLDecodeRuneLiteralValidate(
+                if ((HOPTokenKind)ins->tok == HOPTok_RUNE) {
+                    if (HOPDecodeRuneLiteralValidate(
                             run->env.src.ptr, ins->start, ins->end, &rune, &runeErr)
                         != 0)
                     {
-                        SLCTFESetDiag(
+                        HOPCTFESetDiag(
                             run->env.diag,
-                            SLRuneLitErrDiagCode(runeErr.kind),
+                            HOPRuneLitErrDiagCode(runeErr.kind),
                             runeErr.start,
                             runeErr.end);
                         return -1;
                     }
                     v.i64 = (int64_t)rune;
-                } else if ((SLTokenKind)ins->tok == SLTok_INVALID) {
+                } else if ((HOPTokenKind)ins->tok == HOPTok_INVALID) {
                     v.i64 = (int64_t)(int32_t)ins->aux;
                 } else {
-                    if (SLCTFEParseIntLiteral(run->env.src, ins->start, ins->end, &v.i64) != 0) {
+                    if (HOPCTFEParseIntLiteral(run->env.src, ins->start, ins->end, &v.i64) != 0) {
                         return 0;
                     }
                 }
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_PUSH_FLOAT: {
-                SLCTFEValue v;
-                v.kind = SLCTFEValue_FLOAT;
+            case HOPMirOp_PUSH_FLOAT: {
+                HOPCTFEValue v;
+                v.kind = HOPCTFEValue_FLOAT;
                 v.i64 = 0;
                 v.b = 0;
                 v.typeTag = 0;
@@ -422,23 +424,23 @@ static int SLMirRunLoop(
                 v.span.startColumn = 0;
                 v.span.endLine = 0;
                 v.span.endColumn = 0;
-                if (SLCTFEParseFloatLiteral(run->arena, run->env.src, ins->start, ins->end, &v.f64)
+                if (HOPCTFEParseFloatLiteral(run->arena, run->env.src, ins->start, ins->end, &v.f64)
                     != 0)
                 {
                     return 0;
                 }
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_PUSH_BOOL: {
-                SLCTFEValue v;
-                uint8_t     b = 0;
-                if (SLCTFEParseBoolLiteral(run->env.src, ins->start, ins->end, &b) != 0) {
+            case HOPMirOp_PUSH_BOOL: {
+                HOPCTFEValue v;
+                uint8_t      b = 0;
+                if (HOPCTFEParseBoolLiteral(run->env.src, ins->start, ins->end, &b) != 0) {
                     return 0;
                 }
-                v.kind = SLCTFEValue_BOOL;
+                v.kind = HOPCTFEValue_BOOL;
                 v.i64 = 0;
                 v.f64 = 0.0;
                 v.b = b;
@@ -451,28 +453,28 @@ static int SLMirRunLoop(
                 v.span.startColumn = 0;
                 v.span.endLine = 0;
                 v.span.endColumn = 0;
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_PUSH_STRING: {
-                SLCTFEValue    v;
-                SLStringLitErr litErr = { 0 };
-                uint8_t*       bytes = NULL;
-                uint32_t       len = 0;
-                if (SLDecodeStringLiteralArena(
+            case HOPMirOp_PUSH_STRING: {
+                HOPCTFEValue    v;
+                HOPStringLitErr litErr = { 0 };
+                uint8_t*        bytes = NULL;
+                uint32_t        len = 0;
+                if (HOPDecodeStringLiteralArena(
                         run->arena, run->env.src.ptr, ins->start, ins->end, &bytes, &len, &litErr)
                     != 0)
                 {
-                    SLCTFESetDiag(
+                    HOPCTFESetDiag(
                         run->env.diag,
-                        SLStringLitErrDiagCode(litErr.kind),
+                        HOPStringLitErrDiagCode(litErr.kind),
                         litErr.start,
                         litErr.end);
                     return -1;
                 }
-                v.kind = SLCTFEValue_STRING;
+                v.kind = HOPCTFEValue_STRING;
                 v.i64 = 0;
                 v.f64 = 0.0;
                 v.b = 0;
@@ -485,14 +487,14 @@ static int SLMirRunLoop(
                 v.span.startColumn = 0;
                 v.span.endLine = 0;
                 v.span.endColumn = 0;
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_PUSH_NULL: {
-                SLCTFEValue v;
-                v.kind = SLCTFEValue_NULL;
+            case HOPMirOp_PUSH_NULL: {
+                HOPCTFEValue v;
+                v.kind = HOPCTFEValue_NULL;
                 v.i64 = 0;
                 v.f64 = 0.0;
                 v.b = 0;
@@ -505,67 +507,67 @@ static int SLMirRunLoop(
                 v.span.startColumn = 0;
                 v.span.endLine = 0;
                 v.span.endColumn = 0;
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_LOCAL_LOAD:
+            case HOPMirOp_LOCAL_LOAD:
                 if (ins->aux >= run->localCount) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &run->locals[ins->aux]) != 0) {
+                if (HOPCTFEPush(run, &run->locals[ins->aux]) != 0) {
                     return -1;
                 }
                 break;
-            case SLMirOp_LOCAL_ADDR: {
-                SLMirExecValue v;
+            case HOPMirOp_LOCAL_ADDR: {
+                HOPMirExecValue v;
                 if (ins->aux >= run->localCount) {
                     return 0;
                 }
-                SLCTFEValueInvalid(&v);
-                v.kind = SLCTFEValue_REFERENCE;
+                HOPCTFEValueInvalid(&v);
+                v.kind = HOPCTFEValue_REFERENCE;
                 v.s.bytes = (const uint8_t*)&run->locals[ins->aux];
                 v.s.len = 0;
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_ADDR_OF: {
-                SLMirExecValue  value;
-                SLMirExecValue* target;
-                if (SLCTFEPop(run, &value) != 0) {
+            case HOPMirOp_ADDR_OF: {
+                HOPMirExecValue  value;
+                HOPMirExecValue* target;
+                if (HOPCTFEPop(run, &value) != 0) {
                     return 0;
                 }
-                target = (SLMirExecValue*)SLArenaAlloc(
-                    run->arena, sizeof(*target), (uint32_t)_Alignof(SLMirExecValue));
+                target = (HOPMirExecValue*)HOPArenaAlloc(
+                    run->arena, sizeof(*target), (uint32_t)_Alignof(HOPMirExecValue));
                 if (target == NULL) {
-                    SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                    HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
                     return -1;
                 }
                 *target = value;
-                SLCTFEValueInvalid(&value);
-                value.kind = SLCTFEValue_REFERENCE;
+                HOPCTFEValueInvalid(&value);
+                value.kind = HOPCTFEValue_REFERENCE;
                 value.s.bytes = (const uint8_t*)target;
                 value.s.len = 0;
-                if (SLCTFEPush(run, &value) != 0) {
+                if (HOPCTFEPush(run, &value) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_LOCAL_ZERO: {
-                const SLMirLocal* local;
-                SLMirExecValue    v;
-                int               isConst = 0;
+            case HOPMirOp_LOCAL_ZERO: {
+                const HOPMirLocal* local;
+                HOPMirExecValue    v;
+                int                isConst = 0;
                 if (ins->aux >= run->localCount || run->env.zeroInitLocal == NULL) {
                     return 0;
                 }
-                local = SLMirGetLocalMeta(run, ins->aux);
+                local = HOPMirGetLocalMeta(run, ins->aux);
                 if (local->typeRef == UINT32_MAX || local->typeRef >= run->program->typeLen) {
                     return 0;
                 }
-                SLCTFEValueInvalid(&v);
+                HOPCTFEValueInvalid(&v);
                 if (run->env.zeroInitLocal(
                         run->env.zeroInitCtx,
                         &run->program->types[local->typeRef],
@@ -582,20 +584,20 @@ static int SLMirRunLoop(
                 run->locals[ins->aux] = v;
                 break;
             }
-            case SLMirOp_DEREF_LOAD: {
-                SLMirExecValue ref;
-                SLCTFEValue*   target;
-                if (SLCTFEPop(run, &ref) != 0) {
+            case HOPMirOp_DEREF_LOAD: {
+                HOPMirExecValue ref;
+                HOPCTFEValue*   target;
+                if (HOPCTFEPop(run, &ref) != 0) {
                     return 0;
                 }
-                target = SLMirReferenceTarget(&ref);
+                target = HOPMirReferenceTarget(&ref);
                 if (target == NULL) {
                     return 0;
                 }
                 {
-                    uint8_t*       bytePtr = NULL;
-                    SLMirExecValue out;
-                    if (SLMirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
+                    uint8_t*        bytePtr = NULL;
+                    HOPMirExecValue out;
+                    if (HOPMirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
                         out = *target;
                         out.i64 = (int64_t)(*bytePtr);
                         out.f64 = 0.0;
@@ -603,33 +605,33 @@ static int SLMirRunLoop(
                         out.typeTag = 0;
                         out.s.bytes = NULL;
                         out.s.len = 0;
-                        if (SLCTFEPush(run, &out) != 0) {
+                        if (HOPCTFEPush(run, &out) != 0) {
                             return -1;
                         }
                         break;
                     }
                 }
-                if (SLCTFEPush(run, target) != 0) {
+                if (HOPCTFEPush(run, target) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_DEREF_STORE: {
-                SLMirExecValue ref;
-                SLMirExecValue v;
-                SLCTFEValue*   target;
-                if (SLCTFEPop(run, &ref) != 0 || SLCTFEPop(run, &v) != 0) {
+            case HOPMirOp_DEREF_STORE: {
+                HOPMirExecValue ref;
+                HOPMirExecValue v;
+                HOPCTFEValue*   target;
+                if (HOPCTFEPop(run, &ref) != 0 || HOPCTFEPop(run, &v) != 0) {
                     return 0;
                 }
-                target = SLMirReferenceTarget(&ref);
+                target = HOPMirReferenceTarget(&ref);
                 if (target == NULL) {
                     return 0;
                 }
                 {
                     uint8_t* bytePtr = NULL;
                     int64_t  byteValue = 0;
-                    if (SLMirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
-                        if (SLCTFEValueToInt64(&v, &byteValue) != 0 || byteValue < 0
+                    if (HOPMirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
+                        if (HOPCTFEValueToInt64(&v, &byteValue) != 0 || byteValue < 0
                             || byteValue > 255)
                         {
                             return 0;
@@ -642,18 +644,18 @@ static int SLMirRunLoop(
                 *target = v;
                 break;
             }
-            case SLMirOp_LOCAL_STORE: {
-                const SLMirLocal* local;
-                SLMirExecValue    v;
+            case HOPMirOp_LOCAL_STORE: {
+                const HOPMirLocal* local;
+                HOPMirExecValue    v;
                 if (ins->aux >= run->localCount) {
                     return 0;
                 }
-                if (SLCTFEPop(run, &v) != 0) {
+                if (HOPCTFEPop(run, &v) != 0) {
                     return 0;
                 }
-                local = SLMirGetLocalMeta(run, ins->aux);
+                local = HOPMirGetLocalMeta(run, ins->aux);
                 if (local->typeRef != UINT32_MAX) {
-                    int coerceRc = SLMirCoerceValueForType(run, local->typeRef, &v);
+                    int coerceRc = HOPMirCoerceValueForType(run, local->typeRef, &v);
                     if (coerceRc <= 0) {
                         return coerceRc < 0 ? -1 : 0;
                     }
@@ -661,41 +663,41 @@ static int SLMirRunLoop(
                 run->locals[ins->aux] = v;
                 break;
             }
-            case SLMirOp_DROP: {
-                SLMirExecValue v;
-                if (SLCTFEPop(run, &v) != 0) {
+            case HOPMirOp_DROP: {
+                HOPMirExecValue v;
+                if (HOPCTFEPop(run, &v) != 0) {
                     return 0;
                 }
                 break;
             }
-            case SLMirOp_JUMP:
+            case HOPMirOp_JUMP:
                 if (ins->aux >= run->len) {
                     return 0;
                 }
                 if (run->env.backwardJumpLimit != 0 && ins->aux < run->pc) {
                     if (++run->backwardJumpCount > run->env.backwardJumpLimit) {
-                        SLMirSetReason(run, ins, "for-loop exceeded const-eval iteration limit");
+                        HOPMirSetReason(run, ins, "for-loop exceeded const-eval iteration limit");
                         return 0;
                     }
                 }
                 run->pc = ins->aux;
                 break;
-            case SLMirOp_JUMP_IF_FALSE: {
-                SLMirExecValue cond;
-                SLMirExecValue condBool;
+            case HOPMirOp_JUMP_IF_FALSE: {
+                HOPMirExecValue cond;
+                HOPMirExecValue condBool;
                 if (ins->aux >= run->len) {
                     return 0;
                 }
-                if (SLCTFEPop(run, &cond) != 0) {
+                if (HOPCTFEPop(run, &cond) != 0) {
                     return 0;
                 }
-                if (!SLCTFEEvalCast(SLMirCastTarget_BOOL, &cond, &condBool)) {
+                if (!HOPCTFEEvalCast(HOPMirCastTarget_BOOL, &cond, &condBool)) {
                     return 0;
                 }
                 if (!condBool.b) {
                     if (run->env.backwardJumpLimit != 0 && ins->aux < run->pc) {
                         if (++run->backwardJumpCount > run->env.backwardJumpLimit) {
-                            SLMirSetReason(
+                            HOPMirSetReason(
                                 run, ins, "for-loop exceeded const-eval iteration limit");
                             return 0;
                         }
@@ -704,32 +706,32 @@ static int SLMirRunLoop(
                 }
                 break;
             }
-            case SLMirOp_ASSERT: {
-                SLMirExecValue cond;
-                SLMirExecValue condBool;
-                if (SLCTFEPop(run, &cond) != 0) {
+            case HOPMirOp_ASSERT: {
+                HOPMirExecValue cond;
+                HOPMirExecValue condBool;
+                if (HOPCTFEPop(run, &cond) != 0) {
                     return 0;
                 }
-                if (!SLCTFEEvalCast(SLMirCastTarget_BOOL, &cond, &condBool)) {
+                if (!HOPCTFEEvalCast(HOPMirCastTarget_BOOL, &cond, &condBool)) {
                     return 0;
                 }
                 if (!condBool.b) {
-                    SLMirSetReason(
+                    HOPMirSetReason(
                         run, ins, "assert condition evaluated to false during const evaluation");
                     return 0;
                 }
                 break;
             }
-            case SLMirOp_LOAD_IDENT: {
-                SLCTFEValue v;
-                int         idIsConst = 0;
-                uint32_t    nameStart = ins->start;
-                uint32_t    nameEnd = ins->end;
+            case HOPMirOp_LOAD_IDENT: {
+                HOPCTFEValue v;
+                int          idIsConst = 0;
+                uint32_t     nameStart = ins->start;
+                uint32_t     nameEnd = ins->end;
                 if (run->env.resolveIdent == NULL) {
                     return 0;
                 }
-                SLMirResolveSymbolName(run, ins, SLMirSymbol_IDENT, &nameStart, &nameEnd);
-                SLCTFEValueInvalid(&v);
+                HOPMirResolveSymbolName(run, ins, HOPMirSymbol_IDENT, &nameStart, &nameEnd);
+                HOPCTFEValueInvalid(&v);
                 if (run->env.resolveIdent(
                         run->env.resolveCtx, nameStart, nameEnd, &v, &idIsConst, run->env.diag)
                     != 0)
@@ -739,23 +741,23 @@ static int SLMirRunLoop(
                 if (!idIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_STORE_IDENT: {
-                SLCTFEValue value;
-                int         idIsConst = 0;
-                uint32_t    nameStart = ins->start;
-                uint32_t    nameEnd = ins->end;
-                if (SLCTFEPop(run, &value) != 0) {
+            case HOPMirOp_STORE_IDENT: {
+                HOPCTFEValue value;
+                int          idIsConst = 0;
+                uint32_t     nameStart = ins->start;
+                uint32_t     nameEnd = ins->end;
+                if (HOPCTFEPop(run, &value) != 0) {
                     return 0;
                 }
                 if (run->env.assignIdent == NULL) {
                     return 0;
                 }
-                SLMirResolveSymbolName(run, ins, SLMirSymbol_IDENT, &nameStart, &nameEnd);
+                HOPMirResolveSymbolName(run, ins, HOPMirSymbol_IDENT, &nameStart, &nameEnd);
                 if (run->env.assignIdent(
                         run->env.assignIdentCtx,
                         nameStart,
@@ -772,21 +774,21 @@ static int SLMirRunLoop(
                 }
                 break;
             }
-            case SLMirOp_CALL: {
-                SLCTFEValue* args = NULL;
-                SLCTFEValue  v;
-                int          callIsConst = 0;
-                uint32_t     argCount = SLMirResolvedCallArgCount(ins);
-                uint32_t     i;
-                uint32_t     nameStart = ins->start;
-                uint32_t     nameEnd = ins->end;
+            case HOPMirOp_CALL: {
+                HOPCTFEValue* args = NULL;
+                HOPCTFEValue  v;
+                int           callIsConst = 0;
+                uint32_t      argCount = HOPMirResolvedCallArgCount(ins);
+                uint32_t      i;
+                uint32_t      nameStart = ins->start;
+                uint32_t      nameEnd = ins->end;
                 if (run->env.resolveCall == NULL && run->env.resolveCallPre == NULL) {
                     return 0;
                 }
-                SLMirResolveSymbolName(run, ins, SLMirSymbol_CALL, &nameStart, &nameEnd);
+                HOPMirResolveSymbolName(run, ins, HOPMirSymbol_CALL, &nameStart, &nameEnd);
                 if (run->env.resolveCallPre != NULL) {
                     int preRc;
-                    SLCTFEValueInvalid(&v);
+                    HOPCTFEValueInvalid(&v);
                     preRc = run->env.resolveCallPre(
                         run->env.resolveCtx,
                         run->program,
@@ -804,7 +806,7 @@ static int SLMirRunLoop(
                         if (!callIsConst) {
                             return 0;
                         }
-                        if (SLCTFEPush(run, &v) != 0) {
+                        if (HOPCTFEPush(run, &v) != 0) {
                             return -1;
                         }
                         break;
@@ -817,21 +819,21 @@ static int SLMirRunLoop(
                     return 0;
                 }
                 if (argCount > 0) {
-                    args = (SLCTFEValue*)SLArenaAlloc(
+                    args = (HOPCTFEValue*)HOPArenaAlloc(
                         run->arena,
-                        sizeof(SLCTFEValue) * argCount,
-                        (uint32_t)_Alignof(SLCTFEValue));
+                        sizeof(HOPCTFEValue) * argCount,
+                        (uint32_t)_Alignof(HOPCTFEValue));
                     if (args == NULL) {
-                        SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                        HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
                         return -1;
                     }
                 }
                 for (i = argCount; i > 0; i--) {
-                    if (SLCTFEPop(run, &args[i - 1]) != 0) {
+                    if (HOPCTFEPop(run, &args[i - 1]) != 0) {
                         return 0;
                     }
                 }
-                SLCTFEValueInvalid(&v);
+                HOPCTFEValueInvalid(&v);
                 if (run->env.resolveCall(
                         run->env.resolveCtx,
                         run->program,
@@ -851,18 +853,18 @@ static int SLMirRunLoop(
                 if (!callIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_CALL_HOST: {
-                SLMirExecValue* args = NULL;
-                SLMirExecValue  v;
-                int             callOk = 0;
-                uint32_t        argCount = SLMirResolvedCallArgCount(ins);
-                uint32_t        i;
-                uint32_t        callArgOffset = 0;
+            case HOPMirOp_CALL_HOST: {
+                HOPMirExecValue* args = NULL;
+                HOPMirExecValue  v;
+                int              callOk = 0;
+                uint32_t         argCount = HOPMirResolvedCallArgCount(ins);
+                uint32_t         i;
+                uint32_t         callArgOffset = 0;
                 if (run->env.hostCall == NULL) {
                     return 0;
                 }
@@ -870,22 +872,22 @@ static int SLMirRunLoop(
                     return 0;
                 }
                 if (argCount > 0u) {
-                    args = (SLMirExecValue*)SLArenaAlloc(
+                    args = (HOPMirExecValue*)HOPArenaAlloc(
                         run->arena,
-                        sizeof(SLMirExecValue) * argCount,
-                        (uint32_t)_Alignof(SLMirExecValue));
+                        sizeof(HOPMirExecValue) * argCount,
+                        (uint32_t)_Alignof(HOPMirExecValue));
                     if (args == NULL) {
-                        SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                        HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
                         return -1;
                     }
                 }
                 for (i = argCount; i > 0; i--) {
-                    if (SLCTFEPop(run, &args[i - 1]) != 0) {
+                    if (HOPCTFEPop(run, &args[i - 1]) != 0) {
                         return 0;
                     }
                 }
-                SLCTFEValueInvalid(&v);
-                if (SLMirResolvedCallDropsReceiverArg0(ins)) {
+                HOPCTFEValueInvalid(&v);
+                if (HOPMirResolvedCallDropsReceiverArg0(ins)) {
                     if (argCount == 0u) {
                         return 0;
                     }
@@ -893,7 +895,7 @@ static int SLMirRunLoop(
                 }
                 if (run->env.hostCall(
                         run->env.hostCtx,
-                        SLMirResolveHostId(run, ins),
+                        HOPMirResolveHostId(run, ins),
                         args != NULL ? args + callArgOffset : NULL,
                         argCount - callArgOffset,
                         &v,
@@ -906,18 +908,18 @@ static int SLMirRunLoop(
                 if (!callOk) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_CALL_FN: {
-                SLMirExecValue  v;
-                SLMirExecValue* args = NULL;
-                int             callOk = 0;
-                uint32_t        argCount = SLMirResolvedCallArgCount(ins);
-                uint32_t        i;
-                uint32_t        callArgOffset = 0;
+            case HOPMirOp_CALL_FN: {
+                HOPMirExecValue  v;
+                HOPMirExecValue* args = NULL;
+                int              callOk = 0;
+                uint32_t         argCount = HOPMirResolvedCallArgCount(ins);
+                uint32_t         i;
+                uint32_t         callArgOffset = 0;
                 if (run->program == NULL || ins->aux >= run->program->funcLen) {
                     return 0;
                 }
@@ -925,21 +927,21 @@ static int SLMirRunLoop(
                     return 0;
                 }
                 if (argCount != 0u) {
-                    args = (SLMirExecValue*)SLArenaAlloc(
+                    args = (HOPMirExecValue*)HOPArenaAlloc(
                         run->arena,
-                        sizeof(SLMirExecValue) * argCount,
-                        (uint32_t)_Alignof(SLMirExecValue));
+                        sizeof(HOPMirExecValue) * argCount,
+                        (uint32_t)_Alignof(HOPMirExecValue));
                     if (args == NULL) {
-                        SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                        HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
                         return -1;
                     }
                 }
                 for (i = argCount; i > 0; i--) {
-                    if (SLCTFEPop(run, &args[i - 1]) != 0) {
+                    if (HOPCTFEPop(run, &args[i - 1]) != 0) {
                         return 0;
                     }
                 }
-                if (SLMirResolvedCallDropsReceiverArg0(ins)) {
+                if (HOPMirResolvedCallDropsReceiverArg0(ins)) {
                     if (argCount == 0u) {
                         return 0;
                     }
@@ -962,7 +964,7 @@ static int SLMirRunLoop(
                         return 0;
                     }
                 }
-                if (SLMirEvalFunctionInternal(
+                if (HOPMirEvalFunctionInternal(
                         run->arena,
                         run->program,
                         ins->aux,
@@ -981,51 +983,52 @@ static int SLMirRunLoop(
                 if (!callOk) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_CALL_INDIRECT: {
-                SLMirExecValue  callee;
-                SLMirExecValue  v;
-                SLMirExecValue* args = NULL;
-                int             callOk = 0;
-                uint32_t        fnIndex = 0;
-                uint32_t        argCount = SLMirResolvedCallArgCount(ins);
-                uint32_t        i;
+            case HOPMirOp_CALL_INDIRECT: {
+                HOPMirExecValue  callee;
+                HOPMirExecValue  v;
+                HOPMirExecValue* args = NULL;
+                int              callOk = 0;
+                uint32_t         fnIndex = 0;
+                uint32_t         argCount = HOPMirResolvedCallArgCount(ins);
+                uint32_t         i;
                 if (run->program == NULL || argCount + 1u > run->stackLen) {
-                    SLMirSetReason(
+                    HOPMirSetReason(
                         run, ins, "indirect call stack is invalid during const evaluation");
                     return 0;
                 }
                 if (argCount != 0u) {
-                    args = (SLMirExecValue*)SLArenaAlloc(
+                    args = (HOPMirExecValue*)HOPArenaAlloc(
                         run->arena,
-                        sizeof(SLMirExecValue) * argCount,
-                        (uint32_t)_Alignof(SLMirExecValue));
+                        sizeof(HOPMirExecValue) * argCount,
+                        (uint32_t)_Alignof(HOPMirExecValue));
                     if (args == NULL) {
-                        SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                        HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
                         return -1;
                     }
                 }
                 for (i = argCount; i > 0; i--) {
-                    if (SLCTFEPop(run, &args[i - 1]) != 0) {
-                        SLMirSetReason(
+                    if (HOPCTFEPop(run, &args[i - 1]) != 0) {
+                        HOPMirSetReason(
                             run,
                             ins,
                             "indirect call arguments are not available during const evaluation");
                         return 0;
                     }
                 }
-                if (SLCTFEPop(run, &callee) != 0) {
-                    SLMirSetReason(
+                if (HOPCTFEPop(run, &callee) != 0) {
+                    HOPMirSetReason(
                         run, ins, "indirect call target is not available during const evaluation");
                     return 0;
                 }
-                if (!SLMirValueIsFunctionRef(&callee, &fnIndex) || fnIndex >= run->program->funcLen)
+                if (!HOPMirValueIsFunctionRef(&callee, &fnIndex)
+                    || fnIndex >= run->program->funcLen)
                 {
-                    SLMirSetReason(run, ins, "indirect call target is not a function");
+                    HOPMirSetReason(run, ins, "indirect call target is not a function");
                     return 0;
                 }
                 if (run->env.adjustCallArgs != NULL) {
@@ -1045,7 +1048,7 @@ static int SLMirRunLoop(
                         return 0;
                     }
                 }
-                if (SLMirEvalFunctionInternal(
+                if (HOPMirEvalFunctionInternal(
                         run->arena,
                         run->program,
                         fnIndex,
@@ -1064,66 +1067,66 @@ static int SLMirRunLoop(
                 if (!callOk) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &v) != 0) {
+                if (HOPCTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_UNARY: {
-                SLCTFEValue in;
-                SLCTFEValue out;
-                if (SLCTFEPop(run, &in) != 0) {
+            case HOPMirOp_UNARY: {
+                HOPCTFEValue in;
+                HOPCTFEValue out;
+                if (HOPCTFEPop(run, &in) != 0) {
                     return 0;
                 }
-                if (!SLCTFEEvalUnary((SLTokenKind)ins->tok, &in, &out)) {
+                if (!HOPCTFEEvalUnary((HOPTokenKind)ins->tok, &in, &out)) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_BINARY: {
-                SLCTFEValue lhs;
-                SLCTFEValue rhs;
-                SLCTFEValue out;
-                int         binaryRc;
-                if (SLCTFEPop(run, &rhs) != 0 || SLCTFEPop(run, &lhs) != 0) {
+            case HOPMirOp_BINARY: {
+                HOPCTFEValue lhs;
+                HOPCTFEValue rhs;
+                HOPCTFEValue out;
+                int          binaryRc;
+                if (HOPCTFEPop(run, &rhs) != 0 || HOPCTFEPop(run, &lhs) != 0) {
                     return 0;
                 }
-                binaryRc = SLCTFEEvalBinary(run, (SLTokenKind)ins->tok, &lhs, &rhs, &out);
+                binaryRc = HOPCTFEEvalBinary(run, (HOPTokenKind)ins->tok, &lhs, &rhs, &out);
                 if (binaryRc < 0) {
                     return -1;
                 }
                 if (binaryRc == 0) {
-                    SLMirSetReason(
+                    HOPMirSetReason(
                         run, ins, "binary operation is not supported during const evaluation");
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_INDEX: {
-                SLCTFEValue base;
-                SLCTFEValue idx;
-                SLCTFEValue out;
-                int64_t     idxInt = 0;
-                int         indexIsConst = 0;
-                if (SLCTFEPop(run, &idx) != 0 || SLCTFEPop(run, &base) != 0) {
+            case HOPMirOp_INDEX: {
+                HOPCTFEValue base;
+                HOPCTFEValue idx;
+                HOPCTFEValue out;
+                int64_t      idxInt = 0;
+                int          indexIsConst = 0;
+                if (HOPCTFEPop(run, &idx) != 0 || HOPCTFEPop(run, &base) != 0) {
                     return 0;
                 }
-                if (base.kind == SLCTFEValue_STRING && SLCTFEValueToInt64(&idx, &idxInt) == 0) {
+                if (base.kind == HOPCTFEValue_STRING && HOPCTFEValueToInt64(&idx, &idxInt) == 0) {
                     if (idxInt < 0) {
-                        SLMirSetReason(run, ins, "index is negative in const evaluation");
+                        HOPMirSetReason(run, ins, "index is negative in const evaluation");
                         return 0;
                     }
                     if ((uint64_t)idxInt >= (uint64_t)base.s.len) {
-                        SLMirSetReason(run, ins, "index is out of bounds in const evaluation");
+                        HOPMirSetReason(run, ins, "index is out of bounds in const evaluation");
                         return 0;
                     }
-                    out.kind = SLCTFEValue_INT;
+                    out.kind = HOPCTFEValue_INT;
                     out.i64 = (int64_t)base.s.bytes[(uint32_t)idxInt];
                     out.f64 = 0.0;
                     out.b = 0;
@@ -1136,7 +1139,7 @@ static int SLMirRunLoop(
                     out.span.startColumn = 0;
                     out.span.endLine = 0;
                     out.span.endColumn = 0;
-                    if (SLCTFEPush(run, &out) != 0) {
+                    if (HOPCTFEPush(run, &out) != 0) {
                         return -1;
                     }
                     break;
@@ -1144,7 +1147,7 @@ static int SLMirRunLoop(
                 if (run->env.indexValue == NULL) {
                     return 0;
                 }
-                SLCTFEValueInvalid(&out);
+                HOPCTFEValueInvalid(&out);
                 if (run->env.indexValue(
                         run->env.indexValueCtx, &base, &idx, &out, &indexIsConst, run->env.diag)
                     != 0)
@@ -1154,22 +1157,22 @@ static int SLMirRunLoop(
                 if (!indexIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_SEQ_LEN: {
-                SLCTFEValue base;
-                SLCTFEValue out;
-                int         lenIsConst = 0;
-                if (SLCTFEPop(run, &base) != 0) {
+            case HOPMirOp_SEQ_LEN: {
+                HOPCTFEValue base;
+                HOPCTFEValue out;
+                int          lenIsConst = 0;
+                if (HOPCTFEPop(run, &base) != 0) {
                     return 0;
                 }
-                if (base.kind == SLCTFEValue_STRING || base.kind == SLCTFEValue_ARRAY
-                    || base.kind == SLCTFEValue_NULL)
+                if (base.kind == HOPCTFEValue_STRING || base.kind == HOPCTFEValue_ARRAY
+                    || base.kind == HOPCTFEValue_NULL)
                 {
-                    out.kind = SLCTFEValue_INT;
+                    out.kind = HOPCTFEValue_INT;
                     out.i64 = (int64_t)base.s.len;
                     out.f64 = 0.0;
                     out.b = 0;
@@ -1182,7 +1185,7 @@ static int SLMirRunLoop(
                     out.span.startColumn = 0;
                     out.span.endLine = 0;
                     out.span.endColumn = 0;
-                    if (SLCTFEPush(run, &out) != 0) {
+                    if (HOPCTFEPush(run, &out) != 0) {
                         return -1;
                     }
                     break;
@@ -1190,7 +1193,7 @@ static int SLMirRunLoop(
                 if (run->env.sequenceLen == NULL) {
                     return 0;
                 }
-                SLCTFEValueInvalid(&out);
+                HOPCTFEValueInvalid(&out);
                 if (run->env.sequenceLen(
                         run->env.sequenceLenCtx, &base, &out, &lenIsConst, run->env.diag)
                     != 0)
@@ -1200,41 +1203,41 @@ static int SLMirRunLoop(
                 if (!lenIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_STR_CSTR: {
-                SLCTFEValue  base;
-                SLCTFEValue* target;
-                if (SLCTFEPop(run, &base) != 0) {
+            case HOPMirOp_STR_CSTR: {
+                HOPCTFEValue  base;
+                HOPCTFEValue* target;
+                if (HOPCTFEPop(run, &base) != 0) {
                     return 0;
                 }
-                target = SLMirReferenceTarget(&base);
+                target = HOPMirReferenceTarget(&base);
                 if (target != NULL) {
                     base = *target;
                 }
-                if (base.kind != SLCTFEValue_STRING) {
+                if (base.kind != HOPCTFEValue_STRING) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &base) != 0) {
+                if (HOPCTFEPush(run, &base) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_ARRAY_ADDR: {
-                SLCTFEValue base;
-                SLCTFEValue idx;
-                SLCTFEValue out;
-                int         addrIsConst = 0;
-                if (SLCTFEPop(run, &idx) != 0 || SLCTFEPop(run, &base) != 0) {
+            case HOPMirOp_ARRAY_ADDR: {
+                HOPCTFEValue base;
+                HOPCTFEValue idx;
+                HOPCTFEValue out;
+                int          addrIsConst = 0;
+                if (HOPCTFEPop(run, &idx) != 0 || HOPCTFEPop(run, &base) != 0) {
                     return 0;
                 }
                 if (run->env.indexAddr == NULL) {
                     return 0;
                 }
-                SLCTFEValueInvalid(&out);
+                HOPCTFEValueInvalid(&out);
                 if (run->env.indexAddr(
                         run->env.indexAddrCtx, &base, &idx, &out, &addrIsConst, run->env.diag)
                     != 0)
@@ -1244,39 +1247,39 @@ static int SLMirRunLoop(
                 if (!addrIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_SLICE_MAKE: {
-                SLCTFEValue  base;
-                SLCTFEValue  startValue;
-                SLCTFEValue  endValue;
-                SLCTFEValue  out;
-                SLCTFEValue* startPtr = NULL;
-                SLCTFEValue* endPtr = NULL;
-                int          sliceIsConst = 0;
-                uint16_t     sliceFlags = ins->tok;
+            case HOPMirOp_SLICE_MAKE: {
+                HOPCTFEValue  base;
+                HOPCTFEValue  startValue;
+                HOPCTFEValue  endValue;
+                HOPCTFEValue  out;
+                HOPCTFEValue* startPtr = NULL;
+                HOPCTFEValue* endPtr = NULL;
+                int           sliceIsConst = 0;
+                uint16_t      sliceFlags = ins->tok;
                 if (run->env.sliceValue == NULL) {
                     return 0;
                 }
-                if ((sliceFlags & SLAstFlag_INDEX_HAS_END) != 0u) {
-                    if (SLCTFEPop(run, &endValue) != 0) {
+                if ((sliceFlags & HOPAstFlag_INDEX_HAS_END) != 0u) {
+                    if (HOPCTFEPop(run, &endValue) != 0) {
                         return 0;
                     }
                     endPtr = &endValue;
                 }
-                if ((sliceFlags & SLAstFlag_INDEX_HAS_START) != 0u) {
-                    if (SLCTFEPop(run, &startValue) != 0) {
+                if ((sliceFlags & HOPAstFlag_INDEX_HAS_START) != 0u) {
+                    if (HOPCTFEPop(run, &startValue) != 0) {
                         return 0;
                     }
                     startPtr = &startValue;
                 }
-                if (SLCTFEPop(run, &base) != 0) {
+                if (HOPCTFEPop(run, &base) != 0) {
                     return 0;
                 }
-                SLCTFEValueInvalid(&out);
+                HOPCTFEValueInvalid(&out);
                 if (run->env.sliceValue(
                         run->env.sliceValueCtx,
                         &base,
@@ -1293,18 +1296,18 @@ static int SLMirRunLoop(
                 if (!sliceIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_AGG_MAKE: {
-                SLCTFEValue out;
-                int         aggIsConst = 0;
+            case HOPMirOp_AGG_MAKE: {
+                HOPCTFEValue out;
+                int          aggIsConst = 0;
                 if (run->env.makeAggregate == NULL) {
                     return 0;
                 }
-                SLCTFEValueInvalid(&out);
+                HOPCTFEValueInvalid(&out);
                 if (run->env.makeAggregate(
                         run->env.makeAggregateCtx,
                         ins->aux,
@@ -1319,20 +1322,20 @@ static int SLMirRunLoop(
                 if (!aggIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_AGG_ZERO: {
-                SLCTFEValue out;
-                int         aggIsConst = 0;
+            case HOPMirOp_AGG_ZERO: {
+                HOPCTFEValue out;
+                int          aggIsConst = 0;
                 if (run->program == NULL || run->env.zeroInitLocal == NULL
                     || ins->aux >= run->program->typeLen)
                 {
                     return 0;
                 }
-                SLCTFEValueInvalid(&out);
+                HOPCTFEValueInvalid(&out);
                 if (run->env.zeroInitLocal(
                         run->env.zeroInitCtx,
                         &run->program->types[ins->aux],
@@ -1346,24 +1349,24 @@ static int SLMirRunLoop(
                 if (!aggIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_AGG_SET: {
-                SLCTFEValue value;
-                SLCTFEValue base;
-                int         fieldIsConst = 0;
-                uint32_t    nameStart = ins->start;
-                uint32_t    nameEnd = ins->end;
-                if (SLCTFEPop(run, &value) != 0 || SLCTFEPop(run, &base) != 0) {
+            case HOPMirOp_AGG_SET: {
+                HOPCTFEValue value;
+                HOPCTFEValue base;
+                int          fieldIsConst = 0;
+                uint32_t     nameStart = ins->start;
+                uint32_t     nameEnd = ins->end;
+                if (HOPCTFEPop(run, &value) != 0 || HOPCTFEPop(run, &base) != 0) {
                     return 0;
                 }
                 if (run->env.aggSetField == NULL) {
                     return 0;
                 }
-                SLMirResolveFieldName(run, ins, &nameStart, &nameEnd);
+                HOPMirResolveFieldName(run, ins, &nameStart, &nameEnd);
                 if (run->env.aggSetField(
                         run->env.aggSetFieldCtx,
                         &base,
@@ -1379,25 +1382,25 @@ static int SLMirRunLoop(
                 if (!fieldIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &base) != 0) {
+                if (HOPCTFEPush(run, &base) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_AGG_GET: {
-                SLCTFEValue base;
-                SLCTFEValue out;
-                int         fieldIsConst = 0;
-                uint32_t    nameStart = ins->start;
-                uint32_t    nameEnd = ins->end;
-                if (SLCTFEPop(run, &base) != 0) {
+            case HOPMirOp_AGG_GET: {
+                HOPCTFEValue base;
+                HOPCTFEValue out;
+                int          fieldIsConst = 0;
+                uint32_t     nameStart = ins->start;
+                uint32_t     nameEnd = ins->end;
+                if (HOPCTFEPop(run, &base) != 0) {
                     return 0;
                 }
                 if (run->env.aggGetField == NULL) {
                     return 0;
                 }
-                SLMirResolveFieldName(run, ins, &nameStart, &nameEnd);
-                SLCTFEValueInvalid(&out);
+                HOPMirResolveFieldName(run, ins, &nameStart, &nameEnd);
+                HOPCTFEValueInvalid(&out);
                 if (run->env.aggGetField(
                         run->env.aggGetFieldCtx,
                         &base,
@@ -1413,25 +1416,25 @@ static int SLMirRunLoop(
                 if (!fieldIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_AGG_ADDR: {
-                SLCTFEValue base;
-                SLCTFEValue out;
-                int         fieldIsConst = 0;
-                uint32_t    nameStart = ins->start;
-                uint32_t    nameEnd = ins->end;
-                if (SLCTFEPop(run, &base) != 0) {
+            case HOPMirOp_AGG_ADDR: {
+                HOPCTFEValue base;
+                HOPCTFEValue out;
+                int          fieldIsConst = 0;
+                uint32_t     nameStart = ins->start;
+                uint32_t     nameEnd = ins->end;
+                if (HOPCTFEPop(run, &base) != 0) {
                     return 0;
                 }
                 if (run->env.aggAddrField == NULL) {
                     return 0;
                 }
-                SLMirResolveFieldName(run, ins, &nameStart, &nameEnd);
-                SLCTFEValueInvalid(&out);
+                HOPMirResolveFieldName(run, ins, &nameStart, &nameEnd);
+                HOPCTFEValueInvalid(&out);
                 if (run->env.aggAddrField(
                         run->env.aggAddrFieldCtx,
                         &base,
@@ -1447,36 +1450,36 @@ static int SLMirRunLoop(
                 if (!fieldIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_TUPLE_MAKE: {
-                SLMirExecValue* elems = NULL;
-                SLMirExecValue  out;
-                int             tupleIsConst = 0;
-                uint32_t        elemCount = (uint32_t)ins->tok;
-                uint32_t        i;
+            case HOPMirOp_TUPLE_MAKE: {
+                HOPMirExecValue* elems = NULL;
+                HOPMirExecValue  out;
+                int              tupleIsConst = 0;
+                uint32_t         elemCount = (uint32_t)ins->tok;
+                uint32_t         i;
                 if (run->env.makeTuple == NULL || elemCount > run->stackLen) {
                     return 0;
                 }
                 if (elemCount != 0u) {
-                    elems = (SLMirExecValue*)SLArenaAlloc(
+                    elems = (HOPMirExecValue*)HOPArenaAlloc(
                         run->arena,
-                        sizeof(SLMirExecValue) * elemCount,
-                        (uint32_t)_Alignof(SLMirExecValue));
+                        sizeof(HOPMirExecValue) * elemCount,
+                        (uint32_t)_Alignof(HOPMirExecValue));
                     if (elems == NULL) {
-                        SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                        HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
                         return -1;
                     }
                 }
                 for (i = elemCount; i > 0; i--) {
-                    if (SLCTFEPop(run, &elems[i - 1u]) != 0) {
+                    if (HOPCTFEPop(run, &elems[i - 1u]) != 0) {
                         return 0;
                     }
                 }
-                SLCTFEValueInvalid(&out);
+                HOPCTFEValueInvalid(&out);
                 if (run->env.makeTuple(
                         run->env.makeTupleCtx,
                         elems,
@@ -1492,22 +1495,22 @@ static int SLMirRunLoop(
                 if (!tupleIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_ITER_INIT: {
-                SLCTFEValue source;
-                SLCTFEValue iter;
-                int         iterIsConst = 0;
-                if (SLCTFEPop(run, &source) != 0) {
+            case HOPMirOp_ITER_INIT: {
+                HOPCTFEValue source;
+                HOPCTFEValue iter;
+                int          iterIsConst = 0;
+                if (HOPCTFEPop(run, &source) != 0) {
                     return 0;
                 }
                 if (run->env.iterInit == NULL) {
                     return 0;
                 }
-                SLCTFEValueInvalid(&iter);
+                HOPCTFEValueInvalid(&iter);
                 if (run->env.iterInit(
                         run->env.iterInitCtx,
                         ins->aux,
@@ -1523,27 +1526,27 @@ static int SLMirRunLoop(
                 if (!iterIsConst) {
                     return 0;
                 }
-                if (SLCTFEPush(run, &iter) != 0) {
+                if (HOPCTFEPush(run, &iter) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_ITER_NEXT: {
-                SLCTFEValue iter;
-                SLCTFEValue key;
-                SLCTFEValue value;
-                SLCTFEValue hasItemValue;
-                int         hasItem = 0;
-                int         keyIsConst = 0;
-                int         valueIsConst = 0;
-                if (SLCTFEPop(run, &iter) != 0) {
+            case HOPMirOp_ITER_NEXT: {
+                HOPCTFEValue iter;
+                HOPCTFEValue key;
+                HOPCTFEValue value;
+                HOPCTFEValue hasItemValue;
+                int          hasItem = 0;
+                int          keyIsConst = 0;
+                int          valueIsConst = 0;
+                if (HOPCTFEPop(run, &iter) != 0) {
                     return 0;
                 }
                 if (run->env.iterNext == NULL) {
                     return 0;
                 }
-                SLCTFEValueInvalid(&key);
-                SLCTFEValueInvalid(&value);
+                HOPCTFEValueInvalid(&key);
+                HOPCTFEValueInvalid(&value);
                 if (run->env.iterNext(
                         run->env.iterNextCtx,
                         &iter,
@@ -1559,149 +1562,149 @@ static int SLMirRunLoop(
                     return -1;
                 }
                 if (hasItem) {
-                    if ((ins->tok & SLMirIterFlag_HAS_KEY) != 0u && !keyIsConst) {
+                    if ((ins->tok & HOPMirIterFlag_HAS_KEY) != 0u && !keyIsConst) {
                         return 0;
                     }
-                    if ((ins->tok & SLMirIterFlag_VALUE_DISCARD) == 0u && !valueIsConst) {
+                    if ((ins->tok & HOPMirIterFlag_VALUE_DISCARD) == 0u && !valueIsConst) {
                         return 0;
                     }
-                    if ((ins->tok & SLMirIterFlag_HAS_KEY) != 0u) {
-                        if (SLCTFEPush(run, &key) != 0) {
+                    if ((ins->tok & HOPMirIterFlag_HAS_KEY) != 0u) {
+                        if (HOPCTFEPush(run, &key) != 0) {
                             return -1;
                         }
                     }
-                    if ((ins->tok & SLMirIterFlag_VALUE_DISCARD) == 0u) {
-                        if (SLCTFEPush(run, &value) != 0) {
+                    if ((ins->tok & HOPMirIterFlag_VALUE_DISCARD) == 0u) {
+                        if (HOPCTFEPush(run, &value) != 0) {
                             return -1;
                         }
                     }
                 }
-                hasItemValue.kind = SLCTFEValue_BOOL;
+                hasItemValue.kind = HOPCTFEValue_BOOL;
                 hasItemValue.i64 = 0;
                 hasItemValue.f64 = 0.0;
                 hasItemValue.b = hasItem ? 1u : 0u;
                 hasItemValue.typeTag = 0;
                 hasItemValue.s.bytes = NULL;
                 hasItemValue.s.len = 0;
-                hasItemValue.span = (SLCTFESpan){ 0 };
-                if (SLCTFEPush(run, &hasItemValue) != 0) {
+                hasItemValue.span = (HOPCTFESpan){ 0 };
+                if (HOPCTFEPush(run, &hasItemValue) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_CAST: {
-                SLCTFEValue in;
-                SLCTFEValue out;
-                if (SLCTFEPop(run, &in) != 0) {
+            case HOPMirOp_CAST: {
+                HOPCTFEValue in;
+                HOPCTFEValue out;
+                if (HOPCTFEPop(run, &in) != 0) {
                     return 0;
                 }
-                if (!SLCTFEEvalCast((SLMirCastTarget)ins->tok, &in, &out)) {
+                if (!HOPCTFEEvalCast((HOPMirCastTarget)ins->tok, &in, &out)) {
                     return 0;
                 }
                 {
-                    int coerceRc = SLMirCoerceValueForType(run, ins->aux, &out);
+                    int coerceRc = HOPMirCoerceValueForType(run, ins->aux, &out);
                     if (coerceRc <= 0) {
                         return coerceRc < 0 ? -1 : 0;
                     }
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_COERCE: {
-                SLCTFEValue value;
-                int         coerceRc;
-                if (SLCTFEPop(run, &value) != 0) {
+            case HOPMirOp_COERCE: {
+                HOPCTFEValue value;
+                int          coerceRc;
+                if (HOPCTFEPop(run, &value) != 0) {
                     return 0;
                 }
-                if (value.kind == SLCTFEValue_AGGREGATE) {
-                    value.typeTag |= SLCTFEValueTag_AGG_PARTIAL;
+                if (value.kind == HOPCTFEValue_AGGREGATE) {
+                    value.typeTag |= HOPCTFEValueTag_AGG_PARTIAL;
                 }
-                coerceRc = SLMirCoerceValueForType(run, ins->aux, &value);
+                coerceRc = HOPMirCoerceValueForType(run, ins->aux, &value);
                 if (coerceRc <= 0) {
                     return coerceRc < 0 ? -1 : 0;
                 }
-                if (SLCTFEPush(run, &value) != 0) {
+                if (HOPCTFEPush(run, &value) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_OPTIONAL_WRAP: {
-                SLCTFEValue  value;
-                SLCTFEValue* payloadCopy;
-                if (SLCTFEPop(run, &value) != 0) {
+            case HOPMirOp_OPTIONAL_WRAP: {
+                HOPCTFEValue  value;
+                HOPCTFEValue* payloadCopy;
+                if (HOPCTFEPop(run, &value) != 0) {
                     return 0;
                 }
-                if (value.kind == SLCTFEValue_OPTIONAL) {
-                    if (SLCTFEPush(run, &value) != 0) {
+                if (value.kind == HOPCTFEValue_OPTIONAL) {
+                    if (HOPCTFEPush(run, &value) != 0) {
                         return -1;
                     }
                     break;
                 }
-                if (value.kind == SLCTFEValue_NULL) {
-                    value.kind = SLCTFEValue_OPTIONAL;
+                if (value.kind == HOPCTFEValue_NULL) {
+                    value.kind = HOPCTFEValue_OPTIONAL;
                     value.i64 = 0;
                     value.f64 = 0.0;
                     value.b = 0u;
                     value.typeTag = 0;
                     value.s.bytes = NULL;
                     value.s.len = 0;
-                    if (SLCTFEPush(run, &value) != 0) {
+                    if (HOPCTFEPush(run, &value) != 0) {
                         return -1;
                     }
                     break;
                 }
-                payloadCopy = (SLCTFEValue*)SLArenaAlloc(
-                    run->arena, sizeof(*payloadCopy), (uint32_t)_Alignof(SLCTFEValue));
+                payloadCopy = (HOPCTFEValue*)HOPArenaAlloc(
+                    run->arena, sizeof(*payloadCopy), (uint32_t)_Alignof(HOPCTFEValue));
                 if (payloadCopy == NULL) {
-                    SLCTFESetDiag(run->env.diag, SLDiag_ARENA_OOM, ins->start, ins->end);
+                    HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
                     return -1;
                 }
                 *payloadCopy = value;
-                value.kind = SLCTFEValue_OPTIONAL;
+                value.kind = HOPCTFEValue_OPTIONAL;
                 value.i64 = 0;
                 value.f64 = 0.0;
                 value.b = 1u;
                 value.typeTag = 0;
                 value.s.bytes = (const uint8_t*)payloadCopy;
                 value.s.len = 0;
-                if (SLCTFEPush(run, &value) != 0) {
+                if (HOPCTFEPush(run, &value) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_OPTIONAL_UNWRAP: {
-                SLCTFEValue        value;
-                const SLCTFEValue* payload = NULL;
-                if (SLCTFEPop(run, &value) != 0) {
+            case HOPMirOp_OPTIONAL_UNWRAP: {
+                HOPCTFEValue        value;
+                const HOPCTFEValue* payload = NULL;
+                if (HOPCTFEPop(run, &value) != 0) {
                     return 0;
                 }
-                if (!SLCTFEOptionalPayload(&value, &payload)) {
-                    if (value.kind == SLCTFEValue_NULL) {
-                        SLMirSetReason(run, ins, "unwrap of empty optional in evaluator backend");
+                if (!HOPCTFEOptionalPayload(&value, &payload)) {
+                    if (value.kind == HOPCTFEValue_NULL) {
+                        HOPMirSetReason(run, ins, "unwrap of empty optional in evaluator backend");
                         return 0;
                     }
-                    if (SLCTFEPush(run, &value) != 0) {
+                    if (HOPCTFEPush(run, &value) != 0) {
                         return -1;
                     }
                     break;
                 }
                 if (value.b == 0u || payload == NULL) {
-                    SLMirSetReason(run, ins, "unwrap of empty optional in evaluator backend");
+                    HOPMirSetReason(run, ins, "unwrap of empty optional in evaluator backend");
                     return 0;
                 }
-                if (SLCTFEPush(run, payload) != 0) {
+                if (HOPCTFEPush(run, payload) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_ALLOC_NEW: {
-                SLCTFEValue out;
-                int         allocRc;
-                int         allocIsConst = 0;
+            case HOPMirOp_ALLOC_NEW: {
+                HOPCTFEValue out;
+                int          allocRc;
+                int          allocIsConst = 0;
                 if (run->env.allocNew == NULL) {
-                    SLMirSetReason(
+                    HOPMirSetReason(
                         run, ins, "new expression is not supported during const evaluation");
                     return 0;
                 }
@@ -1711,21 +1714,21 @@ static int SLMirRunLoop(
                     return -1;
                 }
                 if (allocRc == 0 || !allocIsConst) {
-                    SLMirSetReason(
+                    HOPMirSetReason(
                         run, ins, "new expression is not supported during const evaluation");
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_CTX_GET: {
-                SLCTFEValue out;
-                int         getRc;
-                int         isConst = 0;
+            case HOPMirOp_CTX_GET: {
+                HOPCTFEValue out;
+                int          getRc;
+                int          isConst = 0;
                 if (run->env.contextGet == NULL) {
-                    SLMirSetReason(
+                    HOPMirSetReason(
                         run, ins, "context access is not supported during const evaluation");
                     return 0;
                 }
@@ -1735,21 +1738,21 @@ static int SLMirRunLoop(
                     return -1;
                 }
                 if (getRc == 0 || !isConst) {
-                    SLMirSetReason(
+                    HOPMirSetReason(
                         run, ins, "context access is not supported during const evaluation");
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_CTX_ADDR: {
-                SLCTFEValue out;
-                int         addrRc;
-                int         isConst = 0;
+            case HOPMirOp_CTX_ADDR: {
+                HOPCTFEValue out;
+                int          addrRc;
+                int          isConst = 0;
                 if (run->env.contextAddr == NULL) {
-                    SLMirSetReason(
+                    HOPMirSetReason(
                         run, ins, "context address is not supported during const evaluation");
                     return 0;
                 }
@@ -1759,21 +1762,21 @@ static int SLMirRunLoop(
                     return -1;
                 }
                 if (addrRc == 0 || !isConst) {
-                    SLMirSetReason(
+                    HOPMirSetReason(
                         run, ins, "context address is not supported during const evaluation");
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_CTX_SET: {
-                SLCTFEValue out;
-                int         evalRc;
-                int         isConst = 0;
+            case HOPMirOp_CTX_SET: {
+                HOPCTFEValue out;
+                int          evalRc;
+                int          isConst = 0;
                 if (run->env.evalWithContext == NULL) {
-                    SLMirSetReason(
+                    HOPMirSetReason(
                         run, ins, "context overlay is not supported during const evaluation");
                     return 0;
                 }
@@ -1783,31 +1786,31 @@ static int SLMirRunLoop(
                     return -1;
                 }
                 if (evalRc == 0 || !isConst) {
-                    SLMirSetReason(
+                    HOPMirSetReason(
                         run, ins, "context overlay is not supported during const evaluation");
                     return 0;
                 }
-                if (SLCTFEPush(run, &out) != 0) {
+                if (HOPCTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case SLMirOp_RETURN:
+            case HOPMirOp_RETURN:
                 if (run->stackLen != 1) {
-                    SLMirSetReason(run, ins, "return stack is invalid during const evaluation");
+                    HOPMirSetReason(run, ins, "return stack is invalid during const evaluation");
                     return 0;
                 }
                 *outValue = run->stack[0];
                 if (run->function != NULL && run->function->typeRef != UINT32_MAX) {
-                    int coerceRc = SLMirCoerceValueForType(run, run->function->typeRef, outValue);
+                    int coerceRc = HOPMirCoerceValueForType(run, run->function->typeRef, outValue);
                     if (coerceRc <= 0) {
                         return coerceRc < 0 ? -1 : 0;
                     }
                 }
                 *outIsConst = 1;
                 return 0;
-            case SLMirOp_RETURN_VOID:
-                SLCTFEValueInvalid(outValue);
+            case HOPMirOp_RETURN_VOID:
+                HOPCTFEValueInvalid(outValue);
                 *outIsConst = 1;
                 return 0;
             default: return 0;
@@ -1816,20 +1819,20 @@ static int SLMirRunLoop(
     return 0;
 }
 
-static void SLCTFESetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
+static void HOPCTFESetDiag(HOPDiag* diag, HOPDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
     diag->code = code;
-    diag->type = SLDiagTypeOfCode(code);
+    diag->type = HOPDiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
 }
 
-static void SLCTFEValueInvalid(SLCTFEValue* v) {
-    v->kind = SLCTFEValue_INVALID;
+static void HOPCTFEValueInvalid(HOPCTFEValue* v) {
+    v->kind = HOPCTFEValue_INVALID;
     v->i64 = 0;
     v->f64 = 0.0;
     v->b = 0;
@@ -1844,16 +1847,16 @@ static void SLCTFEValueInvalid(SLCTFEValue* v) {
     v->span.endColumn = 0;
 }
 
-static int SLCTFEPush(SLMirExecRun* r, const SLMirExecValue* v) {
+static int HOPCTFEPush(HOPMirExecRun* r, const HOPMirExecValue* v) {
     if (r->stackLen >= r->stackCap) {
-        SLCTFESetDiag(r->env.diag, SLDiag_ARENA_OOM, 0, 0);
+        HOPCTFESetDiag(r->env.diag, HOPDiag_ARENA_OOM, 0, 0);
         return -1;
     }
     r->stack[r->stackLen++] = *v;
     return 0;
 }
 
-static int SLCTFEPop(SLMirExecRun* r, SLMirExecValue* out) {
+static int HOPCTFEPop(HOPMirExecRun* r, HOPMirExecValue* out) {
     if (r->stackLen == 0) {
         return -1;
     }
@@ -1861,7 +1864,7 @@ static int SLCTFEPop(SLMirExecRun* r, SLMirExecValue* out) {
     return 0;
 }
 
-static int SLCTFEParseIntLiteral(SLStrView src, uint32_t start, uint32_t end, int64_t* out) {
+static int HOPCTFEParseIntLiteral(HOPStrView src, uint32_t start, uint32_t end, int64_t* out) {
     uint64_t v = 0;
     uint32_t i;
     uint32_t base = 10;
@@ -1904,8 +1907,8 @@ static int SLCTFEParseIntLiteral(SLStrView src, uint32_t start, uint32_t end, in
     return 0;
 }
 
-static int SLCTFEParseFloatLiteral(
-    SLArena* arena, SLStrView src, uint32_t start, uint32_t end, double* out) {
+static int HOPCTFEParseFloatLiteral(
+    HOPArena* arena, HOPStrView src, uint32_t start, uint32_t end, double* out) {
     uint32_t i;
     double   v = 0.0;
     int      sawDigit = 0;
@@ -1975,7 +1978,7 @@ static int SLCTFEParseFloatLiteral(
     return 0;
 }
 
-static int SLCTFEParseBoolLiteral(SLStrView src, uint32_t start, uint32_t end, uint8_t* out) {
+static int HOPCTFEParseBoolLiteral(HOPStrView src, uint32_t start, uint32_t end, uint8_t* out) {
     uint32_t len = end > start ? end - start : 0;
     if (len == 4 && memcmp(src.ptr + start, "true", 4) == 0) {
         *out = 1;
@@ -1988,7 +1991,7 @@ static int SLCTFEParseBoolLiteral(SLStrView src, uint32_t start, uint32_t end, u
     return -1;
 }
 
-static int SLCTFEStringEq(const SLCTFEString* a, const SLCTFEString* b) {
+static int HOPCTFEStringEq(const HOPCTFEString* a, const HOPCTFEString* b) {
     if (a->len != b->len) {
         return 0;
     }
@@ -1998,11 +2001,11 @@ static int SLCTFEStringEq(const SLCTFEString* a, const SLCTFEString* b) {
     return memcmp(a->bytes, b->bytes, a->len) == 0;
 }
 
-static int SLCTFEOptionalPayload(const SLCTFEValue* opt, const SLCTFEValue** outPayload) {
+static int HOPCTFEOptionalPayload(const HOPCTFEValue* opt, const HOPCTFEValue** outPayload) {
     if (outPayload != NULL) {
         *outPayload = NULL;
     }
-    if (opt == NULL || opt->kind != SLCTFEValue_OPTIONAL || outPayload == NULL) {
+    if (opt == NULL || opt->kind != HOPCTFEValue_OPTIONAL || outPayload == NULL) {
         return 0;
     }
     if (opt->b == 0u) {
@@ -2011,23 +2014,23 @@ static int SLCTFEOptionalPayload(const SLCTFEValue* opt, const SLCTFEValue** out
     if (opt->s.bytes == NULL) {
         return 0;
     }
-    *outPayload = (const SLCTFEValue*)opt->s.bytes;
+    *outPayload = (const HOPCTFEValue*)opt->s.bytes;
     return 1;
 }
 
-static int SLCTFEValueEqRec(const SLCTFEValue* a, const SLCTFEValue* b, uint32_t depth) {
-    const SLCTFEValue* aPayload = NULL;
-    const SLCTFEValue* bPayload = NULL;
+static int HOPCTFEValueEqRec(const HOPCTFEValue* a, const HOPCTFEValue* b, uint32_t depth) {
+    const HOPCTFEValue* aPayload = NULL;
+    const HOPCTFEValue* bPayload = NULL;
     if (a == NULL || b == NULL || a->kind != b->kind || depth > 32u) {
         return 0;
     }
     switch (a->kind) {
-        case SLCTFEValue_INT:    return a->i64 == b->i64;
-        case SLCTFEValue_FLOAT:  return a->f64 == b->f64;
-        case SLCTFEValue_BOOL:   return a->b == b->b;
-        case SLCTFEValue_STRING: return SLCTFEStringEq(&a->s, &b->s);
-        case SLCTFEValue_TYPE:   return a->typeTag == b->typeTag;
-        case SLCTFEValue_SPAN:
+        case HOPCTFEValue_INT:    return a->i64 == b->i64;
+        case HOPCTFEValue_FLOAT:  return a->f64 == b->f64;
+        case HOPCTFEValue_BOOL:   return a->b == b->b;
+        case HOPCTFEValue_STRING: return HOPCTFEStringEq(&a->s, &b->s);
+        case HOPCTFEValue_TYPE:   return a->typeTag == b->typeTag;
+        case HOPCTFEValue_SPAN:
             if (a->span.startLine != b->span.startLine || a->span.startColumn != b->span.startColumn
                 || a->span.endLine != b->span.endLine || a->span.endColumn != b->span.endColumn
                 || a->span.fileLen != b->span.fileLen)
@@ -2039,21 +2042,21 @@ static int SLCTFEValueEqRec(const SLCTFEValue* a, const SLCTFEValue* b, uint32_t
             }
             return a->span.fileBytes != NULL && b->span.fileBytes != NULL
                 && memcmp(a->span.fileBytes, b->span.fileBytes, a->span.fileLen) == 0;
-        case SLCTFEValue_NULL: return 1;
-        case SLCTFEValue_OPTIONAL:
-            if (!SLCTFEOptionalPayload(a, &aPayload) || !SLCTFEOptionalPayload(b, &bPayload)) {
+        case HOPCTFEValue_NULL: return 1;
+        case HOPCTFEValue_OPTIONAL:
+            if (!HOPCTFEOptionalPayload(a, &aPayload) || !HOPCTFEOptionalPayload(b, &bPayload)) {
                 return 0;
             }
             if (a->b == 0u || b->b == 0u) {
                 return a->b == b->b;
             }
-            return SLCTFEValueEqRec(aPayload, bPayload, depth + 1u);
+            return HOPCTFEValueEqRec(aPayload, bPayload, depth + 1u);
         default: return 0;
     }
 }
 
-static int SLCTFEStringConcat(
-    SLMirExecRun* r, const SLCTFEString* a, const SLCTFEString* b, SLCTFEString* out) {
+static int HOPCTFEStringConcat(
+    HOPMirExecRun* r, const HOPCTFEString* a, const HOPCTFEString* b, HOPCTFEString* out) {
     uint64_t total64 = (uint64_t)a->len + (uint64_t)b->len;
     uint32_t totalLen;
     uint8_t* dst;
@@ -2066,9 +2069,9 @@ static int SLCTFEStringConcat(
         out->len = 0;
         return 0;
     }
-    dst = (uint8_t*)SLArenaAlloc(r->arena, totalLen, (uint32_t)_Alignof(uint8_t));
+    dst = (uint8_t*)HOPArenaAlloc(r->arena, totalLen, (uint32_t)_Alignof(uint8_t));
     if (dst == NULL) {
-        SLCTFESetDiag(r->env.diag, SLDiag_ARENA_OOM, 0, 0);
+        HOPCTFESetDiag(r->env.diag, HOPDiag_ARENA_OOM, 0, 0);
         return -1;
     }
     if (a->len > 0) {
@@ -2082,53 +2085,53 @@ static int SLCTFEStringConcat(
     return 0;
 }
 
-static int SLCTFEEvalUnary(SLTokenKind op, const SLCTFEValue* in, SLCTFEValue* out) {
-    SLCTFEValueInvalid(out);
-    if (op == SLTok_ADD && in->kind == SLCTFEValue_INT) {
+static int HOPCTFEEvalUnary(HOPTokenKind op, const HOPCTFEValue* in, HOPCTFEValue* out) {
+    HOPCTFEValueInvalid(out);
+    if (op == HOPTok_ADD && in->kind == HOPCTFEValue_INT) {
         *out = *in;
         return 1;
     }
-    if (op == SLTok_ADD && in->kind == SLCTFEValue_FLOAT) {
+    if (op == HOPTok_ADD && in->kind == HOPCTFEValue_FLOAT) {
         *out = *in;
         return 1;
     }
-    if (op == SLTok_SUB && in->kind == SLCTFEValue_INT) {
+    if (op == HOPTok_SUB && in->kind == HOPCTFEValue_INT) {
         if (in->i64 == INT64_MIN) {
             return 0;
         }
-        out->kind = SLCTFEValue_INT;
+        out->kind = HOPCTFEValue_INT;
         out->i64 = -in->i64;
         return 1;
     }
-    if (op == SLTok_SUB && in->kind == SLCTFEValue_FLOAT) {
-        out->kind = SLCTFEValue_FLOAT;
+    if (op == HOPTok_SUB && in->kind == HOPCTFEValue_FLOAT) {
+        out->kind = HOPCTFEValue_FLOAT;
         out->f64 = -in->f64;
         return 1;
     }
-    if (op == SLTok_NOT && in->kind == SLCTFEValue_BOOL) {
-        out->kind = SLCTFEValue_BOOL;
+    if (op == HOPTok_NOT && in->kind == HOPCTFEValue_BOOL) {
+        out->kind = HOPCTFEValue_BOOL;
         out->b = in->b ? 0u : 1u;
         return 1;
     }
     return 0;
 }
 
-static int SLCTFEValueToF64(const SLCTFEValue* value, double* out) {
+static int HOPCTFEValueToF64(const HOPCTFEValue* value, double* out) {
     if (value == NULL || out == NULL) {
         return 0;
     }
-    if (value->kind == SLCTFEValue_INT) {
+    if (value->kind == HOPCTFEValue_INT) {
         *out = (double)value->i64;
         return 1;
     }
-    if (value->kind == SLCTFEValue_FLOAT) {
+    if (value->kind == HOPCTFEValue_FLOAT) {
         *out = value->f64;
         return 1;
     }
     return 0;
 }
 
-static int SLCTFEAddI64(int64_t a, int64_t b, int64_t* out) {
+static int HOPCTFEAddI64(int64_t a, int64_t b, int64_t* out) {
 #if __has_builtin(__builtin_add_overflow)
     if (__builtin_add_overflow(a, b, out)) {
         return -1;
@@ -2143,7 +2146,7 @@ static int SLCTFEAddI64(int64_t a, int64_t b, int64_t* out) {
 #endif
 }
 
-static int SLCTFESubI64(int64_t a, int64_t b, int64_t* out) {
+static int HOPCTFESubI64(int64_t a, int64_t b, int64_t* out) {
 #if __has_builtin(__builtin_sub_overflow)
     if (__builtin_sub_overflow(a, b, out)) {
         return -1;
@@ -2158,7 +2161,7 @@ static int SLCTFESubI64(int64_t a, int64_t b, int64_t* out) {
 #endif
 }
 
-static int SLCTFEMulI64(int64_t a, int64_t b, int64_t* out) {
+static int HOPCTFEMulI64(int64_t a, int64_t b, int64_t* out) {
 #if __has_builtin(__builtin_mul_overflow)
     if (__builtin_mul_overflow(a, b, out)) {
         return -1;
@@ -2201,153 +2204,153 @@ static int SLCTFEMulI64(int64_t a, int64_t b, int64_t* out) {
 #endif
 }
 
-static int SLCTFEEvalBinary(
-    SLMirExecRun*      r,
-    SLTokenKind        op,
-    const SLCTFEValue* lhs,
-    const SLCTFEValue* rhs,
-    SLCTFEValue*       out) {
-    int64_t            i = 0;
-    double             lf = 0.0;
-    double             rf = 0.0;
-    const SLCTFEValue* lhsPayload = NULL;
-    const SLCTFEValue* rhsPayload = NULL;
-    SLCTFEValueInvalid(out);
+static int HOPCTFEEvalBinary(
+    HOPMirExecRun*      r,
+    HOPTokenKind        op,
+    const HOPCTFEValue* lhs,
+    const HOPCTFEValue* rhs,
+    HOPCTFEValue*       out) {
+    int64_t             i = 0;
+    double              lf = 0.0;
+    double              rf = 0.0;
+    const HOPCTFEValue* lhsPayload = NULL;
+    const HOPCTFEValue* rhsPayload = NULL;
+    HOPCTFEValueInvalid(out);
 
     if (lhs == NULL || rhs == NULL) {
         return 0;
     }
-    if (lhs->kind == SLCTFEValue_OPTIONAL && rhs->kind != SLCTFEValue_OPTIONAL
-        && rhs->kind != SLCTFEValue_NULL)
+    if (lhs->kind == HOPCTFEValue_OPTIONAL && rhs->kind != HOPCTFEValue_OPTIONAL
+        && rhs->kind != HOPCTFEValue_NULL)
     {
-        if (!SLCTFEOptionalPayload(lhs, &lhsPayload) || lhs->b == 0u || lhsPayload == NULL) {
+        if (!HOPCTFEOptionalPayload(lhs, &lhsPayload) || lhs->b == 0u || lhsPayload == NULL) {
             return 0;
         }
-        return SLCTFEEvalBinary(r, op, lhsPayload, rhs, out);
+        return HOPCTFEEvalBinary(r, op, lhsPayload, rhs, out);
     }
-    if (rhs->kind == SLCTFEValue_OPTIONAL && lhs->kind != SLCTFEValue_OPTIONAL
-        && lhs->kind != SLCTFEValue_NULL)
+    if (rhs->kind == HOPCTFEValue_OPTIONAL && lhs->kind != HOPCTFEValue_OPTIONAL
+        && lhs->kind != HOPCTFEValue_NULL)
     {
-        if (!SLCTFEOptionalPayload(rhs, &rhsPayload) || rhs->b == 0u || rhsPayload == NULL) {
+        if (!HOPCTFEOptionalPayload(rhs, &rhsPayload) || rhs->b == 0u || rhsPayload == NULL) {
             return 0;
         }
-        return SLCTFEEvalBinary(r, op, lhs, rhsPayload, out);
+        return HOPCTFEEvalBinary(r, op, lhs, rhsPayload, out);
     }
 
-    if (lhs->kind == SLCTFEValue_INT && rhs->kind == SLCTFEValue_INT) {
+    if (lhs->kind == HOPCTFEValue_INT && rhs->kind == HOPCTFEValue_INT) {
         switch (op) {
-            case SLTok_ADD:
-                if (SLCTFEAddI64(lhs->i64, rhs->i64, &i) != 0) {
+            case HOPTok_ADD:
+                if (HOPCTFEAddI64(lhs->i64, rhs->i64, &i) != 0) {
                     return 0;
                 }
-                out->kind = SLCTFEValue_INT;
+                out->kind = HOPCTFEValue_INT;
                 out->i64 = i;
                 return 1;
-            case SLTok_SUB:
-                if (SLCTFESubI64(lhs->i64, rhs->i64, &i) != 0) {
+            case HOPTok_SUB:
+                if (HOPCTFESubI64(lhs->i64, rhs->i64, &i) != 0) {
                     return 0;
                 }
-                out->kind = SLCTFEValue_INT;
+                out->kind = HOPCTFEValue_INT;
                 out->i64 = i;
                 return 1;
-            case SLTok_MUL:
-                if (SLCTFEMulI64(lhs->i64, rhs->i64, &i) != 0) {
+            case HOPTok_MUL:
+                if (HOPCTFEMulI64(lhs->i64, rhs->i64, &i) != 0) {
                     return 0;
                 }
-                out->kind = SLCTFEValue_INT;
+                out->kind = HOPCTFEValue_INT;
                 out->i64 = i;
                 return 1;
-            case SLTok_DIV:
+            case HOPTok_DIV:
                 if (rhs->i64 == 0 || (lhs->i64 == INT64_MIN && rhs->i64 == -1)) {
                     return 0;
                 }
-                out->kind = SLCTFEValue_INT;
+                out->kind = HOPCTFEValue_INT;
                 out->i64 = lhs->i64 / rhs->i64;
                 return 1;
-            case SLTok_MOD:
+            case HOPTok_MOD:
                 if (rhs->i64 == 0 || (lhs->i64 == INT64_MIN && rhs->i64 == -1)) {
                     return 0;
                 }
-                out->kind = SLCTFEValue_INT;
+                out->kind = HOPCTFEValue_INT;
                 out->i64 = lhs->i64 % rhs->i64;
                 return 1;
-            case SLTok_AND:
-                out->kind = SLCTFEValue_INT;
+            case HOPTok_AND:
+                out->kind = HOPCTFEValue_INT;
                 out->i64 = lhs->i64 & rhs->i64;
                 return 1;
-            case SLTok_OR:
-                out->kind = SLCTFEValue_INT;
+            case HOPTok_OR:
+                out->kind = HOPCTFEValue_INT;
                 out->i64 = lhs->i64 | rhs->i64;
                 return 1;
-            case SLTok_XOR:
-                out->kind = SLCTFEValue_INT;
+            case HOPTok_XOR:
+                out->kind = HOPCTFEValue_INT;
                 out->i64 = lhs->i64 ^ rhs->i64;
                 return 1;
-            case SLTok_LSHIFT:
+            case HOPTok_LSHIFT:
                 if (rhs->i64 < 0 || rhs->i64 > 63 || lhs->i64 < 0) {
                     return 0;
                 }
-                out->kind = SLCTFEValue_INT;
+                out->kind = HOPCTFEValue_INT;
                 out->i64 = (int64_t)((uint64_t)lhs->i64 << (uint32_t)rhs->i64);
                 return 1;
-            case SLTok_RSHIFT:
+            case HOPTok_RSHIFT:
                 if (rhs->i64 < 0 || rhs->i64 > 63 || lhs->i64 < 0) {
                     return 0;
                 }
-                out->kind = SLCTFEValue_INT;
+                out->kind = HOPCTFEValue_INT;
                 out->i64 = (int64_t)((uint64_t)lhs->i64 >> (uint32_t)rhs->i64);
                 return 1;
-            case SLTok_EQ:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_EQ:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->i64 == rhs->i64;
                 return 1;
-            case SLTok_NEQ:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_NEQ:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->i64 != rhs->i64;
                 return 1;
-            case SLTok_LT:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_LT:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->i64 < rhs->i64;
                 return 1;
-            case SLTok_GT:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_GT:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->i64 > rhs->i64;
                 return 1;
-            case SLTok_LTE:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_LTE:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->i64 <= rhs->i64;
                 return 1;
-            case SLTok_GTE:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_GTE:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->i64 >= rhs->i64;
                 return 1;
             default: return 0;
         }
     }
 
-    if (lhs->kind == SLCTFEValue_BOOL && rhs->kind == SLCTFEValue_BOOL) {
+    if (lhs->kind == HOPCTFEValue_BOOL && rhs->kind == HOPCTFEValue_BOOL) {
         switch (op) {
-            case SLTok_LOGICAL_AND:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_LOGICAL_AND:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->b && rhs->b;
                 return 1;
-            case SLTok_LOGICAL_OR:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_LOGICAL_OR:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->b || rhs->b;
                 return 1;
-            case SLTok_EQ:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_EQ:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->b == rhs->b;
                 return 1;
-            case SLTok_NEQ:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_NEQ:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->b != rhs->b;
                 return 1;
             default: return 0;
         }
     }
 
-    if (lhs->kind == SLCTFEValue_STRING && rhs->kind == SLCTFEValue_STRING) {
+    if (lhs->kind == HOPCTFEValue_STRING && rhs->kind == HOPCTFEValue_STRING) {
         int cmp = 0;
         if (lhs->s.len != rhs->s.len) {
             uint32_t minLen = lhs->s.len < rhs->s.len ? lhs->s.len : rhs->s.len;
@@ -2361,38 +2364,38 @@ static int SLCTFEEvalBinary(
             cmp = memcmp(lhs->s.bytes, rhs->s.bytes, lhs->s.len);
         }
         switch (op) {
-            case SLTok_ADD:
-                out->kind = SLCTFEValue_STRING;
-                return SLCTFEStringConcat(r, &lhs->s, &rhs->s, &out->s) == 0;
-            case SLTok_EQ:
-                out->kind = SLCTFEValue_BOOL;
-                out->b = SLCTFEStringEq(&lhs->s, &rhs->s);
+            case HOPTok_ADD:
+                out->kind = HOPCTFEValue_STRING;
+                return HOPCTFEStringConcat(r, &lhs->s, &rhs->s, &out->s) == 0;
+            case HOPTok_EQ:
+                out->kind = HOPCTFEValue_BOOL;
+                out->b = HOPCTFEStringEq(&lhs->s, &rhs->s);
                 return 1;
-            case SLTok_NEQ:
-                out->kind = SLCTFEValue_BOOL;
-                out->b = !SLCTFEStringEq(&lhs->s, &rhs->s);
+            case HOPTok_NEQ:
+                out->kind = HOPCTFEValue_BOOL;
+                out->b = !HOPCTFEStringEq(&lhs->s, &rhs->s);
                 return 1;
-            case SLTok_LT:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_LT:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = cmp < 0;
                 return 1;
-            case SLTok_GT:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_GT:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = cmp > 0;
                 return 1;
-            case SLTok_LTE:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_LTE:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = cmp <= 0;
                 return 1;
-            case SLTok_GTE:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_GTE:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = cmp >= 0;
                 return 1;
             default: return 0;
         }
     }
 
-    if (lhs->kind == SLCTFEValue_TYPE && rhs->kind == SLCTFEValue_TYPE && r != NULL
+    if (lhs->kind == HOPCTFEValue_TYPE && rhs->kind == HOPCTFEValue_TYPE && r != NULL
         && r->env.evalBinary != NULL)
     {
         int hookIsConst = 0;
@@ -2406,90 +2409,90 @@ static int SLCTFEEvalBinary(
         }
     }
 
-    if (lhs->kind == SLCTFEValue_TYPE && rhs->kind == SLCTFEValue_TYPE) {
+    if (lhs->kind == HOPCTFEValue_TYPE && rhs->kind == HOPCTFEValue_TYPE) {
         switch (op) {
-            case SLTok_EQ:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_EQ:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->typeTag == rhs->typeTag;
                 return 1;
-            case SLTok_NEQ:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_NEQ:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lhs->typeTag != rhs->typeTag;
                 return 1;
             default: break;
         }
     }
 
-    if (SLCTFEValueToF64(lhs, &lf) && SLCTFEValueToF64(rhs, &rf)) {
+    if (HOPCTFEValueToF64(lhs, &lf) && HOPCTFEValueToF64(rhs, &rf)) {
         switch (op) {
-            case SLTok_ADD:
-                out->kind = SLCTFEValue_FLOAT;
+            case HOPTok_ADD:
+                out->kind = HOPCTFEValue_FLOAT;
                 out->f64 = lf + rf;
                 return 1;
-            case SLTok_SUB:
-                out->kind = SLCTFEValue_FLOAT;
+            case HOPTok_SUB:
+                out->kind = HOPCTFEValue_FLOAT;
                 out->f64 = lf - rf;
                 return 1;
-            case SLTok_MUL:
-                out->kind = SLCTFEValue_FLOAT;
+            case HOPTok_MUL:
+                out->kind = HOPCTFEValue_FLOAT;
                 out->f64 = lf * rf;
                 return 1;
-            case SLTok_DIV:
-                out->kind = SLCTFEValue_FLOAT;
+            case HOPTok_DIV:
+                out->kind = HOPCTFEValue_FLOAT;
                 out->f64 = lf / rf;
                 return 1;
-            case SLTok_EQ:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_EQ:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lf == rf;
                 return 1;
-            case SLTok_NEQ:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_NEQ:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lf != rf;
                 return 1;
-            case SLTok_LT:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_LT:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lf < rf;
                 return 1;
-            case SLTok_GT:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_GT:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lf > rf;
                 return 1;
-            case SLTok_LTE:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_LTE:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lf <= rf;
                 return 1;
-            case SLTok_GTE:
-                out->kind = SLCTFEValue_BOOL;
+            case HOPTok_GTE:
+                out->kind = HOPCTFEValue_BOOL;
                 out->b = lf >= rf;
                 return 1;
             default: return 0;
         }
     }
 
-    if (op == SLTok_EQ || op == SLTok_NEQ) {
+    if (op == HOPTok_EQ || op == HOPTok_NEQ) {
         int eq = 0;
-        if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_NULL) {
+        if (lhs->kind == HOPCTFEValue_NULL && rhs->kind == HOPCTFEValue_NULL) {
             eq = 1;
-        } else if (lhs->kind == SLCTFEValue_REFERENCE && rhs->kind == SLCTFEValue_NULL) {
+        } else if (lhs->kind == HOPCTFEValue_REFERENCE && rhs->kind == HOPCTFEValue_NULL) {
             eq = lhs->s.bytes == NULL;
-        } else if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_REFERENCE) {
+        } else if (lhs->kind == HOPCTFEValue_NULL && rhs->kind == HOPCTFEValue_REFERENCE) {
             eq = rhs->s.bytes == NULL;
-        } else if (lhs->kind == SLCTFEValue_STRING && rhs->kind == SLCTFEValue_NULL) {
+        } else if (lhs->kind == HOPCTFEValue_STRING && rhs->kind == HOPCTFEValue_NULL) {
             eq = lhs->s.bytes == NULL;
-        } else if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_STRING) {
+        } else if (lhs->kind == HOPCTFEValue_NULL && rhs->kind == HOPCTFEValue_STRING) {
             eq = rhs->s.bytes == NULL;
-        } else if (lhs->kind == SLCTFEValue_OPTIONAL && rhs->kind == SLCTFEValue_NULL) {
+        } else if (lhs->kind == HOPCTFEValue_OPTIONAL && rhs->kind == HOPCTFEValue_NULL) {
             eq = lhs->b == 0u;
-        } else if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_OPTIONAL) {
+        } else if (lhs->kind == HOPCTFEValue_NULL && rhs->kind == HOPCTFEValue_OPTIONAL) {
             eq = rhs->b == 0u;
-        } else if (lhs->kind == SLCTFEValue_OPTIONAL && rhs->kind == SLCTFEValue_OPTIONAL) {
-            eq = SLCTFEValueEqRec(lhs, rhs, 0);
+        } else if (lhs->kind == HOPCTFEValue_OPTIONAL && rhs->kind == HOPCTFEValue_OPTIONAL) {
+            eq = HOPCTFEValueEqRec(lhs, rhs, 0);
         }
-        if (lhs->kind == SLCTFEValue_NULL || rhs->kind == SLCTFEValue_NULL
-            || (lhs->kind == SLCTFEValue_OPTIONAL && rhs->kind == SLCTFEValue_OPTIONAL))
+        if (lhs->kind == HOPCTFEValue_NULL || rhs->kind == HOPCTFEValue_NULL
+            || (lhs->kind == HOPCTFEValue_OPTIONAL && rhs->kind == HOPCTFEValue_OPTIONAL))
         {
-            out->kind = SLCTFEValue_BOOL;
-            out->b = (op == SLTok_EQ) ? (eq ? 1u : 0u) : (eq ? 0u : 1u);
+            out->kind = HOPCTFEValue_BOOL;
+            out->b = (op == HOPTok_EQ) ? (eq ? 1u : 0u) : (eq ? 0u : 1u);
             return 1;
         }
     }
@@ -2509,147 +2512,147 @@ static int SLCTFEEvalBinary(
     return 0;
 }
 
-static int SLCTFEEvalCast(SLMirCastTarget target, const SLCTFEValue* in, SLCTFEValue* out) {
-    SLCTFEValueInvalid(out);
+static int HOPCTFEEvalCast(HOPMirCastTarget target, const HOPCTFEValue* in, HOPCTFEValue* out) {
+    HOPCTFEValueInvalid(out);
     switch (target) {
-        case SLMirCastTarget_INT: {
+        case HOPMirCastTarget_INT: {
             int64_t asInt = 0;
-            if (in->kind == SLCTFEValue_INT) {
+            if (in->kind == HOPCTFEValue_INT) {
                 asInt = in->i64;
-            } else if (in->kind == SLCTFEValue_BOOL) {
+            } else if (in->kind == HOPCTFEValue_BOOL) {
                 asInt = in->b ? 1 : 0;
-            } else if (in->kind == SLCTFEValue_FLOAT) {
+            } else if (in->kind == HOPCTFEValue_FLOAT) {
                 if (in->f64 != in->f64 || in->f64 > (double)INT64_MAX
                     || in->f64 < (double)INT64_MIN)
                 {
                     return 0;
                 }
                 asInt = (int64_t)in->f64;
-            } else if (in->kind == SLCTFEValue_NULL) {
+            } else if (in->kind == HOPCTFEValue_NULL) {
                 asInt = 0;
             } else {
                 return 0;
             }
-            out->kind = SLCTFEValue_INT;
+            out->kind = HOPCTFEValue_INT;
             out->i64 = asInt;
             return 1;
         }
-        case SLMirCastTarget_FLOAT: {
+        case HOPMirCastTarget_FLOAT: {
             double asFloat = 0.0;
-            if (in->kind == SLCTFEValue_FLOAT) {
+            if (in->kind == HOPCTFEValue_FLOAT) {
                 asFloat = in->f64;
-            } else if (in->kind == SLCTFEValue_INT) {
+            } else if (in->kind == HOPCTFEValue_INT) {
                 asFloat = (double)in->i64;
-            } else if (in->kind == SLCTFEValue_BOOL) {
+            } else if (in->kind == HOPCTFEValue_BOOL) {
                 asFloat = in->b ? 1.0 : 0.0;
-            } else if (in->kind == SLCTFEValue_NULL) {
+            } else if (in->kind == HOPCTFEValue_NULL) {
                 asFloat = 0.0;
             } else {
                 return 0;
             }
-            out->kind = SLCTFEValue_FLOAT;
+            out->kind = HOPCTFEValue_FLOAT;
             out->f64 = asFloat;
             return 1;
         }
-        case SLMirCastTarget_BOOL: {
+        case HOPMirCastTarget_BOOL: {
             uint8_t asBool = 0;
-            if (in->kind == SLCTFEValue_BOOL) {
+            if (in->kind == HOPCTFEValue_BOOL) {
                 asBool = in->b ? 1u : 0u;
-            } else if (in->kind == SLCTFEValue_INT) {
+            } else if (in->kind == HOPCTFEValue_INT) {
                 asBool = in->i64 != 0 ? 1u : 0u;
-            } else if (in->kind == SLCTFEValue_FLOAT) {
+            } else if (in->kind == HOPCTFEValue_FLOAT) {
                 asBool = in->f64 != 0.0 ? 1u : 0u;
-            } else if (in->kind == SLCTFEValue_OPTIONAL) {
+            } else if (in->kind == HOPCTFEValue_OPTIONAL) {
                 asBool = in->b != 0u ? 1u : 0u;
-            } else if (in->kind == SLCTFEValue_STRING) {
+            } else if (in->kind == HOPCTFEValue_STRING) {
                 asBool = 1u;
-            } else if (in->kind == SLCTFEValue_NULL) {
+            } else if (in->kind == HOPCTFEValue_NULL) {
                 asBool = 0u;
             } else {
                 return 0;
             }
-            out->kind = SLCTFEValue_BOOL;
+            out->kind = HOPCTFEValue_BOOL;
             out->b = asBool;
             return 1;
         }
-        case SLMirCastTarget_PTR_LIKE:
-            if (in->kind == SLCTFEValue_REFERENCE || in->kind == SLCTFEValue_NULL
-                || in->kind == SLCTFEValue_STRING)
+        case HOPMirCastTarget_PTR_LIKE:
+            if (in->kind == HOPCTFEValue_REFERENCE || in->kind == HOPCTFEValue_NULL
+                || in->kind == HOPCTFEValue_STRING)
             {
                 *out = *in;
                 return 1;
             }
             return 0;
-        case SLMirCastTarget_STR_VIEW: *out = *in; return 1;
-        default:                       return 0;
+        case HOPMirCastTarget_STR_VIEW: *out = *in; return 1;
+        default:                        return 0;
     }
 }
 
-int SLMirEvalChunk(
-    SLArena* _Nonnull arena,
-    SLMirChunk chunk,
-    const SLMirExecEnv* _Nullable env,
-    SLMirExecValue* _Nonnull outValue,
+int HOPMirEvalChunk(
+    HOPArena* _Nonnull arena,
+    HOPMirChunk chunk,
+    const HOPMirExecEnv* _Nullable env,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
-    SLMirExecRun run;
-    if (SLMirInitRun(&run, arena, chunk, NULL, NULL, 0u, NULL, 0u, env, 1, outValue, outIsConst)
+    HOPMirExecRun run;
+    if (HOPMirInitRun(&run, arena, chunk, NULL, NULL, 0u, NULL, 0u, env, 1, outValue, outIsConst)
         != 0)
     {
         return -1;
     }
-    return SLMirRunLoop(&run, outValue, outIsConst);
+    return HOPMirRunLoop(&run, outValue, outIsConst);
 }
 
-static int SLMirEvalFunctionInternal(
-    SLArena* _Nonnull arena,
-    const SLMirProgram* _Nonnull program,
+static int HOPMirEvalFunctionInternal(
+    HOPArena* _Nonnull arena,
+    const HOPMirProgram* _Nonnull program,
     uint32_t functionIndex,
-    const SLMirExecValue* _Nullable args,
+    const HOPMirExecValue* _Nullable args,
     uint32_t argCount,
     uint16_t callFlags,
-    const SLMirExecEnv* _Nullable env,
+    const HOPMirExecEnv* _Nullable env,
     int validateProgram,
     int clearDiag,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
-    const SLMirFunction* fn;
-    SLMirChunk           chunk;
-    SLMirExecEnv         frameEnv;
-    SLMirExecRun         run;
-    SLMirExecValue       variadicPackValue;
-    int                  enteredFunction = 0;
-    int                  boundFrame = 0;
-    int                  rc = 0;
+    const HOPMirFunction* fn;
+    HOPMirChunk           chunk;
+    HOPMirExecEnv         frameEnv;
+    HOPMirExecRun         run;
+    HOPMirExecValue       variadicPackValue;
+    int                   enteredFunction = 0;
+    int                   boundFrame = 0;
+    int                   rc = 0;
     if (program == NULL || functionIndex >= program->funcLen) {
         if (env != NULL) {
-            SLCTFESetDiag(env->diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+            HOPCTFESetDiag(env->diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
         }
         return -1;
     }
-    if (validateProgram && SLMirValidateProgram(program, env != NULL ? env->diag : NULL) != 0) {
+    if (validateProgram && HOPMirValidateProgram(program, env != NULL ? env->diag : NULL) != 0) {
         return -1;
     }
     fn = &program->funcs[functionIndex];
     if (fn->instStart > program->instLen || fn->instLen > program->instLen - fn->instStart) {
         if (env != NULL) {
-            SLCTFESetDiag(env->diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+            HOPCTFESetDiag(env->diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
         }
         return -1;
     }
     if (fn->localCount < fn->paramCount) {
         return 0;
     }
-    if ((fn->flags & SLMirFunctionFlag_VARIADIC) != 0u) {
-        uint32_t          fixedCount = fn->paramCount > 0u ? fn->paramCount - 1u : 0u;
-        const SLMirLocal* variadicLocal = NULL;
-        int               packIsConst = 0;
+    if ((fn->flags & HOPMirFunctionFlag_VARIADIC) != 0u) {
+        uint32_t           fixedCount = fn->paramCount > 0u ? fn->paramCount - 1u : 0u;
+        const HOPMirLocal* variadicLocal = NULL;
+        int                packIsConst = 0;
         if (argCount < fixedCount || fn->paramCount == 0u || env == NULL
             || env->makeVariadicPack == NULL)
         {
             return 0;
         }
         variadicLocal = &program->locals[fn->localStart + fn->paramCount - 1u];
-        SLCTFEValueInvalid(&variadicPackValue);
+        HOPCTFEValueInvalid(&variadicPackValue);
         if (env->makeVariadicPack(
                 env->makeVariadicPackCtx,
                 program,
@@ -2692,7 +2695,7 @@ static int SLMirEvalFunctionInternal(
     }
     chunk.v = program->insts + fn->instStart;
     chunk.len = fn->instLen;
-    if (SLMirInitRun(
+    if (HOPMirInitRun(
             &run,
             arena,
             chunk,
@@ -2710,7 +2713,7 @@ static int SLMirEvalFunctionInternal(
         rc = -1;
         goto end;
     }
-    if ((fn->flags & SLMirFunctionFlag_VARIADIC) != 0u) {
+    if ((fn->flags & HOPMirFunctionFlag_VARIADIC) != 0u) {
         run.locals[fn->paramCount - 1u] = variadicPackValue;
     }
     if (frameEnv.bindFrame != NULL) {
@@ -2723,7 +2726,7 @@ static int SLMirEvalFunctionInternal(
         }
         boundFrame = 1;
     }
-    rc = SLMirRunLoop(&run, outValue, outIsConst);
+    rc = HOPMirRunLoop(&run, outValue, outIsConst);
 end:
     if (boundFrame && frameEnv.unbindFrame != NULL) {
         frameEnv.unbindFrame(frameEnv.frameCtx);
@@ -2734,16 +2737,16 @@ end:
     return rc;
 }
 
-int SLMirEvalFunction(
-    SLArena* _Nonnull arena,
-    const SLMirProgram* _Nonnull program,
+int HOPMirEvalFunction(
+    HOPArena* _Nonnull arena,
+    const HOPMirProgram* _Nonnull program,
     uint32_t functionIndex,
-    const SLMirExecValue* _Nullable args,
+    const HOPMirExecValue* _Nullable args,
     uint32_t argCount,
-    const SLMirExecEnv* _Nullable env,
-    SLMirExecValue* _Nonnull outValue,
+    const HOPMirExecEnv* _Nullable env,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
-    return SLMirEvalFunctionInternal(
+    return HOPMirEvalFunctionInternal(
         arena, program, functionIndex, args, argCount, 0u, env, 1, 1, outValue, outIsConst);
 }
-SL_API_END
+HOP_API_END

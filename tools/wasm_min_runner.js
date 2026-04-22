@@ -110,12 +110,12 @@ function callStringExport(name, text) {
     return result | 0;
 }
 
-callStringExport("sl_test_str", "hello from js");
-callNamedExport("sl_test");
+callStringExport("hop_test_str", "hello from js");
+callNamedExport("hop_test");
 
-const entry = instance.exports.sl_main;
+const entry = instance.exports.hop_main;
 if (typeof entry !== "function") {
-    fail("wasm-min: module does not export sl_main");
+    fail("wasm-min: module does not export hop_main");
 }
 
 let result;
@@ -129,6 +129,6 @@ if (typeof result === "undefined") {
     process.exit(0);
 }
 if (typeof result !== "number" || !Number.isInteger(result)) {
-    fail("wasm-min: sl_main returned a non-integer result");
+    fail("wasm-min: hop_main returned a non-integer result");
 }
 process.exit(result);

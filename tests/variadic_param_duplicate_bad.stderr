@@ -1,1 +1,1 @@
-tests/variadic_param_duplicate_bad.sl:2:23: error: SL2067: only one variadic parameter is allowed
+tests/variadic_param_duplicate_bad.hop:2:23: error: HOP2067: only one variadic parameter is allowed

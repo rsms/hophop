@@ -1,1 +1,1 @@
-tests/null_as_ptr_cast_bad.sl:3:15: error: SL2004: type mismatch: cannot cast null to *int
+tests/null_as_ptr_cast_bad.hop:3:15: error: HOP2004: type mismatch: cannot cast null to *int

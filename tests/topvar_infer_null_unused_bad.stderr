@@ -1,1 +1,1 @@
-tests/topvar_infer_null_unused_bad.sl:2:9: error: SL2026: cannot infer type from null; add explicit type
+tests/topvar_infer_null_unused_bad.hop:2:9: error: HOP2026: cannot infer type from null; add explicit type

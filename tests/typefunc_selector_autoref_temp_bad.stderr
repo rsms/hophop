@@ -1,1 +1,1 @@
-tests/typefunc_selector_autoref_temp_bad.sl:16:11: error: SL2015: no matching overload
+tests/typefunc_selector_autoref_temp_bad.hop:16:11: error: HOP2015: no matching overload

@@ -1,1 +1,1 @@
-tests/const_param_fn_type_distinct_bad.sl:9:2: error: SL2015: no matching overload
+tests/const_param_fn_type_distinct_bad.hop:9:2: error: HOP2015: no matching overload

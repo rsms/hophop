@@ -1,0 +1,2 @@
+// Verifies bad reserved name parameter.
+fn good(__hop_bad i32) {}

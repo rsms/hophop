@@ -1,1 +1,1 @@
-tests/type_constructor_const_name_not_type_bad.sl:4:7: error: SL2003: unknown type
+tests/type_constructor_const_name_not_type_bad.hop:4:7: error: HOP2003: unknown type

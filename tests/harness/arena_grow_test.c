@@ -1,8 +1,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define SL_IMPLEMENTATION
-#include "libsl.h"
+#define HOP_IMPLEMENTATION
+#include "libhop.h"
 
 typedef struct {
     uint32_t allocCount;
@@ -32,26 +32,26 @@ static void ArenaFree(void* ctx, void* block, uint32_t blockSize) {
 int main(void) {
     uint8_t    storage[32];
     ArenaStats stats = { 0 };
-    SLArena    arena;
+    HOPArena    arena;
     void*      p0;
     void*      p1;
     void*      p2;
 
-    SLArenaInitEx(&arena, storage, (uint32_t)sizeof(storage), &stats, ArenaGrow, ArenaFree);
+    HOPArenaInitEx(&arena, storage, (uint32_t)sizeof(storage), &stats, ArenaGrow, ArenaFree);
 
-    p0 = SLArenaAlloc(&arena, 16u, 8u);
-    p1 = SLArenaAlloc(&arena, 128u, 8u);
+    p0 = HOPArenaAlloc(&arena, 16u, 8u);
+    p1 = HOPArenaAlloc(&arena, 128u, 8u);
     if (p0 == NULL || p1 == NULL || stats.allocCount == 0) {
         return 1;
     }
 
-    SLArenaReset(&arena);
-    p2 = SLArenaAlloc(&arena, 64u, 8u);
+    HOPArenaReset(&arena);
+    p2 = HOPArenaAlloc(&arena, 64u, 8u);
     if (p2 == NULL) {
         return 2;
     }
 
-    SLArenaDispose(&arena);
+    HOPArenaDispose(&arena);
     if (stats.freeCount != stats.allocCount) {
         return 3;
     }

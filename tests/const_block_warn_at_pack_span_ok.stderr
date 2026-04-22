@@ -1,1 +1,1 @@
-tests/const_block_warn_at_pack_span_ok.sl:15:10: warning: SL2076: consteval warning: pack warn
+tests/const_block_warn_at_pack_span_ok.hop:15:10: warning: HOP2076: consteval warning: pack warn

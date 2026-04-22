@@ -1,7 +1,7 @@
 #include "internal.h"
 #include "../typecheck/internal.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 size_t StrLen(const char* s) {
     size_t n = 0;
     while (s[n] != '\0') {
@@ -75,12 +75,12 @@ char ToUpperChar(char ch) {
     return (char)c;
 }
 
-void SetDiag(SLDiag* _Nullable diag, SLDiagCode code, uint32_t start, uint32_t end) {
+void SetDiag(HOPDiag* _Nullable diag, HOPDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
     diag->code = code;
-    diag->type = SLDiagTypeOfCode(code);
+    diag->type = HOPDiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
     diag->argStart = 0;
@@ -88,7 +88,7 @@ void SetDiag(SLDiag* _Nullable diag, SLDiagCode code, uint32_t start, uint32_t e
 }
 
 int EnsureCapArena(
-    SLArena* arena, void** ptr, uint32_t* cap, uint32_t need, size_t elemSize, uint32_t align) {
+    HOPArena* arena, void** ptr, uint32_t* cap, uint32_t need, size_t elemSize, uint32_t align) {
     uint32_t newCap;
     uint64_t allocSize64;
     uint32_t allocSize;
@@ -110,7 +110,7 @@ int EnsureCapArena(
         return -1;
     }
     allocSize = (uint32_t)allocSize64;
-    newPtr = SLArenaAlloc(arena, allocSize, align);
+    newPtr = HOPArenaAlloc(arena, allocSize, align);
     if (newPtr == NULL) {
         return -1;
     }
@@ -122,7 +122,7 @@ int EnsureCapArena(
     return 0;
 }
 
-int BufReserve(SLBuf* b, uint32_t extra) {
+int BufReserve(HOPBuf* b, uint32_t extra) {
     uint32_t need;
     if (UINT32_MAX - b->len < extra + 1u) {
         return -1;
@@ -135,7 +135,7 @@ int BufReserve(SLBuf* b, uint32_t extra) {
         b->arena, (void**)&b->v, &b->cap, need, sizeof(char), (uint32_t)_Alignof(char));
 }
 
-int BufAppend(SLBuf* b, const char* s, uint32_t len) {
+int BufAppend(HOPBuf* b, const char* s, uint32_t len) {
     if (len == 0) {
         return 0;
     }
@@ -148,15 +148,15 @@ int BufAppend(SLBuf* b, const char* s, uint32_t len) {
     return 0;
 }
 
-int BufAppendCStr(SLBuf* b, const char* s) {
+int BufAppendCStr(HOPBuf* b, const char* s) {
     return BufAppend(b, s, (uint32_t)StrLen(s));
 }
 
-int BufAppendChar(SLBuf* b, char c) {
+int BufAppendChar(HOPBuf* b, char c) {
     return BufAppend(b, &c, 1u);
 }
 
-int BufAppendU32(SLBuf* b, uint32_t value) {
+int BufAppendU32(HOPBuf* b, uint32_t value) {
     char     tmp[16];
     uint32_t i = 0;
     uint32_t n = value;
@@ -177,20 +177,20 @@ int BufAppendU32(SLBuf* b, uint32_t value) {
     return 0;
 }
 
-int BufAppendSlice(SLBuf* b, const char* src, uint32_t start, uint32_t end) {
+int BufAppendSlice(HOPBuf* b, const char* src, uint32_t start, uint32_t end) {
     if (end < start) {
         return -1;
     }
     return BufAppend(b, src + start, end - start);
 }
 
-char* _Nullable BufFinish(SLBuf* b) {
+char* _Nullable BufFinish(HOPBuf* b) {
     char* out;
     if (b->v == NULL) {
         if (b->arena == NULL) {
             return NULL;
         }
-        out = (char*)SLArenaAlloc(b->arena, 1u, (uint32_t)_Alignof(char));
+        out = (char*)HOPArenaAlloc(b->arena, 1u, (uint32_t)_Alignof(char));
         if (out == NULL) {
             return NULL;
         }
@@ -204,7 +204,7 @@ char* _Nullable BufFinish(SLBuf* b) {
     return out;
 }
 
-void EmitIndent(SLCBackendC* c, uint32_t depth) {
+void EmitIndent(HOPCBackendC* c, uint32_t depth) {
     uint32_t i;
     for (i = 0; i < depth; i++) {
         (void)BufAppendCStr(&c->out, "    ");
@@ -220,14 +220,14 @@ int IsBuiltinType(const char* s) {
 }
 
 int IsIntegerCTypeName(const char* s) {
-    return StrEq(s, "__sl_u8") || StrEq(s, "__sl_u16") || StrEq(s, "__sl_u32")
-        || StrEq(s, "__sl_u64") || StrEq(s, "__sl_uint") || StrEq(s, "__sl_i8")
-        || StrEq(s, "__sl_i16") || StrEq(s, "__sl_i32") || StrEq(s, "__sl_i64")
-        || StrEq(s, "__sl_int");
+    return StrEq(s, "__hop_u8") || StrEq(s, "__hop_u16") || StrEq(s, "__hop_u32")
+        || StrEq(s, "__hop_u64") || StrEq(s, "__hop_uint") || StrEq(s, "__hop_i8")
+        || StrEq(s, "__hop_i16") || StrEq(s, "__hop_i32") || StrEq(s, "__hop_i64")
+        || StrEq(s, "__hop_int");
 }
 
 int IsFloatCTypeName(const char* s) {
-    return StrEq(s, "__sl_f32") || StrEq(s, "__sl_f64");
+    return StrEq(s, "__hop_f32") || StrEq(s, "__hop_f64");
 }
 
 int SliceEq(const char* src, uint32_t start, uint32_t end, const char* s) {
@@ -302,11 +302,11 @@ int TypeNamePkgPrefixLen(const char* typeName, uint32_t* outPkgLen) {
     return 0;
 }
 
-void TypeRefSetInvalid(SLTypeRef* t) {
+void TypeRefSetInvalid(HOPTypeRef* t) {
     t->baseName = NULL;
     t->ptrDepth = 0;
     t->valid = 0;
-    t->containerKind = SLTypeContainer_SCALAR;
+    t->containerKind = HOPTypeContainer_SCALAR;
     t->containerPtrDepth = 0;
     t->arrayLen = 0;
     t->hasArrayLen = 0;
@@ -314,11 +314,11 @@ void TypeRefSetInvalid(SLTypeRef* t) {
     t->isOptional = 0;
 }
 
-void TypeRefSetScalar(SLTypeRef* t, const char* baseName) {
+void TypeRefSetScalar(HOPTypeRef* t, const char* baseName) {
     t->baseName = baseName;
     t->ptrDepth = 0;
     t->valid = 1;
-    t->containerKind = SLTypeContainer_SCALAR;
+    t->containerKind = HOPTypeContainer_SCALAR;
     t->containerPtrDepth = 0;
     t->arrayLen = 0;
     t->hasArrayLen = 0;
@@ -327,14 +327,14 @@ void TypeRefSetScalar(SLTypeRef* t, const char* baseName) {
 }
 
 int EnsureAnonTypeByFields(
-    SLCBackendC*     c,
-    int              isUnion,
-    const char**     fieldNames,
-    const SLTypeRef* fieldTypes,
-    uint32_t         fieldCount,
-    const char**     outCName);
+    HOPCBackendC*     c,
+    int               isUnion,
+    const char**      fieldNames,
+    const HOPTypeRef* fieldTypes,
+    uint32_t          fieldCount,
+    const char**      outCName);
 
-static int TypeRefOptionalPayloadType(const SLTypeRef* optionalType, SLTypeRef* outPayload) {
+static int TypeRefOptionalPayloadType(const HOPTypeRef* optionalType, HOPTypeRef* outPayload) {
     if (optionalType == NULL || outPayload == NULL || !optionalType->valid
         || !optionalType->isOptional)
     {
@@ -345,34 +345,34 @@ static int TypeRefOptionalPayloadType(const SLTypeRef* optionalType, SLTypeRef* 
     return 1;
 }
 
-static int TypeRefOptionalPayloadUsesNullSentinel(const SLTypeRef* payload) {
+static int TypeRefOptionalPayloadUsesNullSentinel(const HOPTypeRef* payload) {
     if (payload == NULL || !payload->valid) {
         return 0;
     }
     if (TypeRefIsPointerLike(payload)) {
         return 1;
     }
-    return (payload->containerKind == SLTypeContainer_SLICE_RO
-            || payload->containerKind == SLTypeContainer_SLICE_MUT)
+    return (payload->containerKind == HOPTypeContainer_SLICE_RO
+            || payload->containerKind == HOPTypeContainer_SLICE_MUT)
         && payload->ptrDepth == 0 && payload->containerPtrDepth == 0;
 }
 
-int TypeRefIsPointerBackedOptional(const SLTypeRef* t) {
-    SLTypeRef payload;
+int TypeRefIsPointerBackedOptional(const HOPTypeRef* t) {
+    HOPTypeRef payload;
     return TypeRefOptionalPayloadType(t, &payload)
         && TypeRefOptionalPayloadUsesNullSentinel(&payload);
 }
 
-int TypeRefIsTaggedOptional(const SLTypeRef* t) {
-    SLTypeRef payload;
+int TypeRefIsTaggedOptional(const HOPTypeRef* t) {
+    HOPTypeRef payload;
     return TypeRefOptionalPayloadType(t, &payload)
         && !TypeRefOptionalPayloadUsesNullSentinel(&payload);
 }
 
-int TypeRefLowerForStorage(SLCBackendC* c, const SLTypeRef* type, SLTypeRef* outType) {
-    static const char* fieldNames[2] = { "__sl_tag", "__sl_value" };
-    SLTypeRef          fieldTypes[2];
-    SLTypeRef          payload;
+int TypeRefLowerForStorage(HOPCBackendC* c, const HOPTypeRef* type, HOPTypeRef* outType) {
+    static const char* fieldNames[2] = { "__hop_tag", "__hop_value" };
+    HOPTypeRef         fieldTypes[2];
+    HOPTypeRef         payload;
     const char*        anonName = NULL;
     if (c == NULL || type == NULL || outType == NULL) {
         return -1;
@@ -383,7 +383,7 @@ int TypeRefLowerForStorage(SLCBackendC* c, const SLTypeRef* type, SLTypeRef* out
     }
     payload = *type;
     payload.isOptional = 0;
-    TypeRefSetScalar(&fieldTypes[0], "__sl_u8");
+    TypeRefSetScalar(&fieldTypes[0], "__hop_u8");
     fieldTypes[1] = payload;
     if (EnsureAnonTypeByFields(c, 0, fieldNames, fieldTypes, 2, &anonName) != 0 || anonName == NULL)
     {
@@ -393,9 +393,9 @@ int TypeRefLowerForStorage(SLCBackendC* c, const SLTypeRef* type, SLTypeRef* out
     return 0;
 }
 
-const char* ResolveScalarAliasBaseName(const SLCBackendC* c, const char* typeName);
+const char* ResolveScalarAliasBaseName(const HOPCBackendC* c, const char* typeName);
 
-void CanonicalizeTypeRefBaseName(const SLCBackendC* c, SLTypeRef* t) {
+void CanonicalizeTypeRefBaseName(const HOPCBackendC* c, HOPTypeRef* t) {
     const char* canonical;
     if (t == NULL || !t->valid || t->baseName == NULL) {
         return;
@@ -406,41 +406,41 @@ void CanonicalizeTypeRefBaseName(const SLCBackendC* c, SLTypeRef* t) {
     }
 }
 
-int TypeRefEqual(const SLTypeRef* a, const SLTypeRef* b);
+int TypeRefEqual(const HOPTypeRef* a, const HOPTypeRef* b);
 int AddFieldInfo(
-    SLCBackendC* c,
-    const char*  ownerType,
-    const char*  fieldName,
+    HOPCBackendC* c,
+    const char*   ownerType,
+    const char*   fieldName,
     const char* _Nullable lenFieldName,
-    int32_t   defaultExprNode,
-    int       isDependent,
-    int       isEmbedded,
-    SLTypeRef type);
-const SLAnonTypeInfo* _Nullable FindAnonTypeByCName(const SLCBackendC* c, const char* cName);
+    int32_t    defaultExprNode,
+    int        isDependent,
+    int        isEmbedded,
+    HOPTypeRef type);
+const HOPAnonTypeInfo* _Nullable FindAnonTypeByCName(const HOPCBackendC* c, const char* cName);
 int EnsureAnonTypeByFields(
-    SLCBackendC*     c,
-    int              isUnion,
-    const char**     fieldNames,
-    const SLTypeRef* fieldTypes,
-    uint32_t         fieldCount,
-    const char**     outCName);
-int EnsureAnonTypeVisible(SLCBackendC* c, const SLTypeRef* type, uint32_t depth);
-int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name);
-int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type);
-int TypeRefIsPointerLike(const SLTypeRef* t);
+    HOPCBackendC*     c,
+    int               isUnion,
+    const char**      fieldNames,
+    const HOPTypeRef* fieldTypes,
+    uint32_t          fieldCount,
+    const char**      outCName);
+int EnsureAnonTypeVisible(HOPCBackendC* c, const HOPTypeRef* type, uint32_t depth);
+int EmitTypeRefWithName(HOPCBackendC* c, const HOPTypeRef* t, const char* name);
+int EmitTypeNameWithDepth(HOPCBackendC* c, const HOPTypeRef* type);
+int TypeRefIsPointerLike(const HOPTypeRef* t);
 int ResolveTopLevelConstTypeValueBySlice(
-    SLCBackendC* c, uint32_t start, uint32_t end, SLTypeRef* outType);
+    HOPCBackendC* c, uint32_t start, uint32_t end, HOPTypeRef* outType);
 int EmitDeclNode(
-    SLCBackendC* c,
-    int32_t      nodeId,
-    uint32_t     depth,
-    int          declarationOnly,
-    int          isPrivate,
-    int          emitBody);
+    HOPCBackendC* c,
+    int32_t       nodeId,
+    uint32_t      depth,
+    int           declarationOnly,
+    int           isPrivate,
+    int           emitBody);
 int IsStrBaseName(const char* _Nullable s);
-int ShouldEmitDeclNode(const SLCBackendC* c, int32_t nodeId);
+int ShouldEmitDeclNode(const HOPCBackendC* c, int32_t nodeId);
 
-int SliceStructPtrDepth(const SLTypeRef* t) {
+int SliceStructPtrDepth(const HOPTypeRef* t) {
     int stars = t->ptrDepth;
     if (t->containerPtrDepth > 0) {
         stars += t->containerPtrDepth - 1;
@@ -448,19 +448,19 @@ int SliceStructPtrDepth(const SLTypeRef* t) {
     return stars;
 }
 
-static int TypeRefIsBorrowedStrValueC(const SLTypeRef* t) {
-    return t != NULL && t->valid && t->containerKind == SLTypeContainer_SCALAR
+static int TypeRefIsBorrowedStrValueC(const HOPTypeRef* t) {
+    return t != NULL && t->valid && t->containerKind == HOPTypeContainer_SCALAR
         && t->containerPtrDepth == 0 && t->ptrDepth == 1 && t->readOnly != 0
         && IsStrBaseName(t->baseName);
 }
 
-static int TypeRefIsPointerBackedStrC(const SLTypeRef* t) {
-    return t != NULL && t->valid && t->containerKind == SLTypeContainer_SCALAR
+static int TypeRefIsPointerBackedStrC(const HOPTypeRef* t) {
+    return t != NULL && t->valid && t->containerKind == HOPTypeContainer_SCALAR
         && t->containerPtrDepth == 0 && IsStrBaseName(t->baseName)
         && !TypeRefIsBorrowedStrValueC(t);
 }
 
-const SLAstNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId);
+const HOPAstNode* _Nullable NodeAt(const HOPCBackendC* c, int32_t nodeId);
 
 int ParseArrayLenLiteral(const char* src, uint32_t start, uint32_t end, uint32_t* outLen) {
     uint64_t v = 0;
@@ -482,8 +482,8 @@ int ParseArrayLenLiteral(const char* src, uint32_t start, uint32_t end, uint32_t
     return 0;
 }
 
-void SetDiagNode(SLCBackendC* c, int32_t nodeId, SLDiagCode code) {
-    const SLAstNode* n = NodeAt(c, nodeId);
+void SetDiagNode(HOPCBackendC* c, int32_t nodeId, HOPDiagCode code) {
+    const HOPAstNode* n = NodeAt(c, nodeId);
     if (n != NULL) {
         SetDiag(c->diag, code, n->start, n->end);
     } else {
@@ -491,7 +491,7 @@ void SetDiagNode(SLCBackendC* c, int32_t nodeId, SLDiagCode code) {
     }
 }
 
-int BufAppendI64(SLBuf* b, int64_t value) {
+int BufAppendI64(HOPBuf* b, int64_t value) {
     char     tmp[32];
     uint32_t len = 0;
     uint64_t mag;
@@ -518,7 +518,7 @@ int BufAppendI64(SLBuf* b, int64_t value) {
     return 0;
 }
 
-int EvalConstIntExpr(SLCBackendC* c, int32_t nodeId, int64_t* outValue, int* outIsConst) {
+int EvalConstIntExpr(HOPCBackendC* c, int32_t nodeId, int64_t* outValue, int* outIsConst) {
     if (outIsConst == NULL || outValue == NULL) {
         return -1;
     }
@@ -526,12 +526,12 @@ int EvalConstIntExpr(SLCBackendC* c, int32_t nodeId, int64_t* outValue, int* out
     if (c->constEval == NULL) {
         return 0;
     }
-    return SLConstEvalSessionEvalIntExpr(c->constEval, nodeId, outValue, outIsConst);
+    return HOPConstEvalSessionEvalIntExpr(c->constEval, nodeId, outValue, outIsConst);
 }
 
-int EvalConstFloatExpr(SLCBackendC* c, int32_t nodeId, double* outValue, int* outIsConst) {
-    SLCTFEValue value = { 0 };
-    int         isConst = 0;
+int EvalConstFloatExpr(HOPCBackendC* c, int32_t nodeId, double* outValue, int* outIsConst) {
+    HOPCTFEValue value = { 0 };
+    int          isConst = 0;
     if (outIsConst == NULL || outValue == NULL) {
         return -1;
     }
@@ -539,15 +539,15 @@ int EvalConstFloatExpr(SLCBackendC* c, int32_t nodeId, double* outValue, int* ou
     if (c->constEval == NULL) {
         return 0;
     }
-    if (SLConstEvalSessionEvalExpr(c->constEval, nodeId, &value, &isConst) != 0 || !isConst) {
+    if (HOPConstEvalSessionEvalExpr(c->constEval, nodeId, &value, &isConst) != 0 || !isConst) {
         return 0;
     }
-    if (value.kind == SLCTFEValue_FLOAT) {
+    if (value.kind == HOPCTFEValue_FLOAT) {
         *outValue = value.f64;
         *outIsConst = 1;
         return 0;
     }
-    if (value.kind == SLCTFEValue_INT) {
+    if (value.kind == HOPCTFEValue_INT) {
         *outValue = (double)value.i64;
         *outIsConst = 1;
         return 0;
@@ -559,28 +559,28 @@ int ConstIntFitsIntegerType(const char* typeName, int64_t value) {
     if (typeName == NULL) {
         return 0;
     }
-    if (StrEq(typeName, "__sl_u8")) {
+    if (StrEq(typeName, "__hop_u8")) {
         return value >= 0 && value <= (int64_t)UINT8_MAX;
     }
-    if (StrEq(typeName, "__sl_u16")) {
+    if (StrEq(typeName, "__hop_u16")) {
         return value >= 0 && value <= (int64_t)UINT16_MAX;
     }
-    if (StrEq(typeName, "__sl_u32")) {
+    if (StrEq(typeName, "__hop_u32")) {
         return value >= 0 && value <= (int64_t)UINT32_MAX;
     }
-    if (StrEq(typeName, "__sl_u64") || StrEq(typeName, "__sl_uint")) {
+    if (StrEq(typeName, "__hop_u64") || StrEq(typeName, "__hop_uint")) {
         return value >= 0;
     }
-    if (StrEq(typeName, "__sl_i8")) {
+    if (StrEq(typeName, "__hop_i8")) {
         return value >= (int64_t)INT8_MIN && value <= (int64_t)INT8_MAX;
     }
-    if (StrEq(typeName, "__sl_i16")) {
+    if (StrEq(typeName, "__hop_i16")) {
         return value >= (int64_t)INT16_MIN && value <= (int64_t)INT16_MAX;
     }
-    if (StrEq(typeName, "__sl_i32")) {
+    if (StrEq(typeName, "__hop_i32")) {
         return value >= (int64_t)INT32_MIN && value <= (int64_t)INT32_MAX;
     }
-    if (StrEq(typeName, "__sl_i64") || StrEq(typeName, "__sl_int")) {
+    if (StrEq(typeName, "__hop_i64") || StrEq(typeName, "__hop_int")) {
         return 1;
     }
     return 0;
@@ -601,9 +601,9 @@ int ConstIntFitsFloatType(const char* typeName, int64_t value) {
     if (typeName == NULL) {
         return 0;
     }
-    if (StrEq(typeName, "__sl_f32")) {
+    if (StrEq(typeName, "__hop_f32")) {
         precisionBits = 23u;
-    } else if (StrEq(typeName, "__sl_f64")) {
+    } else if (StrEq(typeName, "__hop_f64")) {
         precisionBits = 53u;
     } else {
         return 0;
@@ -620,10 +620,10 @@ int ConstFloatFitsFloatType(const char* typeName, double value) {
     if (typeName == NULL) {
         return 0;
     }
-    if (StrEq(typeName, "__sl_f64")) {
+    if (StrEq(typeName, "__hop_f64")) {
         return 1;
     }
-    if (!StrEq(typeName, "__sl_f32")) {
+    if (!StrEq(typeName, "__hop_f32")) {
         return 0;
     }
     if (value != value) {
@@ -633,18 +633,18 @@ int ConstFloatFitsFloatType(const char* typeName, double value) {
 }
 
 int EmitConstEvaluatedScalar(
-    SLCBackendC* c, const SLTypeRef* dstType, const SLCTFEValue* value, int* outEmitted) {
+    HOPCBackendC* c, const HOPTypeRef* dstType, const HOPCTFEValue* value, int* outEmitted) {
     if (outEmitted == NULL || c == NULL || dstType == NULL || value == NULL) {
         return -1;
     }
     *outEmitted = 0;
-    if (!dstType->valid || dstType->containerKind != SLTypeContainer_SCALAR
+    if (!dstType->valid || dstType->containerKind != HOPTypeContainer_SCALAR
         || dstType->containerPtrDepth != 0 || dstType->isOptional)
     {
         return 0;
     }
     switch (value->kind) {
-        case SLCTFEValue_INT:
+        case HOPCTFEValue_INT:
             if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, dstType) != 0
                 || BufAppendCStr(&c->out, ")(") != 0 || BufAppendI64(&c->out, value->i64) != 0
                 || BufAppendCStr(&c->out, "))") != 0)
@@ -653,7 +653,7 @@ int EmitConstEvaluatedScalar(
             }
             *outEmitted = 1;
             return 0;
-        case SLCTFEValue_BOOL:
+        case HOPCTFEValue_BOOL:
             if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, dstType) != 0
                 || BufAppendCStr(&c->out, ")(") != 0
                 || BufAppendChar(&c->out, value->b ? '1' : '0') != 0
@@ -663,7 +663,7 @@ int EmitConstEvaluatedScalar(
             }
             *outEmitted = 1;
             return 0;
-        case SLCTFEValue_NULL:
+        case HOPCTFEValue_NULL:
             if (!TypeRefIsPointerLike(dstType)) {
                 return 0;
             }
@@ -674,7 +674,7 @@ int EmitConstEvaluatedScalar(
             }
             *outEmitted = 1;
             return 0;
-        case SLCTFEValue_TYPE:
+        case HOPCTFEValue_TYPE:
             if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, dstType) != 0
                 || BufAppendCStr(&c->out, ")(") != 0
                 || BufAppendHexU64Literal(&c->out, value->typeTag) != 0
@@ -688,14 +688,14 @@ int EmitConstEvaluatedScalar(
     }
 }
 
-char* _Nullable DupSlice(SLCBackendC* c, const char* src, uint32_t start, uint32_t end) {
+char* _Nullable DupSlice(HOPCBackendC* c, const char* src, uint32_t start, uint32_t end) {
     uint32_t len;
     char*    out;
     if (end < start) {
         return NULL;
     }
     len = end - start;
-    out = (char*)SLArenaAlloc(&c->arena, len + 1u, (uint32_t)_Alignof(char));
+    out = (char*)HOPArenaAlloc(&c->arena, len + 1u, (uint32_t)_Alignof(char));
     if (out == NULL) {
         return NULL;
     }
@@ -711,14 +711,14 @@ int SliceIsHoleName(const char* src, uint32_t start, uint32_t end) {
 }
 
 char* _Nullable DupParamNameForEmit(
-    SLCBackendC* c, const SLAstNode* paramNode, uint32_t paramIndex) {
+    HOPCBackendC* c, const HOPAstNode* paramNode, uint32_t paramIndex) {
     if (paramNode == NULL) {
         return NULL;
     }
     if (SliceIsHoleName(c->unit->source, paramNode->dataStart, paramNode->dataEnd)) {
-        SLBuf b = { 0 };
+        HOPBuf b = { 0 };
         b.arena = &c->arena;
-        if (BufAppendCStr(&b, "__sl_v") != 0 || BufAppendU32(&b, paramIndex) != 0) {
+        if (BufAppendCStr(&b, "__hop_v") != 0 || BufAppendU32(&b, paramIndex) != 0) {
             return NULL;
         }
         return BufFinish(&b);
@@ -726,7 +726,7 @@ char* _Nullable DupParamNameForEmit(
     return DupSlice(c, c->unit->source, paramNode->dataStart, paramNode->dataEnd);
 }
 
-char* _Nullable DupAndReplaceDots(SLCBackendC* c, const char* src, uint32_t start, uint32_t end) {
+char* _Nullable DupAndReplaceDots(HOPCBackendC* c, const char* src, uint32_t start, uint32_t end) {
     char*    out;
     uint32_t i;
     uint32_t len;
@@ -734,7 +734,7 @@ char* _Nullable DupAndReplaceDots(SLCBackendC* c, const char* src, uint32_t star
         return NULL;
     }
     len = end - start;
-    out = (char*)SLArenaAlloc(&c->arena, len + 1u, (uint32_t)_Alignof(char));
+    out = (char*)HOPArenaAlloc(&c->arena, len + 1u, (uint32_t)_Alignof(char));
     if (out == NULL) {
         return NULL;
     }
@@ -747,7 +747,7 @@ char* _Nullable DupAndReplaceDots(SLCBackendC* c, const char* src, uint32_t star
 }
 
 static char* _Nullable DupAndReplaceDotsDouble(
-    SLCBackendC* c, const char* src, uint32_t start, uint32_t end) {
+    HOPCBackendC* c, const char* src, uint32_t start, uint32_t end) {
     char*    out;
     uint32_t i;
     uint32_t len;
@@ -761,7 +761,7 @@ static char* _Nullable DupAndReplaceDotsDouble(
             dotCount++;
         }
     }
-    out = (char*)SLArenaAlloc(&c->arena, len + dotCount + 1u, (uint32_t)_Alignof(char));
+    out = (char*)HOPArenaAlloc(&c->arena, len + dotCount + 1u, (uint32_t)_Alignof(char));
     if (out == NULL) {
         return NULL;
     }
@@ -781,13 +781,13 @@ static char* _Nullable DupAndReplaceDotsDouble(
     return out;
 }
 
-char* _Nullable DupCStr(SLCBackendC* c, const char* s) {
+char* _Nullable DupCStr(HOPCBackendC* c, const char* s) {
     size_t n = StrLen(s);
     char*  out;
     if (n > UINT32_MAX - 1u) {
         return NULL;
     }
-    out = (char*)SLArenaAlloc(&c->arena, (uint32_t)n + 1u, (uint32_t)_Alignof(char));
+    out = (char*)HOPArenaAlloc(&c->arena, (uint32_t)n + 1u, (uint32_t)_Alignof(char));
     if (out == NULL) {
         return NULL;
     }
@@ -795,33 +795,33 @@ char* _Nullable DupCStr(SLCBackendC* c, const char* s) {
     return out;
 }
 
-int32_t AstFirstChild(const SLAst* ast, int32_t nodeId);
-int32_t AstNextSibling(const SLAst* ast, int32_t nodeId);
-const SLAstNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId);
+int32_t AstFirstChild(const HOPAst* ast, int32_t nodeId);
+int32_t AstNextSibling(const HOPAst* ast, int32_t nodeId);
+const HOPAstNode* _Nullable NodeAt(const HOPCBackendC* c, int32_t nodeId);
 
 int DecodeStringLiteralNode(
-    SLCBackendC* c, const SLAstNode* n, uint8_t** outBytes, uint32_t* outLen) {
-    SLStringLitErr litErr = { 0 };
-    if (n == NULL || n->kind != SLAst_STRING) {
+    HOPCBackendC* c, const HOPAstNode* n, uint8_t** outBytes, uint32_t* outLen) {
+    HOPStringLitErr litErr = { 0 };
+    if (n == NULL || n->kind != HOPAst_STRING) {
         return -1;
     }
-    if (SLDecodeStringLiteralArena(
+    if (HOPDecodeStringLiteralArena(
             &c->arena, c->unit->source, n->dataStart, n->dataEnd, outBytes, outLen, &litErr)
         != 0)
     {
-        SetDiag(c->diag, SLStringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
+        SetDiag(c->diag, HOPStringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
         return -1;
     }
     return 0;
 }
 
 int AppendDecodedStringExpr(
-    SLCBackendC* c, int32_t nodeId, uint8_t** bytes, uint32_t* len, uint32_t* cap) {
-    const SLAstNode* n = NodeAt(c, nodeId);
+    HOPCBackendC* c, int32_t nodeId, uint8_t** bytes, uint32_t* len, uint32_t* cap) {
+    const HOPAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
         return -1;
     }
-    if (n->kind == SLAst_STRING) {
+    if (n->kind == HOPAst_STRING) {
         uint8_t* part = NULL;
         uint32_t partLen = 0;
         if (DecodeStringLiteralNode(c, n, &part, &partLen) != 0) {
@@ -837,7 +837,7 @@ int AppendDecodedStringExpr(
                     (uint32_t)_Alignof(uint8_t))
                 != 0)
             {
-                SetDiag(c->diag, SLDiag_ARENA_OOM, n->start, n->end);
+                SetDiag(c->diag, HOPDiag_ARENA_OOM, n->start, n->end);
                 return -1;
             }
             memcpy(*bytes + *len, part, partLen);
@@ -845,8 +845,8 @@ int AppendDecodedStringExpr(
         }
         return 0;
     }
-    if (n->kind == SLAst_BINARY && (SLTokenKind)n->op == SLTok_ADD
-        && SLIsStringLiteralConcatChain(&c->ast, nodeId))
+    if (n->kind == HOPAst_BINARY && (HOPTokenKind)n->op == HOPTok_ADD
+        && HOPIsStringLiteralConcatChain(&c->ast, nodeId))
     {
         int32_t lhs = AstFirstChild(&c->ast, nodeId);
         int32_t rhs = AstNextSibling(&c->ast, lhs);
@@ -864,16 +864,16 @@ int AppendDecodedStringExpr(
 }
 
 int DecodeStringExpr(
-    SLCBackendC* c,
-    int32_t      nodeId,
-    uint8_t**    outBytes,
-    uint32_t*    outLen,
-    uint32_t*    outStart,
-    uint32_t*    outEnd) {
-    uint8_t*         bytes = NULL;
-    uint32_t         len = 0;
-    uint32_t         cap = 0;
-    const SLAstNode* n = NodeAt(c, nodeId);
+    HOPCBackendC* c,
+    int32_t       nodeId,
+    uint8_t**     outBytes,
+    uint32_t*     outLen,
+    uint32_t*     outStart,
+    uint32_t*     outEnd) {
+    uint8_t*          bytes = NULL;
+    uint32_t          len = 0;
+    uint32_t          cap = 0;
+    const HOPAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
         return -1;
     }
@@ -887,7 +887,7 @@ int DecodeStringExpr(
     return 0;
 }
 
-int GetOrAddStringLiteralExpr(SLCBackendC* c, int32_t nodeId, int32_t* outLiteralId) {
+int GetOrAddStringLiteralExpr(HOPCBackendC* c, int32_t nodeId, int32_t* outLiteralId) {
     uint8_t* decoded = NULL;
     uint32_t decodedLen = 0;
     uint32_t spanStart = 0;
@@ -895,8 +895,8 @@ int GetOrAddStringLiteralExpr(SLCBackendC* c, int32_t nodeId, int32_t* outLitera
     uint32_t i;
 
     if (DecodeStringExpr(c, nodeId, &decoded, &decodedLen, &spanStart, &spanEnd) != 0) {
-        if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
-            SetDiag(c->diag, SLDiag_CODEGEN_INTERNAL, spanStart, spanEnd);
+        if (c->diag != NULL && c->diag->code == HOPDiag_NONE) {
+            SetDiag(c->diag, HOPDiag_CODEGEN_INTERNAL, spanStart, spanEnd);
         }
         return -1;
     }
@@ -916,11 +916,11 @@ int GetOrAddStringLiteralExpr(SLCBackendC* c, int32_t nodeId, int32_t* outLitera
             (void**)&c->stringLits,
             &c->stringLitCap,
             c->stringLitLen + 1u,
-            sizeof(SLStringLiteral),
-            (uint32_t)_Alignof(SLStringLiteral))
+            sizeof(HOPStringLiteral),
+            (uint32_t)_Alignof(HOPStringLiteral))
         != 0)
     {
-        SetDiag(c->diag, SLDiag_ARENA_OOM, spanStart, spanEnd);
+        SetDiag(c->diag, HOPDiag_ARENA_OOM, spanStart, spanEnd);
         return -1;
     }
 
@@ -932,7 +932,7 @@ int GetOrAddStringLiteralExpr(SLCBackendC* c, int32_t nodeId, int32_t* outLitera
 }
 
 int GetOrAddStringLiteralBytes(
-    SLCBackendC* c, const uint8_t* bytes, uint32_t len, int32_t* outLiteralId) {
+    HOPCBackendC* c, const uint8_t* bytes, uint32_t len, int32_t* outLiteralId) {
     uint32_t i;
     uint8_t* copied = NULL;
     if (c == NULL || outLiteralId == NULL) {
@@ -947,9 +947,9 @@ int GetOrAddStringLiteralBytes(
         }
     }
     if (len > 0u) {
-        copied = (uint8_t*)SLArenaAlloc(&c->arena, len, (uint32_t)_Alignof(uint8_t));
+        copied = (uint8_t*)HOPArenaAlloc(&c->arena, len, (uint32_t)_Alignof(uint8_t));
         if (copied == NULL) {
-            SetDiag(c->diag, SLDiag_ARENA_OOM, 0, 0);
+            SetDiag(c->diag, HOPDiag_ARENA_OOM, 0, 0);
             return -1;
         }
         memcpy(copied, bytes, (size_t)len);
@@ -959,11 +959,11 @@ int GetOrAddStringLiteralBytes(
             (void**)&c->stringLits,
             &c->stringLitCap,
             c->stringLitLen + 1u,
-            sizeof(SLStringLiteral),
-            (uint32_t)_Alignof(SLStringLiteral))
+            sizeof(HOPStringLiteral),
+            (uint32_t)_Alignof(HOPStringLiteral))
         != 0)
     {
-        SetDiag(c->diag, SLDiag_ARENA_OOM, 0, 0);
+        SetDiag(c->diag, HOPDiag_ARENA_OOM, 0, 0);
         return -1;
     }
     c->stringLits[c->stringLitLen].bytes = copied;
@@ -973,11 +973,11 @@ int GetOrAddStringLiteralBytes(
     return 0;
 }
 
-int CollectStringLiterals(SLCBackendC* c) {
+int CollectStringLiterals(HOPCBackendC* c) {
     uint32_t nodeId;
 
     c->stringLitByNodeLen = c->ast.len;
-    c->stringLitByNode = (int32_t*)SLArenaAlloc(
+    c->stringLitByNode = (int32_t*)HOPArenaAlloc(
         &c->arena, c->stringLitByNodeLen * (uint32_t)sizeof(int32_t), (uint32_t)_Alignof(int32_t));
     if (c->stringLitByNode == NULL) {
         return -1;
@@ -987,13 +987,13 @@ int CollectStringLiterals(SLCBackendC* c) {
     }
 
     for (nodeId = 0; nodeId < c->ast.len; nodeId++) {
-        const SLAstNode* n = &c->ast.nodes[nodeId];
-        int              shouldCollect = 0;
-        if (n->kind == SLAst_STRING) {
+        const HOPAstNode* n = &c->ast.nodes[nodeId];
+        int               shouldCollect = 0;
+        if (n->kind == HOPAst_STRING) {
             shouldCollect = 1;
         } else if (
-            n->kind == SLAst_BINARY && (SLTokenKind)n->op == SLTok_ADD
-            && SLIsStringLiteralConcatChain(&c->ast, (int32_t)nodeId))
+            n->kind == HOPAst_BINARY && (HOPTokenKind)n->op == HOPTok_ADD
+            && HOPIsStringLiteralConcatChain(&c->ast, (int32_t)nodeId))
         {
             shouldCollect = 1;
         }
@@ -1001,11 +1001,11 @@ int CollectStringLiterals(SLCBackendC* c) {
             uint32_t scanNodeId;
             int      skip = 0;
             for (scanNodeId = 0; scanNodeId < c->ast.len; scanNodeId++) {
-                const SLAstNode* parent = &c->ast.nodes[scanNodeId];
-                if (parent->kind == SLAst_ASSERT) {
+                const HOPAstNode* parent = &c->ast.nodes[scanNodeId];
+                if (parent->kind == HOPAst_ASSERT) {
                     int32_t condNode = AstFirstChild(&c->ast, (int32_t)scanNodeId);
                     int32_t fmtNode = AstNextSibling(&c->ast, condNode);
-                    if (n->kind == SLAst_STRING && fmtNode == (int32_t)nodeId) {
+                    if (n->kind == HOPAst_STRING && fmtNode == (int32_t)nodeId) {
                         skip = 1;
                         break;
                     }
@@ -1037,43 +1037,43 @@ int HasDoubleUnderscore(const char* s) {
     return 0;
 }
 
-int IsTypeDeclKind(SLAstKind kind) {
-    return kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
-        || kind == SLAst_TYPE_ALIAS;
+int IsTypeDeclKind(HOPAstKind kind) {
+    return kind == HOPAst_STRUCT || kind == HOPAst_UNION || kind == HOPAst_ENUM
+        || kind == HOPAst_TYPE_ALIAS;
 }
 
-int IsDeclKind(SLAstKind kind) {
-    return kind == SLAst_FN || kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
-        || kind == SLAst_TYPE_ALIAS || kind == SLAst_VAR || kind == SLAst_CONST;
+int IsDeclKind(HOPAstKind kind) {
+    return kind == HOPAst_FN || kind == HOPAst_STRUCT || kind == HOPAst_UNION || kind == HOPAst_ENUM
+        || kind == HOPAst_TYPE_ALIAS || kind == HOPAst_VAR || kind == HOPAst_CONST;
 }
 
-int IsPubDeclNode(const SLAstNode* n) {
-    return (n->flags & SLAstFlag_PUB) != 0;
+int IsPubDeclNode(const HOPAstNode* n) {
+    return (n->flags & HOPAstFlag_PUB) != 0;
 }
 
-int32_t AstFirstChild(const SLAst* ast, int32_t nodeId) {
+int32_t AstFirstChild(const HOPAst* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     return ast->nodes[nodeId].firstChild;
 }
 
-int32_t AstNextSibling(const SLAst* ast, int32_t nodeId) {
+int32_t AstNextSibling(const HOPAst* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     return ast->nodes[nodeId].nextSibling;
 }
 
-const SLAstNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId) {
+const HOPAstNode* _Nullable NodeAt(const HOPCBackendC* c, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast.len) {
         return NULL;
     }
     return &c->ast.nodes[nodeId];
 }
 
-int GetDeclNameSpan(const SLCBackendC* c, int32_t nodeId, uint32_t* outStart, uint32_t* outEnd) {
-    const SLAstNode* n = NodeAt(c, nodeId);
+int GetDeclNameSpan(const HOPCBackendC* c, int32_t nodeId, uint32_t* outStart, uint32_t* outEnd) {
+    const HOPAstNode* n = NodeAt(c, nodeId);
     if (n == NULL || !IsDeclKind(n->kind) || n->dataEnd <= n->dataStart) {
         return -1;
     }
@@ -1083,11 +1083,11 @@ int GetDeclNameSpan(const SLCBackendC* c, int32_t nodeId, uint32_t* outStart, ui
 }
 
 static int AddNameLiteral(
-    SLCBackendC* c, const char* name, SLAstKind kind, int isExported, int forcePkgPrefix) {
+    HOPCBackendC* c, const char* name, HOPAstKind kind, int isExported, int forcePkgPrefix) {
     uint32_t i;
     char*    nameDup;
     char*    cName;
-    SLBuf    tmp = { 0 };
+    HOPBuf   tmp = { 0 };
 
     tmp.arena = &c->arena;
 
@@ -1124,8 +1124,8 @@ static int AddNameLiteral(
             (void**)&c->names,
             &c->nameCap,
             c->nameLen + 1u,
-            sizeof(SLNameMap),
-            (uint32_t)_Alignof(SLNameMap))
+            sizeof(HOPNameMap),
+            (uint32_t)_Alignof(HOPNameMap))
         != 0)
     {
         return -1;
@@ -1138,7 +1138,8 @@ static int AddNameLiteral(
     return 0;
 }
 
-int AddName(SLCBackendC* c, uint32_t nameStart, uint32_t nameEnd, SLAstKind kind, int isExported) {
+int AddName(
+    HOPCBackendC* c, uint32_t nameStart, uint32_t nameEnd, HOPAstKind kind, int isExported) {
     char* name = DupSlice(c, c->unit->source, nameStart, nameEnd);
     if (name == NULL) {
         return -1;
@@ -1146,7 +1147,7 @@ int AddName(SLCBackendC* c, uint32_t nameStart, uint32_t nameEnd, SLAstKind kind
     return AddNameLiteral(c, name, kind, isExported, 0);
 }
 
-const SLNameMap* _Nullable FindNameBySlice(const SLCBackendC* c, uint32_t start, uint32_t end) {
+const HOPNameMap* _Nullable FindNameBySlice(const HOPCBackendC* c, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = 0; i < c->nameLen; i++) {
         if (SliceEqName(c->unit->source, start, end, c->names[i].name)) {
@@ -1156,7 +1157,7 @@ const SLNameMap* _Nullable FindNameBySlice(const SLCBackendC* c, uint32_t start,
     return NULL;
 }
 
-const SLNameMap* _Nullable FindNameByCString(const SLCBackendC* c, const char* name) {
+const HOPNameMap* _Nullable FindNameByCString(const HOPCBackendC* c, const char* name) {
     uint32_t i;
     for (i = 0; i < c->nameLen; i++) {
         if (StrEq(c->names[i].name, name)) {
@@ -1166,7 +1167,7 @@ const SLNameMap* _Nullable FindNameByCString(const SLCBackendC* c, const char* n
     return NULL;
 }
 
-static int32_t FindParentNodeId(const SLAst* ast, int32_t childNodeId) {
+static int32_t FindParentNodeId(const HOPAst* ast, int32_t childNodeId) {
     uint32_t i;
     if (ast == NULL || childNodeId < 0 || (uint32_t)childNodeId >= ast->len) {
         return -1;
@@ -1183,19 +1184,19 @@ static int32_t FindParentNodeId(const SLAst* ast, int32_t childNodeId) {
     return -1;
 }
 
-int BuildTypeDeclFlatName(SLCBackendC* c, int32_t nodeId, char** outName) {
-    int32_t          chain[64];
-    uint32_t         chainLen = 0;
-    int32_t          cur = nodeId;
-    SLBuf            b = { 0 };
-    uint32_t         i;
-    const SLAstNode* n = NodeAt(c, nodeId);
+int BuildTypeDeclFlatName(HOPCBackendC* c, int32_t nodeId, char** outName) {
+    int32_t           chain[64];
+    uint32_t          chainLen = 0;
+    int32_t           cur = nodeId;
+    HOPBuf            b = { 0 };
+    uint32_t          i;
+    const HOPAstNode* n = NodeAt(c, nodeId);
     if (outName == NULL || n == NULL || !IsTypeDeclKind(n->kind)) {
         return -1;
     }
     while (cur >= 0) {
-        const SLAstNode* cn = NodeAt(c, cur);
-        int32_t          parent;
+        const HOPAstNode* cn = NodeAt(c, cur);
+        int32_t           parent;
         if (cn == NULL || !IsTypeDeclKind(cn->kind)) {
             break;
         }
@@ -1205,7 +1206,7 @@ int BuildTypeDeclFlatName(SLCBackendC* c, int32_t nodeId, char** outName) {
         chain[chainLen++] = cur;
         parent = FindParentNodeId(&c->ast, cur);
         while (parent >= 0) {
-            const SLAstNode* pn = NodeAt(c, parent);
+            const HOPAstNode* pn = NodeAt(c, parent);
             if (pn != NULL && IsTypeDeclKind(pn->kind)) {
                 break;
             }
@@ -1215,7 +1216,7 @@ int BuildTypeDeclFlatName(SLCBackendC* c, int32_t nodeId, char** outName) {
     }
     b.arena = &c->arena;
     for (i = chainLen; i > 0; i--) {
-        const SLAstNode* cn = NodeAt(c, chain[i - 1u]);
+        const HOPAstNode* cn = NodeAt(c, chain[i - 1u]);
         if (cn == NULL) {
             return -1;
         }
@@ -1230,7 +1231,7 @@ int BuildTypeDeclFlatName(SLCBackendC* c, int32_t nodeId, char** outName) {
     return *outName == NULL ? -1 : 0;
 }
 
-const SLNameMap* _Nullable FindTypeDeclMapByNode(SLCBackendC* c, int32_t nodeId) {
+const HOPNameMap* _Nullable FindTypeDeclMapByNode(HOPCBackendC* c, int32_t nodeId) {
     char* flat = NULL;
     if (BuildTypeDeclFlatName(c, nodeId, &flat) != 0) {
         return NULL;
@@ -1248,10 +1249,10 @@ static int SliceContainsDot(const char* src, uint32_t start, uint32_t end) {
     return 0;
 }
 
-static int32_t FindEnclosingTypeDeclNode(const SLCBackendC* c, int32_t nodeId) {
+static int32_t FindEnclosingTypeDeclNode(const HOPCBackendC* c, int32_t nodeId) {
     int32_t parent = FindParentNodeId(&c->ast, nodeId);
     while (parent >= 0) {
-        const SLAstNode* pn = NodeAt(c, parent);
+        const HOPAstNode* pn = NodeAt(c, parent);
         if (pn != NULL && IsTypeDeclKind(pn->kind)) {
             return parent;
         }
@@ -1261,10 +1262,10 @@ static int32_t FindEnclosingTypeDeclNode(const SLCBackendC* c, int32_t nodeId) {
 }
 
 static const char* _Nullable ResolveTypeNameInScope(
-    SLCBackendC* c, int32_t typeRefNodeId, uint32_t start, uint32_t end) {
-    const char*      resolved = ResolveTypeName(c, start, end);
-    const SLNameMap* map;
-    int32_t          ownerNodeId;
+    HOPCBackendC* c, int32_t typeRefNodeId, uint32_t start, uint32_t end) {
+    const char*       resolved = ResolveTypeName(c, start, end);
+    const HOPNameMap* map;
+    int32_t           ownerNodeId;
     if (resolved == NULL) {
         return NULL;
     }
@@ -1277,9 +1278,9 @@ static const char* _Nullable ResolveTypeNameInScope(
     }
     ownerNodeId = FindEnclosingTypeDeclNode(c, typeRefNodeId);
     while (ownerNodeId >= 0) {
-        char* ownerFlat = NULL;
-        SLBuf b = { 0 };
-        char* candidate;
+        char*  ownerFlat = NULL;
+        HOPBuf b = { 0 };
+        char*  candidate;
         if (BuildTypeDeclFlatName(c, ownerNodeId, &ownerFlat) != 0 || ownerFlat == NULL) {
             return NULL;
         }
@@ -1300,8 +1301,8 @@ static const char* _Nullable ResolveTypeNameInScope(
         ownerNodeId = FindEnclosingTypeDeclNode(c, ownerNodeId);
     }
     {
-        SLBuf b = { 0 };
-        char* candidate;
+        HOPBuf b = { 0 };
+        char*  candidate;
         b.arena = &c->arena;
         if (BufAppendCStr(&b, "builtin__") != 0
             || BufAppendSlice(&b, c->unit->source, start, end) != 0)
@@ -1337,9 +1338,9 @@ int NameHasPrefixSuffix(const char* name, const char* prefix, const char* suffix
         && memcmp(name + nameLen - suffixLen, suffix, suffixLen) == 0;
 }
 
-int ResolveMainSemanticContextType(SLCBackendC* c, SLTypeRef* outType) {
-    const SLNameMap* map = FindNameByCString(c, "builtin__Context");
-    uint32_t         i;
+int ResolveMainSemanticContextType(HOPCBackendC* c, HOPTypeRef* outType) {
+    const HOPNameMap* map = FindNameByCString(c, "builtin__Context");
+    uint32_t          i;
     if (map != NULL && IsTypeDeclKind(map->kind)) {
         TypeRefSetScalar(outType, map->cName);
         return 0;
@@ -1357,13 +1358,13 @@ int ResolveMainSemanticContextType(SLCBackendC* c, SLTypeRef* outType) {
         TypeRefSetScalar(outType, map->cName);
         return 0;
     }
-    TypeRefSetScalar(outType, "__sl_Context");
+    TypeRefSetScalar(outType, "__hop_Context");
     return 0;
 }
 
-const char* ResolveRuneTypeBaseName(SLCBackendC* c) {
-    const SLNameMap* map = FindNameByCString(c, "builtin__rune");
-    uint32_t         i;
+const char* ResolveRuneTypeBaseName(HOPCBackendC* c) {
+    const HOPNameMap* map = FindNameByCString(c, "builtin__rune");
+    uint32_t          i;
     if (map != NULL && IsTypeDeclKind(map->kind)) {
         return map->cName;
     }
@@ -1378,10 +1379,10 @@ const char* ResolveRuneTypeBaseName(SLCBackendC* c) {
     if (map != NULL && IsTypeDeclKind(map->kind)) {
         return map->cName;
     }
-    return "__sl_u32";
+    return "__hop_u32";
 }
 
-const SLNameMap* _Nullable FindNameByCName(const SLCBackendC* c, const char* cName) {
+const HOPNameMap* _Nullable FindNameByCName(const HOPCBackendC* c, const char* cName) {
     uint32_t i;
     for (i = 0; i < c->nameLen; i++) {
         if (StrEq(c->names[i].cName, cName)) {
@@ -1391,7 +1392,7 @@ const SLNameMap* _Nullable FindNameByCName(const SLCBackendC* c, const char* cNa
     return NULL;
 }
 
-static int32_t CodegenCFindNamedTypeIndexByTypeId(const SLTypeCheckCtx* tc, int32_t typeId) {
+static int32_t CodegenCFindNamedTypeIndexByTypeId(const HOPTypeCheckCtx* tc, int32_t typeId) {
     uint32_t i;
     if (tc == NULL || typeId < 0) {
         return -1;
@@ -1404,18 +1405,18 @@ static int32_t CodegenCFindNamedTypeIndexByTypeId(const SLTypeCheckCtx* tc, int3
     return -1;
 }
 
-static int CodegenCTypeIdContainsTypeParam(const SLTypeCheckCtx* tc, int32_t typeId) {
+static int CodegenCTypeIdContainsTypeParam(const HOPTypeCheckCtx* tc, int32_t typeId) {
     int32_t  namedIndex;
     uint16_t i;
     if (tc == NULL || typeId < 0 || (uint32_t)typeId >= tc->typeLen) {
         return 0;
     }
-    if (tc->types[typeId].kind == SLTCType_TYPE_PARAM) {
+    if (tc->types[typeId].kind == HOPTCType_TYPE_PARAM) {
         return 1;
     }
     namedIndex = CodegenCFindNamedTypeIndexByTypeId(tc, typeId);
     if (namedIndex >= 0) {
-        const SLTCNamedType* nt = &tc->namedTypes[(uint32_t)namedIndex];
+        const HOPTCNamedType* nt = &tc->namedTypes[(uint32_t)namedIndex];
         for (i = 0; i < nt->templateArgCount; i++) {
             if (CodegenCTypeIdContainsTypeParam(tc, tc->genericArgTypes[nt->templateArgStart + i]))
             {
@@ -1429,16 +1430,16 @@ static int CodegenCTypeIdContainsTypeParam(const SLTypeCheckCtx* tc, int32_t typ
     return 0;
 }
 
-int CodegenCNodeHasTypeParams(const SLCBackendC* c, int32_t nodeId) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    int32_t          child;
+int CodegenCNodeHasTypeParams(const HOPCBackendC* c, int32_t nodeId) {
+    const HOPAstNode* n = NodeAt(c, nodeId);
+    int32_t           child;
     if (n == NULL || !IsDeclKind(n->kind)) {
         return 0;
     }
     child = AstFirstChild(&c->ast, nodeId);
     while (child >= 0) {
-        const SLAstNode* ch = NodeAt(c, child);
-        if (ch != NULL && ch->kind == SLAst_TYPE_PARAM) {
+        const HOPAstNode* ch = NodeAt(c, child);
+        if (ch != NULL && ch->kind == HOPAst_TYPE_PARAM) {
             return 1;
         }
         child = AstNextSibling(&c->ast, child);
@@ -1446,9 +1447,9 @@ int CodegenCNodeHasTypeParams(const SLCBackendC* c, int32_t nodeId) {
     return 0;
 }
 
-int CodegenCPushActiveFunctionTypeContext(SLCBackendC* c, uint32_t tcFuncIndex) {
-    SLTypeCheckCtx*     tc;
-    const SLTCFunction* fn;
+int CodegenCPushActiveFunctionTypeContext(HOPCBackendC* c, uint32_t tcFuncIndex) {
+    HOPTypeCheckCtx*     tc;
+    const HOPTCFunction* fn;
     if (c == NULL || c->constEval == NULL || tcFuncIndex == UINT32_MAX) {
         return 0;
     }
@@ -1465,9 +1466,9 @@ int CodegenCPushActiveFunctionTypeContext(SLCBackendC* c, uint32_t tcFuncIndex) 
     return 0;
 }
 
-int CodegenCPushActiveNamedTypeContext(SLCBackendC* c, uint32_t tcNamedIndex) {
-    SLTypeCheckCtx*      tc;
-    const SLTCNamedType* nt;
+int CodegenCPushActiveNamedTypeContext(HOPCBackendC* c, uint32_t tcNamedIndex) {
+    HOPTypeCheckCtx*      tc;
+    const HOPTCNamedType* nt;
     if (c == NULL || c->constEval == NULL) {
         return 0;
     }
@@ -1485,19 +1486,19 @@ int CodegenCPushActiveNamedTypeContext(SLCBackendC* c, uint32_t tcNamedIndex) {
 }
 
 void CodegenCPopActiveTypeContext(
-    SLCBackendC* c,
-    uint32_t     savedFuncIndex,
-    int32_t      savedNamedTypeIndex,
-    uint32_t     savedArgStart,
-    uint16_t     savedArgCount,
-    int32_t      savedDeclNode) {
+    HOPCBackendC* c,
+    uint32_t      savedFuncIndex,
+    int32_t       savedNamedTypeIndex,
+    uint32_t      savedArgStart,
+    uint16_t      savedArgCount,
+    int32_t       savedDeclNode) {
     if (c == NULL) {
         return;
     }
     c->activeTcFuncIndex = savedFuncIndex;
     c->activeTcNamedTypeIndex = savedNamedTypeIndex;
     if (c->constEval != NULL) {
-        SLTypeCheckCtx* tc = &c->constEval->tc;
+        HOPTypeCheckCtx* tc = &c->constEval->tc;
         tc->activeGenericArgStart = savedArgStart;
         tc->activeGenericArgCount = savedArgCount;
         tc->activeGenericDeclNode = savedDeclNode;
@@ -1505,26 +1506,26 @@ void CodegenCPopActiveTypeContext(
 }
 
 int ResolveTypeValueNameExprTypeRef(
-    SLCBackendC* c, uint32_t start, uint32_t end, SLTypeRef* outTypeRef) {
-    const SLNameMap* map;
-    const char*      resolvedTypeName;
+    HOPCBackendC* c, uint32_t start, uint32_t end, HOPTypeRef* outTypeRef) {
+    const HOPNameMap* map;
+    const char*       resolvedTypeName;
     if (c != NULL && c->constEval != NULL
         && (c->activeTcFuncIndex != UINT32_MAX || c->activeTcNamedTypeIndex >= 0))
     {
-        SLTypeCheckCtx* tc = &c->constEval->tc;
-        uint32_t        paramArgStart = tc->activeGenericArgStart;
-        uint32_t        concreteArgStart = tc->activeGenericArgStart;
-        uint16_t        i;
-        uint16_t        argCount = tc->activeGenericArgCount;
+        HOPTypeCheckCtx* tc = &c->constEval->tc;
+        uint32_t         paramArgStart = tc->activeGenericArgStart;
+        uint32_t         concreteArgStart = tc->activeGenericArgStart;
+        uint16_t         i;
+        uint16_t         argCount = tc->activeGenericArgCount;
         if (c->activeTcFuncIndex != UINT32_MAX) {
-            const SLTCFunction* fn = &tc->funcs[c->activeTcFuncIndex];
+            const HOPTCFunction* fn = &tc->funcs[c->activeTcFuncIndex];
             concreteArgStart = fn->templateArgStart;
             argCount = fn->templateArgCount;
             if (fn->templateRootFuncIndex >= 0) {
                 paramArgStart = tc->funcs[(uint32_t)fn->templateRootFuncIndex].templateArgStart;
             }
         } else if (c->activeTcNamedTypeIndex >= 0) {
-            const SLTCNamedType* nt = &tc->namedTypes[(uint32_t)c->activeTcNamedTypeIndex];
+            const HOPTCNamedType* nt = &tc->namedTypes[(uint32_t)c->activeTcNamedTypeIndex];
             concreteArgStart = nt->templateArgStart;
             argCount = nt->templateArgCount;
             if (nt->templateRootNamedIndex >= 0) {
@@ -1535,7 +1536,7 @@ int ResolveTypeValueNameExprTypeRef(
         for (i = 0; i < argCount; i++) {
             int32_t paramTypeId = tc->genericArgTypes[paramArgStart + i];
             if (paramTypeId >= 0 && (uint32_t)paramTypeId < tc->typeLen
-                && tc->types[paramTypeId].kind == SLTCType_TYPE_PARAM && end >= start
+                && tc->types[paramTypeId].kind == HOPTCType_TYPE_PARAM && end >= start
                 && tc->types[paramTypeId].nameEnd >= tc->types[paramTypeId].nameStart
                 && end - start == tc->types[paramTypeId].nameEnd - tc->types[paramTypeId].nameStart
                 && memcmp(
@@ -1554,51 +1555,51 @@ int ResolveTypeValueNameExprTypeRef(
         }
     }
     if (SliceEq(c->unit->source, start, end, "bool")) {
-        TypeRefSetScalar(outTypeRef, "__sl_bool");
+        TypeRefSetScalar(outTypeRef, "__hop_bool");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "str")) {
-        TypeRefSetScalar(outTypeRef, "__sl_str");
+        TypeRefSetScalar(outTypeRef, "__hop_str");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "u8")) {
-        TypeRefSetScalar(outTypeRef, "__sl_u8");
+        TypeRefSetScalar(outTypeRef, "__hop_u8");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "u16")) {
-        TypeRefSetScalar(outTypeRef, "__sl_u16");
+        TypeRefSetScalar(outTypeRef, "__hop_u16");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "u32")) {
-        TypeRefSetScalar(outTypeRef, "__sl_u32");
+        TypeRefSetScalar(outTypeRef, "__hop_u32");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "u64")) {
-        TypeRefSetScalar(outTypeRef, "__sl_u64");
+        TypeRefSetScalar(outTypeRef, "__hop_u64");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "i8")) {
-        TypeRefSetScalar(outTypeRef, "__sl_i8");
+        TypeRefSetScalar(outTypeRef, "__hop_i8");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "i16")) {
-        TypeRefSetScalar(outTypeRef, "__sl_i16");
+        TypeRefSetScalar(outTypeRef, "__hop_i16");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "i32")) {
-        TypeRefSetScalar(outTypeRef, "__sl_i32");
+        TypeRefSetScalar(outTypeRef, "__hop_i32");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "i64")) {
-        TypeRefSetScalar(outTypeRef, "__sl_i64");
+        TypeRefSetScalar(outTypeRef, "__hop_i64");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "uint")) {
-        TypeRefSetScalar(outTypeRef, "__sl_uint");
+        TypeRefSetScalar(outTypeRef, "__hop_uint");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "int")) {
-        TypeRefSetScalar(outTypeRef, "__sl_int");
+        TypeRefSetScalar(outTypeRef, "__hop_int");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "rawptr")) {
@@ -1607,23 +1608,23 @@ int ResolveTypeValueNameExprTypeRef(
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "const_int")) {
-        TypeRefSetScalar(outTypeRef, "__sl_int");
+        TypeRefSetScalar(outTypeRef, "__hop_int");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "f32")) {
-        TypeRefSetScalar(outTypeRef, "__sl_f32");
+        TypeRefSetScalar(outTypeRef, "__hop_f32");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "f64")) {
-        TypeRefSetScalar(outTypeRef, "__sl_f64");
+        TypeRefSetScalar(outTypeRef, "__hop_f64");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "const_float")) {
-        TypeRefSetScalar(outTypeRef, "__sl_f64");
+        TypeRefSetScalar(outTypeRef, "__hop_f64");
         return 1;
     }
     if (SliceEq(c->unit->source, start, end, "type")) {
-        TypeRefSetScalar(outTypeRef, "__sl_type");
+        TypeRefSetScalar(outTypeRef, "__hop_type");
         return 1;
     }
     map = FindNameBySlice(c, start, end);
@@ -1671,77 +1672,77 @@ uint64_t TypeTagHashAddStr(uint64_t h, const char* s) {
 }
 
 enum {
-    SLTypeTagKind_INVALID = 0,
-    SLTypeTagKind_PRIMITIVE = 1,
-    SLTypeTagKind_ALIAS = 2,
-    SLTypeTagKind_STRUCT = 3,
-    SLTypeTagKind_UNION = 4,
-    SLTypeTagKind_ENUM = 5,
-    SLTypeTagKind_POINTER = 6,
-    SLTypeTagKind_REFERENCE = 7,
-    SLTypeTagKind_SLICE = 8,
-    SLTypeTagKind_ARRAY = 9,
-    SLTypeTagKind_OPTIONAL = 10,
-    SLTypeTagKind_FUNCTION = 11,
-    SLTypeTagKind_TUPLE = 12,
+    HOPTypeTagKind_INVALID = 0,
+    HOPTypeTagKind_PRIMITIVE = 1,
+    HOPTypeTagKind_ALIAS = 2,
+    HOPTypeTagKind_STRUCT = 3,
+    HOPTypeTagKind_UNION = 4,
+    HOPTypeTagKind_ENUM = 5,
+    HOPTypeTagKind_POINTER = 6,
+    HOPTypeTagKind_REFERENCE = 7,
+    HOPTypeTagKind_SLICE = 8,
+    HOPTypeTagKind_ARRAY = 9,
+    HOPTypeTagKind_OPTIONAL = 10,
+    HOPTypeTagKind_FUNCTION = 11,
+    HOPTypeTagKind_TUPLE = 12,
 };
 
-const SLTypeAliasInfo* _Nullable FindTypeAliasInfoByAliasName(
-    const SLCBackendC* c, const char* aliasName);
+const HOPTypeAliasInfo* _Nullable FindTypeAliasInfoByAliasName(
+    const HOPCBackendC* c, const char* aliasName);
 
-uint8_t TypeTagKindFromTypeRef(const SLCBackendC* c, const SLTypeRef* t) {
-    const SLNameMap* map;
+uint8_t TypeTagKindFromTypeRef(const HOPCBackendC* c, const HOPTypeRef* t) {
+    const HOPNameMap* map;
     if (c == NULL || t == NULL || !t->valid) {
-        return SLTypeTagKind_INVALID;
+        return HOPTypeTagKind_INVALID;
     }
     if (t->isOptional) {
-        return SLTypeTagKind_OPTIONAL;
+        return HOPTypeTagKind_OPTIONAL;
     }
-    if (t->containerKind == SLTypeContainer_ARRAY) {
-        return SLTypeTagKind_ARRAY;
+    if (t->containerKind == HOPTypeContainer_ARRAY) {
+        return HOPTypeTagKind_ARRAY;
     }
-    if (t->containerKind == SLTypeContainer_SLICE_RO
-        || t->containerKind == SLTypeContainer_SLICE_MUT)
+    if (t->containerKind == HOPTypeContainer_SLICE_RO
+        || t->containerKind == HOPTypeContainer_SLICE_MUT)
     {
-        return SLTypeTagKind_SLICE;
+        return HOPTypeTagKind_SLICE;
     }
     if (t->containerPtrDepth > 0 || t->ptrDepth > 0) {
-        return t->readOnly ? SLTypeTagKind_REFERENCE : SLTypeTagKind_POINTER;
+        return t->readOnly ? HOPTypeTagKind_REFERENCE : HOPTypeTagKind_POINTER;
     }
     if (t->baseName == NULL) {
-        return SLTypeTagKind_INVALID;
+        return HOPTypeTagKind_INVALID;
     }
     if (FindTypeAliasInfoByAliasName(c, t->baseName) != NULL) {
-        return SLTypeTagKind_ALIAS;
+        return HOPTypeTagKind_ALIAS;
     }
     map = FindNameByCName(c, t->baseName);
     if (map != NULL) {
         switch (map->kind) {
-            case SLAst_STRUCT:     return SLTypeTagKind_STRUCT;
-            case SLAst_UNION:      return SLTypeTagKind_UNION;
-            case SLAst_ENUM:       return SLTypeTagKind_ENUM;
-            case SLAst_TYPE_ALIAS: return SLTypeTagKind_ALIAS;
-            default:               break;
+            case HOPAst_STRUCT:     return HOPTypeTagKind_STRUCT;
+            case HOPAst_UNION:      return HOPTypeTagKind_UNION;
+            case HOPAst_ENUM:       return HOPTypeTagKind_ENUM;
+            case HOPAst_TYPE_ALIAS: return HOPTypeTagKind_ALIAS;
+            default:                break;
         }
     }
-    if (StrHasPrefix(t->baseName, "__sl_fn_t_")) {
-        return SLTypeTagKind_FUNCTION;
+    if (StrHasPrefix(t->baseName, "__hop_fn_t_")) {
+        return HOPTypeTagKind_FUNCTION;
     }
-    if (StrHasPrefix(t->baseName, "__sl_tuple_")) {
-        return SLTypeTagKind_TUPLE;
+    if (StrHasPrefix(t->baseName, "__hop_tuple_")) {
+        return HOPTypeTagKind_TUPLE;
     }
-    return SLTypeTagKind_PRIMITIVE;
+    return HOPTypeTagKind_PRIMITIVE;
 }
 
-uint64_t TypeTagFromTypeRef(const SLCBackendC* c, const SLTypeRef* t) {
+uint64_t TypeTagFromTypeRef(const HOPCBackendC* c, const HOPTypeRef* t) {
     uint8_t  kind;
     uint64_t h = 1469598103934665603ULL;
     if (t == NULL || !t->valid) {
         return 0u;
     }
     kind = TypeTagKindFromTypeRef(c, t);
-    if (kind == SLTypeTagKind_INVALID) {
-        kind = SLTypeTagKind_PRIMITIVE;
+    if (kind == HOPTypeTagKind_INVALID) {
+        kind = HOPTypeTagKind_PRIMITIVE;
     }
     h = TypeTagHashAddStr(h, t->baseName);
     h = TypeTagHashAddU32(h, (uint32_t)t->ptrDepth);
@@ -1757,13 +1758,13 @@ uint64_t TypeTagFromTypeRef(const SLCBackendC* c, const SLTypeRef* t) {
     return ((uint64_t)kind << 56u) | (h & 0x00ffffffffffffffULL);
 }
 
-int EmitTypeTagLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* t) {
+int EmitTypeTagLiteralFromTypeRef(HOPCBackendC* c, const HOPTypeRef* t) {
     uint64_t tag = TypeTagFromTypeRef(c, t);
     return BufAppendHexU64Literal(&c->out, tag);
 }
 
-const SLTypeAliasInfo* _Nullable FindTypeAliasInfoByAliasName(
-    const SLCBackendC* c, const char* aliasName) {
+const HOPTypeAliasInfo* _Nullable FindTypeAliasInfoByAliasName(
+    const HOPCBackendC* c, const char* aliasName) {
     uint32_t i;
     for (i = 0; i < c->typeAliasLen; i++) {
         if (StrEq(c->typeAliases[i].aliasName, aliasName)) {
@@ -1773,7 +1774,7 @@ const SLTypeAliasInfo* _Nullable FindTypeAliasInfoByAliasName(
     return NULL;
 }
 
-int AddTypeAliasInfo(SLCBackendC* c, const char* aliasName, SLTypeRef targetType) {
+int AddTypeAliasInfo(HOPCBackendC* c, const char* aliasName, HOPTypeRef targetType) {
     if (FindTypeAliasInfoByAliasName(c, aliasName) != NULL) {
         return 0;
     }
@@ -1782,8 +1783,8 @@ int AddTypeAliasInfo(SLCBackendC* c, const char* aliasName, SLTypeRef targetType
             (void**)&c->typeAliases,
             &c->typeAliasCap,
             c->typeAliasLen + 1u,
-            sizeof(SLTypeAliasInfo),
-            (uint32_t)_Alignof(SLTypeAliasInfo))
+            sizeof(HOPTypeAliasInfo),
+            (uint32_t)_Alignof(HOPTypeAliasInfo))
         != 0)
     {
         return -1;
@@ -1794,12 +1795,12 @@ int AddTypeAliasInfo(SLCBackendC* c, const char* aliasName, SLTypeRef targetType
     return 0;
 }
 
-const char* ResolveScalarAliasBaseName(const SLCBackendC* c, const char* typeName) {
+const char* ResolveScalarAliasBaseName(const HOPCBackendC* c, const char* typeName) {
     uint32_t guard = 0;
     while (typeName != NULL && guard++ <= c->typeAliasLen) {
-        const SLTypeAliasInfo* alias = FindTypeAliasInfoByAliasName(c, typeName);
+        const HOPTypeAliasInfo* alias = FindTypeAliasInfoByAliasName(c, typeName);
         if (alias == NULL || !alias->targetType.valid || alias->targetType.baseName == NULL
-            || alias->targetType.containerKind != SLTypeContainer_SCALAR
+            || alias->targetType.containerKind != HOPTypeContainer_SCALAR
             || alias->targetType.ptrDepth != 0 || alias->targetType.containerPtrDepth != 0
             || alias->targetType.isOptional)
         {
@@ -1810,8 +1811,9 @@ const char* ResolveScalarAliasBaseName(const SLCBackendC* c, const char* typeNam
     return typeName;
 }
 
-int ResolveReflectedTypeValueExprTypeRef(SLCBackendC* c, int32_t exprNode, SLTypeRef* outTypeRef) {
-    const SLAstNode* n = NodeAt(c, exprNode);
+int ResolveReflectedTypeValueExprTypeRef(
+    HOPCBackendC* c, int32_t exprNode, HOPTypeRef* outTypeRef) {
+    const HOPAstNode* n = NodeAt(c, exprNode);
     if (outTypeRef == NULL) {
         return 0;
     }
@@ -1819,35 +1821,35 @@ int ResolveReflectedTypeValueExprTypeRef(SLCBackendC* c, int32_t exprNode, SLTyp
     if (n == NULL) {
         return 0;
     }
-    if (n->kind == SLAst_CALL_ARG) {
+    if (n->kind == HOPAst_CALL_ARG) {
         int32_t inner = AstFirstChild(&c->ast, exprNode);
         if (inner < 0) {
             return 0;
         }
         return ResolveReflectedTypeValueExprTypeRef(c, inner, outTypeRef);
     }
-    if (n->kind == SLAst_IDENT) {
+    if (n->kind == HOPAst_IDENT) {
         return ResolveTypeValueNameExprTypeRef(c, n->dataStart, n->dataEnd, outTypeRef);
     }
-    if (n->kind == SLAst_TYPE_NAME) {
+    if (n->kind == HOPAst_TYPE_NAME) {
         if (AstFirstChild(&c->ast, exprNode) >= 0) {
             return ParseTypeRef(c, exprNode, outTypeRef) == 0 && outTypeRef->valid;
         }
         return ResolveTypeValueNameExprTypeRef(c, n->dataStart, n->dataEnd, outTypeRef);
     }
-    if (n->kind == SLAst_TYPE_VALUE) {
+    if (n->kind == HOPAst_TYPE_VALUE) {
         int32_t typeNode = AstFirstChild(&c->ast, exprNode);
         if (typeNode < 0) {
             return 0;
         }
         return ParseTypeRef(c, typeNode, outTypeRef) == 0 && outTypeRef->valid;
     }
-    if (n->kind == SLAst_CALL) {
-        int32_t          calleeNode = AstFirstChild(&c->ast, exprNode);
-        const SLAstNode* callee = NodeAt(c, calleeNode);
-        int32_t          argNode;
-        int32_t          nextNode;
-        if (callee == NULL || callee->kind != SLAst_IDENT) {
+    if (n->kind == HOPAst_CALL) {
+        int32_t           calleeNode = AstFirstChild(&c->ast, exprNode);
+        const HOPAstNode* callee = NodeAt(c, calleeNode);
+        int32_t           argNode;
+        int32_t           nextNode;
+        if (callee == NULL || callee->kind != HOPAst_IDENT) {
             return 0;
         }
         argNode = AstNextSibling(&c->ast, calleeNode);
@@ -1863,22 +1865,22 @@ int ResolveReflectedTypeValueExprTypeRef(SLCBackendC* c, int32_t exprNode, SLTyp
             return 1;
         }
         if (SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "ptr")) {
-            SLTypeRef elemType;
+            HOPTypeRef elemType;
             if (argNode < 0 || nextNode >= 0) {
                 return 0;
             }
             if (!ResolveReflectedTypeValueExprTypeRef(c, argNode, &elemType)) {
                 return 0;
             }
-            if (elemType.containerKind == SLTypeContainer_ARRAY
-                || elemType.containerKind == SLTypeContainer_SLICE_RO
-                || elemType.containerKind == SLTypeContainer_SLICE_MUT)
+            if (elemType.containerKind == HOPTypeContainer_ARRAY
+                || elemType.containerKind == HOPTypeContainer_SLICE_RO
+                || elemType.containerKind == HOPTypeContainer_SLICE_MUT)
             {
                 elemType.containerPtrDepth++;
-                if (elemType.containerKind == SLTypeContainer_SLICE_RO
-                    || elemType.containerKind == SLTypeContainer_SLICE_MUT)
+                if (elemType.containerKind == HOPTypeContainer_SLICE_RO
+                    || elemType.containerKind == HOPTypeContainer_SLICE_MUT)
                 {
-                    elemType.containerKind = SLTypeContainer_SLICE_MUT;
+                    elemType.containerKind = HOPTypeContainer_SLICE_MUT;
                 }
                 elemType.readOnly = 0;
             } else {
@@ -1889,17 +1891,17 @@ int ResolveReflectedTypeValueExprTypeRef(SLCBackendC* c, int32_t exprNode, SLTyp
             return 1;
         }
         if (SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "slice")) {
-            SLTypeRef elemType;
+            HOPTypeRef elemType;
             if (argNode < 0 || nextNode >= 0) {
                 return 0;
             }
             if (!ResolveReflectedTypeValueExprTypeRef(c, argNode, &elemType)) {
                 return 0;
             }
-            if (elemType.containerKind != SLTypeContainer_SCALAR) {
+            if (elemType.containerKind != HOPTypeContainer_SCALAR) {
                 return 0;
             }
-            elemType.containerKind = SLTypeContainer_SLICE_RO;
+            elemType.containerKind = HOPTypeContainer_SLICE_RO;
             elemType.containerPtrDepth = 0;
             elemType.hasArrayLen = 0;
             elemType.arrayLen = 0;
@@ -1908,22 +1910,22 @@ int ResolveReflectedTypeValueExprTypeRef(SLCBackendC* c, int32_t exprNode, SLTyp
             return 1;
         }
         if (SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "array")) {
-            SLTypeRef elemType;
-            int32_t   lenNode = nextNode;
-            int32_t   extraNode = lenNode >= 0 ? AstNextSibling(&c->ast, lenNode) : -1;
-            int32_t   lenExprNode = lenNode;
-            int64_t   lenValue = 0;
-            int       lenIsConst = 0;
+            HOPTypeRef elemType;
+            int32_t    lenNode = nextNode;
+            int32_t    extraNode = lenNode >= 0 ? AstNextSibling(&c->ast, lenNode) : -1;
+            int32_t    lenExprNode = lenNode;
+            int64_t    lenValue = 0;
+            int        lenIsConst = 0;
             if (argNode < 0 || lenNode < 0 || extraNode >= 0) {
                 return 0;
             }
             if (!ResolveReflectedTypeValueExprTypeRef(c, argNode, &elemType)) {
                 return 0;
             }
-            if (elemType.containerKind != SLTypeContainer_SCALAR) {
+            if (elemType.containerKind != HOPTypeContainer_SCALAR) {
                 return 0;
             }
-            if (NodeAt(c, lenExprNode) != NULL && NodeAt(c, lenExprNode)->kind == SLAst_CALL_ARG) {
+            if (NodeAt(c, lenExprNode) != NULL && NodeAt(c, lenExprNode)->kind == HOPAst_CALL_ARG) {
                 lenExprNode = AstFirstChild(&c->ast, lenExprNode);
             }
             if (lenExprNode < 0 || EvalConstIntExpr(c, lenExprNode, &lenValue, &lenIsConst) != 0
@@ -1931,7 +1933,7 @@ int ResolveReflectedTypeValueExprTypeRef(SLCBackendC* c, int32_t exprNode, SLTyp
             {
                 return 0;
             }
-            elemType.containerKind = SLTypeContainer_ARRAY;
+            elemType.containerKind = HOPTypeContainer_ARRAY;
             elemType.containerPtrDepth = 0;
             elemType.arrayLen = (uint32_t)lenValue;
             elemType.hasArrayLen = 1;
@@ -1943,21 +1945,21 @@ int ResolveReflectedTypeValueExprTypeRef(SLCBackendC* c, int32_t exprNode, SLTyp
     return 0;
 }
 
-int TypeRefIsTypeValue(const SLTypeRef* t) {
-    return t != NULL && t->valid && t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth == 0
+int TypeRefIsTypeValue(const HOPTypeRef* t) {
+    return t != NULL && t->valid && t->containerKind == HOPTypeContainer_SCALAR && t->ptrDepth == 0
         && t->containerPtrDepth == 0 && !t->isOptional && t->baseName != NULL
-        && StrEq(t->baseName, "__sl_type");
+        && StrEq(t->baseName, "__hop_type");
 }
 
-const char* _Nullable FindReflectKindTypeName(const SLCBackendC* c) {
-    uint32_t         i;
-    const SLNameMap* direct = FindNameByCString(c, "reflect__Kind");
-    if (direct != NULL && direct->kind == SLAst_ENUM) {
+const char* _Nullable FindReflectKindTypeName(const HOPCBackendC* c) {
+    uint32_t          i;
+    const HOPNameMap* direct = FindNameByCString(c, "reflect__Kind");
+    if (direct != NULL && direct->kind == HOPAst_ENUM) {
         return direct->cName;
     }
     for (i = 0; i < c->nameLen; i++) {
-        const SLNameMap* map = &c->names[i];
-        if (map->kind != SLAst_ENUM || map->name == NULL) {
+        const HOPNameMap* map = &c->names[i];
+        if (map->kind != HOPAst_ENUM || map->name == NULL) {
             continue;
         }
         if (StrHasPrefix(map->name, "reflect") && StrHasSuffix(map->name, "__Kind")) {
@@ -1967,54 +1969,54 @@ const char* _Nullable FindReflectKindTypeName(const SLCBackendC* c) {
     return NULL;
 }
 
-const char* TypeRefDisplayBaseName(const SLCBackendC* c, const char* baseName) {
-    const SLNameMap* map;
+const char* TypeRefDisplayBaseName(const HOPCBackendC* c, const char* baseName) {
+    const HOPNameMap* map;
     if (baseName == NULL) {
         return "<type>";
     }
-    if (StrEq(baseName, "__sl_bool")) {
+    if (StrEq(baseName, "__hop_bool")) {
         return "bool";
     }
-    if (StrEq(baseName, "__sl_str") || StrEq(baseName, "builtin__str")) {
+    if (StrEq(baseName, "__hop_str") || StrEq(baseName, "builtin__str")) {
         return "str";
     }
-    if (StrEq(baseName, "__sl_u8")) {
+    if (StrEq(baseName, "__hop_u8")) {
         return "u8";
     }
-    if (StrEq(baseName, "__sl_u16")) {
+    if (StrEq(baseName, "__hop_u16")) {
         return "u16";
     }
-    if (StrEq(baseName, "__sl_u32")) {
+    if (StrEq(baseName, "__hop_u32")) {
         return "u32";
     }
-    if (StrEq(baseName, "__sl_u64")) {
+    if (StrEq(baseName, "__hop_u64")) {
         return "u64";
     }
-    if (StrEq(baseName, "__sl_i8")) {
+    if (StrEq(baseName, "__hop_i8")) {
         return "i8";
     }
-    if (StrEq(baseName, "__sl_i16")) {
+    if (StrEq(baseName, "__hop_i16")) {
         return "i16";
     }
-    if (StrEq(baseName, "__sl_i32")) {
+    if (StrEq(baseName, "__hop_i32")) {
         return "i32";
     }
-    if (StrEq(baseName, "__sl_i64")) {
+    if (StrEq(baseName, "__hop_i64")) {
         return "i64";
     }
-    if (StrEq(baseName, "__sl_uint")) {
+    if (StrEq(baseName, "__hop_uint")) {
         return "uint";
     }
-    if (StrEq(baseName, "__sl_int")) {
+    if (StrEq(baseName, "__hop_int")) {
         return "int";
     }
-    if (StrEq(baseName, "__sl_f32")) {
+    if (StrEq(baseName, "__hop_f32")) {
         return "f32";
     }
-    if (StrEq(baseName, "__sl_f64")) {
+    if (StrEq(baseName, "__hop_f64")) {
         return "f64";
     }
-    if (StrEq(baseName, "__sl_type")) {
+    if (StrEq(baseName, "__hop_type")) {
         return "type";
     }
     map = FindNameByCName(c, baseName);
@@ -2024,10 +2026,10 @@ const char* TypeRefDisplayBaseName(const SLCBackendC* c, const char* baseName) {
     return baseName;
 }
 
-int EmitTypeNameStringLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* _Nullable t) {
+int EmitTypeNameStringLiteralFromTypeRef(HOPCBackendC* c, const HOPTypeRef* _Nullable t) {
     const char* name = "<type>";
     int32_t     literalId;
-    if (t != NULL && t->valid && !t->isOptional && t->containerKind == SLTypeContainer_SCALAR
+    if (t != NULL && t->valid && !t->isOptional && t->containerKind == HOPTypeContainer_SCALAR
         && t->ptrDepth == 0 && t->containerPtrDepth == 0)
     {
         name = TypeRefDisplayBaseName(c, t->baseName);
@@ -2040,16 +2042,16 @@ int EmitTypeNameStringLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* _Nulla
     return EmitStringLiteralValue(c, literalId, 0);
 }
 
-int EmitTypeTagKindLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* t) {
+int EmitTypeTagKindLiteralFromTypeRef(HOPCBackendC* c, const HOPTypeRef* t) {
     uint8_t kind = TypeTagKindFromTypeRef(c, t);
-    if (kind == SLTypeTagKind_INVALID) {
-        kind = SLTypeTagKind_PRIMITIVE;
+    if (kind == HOPTypeTagKind_INVALID) {
+        kind = HOPTypeTagKind_PRIMITIVE;
     }
     return BufAppendU32(&c->out, (uint32_t)kind);
 }
 
-int EmitRuntimeTypeTagKindFromExpr(SLCBackendC* c, int32_t exprNode) {
-    if (BufAppendCStr(&c->out, "((__sl_u8)(((") != 0 || EmitExpr(c, exprNode) != 0
+int EmitRuntimeTypeTagKindFromExpr(HOPCBackendC* c, int32_t exprNode) {
+    if (BufAppendCStr(&c->out, "((__hop_u8)(((") != 0 || EmitExpr(c, exprNode) != 0
         || BufAppendCStr(&c->out, ") >> 56u) & 0xffu))") != 0)
     {
         return -1;
@@ -2057,14 +2059,16 @@ int EmitRuntimeTypeTagKindFromExpr(SLCBackendC* c, int32_t exprNode) {
     return 0;
 }
 
-int EmitTypeTagIsAliasLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* t) {
+int EmitTypeTagIsAliasLiteralFromTypeRef(HOPCBackendC* c, const HOPTypeRef* t) {
     return BufAppendCStr(
         &c->out,
-        TypeTagKindFromTypeRef(c, t) == SLTypeTagKind_ALIAS ? "((__sl_bool)1)" : "((__sl_bool)0)");
+        TypeTagKindFromTypeRef(c, t) == HOPTypeTagKind_ALIAS
+            ? "((__hop_bool)1)"
+            : "((__hop_bool)0)");
 }
 
-int EmitRuntimeTypeTagIsAliasFromExpr(SLCBackendC* c, int32_t exprNode) {
-    if (BufAppendCStr(&c->out, "((__sl_bool)((((__sl_u64)(") != 0 || EmitExpr(c, exprNode) != 0
+int EmitRuntimeTypeTagIsAliasFromExpr(HOPCBackendC* c, int32_t exprNode) {
+    if (BufAppendCStr(&c->out, "((__hop_bool)((((__hop_u64)(") != 0 || EmitExpr(c, exprNode) != 0
         || BufAppendCStr(&c->out, ")) >> 56u) & 0xffu) == 2u))") != 0)
     {
         return -1;
@@ -2072,11 +2076,12 @@ int EmitRuntimeTypeTagIsAliasFromExpr(SLCBackendC* c, int32_t exprNode) {
     return 0;
 }
 
-int EmitRuntimeTypeTagCtorUnary(SLCBackendC* c, uint32_t kindTag, uint64_t salt, int32_t argNode) {
-    if (BufAppendCStr(&c->out, "((__sl_type)((((__sl_u64)") != 0
+int EmitRuntimeTypeTagCtorUnary(HOPCBackendC* c, uint32_t kindTag, uint64_t salt, int32_t argNode) {
+    if (BufAppendCStr(&c->out, "((__hop_type)((((__hop_u64)") != 0
         || BufAppendU32(&c->out, kindTag) != 0
-        || BufAppendCStr(&c->out, "u) << 56u) | ((((((__sl_u64)(") != 0 || EmitExpr(c, argNode) != 0
-        || BufAppendCStr(&c->out, ")) ^ ") != 0 || BufAppendHexU64Literal(&c->out, salt) != 0
+        || BufAppendCStr(&c->out, "u) << 56u) | ((((((__hop_u64)(") != 0
+        || EmitExpr(c, argNode) != 0 || BufAppendCStr(&c->out, ")) ^ ") != 0
+        || BufAppendHexU64Literal(&c->out, salt) != 0
         || BufAppendCStr(&c->out, ") * 1099511628211ULL) & 0x00ffffffffffffffULL))))") != 0)
     {
         return -1;
@@ -2084,9 +2089,9 @@ int EmitRuntimeTypeTagCtorUnary(SLCBackendC* c, uint32_t kindTag, uint64_t salt,
     return 0;
 }
 
-int EmitRuntimeTypeTagCtorArray(SLCBackendC* c, int32_t elemTagNode, int32_t lenNode) {
-    if (BufAppendCStr(&c->out, "((__sl_type)((((__sl_u64)9u) << 56u) | ((((((__sl_u64)(") != 0
-        || EmitExpr(c, elemTagNode) != 0 || BufAppendCStr(&c->out, ")) ^ (((__sl_u64)(") != 0
+int EmitRuntimeTypeTagCtorArray(HOPCBackendC* c, int32_t elemTagNode, int32_t lenNode) {
+    if (BufAppendCStr(&c->out, "((__hop_type)((((__hop_u64)9u) << 56u) | ((((((__hop_u64)(") != 0
+        || EmitExpr(c, elemTagNode) != 0 || BufAppendCStr(&c->out, ")) ^ (((__hop_u64)(") != 0
         || EmitExpr(c, lenNode) != 0
         || BufAppendCStr(
                &c->out,
@@ -2099,9 +2104,9 @@ int EmitRuntimeTypeTagCtorArray(SLCBackendC* c, int32_t elemTagNode, int32_t len
     return 0;
 }
 
-int EmitTypeTagBaseLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* t) {
-    const SLTypeAliasInfo* alias;
-    if (t == NULL || !t->valid || t->containerKind != SLTypeContainer_SCALAR || t->ptrDepth != 0
+int EmitTypeTagBaseLiteralFromTypeRef(HOPCBackendC* c, const HOPTypeRef* t) {
+    const HOPTypeAliasInfo* alias;
+    if (t == NULL || !t->valid || t->containerKind != HOPTypeContainer_SCALAR || t->ptrDepth != 0
         || t->containerPtrDepth != 0 || t->isOptional || t->baseName == NULL)
     {
         return -1;
@@ -2113,26 +2118,26 @@ int EmitTypeTagBaseLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* t) {
     return EmitTypeTagLiteralFromTypeRef(c, &alias->targetType);
 }
 
-int TypeRefIsRuneLike(const SLCBackendC* c, const SLTypeRef* typeRef) {
+int TypeRefIsRuneLike(const HOPCBackendC* c, const HOPTypeRef* typeRef) {
     const char* runeType;
     const char* typeName;
     uint32_t    guard = 0;
-    if (typeRef == NULL || !typeRef->valid || typeRef->containerKind != SLTypeContainer_SCALAR
+    if (typeRef == NULL || !typeRef->valid || typeRef->containerKind != HOPTypeContainer_SCALAR
         || typeRef->ptrDepth != 0 || typeRef->containerPtrDepth != 0 || typeRef->isOptional
         || typeRef->baseName == NULL)
     {
         return 0;
     }
-    runeType = ResolveRuneTypeBaseName((SLCBackendC*)c);
+    runeType = ResolveRuneTypeBaseName((HOPCBackendC*)c);
     typeName = typeRef->baseName;
     while (typeName != NULL && guard++ <= c->typeAliasLen + 1u) {
-        const SLTypeAliasInfo* alias;
+        const HOPTypeAliasInfo* alias;
         if (StrEq(typeName, runeType)) {
             return 1;
         }
         alias = FindTypeAliasInfoByAliasName(c, typeName);
         if (alias == NULL || !alias->targetType.valid || alias->targetType.baseName == NULL
-            || alias->targetType.containerKind != SLTypeContainer_SCALAR
+            || alias->targetType.containerKind != HOPTypeContainer_SCALAR
             || alias->targetType.ptrDepth != 0 || alias->targetType.containerPtrDepth != 0
             || alias->targetType.isOptional)
         {
@@ -2143,8 +2148,8 @@ int TypeRefIsRuneLike(const SLCBackendC* c, const SLTypeRef* typeRef) {
     return 0;
 }
 
-const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t end) {
-    const SLNameMap*         mapped;
+const char* _Nullable ResolveTypeName(HOPCBackendC* c, uint32_t start, uint32_t end) {
+    const HOPNameMap*        mapped;
     char*                    normalized;
     char*                    normalizedDouble = NULL;
     uint32_t                 pos;
@@ -2155,9 +2160,9 @@ const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t e
         "uint", "int", "rawptr", "const_int", "f32", "f64", "const_float", "type", "anytype",
     };
     static const char* const builtinCNames[] = {
-        "__sl_bool", "__sl_str", "__sl_u8",  "__sl_u16",  "__sl_u32", "__sl_u64", "__sl_i8",
-        "__sl_i16",  "__sl_i32", "__sl_i64", "__sl_uint", "__sl_int", "void",     "__sl_int",
-        "__sl_f32",  "__sl_f64", "__sl_f64", "__sl_type", "__sl_u8",
+        "__hop_bool", "__hop_str", "__hop_u8",  "__hop_u16",  "__hop_u32", "__hop_u64", "__hop_i8",
+        "__hop_i16",  "__hop_i32", "__hop_i64", "__hop_uint", "__hop_int", "void",      "__hop_int",
+        "__hop_f32",  "__hop_f64", "__hop_f64", "__hop_type", "__hop_u8",
     };
 
     normalized = DupAndReplaceDots(c, c->unit->source, start, end);
@@ -2199,79 +2204,79 @@ const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t e
     return normalized;
 }
 
-void NormalizeCoreRuntimeTypeName(SLTypeRef* outType) {
+void NormalizeCoreRuntimeTypeName(HOPTypeRef* outType) {
     if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__str")) {
-        outType->baseName = "__sl_str";
+        outType->baseName = "__hop_str";
     } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__MemAllocator")) {
-        outType->baseName = "__sl_MemAllocator";
+        outType->baseName = "__hop_MemAllocator";
     } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Logger")) {
-        outType->baseName = "__sl_Logger";
+        outType->baseName = "__hop_Logger";
     } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Context")) {
-        outType->baseName = "__sl_Context";
+        outType->baseName = "__hop_Context";
     } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__PrintContext")) {
-        outType->baseName = "__sl_PrintContext";
+        outType->baseName = "__hop_PrintContext";
     }
 }
 
-const char* _Nullable ConstEvalBuiltinCName(SLConstEvalBuiltinKind builtin) {
+const char* _Nullable ConstEvalBuiltinCName(HOPConstEvalBuiltinKind builtin) {
     switch (builtin) {
-        case SLConstEvalBuiltinKind_VOID:   return "void";
-        case SLConstEvalBuiltinKind_BOOL:   return "__sl_bool";
-        case SLConstEvalBuiltinKind_STR:    return "__sl_str";
-        case SLConstEvalBuiltinKind_TYPE:   return "__sl_type";
-        case SLConstEvalBuiltinKind_U8:     return "__sl_u8";
-        case SLConstEvalBuiltinKind_U16:    return "__sl_u16";
-        case SLConstEvalBuiltinKind_U32:    return "__sl_u32";
-        case SLConstEvalBuiltinKind_U64:    return "__sl_u64";
-        case SLConstEvalBuiltinKind_I8:     return "__sl_i8";
-        case SLConstEvalBuiltinKind_I16:    return "__sl_i16";
-        case SLConstEvalBuiltinKind_I32:    return "__sl_i32";
-        case SLConstEvalBuiltinKind_I64:    return "__sl_i64";
-        case SLConstEvalBuiltinKind_USIZE:  return "__sl_uint";
-        case SLConstEvalBuiltinKind_ISIZE:  return "__sl_int";
-        case SLConstEvalBuiltinKind_RAWPTR: return "void";
-        case SLConstEvalBuiltinKind_F32:    return "__sl_f32";
-        case SLConstEvalBuiltinKind_F64:    return "__sl_f64";
-        default:                            return NULL;
+        case HOPConstEvalBuiltinKind_VOID:   return "void";
+        case HOPConstEvalBuiltinKind_BOOL:   return "__hop_bool";
+        case HOPConstEvalBuiltinKind_STR:    return "__hop_str";
+        case HOPConstEvalBuiltinKind_TYPE:   return "__hop_type";
+        case HOPConstEvalBuiltinKind_U8:     return "__hop_u8";
+        case HOPConstEvalBuiltinKind_U16:    return "__hop_u16";
+        case HOPConstEvalBuiltinKind_U32:    return "__hop_u32";
+        case HOPConstEvalBuiltinKind_U64:    return "__hop_u64";
+        case HOPConstEvalBuiltinKind_I8:     return "__hop_i8";
+        case HOPConstEvalBuiltinKind_I16:    return "__hop_i16";
+        case HOPConstEvalBuiltinKind_I32:    return "__hop_i32";
+        case HOPConstEvalBuiltinKind_I64:    return "__hop_i64";
+        case HOPConstEvalBuiltinKind_USIZE:  return "__hop_uint";
+        case HOPConstEvalBuiltinKind_ISIZE:  return "__hop_int";
+        case HOPConstEvalBuiltinKind_RAWPTR: return "void";
+        case HOPConstEvalBuiltinKind_F32:    return "__hop_f32";
+        case HOPConstEvalBuiltinKind_F64:    return "__hop_f64";
+        default:                             return NULL;
     }
 }
 
-int ParseTypeRefFromConstEvalTypeId(SLCBackendC* c, int32_t typeId, SLTypeRef* outType) {
-    SLConstEvalTypeInfo info;
+int ParseTypeRefFromConstEvalTypeId(HOPCBackendC* c, int32_t typeId, HOPTypeRef* outType) {
+    HOPConstEvalTypeInfo info;
     if (c == NULL || outType == NULL || c->constEval == NULL) {
         TypeRefSetInvalid(outType);
         return -1;
     }
-    if (SLConstEvalSessionGetTypeInfo(c->constEval, typeId, &info) != 0) {
+    if (HOPConstEvalSessionGetTypeInfo(c->constEval, typeId, &info) != 0) {
         TypeRefSetInvalid(outType);
         return -1;
     }
     switch (info.kind) {
-        case SLConstEvalTypeKind_BUILTIN: {
+        case HOPConstEvalTypeKind_BUILTIN: {
             const char* baseName = ConstEvalBuiltinCName(info.builtin);
             if (baseName == NULL) {
                 TypeRefSetInvalid(outType);
                 return -1;
             }
             TypeRefSetScalar(outType, baseName);
-            if (info.builtin == SLConstEvalBuiltinKind_RAWPTR) {
+            if (info.builtin == HOPConstEvalBuiltinKind_RAWPTR) {
                 outType->ptrDepth = 1;
             }
             NormalizeCoreRuntimeTypeName(outType);
             return 0;
         }
-        case SLConstEvalTypeKind_NAMED:
-        case SLConstEvalTypeKind_ALIAS: {
-            uint32_t         nameStart = info.nameStart;
-            uint32_t         nameEnd = info.nameEnd;
-            const SLAstNode* decl = NULL;
-            const char*      name;
+        case HOPConstEvalTypeKind_NAMED:
+        case HOPConstEvalTypeKind_ALIAS: {
+            uint32_t          nameStart = info.nameStart;
+            uint32_t          nameEnd = info.nameEnd;
+            const HOPAstNode* decl = NULL;
+            const char*       name;
             int32_t namedIndex = CodegenCFindNamedTypeIndexByTypeId(&c->constEval->tc, typeId);
             if (namedIndex >= 0) {
-                const SLTCNamedType* nt = &c->constEval->tc.namedTypes[(uint32_t)namedIndex];
+                const HOPTCNamedType* nt = &c->constEval->tc.namedTypes[(uint32_t)namedIndex];
                 if (nt->templateRootNamedIndex >= 0 && nt->templateArgCount > 0) {
-                    const SLNameMap* map;
-                    char*            cName;
+                    const HOPNameMap* map;
+                    char*             cName;
                     map = FindTypeDeclMapByNode(c, nt->declNode);
                     if (map == NULL) {
                         TypeRefSetInvalid(outType);
@@ -2306,25 +2311,25 @@ int ParseTypeRefFromConstEvalTypeId(SLCBackendC* c, int32_t typeId, SLTypeRef* o
             NormalizeCoreRuntimeTypeName(outType);
             return 0;
         }
-        case SLConstEvalTypeKind_PTR:
-        case SLConstEvalTypeKind_REF: {
-            SLTypeRef childType;
-            int       isRef = info.kind == SLConstEvalTypeKind_REF;
-            int       isReadOnlyRef = isRef && !(info.flags & SLConstEvalTypeFlag_MUTABLE);
+        case HOPConstEvalTypeKind_PTR:
+        case HOPConstEvalTypeKind_REF: {
+            HOPTypeRef childType;
+            int        isRef = info.kind == HOPConstEvalTypeKind_REF;
+            int        isReadOnlyRef = isRef && !(info.flags & HOPConstEvalTypeFlag_MUTABLE);
             if (ParseTypeRefFromConstEvalTypeId(c, info.baseTypeId, &childType) != 0) {
                 TypeRefSetInvalid(outType);
                 return -1;
             }
-            if (childType.containerKind == SLTypeContainer_ARRAY
-                || childType.containerKind == SLTypeContainer_SLICE_RO
-                || childType.containerKind == SLTypeContainer_SLICE_MUT)
+            if (childType.containerKind == HOPTypeContainer_ARRAY
+                || childType.containerKind == HOPTypeContainer_SLICE_RO
+                || childType.containerKind == HOPTypeContainer_SLICE_MUT)
             {
                 childType.containerPtrDepth++;
-                if (childType.containerKind == SLTypeContainer_SLICE_RO
-                    || childType.containerKind == SLTypeContainer_SLICE_MUT)
+                if (childType.containerKind == HOPTypeContainer_SLICE_RO
+                    || childType.containerKind == HOPTypeContainer_SLICE_MUT)
                 {
                     childType.containerKind =
-                        isRef ? SLTypeContainer_SLICE_RO : SLTypeContainer_SLICE_MUT;
+                        isRef ? HOPTypeContainer_SLICE_RO : HOPTypeContainer_SLICE_MUT;
                 }
                 childType.readOnly = isRef ? isReadOnlyRef : 0;
             } else {
@@ -2334,17 +2339,17 @@ int ParseTypeRefFromConstEvalTypeId(SLCBackendC* c, int32_t typeId, SLTypeRef* o
             *outType = childType;
             return 0;
         }
-        case SLConstEvalTypeKind_ARRAY: {
-            SLTypeRef elemType;
+        case HOPConstEvalTypeKind_ARRAY: {
+            HOPTypeRef elemType;
             if (ParseTypeRefFromConstEvalTypeId(c, info.baseTypeId, &elemType) != 0) {
                 TypeRefSetInvalid(outType);
                 return -1;
             }
-            if (elemType.containerKind != SLTypeContainer_SCALAR) {
+            if (elemType.containerKind != HOPTypeContainer_SCALAR) {
                 TypeRefSetInvalid(outType);
                 return -1;
             }
-            elemType.containerKind = SLTypeContainer_ARRAY;
+            elemType.containerKind = HOPTypeContainer_ARRAY;
             elemType.containerPtrDepth = 0;
             elemType.arrayLen = info.arrayLen;
             elemType.hasArrayLen = 1;
@@ -2352,61 +2357,61 @@ int ParseTypeRefFromConstEvalTypeId(SLCBackendC* c, int32_t typeId, SLTypeRef* o
             *outType = elemType;
             return 0;
         }
-        case SLConstEvalTypeKind_SLICE: {
-            SLTypeRef elemType;
+        case HOPConstEvalTypeKind_SLICE: {
+            HOPTypeRef elemType;
             if (ParseTypeRefFromConstEvalTypeId(c, info.baseTypeId, &elemType) != 0) {
                 TypeRefSetInvalid(outType);
                 return -1;
             }
-            if (elemType.containerKind != SLTypeContainer_SCALAR) {
+            if (elemType.containerKind != HOPTypeContainer_SCALAR) {
                 TypeRefSetInvalid(outType);
                 return -1;
             }
             elemType.containerKind =
-                (info.flags & SLConstEvalTypeFlag_MUTABLE)
-                    ? SLTypeContainer_SLICE_MUT
-                    : SLTypeContainer_SLICE_RO;
+                (info.flags & HOPConstEvalTypeFlag_MUTABLE)
+                    ? HOPTypeContainer_SLICE_MUT
+                    : HOPTypeContainer_SLICE_RO;
             elemType.containerPtrDepth = 0;
             elemType.hasArrayLen = 0;
             elemType.arrayLen = 0;
-            elemType.readOnly = (info.flags & SLConstEvalTypeFlag_MUTABLE) ? 0 : 1;
+            elemType.readOnly = (info.flags & HOPConstEvalTypeFlag_MUTABLE) ? 0 : 1;
             *outType = elemType;
             return 0;
         }
-        case SLConstEvalTypeKind_OPTIONAL:
+        case HOPConstEvalTypeKind_OPTIONAL:
             if (ParseTypeRefFromConstEvalTypeId(c, info.baseTypeId, outType) != 0) {
                 TypeRefSetInvalid(outType);
                 return -1;
             }
             outType->isOptional = 1;
             return 0;
-        case SLConstEvalTypeKind_UNTYPED_INT:   TypeRefSetScalar(outType, "__sl_int"); return 0;
-        case SLConstEvalTypeKind_UNTYPED_FLOAT: TypeRefSetScalar(outType, "__sl_f64"); return 0;
-        default:                                TypeRefSetInvalid(outType); return -1;
+        case HOPConstEvalTypeKind_UNTYPED_INT:   TypeRefSetScalar(outType, "__hop_int"); return 0;
+        case HOPConstEvalTypeKind_UNTYPED_FLOAT: TypeRefSetScalar(outType, "__hop_f64"); return 0;
+        default:                                 TypeRefSetInvalid(outType); return -1;
     }
 }
 
-int ParseTypeRefFromConstEvalTypeTag(SLCBackendC* c, uint64_t typeTag, SLTypeRef* outType) {
+int ParseTypeRefFromConstEvalTypeTag(HOPCBackendC* c, uint64_t typeTag, HOPTypeRef* outType) {
     int32_t typeId = -1;
     if (c == NULL || outType == NULL || c->constEval == NULL) {
         TypeRefSetInvalid(outType);
         return -1;
     }
-    if (SLConstEvalSessionDecodeTypeTag(c->constEval, typeTag, &typeId) != 0) {
+    if (HOPConstEvalSessionDecodeTypeTag(c->constEval, typeTag, &typeId) != 0) {
         TypeRefSetInvalid(outType);
         return -1;
     }
     return ParseTypeRefFromConstEvalTypeId(c, typeId, outType);
 }
 
-int AddNodeRef(SLCBackendC* c, SLNodeRef** arr, uint32_t* len, uint32_t* cap, int32_t nodeId) {
+int AddNodeRef(HOPCBackendC* c, HOPNodeRef** arr, uint32_t* len, uint32_t* cap, int32_t nodeId) {
     if (EnsureCapArena(
             &c->arena,
             (void**)arr,
             cap,
             *len + 1u,
-            sizeof(SLNodeRef),
-            (uint32_t)_Alignof(SLNodeRef))
+            sizeof(HOPNodeRef),
+            (uint32_t)_Alignof(HOPNodeRef))
         != 0)
     {
         return -1;
@@ -2416,8 +2421,8 @@ int AddNodeRef(SLCBackendC* c, SLNodeRef** arr, uint32_t* len, uint32_t* cap, in
     return 0;
 }
 
-static int IsNodeImportedSurface(const SLCBackendC* c, int32_t nodeId) {
-    const SLAstNode* n = NodeAt(c, nodeId);
+static int IsNodeImportedSurface(const HOPCBackendC* c, int32_t nodeId) {
+    const HOPAstNode* n = NodeAt(c, nodeId);
     if (n == NULL || c->options == NULL || c->options->emitNodeStartOffsetEnabled == 0) {
         return 0;
     }
@@ -2425,11 +2430,11 @@ static int IsNodeImportedSurface(const SLCBackendC* c, int32_t nodeId) {
 }
 
 static int CollectDeclSetsFromNode(
-    SLCBackendC* c, int32_t nodeId, int isNested, int inheritedExported) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    uint32_t         start;
-    uint32_t         end;
-    int              isExported;
+    HOPCBackendC* c, int32_t nodeId, int isNested, int inheritedExported) {
+    const HOPAstNode* n = NodeAt(c, nodeId);
+    uint32_t          start;
+    uint32_t          end;
+    int               isExported;
     if (n == NULL || !IsDeclKind(n->kind)) {
         return 0;
     }
@@ -2442,16 +2447,16 @@ static int CollectDeclSetsFromNode(
             return -1;
         }
     }
-    if ((n->kind == SLAst_VAR || n->kind == SLAst_CONST)
+    if ((n->kind == HOPAst_VAR || n->kind == HOPAst_CONST)
         && NodeAt(c, AstFirstChild(&c->ast, nodeId)) != NULL
-        && NodeAt(c, AstFirstChild(&c->ast, nodeId))->kind == SLAst_NAME_LIST)
+        && NodeAt(c, AstFirstChild(&c->ast, nodeId))->kind == HOPAst_NAME_LIST)
     {
         int32_t  nameList = AstFirstChild(&c->ast, nodeId);
         uint32_t i;
         uint32_t nameCount = ListCount(&c->ast, nameList);
         for (i = 0; i < nameCount; i++) {
-            int32_t          nameNode = ListItemAt(&c->ast, nameList, i);
-            const SLAstNode* name = NodeAt(c, nameNode);
+            int32_t           nameNode = ListItemAt(&c->ast, nameList, i);
+            const HOPAstNode* name = NodeAt(c, nameNode);
             if (name == NULL) {
                 return -1;
             }
@@ -2479,10 +2484,10 @@ static int CollectDeclSetsFromNode(
         }
     }
 
-    if (n->kind == SLAst_STRUCT || n->kind == SLAst_UNION) {
+    if (n->kind == HOPAst_STRUCT || n->kind == HOPAst_UNION) {
         int32_t child = AstFirstChild(&c->ast, nodeId);
         while (child >= 0) {
-            const SLAstNode* ch = NodeAt(c, child);
+            const HOPAstNode* ch = NodeAt(c, child);
             if (ch != NULL && IsTypeDeclKind(ch->kind)
                 && CollectDeclSetsFromNode(c, child, 1, isExported) != 0)
             {
@@ -2494,7 +2499,7 @@ static int CollectDeclSetsFromNode(
     return 0;
 }
 
-int CollectDeclSets(SLCBackendC* c) {
+int CollectDeclSets(HOPCBackendC* c) {
     int32_t child = AstFirstChild(&c->ast, c->ast.root);
     while (child >= 0) {
         if (CollectDeclSetsFromNode(c, child, 0, 0) != 0) {
@@ -2505,7 +2510,7 @@ int CollectDeclSets(SLCBackendC* c) {
     return 0;
 }
 
-const SLFnTypeAlias* _Nullable FindFnTypeAliasByName(const SLCBackendC* c, const char* name) {
+const HOPFnTypeAlias* _Nullable FindFnTypeAliasByName(const HOPCBackendC* c, const char* name) {
     uint32_t i;
     for (i = 0; i < c->fnTypeAliasLen; i++) {
         if (StrEq(c->fnTypeAliases[i].aliasName, name)) {
@@ -2516,17 +2521,17 @@ const SLFnTypeAlias* _Nullable FindFnTypeAliasByName(const SLCBackendC* c, const
 }
 
 int EnsureFnTypeAlias(
-    SLCBackendC* c,
-    SLTypeRef    returnType,
-    SLTypeRef* _Nullable paramTypes,
+    HOPCBackendC* c,
+    HOPTypeRef    returnType,
+    HOPTypeRef* _Nullable paramTypes,
     uint32_t     paramLen,
     int          isVariadic,
     const char** outAliasName) {
     uint32_t i;
     for (i = 0; i < c->fnTypeAliasLen; i++) {
-        const SLFnTypeAlias* alias = &c->fnTypeAliases[i];
-        uint32_t             p;
-        int                  same = 1;
+        const HOPFnTypeAlias* alias = &c->fnTypeAliases[i];
+        uint32_t              p;
+        int                   same = 1;
         if (!TypeRefEqual(&alias->returnType, &returnType) || alias->paramLen != paramLen
             || alias->isVariadic != (uint8_t)(isVariadic ? 1 : 0))
         {
@@ -2545,13 +2550,15 @@ int EnsureFnTypeAlias(
     }
 
     {
-        SLTypeRef* paramCopy = NULL;
-        char*      aliasName;
-        SLBuf      b = { 0 };
+        HOPTypeRef* paramCopy = NULL;
+        char*       aliasName;
+        HOPBuf      b = { 0 };
         if (paramLen > 0) {
             uint32_t p;
-            paramCopy = (SLTypeRef*)SLArenaAlloc(
-                &c->arena, (uint32_t)(sizeof(SLTypeRef) * paramLen), (uint32_t)_Alignof(SLTypeRef));
+            paramCopy = (HOPTypeRef*)HOPArenaAlloc(
+                &c->arena,
+                (uint32_t)(sizeof(HOPTypeRef) * paramLen),
+                (uint32_t)_Alignof(HOPTypeRef));
             if (paramCopy == NULL) {
                 return -1;
             }
@@ -2560,7 +2567,7 @@ int EnsureFnTypeAlias(
             }
         }
         b.arena = &c->arena;
-        if (BufAppendCStr(&b, "__sl_fn_t_") != 0 || BufAppendU32(&b, c->fnTypeAliasLen) != 0) {
+        if (BufAppendCStr(&b, "__hop_fn_t_") != 0 || BufAppendU32(&b, c->fnTypeAliasLen) != 0) {
             return -1;
         }
         aliasName = BufFinish(&b);
@@ -2572,8 +2579,8 @@ int EnsureFnTypeAlias(
                 (void**)&c->fnTypeAliases,
                 &c->fnTypeAliasCap,
                 c->fnTypeAliasLen + 1u,
-                sizeof(SLFnTypeAlias),
-                (uint32_t)_Alignof(SLFnTypeAlias))
+                sizeof(HOPFnTypeAlias),
+                (uint32_t)_Alignof(HOPFnTypeAlias))
             != 0)
         {
             return -1;
@@ -2592,19 +2599,19 @@ int EnsureFnTypeAlias(
     }
 }
 
-const char* _Nullable TupleFieldName(SLCBackendC* c, uint32_t index) {
-    SLBuf b = { 0 };
+const char* _Nullable TupleFieldName(HOPCBackendC* c, uint32_t index) {
+    HOPBuf b = { 0 };
     b.arena = &c->arena;
-    if (BufAppendCStr(&b, "__sl_t") != 0 || BufAppendU32(&b, index) != 0) {
+    if (BufAppendCStr(&b, "__hop_t") != 0 || BufAppendU32(&b, index) != 0) {
         return NULL;
     }
     return BufFinish(&b);
 }
 
 static int ParseTypeRefFromActiveTypecheck(
-    SLCBackendC* c, int32_t nodeId, SLTypeRef* outType, int* outHandled) {
-    int32_t          typeId = -1;
-    const SLAstNode* n;
+    HOPCBackendC* c, int32_t nodeId, HOPTypeRef* outType, int* outHandled) {
+    int32_t           typeId = -1;
+    const HOPAstNode* n;
     if (outHandled != NULL) {
         *outHandled = 0;
     }
@@ -2619,23 +2626,23 @@ static int ParseTypeRefFromActiveTypecheck(
         return 0;
     }
     n = NodeAt(c, nodeId);
-    if (n != NULL && n->kind == SLAst_TYPE_NAME && AstFirstChild(&c->ast, nodeId) < 0
+    if (n != NULL && n->kind == HOPAst_TYPE_NAME && AstFirstChild(&c->ast, nodeId) < 0
         && (c->activeTcFuncIndex != UINT32_MAX || c->activeTcNamedTypeIndex >= 0))
     {
-        SLTypeCheckCtx* tc = &c->constEval->tc;
-        uint32_t        paramArgStart = tc->activeGenericArgStart;
-        uint32_t        concreteArgStart = tc->activeGenericArgStart;
-        uint16_t        argCount = tc->activeGenericArgCount;
-        uint16_t        i;
+        HOPTypeCheckCtx* tc = &c->constEval->tc;
+        uint32_t         paramArgStart = tc->activeGenericArgStart;
+        uint32_t         concreteArgStart = tc->activeGenericArgStart;
+        uint16_t         argCount = tc->activeGenericArgCount;
+        uint16_t         i;
         if (c->activeTcFuncIndex != UINT32_MAX) {
-            const SLTCFunction* fn = &tc->funcs[c->activeTcFuncIndex];
+            const HOPTCFunction* fn = &tc->funcs[c->activeTcFuncIndex];
             concreteArgStart = fn->templateArgStart;
             argCount = fn->templateArgCount;
             if (fn->templateRootFuncIndex >= 0) {
                 paramArgStart = tc->funcs[(uint32_t)fn->templateRootFuncIndex].templateArgStart;
             }
         } else {
-            const SLTCNamedType* nt = &tc->namedTypes[(uint32_t)c->activeTcNamedTypeIndex];
+            const HOPTCNamedType* nt = &tc->namedTypes[(uint32_t)c->activeTcNamedTypeIndex];
             concreteArgStart = nt->templateArgStart;
             argCount = nt->templateArgCount;
             if (nt->templateRootNamedIndex >= 0) {
@@ -2646,7 +2653,7 @@ static int ParseTypeRefFromActiveTypecheck(
         for (i = 0; i < argCount; i++) {
             int32_t paramTypeId = tc->genericArgTypes[paramArgStart + i];
             if (paramTypeId >= 0 && (uint32_t)paramTypeId < tc->typeLen
-                && tc->types[paramTypeId].kind == SLTCType_TYPE_PARAM && n->dataEnd >= n->dataStart
+                && tc->types[paramTypeId].kind == HOPTCType_TYPE_PARAM && n->dataEnd >= n->dataStart
                 && tc->types[paramTypeId].nameEnd >= tc->types[paramTypeId].nameStart
                 && n->dataEnd - n->dataStart
                        == tc->types[paramTypeId].nameEnd - tc->types[paramTypeId].nameStart
@@ -2667,11 +2674,11 @@ static int ParseTypeRefFromActiveTypecheck(
             }
         }
     }
-    if (SLTCResolveTypeNode(&c->constEval->tc, nodeId, &typeId) != 0) {
+    if (HOPTCResolveTypeNode(&c->constEval->tc, nodeId, &typeId) != 0) {
         return 0;
     }
     if (typeId < 0 || (uint32_t)typeId >= c->constEval->tc.typeLen
-        || c->constEval->tc.types[typeId].kind == SLTCType_TYPE_PARAM)
+        || c->constEval->tc.types[typeId].kind == HOPTCType_TYPE_PARAM)
     {
         return 0;
     }
@@ -2682,16 +2689,16 @@ static int ParseTypeRefFromActiveTypecheck(
     return 0;
 }
 
-int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
-    const SLAstNode* n = NodeAt(c, nodeId);
+int ParseTypeRef(HOPCBackendC* c, int32_t nodeId, HOPTypeRef* outType) {
+    const HOPAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
         TypeRefSetInvalid(outType);
         return -1;
     }
     switch (n->kind) {
-        case SLAst_TYPE_NAME: {
-            SLTypeRef reflectedType;
-            int       handled = 0;
+        case HOPAst_TYPE_NAME: {
+            HOPTypeRef reflectedType;
+            int        handled = 0;
             if (ParseTypeRefFromActiveTypecheck(c, nodeId, outType, &handled) != 0) {
                 return -1;
             }
@@ -2716,7 +2723,7 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 int resolvedConstType = ResolveTopLevelConstTypeValueBySlice(
                     c, n->dataStart, n->dataEnd, &reflectedType);
                 if (resolvedConstType < 0) {
-                    SetDiagNode(c, nodeId, SLDiag_CODEGEN_INTERNAL);
+                    SetDiagNode(c, nodeId, HOPDiag_CODEGEN_INTERNAL);
                     return -1;
                 }
                 if (resolvedConstType > 0) {
@@ -2733,11 +2740,11 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 char* normalizedDouble = NULL;
                 const char* name = ResolveTypeNameInScope(c, nodeId, n->dataStart, n->dataEnd);
                 if (normalized == NULL) {
-                    SetDiagNode(c, nodeId, SLDiag_ARENA_OOM);
+                    SetDiagNode(c, nodeId, HOPDiag_ARENA_OOM);
                     return -1;
                 }
                 if (!IsBuiltinType(normalized)) {
-                    const SLNameMap* map = FindNameByCName(c, name);
+                    const HOPNameMap* map = FindNameByCName(c, name);
                     if (map == NULL || !IsTypeDeclKind(map->kind)) {
                         map = FindNameByCString(c, normalized);
                     }
@@ -2753,18 +2760,18 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                         normalizedDouble = DupAndReplaceDotsDouble(
                             c, c->unit->source, n->dataStart, n->dataEnd);
                         if (normalizedDouble == NULL) {
-                            SetDiagNode(c, nodeId, SLDiag_ARENA_OOM);
+                            SetDiagNode(c, nodeId, HOPDiag_ARENA_OOM);
                             return -1;
                         }
                         map = FindNameByCString(c, normalizedDouble);
                     }
                     if (map == NULL || !IsTypeDeclKind(map->kind)) {
-                        SetDiag(c->diag, SLDiag_UNKNOWN_TYPE, n->dataStart, n->dataEnd);
+                        SetDiag(c->diag, HOPDiag_UNKNOWN_TYPE, n->dataStart, n->dataEnd);
                         return -1;
                     }
                 }
                 if (name == NULL) {
-                    SetDiagNode(c, nodeId, SLDiag_CODEGEN_INTERNAL);
+                    SetDiagNode(c, nodeId, HOPDiag_CODEGEN_INTERNAL);
                     return -1;
                 }
                 TypeRefSetScalar(outType, name);
@@ -2772,17 +2779,17 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             }
             return 0;
         }
-        case SLAst_TYPE_ANON_STRUCT:
-        case SLAst_TYPE_ANON_UNION:  {
+        case HOPAst_TYPE_ANON_STRUCT:
+        case HOPAst_TYPE_ANON_UNION:  {
             int32_t     fieldNode = AstFirstChild(&c->ast, nodeId);
             const char* fieldNames[256];
-            SLTypeRef   fieldTypes[256];
+            HOPTypeRef  fieldTypes[256];
             uint32_t    fieldCount = 0;
             const char* anonName;
             while (fieldNode >= 0) {
-                const SLAstNode* field = NodeAt(c, fieldNode);
-                int32_t          typeNode;
-                if (field == NULL || field->kind != SLAst_FIELD) {
+                const HOPAstNode* field = NodeAt(c, fieldNode);
+                int32_t           typeNode;
+                if (field == NULL || field->kind != HOPAst_FIELD) {
                     return -1;
                 }
                 if (fieldCount >= (uint32_t)(sizeof(fieldNames) / sizeof(fieldNames[0]))) {
@@ -2803,7 +2810,7 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             }
             if (EnsureAnonTypeByFields(
                     c,
-                    n->kind == SLAst_TYPE_ANON_UNION,
+                    n->kind == HOPAst_TYPE_ANON_UNION,
                     fieldNames,
                     fieldTypes,
                     fieldCount,
@@ -2815,26 +2822,26 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             TypeRefSetScalar(outType, anonName);
             return 0;
         }
-        case SLAst_TYPE_PTR:
-        case SLAst_TYPE_REF:
-        case SLAst_TYPE_MUTREF: {
-            int32_t   child = AstFirstChild(&c->ast, nodeId);
-            SLTypeRef childType;
-            int       isReadOnlyRef = (n->kind == SLAst_TYPE_REF);
-            int       isRef = (n->kind == SLAst_TYPE_REF || n->kind == SLAst_TYPE_MUTREF);
+        case HOPAst_TYPE_PTR:
+        case HOPAst_TYPE_REF:
+        case HOPAst_TYPE_MUTREF: {
+            int32_t    child = AstFirstChild(&c->ast, nodeId);
+            HOPTypeRef childType;
+            int        isReadOnlyRef = (n->kind == HOPAst_TYPE_REF);
+            int        isRef = (n->kind == HOPAst_TYPE_REF || n->kind == HOPAst_TYPE_MUTREF);
             if (ParseTypeRef(c, child, &childType) != 0) {
                 return -1;
             }
-            if (childType.containerKind == SLTypeContainer_ARRAY
-                || childType.containerKind == SLTypeContainer_SLICE_RO
-                || childType.containerKind == SLTypeContainer_SLICE_MUT)
+            if (childType.containerKind == HOPTypeContainer_ARRAY
+                || childType.containerKind == HOPTypeContainer_SLICE_RO
+                || childType.containerKind == HOPTypeContainer_SLICE_MUT)
             {
                 childType.containerPtrDepth++;
-                if (childType.containerKind == SLTypeContainer_SLICE_RO
-                    || childType.containerKind == SLTypeContainer_SLICE_MUT)
+                if (childType.containerKind == HOPTypeContainer_SLICE_RO
+                    || childType.containerKind == HOPTypeContainer_SLICE_MUT)
                 {
                     childType.containerKind =
-                        isRef ? SLTypeContainer_SLICE_RO : SLTypeContainer_SLICE_MUT;
+                        isRef ? HOPTypeContainer_SLICE_RO : HOPTypeContainer_SLICE_MUT;
                 }
                 if (isRef) {
                     childType.readOnly = isReadOnlyRef;
@@ -2852,23 +2859,23 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             *outType = childType;
             return 0;
         }
-        case SLAst_TYPE_ARRAY: {
-            int32_t   child = AstFirstChild(&c->ast, nodeId);
-            int32_t   lenNode = AstNextSibling(&c->ast, child);
-            SLTypeRef elemType;
-            int64_t   lenValue = 0;
-            int       lenIsConst = 0;
-            uint32_t  len = 0;
+        case HOPAst_TYPE_ARRAY: {
+            int32_t    child = AstFirstChild(&c->ast, nodeId);
+            int32_t    lenNode = AstNextSibling(&c->ast, child);
+            HOPTypeRef elemType;
+            int64_t    lenValue = 0;
+            int        lenIsConst = 0;
+            uint32_t   len = 0;
             if (ParseTypeRef(c, child, &elemType) != 0) {
                 return -1;
             }
-            if (elemType.containerKind != SLTypeContainer_SCALAR) {
+            if (elemType.containerKind != HOPTypeContainer_SCALAR) {
                 TypeRefSetInvalid(outType);
                 return -1;
             }
             if (lenNode < 0) {
                 if (ParseArrayLenLiteral(c->unit->source, n->dataStart, n->dataEnd, &len) != 0) {
-                    SetDiagNode(c, nodeId, SLDiag_CODEGEN_INTERNAL);
+                    SetDiagNode(c, nodeId, HOPDiag_CODEGEN_INTERNAL);
                     TypeRefSetInvalid(outType);
                     return -1;
                 }
@@ -2876,13 +2883,13 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                 if (EvalConstIntExpr(c, lenNode, &lenValue, &lenIsConst) != 0 || !lenIsConst
                     || lenValue < 0 || lenValue > (int64_t)UINT32_MAX)
                 {
-                    SetDiagNode(c, lenNode, SLDiag_CODEGEN_INTERNAL);
+                    SetDiagNode(c, lenNode, HOPDiag_CODEGEN_INTERNAL);
                     TypeRefSetInvalid(outType);
                     return -1;
                 }
                 len = (uint32_t)lenValue;
             }
-            elemType.containerKind = SLTypeContainer_ARRAY;
+            elemType.containerKind = HOPTypeContainer_ARRAY;
             elemType.containerPtrDepth = 0;
             elemType.arrayLen = len;
             elemType.hasArrayLen = 1;
@@ -2890,13 +2897,13 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             *outType = elemType;
             return 0;
         }
-        case SLAst_TYPE_VARRAY: {
-            int32_t   child = AstFirstChild(&c->ast, nodeId);
-            SLTypeRef elemType;
+        case HOPAst_TYPE_VARRAY: {
+            int32_t    child = AstFirstChild(&c->ast, nodeId);
+            HOPTypeRef elemType;
             if (ParseTypeRef(c, child, &elemType) != 0) {
                 return -1;
             }
-            if (elemType.containerKind != SLTypeContainer_SCALAR) {
+            if (elemType.containerKind != HOPTypeContainer_SCALAR) {
                 TypeRefSetInvalid(outType);
                 return -1;
             }
@@ -2904,70 +2911,70 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             *outType = elemType;
             return 0;
         }
-        case SLAst_TYPE_SLICE:
-        case SLAst_TYPE_MUTSLICE: {
-            int32_t   child = AstFirstChild(&c->ast, nodeId);
-            SLTypeRef elemType;
+        case HOPAst_TYPE_SLICE:
+        case HOPAst_TYPE_MUTSLICE: {
+            int32_t    child = AstFirstChild(&c->ast, nodeId);
+            HOPTypeRef elemType;
             if (ParseTypeRef(c, child, &elemType) != 0) {
                 return -1;
             }
-            if (elemType.containerKind != SLTypeContainer_SCALAR) {
+            if (elemType.containerKind != HOPTypeContainer_SCALAR) {
                 TypeRefSetInvalid(outType);
                 return -1;
             }
             elemType.containerKind =
-                n->kind == SLAst_TYPE_MUTSLICE
-                    ? SLTypeContainer_SLICE_MUT
-                    : SLTypeContainer_SLICE_RO;
+                n->kind == HOPAst_TYPE_MUTSLICE
+                    ? HOPTypeContainer_SLICE_MUT
+                    : HOPTypeContainer_SLICE_RO;
             elemType.containerPtrDepth = 0;
             elemType.hasArrayLen = 0;
             elemType.arrayLen = 0;
-            elemType.readOnly = n->kind == SLAst_TYPE_MUTSLICE ? 0 : 1;
+            elemType.readOnly = n->kind == HOPAst_TYPE_MUTSLICE ? 0 : 1;
             *outType = elemType;
             return 0;
         }
-        case SLAst_TYPE_OPTIONAL: {
+        case HOPAst_TYPE_OPTIONAL: {
             int32_t child = AstFirstChild(&c->ast, nodeId);
             if (ParseTypeRef(c, child, outType) != 0) {
                 return -1;
             }
             outType->isOptional = 1;
             {
-                SLTypeRef lowered;
+                HOPTypeRef lowered;
                 if (TypeRefLowerForStorage(c, outType, &lowered) != 0) {
                     return -1;
                 }
             }
             return 0;
         }
-        case SLAst_TYPE_FN: {
+        case HOPAst_TYPE_FN: {
             int32_t     child = AstFirstChild(&c->ast, nodeId);
-            SLTypeRef   returnType;
-            SLTypeRef*  paramTypes = NULL;
+            HOPTypeRef  returnType;
+            HOPTypeRef* paramTypes = NULL;
             uint32_t    paramLen = 0;
             uint32_t    paramCap = 0;
             int         isVariadic = 0;
             const char* aliasName;
             TypeRefSetScalar(&returnType, "void");
             while (child >= 0) {
-                const SLAstNode* ch = NodeAt(c, child);
+                const HOPAstNode* ch = NodeAt(c, child);
                 if (ch != NULL && ch->flags == 1) {
                     if (ParseTypeRef(c, child, &returnType) != 0) {
                         return -1;
                     }
                 } else {
-                    SLTypeRef paramType;
+                    HOPTypeRef paramType;
                     if (ParseTypeRef(c, child, &paramType) != 0) {
                         return -1;
                     }
-                    if (ch != NULL && (ch->flags & SLAstFlag_PARAM_VARIADIC) != 0) {
+                    if (ch != NULL && (ch->flags & HOPAstFlag_PARAM_VARIADIC) != 0) {
                         if (isVariadic) {
                             return -1;
                         }
-                        if (paramType.containerKind != SLTypeContainer_SCALAR) {
+                        if (paramType.containerKind != HOPTypeContainer_SCALAR) {
                             return -1;
                         }
-                        paramType.containerKind = SLTypeContainer_SLICE_RO;
+                        paramType.containerKind = HOPTypeContainer_SLICE_RO;
                         paramType.containerPtrDepth = 0;
                         paramType.hasArrayLen = 0;
                         paramType.arrayLen = 0;
@@ -2982,8 +2989,8 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
                                 (void**)&paramTypes,
                                 &paramCap,
                                 paramLen + 1u,
-                                sizeof(SLTypeRef),
-                                (uint32_t)_Alignof(SLTypeRef))
+                                sizeof(HOPTypeRef),
+                                (uint32_t)_Alignof(HOPTypeRef))
                             != 0)
                         {
                             return -1;
@@ -3000,10 +3007,10 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
             TypeRefSetScalar(outType, aliasName);
             return 0;
         }
-        case SLAst_TYPE_TUPLE: {
+        case HOPAst_TYPE_TUPLE: {
             int32_t     child = AstFirstChild(&c->ast, nodeId);
             const char* fieldNames[256];
-            SLTypeRef   fieldTypes[256];
+            HOPTypeRef  fieldTypes[256];
             uint32_t    fieldCount = 0;
             const char* anonName = NULL;
             while (child >= 0) {
@@ -3035,22 +3042,22 @@ int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType) {
 }
 
 int AddFnSig(
-    SLCBackendC* c,
-    const char*  slName,
-    const char*  baseCName,
-    int32_t      nodeId,
-    SLTypeRef    returnType,
-    SLTypeRef* _Nullable paramTypes,
+    HOPCBackendC* c,
+    const char*   hopName,
+    const char*   baseCName,
+    int32_t       nodeId,
+    HOPTypeRef    returnType,
+    HOPTypeRef* _Nullable paramTypes,
     char** _Nullable paramNames,
     uint8_t* _Nullable paramFlags,
-    uint32_t  paramLen,
-    int       isVariadic,
-    int       hasContext,
-    SLTypeRef contextType,
-    uint16_t  sigFlags,
-    uint32_t  tcFuncIndex,
-    uint32_t  packArgStart,
-    uint32_t  packArgCount,
+    uint32_t   paramLen,
+    int        isVariadic,
+    int        hasContext,
+    HOPTypeRef contextType,
+    uint16_t   sigFlags,
+    uint32_t   tcFuncIndex,
+    uint32_t   packArgStart,
+    uint32_t   packArgCount,
     char* _Nullable packParamName) {
     const char* cName = baseCName;
     uint32_t    i;
@@ -3058,7 +3065,7 @@ int AddFnSig(
     for (i = 0; i < c->fnSigLen; i++) {
         uint32_t p;
         int      sameSig = 1;
-        if (!StrEq(c->fnSigs[i].slName, slName) || c->fnSigs[i].paramLen != paramLen
+        if (!StrEq(c->fnSigs[i].hopName, hopName) || c->fnSigs[i].paramLen != paramLen
             || !TypeRefEqual(&c->fnSigs[i].returnType, &returnType))
         {
             continue;
@@ -3097,8 +3104,8 @@ int AddFnSig(
                     (void**)&c->fnNodeNames,
                     &c->fnNodeNameCap,
                     c->fnNodeNameLen + 1u,
-                    sizeof(SLFnNodeName),
-                    (uint32_t)_Alignof(SLFnNodeName))
+                    sizeof(HOPFnNodeName),
+                    (uint32_t)_Alignof(HOPFnNodeName))
                 != 0)
             {
                 return -1;
@@ -3114,7 +3121,7 @@ int AddFnSig(
         if (StrEq(c->fnSigs[i].cName, cName)) {
             uint32_t suffix = 1;
             while (1) {
-                SLBuf    b = { 0 };
+                HOPBuf   b = { 0 };
                 char*    candidate;
                 uint32_t j;
                 int      used = 0;
@@ -3149,13 +3156,13 @@ int AddFnSig(
             (void**)&c->fnSigs,
             &c->fnSigCap,
             c->fnSigLen + 1u,
-            sizeof(SLFnSig),
-            (uint32_t)_Alignof(SLFnSig))
+            sizeof(HOPFnSig),
+            (uint32_t)_Alignof(HOPFnSig))
         != 0)
     {
         return -1;
     }
-    c->fnSigs[c->fnSigLen].slName = (char*)slName;
+    c->fnSigs[c->fnSigLen].hopName = (char*)hopName;
     c->fnSigs[c->fnSigLen].cName = (char*)cName;
     c->fnSigs[c->fnSigLen].nodeId = nodeId;
     c->fnSigs[c->fnSigLen].tcFuncIndex = tcFuncIndex;
@@ -3179,8 +3186,8 @@ int AddFnSig(
             (void**)&c->fnNodeNames,
             &c->fnNodeNameCap,
             c->fnNodeNameLen + 1u,
-            sizeof(SLFnNodeName),
-            (uint32_t)_Alignof(SLFnNodeName))
+            sizeof(HOPFnNodeName),
+            (uint32_t)_Alignof(HOPFnNodeName))
         != 0)
     {
         return -1;
@@ -3192,21 +3199,21 @@ int AddFnSig(
 }
 
 int AddFieldInfo(
-    SLCBackendC* c,
-    const char*  ownerType,
-    const char*  fieldName,
+    HOPCBackendC* c,
+    const char*   ownerType,
+    const char*   fieldName,
     const char* _Nullable lenFieldName,
-    int32_t   defaultExprNode,
-    int       isDependent,
-    int       isEmbedded,
-    SLTypeRef type) {
+    int32_t    defaultExprNode,
+    int        isDependent,
+    int        isEmbedded,
+    HOPTypeRef type) {
     if (EnsureCapArena(
             &c->arena,
             (void**)&c->fieldInfos,
             &c->fieldInfoCap,
             c->fieldInfoLen + 1u,
-            sizeof(SLFieldInfo),
-            (uint32_t)_Alignof(SLFieldInfo))
+            sizeof(HOPFieldInfo),
+            (uint32_t)_Alignof(HOPFieldInfo))
         != 0)
     {
         return -1;
@@ -3222,7 +3229,7 @@ int AddFieldInfo(
     return 0;
 }
 
-int AppendTypeRefKey(SLBuf* b, const SLTypeRef* t) {
+int AppendTypeRefKey(HOPBuf* b, const HOPTypeRef* t) {
     if (t == NULL || !t->valid || t->baseName == NULL) {
         return BufAppendCStr(b, "!");
     }
@@ -3256,7 +3263,7 @@ int AppendTypeRefKey(SLBuf* b, const SLTypeRef* t) {
     return 0;
 }
 
-const SLAnonTypeInfo* _Nullable FindAnonTypeByKey(const SLCBackendC* c, const char* key) {
+const HOPAnonTypeInfo* _Nullable FindAnonTypeByKey(const HOPCBackendC* c, const char* key) {
     uint32_t i;
     for (i = 0; i < c->anonTypeLen; i++) {
         if (StrEq(c->anonTypes[i].key, key)) {
@@ -3266,7 +3273,7 @@ const SLAnonTypeInfo* _Nullable FindAnonTypeByKey(const SLCBackendC* c, const ch
     return NULL;
 }
 
-const SLAnonTypeInfo* _Nullable FindAnonTypeByCName(const SLCBackendC* c, const char* cName) {
+const HOPAnonTypeInfo* _Nullable FindAnonTypeByCName(const HOPCBackendC* c, const char* cName) {
     uint32_t i;
     for (i = 0; i < c->anonTypeLen; i++) {
         if (StrEq(c->anonTypes[i].cName, cName)) {
@@ -3277,7 +3284,7 @@ const SLAnonTypeInfo* _Nullable FindAnonTypeByCName(const SLCBackendC* c, const 
 }
 
 int IsTupleFieldName(const char* name, uint32_t index) {
-    const char* prefix = "__sl_t";
+    const char* prefix = "__hop_t";
     uint32_t    i = 0;
     uint32_t    n = index;
     char        digits[16];
@@ -3311,14 +3318,14 @@ int IsTupleFieldName(const char* name, uint32_t index) {
     return 1;
 }
 
-int TypeRefTupleInfo(const SLCBackendC* c, const SLTypeRef* t, const SLAnonTypeInfo** outInfo) {
-    const SLAnonTypeInfo* info;
-    uint32_t              i;
+int TypeRefTupleInfo(const HOPCBackendC* c, const HOPTypeRef* t, const HOPAnonTypeInfo** outInfo) {
+    const HOPAnonTypeInfo* info;
+    uint32_t               i;
     if (outInfo != NULL) {
         *outInfo = NULL;
     }
     if (t == NULL || !t->valid || t->baseName == NULL || t->ptrDepth != 0 || t->isOptional
-        || t->containerKind != SLTypeContainer_SCALAR || t->containerPtrDepth != 0)
+        || t->containerKind != HOPTypeContainer_SCALAR || t->containerPtrDepth != 0)
     {
         return 0;
     }
@@ -3327,7 +3334,7 @@ int TypeRefTupleInfo(const SLCBackendC* c, const SLTypeRef* t, const SLAnonTypeI
         return 0;
     }
     for (i = 0; i < info->fieldCount; i++) {
-        const SLFieldInfo* f = &c->fieldInfos[info->fieldStart + i];
+        const HOPFieldInfo* f = &c->fieldInfos[info->fieldStart + i];
         if (!IsTupleFieldName(f->fieldName, i)) {
             return 0;
         }
@@ -3338,7 +3345,7 @@ int TypeRefTupleInfo(const SLCBackendC* c, const SLTypeRef* t, const SLAnonTypeI
     return 1;
 }
 
-int IsLocalAnonTypedefVisible(const SLCBackendC* c, const char* cName) {
+int IsLocalAnonTypedefVisible(const HOPCBackendC* c, const char* cName) {
     uint32_t i = c->localAnonTypedefLen;
     while (i > 0) {
         i--;
@@ -3349,7 +3356,7 @@ int IsLocalAnonTypedefVisible(const SLCBackendC* c, const char* cName) {
     return 0;
 }
 
-int MarkLocalAnonTypedefVisible(SLCBackendC* c, const char* cName) {
+int MarkLocalAnonTypedefVisible(HOPCBackendC* c, const char* cName) {
     if (IsLocalAnonTypedefVisible(c, cName)) {
         return 0;
     }
@@ -3368,15 +3375,15 @@ int MarkLocalAnonTypedefVisible(SLCBackendC* c, const char* cName) {
     return 0;
 }
 
-int IsAnonTypeNameVisible(const SLCBackendC* c, const char* cName) {
-    const SLAnonTypeInfo* info = FindAnonTypeByCName(c, cName);
-    if (info != NULL && (info->flags & SLAnonTypeFlag_EMITTED_GLOBAL) != 0) {
+int IsAnonTypeNameVisible(const HOPCBackendC* c, const char* cName) {
+    const HOPAnonTypeInfo* info = FindAnonTypeByCName(c, cName);
+    if (info != NULL && (info->flags & HOPAnonTypeFlag_EMITTED_GLOBAL) != 0) {
         return 1;
     }
     return IsLocalAnonTypedefVisible(c, cName);
 }
 
-int EmitAnonTypeDeclAtDepth(SLCBackendC* c, const SLAnonTypeInfo* t, uint32_t depth) {
+int EmitAnonTypeDeclAtDepth(HOPCBackendC* c, const HOPAnonTypeInfo* t, uint32_t depth) {
     uint32_t j;
     EmitIndent(c, depth);
     if (BufAppendCStr(&c->out, "typedef ") != 0
@@ -3386,7 +3393,7 @@ int EmitAnonTypeDeclAtDepth(SLCBackendC* c, const SLAnonTypeInfo* t, uint32_t de
         return -1;
     }
     for (j = 0; j < t->fieldCount; j++) {
-        const SLFieldInfo* f = &c->fieldInfos[t->fieldStart + j];
+        const HOPFieldInfo* f = &c->fieldInfos[t->fieldStart + j];
         EmitIndent(c, depth + 1u);
         if (EmitTypeRefWithName(c, &f->type, f->fieldName) != 0
             || BufAppendCStr(&c->out, ";\n") != 0)
@@ -3403,10 +3410,10 @@ int EmitAnonTypeDeclAtDepth(SLCBackendC* c, const SLAnonTypeInfo* t, uint32_t de
     return 0;
 }
 
-int EnsureAnonTypeVisible(SLCBackendC* c, const SLTypeRef* type, uint32_t depth) {
-    const SLAnonTypeInfo* info;
-    uint32_t              i;
-    if (type == NULL || !type->valid || type->containerKind != SLTypeContainer_SCALAR
+int EnsureAnonTypeVisible(HOPCBackendC* c, const HOPTypeRef* type, uint32_t depth) {
+    const HOPAnonTypeInfo* info;
+    uint32_t               i;
+    if (type == NULL || !type->valid || type->containerKind != HOPTypeContainer_SCALAR
         || type->containerPtrDepth != 0 || type->ptrDepth != 0 || type->isOptional
         || type->baseName == NULL)
     {
@@ -3416,13 +3423,13 @@ int EnsureAnonTypeVisible(SLCBackendC* c, const SLTypeRef* type, uint32_t depth)
     if (info == NULL) {
         return 0;
     }
-    if ((info->flags & SLAnonTypeFlag_EMITTED_GLOBAL) != 0
+    if ((info->flags & HOPAnonTypeFlag_EMITTED_GLOBAL) != 0
         || IsLocalAnonTypedefVisible(c, info->cName))
     {
         return 0;
     }
     for (i = 0; i < info->fieldCount; i++) {
-        const SLFieldInfo* f = &c->fieldInfos[info->fieldStart + i];
+        const HOPFieldInfo* f = &c->fieldInfos[info->fieldStart + i];
         if (EnsureAnonTypeVisible(c, &f->type, depth) != 0) {
             return -1;
         }
@@ -3431,7 +3438,7 @@ int EnsureAnonTypeVisible(SLCBackendC* c, const SLTypeRef* type, uint32_t depth)
         return -1;
     }
     if (depth == 0) {
-        ((SLAnonTypeInfo*)info)->flags |= SLAnonTypeFlag_EMITTED_GLOBAL;
+        ((HOPAnonTypeInfo*)info)->flags |= HOPAnonTypeFlag_EMITTED_GLOBAL;
         if (BufAppendChar(&c->out, '\n') != 0) {
             return -1;
         }
@@ -3442,14 +3449,14 @@ int EnsureAnonTypeVisible(SLCBackendC* c, const SLTypeRef* type, uint32_t depth)
 }
 
 int EnsureAnonTypeByFields(
-    SLCBackendC*     c,
-    int              isUnion,
-    const char**     fieldNames,
-    const SLTypeRef* fieldTypes,
-    uint32_t         fieldCount,
-    const char**     outCName) {
+    HOPCBackendC*     c,
+    int               isUnion,
+    const char**      fieldNames,
+    const HOPTypeRef* fieldTypes,
+    uint32_t          fieldCount,
+    const char**      outCName) {
     uint32_t i;
-    SLBuf    keyBuf = { 0 };
+    HOPBuf   keyBuf = { 0 };
     char*    key;
 
     keyBuf.arena = &c->arena;
@@ -3471,7 +3478,7 @@ int EnsureAnonTypeByFields(
         return -1;
     }
     {
-        const SLAnonTypeInfo* info = FindAnonTypeByKey(c, key);
+        const HOPAnonTypeInfo* info = FindAnonTypeByKey(c, key);
         if (info != NULL) {
             *outCName = info->cName;
             return 0;
@@ -3483,19 +3490,19 @@ int EnsureAnonTypeByFields(
             (void**)&c->anonTypes,
             &c->anonTypeCap,
             c->anonTypeLen + 1u,
-            sizeof(SLAnonTypeInfo),
-            (uint32_t)_Alignof(SLAnonTypeInfo))
+            sizeof(HOPAnonTypeInfo),
+            (uint32_t)_Alignof(HOPAnonTypeInfo))
         != 0)
     {
         return -1;
     }
 
     {
-        SLBuf    cNameBuf = { 0 };
+        HOPBuf   cNameBuf = { 0 };
         char*    cName;
         uint32_t fieldStart = c->fieldInfoLen;
         cNameBuf.arena = &c->arena;
-        if (BufAppendCStr(&cNameBuf, "__sl_anon_") != 0
+        if (BufAppendCStr(&cNameBuf, "__hop_anon_") != 0
             || (c->unit != NULL && c->unit->packageName != NULL
                 && (BufAppendCStr(&cNameBuf, c->unit->packageName) != 0
                     || BufAppendChar(&cNameBuf, '_') != 0))
@@ -3526,11 +3533,11 @@ int EnsureAnonTypeByFields(
     }
 }
 
-const SLFnSig* _Nullable FindFnSigBySlice(const SLCBackendC* c, uint32_t start, uint32_t end) {
-    const SLFnSig* found = NULL;
-    uint32_t       i;
+const HOPFnSig* _Nullable FindFnSigBySlice(const HOPCBackendC* c, uint32_t start, uint32_t end) {
+    const HOPFnSig* found = NULL;
+    uint32_t        i;
     for (i = 0; i < c->fnSigLen; i++) {
-        if (SliceEqName(c->unit->source, start, end, c->fnSigs[i].slName)) {
+        if (SliceEqName(c->unit->source, start, end, c->fnSigs[i].hopName)) {
             if (found != NULL) {
                 return NULL;
             }
@@ -3541,11 +3548,11 @@ const SLFnSig* _Nullable FindFnSigBySlice(const SLCBackendC* c, uint32_t start, 
 }
 
 uint32_t FindFnSigCandidatesBySlice(
-    const SLCBackendC* c, uint32_t start, uint32_t end, const SLFnSig** out, uint32_t cap) {
+    const HOPCBackendC* c, uint32_t start, uint32_t end, const HOPFnSig** out, uint32_t cap) {
     uint32_t i;
     uint32_t n = 0;
     for (i = 0; i < c->fnSigLen; i++) {
-        if (SliceEqName(c->unit->source, start, end, c->fnSigs[i].slName)) {
+        if (SliceEqName(c->unit->source, start, end, c->fnSigs[i].hopName)) {
             if (n < cap) {
                 out[n] = &c->fnSigs[i];
             }
@@ -3556,11 +3563,11 @@ uint32_t FindFnSigCandidatesBySlice(
 }
 
 uint32_t FindFnSigCandidatesByName(
-    const SLCBackendC* c, const char* slName, const SLFnSig** out, uint32_t cap) {
+    const HOPCBackendC* c, const char* hopName, const HOPFnSig** out, uint32_t cap) {
     uint32_t i;
     uint32_t n = 0;
     for (i = 0; i < c->fnSigLen; i++) {
-        if (StrEq(c->fnSigs[i].slName, slName)) {
+        if (StrEq(c->fnSigs[i].hopName, hopName)) {
             if (n < cap) {
                 out[n] = &c->fnSigs[i];
             }
@@ -3570,7 +3577,7 @@ uint32_t FindFnSigCandidatesByName(
     return n;
 }
 
-const char* _Nullable FindFnCNameByNodeId(const SLCBackendC* c, int32_t nodeId) {
+const char* _Nullable FindFnCNameByNodeId(const HOPCBackendC* c, int32_t nodeId) {
     uint32_t i;
     for (i = 0; i < c->fnNodeNameLen; i++) {
         if (c->fnNodeNames[i].nodeId == nodeId) {
@@ -3580,11 +3587,11 @@ const char* _Nullable FindFnCNameByNodeId(const SLCBackendC* c, int32_t nodeId) 
     return NULL;
 }
 
-const SLFnSig* _Nullable FindFnSigByNodeId(const SLCBackendC* c, int32_t nodeId) {
+const HOPFnSig* _Nullable FindFnSigByNodeId(const HOPCBackendC* c, int32_t nodeId) {
     uint32_t i;
     for (i = 0; i < c->fnSigLen; i++) {
         if (c->fnSigs[i].nodeId == nodeId
-            && (c->fnSigs[i].flags & SLFnSigFlag_TEMPLATE_INSTANCE) == 0)
+            && (c->fnSigs[i].flags & HOPFnSigFlag_TEMPLATE_INSTANCE) == 0)
         {
             return &c->fnSigs[i];
         }
@@ -3608,7 +3615,7 @@ const SLFnSig* _Nullable FindFnSigByNodeId(const SLCBackendC* c, int32_t nodeId)
 }
 
 uint32_t FindFnSigCandidatesByNodeId(
-    const SLCBackendC* c, int32_t nodeId, const SLFnSig** out, uint32_t cap) {
+    const HOPCBackendC* c, int32_t nodeId, const HOPFnSig** out, uint32_t cap) {
     uint32_t i;
     uint32_t n = 0;
     for (i = 0; i < c->fnSigLen; i++) {
@@ -3622,8 +3629,8 @@ uint32_t FindFnSigCandidatesByNodeId(
     return n;
 }
 
-const SLFieldInfo* _Nullable FindFieldInfo(
-    const SLCBackendC* c, const char* ownerType, uint32_t fieldStart, uint32_t fieldEnd) {
+const HOPFieldInfo* _Nullable FindFieldInfo(
+    const HOPCBackendC* c, const char* ownerType, uint32_t fieldStart, uint32_t fieldEnd) {
     uint32_t i;
     for (i = 0; i < c->fieldInfoLen; i++) {
         if (StrEq(c->fieldInfos[i].ownerType, ownerType)
@@ -3635,7 +3642,7 @@ const SLFieldInfo* _Nullable FindFieldInfo(
     return NULL;
 }
 
-const SLFieldInfo* _Nullable FindEmbeddedFieldInfo(const SLCBackendC* c, const char* ownerType) {
+const HOPFieldInfo* _Nullable FindEmbeddedFieldInfo(const HOPCBackendC* c, const char* ownerType) {
     uint32_t i;
     for (i = 0; i < c->fieldInfoLen; i++) {
         if (StrEq(c->fieldInfos[i].ownerType, ownerType) && c->fieldInfos[i].isEmbedded) {
@@ -3645,8 +3652,8 @@ const SLFieldInfo* _Nullable FindEmbeddedFieldInfo(const SLCBackendC* c, const c
     return NULL;
 }
 
-const SLFieldInfo* _Nullable FindFieldInfoByName(
-    const SLCBackendC* c, const char* ownerType, const char* fieldName) {
+const HOPFieldInfo* _Nullable FindFieldInfoByName(
+    const HOPCBackendC* c, const char* ownerType, const char* fieldName) {
     uint32_t i;
     for (i = 0; i < c->fieldInfoLen; i++) {
         if (StrEq(c->fieldInfos[i].ownerType, ownerType)
@@ -3659,7 +3666,7 @@ const SLFieldInfo* _Nullable FindFieldInfoByName(
 }
 
 const char* _Nullable CanonicalFieldOwnerType(
-    const SLCBackendC* c, const char* _Nullable ownerType) {
+    const HOPCBackendC* c, const char* _Nullable ownerType) {
     const char* canonical = ResolveScalarAliasBaseName(c, ownerType);
     if (canonical == NULL) {
         canonical = ownerType;
@@ -3667,36 +3674,36 @@ const char* _Nullable CanonicalFieldOwnerType(
     if (canonical == NULL) {
         return NULL;
     }
-    if (StrEq(canonical, "__sl_MemAllocator")) {
+    if (StrEq(canonical, "__hop_MemAllocator")) {
         return "builtin__MemAllocator";
     }
-    if (StrEq(canonical, "__sl_Logger")) {
+    if (StrEq(canonical, "__hop_Logger")) {
         return "builtin__Logger";
     }
-    if (StrEq(canonical, "__sl_Context")) {
+    if (StrEq(canonical, "__hop_Context")) {
         return "builtin__Context";
     }
-    if (StrEq(canonical, "__sl_PrintContext")) {
+    if (StrEq(canonical, "__hop_PrintContext")) {
         return "builtin__PrintContext";
     }
     return canonical;
 }
 
 int ResolveCoreStrFieldBySlice(
-    const SLCBackendC* c, uint32_t fieldStart, uint32_t fieldEnd, const SLFieldInfo** outField) {
-    static int         inited = 0;
-    static SLFieldInfo lenField;
-    static SLFieldInfo ptrField;
+    const HOPCBackendC* c, uint32_t fieldStart, uint32_t fieldEnd, const HOPFieldInfo** outField) {
+    static int          inited = 0;
+    static HOPFieldInfo lenField;
+    static HOPFieldInfo ptrField;
     if (!inited) {
         memset(&lenField, 0, sizeof(lenField));
         memset(&ptrField, 0, sizeof(ptrField));
         lenField.ownerType = "builtin__str";
         lenField.fieldName = "len";
-        TypeRefSetScalar(&lenField.type, "__sl_int");
+        TypeRefSetScalar(&lenField.type, "__hop_int");
 
         ptrField.ownerType = "builtin__str";
         ptrField.fieldName = "ptr";
-        TypeRefSetScalar(&ptrField.type, "__sl_u8");
+        TypeRefSetScalar(&ptrField.type, "__hop_u8");
         ptrField.type.ptrDepth = 1;
         inited = 1;
     }
@@ -3712,19 +3719,19 @@ int ResolveCoreStrFieldBySlice(
 }
 
 int ResolveFieldPathSingleSegment(
-    const SLCBackendC*  c,
-    const char*         ownerTypeIn,
-    uint32_t            fieldStart,
-    uint32_t            fieldEnd,
-    const SLFieldInfo** outPath,
-    uint32_t            cap,
-    uint32_t*           outLen,
-    const SLFieldInfo** _Nullable outField) {
-    const SLFieldInfo* direct;
-    const SLFieldInfo* embedded;
-    const char*        embeddedBaseName;
-    const char*        ownerType;
-    uint32_t           nestedLen = 0;
+    const HOPCBackendC*  c,
+    const char*          ownerTypeIn,
+    uint32_t             fieldStart,
+    uint32_t             fieldEnd,
+    const HOPFieldInfo** outPath,
+    uint32_t             cap,
+    uint32_t*            outLen,
+    const HOPFieldInfo** _Nullable outField) {
+    const HOPFieldInfo* direct;
+    const HOPFieldInfo* embedded;
+    const char*         embeddedBaseName;
+    const char*         ownerType;
+    uint32_t            nestedLen = 0;
 
     if (outLen == NULL || cap == 0u) {
         return -1;
@@ -3736,7 +3743,7 @@ int ResolveFieldPathSingleSegment(
     }
 
     if (IsStrBaseName(ownerType)) {
-        const SLFieldInfo* strField = NULL;
+        const HOPFieldInfo* strField = NULL;
         if (ResolveCoreStrFieldBySlice(c, fieldStart, fieldEnd, &strField) == 0) {
             outPath[0] = strField;
             *outLen = 1u;
@@ -3759,7 +3766,7 @@ int ResolveFieldPathSingleSegment(
 
     embedded = FindEmbeddedFieldInfo(c, ownerType);
     if (embedded == NULL || !embedded->type.valid
-        || embedded->type.containerKind != SLTypeContainer_SCALAR || embedded->type.ptrDepth != 0
+        || embedded->type.containerKind != HOPTypeContainer_SCALAR || embedded->type.ptrDepth != 0
         || embedded->type.containerPtrDepth != 0 || embedded->type.baseName == NULL)
     {
         return -1;
@@ -3821,25 +3828,25 @@ int FieldPathNextSegment(
 }
 
 int ResolveFieldPathBySlice(
-    const SLCBackendC*  c,
-    const char*         ownerType,
-    uint32_t            fieldStart,
-    uint32_t            fieldEnd,
-    const SLFieldInfo** outPath,
-    uint32_t            cap,
-    uint32_t*           outLen,
-    const SLFieldInfo** _Nullable outField) {
-    uint32_t           pos = fieldStart;
-    uint32_t           totalLen = 0;
-    const char*        curOwnerType = ownerType;
-    const SLFieldInfo* lastField = NULL;
+    const HOPCBackendC*  c,
+    const char*          ownerType,
+    uint32_t             fieldStart,
+    uint32_t             fieldEnd,
+    const HOPFieldInfo** outPath,
+    uint32_t             cap,
+    uint32_t*            outLen,
+    const HOPFieldInfo** _Nullable outField) {
+    uint32_t            pos = fieldStart;
+    uint32_t            totalLen = 0;
+    const char*         curOwnerType = ownerType;
+    const HOPFieldInfo* lastField = NULL;
 
     while (pos <= fieldEnd) {
-        const SLFieldInfo* segPath[64];
-        const SLFieldInfo* segField = NULL;
-        uint32_t           segLen = 0;
-        uint32_t           segStart = 0;
-        uint32_t           segEnd = 0;
+        const HOPFieldInfo* segPath[64];
+        const HOPFieldInfo* segField = NULL;
+        uint32_t            segLen = 0;
+        uint32_t            segStart = 0;
+        uint32_t            segEnd = 0;
         int      nextRc = FieldPathNextSegment(c->unit->source, fieldEnd, &pos, &segStart, &segEnd);
         uint32_t i;
         if (nextRc == 1) {
@@ -3872,7 +3879,7 @@ int ResolveFieldPathBySlice(
         lastField = segField;
 
         if (segField != NULL && segField->type.valid
-            && segField->type.containerKind == SLTypeContainer_SCALAR
+            && segField->type.containerKind == HOPTypeContainer_SCALAR
             && segField->type.ptrDepth == 0 && segField->type.containerPtrDepth == 0
             && segField->type.baseName != NULL && !segField->type.isOptional)
         {
@@ -3893,17 +3900,17 @@ int ResolveFieldPathBySlice(
 }
 
 int ResolveEmbeddedPathByNames(
-    const SLCBackendC*  c,
-    const char*         srcTypeName,
-    const char*         dstTypeName,
-    const SLFieldInfo** outPath,
-    uint32_t            cap,
-    uint32_t*           outLen) {
-    const SLFieldInfo* embedded;
-    const char*        curType;
-    const char*        dstCanonical;
-    uint32_t           n = 0;
-    uint32_t           guard = 0;
+    const HOPCBackendC*  c,
+    const char*          srcTypeName,
+    const char*          dstTypeName,
+    const HOPFieldInfo** outPath,
+    uint32_t             cap,
+    uint32_t*            outLen) {
+    const HOPFieldInfo* embedded;
+    const char*         curType;
+    const char*         dstCanonical;
+    uint32_t            n = 0;
+    uint32_t            guard = 0;
 
     if (outLen == NULL || srcTypeName == NULL || dstTypeName == NULL) {
         return -1;
@@ -3924,7 +3931,7 @@ int ResolveEmbeddedPathByNames(
         }
         embedded = FindEmbeddedFieldInfo(c, curType);
         if (embedded == NULL || !embedded->type.valid
-            || embedded->type.containerKind != SLTypeContainer_SCALAR
+            || embedded->type.containerKind != HOPTypeContainer_SCALAR
             || embedded->type.ptrDepth != 0 || embedded->type.containerPtrDepth != 0
             || embedded->type.baseName == NULL)
         {
@@ -3944,31 +3951,31 @@ int ResolveEmbeddedPathByNames(
     return -1;
 }
 
-static int TypeRefIsNamedPtr(const SLTypeRef* t, const char* name) {
-    return t != NULL && t->valid && t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth == 1
+static int TypeRefIsNamedPtr(const HOPTypeRef* t, const char* name) {
+    return t != NULL && t->valid && t->containerKind == HOPTypeContainer_SCALAR && t->ptrDepth == 1
         && t->baseName != NULL && StrEq(t->baseName, name);
 }
 
-static int TypeRefIsNamedValue(const SLTypeRef* t, const char* name) {
-    return t != NULL && t->valid && t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth == 0
+static int TypeRefIsNamedValue(const HOPTypeRef* t, const char* name) {
+    return t != NULL && t->valid && t->containerKind == HOPTypeContainer_SCALAR && t->ptrDepth == 0
         && t->baseName != NULL && StrEq(t->baseName, name);
 }
 
 static int FnSigIsNoContextAbiCallback(
-    const SLTypeRef* returnType, const SLTypeRef* paramTypes, uint32_t paramLen) {
+    const HOPTypeRef* returnType, const HOPTypeRef* paramTypes, uint32_t paramLen) {
     if (returnType == NULL || paramTypes == NULL) {
         return 0;
     }
     if (paramLen == 7
         && (TypeRefIsNamedPtr(&paramTypes[0], "builtin__MemAllocator")
-            || TypeRefIsNamedPtr(&paramTypes[0], "__sl_MemAllocator")
+            || TypeRefIsNamedPtr(&paramTypes[0], "__hop_MemAllocator")
             || TypeRefIsNamedPtr(&paramTypes[0], "MemAllocator")))
     {
         return 1;
     }
     if (paramLen == 4 && TypeRefIsNamedValue(returnType, "void")
         && (TypeRefIsNamedPtr(&paramTypes[0], "builtin__Logger")
-            || TypeRefIsNamedPtr(&paramTypes[0], "__sl_Logger")
+            || TypeRefIsNamedPtr(&paramTypes[0], "__hop_Logger")
             || TypeRefIsNamedPtr(&paramTypes[0], "Logger")))
     {
         return 1;
@@ -3976,22 +3983,22 @@ static int FnSigIsNoContextAbiCallback(
     return 0;
 }
 
-static int NodeSubtreeNeedsAmbientContext(SLCBackendC* c, int32_t nodeId) {
-    int32_t          child;
-    const SLAstNode* n = NodeAt(c, nodeId);
+static int NodeSubtreeNeedsAmbientContext(HOPCBackendC* c, int32_t nodeId) {
+    int32_t           child;
+    const HOPAstNode* n = NodeAt(c, nodeId);
     if (n == NULL) {
         return 0;
     }
-    if (n->kind == SLAst_NEW || n->kind == SLAst_DEL || n->kind == SLAst_CALL
-        || n->kind == SLAst_CALL_WITH_CONTEXT)
+    if (n->kind == HOPAst_NEW || n->kind == HOPAst_DEL || n->kind == HOPAst_CALL
+        || n->kind == HOPAst_CALL_WITH_CONTEXT)
     {
         return 1;
     }
-    if (n->kind == SLAst_FOR && (n->flags & SLAstFlag_FOR_IN) != 0) {
+    if (n->kind == HOPAst_FOR && (n->flags & HOPAstFlag_FOR_IN) != 0) {
         /* For-in lowering may synthesize iterator hook calls that need ambient context. */
         return 1;
     }
-    if (n->kind == SLAst_IDENT && SliceEq(c->unit->source, n->dataStart, n->dataEnd, "context")) {
+    if (n->kind == HOPAst_IDENT && SliceEq(c->unit->source, n->dataStart, n->dataEnd, "context")) {
         return 1;
     }
     child = AstFirstChild(&c->ast, nodeId);
@@ -4004,11 +4011,11 @@ static int NodeSubtreeNeedsAmbientContext(SLCBackendC* c, int32_t nodeId) {
     return 0;
 }
 
-int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    uint32_t         nameStart;
-    uint32_t         nameEnd;
-    const SLNameMap* mapName;
+int CollectFnAndFieldInfoFromNode(HOPCBackendC* c, int32_t nodeId) {
+    const HOPAstNode* n = NodeAt(c, nodeId);
+    uint32_t          nameStart;
+    uint32_t          nameEnd;
+    const HOPNameMap* mapName;
 
     if (n == NULL || !IsDeclKind(n->kind) || GetDeclNameSpan(c, nodeId, &nameStart, &nameEnd) != 0)
     {
@@ -4023,68 +4030,68 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
         return 0;
     }
 
-    if (n->kind == SLAst_FN) {
+    if (n->kind == HOPAst_FN) {
         if (CodegenCNodeHasTypeParams(c, nodeId)) {
             return 0;
         }
-        int32_t    child = AstFirstChild(&c->ast, nodeId);
-        SLTypeRef  returnType;
-        SLTypeRef* paramTypes = NULL;
-        char**     paramNames = NULL;
-        uint8_t*   paramFlags = NULL;
-        uint32_t   paramLen = 0;
-        uint32_t   paramTypeCap = 0;
-        uint32_t   paramNameCap = 0;
-        uint32_t   paramFlagCap = 0;
-        SLTypeRef  contextType;
-        int        isVariadic = 0;
-        int        hasAnytypeParam = 0;
-        int32_t    bodyNode = -1;
-        int        hasContext = 0;
+        int32_t     child = AstFirstChild(&c->ast, nodeId);
+        HOPTypeRef  returnType;
+        HOPTypeRef* paramTypes = NULL;
+        char**      paramNames = NULL;
+        uint8_t*    paramFlags = NULL;
+        uint32_t    paramLen = 0;
+        uint32_t    paramTypeCap = 0;
+        uint32_t    paramNameCap = 0;
+        uint32_t    paramFlagCap = 0;
+        HOPTypeRef  contextType;
+        int         isVariadic = 0;
+        int         hasAnytypeParam = 0;
+        int32_t     bodyNode = -1;
+        int         hasContext = 0;
         TypeRefSetScalar(&returnType, "void");
         TypeRefSetInvalid(&contextType);
         if (ResolveMainSemanticContextType(c, &contextType) != 0) {
             return -1;
         }
         while (child >= 0) {
-            const SLAstNode* ch = NodeAt(c, child);
-            if (ch != NULL && ch->kind == SLAst_PARAM) {
-                int32_t          typeNode = AstFirstChild(&c->ast, child);
-                SLTypeRef        paramType;
-                int              isAnytypeParam = 0;
-                uint8_t          pflags = 0;
-                const SLAstNode* typeAst = NodeAt(c, typeNode);
+            const HOPAstNode* ch = NodeAt(c, child);
+            if (ch != NULL && ch->kind == HOPAst_PARAM) {
+                int32_t           typeNode = AstFirstChild(&c->ast, child);
+                HOPTypeRef        paramType;
+                int               isAnytypeParam = 0;
+                uint8_t           pflags = 0;
+                const HOPAstNode* typeAst = NodeAt(c, typeNode);
                 if (ParseTypeRef(c, typeNode, &paramType) != 0) {
                     return -1;
                 }
-                if (typeAst != NULL && typeAst->kind == SLAst_TYPE_NAME
+                if (typeAst != NULL && typeAst->kind == HOPAst_TYPE_NAME
                     && SliceEq(c->unit->source, typeAst->dataStart, typeAst->dataEnd, "anytype"))
                 {
                     isAnytypeParam = 1;
                     hasAnytypeParam = 1;
                 }
-                if ((ch->flags & SLAstFlag_PARAM_VARIADIC) != 0) {
+                if ((ch->flags & HOPAstFlag_PARAM_VARIADIC) != 0) {
                     if (isVariadic) {
                         return -1;
                     }
-                    if (paramType.containerKind != SLTypeContainer_SCALAR) {
+                    if (paramType.containerKind != HOPTypeContainer_SCALAR) {
                         return -1;
                     }
-                    paramType.containerKind = SLTypeContainer_SLICE_RO;
+                    paramType.containerKind = HOPTypeContainer_SLICE_RO;
                     paramType.containerPtrDepth = 0;
                     paramType.hasArrayLen = 0;
                     paramType.arrayLen = 0;
                     paramType.readOnly = 1;
                     isVariadic = 1;
                     if (isAnytypeParam) {
-                        pflags |= SLCCGParamFlag_ANYPACK;
+                        pflags |= HOPCCGParamFlag_ANYPACK;
                     }
                 } else if (isVariadic) {
                     /* Variadic parameter must be the final parameter. */
                     return -1;
                 }
                 if (isAnytypeParam) {
-                    pflags |= SLCCGParamFlag_ANYTYPE;
+                    pflags |= HOPCCGParamFlag_ANYTYPE;
                 }
                 if (paramLen >= paramTypeCap) {
                     uint32_t need = paramLen + 1u;
@@ -4093,8 +4100,8 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                             (void**)&paramTypes,
                             &paramTypeCap,
                             need,
-                            sizeof(SLTypeRef),
-                            (uint32_t)_Alignof(SLTypeRef))
+                            sizeof(HOPTypeRef),
+                            (uint32_t)_Alignof(HOPTypeRef))
                         != 0)
                     {
                         return -1;
@@ -4128,27 +4135,27 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                 if (paramNames[paramLen - 1u] == NULL) {
                     return -1;
                 }
-                if ((ch->flags & SLAstFlag_PARAM_CONST) != 0) {
-                    pflags |= SLCCGParamFlag_CONST;
+                if ((ch->flags & HOPAstFlag_PARAM_CONST) != 0) {
+                    pflags |= HOPCCGParamFlag_CONST;
                 }
                 paramFlags[paramLen - 1u] = pflags;
             } else if (
                 ch != NULL
-                && (ch->kind == SLAst_TYPE_NAME || ch->kind == SLAst_TYPE_PTR
-                    || ch->kind == SLAst_TYPE_REF || ch->kind == SLAst_TYPE_MUTREF
-                    || ch->kind == SLAst_TYPE_ARRAY || ch->kind == SLAst_TYPE_VARRAY
-                    || ch->kind == SLAst_TYPE_SLICE || ch->kind == SLAst_TYPE_MUTSLICE
-                    || ch->kind == SLAst_TYPE_OPTIONAL || ch->kind == SLAst_TYPE_FN
-                    || ch->kind == SLAst_TYPE_ANON_STRUCT || ch->kind == SLAst_TYPE_ANON_UNION
-                    || ch->kind == SLAst_TYPE_TUPLE)
+                && (ch->kind == HOPAst_TYPE_NAME || ch->kind == HOPAst_TYPE_PTR
+                    || ch->kind == HOPAst_TYPE_REF || ch->kind == HOPAst_TYPE_MUTREF
+                    || ch->kind == HOPAst_TYPE_ARRAY || ch->kind == HOPAst_TYPE_VARRAY
+                    || ch->kind == HOPAst_TYPE_SLICE || ch->kind == HOPAst_TYPE_MUTSLICE
+                    || ch->kind == HOPAst_TYPE_OPTIONAL || ch->kind == HOPAst_TYPE_FN
+                    || ch->kind == HOPAst_TYPE_ANON_STRUCT || ch->kind == HOPAst_TYPE_ANON_UNION
+                    || ch->kind == HOPAst_TYPE_TUPLE)
                 && ch->flags == 1)
             {
                 if (ParseTypeRef(c, child, &returnType) != 0) {
                     return -1;
                 }
-            } else if (ch != NULL && ch->kind == SLAst_BLOCK) {
+            } else if (ch != NULL && ch->kind == HOPAst_BLOCK) {
                 bodyNode = child;
-            } else if (ch != NULL && ch->kind == SLAst_CONTEXT_CLAUSE) {
+            } else if (ch != NULL && ch->kind == HOPAst_CONTEXT_CLAUSE) {
                 int32_t typeNode = AstFirstChild(&c->ast, child);
                 if (typeNode < 0 || ParseTypeRef(c, typeNode, &contextType) != 0) {
                     return -1;
@@ -4174,27 +4181,27 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
             isVariadic,
             hasContext,
             contextType,
-            hasAnytypeParam ? SLFnSigFlag_TEMPLATE_BASE : 0u,
+            hasAnytypeParam ? HOPFnSigFlag_TEMPLATE_BASE : 0u,
             UINT32_MAX,
             0u,
             0u,
             NULL);
     }
 
-    if (n->kind == SLAst_STRUCT || n->kind == SLAst_UNION) {
+    if (n->kind == HOPAst_STRUCT || n->kind == HOPAst_UNION) {
         if (CodegenCNodeHasTypeParams(c, nodeId)) {
             return 0;
         }
         int32_t child = AstFirstChild(&c->ast, nodeId);
         while (child >= 0) {
-            const SLAstNode* field = NodeAt(c, child);
-            if (field != NULL && field->kind == SLAst_FIELD) {
+            const HOPAstNode* field = NodeAt(c, child);
+            if (field != NULL && field->kind == HOPAst_FIELD) {
                 int32_t     typeNode = AstFirstChild(&c->ast, child);
                 int32_t     defaultExprNode = -1;
                 const char* lenFieldName = NULL;
                 int         isDependent = 0;
-                int         isEmbedded = (field->flags & SLAstFlag_FIELD_EMBEDDED) != 0;
-                SLTypeRef   fieldType;
+                int         isEmbedded = (field->flags & HOPAstFlag_FIELD_EMBEDDED) != 0;
+                HOPTypeRef  fieldType;
                 char*       fieldName;
                 if (ParseTypeRef(c, typeNode, &fieldType) != 0) {
                     return -1;
@@ -4203,7 +4210,7 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                     defaultExprNode = AstNextSibling(&c->ast, typeNode);
                 }
                 if (typeNode >= 0 && NodeAt(c, typeNode) != NULL
-                    && NodeAt(c, typeNode)->kind == SLAst_TYPE_VARRAY)
+                    && NodeAt(c, typeNode)->kind == HOPAst_TYPE_VARRAY)
                 {
                     lenFieldName = DupSlice(
                         c,
@@ -4241,8 +4248,8 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
 }
 
 char* _Nullable BuildTemplateInstanceCName(
-    SLCBackendC* c, const char* baseCName, uint32_t tcFuncIndex) {
-    SLBuf b = { 0 };
+    HOPCBackendC* c, const char* baseCName, uint32_t tcFuncIndex) {
+    HOPBuf b = { 0 };
     b.arena = &c->arena;
     if (BufAppendCStr(&b, baseCName) != 0 || BufAppendCStr(&b, "__ti") != 0
         || BufAppendU32(&b, tcFuncIndex) != 0)
@@ -4253,8 +4260,8 @@ char* _Nullable BuildTemplateInstanceCName(
 }
 
 char* _Nullable BuildTemplateNamedTypeCName(
-    SLCBackendC* c, const char* baseCName, uint32_t tcNamedIndex) {
-    SLBuf b = { 0 };
+    HOPCBackendC* c, const char* baseCName, uint32_t tcNamedIndex) {
+    HOPBuf b = { 0 };
     b.arena = &c->arena;
     if (BufAppendCStr(&b, baseCName) != 0 || BufAppendCStr(&b, "__tn") != 0
         || BufAppendU32(&b, tcNamedIndex) != 0)
@@ -4265,7 +4272,7 @@ char* _Nullable BuildTemplateNamedTypeCName(
 }
 
 char* _Nullable DupParamNameFromSpanOrDefault(
-    SLCBackendC* c, uint32_t start, uint32_t end, uint32_t index) {
+    HOPCBackendC* c, uint32_t start, uint32_t end, uint32_t index) {
     if (end > start) {
         char* n = DupSlice(c, c->unit->source, start, end);
         if (n != NULL && n[0] != '\0') {
@@ -4273,17 +4280,17 @@ char* _Nullable DupParamNameFromSpanOrDefault(
         }
     }
     {
-        SLBuf b = { 0 };
+        HOPBuf b = { 0 };
         b.arena = &c->arena;
-        if (BufAppendCStr(&b, "__sl_p") != 0 || BufAppendU32(&b, index) != 0) {
+        if (BufAppendCStr(&b, "__hop_p") != 0 || BufAppendU32(&b, index) != 0) {
             return NULL;
         }
         return BufFinish(&b);
     }
 }
 
-char* _Nullable BuildExpandedPackElemName(SLCBackendC* c, const char* packName, uint32_t index) {
-    SLBuf b = { 0 };
+char* _Nullable BuildExpandedPackElemName(HOPCBackendC* c, const char* packName, uint32_t index) {
+    HOPBuf b = { 0 };
     b.arena = &c->arena;
     if (BufAppendCStr(&b, packName) != 0 || BufAppendCStr(&b, "__") != 0
         || BufAppendU32(&b, index) != 0)
@@ -4293,36 +4300,36 @@ char* _Nullable BuildExpandedPackElemName(SLCBackendC* c, const char* packName, 
     return BufFinish(&b);
 }
 
-int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
-    const SLTypeCheckCtx* tc;
-    uint32_t              i;
+int CollectTemplateInstanceFnSigs(HOPCBackendC* c) {
+    const HOPTypeCheckCtx* tc;
+    uint32_t               i;
     if (c == NULL || c->constEval == NULL) {
         return 0;
     }
     tc = &c->constEval->tc;
     for (i = 0; i < tc->funcLen; i++) {
-        const SLTCFunction* fn = &tc->funcs[i];
-        int32_t             nodeId;
-        const SLAstNode*    fnNode;
-        const SLNameMap*    map;
-        char*               cName;
-        SLTypeRef           returnType;
-        SLTypeRef           contextType;
-        SLTypeRef*          paramTypes = NULL;
-        char**              paramNames = NULL;
-        uint8_t*            paramFlags = NULL;
-        uint32_t            paramLen = 0;
-        uint32_t            paramTypeCap = 0;
-        uint32_t            paramNameCap = 0;
-        uint32_t            paramFlagCap = 0;
-        uint32_t            packArgStart = 0;
-        uint32_t            packArgCount = 0;
-        char*               packParamName = NULL;
-        int                 isVariadic = (fn->flags & SLTCFunctionFlag_VARIADIC) != 0;
-        int                 hasContext = 1;
-        uint32_t            p;
+        const HOPTCFunction* fn = &tc->funcs[i];
+        int32_t              nodeId;
+        const HOPAstNode*    fnNode;
+        const HOPNameMap*    map;
+        char*                cName;
+        HOPTypeRef           returnType;
+        HOPTypeRef           contextType;
+        HOPTypeRef*          paramTypes = NULL;
+        char**               paramNames = NULL;
+        uint8_t*             paramFlags = NULL;
+        uint32_t             paramLen = 0;
+        uint32_t             paramTypeCap = 0;
+        uint32_t             paramNameCap = 0;
+        uint32_t             paramFlagCap = 0;
+        uint32_t             packArgStart = 0;
+        uint32_t             packArgCount = 0;
+        char*                packParamName = NULL;
+        int                  isVariadic = (fn->flags & HOPTCFunctionFlag_VARIADIC) != 0;
+        int                  hasContext = 1;
+        uint32_t             p;
 
-        if ((fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0) {
+        if ((fn->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) == 0) {
             continue;
         }
         if (CodegenCTypeIdContainsTypeParam(tc, fn->returnType)
@@ -4332,7 +4339,7 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
         }
         nodeId = fn->defNode >= 0 ? fn->defNode : fn->declNode;
         fnNode = NodeAt(c, nodeId);
-        if (fnNode == NULL || fnNode->kind != SLAst_FN) {
+        if (fnNode == NULL || fnNode->kind != HOPAst_FN) {
             return -1;
         }
         map = FindNameBySlice(c, fnNode->dataStart, fnNode->dataEnd);
@@ -4355,18 +4362,18 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
             uint8_t  pflags = 0;
             uint32_t nameStart = tc->funcParamNameStarts[fn->paramTypeStart + p];
             uint32_t nameEnd = tc->funcParamNameEnds[fn->paramTypeStart + p];
-            if ((tc->funcParamFlags[fn->paramTypeStart + p] & SLTCFuncParamFlag_CONST) != 0) {
-                pflags |= SLCCGParamFlag_CONST;
+            if ((tc->funcParamFlags[fn->paramTypeStart + p] & HOPTCFuncParamFlag_CONST) != 0) {
+                pflags |= HOPCCGParamFlag_CONST;
             }
             if (CodegenCTypeIdContainsTypeParam(tc, typeId)) {
                 paramLen = 0;
                 break;
             }
             if (isVariadic && p + 1u == fn->paramCount && typeId >= 0
-                && (uint32_t)typeId < tc->typeLen && tc->types[typeId].kind == SLTCType_PACK)
+                && (uint32_t)typeId < tc->typeLen && tc->types[typeId].kind == HOPTCType_PACK)
             {
-                const SLTCType* packType = &tc->types[typeId];
-                uint32_t        k;
+                const HOPTCType* packType = &tc->types[typeId];
+                uint32_t         k;
                 isVariadic = 0;
                 packArgStart = paramLen;
                 packArgCount = packType->fieldCount;
@@ -4375,9 +4382,9 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
                     return -1;
                 }
                 for (k = 0; k < packType->fieldCount; k++) {
-                    int32_t   elemTypeId = tc->funcParamTypes[packType->fieldStart + k];
-                    SLTypeRef paramType;
-                    char*     elemName;
+                    int32_t    elemTypeId = tc->funcParamTypes[packType->fieldStart + k];
+                    HOPTypeRef paramType;
+                    char*      elemName;
                     if (ParseTypeRefFromConstEvalTypeId(c, elemTypeId, &paramType) != 0) {
                         break;
                     }
@@ -4394,8 +4401,8 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
                                 (void**)&paramTypes,
                                 &paramTypeCap,
                                 need,
-                                sizeof(SLTypeRef),
-                                (uint32_t)_Alignof(SLTypeRef))
+                                sizeof(HOPTypeRef),
+                                (uint32_t)_Alignof(HOPTypeRef))
                                 != 0
                             || EnsureCapArena(
                                    &c->arena,
@@ -4429,8 +4436,8 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
             }
 
             {
-                SLTypeRef paramType;
-                char*     paramName;
+                HOPTypeRef paramType;
+                char*      paramName;
                 if (ParseTypeRefFromConstEvalTypeId(c, typeId, &paramType) != 0) {
                     paramLen = 0;
                     break;
@@ -4448,8 +4455,8 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
                             (void**)&paramTypes,
                             &paramTypeCap,
                             need,
-                            sizeof(SLTypeRef),
-                            (uint32_t)_Alignof(SLTypeRef))
+                            sizeof(HOPTypeRef),
+                            (uint32_t)_Alignof(HOPTypeRef))
                             != 0
                         || EnsureCapArena(
                                &c->arena,
@@ -4494,8 +4501,8 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
                 isVariadic,
                 hasContext,
                 contextType,
-                (uint16_t)(SLFnSigFlag_TEMPLATE_INSTANCE
-                           | (packParamName != NULL ? SLFnSigFlag_EXPANDED_ANYPACK : 0u)),
+                (uint16_t)(HOPFnSigFlag_TEMPLATE_INSTANCE
+                           | (packParamName != NULL ? HOPFnSigFlag_EXPANDED_ANYPACK : 0u)),
                 i,
                 packArgStart,
                 packArgCount,
@@ -4508,24 +4515,24 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
     return 0;
 }
 
-int CollectTemplateInstanceNamedTypes(SLCBackendC* c) {
-    SLTypeCheckCtx* tc;
-    uint32_t        i;
+int CollectTemplateInstanceNamedTypes(HOPCBackendC* c) {
+    HOPTypeCheckCtx* tc;
+    uint32_t         i;
     if (c == NULL || c->constEval == NULL) {
         return 0;
     }
     tc = &c->constEval->tc;
     for (i = 0; i < tc->namedTypeLen; i++) {
-        const SLTCNamedType* nt = &tc->namedTypes[i];
-        const SLAstNode*     decl;
-        const SLNameMap*     rootMap;
-        char*                cName;
-        int32_t              fieldNode;
-        uint32_t             savedArgStart = tc->activeGenericArgStart;
-        uint16_t             savedArgCount = tc->activeGenericArgCount;
-        int32_t              savedDeclNode = tc->activeGenericDeclNode;
-        uint32_t             savedFuncIndex = c->activeTcFuncIndex;
-        int32_t              savedNamedTypeIndex = c->activeTcNamedTypeIndex;
+        const HOPTCNamedType* nt = &tc->namedTypes[i];
+        const HOPAstNode*     decl;
+        const HOPNameMap*     rootMap;
+        char*                 cName;
+        int32_t               fieldNode;
+        uint32_t              savedArgStart = tc->activeGenericArgStart;
+        uint16_t              savedArgCount = tc->activeGenericArgCount;
+        int32_t               savedDeclNode = tc->activeGenericDeclNode;
+        uint32_t              savedFuncIndex = c->activeTcFuncIndex;
+        int32_t               savedNamedTypeIndex = c->activeTcNamedTypeIndex;
         if (nt->templateRootNamedIndex < 0 || nt->templateArgCount == 0) {
             continue;
         }
@@ -4536,7 +4543,7 @@ int CollectTemplateInstanceNamedTypes(SLCBackendC* c) {
             continue;
         }
         decl = NodeAt(c, nt->declNode);
-        if (decl == NULL || (decl->kind != SLAst_STRUCT && decl->kind != SLAst_UNION)) {
+        if (decl == NULL || (decl->kind != HOPAst_STRUCT && decl->kind != HOPAst_UNION)) {
             continue;
         }
         rootMap = FindTypeDeclMapByNode(c, nt->declNode);
@@ -4555,21 +4562,21 @@ int CollectTemplateInstanceNamedTypes(SLCBackendC* c) {
         }
         fieldNode = AstFirstChild(&c->ast, nt->declNode);
         while (fieldNode >= 0) {
-            const SLAstNode* field = NodeAt(c, fieldNode);
-            int32_t          typeNode;
-            int32_t          defaultExprNode;
-            SLTypeRef        fieldType;
-            char*            fieldName;
-            char*            lenFieldName = NULL;
-            int              isDependent = 0;
-            int              isEmbedded = 0;
-            if (field == NULL || field->kind != SLAst_FIELD) {
+            const HOPAstNode* field = NodeAt(c, fieldNode);
+            int32_t           typeNode;
+            int32_t           defaultExprNode;
+            HOPTypeRef        fieldType;
+            char*             fieldName;
+            char*             lenFieldName = NULL;
+            int               isDependent = 0;
+            int               isEmbedded = 0;
+            if (field == NULL || field->kind != HOPAst_FIELD) {
                 fieldNode = AstNextSibling(&c->ast, fieldNode);
                 continue;
             }
             typeNode = AstFirstChild(&c->ast, fieldNode);
             defaultExprNode = typeNode >= 0 ? AstNextSibling(&c->ast, typeNode) : -1;
-            isEmbedded = (field->flags & SLAstFlag_FIELD_EMBEDDED) != 0;
+            isEmbedded = (field->flags & HOPAstFlag_FIELD_EMBEDDED) != 0;
             if (typeNode < 0 || ParseTypeRef(c, typeNode, &fieldType) != 0) {
                 CodegenCPopActiveTypeContext(
                     c,
@@ -4581,7 +4588,7 @@ int CollectTemplateInstanceNamedTypes(SLCBackendC* c) {
                 return -1;
             }
             if (typeNode >= 0 && NodeAt(c, typeNode) != NULL
-                && NodeAt(c, typeNode)->kind == SLAst_TYPE_VARRAY)
+                && NodeAt(c, typeNode)->kind == HOPAst_TYPE_VARRAY)
             {
                 lenFieldName = DupSlice(
                     c,
@@ -4639,7 +4646,7 @@ int CollectTemplateInstanceNamedTypes(SLCBackendC* c) {
     return 0;
 }
 
-int CollectFnAndFieldInfo(SLCBackendC* c) {
+int CollectFnAndFieldInfo(HOPCBackendC* c) {
     uint32_t i;
     for (i = 0; i < c->pubDeclLen; i++) {
         if (CollectFnAndFieldInfoFromNode(c, c->pubDecls[i].nodeId) != 0) {
@@ -4660,15 +4667,15 @@ int CollectFnAndFieldInfo(SLCBackendC* c) {
     return 0;
 }
 
-int CollectTypeAliasInfo(SLCBackendC* c) {
+int CollectTypeAliasInfo(HOPCBackendC* c) {
     uint32_t i;
     for (i = 0; i < c->topDeclLen; i++) {
-        int32_t          nodeId = c->topDecls[i].nodeId;
-        const SLAstNode* n = NodeAt(c, nodeId);
-        const SLNameMap* map;
-        int32_t          targetNode;
-        SLTypeRef        targetType;
-        if (n == NULL || n->kind != SLAst_TYPE_ALIAS) {
+        int32_t           nodeId = c->topDecls[i].nodeId;
+        const HOPAstNode* n = NodeAt(c, nodeId);
+        const HOPNameMap* map;
+        int32_t           targetNode;
+        HOPTypeRef        targetType;
+        if (n == NULL || n->kind != HOPAst_TYPE_ALIAS) {
             continue;
         }
         map = FindTypeDeclMapByNode(c, nodeId);
@@ -4689,16 +4696,16 @@ int CollectTypeAliasInfo(SLCBackendC* c) {
     return 0;
 }
 
-int CollectFnTypeAliasesFromNode(SLCBackendC* c, int32_t nodeId) {
-    const SLAstNode* n = NodeAt(c, nodeId);
-    int32_t          child;
+int CollectFnTypeAliasesFromNode(HOPCBackendC* c, int32_t nodeId) {
+    const HOPAstNode* n = NodeAt(c, nodeId);
+    int32_t           child;
     if (n == NULL) {
         return 0;
     }
-    if (n->kind == SLAst_TYPE_FN) {
-        SLTypeRef ignoredType;
+    if (n->kind == HOPAst_TYPE_FN) {
+        HOPTypeRef ignoredType;
         if (ParseTypeRef(c, nodeId, &ignoredType) != 0) {
-            SetDiagNode(c, nodeId, SLDiag_CODEGEN_INTERNAL);
+            SetDiagNode(c, nodeId, HOPDiag_CODEGEN_INTERNAL);
             return -1;
         }
     }
@@ -4712,11 +4719,11 @@ int CollectFnTypeAliasesFromNode(SLCBackendC* c, int32_t nodeId) {
     return 0;
 }
 
-int CollectFnTypeAliases(SLCBackendC* c) {
+int CollectFnTypeAliases(HOPCBackendC* c) {
     return CollectFnTypeAliasesFromNode(c, c->ast.root);
 }
 
-int AddVarSizeType(SLCBackendC* c, const char* cName, int isUnion) {
+int AddVarSizeType(HOPCBackendC* c, const char* cName, int isUnion) {
     uint32_t i;
     char*    copy;
     for (i = 0; i < c->varSizeTypeLen; i++) {
@@ -4729,8 +4736,8 @@ int AddVarSizeType(SLCBackendC* c, const char* cName, int isUnion) {
             (void**)&c->varSizeTypes,
             &c->varSizeTypeCap,
             c->varSizeTypeLen + 1u,
-            sizeof(SLVarSizeType),
-            (uint32_t)_Alignof(SLVarSizeType))
+            sizeof(HOPVarSizeType),
+            (uint32_t)_Alignof(HOPVarSizeType))
         != 0)
     {
         return -1;
@@ -4746,7 +4753,7 @@ int AddVarSizeType(SLCBackendC* c, const char* cName, int isUnion) {
     return 0;
 }
 
-SLVarSizeType* _Nullable FindVarSizeType(SLCBackendC* c, const char* cName) {
+HOPVarSizeType* _Nullable FindVarSizeType(HOPCBackendC* c, const char* cName) {
     uint32_t i;
     for (i = 0; i < c->varSizeTypeLen; i++) {
         if (StrEq(c->varSizeTypes[i].cName, cName)) {
@@ -4756,42 +4763,42 @@ SLVarSizeType* _Nullable FindVarSizeType(SLCBackendC* c, const char* cName) {
     return NULL;
 }
 
-int CollectVarSizeTypesFromDeclSets(SLCBackendC* c) {
+int CollectVarSizeTypesFromDeclSets(HOPCBackendC* c) {
     uint32_t i;
     for (i = 0; i < c->pubDeclLen; i++) {
-        int32_t          nodeId = c->pubDecls[i].nodeId;
-        const SLAstNode* n = NodeAt(c, nodeId);
-        const SLNameMap* map;
-        if (n == NULL || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION)) {
+        int32_t           nodeId = c->pubDecls[i].nodeId;
+        const HOPAstNode* n = NodeAt(c, nodeId);
+        const HOPNameMap* map;
+        if (n == NULL || (n->kind != HOPAst_STRUCT && n->kind != HOPAst_UNION)) {
             continue;
         }
         map = FindTypeDeclMapByNode(c, nodeId);
         if (map == NULL) {
             continue;
         }
-        if (AddVarSizeType(c, map->cName, n->kind == SLAst_UNION) != 0) {
+        if (AddVarSizeType(c, map->cName, n->kind == HOPAst_UNION) != 0) {
             return -1;
         }
     }
     for (i = 0; i < c->topDeclLen; i++) {
-        int32_t          nodeId = c->topDecls[i].nodeId;
-        const SLAstNode* n = NodeAt(c, nodeId);
-        const SLNameMap* map;
-        if (n == NULL || (n->kind != SLAst_STRUCT && n->kind != SLAst_UNION)) {
+        int32_t           nodeId = c->topDecls[i].nodeId;
+        const HOPAstNode* n = NodeAt(c, nodeId);
+        const HOPNameMap* map;
+        if (n == NULL || (n->kind != HOPAst_STRUCT && n->kind != HOPAst_UNION)) {
             continue;
         }
         map = FindTypeDeclMapByNode(c, nodeId);
         if (map == NULL) {
             continue;
         }
-        if (AddVarSizeType(c, map->cName, n->kind == SLAst_UNION) != 0) {
+        if (AddVarSizeType(c, map->cName, n->kind == HOPAst_UNION) != 0) {
             return -1;
         }
     }
     return 0;
 }
 
-int IsVarSizeTypeName(const SLCBackendC* c, const char* cName) {
+int IsVarSizeTypeName(const HOPCBackendC* c, const char* cName) {
     uint32_t i;
     for (i = 0; i < c->varSizeTypeLen; i++) {
         if (StrEq(c->varSizeTypes[i].cName, cName)) {
@@ -4801,14 +4808,14 @@ int IsVarSizeTypeName(const SLCBackendC* c, const char* cName) {
     return 0;
 }
 
-int PropagateVarSizeTypes(SLCBackendC* c) {
+int PropagateVarSizeTypes(HOPCBackendC* c) {
     int changed = 1;
     while (changed) {
         uint32_t i;
         changed = 0;
         for (i = 0; i < c->fieldInfoLen; i++) {
-            SLFieldInfo*   field = &c->fieldInfos[i];
-            SLVarSizeType* owner;
+            HOPFieldInfo*   field = &c->fieldInfos[i];
+            HOPVarSizeType* owner;
             if (field->ownerType == NULL) {
                 continue;
             }
@@ -4823,8 +4830,8 @@ int PropagateVarSizeTypes(SLCBackendC* c) {
             }
             if (field->type.valid && field->type.containerPtrDepth == 0 && field->type.ptrDepth == 0
                 && field->type.baseName != NULL
-                && (field->type.containerKind == SLTypeContainer_SCALAR
-                    || field->type.containerKind == SLTypeContainer_ARRAY)
+                && (field->type.containerKind == HOPTypeContainer_SCALAR
+                    || field->type.containerKind == HOPTypeContainer_ARRAY)
                 && IsVarSizeTypeName(c, field->type.baseName))
             {
                 owner->isVarSize = 1;
@@ -4835,7 +4842,7 @@ int PropagateVarSizeTypes(SLCBackendC* c) {
     return 0;
 }
 
-int PushScope(SLCBackendC* c) {
+int PushScope(HOPCBackendC* c) {
     if (EnsureCapArena(
             &c->arena,
             (void**)&c->localScopeMarks,
@@ -4884,9 +4891,9 @@ int PushScope(SLCBackendC* c) {
     return 0;
 }
 
-void TrimVariantNarrowsToLocalLen(SLCBackendC* c);
+void TrimVariantNarrowsToLocalLen(HOPCBackendC* c);
 
-void PopScope(SLCBackendC* c) {
+void PopScope(HOPCBackendC* c) {
     if (c->localScopeLen == 0) {
         c->localLen = 0;
         c->localAnonTypedefLen = 0;
@@ -4904,7 +4911,7 @@ void PopScope(SLCBackendC* c) {
     }
 }
 
-int PushDeferScope(SLCBackendC* c) {
+int PushDeferScope(HOPCBackendC* c) {
     if (EnsureCapArena(
             &c->arena,
             (void**)&c->deferScopeMarks,
@@ -4920,7 +4927,7 @@ int PushDeferScope(SLCBackendC* c) {
     return 0;
 }
 
-void PopDeferScope(SLCBackendC* c) {
+void PopDeferScope(HOPCBackendC* c) {
     if (c->deferScopeLen == 0) {
         c->deferredStmtLen = 0;
         return;
@@ -4929,7 +4936,7 @@ void PopDeferScope(SLCBackendC* c) {
     c->deferredStmtLen = c->deferScopeMarks[c->deferScopeLen];
 }
 
-int AddDeferredStmt(SLCBackendC* c, int32_t stmtNodeId) {
+int AddDeferredStmt(HOPCBackendC* c, int32_t stmtNodeId) {
     if (EnsureCapArena(
             &c->arena,
             (void**)&c->deferredStmtNodes,
@@ -4945,14 +4952,14 @@ int AddDeferredStmt(SLCBackendC* c, int32_t stmtNodeId) {
     return 0;
 }
 
-int AddLocal(SLCBackendC* c, const char* name, SLTypeRef type) {
+int AddLocal(HOPCBackendC* c, const char* name, HOPTypeRef type) {
     if (EnsureCapArena(
             &c->arena,
             (void**)&c->locals,
             &c->localCap,
             c->localLen + 1u,
-            sizeof(SLLocal),
-            (uint32_t)_Alignof(SLLocal))
+            sizeof(HOPLocal),
+            (uint32_t)_Alignof(HOPLocal))
         != 0)
     {
         return -1;
@@ -4963,7 +4970,7 @@ int AddLocal(SLCBackendC* c, const char* name, SLTypeRef type) {
     return 0;
 }
 
-void TrimVariantNarrowsToLocalLen(SLCBackendC* c) {
+void TrimVariantNarrowsToLocalLen(HOPCBackendC* c) {
     while (c->variantNarrowLen > 0) {
         if (c->variantNarrows[c->variantNarrowLen - 1u].localIdx < (int32_t)c->localLen) {
             break;
@@ -4973,18 +4980,18 @@ void TrimVariantNarrowsToLocalLen(SLCBackendC* c) {
 }
 
 int AddVariantNarrow(
-    SLCBackendC* c,
-    int32_t      localIdx,
-    const char*  enumTypeName,
-    uint32_t     variantStart,
-    uint32_t     variantEnd) {
+    HOPCBackendC* c,
+    int32_t       localIdx,
+    const char*   enumTypeName,
+    uint32_t      variantStart,
+    uint32_t      variantEnd) {
     if (EnsureCapArena(
             &c->arena,
             (void**)&c->variantNarrows,
             &c->variantNarrowCap,
             c->variantNarrowLen + 1u,
-            sizeof(SLVariantNarrow),
-            (uint32_t)_Alignof(SLVariantNarrow))
+            sizeof(HOPVariantNarrow),
+            (uint32_t)_Alignof(HOPVariantNarrow))
         != 0)
     {
         return -1;
@@ -4997,7 +5004,7 @@ int AddVariantNarrow(
     return 0;
 }
 
-int32_t FindLocalIndexBySlice(const SLCBackendC* c, uint32_t start, uint32_t end) {
+int32_t FindLocalIndexBySlice(const HOPCBackendC* c, uint32_t start, uint32_t end) {
     uint32_t i = c->localLen;
     while (i > 0) {
         i--;
@@ -5008,8 +5015,8 @@ int32_t FindLocalIndexBySlice(const SLCBackendC* c, uint32_t start, uint32_t end
     return -1;
 }
 
-const SLVariantNarrow* _Nullable FindVariantNarrowByLocalIdx(
-    const SLCBackendC* c, int32_t localIdx) {
+const HOPVariantNarrow* _Nullable FindVariantNarrowByLocalIdx(
+    const HOPCBackendC* c, int32_t localIdx) {
     uint32_t i = c->variantNarrowLen;
     while (i > 0) {
         i--;
@@ -5020,7 +5027,7 @@ const SLVariantNarrow* _Nullable FindVariantNarrowByLocalIdx(
     return NULL;
 }
 
-const SLLocal* _Nullable FindLocalBySlice(const SLCBackendC* c, uint32_t start, uint32_t end) {
+const HOPLocal* _Nullable FindLocalBySlice(const HOPCBackendC* c, uint32_t start, uint32_t end) {
     uint32_t i = c->localLen;
     while (i > 0) {
         i--;
@@ -5031,49 +5038,49 @@ const SLLocal* _Nullable FindLocalBySlice(const SLCBackendC* c, uint32_t start, 
     return NULL;
 }
 
-int FindEnumDeclNodeByCName(const SLCBackendC* c, const char* enumCName, int32_t* outNodeId);
+int FindEnumDeclNodeByCName(const HOPCBackendC* c, const char* enumCName, int32_t* outNodeId);
 
 int FindEnumDeclNodeBySlice(
-    const SLCBackendC* c, uint32_t start, uint32_t end, int32_t* outNodeId) {
-    const char*      enumCName;
-    const SLNameMap* map;
+    const HOPCBackendC* c, uint32_t start, uint32_t end, int32_t* outNodeId) {
+    const char*       enumCName;
+    const HOPNameMap* map;
     if (outNodeId == NULL) {
         return -1;
     }
-    enumCName = ResolveTypeName((SLCBackendC*)c, start, end);
+    enumCName = ResolveTypeName((HOPCBackendC*)c, start, end);
     if (enumCName == NULL) {
         return -1;
     }
     map = FindNameByCName(c, enumCName);
-    if (map == NULL || map->kind != SLAst_ENUM) {
+    if (map == NULL || map->kind != HOPAst_ENUM) {
         return -1;
     }
     return FindEnumDeclNodeByCName(c, enumCName, outNodeId);
 }
 
 int EnumDeclHasMemberBySlice(
-    const SLCBackendC* c, int32_t enumNodeId, uint32_t memberStart, uint32_t memberEnd) {
+    const HOPCBackendC* c, int32_t enumNodeId, uint32_t memberStart, uint32_t memberEnd) {
     int32_t child = AstFirstChild(&c->ast, enumNodeId);
 
     if (child >= 0) {
-        const SLAstNode* firstChild = NodeAt(c, child);
+        const HOPAstNode* firstChild = NodeAt(c, child);
         if (firstChild != NULL
-            && (firstChild->kind == SLAst_TYPE_NAME || firstChild->kind == SLAst_TYPE_PTR
-                || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
-                || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
-                || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
-                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN
-                || firstChild->kind == SLAst_TYPE_ANON_STRUCT
-                || firstChild->kind == SLAst_TYPE_ANON_UNION
-                || firstChild->kind == SLAst_TYPE_TUPLE))
+            && (firstChild->kind == HOPAst_TYPE_NAME || firstChild->kind == HOPAst_TYPE_PTR
+                || firstChild->kind == HOPAst_TYPE_REF || firstChild->kind == HOPAst_TYPE_MUTREF
+                || firstChild->kind == HOPAst_TYPE_ARRAY || firstChild->kind == HOPAst_TYPE_VARRAY
+                || firstChild->kind == HOPAst_TYPE_SLICE || firstChild->kind == HOPAst_TYPE_MUTSLICE
+                || firstChild->kind == HOPAst_TYPE_OPTIONAL || firstChild->kind == HOPAst_TYPE_FN
+                || firstChild->kind == HOPAst_TYPE_ANON_STRUCT
+                || firstChild->kind == HOPAst_TYPE_ANON_UNION
+                || firstChild->kind == HOPAst_TYPE_TUPLE))
         {
             child = AstNextSibling(&c->ast, child);
         }
     }
 
     while (child >= 0) {
-        const SLAstNode* item = NodeAt(c, child);
-        if (item != NULL && item->kind == SLAst_FIELD
+        const HOPAstNode* item = NodeAt(c, child);
+        if (item != NULL && item->kind == HOPAst_FIELD
             && SliceSpanEq(c->unit->source, item->dataStart, item->dataEnd, memberStart, memberEnd))
         {
             return 1;
@@ -5083,20 +5090,20 @@ int EnumDeclHasMemberBySlice(
     return 0;
 }
 
-int EnumDeclHasPayload(const SLCBackendC* c, int32_t enumNodeId);
+int EnumDeclHasPayload(const HOPCBackendC* c, int32_t enumNodeId);
 
 static int ResolveTypePathSpanByExpr(
-    const SLCBackendC* c, int32_t exprNode, uint32_t* outStart, uint32_t* outEnd) {
-    const SLAstNode* n = NodeAt(c, exprNode);
+    const HOPCBackendC* c, int32_t exprNode, uint32_t* outStart, uint32_t* outEnd) {
+    const HOPAstNode* n = NodeAt(c, exprNode);
     if (n == NULL) {
         return 0;
     }
-    if (n->kind == SLAst_IDENT) {
+    if (n->kind == HOPAst_IDENT) {
         *outStart = n->dataStart;
         *outEnd = n->dataEnd;
         return 1;
     }
-    if (n->kind == SLAst_FIELD_EXPR) {
+    if (n->kind == HOPAst_FIELD_EXPR) {
         int32_t recvNode = AstFirstChild(&c->ast, exprNode);
         if (ResolveTypePathSpanByExpr(c, recvNode, outStart, outEnd)) {
             *outEnd = n->dataEnd;
@@ -5107,24 +5114,24 @@ static int ResolveTypePathSpanByExpr(
 }
 
 static int ResolveEnumTypeByPathExpr(
-    const SLCBackendC* c,
-    int32_t            exprNode,
-    const SLNameMap**  outEnumMap,
-    int32_t*           outEnumDeclNode) {
-    int32_t          rootNodeId = exprNode;
-    const SLAstNode* root = NodeAt(c, rootNodeId);
-    uint32_t         pathStart = 0;
-    uint32_t         pathEnd = 0;
-    const char*      enumCName;
-    const SLNameMap* map;
+    const HOPCBackendC* c,
+    int32_t             exprNode,
+    const HOPNameMap**  outEnumMap,
+    int32_t*            outEnumDeclNode) {
+    int32_t           rootNodeId = exprNode;
+    const HOPAstNode* root = NodeAt(c, rootNodeId);
+    uint32_t          pathStart = 0;
+    uint32_t          pathEnd = 0;
+    const char*       enumCName;
+    const HOPNameMap* map;
     if (outEnumMap == NULL || outEnumDeclNode == NULL) {
         return -1;
     }
-    while (root != NULL && root->kind == SLAst_FIELD_EXPR) {
+    while (root != NULL && root->kind == HOPAst_FIELD_EXPR) {
         rootNodeId = AstFirstChild(&c->ast, rootNodeId);
         root = NodeAt(c, rootNodeId);
     }
-    if (root == NULL || root->kind != SLAst_IDENT) {
+    if (root == NULL || root->kind != HOPAst_IDENT) {
         return 0;
     }
     if (FindLocalBySlice(c, root->dataStart, root->dataEnd) != NULL) {
@@ -5133,12 +5140,12 @@ static int ResolveEnumTypeByPathExpr(
     if (!ResolveTypePathSpanByExpr(c, exprNode, &pathStart, &pathEnd)) {
         return 0;
     }
-    enumCName = ResolveTypeName((SLCBackendC*)c, pathStart, pathEnd);
+    enumCName = ResolveTypeName((HOPCBackendC*)c, pathStart, pathEnd);
     if (enumCName == NULL) {
         return -1;
     }
     map = FindNameByCName(c, enumCName);
-    if (map == NULL || map->kind != SLAst_ENUM) {
+    if (map == NULL || map->kind != HOPAst_ENUM) {
         return 0;
     }
     if (FindEnumDeclNodeByCName(c, enumCName, outEnumDeclNode) != 0) {
@@ -5149,17 +5156,17 @@ static int ResolveEnumTypeByPathExpr(
 }
 
 int ResolveEnumSelectorByFieldExpr(
-    const SLCBackendC* c,
-    int32_t            fieldExprNode,
-    const SLNameMap** _Nullable outEnumMap,
+    const HOPCBackendC* c,
+    int32_t             fieldExprNode,
+    const HOPNameMap** _Nullable outEnumMap,
     int32_t* _Nullable outEnumDeclNode,
     int* _Nullable outEnumHasPayload,
     uint32_t* _Nullable outVariantStart,
     uint32_t* _Nullable outVariantEnd) {
-    const SLAstNode* n = NodeAt(c, fieldExprNode);
-    int32_t          recvNode;
-    const SLNameMap* map;
-    int32_t          enumDeclNode;
+    const HOPAstNode* n = NodeAt(c, fieldExprNode);
+    int32_t           recvNode;
+    const HOPNameMap* map;
+    int32_t           enumDeclNode;
 
     if (outEnumMap != NULL) {
         *outEnumMap = NULL;
@@ -5176,7 +5183,7 @@ int ResolveEnumSelectorByFieldExpr(
     if (outVariantEnd != NULL) {
         *outVariantEnd = 0;
     }
-    if (n == NULL || n->kind != SLAst_FIELD_EXPR) {
+    if (n == NULL || n->kind != HOPAst_FIELD_EXPR) {
         return 0;
     }
     recvNode = AstFirstChild(&c->ast, fieldExprNode);
@@ -5207,19 +5214,19 @@ int ResolveEnumSelectorByFieldExpr(
     return 1;
 }
 
-int EnumDeclHasPayload(const SLCBackendC* c, int32_t enumNodeId) {
+int EnumDeclHasPayload(const HOPCBackendC* c, int32_t enumNodeId) {
     int32_t child = AstFirstChild(&c->ast, enumNodeId);
     if (child >= 0) {
-        const SLAstNode* firstChild = NodeAt(c, child);
+        const HOPAstNode* firstChild = NodeAt(c, child);
         if (firstChild != NULL
-            && (firstChild->kind == SLAst_TYPE_NAME || firstChild->kind == SLAst_TYPE_PTR
-                || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
-                || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
-                || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
-                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN
-                || firstChild->kind == SLAst_TYPE_ANON_STRUCT
-                || firstChild->kind == SLAst_TYPE_ANON_UNION
-                || firstChild->kind == SLAst_TYPE_TUPLE))
+            && (firstChild->kind == HOPAst_TYPE_NAME || firstChild->kind == HOPAst_TYPE_PTR
+                || firstChild->kind == HOPAst_TYPE_REF || firstChild->kind == HOPAst_TYPE_MUTREF
+                || firstChild->kind == HOPAst_TYPE_ARRAY || firstChild->kind == HOPAst_TYPE_VARRAY
+                || firstChild->kind == HOPAst_TYPE_SLICE || firstChild->kind == HOPAst_TYPE_MUTSLICE
+                || firstChild->kind == HOPAst_TYPE_OPTIONAL || firstChild->kind == HOPAst_TYPE_FN
+                || firstChild->kind == HOPAst_TYPE_ANON_STRUCT
+                || firstChild->kind == HOPAst_TYPE_ANON_UNION
+                || firstChild->kind == HOPAst_TYPE_TUPLE))
         {
             child = AstNextSibling(&c->ast, child);
         }
@@ -5227,7 +5234,7 @@ int EnumDeclHasPayload(const SLCBackendC* c, int32_t enumNodeId) {
     while (child >= 0) {
         int32_t payload = AstFirstChild(&c->ast, child);
         while (payload >= 0) {
-            if (NodeAt(c, payload) != NULL && NodeAt(c, payload)->kind == SLAst_FIELD) {
+            if (NodeAt(c, payload) != NULL && NodeAt(c, payload)->kind == HOPAst_FIELD) {
                 return 1;
             }
             payload = AstNextSibling(&c->ast, payload);
@@ -5237,11 +5244,11 @@ int EnumDeclHasPayload(const SLCBackendC* c, int32_t enumNodeId) {
     return 0;
 }
 
-int32_t EnumVariantTagExprNode(const SLCBackendC* c, int32_t variantNode) {
+int32_t EnumVariantTagExprNode(const HOPCBackendC* c, int32_t variantNode) {
     int32_t child = AstFirstChild(&c->ast, variantNode);
     while (child >= 0) {
-        const SLAstNode* n = NodeAt(c, child);
-        if (n != NULL && n->kind != SLAst_FIELD) {
+        const HOPAstNode* n = NodeAt(c, child);
+        if (n != NULL && n->kind != HOPAst_FIELD) {
             return child;
         }
         child = AstNextSibling(&c->ast, child);
@@ -5249,19 +5256,19 @@ int32_t EnumVariantTagExprNode(const SLCBackendC* c, int32_t variantNode) {
     return -1;
 }
 
-int FindEnumDeclNodeByCName(const SLCBackendC* c, const char* enumCName, int32_t* outNodeId) {
+int FindEnumDeclNodeByCName(const HOPCBackendC* c, const char* enumCName, int32_t* outNodeId) {
     uint32_t i;
     if (enumCName == NULL || outNodeId == NULL) {
         return -1;
     }
     for (i = 0; i < c->topDeclLen; i++) {
-        int32_t          nodeId = c->topDecls[i].nodeId;
-        const SLAstNode* n = NodeAt(c, nodeId);
-        const SLNameMap* map;
-        if (n == NULL || n->kind != SLAst_ENUM) {
+        int32_t           nodeId = c->topDecls[i].nodeId;
+        const HOPAstNode* n = NodeAt(c, nodeId);
+        const HOPNameMap* map;
+        if (n == NULL || n->kind != HOPAst_ENUM) {
             continue;
         }
-        map = FindTypeDeclMapByNode((SLCBackendC*)c, nodeId);
+        map = FindTypeDeclMapByNode((HOPCBackendC*)c, nodeId);
         if (map != NULL && StrEq(map->cName, enumCName)) {
             *outNodeId = nodeId;
             return 0;
@@ -5271,30 +5278,30 @@ int FindEnumDeclNodeByCName(const SLCBackendC* c, const char* enumCName, int32_t
 }
 
 int FindEnumVariantNodeBySlice(
-    const SLCBackendC* c,
-    int32_t            enumNodeId,
-    uint32_t           variantStart,
-    uint32_t           variantEnd,
-    int32_t*           outVariantNode) {
+    const HOPCBackendC* c,
+    int32_t             enumNodeId,
+    uint32_t            variantStart,
+    uint32_t            variantEnd,
+    int32_t*            outVariantNode) {
     int32_t child = AstFirstChild(&c->ast, enumNodeId);
     if (child >= 0) {
-        const SLAstNode* firstChild = NodeAt(c, child);
+        const HOPAstNode* firstChild = NodeAt(c, child);
         if (firstChild != NULL
-            && (firstChild->kind == SLAst_TYPE_NAME || firstChild->kind == SLAst_TYPE_PTR
-                || firstChild->kind == SLAst_TYPE_REF || firstChild->kind == SLAst_TYPE_MUTREF
-                || firstChild->kind == SLAst_TYPE_ARRAY || firstChild->kind == SLAst_TYPE_VARRAY
-                || firstChild->kind == SLAst_TYPE_SLICE || firstChild->kind == SLAst_TYPE_MUTSLICE
-                || firstChild->kind == SLAst_TYPE_OPTIONAL || firstChild->kind == SLAst_TYPE_FN
-                || firstChild->kind == SLAst_TYPE_ANON_STRUCT
-                || firstChild->kind == SLAst_TYPE_ANON_UNION
-                || firstChild->kind == SLAst_TYPE_TUPLE))
+            && (firstChild->kind == HOPAst_TYPE_NAME || firstChild->kind == HOPAst_TYPE_PTR
+                || firstChild->kind == HOPAst_TYPE_REF || firstChild->kind == HOPAst_TYPE_MUTREF
+                || firstChild->kind == HOPAst_TYPE_ARRAY || firstChild->kind == HOPAst_TYPE_VARRAY
+                || firstChild->kind == HOPAst_TYPE_SLICE || firstChild->kind == HOPAst_TYPE_MUTSLICE
+                || firstChild->kind == HOPAst_TYPE_OPTIONAL || firstChild->kind == HOPAst_TYPE_FN
+                || firstChild->kind == HOPAst_TYPE_ANON_STRUCT
+                || firstChild->kind == HOPAst_TYPE_ANON_UNION
+                || firstChild->kind == HOPAst_TYPE_TUPLE))
         {
             child = AstNextSibling(&c->ast, child);
         }
     }
     while (child >= 0) {
-        const SLAstNode* v = NodeAt(c, child);
-        if (v != NULL && v->kind == SLAst_FIELD
+        const HOPAstNode* v = NodeAt(c, child);
+        if (v != NULL && v->kind == HOPAst_FIELD
             && SliceSpanEq(c->unit->source, v->dataStart, v->dataEnd, variantStart, variantEnd))
         {
             *outVariantNode = child;
@@ -5306,13 +5313,13 @@ int FindEnumVariantNodeBySlice(
 }
 
 int ResolveEnumVariantPayloadFieldType(
-    SLCBackendC* c,
-    const char*  enumTypeName,
-    uint32_t     variantStart,
-    uint32_t     variantEnd,
-    uint32_t     fieldStart,
-    uint32_t     fieldEnd,
-    SLTypeRef*   outType) {
+    HOPCBackendC* c,
+    const char*   enumTypeName,
+    uint32_t      variantStart,
+    uint32_t      variantEnd,
+    uint32_t      fieldStart,
+    uint32_t      fieldEnd,
+    HOPTypeRef*   outType) {
     int32_t enumNodeId;
     int32_t variantNode;
     int32_t payload = -1;
@@ -5324,9 +5331,9 @@ int ResolveEnumVariantPayloadFieldType(
     }
     payload = AstFirstChild(&c->ast, variantNode);
     while (payload >= 0) {
-        const SLAstNode* f = NodeAt(c, payload);
-        int32_t          typeNode;
-        if (f == NULL || f->kind != SLAst_FIELD) {
+        const HOPAstNode* f = NodeAt(c, payload);
+        int32_t           typeNode;
+        if (f == NULL || f->kind != HOPAst_FIELD) {
             break;
         }
         if (!SliceSpanEq(c->unit->source, f->dataStart, f->dataEnd, fieldStart, fieldEnd)) {
@@ -5345,17 +5352,17 @@ int ResolveEnumVariantPayloadFieldType(
 
 /* Returns 1 on success, 0 if node is not enum.variant syntax, -1 on error. */
 int ResolveEnumVariantTypeNameNode(
-    const SLCBackendC* c,
-    int32_t            typeNode,
-    const char**       outEnumCName,
-    uint32_t*          outVariantStart,
-    uint32_t*          outVariantEnd) {
-    const SLAstNode* typeNameNode = NodeAt(c, typeNode);
-    uint32_t         dotPos;
-    const char*      enumCName;
-    const SLNameMap* enumMap;
-    int32_t          enumDeclNode;
-    if (typeNameNode == NULL || typeNameNode->kind != SLAst_TYPE_NAME) {
+    const HOPCBackendC* c,
+    int32_t             typeNode,
+    const char**        outEnumCName,
+    uint32_t*           outVariantStart,
+    uint32_t*           outVariantEnd) {
+    const HOPAstNode* typeNameNode = NodeAt(c, typeNode);
+    uint32_t          dotPos;
+    const char*       enumCName;
+    const HOPNameMap* enumMap;
+    int32_t           enumDeclNode;
+    if (typeNameNode == NULL || typeNameNode->kind != HOPAst_TYPE_NAME) {
         return 0;
     }
     dotPos = typeNameNode->dataEnd;
@@ -5370,12 +5377,12 @@ int ResolveEnumVariantTypeNameNode(
     {
         return 0;
     }
-    enumCName = ResolveTypeName((SLCBackendC*)c, typeNameNode->dataStart, dotPos);
+    enumCName = ResolveTypeName((HOPCBackendC*)c, typeNameNode->dataStart, dotPos);
     if (enumCName == NULL) {
         return -1;
     }
     enumMap = FindNameByCName(c, enumCName);
-    if (enumMap == NULL || enumMap->kind != SLAst_ENUM) {
+    if (enumMap == NULL || enumMap->kind != HOPAst_ENUM) {
         return 0;
     }
     if (FindEnumDeclNodeByCName(c, enumCName, &enumDeclNode) != 0) {
@@ -5391,12 +5398,12 @@ int ResolveEnumVariantTypeNameNode(
 }
 
 int CasePatternParts(
-    const SLCBackendC* c, int32_t caseLabelNode, int32_t* outExprNode, int32_t* outAliasNode) {
-    const SLAstNode* n = NodeAt(c, caseLabelNode);
+    const HOPCBackendC* c, int32_t caseLabelNode, int32_t* outExprNode, int32_t* outAliasNode) {
+    const HOPAstNode* n = NodeAt(c, caseLabelNode);
     if (n == NULL) {
         return -1;
     }
-    if (n->kind == SLAst_CASE_PATTERN) {
+    if (n->kind == HOPAst_CASE_PATTERN) {
         int32_t expr = AstFirstChild(&c->ast, caseLabelNode);
         int32_t alias = expr >= 0 ? AstNextSibling(&c->ast, expr) : -1;
         if (expr < 0) {
@@ -5413,14 +5420,14 @@ int CasePatternParts(
 
 /* Returns 1 for enum variant selector syntax (Enum.Variant), 0 otherwise, -1 on error. */
 int DecodeEnumVariantPatternExpr(
-    const SLCBackendC* c,
-    int32_t            exprNode,
-    const SLNameMap** _Nullable outEnumMap,
+    const HOPCBackendC* c,
+    int32_t             exprNode,
+    const HOPNameMap** _Nullable outEnumMap,
     int32_t* _Nullable outEnumDeclNode,
     int* _Nullable outEnumHasPayload,
     uint32_t* _Nullable outVariantStart,
     uint32_t* _Nullable outVariantEnd) {
-    const SLAstNode* n = NodeAt(c, exprNode);
+    const HOPAstNode* n = NodeAt(c, exprNode);
     if (outEnumMap != NULL) {
         *outEnumMap = NULL;
     }
@@ -5436,7 +5443,7 @@ int DecodeEnumVariantPatternExpr(
     if (outVariantEnd != NULL) {
         *outVariantEnd = 0;
     }
-    if (n == NULL || n->kind != SLAst_FIELD_EXPR) {
+    if (n == NULL || n->kind != HOPAst_FIELD_EXPR) {
         return 0;
     }
     return ResolveEnumSelectorByFieldExpr(
@@ -5449,14 +5456,14 @@ int DecodeEnumVariantPatternExpr(
         outVariantEnd);
 }
 
-int ResolvePayloadEnumType(const SLCBackendC* c, const SLTypeRef* t, const char** outEnumName) {
-    const char*      baseName;
-    const SLNameMap* map;
-    int32_t          enumNodeId;
+int ResolvePayloadEnumType(const HOPCBackendC* c, const HOPTypeRef* t, const char** outEnumName) {
+    const char*       baseName;
+    const HOPNameMap* map;
+    int32_t           enumNodeId;
     if (outEnumName != NULL) {
         *outEnumName = NULL;
     }
-    if (t == NULL || !t->valid || t->containerKind != SLTypeContainer_SCALAR
+    if (t == NULL || !t->valid || t->containerKind != HOPTypeContainer_SCALAR
         || t->containerPtrDepth != 0 || t->ptrDepth != 0 || t->baseName == NULL)
     {
         return 0;
@@ -5466,7 +5473,7 @@ int ResolvePayloadEnumType(const SLCBackendC* c, const SLTypeRef* t, const char*
         baseName = t->baseName;
     }
     map = FindNameByCName(c, baseName);
-    if (map == NULL || map->kind != SLAst_ENUM) {
+    if (map == NULL || map->kind != HOPAst_ENUM) {
         return 0;
     }
     if (FindEnumDeclNodeByCName(c, baseName, &enumNodeId) != 0
@@ -5480,9 +5487,9 @@ int ResolvePayloadEnumType(const SLCBackendC* c, const SLTypeRef* t, const char*
     return 1;
 }
 
-int AppendMappedIdentifier(SLCBackendC* c, uint32_t start, uint32_t end) {
-    const SLLocal*   local = FindLocalBySlice(c, start, end);
-    const SLNameMap* map;
+int AppendMappedIdentifier(HOPCBackendC* c, uint32_t start, uint32_t end) {
+    const HOPLocal*   local = FindLocalBySlice(c, start, end);
+    const HOPNameMap* map;
     if (local != NULL) {
         return BufAppendCStr(&c->out, local->name);
     }
@@ -5493,14 +5500,14 @@ int AppendMappedIdentifier(SLCBackendC* c, uint32_t start, uint32_t end) {
     return BufAppendSlice(&c->out, c->unit->source, start, end);
 }
 
-int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
-    int              i;
-    const char*      base = NULL;
-    int              stars = 0;
-    int              inlineAnon = 0;
-    int              inlineAnonIsUnion = 0;
-    SLTypeRef        lowered;
-    const SLTypeRef* t = type;
+int EmitTypeNameWithDepth(HOPCBackendC* c, const HOPTypeRef* type) {
+    int               i;
+    const char*       base = NULL;
+    int               stars = 0;
+    int               inlineAnon = 0;
+    int               inlineAnonIsUnion = 0;
+    HOPTypeRef        lowered;
+    const HOPTypeRef* t = type;
     if (type == NULL) {
         return -1;
     }
@@ -5511,17 +5518,19 @@ int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
     if (!t->valid) {
         return BufAppendCStr(&c->out, "void");
     }
-    if (t->containerKind == SLTypeContainer_SLICE_RO
-        || t->containerKind == SLTypeContainer_SLICE_MUT)
+    if (t->containerKind == HOPTypeContainer_SLICE_RO
+        || t->containerKind == HOPTypeContainer_SLICE_MUT)
     {
         if (t->containerPtrDepth > 0) {
             /* *[T] / &[T] lower to slice structs (ptr+len) */
-            base =
-                t->containerKind == SLTypeContainer_SLICE_MUT ? "__sl_slice_mut" : "__sl_slice_ro";
+            base = t->containerKind == HOPTypeContainer_SLICE_MUT
+                     ? "__hop_slice_mut"
+                     : "__hop_slice_ro";
             stars = SliceStructPtrDepth(t);
         } else {
-            base =
-                t->containerKind == SLTypeContainer_SLICE_MUT ? "__sl_slice_mut" : "__sl_slice_ro";
+            base = t->containerKind == HOPTypeContainer_SLICE_MUT
+                     ? "__hop_slice_mut"
+                     : "__hop_slice_ro";
             stars = 0;
         }
     } else if (TypeRefIsBorrowedStrValueC(t)) {
@@ -5535,13 +5544,13 @@ int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
             return BufAppendCStr(&c->out, "void");
         }
         base = t->baseName;
-        if (StrHasPrefix(base, "__sl_anon_") && !IsAnonTypeNameVisible(c, base)) {
-            const SLAnonTypeInfo* info = FindAnonTypeByCName(c, base);
+        if (StrHasPrefix(base, "__hop_anon_") && !IsAnonTypeNameVisible(c, base)) {
+            const HOPAnonTypeInfo* info = FindAnonTypeByCName(c, base);
             inlineAnon = 1;
             inlineAnonIsUnion = info != NULL ? info->isUnion : (base[10] == 'u');
         }
         stars = t->ptrDepth;
-        if (t->containerKind == SLTypeContainer_ARRAY && t->containerPtrDepth > 0) {
+        if (t->containerKind == HOPTypeContainer_ARRAY && t->containerPtrDepth > 0) {
             stars += t->containerPtrDepth;
         }
     }
@@ -5551,7 +5560,7 @@ int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
             return -1;
         }
         for (i = 0; i < c->fieldInfoLen; i++) {
-            const SLFieldInfo* f = &c->fieldInfos[i];
+            const HOPFieldInfo* f = &c->fieldInfos[i];
             if (!StrEq(f->ownerType, base)) {
                 continue;
             }
@@ -5576,13 +5585,13 @@ int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type) {
     return 0;
 }
 
-int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) {
-    SLTypeRef        t;
-    SLTypeRef        lowered;
-    const SLTypeRef* src;
-    int              i;
-    int              stars;
-    int              pointerBackedOptional = 0;
+int EmitTypeWithName(HOPCBackendC* c, int32_t typeNode, const char* name) {
+    HOPTypeRef        t;
+    HOPTypeRef        lowered;
+    const HOPTypeRef* src;
+    int               i;
+    int               stars;
+    int               pointerBackedOptional = 0;
     if (ParseTypeRef(c, typeNode, &t) != 0 || !t.valid) {
         return -1;
     }
@@ -5591,16 +5600,16 @@ int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) {
     }
     pointerBackedOptional = TypeRefIsPointerBackedOptional(&t);
     src = &lowered;
-    if (src->containerKind == SLTypeContainer_SLICE_RO
-        || src->containerKind == SLTypeContainer_SLICE_MUT)
+    if (src->containerKind == HOPTypeContainer_SLICE_RO
+        || src->containerKind == HOPTypeContainer_SLICE_MUT)
     {
         if (src->containerPtrDepth > 0) {
             int stars = SliceStructPtrDepth(src);
             if (BufAppendCStr(
                     &c->out,
-                    src->containerKind == SLTypeContainer_SLICE_MUT
-                        ? "__sl_slice_mut"
-                        : "__sl_slice_ro")
+                    src->containerKind == HOPTypeContainer_SLICE_MUT
+                        ? "__hop_slice_mut"
+                        : "__hop_slice_ro")
                     != 0
                 || BufAppendChar(&c->out, ' ') != 0)
             {
@@ -5615,9 +5624,9 @@ int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) {
         }
         if (BufAppendCStr(
                 &c->out,
-                src->containerKind == SLTypeContainer_SLICE_MUT
-                    ? "__sl_slice_mut"
-                    : "__sl_slice_ro")
+                src->containerKind == HOPTypeContainer_SLICE_MUT
+                    ? "__hop_slice_mut"
+                    : "__hop_slice_ro")
                 != 0
             || BufAppendChar(&c->out, ' ') != 0)
         {
@@ -5650,7 +5659,7 @@ int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) {
         return -1;
     }
     stars = src->ptrDepth;
-    if (src->containerKind == SLTypeContainer_ARRAY && src->containerPtrDepth > 0) {
+    if (src->containerKind == HOPTypeContainer_ARRAY && src->containerPtrDepth > 0) {
         stars += src->containerPtrDepth;
     }
     for (i = 0; i < stars; i++) {
@@ -5664,7 +5673,7 @@ int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) {
     if (BufAppendCStr(&c->out, name) != 0) {
         return -1;
     }
-    if (src->containerKind == SLTypeContainer_ARRAY && src->containerPtrDepth == 0
+    if (src->containerKind == HOPTypeContainer_ARRAY && src->containerPtrDepth == 0
         && src->hasArrayLen)
     {
         if (BufAppendChar(&c->out, '[') != 0 || BufAppendU32(&c->out, src->arrayLen) != 0
@@ -5676,17 +5685,17 @@ int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name) {
     return 0;
 }
 
-int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name);
+int EmitTypeRefWithName(HOPCBackendC* c, const HOPTypeRef* t, const char* name);
 
 int EmitAnonInlineTypeWithName(
-    SLCBackendC* c, const char* ownerType, int isUnion, const char* name) {
+    HOPCBackendC* c, const char* ownerType, int isUnion, const char* name) {
     uint32_t i;
     int      sawField = 0;
     if (BufAppendCStr(&c->out, isUnion ? "union {\n" : "struct {\n") != 0) {
         return -1;
     }
     for (i = 0; i < c->fieldInfoLen; i++) {
-        const SLFieldInfo* f = &c->fieldInfos[i];
+        const HOPFieldInfo* f = &c->fieldInfos[i];
         if (!StrEq(f->ownerType, ownerType)) {
             continue;
         }
@@ -5707,12 +5716,12 @@ int EmitAnonInlineTypeWithName(
     return 0;
 }
 
-int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
-    int              stars;
-    int              i;
-    SLTypeRef        lowered;
-    const SLTypeRef* src = t;
-    int              pointerBackedOptional = 0;
+int EmitTypeRefWithName(HOPCBackendC* c, const HOPTypeRef* t, const char* name) {
+    int               stars;
+    int               i;
+    HOPTypeRef        lowered;
+    const HOPTypeRef* src = t;
+    int               pointerBackedOptional = 0;
     if (t == NULL) {
         return -1;
     }
@@ -5724,16 +5733,16 @@ int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
     if (!src->valid) {
         return -1;
     }
-    if (src->containerKind == SLTypeContainer_SLICE_RO
-        || src->containerKind == SLTypeContainer_SLICE_MUT)
+    if (src->containerKind == HOPTypeContainer_SLICE_RO
+        || src->containerKind == HOPTypeContainer_SLICE_MUT)
     {
         if (src->containerPtrDepth > 0) {
             int stars = SliceStructPtrDepth(src);
             if (BufAppendCStr(
                     &c->out,
-                    src->containerKind == SLTypeContainer_SLICE_MUT
-                        ? "__sl_slice_mut"
-                        : "__sl_slice_ro")
+                    src->containerKind == HOPTypeContainer_SLICE_MUT
+                        ? "__hop_slice_mut"
+                        : "__hop_slice_ro")
                     != 0
                 || BufAppendChar(&c->out, ' ') != 0)
             {
@@ -5748,9 +5757,9 @@ int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
         }
         if (BufAppendCStr(
                 &c->out,
-                src->containerKind == SLTypeContainer_SLICE_MUT
-                    ? "__sl_slice_mut"
-                    : "__sl_slice_ro")
+                src->containerKind == HOPTypeContainer_SLICE_MUT
+                    ? "__hop_slice_mut"
+                    : "__hop_slice_ro")
                 != 0
             || BufAppendChar(&c->out, ' ') != 0)
         {
@@ -5779,16 +5788,16 @@ int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
     if (src->baseName == NULL) {
         return -1;
     }
-    if (src->containerKind == SLTypeContainer_SCALAR && src->ptrDepth == 0
+    if (src->containerKind == HOPTypeContainer_SCALAR && src->ptrDepth == 0
         && src->containerPtrDepth == 0 && !src->isOptional)
     {
-        const SLAnonTypeInfo* info = FindAnonTypeByCName(c, src->baseName);
-        if (info != NULL && (info->flags & SLAnonTypeFlag_EMITTED_GLOBAL) == 0
+        const HOPAnonTypeInfo* info = FindAnonTypeByCName(c, src->baseName);
+        if (info != NULL && (info->flags & HOPAnonTypeFlag_EMITTED_GLOBAL) == 0
             && !IsLocalAnonTypedefVisible(c, info->cName))
         {
             return EmitAnonInlineTypeWithName(c, info->cName, info->isUnion, name);
         }
-        if (info == NULL && StrHasPrefix(src->baseName, "__sl_anon_")
+        if (info == NULL && StrHasPrefix(src->baseName, "__hop_anon_")
             && !IsAnonTypeNameVisible(c, src->baseName))
         {
             int isUnion = src->baseName[10] == 'u';
@@ -5799,7 +5808,7 @@ int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
         return -1;
     }
     stars = src->ptrDepth;
-    if (src->containerKind == SLTypeContainer_ARRAY && src->containerPtrDepth > 0) {
+    if (src->containerKind == HOPTypeContainer_ARRAY && src->containerPtrDepth > 0) {
         stars += src->containerPtrDepth;
     }
     for (i = 0; i < stars; i++) {
@@ -5813,7 +5822,7 @@ int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
     if (BufAppendCStr(&c->out, name) != 0) {
         return -1;
     }
-    if (src->containerKind == SLTypeContainer_ARRAY && src->containerPtrDepth == 0
+    if (src->containerKind == HOPTypeContainer_ARRAY && src->containerPtrDepth == 0
         && src->hasArrayLen)
     {
         if (BufAppendChar(&c->out, '[') != 0 || BufAppendU32(&c->out, src->arrayLen) != 0
@@ -5825,35 +5834,38 @@ int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name) {
     return 0;
 }
 
-int EmitTypeForCast(SLCBackendC* c, int32_t typeNode) {
-    SLTypeRef t;
+int EmitTypeForCast(HOPCBackendC* c, int32_t typeNode) {
+    HOPTypeRef t;
     if (ParseTypeRef(c, typeNode, &t) != 0) {
         return -1;
     }
     return EmitTypeNameWithDepth(c, &t);
 }
 
-int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
+int InferExprType(HOPCBackendC* c, int32_t nodeId, HOPTypeRef* outType);
 int InferExprTypeExpected(
-    SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType, SLTypeRef* outType);
-int EmitExpr(SLCBackendC* c, int32_t nodeId);
-int EmitCompoundLiteral(SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType);
+    HOPCBackendC* c, int32_t nodeId, const HOPTypeRef* _Nullable expectedType, HOPTypeRef* outType);
+int EmitExpr(HOPCBackendC* c, int32_t nodeId);
+int EmitCompoundLiteral(HOPCBackendC* c, int32_t nodeId, const HOPTypeRef* _Nullable expectedType);
 int EmitCompoundLiteralOrderedStruct(
-    SLCBackendC* c, int32_t firstField, const char* ownerType, const SLTypeRef* valueType);
+    HOPCBackendC* c, int32_t firstField, const char* ownerType, const HOPTypeRef* valueType);
 int EmitEffectiveContextFieldValue(
-    SLCBackendC* c, const char* fieldName, const SLTypeRef* requiredType);
-int InferNewExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
-int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* _Nullable dstType);
+    HOPCBackendC* c, const char* fieldName, const HOPTypeRef* requiredType);
+int InferNewExprType(HOPCBackendC* c, int32_t nodeId, HOPTypeRef* outType);
+int EmitExprCoerced(HOPCBackendC* c, int32_t exprNode, const HOPTypeRef* _Nullable dstType);
 int EmitCompoundFieldValueCoerced(
-    SLCBackendC* c, const SLAstNode* field, int32_t exprNode, const SLTypeRef* _Nullable dstType);
-int EmitContextArgForSig(SLCBackendC* c, const SLFnSig* sig);
-int StructHasFieldDefaults(const SLCBackendC* c, const char* ownerType);
+    HOPCBackendC*     c,
+    const HOPAstNode* field,
+    int32_t           exprNode,
+    const HOPTypeRef* _Nullable dstType);
+int EmitContextArgForSig(HOPCBackendC* c, const HOPFnSig* sig);
+int StructHasFieldDefaults(const HOPCBackendC* c, const char* ownerType);
 int TypeRefAssignableCost(
-    SLCBackendC* c, const SLTypeRef* dst, const SLTypeRef* src, uint8_t* outCost);
+    HOPCBackendC* c, const HOPTypeRef* dst, const HOPTypeRef* src, uint8_t* outCost);
 
-void SetPreferredAllocatorPtrType(SLTypeRef* outType) {
+void SetPreferredAllocatorPtrType(HOPTypeRef* outType) {
     TypeRefSetScalar(outType, "builtin__MemAllocator");
     outType->ptrDepth = 1;
 }
 
-SL_API_END
+HOP_API_END

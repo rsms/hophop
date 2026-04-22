@@ -1,1 +1,1 @@
-tests/variadic_param_not_last_bad.sl:2:21: error: SL2066: variadic parameter must be last
+tests/variadic_param_not_last_bad.hop:2:21: error: HOP2066: variadic parameter must be last

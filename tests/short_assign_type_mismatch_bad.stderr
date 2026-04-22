@@ -1,1 +1,1 @@
-tests/short_assign_type_mismatch_bad.sl:4:2: error: SL2004: type mismatch: cannot use expression of type const_int as bool
+tests/short_assign_type_mismatch_bad.hop:4:2: error: HOP2004: type mismatch: cannot use expression of type const_int as bool

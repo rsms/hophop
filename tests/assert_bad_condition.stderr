@@ -1,1 +1,1 @@
-tests/assert_bad_condition.sl:3:9: error: SL2009: expected bool expression
+tests/assert_bad_condition.hop:3:9: error: HOP2009: expected bool expression

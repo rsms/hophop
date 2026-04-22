@@ -1,24 +1,24 @@
-SL_API_BEGIN
+HOP_API_BEGIN
 
-static const uint32_t SL_EVAL_MIR_FN_NONE = UINT32_MAX;
+static const uint32_t HOP_EVAL_MIR_FN_NONE = UINT32_MAX;
 
 typedef struct {
-    SLEvalProgram*       p;
-    SLMirProgramBuilder  builder;
+    HOPEvalProgram*       p;
+    HOPMirProgramBuilder  builder;
     uint32_t*            evalToMir;
     uint8_t*             loweringFns;
     uint32_t*            topConstToMir;
     uint8_t*             loweringTopConsts;
     uint32_t*            topVarToMir;
     uint8_t*             loweringTopVars;
-    SLEvalMirExecCtx     execCtx;
-    SLDiag*              diag;
-} SLEvalMirLowerCtx;
+    HOPEvalMirExecCtx     execCtx;
+    HOPDiag*              diag;
+} HOPEvalMirLowerCtx;
 
-static int SLEvalMirInitLowerCtx(
-    SLEvalProgram*      p,
+static int HOPEvalMirInitLowerCtx(
+    HOPEvalProgram*      p,
     uint32_t            extraMirFuncs,
-    SLEvalMirLowerCtx* _Nonnull outCtx) {
+    HOPEvalMirLowerCtx* _Nonnull outCtx) {
     uint32_t*            evalToMir;
     uint8_t*             loweringFns;
     uint32_t*            topConstToMir;
@@ -26,7 +26,7 @@ static int SLEvalMirInitLowerCtx(
     uint32_t*            topVarToMir;
     uint8_t*             loweringTopVars;
     uint32_t*            mirToEval;
-    const SLParsedFile** sourceFiles;
+    const HOPParsedFile** sourceFiles;
     uint32_t             i;
     uint32_t             mirCap;
     if (p == NULL || outCtx == NULL) {
@@ -37,22 +37,22 @@ static int SLEvalMirInitLowerCtx(
     if (mirCap < p->funcLen || mirCap < p->topConstLen || mirCap < p->topVarLen) {
         return -1;
     }
-    evalToMir = (uint32_t*)SLArenaAlloc(
+    evalToMir = (uint32_t*)HOPArenaAlloc(
         p->arena, sizeof(uint32_t) * p->funcLen, (uint32_t)_Alignof(uint32_t));
-    loweringFns = (uint8_t*)SLArenaAlloc(
+    loweringFns = (uint8_t*)HOPArenaAlloc(
         p->arena, sizeof(uint8_t) * p->funcLen, (uint32_t)_Alignof(uint8_t));
-    topConstToMir = (uint32_t*)SLArenaAlloc(
+    topConstToMir = (uint32_t*)HOPArenaAlloc(
         p->arena, sizeof(uint32_t) * p->topConstLen, (uint32_t)_Alignof(uint32_t));
-    loweringTopConsts = (uint8_t*)SLArenaAlloc(
+    loweringTopConsts = (uint8_t*)HOPArenaAlloc(
         p->arena, sizeof(uint8_t) * p->topConstLen, (uint32_t)_Alignof(uint8_t));
-    topVarToMir = (uint32_t*)SLArenaAlloc(
+    topVarToMir = (uint32_t*)HOPArenaAlloc(
         p->arena, sizeof(uint32_t) * p->topVarLen, (uint32_t)_Alignof(uint32_t));
-    loweringTopVars = (uint8_t*)SLArenaAlloc(
+    loweringTopVars = (uint8_t*)HOPArenaAlloc(
         p->arena, sizeof(uint8_t) * p->topVarLen, (uint32_t)_Alignof(uint8_t));
-    mirToEval = (uint32_t*)SLArenaAlloc(
+    mirToEval = (uint32_t*)HOPArenaAlloc(
         p->arena, sizeof(uint32_t) * mirCap, (uint32_t)_Alignof(uint32_t));
-    sourceFiles = (const SLParsedFile**)SLArenaAlloc(
-        p->arena, sizeof(const SLParsedFile*) * mirCap, (uint32_t)_Alignof(const SLParsedFile*));
+    sourceFiles = (const HOPParsedFile**)HOPArenaAlloc(
+        p->arena, sizeof(const HOPParsedFile*) * mirCap, (uint32_t)_Alignof(const HOPParsedFile*));
     if (evalToMir == NULL || loweringFns == NULL || topConstToMir == NULL
         || loweringTopConsts == NULL || topVarToMir == NULL || loweringTopVars == NULL
         || mirToEval == NULL || sourceFiles == NULL)
@@ -60,22 +60,22 @@ static int SLEvalMirInitLowerCtx(
         return ErrorSimple("out of memory");
     }
     for (i = 0; i < p->funcLen; i++) {
-        evalToMir[i] = SL_EVAL_MIR_FN_NONE;
+        evalToMir[i] = HOP_EVAL_MIR_FN_NONE;
         loweringFns[i] = 0u;
     }
     for (i = 0; i < p->topConstLen; i++) {
-        topConstToMir[i] = SL_EVAL_MIR_FN_NONE;
+        topConstToMir[i] = HOP_EVAL_MIR_FN_NONE;
         loweringTopConsts[i] = 0u;
     }
     for (i = 0; i < p->topVarLen; i++) {
-        topVarToMir[i] = SL_EVAL_MIR_FN_NONE;
+        topVarToMir[i] = HOP_EVAL_MIR_FN_NONE;
         loweringTopVars[i] = 0u;
     }
     for (i = 0; i < mirCap; i++) {
         mirToEval[i] = UINT32_MAX;
         sourceFiles[i] = NULL;
     }
-    SLMirProgramBuilderInit(&outCtx->builder, p->arena);
+    HOPMirProgramBuilderInit(&outCtx->builder, p->arena);
     outCtx->p = p;
     outCtx->evalToMir = evalToMir;
     outCtx->loweringFns = loweringFns;
@@ -96,15 +96,15 @@ static int SLEvalMirInitLowerCtx(
     return 0;
 }
 
-static int SLEvalMirInternSourceFile(
-    SLEvalMirLowerCtx* c, const SLParsedFile* file, uint32_t* _Nonnull outSourceRef) {
-    SLMirSourceRef sourceRef = { 0 };
+static int HOPEvalMirInternSourceFile(
+    HOPEvalMirLowerCtx* c, const HOPParsedFile* file, uint32_t* _Nonnull outSourceRef) {
+    HOPMirSourceRef sourceRef = { 0 };
     if (c == NULL || file == NULL || outSourceRef == NULL) {
         return -1;
     }
     sourceRef.src.ptr = file->source;
     sourceRef.src.len = file->sourceLen;
-    if (SLMirProgramBuilderAddSource(&c->builder, &sourceRef, outSourceRef) != 0) {
+    if (HOPMirProgramBuilderAddSource(&c->builder, &sourceRef, outSourceRef) != 0) {
         return -1;
     }
     if (*outSourceRef >= c->execCtx.sourceFileCap) {
@@ -114,8 +114,8 @@ static int SLEvalMirInternSourceFile(
     return 0;
 }
 
-static void SLEvalMirAdaptOutValue(
-    const SLEvalMirExecCtx* c, SLCTFEValue* _Nullable value, int* _Nullable inOutIsConst) {
+static void HOPEvalMirAdaptOutValue(
+    const HOPEvalMirExecCtx* c, HOPCTFEValue* _Nullable value, int* _Nullable inOutIsConst) {
     uint32_t mirFnIndex = UINT32_MAX;
     uint32_t evalFnIndex = UINT32_MAX;
     if (inOutIsConst != NULL && !*inOutIsConst) {
@@ -124,7 +124,7 @@ static void SLEvalMirAdaptOutValue(
     if (c == NULL || value == NULL) {
         return;
     }
-    if (!SLMirValueAsFunctionRef(value, &mirFnIndex)) {
+    if (!HOPMirValueAsFunctionRef(value, &mirFnIndex)) {
         return;
     }
     if (c->mirToEval == NULL || mirFnIndex >= c->mirToEvalLen) {
@@ -140,17 +140,17 @@ static void SLEvalMirAdaptOutValue(
         }
         return;
     }
-    SLEvalValueSetFunctionRef(value, evalFnIndex);
+    HOPEvalValueSetFunctionRef(value, evalFnIndex);
 }
 
-static const SLPackage* _Nullable SLEvalMirFindImportTargetByAliasSlice(
-    const SLPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+static const HOPPackage* _Nullable HOPEvalMirFindImportTargetByAliasSlice(
+    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     if (pkg == NULL || src == NULL) {
         return NULL;
     }
     for (i = 0; i < pkg->importLen; i++) {
-        const SLImportRef* imp = &pkg->imports[i];
+        const HOPImportRef* imp = &pkg->imports[i];
         if (imp->bindName == NULL || imp->target == NULL) {
             continue;
         }
@@ -163,9 +163,9 @@ static const SLPackage* _Nullable SLEvalMirFindImportTargetByAliasSlice(
     return NULL;
 }
 
-static int SLEvalMirMatchQualifiedCallBaseSlice(
-    const SLAst*          ast,
-    const SLMirSymbolRef* symbol,
+static int HOPEvalMirMatchQualifiedCallBaseSlice(
+    const HOPAst*          ast,
+    const HOPMirSymbolRef* symbol,
     int32_t               rootNode,
     uint32_t              encodedArgCount,
     uint32_t* _Nonnull outBaseStart,
@@ -181,24 +181,24 @@ static int SLEvalMirMatchQualifiedCallBaseSlice(
     }
     if (ast == NULL || symbol == NULL || outBaseStart == NULL || outBaseEnd == NULL
         || rootNode < 0 || (uint32_t)rootNode >= ast->len
-        || symbol->flags != SLMirSymbolFlag_CALL_RECEIVER_ARG0)
+        || symbol->flags != HOPMirSymbolFlag_CALL_RECEIVER_ARG0)
     {
         return 0;
     }
     stack[stackLen++] = rootNode;
     while (stackLen > 0) {
         int32_t          nodeId = stack[--stackLen];
-        const SLAstNode* node = &ast->nodes[nodeId];
+        const HOPAstNode* node = &ast->nodes[nodeId];
         int32_t          child;
-        if (node->kind == SLAst_CALL) {
+        if (node->kind == HOPAst_CALL) {
             int32_t calleeNode = node->firstChild;
             int32_t baseNode = calleeNode >= 0 ? ast->nodes[calleeNode].firstChild : -1;
             if (calleeNode >= 0 && (uint32_t)calleeNode < ast->len
-                && ast->nodes[calleeNode].kind == SLAst_FIELD_EXPR && baseNode >= 0
-                && (uint32_t)baseNode < ast->len && ast->nodes[baseNode].kind == SLAst_IDENT
+                && ast->nodes[calleeNode].kind == HOPAst_FIELD_EXPR && baseNode >= 0
+                && (uint32_t)baseNode < ast->len && ast->nodes[baseNode].kind == HOPAst_IDENT
                 && ast->nodes[calleeNode].dataStart == symbol->nameStart
                 && ast->nodes[calleeNode].dataEnd == symbol->nameEnd
-                && AstListCount(ast, nodeId) == SLMirCallArgCountFromTok((uint16_t)encodedArgCount))
+                && AstListCount(ast, nodeId) == HOPMirCallArgCountFromTok((uint16_t)encodedArgCount))
             {
                 uint32_t baseStart = ast->nodes[baseNode].dataStart;
                 uint32_t baseEnd = ast->nodes[baseNode].dataEnd;
@@ -223,15 +223,15 @@ static int SLEvalMirMatchQualifiedCallBaseSlice(
     return found;
 }
 
-static int SLEvalMirResolveQualifiedCallTargetInNode(
-    const SLEvalMirLowerCtx* c,
-    const SLPackage*         currentPkg,
-    const SLParsedFile*      file,
+static int HOPEvalMirResolveQualifiedCallTargetInNode(
+    const HOPEvalMirLowerCtx* c,
+    const HOPPackage*         currentPkg,
+    const HOPParsedFile*      file,
     int32_t                  rootNode,
-    const SLMirInst*         ins,
+    const HOPMirInst*         ins,
     uint32_t*                outEvalFnIndex) {
-    const SLMirSymbolRef* symbol;
-    const SLPackage*      targetPkg;
+    const HOPMirSymbolRef* symbol;
+    const HOPPackage*      targetPkg;
     int32_t               fnIndex;
     uint32_t              baseStart = 0;
     uint32_t              baseEnd = 0;
@@ -239,30 +239,30 @@ static int SLEvalMirResolveQualifiedCallTargetInNode(
         *outEvalFnIndex = UINT32_MAX;
     }
     if (c == NULL || currentPkg == NULL || file == NULL || ins == NULL || outEvalFnIndex == NULL
-        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->op != HOPMirOp_CALL || c->builder.symbols == NULL
         || ins->aux >= c->builder.symbolLen)
     {
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL
-        || !SLEvalMirMatchQualifiedCallBaseSlice(
+    if (symbol->kind != HOPMirSymbol_CALL
+        || !HOPEvalMirMatchQualifiedCallBaseSlice(
             &file->ast, symbol, rootNode, (uint32_t)ins->tok, &baseStart, &baseEnd))
     {
         return 0;
     }
-    targetPkg = SLEvalMirFindImportTargetByAliasSlice(currentPkg, file->source, baseStart, baseEnd);
+    targetPkg = HOPEvalMirFindImportTargetByAliasSlice(currentPkg, file->source, baseStart, baseEnd);
     if (targetPkg == NULL) {
         return 0;
     }
-    fnIndex = SLEvalResolveFunctionBySlice(
+    fnIndex = HOPEvalResolveFunctionBySlice(
         c->p,
         targetPkg,
         file,
         symbol->nameStart,
         symbol->nameEnd,
         NULL,
-        SLMirCallArgCountFromTok(ins->tok) - 1u);
+        HOPMirCallArgCountFromTok(ins->tok) - 1u);
     if (fnIndex == -2) {
         return 0;
     }
@@ -275,42 +275,42 @@ static int SLEvalMirResolveQualifiedCallTargetInNode(
     return 1;
 }
 
-static int SLEvalMirResolveDirectCallTarget(
-    const SLEvalMirLowerCtx* c,
-    const SLEvalFunction*    callerFn,
+static int HOPEvalMirResolveDirectCallTarget(
+    const HOPEvalMirLowerCtx* c,
+    const HOPEvalFunction*    callerFn,
     int32_t                  callerFnIndex,
-    const SLMirInst*         ins,
+    const HOPMirInst*         ins,
     uint32_t*                outEvalFnIndex) {
-    const SLMirSymbolRef* symbol;
+    const HOPMirSymbolRef* symbol;
     int32_t               targetFnIndex;
     if (outEvalFnIndex != NULL) {
         *outEvalFnIndex = UINT32_MAX;
     }
     if (c == NULL || callerFn == NULL || ins == NULL || outEvalFnIndex == NULL
-        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->op != HOPMirOp_CALL || c->builder.symbols == NULL
         || ins->aux >= c->builder.symbolLen)
     {
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL) {
+    if (symbol->kind != HOPMirSymbol_CALL) {
         return 0;
     }
-    if (symbol->flags == SLMirSymbolFlag_CALL_RECEIVER_ARG0) {
-        return SLEvalMirResolveQualifiedCallTargetInNode(
+    if (symbol->flags == HOPMirSymbolFlag_CALL_RECEIVER_ARG0) {
+        return HOPEvalMirResolveQualifiedCallTargetInNode(
             c, callerFn->pkg, callerFn->file, callerFn->bodyNode, ins, outEvalFnIndex);
     }
     if (symbol->flags != 0u) {
         return 0;
     }
-    targetFnIndex = SLEvalResolveFunctionBySlice(
+    targetFnIndex = HOPEvalResolveFunctionBySlice(
         c->p,
         NULL,
         callerFn->file,
         symbol->nameStart,
         symbol->nameEnd,
         NULL,
-        SLMirCallArgCountFromTok(ins->tok));
+        HOPMirCallArgCountFromTok(ins->tok));
     if (targetFnIndex < 0 || (uint32_t)targetFnIndex >= c->p->funcLen)
     {
         return 0;
@@ -323,33 +323,33 @@ static int SLEvalMirResolveDirectCallTarget(
     return 1;
 }
 
-static int SLEvalMirResolvePlainDirectCallTargetForFile(
-    const SLEvalMirLowerCtx* c,
-    const SLParsedFile*      file,
-    const SLMirInst*         ins,
+static int HOPEvalMirResolvePlainDirectCallTargetForFile(
+    const HOPEvalMirLowerCtx* c,
+    const HOPParsedFile*      file,
+    const HOPMirInst*         ins,
     uint32_t*                outEvalFnIndex) {
-    const SLMirSymbolRef* symbol;
+    const HOPMirSymbolRef* symbol;
     int32_t               targetFnIndex;
     if (outEvalFnIndex != NULL) {
         *outEvalFnIndex = UINT32_MAX;
     }
-    if (c == NULL || file == NULL || ins == NULL || outEvalFnIndex == NULL || ins->op != SLMirOp_CALL
+    if (c == NULL || file == NULL || ins == NULL || outEvalFnIndex == NULL || ins->op != HOPMirOp_CALL
         || c->builder.symbols == NULL || ins->aux >= c->builder.symbolLen)
     {
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+    if (symbol->kind != HOPMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
-    targetFnIndex = SLEvalResolveFunctionBySlice(
+    targetFnIndex = HOPEvalResolveFunctionBySlice(
         c->p,
         NULL,
         file,
         symbol->nameStart,
         symbol->nameEnd,
         NULL,
-        SLMirCallArgCountFromTok(ins->tok));
+        HOPMirCallArgCountFromTok(ins->tok));
     if (targetFnIndex < 0 || (uint32_t)targetFnIndex >= c->p->funcLen
         || c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn)
     {
@@ -359,107 +359,107 @@ static int SLEvalMirResolvePlainDirectCallTargetForFile(
     return 1;
 }
 
-static int SLEvalMirResolveQualifiedCallTargetForNode(
-    const SLEvalMirLowerCtx* c,
-    const SLParsedFile*      file,
+static int HOPEvalMirResolveQualifiedCallTargetForNode(
+    const HOPEvalMirLowerCtx* c,
+    const HOPParsedFile*      file,
     int32_t                  rootNode,
-    const SLMirInst*         ins,
+    const HOPMirInst*         ins,
     uint32_t*                outEvalFnIndex) {
-    const SLPackage*      currentPkg;
+    const HOPPackage*      currentPkg;
     if (outEvalFnIndex != NULL) {
         *outEvalFnIndex = UINT32_MAX;
     }
-    if (c == NULL || file == NULL || ins == NULL || outEvalFnIndex == NULL || ins->op != SLMirOp_CALL
+    if (c == NULL || file == NULL || ins == NULL || outEvalFnIndex == NULL || ins->op != HOPMirOp_CALL
         || c->builder.symbols == NULL || ins->aux >= c->builder.symbolLen)
     {
         return 0;
     }
-    currentPkg = SLEvalFindPackageByFile(c->p, file);
-    return SLEvalMirResolveQualifiedCallTargetInNode(
+    currentPkg = HOPEvalFindPackageByFile(c->p, file);
+    return HOPEvalMirResolveQualifiedCallTargetInNode(
         c, currentPkg, file, rootNode, ins, outEvalFnIndex);
 }
 
-static int SLEvalMirRewriteBuiltinHostCallForFile(
-    SLEvalMirLowerCtx*  c,
-    const SLParsedFile* file,
-    SLMirInst*          ins,
+static int HOPEvalMirRewriteBuiltinHostCallForFile(
+    HOPEvalMirLowerCtx*  c,
+    const HOPParsedFile* file,
+    HOPMirInst*          ins,
     int* _Nonnull outRewritten) {
-    const SLMirSymbolRef* symbol;
-    SLMirHostRef          host = { 0 };
+    const HOPMirSymbolRef* symbol;
+    HOPMirHostRef          host = { 0 };
     uint32_t              hostIndex = UINT32_MAX;
     if (outRewritten != NULL) {
         *outRewritten = 0;
     }
     if (c == NULL || file == NULL || ins == NULL || outRewritten == NULL
-        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->op != HOPMirOp_CALL || c->builder.symbols == NULL
         || ins->aux >= c->builder.symbolLen)
     {
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+    if (symbol->kind != HOPMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
-    if (SLMirCallArgCountFromTok(ins->tok) == 1u
+    if (HOPMirCallArgCountFromTok(ins->tok) == 1u
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "print"))
     {
         host.nameStart = symbol->nameStart;
         host.nameEnd = symbol->nameEnd;
-        host.kind = SLMirHost_GENERIC;
+        host.kind = HOPMirHost_GENERIC;
         host.flags = 0;
-        host.target = SL_EVAL_MIR_HOST_PRINT;
-        if (SLMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
+        host.target = HOP_EVAL_MIR_HOST_PRINT;
+        if (HOPMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
             return -1;
         }
-        ins->op = SLMirOp_CALL_HOST;
+        ins->op = HOPMirOp_CALL_HOST;
         ins->aux = hostIndex;
         *outRewritten = 1;
         return 1;
     }
-    if (SLMirCallArgCountFromTok(ins->tok) == 2u
+    if (HOPMirCallArgCountFromTok(ins->tok) == 2u
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "copy"))
     {
         host.nameStart = symbol->nameStart;
         host.nameEnd = symbol->nameEnd;
-        host.kind = SLMirHost_GENERIC;
+        host.kind = HOPMirHost_GENERIC;
         host.flags = 0;
-        host.target = SL_EVAL_MIR_HOST_COPY;
-        if (SLMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
+        host.target = HOP_EVAL_MIR_HOST_COPY;
+        if (HOPMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
             return -1;
         }
-        ins->op = SLMirOp_CALL_HOST;
+        ins->op = HOPMirOp_CALL_HOST;
         ins->aux = hostIndex;
         *outRewritten = 1;
         return 1;
     }
-    if (SLMirCallArgCountFromTok(ins->tok) == 2u
+    if (HOPMirCallArgCountFromTok(ins->tok) == 2u
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "concat"))
     {
         host.nameStart = symbol->nameStart;
         host.nameEnd = symbol->nameEnd;
-        host.kind = SLMirHost_GENERIC;
+        host.kind = HOPMirHost_GENERIC;
         host.flags = 0;
-        host.target = SL_EVAL_MIR_HOST_CONCAT;
-        if (SLMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
+        host.target = HOP_EVAL_MIR_HOST_CONCAT;
+        if (HOPMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
             return -1;
         }
-        ins->op = SLMirOp_CALL_HOST;
+        ins->op = HOPMirOp_CALL_HOST;
         ins->aux = hostIndex;
         *outRewritten = 1;
         return 1;
     }
-    if ((SLMirCallArgCountFromTok(ins->tok) == 1u || SLMirCallArgCountFromTok(ins->tok) == 2u)
+    if ((HOPMirCallArgCountFromTok(ins->tok) == 1u || HOPMirCallArgCountFromTok(ins->tok) == 2u)
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "free"))
     {
         host.nameStart = symbol->nameStart;
         host.nameEnd = symbol->nameEnd;
-        host.kind = SLMirHost_GENERIC;
+        host.kind = HOPMirHost_GENERIC;
         host.flags = 0;
-        host.target = SL_EVAL_MIR_HOST_FREE;
-        if (SLMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
+        host.target = HOP_EVAL_MIR_HOST_FREE;
+        if (HOPMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
             return -1;
         }
-        ins->op = SLMirOp_CALL_HOST;
+        ins->op = HOPMirOp_CALL_HOST;
         ins->aux = hostIndex;
         *outRewritten = 1;
         return 1;
@@ -467,176 +467,176 @@ static int SLEvalMirRewriteBuiltinHostCallForFile(
     return 0;
 }
 
-static int SLEvalMirRewriteBuiltinHostCall(
-    SLEvalMirLowerCtx*    c,
-    const SLEvalFunction* callerFn,
-    SLMirInst*            ins,
+static int HOPEvalMirRewriteBuiltinHostCall(
+    HOPEvalMirLowerCtx*    c,
+    const HOPEvalFunction* callerFn,
+    HOPMirInst*            ins,
     int* _Nonnull outRewritten) {
     if (c == NULL || callerFn == NULL) {
         return 0;
     }
-    return SLEvalMirRewriteBuiltinHostCallForFile(c, callerFn->file, ins, outRewritten);
+    return HOPEvalMirRewriteBuiltinHostCallForFile(c, callerFn->file, ins, outRewritten);
 }
 
-static int SLEvalMirRewriteQualifiedHostCallForNode(
-    SLEvalMirLowerCtx*  c,
-    const SLPackage*    currentPkg,
-    const SLParsedFile* file,
+static int HOPEvalMirRewriteQualifiedHostCallForNode(
+    HOPEvalMirLowerCtx*  c,
+    const HOPPackage*    currentPkg,
+    const HOPParsedFile* file,
     int32_t             rootNode,
-    SLMirInst*          ins,
+    HOPMirInst*          ins,
     int* _Nonnull outRewritten) {
-    const SLMirSymbolRef* symbol;
-    const SLPackage*      targetPkg;
+    const HOPMirSymbolRef* symbol;
+    const HOPPackage*      targetPkg;
     uint32_t              baseStart = 0;
     uint32_t              baseEnd = 0;
     if (outRewritten != NULL) {
         *outRewritten = 0;
     }
     if (c == NULL || currentPkg == NULL || file == NULL || ins == NULL || outRewritten == NULL
-        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->op != HOPMirOp_CALL || c->builder.symbols == NULL
         || ins->aux >= c->builder.symbolLen)
     {
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != SLMirSymbolFlag_CALL_RECEIVER_ARG0
+    if (symbol->kind != HOPMirSymbol_CALL || symbol->flags != HOPMirSymbolFlag_CALL_RECEIVER_ARG0
         || rootNode < 0)
     {
         return 0;
     }
-    if (!SLEvalMirMatchQualifiedCallBaseSlice(
+    if (!HOPEvalMirMatchQualifiedCallBaseSlice(
             &file->ast, symbol, rootNode, (uint32_t)ins->tok, &baseStart, &baseEnd))
     {
         return 0;
     }
-    targetPkg = SLEvalMirFindImportTargetByAliasSlice(currentPkg, file->source, baseStart, baseEnd);
+    targetPkg = HOPEvalMirFindImportTargetByAliasSlice(currentPkg, file->source, baseStart, baseEnd);
     if (targetPkg != NULL && StrEq(targetPkg->name, "platform")
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "exit"))
     {
-        SLMirHostRef host = { 0 };
+        HOPMirHostRef host = { 0 };
         uint32_t     hostIndex = UINT32_MAX;
         host.nameStart = symbol->nameStart;
         host.nameEnd = symbol->nameEnd;
-        host.kind = SLMirHost_GENERIC;
+        host.kind = HOPMirHost_GENERIC;
         host.flags = 0;
-        host.target = SL_EVAL_MIR_HOST_PLATFORM_EXIT;
-        if (SLMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
+        host.target = HOP_EVAL_MIR_HOST_PLATFORM_EXIT;
+        if (HOPMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
             return -1;
         }
-        ins->op = SLMirOp_CALL_HOST;
+        ins->op = HOPMirOp_CALL_HOST;
         ins->aux = hostIndex;
-        ins->tok |= SLMirCallArgFlag_RECEIVER_ARG0;
+        ins->tok |= HOPMirCallArgFlag_RECEIVER_ARG0;
         *outRewritten = 1;
         return 1;
     }
     if (targetPkg != NULL && StrEq(targetPkg->name, "platform")
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "console_log")
-        && SLMirCallArgCountFromTok(ins->tok) == 3u)
+        && HOPMirCallArgCountFromTok(ins->tok) == 3u)
     {
-        SLMirHostRef host = { 0 };
+        HOPMirHostRef host = { 0 };
         uint32_t     hostIndex = UINT32_MAX;
         host.nameStart = symbol->nameStart;
         host.nameEnd = symbol->nameEnd;
-        host.kind = SLMirHost_GENERIC;
+        host.kind = HOPMirHost_GENERIC;
         host.flags = 0;
-        host.target = SL_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG;
-        if (SLMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
+        host.target = HOP_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG;
+        if (HOPMirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
             return -1;
         }
-        ins->op = SLMirOp_CALL_HOST;
+        ins->op = HOPMirOp_CALL_HOST;
         ins->aux = hostIndex;
-        ins->tok |= SLMirCallArgFlag_RECEIVER_ARG0;
+        ins->tok |= HOPMirCallArgFlag_RECEIVER_ARG0;
         *outRewritten = 1;
         return 1;
     }
     return 0;
 }
 
-static int SLEvalMirRewriteQualifiedHostCall(
-    SLEvalMirLowerCtx*    c,
-    const SLEvalFunction* callerFn,
-    SLMirInst*            ins,
+static int HOPEvalMirRewriteQualifiedHostCall(
+    HOPEvalMirLowerCtx*    c,
+    const HOPEvalFunction* callerFn,
+    HOPMirInst*            ins,
     int* _Nonnull outRewritten) {
     if (c == NULL || callerFn == NULL) {
         return 0;
     }
-    return SLEvalMirRewriteQualifiedHostCallForNode(
+    return HOPEvalMirRewriteQualifiedHostCallForNode(
         c, callerFn->pkg, callerFn->file, callerFn->bodyNode, ins, outRewritten);
 }
 
-static void SLEvalMirRewriteCallToMirFunction(
-    const SLEvalMirLowerCtx* c, SLMirInst* ins, uint32_t targetMirFnIndex) {
+static void HOPEvalMirRewriteCallToMirFunction(
+    const HOPEvalMirLowerCtx* c, HOPMirInst* ins, uint32_t targetMirFnIndex) {
     int preserveReceiverArg0 = 0;
     if (c != NULL && ins != NULL && c->builder.symbols != NULL && ins->aux < c->builder.symbolLen
-        && (c->builder.symbols[ins->aux].flags & SLMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u)
+        && (c->builder.symbols[ins->aux].flags & HOPMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u)
     {
         preserveReceiverArg0 = 1;
     }
     if (ins == NULL) {
         return;
     }
-    ins->op = SLMirOp_CALL_FN;
+    ins->op = HOPMirOp_CALL_FN;
     ins->aux = targetMirFnIndex;
     if (preserveReceiverArg0) {
-        ins->tok |= SLMirCallArgFlag_RECEIVER_ARG0;
+        ins->tok |= HOPMirCallArgFlag_RECEIVER_ARG0;
     }
 }
 
-static void SLEvalMirRewriteLoadIdentToMirFunction(SLMirInst* ins, uint32_t targetMirFnIndex);
-static int SLEvalMirLowerTopConst(
-    SLEvalMirLowerCtx* c, uint32_t topConstIndex, uint32_t* _Nullable outMirFnIndex);
-static int SLEvalMirLowerTopVar(
-    SLEvalMirLowerCtx* c, uint32_t topVarIndex, uint32_t* _Nullable outMirFnIndex);
-static int SLEvalMirFindAnyFunctionBySliceInPackage(
-    const SLEvalProgram* p,
-    const SLPackage*     pkg,
-    const SLParsedFile*  callerFile,
+static void HOPEvalMirRewriteLoadIdentToMirFunction(HOPMirInst* ins, uint32_t targetMirFnIndex);
+static int HOPEvalMirLowerTopConst(
+    HOPEvalMirLowerCtx* c, uint32_t topConstIndex, uint32_t* _Nullable outMirFnIndex);
+static int HOPEvalMirLowerTopVar(
+    HOPEvalMirLowerCtx* c, uint32_t topVarIndex, uint32_t* _Nullable outMirFnIndex);
+static int HOPEvalMirFindAnyFunctionBySliceInPackage(
+    const HOPEvalProgram* p,
+    const HOPPackage*     pkg,
+    const HOPParsedFile*  callerFile,
     uint32_t             nameStart,
     uint32_t             nameEnd);
-static int SLEvalMirResolveTopConstIdentTargetForFile(
-    const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex);
-static int SLEvalMirResolveTopInitSliceTargetForPackage(
-    const SLEvalMirLowerCtx* c,
-    const SLPackage*         currentPkg,
-    const SLParsedFile*      file,
+static int HOPEvalMirResolveTopConstIdentTargetForFile(
+    const HOPEvalMirLowerCtx* c, const HOPParsedFile* file, const HOPMirInst* ins, uint32_t* outIndex);
+static int HOPEvalMirResolveTopInitSliceTargetForPackage(
+    const HOPEvalMirLowerCtx* c,
+    const HOPPackage*         currentPkg,
+    const HOPParsedFile*      file,
     uint32_t                 nameStart,
     uint32_t                 nameEnd,
     int*                     outIsTopConst,
     uint32_t*                outIndex);
-static int SLEvalMirResolveTopInitIdentTargetForFile(
-    const SLEvalMirLowerCtx* c,
-    const SLParsedFile*      file,
-    const SLMirInst*         ins,
+static int HOPEvalMirResolveTopInitIdentTargetForFile(
+    const HOPEvalMirLowerCtx* c,
+    const HOPParsedFile*      file,
+    const HOPMirInst*         ins,
     int*                     outIsTopConst,
     uint32_t*                outIndex);
-static int SLEvalMirResolveFunctionIdentTargetForFile(
-    const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex);
-static int SLEvalMirRewriteLoadIdentToFunctionConst(
-    SLEvalMirLowerCtx* c, SLMirInst* ins, uint32_t targetMirFnIndex);
-static int SLEvalMirResolveQualifiedValueLoadTargetForFile(
-    const SLEvalMirLowerCtx* c,
-    const SLParsedFile*      file,
-    const SLMirInst*         loadIns,
-    const SLMirInst* _Nullable fieldIns,
+static int HOPEvalMirResolveFunctionIdentTargetForFile(
+    const HOPEvalMirLowerCtx* c, const HOPParsedFile* file, const HOPMirInst* ins, uint32_t* outIndex);
+static int HOPEvalMirRewriteLoadIdentToFunctionConst(
+    HOPEvalMirLowerCtx* c, HOPMirInst* ins, uint32_t targetMirFnIndex);
+static int HOPEvalMirResolveQualifiedValueLoadTargetForFile(
+    const HOPEvalMirLowerCtx* c,
+    const HOPParsedFile*      file,
+    const HOPMirInst*         loadIns,
+    const HOPMirInst* _Nullable fieldIns,
     int*                     outTargetKind,
     uint32_t*                outTargetIndex);
-static int SLEvalMirRewriteQualifiedValueLoad(
-    SLEvalMirLowerCtx* c,
+static int HOPEvalMirRewriteQualifiedValueLoad(
+    HOPEvalMirLowerCtx* c,
     uint32_t           ownerMirFnIndex,
     uint32_t           loadInstIndex,
     int                rewriteAsFunctionConst,
     uint32_t           targetMirFnIndex);
-static int SLEvalMirResolveSimpleFunctionValueAliasCallTarget(
-    const SLEvalMirLowerCtx* c,
-    const SLParsedFile*      file,
-    const SLMirInst*         ins,
+static int HOPEvalMirResolveSimpleFunctionValueAliasCallTarget(
+    const HOPEvalMirLowerCtx* c,
+    const HOPParsedFile*      file,
+    const HOPMirInst*         ins,
     uint32_t*                outEvalFnIndex);
-static int SLEvalMirRewriteZeroArgFunctionValueCall(
-    SLEvalMirLowerCtx* c, const SLParsedFile* file, uint32_t ownerMirFnIndex, uint32_t instIndex);
+static int HOPEvalMirRewriteZeroArgFunctionValueCall(
+    HOPEvalMirLowerCtx* c, const HOPParsedFile* file, uint32_t ownerMirFnIndex, uint32_t instIndex);
 
-static int SLEvalMirLowerFunction(
-    SLEvalMirLowerCtx* c, int32_t evalFnIndex, uint32_t* _Nullable outMirFnIndex) {
-    const SLEvalFunction* fn;
+static int HOPEvalMirLowerFunction(
+    HOPEvalMirLowerCtx* c, int32_t evalFnIndex, uint32_t* _Nullable outMirFnIndex) {
+    const HOPEvalFunction* fn;
     uint32_t              mirFnIndex = UINT32_MAX;
     uint32_t              sourceRefIndex = UINT32_MAX;
     uint32_t              instIndex;
@@ -650,7 +650,7 @@ static int SLEvalMirLowerFunction(
         return -1;
     }
     if (c->loweringFns != NULL && c->loweringFns[(uint32_t)evalFnIndex] != 0u) {
-        if (c->evalToMir[(uint32_t)evalFnIndex] != SL_EVAL_MIR_FN_NONE) {
+        if (c->evalToMir[(uint32_t)evalFnIndex] != HOP_EVAL_MIR_FN_NONE) {
             if (outMirFnIndex != NULL) {
                 *outMirFnIndex = c->evalToMir[(uint32_t)evalFnIndex];
             }
@@ -658,7 +658,7 @@ static int SLEvalMirLowerFunction(
         }
         return 0;
     }
-    if (c->evalToMir[(uint32_t)evalFnIndex] != SL_EVAL_MIR_FN_NONE) {
+    if (c->evalToMir[(uint32_t)evalFnIndex] != HOP_EVAL_MIR_FN_NONE) {
         if (outMirFnIndex != NULL) {
             *outMirFnIndex = c->evalToMir[(uint32_t)evalFnIndex];
         }
@@ -671,7 +671,7 @@ static int SLEvalMirLowerFunction(
     if (c->loweringFns != NULL) {
         c->loweringFns[(uint32_t)evalFnIndex] = 1u;
     }
-    if (SLEvalMirInternSourceFile(c, fn->file, &sourceRefIndex) != 0) {
+    if (HOPEvalMirInternSourceFile(c, fn->file, &sourceRefIndex) != 0) {
         if (c->loweringFns != NULL) {
             c->loweringFns[(uint32_t)evalFnIndex] = 0u;
         }
@@ -679,19 +679,19 @@ static int SLEvalMirLowerFunction(
     }
     (void)sourceRefIndex;
     {
-        SLEvalMirLowerConstCtx lowerConstCtx;
-        SLMirLowerOptions      lowerOptions;
+        HOPEvalMirLowerConstCtx lowerConstCtx;
+        HOPMirLowerOptions      lowerOptions;
         memset(&lowerConstCtx, 0, sizeof(lowerConstCtx));
         memset(&lowerOptions, 0, sizeof(lowerOptions));
         lowerConstCtx.p = c->p;
         lowerConstCtx.file = fn->file;
-        lowerOptions.lowerConstExpr = SLEvalMirLowerConstExpr;
+        lowerOptions.lowerConstExpr = HOPEvalMirLowerConstExpr;
         lowerOptions.lowerConstExprCtx = &lowerConstCtx;
-        if (SLMirLowerAppendSimpleFunctionWithOptions(
+        if (HOPMirLowerAppendSimpleFunctionWithOptions(
             &c->builder,
             c->p->arena,
             &fn->file->ast,
-            (SLStrView){ fn->file->source, fn->file->sourceLen },
+            (HOPStrView){ fn->file->source, fn->file->sourceLen },
             fn->fnNode,
             fn->bodyNode,
             &lowerOptions,
@@ -720,8 +720,8 @@ static int SLEvalMirLowerFunction(
          instIndex < c->builder.funcs[mirFnIndex].instStart + c->builder.funcs[mirFnIndex].instLen;
          instIndex++)
     {
-        SLMirInst* ins = &c->builder.insts[instIndex];
-        SLMirInst* nextIns =
+        HOPMirInst* ins = &c->builder.insts[instIndex];
+        HOPMirInst* nextIns =
             instIndex + 1u < c->builder.instLen ? &c->builder.insts[instIndex + 1u] : NULL;
         int        isTopConst = 0;
         uint32_t   targetTopInitIndex = UINT32_MAX;
@@ -732,7 +732,7 @@ static int SLEvalMirLowerFunction(
         int        lowerRc;
         int        rewrittenBuiltinHost = 0;
         int        rewrittenHost = 0;
-        if (SLEvalMirResolveQualifiedValueLoadTargetForFile(
+        if (HOPEvalMirResolveQualifiedValueLoadTargetForFile(
                 c,
                 fn->file,
                 ins,
@@ -741,11 +741,11 @@ static int SLEvalMirLowerFunction(
                 &targetTopInitIndex))
         {
             if (qualifiedValueTargetKind == 1) {
-                lowerRc = SLEvalMirLowerTopConst(c, targetTopInitIndex, &targetMirFnIndex);
+                lowerRc = HOPEvalMirLowerTopConst(c, targetTopInitIndex, &targetMirFnIndex);
             } else if (qualifiedValueTargetKind == 2) {
-                lowerRc = SLEvalMirLowerTopVar(c, targetTopInitIndex, &targetMirFnIndex);
+                lowerRc = HOPEvalMirLowerTopVar(c, targetTopInitIndex, &targetMirFnIndex);
             } else {
-                lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetTopInitIndex, &targetMirFnIndex);
+                lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetTopInitIndex, &targetMirFnIndex);
             }
             if (lowerRc < 0) {
                 if (c->loweringFns != NULL) {
@@ -757,13 +757,13 @@ static int SLEvalMirLowerFunction(
                 continue;
             }
             if (lowerRc == 0) {
-                c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+                c->evalToMir[(uint32_t)evalFnIndex] = HOP_EVAL_MIR_FN_NONE;
                 if (c->loweringFns != NULL) {
                     c->loweringFns[(uint32_t)evalFnIndex] = 0u;
                 }
                 return 0;
             }
-            if (SLEvalMirRewriteQualifiedValueLoad(
+            if (HOPEvalMirRewriteQualifiedValueLoad(
                     c,
                     mirFnIndex,
                     instIndex,
@@ -779,15 +779,15 @@ static int SLEvalMirLowerFunction(
             instIndex += 2u;
             continue;
         }
-        if (SLEvalMirResolveTopInitIdentTargetForFile(
+        if (HOPEvalMirResolveTopInitIdentTargetForFile(
                 c, fn->file, ins, &isTopConst, &targetTopInitIndex))
         {
             if (!isTopConst) {
                 continue;
             }
             lowerRc = isTopConst
-                ? SLEvalMirLowerTopConst(c, targetTopInitIndex, &targetMirFnIndex)
-                : SLEvalMirLowerTopVar(c, targetTopInitIndex, &targetMirFnIndex);
+                ? HOPEvalMirLowerTopConst(c, targetTopInitIndex, &targetMirFnIndex)
+                : HOPEvalMirLowerTopVar(c, targetTopInitIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 if (c->loweringFns != NULL) {
                     c->loweringFns[(uint32_t)evalFnIndex] = 0u;
@@ -795,18 +795,18 @@ static int SLEvalMirLowerFunction(
                 return -1;
             }
             if (lowerRc == 0) {
-                c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+                c->evalToMir[(uint32_t)evalFnIndex] = HOP_EVAL_MIR_FN_NONE;
                 if (c->loweringFns != NULL) {
                     c->loweringFns[(uint32_t)evalFnIndex] = 0u;
                 }
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            SLEvalMirRewriteLoadIdentToMirFunction(ins, targetMirFnIndex);
+            HOPEvalMirRewriteLoadIdentToMirFunction(ins, targetMirFnIndex);
             continue;
         }
-        if (SLEvalMirResolveFunctionIdentTargetForFile(c, fn->file, ins, &targetFnIdentIndex)) {
-            lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetFnIdentIndex, &targetMirFnIndex);
+        if (HOPEvalMirResolveFunctionIdentTargetForFile(c, fn->file, ins, &targetFnIdentIndex)) {
+            lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetFnIdentIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 if (c->loweringFns != NULL) {
                     c->loweringFns[(uint32_t)evalFnIndex] = 0u;
@@ -814,14 +814,14 @@ static int SLEvalMirLowerFunction(
                 return -1;
             }
             if (lowerRc == 0) {
-                c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+                c->evalToMir[(uint32_t)evalFnIndex] = HOP_EVAL_MIR_FN_NONE;
                 if (c->loweringFns != NULL) {
                     c->loweringFns[(uint32_t)evalFnIndex] = 0u;
                 }
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            if (SLEvalMirRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
+            if (HOPEvalMirRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
                 if (c->loweringFns != NULL) {
                     c->loweringFns[(uint32_t)evalFnIndex] = 0u;
                 }
@@ -829,10 +829,10 @@ static int SLEvalMirLowerFunction(
             }
             continue;
         }
-        if (SLEvalMirResolveSimpleFunctionValueAliasCallTarget(
+        if (HOPEvalMirResolveSimpleFunctionValueAliasCallTarget(
                 c, fn->file, ins, &targetEvalFnIndex))
         {
-            lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
+            lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 if (c->loweringFns != NULL) {
                     c->loweringFns[(uint32_t)evalFnIndex] = 0u;
@@ -840,17 +840,17 @@ static int SLEvalMirLowerFunction(
                 return -1;
             }
             if (lowerRc == 0) {
-                c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+                c->evalToMir[(uint32_t)evalFnIndex] = HOP_EVAL_MIR_FN_NONE;
                 if (c->loweringFns != NULL) {
                     c->loweringFns[(uint32_t)evalFnIndex] = 0u;
                 }
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
+            HOPEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
             continue;
         }
-        lowerRc = SLEvalMirRewriteZeroArgFunctionValueCall(c, fn->file, mirFnIndex, instIndex);
+        lowerRc = HOPEvalMirRewriteZeroArgFunctionValueCall(c, fn->file, mirFnIndex, instIndex);
         if (lowerRc < 0) {
             if (c->loweringFns != NULL) {
                 c->loweringFns[(uint32_t)evalFnIndex] = 0u;
@@ -861,24 +861,24 @@ static int SLEvalMirLowerFunction(
             instIndex++;
             continue;
         }
-        lowerRc = SLEvalMirRewriteBuiltinHostCall(c, fn, ins, &rewrittenHost);
+        lowerRc = HOPEvalMirRewriteBuiltinHostCall(c, fn, ins, &rewrittenHost);
         if (lowerRc < 0) {
             return -1;
         }
         if (rewrittenHost) {
             continue;
         }
-        lowerRc = SLEvalMirRewriteQualifiedHostCall(c, fn, ins, &rewrittenHost);
+        lowerRc = HOPEvalMirRewriteQualifiedHostCall(c, fn, ins, &rewrittenHost);
         if (lowerRc < 0) {
             return -1;
         }
         if (rewrittenHost) {
             continue;
         }
-        if (!SLEvalMirResolveDirectCallTarget(c, fn, evalFnIndex, ins, &targetEvalFnIndex)) {
+        if (!HOPEvalMirResolveDirectCallTarget(c, fn, evalFnIndex, ins, &targetEvalFnIndex)) {
             continue;
         }
-        lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
+        lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
         if (lowerRc < 0) {
             if (c->loweringFns != NULL) {
                 c->loweringFns[(uint32_t)evalFnIndex] = 0u;
@@ -886,14 +886,14 @@ static int SLEvalMirLowerFunction(
             return -1;
         }
         if (lowerRc == 0) {
-            c->evalToMir[(uint32_t)evalFnIndex] = SL_EVAL_MIR_FN_NONE;
+            c->evalToMir[(uint32_t)evalFnIndex] = HOP_EVAL_MIR_FN_NONE;
             if (c->loweringFns != NULL) {
                 c->loweringFns[(uint32_t)evalFnIndex] = 0u;
             }
             return 0;
         }
         ins = &c->builder.insts[instIndex];
-        SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
+        HOPEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
     }
     if (c->loweringFns != NULL) {
         c->loweringFns[(uint32_t)evalFnIndex] = 0u;
@@ -904,37 +904,37 @@ static int SLEvalMirLowerFunction(
     return 1;
 }
 
-static void SLEvalMirRewriteLoadIdentToMirFunction(SLMirInst* ins, uint32_t targetMirFnIndex) {
+static void HOPEvalMirRewriteLoadIdentToMirFunction(HOPMirInst* ins, uint32_t targetMirFnIndex) {
     if (ins == NULL) {
         return;
     }
-    ins->op = SLMirOp_CALL_FN;
+    ins->op = HOPMirOp_CALL_FN;
     ins->tok = 0u;
     ins->aux = targetMirFnIndex;
 }
 
-static int SLEvalMirRewriteLoadIdentToFunctionConst(
-    SLEvalMirLowerCtx* c, SLMirInst* ins, uint32_t targetMirFnIndex) {
-    SLMirConst value = { 0 };
+static int HOPEvalMirRewriteLoadIdentToFunctionConst(
+    HOPEvalMirLowerCtx* c, HOPMirInst* ins, uint32_t targetMirFnIndex) {
+    HOPMirConst value = { 0 };
     uint32_t   constIndex = UINT32_MAX;
     if (c == NULL || ins == NULL) {
         return -1;
     }
-    value.kind = SLMirConst_FUNCTION;
+    value.kind = HOPMirConst_FUNCTION;
     value.bits = targetMirFnIndex;
-    if (SLMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
+    if (HOPMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
         return -1;
     }
-    ins->op = SLMirOp_PUSH_CONST;
+    ins->op = HOPMirOp_PUSH_CONST;
     ins->tok = 0u;
     ins->aux = constIndex;
     return 0;
 }
 
-static int SLEvalMirFindAnyFunctionBySliceInPackage(
-    const SLEvalProgram* p,
-    const SLPackage*     pkg,
-    const SLParsedFile*  callerFile,
+static int HOPEvalMirFindAnyFunctionBySliceInPackage(
+    const HOPEvalProgram* p,
+    const HOPPackage*     pkg,
+    const HOPParsedFile*  callerFile,
     uint32_t             nameStart,
     uint32_t             nameEnd) {
     uint32_t i;
@@ -945,7 +945,7 @@ static int SLEvalMirFindAnyFunctionBySliceInPackage(
         return -1;
     }
     for (i = 0; i < p->funcLen; i++) {
-        const SLEvalFunction* fn = &p->funcs[i];
+        const HOPEvalFunction* fn = &p->funcs[i];
         if (fn->pkg != pkg
             || !SliceEqSlice(
                 callerFile->source,
@@ -965,15 +965,15 @@ static int SLEvalMirFindAnyFunctionBySliceInPackage(
     return found;
 }
 
-static int SLEvalMirResolveQualifiedValueLoadTargetForFile(
-    const SLEvalMirLowerCtx* c,
-    const SLParsedFile*      file,
-    const SLMirInst*         loadIns,
-    const SLMirInst* _Nullable fieldIns,
+static int HOPEvalMirResolveQualifiedValueLoadTargetForFile(
+    const HOPEvalMirLowerCtx* c,
+    const HOPParsedFile*      file,
+    const HOPMirInst*         loadIns,
+    const HOPMirInst* _Nullable fieldIns,
     int*                     outTargetKind,
     uint32_t*                outTargetIndex) {
-    const SLPackage* currentPkg;
-    const SLPackage* targetPkg;
+    const HOPPackage* currentPkg;
+    const HOPPackage* targetPkg;
     uint32_t         fieldStart;
     uint32_t         fieldEnd;
     int32_t          targetIndex = -1;
@@ -984,16 +984,16 @@ static int SLEvalMirResolveQualifiedValueLoadTargetForFile(
         *outTargetIndex = UINT32_MAX;
     }
     if (c == NULL || c->p == NULL || file == NULL || loadIns == NULL || fieldIns == NULL
-        || outTargetKind == NULL || outTargetIndex == NULL || loadIns->op != SLMirOp_LOAD_IDENT
-        || fieldIns->op != SLMirOp_AGG_GET)
+        || outTargetKind == NULL || outTargetIndex == NULL || loadIns->op != HOPMirOp_LOAD_IDENT
+        || fieldIns->op != HOPMirOp_AGG_GET)
     {
         return 0;
     }
-    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    currentPkg = HOPEvalFindPackageByFile(c->p, file);
     if (currentPkg == NULL) {
         return 0;
     }
-    targetPkg = SLEvalMirFindImportTargetByAliasSlice(
+    targetPkg = HOPEvalMirFindImportTargetByAliasSlice(
         currentPkg, file->source, loadIns->start, loadIns->end);
     if (targetPkg == NULL) {
         return 0;
@@ -1006,19 +1006,19 @@ static int SLEvalMirResolveQualifiedValueLoadTargetForFile(
         fieldEnd = fieldIns->end;
     }
     targetIndex =
-        SLEvalFindTopConstBySliceInPackage(c->p, targetPkg, file, fieldStart, fieldEnd);
+        HOPEvalFindTopConstBySliceInPackage(c->p, targetPkg, file, fieldStart, fieldEnd);
     if (targetIndex >= 0) {
         *outTargetKind = 1;
         *outTargetIndex = (uint32_t)targetIndex;
         return 1;
     }
-    targetIndex = SLEvalFindTopVarBySliceInPackage(c->p, targetPkg, file, fieldStart, fieldEnd);
+    targetIndex = HOPEvalFindTopVarBySliceInPackage(c->p, targetPkg, file, fieldStart, fieldEnd);
     if (targetIndex >= 0) {
         *outTargetKind = 2;
         *outTargetIndex = (uint32_t)targetIndex;
         return 1;
     }
-    targetIndex = SLEvalMirFindAnyFunctionBySliceInPackage(c->p, targetPkg, file, fieldStart, fieldEnd);
+    targetIndex = HOPEvalMirFindAnyFunctionBySliceInPackage(c->p, targetPkg, file, fieldStart, fieldEnd);
     if (targetIndex < 0 || c->p->funcs[(uint32_t)targetIndex].isBuiltinPackageFn
         || c->p->funcs[(uint32_t)targetIndex].isVariadic)
     {
@@ -1029,15 +1029,15 @@ static int SLEvalMirResolveQualifiedValueLoadTargetForFile(
     return 1;
 }
 
-static int SLEvalMirRewriteQualifiedValueLoad(
-    SLEvalMirLowerCtx* c,
+static int HOPEvalMirRewriteQualifiedValueLoad(
+    HOPEvalMirLowerCtx* c,
     uint32_t           ownerMirFnIndex,
     uint32_t           loadInstIndex,
     int                rewriteAsFunctionConst,
     uint32_t           targetMirFnIndex) {
-    SLMirInst* loadIns;
-    SLMirInst* fieldIns;
-    SLMirInst  inserted = { 0 };
+    HOPMirInst* loadIns;
+    HOPMirInst* fieldIns;
+    HOPMirInst  inserted = { 0 };
     if (c == NULL || ownerMirFnIndex >= c->builder.funcLen
         || loadInstIndex >= c->builder.instLen || loadInstIndex + 1u >= c->builder.instLen)
     {
@@ -1047,20 +1047,20 @@ static int SLEvalMirRewriteQualifiedValueLoad(
     inserted.start = fieldIns->start;
     inserted.end = fieldIns->end;
     if (rewriteAsFunctionConst) {
-        SLMirConst value = { 0 };
+        HOPMirConst value = { 0 };
         uint32_t   constIndex = UINT32_MAX;
-        value.kind = SLMirConst_FUNCTION;
+        value.kind = HOPMirConst_FUNCTION;
         value.bits = targetMirFnIndex;
-        if (SLMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
+        if (HOPMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
             return -1;
         }
-        inserted.op = SLMirOp_PUSH_CONST;
+        inserted.op = HOPMirOp_PUSH_CONST;
         inserted.aux = constIndex;
     } else {
-        inserted.op = SLMirOp_CALL_FN;
+        inserted.op = HOPMirOp_CALL_FN;
         inserted.aux = targetMirFnIndex;
     }
-    if (SLMirProgramBuilderInsertInst(
+    if (HOPMirProgramBuilderInsertInst(
             &c->builder,
             ownerMirFnIndex,
             loadInstIndex + 2u - c->builder.funcs[ownerMirFnIndex].instStart,
@@ -1071,37 +1071,37 @@ static int SLEvalMirRewriteQualifiedValueLoad(
     }
     loadIns = &c->builder.insts[loadInstIndex];
     fieldIns = &c->builder.insts[loadInstIndex + 1u];
-    loadIns->op = SLMirOp_PUSH_NULL;
+    loadIns->op = HOPMirOp_PUSH_NULL;
     loadIns->tok = 0u;
     loadIns->aux = 0u;
-    fieldIns->op = SLMirOp_DROP;
+    fieldIns->op = HOPMirOp_DROP;
     fieldIns->tok = 0u;
     fieldIns->aux = 0u;
     return 0;
 }
 
-static int SLEvalMirLowerTopConst(
-    SLEvalMirLowerCtx* c, uint32_t topConstIndex, uint32_t* _Nullable outMirFnIndex);
-static int SLEvalMirLowerTopVar(
-    SLEvalMirLowerCtx* c, uint32_t topVarIndex, uint32_t* _Nullable outMirFnIndex);
+static int HOPEvalMirLowerTopConst(
+    HOPEvalMirLowerCtx* c, uint32_t topConstIndex, uint32_t* _Nullable outMirFnIndex);
+static int HOPEvalMirLowerTopVar(
+    HOPEvalMirLowerCtx* c, uint32_t topVarIndex, uint32_t* _Nullable outMirFnIndex);
 
-static int SLEvalMirResolveTopConstIdentTargetForFile(
-    const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex) {
-    const SLPackage* currentPkg;
+static int HOPEvalMirResolveTopConstIdentTargetForFile(
+    const HOPEvalMirLowerCtx* c, const HOPParsedFile* file, const HOPMirInst* ins, uint32_t* outIndex) {
+    const HOPPackage* currentPkg;
     int32_t topIndex = -1;
     if (outIndex != NULL) {
         *outIndex = UINT32_MAX;
     }
     if (c == NULL || c->p == NULL || file == NULL || ins == NULL || outIndex == NULL
-        || ins->op != SLMirOp_LOAD_IDENT)
+        || ins->op != HOPMirOp_LOAD_IDENT)
     {
         return 0;
     }
-    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    currentPkg = HOPEvalFindPackageByFile(c->p, file);
     if (currentPkg == NULL) {
         return 0;
     }
-    topIndex = SLEvalFindTopConstBySliceInPackage(c->p, currentPkg, file, ins->start, ins->end);
+    topIndex = HOPEvalFindTopConstBySliceInPackage(c->p, currentPkg, file, ins->start, ins->end);
     if (topIndex >= 0) {
         *outIndex = (uint32_t)topIndex;
         return 1;
@@ -1109,10 +1109,10 @@ static int SLEvalMirResolveTopConstIdentTargetForFile(
     return 0;
 }
 
-static int SLEvalMirResolveTopInitSliceTargetForPackage(
-    const SLEvalMirLowerCtx* c,
-    const SLPackage*         currentPkg,
-    const SLParsedFile*      file,
+static int HOPEvalMirResolveTopInitSliceTargetForPackage(
+    const HOPEvalMirLowerCtx* c,
+    const HOPPackage*         currentPkg,
+    const HOPParsedFile*      file,
     uint32_t                 nameStart,
     uint32_t                 nameEnd,
     int*                     outIsTopConst,
@@ -1129,13 +1129,13 @@ static int SLEvalMirResolveTopInitSliceTargetForPackage(
     {
         return 0;
     }
-    topIndex = SLEvalFindTopConstBySliceInPackage(c->p, currentPkg, file, nameStart, nameEnd);
+    topIndex = HOPEvalFindTopConstBySliceInPackage(c->p, currentPkg, file, nameStart, nameEnd);
     if (topIndex >= 0) {
         *outIsTopConst = 1;
         *outIndex = (uint32_t)topIndex;
         return 1;
     }
-    topIndex = SLEvalFindTopVarBySliceInPackage(c->p, currentPkg, file, nameStart, nameEnd);
+    topIndex = HOPEvalFindTopVarBySliceInPackage(c->p, currentPkg, file, nameStart, nameEnd);
     if (topIndex >= 0) {
         *outIsTopConst = 0;
         *outIndex = (uint32_t)topIndex;
@@ -1144,22 +1144,22 @@ static int SLEvalMirResolveTopInitSliceTargetForPackage(
     return 0;
 }
 
-static int SLEvalMirResolveFunctionIdentTargetForFile(
-    const SLEvalMirLowerCtx* c, const SLParsedFile* file, const SLMirInst* ins, uint32_t* outIndex) {
-    const SLPackage* currentPkg;
+static int HOPEvalMirResolveFunctionIdentTargetForFile(
+    const HOPEvalMirLowerCtx* c, const HOPParsedFile* file, const HOPMirInst* ins, uint32_t* outIndex) {
+    const HOPPackage* currentPkg;
     int32_t fnIndex = -1;
     if (outIndex != NULL) {
         *outIndex = UINT32_MAX;
     }
     if (c == NULL || c->p == NULL || file == NULL || ins == NULL || outIndex == NULL
-        || ins->op != SLMirOp_LOAD_IDENT)
+        || ins->op != HOPMirOp_LOAD_IDENT)
     {
         return 0;
     }
-    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    currentPkg = HOPEvalFindPackageByFile(c->p, file);
     fnIndex = currentPkg != NULL
-        ? SLEvalFindAnyFunctionBySliceInPackage(c->p, currentPkg, file, ins->start, ins->end)
-        : SLEvalFindAnyFunctionBySlice(c->p, file, ins->start, ins->end);
+        ? HOPEvalFindAnyFunctionBySliceInPackage(c->p, currentPkg, file, ins->start, ins->end)
+        : HOPEvalFindAnyFunctionBySlice(c->p, file, ins->start, ins->end);
     if (fnIndex < 0 || (uint32_t)fnIndex >= c->p->funcLen
         || c->p->funcs[(uint32_t)fnIndex].isBuiltinPackageFn
         || c->p->funcs[(uint32_t)fnIndex].isVariadic)
@@ -1170,17 +1170,17 @@ static int SLEvalMirResolveFunctionIdentTargetForFile(
     return 1;
 }
 
-static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
-    const SLEvalMirLowerCtx* c,
-    const SLParsedFile*      file,
+static int HOPEvalMirResolveSimpleTopInitFunctionValueTarget(
+    const HOPEvalMirLowerCtx* c,
+    const HOPParsedFile*      file,
     int                      isTopConst,
     uint32_t                 topInitIndex,
     uint32_t*                outEvalFnIndex) {
-    const SLPackage*   currentPkg;
-    const SLPackage*   targetPkg;
+    const HOPPackage*   currentPkg;
+    const HOPPackage*   targetPkg;
     int32_t          initExprNode = -1;
-    const SLAstNode* initExpr;
-    const SLAstNode* baseExpr;
+    const HOPAstNode* initExpr;
+    const HOPAstNode* baseExpr;
     int32_t          targetFnIndex = -1;
     if (outEvalFnIndex != NULL) {
         *outEvalFnIndex = UINT32_MAX;
@@ -1188,7 +1188,7 @@ static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
     if (c == NULL || c->p == NULL || file == NULL || outEvalFnIndex == NULL) {
         return 0;
     }
-    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    currentPkg = HOPEvalFindPackageByFile(c->p, file);
     if (isTopConst) {
         if (topInitIndex >= c->p->topConstLen) {
             return 0;
@@ -1204,27 +1204,27 @@ static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
         return 0;
     }
     initExpr = &file->ast.nodes[initExprNode];
-    if (initExpr->kind == SLAst_IDENT) {
+    if (initExpr->kind == HOPAst_IDENT) {
         targetFnIndex = currentPkg != NULL
-            ? SLEvalFindAnyFunctionBySliceInPackage(
+            ? HOPEvalFindAnyFunctionBySliceInPackage(
                 c->p, currentPkg, file, initExpr->dataStart, initExpr->dataEnd)
-            : SLEvalFindAnyFunctionBySlice(
+            : HOPEvalFindAnyFunctionBySlice(
                 c->p, file, initExpr->dataStart, initExpr->dataEnd);
-    } else if (initExpr->kind == SLAst_FIELD_EXPR) {
+    } else if (initExpr->kind == HOPAst_FIELD_EXPR) {
         int32_t baseNode = initExpr->firstChild;
         if (baseNode < 0 || (uint32_t)baseNode >= file->ast.len) {
             return 0;
         }
         baseExpr = &file->ast.nodes[baseNode];
-        if (currentPkg == NULL || baseExpr->kind != SLAst_IDENT) {
+        if (currentPkg == NULL || baseExpr->kind != HOPAst_IDENT) {
             return 0;
         }
-        targetPkg = SLEvalMirFindImportTargetByAliasSlice(
+        targetPkg = HOPEvalMirFindImportTargetByAliasSlice(
             currentPkg, file->source, baseExpr->dataStart, baseExpr->dataEnd);
         if (targetPkg == NULL) {
             return 0;
         }
-        targetFnIndex = SLEvalMirFindAnyFunctionBySliceInPackage(
+        targetFnIndex = HOPEvalMirFindAnyFunctionBySliceInPackage(
             c->p, targetPkg, file, initExpr->dataStart, initExpr->dataEnd);
     } else {
         return 0;
@@ -1239,32 +1239,32 @@ static int SLEvalMirResolveSimpleTopInitFunctionValueTarget(
     return 1;
 }
 
-static int SLEvalMirResolveSimpleFunctionValueAliasCallTarget(
-    const SLEvalMirLowerCtx* c,
-    const SLParsedFile*      file,
-    const SLMirInst*         ins,
+static int HOPEvalMirResolveSimpleFunctionValueAliasCallTarget(
+    const HOPEvalMirLowerCtx* c,
+    const HOPParsedFile*      file,
+    const HOPMirInst*         ins,
     uint32_t*                outEvalFnIndex) {
-    const SLPackage*      currentPkg;
-    const SLMirSymbolRef* symbol;
+    const HOPPackage*      currentPkg;
+    const HOPMirSymbolRef* symbol;
     uint32_t              topIndex = UINT32_MAX;
     int                   isTopConst = 0;
     if (outEvalFnIndex != NULL) {
         *outEvalFnIndex = UINT32_MAX;
     }
     if (c == NULL || c->p == NULL || file == NULL || ins == NULL || outEvalFnIndex == NULL
-        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL || ins->aux >= c->builder.symbolLen)
+        || ins->op != HOPMirOp_CALL || c->builder.symbols == NULL || ins->aux >= c->builder.symbolLen)
     {
         return 0;
     }
-    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    currentPkg = HOPEvalFindPackageByFile(c->p, file);
     if (currentPkg == NULL) {
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+    if (symbol->kind != HOPMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
-    if (SLEvalMirResolveTopInitSliceTargetForPackage(
+    if (HOPEvalMirResolveTopInitSliceTargetForPackage(
             c,
             currentPkg,
             file,
@@ -1273,44 +1273,44 @@ static int SLEvalMirResolveSimpleFunctionValueAliasCallTarget(
             &isTopConst,
             &topIndex))
     {
-        return SLEvalMirResolveSimpleTopInitFunctionValueTarget(
+        return HOPEvalMirResolveSimpleTopInitFunctionValueTarget(
             c, file, isTopConst, topIndex, outEvalFnIndex);
     }
     return 0;
 }
 
-static int SLEvalMirRewriteZeroArgFunctionValueCall(
-    SLEvalMirLowerCtx* c, const SLParsedFile* file, uint32_t ownerMirFnIndex, uint32_t instIndex) {
-    const SLPackage*      currentPkg;
-    SLMirInst*            ins;
-    const SLMirSymbolRef* symbol;
+static int HOPEvalMirRewriteZeroArgFunctionValueCall(
+    HOPEvalMirLowerCtx* c, const HOPParsedFile* file, uint32_t ownerMirFnIndex, uint32_t instIndex) {
+    const HOPPackage*      currentPkg;
+    HOPMirInst*            ins;
+    const HOPMirSymbolRef* symbol;
     uint32_t              topIndex = UINT32_MAX;
     int                   isTopConst = 0;
     uint32_t              targetEvalFnIndex = UINT32_MAX;
     uint32_t              targetMirFnIndex = UINT32_MAX;
     uint32_t              constIndex = UINT32_MAX;
-    SLMirConst            value = { 0 };
+    HOPMirConst            value = { 0 };
     int                   lowerRc;
     if (c == NULL || file == NULL || ownerMirFnIndex >= c->builder.funcLen
         || instIndex >= c->builder.instLen)
     {
         return 0;
     }
-    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    currentPkg = HOPEvalFindPackageByFile(c->p, file);
     if (currentPkg == NULL) {
         return 0;
     }
     ins = &c->builder.insts[instIndex];
-    if (ins->op != SLMirOp_CALL || (uint32_t)ins->tok != 0u || c->builder.symbols == NULL
+    if (ins->op != HOPMirOp_CALL || (uint32_t)ins->tok != 0u || c->builder.symbols == NULL
         || ins->aux >= c->builder.symbolLen)
     {
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+    if (symbol->kind != HOPMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
-    if (!SLEvalMirResolveTopInitSliceTargetForPackage(
+    if (!HOPEvalMirResolveTopInitSliceTargetForPackage(
             c,
             currentPkg,
             file,
@@ -1318,24 +1318,24 @@ static int SLEvalMirRewriteZeroArgFunctionValueCall(
             symbol->nameEnd,
             &isTopConst,
             &topIndex)
-        || !SLEvalMirResolveSimpleTopInitFunctionValueTarget(
+        || !HOPEvalMirResolveSimpleTopInitFunctionValueTarget(
             c, file, isTopConst, topIndex, &targetEvalFnIndex))
     {
         return 0;
     }
-    lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
+    lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
     if (lowerRc <= 0) {
         return lowerRc;
     }
-    value.kind = SLMirConst_FUNCTION;
+    value.kind = HOPMirConst_FUNCTION;
     value.bits = targetMirFnIndex;
-    if (SLMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0
-        || SLMirProgramBuilderInsertInst(
+    if (HOPMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0
+        || HOPMirProgramBuilderInsertInst(
                &c->builder,
                ownerMirFnIndex,
                instIndex - c->builder.funcs[ownerMirFnIndex].instStart,
-               &(SLMirInst){
-                   .op = SLMirOp_PUSH_CONST,
+               &(HOPMirInst){
+                   .op = HOPMirOp_PUSH_CONST,
                    .aux = constIndex,
                    .start = ins->start,
                    .end = ins->end,
@@ -1345,19 +1345,19 @@ static int SLEvalMirRewriteZeroArgFunctionValueCall(
         return -1;
     }
     ins = &c->builder.insts[instIndex + 1u];
-    ins->op = SLMirOp_CALL_INDIRECT;
+    ins->op = HOPMirOp_CALL_INDIRECT;
     ins->tok = 0u;
     ins->aux = 0u;
     return 1;
 }
 
-static int SLEvalMirResolveTopInitIdentTargetForFile(
-    const SLEvalMirLowerCtx* c,
-    const SLParsedFile*      file,
-    const SLMirInst*         ins,
+static int HOPEvalMirResolveTopInitIdentTargetForFile(
+    const HOPEvalMirLowerCtx* c,
+    const HOPParsedFile*      file,
+    const HOPMirInst*         ins,
     int*                     outIsTopConst,
     uint32_t*                outIndex) {
-    const SLPackage* currentPkg;
+    const HOPPackage* currentPkg;
     if (outIsTopConst != NULL) {
         *outIsTopConst = 0;
     }
@@ -1365,21 +1365,21 @@ static int SLEvalMirResolveTopInitIdentTargetForFile(
         *outIndex = UINT32_MAX;
     }
     if (c == NULL || c->p == NULL || file == NULL || ins == NULL || outIsTopConst == NULL
-        || outIndex == NULL || ins->op != SLMirOp_LOAD_IDENT)
+        || outIndex == NULL || ins->op != HOPMirOp_LOAD_IDENT)
     {
         return 0;
     }
-    currentPkg = SLEvalFindPackageByFile(c->p, file);
+    currentPkg = HOPEvalFindPackageByFile(c->p, file);
     if (currentPkg == NULL) {
         return 0;
     }
-    return SLEvalMirResolveTopInitSliceTargetForPackage(
+    return HOPEvalMirResolveTopInitSliceTargetForPackage(
         c, currentPkg, file, ins->start, ins->end, outIsTopConst, outIndex);
 }
 
-static int SLEvalMirRewriteTopInitCalls(
-    SLEvalMirLowerCtx*    c,
-    const SLParsedFile*   file,
+static int HOPEvalMirRewriteTopInitCalls(
+    HOPEvalMirLowerCtx*    c,
+    const HOPParsedFile*   file,
     int32_t               initExprNode,
     uint32_t              rootMirFnIndex,
     int* _Nonnull outSupported) {
@@ -1395,8 +1395,8 @@ static int SLEvalMirRewriteTopInitCalls(
          < c->builder.funcs[rootMirFnIndex].instStart + c->builder.funcs[rootMirFnIndex].instLen;
          instIndex++)
     {
-        SLMirInst* ins = &c->builder.insts[instIndex];
-        SLMirInst* nextIns =
+        HOPMirInst* ins = &c->builder.insts[instIndex];
+        HOPMirInst* nextIns =
             instIndex + 1u < c->builder.instLen ? &c->builder.insts[instIndex + 1u] : NULL;
         int        isTopConst = 0;
         uint32_t   targetTopInitIndex = UINT32_MAX;
@@ -1405,7 +1405,7 @@ static int SLEvalMirRewriteTopInitCalls(
         uint32_t   targetMirFnIndex = UINT32_MAX;
         int        qualifiedValueTargetKind = 0;
         int        lowerRc;
-        if (SLEvalMirResolveQualifiedValueLoadTargetForFile(
+        if (HOPEvalMirResolveQualifiedValueLoadTargetForFile(
                 c,
                 file,
                 ins,
@@ -1414,11 +1414,11 @@ static int SLEvalMirRewriteTopInitCalls(
                 &targetTopInitIndex))
         {
             if (qualifiedValueTargetKind == 1) {
-                lowerRc = SLEvalMirLowerTopConst(c, targetTopInitIndex, &targetMirFnIndex);
+                lowerRc = HOPEvalMirLowerTopConst(c, targetTopInitIndex, &targetMirFnIndex);
             } else if (qualifiedValueTargetKind == 2) {
-                lowerRc = SLEvalMirLowerTopVar(c, targetTopInitIndex, &targetMirFnIndex);
+                lowerRc = HOPEvalMirLowerTopVar(c, targetTopInitIndex, &targetMirFnIndex);
             } else {
-                lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetTopInitIndex, &targetMirFnIndex);
+                lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetTopInitIndex, &targetMirFnIndex);
             }
             if (lowerRc < 0) {
                 return -1;
@@ -1426,7 +1426,7 @@ static int SLEvalMirRewriteTopInitCalls(
             if (lowerRc == 0) {
                 return 0;
             }
-            if (SLEvalMirRewriteQualifiedValueLoad(
+            if (HOPEvalMirRewriteQualifiedValueLoad(
                     c,
                     rootMirFnIndex,
                     instIndex,
@@ -1439,12 +1439,12 @@ static int SLEvalMirRewriteTopInitCalls(
             instIndex += 2u;
             continue;
         }
-        if (SLEvalMirResolveTopInitIdentTargetForFile(
+        if (HOPEvalMirResolveTopInitIdentTargetForFile(
                 c, file, ins, &isTopConst, &targetTopInitIndex))
         {
             lowerRc = isTopConst
-                ? SLEvalMirLowerTopConst(c, targetTopInitIndex, &targetMirFnIndex)
-                : SLEvalMirLowerTopVar(c, targetTopInitIndex, &targetMirFnIndex);
+                ? HOPEvalMirLowerTopConst(c, targetTopInitIndex, &targetMirFnIndex)
+                : HOPEvalMirLowerTopVar(c, targetTopInitIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 return -1;
             }
@@ -1452,11 +1452,11 @@ static int SLEvalMirRewriteTopInitCalls(
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            SLEvalMirRewriteLoadIdentToMirFunction(ins, targetMirFnIndex);
+            HOPEvalMirRewriteLoadIdentToMirFunction(ins, targetMirFnIndex);
             continue;
         }
-        if (SLEvalMirResolveFunctionIdentTargetForFile(c, file, ins, &targetFnIdentIndex)) {
-            lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetFnIdentIndex, &targetMirFnIndex);
+        if (HOPEvalMirResolveFunctionIdentTargetForFile(c, file, ins, &targetFnIdentIndex)) {
+            lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetFnIdentIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 return -1;
             }
@@ -1464,13 +1464,13 @@ static int SLEvalMirRewriteTopInitCalls(
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            if (SLEvalMirRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
+            if (HOPEvalMirRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
                 return -1;
             }
             continue;
         }
-        if (SLEvalMirResolveSimpleFunctionValueAliasCallTarget(c, file, ins, &targetEvalFnIndex)) {
-            lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
+        if (HOPEvalMirResolveSimpleFunctionValueAliasCallTarget(c, file, ins, &targetEvalFnIndex)) {
+            lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 return -1;
             }
@@ -1478,10 +1478,10 @@ static int SLEvalMirRewriteTopInitCalls(
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
+            HOPEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
             continue;
         }
-        lowerRc = SLEvalMirRewriteZeroArgFunctionValueCall(c, file, rootMirFnIndex, instIndex);
+        lowerRc = HOPEvalMirRewriteZeroArgFunctionValueCall(c, file, rootMirFnIndex, instIndex);
         if (lowerRc < 0) {
             return -1;
         }
@@ -1489,10 +1489,10 @@ static int SLEvalMirRewriteTopInitCalls(
             instIndex++;
             continue;
         }
-        if (SLEvalMirResolveQualifiedCallTargetForNode(
+        if (HOPEvalMirResolveQualifiedCallTargetForNode(
                 c, file, initExprNode, ins, &targetEvalFnIndex))
         {
-            lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
+            lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 return -1;
             }
@@ -1500,13 +1500,13 @@ static int SLEvalMirRewriteTopInitCalls(
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
+            HOPEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
             continue;
         }
-        if (!SLEvalMirResolvePlainDirectCallTargetForFile(c, file, ins, &targetEvalFnIndex)) {
+        if (!HOPEvalMirResolvePlainDirectCallTargetForFile(c, file, ins, &targetEvalFnIndex)) {
             continue;
         }
-        lowerRc = SLEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
+        lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
         if (lowerRc < 0) {
             return -1;
         }
@@ -1514,15 +1514,15 @@ static int SLEvalMirRewriteTopInitCalls(
             return 0;
         }
         ins = &c->builder.insts[instIndex];
-        SLEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
+        HOPEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
     }
     *outSupported = 1;
     return 0;
 }
 
-static int SLEvalMirFinalizeLoweredTopInit(
-    SLEvalMirLowerCtx*  c,
-    const SLParsedFile* file,
+static int HOPEvalMirFinalizeLoweredTopInit(
+    HOPEvalMirLowerCtx*  c,
+    const HOPParsedFile* file,
     int32_t             initExprNode,
     uint32_t            mirFnIndex,
     int*                outSupported) {
@@ -1538,12 +1538,12 @@ static int SLEvalMirFinalizeLoweredTopInit(
         return -1;
     }
     c->execCtx.sourceFiles[sourceRef] = file;
-    return SLEvalMirRewriteTopInitCalls(c, file, initExprNode, mirFnIndex, outSupported);
+    return HOPEvalMirRewriteTopInitCalls(c, file, initExprNode, mirFnIndex, outSupported);
 }
 
-static int SLEvalMirLowerNamedTopInitVarLike(
-    SLEvalMirLowerCtx*      c,
-    const SLParsedFile*     file,
+static int HOPEvalMirLowerNamedTopInitVarLike(
+    HOPEvalMirLowerCtx*      c,
+    const HOPParsedFile*     file,
     int32_t                 nodeId,
     int32_t                 initExprNode,
     uint32_t                nameStart,
@@ -1560,7 +1560,7 @@ static int SLEvalMirLowerNamedTopInitVarLike(
     if (c == NULL || c->p == NULL || file == NULL || mirMap == NULL || lowering == NULL) {
         return -1;
     }
-    if (mirMap[itemIndex] != SL_EVAL_MIR_FN_NONE) {
+    if (mirMap[itemIndex] != HOP_EVAL_MIR_FN_NONE) {
         if (outMirFnIndex != NULL) {
             *outMirFnIndex = mirMap[itemIndex];
         }
@@ -1570,11 +1570,11 @@ static int SLEvalMirLowerNamedTopInitVarLike(
         return 0;
     }
     lowering[itemIndex] = 1u;
-    if (SLMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+    if (HOPMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
             &c->builder,
             c->p->arena,
             &file->ast,
-            (SLStrView){ file->source, file->sourceLen },
+            (HOPStrView){ file->source, file->sourceLen },
             nodeId,
             nameStart,
             nameEnd,
@@ -1591,13 +1591,13 @@ static int SLEvalMirLowerNamedTopInitVarLike(
         return 0;
     }
     mirMap[itemIndex] = mirFnIndex;
-    if (SLEvalMirFinalizeLoweredTopInit(c, file, initExprNode, mirFnIndex, &supported) != 0) {
+    if (HOPEvalMirFinalizeLoweredTopInit(c, file, initExprNode, mirFnIndex, &supported) != 0) {
         lowering[itemIndex] = 0u;
         return -1;
     }
     lowering[itemIndex] = 0u;
     if (!supported) {
-        mirMap[itemIndex] = SL_EVAL_MIR_FN_NONE;
+        mirMap[itemIndex] = HOP_EVAL_MIR_FN_NONE;
         return 0;
     }
     if (outMirFnIndex != NULL) {
@@ -1606,9 +1606,9 @@ static int SLEvalMirLowerNamedTopInitVarLike(
     return 1;
 }
 
-static int SLEvalMirLowerTopConst(
-    SLEvalMirLowerCtx* c, uint32_t topConstIndex, uint32_t* _Nullable outMirFnIndex) {
-    const SLEvalTopConst* topConst;
+static int HOPEvalMirLowerTopConst(
+    HOPEvalMirLowerCtx* c, uint32_t topConstIndex, uint32_t* _Nullable outMirFnIndex) {
+    const HOPEvalTopConst* topConst;
     if (outMirFnIndex != NULL) {
         *outMirFnIndex = UINT32_MAX;
     }
@@ -1621,7 +1621,7 @@ static int SLEvalMirLowerTopConst(
     if (topConst->nodeId < 0) {
         return 0;
     }
-    return SLEvalMirLowerNamedTopInitVarLike(
+    return HOPEvalMirLowerNamedTopInitVarLike(
         c,
         topConst->file,
         topConst->nodeId,
@@ -1634,9 +1634,9 @@ static int SLEvalMirLowerTopConst(
         outMirFnIndex);
 }
 
-static int SLEvalMirLowerTopVar(
-    SLEvalMirLowerCtx* c, uint32_t topVarIndex, uint32_t* _Nullable outMirFnIndex) {
-    const SLEvalTopVar* topVar;
+static int HOPEvalMirLowerTopVar(
+    HOPEvalMirLowerCtx* c, uint32_t topVarIndex, uint32_t* _Nullable outMirFnIndex) {
+    const HOPEvalTopVar* topVar;
     if (outMirFnIndex != NULL) {
         *outMirFnIndex = UINT32_MAX;
     }
@@ -1646,7 +1646,7 @@ static int SLEvalMirLowerTopVar(
         return -1;
     }
     topVar = &c->p->topVars[topVarIndex];
-    return SLEvalMirLowerNamedTopInitVarLike(
+    return HOPEvalMirLowerNamedTopInitVarLike(
         c,
         topVar->file,
         topVar->nodeId,
@@ -1659,22 +1659,22 @@ static int SLEvalMirLowerTopVar(
         outMirFnIndex);
 }
 
-static int SLEvalMirBuildTopInitProgram(
-    SLEvalProgram*      p,
-    const SLParsedFile* file,
+static int HOPEvalMirBuildTopInitProgram(
+    HOPEvalProgram*      p,
+    const HOPParsedFile* file,
     int32_t             initExprNode,
     int32_t             declTypeNode,
     uint32_t            nameStart,
     uint32_t            nameEnd,
-    SLMirProgram*       outProgram,
-    SLEvalMirExecCtx*   outExecCtx,
+    HOPMirProgram*       outProgram,
+    HOPEvalMirExecCtx*   outExecCtx,
     uint32_t*           outRootMirFnIndex,
     int*                outSupported) {
-    SLEvalMirLowerCtx lowerCtx;
+    HOPEvalMirLowerCtx lowerCtx;
     uint32_t          rootMirFnIndex = UINT32_MAX;
     int               supported = 0;
     if (outProgram != NULL) {
-        *outProgram = (SLMirProgram){ 0 };
+        *outProgram = (HOPMirProgram){ 0 };
     }
     if (outExecCtx != NULL) {
         memset(outExecCtx, 0, sizeof(*outExecCtx));
@@ -1690,14 +1690,14 @@ static int SLEvalMirBuildTopInitProgram(
     {
         return -1;
     }
-    if (SLEvalMirInitLowerCtx(p, 1u, &lowerCtx) != 0) {
+    if (HOPEvalMirInitLowerCtx(p, 1u, &lowerCtx) != 0) {
         return -1;
     }
-    if (SLMirLowerBeginNamedTopInitProgram(
+    if (HOPMirLowerBeginNamedTopInitProgram(
             &lowerCtx.builder,
             p->arena,
             &file->ast,
-            (SLStrView){ file->source, file->sourceLen },
+            (HOPStrView){ file->source, file->sourceLen },
             initExprNode,
             declTypeNode,
             nameStart,
@@ -1712,7 +1712,7 @@ static int SLEvalMirBuildTopInitProgram(
     if (!supported || rootMirFnIndex == UINT32_MAX) {
         return 0;
     }
-    if (SLEvalMirFinalizeLoweredTopInit(
+    if (HOPEvalMirFinalizeLoweredTopInit(
             &lowerCtx, file, initExprNode, rootMirFnIndex, &supported)
         != 0)
     {
@@ -1722,25 +1722,25 @@ static int SLEvalMirBuildTopInitProgram(
         return 0;
     }
     lowerCtx.execCtx.rootMirFnIndex = rootMirFnIndex;
-    SLMirProgramBuilderFinish(&lowerCtx.builder, outProgram);
+    HOPMirProgramBuilderFinish(&lowerCtx.builder, outProgram);
     *outExecCtx = lowerCtx.execCtx;
     *outRootMirFnIndex = rootMirFnIndex;
     *outSupported = 1;
     return 0;
 }
 
-static int SLEvalTryMirInvokeFunction(
-    SLEvalProgram*        p,
-    const SLEvalFunction* fn,
+static int HOPEvalTryMirInvokeFunction(
+    HOPEvalProgram*        p,
+    const HOPEvalFunction* fn,
     int32_t               fnIndex,
-    const SLCTFEValue*    args,
+    const HOPCTFEValue*    args,
     uint32_t              argCount,
-    SLCTFEValue*          outValue,
+    HOPCTFEValue*          outValue,
     int*                  outDidReturn,
     int*                  outIsConst) {
-    SLMirProgram         program = { 0 };
-    SLMirExecEnv         env = { 0 };
-    SLEvalMirLowerCtx    lowerCtx;
+    HOPMirProgram         program = { 0 };
+    HOPMirExecEnv         env = { 0 };
+    HOPEvalMirLowerCtx    lowerCtx;
     uint32_t             mirFnIndex = UINT32_MAX;
     int                  lowerRc;
     int                  mirIsConst = 0;
@@ -1749,16 +1749,16 @@ static int SLEvalTryMirInvokeFunction(
     }
     *outDidReturn = 0;
     *outIsConst = 0;
-    if (SLEvalMirInitLowerCtx(p, 0u, &lowerCtx) != 0) {
+    if (HOPEvalMirInitLowerCtx(p, 0u, &lowerCtx) != 0) {
         return -1;
     }
-    lowerRc = SLEvalMirLowerFunction(&lowerCtx, fnIndex, &mirFnIndex);
+    lowerRc = HOPEvalMirLowerFunction(&lowerCtx, fnIndex, &mirFnIndex);
     if (lowerRc < 0) {
         return -1;
     }
     if (lowerRc == 0 || mirFnIndex == UINT32_MAX) {
         if (p->currentExecCtx != NULL && lowerCtx.diag != NULL && lowerCtx.diag->detail != NULL) {
-            SLCTFEExecSetReason(
+            HOPCTFEExecSetReason(
                 p->currentExecCtx,
                 lowerCtx.diag->start,
                 lowerCtx.diag->end,
@@ -1767,23 +1767,23 @@ static int SLEvalTryMirInvokeFunction(
         return 0;
     }
     lowerCtx.execCtx.rootMirFnIndex = mirFnIndex;
-    SLMirProgramBuilderFinish(&lowerCtx.builder, &program);
-    SLEvalMirInitExecEnv(p, fn->file, &env, &lowerCtx.execCtx);
-    if (!SLMirProgramNeedsDynamicResolution(&program)) {
-        SLMirExecEnvDisableDynamicResolution(&env);
+    HOPMirProgramBuilderFinish(&lowerCtx.builder, &program);
+    HOPEvalMirInitExecEnv(p, fn->file, &env, &lowerCtx.execCtx);
+    if (!HOPMirProgramNeedsDynamicResolution(&program)) {
+        HOPMirExecEnvDisableDynamicResolution(&env);
     }
-    if (SLMirEvalFunction(
+    if (HOPMirEvalFunction(
             p->arena, &program, mirFnIndex, args, argCount, &env, outValue, &mirIsConst)
         != 0)
     {
         return -1;
     }
-    SLEvalMirAdaptOutValue(&lowerCtx.execCtx, outValue, &mirIsConst);
+    HOPEvalMirAdaptOutValue(&lowerCtx.execCtx, outValue, &mirIsConst);
     *outIsConst = mirIsConst;
     if (mirIsConst) {
-        *outDidReturn = outValue->kind != SLCTFEValue_INVALID;
+        *outDidReturn = outValue->kind != HOPCTFEValue_INVALID;
     }
     return 0;
 }
 
-SL_API_END
+HOP_API_END

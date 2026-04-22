@@ -1,1 +1,0 @@
-tests/slp17_platform_target_field_requires_import_bad.sl:5:22: error: SL2002: unknown identifier 'stdin'

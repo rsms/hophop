@@ -1,18 +1,18 @@
-# SL language project
+# HopHop language project
 
 This file defines the default working protocol for coding agents in this repository.
 Scope: entire repository.
 
 ## 1) Project overview
 
-SL is a systems-programming language; a custom minimal programming language inspired by C and Go. We are developing the reference compiler (slc) and the specification (`docs/language.md`). The reference compiler has support for multiple target backends, currently a **C11 backend** and an **evaluator**. There is a concept of "platforms" on which SL programs can run (`lib/platform/`).
+HopHop is a systems-programming language; a custom minimal programming language inspired by C and Go. We are developing the reference compiler (hop) and the specification (`docs/language.md`). The reference compiler has support for multiple target backends, currently a **C11 backend** and an **evaluator**. There is a concept of "platforms" on which HopHop programs can run (`lib/platform/`).
 
 - The reference compiler is written in C11 and composed of two major components:
-    1. `libsl.h`, a library which does **not** use libc (compiled with `-ffreestanding`), which contains the majority of the compiler (parser, typechecker, code generation etc.) `lib_sources` in `build.sh`
-    2. `slc`, a CLI program which uses libc to load files, drives the library and writes output. `cli_sources` in `build.sh`.
+    1. `libhop.h`, a library which does **not** use libc (compiled with `-ffreestanding`), which contains the majority of the compiler (parser, typechecker, code generation etc.) `lib_sources` in `build.sh`
+    2. `hop`, a CLI program which uses libc to load files, drives the library and writes output. `cli_sources` in `build.sh`.
 - The syntax is **regular and LLM-friendly**
 - The language spec and EBNF grammar is in `docs/language.md`
-- Feature proposals are at `docs/SLP-*.md`
+- Feature proposals are at `docs/HEP-*.md`
 - Source of truth for implementation details: the code itself (`src/`, `lib/`, `examples/`, `tests/`).
 - If a high-level summary conflicts with code, trust `docs/language.md` first, and current source files second, before anything else.
 
@@ -24,7 +24,7 @@ SL is a systems-programming language; a custom minimal programming language insp
 
 ### 1.2 Feature proposals
 
-Language evolution happens via explicit proposal documents called "SLP" (SL Proposal). Each logical change is documented in one SLP document stored at `docs/SLP-*.md`
+Language evolution happens via explicit proposal documents called "HEP" (HopHop Enhancement Proposal). Each logical change is documented in one HEP document stored at `docs/HEP-*.md`
 
 ## 2) Engineering Principles (Normative)
 
@@ -108,7 +108,7 @@ When making plans, editing files or running commands that change things (but not
 
 Announcement format:
 - Preferred: plain short message text, e.g. `agent-worklog "editing typecheck: fix mutable slice assign"`
-- Optional: JSON object when structured fields help, e.g. `agent-worklog '{"message":"running tests","SLP":"14"}'`
+- Optional: JSON object when structured fields help, e.g. `agent-worklog '{"message":"running tests","HEP":"14"}'`
 - If plain text is used, `agent-worklog` wraps it into JSON and adds `timestamp` plus `from` (current branch name)
 
 Reacting to important updates:
@@ -126,7 +126,7 @@ Guidelines for announcement types:
 - `./build.sh` — build debug into `_build/macos-aarch64-debug/`
 - `./build.sh release` — build release into `_build/macos-aarch64-release/`
 - `./build.sh verbose=1` — show compiler commands
-- Run the CLI: `_build/macos-aarch64-debug/slc`
+- Run the CLI: `_build/macos-aarch64-debug/hop`
 - List tests: `python3 tools/test.py list`
 - Run tests directly: `python3 tools/test.py run --build-dir _build/macos-aarch64-debug --cc clang`
 - Run one suite: `python3 tools/test.py run --suite <suite> --build-dir _build/macos-aarch64-debug --cc clang`
@@ -138,31 +138,31 @@ Tests are defined in `tests/tests.jsonl` and run by `tools/test.py` (which `./bu
 
 ## 6) Reference compiler CLI
 
-See `_build/<target>/slc` for a comlpete list of commands.
+See `_build/<target>/hop` for a comlpete list of commands.
 Here are a few examples:
 
-- `slc tokens file.sl` — tokenize
-- `slc ast file.sl` — parse + print AST
-- `slc check file.sl` — typecheck single file
-- `slc genpkg:c <dir|file.sl> [out.h]` — generate C output via C11 backend
-- `slc compile <dir|file.sl> -o <exe>` — compile via C11 backend + system compiler
-- `slc run <dir|file.sl>` — run with evaluator (not C11 backend)
+- `hop tokens file.hop` — tokenize
+- `hop ast file.hop` — parse + print AST
+- `hop check file.hop` — typecheck single file
+- `hop genpkg:c <dir|file.hop> [out.h]` — generate C output via C11 backend
+- `hop compile <dir|file.hop> -o <exe>` — compile via C11 backend + system compiler
+- `hop run <dir|file.hop>` — run with evaluator (not C11 backend)
 
 ## 7) Code guidelines
 
 ### 7.1 C code in src/
 
-Each implementation (.c) file should begin with `#include "libsl-impl.h"` (or `#include "../libsl-impl.h"` if in a subdirectory.) This includes the public API header `libsl.h` as well as some implementation-only parts of libsl.
+Each implementation (.c) file should begin with `#include "libhop-impl.h"` (or `#include "../libhop-impl.h"` if in a subdirectory.) This includes the public API header `libhop.h` as well as some implementation-only parts of libhop.
 
-Bracket every .h and .c file's content with `SL_API_BEGIN` and `SL_API_END`. They configure the compiler's nullability checks and sets the compiler to interpret `T*` as being `_Nonnull` by default.
+Bracket every .h and .c file's content with `HOP_API_BEGIN` and `HOP_API_END`. They configure the compiler's nullability checks and sets the compiler to interpret `T*` as being `_Nonnull` by default.
 
 ```c
-/* all includes before SL_API_BEGIN */
-#include "libsl-impl.h"
+/* all includes before HOP_API_BEGIN */
+#include "libhop-impl.h"
 #include "other_header.h"
-SL_API_BEGIN
+HOP_API_BEGIN
 /* types, functions etc */
-SL_API_END
+HOP_API_END
 /* end of file*/
 ```
 

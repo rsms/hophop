@@ -24,20 +24,20 @@ EXAMPLES_ROOT = ROOT / "examples"
 ARENA_GROW_TEST_C_PATH = ROOT / "tests" / "harness" / "arena_grow_test.c"
 BUILTIN_H_PATH = ROOT / "lib" / "builtin" / "builtin.h"
 TEST_ROOT_IGNORED_NAMES = {"tests.jsonl", "README.md", "harness", ".DS_Store"}
-TEST_ROOT_TRACKED_SUFFIXES = {".sl", ".stderr", ".ast", ".tokens"}
+TEST_ROOT_TRACKED_SUFFIXES = {".hop", ".stderr", ".ast", ".tokens"}
 PRETEST_FMT_ROOTS = ("examples", "lib", "tests")
 PRETEST_FMT_STRICT_ROOTS = ("examples", "lib")
-PRETEST_FMT_DEFAULT_EXCLUDES = {"tests/fmt_canonical.sl"}
+PRETEST_FMT_DEFAULT_EXCLUDES = {"tests/fmt_canonical.hop"}
 DIAGNOSTICS_JSON = ROOT / "src" / "diagnostics.jsonl"
-DIAG_ID_RE = re.compile(r"\bSL\d{4}\b")
+DIAG_ID_RE = re.compile(r"\bHOP\d{4}\b")
 MAIN_FN_RE = re.compile(r"(?m)^\s*fn\s+main\s*\(")
 EXAMPLE_COMPILE_SKIP: Set[str] = {
     # Known C backend gaps (tracked outside test discovery wiring).
-    "examples/anytype.sl",
-    "examples/generics.sl",
-    "examples/string-format.sl",
-    "examples/string-literal.sl",
-    "examples/tuples.sl",
+    "examples/anytype.hop",
+    "examples/generics.hop",
+    "examples/string-format.hop",
+    "examples/string-literal.hop",
+    "examples/tuples.hop",
 }
 
 
@@ -70,7 +70,7 @@ class RunResult:
 @dataclass
 class RunContext:
     build_dir: Path
-    slc: Path
+    hop: Path
     cc: str
     update: bool
     sidecar_codegen: bool
@@ -262,7 +262,7 @@ def has_main_function(path: Path) -> bool:
     if path.is_file():
         return MAIN_FN_RE.search(path.read_text()) is not None
     if path.is_dir():
-        for source_path in sorted(path.rglob("*.sl")):
+        for source_path in sorted(path.rglob("*.hop")):
             if source_path.is_file() and MAIN_FN_RE.search(source_path.read_text()) is not None:
                 return True
     return False
@@ -275,11 +275,11 @@ def discover_example_targets() -> tuple[List[str], List[str]]:
     if not EXAMPLES_ROOT.exists():
         return files, []
 
-    for path in sorted(EXAMPLES_ROOT.glob("*.sl")):
+    for path in sorted(EXAMPLES_ROOT.glob("*.hop")):
         if path.is_file():
             files.append(path.relative_to(ROOT).as_posix())
 
-    for path in sorted(EXAMPLES_ROOT.rglob("*.sl")):
+    for path in sorted(EXAMPLES_ROOT.rglob("*.hop")):
         if not path.is_file():
             continue
         parent = path.parent
@@ -316,7 +316,7 @@ def build_auto_example_cases(manifest_cases: List[TestCase]) -> List[TestCase]:
             {
                 "id": f"auto.examples.checkpkg.file.{slug}",
                 "suite": "integration.examples.auto.checkpkg",
-                "kind": "slc_ok",
+                "kind": "hop_ok",
                 "mode": "checkpkg",
                 "input": rel,
             }
@@ -338,7 +338,7 @@ def build_auto_example_cases(manifest_cases: List[TestCase]) -> List[TestCase]:
             {
                 "id": f"auto.examples.checkpkg.pkg.{slug}",
                 "suite": "integration.examples.auto.checkpkg",
-                "kind": "slc_ok",
+                "kind": "hop_ok",
                 "mode": "checkpkg",
                 "input": rel,
             }
@@ -361,7 +361,7 @@ def collect_pretest_fmt_exemptions(cases: List[TestCase]) -> Tuple[Set[str], Lis
     errors: List[str] = []
 
     for case in cases:
-        if case.kind != "slc_fmt":
+        if case.kind != "hop_fmt":
             continue
         c = case.data
         input_value = c.get("input")
@@ -380,7 +380,7 @@ def collect_pretest_fmt_exemptions(cases: List[TestCase]) -> Tuple[Set[str], Lis
             if input_abs.is_file():
                 exempt_paths.add(input_rel)
             elif input_abs.is_dir():
-                for p in input_abs.rglob("*.sl"):
+                for p in input_abs.rglob("*.hop"):
                     if p.is_file():
                         exempt_paths.add(p.relative_to(ROOT).as_posix())
             else:
@@ -429,8 +429,8 @@ def collect_pretest_fmt_exemptions(cases: List[TestCase]) -> Tuple[Set[str], Lis
                     f"{case.id}: pretest_fmt_exempt_paths entry escapes input directory: {item}"
                 )
                 continue
-            if candidate.suffix != ".sl":
-                errors.append(f"{case.id}: pretest_fmt_exempt_paths entry is not an .sl file: {item}")
+            if candidate.suffix != ".hop":
+                errors.append(f"{case.id}: pretest_fmt_exempt_paths entry is not an .hop file: {item}")
                 continue
             if not candidate.is_file():
                 errors.append(
@@ -448,7 +448,7 @@ def collect_pretest_fmt_targets(exempt_paths: Set[str]) -> List[str]:
         root_path = ROOT / root_name
         if not root_path.exists():
             continue
-        for path in root_path.rglob("*.sl"):
+        for path in root_path.rglob("*.hop"):
             if not path.is_file():
                 continue
             rel = path.relative_to(ROOT).as_posix()
@@ -468,7 +468,7 @@ def is_pretest_fmt_strict_target(path: str) -> bool:
 
 
 def run_pretest_fmt_target(ctx: RunContext, path: str) -> tuple[str, subprocess.CompletedProcess[str]]:
-    return path, run_cmd([str(ctx.slc), "fmt", "--check", path])
+    return path, run_cmd([str(ctx.hop), "fmt", "--check", path])
 
 
 def run_pretest_fmt_check(ctx: RunContext, all_cases: List[TestCase], jobs: int) -> tuple[bool, str]:
@@ -487,7 +487,7 @@ def run_pretest_fmt_check(ctx: RunContext, all_cases: List[TestCase], jobs: int)
     worker_count = min(max(jobs, 1), len(targets))
     if worker_count == 1:
         for path in targets:
-            results[path] = run_cmd([str(ctx.slc), "fmt", "--check", path])
+            results[path] = run_cmd([str(ctx.hop), "fmt", "--check", path])
     else:
         with ThreadPoolExecutor(max_workers=worker_count) as ex:
             futs = {ex.submit(run_pretest_fmt_target, ctx, path): path for path in targets}
@@ -525,7 +525,7 @@ def run_pretest_fmt_check(ctx: RunContext, all_cases: List[TestCase], jobs: int)
             if has_mismatch_report:
                 dirty_paths.add(path)
                 continue
-            path_like = [line for line in stdout_lines if line.endswith(".sl")]
+            path_like = [line for line in stdout_lines if line.endswith(".hop")]
             if path_like:
                 dirty_paths.update(path_like)
                 continue
@@ -540,7 +540,7 @@ def run_pretest_fmt_check(ctx: RunContext, all_cases: List[TestCase], jobs: int)
 
     if dirty_paths:
         details = [
-            f"{path}: non-standard formatting; run `{ctx.slc} fmt {path}` to correct formatting"
+            f"{path}: non-standard formatting; run `{ctx.hop} fmt {path}` to correct formatting"
             for path in sorted(dirty_paths)
         ]
         return fail("pre-test formatting check failed:\n" + "\n".join(details))
@@ -552,18 +552,18 @@ def sanitize_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
 
 
-def slc_args(ctx: RunContext, mode: str, input_path: str) -> List[str]:
+def hop_args(ctx: RunContext, mode: str, input_path: str) -> List[str]:
     if mode in ("", "_"):
-        return [str(ctx.slc), "lex", input_path]
-    return [str(ctx.slc), mode, input_path]
+        return [str(ctx.hop), "lex", input_path]
+    return [str(ctx.hop), mode, input_path]
 
 
 def mode_uses_platform_flag(mode: str) -> bool:
     return mode in ("run", "compile", "checkpkg", "mir") or mode.startswith("genpkg")
 
 
-def slc_case_args(ctx: RunContext, case: Dict[str, Any]) -> List[str]:
-    args = [str(ctx.slc)]
+def hop_case_args(ctx: RunContext, case: Dict[str, Any]) -> List[str]:
+    args = [str(ctx.hop)]
     mode = str(case.get("mode", ""))
     if mode in ("", "_"):
         mode = "lex"
@@ -607,14 +607,14 @@ def maybe_check_codegen_sidecar(ctx: RunContext, case: Dict[str, Any]) -> tuple[
     if not ctx.sidecar_codegen:
         return ok()
     input_path = case.get("input")
-    if not isinstance(input_path, str) or not input_path.endswith(".sl"):
+    if not isinstance(input_path, str) or not input_path.endswith(".hop"):
         return ok()
 
     expected_path = abs_path(str(Path(input_path).with_suffix(".expected.c")))
     if not expected_path.exists():
         return ok()
 
-    cp = run_cmd([str(ctx.slc), "genpkg:c", input_path])
+    cp = run_cmd([str(ctx.hop), "genpkg:c", input_path])
     if cp.returncode != 0:
         return fail(
             "sidecar codegen check failed to run genpkg:c:\n"
@@ -641,8 +641,8 @@ def maybe_check_codegen_sidecar(ctx: RunContext, case: Dict[str, Any]) -> tuple[
     return fail(f"codegen sidecar mismatch:\n{diff}")
 
 
-def kind_slc_stdout_eq(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
-    cp = run_cmd(slc_case_args(ctx, case))
+def kind_hop_stdout_eq(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
+    cp = run_cmd(hop_case_args(ctx, case))
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"unexpected failure (exit {cp.returncode})\nstderr:\n{cp.stderr}")
@@ -662,8 +662,8 @@ def kind_slc_stdout_eq(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str
     return ok()
 
 
-def kind_slc_ok(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
-    cp = run_cmd(slc_case_args(ctx, case))
+def kind_hop_ok(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
+    cp = run_cmd(hop_case_args(ctx, case))
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
         return fail(f"unexpected failure (exit {cp.returncode})\nstderr:\n{cp.stderr}")
@@ -674,15 +674,15 @@ def kind_slc_ok(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     return ok()
 
 
-def kind_slc_ok_tmp(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
+def kind_hop_ok_tmp(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     source_path = abs_path(str(case["input"]))
-    temp_dir = Path(tempfile.mkdtemp(prefix="slc-ok-tmp-"))
+    temp_dir = Path(tempfile.mkdtemp(prefix="hop-ok-tmp-"))
     temp_input = temp_dir / source_path.name
     try:
         shutil.copyfile(source_path, temp_input)
         temp_case = dict(case)
         temp_case["input"] = str(temp_input)
-        cp = run_cmd(slc_case_args(ctx, temp_case))
+        cp = run_cmd(hop_case_args(ctx, temp_case))
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
     stderr = strip_warning_diagnostics(cp.stderr)
@@ -695,8 +695,8 @@ def kind_slc_ok_tmp(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     return ok()
 
 
-def kind_slc_fail_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
-    cp = run_cmd(slc_case_args(ctx, case))
+def kind_hop_fail_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
+    cp = run_cmd(hop_case_args(ctx, case))
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode == 0:
         return fail("expected failure but command succeeded")
@@ -716,8 +716,8 @@ def kind_slc_fail_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, s
     return ok()
 
 
-def kind_slc_ok_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
-    cp = run_cmd(slc_case_args(ctx, case))
+def kind_hop_ok_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
+    cp = run_cmd(hop_case_args(ctx, case))
     if cp.returncode != 0:
         return fail(f"unexpected failure (exit {cp.returncode})\nstderr:\n{cp.stderr}")
     if cp.stdout:
@@ -736,8 +736,8 @@ def kind_slc_ok_stderr(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str
     return ok()
 
 
-def kind_slc_fail_no_stdout(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
-    cp = run_cmd(slc_case_args(ctx, case))
+def kind_hop_fail_no_stdout(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
+    cp = run_cmd(hop_case_args(ctx, case))
     if cp.returncode == 0:
         return fail("expected failure but command succeeded")
     if cp.stdout:
@@ -745,7 +745,7 @@ def kind_slc_fail_no_stdout(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool
     return ok()
 
 
-def kind_slc_fmt(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
+def kind_hop_fmt(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     input_path = abs_path(str(case["input"]))
     check = bool(case.get("check", False))
     expect_exit = int(case.get("expect_exit", 0))
@@ -759,11 +759,11 @@ def kind_slc_fmt(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple
         shutil.copytree(input_path, dst_dir)
         cmd_target = "input"
     else:
-        dst_file = work_dir / "input.sl"
+        dst_file = work_dir / "input.hop"
         shutil.copy2(input_path, dst_file)
-        cmd_target = "input.sl"
+        cmd_target = "input.hop"
 
-    args = [str(ctx.slc), "fmt"]
+    args = [str(ctx.hop), "fmt"]
     if check:
         args.append("--check")
     args.append(cmd_target)
@@ -812,7 +812,7 @@ def kind_slc_fmt(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple
 def compile_case_args(
     ctx: RunContext, case: Dict[str, Any], input_path: str, output_path: Path
 ) -> List[str]:
-    args = [str(ctx.slc), "compile"]
+    args = [str(ctx.hop), "compile"]
     if case.get("platform") is not None:
         args.extend(["--platform", str(case["platform"])])
     if case.get("arch") is not None:
@@ -938,7 +938,7 @@ def kind_compile_and_run(ctx: RunContext, case: Dict[str, Any], work_dir: Path) 
     return ok()
 
 
-def run_slc_run_cmd(
+def run_hop_run_cmd(
     ctx: RunContext,
     input_path: str,
     platform: Optional[str],
@@ -946,7 +946,7 @@ def run_slc_run_cmd(
     testing: bool = False,
     env: Optional[Dict[str, str]] = None,
 ) -> subprocess.CompletedProcess[str]:
-    args = [str(ctx.slc), "run"]
+    args = [str(ctx.hop), "run"]
     if platform:
         args.extend(["--platform", platform])
     if arch:
@@ -964,7 +964,7 @@ def kind_eval_run_expectation(ctx: RunContext, case: Dict[str, Any]) -> tuple[bo
 
     input_path = str(case["input"])
     arch = str(case["arch"]) if case.get("arch") is not None else None
-    cp = run_slc_run_cmd(ctx, input_path, "cli-eval", arch, bool(case.get("testing", False)))
+    cp = run_hop_run_cmd(ctx, input_path, "cli-eval", arch, bool(case.get("testing", False)))
     default_expect_nonzero = bool(case.get("expect_nonzero", False))
     default_expect_exit = int(case.get("expect_exit", 0))
     if eval_expect == "fail":
@@ -989,14 +989,14 @@ def kind_eval_run_expectation(ctx: RunContext, case: Dict[str, Any]) -> tuple[bo
     return ok()
 
 
-def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
+def kind_hop_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
     platform = str(case["platform"]) if case.get("platform") is not None else None
     arch = str(case["arch"]) if case.get("arch") is not None else None
     try:
         env = case_env(case)
     except ValueError as e:
         return fail(str(e))
-    cp = run_slc_run_cmd(ctx, str(case["input"]), platform, arch, bool(case.get("testing", False)), env)
+    cp = run_hop_run_cmd(ctx, str(case["input"]), platform, arch, bool(case.get("testing", False)), env)
     stderr = strip_warning_diagnostics(cp.stderr)
     expect_nonzero = bool(case.get("expect_nonzero", False))
     expect_exit = int(case.get("expect_exit", 0))
@@ -1044,7 +1044,7 @@ def kind_slc_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
 
 
 def genpkg_case_args(ctx: RunContext, case: Dict[str, Any], mode: str) -> List[str]:
-    args = [str(ctx.slc), mode]
+    args = [str(ctx.hop), mode]
     if case.get("platform") is not None:
         args.extend(["--platform", str(case["platform"])])
     if case.get("arch") is not None:
@@ -1059,16 +1059,16 @@ def run_genpkg_mode(ctx: RunContext, case: Dict[str, Any], mode: str) -> subproc
     return run_cmd(genpkg_case_args(ctx, case, mode))
 
 
-def kind_slc_cli(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
+def kind_hop_cli(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     args_field = case.get("args")
     if not isinstance(args_field, list):
         return fail("args must be a list")
 
-    argv0 = ctx.slc
+    argv0 = ctx.hop
     argv0_basename = case.get("argv0_basename")
     if isinstance(argv0_basename, str) and argv0_basename:
         argv0 = work_dir / argv0_basename
-        os.symlink(ctx.slc, argv0)
+        os.symlink(ctx.hop, argv0)
 
     try:
         env = case_env(case)
@@ -1098,6 +1098,9 @@ def kind_slc_cli(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple
                 )
             )
             return fail(f"stdout mismatch:\n{diff}")
+    stdout_contains = case.get("stdout_contains")
+    if stdout_contains is not None and str(stdout_contains) not in cp.stdout:
+        return fail(f"stdout missing expected text {stdout_contains!r}\n{cp.stdout}")
     if expected_stderr_path is not None:
         expected_stderr = read_text(str(expected_stderr_path))
         if cp.stderr != expected_stderr:
@@ -1305,15 +1308,15 @@ def kind_genpkg_wasm_check(ctx: RunContext, case: Dict[str, Any], work_dir: Path
     return ok()
 
 
-def kind_libsl_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, str]:
-    src_header = ctx.build_dir / "libsl.h"
+def kind_libhop_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, str]:
+    src_header = ctx.build_dir / "libhop.h"
     if not src_header.exists():
         return fail(f"missing generated header: {src_header}")
 
-    dst_header = work_dir / "libsl.h"
+    dst_header = work_dir / "libhop.h"
     shutil.copy2(src_header, dst_header)
-    libsl_c = work_dir / "libsl.c"
-    libsl_c.write_text('#define SL_IMPLEMENTATION\n#include "libsl.h"\n')
+    libhop_c = work_dir / "libhop.c"
+    libhop_c.write_text('#define HOP_IMPLEMENTATION\n#include "libhop.h"\n')
 
     host_args = [
         ctx.cc,
@@ -1325,9 +1328,9 @@ def kind_libsl_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, str]
         "-Wextra",
         "-Werror",
         "-c",
-        str(libsl_c),
+        str(libhop_c),
         "-o",
-        str(work_dir / "libsl.freestanding.o"),
+        str(work_dir / "libhop.freestanding.o"),
     ]
     cp = run_cmd(host_args, cwd=work_dir)
     if cp.returncode != 0:
@@ -1345,9 +1348,9 @@ def kind_libsl_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, str]
         "-Wextra",
         "-Werror",
         "-c",
-        str(libsl_c),
+        str(libhop_c),
         "-o",
-        str(work_dir / "libsl.wasm"),
+        str(work_dir / "libhop.wasm"),
     ]
     cp = run_cmd(wasm_args, cwd=work_dir)
     if cp.returncode != 0:
@@ -1419,13 +1422,13 @@ def kind_builtin_h_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, 
 
 
 def kind_arena_grow_test(ctx: RunContext, work_dir: Path) -> tuple[bool, str]:
-    src_header = ctx.build_dir / "libsl.h"
+    src_header = ctx.build_dir / "libhop.h"
     if not src_header.exists():
         return fail(f"missing generated header: {src_header}")
     if not ARENA_GROW_TEST_C_PATH.exists():
         return fail(f"missing source file: {ARENA_GROW_TEST_C_PATH}")
 
-    shutil.copy2(src_header, work_dir / "libsl.h")
+    shutil.copy2(src_header, work_dir / "libhop.h")
     c_path = work_dir / "arena_grow_test.c"
     exe_path = work_dir / "arena_grow_test"
     shutil.copy2(ARENA_GROW_TEST_C_PATH, c_path)
@@ -1454,7 +1457,7 @@ def kind_arena_grow_test(ctx: RunContext, work_dir: Path) -> tuple[bool, str]:
 
 
 def case_has_eval_variant(case: TestCase) -> bool:
-    if case.kind not in ("compile_and_run", "slc_run"):
+    if case.kind not in ("compile_and_run", "hop_run"):
         return False
     if case.data.get("eval_expect") is None:
         return False
@@ -1511,7 +1514,7 @@ def execution_case_supported_in_eval_only(case: ExecutionCase) -> bool:
     ):
         return False
 
-    if kind == "slc_run":
+    if kind == "hop_run":
         return data.get("platform") == "cli-eval"
 
     return not mode_uses_c_backend(data.get("mode"), data.get("platform"))
@@ -1535,38 +1538,38 @@ def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunRe
         if case.variant == "cli-eval":
             ok_main, detail = kind_eval_run_expectation(ctx, c)
         else:
-            if k == "slc_stdout_eq":
-                ok_main, detail = kind_slc_stdout_eq(ctx, c)
-            elif k == "slc_ok":
-                ok_main, detail = kind_slc_ok(ctx, c)
-            elif k == "slc_ok_tmp":
-                ok_main, detail = kind_slc_ok_tmp(ctx, c)
-            elif k == "slc_cli":
-                ok_main, detail = kind_slc_cli(ctx, c, work_dir)
-            elif k == "slc_fail_stderr":
-                ok_main, detail = kind_slc_fail_stderr(ctx, c)
-            elif k == "slc_ok_stderr":
-                ok_main, detail = kind_slc_ok_stderr(ctx, c)
-            elif k == "slc_fail_no_stdout":
-                ok_main, detail = kind_slc_fail_no_stdout(ctx, c)
-            elif k == "slc_fmt":
-                ok_main, detail = kind_slc_fmt(ctx, c, work_dir)
+            if k == "hop_stdout_eq":
+                ok_main, detail = kind_hop_stdout_eq(ctx, c)
+            elif k == "hop_ok":
+                ok_main, detail = kind_hop_ok(ctx, c)
+            elif k == "hop_ok_tmp":
+                ok_main, detail = kind_hop_ok_tmp(ctx, c)
+            elif k == "hop_cli":
+                ok_main, detail = kind_hop_cli(ctx, c, work_dir)
+            elif k == "hop_fail_stderr":
+                ok_main, detail = kind_hop_fail_stderr(ctx, c)
+            elif k == "hop_ok_stderr":
+                ok_main, detail = kind_hop_ok_stderr(ctx, c)
+            elif k == "hop_fail_no_stdout":
+                ok_main, detail = kind_hop_fail_no_stdout(ctx, c)
+            elif k == "hop_fmt":
+                ok_main, detail = kind_hop_fmt(ctx, c, work_dir)
             elif k == "compile_only":
                 ok_main, detail = kind_compile_only(ctx, c, work_dir)
             elif k == "compile_cache_reuse":
                 ok_main, detail = kind_compile_cache_reuse(ctx, c, work_dir)
             elif k == "compile_and_run":
                 ok_main, detail = kind_compile_and_run(ctx, c, work_dir)
-            elif k == "slc_run":
-                ok_main, detail = kind_slc_run(ctx, c)
+            elif k == "hop_run":
+                ok_main, detail = kind_hop_run(ctx, c)
             elif k == "genpkg_text_check":
                 ok_main, detail = kind_genpkg_text_check(ctx, c)
             elif k == "genpkg_compile":
                 ok_main, detail = kind_genpkg_compile(ctx, c, work_dir)
             elif k == "genpkg_wasm_check":
                 ok_main, detail = kind_genpkg_wasm_check(ctx, c, work_dir)
-            elif k == "libsl_freestanding":
-                ok_main, detail = kind_libsl_freestanding(ctx, work_dir)
+            elif k == "libhop_freestanding":
+                ok_main, detail = kind_libhop_freestanding(ctx, work_dir)
             elif k == "builtin_h_freestanding":
                 ok_main, detail = kind_builtin_h_freestanding(ctx, work_dir)
             elif k == "arena_grow_test":
@@ -1708,8 +1711,8 @@ def is_test_root_artifact_file(path: Path) -> bool:
 
 
 def is_test_root_artifact_dir(path: Path) -> bool:
-    # Treat top-level directories containing SL sources as test artifacts.
-    for p in path.rglob("*.sl"):
+    # Treat top-level directories containing HopHop sources as test artifacts.
+    for p in path.rglob("*.hop"):
         if p.is_file():
             return True
     return False
@@ -1774,14 +1777,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         cases = [case for case in cases if execution_case_supported_in_eval_only(case)]
 
     build_dir = abs_path(args.build_dir)
-    slc = build_dir / "slc"
-    if not slc.exists():
-        print(f"slc binary not found: {slc}", file=sys.stderr)
+    hop = build_dir / "hop"
+    if not hop.exists():
+        print(f"hop binary not found: {hop}", file=sys.stderr)
         return 1
 
     ctx = RunContext(
         build_dir=build_dir,
-        slc=slc,
+        hop=hop,
         cc=args.cc,
         update=args.update,
         sidecar_codegen=not args.no_sidecar_codegen and not args.eval_only,
@@ -1795,7 +1798,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(fmt_detail, file=sys.stderr)
         return 1
 
-    temp_root = Path(tempfile.mkdtemp(prefix="slang-tests."))
+    temp_root = Path(tempfile.mkdtemp(prefix="hophop-tests."))
 
     print(
         f"Running {count_noun(len(fixtures), 'fixture')}, "
@@ -1861,7 +1864,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="SL test runner")
+    p = argparse.ArgumentParser(description="HopHop test runner")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def add_common(sp: argparse.ArgumentParser) -> None:

@@ -1,1 +1,1 @@
-tests/bad_block_comment.sl:2:1: error: SL1012: unterminated block comment
+tests/bad_block_comment.hop:2:1: error: HOP1012: unterminated block comment

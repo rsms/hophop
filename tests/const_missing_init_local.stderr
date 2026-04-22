@@ -1,1 +1,1 @@
-tests/const_missing_init_local.sl:3:2: error: SL2028: const declaration requires initializer
+tests/const_missing_init_local.hop:3:2: error: HOP2028: const declaration requires initializer

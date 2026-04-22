@@ -1,0 +1,16 @@
+usage:
+    hop --version
+    hop run [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
+    hop fmt [--check] [<file-or-dir> ...]
+    hop compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile> [-o <output>]
+    hop genpkg[:backend] [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile> [out]
+    hop check <srcfile>
+    hop checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
+    hop lex <srcfile>
+    hop ast <srcfile>
+    hop mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
+    hop --version
+    hop --help
+
+<target> is one of: cli-libc (default), cli-eval, wasm-min, playbit
+`hop run` defaults to cli-eval when --platform is omitted

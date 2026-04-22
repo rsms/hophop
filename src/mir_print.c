@@ -1,13 +1,13 @@
-#include "libsl-impl.h"
+#include "libhop-impl.h"
 #include "mir.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
-static void MirWWrite(SLWriter* w, const char* s, uint32_t len) {
+static void MirWWrite(HOPWriter* w, const char* s, uint32_t len) {
     w->write(w->ctx, s, len);
 }
 
-static void MirWCStr(SLWriter* w, const char* s) {
+static void MirWCStr(HOPWriter* w, const char* s) {
     uint32_t n = 0;
     while (s[n] != '\0') {
         n++;
@@ -15,7 +15,7 @@ static void MirWCStr(SLWriter* w, const char* s) {
     MirWWrite(w, s, n);
 }
 
-static void MirWU32(SLWriter* w, uint32_t v) {
+static void MirWU32(HOPWriter* w, uint32_t v) {
     char     buf[16];
     uint32_t n = 0;
     if (v == 0) {
@@ -32,7 +32,7 @@ static void MirWU32(SLWriter* w, uint32_t v) {
     }
 }
 
-static void MirWU64(SLWriter* w, uint64_t v) {
+static void MirWU64(HOPWriter* w, uint64_t v) {
     char     buf[32];
     uint32_t n = 0;
     if (v == 0) {
@@ -49,7 +49,7 @@ static void MirWU64(SLWriter* w, uint64_t v) {
     }
 }
 
-static void MirWI64(SLWriter* w, int64_t v) {
+static void MirWI64(HOPWriter* w, int64_t v) {
     uint64_t mag;
     if (v < 0) {
         MirWWrite(w, "-", 1);
@@ -60,7 +60,7 @@ static void MirWI64(SLWriter* w, int64_t v) {
     MirWU64(w, mag);
 }
 
-static void MirWHexU64(SLWriter* w, uint64_t v) {
+static void MirWHexU64(HOPWriter* w, uint64_t v) {
     char               buf[16];
     uint32_t           i;
     static const char* digits = "0123456789abcdef";
@@ -72,14 +72,14 @@ static void MirWHexU64(SLWriter* w, uint64_t v) {
     MirWWrite(w, buf, 16);
 }
 
-static void MirWIndent(SLWriter* w, uint32_t depth) {
+static void MirWIndent(HOPWriter* w, uint32_t depth) {
     uint32_t i;
     for (i = 0; i < depth; i++) {
         MirWWrite(w, "  ", 2);
     }
 }
 
-static void MirWEscapedView(SLWriter* w, SLStrView src, uint32_t start, uint32_t end) {
+static void MirWEscapedView(HOPWriter* w, HOPStrView src, uint32_t start, uint32_t end) {
     uint32_t i;
     MirWWrite(w, "\"", 1);
     for (i = start; i < end && i < src.len; i++) {
@@ -108,140 +108,140 @@ static void MirWEscapedView(SLWriter* w, SLStrView src, uint32_t start, uint32_t
     MirWWrite(w, "\"", 1);
 }
 
-static void MirWEscapedBytes(SLWriter* w, SLStrView bytes) {
+static void MirWEscapedBytes(HOPWriter* w, HOPStrView bytes) {
     MirWEscapedView(w, bytes, 0, bytes.len);
 }
 
-static const char* SLMirOpName(SLMirOp op) {
+static const char* HOPMirOpName(HOPMirOp op) {
     switch (op) {
-        case SLMirOp_INVALID:         return "INVALID";
-        case SLMirOp_PUSH_CONST:      return "PUSH_CONST";
-        case SLMirOp_PUSH_INT:        return "PUSH_INT";
-        case SLMirOp_PUSH_FLOAT:      return "PUSH_FLOAT";
-        case SLMirOp_PUSH_BOOL:       return "PUSH_BOOL";
-        case SLMirOp_PUSH_STRING:     return "PUSH_STRING";
-        case SLMirOp_PUSH_NULL:       return "PUSH_NULL";
-        case SLMirOp_LOAD_IDENT:      return "LOAD_IDENT";
-        case SLMirOp_STORE_IDENT:     return "STORE_IDENT";
-        case SLMirOp_CALL:            return "CALL";
-        case SLMirOp_UNARY:           return "UNARY";
-        case SLMirOp_BINARY:          return "BINARY";
-        case SLMirOp_INDEX:           return "INDEX";
-        case SLMirOp_SEQ_LEN:         return "SEQ_LEN";
-        case SLMirOp_STR_CSTR:        return "STR_CSTR";
-        case SLMirOp_ITER_INIT:       return "ITER_INIT";
-        case SLMirOp_ITER_NEXT:       return "ITER_NEXT";
-        case SLMirOp_CAST:            return "CAST";
-        case SLMirOp_COERCE:          return "COERCE";
-        case SLMirOp_LOCAL_ZERO:      return "LOCAL_ZERO";
-        case SLMirOp_LOCAL_LOAD:      return "LOCAL_LOAD";
-        case SLMirOp_LOCAL_STORE:     return "LOCAL_STORE";
-        case SLMirOp_LOCAL_ADDR:      return "LOCAL_ADDR";
-        case SLMirOp_DROP:            return "DROP";
-        case SLMirOp_JUMP:            return "JUMP";
-        case SLMirOp_JUMP_IF_FALSE:   return "JUMP_IF_FALSE";
-        case SLMirOp_ASSERT:          return "ASSERT";
-        case SLMirOp_CALL_FN:         return "CALL_FN";
-        case SLMirOp_CALL_HOST:       return "CALL_HOST";
-        case SLMirOp_CALL_INDIRECT:   return "CALL_INDIRECT";
-        case SLMirOp_DEREF_LOAD:      return "DEREF_LOAD";
-        case SLMirOp_DEREF_STORE:     return "DEREF_STORE";
-        case SLMirOp_ADDR_OF:         return "ADDR_OF";
-        case SLMirOp_AGG_MAKE:        return "AGG_MAKE";
-        case SLMirOp_AGG_ZERO:        return "AGG_ZERO";
-        case SLMirOp_AGG_GET:         return "AGG_GET";
-        case SLMirOp_AGG_SET:         return "AGG_SET";
-        case SLMirOp_AGG_ADDR:        return "AGG_ADDR";
-        case SLMirOp_ARRAY_ZERO:      return "ARRAY_ZERO";
-        case SLMirOp_ARRAY_GET:       return "ARRAY_GET";
-        case SLMirOp_ARRAY_SET:       return "ARRAY_SET";
-        case SLMirOp_ARRAY_ADDR:      return "ARRAY_ADDR";
-        case SLMirOp_TUPLE_MAKE:      return "TUPLE_MAKE";
-        case SLMirOp_SLICE_MAKE:      return "SLICE_MAKE";
-        case SLMirOp_OPTIONAL_WRAP:   return "OPTIONAL_WRAP";
-        case SLMirOp_OPTIONAL_UNWRAP: return "OPTIONAL_UNWRAP";
-        case SLMirOp_TAGGED_MAKE:     return "TAGGED_MAKE";
-        case SLMirOp_TAGGED_TAG:      return "TAGGED_TAG";
-        case SLMirOp_TAGGED_PAYLOAD:  return "TAGGED_PAYLOAD";
-        case SLMirOp_ALLOC_NEW:       return "ALLOC_NEW";
-        case SLMirOp_CTX_GET:         return "CTX_GET";
-        case SLMirOp_CTX_ADDR:        return "CTX_ADDR";
-        case SLMirOp_CTX_SET:         return "CTX_SET";
-        case SLMirOp_RETURN:          return "RETURN";
-        case SLMirOp_RETURN_VOID:     return "RETURN_VOID";
+        case HOPMirOp_INVALID:         return "INVALID";
+        case HOPMirOp_PUSH_CONST:      return "PUSH_CONST";
+        case HOPMirOp_PUSH_INT:        return "PUSH_INT";
+        case HOPMirOp_PUSH_FLOAT:      return "PUSH_FLOAT";
+        case HOPMirOp_PUSH_BOOL:       return "PUSH_BOOL";
+        case HOPMirOp_PUSH_STRING:     return "PUSH_STRING";
+        case HOPMirOp_PUSH_NULL:       return "PUSH_NULL";
+        case HOPMirOp_LOAD_IDENT:      return "LOAD_IDENT";
+        case HOPMirOp_STORE_IDENT:     return "STORE_IDENT";
+        case HOPMirOp_CALL:            return "CALL";
+        case HOPMirOp_UNARY:           return "UNARY";
+        case HOPMirOp_BINARY:          return "BINARY";
+        case HOPMirOp_INDEX:           return "INDEX";
+        case HOPMirOp_SEQ_LEN:         return "SEQ_LEN";
+        case HOPMirOp_STR_CSTR:        return "STR_CSTR";
+        case HOPMirOp_ITER_INIT:       return "ITER_INIT";
+        case HOPMirOp_ITER_NEXT:       return "ITER_NEXT";
+        case HOPMirOp_CAST:            return "CAST";
+        case HOPMirOp_COERCE:          return "COERCE";
+        case HOPMirOp_LOCAL_ZERO:      return "LOCAL_ZERO";
+        case HOPMirOp_LOCAL_LOAD:      return "LOCAL_LOAD";
+        case HOPMirOp_LOCAL_STORE:     return "LOCAL_STORE";
+        case HOPMirOp_LOCAL_ADDR:      return "LOCAL_ADDR";
+        case HOPMirOp_DROP:            return "DROP";
+        case HOPMirOp_JUMP:            return "JUMP";
+        case HOPMirOp_JUMP_IF_FALSE:   return "JUMP_IF_FALSE";
+        case HOPMirOp_ASSERT:          return "ASSERT";
+        case HOPMirOp_CALL_FN:         return "CALL_FN";
+        case HOPMirOp_CALL_HOST:       return "CALL_HOST";
+        case HOPMirOp_CALL_INDIRECT:   return "CALL_INDIRECT";
+        case HOPMirOp_DEREF_LOAD:      return "DEREF_LOAD";
+        case HOPMirOp_DEREF_STORE:     return "DEREF_STORE";
+        case HOPMirOp_ADDR_OF:         return "ADDR_OF";
+        case HOPMirOp_AGG_MAKE:        return "AGG_MAKE";
+        case HOPMirOp_AGG_ZERO:        return "AGG_ZERO";
+        case HOPMirOp_AGG_GET:         return "AGG_GET";
+        case HOPMirOp_AGG_SET:         return "AGG_SET";
+        case HOPMirOp_AGG_ADDR:        return "AGG_ADDR";
+        case HOPMirOp_ARRAY_ZERO:      return "ARRAY_ZERO";
+        case HOPMirOp_ARRAY_GET:       return "ARRAY_GET";
+        case HOPMirOp_ARRAY_SET:       return "ARRAY_SET";
+        case HOPMirOp_ARRAY_ADDR:      return "ARRAY_ADDR";
+        case HOPMirOp_TUPLE_MAKE:      return "TUPLE_MAKE";
+        case HOPMirOp_SLICE_MAKE:      return "SLICE_MAKE";
+        case HOPMirOp_OPTIONAL_WRAP:   return "OPTIONAL_WRAP";
+        case HOPMirOp_OPTIONAL_UNWRAP: return "OPTIONAL_UNWRAP";
+        case HOPMirOp_TAGGED_MAKE:     return "TAGGED_MAKE";
+        case HOPMirOp_TAGGED_TAG:      return "TAGGED_TAG";
+        case HOPMirOp_TAGGED_PAYLOAD:  return "TAGGED_PAYLOAD";
+        case HOPMirOp_ALLOC_NEW:       return "ALLOC_NEW";
+        case HOPMirOp_CTX_GET:         return "CTX_GET";
+        case HOPMirOp_CTX_ADDR:        return "CTX_ADDR";
+        case HOPMirOp_CTX_SET:         return "CTX_SET";
+        case HOPMirOp_RETURN:          return "RETURN";
+        case HOPMirOp_RETURN_VOID:     return "RETURN_VOID";
     }
     return "UNKNOWN";
 }
 
-static const char* SLMirConstKindName(SLMirConstKind kind) {
+static const char* HOPMirConstKindName(HOPMirConstKind kind) {
     switch (kind) {
-        case SLMirConst_INVALID:  return "INVALID";
-        case SLMirConst_INT:      return "INT";
-        case SLMirConst_FLOAT:    return "FLOAT";
-        case SLMirConst_BOOL:     return "BOOL";
-        case SLMirConst_STRING:   return "STRING";
-        case SLMirConst_NULL:     return "NULL";
-        case SLMirConst_TYPE:     return "TYPE";
-        case SLMirConst_FUNCTION: return "FUNCTION";
-        case SLMirConst_HOST:     return "HOST";
+        case HOPMirConst_INVALID:  return "INVALID";
+        case HOPMirConst_INT:      return "INT";
+        case HOPMirConst_FLOAT:    return "FLOAT";
+        case HOPMirConst_BOOL:     return "BOOL";
+        case HOPMirConst_STRING:   return "STRING";
+        case HOPMirConst_NULL:     return "NULL";
+        case HOPMirConst_TYPE:     return "TYPE";
+        case HOPMirConst_FUNCTION: return "FUNCTION";
+        case HOPMirConst_HOST:     return "HOST";
     }
     return "UNKNOWN";
 }
 
-static const char* SLMirHostKindName(SLMirHostKind kind) {
+static const char* HOPMirHostKindName(HOPMirHostKind kind) {
     switch (kind) {
-        case SLMirHost_INVALID: return "INVALID";
-        case SLMirHost_GENERIC: return "GENERIC";
+        case HOPMirHost_INVALID: return "INVALID";
+        case HOPMirHost_GENERIC: return "GENERIC";
     }
     return "UNKNOWN";
 }
 
-static const char* SLMirHostTargetName(SLMirHostTarget target) {
+static const char* HOPMirHostTargetName(HOPMirHostTarget target) {
     switch (target) {
-        case SLMirHostTarget_INVALID:              return "INVALID";
-        case SLMirHostTarget_PRINT:                return "PRINT";
-        case SLMirHostTarget_PLATFORM_EXIT:        return "PLATFORM_EXIT";
-        case SLMirHostTarget_FREE:                 return "FREE";
-        case SLMirHostTarget_CONCAT:               return "CONCAT";
-        case SLMirHostTarget_COPY:                 return "COPY";
-        case SLMirHostTarget_PLATFORM_CONSOLE_LOG: return "PLATFORM_CONSOLE_LOG";
+        case HOPMirHostTarget_INVALID:              return "INVALID";
+        case HOPMirHostTarget_PRINT:                return "PRINT";
+        case HOPMirHostTarget_PLATFORM_EXIT:        return "PLATFORM_EXIT";
+        case HOPMirHostTarget_FREE:                 return "FREE";
+        case HOPMirHostTarget_CONCAT:               return "CONCAT";
+        case HOPMirHostTarget_COPY:                 return "COPY";
+        case HOPMirHostTarget_PLATFORM_CONSOLE_LOG: return "PLATFORM_CONSOLE_LOG";
     }
     return "UNKNOWN";
 }
 
-static const char* SLMirSymbolKindName(SLMirSymbolKind kind) {
+static const char* HOPMirSymbolKindName(HOPMirSymbolKind kind) {
     switch (kind) {
-        case SLMirSymbol_INVALID: return "INVALID";
-        case SLMirSymbol_IDENT:   return "IDENT";
-        case SLMirSymbol_CALL:    return "CALL";
-        case SLMirSymbol_HOST:    return "HOST";
+        case HOPMirSymbol_INVALID: return "INVALID";
+        case HOPMirSymbol_IDENT:   return "IDENT";
+        case HOPMirSymbol_CALL:    return "CALL";
+        case HOPMirSymbol_HOST:    return "HOST";
     }
     return "UNKNOWN";
 }
 
-static const char* SLMirCastTargetName(SLMirCastTarget target) {
+static const char* HOPMirCastTargetName(HOPMirCastTarget target) {
     switch (target) {
-        case SLMirCastTarget_INVALID:  return "INVALID";
-        case SLMirCastTarget_INT:      return "INT";
-        case SLMirCastTarget_FLOAT:    return "FLOAT";
-        case SLMirCastTarget_BOOL:     return "BOOL";
-        case SLMirCastTarget_STR_VIEW: return "STR_VIEW";
-        case SLMirCastTarget_PTR_LIKE: return "PTR_LIKE";
+        case HOPMirCastTarget_INVALID:  return "INVALID";
+        case HOPMirCastTarget_INT:      return "INT";
+        case HOPMirCastTarget_FLOAT:    return "FLOAT";
+        case HOPMirCastTarget_BOOL:     return "BOOL";
+        case HOPMirCastTarget_STR_VIEW: return "STR_VIEW";
+        case HOPMirCastTarget_PTR_LIKE: return "PTR_LIKE";
     }
     return "UNKNOWN";
 }
 
-static const char* SLMirContextFieldName(SLMirContextField field) {
+static const char* HOPMirContextFieldName(HOPMirContextField field) {
     switch (field) {
-        case SLMirContextField_INVALID:        return "INVALID";
-        case SLMirContextField_ALLOCATOR:      return "ALLOCATOR";
-        case SLMirContextField_TEMP_ALLOCATOR: return "TEMP_ALLOCATOR";
-        case SLMirContextField_LOGGER:         return "LOGGER";
+        case HOPMirContextField_INVALID:        return "INVALID";
+        case HOPMirContextField_ALLOCATOR:      return "ALLOCATOR";
+        case HOPMirContextField_TEMP_ALLOCATOR: return "TEMP_ALLOCATOR";
+        case HOPMirContextField_LOGGER:         return "LOGGER";
     }
     return "UNKNOWN";
 }
 
-static void SLMirWriteRange(SLWriter* w, uint32_t start, uint32_t end) {
+static void HOPMirWriteRange(HOPWriter* w, uint32_t start, uint32_t end) {
     MirWWrite(w, "[", 1);
     MirWU32(w, start);
     MirWWrite(w, ",", 1);
@@ -249,59 +249,59 @@ static void SLMirWriteRange(SLWriter* w, uint32_t start, uint32_t end) {
     MirWWrite(w, "]", 1);
 }
 
-static int SLMirRangeInSrc(SLStrView src, uint32_t start, uint32_t end) {
+static int HOPMirRangeInSrc(HOPStrView src, uint32_t start, uint32_t end) {
     return src.ptr != NULL && end >= start && end <= src.len;
 }
 
-static void SLMirWriteSliceOrRange(
-    SLWriter* w, SLStrView src, uint32_t start, uint32_t end, int writeRange) {
-    if (SLMirRangeInSrc(src, start, end)) {
+static void HOPMirWriteSliceOrRange(
+    HOPWriter* w, HOPStrView src, uint32_t start, uint32_t end, int writeRange) {
+    if (HOPMirRangeInSrc(src, start, end)) {
         MirWEscapedView(w, src, start, end);
     } else {
         MirWCStr(w, "<slice ");
-        SLMirWriteRange(w, start, end);
+        HOPMirWriteRange(w, start, end);
         MirWWrite(w, ">", 1);
     }
     if (writeRange) {
         MirWWrite(w, " ", 1);
-        SLMirWriteRange(w, start, end);
+        HOPMirWriteRange(w, start, end);
     }
 }
 
-static void SLMirWriteCallFlags(SLWriter* w, uint16_t tok) {
+static void HOPMirWriteCallFlags(HOPWriter* w, uint16_t tok) {
     int wrote = 0;
-    if (SLMirCallTokDropsReceiverArg0(tok)) {
+    if (HOPMirCallTokDropsReceiverArg0(tok)) {
         MirWCStr(w, " receiver_arg0");
         wrote = 1;
     }
-    if (SLMirCallTokHasSpreadLast(tok)) {
+    if (HOPMirCallTokHasSpreadLast(tok)) {
         MirWCStr(w, wrote ? "|spread_last" : " spread_last");
     }
 }
 
-static void SLMirWriteIterFlags(SLWriter* w, uint16_t tok) {
+static void HOPMirWriteIterFlags(HOPWriter* w, uint16_t tok) {
     int wrote = 0;
-    if ((tok & SLMirIterFlag_HAS_KEY) != 0u) {
+    if ((tok & HOPMirIterFlag_HAS_KEY) != 0u) {
         MirWCStr(w, wrote ? "|HAS_KEY" : " HAS_KEY");
         wrote = 1;
     }
-    if ((tok & SLMirIterFlag_KEY_REF) != 0u) {
+    if ((tok & HOPMirIterFlag_KEY_REF) != 0u) {
         MirWCStr(w, wrote ? "|KEY_REF" : " KEY_REF");
         wrote = 1;
     }
-    if ((tok & SLMirIterFlag_VALUE_REF) != 0u) {
+    if ((tok & HOPMirIterFlag_VALUE_REF) != 0u) {
         MirWCStr(w, wrote ? "|VALUE_REF" : " VALUE_REF");
         wrote = 1;
     }
-    if ((tok & SLMirIterFlag_VALUE_DISCARD) != 0u) {
+    if ((tok & HOPMirIterFlag_VALUE_DISCARD) != 0u) {
         MirWCStr(w, wrote ? "|VALUE_DISCARD" : " VALUE_DISCARD");
     }
 }
 
-static SLStrView SLMirFunctionSource(
-    const SLMirProgram* program, uint32_t funcIndex, SLStrView fallbackSrc) {
+static HOPStrView HOPMirFunctionSource(
+    const HOPMirProgram* program, uint32_t funcIndex, HOPStrView fallbackSrc) {
     if (program != NULL && funcIndex < program->funcLen) {
-        const SLMirFunction* fn = &program->funcs[funcIndex];
+        const HOPMirFunction* fn = &program->funcs[funcIndex];
         if (fn->sourceRef < program->sourceLen) {
             return program->sources[fn->sourceRef].src;
         }
@@ -309,29 +309,30 @@ static SLStrView SLMirFunctionSource(
     return fallbackSrc;
 }
 
-static void SLMirDumpConst(const SLMirConst* value, uint32_t index, SLWriter* w, uint32_t depth) {
+static void HOPMirDumpConst(
+    const HOPMirConst* value, uint32_t index, HOPWriter* w, uint32_t depth) {
     MirWIndent(w, depth);
     MirWCStr(w, "#");
     MirWU32(w, index);
     MirWCStr(w, " ");
-    MirWCStr(w, SLMirConstKindName(value->kind));
+    MirWCStr(w, HOPMirConstKindName(value->kind));
     switch (value->kind) {
-        case SLMirConst_INT:
+        case HOPMirConst_INT:
             MirWCStr(w, " value=");
             MirWI64(w, (int64_t)value->bits);
             break;
-        case SLMirConst_FLOAT:
+        case HOPMirConst_FLOAT:
             MirWCStr(w, " bits=");
             MirWHexU64(w, value->bits);
             break;
-        case SLMirConst_BOOL: MirWCStr(w, value->bits != 0 ? " true" : " false"); break;
-        case SLMirConst_STRING:
+        case HOPMirConst_BOOL: MirWCStr(w, value->bits != 0 ? " true" : " false"); break;
+        case HOPMirConst_STRING:
             MirWCStr(w, " bytes=");
             MirWEscapedBytes(w, value->bytes);
             break;
-        case SLMirConst_TYPE:
-        case SLMirConst_FUNCTION:
-        case SLMirConst_HOST:
+        case HOPMirConst_TYPE:
+        case HOPMirConst_FUNCTION:
+        case HOPMirConst_HOST:
             MirWCStr(w, " aux=");
             MirWU32(w, value->aux);
             break;
@@ -340,131 +341,131 @@ static void SLMirDumpConst(const SLMirConst* value, uint32_t index, SLWriter* w,
     MirWWrite(w, "\n", 1);
 }
 
-static void SLMirDumpInst(
-    const SLMirProgram*  program,
-    const SLMirFunction* fn,
-    uint32_t             funcIndex,
-    uint32_t             pc,
-    const SLMirInst*     ins,
-    SLStrView            fallbackSrc,
-    SLWriter*            w,
-    uint32_t             depth) {
-    SLStrView src = SLMirFunctionSource(program, funcIndex, fallbackSrc);
+static void HOPMirDumpInst(
+    const HOPMirProgram*  program,
+    const HOPMirFunction* fn,
+    uint32_t              funcIndex,
+    uint32_t              pc,
+    const HOPMirInst*     ins,
+    HOPStrView            fallbackSrc,
+    HOPWriter*            w,
+    uint32_t              depth) {
+    HOPStrView src = HOPMirFunctionSource(program, funcIndex, fallbackSrc);
     MirWIndent(w, depth);
     MirWU32(w, pc);
     MirWCStr(w, ": ");
-    MirWCStr(w, SLMirOpName(ins->op));
+    MirWCStr(w, HOPMirOpName(ins->op));
     switch (ins->op) {
-        case SLMirOp_PUSH_CONST:
+        case HOPMirOp_PUSH_CONST:
             MirWCStr(w, " const=#");
             MirWU32(w, ins->aux);
             break;
-        case SLMirOp_LOAD_IDENT:
-        case SLMirOp_STORE_IDENT:
-        case SLMirOp_CALL:
+        case HOPMirOp_LOAD_IDENT:
+        case HOPMirOp_STORE_IDENT:
+        case HOPMirOp_CALL:
             MirWCStr(w, " symbol=#");
             MirWU32(w, ins->aux);
             if (ins->aux < program->symbolLen) {
-                const SLMirSymbolRef* sym = &program->symbols[ins->aux];
+                const HOPMirSymbolRef* sym = &program->symbols[ins->aux];
                 MirWCStr(w, " ");
-                SLMirWriteSliceOrRange(w, src, sym->nameStart, sym->nameEnd, 1);
-                if (ins->op == SLMirOp_CALL) {
+                HOPMirWriteSliceOrRange(w, src, sym->nameStart, sym->nameEnd, 1);
+                if (ins->op == HOPMirOp_CALL) {
                     MirWCStr(w, " argc=");
-                    MirWU32(w, SLMirCallArgCountFromTok(ins->tok));
-                    SLMirWriteCallFlags(w, ins->tok);
+                    MirWU32(w, HOPMirCallArgCountFromTok(ins->tok));
+                    HOPMirWriteCallFlags(w, ins->tok);
                 }
             }
             break;
-        case SLMirOp_CALL_FN:
+        case HOPMirOp_CALL_FN:
             MirWCStr(w, " fn=#");
             MirWU32(w, ins->aux);
             MirWCStr(w, " argc=");
-            MirWU32(w, SLMirCallArgCountFromTok(ins->tok));
-            SLMirWriteCallFlags(w, ins->tok);
+            MirWU32(w, HOPMirCallArgCountFromTok(ins->tok));
+            HOPMirWriteCallFlags(w, ins->tok);
             break;
-        case SLMirOp_CALL_HOST:
+        case HOPMirOp_CALL_HOST:
             MirWCStr(w, " host=#");
             MirWU32(w, ins->aux);
             MirWCStr(w, " argc=");
-            MirWU32(w, SLMirCallArgCountFromTok(ins->tok));
-            SLMirWriteCallFlags(w, ins->tok);
+            MirWU32(w, HOPMirCallArgCountFromTok(ins->tok));
+            HOPMirWriteCallFlags(w, ins->tok);
             break;
-        case SLMirOp_CALL_INDIRECT:
+        case HOPMirOp_CALL_INDIRECT:
             MirWCStr(w, " argc=");
-            MirWU32(w, SLMirCallArgCountFromTok(ins->tok));
-            SLMirWriteCallFlags(w, ins->tok);
+            MirWU32(w, HOPMirCallArgCountFromTok(ins->tok));
+            HOPMirWriteCallFlags(w, ins->tok);
             break;
-        case SLMirOp_LOCAL_ZERO:
-        case SLMirOp_LOCAL_LOAD:
-        case SLMirOp_LOCAL_STORE:
-        case SLMirOp_LOCAL_ADDR:
+        case HOPMirOp_LOCAL_ZERO:
+        case HOPMirOp_LOCAL_LOAD:
+        case HOPMirOp_LOCAL_STORE:
+        case HOPMirOp_LOCAL_ADDR:
             MirWCStr(w, " local=#");
             MirWU32(w, ins->aux);
             if (ins->aux < fn->localCount) {
-                const SLMirLocal* local = &program->locals[fn->localStart + ins->aux];
+                const HOPMirLocal* local = &program->locals[fn->localStart + ins->aux];
                 MirWCStr(w, " ");
-                SLMirWriteSliceOrRange(w, src, local->nameStart, local->nameEnd, 1);
+                HOPMirWriteSliceOrRange(w, src, local->nameStart, local->nameEnd, 1);
             }
             break;
-        case SLMirOp_JUMP:
-        case SLMirOp_JUMP_IF_FALSE:
+        case HOPMirOp_JUMP:
+        case HOPMirOp_JUMP_IF_FALSE:
             MirWCStr(w, " target=");
             MirWU32(w, ins->aux);
             break;
-        case SLMirOp_CAST:
+        case HOPMirOp_CAST:
             MirWCStr(w, " cast=");
-            MirWCStr(w, SLMirCastTargetName((SLMirCastTarget)ins->tok));
+            MirWCStr(w, HOPMirCastTargetName((HOPMirCastTarget)ins->tok));
             MirWCStr(w, " type=#");
             MirWU32(w, ins->aux);
             break;
-        case SLMirOp_COERCE:
+        case HOPMirOp_COERCE:
             MirWCStr(w, " type=#");
             MirWU32(w, ins->aux);
             break;
-        case SLMirOp_UNARY:
-        case SLMirOp_BINARY:
+        case HOPMirOp_UNARY:
+        case HOPMirOp_BINARY:
             MirWCStr(w, " op=");
-            MirWCStr(w, SLTokenKindName((SLTokenKind)ins->tok));
+            MirWCStr(w, HOPTokenKindName((HOPTokenKind)ins->tok));
             break;
-        case SLMirOp_ITER_INIT:
+        case HOPMirOp_ITER_INIT:
             MirWCStr(w, " flags=");
-            SLMirWriteIterFlags(w, ins->tok);
+            HOPMirWriteIterFlags(w, ins->tok);
             MirWCStr(w, " aux=");
             MirWU32(w, ins->aux);
             break;
-        case SLMirOp_ITER_NEXT:
+        case HOPMirOp_ITER_NEXT:
             MirWCStr(w, " flags=");
-            SLMirWriteIterFlags(w, ins->tok);
+            HOPMirWriteIterFlags(w, ins->tok);
             break;
-        case SLMirOp_AGG_GET:
-        case SLMirOp_AGG_ADDR:
+        case HOPMirOp_AGG_GET:
+        case HOPMirOp_AGG_ADDR:
             MirWCStr(w, " field=#");
             MirWU32(w, ins->aux);
             if (ins->aux < program->fieldLen) {
-                const SLMirField* field = &program->fields[ins->aux];
+                const HOPMirField* field = &program->fields[ins->aux];
                 MirWCStr(w, " ");
-                SLMirWriteSliceOrRange(w, src, field->nameStart, field->nameEnd, 1);
+                HOPMirWriteSliceOrRange(w, src, field->nameStart, field->nameEnd, 1);
             }
             break;
-        case SLMirOp_AGG_MAKE:
-        case SLMirOp_TUPLE_MAKE:
-        case SLMirOp_TAGGED_MAKE:
-        case SLMirOp_ARRAY_ZERO:
-        case SLMirOp_OPTIONAL_WRAP:
+        case HOPMirOp_AGG_MAKE:
+        case HOPMirOp_TUPLE_MAKE:
+        case HOPMirOp_TAGGED_MAKE:
+        case HOPMirOp_ARRAY_ZERO:
+        case HOPMirOp_OPTIONAL_WRAP:
             MirWCStr(w, " count=");
             MirWU32(w, ins->tok);
             break;
-        case SLMirOp_AGG_ZERO:
-        case SLMirOp_SLICE_MAKE:
-        case SLMirOp_ARRAY_GET:
-        case SLMirOp_ARRAY_SET:
-        case SLMirOp_ARRAY_ADDR:
-        case SLMirOp_INDEX:
-        case SLMirOp_ASSERT:
-        case SLMirOp_OPTIONAL_UNWRAP:
-        case SLMirOp_TAGGED_TAG:
-        case SLMirOp_TAGGED_PAYLOAD:
-        case SLMirOp_ALLOC_NEW:
+        case HOPMirOp_AGG_ZERO:
+        case HOPMirOp_SLICE_MAKE:
+        case HOPMirOp_ARRAY_GET:
+        case HOPMirOp_ARRAY_SET:
+        case HOPMirOp_ARRAY_ADDR:
+        case HOPMirOp_INDEX:
+        case HOPMirOp_ASSERT:
+        case HOPMirOp_OPTIONAL_UNWRAP:
+        case HOPMirOp_TAGGED_TAG:
+        case HOPMirOp_TAGGED_PAYLOAD:
+        case HOPMirOp_ALLOC_NEW:
             if (ins->tok != 0) {
                 MirWCStr(w, " tok=");
                 MirWU32(w, ins->tok);
@@ -474,11 +475,11 @@ static void SLMirDumpInst(
                 MirWU32(w, ins->aux);
             }
             break;
-        case SLMirOp_CTX_GET:
-        case SLMirOp_CTX_ADDR:
-        case SLMirOp_CTX_SET:
+        case HOPMirOp_CTX_GET:
+        case HOPMirOp_CTX_ADDR:
+        case HOPMirOp_CTX_SET:
             MirWCStr(w, " field=");
-            MirWCStr(w, SLMirContextFieldName((SLMirContextField)ins->aux));
+            MirWCStr(w, HOPMirContextFieldName((HOPMirContextField)ins->aux));
             break;
         default:
             if (ins->tok != 0) {
@@ -492,26 +493,26 @@ static void SLMirDumpInst(
             break;
     }
     MirWCStr(w, " span=");
-    SLMirWriteRange(w, ins->start, ins->end);
+    HOPMirWriteRange(w, ins->start, ins->end);
     MirWWrite(w, "\n", 1);
 }
 
-int SLMirDumpProgram(
-    const SLMirProgram* program, SLStrView src, SLWriter* w, SLDiag* _Nullable diag) {
+int HOPMirDumpProgram(
+    const HOPMirProgram* program, HOPStrView src, HOPWriter* w, HOPDiag* _Nullable diag) {
     uint32_t i;
     if (diag != NULL) {
-        *diag = (SLDiag){ 0 };
+        *diag = (HOPDiag){ 0 };
     }
     if (program == NULL || w == NULL || w->write == NULL) {
         if (diag != NULL) {
-            diag->code = SLDiag_UNEXPECTED_TOKEN;
-            diag->type = SLDiagTypeOfCode(SLDiag_UNEXPECTED_TOKEN);
+            diag->code = HOPDiag_UNEXPECTED_TOKEN;
+            diag->type = HOPDiagTypeOfCode(HOPDiag_UNEXPECTED_TOKEN);
         }
         return -1;
     }
     MirWCStr(w, "mir\n");
     MirWCStr(w, "  dynamic_resolution=");
-    MirWCStr(w, SLMirProgramNeedsDynamicResolution(program) ? "yes\n" : "no\n");
+    MirWCStr(w, HOPMirProgramNeedsDynamicResolution(program) ? "yes\n" : "no\n");
     MirWCStr(w, "  insts=");
     MirWU32(w, program->instLen);
     MirWCStr(w, " consts=");
@@ -544,7 +545,7 @@ int SLMirDumpProgram(
 
     MirWCStr(w, "types\n");
     for (i = 0; i < program->typeLen; i++) {
-        const SLMirTypeRef* typeRef = &program->types[i];
+        const HOPMirTypeRef* typeRef = &program->types[i];
         MirWIndent(w, 1);
         MirWCStr(w, "#");
         MirWU32(w, i);
@@ -556,7 +557,7 @@ int SLMirDumpProgram(
             MirWCStr(w, " flags=");
             MirWU32(w, typeRef->flags);
         }
-        if (typeRef->aux != 0 && SLMirTypeRefIsFixedArray(typeRef)) {
+        if (typeRef->aux != 0 && HOPMirTypeRefIsFixedArray(typeRef)) {
             MirWCStr(w, " aux=");
             MirWU32(w, typeRef->aux);
         }
@@ -565,16 +566,16 @@ int SLMirDumpProgram(
 
     MirWCStr(w, "hosts\n");
     for (i = 0; i < program->hostLen; i++) {
-        const SLMirHostRef* host = &program->hosts[i];
+        const HOPMirHostRef* host = &program->hosts[i];
         MirWIndent(w, 1);
         MirWCStr(w, "#");
         MirWU32(w, i);
         MirWCStr(w, " ");
-        MirWCStr(w, SLMirHostKindName(host->kind));
+        MirWCStr(w, HOPMirHostKindName(host->kind));
         MirWCStr(w, " target=");
-        MirWCStr(w, SLMirHostTargetName((SLMirHostTarget)host->target));
+        MirWCStr(w, HOPMirHostTargetName((HOPMirHostTarget)host->target));
         MirWCStr(w, " name=");
-        SLMirWriteSliceOrRange(w, src, host->nameStart, host->nameEnd, 1);
+        HOPMirWriteSliceOrRange(w, src, host->nameStart, host->nameEnd, 1);
         if (host->flags != 0) {
             MirWCStr(w, " flags=");
             MirWU32(w, host->flags);
@@ -584,16 +585,16 @@ int SLMirDumpProgram(
 
     MirWCStr(w, "symbols\n");
     for (i = 0; i < program->symbolLen; i++) {
-        const SLMirSymbolRef* sym = &program->symbols[i];
+        const HOPMirSymbolRef* sym = &program->symbols[i];
         MirWIndent(w, 1);
         MirWCStr(w, "#");
         MirWU32(w, i);
         MirWCStr(w, " ");
-        MirWCStr(w, SLMirSymbolKindName(sym->kind));
+        MirWCStr(w, HOPMirSymbolKindName(sym->kind));
         MirWCStr(w, " target=");
         MirWU32(w, sym->target);
         MirWCStr(w, " name=");
-        SLMirWriteSliceOrRange(w, src, sym->nameStart, sym->nameEnd, 1);
+        HOPMirWriteSliceOrRange(w, src, sym->nameStart, sym->nameEnd, 1);
         if (sym->flags != 0) {
             MirWCStr(w, " flags=");
             MirWU32(w, sym->flags);
@@ -603,7 +604,7 @@ int SLMirDumpProgram(
 
     MirWCStr(w, "fields\n");
     for (i = 0; i < program->fieldLen; i++) {
-        const SLMirField* field = &program->fields[i];
+        const HOPMirField* field = &program->fields[i];
         MirWIndent(w, 1);
         MirWCStr(w, "#");
         MirWU32(w, i);
@@ -612,25 +613,25 @@ int SLMirDumpProgram(
         MirWCStr(w, " type=#");
         MirWU32(w, field->typeRef);
         MirWCStr(w, " name=");
-        SLMirWriteSliceOrRange(w, src, field->nameStart, field->nameEnd, 1);
+        HOPMirWriteSliceOrRange(w, src, field->nameStart, field->nameEnd, 1);
         MirWWrite(w, "\n", 1);
     }
 
     MirWCStr(w, "consts\n");
     for (i = 0; i < program->constLen; i++) {
-        SLMirDumpConst(&program->consts[i], i, w, 1);
+        HOPMirDumpConst(&program->consts[i], i, w, 1);
     }
 
     MirWCStr(w, "functions\n");
     for (i = 0; i < program->funcLen; i++) {
-        uint32_t             j;
-        const SLMirFunction* fn = &program->funcs[i];
-        SLStrView            fnSrc = SLMirFunctionSource(program, i, src);
+        uint32_t              j;
+        const HOPMirFunction* fn = &program->funcs[i];
+        HOPStrView            fnSrc = HOPMirFunctionSource(program, i, src);
         MirWIndent(w, 1);
         MirWCStr(w, "#");
         MirWU32(w, i);
         MirWCStr(w, " name=");
-        SLMirWriteSliceOrRange(w, fnSrc, fn->nameStart, fn->nameEnd, 1);
+        HOPMirWriteSliceOrRange(w, fnSrc, fn->nameStart, fn->nameEnd, 1);
         MirWCStr(w, " source=#");
         MirWU32(w, fn->sourceRef);
         MirWCStr(w, " type=#");
@@ -656,12 +657,12 @@ int SLMirDumpProgram(
         MirWIndent(w, 2);
         MirWCStr(w, "locals\n");
         for (j = 0; j < fn->localCount; j++) {
-            const SLMirLocal* local = &program->locals[fn->localStart + j];
+            const HOPMirLocal* local = &program->locals[fn->localStart + j];
             MirWIndent(w, 3);
             MirWCStr(w, "#");
             MirWU32(w, j);
             MirWCStr(w, " name=");
-            SLMirWriteSliceOrRange(w, fnSrc, local->nameStart, local->nameEnd, 1);
+            HOPMirWriteSliceOrRange(w, fnSrc, local->nameStart, local->nameEnd, 1);
             MirWCStr(w, " type=#");
             MirWU32(w, local->typeRef);
             if (local->flags != 0) {
@@ -674,10 +675,10 @@ int SLMirDumpProgram(
         MirWIndent(w, 2);
         MirWCStr(w, "insts\n");
         for (j = 0; j < fn->instLen; j++) {
-            SLMirDumpInst(program, fn, i, j, &program->insts[fn->instStart + j], src, w, 3);
+            HOPMirDumpInst(program, fn, i, j, &program->insts[fn->instStart + j], src, w, 3);
         }
     }
     return 0;
 }
 
-SL_API_END
+HOP_API_END

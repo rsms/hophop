@@ -1,0 +1,6 @@
+// Verifies HEP 3 bad null assign.
+import "hophop/feature/optional"
+
+pub fn bad() *i32 {
+	return null
+}

@@ -1,153 +1,153 @@
 #include "internal.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
-static int SLTCMarkTemplateRootUsesVisitNode(SLTypeCheckCtx* c, int32_t nodeId) {
-    const SLAstNode* n;
-    int32_t          child;
+static int HOPTCMarkTemplateRootUsesVisitNode(HOPTypeCheckCtx* c, int32_t nodeId) {
+    const HOPAstNode* n;
+    int32_t           child;
     if (c == NULL || c->ast == NULL || nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return 0;
     }
     n = &c->ast->nodes[nodeId];
-    if (n->kind == SLAst_CALL) {
-        int32_t calleeNode = SLAstFirstChild(c->ast, nodeId);
+    if (n->kind == HOPAst_CALL) {
+        int32_t calleeNode = HOPAstFirstChild(c->ast, nodeId);
         if (calleeNode >= 0 && (uint32_t)calleeNode < c->ast->len) {
-            const SLAstNode* callee = &c->ast->nodes[calleeNode];
-            if (callee->kind == SLAst_IDENT) {
-                int32_t fnIndex = SLTCFindFunctionIndex(c, callee->dataStart, callee->dataEnd);
+            const HOPAstNode* callee = &c->ast->nodes[calleeNode];
+            if (callee->kind == HOPAst_IDENT) {
+                int32_t fnIndex = HOPTCFindFunctionIndex(c, callee->dataStart, callee->dataEnd);
                 if (fnIndex >= 0) {
-                    SLTCMarkFunctionUsed(c, fnIndex);
+                    HOPTCMarkFunctionUsed(c, fnIndex);
                 }
             }
         }
     }
-    child = SLAstFirstChild(c->ast, nodeId);
+    child = HOPAstFirstChild(c->ast, nodeId);
     while (child >= 0) {
-        if (SLTCMarkTemplateRootUsesVisitNode(c, child) != 0) {
+        if (HOPTCMarkTemplateRootUsesVisitNode(c, child) != 0) {
             return -1;
         }
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
     return 0;
 }
 
-int SLTCMarkTemplateRootFunctionUses(SLTypeCheckCtx* c) {
+int HOPTCMarkTemplateRootFunctionUses(HOPTypeCheckCtx* c) {
     uint32_t i;
     if (c == NULL || c->ast == NULL) {
         return -1;
     }
     for (i = 0; i < c->funcLen; i++) {
-        const SLTCFunction* fn = &c->funcs[i];
-        int32_t             child;
-        if ((fn->flags & SLTCFunctionFlag_TEMPLATE) == 0
-            || (fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) != 0 || fn->defNode < 0)
+        const HOPTCFunction* fn = &c->funcs[i];
+        int32_t              child;
+        if ((fn->flags & HOPTCFunctionFlag_TEMPLATE) == 0
+            || (fn->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) != 0 || fn->defNode < 0)
         {
             continue;
         }
-        child = SLAstFirstChild(c->ast, fn->defNode);
+        child = HOPAstFirstChild(c->ast, fn->defNode);
         while (child >= 0) {
-            if (c->ast->nodes[child].kind == SLAst_BLOCK) {
-                if (SLTCMarkTemplateRootUsesVisitNode(c, child) != 0) {
+            if (c->ast->nodes[child].kind == HOPAst_BLOCK) {
+                if (HOPTCMarkTemplateRootUsesVisitNode(c, child) != 0) {
                     return -1;
                 }
                 break;
             }
-            child = SLAstNextSibling(c->ast, child);
+            child = HOPAstNextSibling(c->ast, child);
         }
     }
     return 0;
 }
 
-static void SLTCMarkConstBlockLocalReadsRec(
-    SLTypeCheckCtx* c, int32_t nodeId, int skipDirectIdent) {
-    const SLAstNode* n;
-    int32_t          child;
+static void HOPTCMarkConstBlockLocalReadsRec(
+    HOPTypeCheckCtx* c, int32_t nodeId, int skipDirectIdent) {
+    const HOPAstNode* n;
+    int32_t           child;
     if (c == NULL || c->ast == NULL || nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return;
     }
     n = &c->ast->nodes[nodeId];
-    if (!skipDirectIdent && n->kind == SLAst_IDENT) {
-        int32_t localIdx = SLTCLocalFind(c, n->dataStart, n->dataEnd);
+    if (!skipDirectIdent && n->kind == HOPAst_IDENT) {
+        int32_t localIdx = HOPTCLocalFind(c, n->dataStart, n->dataEnd);
         if (localIdx >= 0) {
-            SLTCMarkLocalRead(c, localIdx);
+            HOPTCMarkLocalRead(c, localIdx);
         }
         return;
     }
-    if (n->kind == SLAst_VAR || n->kind == SLAst_CONST) {
-        child = SLAstFirstChild(c->ast, nodeId);
+    if (n->kind == HOPAst_VAR || n->kind == HOPAst_CONST) {
+        child = HOPAstFirstChild(c->ast, nodeId);
         if (child >= 0 && (uint32_t)child < c->ast->len
-            && c->ast->nodes[child].kind == SLAst_NAME_LIST)
+            && c->ast->nodes[child].kind == HOPAst_NAME_LIST)
         {
-            child = SLAstNextSibling(c->ast, child);
+            child = HOPAstNextSibling(c->ast, child);
         }
         while (child >= 0) {
-            SLTCMarkConstBlockLocalReadsRec(c, child, 0);
-            child = SLAstNextSibling(c->ast, child);
+            HOPTCMarkConstBlockLocalReadsRec(c, child, 0);
+            child = HOPAstNextSibling(c->ast, child);
         }
         return;
     }
-    if (n->kind == SLAst_BINARY && n->op == SLTok_ASSIGN) {
-        int32_t lhsNode = SLAstFirstChild(c->ast, nodeId);
-        int32_t rhsNode = lhsNode >= 0 ? SLAstNextSibling(c->ast, lhsNode) : -1;
+    if (n->kind == HOPAst_BINARY && n->op == HOPTok_ASSIGN) {
+        int32_t lhsNode = HOPAstFirstChild(c->ast, nodeId);
+        int32_t rhsNode = lhsNode >= 0 ? HOPAstNextSibling(c->ast, lhsNode) : -1;
         if (lhsNode >= 0 && (uint32_t)lhsNode < c->ast->len
-            && c->ast->nodes[lhsNode].kind != SLAst_IDENT)
+            && c->ast->nodes[lhsNode].kind != HOPAst_IDENT)
         {
-            SLTCMarkConstBlockLocalReadsRec(c, lhsNode, 0);
+            HOPTCMarkConstBlockLocalReadsRec(c, lhsNode, 0);
         }
         if (rhsNode >= 0) {
-            SLTCMarkConstBlockLocalReadsRec(c, rhsNode, 0);
+            HOPTCMarkConstBlockLocalReadsRec(c, rhsNode, 0);
         }
         return;
     }
-    child = SLAstFirstChild(c->ast, nodeId);
+    child = HOPAstFirstChild(c->ast, nodeId);
     while (child >= 0) {
-        SLTCMarkConstBlockLocalReadsRec(c, child, 0);
-        child = SLAstNextSibling(c->ast, child);
+        HOPTCMarkConstBlockLocalReadsRec(c, child, 0);
+        child = HOPAstNextSibling(c->ast, child);
     }
 }
 
-static void SLTCMarkConstBlockLocalReads(SLTypeCheckCtx* c, int32_t blockNode) {
+static void HOPTCMarkConstBlockLocalReads(HOPTypeCheckCtx* c, int32_t blockNode) {
     int32_t child;
     if (c == NULL || c->ast == NULL || blockNode < 0 || (uint32_t)blockNode >= c->ast->len
-        || c->ast->nodes[blockNode].kind != SLAst_BLOCK)
+        || c->ast->nodes[blockNode].kind != HOPAst_BLOCK)
     {
         return;
     }
-    child = SLAstFirstChild(c->ast, blockNode);
+    child = HOPAstFirstChild(c->ast, blockNode);
     while (child >= 0) {
-        SLTCMarkConstBlockLocalReadsRec(c, child, 0);
-        child = SLAstNextSibling(c->ast, child);
+        HOPTCMarkConstBlockLocalReadsRec(c, child, 0);
+        child = HOPAstNextSibling(c->ast, child);
     }
 }
 
-int SLTCBlockTerminates(SLTypeCheckCtx* c, int32_t blockNode) {
-    int32_t child = SLAstFirstChild(c->ast, blockNode);
+int HOPTCBlockTerminates(HOPTypeCheckCtx* c, int32_t blockNode) {
+    int32_t child = HOPAstFirstChild(c->ast, blockNode);
     int32_t last = -1;
     while (child >= 0) {
         last = child;
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
     if (last < 0) {
         return 0;
     }
     switch (c->ast->nodes[last].kind) {
-        case SLAst_RETURN:
-        case SLAst_BREAK:
-        case SLAst_CONTINUE: return 1;
-        default:             return 0;
+        case HOPAst_RETURN:
+        case HOPAst_BREAK:
+        case HOPAst_CONTINUE: return 1;
+        default:              return 0;
     }
 }
 
-static int SLTCSnapshotLocalInitStates(SLTypeCheckCtx* c, uint8_t** outStates) {
+static int HOPTCSnapshotLocalInitStates(HOPTypeCheckCtx* c, uint8_t** outStates) {
     uint32_t i;
     uint8_t* states;
     *outStates = NULL;
     if (c->localLen == 0) {
         return 0;
     }
-    states = (uint8_t*)SLArenaAlloc(c->arena, c->localLen * sizeof(uint8_t), 1);
+    states = (uint8_t*)HOPArenaAlloc(c->arena, c->localLen * sizeof(uint8_t), 1);
     if (states == NULL) {
-        return SLTCFailSpan(c, SLDiag_ARENA_OOM, 0, 0);
+        return HOPTCFailSpan(c, HOPDiag_ARENA_OOM, 0, 0);
     }
     for (i = 0; i < c->localLen; i++) {
         states[i] = c->locals[i].initState;
@@ -156,8 +156,8 @@ static int SLTCSnapshotLocalInitStates(SLTypeCheckCtx* c, uint8_t** outStates) {
     return 0;
 }
 
-static void SLTCRestoreLocalInitStates(
-    SLTypeCheckCtx* c, const uint8_t* states, uint32_t stateLen) {
+static void HOPTCRestoreLocalInitStates(
+    HOPTypeCheckCtx* c, const uint8_t* states, uint32_t stateLen) {
     uint32_t i;
     uint32_t len = c->localLen < stateLen ? c->localLen : stateLen;
     if (states == NULL) {
@@ -168,88 +168,88 @@ static void SLTCRestoreLocalInitStates(
     }
 }
 
-static uint8_t SLTCMergeLocalInitState(uint8_t a, uint8_t b) {
-    if (a == SLTCLocalInit_UNTRACKED || b == SLTCLocalInit_UNTRACKED) {
-        return SLTCLocalInit_UNTRACKED;
+static uint8_t HOPTCMergeLocalInitState(uint8_t a, uint8_t b) {
+    if (a == HOPTCLocalInit_UNTRACKED || b == HOPTCLocalInit_UNTRACKED) {
+        return HOPTCLocalInit_UNTRACKED;
     }
     if (a == b) {
         return a;
     }
-    return SLTCLocalInit_MAYBE;
+    return HOPTCLocalInit_MAYBE;
 }
 
-static void SLTCMergeLocalInitStates(
-    SLTypeCheckCtx* c, const uint8_t* a, const uint8_t* b, uint32_t stateLen) {
+static void HOPTCMergeLocalInitStates(
+    HOPTypeCheckCtx* c, const uint8_t* a, const uint8_t* b, uint32_t stateLen) {
     uint32_t i;
     uint32_t len = c->localLen < stateLen ? c->localLen : stateLen;
     if (a == NULL || b == NULL) {
         return;
     }
     for (i = 0; i < len; i++) {
-        c->locals[i].initState = SLTCMergeLocalInitState(a[i], b[i]);
+        c->locals[i].initState = HOPTCMergeLocalInitState(a[i], b[i]);
     }
 }
 
-static void SLTCMergeLocalInitStateBuffers(uint8_t* dst, const uint8_t* src, uint32_t stateLen) {
+static void HOPTCMergeLocalInitStateBuffers(uint8_t* dst, const uint8_t* src, uint32_t stateLen) {
     uint32_t i;
     if (dst == NULL || src == NULL) {
         return;
     }
     for (i = 0; i < stateLen; i++) {
-        dst[i] = SLTCMergeLocalInitState(dst[i], src[i]);
+        dst[i] = HOPTCMergeLocalInitState(dst[i], src[i]);
     }
 }
 
-static int SLTCStmtTerminates(SLTypeCheckCtx* c, int32_t nodeId) {
-    const SLAstNode* n;
+static int HOPTCStmtTerminates(HOPTypeCheckCtx* c, int32_t nodeId) {
+    const HOPAstNode* n;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return 0;
     }
     n = &c->ast->nodes[nodeId];
     switch (n->kind) {
-        case SLAst_RETURN:
-        case SLAst_BREAK:
-        case SLAst_CONTINUE: return 1;
-        case SLAst_BLOCK:    return SLTCBlockTerminates(c, nodeId);
-        default:             return 0;
+        case HOPAst_RETURN:
+        case HOPAst_BREAK:
+        case HOPAst_CONTINUE: return 1;
+        case HOPAst_BLOCK:    return HOPTCBlockTerminates(c, nodeId);
+        default:              return 0;
     }
 }
 
-static int SLTCStmtExitsSwitchWithoutContinuing(SLTypeCheckCtx* c, int32_t nodeId) {
+static int HOPTCStmtExitsSwitchWithoutContinuing(HOPTypeCheckCtx* c, int32_t nodeId) {
     int32_t child;
     int32_t last = -1;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return 0;
     }
     switch (c->ast->nodes[nodeId].kind) {
-        case SLAst_RETURN:
-        case SLAst_CONTINUE: return 1;
-        case SLAst_BLOCK:    break;
-        default:             return 0;
+        case HOPAst_RETURN:
+        case HOPAst_CONTINUE: return 1;
+        case HOPAst_BLOCK:    break;
+        default:              return 0;
     }
-    child = SLAstFirstChild(c->ast, nodeId);
+    child = HOPAstFirstChild(c->ast, nodeId);
     while (child >= 0) {
         last = child;
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
     if (last < 0) {
         return 0;
     }
-    return SLTCStmtExitsSwitchWithoutContinuing(c, last);
+    return HOPTCStmtExitsSwitchWithoutContinuing(c, last);
 }
 
-int SLTCTypeBlock(
-    SLTypeCheckCtx* c, int32_t blockNode, int32_t returnType, int loopDepth, int switchDepth) {
-    uint32_t       savedLocalLen = c->localLen;
-    uint32_t       savedVariantNarrowLen = c->variantNarrowLen;
-    int32_t        child = SLAstFirstChild(c->ast, blockNode);
-    SLTCNarrowSave narrows[8]; /* saved narrowings applied during this block */
-    int            narrowLen = 0;
-    int            i;
+int HOPTCTypeBlock(
+    HOPTypeCheckCtx* c, int32_t blockNode, int32_t returnType, int loopDepth, int switchDepth) {
+    uint32_t        savedLocalLen = c->localLen;
+    uint32_t        savedVariantNarrowLen = c->variantNarrowLen;
+    int32_t         child = HOPAstFirstChild(c->ast, blockNode);
+    HOPTCNarrowSave narrows[8]; /* saved narrowings applied during this block */
+    int             narrowLen = 0;
+    int             i;
 
     while (child >= 0) {
-        int32_t next = SLAstNextSibling(c->ast, child);
-        if (SLTCTypeStmt(c, child, returnType, loopDepth, switchDepth) != 0) {
+        int32_t next = HOPAstNextSibling(c->ast, child);
+        if (HOPTCTypeStmt(c, child, returnType, loopDepth, switchDepth) != 0) {
             for (i = 0; i < narrowLen; i++) {
                 c->locals[narrows[i].localIdx].typeId = narrows[i].savedType;
             }
@@ -270,14 +270,14 @@ int SLTCTypeBlock(
          * Only fires when there is more code after the if (next >= 0) and no else
          * clause.
          */
-        if (next >= 0 && c->ast->nodes[child].kind == SLAst_IF && narrowLen < 8) {
-            int32_t        condNode = SLAstFirstChild(c->ast, child);
-            int32_t        thenNode = condNode >= 0 ? SLAstNextSibling(c->ast, condNode) : -1;
-            int32_t        elseNode = thenNode >= 0 ? SLAstNextSibling(c->ast, thenNode) : -1;
-            SLTCNullNarrow narrow;
-            int            thenIsSome;
-            if (elseNode < 0 && thenNode >= 0 && condNode >= 0 && SLTCBlockTerminates(c, thenNode)
-                && SLTCGetOptionalCondNarrow(c, condNode, &thenIsSome, &narrow))
+        if (next >= 0 && c->ast->nodes[child].kind == HOPAst_IF && narrowLen < 8) {
+            int32_t         condNode = HOPAstFirstChild(c->ast, child);
+            int32_t         thenNode = condNode >= 0 ? HOPAstNextSibling(c->ast, condNode) : -1;
+            int32_t         elseNode = thenNode >= 0 ? HOPAstNextSibling(c->ast, thenNode) : -1;
+            HOPTCNullNarrow narrow;
+            int             thenIsSome;
+            if (elseNode < 0 && thenNode >= 0 && condNode >= 0 && HOPTCBlockTerminates(c, thenNode)
+                && HOPTCGetOptionalCondNarrow(c, condNode, &thenIsSome, &narrow))
             {
                 int32_t contType = thenIsSome ? c->typeNull : narrow.innerType;
                 narrows[narrowLen].localIdx = narrow.localIdx;
@@ -296,58 +296,58 @@ int SLTCTypeBlock(
     return 0;
 }
 
-static void SLTCAttachForInNextHookNoMatchingDetail(
-    SLTypeCheckCtx* c, int hasKey, int valueDiscard, int32_t iterType) {
-    char        detailBuf[512];
-    char        iterTypeBuf[SLTC_DIAG_TEXT_CAP];
-    SLTCTextBuf b;
-    SLTCTextBuf iterTypeText;
-    const char* iterTypeName = "Iter";
+static void HOPTCAttachForInNextHookNoMatchingDetail(
+    HOPTypeCheckCtx* c, int hasKey, int valueDiscard, int32_t iterType) {
+    char         detailBuf[512];
+    char         iterTypeBuf[HOPTC_DIAG_TEXT_CAP];
+    HOPTCTextBuf b;
+    HOPTCTextBuf iterTypeText;
+    const char*  iterTypeName = "Iter";
     if (c == NULL || c->diag == NULL) {
         return;
     }
-    SLTCTextBufInit(&iterTypeText, iterTypeBuf, (uint32_t)sizeof(iterTypeBuf));
+    HOPTCTextBufInit(&iterTypeText, iterTypeBuf, (uint32_t)sizeof(iterTypeBuf));
     if (iterType >= 0 && (uint32_t)iterType < c->typeLen) {
-        SLTCFormatTypeRec(c, iterType, &iterTypeText, 0);
+        HOPTCFormatTypeRec(c, iterType, &iterTypeText, 0);
         iterTypeName = iterTypeBuf;
     }
-    SLTCTextBufInit(&b, detailBuf, (uint32_t)sizeof(detailBuf));
+    HOPTCTextBufInit(&b, detailBuf, (uint32_t)sizeof(detailBuf));
     if (!hasKey) {
-        SLTCTextBufAppendCStr(&b, "loop form requires ");
-        SLTCTextBufAppendCStr(&b, "next_value(it *");
-        SLTCTextBufAppendCStr(&b, iterTypeName);
-        SLTCTextBufAppendCStr(&b, ")");
-        SLTCTextBufAppendCStr(&b, " or ");
-        SLTCTextBufAppendCStr(&b, "next_key_and_value(it *");
-        SLTCTextBufAppendCStr(&b, iterTypeName);
-        SLTCTextBufAppendCStr(&b, ")");
+        HOPTCTextBufAppendCStr(&b, "loop form requires ");
+        HOPTCTextBufAppendCStr(&b, "next_value(it *");
+        HOPTCTextBufAppendCStr(&b, iterTypeName);
+        HOPTCTextBufAppendCStr(&b, ")");
+        HOPTCTextBufAppendCStr(&b, " or ");
+        HOPTCTextBufAppendCStr(&b, "next_key_and_value(it *");
+        HOPTCTextBufAppendCStr(&b, iterTypeName);
+        HOPTCTextBufAppendCStr(&b, ")");
     } else if (valueDiscard) {
-        SLTCTextBufAppendCStr(&b, "loop form requires ");
-        SLTCTextBufAppendCStr(&b, "next_key(it *");
-        SLTCTextBufAppendCStr(&b, iterTypeName);
-        SLTCTextBufAppendCStr(&b, ")");
-        SLTCTextBufAppendCStr(&b, " or ");
-        SLTCTextBufAppendCStr(&b, "next_key_and_value(it *");
-        SLTCTextBufAppendCStr(&b, iterTypeName);
-        SLTCTextBufAppendCStr(&b, ")");
+        HOPTCTextBufAppendCStr(&b, "loop form requires ");
+        HOPTCTextBufAppendCStr(&b, "next_key(it *");
+        HOPTCTextBufAppendCStr(&b, iterTypeName);
+        HOPTCTextBufAppendCStr(&b, ")");
+        HOPTCTextBufAppendCStr(&b, " or ");
+        HOPTCTextBufAppendCStr(&b, "next_key_and_value(it *");
+        HOPTCTextBufAppendCStr(&b, iterTypeName);
+        HOPTCTextBufAppendCStr(&b, ")");
     } else {
-        SLTCTextBufAppendCStr(&b, "loop form requires ");
-        SLTCTextBufAppendCStr(&b, "next_key_and_value(it *");
-        SLTCTextBufAppendCStr(&b, iterTypeName);
-        SLTCTextBufAppendCStr(&b, ")");
+        HOPTCTextBufAppendCStr(&b, "loop form requires ");
+        HOPTCTextBufAppendCStr(&b, "next_key_and_value(it *");
+        HOPTCTextBufAppendCStr(&b, iterTypeName);
+        HOPTCTextBufAppendCStr(&b, ")");
     }
-    c->diag->detail = SLTCAllocDiagText(c, detailBuf);
+    c->diag->detail = HOPTCAllocDiagText(c, detailBuf);
 }
 
-static int SLTCForInPayloadTypeFromOptional(
-    SLTypeCheckCtx* c, int32_t optionalType, int32_t* outPayloadType) {
-    const SLTCType* t;
-    int32_t         payloadType;
+static int HOPTCForInPayloadTypeFromOptional(
+    HOPTypeCheckCtx* c, int32_t optionalType, int32_t* outPayloadType) {
+    const HOPTCType* t;
+    int32_t          payloadType;
     if (optionalType < 0 || (uint32_t)optionalType >= c->typeLen) {
         return 0;
     }
     t = &c->types[optionalType];
-    if (t->kind != SLTCType_OPTIONAL || t->baseType < 0) {
+    if (t->kind != HOPTCType_OPTIONAL || t->baseType < 0) {
         return 0;
     }
     payloadType = t->baseType;
@@ -358,22 +358,22 @@ static int SLTCForInPayloadTypeFromOptional(
     return 1;
 }
 
-static int SLTCForInValueLocalTypeFromPayload(
-    SLTypeCheckCtx* c, int32_t payloadType, SLTCForInValueMode mode, int32_t* outLocalType) {
-    const SLTCType* payload;
+static int HOPTCForInValueLocalTypeFromPayload(
+    HOPTypeCheckCtx* c, int32_t payloadType, HOPTCForInValueMode mode, int32_t* outLocalType) {
+    const HOPTCType* payload;
     if (payloadType < 0 || (uint32_t)payloadType >= c->typeLen) {
         return 0;
     }
     payload = &c->types[payloadType];
-    if (mode == SLTCForInValueMode_REF) {
-        if (payload->kind != SLTCType_PTR && payload->kind != SLTCType_REF) {
+    if (mode == HOPTCForInValueMode_REF) {
+        if (payload->kind != HOPTCType_PTR && payload->kind != HOPTCType_REF) {
             return 0;
         }
         *outLocalType = payloadType;
         return 1;
     }
-    if (mode == SLTCForInValueMode_VALUE) {
-        if (payload->kind == SLTCType_PTR || payload->kind == SLTCType_REF) {
+    if (mode == HOPTCForInValueMode_VALUE) {
+        if (payload->kind == HOPTCType_PTR || payload->kind == HOPTCType_REF) {
             if (payload->baseType < 0 || (uint32_t)payload->baseType >= c->typeLen) {
                 return 0;
             }
@@ -383,33 +383,33 @@ static int SLTCForInValueLocalTypeFromPayload(
         *outLocalType = payloadType;
         return 1;
     }
-    if (mode == SLTCForInValueMode_ANY) {
+    if (mode == HOPTCForInValueMode_ANY) {
         *outLocalType = payloadType;
         return 1;
     }
     return 0;
 }
 
-static int SLTCForInValueLocalTypeFromDirect(
-    SLTypeCheckCtx* c, int32_t valueType, SLTCForInValueMode mode, int32_t* outLocalType) {
-    const SLTCType* value;
+static int HOPTCForInValueLocalTypeFromDirect(
+    HOPTypeCheckCtx* c, int32_t valueType, HOPTCForInValueMode mode, int32_t* outLocalType) {
+    const HOPTCType* value;
     if (valueType < 0 || (uint32_t)valueType >= c->typeLen) {
         return 0;
     }
     value = &c->types[valueType];
-    if (mode == SLTCForInValueMode_ANY) {
+    if (mode == HOPTCForInValueMode_ANY) {
         *outLocalType = valueType;
         return 1;
     }
-    if (mode == SLTCForInValueMode_REF) {
-        if (value->kind != SLTCType_PTR && value->kind != SLTCType_REF) {
+    if (mode == HOPTCForInValueMode_REF) {
+        if (value->kind != HOPTCType_PTR && value->kind != HOPTCType_REF) {
             return 0;
         }
         *outLocalType = valueType;
         return 1;
     }
-    if (mode == SLTCForInValueMode_VALUE) {
-        if (value->kind == SLTCType_PTR || value->kind == SLTCType_REF) {
+    if (mode == HOPTCForInValueMode_VALUE) {
+        if (value->kind == HOPTCType_PTR || value->kind == HOPTCType_REF) {
             if (value->baseType < 0 || (uint32_t)value->baseType >= c->typeLen) {
                 return 0;
             }
@@ -422,26 +422,27 @@ static int SLTCForInValueLocalTypeFromDirect(
     return 0;
 }
 
-static int SLTCForInTuple2ValueTypesFromPayload(
-    SLTypeCheckCtx* c, int32_t payloadType, int32_t* outKeyType, int32_t* outValueType) {
-    const SLTCType* payload;
-    int32_t         pairType = payloadType;
+static int HOPTCForInTuple2ValueTypesFromPayload(
+    HOPTypeCheckCtx* c, int32_t payloadType, int32_t* outKeyType, int32_t* outValueType) {
+    const HOPTCType* payload;
+    int32_t          pairType = payloadType;
     if (payloadType < 0 || (uint32_t)payloadType >= c->typeLen) {
         return 0;
     }
     payload = &c->types[payloadType];
-    if ((payload->kind == SLTCType_PTR || payload->kind == SLTCType_REF) && payload->baseType >= 0)
+    if ((payload->kind == HOPTCType_PTR || payload->kind == HOPTCType_REF)
+        && payload->baseType >= 0)
     {
         pairType = payload->baseType;
     }
     if (pairType < 0 || (uint32_t)pairType >= c->typeLen) {
         return 0;
     }
-    pairType = SLTCResolveAliasBaseType(c, pairType);
+    pairType = HOPTCResolveAliasBaseType(c, pairType);
     if (pairType < 0 || (uint32_t)pairType >= c->typeLen) {
         return 0;
     }
-    if (c->types[pairType].kind != SLTCType_TUPLE || c->types[pairType].fieldCount != 2
+    if (c->types[pairType].kind != HOPTCType_TUPLE || c->types[pairType].fieldCount != 2
         || c->types[pairType].fieldStart + 2 > c->funcParamLen)
     {
         return 0;
@@ -452,8 +453,8 @@ static int SLTCForInTuple2ValueTypesFromPayload(
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
-static int SLTCResolveForInIteratorFromType(
-    SLTypeCheckCtx* c, int32_t sourceType, int32_t* outFnIndex, int32_t* outIterType) {
+static int HOPTCResolveForInIteratorFromType(
+    HOPTypeCheckCtx* c, int32_t sourceType, int32_t* outFnIndex, int32_t* outIterType) {
     int32_t bestFn = -1;
     int32_t bestIterType = -1;
     uint8_t bestCost = 0;
@@ -462,22 +463,22 @@ static int SLTCResolveForInIteratorFromType(
     int     i;
 
     for (i = 0; i < (int)c->funcLen; i++) {
-        const SLTCFunction* fn = &c->funcs[i];
-        int32_t             paramType;
-        uint8_t             cost = 0;
-        if (!SLNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "__iterator")) {
+        const HOPTCFunction* fn = &c->funcs[i];
+        int32_t              paramType;
+        uint8_t              cost = 0;
+        if (!HOPNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "__iterator")) {
             continue;
         }
         nameFound = 1;
-        if ((fn->flags & SLTCFunctionFlag_VARIADIC) != 0
-            || ((fn->flags & SLTCFunctionFlag_TEMPLATE) != 0
-                && (fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
+        if ((fn->flags & HOPTCFunctionFlag_VARIADIC) != 0
+            || ((fn->flags & HOPTCFunctionFlag_TEMPLATE) != 0
+                && (fn->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
             || fn->paramCount != 1 || fn->paramTypeStart >= c->funcParamLen)
         {
             continue;
         }
         paramType = c->funcParamTypes[fn->paramTypeStart];
-        if (SLTCConversionCost(c, paramType, sourceType, &cost) != 0) {
+        if (HOPTCConversionCost(c, paramType, sourceType, &cost) != 0) {
             continue;
         }
         if (bestFn < 0) {
@@ -509,33 +510,33 @@ static int SLTCResolveForInIteratorFromType(
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous */
-int SLTCResolveForInIterator(
-    SLTypeCheckCtx* c,
-    int32_t         sourceNode,
-    int32_t         sourceType,
-    int32_t*        outFnIndex,
-    int32_t*        outIterType) {
-    int rc = SLTCResolveForInIteratorFromType(c, sourceType, outFnIndex, outIterType);
+int HOPTCResolveForInIterator(
+    HOPTypeCheckCtx* c,
+    int32_t          sourceNode,
+    int32_t          sourceType,
+    int32_t*         outFnIndex,
+    int32_t*         outIterType) {
+    int rc = HOPTCResolveForInIteratorFromType(c, sourceType, outFnIndex, outIterType);
     if (rc == 2 && sourceNode >= 0 && (uint32_t)sourceNode < c->ast->len
-        && SLTCExprIsAssignable(c, sourceNode))
+        && HOPTCExprIsAssignable(c, sourceNode))
     {
-        const SLAstNode* srcNode = &c->ast->nodes[sourceNode];
-        int32_t autoRefType = SLTCInternPtrType(c, sourceType, srcNode->start, srcNode->end);
+        const HOPAstNode* srcNode = &c->ast->nodes[sourceNode];
+        int32_t autoRefType = HOPTCInternPtrType(c, sourceType, srcNode->start, srcNode->end);
         if (autoRefType < 0) {
             return -1;
         }
-        rc = SLTCResolveForInIteratorFromType(c, autoRefType, outFnIndex, outIterType);
+        rc = HOPTCResolveForInIteratorFromType(c, autoRefType, outFnIndex, outIterType);
     }
     return rc;
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 bad return type */
-int SLTCResolveForInNextValue(
-    SLTypeCheckCtx*    c,
-    int32_t            iterPtrType,
-    SLTCForInValueMode valueMode,
-    int32_t*           outValueType,
-    int32_t*           outFn) {
+int HOPTCResolveForInNextValue(
+    HOPTypeCheckCtx*    c,
+    int32_t             iterPtrType,
+    HOPTCForInValueMode valueMode,
+    int32_t*            outValueType,
+    int32_t*            outFn) {
     int32_t bestFn = -1;
     uint8_t bestCost = 0;
     int32_t bestValueType = -1;
@@ -544,29 +545,29 @@ int SLTCResolveForInNextValue(
     int     ambiguous = 0;
     int     i;
     for (i = 0; i < (int)c->funcLen; i++) {
-        const SLTCFunction* fn = &c->funcs[i];
-        int32_t             p0Type;
-        uint8_t             cost = 0;
-        int32_t             payloadType = -1;
-        int32_t             valueType = -1;
-        if (!SLNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "next_value")) {
+        const HOPTCFunction* fn = &c->funcs[i];
+        int32_t              p0Type;
+        uint8_t              cost = 0;
+        int32_t              payloadType = -1;
+        int32_t              valueType = -1;
+        if (!HOPNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "next_value")) {
             continue;
         }
         nameFound = 1;
-        if ((fn->flags & SLTCFunctionFlag_VARIADIC) != 0
-            || ((fn->flags & SLTCFunctionFlag_TEMPLATE) != 0
-                && (fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
+        if ((fn->flags & HOPTCFunctionFlag_VARIADIC) != 0
+            || ((fn->flags & HOPTCFunctionFlag_TEMPLATE) != 0
+                && (fn->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
             || fn->paramCount != 1 || fn->paramTypeStart >= c->funcParamLen
             || fn->paramTypeStart + fn->paramCount > c->funcParamLen)
         {
             continue;
         }
         p0Type = c->funcParamTypes[fn->paramTypeStart];
-        if (SLTCConversionCost(c, p0Type, iterPtrType, &cost) != 0) {
+        if (HOPTCConversionCost(c, p0Type, iterPtrType, &cost) != 0) {
             continue;
         }
-        if (!SLTCForInPayloadTypeFromOptional(c, fn->returnType, &payloadType)
-            || !SLTCForInValueLocalTypeFromPayload(c, payloadType, valueMode, &valueType))
+        if (!HOPTCForInPayloadTypeFromOptional(c, fn->returnType, &payloadType)
+            || !HOPTCForInValueLocalTypeFromPayload(c, payloadType, valueMode, &valueType))
         {
             badReturnType = 1;
             continue;
@@ -600,8 +601,8 @@ int SLTCResolveForInNextValue(
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 bad return type */
-int SLTCResolveForInNextKey(
-    SLTypeCheckCtx* c, int32_t iterPtrType, int32_t* outKeyType, int32_t* outFn) {
+int HOPTCResolveForInNextKey(
+    HOPTypeCheckCtx* c, int32_t iterPtrType, int32_t* outKeyType, int32_t* outFn) {
     int32_t bestFn = -1;
     uint8_t bestCost = 0;
     int32_t bestKeyType = -1;
@@ -610,27 +611,27 @@ int SLTCResolveForInNextKey(
     int     ambiguous = 0;
     int     i;
     for (i = 0; i < (int)c->funcLen; i++) {
-        const SLTCFunction* fn = &c->funcs[i];
-        int32_t             p0Type;
-        uint8_t             cost = 0;
-        int32_t             payloadType = -1;
-        if (!SLNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "next_key")) {
+        const HOPTCFunction* fn = &c->funcs[i];
+        int32_t              p0Type;
+        uint8_t              cost = 0;
+        int32_t              payloadType = -1;
+        if (!HOPNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "next_key")) {
             continue;
         }
         nameFound = 1;
-        if ((fn->flags & SLTCFunctionFlag_VARIADIC) != 0
-            || ((fn->flags & SLTCFunctionFlag_TEMPLATE) != 0
-                && (fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
+        if ((fn->flags & HOPTCFunctionFlag_VARIADIC) != 0
+            || ((fn->flags & HOPTCFunctionFlag_TEMPLATE) != 0
+                && (fn->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
             || fn->paramCount != 1 || fn->paramTypeStart >= c->funcParamLen
             || fn->paramTypeStart + fn->paramCount > c->funcParamLen)
         {
             continue;
         }
         p0Type = c->funcParamTypes[fn->paramTypeStart];
-        if (SLTCConversionCost(c, p0Type, iterPtrType, &cost) != 0) {
+        if (HOPTCConversionCost(c, p0Type, iterPtrType, &cost) != 0) {
             continue;
         }
-        if (!SLTCForInPayloadTypeFromOptional(c, fn->returnType, &payloadType)) {
+        if (!HOPTCForInPayloadTypeFromOptional(c, fn->returnType, &payloadType)) {
             badReturnType = 1;
             continue;
         }
@@ -663,13 +664,13 @@ int SLTCResolveForInNextKey(
 }
 
 /* Returns 0 success, 1 no name, 2 no match, 3 ambiguous, 4 bad return type */
-int SLTCResolveForInNextKeyAndValue(
-    SLTypeCheckCtx*    c,
-    int32_t            iterPtrType,
-    SLTCForInValueMode valueMode,
-    int32_t*           outKeyType,
-    int32_t*           outValueType,
-    int32_t*           outFn) {
+int HOPTCResolveForInNextKeyAndValue(
+    HOPTypeCheckCtx*    c,
+    int32_t             iterPtrType,
+    HOPTCForInValueMode valueMode,
+    int32_t*            outKeyType,
+    int32_t*            outValueType,
+    int32_t*            outFn) {
     int32_t bestFn = -1;
     uint8_t bestCost = 0;
     int32_t bestKeyType = -1;
@@ -679,32 +680,33 @@ int SLTCResolveForInNextKeyAndValue(
     int     ambiguous = 0;
     int     i;
     for (i = 0; i < (int)c->funcLen; i++) {
-        const SLTCFunction* fn = &c->funcs[i];
-        int32_t             p0Type;
-        uint8_t             cost = 0;
-        int32_t             payloadType = -1;
-        int32_t             keyFieldType = -1;
-        int32_t             valueFieldType = -1;
-        int32_t             valueType = -1;
-        if (!SLNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "next_key_and_value")) {
+        const HOPTCFunction* fn = &c->funcs[i];
+        int32_t              p0Type;
+        uint8_t              cost = 0;
+        int32_t              payloadType = -1;
+        int32_t              keyFieldType = -1;
+        int32_t              valueFieldType = -1;
+        int32_t              valueType = -1;
+        if (!HOPNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "next_key_and_value")) {
             continue;
         }
         nameFound = 1;
-        if ((fn->flags & SLTCFunctionFlag_VARIADIC) != 0
-            || ((fn->flags & SLTCFunctionFlag_TEMPLATE) != 0
-                && (fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
+        if ((fn->flags & HOPTCFunctionFlag_VARIADIC) != 0
+            || ((fn->flags & HOPTCFunctionFlag_TEMPLATE) != 0
+                && (fn->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
             || fn->paramCount != 1 || fn->paramTypeStart >= c->funcParamLen
             || fn->paramTypeStart + fn->paramCount > c->funcParamLen)
         {
             continue;
         }
         p0Type = c->funcParamTypes[fn->paramTypeStart];
-        if (SLTCConversionCost(c, p0Type, iterPtrType, &cost) != 0) {
+        if (HOPTCConversionCost(c, p0Type, iterPtrType, &cost) != 0) {
             continue;
         }
-        if (!SLTCForInPayloadTypeFromOptional(c, fn->returnType, &payloadType)
-            || !SLTCForInTuple2ValueTypesFromPayload(c, payloadType, &keyFieldType, &valueFieldType)
-            || !SLTCForInValueLocalTypeFromDirect(c, valueFieldType, valueMode, &valueType))
+        if (!HOPTCForInPayloadTypeFromOptional(c, fn->returnType, &payloadType)
+            || !HOPTCForInTuple2ValueTypesFromPayload(
+                c, payloadType, &keyFieldType, &valueFieldType)
+            || !HOPTCForInValueLocalTypeFromDirect(c, valueFieldType, valueMode, &valueType))
         {
             badReturnType = 1;
             continue;
@@ -740,39 +742,39 @@ int SLTCResolveForInNextKeyAndValue(
     return 0;
 }
 
-static int SLTCTypeForInStmt(
-    SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
-    const SLAstNode*   forNode = &c->ast->nodes[nodeId];
-    uint32_t           savedLocalLen = c->localLen;
-    int                hasKey = (forNode->flags & SLAstFlag_FOR_IN_HAS_KEY) != 0;
-    int                keyRef = (forNode->flags & SLAstFlag_FOR_IN_KEY_REF) != 0;
-    int                valueRef = (forNode->flags & SLAstFlag_FOR_IN_VALUE_REF) != 0;
-    int                valueDiscard = (forNode->flags & SLAstFlag_FOR_IN_VALUE_DISCARD) != 0;
-    int32_t            nodes[4];
-    int                count = 0;
-    int32_t            child = SLAstFirstChild(c->ast, nodeId);
-    int32_t            keyNode = -1;
-    int32_t            valueNode = -1;
-    int32_t            sourceNode = -1;
-    int32_t            bodyNode = -1;
-    int32_t            sourceType = -1;
-    SLTCIndexBaseInfo  sourceInfo;
-    int                useSequencePath = 0;
-    int32_t            keyLocalType = -1;
-    int32_t            valueLocalType = -1;
-    int32_t            iterTypeForDiag = -1;
-    SLTCForInValueMode requestedValueMode = SLTCForInValueMode_VALUE;
+static int HOPTCTypeForInStmt(
+    HOPTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
+    const HOPAstNode*   forNode = &c->ast->nodes[nodeId];
+    uint32_t            savedLocalLen = c->localLen;
+    int                 hasKey = (forNode->flags & HOPAstFlag_FOR_IN_HAS_KEY) != 0;
+    int                 keyRef = (forNode->flags & HOPAstFlag_FOR_IN_KEY_REF) != 0;
+    int                 valueRef = (forNode->flags & HOPAstFlag_FOR_IN_VALUE_REF) != 0;
+    int                 valueDiscard = (forNode->flags & HOPAstFlag_FOR_IN_VALUE_DISCARD) != 0;
+    int32_t             nodes[4];
+    int                 count = 0;
+    int32_t             child = HOPAstFirstChild(c->ast, nodeId);
+    int32_t             keyNode = -1;
+    int32_t             valueNode = -1;
+    int32_t             sourceNode = -1;
+    int32_t             bodyNode = -1;
+    int32_t             sourceType = -1;
+    HOPTCIndexBaseInfo  sourceInfo;
+    int                 useSequencePath = 0;
+    int32_t             keyLocalType = -1;
+    int32_t             valueLocalType = -1;
+    int32_t             iterTypeForDiag = -1;
+    HOPTCForInValueMode requestedValueMode = HOPTCForInValueMode_VALUE;
 
     while (child >= 0 && count < 4) {
         nodes[count++] = child;
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
     if (count == 0 || child >= 0) {
-        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
     }
     if (hasKey) {
         if (count != 4) {
-            return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+            return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
         }
         keyNode = nodes[0];
         valueNode = nodes[1];
@@ -780,33 +782,33 @@ static int SLTCTypeForInStmt(
         bodyNode = nodes[3];
     } else {
         if (count != 3) {
-            return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+            return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
         }
         valueNode = nodes[0];
         sourceNode = nodes[1];
         bodyNode = nodes[2];
     }
 
-    if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != SLAst_BLOCK) {
-        return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
+    if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != HOPAst_BLOCK) {
+        return HOPTCFailNode(c, nodeId, HOPDiag_UNEXPECTED_TOKEN);
     }
     if (valueDiscard) {
-        const SLAstNode* valueIdent = &c->ast->nodes[valueNode];
-        if (valueIdent->kind != SLAst_IDENT
-            || !SLNameEqLiteral(c->src, valueIdent->dataStart, valueIdent->dataEnd, "_"))
+        const HOPAstNode* valueIdent = &c->ast->nodes[valueNode];
+        if (valueIdent->kind != HOPAst_IDENT
+            || !HOPNameEqLiteral(c->src, valueIdent->dataStart, valueIdent->dataEnd, "_"))
         {
-            return SLTCFailNode(c, valueNode, SLDiag_FOR_IN_VALUE_BINDING_INVALID);
+            return HOPTCFailNode(c, valueNode, HOPDiag_FOR_IN_VALUE_BINDING_INVALID);
         }
     }
 
-    if (SLTCTypeExpr(c, sourceNode, &sourceType) != 0) {
+    if (HOPTCTypeExpr(c, sourceNode, &sourceType) != 0) {
         return -1;
     }
     if (valueRef) {
-        requestedValueMode = SLTCForInValueMode_REF;
+        requestedValueMode = HOPTCForInValueMode_REF;
     }
-    if (SLTCTypeSupportsLen(c, sourceType)
-        && SLTCResolveIndexBaseInfo(c, sourceType, &sourceInfo) == 0 && sourceInfo.indexable
+    if (HOPTCTypeSupportsLen(c, sourceType)
+        && HOPTCResolveIndexBaseInfo(c, sourceType, &sourceInfo) == 0 && sourceInfo.indexable
         && sourceInfo.elemType >= 0)
     {
         useSequencePath = 1;
@@ -814,24 +816,24 @@ static int SLTCTypeForInStmt(
 
     if (useSequencePath) {
         if (keyRef) {
-            return SLTCFailNode(c, keyNode, SLDiag_FOR_IN_KEY_REF_INVALID);
+            return HOPTCFailNode(c, keyNode, HOPDiag_FOR_IN_KEY_REF_INVALID);
         }
 
         if (hasKey) {
-            keyLocalType = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+            keyLocalType = HOPTCFindBuiltinByKind(c, HOPBuiltin_ISIZE);
             if (keyLocalType < 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+                return HOPTCFailNode(c, nodeId, HOPDiag_UNKNOWN_TYPE);
             }
         }
         if (!valueDiscard) {
-            const SLAstNode* valueName = &c->ast->nodes[valueNode];
+            const HOPAstNode* valueName = &c->ast->nodes[valueNode];
             valueLocalType = sourceInfo.elemType;
             if (valueRef) {
                 if (sourceInfo.sliceMutable) {
-                    valueLocalType = SLTCInternPtrType(
+                    valueLocalType = HOPTCInternPtrType(
                         c, sourceInfo.elemType, valueName->start, valueName->end);
                 } else {
-                    valueLocalType = SLTCInternRefType(
+                    valueLocalType = HOPTCInternRefType(
                         c, sourceInfo.elemType, 0, valueName->start, valueName->end);
                 }
             }
@@ -849,37 +851,37 @@ static int SLTCTypeForInStmt(
         int     useNextPair = 0;
         int     rc;
         if (keyRef) {
-            return SLTCFailNode(c, keyNode, SLDiag_FOR_IN_KEY_REF_INVALID);
+            return HOPTCFailNode(c, keyNode, HOPDiag_FOR_IN_KEY_REF_INVALID);
         }
 
-        rc = SLTCResolveForInIterator(c, sourceNode, sourceType, &iterFn, &iterType);
+        rc = HOPTCResolveForInIterator(c, sourceNode, sourceType, &iterFn, &iterType);
         if (rc == 1 || rc == 2) {
-            return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_INVALID_SOURCE);
+            return HOPTCFailNode(c, sourceNode, HOPDiag_FOR_IN_INVALID_SOURCE);
         }
         if (rc == 3) {
-            return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ITERATOR_AMBIGUOUS);
+            return HOPTCFailNode(c, sourceNode, HOPDiag_FOR_IN_ITERATOR_AMBIGUOUS);
         }
         if (rc != 0) {
             return -1;
         }
-        if (SLTCValidateCallContextRequirements(c, c->funcs[iterFn].contextType) != 0) {
+        if (HOPTCValidateCallContextRequirements(c, c->funcs[iterFn].contextType) != 0) {
             return -1;
         }
-        SLTCMarkFunctionUsed(c, iterFn);
+        HOPTCMarkFunctionUsed(c, iterFn);
         iterTypeForDiag = iterType;
-        iterPtrType = SLTCInternPtrType(
+        iterPtrType = HOPTCInternPtrType(
             c, iterType, c->ast->nodes[sourceNode].start, c->ast->nodes[sourceNode].end);
         if (iterPtrType < 0) {
             return -1;
         }
 
         if (hasKey && valueDiscard) {
-            rc = SLTCResolveForInNextKey(c, iterPtrType, &keyLocalType, &nextKeyFn);
+            rc = HOPTCResolveForInNextKey(c, iterPtrType, &keyLocalType, &nextKeyFn);
             if (rc == 1 || rc == 2) {
-                rc = SLTCResolveForInNextKeyAndValue(
+                rc = HOPTCResolveForInNextKeyAndValue(
                     c,
                     iterPtrType,
-                    SLTCForInValueMode_ANY,
+                    HOPTCForInValueMode_ANY,
                     &keyLocalType,
                     &valueLocalType,
                     &nextPairFn);
@@ -888,30 +890,30 @@ static int SLTCTypeForInStmt(
                 }
             }
             if (rc == 4) {
-                return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NON_BOOL);
+                return HOPTCFailNode(c, sourceNode, HOPDiag_FOR_IN_ADVANCE_NON_BOOL);
             }
             if (rc == 1 || rc == 2 || rc == 3) {
-                int err = SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
-                SLTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
+                int err = HOPTCFailNode(c, sourceNode, HOPDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
+                HOPTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
                 return err;
             }
             if (rc != 0) {
                 return -1;
             }
         } else if (hasKey) {
-            rc = SLTCResolveForInNextKeyAndValue(
+            rc = HOPTCResolveForInNextKeyAndValue(
                 c,
                 iterPtrType,
-                valueDiscard ? SLTCForInValueMode_ANY : requestedValueMode,
+                valueDiscard ? HOPTCForInValueMode_ANY : requestedValueMode,
                 &keyLocalType,
                 &valueLocalType,
                 &nextPairFn);
             if (rc == 4) {
-                return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NON_BOOL);
+                return HOPTCFailNode(c, sourceNode, HOPDiag_FOR_IN_ADVANCE_NON_BOOL);
             }
             if (rc == 1 || rc == 2 || rc == 3) {
-                int err = SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
-                SLTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
+                int err = HOPTCFailNode(c, sourceNode, HOPDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
+                HOPTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
                 return err;
             }
             if (rc != 0) {
@@ -919,17 +921,17 @@ static int SLTCTypeForInStmt(
             }
             useNextPair = 1;
         } else {
-            rc = SLTCResolveForInNextValue(
+            rc = HOPTCResolveForInNextValue(
                 c,
                 iterPtrType,
-                valueDiscard ? SLTCForInValueMode_ANY : requestedValueMode,
+                valueDiscard ? HOPTCForInValueMode_ANY : requestedValueMode,
                 &valueLocalType,
                 &nextValueFn);
             if (rc == 1 || rc == 2) {
-                rc = SLTCResolveForInNextKeyAndValue(
+                rc = HOPTCResolveForInNextKeyAndValue(
                     c,
                     iterPtrType,
-                    valueDiscard ? SLTCForInValueMode_ANY : requestedValueMode,
+                    valueDiscard ? HOPTCForInValueMode_ANY : requestedValueMode,
                     &keyLocalType,
                     &valueLocalType,
                     &nextPairFn);
@@ -938,11 +940,11 @@ static int SLTCTypeForInStmt(
                 }
             }
             if (rc == 4) {
-                return SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NON_BOOL);
+                return HOPTCFailNode(c, sourceNode, HOPDiag_FOR_IN_ADVANCE_NON_BOOL);
             }
             if (rc == 1 || rc == 2 || rc == 3) {
-                int err = SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
-                SLTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
+                int err = HOPTCFailNode(c, sourceNode, HOPDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
+                HOPTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
                 return err;
             }
             if (rc != 0) {
@@ -951,148 +953,149 @@ static int SLTCTypeForInStmt(
         }
 
         if (nextValueFn >= 0 && !useNextPair) {
-            if (SLTCValidateCallContextRequirements(c, c->funcs[nextValueFn].contextType) != 0) {
+            if (HOPTCValidateCallContextRequirements(c, c->funcs[nextValueFn].contextType) != 0) {
                 return -1;
             }
-            SLTCMarkFunctionUsed(c, nextValueFn);
+            HOPTCMarkFunctionUsed(c, nextValueFn);
         }
         if (nextKeyFn >= 0 && !useNextPair) {
-            if (SLTCValidateCallContextRequirements(c, c->funcs[nextKeyFn].contextType) != 0) {
+            if (HOPTCValidateCallContextRequirements(c, c->funcs[nextKeyFn].contextType) != 0) {
                 return -1;
             }
-            SLTCMarkFunctionUsed(c, nextKeyFn);
+            HOPTCMarkFunctionUsed(c, nextKeyFn);
         }
         if (nextPairFn >= 0 && useNextPair) {
-            if (SLTCValidateCallContextRequirements(c, c->funcs[nextPairFn].contextType) != 0) {
+            if (HOPTCValidateCallContextRequirements(c, c->funcs[nextPairFn].contextType) != 0) {
                 return -1;
             }
-            SLTCMarkFunctionUsed(c, nextPairFn);
+            HOPTCMarkFunctionUsed(c, nextPairFn);
         }
     }
 
     if (hasKey) {
-        const SLAstNode* keyName = &c->ast->nodes[keyNode];
+        const HOPAstNode* keyName = &c->ast->nodes[keyNode];
         if (keyLocalType < 0) {
-            int err = SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
-            SLTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
+            int err = HOPTCFailNode(c, sourceNode, HOPDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
+            HOPTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
             return err;
         }
-        if (SLTCLocalAdd(c, keyName->dataStart, keyName->dataEnd, keyLocalType, 0, -1) != 0) {
+        if (HOPTCLocalAdd(c, keyName->dataStart, keyName->dataEnd, keyLocalType, 0, -1) != 0) {
             return -1;
         }
-        SLTCMarkLocalWrite(c, (int32_t)c->localLen - 1);
-        SLTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
+        HOPTCMarkLocalWrite(c, (int32_t)c->localLen - 1);
+        HOPTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
     }
     if (!valueDiscard) {
-        const SLAstNode* valueName = &c->ast->nodes[valueNode];
+        const HOPAstNode* valueName = &c->ast->nodes[valueNode];
         if (valueLocalType < 0) {
-            int err = SLTCFailNode(c, sourceNode, SLDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
-            SLTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
+            int err = HOPTCFailNode(c, sourceNode, HOPDiag_FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD);
+            HOPTCAttachForInNextHookNoMatchingDetail(c, hasKey, valueDiscard, iterTypeForDiag);
             return err;
         }
-        if (SLTCLocalAdd(c, valueName->dataStart, valueName->dataEnd, valueLocalType, 0, -1) != 0) {
+        if (HOPTCLocalAdd(c, valueName->dataStart, valueName->dataEnd, valueLocalType, 0, -1) != 0)
+        {
             return -1;
         }
-        SLTCMarkLocalWrite(c, (int32_t)c->localLen - 1);
-        SLTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
+        HOPTCMarkLocalWrite(c, (int32_t)c->localLen - 1);
+        HOPTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
     }
 
     {
         uint8_t* beforeBodyStates;
         uint32_t beforeBodyStateLen = c->localLen;
         uint8_t  savedDiagPath = c->compilerDiagPathProven;
-        if (SLTCSnapshotLocalInitStates(c, &beforeBodyStates) != 0) {
+        if (HOPTCSnapshotLocalInitStates(c, &beforeBodyStates) != 0) {
             c->localLen = savedLocalLen;
             return -1;
         }
         c->compilerDiagPathProven = 0;
-        if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth + 1, switchDepth) != 0) {
+        if (HOPTCTypeBlock(c, bodyNode, returnType, loopDepth + 1, switchDepth) != 0) {
             c->compilerDiagPathProven = savedDiagPath;
-            SLTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
+            HOPTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
             return -1;
         }
         c->compilerDiagPathProven = savedDiagPath;
-        SLTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
+        HOPTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
     }
     c->localLen = savedLocalLen;
     return 0;
 }
 
-int SLTCTypeShortAssignStmt(SLTypeCheckCtx* c, int32_t nodeId);
+int HOPTCTypeShortAssignStmt(HOPTypeCheckCtx* c, int32_t nodeId);
 
-int SLTCTypeForStmt(
-    SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
-    const SLAstNode* forNode = &c->ast->nodes[nodeId];
-    uint32_t         savedLocalLen = c->localLen;
-    int32_t          child = SLAstFirstChild(c->ast, nodeId);
-    int32_t          nodes[4];
-    int              count = 0;
-    int              i;
+int HOPTCTypeForStmt(
+    HOPTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
+    const HOPAstNode* forNode = &c->ast->nodes[nodeId];
+    uint32_t          savedLocalLen = c->localLen;
+    int32_t           child = HOPAstFirstChild(c->ast, nodeId);
+    int32_t           nodes[4];
+    int               count = 0;
+    int               i;
 
-    if ((forNode->flags & SLAstFlag_FOR_IN) != 0) {
-        return SLTCTypeForInStmt(c, nodeId, returnType, loopDepth, switchDepth);
+    if ((forNode->flags & HOPAstFlag_FOR_IN) != 0) {
+        return HOPTCTypeForInStmt(c, nodeId, returnType, loopDepth, switchDepth);
     }
 
     while (child >= 0 && count < 4) {
         nodes[count++] = child;
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
 
     if (count == 0) {
-        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
     }
 
-    if (c->ast->nodes[nodes[count - 1]].kind != SLAst_BLOCK) {
-        return SLTCFailNode(c, nodes[count - 1], SLDiag_UNEXPECTED_TOKEN);
+    if (c->ast->nodes[nodes[count - 1]].kind != HOPAst_BLOCK) {
+        return HOPTCFailNode(c, nodes[count - 1], HOPDiag_UNEXPECTED_TOKEN);
     }
 
     if (count == 2 || count == 4) {
         int     condIndex = count == 2 ? 0 : 1;
         int32_t condType;
         if (count == 4) {
-            const SLAstNode* initNode = &c->ast->nodes[nodes[0]];
-            if (initNode->kind == SLAst_VAR || initNode->kind == SLAst_CONST) {
-                if (SLTCTypeVarLike(c, nodes[0]) != 0) {
+            const HOPAstNode* initNode = &c->ast->nodes[nodes[0]];
+            if (initNode->kind == HOPAst_VAR || initNode->kind == HOPAst_CONST) {
+                if (HOPTCTypeVarLike(c, nodes[0]) != 0) {
                     c->localLen = savedLocalLen;
                     return -1;
                 }
-            } else if (initNode->kind == SLAst_SHORT_ASSIGN) {
-                if (SLTCTypeShortAssignStmt(c, nodes[0]) != 0) {
+            } else if (initNode->kind == HOPAst_SHORT_ASSIGN) {
+                if (HOPTCTypeShortAssignStmt(c, nodes[0]) != 0) {
                     c->localLen = savedLocalLen;
                     return -1;
                 }
             } else {
                 int32_t initType;
-                if (SLTCTypeExpr(c, nodes[0], &initType) != 0) {
+                if (HOPTCTypeExpr(c, nodes[0], &initType) != 0) {
                     c->localLen = savedLocalLen;
                     return -1;
                 }
             }
         }
-        if (SLTCTypeExpr(c, nodes[condIndex], &condType) != 0) {
+        if (HOPTCTypeExpr(c, nodes[condIndex], &condType) != 0) {
             c->localLen = savedLocalLen;
             return -1;
         }
-        if (!SLTCIsBoolType(c, condType)) {
+        if (!HOPTCIsBoolType(c, condType)) {
             c->localLen = savedLocalLen;
-            return SLTCFailNode(c, nodes[condIndex], SLDiag_EXPECTED_BOOL);
+            return HOPTCFailNode(c, nodes[condIndex], HOPDiag_EXPECTED_BOOL);
         }
     } else {
         for (i = 0; i < count - 1; i++) {
-            const SLAstNode* n = &c->ast->nodes[nodes[i]];
-            if (n->kind == SLAst_VAR || n->kind == SLAst_CONST) {
-                if (SLTCTypeVarLike(c, nodes[i]) != 0) {
+            const HOPAstNode* n = &c->ast->nodes[nodes[i]];
+            if (n->kind == HOPAst_VAR || n->kind == HOPAst_CONST) {
+                if (HOPTCTypeVarLike(c, nodes[i]) != 0) {
                     c->localLen = savedLocalLen;
                     return -1;
                 }
-            } else if (n->kind == SLAst_SHORT_ASSIGN) {
-                if (SLTCTypeShortAssignStmt(c, nodes[i]) != 0) {
+            } else if (n->kind == HOPAst_SHORT_ASSIGN) {
+                if (HOPTCTypeShortAssignStmt(c, nodes[i]) != 0) {
                     c->localLen = savedLocalLen;
                     return -1;
                 }
             } else {
                 int32_t t;
-                if (SLTCTypeExpr(c, nodes[i], &t) != 0) {
+                if (HOPTCTypeExpr(c, nodes[i], &t) != 0) {
                     c->localLen = savedLocalLen;
                     return -1;
                 }
@@ -1104,26 +1107,26 @@ int SLTCTypeForStmt(
         uint8_t* beforeBodyStates;
         uint32_t beforeBodyStateLen = c->localLen;
         uint8_t  savedDiagPath = c->compilerDiagPathProven;
-        if (SLTCSnapshotLocalInitStates(c, &beforeBodyStates) != 0) {
+        if (HOPTCSnapshotLocalInitStates(c, &beforeBodyStates) != 0) {
             c->localLen = savedLocalLen;
             return -1;
         }
         c->compilerDiagPathProven = 0;
-        if (SLTCTypeBlock(c, nodes[count - 1], returnType, loopDepth + 1, switchDepth) != 0) {
+        if (HOPTCTypeBlock(c, nodes[count - 1], returnType, loopDepth + 1, switchDepth) != 0) {
             c->compilerDiagPathProven = savedDiagPath;
-            SLTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
+            HOPTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
             c->localLen = savedLocalLen;
             return -1;
         }
         c->compilerDiagPathProven = savedDiagPath;
-        SLTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
+        HOPTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
         if (count == 4) {
             int32_t postType;
-            if (SLTCTypeExpr(c, nodes[2], &postType) != 0) {
+            if (HOPTCTypeExpr(c, nodes[2], &postType) != 0) {
                 c->localLen = savedLocalLen;
                 return -1;
             }
-            SLTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
+            HOPTCRestoreLocalInitStates(c, beforeBodyStates, beforeBodyStateLen);
         }
     }
 
@@ -1131,101 +1134,101 @@ int SLTCTypeForStmt(
     return 0;
 }
 
-int SLTCTypeSwitchStmt(
-    SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
-    const SLAstNode* sw = &c->ast->nodes[nodeId];
-    int32_t          child = SLAstFirstChild(c->ast, nodeId);
-    int32_t          subjectNode = -1;
-    int32_t          subjectType = -1;
-    int32_t          subjectEnumType = -1;
-    int32_t          subjectLocalIdx = -1;
-    uint32_t         enumVariantCount = 0;
-    uint32_t*        enumVariantStarts = NULL;
-    uint32_t*        enumVariantEnds = NULL;
-    uint8_t*         enumCovered = NULL;
-    int              boolCoveredTrue = 0;
-    int              boolCoveredFalse = 0;
-    int              hasDefault = 0;
-    uint8_t*         preSwitchStates = NULL;
-    uint8_t*         mergedSwitchStates = NULL;
-    uint32_t         switchStateLen = 0;
-    int              hasMergedSwitchState = 0;
-    int              i;
+int HOPTCTypeSwitchStmt(
+    HOPTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
+    const HOPAstNode* sw = &c->ast->nodes[nodeId];
+    int32_t           child = HOPAstFirstChild(c->ast, nodeId);
+    int32_t           subjectNode = -1;
+    int32_t           subjectType = -1;
+    int32_t           subjectEnumType = -1;
+    int32_t           subjectLocalIdx = -1;
+    uint32_t          enumVariantCount = 0;
+    uint32_t*         enumVariantStarts = NULL;
+    uint32_t*         enumVariantEnds = NULL;
+    uint8_t*          enumCovered = NULL;
+    int               boolCoveredTrue = 0;
+    int               boolCoveredFalse = 0;
+    int               hasDefault = 0;
+    uint8_t*          preSwitchStates = NULL;
+    uint8_t*          mergedSwitchStates = NULL;
+    uint32_t          switchStateLen = 0;
+    int               hasMergedSwitchState = 0;
+    int               i;
 
     if (sw->flags == 1) {
         if (child < 0) {
-            return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+            return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
         }
         subjectNode = child;
-        if (SLTCTypeExpr(c, child, &subjectType) != 0) {
+        if (HOPTCTypeExpr(c, child, &subjectType) != 0) {
             return -1;
         }
-        if (c->ast->nodes[subjectNode].kind == SLAst_IDENT) {
-            subjectLocalIdx = SLTCLocalFind(
+        if (c->ast->nodes[subjectNode].kind == HOPAst_IDENT) {
+            subjectLocalIdx = HOPTCLocalFind(
                 c, c->ast->nodes[subjectNode].dataStart, c->ast->nodes[subjectNode].dataEnd);
         }
-        if (SLTCIsNamedDeclKind(c, subjectType, SLAst_ENUM)) {
-            int32_t declNode = c->types[SLTCResolveAliasBaseType(c, subjectType)].declNode;
-            int32_t variant = SLTCEnumDeclFirstVariantNode(c, declNode);
+        if (HOPTCIsNamedDeclKind(c, subjectType, HOPAst_ENUM)) {
+            int32_t declNode = c->types[HOPTCResolveAliasBaseType(c, subjectType)].declNode;
+            int32_t variant = HOPTCEnumDeclFirstVariantNode(c, declNode);
             while (variant >= 0) {
-                if (c->ast->nodes[variant].kind == SLAst_FIELD) {
+                if (c->ast->nodes[variant].kind == HOPAst_FIELD) {
                     enumVariantCount++;
                 }
-                variant = SLAstNextSibling(c->ast, variant);
+                variant = HOPAstNextSibling(c->ast, variant);
             }
             if (enumVariantCount > 0) {
                 uint32_t idx = 0;
-                variant = SLTCEnumDeclFirstVariantNode(c, declNode);
-                enumVariantStarts = (uint32_t*)SLArenaAlloc(
+                variant = HOPTCEnumDeclFirstVariantNode(c, declNode);
+                enumVariantStarts = (uint32_t*)HOPArenaAlloc(
                     c->arena, enumVariantCount * sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
-                enumVariantEnds = (uint32_t*)SLArenaAlloc(
+                enumVariantEnds = (uint32_t*)HOPArenaAlloc(
                     c->arena, enumVariantCount * sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
-                enumCovered = (uint8_t*)SLArenaAlloc(
+                enumCovered = (uint8_t*)HOPArenaAlloc(
                     c->arena, enumVariantCount * sizeof(uint8_t), (uint32_t)_Alignof(uint8_t));
                 if (enumVariantStarts == NULL || enumVariantEnds == NULL || enumCovered == NULL) {
-                    return SLTCFailNode(c, nodeId, SLDiag_ARENA_OOM);
+                    return HOPTCFailNode(c, nodeId, HOPDiag_ARENA_OOM);
                 }
                 while (variant >= 0 && idx < enumVariantCount) {
-                    if (c->ast->nodes[variant].kind == SLAst_FIELD) {
+                    if (c->ast->nodes[variant].kind == HOPAst_FIELD) {
                         enumVariantStarts[idx] = c->ast->nodes[variant].dataStart;
                         enumVariantEnds[idx] = c->ast->nodes[variant].dataEnd;
                         enumCovered[idx] = 0;
                         idx++;
                     }
-                    variant = SLAstNextSibling(c->ast, variant);
+                    variant = HOPAstNextSibling(c->ast, variant);
                 }
-                subjectEnumType = SLTCResolveAliasBaseType(c, subjectType);
+                subjectEnumType = HOPTCResolveAliasBaseType(c, subjectType);
             }
         }
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
 
     switchStateLen = c->localLen;
-    if (SLTCSnapshotLocalInitStates(c, &preSwitchStates) != 0) {
+    if (HOPTCSnapshotLocalInitStates(c, &preSwitchStates) != 0) {
         return -1;
     }
 
     while (child >= 0) {
-        const SLAstNode* clause = &c->ast->nodes[child];
-        if (clause->kind == SLAst_CASE) {
+        const HOPAstNode* clause = &c->ast->nodes[child];
+        if (clause->kind == HOPAst_CASE) {
             uint32_t savedLocalLen = c->localLen;
             uint32_t savedVariantNarrowLen = c->variantNarrowLen;
-            int32_t  caseChild = SLAstFirstChild(c->ast, child);
+            int32_t  caseChild = HOPAstFirstChild(c->ast, child);
             int32_t  bodyNode = -1;
             int      labelCount = 0;
             int      singleVariantLabel = 0;
             uint32_t singleVariantStart = 0;
             uint32_t singleVariantEnd = 0;
-            SLTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
+            HOPTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
             while (caseChild >= 0) {
-                int32_t next = SLAstNextSibling(c->ast, caseChild);
+                int32_t next = HOPAstNextSibling(c->ast, caseChild);
                 int32_t labelExprNode;
                 int32_t aliasNode;
                 if (next < 0) {
                     bodyNode = caseChild;
                     break;
                 }
-                if (SLTCCasePatternParts(c, caseChild, &labelExprNode, &aliasNode) != 0) {
+                if (HOPTCCasePatternParts(c, caseChild, &labelExprNode, &aliasNode) != 0) {
                     c->localLen = savedLocalLen;
                     c->variantNarrowLen = savedVariantNarrowLen;
                     return -1;
@@ -1234,7 +1237,7 @@ int SLTCTypeSwitchStmt(
                     int32_t  labelEnumType = -1;
                     uint32_t labelVariantStart = 0;
                     uint32_t labelVariantEnd = 0;
-                    int      variantRc = SLTCDecodeVariantPatternExpr(
+                    int      variantRc = HOPTCDecodeVariantPatternExpr(
                         c, labelExprNode, &labelEnumType, &labelVariantStart, &labelVariantEnd);
                     int32_t labelType;
                     if (variantRc < 0) {
@@ -1246,10 +1249,10 @@ int SLTCTypeSwitchStmt(
                         if (subjectEnumType < 0 || labelEnumType != subjectEnumType) {
                             c->localLen = savedLocalLen;
                             c->variantNarrowLen = savedVariantNarrowLen;
-                            return SLTCFailNode(c, labelExprNode, SLDiag_TYPE_MISMATCH);
+                            return HOPTCFailNode(c, labelExprNode, HOPDiag_TYPE_MISMATCH);
                         }
                         for (i = 0; i < (int)enumVariantCount; i++) {
-                            if (SLNameEqSlice(
+                            if (HOPNameEqSlice(
                                     c->src,
                                     enumVariantStarts[i],
                                     enumVariantEnds[i],
@@ -1268,20 +1271,20 @@ int SLTCTypeSwitchStmt(
                             singleVariantLabel = 0;
                         }
                     } else {
-                        if (SLTCTypeExpr(c, labelExprNode, &labelType) != 0) {
+                        if (HOPTCTypeExpr(c, labelExprNode, &labelType) != 0) {
                             c->localLen = savedLocalLen;
                             c->variantNarrowLen = savedVariantNarrowLen;
                             return -1;
                         }
-                        if (!SLTCCanAssign(c, subjectType, labelType)) {
+                        if (!HOPTCCanAssign(c, subjectType, labelType)) {
                             c->localLen = savedLocalLen;
                             c->variantNarrowLen = savedVariantNarrowLen;
-                            return SLTCFailNode(c, labelExprNode, SLDiag_TYPE_MISMATCH);
+                            return HOPTCFailNode(c, labelExprNode, HOPDiag_TYPE_MISMATCH);
                         }
-                        if (SLTCIsBoolType(c, subjectType)
-                            && c->ast->nodes[labelExprNode].kind == SLAst_BOOL)
+                        if (HOPTCIsBoolType(c, subjectType)
+                            && c->ast->nodes[labelExprNode].kind == HOPAst_BOOL)
                         {
-                            if (SLNameEqLiteral(
+                            if (HOPNameEqLiteral(
                                     c->src,
                                     c->ast->nodes[labelExprNode].dataStart,
                                     c->ast->nodes[labelExprNode].dataEnd,
@@ -1298,9 +1301,9 @@ int SLTCTypeSwitchStmt(
                         if (variantRc != 1 || subjectEnumType < 0) {
                             c->localLen = savedLocalLen;
                             c->variantNarrowLen = savedVariantNarrowLen;
-                            return SLTCFailNode(c, aliasNode, SLDiag_TYPE_MISMATCH);
+                            return HOPTCFailNode(c, aliasNode, HOPDiag_TYPE_MISMATCH);
                         }
-                        if (SLTCLocalAdd(
+                        if (HOPTCLocalAdd(
                                 c,
                                 c->ast->nodes[aliasNode].dataStart,
                                 c->ast->nodes[aliasNode].dataEnd,
@@ -1313,8 +1316,8 @@ int SLTCTypeSwitchStmt(
                             c->variantNarrowLen = savedVariantNarrowLen;
                             return -1;
                         }
-                        SLTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
-                        if (SLTCVariantNarrowPush(
+                        HOPTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
+                        if (HOPTCVariantNarrowPush(
                                 c,
                                 (int32_t)c->localLen - 1,
                                 subjectEnumType,
@@ -1332,32 +1335,32 @@ int SLTCTypeSwitchStmt(
                     if (aliasNode >= 0) {
                         c->localLen = savedLocalLen;
                         c->variantNarrowLen = savedVariantNarrowLen;
-                        return SLTCFailNode(c, aliasNode, SLDiag_UNEXPECTED_TOKEN);
+                        return HOPTCFailNode(c, aliasNode, HOPDiag_UNEXPECTED_TOKEN);
                     }
-                    if (SLTCTypeExpr(c, labelExprNode, &condType) != 0) {
+                    if (HOPTCTypeExpr(c, labelExprNode, &condType) != 0) {
                         c->localLen = savedLocalLen;
                         c->variantNarrowLen = savedVariantNarrowLen;
                         return -1;
                     }
-                    if (!SLTCIsBoolType(c, condType)) {
+                    if (!HOPTCIsBoolType(c, condType)) {
                         c->localLen = savedLocalLen;
                         c->variantNarrowLen = savedVariantNarrowLen;
-                        return SLTCFailNode(c, labelExprNode, SLDiag_EXPECTED_BOOL);
+                        return HOPTCFailNode(c, labelExprNode, HOPDiag_EXPECTED_BOOL);
                     }
                 }
                 labelCount++;
                 caseChild = next;
             }
-            if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != SLAst_BLOCK) {
+            if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != HOPAst_BLOCK) {
                 c->localLen = savedLocalLen;
                 c->variantNarrowLen = savedVariantNarrowLen;
-                return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
+                return HOPTCFailNode(c, child, HOPDiag_UNEXPECTED_TOKEN);
             }
-            SLTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
+            HOPTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
             if (sw->flags == 1 && subjectEnumType >= 0 && subjectLocalIdx >= 0 && labelCount == 1
                 && singleVariantLabel)
             {
-                if (SLTCVariantNarrowPush(
+                if (HOPTCVariantNarrowPush(
                         c, subjectLocalIdx, subjectEnumType, singleVariantStart, singleVariantEnd)
                     != 0)
                 {
@@ -1369,7 +1372,7 @@ int SLTCTypeSwitchStmt(
             {
                 uint8_t savedDiagPath = c->compilerDiagPathProven;
                 c->compilerDiagPathProven = 0;
-                if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth, switchDepth + 1) != 0) {
+                if (HOPTCTypeBlock(c, bodyNode, returnType, loopDepth, switchDepth + 1) != 0) {
                     c->compilerDiagPathProven = savedDiagPath;
                     c->localLen = savedLocalLen;
                     c->variantNarrowLen = savedVariantNarrowLen;
@@ -1377,9 +1380,9 @@ int SLTCTypeSwitchStmt(
                 }
                 c->compilerDiagPathProven = savedDiagPath;
             }
-            if (!SLTCStmtExitsSwitchWithoutContinuing(c, bodyNode)) {
+            if (!HOPTCStmtExitsSwitchWithoutContinuing(c, bodyNode)) {
                 uint8_t* caseStates;
-                if (SLTCSnapshotLocalInitStates(c, &caseStates) != 0) {
+                if (HOPTCSnapshotLocalInitStates(c, &caseStates) != 0) {
                     c->localLen = savedLocalLen;
                     c->variantNarrowLen = savedVariantNarrowLen;
                     return -1;
@@ -1388,43 +1391,43 @@ int SLTCTypeSwitchStmt(
                     mergedSwitchStates = caseStates;
                     hasMergedSwitchState = 1;
                 } else {
-                    SLTCMergeLocalInitStateBuffers(mergedSwitchStates, caseStates, switchStateLen);
+                    HOPTCMergeLocalInitStateBuffers(mergedSwitchStates, caseStates, switchStateLen);
                 }
             }
             c->localLen = savedLocalLen;
             c->variantNarrowLen = savedVariantNarrowLen;
-        } else if (clause->kind == SLAst_DEFAULT) {
-            int32_t bodyNode = SLAstFirstChild(c->ast, child);
+        } else if (clause->kind == HOPAst_DEFAULT) {
+            int32_t bodyNode = HOPAstFirstChild(c->ast, child);
             hasDefault = 1;
-            SLTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
-            if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != SLAst_BLOCK) {
-                return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
+            HOPTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
+            if (bodyNode < 0 || c->ast->nodes[bodyNode].kind != HOPAst_BLOCK) {
+                return HOPTCFailNode(c, child, HOPDiag_UNEXPECTED_TOKEN);
             }
             {
                 uint8_t savedDiagPath = c->compilerDiagPathProven;
                 c->compilerDiagPathProven = 0;
-                if (SLTCTypeBlock(c, bodyNode, returnType, loopDepth, switchDepth + 1) != 0) {
+                if (HOPTCTypeBlock(c, bodyNode, returnType, loopDepth, switchDepth + 1) != 0) {
                     c->compilerDiagPathProven = savedDiagPath;
                     return -1;
                 }
                 c->compilerDiagPathProven = savedDiagPath;
             }
-            if (!SLTCStmtExitsSwitchWithoutContinuing(c, bodyNode)) {
+            if (!HOPTCStmtExitsSwitchWithoutContinuing(c, bodyNode)) {
                 uint8_t* caseStates;
-                if (SLTCSnapshotLocalInitStates(c, &caseStates) != 0) {
+                if (HOPTCSnapshotLocalInitStates(c, &caseStates) != 0) {
                     return -1;
                 }
                 if (!hasMergedSwitchState) {
                     mergedSwitchStates = caseStates;
                     hasMergedSwitchState = 1;
                 } else {
-                    SLTCMergeLocalInitStateBuffers(mergedSwitchStates, caseStates, switchStateLen);
+                    HOPTCMergeLocalInitStateBuffers(mergedSwitchStates, caseStates, switchStateLen);
                 }
             }
         } else {
-            return SLTCFailNode(c, child, SLDiag_UNEXPECTED_TOKEN);
+            return HOPTCFailNode(c, child, HOPDiag_UNEXPECTED_TOKEN);
         }
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
 
     {
@@ -1439,7 +1442,7 @@ int SLTCTypeSwitchStmt(
                     }
                 }
                 if (hasMissing) {
-                    return SLTCFailSwitchMissingCases(
+                    return HOPTCFailSwitchMissingCases(
                         c,
                         nodeId,
                         subjectType,
@@ -1452,9 +1455,9 @@ int SLTCTypeSwitchStmt(
                         boolCoveredFalse);
                 }
                 switchIsExhaustive = 1;
-            } else if (SLTCIsBoolType(c, subjectType)) {
+            } else if (HOPTCIsBoolType(c, subjectType)) {
                 if (!boolCoveredTrue || !boolCoveredFalse) {
-                    return SLTCFailSwitchMissingCases(
+                    return HOPTCFailSwitchMissingCases(
                         c,
                         nodeId,
                         subjectType,
@@ -1472,84 +1475,85 @@ int SLTCTypeSwitchStmt(
 
         if (!switchIsExhaustive) {
             if (hasMergedSwitchState) {
-                SLTCMergeLocalInitStateBuffers(mergedSwitchStates, preSwitchStates, switchStateLen);
+                HOPTCMergeLocalInitStateBuffers(
+                    mergedSwitchStates, preSwitchStates, switchStateLen);
             } else {
                 mergedSwitchStates = preSwitchStates;
                 hasMergedSwitchState = 1;
             }
         }
         if (hasMergedSwitchState) {
-            SLTCRestoreLocalInitStates(c, mergedSwitchStates, switchStateLen);
+            HOPTCRestoreLocalInitStates(c, mergedSwitchStates, switchStateLen);
         } else {
-            SLTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
+            HOPTCRestoreLocalInitStates(c, preSwitchStates, switchStateLen);
         }
     }
 
     return 0;
 }
 
-int SLTCExprIsBlankIdent(SLTypeCheckCtx* c, int32_t exprNode) {
-    const SLAstNode* n;
+int HOPTCExprIsBlankIdent(HOPTypeCheckCtx* c, int32_t exprNode) {
+    const HOPAstNode* n;
     if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return 0;
     }
     n = &c->ast->nodes[exprNode];
-    return n->kind == SLAst_IDENT && SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_");
+    return n->kind == HOPAst_IDENT && HOPNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_");
 }
 
-int SLTCTypeMultiAssignStmt(SLTypeCheckCtx* c, int32_t nodeId) {
-    int32_t  lhsList = SLAstFirstChild(c->ast, nodeId);
-    int32_t  rhsList = lhsList >= 0 ? SLAstNextSibling(c->ast, lhsList) : -1;
+int HOPTCTypeMultiAssignStmt(HOPTypeCheckCtx* c, int32_t nodeId) {
+    int32_t  lhsList = HOPAstFirstChild(c->ast, nodeId);
+    int32_t  rhsList = lhsList >= 0 ? HOPAstNextSibling(c->ast, lhsList) : -1;
     uint32_t lhsCount;
     uint32_t rhsCount;
     int32_t  rhsTypes[256];
     uint32_t i;
-    if (lhsList < 0 || rhsList < 0 || c->ast->nodes[lhsList].kind != SLAst_EXPR_LIST
-        || c->ast->nodes[rhsList].kind != SLAst_EXPR_LIST)
+    if (lhsList < 0 || rhsList < 0 || c->ast->nodes[lhsList].kind != HOPAst_EXPR_LIST
+        || c->ast->nodes[rhsList].kind != HOPAst_EXPR_LIST)
     {
-        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
     }
-    lhsCount = SLTCListCount(c->ast, lhsList);
-    rhsCount = SLTCListCount(c->ast, rhsList);
+    lhsCount = HOPTCListCount(c->ast, lhsList);
+    rhsCount = HOPTCListCount(c->ast, rhsList);
     if (lhsCount == 0 || lhsCount > (uint32_t)(sizeof(rhsTypes) / sizeof(rhsTypes[0]))) {
-        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+        return HOPTCFailNode(c, nodeId, HOPDiag_ARITY_MISMATCH);
     }
     if (rhsCount == lhsCount) {
         for (i = 0; i < rhsCount; i++) {
-            int32_t rhsNode = SLTCListItemAt(c->ast, rhsList, i);
-            if (rhsNode < 0 || SLTCTypeExpr(c, rhsNode, &rhsTypes[i]) != 0) {
+            int32_t rhsNode = HOPTCListItemAt(c->ast, rhsList, i);
+            if (rhsNode < 0 || HOPTCTypeExpr(c, rhsNode, &rhsTypes[i]) != 0) {
                 return -1;
             }
         }
     } else if (rhsCount == 1u) {
-        int32_t         rhsNode = SLTCListItemAt(c->ast, rhsList, 0);
-        int32_t         rhsType;
-        const SLTCType* t;
-        if (rhsNode < 0 || SLTCTypeExpr(c, rhsNode, &rhsType) != 0) {
+        int32_t          rhsNode = HOPTCListItemAt(c->ast, rhsList, 0);
+        int32_t          rhsType;
+        const HOPTCType* t;
+        if (rhsNode < 0 || HOPTCTypeExpr(c, rhsNode, &rhsType) != 0) {
             return -1;
         }
         if (rhsType < 0 || (uint32_t)rhsType >= c->typeLen) {
-            return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+            return HOPTCFailNode(c, nodeId, HOPDiag_ARITY_MISMATCH);
         }
         t = &c->types[rhsType];
-        if (t->kind != SLTCType_TUPLE || t->fieldCount != lhsCount) {
-            return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+        if (t->kind != HOPTCType_TUPLE || t->fieldCount != lhsCount) {
+            return HOPTCFailNode(c, nodeId, HOPDiag_ARITY_MISMATCH);
         }
         for (i = 0; i < lhsCount; i++) {
             rhsTypes[i] = c->funcParamTypes[t->fieldStart + i];
         }
     } else {
-        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+        return HOPTCFailNode(c, nodeId, HOPDiag_ARITY_MISMATCH);
     }
     for (i = 0; i < lhsCount; i++) {
-        int32_t lhsNode = SLTCListItemAt(c->ast, lhsList, i);
+        int32_t lhsNode = HOPTCListItemAt(c->ast, lhsList, i);
         int32_t rhsType = rhsTypes[i];
         if (lhsNode < 0) {
-            return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+            return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
         }
-        if (SLTCExprIsBlankIdent(c, lhsNode)) {
+        if (HOPTCExprIsBlankIdent(c, lhsNode)) {
             if (rhsType == c->typeUntypedInt || rhsType == c->typeUntypedFloat) {
-                if (SLTCConcretizeInferredType(c, rhsType, &rhsType) != 0) {
+                if (HOPTCConcretizeInferredType(c, rhsType, &rhsType) != 0) {
                     return -1;
                 }
             }
@@ -1557,27 +1561,27 @@ int SLTCTypeMultiAssignStmt(SLTypeCheckCtx* c, int32_t nodeId) {
         }
         {
             int32_t lhsType;
-            if (SLTCTypeAssignTargetExpr(c, lhsNode, 1, &lhsType) != 0) {
+            if (HOPTCTypeAssignTargetExpr(c, lhsNode, 1, &lhsType) != 0) {
                 return -1;
             }
-            if (!SLTCExprIsAssignable(c, lhsNode)) {
-                return SLTCFailNode(c, lhsNode, SLDiag_TYPE_MISMATCH);
+            if (!HOPTCExprIsAssignable(c, lhsNode)) {
+                return HOPTCFailNode(c, lhsNode, HOPDiag_TYPE_MISMATCH);
             }
-            if (SLTCExprIsConstAssignTarget(c, lhsNode)) {
-                return SLTCFailAssignToConst(c, lhsNode);
+            if (HOPTCExprIsConstAssignTarget(c, lhsNode)) {
+                return HOPTCFailAssignToConst(c, lhsNode);
             }
-            if (!SLTCCanAssign(c, lhsType, rhsType)) {
-                return SLTCFailTypeMismatchDetail(c, lhsNode, lhsNode, rhsType, lhsType);
+            if (!HOPTCCanAssign(c, lhsType, rhsType)) {
+                return HOPTCFailTypeMismatchDetail(c, lhsNode, lhsNode, rhsType, lhsType);
             }
-            SLTCMarkDirectIdentLocalWrite(c, lhsNode, 1);
+            HOPTCMarkDirectIdentLocalWrite(c, lhsNode, 1);
         }
     }
     return 0;
 }
 
-int SLTCTypeShortAssignStmt(SLTypeCheckCtx* c, int32_t nodeId) {
-    int32_t  nameList = SLAstFirstChild(c->ast, nodeId);
-    int32_t  rhsList = nameList >= 0 ? SLAstNextSibling(c->ast, nameList) : -1;
+int HOPTCTypeShortAssignStmt(HOPTypeCheckCtx* c, int32_t nodeId) {
+    int32_t  nameList = HOPAstFirstChild(c->ast, nodeId);
+    int32_t  rhsList = nameList >= 0 ? HOPAstNextSibling(c->ast, nameList) : -1;
     uint32_t lhsCount;
     uint32_t rhsCount;
     int32_t  rhsTypes[256];
@@ -1586,90 +1590,90 @@ int SLTCTypeShortAssignStmt(SLTypeCheckCtx* c, int32_t nodeId) {
     int32_t  declTypes[256];
     uint8_t  isBlank[256];
     uint32_t i;
-    if (nameList < 0 || rhsList < 0 || c->ast->nodes[nameList].kind != SLAst_NAME_LIST
-        || c->ast->nodes[rhsList].kind != SLAst_EXPR_LIST)
+    if (nameList < 0 || rhsList < 0 || c->ast->nodes[nameList].kind != HOPAst_NAME_LIST
+        || c->ast->nodes[rhsList].kind != HOPAst_EXPR_LIST)
     {
-        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
     }
-    lhsCount = SLTCListCount(c->ast, nameList);
-    rhsCount = SLTCListCount(c->ast, rhsList);
+    lhsCount = HOPTCListCount(c->ast, nameList);
+    rhsCount = HOPTCListCount(c->ast, rhsList);
     if (lhsCount == 0 || lhsCount > (uint32_t)(sizeof(rhsTypes) / sizeof(rhsTypes[0]))) {
-        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+        return HOPTCFailNode(c, nodeId, HOPDiag_ARITY_MISMATCH);
     }
 
     for (i = 0; i < lhsCount; i++) {
-        int32_t          nameNode = SLTCListItemAt(c->ast, nameList, i);
-        const SLAstNode* name;
-        uint32_t         j;
+        int32_t           nameNode = HOPTCListItemAt(c->ast, nameList, i);
+        const HOPAstNode* name;
+        uint32_t          j;
         localIdxs[i] = -1;
         declTypes[i] = -1;
         isBlank[i] = 0;
         rhsNodes[i] = -1;
-        if (nameNode < 0 || c->ast->nodes[nameNode].kind != SLAst_IDENT) {
-            return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+        if (nameNode < 0 || c->ast->nodes[nameNode].kind != HOPAst_IDENT) {
+            return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
         }
         name = &c->ast->nodes[nameNode];
-        if (SLNameEqLiteral(c->src, name->dataStart, name->dataEnd, "_")) {
+        if (HOPNameEqLiteral(c->src, name->dataStart, name->dataEnd, "_")) {
             isBlank[i] = 1;
             continue;
         }
         for (j = 0; j < i; j++) {
-            int32_t          prevNameNode;
-            const SLAstNode* prevName;
+            int32_t           prevNameNode;
+            const HOPAstNode* prevName;
             if (isBlank[j]) {
                 continue;
             }
-            prevNameNode = SLTCListItemAt(c->ast, nameList, j);
+            prevNameNode = HOPTCListItemAt(c->ast, nameList, j);
             prevName = prevNameNode >= 0 ? &c->ast->nodes[prevNameNode] : NULL;
             if (prevName != NULL
-                && SLNameEqSlice(
+                && HOPNameEqSlice(
                     c->src, prevName->dataStart, prevName->dataEnd, name->dataStart, name->dataEnd))
             {
-                return SLTCFailDuplicateDefinition(
+                return HOPTCFailDuplicateDefinition(
                     c, name->dataStart, name->dataEnd, prevName->dataStart, prevName->dataEnd);
             }
         }
-        localIdxs[i] = SLTCLocalFind(c, name->dataStart, name->dataEnd);
+        localIdxs[i] = HOPTCLocalFind(c, name->dataStart, name->dataEnd);
     }
 
     if (rhsCount == lhsCount) {
         for (i = 0; i < rhsCount; i++) {
-            int32_t rhsNode = SLTCListItemAt(c->ast, rhsList, i);
+            int32_t rhsNode = HOPTCListItemAt(c->ast, rhsList, i);
             rhsNodes[i] = rhsNode;
-            if (rhsNode < 0 || SLTCTypeExpr(c, rhsNode, &rhsTypes[i]) != 0) {
+            if (rhsNode < 0 || HOPTCTypeExpr(c, rhsNode, &rhsTypes[i]) != 0) {
                 return -1;
             }
         }
     } else if (rhsCount == 1u) {
-        int32_t         rhsNode = SLTCListItemAt(c->ast, rhsList, 0);
-        int32_t         rhsType;
-        const SLTCType* t;
-        if (rhsNode < 0 || SLTCTypeExpr(c, rhsNode, &rhsType) != 0) {
+        int32_t          rhsNode = HOPTCListItemAt(c->ast, rhsList, 0);
+        int32_t          rhsType;
+        const HOPTCType* t;
+        if (rhsNode < 0 || HOPTCTypeExpr(c, rhsNode, &rhsType) != 0) {
             return -1;
         }
         if (rhsType < 0 || (uint32_t)rhsType >= c->typeLen) {
-            return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+            return HOPTCFailNode(c, nodeId, HOPDiag_ARITY_MISMATCH);
         }
         t = &c->types[rhsType];
-        if (t->kind != SLTCType_TUPLE || t->fieldCount != lhsCount
+        if (t->kind != HOPTCType_TUPLE || t->fieldCount != lhsCount
             || t->fieldStart + lhsCount > c->funcParamLen)
         {
-            return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+            return HOPTCFailNode(c, nodeId, HOPDiag_ARITY_MISMATCH);
         }
         for (i = 0; i < lhsCount; i++) {
             rhsTypes[i] = c->funcParamTypes[t->fieldStart + i];
             rhsNodes[i] = rhsNode;
         }
     } else {
-        return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+        return HOPTCFailNode(c, nodeId, HOPDiag_ARITY_MISMATCH);
     }
 
     for (i = 0; i < lhsCount; i++) {
-        int32_t nameNode = SLTCListItemAt(c->ast, nameList, i);
+        int32_t nameNode = HOPTCListItemAt(c->ast, nameList, i);
         int32_t rhsType = rhsTypes[i];
         if (isBlank[i]) {
             if (rhsType == c->typeUntypedInt || rhsType == c->typeUntypedFloat) {
-                if (SLTCConcretizeInferredType(c, rhsType, &rhsType) != 0) {
+                if (HOPTCConcretizeInferredType(c, rhsType, &rhsType) != 0) {
                     return -1;
                 }
             }
@@ -1677,180 +1681,181 @@ int SLTCTypeShortAssignStmt(SLTypeCheckCtx* c, int32_t nodeId) {
         }
         if (localIdxs[i] >= 0) {
             int32_t localType = c->locals[localIdxs[i]].typeId;
-            if ((c->locals[localIdxs[i]].flags & SLTCLocalFlag_CONST) != 0) {
-                return SLTCFailAssignToConst(c, nameNode);
+            if ((c->locals[localIdxs[i]].flags & HOPTCLocalFlag_CONST) != 0) {
+                return HOPTCFailAssignToConst(c, nameNode);
             }
-            if (!SLTCCanAssign(c, localType, rhsType)) {
-                return SLTCFailTypeMismatchDetail(c, nameNode, rhsNodes[i], rhsType, localType);
+            if (!HOPTCCanAssign(c, localType, rhsType)) {
+                return HOPTCFailTypeMismatchDetail(c, nameNode, rhsNodes[i], rhsType, localType);
             }
             continue;
         }
         if (rhsType == c->typeNull) {
-            return SLTCFailNode(c, rhsNodes[i], SLDiag_INFER_NULL_TYPE_UNKNOWN);
+            return HOPTCFailNode(c, rhsNodes[i], HOPDiag_INFER_NULL_TYPE_UNKNOWN);
         }
         if (rhsType == c->typeVoid) {
-            return SLTCFailNode(c, rhsNodes[i], SLDiag_INFER_VOID_TYPE_UNKNOWN);
+            return HOPTCFailNode(c, rhsNodes[i], HOPDiag_INFER_VOID_TYPE_UNKNOWN);
         }
-        if (SLTCConcretizeInferredType(c, rhsType, &declTypes[i]) != 0) {
+        if (HOPTCConcretizeInferredType(c, rhsType, &declTypes[i]) != 0) {
             return -1;
         }
-        if (SLTCTypeContainsVarSizeByValue(c, declTypes[i])) {
-            return SLTCFailNode(c, rhsNodes[i], SLDiag_TYPE_MISMATCH);
+        if (HOPTCTypeContainsVarSizeByValue(c, declTypes[i])) {
+            return HOPTCFailNode(c, rhsNodes[i], HOPDiag_TYPE_MISMATCH);
         }
     }
 
     for (i = 0; i < lhsCount; i++) {
-        int32_t          nameNode = SLTCListItemAt(c->ast, nameList, i);
-        const SLAstNode* name;
+        int32_t           nameNode = HOPTCListItemAt(c->ast, nameList, i);
+        const HOPAstNode* name;
         if (isBlank[i]) {
             continue;
         }
         name = &c->ast->nodes[nameNode];
         if (localIdxs[i] >= 0) {
-            SLTCMarkLocalWrite(c, localIdxs[i]);
-            SLTCMarkLocalInitialized(c, localIdxs[i]);
+            HOPTCMarkLocalWrite(c, localIdxs[i]);
+            HOPTCMarkLocalInitialized(c, localIdxs[i]);
             continue;
         }
-        if (SLTCLocalAdd(c, name->dataStart, name->dataEnd, declTypes[i], 0, -1) != 0) {
+        if (HOPTCLocalAdd(c, name->dataStart, name->dataEnd, declTypes[i], 0, -1) != 0) {
             return -1;
         }
-        SLTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
+        HOPTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
     }
     return 0;
 }
 
-int SLTCTypeStmt(
-    SLTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
-    const SLAstNode* n = &c->ast->nodes[nodeId];
+int HOPTCTypeStmt(
+    HOPTypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
+    const HOPAstNode* n = &c->ast->nodes[nodeId];
     switch (n->kind) {
-        case SLAst_BLOCK:       return SLTCTypeBlock(c, nodeId, returnType, loopDepth, switchDepth);
-        case SLAst_VAR:
-        case SLAst_CONST:       return SLTCTypeVarLike(c, nodeId);
-        case SLAst_CONST_BLOCK: {
-            int32_t blockNode = SLAstFirstChild(c->ast, nodeId);
-            if (blockNode < 0 || c->ast->nodes[blockNode].kind != SLAst_BLOCK) {
-                return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
+        case HOPAst_BLOCK:       return HOPTCTypeBlock(c, nodeId, returnType, loopDepth, switchDepth);
+        case HOPAst_VAR:
+        case HOPAst_CONST:       return HOPTCTypeVarLike(c, nodeId);
+        case HOPAst_CONST_BLOCK: {
+            int32_t blockNode = HOPAstFirstChild(c->ast, nodeId);
+            if (blockNode < 0 || c->ast->nodes[blockNode].kind != HOPAst_BLOCK) {
+                return HOPTCFailNode(c, nodeId, HOPDiag_UNEXPECTED_TOKEN);
             }
-            SLTCMarkConstBlockLocalReads(c, blockNode);
+            HOPTCMarkConstBlockLocalReads(c, blockNode);
             return 0;
         }
-        case SLAst_MULTI_ASSIGN: return SLTCTypeMultiAssignStmt(c, nodeId);
-        case SLAst_SHORT_ASSIGN: return SLTCTypeShortAssignStmt(c, nodeId);
-        case SLAst_EXPR_STMT:    {
-            int32_t expr = SLAstFirstChild(c->ast, nodeId);
+        case HOPAst_MULTI_ASSIGN: return HOPTCTypeMultiAssignStmt(c, nodeId);
+        case HOPAst_SHORT_ASSIGN: return HOPTCTypeShortAssignStmt(c, nodeId);
+        case HOPAst_EXPR_STMT:    {
+            int32_t expr = HOPAstFirstChild(c->ast, nodeId);
             int32_t t;
             if (expr < 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+                return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
             }
-            return SLTCTypeExpr(c, expr, &t);
+            return HOPTCTypeExpr(c, expr, &t);
         }
-        case SLAst_RETURN: {
-            int32_t expr = SLAstFirstChild(c->ast, nodeId);
+        case HOPAst_RETURN: {
+            int32_t expr = HOPAstFirstChild(c->ast, nodeId);
             if (expr < 0) {
                 if (returnType != c->typeVoid) {
-                    return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+                    return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
                 }
                 return 0;
             }
-            if (c->ast->nodes[expr].kind == SLAst_EXPR_LIST) {
-                const SLTCType* rt;
-                const SLTCType* payload = NULL;
-                uint32_t        wantCount;
-                uint32_t        i;
+            if (c->ast->nodes[expr].kind == HOPAst_EXPR_LIST) {
+                const HOPTCType* rt;
+                const HOPTCType* payload = NULL;
+                uint32_t         wantCount;
+                uint32_t         i;
                 if (returnType < 0 || (uint32_t)returnType >= c->typeLen) {
-                    return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+                    return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
                 }
                 rt = &c->types[returnType];
-                if (rt->kind == SLTCType_OPTIONAL && rt->baseType >= 0
+                if (rt->kind == HOPTCType_OPTIONAL && rt->baseType >= 0
                     && (uint32_t)rt->baseType < c->typeLen)
                 {
                     payload = &c->types[rt->baseType];
                 }
-                if (rt->kind != SLTCType_TUPLE
-                    && !(payload != NULL && payload->kind == SLTCType_TUPLE))
+                if (rt->kind != HOPTCType_TUPLE
+                    && !(payload != NULL && payload->kind == HOPTCType_TUPLE))
                 {
-                    return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                    return HOPTCFailNode(c, nodeId, HOPDiag_ARITY_MISMATCH);
                 }
-                if (payload != NULL && payload->kind == SLTCType_TUPLE) {
+                if (payload != NULL && payload->kind == HOPTCType_TUPLE) {
                     rt = payload;
                 }
                 wantCount = rt->fieldCount;
-                if (SLTCListCount(c->ast, expr) != wantCount) {
-                    return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
+                if (HOPTCListCount(c->ast, expr) != wantCount) {
+                    return HOPTCFailNode(c, nodeId, HOPDiag_ARITY_MISMATCH);
                 }
                 for (i = 0; i < wantCount; i++) {
-                    int32_t itemNode = SLTCListItemAt(c->ast, expr, i);
+                    int32_t itemNode = HOPTCListItemAt(c->ast, expr, i);
                     int32_t itemType;
                     int32_t dstType;
                     if (itemNode < 0) {
-                        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+                        return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
                     }
                     dstType = c->funcParamTypes[rt->fieldStart + i];
-                    if (SLTCTypeExprExpected(c, itemNode, dstType, &itemType) != 0) {
+                    if (HOPTCTypeExprExpected(c, itemNode, dstType, &itemType) != 0) {
                         return -1;
                     }
-                    if (!SLTCCanAssign(c, dstType, itemType)) {
-                        return SLTCFailTypeMismatchDetail(c, itemNode, itemNode, itemType, dstType);
+                    if (!HOPTCCanAssign(c, dstType, itemType)) {
+                        return HOPTCFailTypeMismatchDetail(
+                            c, itemNode, itemNode, itemType, dstType);
                     }
                 }
                 return 0;
             }
             {
                 int32_t t;
-                if (SLTCTypeExprExpected(c, expr, returnType, &t) != 0) {
+                if (HOPTCTypeExprExpected(c, expr, returnType, &t) != 0) {
                     return -1;
                 }
-                if (!SLTCCanAssign(c, returnType, t)) {
-                    return SLTCFailNode(c, expr, SLDiag_TYPE_MISMATCH);
+                if (!HOPTCCanAssign(c, returnType, t)) {
+                    return HOPTCFailNode(c, expr, HOPDiag_TYPE_MISMATCH);
                 }
                 return 0;
             }
         }
-        case SLAst_IF: {
-            int32_t        cond = SLAstFirstChild(c->ast, nodeId);
-            int32_t        thenNode;
-            int32_t        elseNode;
-            int32_t        condType;
-            int            condIsOptional = 0;
-            int            canSpecializeByConstCond = 0;
-            int            condConstValue = 0;
-            int            condIsConst = 0;
-            int            diagCondConstValue = 0;
-            int            diagCondIsConst = 0;
-            uint8_t        savedDiagPath = c->compilerDiagPathProven;
-            uint8_t        thenDiagPath = 0;
-            uint8_t        elseDiagPath = 0;
-            SLTCNullNarrow narrow;
-            int            thenIsSome = 0;
-            int            hasNarrow;
+        case HOPAst_IF: {
+            int32_t         cond = HOPAstFirstChild(c->ast, nodeId);
+            int32_t         thenNode;
+            int32_t         elseNode;
+            int32_t         condType;
+            int             condIsOptional = 0;
+            int             canSpecializeByConstCond = 0;
+            int             condConstValue = 0;
+            int             condIsConst = 0;
+            int             diagCondConstValue = 0;
+            int             diagCondIsConst = 0;
+            uint8_t         savedDiagPath = c->compilerDiagPathProven;
+            uint8_t         thenDiagPath = 0;
+            uint8_t         elseDiagPath = 0;
+            HOPTCNullNarrow narrow;
+            int             thenIsSome = 0;
+            int             hasNarrow;
             if (cond < 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_BOOL);
+                return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_BOOL);
             }
-            thenNode = SLAstNextSibling(c->ast, cond);
+            thenNode = HOPAstNextSibling(c->ast, cond);
             if (thenNode < 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
+                return HOPTCFailNode(c, nodeId, HOPDiag_UNEXPECTED_TOKEN);
             }
-            if (SLTCTypeExpr(c, cond, &condType) != 0) {
+            if (HOPTCTypeExpr(c, cond, &condType) != 0) {
                 return -1;
             }
             condIsOptional =
                 (condType >= 0 && (uint32_t)condType < c->typeLen
-                 && c->types[condType].kind == SLTCType_OPTIONAL);
-            if (!SLTCIsBoolType(c, condType) && !condIsOptional) {
-                return SLTCFailNode(c, cond, SLDiag_EXPECTED_BOOL);
+                 && c->types[condType].kind == HOPTCType_OPTIONAL);
+            if (!HOPTCIsBoolType(c, condType) && !condIsOptional) {
+                return HOPTCFailNode(c, cond, HOPDiag_EXPECTED_BOOL);
             }
-            if (SLTCConstBoolExpr(c, cond, &diagCondConstValue, &diagCondIsConst) != 0) {
+            if (HOPTCConstBoolExpr(c, cond, &diagCondConstValue, &diagCondIsConst) != 0) {
                 return -1;
             }
             if (diagCondIsConst) {
                 thenDiagPath = diagCondConstValue ? savedDiagPath : 0;
                 elseDiagPath = diagCondConstValue ? 0 : savedDiagPath;
             }
-            elseNode = SLAstNextSibling(c->ast, thenNode);
+            elseNode = HOPAstNextSibling(c->ast, thenNode);
             canSpecializeByConstCond = c->activeConstEvalCtx != NULL;
             if (!canSpecializeByConstCond && c->currentFunctionIndex >= 0
                 && (uint32_t)c->currentFunctionIndex < c->funcLen
-                && (c->funcs[c->currentFunctionIndex].flags & SLTCFunctionFlag_TEMPLATE_INSTANCE)
+                && (c->funcs[c->currentFunctionIndex].flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE)
                        != 0)
             {
                 canSpecializeByConstCond = 1;
@@ -1859,11 +1864,11 @@ int SLTCTypeStmt(
                 condConstValue = diagCondConstValue;
                 condIsConst = diagCondIsConst;
             }
-            hasNarrow = SLTCGetOptionalCondNarrow(c, cond, &thenIsSome, &narrow);
+            hasNarrow = HOPTCGetOptionalCondNarrow(c, cond, &thenIsSome, &narrow);
             {
                 uint8_t* preInitStates;
                 uint32_t initStateLen = c->localLen;
-                if (SLTCSnapshotLocalInitStates(c, &preInitStates) != 0) {
+                if (HOPTCSnapshotLocalInitStates(c, &preInitStates) != 0) {
                     return -1;
                 }
                 if (condIsConst) {
@@ -1876,19 +1881,20 @@ int SLTCTypeStmt(
                         int32_t falseType = thenIsSome ? c->typeNull : narrow.innerType;
                         c->locals[narrow.localIdx].typeId = condConstValue ? trueType : falseType;
                         if (branchNode >= 0
-                            && SLTCTypeStmt(c, branchNode, returnType, loopDepth, switchDepth) != 0)
+                            && HOPTCTypeStmt(c, branchNode, returnType, loopDepth, switchDepth)
+                                   != 0)
                         {
                             c->locals[narrow.localIdx].typeId = origType;
-                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                             c->compilerDiagPathProven = savedDiagPath;
                             return -1;
                         }
                         c->locals[narrow.localIdx].typeId = origType;
                     } else if (
                         branchNode >= 0
-                        && SLTCTypeStmt(c, branchNode, returnType, loopDepth, switchDepth) != 0)
+                        && HOPTCTypeStmt(c, branchNode, returnType, loopDepth, switchDepth) != 0)
                     {
-                        SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                        HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                         c->compilerDiagPathProven = savedDiagPath;
                         return -1;
                     }
@@ -1911,145 +1917,146 @@ int SLTCTypeStmt(
                         int32_t falseType = thenIsSome ? c->typeNull : narrow.innerType;
                         c->locals[narrow.localIdx].typeId = trueType;
                         c->compilerDiagPathProven = thenDiagPath;
-                        if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
+                        if (HOPTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
                             c->locals[narrow.localIdx].typeId = origType;
-                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                             c->compilerDiagPathProven = savedDiagPath;
                             return -1;
                         }
                         c->locals[narrow.localIdx].typeId = origType;
-                        thenContinues = !SLTCStmtTerminates(c, thenNode);
-                        if (SLTCSnapshotLocalInitStates(c, &thenInitStates) != 0) {
-                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                        thenContinues = !HOPTCStmtTerminates(c, thenNode);
+                        if (HOPTCSnapshotLocalInitStates(c, &thenInitStates) != 0) {
+                            HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                             c->compilerDiagPathProven = savedDiagPath;
                             return -1;
                         }
-                        SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                        HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                         c->locals[narrow.localIdx].typeId = falseType;
                         c->compilerDiagPathProven = elseDiagPath;
                         if (elseNode >= 0
-                            && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
+                            && HOPTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
                         {
                             c->locals[narrow.localIdx].typeId = origType;
-                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                             c->compilerDiagPathProven = savedDiagPath;
                             return -1;
                         }
                         c->locals[narrow.localIdx].typeId = origType;
                     } else {
                         c->compilerDiagPathProven = thenDiagPath;
-                        if (SLTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
-                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                        if (HOPTCTypeStmt(c, thenNode, returnType, loopDepth, switchDepth) != 0) {
+                            HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                             c->compilerDiagPathProven = savedDiagPath;
                             return -1;
                         }
-                        thenContinues = !SLTCStmtTerminates(c, thenNode);
-                        if (SLTCSnapshotLocalInitStates(c, &thenInitStates) != 0) {
-                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                        thenContinues = !HOPTCStmtTerminates(c, thenNode);
+                        if (HOPTCSnapshotLocalInitStates(c, &thenInitStates) != 0) {
+                            HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                             c->compilerDiagPathProven = savedDiagPath;
                             return -1;
                         }
-                        SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                        HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                         c->compilerDiagPathProven = elseDiagPath;
                         if (elseNode >= 0
-                            && SLTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
+                            && HOPTCTypeStmt(c, elseNode, returnType, loopDepth, switchDepth) != 0)
                         {
-                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                            HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                             c->compilerDiagPathProven = savedDiagPath;
                             return -1;
                         }
                     }
                     if (elseNode >= 0) {
-                        elseContinues = !SLTCStmtTerminates(c, elseNode);
-                        if (SLTCSnapshotLocalInitStates(c, &elseInitStates) != 0) {
-                            SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                        elseContinues = !HOPTCStmtTerminates(c, elseNode);
+                        if (HOPTCSnapshotLocalInitStates(c, &elseInitStates) != 0) {
+                            HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                             c->compilerDiagPathProven = savedDiagPath;
                             return -1;
                         }
                     }
                     if (thenContinues && elseContinues) {
-                        SLTCMergeLocalInitStates(c, thenInitStates, elseInitStates, initStateLen);
+                        HOPTCMergeLocalInitStates(c, thenInitStates, elseInitStates, initStateLen);
                     } else if (thenContinues) {
-                        SLTCRestoreLocalInitStates(c, thenInitStates, initStateLen);
+                        HOPTCRestoreLocalInitStates(c, thenInitStates, initStateLen);
                     } else if (elseContinues) {
-                        SLTCRestoreLocalInitStates(c, elseInitStates, initStateLen);
+                        HOPTCRestoreLocalInitStates(c, elseInitStates, initStateLen);
                     } else {
-                        SLTCRestoreLocalInitStates(c, preInitStates, initStateLen);
+                        HOPTCRestoreLocalInitStates(c, preInitStates, initStateLen);
                     }
                 }
                 c->compilerDiagPathProven = savedDiagPath;
                 return 0;
             }
         }
-        case SLAst_FOR:    return SLTCTypeForStmt(c, nodeId, returnType, loopDepth, switchDepth);
-        case SLAst_SWITCH: return SLTCTypeSwitchStmt(c, nodeId, returnType, loopDepth, switchDepth);
-        case SLAst_BREAK:
+        case HOPAst_FOR: return HOPTCTypeForStmt(c, nodeId, returnType, loopDepth, switchDepth);
+        case HOPAst_SWITCH:
+            return HOPTCTypeSwitchStmt(c, nodeId, returnType, loopDepth, switchDepth);
+        case HOPAst_BREAK:
             if (loopDepth <= 0 && switchDepth <= 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
+                return HOPTCFailNode(c, nodeId, HOPDiag_UNEXPECTED_TOKEN);
             }
             return 0;
-        case SLAst_CONTINUE:
+        case HOPAst_CONTINUE:
             if (loopDepth <= 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
+                return HOPTCFailNode(c, nodeId, HOPDiag_UNEXPECTED_TOKEN);
             }
             return 0;
-        case SLAst_DEFER: {
-            int32_t stmt = SLAstFirstChild(c->ast, nodeId);
+        case HOPAst_DEFER: {
+            int32_t stmt = HOPAstFirstChild(c->ast, nodeId);
             if (stmt < 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
+                return HOPTCFailNode(c, nodeId, HOPDiag_UNEXPECTED_TOKEN);
             }
-            return SLTCTypeStmt(c, stmt, returnType, loopDepth, switchDepth);
+            return HOPTCTypeStmt(c, stmt, returnType, loopDepth, switchDepth);
         }
-        case SLAst_ASSERT: {
-            int32_t cond = SLAstFirstChild(c->ast, nodeId);
+        case HOPAst_ASSERT: {
+            int32_t cond = HOPAstFirstChild(c->ast, nodeId);
             int32_t condType;
             int32_t fmtNode;
             if (cond < 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_BOOL);
+                return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_BOOL);
             }
-            if (SLTCTypeExpr(c, cond, &condType) != 0) {
+            if (HOPTCTypeExpr(c, cond, &condType) != 0) {
                 return -1;
             }
-            if (!SLTCIsBoolType(c, condType)) {
-                return SLTCFailNode(c, cond, SLDiag_EXPECTED_BOOL);
+            if (!HOPTCIsBoolType(c, condType)) {
+                return HOPTCFailNode(c, cond, HOPDiag_EXPECTED_BOOL);
             }
-            fmtNode = SLAstNextSibling(c->ast, cond);
+            fmtNode = HOPAstNextSibling(c->ast, cond);
             if (fmtNode >= 0) {
                 int32_t fmtType;
                 int32_t argNode;
-                int32_t wantStrType = SLTCGetStrRefType(c, n->start, n->end);
-                if (SLTCTypeExpr(c, fmtNode, &fmtType) != 0) {
+                int32_t wantStrType = HOPTCGetStrRefType(c, n->start, n->end);
+                if (HOPTCTypeExpr(c, fmtNode, &fmtType) != 0) {
                     return -1;
                 }
                 if (wantStrType < 0) {
-                    return SLTCFailNode(c, fmtNode, SLDiag_UNKNOWN_TYPE);
+                    return HOPTCFailNode(c, fmtNode, HOPDiag_UNKNOWN_TYPE);
                 }
-                if (!SLTCCanAssign(c, wantStrType, fmtType)) {
-                    return SLTCFailNode(c, fmtNode, SLDiag_TYPE_MISMATCH);
+                if (!HOPTCCanAssign(c, wantStrType, fmtType)) {
+                    return HOPTCFailNode(c, fmtNode, HOPDiag_TYPE_MISMATCH);
                 }
-                argNode = SLAstNextSibling(c->ast, fmtNode);
+                argNode = HOPAstNextSibling(c->ast, fmtNode);
                 while (argNode >= 0) {
                     int32_t argType;
-                    if (SLTCTypeExpr(c, argNode, &argType) != 0) {
+                    if (HOPTCTypeExpr(c, argNode, &argType) != 0) {
                         return -1;
                     }
-                    argNode = SLAstNextSibling(c->ast, argNode);
+                    argNode = HOPAstNextSibling(c->ast, argNode);
                 }
             }
             return 0;
         }
-        case SLAst_DEL: {
-            int32_t expr = SLAstFirstChild(c->ast, nodeId);
+        case HOPAst_DEL: {
+            int32_t expr = HOPAstFirstChild(c->ast, nodeId);
             int32_t allocArgNode = -1;
-            int32_t allocType = SLTCFindMemAllocatorType(c);
+            int32_t allocType = HOPTCFindMemAllocatorType(c);
             int32_t ctxAllocType = -1;
             if (allocType < 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+                return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
             }
-            if ((n->flags & SLAstFlag_DEL_HAS_ALLOC) != 0) {
+            if ((n->flags & HOPAstFlag_DEL_HAS_ALLOC) != 0) {
                 int32_t scan = expr;
                 while (scan >= 0) {
-                    int32_t next = SLAstNextSibling(c->ast, scan);
+                    int32_t next = HOPAstNextSibling(c->ast, scan);
                     if (next < 0) {
                         allocArgNode = scan;
                         break;
@@ -2057,117 +2064,118 @@ int SLTCTypeStmt(
                     scan = next;
                 }
                 if (allocArgNode < 0
-                    || SLTCValidateMemAllocatorArg(c, allocArgNode, allocType) != 0)
+                    || HOPTCValidateMemAllocatorArg(c, allocArgNode, allocType) != 0)
                 {
                     return -1;
                 }
             } else {
-                if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "allocator", &ctxAllocType) != 0) {
+                if (HOPTCGetEffectiveContextFieldTypeByLiteral(c, "allocator", &ctxAllocType) != 0)
+                {
                     return -1;
                 }
-                if (!SLTCCanAssign(c, allocType, ctxAllocType)) {
-                    return SLTCFailNode(c, nodeId, SLDiag_CONTEXT_TYPE_MISMATCH);
+                if (!HOPTCCanAssign(c, allocType, ctxAllocType)) {
+                    return HOPTCFailNode(c, nodeId, HOPDiag_CONTEXT_TYPE_MISMATCH);
                 }
             }
             if (expr < 0) {
-                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+                return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_EXPR);
             }
             while (expr >= 0 && expr != allocArgNode) {
                 int32_t t;
                 int32_t resolved;
-                if (SLTCTypeExpr(c, expr, &t) != 0) {
+                if (HOPTCTypeExpr(c, expr, &t) != 0) {
                     return -1;
                 }
-                resolved = SLTCResolveAliasBaseType(c, t);
+                resolved = HOPTCResolveAliasBaseType(c, t);
                 if (resolved < 0 || (uint32_t)resolved >= c->typeLen
-                    || c->types[resolved].kind != SLTCType_PTR)
+                    || c->types[resolved].kind != HOPTCType_PTR)
                 {
-                    return SLTCFailNode(c, expr, SLDiag_TYPE_MISMATCH);
+                    return HOPTCFailNode(c, expr, HOPDiag_TYPE_MISMATCH);
                 }
-                expr = SLAstNextSibling(c->ast, expr);
+                expr = HOPAstNextSibling(c->ast, expr);
             }
             return 0;
         }
-        default: return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
+        default: return HOPTCFailNode(c, nodeId, HOPDiag_UNEXPECTED_TOKEN);
     }
 }
 
-int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
-    const SLTCFunction* fn = &c->funcs[funcIndex];
-    int32_t             nodeId = fn->defNode;
-    int32_t             child;
-    uint32_t            paramIndex = 0;
-    int32_t             bodyNode = -1;
-    int32_t             savedContextType = c->currentContextType;
-    int                 savedImplicitRoot = c->hasImplicitMainRootContext;
-    int32_t             savedImplicitMainContextType = c->implicitMainContextType;
-    int32_t             savedFunctionIndex = c->currentFunctionIndex;
-    int                 savedFunctionIsCompareHook = c->currentFunctionIsCompareHook;
-    int32_t             savedActiveTypeParamFnNode = c->activeTypeParamFnNode;
-    uint32_t            savedActiveGenericArgStart = c->activeGenericArgStart;
-    uint16_t            savedActiveGenericArgCount = c->activeGenericArgCount;
-    int32_t             savedActiveGenericDeclNode = c->activeGenericDeclNode;
-    int                 isEqualHook = 0;
+int HOPTCTypeFunctionBody(HOPTypeCheckCtx* c, int32_t funcIndex) {
+    const HOPTCFunction* fn = &c->funcs[funcIndex];
+    int32_t              nodeId = fn->defNode;
+    int32_t              child;
+    uint32_t             paramIndex = 0;
+    int32_t              bodyNode = -1;
+    int32_t              savedContextType = c->currentContextType;
+    int                  savedImplicitRoot = c->hasImplicitMainRootContext;
+    int32_t              savedImplicitMainContextType = c->implicitMainContextType;
+    int32_t              savedFunctionIndex = c->currentFunctionIndex;
+    int                  savedFunctionIsCompareHook = c->currentFunctionIsCompareHook;
+    int32_t              savedActiveTypeParamFnNode = c->activeTypeParamFnNode;
+    uint32_t             savedActiveGenericArgStart = c->activeGenericArgStart;
+    uint16_t             savedActiveGenericArgCount = c->activeGenericArgCount;
+    int32_t              savedActiveGenericDeclNode = c->activeGenericDeclNode;
+    int                  isEqualHook = 0;
 
     if (nodeId < 0) {
         return 0;
     }
-    if ((fn->flags & SLTCFunctionFlag_TEMPLATE) != 0
-        && (fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
+    if ((fn->flags & HOPTCFunctionFlag_TEMPLATE) != 0
+        && (fn->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
     {
         return 0;
     }
 
     c->localLen = 0;
     c->currentFunctionIndex = funcIndex;
-    c->currentFunctionIsCompareHook = SLTCIsComparisonHookName(
+    c->currentFunctionIsCompareHook = HOPTCIsComparisonHookName(
         c, fn->nameStart, fn->nameEnd, &isEqualHook);
     c->activeTypeParamFnNode = nodeId;
     c->activeGenericArgStart = fn->templateArgStart;
     c->activeGenericArgCount = fn->templateArgCount;
     c->activeGenericDeclNode = fn->templateArgCount > 0 ? fn->declNode : -1;
 
-    child = SLAstFirstChild(c->ast, nodeId);
+    child = HOPAstFirstChild(c->ast, nodeId);
     while (child >= 0) {
-        const SLAstNode* n = &c->ast->nodes[child];
-        if (n->kind == SLAst_PARAM) {
+        const HOPAstNode* n = &c->ast->nodes[child];
+        if (n->kind == HOPAst_PARAM) {
             int32_t paramType;
             int     addedLocal = 0;
             if (paramIndex >= fn->paramCount) {
-                return SLTCFailNode(c, child, SLDiag_ARITY_MISMATCH);
+                return HOPTCFailNode(c, child, HOPDiag_ARITY_MISMATCH);
             }
             paramType = c->funcParamTypes[fn->paramTypeStart + paramIndex];
-            if (!SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")
-                && SLTCLocalAdd(
+            if (!HOPNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")
+                && HOPTCLocalAdd(
                        c,
                        n->dataStart,
                        n->dataEnd,
                        paramType,
                        (c->funcParamFlags[fn->paramTypeStart + paramIndex]
-                        & SLTCFuncParamFlag_CONST)
+                        & HOPTCFuncParamFlag_CONST)
                            != 0,
                        -1)
                        != 0)
             {
                 return -1;
             }
-            if (!SLNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")) {
+            if (!HOPNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")) {
                 addedLocal = 1;
-                SLTCSetLocalUsageKind(c, (int32_t)c->localLen - 1, SLTCLocalUseKind_PARAM);
-                SLTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
+                HOPTCSetLocalUsageKind(c, (int32_t)c->localLen - 1, HOPTCLocalUseKind_PARAM);
+                HOPTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
             }
-            if (addedLocal && (n->flags & SLAstFlag_PARAM_VARIADIC) != 0
+            if (addedLocal && (n->flags & HOPAstFlag_PARAM_VARIADIC) != 0
                 && (paramType == c->typeAnytype
                     || ((uint32_t)paramType < c->typeLen
-                        && c->types[paramType].kind == SLTCType_PACK)))
+                        && c->types[paramType].kind == HOPTCType_PACK)))
             {
-                c->locals[c->localLen - 1u].flags |= SLTCLocalFlag_ANYPACK;
+                c->locals[c->localLen - 1u].flags |= HOPTCLocalFlag_ANYPACK;
             }
             paramIndex++;
-        } else if (n->kind == SLAst_BLOCK) {
+        } else if (n->kind == HOPAst_BLOCK) {
             bodyNode = child;
         }
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
 
     if (bodyNode < 0) {
@@ -2180,12 +2188,12 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
         return 0;
     }
 
-    c->currentContextType = SLTCResolveImplicitMainContextType(c);
+    c->currentContextType = HOPTCResolveImplicitMainContextType(c);
     c->hasImplicitMainRootContext = c->currentContextType < 0;
     c->implicitMainContextType = c->currentContextType;
 
     {
-        int rc = SLTCTypeBlock(c, bodyNode, fn->returnType, 0, 0);
+        int rc = HOPTCTypeBlock(c, bodyNode, fn->returnType, 0, 0);
         c->currentFunctionIndex = savedFunctionIndex;
         c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;
         c->activeTypeParamFnNode = savedActiveTypeParamFnNode;
@@ -2199,45 +2207,45 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
     }
 }
 
-int SLTCCollectFunctionDecls(SLTypeCheckCtx* c) {
-    int32_t child = SLAstFirstChild(c->ast, c->ast->root);
+int HOPTCCollectFunctionDecls(HOPTypeCheckCtx* c) {
+    int32_t child = HOPAstFirstChild(c->ast, c->ast->root);
     while (child >= 0) {
-        if (SLTCCollectFunctionFromNode(c, child) != 0) {
+        if (HOPTCCollectFunctionFromNode(c, child) != 0) {
             return -1;
         }
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
     return 0;
 }
 
-int SLTCCollectTypeDecls(SLTypeCheckCtx* c) {
-    int32_t child = SLAstFirstChild(c->ast, c->ast->root);
+int HOPTCCollectTypeDecls(HOPTypeCheckCtx* c) {
+    int32_t child = HOPAstFirstChild(c->ast, c->ast->root);
     while (child >= 0) {
-        if (SLTCCollectTypeDeclsFromNode(c, child) != 0) {
+        if (HOPTCCollectTypeDeclsFromNode(c, child) != 0) {
             return -1;
         }
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
     return 0;
 }
 
-int SLTCBuildCheckedContext(
-    SLArena*     arena,
-    const SLAst* ast,
-    SLStrView    src,
-    const SLTypeCheckOptions* _Nullable options,
-    SLDiag* _Nullable diag,
-    SLTypeCheckCtx* _Nullable outCtx) {
-    SLTypeCheckCtx c;
-    uint32_t       capBase;
-    uint32_t       i;
+int HOPTCBuildCheckedContext(
+    HOPArena*     arena,
+    const HOPAst* ast,
+    HOPStrView    src,
+    const HOPTypeCheckOptions* _Nullable options,
+    HOPDiag* _Nullable diag,
+    HOPTypeCheckCtx* _Nullable outCtx) {
+    HOPTypeCheckCtx c;
+    uint32_t        capBase;
+    uint32_t        i;
 
     if (diag != NULL) {
-        *diag = (SLDiag){ 0 };
+        *diag = (HOPDiag){ 0 };
     }
 
     if (arena == NULL || ast == NULL || ast->nodes == NULL || ast->root < 0) {
-        SLTCSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        HOPTCSetDiag(diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
         return -1;
     }
 
@@ -2250,51 +2258,51 @@ int SLTCBuildCheckedContext(
     c.diagSink.ctx = options != NULL ? options->ctx : NULL;
     c.diagSink.onDiag = options != NULL ? options->onDiag : NULL;
 
-    c.types = (SLTCType*)SLArenaAlloc(
-        arena, sizeof(SLTCType) * capBase * 4u, (uint32_t)_Alignof(SLTCType));
-    c.fields = (SLTCField*)SLArenaAlloc(
-        arena, sizeof(SLTCField) * capBase * 4u, (uint32_t)_Alignof(SLTCField));
-    c.namedTypes = (SLTCNamedType*)SLArenaAlloc(
-        arena, sizeof(SLTCNamedType) * capBase, (uint32_t)_Alignof(SLTCNamedType));
-    c.funcs = (SLTCFunction*)SLArenaAlloc(
-        arena, sizeof(SLTCFunction) * capBase, (uint32_t)_Alignof(SLTCFunction));
-    c.funcUsed = (uint8_t*)SLArenaAlloc(
+    c.types = (HOPTCType*)HOPArenaAlloc(
+        arena, sizeof(HOPTCType) * capBase * 4u, (uint32_t)_Alignof(HOPTCType));
+    c.fields = (HOPTCField*)HOPArenaAlloc(
+        arena, sizeof(HOPTCField) * capBase * 4u, (uint32_t)_Alignof(HOPTCField));
+    c.namedTypes = (HOPTCNamedType*)HOPArenaAlloc(
+        arena, sizeof(HOPTCNamedType) * capBase, (uint32_t)_Alignof(HOPTCNamedType));
+    c.funcs = (HOPTCFunction*)HOPArenaAlloc(
+        arena, sizeof(HOPTCFunction) * capBase, (uint32_t)_Alignof(HOPTCFunction));
+    c.funcUsed = (uint8_t*)HOPArenaAlloc(
         arena, sizeof(uint8_t) * capBase, (uint32_t)_Alignof(uint8_t));
-    c.funcParamTypes = (int32_t*)SLArenaAlloc(
+    c.funcParamTypes = (int32_t*)HOPArenaAlloc(
         arena, sizeof(int32_t) * capBase * 8u, (uint32_t)_Alignof(int32_t));
-    c.funcParamNameStarts = (uint32_t*)SLArenaAlloc(
+    c.funcParamNameStarts = (uint32_t*)HOPArenaAlloc(
         arena, sizeof(uint32_t) * capBase * 8u, (uint32_t)_Alignof(uint32_t));
-    c.funcParamNameEnds = (uint32_t*)SLArenaAlloc(
+    c.funcParamNameEnds = (uint32_t*)HOPArenaAlloc(
         arena, sizeof(uint32_t) * capBase * 8u, (uint32_t)_Alignof(uint32_t));
-    c.funcParamFlags = (uint8_t*)SLArenaAlloc(
+    c.funcParamFlags = (uint8_t*)HOPArenaAlloc(
         arena, sizeof(uint8_t) * capBase * 8u, (uint32_t)_Alignof(uint8_t));
-    c.genericArgTypes = (int32_t*)SLArenaAlloc(
+    c.genericArgTypes = (int32_t*)HOPArenaAlloc(
         arena, sizeof(int32_t) * capBase * 16u, (uint32_t)_Alignof(int32_t));
-    c.scratchParamTypes = (int32_t*)SLArenaAlloc(
+    c.scratchParamTypes = (int32_t*)HOPArenaAlloc(
         arena, sizeof(int32_t) * capBase, (uint32_t)_Alignof(int32_t));
-    c.scratchParamFlags = (uint8_t*)SLArenaAlloc(
+    c.scratchParamFlags = (uint8_t*)HOPArenaAlloc(
         arena, sizeof(uint8_t) * capBase, (uint32_t)_Alignof(uint8_t));
-    c.locals = (SLTCLocal*)SLArenaAlloc(
-        arena, sizeof(SLTCLocal) * capBase * 4u, (uint32_t)_Alignof(SLTCLocal));
-    c.localUses = (SLTCLocalUse*)SLArenaAlloc(
-        arena, sizeof(SLTCLocalUse) * capBase * 8u, (uint32_t)_Alignof(SLTCLocalUse));
-    c.variantNarrows = (SLTCVariantNarrow*)SLArenaAlloc(
-        arena, sizeof(SLTCVariantNarrow) * capBase * 4u, (uint32_t)_Alignof(SLTCVariantNarrow));
-    c.warningDedup = (SLTCWarningDedup*)SLArenaAlloc(
-        arena, sizeof(SLTCWarningDedup) * capBase, (uint32_t)_Alignof(SLTCWarningDedup));
-    c.constDiagUses = (SLTCConstDiagUse*)SLArenaAlloc(
-        arena, sizeof(SLTCConstDiagUse) * capBase, (uint32_t)_Alignof(SLTCConstDiagUse));
-    c.constDiagFnInvoked = (uint8_t*)SLArenaAlloc(
+    c.locals = (HOPTCLocal*)HOPArenaAlloc(
+        arena, sizeof(HOPTCLocal) * capBase * 4u, (uint32_t)_Alignof(HOPTCLocal));
+    c.localUses = (HOPTCLocalUse*)HOPArenaAlloc(
+        arena, sizeof(HOPTCLocalUse) * capBase * 8u, (uint32_t)_Alignof(HOPTCLocalUse));
+    c.variantNarrows = (HOPTCVariantNarrow*)HOPArenaAlloc(
+        arena, sizeof(HOPTCVariantNarrow) * capBase * 4u, (uint32_t)_Alignof(HOPTCVariantNarrow));
+    c.warningDedup = (HOPTCWarningDedup*)HOPArenaAlloc(
+        arena, sizeof(HOPTCWarningDedup) * capBase, (uint32_t)_Alignof(HOPTCWarningDedup));
+    c.constDiagUses = (HOPTCConstDiagUse*)HOPArenaAlloc(
+        arena, sizeof(HOPTCConstDiagUse) * capBase, (uint32_t)_Alignof(HOPTCConstDiagUse));
+    c.constDiagFnInvoked = (uint8_t*)HOPArenaAlloc(
         arena, sizeof(uint8_t) * capBase, (uint32_t)_Alignof(uint8_t));
-    c.callTargets = (SLTCCallTarget*)SLArenaAlloc(
-        arena, sizeof(SLTCCallTarget) * capBase * 8u, (uint32_t)_Alignof(SLTCCallTarget));
-    c.constEvalValues = (SLCTFEValue*)SLArenaAlloc(
-        arena, sizeof(SLCTFEValue) * ast->len, (uint32_t)_Alignof(SLCTFEValue));
-    c.constEvalState = (uint8_t*)SLArenaAlloc(
+    c.callTargets = (HOPTCCallTarget*)HOPArenaAlloc(
+        arena, sizeof(HOPTCCallTarget) * capBase * 8u, (uint32_t)_Alignof(HOPTCCallTarget));
+    c.constEvalValues = (HOPCTFEValue*)HOPArenaAlloc(
+        arena, sizeof(HOPCTFEValue) * ast->len, (uint32_t)_Alignof(HOPCTFEValue));
+    c.constEvalState = (uint8_t*)HOPArenaAlloc(
         arena, sizeof(uint8_t) * ast->len, (uint32_t)_Alignof(uint8_t));
-    c.topVarLikeTypes = (int32_t*)SLArenaAlloc(
+    c.topVarLikeTypes = (int32_t*)HOPArenaAlloc(
         arena, sizeof(int32_t) * ast->len, (uint32_t)_Alignof(int32_t));
-    c.topVarLikeTypeState = (uint8_t*)SLArenaAlloc(
+    c.topVarLikeTypeState = (uint8_t*)HOPArenaAlloc(
         arena, sizeof(uint8_t) * ast->len, (uint32_t)_Alignof(uint8_t));
 
     if (c.types == NULL || c.fields == NULL || c.namedTypes == NULL || c.funcs == NULL
@@ -2306,7 +2314,7 @@ int SLTCBuildCheckedContext(
         || c.warningDedup == NULL || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL
         || c.callTargets == NULL)
     {
-        SLTCSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+        HOPTCSetDiag(diag, HOPDiag_ARENA_OOM, 0, 0);
         return -1;
     }
 
@@ -2369,7 +2377,7 @@ int SLTCBuildCheckedContext(
         memset(c.constDiagFnInvoked, 0, sizeof(uint8_t) * c.constDiagFnInvokedCap);
         for (i = 0; i < ast->len; i++) {
             c.topVarLikeTypes[i] = -1;
-            c.constEvalValues[i].kind = SLCTFEValue_INVALID;
+            c.constEvalValues[i].kind = HOPCTFEValue_INVALID;
             c.constEvalValues[i].i64 = 0;
             c.constEvalValues[i].f64 = 0.0;
             c.constEvalValues[i].b = 0;
@@ -2385,94 +2393,94 @@ int SLTCBuildCheckedContext(
         }
     }
 
-    if (SLTCEnsureInitialized(&c) != 0) {
+    if (HOPTCEnsureInitialized(&c) != 0) {
         return -1;
     }
-    c.typeUsize = SLTCFindBuiltinByKind(&c, SLBuiltin_USIZE);
+    c.typeUsize = HOPTCFindBuiltinByKind(&c, HOPBuiltin_USIZE);
     if (c.typeUsize < 0) {
-        return SLTCFailSpan(&c, SLDiag_UNKNOWN_TYPE, 0, 0);
+        return HOPTCFailSpan(&c, HOPDiag_UNKNOWN_TYPE, 0, 0);
     }
 
-    if (SLTCCollectTypeDecls(&c) != 0) {
+    if (HOPTCCollectTypeDecls(&c) != 0) {
         return -1;
     }
     {
-        int32_t namedStrType = SLTCFindNamedTypeByLiteral(&c, "builtin__str");
+        int32_t namedStrType = HOPTCFindNamedTypeByLiteral(&c, "builtin__str");
         if (namedStrType < 0) {
-            namedStrType = SLTCFindBuiltinNamedTypeBySuffix(&c, "__str");
+            namedStrType = HOPTCFindBuiltinNamedTypeBySuffix(&c, "__str");
         }
         if (namedStrType < 0) {
-            namedStrType = SLTCFindNamedTypeByLiteral(&c, "str");
+            namedStrType = HOPTCFindNamedTypeByLiteral(&c, "str");
         }
         if (namedStrType >= 0) {
             c.typeStr = namedStrType;
         }
     }
     {
-        int32_t namedRuneType = SLTCFindNamedTypeByLiteral(&c, "builtin__rune");
+        int32_t namedRuneType = HOPTCFindNamedTypeByLiteral(&c, "builtin__rune");
         if (namedRuneType < 0) {
-            namedRuneType = SLTCFindBuiltinNamedTypeBySuffix(&c, "__rune");
+            namedRuneType = HOPTCFindBuiltinNamedTypeBySuffix(&c, "__rune");
         }
         if (namedRuneType < 0) {
-            namedRuneType = SLTCFindNamedTypeByLiteral(&c, "rune");
+            namedRuneType = HOPTCFindNamedTypeByLiteral(&c, "rune");
         }
         if (namedRuneType >= 0) {
             c.typeRune = namedRuneType;
         }
     }
-    c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "builtin__MemAllocator");
+    c.typeMemAllocator = HOPTCFindNamedTypeByLiteral(&c, "builtin__MemAllocator");
     if (c.typeMemAllocator < 0) {
-        c.typeMemAllocator = SLTCFindBuiltinNamedTypeBySuffix(&c, "__MemAllocator");
-    }
-    if (c.typeMemAllocator < 0) {
-        c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "MemAllocator");
+        c.typeMemAllocator = HOPTCFindBuiltinNamedTypeBySuffix(&c, "__MemAllocator");
     }
     if (c.typeMemAllocator < 0) {
-        c.typeMemAllocator = SLTCFindNamedTypeBySuffix(&c, "__MemAllocator");
+        c.typeMemAllocator = HOPTCFindNamedTypeByLiteral(&c, "MemAllocator");
     }
-    if (SLTCResolveAllTypeAliases(&c) != 0) {
+    if (c.typeMemAllocator < 0) {
+        c.typeMemAllocator = HOPTCFindNamedTypeBySuffix(&c, "__MemAllocator");
+    }
+    if (HOPTCResolveAllTypeAliases(&c) != 0) {
         return -1;
     }
-    if (SLTCCollectFunctionDecls(&c) != 0) {
+    if (HOPTCCollectFunctionDecls(&c) != 0) {
         return -1;
     }
-    if (SLTCFinalizeFunctionTypes(&c) != 0) {
+    if (HOPTCFinalizeFunctionTypes(&c) != 0) {
         return -1;
     }
-    if (SLTCResolveAllNamedTypeFields(&c) != 0) {
+    if (HOPTCResolveAllNamedTypeFields(&c) != 0) {
         return -1;
     }
-    if (SLTCCheckEmbeddedCycles(&c) != 0) {
+    if (HOPTCCheckEmbeddedCycles(&c) != 0) {
         return -1;
     }
-    if (SLTCPropagateVarSizeNamedTypes(&c) != 0) {
+    if (HOPTCPropagateVarSizeNamedTypes(&c) != 0) {
         return -1;
     }
-    if (SLTCCheckTopLevelConstInitializers(&c) != 0) {
+    if (HOPTCCheckTopLevelConstInitializers(&c) != 0) {
         return -1;
     }
-    if (SLTCTypeTopLevelConsts(&c) != 0) {
+    if (HOPTCTypeTopLevelConsts(&c) != 0) {
         return -1;
     }
-    if (SLTCTypeTopLevelVars(&c) != 0) {
+    if (HOPTCTypeTopLevelVars(&c) != 0) {
         return -1;
     }
 
     for (i = 0; i < c.funcLen; i++) {
-        if (SLTCTypeFunctionBody(&c, (int32_t)i) != 0) {
+        if (HOPTCTypeFunctionBody(&c, (int32_t)i) != 0) {
             return -1;
         }
     }
-    if (SLTCValidateTopLevelConstEvaluable(&c) != 0) {
+    if (HOPTCValidateTopLevelConstEvaluable(&c) != 0) {
         return -1;
     }
-    if (SLTCValidateConstDiagUses(&c) != 0) {
+    if (HOPTCValidateConstDiagUses(&c) != 0) {
         return -1;
     }
-    if (SLTCMarkTemplateRootFunctionUses(&c) != 0) {
+    if (HOPTCMarkTemplateRootFunctionUses(&c) != 0) {
         return -1;
     }
-    if (SLTCEmitUnusedSymbolWarnings(&c) != 0) {
+    if (HOPTCEmitUnusedSymbolWarnings(&c) != 0) {
         return -1;
     }
 
@@ -2483,4 +2491,4 @@ int SLTCBuildCheckedContext(
     return 0;
 }
 
-SL_API_END
+HOP_API_END

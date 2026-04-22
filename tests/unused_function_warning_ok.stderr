@@ -1,1 +1,1 @@
-tests/unused_function_warning_ok.sl:4:4: warning: SL2092: function 'helper_unused' is unused
+tests/unused_function_warning_ok.hop:4:4: warning: HOP2092: function 'helper_unused' is unused

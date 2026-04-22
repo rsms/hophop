@@ -1,1 +1,1 @@
-tests/foreign_directives_codegen_ok.sl:2:1: error: SL0000: foreign imports are not supported for platform cli-eval
+tests/foreign_directives_codegen_ok.hop:2:1: error: HOP0000: foreign imports are not supported for platform cli-eval

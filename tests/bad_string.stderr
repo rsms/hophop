@@ -1,1 +1,1 @@
-tests/bad_string.sl:2:15: error: SL1002: unterminated string literal
+tests/bad_string.hop:2:15: error: HOP1002: unterminated string literal

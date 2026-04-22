@@ -1,1 +1,1 @@
-tests/typefunc_import_named_collision_bad/app/main.sl:3:14: error: SL0000: import binding conflict
+tests/typefunc_import_named_collision_bad/app/main.hop:3:14: error: HOP0000: import binding conflict

@@ -1,2 +1,2 @@
-tests/checkpkg_unused_param_remap_name_ok.sl:4:10: warning: SL2095: parameter 'self' is unused
-tests/checkpkg_unused_param_remap_name_ok.sl:4:10: hint: SL2095: rename parameter to '_' to silence this warning
+tests/checkpkg_unused_param_remap_name_ok.hop:4:10: warning: HOP2095: parameter 'self' is unused
+tests/checkpkg_unused_param_remap_name_ok.hop:4:10: hint: HOP2095: rename parameter to '_' to silence this warning

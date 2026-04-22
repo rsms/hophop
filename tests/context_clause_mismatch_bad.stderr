@@ -1,1 +1,1 @@
-tests/context_clause_mismatch_bad.sl:14:16: error: SL1004: unexpected token
+tests/context_clause_mismatch_bad.hop:14:16: error: HOP1004: unexpected token

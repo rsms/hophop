@@ -1,10 +1,10 @@
-# SL
+# HopHop
 
-SL is a small, statically-checked language with a C11 backend.
+HopHop is a small, statically-checked language with a C11 backend.
 
 The project has two parts:
-- `libsl`: lexer, parser, typechecker, diagnostics, and codegen interfaces in C.
-- `slc`: hosted CLI for checking packages, generating C, compiling, and running.
+- `libhop`: lexer, parser, typechecker, diagnostics, and codegen interfaces in C.
+- `hop`: hosted CLI for checking packages, generating C, compiling, and running.
 
 Generated output is designed to stay portable and straightforward to inspect.
 
@@ -19,13 +19,13 @@ Build and test:
 Common CLI flow:
 
 ```sh
-_build/macos-aarch64-debug/slc checkpkg <dir|file.sl>
-_build/macos-aarch64-debug/slc genpkg:c <dir|file.sl> [out.h]
-_build/macos-aarch64-debug/slc compile [--cache-dir <dir>] <dir|file.sl> [-o <exe>]
-_build/macos-aarch64-debug/slc run [--cache-dir <dir>] <dir|file.sl>
+_build/macos-aarch64-debug/hop checkpkg <dir|file.hop>
+_build/macos-aarch64-debug/hop genpkg:c <dir|file.hop> [out.h]
+_build/macos-aarch64-debug/hop compile [--cache-dir <dir>] <dir|file.hop> [-o <exe>]
+_build/macos-aarch64-debug/hop run [--cache-dir <dir>] <dir|file.hop>
 ```
 
-`slc run` defaults to `--platform cli-eval`. Other platform-aware commands still default to
+`hop run` defaults to `--platform cli-eval`. Other platform-aware commands still default to
 `cli-libc` when `--platform` is omitted.
 
 ## Read By Goal
@@ -40,12 +40,12 @@ Understand architecture and compiler behavior:
 - `README.md`
 
 Work on runtime/platform integration:
-- `docs/SLP-5-platform.md`
+- `docs/HEP-5-platform.md`
 - `lib/platform_libc.c`
 
 Work on compiler/library APIs:
-- `src/libsl.h` (`SLLex`, `SLParse`, `SLTypeCheck`, diagnostics)
-- `src/slc.c` (CLI flow)
+- `src/libhop.h` (`HOPLex`, `HOPParse`, `HOPTypeCheck`, diagnostics)
+- `src/hop.c` (CLI flow)
 - `src/codegen_c.c` (C backend)
 
 ## Current Language Surface
@@ -58,39 +58,39 @@ Implemented core includes:
 - variable-size structs
 - typed contexts/capabilities (`context`)
 
-## Feature Proposals (SLP)
+## Feature Proposals (HEP)
 
-- [SLP-1-variable-size-structs.md](SLP-1-variable-size-structs.md)
-- [SLP-2-types.md](SLP-2-types.md)
-- [SLP-3-optional.md](SLP-3-optional.md)
-- [SLP-4-type-functions.md](SLP-4-type-functions.md)
-- [SLP-5-platform.md](SLP-5-platform.md)
-- [SLP-6-struct-composition.md](SLP-6-struct-composition.md)
-- [SLP-7-imports.md](SLP-7-imports.md)
-- [SLP-8-parameter-runs.md](SLP-8-parameter-runs.md)
-- [SLP-9-enum-member-namespaces.md](SLP-9-enum-member-namespaces.md)
-- [SLP-10-variable-type-inference.md](SLP-10-variable-type-inference.md)
-- [SLP-11-function-types.md](SLP-11-function-types.md)
-- [SLP-12-capabilities.md](SLP-12-capabilities.md)
-- [SLP-13-compound-literals.md](SLP-13-compound-literals.md)
-- [SLP-14-anonymous-struct-types.md](SLP-14-anonymous-struct-types.md)
-- [SLP-15-struct-field-defaults.md](SLP-15-struct-field-defaults.md)
-- [SLP-16-anonymous-enums.md](SLP-16-anonymous-enums.md)
-- [SLP-17-platform-context-composition.md](SLP-17-platform-context-composition.md)
-- [SLP-18-reflection.md](SLP-18-reflection.md)
-- [SLP-19-pointer-slice-unification.md](SLP-19-pointer-slice-unification.md)
-- [SLP-20-tagged-unions.md](SLP-20-tagged-unions.md)
-- [SLP-21-variadic-function-parameters.md](SLP-21-variadic-function-parameters.md)
-- [SLP-22-consteval-diagnostics.md](SLP-22-consteval-diagnostics.md)
-- [SLP-23-const-semantics.md](SLP-23-const-semantics.md)
-- [SLP-24-const-params.md](SLP-24-const-params.md)
-- [SLP-25-anytype.md](SLP-25-anytype.md)
-- [SLP-26-format-function.md](SLP-26-format-function.md)
-- [SLP-27-const-numeric-literals.md](SLP-27-const-numeric-literals.md)
-- [SLP-28-call-site-compile-time-validation.md](SLP-28-call-site-compile-time-validation.md)
-- [SLP-29-for-in-loops.md](SLP-29-for-in-loops.md)
-- [SLP-30-iterator-protocol.md](SLP-30-iterator-protocol.md)
-- [SLP-31-nested-types.md](SLP-31-nested-types.md)
-- [SLP-32-wasm-backend.md](SLP-32-wasm-backend.md)
-- [SLP-33-rawptr.md](SLP-33-rawptr.md)
-- [SLP-34-link-time-imports.md](SLP-34-link-time-imports.md)
+- [HEP-1-variable-size-structs.md](HEP-1-variable-size-structs.md)
+- [HEP-2-types.md](HEP-2-types.md)
+- [HEP-3-optional.md](HEP-3-optional.md)
+- [HEP-4-type-functions.md](HEP-4-type-functions.md)
+- [HEP-5-platform.md](HEP-5-platform.md)
+- [HEP-6-struct-composition.md](HEP-6-struct-composition.md)
+- [HEP-7-imports.md](HEP-7-imports.md)
+- [HEP-8-parameter-runs.md](HEP-8-parameter-runs.md)
+- [HEP-9-enum-member-namespaces.md](HEP-9-enum-member-namespaces.md)
+- [HEP-10-variable-type-inference.md](HEP-10-variable-type-inference.md)
+- [HEP-11-function-types.md](HEP-11-function-types.md)
+- [HEP-12-capabilities.md](HEP-12-capabilities.md)
+- [HEP-13-compound-literals.md](HEP-13-compound-literals.md)
+- [HEP-14-anonymous-struct-types.md](HEP-14-anonymous-struct-types.md)
+- [HEP-15-struct-field-defaults.md](HEP-15-struct-field-defaults.md)
+- [HEP-16-anonymous-enums.md](HEP-16-anonymous-enums.md)
+- [HEP-17-platform-context-composition.md](HEP-17-platform-context-composition.md)
+- [HEP-18-reflection.md](HEP-18-reflection.md)
+- [HEP-19-pointer-slice-unification.md](HEP-19-pointer-slice-unification.md)
+- [HEP-20-tagged-unions.md](HEP-20-tagged-unions.md)
+- [HEP-21-variadic-function-parameters.md](HEP-21-variadic-function-parameters.md)
+- [HEP-22-consteval-diagnostics.md](HEP-22-consteval-diagnostics.md)
+- [HEP-23-const-semantics.md](HEP-23-const-semantics.md)
+- [HEP-24-const-params.md](HEP-24-const-params.md)
+- [HEP-25-anytype.md](HEP-25-anytype.md)
+- [HEP-26-format-function.md](HEP-26-format-function.md)
+- [HEP-27-const-numeric-literals.md](HEP-27-const-numeric-literals.md)
+- [HEP-28-call-site-compile-time-validation.md](HEP-28-call-site-compile-time-validation.md)
+- [HEP-29-for-in-loops.md](HEP-29-for-in-loops.md)
+- [HEP-30-iterator-protocol.md](HEP-30-iterator-protocol.md)
+- [HEP-31-nested-types.md](HEP-31-nested-types.md)
+- [HEP-32-wasm-backend.md](HEP-32-wasm-backend.md)
+- [HEP-33-rawptr.md](HEP-33-rawptr.md)
+- [HEP-34-link-time-imports.md](HEP-34-link-time-imports.md)

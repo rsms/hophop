@@ -1,1 +1,1 @@
-tests/struct_field_defaults_union_bad.sl:3:10: error: SL2004: type mismatch
+tests/struct_field_defaults_union_bad.hop:3:10: error: HOP2004: type mismatch

@@ -25,8 +25,8 @@ release=0 # compatibility alias for debug=0
 analyze=0 # run clang analyzer on source code and exit
 toolchain=
 jobs=     # explicit number of -j or --jobs to use for running tests (defaults to CPU count)
-c_backend=1 # build C backend support into slc
-wasm_backend=1 # build Wasm backend support into slc
+c_backend=1 # build C backend support into hop
+wasm_backend=1 # build Wasm backend support into hop
 [ "$*" = "--help" ] && { echo "Usage: $0 [var[=value] ...]"; exit 0; };
 for a in "$@"; do
     case "$a" in
@@ -60,22 +60,22 @@ fi
 
 cli_sources=(
     src/evaluator.c
-    src/slc_support.c
-    src/slc_pkg.c
-    src/slc_mir.c
-    src/slc_codegen.c
-    src/slc_main.c
+    src/hop_support.c
+    src/hop_pkg.c
+    src/hop_mir.c
+    src/hop_codegen.c
+    src/hop_main.c
     src/platform_cli-eval.c
 )
 if [ $c_backend = 1 ]; then
     lib_sources=(
         $(find src -maxdepth 2 -name '*.c' \
             -and -not -name 'evaluator.c' \
-            -and -not -name 'slc_support.c' \
-            -and -not -name 'slc_pkg.c' \
-            -and -not -name 'slc_mir.c' \
-            -and -not -name 'slc_codegen.c' \
-            -and -not -name 'slc_main.c' \
+            -and -not -name 'hop_support.c' \
+            -and -not -name 'hop_pkg.c' \
+            -and -not -name 'hop_mir.c' \
+            -and -not -name 'hop_codegen.c' \
+            -and -not -name 'hop_main.c' \
             -and -not -name 'platform_cli-eval.c' | sort -V)
     )
 else
@@ -83,11 +83,11 @@ else
         $(find src -maxdepth 2 -name '*.c' \
             -and -not -path 'src/codegen_c/*' \
             -and -not -name 'evaluator.c' \
-            -and -not -name 'slc_support.c' \
-            -and -not -name 'slc_pkg.c' \
-            -and -not -name 'slc_mir.c' \
-            -and -not -name 'slc_codegen.c' \
-            -and -not -name 'slc_main.c' \
+            -and -not -name 'hop_support.c' \
+            -and -not -name 'hop_pkg.c' \
+            -and -not -name 'hop_mir.c' \
+            -and -not -name 'hop_codegen.c' \
+            -and -not -name 'hop_main.c' \
             -and -not -name 'platform_cli-eval.c' | sort -V)
     )
 fi
@@ -95,14 +95,14 @@ case " ${lib_sources[*]} " in
 *" $diag_c_out "*) ;;
 *) lib_sources+=( "$diag_c_out" ) ;;
 esac
-libsl_sources=()
+libhop_sources=()
 for srcfile in "${lib_sources[@]}"; do
-    libsl_sources+=( "$srcfile" )
+    libhop_sources+=( "$srcfile" )
 done
 lib_headers=( $(find src -maxdepth 2 -name '*.h' | sort -V) )
-builtin_sl_sources=( $(find lib/builtin -maxdepth 1 -name '*.sl' | sort -V) )
-cli_output=slc
-lib_output=libsl.h
+builtin_hop_sources=( $(find lib/builtin -maxdepth 1 -name '*.hop' | sort -V) )
+cli_output=hop
+lib_output=libhop.h
 toolchain=${toolchain:-/opt/homebrew/opt/llvm}
 [ -z "$toolchain" -a -x "$toolchain/bin/clang" ] || export PATH=$toolchain/bin:$PATH
 format=${format:-$([ $debug = 1 -a -n "$(command -v clang-format)" ] && echo 1 || echo 0 )}
@@ -128,8 +128,8 @@ c_flags=(
     -Werror=return-type \
     -Werror=switch \
     -Werror=enum-conversion \
-    -DSL_WITH_C_BACKEND=$c_backend \
-    -DSL_WITH_WASM_BACKEND=$wasm_backend \
+    -DHOP_WITH_C_BACKEND=$c_backend \
+    -DHOP_WITH_WASM_BACKEND=$wasm_backend \
     $(_if_release -O2 -DNDEBUG -flto=thin) \
 )
 l_flags=()
@@ -161,7 +161,7 @@ c_backend       = $c_backend
 wasm_backend    = $wasm_backend
 cli_sources     = ${cli_sources[@]:-}
 lib_sources     = ${lib_sources[@]:-}
-libsl_sources   = ${libsl_sources[@]:-}
+libhop_sources   = ${libhop_sources[@]:-}
 c_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${c_flags[@]:-}")
 l_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${l_flags[@]:-}")
 _END
@@ -269,7 +269,7 @@ rule copy
     description = copy \$out
 
 rule builtinabigen
-    command = mkdir -p \`dirname \$out\` && python3 tools/gen_builtin_abi.py --builtin-dir lib/builtin --platform lib/platform/platform.sl --header lib/builtin/builtin.h && clang-format --Werror --style=file:clang-format.yaml -i lib/builtin/builtin.h && touch \$out
+    command = mkdir -p \`dirname \$out\` && python3 tools/gen_builtin_abi.py --builtin-dir lib/builtin --platform lib/platform/platform.hop --header lib/builtin/builtin.h && clang-format --Werror --style=file:clang-format.yaml -i lib/builtin/builtin.h && touch \$out
     description = generate \$out
 
 rule diaggen
@@ -283,9 +283,9 @@ for srcfile in "${cli_sources[@]}" "${lib_sources[@]}"; do
     objfile="\$objdir/${srcfile//\//.}.o"
     objfiles+=( "$objfile" )
     echo "build $objfile: cc $srcfile | ${diag_outputs[*]}" >> $NF
-    if [ $srcfile = "src/slc.c" ]; then
-        SL_SOURCE_HASH=$(git rev-parse --short=20 HEAD 2>/dev/null || echo src)
-        echo "  flags = -DSL_SOURCE_HASH=\\\"$SL_SOURCE_HASH\\\"" >> $NF
+    if [ $srcfile = "src/hop_main.c" ]; then
+        HOP_SOURCE_HASH=$(git rev-parse --short=20 HEAD 2>/dev/null || echo src)
+        echo "  flags = -DHOP_SOURCE_HASH=\\\"$HOP_SOURCE_HASH\\\"" >> $NF
     elif [ $srcfile = "src/platform_cli-eval.c" ]; then
         echo "  flags = -isystem lib" >> $NF
     fi
@@ -296,14 +296,14 @@ git_index=$(git rev-parse --git-dir || true)
 
 cat << _END >> $NF
 build ${diag_outputs[*]}: diaggen $diag_json $diag_tool
-build \$builddir/libsl.h: amalgamate ${lib_headers[@]} ${libsl_sources[@]} | tools/amalgamate.sh tools/amalgamate.py ${git_index} ${diag_outputs[*]}
-build \$builddir/lib/builtin/builtin_abi.stamp: builtinabigen ${builtin_sl_sources[@]} lib/platform/platform.sl tools/gen_builtin_abi.py
+build \$builddir/libhop.h: amalgamate ${lib_headers[@]} ${libhop_sources[@]} | tools/amalgamate.sh tools/amalgamate.py ${git_index} ${diag_outputs[*]}
+build \$builddir/lib/builtin/builtin_abi.stamp: builtinabigen ${builtin_hop_sources[@]} lib/platform/platform.hop tools/gen_builtin_abi.py
 build \$builddir/lib/builtin/builtin.h: copy lib/builtin/builtin.h | \$builddir/lib/builtin/builtin_abi.stamp
 build \$builddir/lib/builtin/builtin.c: copy lib/builtin/builtin.c
 build \$builddir/lib/platform/cli-libc/platform.c: copy lib/platform/cli-libc/platform.c
-build \$builddir/slc: link ${objfiles[*]}
+build \$builddir/hop: link ${objfiles[*]}
 
-default \$builddir/libsl.h \$builddir/lib/builtin/builtin.h \$builddir/lib/builtin/builtin.c \$builddir/lib/platform/cli-libc/platform.c \$builddir/slc
+default \$builddir/libhop.h \$builddir/lib/builtin/builtin.h \$builddir/lib/builtin/builtin.c \$builddir/lib/platform/cli-libc/platform.c \$builddir/hop
 _END
 
 if [ ! -f build.ninja ]; then

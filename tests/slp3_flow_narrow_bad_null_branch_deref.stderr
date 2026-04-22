@@ -1,1 +1,0 @@
-tests/slp3_flow_narrow_bad_null_branch_deref.sl:7:10: error: SL2004: type mismatch

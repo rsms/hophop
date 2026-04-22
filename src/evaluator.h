@@ -1,7 +1,7 @@
 #pragma once
-#include "libsl.h"
+#include "libhop.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
 int RunProgramEval(
     const char* entryPath,
@@ -9,4 +9,4 @@ int RunProgramEval(
     const char* _Nullable archTarget,
     int testingBuild);
 
-SL_API_END
+HOP_API_END

@@ -1,1 +1,1 @@
-error: invalid filename build tag in tests/filename_build_tags_missing_close_bad/file[wasm32.sl: missing closing ']'
+error: invalid filename build tag in tests/filename_build_tags_missing_close_bad/file[wasm32.hop: missing closing ']'

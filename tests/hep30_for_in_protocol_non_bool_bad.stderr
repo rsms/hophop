@@ -1,0 +1,1 @@
+tests/hep30_for_in_protocol_non_bool_bad.hop:27:15: error: HOP2091: for-in next_value overload must return ?T

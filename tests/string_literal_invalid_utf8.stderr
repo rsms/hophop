@@ -1,1 +1,1 @@
-tests/string_literal_invalid_utf8.sl:2:12: error: SL1011: string literal must decode to valid UTF-8
+tests/string_literal_invalid_utf8.hop:2:12: error: HOP1011: string literal must decode to valid UTF-8

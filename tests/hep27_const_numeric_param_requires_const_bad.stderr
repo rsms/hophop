@@ -1,0 +1,1 @@
+tests/hep27_const_numeric_param_requires_const_bad.hop:2:8: error: HOP2084: parameter type const_int/const_float requires the 'const' modifier

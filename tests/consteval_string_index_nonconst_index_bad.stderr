@@ -1,1 +1,1 @@
-tests/consteval_string_index_nonconst_index_bad.sl:10:15: error: SL2083: const block failed compile-time evaluation: identifier is not a const value in this context
+tests/consteval_string_index_nonconst_index_bad.hop:10:15: error: HOP2083: const block failed compile-time evaluation: identifier is not a const value in this context

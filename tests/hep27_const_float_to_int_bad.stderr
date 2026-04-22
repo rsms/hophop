@@ -1,0 +1,1 @@
+tests/hep27_const_float_to_int_bad.hop:3:14: error: HOP2004: type mismatch: cannot use expression of type const_float as i32

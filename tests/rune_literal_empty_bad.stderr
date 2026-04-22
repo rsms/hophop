@@ -1,1 +1,1 @@
-tests/rune_literal_empty_bad.sl:2:11: error: SL1014: empty rune literal
+tests/rune_literal_empty_bad.hop:2:11: error: HOP1014: empty rune literal

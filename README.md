@@ -1,16 +1,16 @@
-# slang (SL)
+# hophop (HopHop)
 
-A small language with a C11 backend via `slc`.
+A small language with a C11 backend via `hop`.
 
 Build with `./build.sh` (you'll need `clang` in `PATH`).
 For an evaluator-only binary without the C backend, use `./build.sh c_backend=0`.
 
 Documentation home: `docs/index.md`
 
-## `slc` at a glance
+## `hop` at a glance
 
-After `./build.sh`, use `_build/macos-aarch64-debug/slc`.
-Run `_build/macos-aarch64-debug/slc --help` (or `_build/macos-aarch64-debug/slc`) for the full command reference.
+After `./build.sh`, use `_build/macos-aarch64-debug/hop`.
+Run `_build/macos-aarch64-debug/hop --help` (or `_build/macos-aarch64-debug/hop`) for the full command reference.
 
 - Lexing, AST dump, and single-file checking.
 - Package-level checking (`checkpkg`) with import loading.
@@ -20,14 +20,14 @@ Run `_build/macos-aarch64-debug/slc --help` (or `_build/macos-aarch64-debug/slc`
 - Compile-and-run (`run`) for quick iteration.
 - `--platform` and `--cache-dir` options for target/runtime selection and build cache control.
 
-In `c_backend=0` builds, `slc` still supports parse/check/fmt plus `run --platform cli-eval`,
+In `c_backend=0` builds, `hop` still supports parse/check/fmt plus `run --platform cli-eval`,
 but rejects C-backend commands such as `compile` and `genpkg`.
 
 ## Example
 
-`hello.sl`:
+`hello.hop`:
 
-```sl
+```hop
 import "platform"
 
 fn twice(x i32) i32 {
@@ -45,17 +45,17 @@ fn main() {
 Typecheck and generate C header:
 
 ```sh
-_build/macos-aarch64-debug/slc checkpkg hello.sl
-_build/macos-aarch64-debug/slc genpkg:c hello.sl hello.h
+_build/macos-aarch64-debug/hop checkpkg hello.hop
+_build/macos-aarch64-debug/hop genpkg:c hello.hop hello.h
 ```
 
 Compile and run:
 
 ```sh
-_build/macos-aarch64-debug/slc compile hello.sl -o hello
+_build/macos-aarch64-debug/hop compile hello.hop -o hello
 ./hello
 
-_build/macos-aarch64-debug/slc run hello.sl
+_build/macos-aarch64-debug/hop run hello.hop
 ```
 
 For more programs, see `examples/`.

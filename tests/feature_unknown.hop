@@ -1,0 +1,4 @@
+// Verifies feature unknown.
+import "hophop/feature/bogus"
+
+fn nothing() {}

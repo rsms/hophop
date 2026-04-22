@@ -1,1 +1,1 @@
-tests/slice_bad_range_oob.sl:4:17: error: SL2004: type mismatch
+tests/slice_bad_range_oob.hop:4:17: error: HOP2004: type mismatch

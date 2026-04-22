@@ -1,1 +1,1 @@
-tests/nested_type_disallowed_const_bad.sl:3:5: error: SL1004: unexpected token
+tests/nested_type_disallowed_const_bad.hop:3:5: error: HOP1004: unexpected token

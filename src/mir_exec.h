@@ -2,300 +2,300 @@
 #include "ctfe.h"
 #include "mir.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
-typedef SLCTFEValue SLMirExecValue;
+typedef HOPCTFEValue HOPMirExecValue;
 
-typedef int (*SLMirResolveIdentFn)(
+typedef int (*HOPMirResolveIdentFn)(
     void* _Nullable ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirAssignIdentFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirAssignIdentFn)(
     void* _Nullable ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const SLMirExecValue* _Nonnull inValue,
+    const HOPMirExecValue* _Nonnull inValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
+    HOPDiag* _Nullable diag);
 
-typedef int (*SLMirResolveCallFn)(
+typedef int (*HOPMirResolveCallFn)(
     void* _Nullable ctx,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
-    const SLMirInst* _Nullable inst,
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
+    const HOPMirInst* _Nullable inst,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const SLMirExecValue* _Nonnull args,
+    const HOPMirExecValue* _Nonnull args,
     uint32_t argCount,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirResolveCallPreFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirResolveCallPreFn)(
     void* _Nullable ctx,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
-    const SLMirInst* _Nullable inst,
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
+    const HOPMirInst* _Nullable inst,
     uint32_t nameStart,
     uint32_t nameEnd,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirAdjustCallArgsFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirAdjustCallArgsFn)(
     void* _Nullable ctx,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
-    const SLMirInst* _Nullable inst,
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
+    const HOPMirInst* _Nullable inst,
     uint32_t calleeFunctionIndex,
-    SLMirExecValue* _Nonnull args,
+    HOPMirExecValue* _Nonnull args,
     uint32_t argCount,
-    SLDiag* _Nullable diag);
+    HOPDiag* _Nullable diag);
 
-typedef int (*SLMirHostCallFn)(
+typedef int (*HOPMirHostCallFn)(
     void* _Nullable ctx,
     uint32_t hostId,
-    const SLMirExecValue* _Nonnull args,
+    const HOPMirExecValue* _Nonnull args,
     uint32_t argCount,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
+    HOPDiag* _Nullable diag);
 
-typedef int (*SLMirZeroInitLocalFn)(
+typedef int (*HOPMirZeroInitLocalFn)(
     void* _Nullable ctx,
-    const SLMirTypeRef* _Nonnull typeRef,
-    SLMirExecValue* _Nonnull outValue,
+    const HOPMirTypeRef* _Nonnull typeRef,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirCoerceValueForTypeFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirCoerceValueForTypeFn)(
     void* _Nullable ctx,
-    const SLMirTypeRef* _Nonnull typeRef,
-    SLMirExecValue* _Nonnull inOutValue,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirIndexValueFn)(
+    const HOPMirTypeRef* _Nonnull typeRef,
+    HOPMirExecValue* _Nonnull inOutValue,
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirIndexValueFn)(
     void* _Nullable ctx,
-    const SLMirExecValue* _Nonnull base,
-    const SLMirExecValue* _Nonnull index,
-    SLMirExecValue* _Nonnull outValue,
+    const HOPMirExecValue* _Nonnull base,
+    const HOPMirExecValue* _Nonnull index,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirIndexAddrFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirIndexAddrFn)(
     void* _Nullable ctx,
-    const SLMirExecValue* _Nonnull base,
-    const SLMirExecValue* _Nonnull index,
-    SLMirExecValue* _Nonnull outValue,
+    const HOPMirExecValue* _Nonnull base,
+    const HOPMirExecValue* _Nonnull index,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirSliceValueFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirSliceValueFn)(
     void* _Nullable ctx,
-    const SLMirExecValue* _Nonnull base,
-    const SLMirExecValue* _Nullable start,
-    const SLMirExecValue* _Nullable end,
+    const HOPMirExecValue* _Nonnull base,
+    const HOPMirExecValue* _Nullable start,
+    const HOPMirExecValue* _Nullable end,
     uint16_t flags,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirSequenceLenFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirSequenceLenFn)(
     void* _Nullable ctx,
-    const SLMirExecValue* _Nonnull base,
-    SLMirExecValue* _Nonnull outValue,
+    const HOPMirExecValue* _Nonnull base,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirIterInitFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirIterInitFn)(
     void* _Nullable ctx,
     uint32_t sourceNode,
-    const SLMirExecValue* _Nonnull source,
+    const HOPMirExecValue* _Nonnull source,
     uint16_t flags,
-    SLMirExecValue* _Nonnull outIter,
+    HOPMirExecValue* _Nonnull outIter,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirIterNextFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirIterNextFn)(
     void* _Nullable ctx,
-    const SLMirExecValue* _Nonnull iter,
+    const HOPMirExecValue* _Nonnull iter,
     uint16_t flags,
     int* _Nonnull outHasItem,
-    SLMirExecValue* _Nonnull outKey,
+    HOPMirExecValue* _Nonnull outKey,
     int* _Nonnull outKeyIsConst,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outValueIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirAggGetFieldFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirAggGetFieldFn)(
     void* _Nullable ctx,
-    const SLMirExecValue* _Nonnull base,
+    const HOPMirExecValue* _Nonnull base,
     uint32_t nameStart,
     uint32_t nameEnd,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirAggAddrFieldFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirAggAddrFieldFn)(
     void* _Nullable ctx,
-    const SLMirExecValue* _Nonnull base,
+    const HOPMirExecValue* _Nonnull base,
     uint32_t nameStart,
     uint32_t nameEnd,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirAggSetFieldFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirAggSetFieldFn)(
     void* _Nullable ctx,
-    SLMirExecValue* _Nonnull inOutBase,
+    HOPMirExecValue* _Nonnull inOutBase,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const SLMirExecValue* _Nonnull inValue,
+    const HOPMirExecValue* _Nonnull inValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirMakeAggregateFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirMakeAggregateFn)(
     void* _Nullable ctx,
     uint32_t sourceNode,
     uint32_t fieldCount,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirMakeTupleFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirMakeTupleFn)(
     void* _Nullable ctx,
-    const SLMirExecValue* _Nonnull elems,
+    const HOPMirExecValue* _Nonnull elems,
     uint32_t elemCount,
     uint32_t typeNodeHint,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirMakeVariadicPackFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirMakeVariadicPackFn)(
     void* _Nullable ctx,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
-    const SLMirTypeRef* _Nullable paramTypeRef,
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
+    const HOPMirTypeRef* _Nullable paramTypeRef,
     uint16_t callFlags,
-    const SLMirExecValue* _Nonnull args,
+    const HOPMirExecValue* _Nonnull args,
     uint32_t argCount,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirEvalBinaryFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirEvalBinaryFn)(
     void* _Nullable ctx,
-    SLTokenKind op,
-    const SLMirExecValue* _Nonnull lhs,
-    const SLMirExecValue* _Nonnull rhs,
-    SLMirExecValue* _Nonnull outValue,
+    HOPTokenKind op,
+    const HOPMirExecValue* _Nonnull lhs,
+    const HOPMirExecValue* _Nonnull rhs,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirAllocNewFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirAllocNewFn)(
     void* _Nullable ctx,
     uint32_t sourceNode,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLMirContextGetFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPMirContextGetFn)(
     void* _Nullable ctx,
     uint32_t fieldId,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef SLMirContextGetFn SLMirContextAddrFn;
-typedef int (*SLMirEvalWithContextFn)(
+    HOPDiag* _Nullable diag);
+typedef HOPMirContextGetFn HOPMirContextAddrFn;
+typedef int (*HOPMirEvalWithContextFn)(
     void* _Nullable ctx,
     uint32_t sourceNode,
-    SLMirExecValue* _Nonnull outValue,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
+    HOPDiag* _Nullable diag);
 
-typedef int (*SLMirEnterFunctionFn)(
-    void* _Nullable ctx, uint32_t functionIndex, uint32_t sourceRef, SLDiag* _Nullable diag);
+typedef int (*HOPMirEnterFunctionFn)(
+    void* _Nullable ctx, uint32_t functionIndex, uint32_t sourceRef, HOPDiag* _Nullable diag);
 
-typedef void (*SLMirLeaveFunctionFn)(void* _Nullable ctx);
-typedef int (*SLMirBindFrameFn)(
+typedef void (*HOPMirLeaveFunctionFn)(void* _Nullable ctx);
+typedef int (*HOPMirBindFrameFn)(
     void* _Nullable ctx,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
-    const SLMirExecValue* _Nullable locals,
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
+    const HOPMirExecValue* _Nullable locals,
     uint32_t localCount,
-    SLDiag* _Nullable diag);
-typedef void (*SLMirUnbindFrameFn)(void* _Nullable ctx);
-typedef void (*SLMirSetReasonFn)(
+    HOPDiag* _Nullable diag);
+typedef void (*HOPMirUnbindFrameFn)(void* _Nullable ctx);
+typedef void (*HOPMirSetReasonFn)(
     void* _Nullable ctx, uint32_t start, uint32_t end, const char* _Nonnull reason);
 
 typedef struct {
-    SLStrView src;
-    SLMirResolveIdentFn _Nullable resolveIdent;
-    SLMirAssignIdentFn _Nullable assignIdent;
+    HOPStrView src;
+    HOPMirResolveIdentFn _Nullable resolveIdent;
+    HOPMirAssignIdentFn _Nullable assignIdent;
     void* _Nullable assignIdentCtx;
-    SLMirResolveCallPreFn _Nullable resolveCallPre;
-    SLMirResolveCallFn _Nullable resolveCall;
-    SLMirAdjustCallArgsFn _Nullable adjustCallArgs;
+    HOPMirResolveCallPreFn _Nullable resolveCallPre;
+    HOPMirResolveCallFn _Nullable resolveCall;
+    HOPMirAdjustCallArgsFn _Nullable adjustCallArgs;
     void* _Nullable resolveCtx;
     void* _Nullable adjustCallArgsCtx;
-    SLMirHostCallFn _Nullable hostCall;
+    HOPMirHostCallFn _Nullable hostCall;
     void* _Nullable hostCtx;
-    SLMirZeroInitLocalFn _Nullable zeroInitLocal;
+    HOPMirZeroInitLocalFn _Nullable zeroInitLocal;
     void* _Nullable zeroInitCtx;
-    SLMirCoerceValueForTypeFn _Nullable coerceValueForType;
+    HOPMirCoerceValueForTypeFn _Nullable coerceValueForType;
     void* _Nullable coerceValueCtx;
-    SLMirIndexValueFn _Nullable indexValue;
+    HOPMirIndexValueFn _Nullable indexValue;
     void* _Nullable indexValueCtx;
-    SLMirIndexAddrFn _Nullable indexAddr;
+    HOPMirIndexAddrFn _Nullable indexAddr;
     void* _Nullable indexAddrCtx;
-    SLMirSliceValueFn _Nullable sliceValue;
+    HOPMirSliceValueFn _Nullable sliceValue;
     void* _Nullable sliceValueCtx;
-    SLMirSequenceLenFn _Nullable sequenceLen;
+    HOPMirSequenceLenFn _Nullable sequenceLen;
     void* _Nullable sequenceLenCtx;
-    SLMirIterInitFn _Nullable iterInit;
+    HOPMirIterInitFn _Nullable iterInit;
     void* _Nullable iterInitCtx;
-    SLMirIterNextFn _Nullable iterNext;
+    HOPMirIterNextFn _Nullable iterNext;
     void* _Nullable iterNextCtx;
-    SLMirAggGetFieldFn _Nullable aggGetField;
+    HOPMirAggGetFieldFn _Nullable aggGetField;
     void* _Nullable aggGetFieldCtx;
-    SLMirAggAddrFieldFn _Nullable aggAddrField;
+    HOPMirAggAddrFieldFn _Nullable aggAddrField;
     void* _Nullable aggAddrFieldCtx;
-    SLMirAggSetFieldFn _Nullable aggSetField;
+    HOPMirAggSetFieldFn _Nullable aggSetField;
     void* _Nullable aggSetFieldCtx;
-    SLMirMakeAggregateFn _Nullable makeAggregate;
+    HOPMirMakeAggregateFn _Nullable makeAggregate;
     void* _Nullable makeAggregateCtx;
-    SLMirMakeTupleFn _Nullable makeTuple;
+    HOPMirMakeTupleFn _Nullable makeTuple;
     void* _Nullable makeTupleCtx;
-    SLMirMakeVariadicPackFn _Nullable makeVariadicPack;
+    HOPMirMakeVariadicPackFn _Nullable makeVariadicPack;
     void* _Nullable makeVariadicPackCtx;
-    SLMirEvalBinaryFn _Nullable evalBinary;
+    HOPMirEvalBinaryFn _Nullable evalBinary;
     void* _Nullable evalBinaryCtx;
-    SLMirAllocNewFn _Nullable allocNew;
+    HOPMirAllocNewFn _Nullable allocNew;
     void* _Nullable allocNewCtx;
-    SLMirContextGetFn _Nullable contextGet;
+    HOPMirContextGetFn _Nullable contextGet;
     void* _Nullable contextGetCtx;
-    SLMirContextAddrFn _Nullable contextAddr;
+    HOPMirContextAddrFn _Nullable contextAddr;
     void* _Nullable contextAddrCtx;
-    SLMirEvalWithContextFn _Nullable evalWithContext;
+    HOPMirEvalWithContextFn _Nullable evalWithContext;
     void* _Nullable evalWithContextCtx;
-    SLMirEnterFunctionFn _Nullable enterFunction;
-    SLMirLeaveFunctionFn _Nullable leaveFunction;
+    HOPMirEnterFunctionFn _Nullable enterFunction;
+    HOPMirLeaveFunctionFn _Nullable leaveFunction;
     void* _Nullable functionCtx;
-    SLMirBindFrameFn _Nullable bindFrame;
-    SLMirUnbindFrameFn _Nullable unbindFrame;
+    HOPMirBindFrameFn _Nullable bindFrame;
+    HOPMirUnbindFrameFn _Nullable unbindFrame;
     void* _Nullable frameCtx;
-    SLMirSetReasonFn _Nullable setReason;
+    HOPMirSetReasonFn _Nullable setReason;
     void* _Nullable setReasonCtx;
     uint32_t backwardJumpLimit;
-    SLDiag* _Nullable diag;
-} SLMirExecEnv;
+    HOPDiag* _Nullable diag;
+} HOPMirExecEnv;
 
-int SLMirEvalChunk(
-    SLArena* _Nonnull arena,
-    SLMirChunk chunk,
-    const SLMirExecEnv* _Nullable env,
-    SLMirExecValue* _Nonnull outValue,
+int HOPMirEvalChunk(
+    HOPArena* _Nonnull arena,
+    HOPMirChunk chunk,
+    const HOPMirExecEnv* _Nullable env,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
-int SLMirEvalFunction(
-    SLArena* _Nonnull arena,
-    const SLMirProgram* _Nonnull program,
+int HOPMirEvalFunction(
+    HOPArena* _Nonnull arena,
+    const HOPMirProgram* _Nonnull program,
     uint32_t functionIndex,
-    const SLMirExecValue* _Nullable args,
+    const HOPMirExecValue* _Nullable args,
     uint32_t argCount,
-    const SLMirExecEnv* _Nullable env,
-    SLMirExecValue* _Nonnull outValue,
+    const HOPMirExecEnv* _Nullable env,
+    HOPMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
-void SLMirExecEnvDisableDynamicResolution(SLMirExecEnv* _Nonnull env);
-void SLMirValueSetFunctionRef(SLMirExecValue* _Nonnull value, uint32_t functionIndex);
-int  SLMirValueAsFunctionRef(
-    const SLMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex);
-void SLMirValueSetByteRefProxy(SLMirExecValue* _Nonnull value, uint8_t* _Nullable targetByte);
-int  SLMirValueAsByteRefProxy(
-    const SLMirExecValue* _Nonnull value, uint8_t* _Nullable* _Nullable outTargetByte);
+void HOPMirExecEnvDisableDynamicResolution(HOPMirExecEnv* _Nonnull env);
+void HOPMirValueSetFunctionRef(HOPMirExecValue* _Nonnull value, uint32_t functionIndex);
+int  HOPMirValueAsFunctionRef(
+    const HOPMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex);
+void HOPMirValueSetByteRefProxy(HOPMirExecValue* _Nonnull value, uint8_t* _Nullable targetByte);
+int  HOPMirValueAsByteRefProxy(
+    const HOPMirExecValue* _Nonnull value, uint8_t* _Nullable* _Nullable outTargetByte);
 
-SL_API_END
+HOP_API_END

@@ -1,29 +1,29 @@
-#include "libsl-impl.h"
+#include "libhop-impl.h"
 #include "codegen.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
-#ifndef SL_WITH_C_BACKEND
-    #define SL_WITH_C_BACKEND 1
-#endif
-
-#ifndef SL_WITH_WASM_BACKEND
-    #define SL_WITH_WASM_BACKEND 1
+#ifndef HOP_WITH_C_BACKEND
+    #define HOP_WITH_C_BACKEND 1
 #endif
 
-#if SL_WITH_C_BACKEND
-extern const SLCodegenBackend gSLCodegenBackendC;
-#endif
-#if SL_WITH_WASM_BACKEND
-extern const SLCodegenBackend gSLCodegenBackendWasm;
+#ifndef HOP_WITH_WASM_BACKEND
+    #define HOP_WITH_WASM_BACKEND 1
 #endif
 
-static const SLCodegenBackend* const gSLCodegenBackends[] = {
-#if SL_WITH_WASM_BACKEND
-    &gSLCodegenBackendWasm,
+#if HOP_WITH_C_BACKEND
+extern const HOPCodegenBackend gHOPCodegenBackendC;
 #endif
-#if SL_WITH_C_BACKEND
-    &gSLCodegenBackendC,
+#if HOP_WITH_WASM_BACKEND
+extern const HOPCodegenBackend gHOPCodegenBackendWasm;
+#endif
+
+static const HOPCodegenBackend* const gHOPCodegenBackends[] = {
+#if HOP_WITH_WASM_BACKEND
+    &gHOPCodegenBackendWasm,
+#endif
+#if HOP_WITH_C_BACKEND
+    &gHOPCodegenBackendC,
 #endif
 };
 
@@ -38,19 +38,19 @@ static int BackendNameEq(const char* a, const char* b) {
     return *a == '\0' && *b == '\0';
 }
 
-const SLCodegenBackend* _Nullable SLCodegenFindBackend(const char* _Nullable name) {
+const HOPCodegenBackend* _Nullable HOPCodegenFindBackend(const char* _Nullable name) {
     uint32_t i;
-#if SL_WITH_C_BACKEND
+#if HOP_WITH_C_BACKEND
     if (name == NULL || name[0] == '\0') {
-        return &gSLCodegenBackendC;
+        return &gHOPCodegenBackendC;
     }
 #endif
-    for (i = 0; i < (uint32_t)(sizeof(gSLCodegenBackends) / sizeof(gSLCodegenBackends[0])); i++) {
-        if (BackendNameEq(gSLCodegenBackends[i]->name, name)) {
-            return gSLCodegenBackends[i];
+    for (i = 0; i < (uint32_t)(sizeof(gHOPCodegenBackends) / sizeof(gHOPCodegenBackends[0])); i++) {
+        if (BackendNameEq(gHOPCodegenBackends[i]->name, name)) {
+            return gHOPCodegenBackends[i];
         }
     }
     return NULL;
 }
 
-SL_API_END
+HOP_API_END

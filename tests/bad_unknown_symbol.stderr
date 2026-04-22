@@ -1,1 +1,1 @@
-tests/bad_unknown_symbol.sl:3:9: error: SL2002: unknown identifier 'missing'
+tests/bad_unknown_symbol.hop:3:9: error: HOP2002: unknown identifier 'missing'

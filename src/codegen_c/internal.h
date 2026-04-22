@@ -1,9 +1,9 @@
 #pragma once
 
 #include "../codegen.h"
-#include "../libsl-impl.h"
+#include "../libhop-impl.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 typedef struct {
     const char* _Nullable baseName;
     int      ptrDepth;
@@ -14,81 +14,81 @@ typedef struct {
     int      hasArrayLen;
     int      readOnly;
     int      isOptional;
-} SLTypeRef;
+} HOPTypeRef;
 
 typedef struct {
-    SLArena* _Nullable arena;
+    HOPArena* _Nullable arena;
     char* _Nullable v;
     uint32_t len;
     uint32_t cap;
-} SLBuf;
+} HOPBuf;
 
 typedef struct {
-    char*     name;
-    char*     cName;
-    SLAstKind kind;
-    int       isExported;
-} SLNameMap;
+    char*      name;
+    char*      cName;
+    HOPAstKind kind;
+    int        isExported;
+} HOPNameMap;
 
 typedef struct {
     int32_t nodeId;
-} SLNodeRef;
+} HOPNodeRef;
 
 typedef struct {
-    char*     slName;
-    char*     cName;
-    int32_t   nodeId;
-    uint32_t  tcFuncIndex;
-    SLTypeRef returnType;
-    SLTypeRef* _Nullable paramTypes;
+    char*      hopName;
+    char*      cName;
+    int32_t    nodeId;
+    uint32_t   tcFuncIndex;
+    HOPTypeRef returnType;
+    HOPTypeRef* _Nullable paramTypes;
     char** _Nullable paramNames;
     uint8_t* _Nullable paramFlags;
     uint32_t paramLen;
     uint32_t packArgStart;
     uint32_t packArgCount;
     char* _Nullable packParamName;
-    uint16_t  flags;
-    SLTypeRef contextType;
-    int       hasContext;
-    uint8_t   isVariadic;
-    uint8_t   _reserved[1];
-} SLFnSig;
+    uint16_t   flags;
+    HOPTypeRef contextType;
+    int        hasContext;
+    uint8_t    isVariadic;
+    uint8_t    _reserved[1];
+} HOPFnSig;
 
 enum {
-    SLFnSigFlag_TEMPLATE_BASE = 1u << 0,
-    SLFnSigFlag_TEMPLATE_INSTANCE = 1u << 1,
-    SLFnSigFlag_EXPANDED_ANYPACK = 1u << 2,
+    HOPFnSigFlag_TEMPLATE_BASE = 1u << 0,
+    HOPFnSigFlag_TEMPLATE_INSTANCE = 1u << 1,
+    HOPFnSigFlag_EXPANDED_ANYPACK = 1u << 2,
 };
 
 typedef struct {
-    char*     aliasName;
-    SLTypeRef returnType;
-    SLTypeRef* _Nullable paramTypes;
+    char*      aliasName;
+    HOPTypeRef returnType;
+    HOPTypeRef* _Nullable paramTypes;
     uint32_t paramLen;
     uint8_t  isVariadic;
     uint8_t  _reserved[3];
-} SLFnTypeAlias;
+} HOPFnTypeAlias;
 
 typedef struct {
-    char*     aliasName;
-    SLTypeRef targetType;
-} SLTypeAliasInfo;
+    char*      aliasName;
+    HOPTypeRef targetType;
+} HOPTypeAliasInfo;
 
 typedef struct {
     char* _Nullable ownerType;
     char* _Nullable fieldName;
     char* _Nullable lenFieldName;
-    int       isDependent;
-    int       isEmbedded;
-    int32_t   defaultExprNode;
-    SLTypeRef type;
-} SLFieldInfo;
+    int        isDependent;
+    int        isEmbedded;
+    int32_t    defaultExprNode;
+    HOPTypeRef type;
+} HOPFieldInfo;
 
 typedef struct {
     char* cName;
     int   isUnion;
     int   isVarSize;
-} SLVarSizeType;
+} HOPVarSizeType;
 
 typedef struct {
     char*    key;
@@ -97,96 +97,96 @@ typedef struct {
     uint32_t fieldStart;
     uint16_t fieldCount;
     uint16_t flags;
-} SLAnonTypeInfo;
+} HOPAnonTypeInfo;
 
 enum {
-    SLAnonTypeFlag_EMITTED_GLOBAL = 1u << 0,
+    HOPAnonTypeFlag_EMITTED_GLOBAL = 1u << 0,
 };
 
 typedef struct {
-    char*     name;
-    SLTypeRef type;
-} SLLocal;
+    char*      name;
+    HOPTypeRef type;
+} HOPLocal;
 
 typedef struct {
     int32_t  localIdx;
     char*    enumTypeName;
     uint32_t variantStart;
     uint32_t variantEnd;
-} SLVariantNarrow;
+} HOPVariantNarrow;
 
 typedef struct {
     int32_t nodeId;
     char*   cName;
-} SLFnNodeName;
+} HOPFnNodeName;
 
 typedef struct {
     uint8_t* _Nullable bytes;
     uint32_t len;
-} SLStringLiteral;
+} HOPStringLiteral;
 
 typedef struct {
-    const SLCodegenUnit*    unit;
-    const SLCodegenOptions* options;
-    SLDiag* _Nullable diag;
+    const HOPCodegenUnit*    unit;
+    const HOPCodegenOptions* options;
+    HOPDiag* _Nullable diag;
 
-    SLArena arena;
-    uint8_t arenaInlineStorage[16384];
-    SLAst   ast;
+    HOPArena arena;
+    uint8_t  arenaInlineStorage[16384];
+    HOPAst   ast;
 
-    SLBuf out;
+    HOPBuf out;
 
-    SLNameMap* names;
-    uint32_t   nameLen;
-    uint32_t   nameCap;
+    HOPNameMap* names;
+    uint32_t    nameLen;
+    uint32_t    nameCap;
 
-    SLNodeRef* pubDecls;
-    uint32_t   pubDeclLen;
-    uint32_t   pubDeclCap;
+    HOPNodeRef* pubDecls;
+    uint32_t    pubDeclLen;
+    uint32_t    pubDeclCap;
 
-    SLNodeRef* topDecls;
-    uint32_t   topDeclLen;
-    uint32_t   topDeclCap;
+    HOPNodeRef* topDecls;
+    uint32_t    topDeclLen;
+    uint32_t    topDeclCap;
 
-    SLFnSig* fnSigs;
-    uint32_t fnSigLen;
-    uint32_t fnSigCap;
+    HOPFnSig* fnSigs;
+    uint32_t  fnSigLen;
+    uint32_t  fnSigCap;
 
-    SLFnTypeAlias* fnTypeAliases;
-    uint32_t       fnTypeAliasLen;
-    uint32_t       fnTypeAliasCap;
+    HOPFnTypeAlias* fnTypeAliases;
+    uint32_t        fnTypeAliasLen;
+    uint32_t        fnTypeAliasCap;
 
-    SLTypeAliasInfo* typeAliases;
-    uint32_t         typeAliasLen;
-    uint32_t         typeAliasCap;
+    HOPTypeAliasInfo* typeAliases;
+    uint32_t          typeAliasLen;
+    uint32_t          typeAliasCap;
 
-    SLFieldInfo* fieldInfos;
-    uint32_t     fieldInfoLen;
-    uint32_t     fieldInfoCap;
+    HOPFieldInfo* fieldInfos;
+    uint32_t      fieldInfoLen;
+    uint32_t      fieldInfoCap;
 
-    SLVarSizeType* varSizeTypes;
-    uint32_t       varSizeTypeLen;
-    uint32_t       varSizeTypeCap;
+    HOPVarSizeType* varSizeTypes;
+    uint32_t        varSizeTypeLen;
+    uint32_t        varSizeTypeCap;
 
-    SLAnonTypeInfo* anonTypes;
-    uint32_t        anonTypeLen;
-    uint32_t        anonTypeCap;
+    HOPAnonTypeInfo* anonTypes;
+    uint32_t         anonTypeLen;
+    uint32_t         anonTypeCap;
 
-    SLLocal* locals;
-    uint32_t localLen;
-    uint32_t localCap;
+    HOPLocal* locals;
+    uint32_t  localLen;
+    uint32_t  localCap;
 
-    SLVariantNarrow* variantNarrows;
-    uint32_t         variantNarrowLen;
-    uint32_t         variantNarrowCap;
-    int32_t          activeOptionalNarrowLocalIdx;
-    uint8_t          hasActiveOptionalNarrow;
-    uint8_t          _reserved_optional_narrow[3];
-    SLTypeRef        activeOptionalNarrowStorageType;
+    HOPVariantNarrow* variantNarrows;
+    uint32_t          variantNarrowLen;
+    uint32_t          variantNarrowCap;
+    int32_t           activeOptionalNarrowLocalIdx;
+    uint8_t           hasActiveOptionalNarrow;
+    uint8_t           _reserved_optional_narrow[3];
+    HOPTypeRef        activeOptionalNarrowStorageType;
 
-    SLFnNodeName* fnNodeNames;
-    uint32_t      fnNodeNameLen;
-    uint32_t      fnNodeNameCap;
+    HOPFnNodeName* fnNodeNames;
+    uint32_t       fnNodeNameLen;
+    uint32_t       fnNodeNameCap;
 
     uint32_t* localScopeMarks;
     uint32_t  localScopeLen;
@@ -213,35 +213,35 @@ typedef struct {
     uint32_t  deferScopeLen;
     uint32_t  deferScopeCap;
 
-    SLStringLiteral* stringLits;
-    uint32_t         stringLitLen;
-    uint32_t         stringLitCap;
+    HOPStringLiteral* stringLits;
+    uint32_t          stringLitLen;
+    uint32_t          stringLitCap;
 
     int32_t* stringLitByNode;
     uint32_t stringLitByNodeLen;
 
-    int       emitPrivateFnDeclStatic;
-    SLTypeRef currentReturnType;
-    int       hasCurrentReturnType;
-    SLTypeRef currentContextType;
-    int       hasCurrentContext;
-    int       currentFunctionIsMain;
-    int32_t   activeCallWithNode;
+    int        emitPrivateFnDeclStatic;
+    HOPTypeRef currentReturnType;
+    int        hasCurrentReturnType;
+    HOPTypeRef currentContextType;
+    int        hasCurrentContext;
+    int        currentFunctionIsMain;
+    int32_t    activeCallWithNode;
     const char* _Nullable activePackParamName;
     char** _Nullable activePackElemNames;
-    SLTypeRef* _Nullable activePackElemTypes;
+    HOPTypeRef* _Nullable activePackElemTypes;
     uint32_t activePackElemCount;
     uint32_t fmtTempCounter;
-    SLConstEvalSession* _Nullable constEval;
+    HOPConstEvalSession* _Nullable constEval;
     uint32_t activeTcFuncIndex;
     int32_t  activeTcNamedTypeIndex;
-} SLCBackendC;
+} HOPCBackendC;
 
 enum {
-    SLTypeContainer_SCALAR = 0,
-    SLTypeContainer_ARRAY = 1,
-    SLTypeContainer_SLICE_RO = 2,
-    SLTypeContainer_SLICE_MUT = 3,
+    HOPTypeContainer_SCALAR = 0,
+    HOPTypeContainer_ARRAY = 1,
+    HOPTypeContainer_SLICE_RO = 2,
+    HOPTypeContainer_SLICE_MUT = 3,
 };
 
 typedef struct {
@@ -250,10 +250,10 @@ typedef struct {
     int32_t  initNode;
     uint32_t nameCount;
     uint8_t  grouped;
-} SLCCGVarLikeParts;
+} HOPCCGVarLikeParts;
 
-#define SLCCG_MAX_CALL_ARGS       128u
-#define SLCCG_MAX_CALL_CANDIDATES 256u
+#define HOPCCG_MAX_CALL_ARGS       128u
+#define HOPCCG_MAX_CALL_CANDIDATES 256u
 
 typedef struct {
     int32_t  argNode;
@@ -264,24 +264,24 @@ typedef struct {
     uint32_t implicitNameEnd;
     uint8_t  spread;
     uint8_t  _reserved[3];
-} SLCCallArgInfo;
+} HOPCCallArgInfo;
 
 typedef struct {
-    int       isVariadic;
-    uint32_t  fixedCount;
-    uint32_t  fixedInputCount;
-    uint32_t  spreadArgIndex;
-    int32_t   fixedMappedArgNodes[SLCCG_MAX_CALL_ARGS];
-    int32_t   explicitTailNodes[SLCCG_MAX_CALL_ARGS];
-    int32_t   argParamIndices[SLCCG_MAX_CALL_ARGS];
-    uint32_t  explicitTailCount;
-    SLTypeRef argExpectedTypes[SLCCG_MAX_CALL_ARGS];
-} SLCCallBinding;
+    int        isVariadic;
+    uint32_t   fixedCount;
+    uint32_t   fixedInputCount;
+    uint32_t   spreadArgIndex;
+    int32_t    fixedMappedArgNodes[HOPCCG_MAX_CALL_ARGS];
+    int32_t    explicitTailNodes[HOPCCG_MAX_CALL_ARGS];
+    int32_t    argParamIndices[HOPCCG_MAX_CALL_ARGS];
+    uint32_t   explicitTailCount;
+    HOPTypeRef argExpectedTypes[HOPCCG_MAX_CALL_ARGS];
+} HOPCCallBinding;
 
 enum {
-    SLCCGParamFlag_CONST = 1u << 0,
-    SLCCGParamFlag_ANYTYPE = 1u << 1,
-    SLCCGParamFlag_ANYPACK = 1u << 2,
+    HOPCCGParamFlag_CONST = 1u << 0,
+    HOPCCGParamFlag_ANYTYPE = 1u << 1,
+    HOPCCGParamFlag_ANYPACK = 1u << 2,
 };
 
 size_t StrLen(const char* s);
@@ -302,26 +302,26 @@ int IsIdentContinueChar(unsigned char c);
 
 char ToUpperChar(char ch);
 
-void SetDiag(SLDiag* _Nullable diag, SLDiagCode code, uint32_t start, uint32_t end);
+void SetDiag(HOPDiag* _Nullable diag, HOPDiagCode code, uint32_t start, uint32_t end);
 
 int EnsureCapArena(
-    SLArena* arena, void** ptr, uint32_t* cap, uint32_t need, size_t elemSize, uint32_t align);
+    HOPArena* arena, void** ptr, uint32_t* cap, uint32_t need, size_t elemSize, uint32_t align);
 
-int BufReserve(SLBuf* b, uint32_t extra);
+int BufReserve(HOPBuf* b, uint32_t extra);
 
-int BufAppend(SLBuf* b, const char* s, uint32_t len);
+int BufAppend(HOPBuf* b, const char* s, uint32_t len);
 
-int BufAppendCStr(SLBuf* b, const char* s);
+int BufAppendCStr(HOPBuf* b, const char* s);
 
-int BufAppendChar(SLBuf* b, char c);
+int BufAppendChar(HOPBuf* b, char c);
 
-int BufAppendU32(SLBuf* b, uint32_t value);
+int BufAppendU32(HOPBuf* b, uint32_t value);
 
-int BufAppendSlice(SLBuf* b, const char* src, uint32_t start, uint32_t end);
+int BufAppendSlice(HOPBuf* b, const char* src, uint32_t start, uint32_t end);
 
-char* _Nullable BufFinish(SLBuf* b);
+char* _Nullable BufFinish(HOPBuf* b);
 
-void EmitIndent(SLCBackendC* c, uint32_t depth);
+void EmitIndent(HOPCBackendC* c, uint32_t depth);
 
 int IsBuiltinType(const char* s);
 
@@ -345,96 +345,96 @@ int NameEqPkgPrefixedMethod(
 
 int TypeNamePkgPrefixLen(const char* typeName, uint32_t* outPkgLen);
 
-void TypeRefSetInvalid(SLTypeRef* t);
+void TypeRefSetInvalid(HOPTypeRef* t);
 
-void TypeRefSetScalar(SLTypeRef* t, const char* baseName);
+void TypeRefSetScalar(HOPTypeRef* t, const char* baseName);
 
-void CanonicalizeTypeRefBaseName(const SLCBackendC* c, SLTypeRef* t);
+void CanonicalizeTypeRefBaseName(const HOPCBackendC* c, HOPTypeRef* t);
 
-int SliceStructPtrDepth(const SLTypeRef* t);
+int SliceStructPtrDepth(const HOPTypeRef* t);
 
 int ParseArrayLenLiteral(const char* src, uint32_t start, uint32_t end, uint32_t* outLen);
 
-void SetDiagNode(SLCBackendC* c, int32_t nodeId, SLDiagCode code);
+void SetDiagNode(HOPCBackendC* c, int32_t nodeId, HOPDiagCode code);
 
-int BufAppendI64(SLBuf* b, int64_t value);
+int BufAppendI64(HOPBuf* b, int64_t value);
 
-int EvalConstIntExpr(SLCBackendC* c, int32_t nodeId, int64_t* outValue, int* outIsConst);
-int EvalConstFloatExpr(SLCBackendC* c, int32_t nodeId, double* outValue, int* outIsConst);
+int EvalConstIntExpr(HOPCBackendC* c, int32_t nodeId, int64_t* outValue, int* outIsConst);
+int EvalConstFloatExpr(HOPCBackendC* c, int32_t nodeId, double* outValue, int* outIsConst);
 
 int ConstIntFitsIntegerType(const char* typeName, int64_t value);
 int ConstIntFitsFloatType(const char* typeName, int64_t value);
 int ConstFloatFitsFloatType(const char* typeName, double value);
 
 int EmitConstEvaluatedScalar(
-    SLCBackendC* c, const SLTypeRef* dstType, const SLCTFEValue* value, int* outEmitted);
+    HOPCBackendC* c, const HOPTypeRef* dstType, const HOPCTFEValue* value, int* outEmitted);
 
-char* _Nullable DupSlice(SLCBackendC* c, const char* src, uint32_t start, uint32_t end);
+char* _Nullable DupSlice(HOPCBackendC* c, const char* src, uint32_t start, uint32_t end);
 
 int SliceIsHoleName(const char* src, uint32_t start, uint32_t end);
 
 char* _Nullable DupParamNameForEmit(
-    SLCBackendC* c, const SLAstNode* paramNode, uint32_t paramIndex);
+    HOPCBackendC* c, const HOPAstNode* paramNode, uint32_t paramIndex);
 
-char* _Nullable DupAndReplaceDots(SLCBackendC* c, const char* src, uint32_t start, uint32_t end);
+char* _Nullable DupAndReplaceDots(HOPCBackendC* c, const char* src, uint32_t start, uint32_t end);
 
-char* _Nullable DupCStr(SLCBackendC* c, const char* s);
+char* _Nullable DupCStr(HOPCBackendC* c, const char* s);
 
 int DecodeStringLiteralNode(
-    SLCBackendC* c, const SLAstNode* n, uint8_t** outBytes, uint32_t* outLen);
+    HOPCBackendC* c, const HOPAstNode* n, uint8_t** outBytes, uint32_t* outLen);
 
 int AppendDecodedStringExpr(
-    SLCBackendC* c, int32_t nodeId, uint8_t** bytes, uint32_t* len, uint32_t* cap);
+    HOPCBackendC* c, int32_t nodeId, uint8_t** bytes, uint32_t* len, uint32_t* cap);
 
 int DecodeStringExpr(
-    SLCBackendC* c,
-    int32_t      nodeId,
-    uint8_t**    outBytes,
-    uint32_t*    outLen,
-    uint32_t*    outStart,
-    uint32_t*    outEnd);
+    HOPCBackendC* c,
+    int32_t       nodeId,
+    uint8_t**     outBytes,
+    uint32_t*     outLen,
+    uint32_t*     outStart,
+    uint32_t*     outEnd);
 
-int GetOrAddStringLiteralExpr(SLCBackendC* c, int32_t nodeId, int32_t* outLiteralId);
+int GetOrAddStringLiteralExpr(HOPCBackendC* c, int32_t nodeId, int32_t* outLiteralId);
 
 int GetOrAddStringLiteralBytes(
-    SLCBackendC* c, const uint8_t* bytes, uint32_t len, int32_t* outLiteralId);
+    HOPCBackendC* c, const uint8_t* bytes, uint32_t len, int32_t* outLiteralId);
 
-int CollectStringLiterals(SLCBackendC* c);
+int CollectStringLiterals(HOPCBackendC* c);
 
 int HasDoubleUnderscore(const char* s);
 
-int IsTypeDeclKind(SLAstKind kind);
+int IsTypeDeclKind(HOPAstKind kind);
 
-int IsDeclKind(SLAstKind kind);
+int IsDeclKind(HOPAstKind kind);
 
-int IsPubDeclNode(const SLAstNode* n);
+int IsPubDeclNode(const HOPAstNode* n);
 
-int32_t AstFirstChild(const SLAst* ast, int32_t nodeId);
+int32_t AstFirstChild(const HOPAst* ast, int32_t nodeId);
 
-int32_t AstNextSibling(const SLAst* ast, int32_t nodeId);
+int32_t AstNextSibling(const HOPAst* ast, int32_t nodeId);
 
-const SLAstNode* _Nullable NodeAt(const SLCBackendC* c, int32_t nodeId);
+const HOPAstNode* _Nullable NodeAt(const HOPCBackendC* c, int32_t nodeId);
 
-int GetDeclNameSpan(const SLCBackendC* c, int32_t nodeId, uint32_t* outStart, uint32_t* outEnd);
+int GetDeclNameSpan(const HOPCBackendC* c, int32_t nodeId, uint32_t* outStart, uint32_t* outEnd);
 
-int AddName(SLCBackendC* c, uint32_t nameStart, uint32_t nameEnd, SLAstKind kind, int isExported);
-int BuildTypeDeclFlatName(SLCBackendC* c, int32_t nodeId, char** outName);
+int AddName(HOPCBackendC* c, uint32_t nameStart, uint32_t nameEnd, HOPAstKind kind, int isExported);
+int BuildTypeDeclFlatName(HOPCBackendC* c, int32_t nodeId, char** outName);
 
-const SLNameMap* _Nullable FindNameBySlice(const SLCBackendC* c, uint32_t start, uint32_t end);
-const SLNameMap* _Nullable FindTypeDeclMapByNode(SLCBackendC* c, int32_t nodeId);
+const HOPNameMap* _Nullable FindNameBySlice(const HOPCBackendC* c, uint32_t start, uint32_t end);
+const HOPNameMap* _Nullable FindTypeDeclMapByNode(HOPCBackendC* c, int32_t nodeId);
 
-const SLNameMap* _Nullable FindNameByCString(const SLCBackendC* c, const char* name);
+const HOPNameMap* _Nullable FindNameByCString(const HOPCBackendC* c, const char* name);
 
 int NameHasPrefixSuffix(const char* name, const char* prefix, const char* suffix);
 
-int ResolveMainSemanticContextType(SLCBackendC* c, SLTypeRef* outType);
+int ResolveMainSemanticContextType(HOPCBackendC* c, HOPTypeRef* outType);
 
-const char* ResolveRuneTypeBaseName(SLCBackendC* c);
+const char* ResolveRuneTypeBaseName(HOPCBackendC* c);
 
-const SLNameMap* _Nullable FindNameByCName(const SLCBackendC* c, const char* cName);
+const HOPNameMap* _Nullable FindNameByCName(const HOPCBackendC* c, const char* cName);
 
 int ResolveTypeValueNameExprTypeRef(
-    SLCBackendC* c, uint32_t start, uint32_t end, SLTypeRef* outTypeRef);
+    HOPCBackendC* c, uint32_t start, uint32_t end, HOPTypeRef* outTypeRef);
 
 uint64_t TypeTagHashAddByte(uint64_t h, uint8_t b);
 
@@ -442,843 +442,849 @@ uint64_t TypeTagHashAddU32(uint64_t h, uint32_t v);
 
 uint64_t TypeTagHashAddStr(uint64_t h, const char* s);
 
-uint8_t TypeTagKindFromTypeRef(const SLCBackendC* c, const SLTypeRef* t);
+uint8_t TypeTagKindFromTypeRef(const HOPCBackendC* c, const HOPTypeRef* t);
 
-uint64_t TypeTagFromTypeRef(const SLCBackendC* c, const SLTypeRef* t);
+uint64_t TypeTagFromTypeRef(const HOPCBackendC* c, const HOPTypeRef* t);
 
-int EmitTypeTagLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* t);
+int EmitTypeTagLiteralFromTypeRef(HOPCBackendC* c, const HOPTypeRef* t);
 
-const SLTypeAliasInfo* _Nullable FindTypeAliasInfoByAliasName(
-    const SLCBackendC* c, const char* aliasName);
+const HOPTypeAliasInfo* _Nullable FindTypeAliasInfoByAliasName(
+    const HOPCBackendC* c, const char* aliasName);
 
-int AddTypeAliasInfo(SLCBackendC* c, const char* aliasName, SLTypeRef targetType);
+int AddTypeAliasInfo(HOPCBackendC* c, const char* aliasName, HOPTypeRef targetType);
 
-const char* ResolveScalarAliasBaseName(const SLCBackendC* c, const char* typeName);
+const char* ResolveScalarAliasBaseName(const HOPCBackendC* c, const char* typeName);
 
-int ResolveReflectedTypeValueExprTypeRef(SLCBackendC* c, int32_t exprNode, SLTypeRef* outTypeRef);
+int ResolveReflectedTypeValueExprTypeRef(HOPCBackendC* c, int32_t exprNode, HOPTypeRef* outTypeRef);
 
-int TypeRefIsTypeValue(const SLTypeRef* t);
+int TypeRefIsTypeValue(const HOPTypeRef* t);
 
-const char* _Nullable FindReflectKindTypeName(const SLCBackendC* c);
+const char* _Nullable FindReflectKindTypeName(const HOPCBackendC* c);
 
-const char* TypeRefDisplayBaseName(const SLCBackendC* c, const char* baseName);
+const char* TypeRefDisplayBaseName(const HOPCBackendC* c, const char* baseName);
 
-int EmitTypeNameStringLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* _Nullable t);
+int EmitTypeNameStringLiteralFromTypeRef(HOPCBackendC* c, const HOPTypeRef* _Nullable t);
 
-int EmitTypeTagKindLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* t);
+int EmitTypeTagKindLiteralFromTypeRef(HOPCBackendC* c, const HOPTypeRef* t);
 
-int EmitRuntimeTypeTagKindFromExpr(SLCBackendC* c, int32_t exprNode);
+int EmitRuntimeTypeTagKindFromExpr(HOPCBackendC* c, int32_t exprNode);
 
-int EmitTypeTagIsAliasLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* t);
+int EmitTypeTagIsAliasLiteralFromTypeRef(HOPCBackendC* c, const HOPTypeRef* t);
 
-int EmitRuntimeTypeTagIsAliasFromExpr(SLCBackendC* c, int32_t exprNode);
+int EmitRuntimeTypeTagIsAliasFromExpr(HOPCBackendC* c, int32_t exprNode);
 
-int EmitRuntimeTypeTagCtorUnary(SLCBackendC* c, uint32_t kindTag, uint64_t salt, int32_t argNode);
+int EmitRuntimeTypeTagCtorUnary(HOPCBackendC* c, uint32_t kindTag, uint64_t salt, int32_t argNode);
 
-int EmitRuntimeTypeTagCtorArray(SLCBackendC* c, int32_t elemTagNode, int32_t lenNode);
+int EmitRuntimeTypeTagCtorArray(HOPCBackendC* c, int32_t elemTagNode, int32_t lenNode);
 
-int EmitTypeTagBaseLiteralFromTypeRef(SLCBackendC* c, const SLTypeRef* t);
+int EmitTypeTagBaseLiteralFromTypeRef(HOPCBackendC* c, const HOPTypeRef* t);
 
-int TypeRefIsRuneLike(const SLCBackendC* c, const SLTypeRef* typeRef);
+int TypeRefIsRuneLike(const HOPCBackendC* c, const HOPTypeRef* typeRef);
 
-const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t end);
+const char* _Nullable ResolveTypeName(HOPCBackendC* c, uint32_t start, uint32_t end);
 
-void NormalizeCoreRuntimeTypeName(SLTypeRef* outType);
+void NormalizeCoreRuntimeTypeName(HOPTypeRef* outType);
 
-const char* _Nullable ConstEvalBuiltinCName(SLConstEvalBuiltinKind builtin);
+const char* _Nullable ConstEvalBuiltinCName(HOPConstEvalBuiltinKind builtin);
 
-int ParseTypeRefFromConstEvalTypeId(SLCBackendC* c, int32_t typeId, SLTypeRef* outType);
+int ParseTypeRefFromConstEvalTypeId(HOPCBackendC* c, int32_t typeId, HOPTypeRef* outType);
 
-int ParseTypeRefFromConstEvalTypeTag(SLCBackendC* c, uint64_t typeTag, SLTypeRef* outType);
+int ParseTypeRefFromConstEvalTypeTag(HOPCBackendC* c, uint64_t typeTag, HOPTypeRef* outType);
 
 char* _Nullable BuildTemplateNamedTypeCName(
-    SLCBackendC* c, const char* baseCName, uint32_t tcNamedIndex);
+    HOPCBackendC* c, const char* baseCName, uint32_t tcNamedIndex);
 
-int CollectTemplateInstanceNamedTypes(SLCBackendC* c);
+int CollectTemplateInstanceNamedTypes(HOPCBackendC* c);
 
-int CodegenCNodeHasTypeParams(const SLCBackendC* c, int32_t nodeId);
+int CodegenCNodeHasTypeParams(const HOPCBackendC* c, int32_t nodeId);
 
-int CodegenCPushActiveFunctionTypeContext(SLCBackendC* c, uint32_t tcFuncIndex);
+int CodegenCPushActiveFunctionTypeContext(HOPCBackendC* c, uint32_t tcFuncIndex);
 
-int CodegenCPushActiveNamedTypeContext(SLCBackendC* c, uint32_t tcNamedIndex);
+int CodegenCPushActiveNamedTypeContext(HOPCBackendC* c, uint32_t tcNamedIndex);
 
 void CodegenCPopActiveTypeContext(
-    SLCBackendC* c,
-    uint32_t     savedFuncIndex,
-    int32_t      savedNamedTypeIndex,
-    uint32_t     savedArgStart,
-    uint16_t     savedArgCount,
-    int32_t      savedDeclNode);
+    HOPCBackendC* c,
+    uint32_t      savedFuncIndex,
+    int32_t       savedNamedTypeIndex,
+    uint32_t      savedArgStart,
+    uint16_t      savedArgCount,
+    int32_t       savedDeclNode);
 
-int AddNodeRef(SLCBackendC* c, SLNodeRef** arr, uint32_t* len, uint32_t* cap, int32_t nodeId);
+int AddNodeRef(HOPCBackendC* c, HOPNodeRef** arr, uint32_t* len, uint32_t* cap, int32_t nodeId);
 
-int CollectDeclSets(SLCBackendC* c);
+int CollectDeclSets(HOPCBackendC* c);
 
-const SLFnTypeAlias* _Nullable FindFnTypeAliasByName(const SLCBackendC* c, const char* name);
+const HOPFnTypeAlias* _Nullable FindFnTypeAliasByName(const HOPCBackendC* c, const char* name);
 
 int EnsureFnTypeAlias(
-    SLCBackendC* c,
-    SLTypeRef    returnType,
-    SLTypeRef* _Nullable paramTypes,
+    HOPCBackendC* c,
+    HOPTypeRef    returnType,
+    HOPTypeRef* _Nullable paramTypes,
     uint32_t     paramLen,
     int          isVariadic,
     const char** outAliasName);
 
-const char* _Nullable TupleFieldName(SLCBackendC* c, uint32_t index);
+const char* _Nullable TupleFieldName(HOPCBackendC* c, uint32_t index);
 
-int ParseTypeRef(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
+int ParseTypeRef(HOPCBackendC* c, int32_t nodeId, HOPTypeRef* outType);
 
 int AddFnSig(
-    SLCBackendC* c,
-    const char*  slName,
-    const char*  baseCName,
-    int32_t      nodeId,
-    SLTypeRef    returnType,
-    SLTypeRef* _Nullable paramTypes,
+    HOPCBackendC* c,
+    const char*   hopName,
+    const char*   baseCName,
+    int32_t       nodeId,
+    HOPTypeRef    returnType,
+    HOPTypeRef* _Nullable paramTypes,
     char** _Nullable paramNames,
     uint8_t* _Nullable paramFlags,
-    uint32_t  paramLen,
-    int       isVariadic,
-    int       hasContext,
-    SLTypeRef contextType,
-    uint16_t  sigFlags,
-    uint32_t  tcFuncIndex,
-    uint32_t  packArgStart,
-    uint32_t  packArgCount,
+    uint32_t   paramLen,
+    int        isVariadic,
+    int        hasContext,
+    HOPTypeRef contextType,
+    uint16_t   sigFlags,
+    uint32_t   tcFuncIndex,
+    uint32_t   packArgStart,
+    uint32_t   packArgCount,
     char* _Nullable packParamName);
 
 int AddFieldInfo(
-    SLCBackendC* c,
-    const char*  ownerType,
-    const char*  fieldName,
+    HOPCBackendC* c,
+    const char*   ownerType,
+    const char*   fieldName,
     const char* _Nullable lenFieldName,
-    int32_t   defaultExprNode,
-    int       isDependent,
-    int       isEmbedded,
-    SLTypeRef type);
+    int32_t    defaultExprNode,
+    int        isDependent,
+    int        isEmbedded,
+    HOPTypeRef type);
 
-int AppendTypeRefKey(SLBuf* b, const SLTypeRef* t);
+int AppendTypeRefKey(HOPBuf* b, const HOPTypeRef* t);
 
-const SLAnonTypeInfo* _Nullable FindAnonTypeByKey(const SLCBackendC* c, const char* key);
+const HOPAnonTypeInfo* _Nullable FindAnonTypeByKey(const HOPCBackendC* c, const char* key);
 
-const SLAnonTypeInfo* _Nullable FindAnonTypeByCName(const SLCBackendC* c, const char* cName);
+const HOPAnonTypeInfo* _Nullable FindAnonTypeByCName(const HOPCBackendC* c, const char* cName);
 
 int IsTupleFieldName(const char* name, uint32_t index);
 
-int TypeRefTupleInfo(const SLCBackendC* c, const SLTypeRef* t, const SLAnonTypeInfo** outInfo);
+int TypeRefTupleInfo(const HOPCBackendC* c, const HOPTypeRef* t, const HOPAnonTypeInfo** outInfo);
 
-int IsLocalAnonTypedefVisible(const SLCBackendC* c, const char* cName);
+int IsLocalAnonTypedefVisible(const HOPCBackendC* c, const char* cName);
 
-int MarkLocalAnonTypedefVisible(SLCBackendC* c, const char* cName);
+int MarkLocalAnonTypedefVisible(HOPCBackendC* c, const char* cName);
 
-int IsAnonTypeNameVisible(const SLCBackendC* c, const char* cName);
+int IsAnonTypeNameVisible(const HOPCBackendC* c, const char* cName);
 
-int EmitAnonTypeDeclAtDepth(SLCBackendC* c, const SLAnonTypeInfo* t, uint32_t depth);
+int EmitAnonTypeDeclAtDepth(HOPCBackendC* c, const HOPAnonTypeInfo* t, uint32_t depth);
 
-int EnsureAnonTypeVisible(SLCBackendC* c, const SLTypeRef* type, uint32_t depth);
+int EnsureAnonTypeVisible(HOPCBackendC* c, const HOPTypeRef* type, uint32_t depth);
 
 int EnsureAnonTypeByFields(
-    SLCBackendC*     c,
-    int              isUnion,
-    const char**     fieldNames,
-    const SLTypeRef* fieldTypes,
-    uint32_t         fieldCount,
-    const char**     outCName);
+    HOPCBackendC*     c,
+    int               isUnion,
+    const char**      fieldNames,
+    const HOPTypeRef* fieldTypes,
+    uint32_t          fieldCount,
+    const char**      outCName);
 
-const SLFnSig* _Nullable FindFnSigBySlice(const SLCBackendC* c, uint32_t start, uint32_t end);
+const HOPFnSig* _Nullable FindFnSigBySlice(const HOPCBackendC* c, uint32_t start, uint32_t end);
 
 uint32_t FindFnSigCandidatesBySlice(
-    const SLCBackendC* c, uint32_t start, uint32_t end, const SLFnSig** out, uint32_t cap);
+    const HOPCBackendC* c, uint32_t start, uint32_t end, const HOPFnSig** out, uint32_t cap);
 
 uint32_t FindFnSigCandidatesByName(
-    const SLCBackendC* c, const char* slName, const SLFnSig** out, uint32_t cap);
+    const HOPCBackendC* c, const char* hopName, const HOPFnSig** out, uint32_t cap);
 
-const char* _Nullable FindFnCNameByNodeId(const SLCBackendC* c, int32_t nodeId);
+const char* _Nullable FindFnCNameByNodeId(const HOPCBackendC* c, int32_t nodeId);
 
-const SLFnSig* _Nullable FindFnSigByNodeId(const SLCBackendC* c, int32_t nodeId);
+const HOPFnSig* _Nullable FindFnSigByNodeId(const HOPCBackendC* c, int32_t nodeId);
 uint32_t FindFnSigCandidatesByNodeId(
-    const SLCBackendC* c, int32_t nodeId, const SLFnSig** out, uint32_t cap);
+    const HOPCBackendC* c, int32_t nodeId, const HOPFnSig** out, uint32_t cap);
 
-const SLFieldInfo* _Nullable FindFieldInfo(
-    const SLCBackendC* c, const char* ownerType, uint32_t fieldStart, uint32_t fieldEnd);
+const HOPFieldInfo* _Nullable FindFieldInfo(
+    const HOPCBackendC* c, const char* ownerType, uint32_t fieldStart, uint32_t fieldEnd);
 
-const SLFieldInfo* _Nullable FindEmbeddedFieldInfo(const SLCBackendC* c, const char* ownerType);
+const HOPFieldInfo* _Nullable FindEmbeddedFieldInfo(const HOPCBackendC* c, const char* ownerType);
 
-const SLFieldInfo* _Nullable FindFieldInfoByName(
-    const SLCBackendC* c, const char* ownerType, const char* fieldName);
+const HOPFieldInfo* _Nullable FindFieldInfoByName(
+    const HOPCBackendC* c, const char* ownerType, const char* fieldName);
 
 const char* _Nullable CanonicalFieldOwnerType(
-    const SLCBackendC* c, const char* _Nullable ownerType);
+    const HOPCBackendC* c, const char* _Nullable ownerType);
 
 int ResolveCoreStrFieldBySlice(
-    const SLCBackendC* c, uint32_t fieldStart, uint32_t fieldEnd, const SLFieldInfo** outField);
+    const HOPCBackendC* c, uint32_t fieldStart, uint32_t fieldEnd, const HOPFieldInfo** outField);
 
 int ResolveFieldPathSingleSegment(
-    const SLCBackendC*  c,
-    const char*         ownerTypeIn,
-    uint32_t            fieldStart,
-    uint32_t            fieldEnd,
-    const SLFieldInfo** outPath,
-    uint32_t            cap,
-    uint32_t*           outLen,
-    const SLFieldInfo** _Nullable outField);
+    const HOPCBackendC*  c,
+    const char*          ownerTypeIn,
+    uint32_t             fieldStart,
+    uint32_t             fieldEnd,
+    const HOPFieldInfo** outPath,
+    uint32_t             cap,
+    uint32_t*            outLen,
+    const HOPFieldInfo** _Nullable outField);
 
 int FieldPathNextSegment(
     const char* src, uint32_t pathEnd, uint32_t* ioPos, uint32_t* outSegStart, uint32_t* outSegEnd);
 
 int ResolveFieldPathBySlice(
-    const SLCBackendC*  c,
-    const char*         ownerType,
-    uint32_t            fieldStart,
-    uint32_t            fieldEnd,
-    const SLFieldInfo** outPath,
-    uint32_t            cap,
-    uint32_t*           outLen,
-    const SLFieldInfo** _Nullable outField);
+    const HOPCBackendC*  c,
+    const char*          ownerType,
+    uint32_t             fieldStart,
+    uint32_t             fieldEnd,
+    const HOPFieldInfo** outPath,
+    uint32_t             cap,
+    uint32_t*            outLen,
+    const HOPFieldInfo** _Nullable outField);
 
 int ResolveEmbeddedPathByNames(
-    const SLCBackendC*  c,
-    const char*         srcTypeName,
-    const char*         dstTypeName,
-    const SLFieldInfo** outPath,
-    uint32_t            cap,
-    uint32_t*           outLen);
+    const HOPCBackendC*  c,
+    const char*          srcTypeName,
+    const char*          dstTypeName,
+    const HOPFieldInfo** outPath,
+    uint32_t             cap,
+    uint32_t*            outLen);
 
-int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId);
+int CollectFnAndFieldInfoFromNode(HOPCBackendC* c, int32_t nodeId);
 
-int CollectFnAndFieldInfo(SLCBackendC* c);
+int CollectFnAndFieldInfo(HOPCBackendC* c);
 
-int CollectTypeAliasInfo(SLCBackendC* c);
+int CollectTypeAliasInfo(HOPCBackendC* c);
 
-int CollectFnTypeAliasesFromNode(SLCBackendC* c, int32_t nodeId);
+int CollectFnTypeAliasesFromNode(HOPCBackendC* c, int32_t nodeId);
 
-int CollectFnTypeAliases(SLCBackendC* c);
+int CollectFnTypeAliases(HOPCBackendC* c);
 
-int AddVarSizeType(SLCBackendC* c, const char* cName, int isUnion);
+int AddVarSizeType(HOPCBackendC* c, const char* cName, int isUnion);
 
-SLVarSizeType* _Nullable FindVarSizeType(SLCBackendC* c, const char* cName);
+HOPVarSizeType* _Nullable FindVarSizeType(HOPCBackendC* c, const char* cName);
 
-int CollectVarSizeTypesFromDeclSets(SLCBackendC* c);
+int CollectVarSizeTypesFromDeclSets(HOPCBackendC* c);
 
-int IsVarSizeTypeName(const SLCBackendC* c, const char* cName);
+int IsVarSizeTypeName(const HOPCBackendC* c, const char* cName);
 
-int PropagateVarSizeTypes(SLCBackendC* c);
+int PropagateVarSizeTypes(HOPCBackendC* c);
 
-int PushScope(SLCBackendC* c);
+int PushScope(HOPCBackendC* c);
 
-void PopScope(SLCBackendC* c);
+void PopScope(HOPCBackendC* c);
 
-int PushDeferScope(SLCBackendC* c);
+int PushDeferScope(HOPCBackendC* c);
 
-void PopDeferScope(SLCBackendC* c);
+void PopDeferScope(HOPCBackendC* c);
 
-int AddDeferredStmt(SLCBackendC* c, int32_t stmtNodeId);
+int AddDeferredStmt(HOPCBackendC* c, int32_t stmtNodeId);
 
-int AddLocal(SLCBackendC* c, const char* name, SLTypeRef type);
+int AddLocal(HOPCBackendC* c, const char* name, HOPTypeRef type);
 
-void TrimVariantNarrowsToLocalLen(SLCBackendC* c);
+void TrimVariantNarrowsToLocalLen(HOPCBackendC* c);
 
 int AddVariantNarrow(
-    SLCBackendC* c,
-    int32_t      localIdx,
-    const char*  enumTypeName,
-    uint32_t     variantStart,
-    uint32_t     variantEnd);
+    HOPCBackendC* c,
+    int32_t       localIdx,
+    const char*   enumTypeName,
+    uint32_t      variantStart,
+    uint32_t      variantEnd);
 
-int32_t FindLocalIndexBySlice(const SLCBackendC* c, uint32_t start, uint32_t end);
+int32_t FindLocalIndexBySlice(const HOPCBackendC* c, uint32_t start, uint32_t end);
 
-const SLVariantNarrow* _Nullable FindVariantNarrowByLocalIdx(
-    const SLCBackendC* c, int32_t localIdx);
+const HOPVariantNarrow* _Nullable FindVariantNarrowByLocalIdx(
+    const HOPCBackendC* c, int32_t localIdx);
 
-const SLLocal* _Nullable FindLocalBySlice(const SLCBackendC* c, uint32_t start, uint32_t end);
+const HOPLocal* _Nullable FindLocalBySlice(const HOPCBackendC* c, uint32_t start, uint32_t end);
 
-int FindEnumDeclNodeBySlice(const SLCBackendC* c, uint32_t start, uint32_t end, int32_t* outNodeId);
+int FindEnumDeclNodeBySlice(
+    const HOPCBackendC* c, uint32_t start, uint32_t end, int32_t* outNodeId);
 
 int EnumDeclHasMemberBySlice(
-    const SLCBackendC* c, int32_t enumNodeId, uint32_t memberStart, uint32_t memberEnd);
+    const HOPCBackendC* c, int32_t enumNodeId, uint32_t memberStart, uint32_t memberEnd);
 
 int ResolveEnumSelectorByFieldExpr(
-    const SLCBackendC* c,
-    int32_t            fieldExprNode,
-    const SLNameMap** _Nullable outEnumMap,
+    const HOPCBackendC* c,
+    int32_t             fieldExprNode,
+    const HOPNameMap** _Nullable outEnumMap,
     int32_t* _Nullable outEnumDeclNode,
     int* _Nullable outEnumHasPayload,
     uint32_t* _Nullable outVariantStart,
     uint32_t* _Nullable outVariantEnd);
 
-int EnumDeclHasPayload(const SLCBackendC* c, int32_t enumNodeId);
+int EnumDeclHasPayload(const HOPCBackendC* c, int32_t enumNodeId);
 
-int32_t EnumVariantTagExprNode(const SLCBackendC* c, int32_t variantNode);
+int32_t EnumVariantTagExprNode(const HOPCBackendC* c, int32_t variantNode);
 
-int FindEnumDeclNodeByCName(const SLCBackendC* c, const char* enumCName, int32_t* outNodeId);
+int FindEnumDeclNodeByCName(const HOPCBackendC* c, const char* enumCName, int32_t* outNodeId);
 
 int FindEnumVariantNodeBySlice(
-    const SLCBackendC* c,
-    int32_t            enumNodeId,
-    uint32_t           variantStart,
-    uint32_t           variantEnd,
-    int32_t*           outVariantNode);
+    const HOPCBackendC* c,
+    int32_t             enumNodeId,
+    uint32_t            variantStart,
+    uint32_t            variantEnd,
+    int32_t*            outVariantNode);
 
 int ResolveEnumVariantPayloadFieldType(
-    SLCBackendC* c,
-    const char*  enumTypeName,
-    uint32_t     variantStart,
-    uint32_t     variantEnd,
-    uint32_t     fieldStart,
-    uint32_t     fieldEnd,
-    SLTypeRef*   outType);
+    HOPCBackendC* c,
+    const char*   enumTypeName,
+    uint32_t      variantStart,
+    uint32_t      variantEnd,
+    uint32_t      fieldStart,
+    uint32_t      fieldEnd,
+    HOPTypeRef*   outType);
 
 int ResolveEnumVariantTypeNameNode(
-    const SLCBackendC* c,
-    int32_t            typeNode,
-    const char**       outEnumCName,
-    uint32_t*          outVariantStart,
-    uint32_t*          outVariantEnd);
+    const HOPCBackendC* c,
+    int32_t             typeNode,
+    const char**        outEnumCName,
+    uint32_t*           outVariantStart,
+    uint32_t*           outVariantEnd);
 
 int CasePatternParts(
-    const SLCBackendC* c, int32_t caseLabelNode, int32_t* outExprNode, int32_t* outAliasNode);
+    const HOPCBackendC* c, int32_t caseLabelNode, int32_t* outExprNode, int32_t* outAliasNode);
 
 int DecodeEnumVariantPatternExpr(
-    const SLCBackendC* c,
-    int32_t            exprNode,
-    const SLNameMap** _Nullable outEnumMap,
+    const HOPCBackendC* c,
+    int32_t             exprNode,
+    const HOPNameMap** _Nullable outEnumMap,
     int32_t* _Nullable outEnumDeclNode,
     int* _Nullable outEnumHasPayload,
     uint32_t* _Nullable outVariantStart,
     uint32_t* _Nullable outVariantEnd);
 
-int ResolvePayloadEnumType(const SLCBackendC* c, const SLTypeRef* t, const char** outEnumName);
+int ResolvePayloadEnumType(const HOPCBackendC* c, const HOPTypeRef* t, const char** outEnumName);
 
-int AppendMappedIdentifier(SLCBackendC* c, uint32_t start, uint32_t end);
+int AppendMappedIdentifier(HOPCBackendC* c, uint32_t start, uint32_t end);
 
-int EmitTypeNameWithDepth(SLCBackendC* c, const SLTypeRef* type);
+int EmitTypeNameWithDepth(HOPCBackendC* c, const HOPTypeRef* type);
 
-int EmitTypeWithName(SLCBackendC* c, int32_t typeNode, const char* name);
+int EmitTypeWithName(HOPCBackendC* c, int32_t typeNode, const char* name);
 
 int EmitAnonInlineTypeWithName(
-    SLCBackendC* c, const char* ownerType, int isUnion, const char* name);
+    HOPCBackendC* c, const char* ownerType, int isUnion, const char* name);
 
-int EmitTypeRefWithName(SLCBackendC* c, const SLTypeRef* t, const char* name);
+int EmitTypeRefWithName(HOPCBackendC* c, const HOPTypeRef* t, const char* name);
 
-int EmitTypeForCast(SLCBackendC* c, int32_t typeNode);
+int EmitTypeForCast(HOPCBackendC* c, int32_t typeNode);
 
-void SetPreferredAllocatorPtrType(SLTypeRef* outType);
+void SetPreferredAllocatorPtrType(HOPTypeRef* outType);
 
-int IsTypeNodeKind(SLAstKind kind);
+int IsTypeNodeKind(HOPAstKind kind);
 
 int DecodeNewExprNodes(
-    SLCBackendC* c,
-    int32_t      nodeId,
-    int32_t*     outTypeNode,
-    int32_t*     outCountNode,
-    int32_t*     outInitNode,
-    int32_t*     outAllocNode);
+    HOPCBackendC* c,
+    int32_t       nodeId,
+    int32_t*      outTypeNode,
+    int32_t*      outCountNode,
+    int32_t*      outInitNode,
+    int32_t*      outAllocNode);
 
-uint32_t ListCount(const SLAst* ast, int32_t listNode);
+uint32_t ListCount(const HOPAst* ast, int32_t listNode);
 
-int32_t ListItemAt(const SLAst* ast, int32_t listNode, uint32_t index);
+int32_t ListItemAt(const HOPAst* ast, int32_t listNode, uint32_t index);
 
-int ResolveVarLikeParts(SLCBackendC* c, int32_t nodeId, SLCCGVarLikeParts* out);
+int ResolveVarLikeParts(HOPCBackendC* c, int32_t nodeId, HOPCCGVarLikeParts* out);
 
-int InferVarLikeDeclType(SLCBackendC* c, int32_t initNode, SLTypeRef* outType);
+int InferVarLikeDeclType(HOPCBackendC* c, int32_t initNode, HOPTypeRef* outType);
 
 int FindTopLevelVarLikeNodeBySliceEx(
-    const SLCBackendC* c,
-    uint32_t           start,
-    uint32_t           end,
-    int32_t*           outNodeId,
+    const HOPCBackendC* c,
+    uint32_t            start,
+    uint32_t            end,
+    int32_t*            outNodeId,
     int32_t* _Nullable outNameIndex);
 
 int FindTopLevelVarLikeNodeBySlice(
-    const SLCBackendC* c, uint32_t start, uint32_t end, int32_t* outNodeId);
+    const HOPCBackendC* c, uint32_t start, uint32_t end, int32_t* outNodeId);
 
 int InferTopLevelVarLikeType(
-    SLCBackendC* c, int32_t nodeId, uint32_t nameStart, uint32_t nameEnd, SLTypeRef* outType);
+    HOPCBackendC* c, int32_t nodeId, uint32_t nameStart, uint32_t nameEnd, HOPTypeRef* outType);
 
 int ResolveTopLevelConstTypeValueBySlice(
-    SLCBackendC* c, uint32_t start, uint32_t end, SLTypeRef* outType);
+    HOPCBackendC* c, uint32_t start, uint32_t end, HOPTypeRef* outType);
 
-int TypeRefEqual(const SLTypeRef* a, const SLTypeRef* b);
+int TypeRefEqual(const HOPTypeRef* a, const HOPTypeRef* b);
 
-int ExpandAliasSourceType(const SLCBackendC* c, const SLTypeRef* src, SLTypeRef* outExpanded);
+int ExpandAliasSourceType(const HOPCBackendC* c, const HOPTypeRef* src, HOPTypeRef* outExpanded);
 
 int TypeRefAssignableCost(
-    SLCBackendC* c, const SLTypeRef* dst, const SLTypeRef* src, uint8_t* outCost);
+    HOPCBackendC* c, const HOPTypeRef* dst, const HOPTypeRef* src, uint8_t* outCost);
 
 int CostVecCmp(const uint8_t* a, const uint8_t* b, uint32_t len);
 
-int ExprNeedsExpectedType(const SLCBackendC* c, int32_t exprNode);
+int ExprNeedsExpectedType(const HOPCBackendC* c, int32_t exprNode);
 
-int32_t UnwrapCallArgExprNode(const SLCBackendC* c, int32_t argNode);
+int32_t UnwrapCallArgExprNode(const HOPCBackendC* c, int32_t argNode);
 
 int CollectCallArgInfo(
-    SLCBackendC*    c,
-    int32_t         callNode,
-    int32_t         calleeNode,
-    int             includeReceiver,
-    int32_t         receiverNode,
-    SLCCallArgInfo* outArgs,
-    SLTypeRef*      outArgTypes,
-    uint32_t*       outArgCount);
+    HOPCBackendC*    c,
+    int32_t          callNode,
+    int32_t          calleeNode,
+    int              includeReceiver,
+    int32_t          receiverNode,
+    HOPCCallArgInfo* outArgs,
+    HOPTypeRef*      outArgTypes,
+    uint32_t*        outArgCount);
 
 void GatherCallCandidatesBySlice(
-    const SLCBackendC* c,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
-    const SLFnSig**    outCandidates,
-    uint32_t*          outCandidateLen,
-    int*               outNameFound);
+    const HOPCBackendC* c,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    const HOPFnSig**    outCandidates,
+    uint32_t*           outCandidateLen,
+    int*                outNameFound);
 
 void GatherCallCandidatesByPkgMethod(
-    const SLCBackendC* c,
-    uint32_t           pkgStart,
-    uint32_t           pkgEnd,
-    uint32_t           methodStart,
-    uint32_t           methodEnd,
-    const SLFnSig**    outCandidates,
-    uint32_t*          outCandidateLen,
-    int*               outNameFound);
+    const HOPCBackendC* c,
+    uint32_t            pkgStart,
+    uint32_t            pkgEnd,
+    uint32_t            methodStart,
+    uint32_t            methodEnd,
+    const HOPFnSig**    outCandidates,
+    uint32_t*           outCandidateLen,
+    int*                outNameFound);
 
 int MapCallArgsToParams(
-    const SLCBackendC*    c,
-    const SLFnSig*        sig,
-    const SLCCallArgInfo* callArgs,
-    uint32_t              argCount,
-    uint32_t              firstPositionalArgIndex,
-    int32_t*              outMappedArgNodes,
-    SLTypeRef*            outMappedArgTypes,
-    const SLTypeRef*      argTypes);
+    const HOPCBackendC*    c,
+    const HOPFnSig*        sig,
+    const HOPCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int32_t*               outMappedArgNodes,
+    HOPTypeRef*            outMappedArgTypes,
+    const HOPTypeRef*      argTypes);
 
 int PrepareCallBinding(
-    const SLCBackendC*    c,
-    const SLFnSig*        sig,
-    const SLCCallArgInfo* callArgs,
-    const int32_t*        argNodes,
-    const SLTypeRef*      argTypes,
-    uint32_t              argCount,
-    uint32_t              firstPositionalArgIndex,
-    int                   allowNamedMapping,
-    SLCCallBinding*       out);
+    const HOPCBackendC*    c,
+    const HOPFnSig*        sig,
+    const HOPCCallArgInfo* callArgs,
+    const int32_t*         argNodes,
+    const HOPTypeRef*      argTypes,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int                    allowNamedMapping,
+    HOPCCallBinding*       out);
 
 int ResolveCallTargetFromCandidates(
-    SLCBackendC*          c,
-    const SLFnSig**       candidates,
-    uint32_t              candidateLen,
-    int                   nameFound,
-    const SLCCallArgInfo* callArgs,
-    const int32_t*        argNodes,
-    const SLTypeRef*      argTypes,
-    uint32_t              argCount,
-    uint32_t              firstPositionalArgIndex,
-    int                   autoRefFirstArg,
-    SLCCallBinding* _Nullable outBinding,
-    const SLFnSig** outSig,
-    const char**    outCalleeName);
+    HOPCBackendC*          c,
+    const HOPFnSig**       candidates,
+    uint32_t               candidateLen,
+    int                    nameFound,
+    const HOPCCallArgInfo* callArgs,
+    const int32_t*         argNodes,
+    const HOPTypeRef*      argTypes,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int                    autoRefFirstArg,
+    HOPCCallBinding* _Nullable outBinding,
+    const HOPFnSig** outSig,
+    const char**     outCalleeName);
 
 int ResolveCallTarget(
-    SLCBackendC*          c,
-    uint32_t              nameStart,
-    uint32_t              nameEnd,
-    const SLCCallArgInfo* callArgs,
-    const int32_t*        argNodes,
-    const SLTypeRef*      argTypes,
-    uint32_t              argCount,
-    uint32_t              firstPositionalArgIndex,
-    int                   autoRefFirstArg,
-    SLCCallBinding* _Nullable outBinding,
-    const SLFnSig** outSig,
-    const char**    outCalleeName);
+    HOPCBackendC*          c,
+    uint32_t               nameStart,
+    uint32_t               nameEnd,
+    const HOPCCallArgInfo* callArgs,
+    const int32_t*         argNodes,
+    const HOPTypeRef*      argTypes,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int                    autoRefFirstArg,
+    HOPCCallBinding* _Nullable outBinding,
+    const HOPFnSig** outSig,
+    const char**     outCalleeName);
 
 int ResolveCallTargetByPkgMethod(
-    SLCBackendC*          c,
-    uint32_t              pkgStart,
-    uint32_t              pkgEnd,
-    uint32_t              methodStart,
-    uint32_t              methodEnd,
-    const SLCCallArgInfo* callArgs,
-    const int32_t*        argNodes,
-    const SLTypeRef*      argTypes,
-    uint32_t              argCount,
-    uint32_t              firstPositionalArgIndex,
-    int                   autoRefFirstArg,
-    SLCCallBinding* _Nullable outBinding,
-    const SLFnSig** outSig,
-    const char**    outCalleeName);
+    HOPCBackendC*          c,
+    uint32_t               pkgStart,
+    uint32_t               pkgEnd,
+    uint32_t               methodStart,
+    uint32_t               methodEnd,
+    const HOPCCallArgInfo* callArgs,
+    const int32_t*         argNodes,
+    const HOPTypeRef*      argTypes,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int                    autoRefFirstArg,
+    HOPCCallBinding* _Nullable outBinding,
+    const HOPFnSig** outSig,
+    const char**     outCalleeName);
 
 int InferCompoundLiteralType(
-    SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType, SLTypeRef* outType);
+    HOPCBackendC* c, int32_t nodeId, const HOPTypeRef* _Nullable expectedType, HOPTypeRef* outType);
 
 int InferExprTypeExpected(
-    SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType, SLTypeRef* outType);
+    HOPCBackendC* c, int32_t nodeId, const HOPTypeRef* _Nullable expectedType, HOPTypeRef* outType);
 
-int InferExprType_IDENT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_IDENT(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
 int InferExprType_COMPOUND_LIT(
-    SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+    HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
 int InferExprType_CALL_WITH_CONTEXT(
-    SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+    HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_CALL(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_NEW(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_NEW(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_UNARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_UNARY(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
 int InferExprType_FIELD_EXPR(
-    SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+    HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_INDEX(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_INDEX(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_CAST(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_CAST(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_SIZEOF(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_SIZEOF(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_STRING(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_STRING(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_BOOL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_BOOL(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_INT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_INT(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_RUNE(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_RUNE(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_FLOAT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_FLOAT(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_NULL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_NULL(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_UNWRAP(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_UNWRAP(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
 int InferExprType_TUPLE_EXPR(
-    SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+    HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType_CALL_ARG(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTypeRef* outType);
+int InferExprType_CALL_ARG(
+    HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n, HOPTypeRef* outType);
 
-int InferExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
+int InferExprType(HOPCBackendC* c, int32_t nodeId, HOPTypeRef* outType);
 
-int InferNewExprType(SLCBackendC* c, int32_t nodeId, SLTypeRef* outType);
+int InferNewExprType(HOPCBackendC* c, int32_t nodeId, HOPTypeRef* outType);
 
-const char* UnaryOpString(SLTokenKind op);
+const char* UnaryOpString(HOPTokenKind op);
 
-const char* BinaryOpString(SLTokenKind op);
+const char* BinaryOpString(HOPTokenKind op);
 
-int EmitHexByte(SLBuf* b, uint8_t value);
+int EmitHexByte(HOPBuf* b, uint8_t value);
 
-int BufAppendHexU64Literal(SLBuf* b, uint64_t value);
+int BufAppendHexU64Literal(HOPBuf* b, uint64_t value);
 
-int EmitStringLiteralValue(SLCBackendC* c, int32_t literalId, int writable);
+int EmitStringLiteralValue(HOPCBackendC* c, int32_t literalId, int writable);
 
-int EmitStringLiteralPool(SLCBackendC* c);
+int EmitStringLiteralPool(HOPCBackendC* c);
 
 int IsStrBaseName(const char* _Nullable s);
 
-int TypeRefIsStr(const SLTypeRef* t);
+int TypeRefIsStr(const HOPTypeRef* t);
 
-int TypeRefContainerWritable(const SLTypeRef* t);
+int TypeRefContainerWritable(const HOPTypeRef* t);
 
-int EmitElementTypeName(SLCBackendC* c, const SLTypeRef* t, int asConst);
+int EmitElementTypeName(HOPCBackendC* c, const HOPTypeRef* t, int asConst);
 
-int EmitLenExprFromType(SLCBackendC* c, int32_t exprNode, const SLTypeRef* t);
+int EmitLenExprFromType(HOPCBackendC* c, int32_t exprNode, const HOPTypeRef* t);
 
 int EmitElemPtrExpr(
-    SLCBackendC* c, int32_t baseNode, const SLTypeRef* baseType, int wantWritableElem);
+    HOPCBackendC* c, int32_t baseNode, const HOPTypeRef* baseType, int wantWritableElem);
 
-int EmitSliceExpr(SLCBackendC* c, int32_t nodeId);
+int EmitSliceExpr(HOPCBackendC* c, int32_t nodeId);
 
-int TypeRefIsPointerLike(const SLTypeRef* t);
-int TypeRefIsPointerBackedOptional(const SLTypeRef* t);
-int TypeRefIsTaggedOptional(const SLTypeRef* t);
-int TypeRefLowerForStorage(SLCBackendC* c, const SLTypeRef* type, SLTypeRef* outType);
+int TypeRefIsPointerLike(const HOPTypeRef* t);
+int TypeRefIsPointerBackedOptional(const HOPTypeRef* t);
+int TypeRefIsTaggedOptional(const HOPTypeRef* t);
+int TypeRefLowerForStorage(HOPCBackendC* c, const HOPTypeRef* type, HOPTypeRef* outType);
 
-int TypeRefIsOwnedRuntimeArrayStruct(const SLTypeRef* t);
+int TypeRefIsOwnedRuntimeArrayStruct(const HOPTypeRef* t);
 
-int TypeRefIsNamedDeclKind(const SLCBackendC* c, const SLTypeRef* t, SLAstKind wantKind);
+int TypeRefIsNamedDeclKind(const HOPCBackendC* c, const HOPTypeRef* t, HOPAstKind wantKind);
 
-int TypeRefDerefReadonlyRefLike(const SLTypeRef* in, SLTypeRef* outBase);
+int TypeRefDerefReadonlyRefLike(const HOPTypeRef* in, HOPTypeRef* outBase);
 
 int ResolveComparisonHookArgCost(
-    SLCBackendC*     c,
-    const SLTypeRef* paramType,
-    const SLTypeRef* argType,
-    uint8_t*         outCost,
-    int*             outAutoRef);
+    HOPCBackendC*     c,
+    const HOPTypeRef* paramType,
+    const HOPTypeRef* argType,
+    uint8_t*          outCost,
+    int*              outAutoRef);
 
 int ResolveComparisonHook(
-    SLCBackendC*     c,
-    const char*      hookName,
-    const SLTypeRef* lhsType,
-    const SLTypeRef* rhsType,
-    const SLFnSig**  outSig,
-    const char**     outCalleeName,
-    int              outAutoRef[2]);
+    HOPCBackendC*     c,
+    const char*       hookName,
+    const HOPTypeRef* lhsType,
+    const HOPTypeRef* rhsType,
+    const HOPFnSig**  outSig,
+    const char**      outCalleeName,
+    int               outAutoRef[2]);
 
-int EmitExprAutoRefCoerced(SLCBackendC* c, int32_t argNode, const SLTypeRef* paramType);
+int EmitExprAutoRefCoerced(HOPCBackendC* c, int32_t argNode, const HOPTypeRef* paramType);
 
-int EmitExprAsSliceRO(SLCBackendC* c, int32_t exprNode, const SLTypeRef* exprType);
+int EmitExprAsSliceRO(HOPCBackendC* c, int32_t exprNode, const HOPTypeRef* exprType);
 
 int EmitComparisonHookCall(
-    SLCBackendC*   c,
-    const SLFnSig* sig,
-    const char*    calleeName,
-    int32_t        lhsNode,
-    int32_t        rhsNode,
-    const int      autoRef[2]);
+    HOPCBackendC*   c,
+    const HOPFnSig* sig,
+    const char*     calleeName,
+    int32_t         lhsNode,
+    int32_t         rhsNode,
+    const int       autoRef[2]);
 
-int EmitPointerIdentityExpr(SLCBackendC* c, int32_t exprNode, const SLTypeRef* exprType);
+int EmitPointerIdentityExpr(HOPCBackendC* c, int32_t exprNode, const HOPTypeRef* exprType);
 
-int EmitNewAllocArgExpr(SLCBackendC* c, int32_t allocArg);
+int EmitNewAllocArgExpr(HOPCBackendC* c, int32_t allocArg);
 
-const char* _Nullable ResolveVarSizeValueBaseName(SLCBackendC* c, const SLTypeRef* valueType);
+const char* _Nullable ResolveVarSizeValueBaseName(HOPCBackendC* c, const HOPTypeRef* valueType);
 
-int EmitConcatCallExpr(SLCBackendC* c, int32_t calleeNode);
+int EmitConcatCallExpr(HOPCBackendC* c, int32_t calleeNode);
 
-uint32_t FmtNextTempId(SLCBackendC* c);
+uint32_t FmtNextTempId(HOPCBackendC* c);
 
-int TypeRefIsSignedIntegerLike(const SLCBackendC* c, const SLTypeRef* t);
+int TypeRefIsSignedIntegerLike(const HOPCBackendC* c, const HOPTypeRef* t);
 
-int TypeRefIsIntegerLike(const SLCBackendC* c, const SLTypeRef* t);
+int TypeRefIsIntegerLike(const HOPCBackendC* c, const HOPTypeRef* t);
 
-int TypeRefIsBoolLike(const SLCBackendC* c, const SLTypeRef* t);
+int TypeRefIsBoolLike(const HOPCBackendC* c, const HOPTypeRef* t);
 
-int TypeRefIsNamedEnumLike(const SLCBackendC* c, const SLTypeRef* t);
+int TypeRefIsNamedEnumLike(const HOPCBackendC* c, const HOPTypeRef* t);
 
-int TypeRefIsFmtStringLike(const SLCBackendC* c, const SLTypeRef* t);
+int TypeRefIsFmtStringLike(const HOPCBackendC* c, const HOPTypeRef* t);
 
-int TypeRefIsFmtValueType(const SLCBackendC* c, const SLTypeRef* t);
+int TypeRefIsFmtValueType(const HOPCBackendC* c, const HOPTypeRef* t);
 
 int EmitFmtAppendLiteralBytes(
-    SLCBackendC* c, const char* builderName, const uint8_t* bytes, uint32_t len);
+    HOPCBackendC* c, const char* builderName, const uint8_t* bytes, uint32_t len);
 
 int EmitFmtAppendLiteralText(
-    SLCBackendC* c, const char* builderName, const char* text, uint32_t len);
+    HOPCBackendC* c, const char* builderName, const char* text, uint32_t len);
 
-int EmitFmtBuilderInitStmt(SLCBackendC* c, const char* builderName, int32_t allocArgNode);
+int EmitFmtBuilderInitStmt(HOPCBackendC* c, const char* builderName, int32_t allocArgNode);
 
-char* _Nullable FmtMakeExprField(SLCBackendC* c, const char* baseExpr, const char* fieldName);
+char* _Nullable FmtMakeExprField(HOPCBackendC* c, const char* baseExpr, const char* fieldName);
 
-char* _Nullable FmtMakeExprIndex(SLCBackendC* c, const char* baseExpr, const char* indexExpr);
+char* _Nullable FmtMakeExprIndex(HOPCBackendC* c, const char* baseExpr, const char* indexExpr);
 
 int EmitFmtAppendReflectArray(
-    SLCBackendC*     c,
-    const char*      builderName,
-    const char*      expr,
-    const SLTypeRef* type,
-    uint32_t         depth);
+    HOPCBackendC*     c,
+    const char*       builderName,
+    const char*       expr,
+    const HOPTypeRef* type,
+    uint32_t          depth);
 
 int EmitFmtAppendReflectSlice(
-    SLCBackendC*     c,
-    const char*      builderName,
-    const char*      expr,
-    const SLTypeRef* type,
-    uint32_t         depth);
+    HOPCBackendC*     c,
+    const char*       builderName,
+    const char*       expr,
+    const HOPTypeRef* type,
+    uint32_t          depth);
 
 int EmitFmtAppendReflectStruct(
-    SLCBackendC*     c,
-    const char*      builderName,
-    const char*      expr,
-    const SLTypeRef* type,
-    uint32_t         depth);
+    HOPCBackendC*     c,
+    const char*       builderName,
+    const char*       expr,
+    const HOPTypeRef* type,
+    uint32_t          depth);
 
 int EmitFmtAppendReflectExpr(
-    SLCBackendC*     c,
-    const char*      builderName,
-    const char*      expr,
-    const SLTypeRef* type,
-    uint32_t         depth);
+    HOPCBackendC*     c,
+    const char*       builderName,
+    const char*       expr,
+    const HOPTypeRef* type,
+    uint32_t          depth);
 
 int EmitExprCoerceFmtValue(
-    SLCBackendC* c, int32_t exprNode, const SLTypeRef* srcType, const SLTypeRef* dstType);
+    HOPCBackendC* c, int32_t exprNode, const HOPTypeRef* srcType, const HOPTypeRef* dstType);
 
-int EmitFreeCallExpr(SLCBackendC* c, int32_t allocArgNode, int32_t valueNode);
+int EmitFreeCallExpr(HOPCBackendC* c, int32_t allocArgNode, int32_t valueNode);
 
 int EmitNewExpr(
-    SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable dstType, int requireNonNull);
+    HOPCBackendC* c, int32_t nodeId, const HOPTypeRef* _Nullable dstType, int requireNonNull);
 
-int EmitExprCoerced(SLCBackendC* c, int32_t exprNode, const SLTypeRef* _Nullable dstType);
+int EmitExprCoerced(HOPCBackendC* c, int32_t exprNode, const HOPTypeRef* _Nullable dstType);
 
-int32_t ActiveCallOverlayNode(const SLCBackendC* c);
+int32_t ActiveCallOverlayNode(const HOPCBackendC* c);
 
-int32_t FindActiveOverlayBindByName(const SLCBackendC* c, const char* fieldName);
+int32_t FindActiveOverlayBindByName(const HOPCBackendC* c, const char* fieldName);
 
-int EmitCurrentContextFieldRaw(SLCBackendC* c, const char* fieldName);
+int EmitCurrentContextFieldRaw(HOPCBackendC* c, const char* fieldName);
 
 int EmitCurrentContextFieldValue(
-    SLCBackendC* c, const char* fieldName, const SLTypeRef* requiredType);
+    HOPCBackendC* c, const char* fieldName, const HOPTypeRef* requiredType);
 
 int EmitEffectiveContextFieldValue(
-    SLCBackendC* c, const char* fieldName, const SLTypeRef* requiredType);
+    HOPCBackendC* c, const char* fieldName, const HOPTypeRef* requiredType);
 
-int EmitContextArgForSig(SLCBackendC* c, const SLFnSig* sig);
+int EmitContextArgForSig(HOPCBackendC* c, const HOPFnSig* sig);
 
 int EmitResolvedCall(
-    SLCBackendC*          c,
-    int32_t               callNode,
-    const char*           calleeName,
-    const SLFnSig*        sig,
-    const SLCCallBinding* binding,
-    int                   autoRefFirstArg);
+    HOPCBackendC*          c,
+    int32_t                callNode,
+    const char*            calleeName,
+    const HOPFnSig*        sig,
+    const HOPCCallBinding* binding,
+    int                    autoRefFirstArg);
 
 int EmitFieldPathLValue(
-    SLCBackendC* c, const char* base, const SLFieldInfo* const* path, uint32_t pathLen);
+    HOPCBackendC* c, const char* base, const HOPFieldInfo* const* path, uint32_t pathLen);
 
 int EmitCompoundFieldValueCoerced(
-    SLCBackendC* c, const SLAstNode* field, int32_t exprNode, const SLTypeRef* _Nullable dstType);
+    HOPCBackendC*     c,
+    const HOPAstNode* field,
+    int32_t           exprNode,
+    const HOPTypeRef* _Nullable dstType);
 
 int EmitEnumVariantCompoundLiteral(
-    SLCBackendC*     c,
-    int32_t          nodeId,
-    int32_t          firstField,
-    const char*      enumTypeName,
-    uint32_t         variantStart,
-    uint32_t         variantEnd,
-    const SLTypeRef* valueType);
+    HOPCBackendC*     c,
+    int32_t           nodeId,
+    int32_t           firstField,
+    const char*       enumTypeName,
+    uint32_t          variantStart,
+    uint32_t          variantEnd,
+    const HOPTypeRef* valueType);
 
 int EmitCompoundLiteralDesignated(
-    SLCBackendC* c, int32_t firstField, const char* ownerType, const SLTypeRef* valueType);
+    HOPCBackendC* c, int32_t firstField, const char* ownerType, const HOPTypeRef* valueType);
 
 int EmitCompoundLiteralOrderedStruct(
-    SLCBackendC* c, int32_t firstField, const char* ownerType, const SLTypeRef* valueType);
+    HOPCBackendC* c, int32_t firstField, const char* ownerType, const HOPTypeRef* valueType);
 
-int StructHasFieldDefaults(const SLCBackendC* c, const char* ownerType);
+int StructHasFieldDefaults(const HOPCBackendC* c, const char* ownerType);
 
-int EmitCompoundLiteral(SLCBackendC* c, int32_t nodeId, const SLTypeRef* _Nullable expectedType);
+int EmitCompoundLiteral(HOPCBackendC* c, int32_t nodeId, const HOPTypeRef* _Nullable expectedType);
 
-int EmitExpr_IDENT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_IDENT(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_INT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_INT(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_RUNE(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_RUNE(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_FLOAT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_FLOAT(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_BOOL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_BOOL(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_COMPOUND_LIT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_COMPOUND_LIT(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_STRING(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_STRING(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_UNARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_UNARY(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_BINARY(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_BINARY(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_CALL_WITH_CONTEXT(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_CALL_WITH_CONTEXT(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_CALL(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_NEW(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_NEW(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_INDEX(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_INDEX(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_FIELD_EXPR(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_FIELD_EXPR(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_CAST(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_CAST(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_SIZEOF(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_SIZEOF(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_NULL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_NULL(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_UNWRAP(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_UNWRAP(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_CALL_ARG(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_CALL_ARG(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr_TUPLE_EXPR(SLCBackendC* c, int32_t nodeId, const SLAstNode* n);
+int EmitExpr_TUPLE_EXPR(HOPCBackendC* c, int32_t nodeId, const HOPAstNode* n);
 
-int EmitExpr(SLCBackendC* c, int32_t nodeId);
+int EmitExpr(HOPCBackendC* c, int32_t nodeId);
 
-int EmitDeferredRange(SLCBackendC* c, uint32_t start, uint32_t depth);
+int EmitDeferredRange(HOPCBackendC* c, uint32_t start, uint32_t depth);
 
-int EmitBlockImpl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int inlineOpen);
+int EmitBlockImpl(HOPCBackendC* c, int32_t nodeId, uint32_t depth, int inlineOpen);
 
-int EmitBlock(SLCBackendC* c, int32_t nodeId, uint32_t depth);
+int EmitBlock(HOPCBackendC* c, int32_t nodeId, uint32_t depth);
 
-int EmitBlockInline(SLCBackendC* c, int32_t nodeId, uint32_t depth);
+int EmitBlockInline(HOPCBackendC* c, int32_t nodeId, uint32_t depth);
 
-int EmitVarLikeStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth, int isConst);
+int EmitVarLikeStmt(HOPCBackendC* c, int32_t nodeId, uint32_t depth, int isConst);
 
-int EmitMultiAssignStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth);
+int EmitMultiAssignStmt(HOPCBackendC* c, int32_t nodeId, uint32_t depth);
 
-int EmitShortAssignStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth);
+int EmitShortAssignStmt(HOPCBackendC* c, int32_t nodeId, uint32_t depth);
 
-int EmitForStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth);
+int EmitForStmt(HOPCBackendC* c, int32_t nodeId, uint32_t depth);
 
-int EmitSwitchStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth);
+int EmitSwitchStmt(HOPCBackendC* c, int32_t nodeId, uint32_t depth);
 
-int EmitAssertFormatArg(SLCBackendC* c, int32_t nodeId);
+int EmitAssertFormatArg(HOPCBackendC* c, int32_t nodeId);
 
-int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth);
+int EmitStmt(HOPCBackendC* c, int32_t nodeId, uint32_t depth);
 
-int IsMainFunctionNode(const SLCBackendC* c, int32_t nodeId);
+int IsMainFunctionNode(const HOPCBackendC* c, int32_t nodeId);
 
-int IsExplicitlyExportedNode(const SLCBackendC* c, int32_t nodeId);
+int IsExplicitlyExportedNode(const HOPCBackendC* c, int32_t nodeId);
 
-int IsExportedNode(const SLCBackendC* c, int32_t nodeId);
+int IsExportedNode(const HOPCBackendC* c, int32_t nodeId);
 
-int IsExportedTypeNode(const SLCBackendC* c, int32_t nodeId);
+int IsExportedTypeNode(const HOPCBackendC* c, int32_t nodeId);
 
-int EmitEnumDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth);
+int EmitEnumDecl(HOPCBackendC* c, int32_t nodeId, uint32_t depth);
 
-int NodeHasDirectDependentFields(SLCBackendC* c, int32_t nodeId);
+int NodeHasDirectDependentFields(HOPCBackendC* c, int32_t nodeId);
 
-int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth);
+int EmitVarSizeStructDecl(HOPCBackendC* c, int32_t nodeId, uint32_t depth);
 
-int EmitStructOrUnionDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int isUnion);
+int EmitStructOrUnionDecl(HOPCBackendC* c, int32_t nodeId, uint32_t depth, int isUnion);
 
-int EmitForwardTypeDecls(SLCBackendC* c);
+int EmitForwardTypeDecls(HOPCBackendC* c);
 
-int EmitForwardAnonTypeDecls(SLCBackendC* c);
+int EmitForwardAnonTypeDecls(HOPCBackendC* c);
 
-int EmitAnonTypeDecls(SLCBackendC* c);
+int EmitAnonTypeDecls(HOPCBackendC* c);
 
-int EmitHeaderTypeAliasDecls(SLCBackendC* c);
+int EmitHeaderTypeAliasDecls(HOPCBackendC* c);
 
-int EmitFnTypeAliasDecls(SLCBackendC* c);
+int EmitFnTypeAliasDecls(HOPCBackendC* c);
 
-int FnNodeHasBody(const SLCBackendC* c, int32_t nodeId);
+int FnNodeHasBody(const HOPCBackendC* c, int32_t nodeId);
 
-int HasFunctionBodyForName(const SLCBackendC* c, int32_t nodeId);
+int HasFunctionBodyForName(const HOPCBackendC* c, int32_t nodeId);
 
 int EmitFnDeclOrDef(
-    SLCBackendC* c,
-    int32_t      nodeId,
-    uint32_t     depth,
-    int          emitBody,
-    int          isPrivate,
-    const SLFnSig* _Nullable forcedSig);
+    HOPCBackendC* c,
+    int32_t       nodeId,
+    uint32_t      depth,
+    int           emitBody,
+    int           isPrivate,
+    const HOPFnSig* _Nullable forcedSig);
 
 int EmitConstDecl(
-    SLCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate);
+    HOPCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate);
 
-int EmitVarDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate);
+int EmitVarDecl(
+    HOPCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate);
 
 int EmitTypeAliasDecl(
-    SLCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate);
+    HOPCBackendC* c, int32_t nodeId, uint32_t depth, int declarationOnly, int isPrivate);
 
 int EmitDeclNode(
-    SLCBackendC* c,
-    int32_t      nodeId,
-    uint32_t     depth,
-    int          declarationOnly,
-    int          isPrivate,
-    int          emitBody);
+    HOPCBackendC* c,
+    int32_t       nodeId,
+    uint32_t      depth,
+    int           declarationOnly,
+    int           isPrivate,
+    int           emitBody);
 
-int EmitPrelude(SLCBackendC* c);
+int EmitPrelude(HOPCBackendC* c);
 
-char* _Nullable BuildDefaultMacro(SLCBackendC* c, const char* pkgName, const char* suffix);
+char* _Nullable BuildDefaultMacro(HOPCBackendC* c, const char* pkgName, const char* suffix);
 
-int EmitHeader(SLCBackendC* c);
+int EmitHeader(HOPCBackendC* c);
 
-int ShouldEmitDeclNode(const SLCBackendC* c, int32_t nodeId);
+int ShouldEmitDeclNode(const HOPCBackendC* c, int32_t nodeId);
 
-int InitAst(SLCBackendC* c);
+int InitAst(HOPCBackendC* c);
 
-char* _Nullable AllocOutputCopy(SLCBackendC* c);
+char* _Nullable AllocOutputCopy(HOPCBackendC* c);
 
-void FreeContext(SLCBackendC* c);
+void FreeContext(HOPCBackendC* c);
 
 int EmitCBackend(
-    const SLCodegenBackend* backend,
-    const SLCodegenUnit*    unit,
-    const SLCodegenOptions* _Nullable options,
-    SLCodegenArtifact* _Nonnull outArtifact,
-    SLDiag* _Nullable diag);
+    const HOPCodegenBackend* backend,
+    const HOPCodegenUnit*    unit,
+    const HOPCodegenOptions* _Nullable options,
+    HOPCodegenArtifact* _Nonnull outArtifact,
+    HOPDiag* _Nullable diag);
 
-SL_API_END
+HOP_API_END

@@ -1,1 +1,0 @@
-tests/slp27_const_float_to_f32_precision_bad.sl:3:14: error: SL2004: type mismatch: constant value is not representable for f32

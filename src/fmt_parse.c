@@ -1,14 +1,14 @@
 #include "fmt_parse.h"
 #include <stddef.h>
 
-static int SLFmtPushToken(
-    SLFmtToken* _Nonnull outTokens,
+static int HOPFmtPushToken(
+    HOPFmtToken* _Nonnull outTokens,
     uint32_t tokenCap,
     uint32_t* _Nonnull ioLen,
-    SLFmtTokKind kind,
-    uint32_t     start,
-    uint32_t     end,
-    SLFmtParseError* _Nullable outErr) {
+    HOPFmtTokKind kind,
+    uint32_t      start,
+    uint32_t      end,
+    HOPFmtParseError* _Nullable outErr) {
     uint32_t n;
     if (ioLen == NULL) {
         return -1;
@@ -16,7 +16,7 @@ static int SLFmtPushToken(
     n = *ioLen;
     if (n >= tokenCap) {
         if (outErr != NULL) {
-            outErr->code = SLFmtParseErr_TOKEN_OVERFLOW;
+            outErr->code = HOPFmtParseErr_TOKEN_OVERFLOW;
             outErr->start = start;
             outErr->end = end;
         }
@@ -29,13 +29,13 @@ static int SLFmtPushToken(
     return 0;
 }
 
-int SLFmtParseBytes(
+int HOPFmtParseBytes(
     const uint8_t* _Nonnull bytes,
     uint32_t len,
-    SLFmtToken* _Nonnull outTokens,
+    HOPFmtToken* _Nonnull outTokens,
     uint32_t tokenCap,
     uint32_t* _Nonnull outTokenLen,
-    SLFmtParseError* _Nullable outErr) {
+    HOPFmtParseError* _Nullable outErr) {
     uint32_t i = 0;
     uint32_t literalStart = 0;
     uint32_t tokenLen = 0;
@@ -43,7 +43,7 @@ int SLFmtParseBytes(
         return -1;
     }
     if (outErr != NULL) {
-        outErr->code = SLFmtParseErr_NONE;
+        outErr->code = HOPFmtParseErr_NONE;
         outErr->start = 0;
         outErr->end = 0;
     }
@@ -54,8 +54,8 @@ int SLFmtParseBytes(
                 continue;
             }
             if (literalStart < i
-                && SLFmtPushToken(
-                       outTokens, tokenCap, &tokenLen, SLFmtTok_LITERAL, literalStart, i, outErr)
+                && HOPFmtPushToken(
+                       outTokens, tokenCap, &tokenLen, HOPFmtTok_LITERAL, literalStart, i, outErr)
                        != 0)
             {
                 return -1;
@@ -65,15 +65,15 @@ int SLFmtParseBytes(
                     || bytes[i + 1u] == (uint8_t)'s' || bytes[i + 1u] == (uint8_t)'r')
                 && bytes[i + 2u] == (uint8_t)'}')
             {
-                SLFmtTokKind kind = SLFmtTok_PLACEHOLDER_R;
+                HOPFmtTokKind kind = HOPFmtTok_PLACEHOLDER_R;
                 if (bytes[i + 1u] == (uint8_t)'i') {
-                    kind = SLFmtTok_PLACEHOLDER_I;
+                    kind = HOPFmtTok_PLACEHOLDER_I;
                 } else if (bytes[i + 1u] == (uint8_t)'f') {
-                    kind = SLFmtTok_PLACEHOLDER_F;
+                    kind = HOPFmtTok_PLACEHOLDER_F;
                 } else if (bytes[i + 1u] == (uint8_t)'s') {
-                    kind = SLFmtTok_PLACEHOLDER_S;
+                    kind = HOPFmtTok_PLACEHOLDER_S;
                 }
-                if (SLFmtPushToken(outTokens, tokenCap, &tokenLen, kind, i, i + 3u, outErr) != 0) {
+                if (HOPFmtPushToken(outTokens, tokenCap, &tokenLen, kind, i, i + 3u, outErr) != 0) {
                     return -1;
                 }
                 i += 3u;
@@ -81,7 +81,7 @@ int SLFmtParseBytes(
                 continue;
             }
             if (outErr != NULL) {
-                outErr->code = SLFmtParseErr_INVALID_PLACEHOLDER;
+                outErr->code = HOPFmtParseErr_INVALID_PLACEHOLDER;
                 outErr->start = i;
                 outErr->end = i + 1u < len ? i + 2u : i + 1u;
             }
@@ -93,7 +93,7 @@ int SLFmtParseBytes(
                 continue;
             }
             if (outErr != NULL) {
-                outErr->code = SLFmtParseErr_UNMATCHED_CLOSE_BRACE;
+                outErr->code = HOPFmtParseErr_UNMATCHED_CLOSE_BRACE;
                 outErr->start = i;
                 outErr->end = i + 1u;
             }
@@ -102,8 +102,8 @@ int SLFmtParseBytes(
         i++;
     }
     if (literalStart < len
-        && SLFmtPushToken(
-               outTokens, tokenCap, &tokenLen, SLFmtTok_LITERAL, literalStart, len, outErr)
+        && HOPFmtPushToken(
+               outTokens, tokenCap, &tokenLen, HOPFmtTok_LITERAL, literalStart, len, outErr)
                != 0)
     {
         return -1;

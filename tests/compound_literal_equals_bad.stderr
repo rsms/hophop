@@ -1,1 +1,1 @@
-tests/compound_literal_equals_bad.sl:8:19: error: SL1004: unexpected token
+tests/compound_literal_equals_bad.hop:8:19: error: HOP1004: unexpected token

@@ -1,1 +1,1 @@
-tests/rune_literal_nonconst_to_i8_bad.sl:4:15: error: SL2004: type mismatch: cannot use 'r' of type rune as i8
+tests/rune_literal_nonconst_to_i8_bad.hop:4:15: error: HOP2004: type mismatch: cannot use 'r' of type rune as i8

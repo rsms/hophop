@@ -1,23 +1,23 @@
-input.sl
-input.sl:2:1: line should be inserted
+input.hop
+input.hop:2:1: line should be inserted
   current : ""
   expected: ""
-input.sl:4:1: internal whitespace differs
+input.hop:4:1: internal whitespace differs
   current : "import \"cat\"   // needed for meows"
   expected: "import \"cat\" // needed for meows"
-input.sl:6:1: line content differs
+input.hop:6:1: line content differs
   current : "import \"garage\" {CV2 as Car} // comment"
   expected: "import \"bar\"  { Coke }        // comment"
-input.sl:7:1: line content differs
+input.hop:7:1: line content differs
   current : "import \"bar\" {Coke} // comment"
   expected: "import \"data\" { A, B as Bee } // comment"
-input.sl:8:1: line should be removed
+input.hop:8:1: line should be removed
   current : "import \"xml\" {lol} // yay"
   expected: ""
-input.sl:10:1: line content differs
+input.hop:10:1: line content differs
   current : "import \"data\" {A, B as Bee} // comment"
   expected: "import \"garage\" { CV2 as Car } // comment"
-input.sl:11:1: line should be inserted
+input.hop:11:1: line should be inserted
   current : ""
   expected: "import \"xml\"    { lol }        // yay"
   issues: 7

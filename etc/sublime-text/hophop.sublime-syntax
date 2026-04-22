@@ -1,0 +1,219 @@
+%YAML 1.2
+---
+name: HopHop
+scope: source.hophop
+
+file_extensions:
+    - hop
+
+first_line_match: |-
+    (?xi:
+        ^\s*//.*?-\*-.*?\bsl\b.*?-\*-
+    )
+
+variables:
+    ident: '[A-Za-z_][A-Za-z0-9_]*'
+
+contexts:
+    prototype:
+      - include: comments
+
+    main:
+      - include: strings
+      - include: numbers
+      - include: directives
+      - include: declarations
+      - include: keywords
+      - include: builtins
+      - include: operators
+      - include: punctuation
+      - include: identifiers
+
+    comments:
+      - match: '//.*$'
+        scope: comment.line.double-slash.hophop
+      - include: block-comments
+
+    block-comments:
+      - match: /\*
+        scope: punctuation.definition.comment.hophop
+        push:
+          - meta_scope: comment.block.hophop
+          - match: \*/
+            scope: punctuation.definition.comment.hophop
+            pop: true
+          - include: block-comments
+      - match: \*/
+        scope: invalid.illegal.stray-comment-end.hophop
+
+    strings:
+      - match: ''''
+        scope: punctuation.definition.character.begin.hophop
+        push: rune
+      - match: '"'
+        scope: punctuation.definition.string.begin.hophop
+        push: interpreted-string
+      - match: '`'
+        scope: punctuation.definition.string.begin.hophop
+        push: raw-string
+
+    rune:
+      - meta_include_prototype: false
+      - meta_scope: constant.character.rune.hophop
+      - match: '\\\r?\n'
+        scope: constant.character.escape.line-continuation.hophop
+      - match: '\\(?:[abfnrtv\\''"]|[0-7]{3}|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'
+        scope: constant.character.escape.hophop
+      - match: '\\.'
+        scope: invalid.illegal.escape.hophop
+      - match: ''''
+        scope: punctuation.definition.character.end.hophop
+        pop: true
+
+    interpreted-string:
+      - meta_include_prototype: false
+      - meta_scope: string.quoted.double.hophop
+      - match: '\\\r?\n'
+        scope: constant.character.escape.line-continuation.hophop
+      - match: '\\(?:[abfnrtv\\''"]|[0-7]{3}|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'
+        scope: constant.character.escape.hophop
+      - match: '\\.'
+        scope: invalid.illegal.escape.hophop
+      - match: '"'
+        scope: punctuation.definition.string.end.hophop
+        pop: true
+
+    raw-string:
+      - meta_include_prototype: false
+      - meta_scope: string.quoted.raw.hophop
+      - match: '\\`'
+        scope: constant.character.escape.hophop
+      - match: '`'
+        scope: punctuation.definition.string.end.hophop
+        pop: true
+
+    numbers:
+      - match: '\b0[xX][0-9A-Fa-f]+\b'
+        scope: constant.numeric.integer.hex.hophop
+      - match: '\b0[bB][01]+\b'
+        scope: constant.numeric.integer.binary.hophop
+      - match: '\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b'
+        scope: constant.numeric.hophop
+
+    # function-params:
+    #   - match: '\('
+    #     scope: meta.function.parameters.hophop punctuation.definition.group.begin.hophop
+    #     push:
+    #       - meta_scope: meta.function.parameters.hophop
+    #       - include: main
+    #       - match: '\)'
+    #         scope: meta.function.parameters.hophop punctuation.definition.group.end.hophop
+    #         pop: true
+
+    functions:
+      - match: '\b(pub)\s+(fn)\s+({{ident}})(?=\s*\()'
+        scope: meta.function.declaration.hophop
+        captures:
+            1: storage.modifier.visibility.hophop
+            2: keyword.declaration.function.hophop
+            3: entity.name.function.hophop
+        # push: function-params
+      - match: '\b(fn)\s+({{ident}})'
+        captures:
+            1: keyword.declaration.function.hophop
+            2: entity.name.function.hophop
+        # push: function-params
+
+    declarations:
+      - include: functions
+      - match: '\b(import)\s+({{ident}})(?=\s+["`])'
+        captures:
+            1: keyword.control.import.hophop
+            2: entity.name.namespace.alias.hophop
+      - match: '\b(pub)\s+(struct|union|enum)\s+({{ident}})'
+        captures:
+            1: storage.modifier.visibility.hophop
+            2: storage.type.hophop
+            3: entity.name.type.hophop
+      - match: '\b(struct|union|enum)\s+({{ident}})'
+        captures:
+            1: storage.type.hophop
+            2: entity.name.type.hophop
+      - match: '\b(pub)\s+(type)\s+({{ident}})'
+        captures:
+            1: storage.modifier.visibility.hophop
+            2: storage.type.hophop
+            3: entity.name.type.hophop
+      - match: '\b(type)\s+({{ident}})'
+        captures:
+            1: storage.type.hophop
+            2: entity.name.type.hophop
+      - match: '\b(pub)\s+(const)\s+({{ident}})'
+        captures:
+            1: storage.modifier.visibility.hophop
+            2: storage.modifier.hophop
+            3: entity.name.constant.hophop
+      - match: '\b(const)\s+({{ident}})'
+        captures:
+            1: storage.modifier.hophop
+            2: entity.name.constant.hophop
+      - match: '\b(var)\s+({{ident}})'
+        captures:
+            1: storage.modifier.hophop
+            2: variable.other.definition.hophop
+
+    directives:
+      - match: '(@)({{ident}})\b'
+        captures:
+            1: punctuation.definition.directive.hophop
+            2: keyword.directive.hophop
+
+    keywords:
+      - match: '\b(import|pub|struct|union|enum|fn|var|const|if|else|for|in|switch|case|default|break|continue|return|defer|assert|new|as|with)\b'
+        scope: keyword.control.hophop
+      - match: '\b(context)\b(?=\s+{{ident}}\b)'
+        scope: keyword.control.hophop
+      - match: '\b(context)\b(?=\s+\{)'
+        scope: keyword.control.hophop
+
+    builtins:
+      - match: '\b(u8|u16|u32|u64|i8|i16|i32|i64|uint|int|rune|f32|f64|bool|str|rawptr|type|anytype)\b'
+        scope: support.type.builtin.hophop
+      - match: '\b(len|typeof|sizeof|panic|print|copy)\b'
+        scope: support.function.builtin.hophop
+      - match: '\b(context)\b'
+        scope: support.variable.builtin.hophop
+      - match: '\b(true|false|null)\b'
+        scope: constant.language.boolean.hophop
+
+    operators:
+      - match: '\.\.\.'
+        scope: keyword.operator.variadic.hophop
+      - match: '(==|!=|<=|>=|<<=|>>=|\+=|-=|\*=|/=|%=|&=|\|=|\^=|<<|>>|&&|\|\||=|\+|-|\*|/|%|&|\||\^|<|>|!)'
+        scope: keyword.operator.hophop
+
+    punctuation:
+      - match: '\.'
+        scope: punctuation.separator.dot.hophop
+      - match: ','
+        scope: punctuation.separator.comma.hophop
+      - match: ';'
+        scope: punctuation.terminator.statement.hophop
+      - match: ':'
+        scope: punctuation.separator.colon.hophop
+      - match: '\{'
+        scope: punctuation.section.block.begin.hophop
+      - match: '\}'
+        scope: punctuation.section.block.end.hophop
+      - match: '\('
+        scope: punctuation.section.parens.begin.hophop
+      - match: '\)'
+        scope: punctuation.section.parens.end.hophop
+      - match: '\['
+        scope: punctuation.section.brackets.begin.hophop
+      - match: '\]'
+        scope: punctuation.section.brackets.end.hophop
+
+    identifiers:
+      - match: '{{ident}}'
+        scope: variable.other.hophop

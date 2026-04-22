@@ -1,22 +1,22 @@
-#include "libsl-impl.h"
+#include "libhop-impl.h"
 #include "mir.h"
 #include "mir_lower.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
-static void SLMirLowerSetDiag(SLDiag* diag, SLDiagCode code, uint32_t start, uint32_t end) {
+static void HOPMirLowerSetDiag(HOPDiag* diag, HOPDiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
     diag->code = code;
-    diag->type = SLDiagTypeOfCode(code);
+    diag->type = HOPDiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
 }
 
-static int SLMirLowerParseIntLiteral(SLStrView src, uint32_t start, uint32_t end, int64_t* out) {
+static int HOPMirLowerParseIntLiteral(HOPStrView src, uint32_t start, uint32_t end, int64_t* out) {
     uint64_t v = 0;
     uint32_t i;
     uint32_t base = 10;
@@ -59,7 +59,7 @@ static int SLMirLowerParseIntLiteral(SLStrView src, uint32_t start, uint32_t end
     return 0;
 }
 
-static int SLMirLowerParseFloatLiteral(SLStrView src, uint32_t start, uint32_t end, double* out) {
+static int HOPMirLowerParseFloatLiteral(HOPStrView src, uint32_t start, uint32_t end, double* out) {
     uint32_t i;
     double   v = 0.0;
     int      sawDigit = 0;
@@ -123,7 +123,7 @@ static int SLMirLowerParseFloatLiteral(SLStrView src, uint32_t start, uint32_t e
     return 0;
 }
 
-static int SLMirLowerParseBoolLiteral(SLStrView src, uint32_t start, uint32_t end, uint8_t* out) {
+static int HOPMirLowerParseBoolLiteral(HOPStrView src, uint32_t start, uint32_t end, uint8_t* out) {
     uint32_t len = end > start ? end - start : 0;
     if (out == NULL) {
         return -1;
@@ -139,99 +139,99 @@ static int SLMirLowerParseBoolLiteral(SLStrView src, uint32_t start, uint32_t en
     return -1;
 }
 
-static int SLMirLowerRewriteConstInst(
-    SLMirProgramBuilder* _Nonnull builder,
-    SLArena* _Nonnull arena,
-    SLStrView src,
-    const SLMirInst* _Nonnull in,
-    SLMirInst* _Nonnull out,
-    SLDiag* _Nullable diag) {
-    SLMirConst     value = { 0 };
-    uint32_t       constIndex = 0;
-    SLRuneLitErr   runeErr = { 0 };
-    SLStringLitErr litErr = { 0 };
-    int64_t        intValue = 0;
-    double         floatValue = 0.0;
-    uint8_t        boolValue = 0;
-    uint32_t       rune = 0;
-    uint8_t*       bytes = NULL;
-    uint32_t       len = 0;
+static int HOPMirLowerRewriteConstInst(
+    HOPMirProgramBuilder* _Nonnull builder,
+    HOPArena* _Nonnull arena,
+    HOPStrView src,
+    const HOPMirInst* _Nonnull in,
+    HOPMirInst* _Nonnull out,
+    HOPDiag* _Nullable diag) {
+    HOPMirConst     value = { 0 };
+    uint32_t        constIndex = 0;
+    HOPRuneLitErr   runeErr = { 0 };
+    HOPStringLitErr litErr = { 0 };
+    int64_t         intValue = 0;
+    double          floatValue = 0.0;
+    uint8_t         boolValue = 0;
+    uint32_t        rune = 0;
+    uint8_t*        bytes = NULL;
+    uint32_t        len = 0;
     memcpy(out, in, sizeof(*out));
     switch (in->op) {
-        case SLMirOp_PUSH_INT:
-            value.kind = SLMirConst_INT;
-            if ((SLTokenKind)in->tok == SLTok_RUNE) {
-                if (SLDecodeRuneLiteralValidate(src.ptr, in->start, in->end, &rune, &runeErr) != 0)
+        case HOPMirOp_PUSH_INT:
+            value.kind = HOPMirConst_INT;
+            if ((HOPTokenKind)in->tok == HOPTok_RUNE) {
+                if (HOPDecodeRuneLiteralValidate(src.ptr, in->start, in->end, &rune, &runeErr) != 0)
                 {
-                    SLMirLowerSetDiag(
-                        diag, SLRuneLitErrDiagCode(runeErr.kind), runeErr.start, runeErr.end);
+                    HOPMirLowerSetDiag(
+                        diag, HOPRuneLitErrDiagCode(runeErr.kind), runeErr.start, runeErr.end);
                     return -1;
                 }
                 value.bits = (uint64_t)(int64_t)rune;
-            } else if ((SLTokenKind)in->tok == SLTok_INVALID) {
+            } else if ((HOPTokenKind)in->tok == HOPTok_INVALID) {
                 value.bits = (uint64_t)(int64_t)(int32_t)in->aux;
-            } else if (SLMirLowerParseIntLiteral(src, in->start, in->end, &intValue) != 0) {
+            } else if (HOPMirLowerParseIntLiteral(src, in->start, in->end, &intValue) != 0) {
                 return 0;
             } else {
                 value.bits = (uint64_t)intValue;
             }
             break;
-        case SLMirOp_PUSH_FLOAT:
-            value.kind = SLMirConst_FLOAT;
-            if (SLMirLowerParseFloatLiteral(src, in->start, in->end, &floatValue) != 0) {
+        case HOPMirOp_PUSH_FLOAT:
+            value.kind = HOPMirConst_FLOAT;
+            if (HOPMirLowerParseFloatLiteral(src, in->start, in->end, &floatValue) != 0) {
                 return 0;
             }
             memcpy(&value.bits, &floatValue, sizeof(floatValue));
             break;
-        case SLMirOp_PUSH_BOOL:
-            value.kind = SLMirConst_BOOL;
-            if (SLMirLowerParseBoolLiteral(src, in->start, in->end, &boolValue) != 0) {
+        case HOPMirOp_PUSH_BOOL:
+            value.kind = HOPMirConst_BOOL;
+            if (HOPMirLowerParseBoolLiteral(src, in->start, in->end, &boolValue) != 0) {
                 return 0;
             }
             value.bits = (uint64_t)boolValue;
             break;
-        case SLMirOp_PUSH_STRING:
-            value.kind = SLMirConst_STRING;
-            if (SLDecodeStringLiteralArena(
+        case HOPMirOp_PUSH_STRING:
+            value.kind = HOPMirConst_STRING;
+            if (HOPDecodeStringLiteralArena(
                     arena, src.ptr, in->start, in->end, &bytes, &len, &litErr)
                 != 0)
             {
-                SLMirLowerSetDiag(
-                    diag, SLStringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
+                HOPMirLowerSetDiag(
+                    diag, HOPStringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
                 return -1;
             }
             value.bytes.ptr = (const char*)bytes;
             value.bytes.len = len;
             break;
-        case SLMirOp_PUSH_NULL: value.kind = SLMirConst_NULL; break;
-        default:                return 0;
+        case HOPMirOp_PUSH_NULL: value.kind = HOPMirConst_NULL; break;
+        default:                 return 0;
     }
-    if (SLMirProgramBuilderAddConst(builder, &value, &constIndex) != 0) {
-        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, in->start, in->end);
+    if (HOPMirProgramBuilderAddConst(builder, &value, &constIndex) != 0) {
+        HOPMirLowerSetDiag(diag, HOPDiag_ARENA_OOM, in->start, in->end);
         return -1;
     }
-    out->op = SLMirOp_PUSH_CONST;
+    out->op = HOPMirOp_PUSH_CONST;
     out->tok = 0;
     out->aux = constIndex;
     return 1;
 }
 
-static int SLMirLowerInternSymbol(
-    SLMirProgramBuilder* _Nonnull builder,
-    SLMirSymbolKind kind,
-    uint32_t        nameStart,
-    uint32_t        nameEnd,
-    uint32_t        flags,
-    uint32_t        target,
+static int HOPMirLowerInternSymbol(
+    HOPMirProgramBuilder* _Nonnull builder,
+    HOPMirSymbolKind kind,
+    uint32_t         nameStart,
+    uint32_t         nameEnd,
+    uint32_t         flags,
+    uint32_t         target,
     uint32_t* _Nonnull outIndex,
-    SLDiag* _Nullable diag) {
-    uint32_t       i;
-    SLMirSymbolRef symbol;
+    HOPDiag* _Nullable diag) {
+    uint32_t        i;
+    HOPMirSymbolRef symbol;
     if (builder == NULL || outIndex == NULL) {
         return -1;
     }
     for (i = 0; i < builder->symbolLen; i++) {
-        const SLMirSymbolRef* existing = &builder->symbols[i];
+        const HOPMirSymbolRef* existing = &builder->symbols[i];
         if (existing->kind == kind && existing->nameStart == nameStart
             && existing->nameEnd == nameEnd && existing->flags == flags
             && existing->target == target)
@@ -245,37 +245,38 @@ static int SLMirLowerInternSymbol(
     symbol.nameEnd = nameEnd;
     symbol.flags = flags;
     symbol.target = target;
-    if (SLMirProgramBuilderAddSymbol(builder, &symbol, outIndex) != 0) {
-        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, nameStart, nameEnd);
+    if (HOPMirProgramBuilderAddSymbol(builder, &symbol, outIndex) != 0) {
+        HOPMirLowerSetDiag(diag, HOPDiag_ARENA_OOM, nameStart, nameEnd);
         return -1;
     }
     return 0;
 }
 
-static int SLMirLowerRewriteSymbolInst(
-    SLMirProgramBuilder* _Nonnull builder,
-    const SLMirInst* _Nonnull in,
-    SLMirInst* _Nonnull out,
-    SLDiag* _Nullable diag) {
-    SLMirSymbolKind kind = SLMirSymbol_INVALID;
-    uint32_t        flags = 0;
-    uint32_t        target = 0;
-    uint32_t        symbolIndex = 0;
+static int HOPMirLowerRewriteSymbolInst(
+    HOPMirProgramBuilder* _Nonnull builder,
+    const HOPMirInst* _Nonnull in,
+    HOPMirInst* _Nonnull out,
+    HOPDiag* _Nullable diag) {
+    HOPMirSymbolKind kind = HOPMirSymbol_INVALID;
+    uint32_t         flags = 0;
+    uint32_t         target = 0;
+    uint32_t         symbolIndex = 0;
     memcpy(out, in, sizeof(*out));
     switch (in->op) {
-        case SLMirOp_LOAD_IDENT:
-        case SLMirOp_STORE_IDENT:
-            kind = SLMirSymbol_IDENT;
+        case HOPMirOp_LOAD_IDENT:
+        case HOPMirOp_STORE_IDENT:
+            kind = HOPMirSymbol_IDENT;
             target = in->aux;
             break;
-        case SLMirOp_CALL:
-            kind = SLMirSymbol_CALL;
-            flags = SLMirRawCallAuxFlags(in->aux);
-            target = SLMirRawCallAuxNode(in->aux);
+        case HOPMirOp_CALL:
+            kind = HOPMirSymbol_CALL;
+            flags = HOPMirRawCallAuxFlags(in->aux);
+            target = HOPMirRawCallAuxNode(in->aux);
             break;
         default: return 0;
     }
-    if (SLMirLowerInternSymbol(builder, kind, in->start, in->end, flags, target, &symbolIndex, diag)
+    if (HOPMirLowerInternSymbol(
+            builder, kind, in->start, in->end, flags, target, &symbolIndex, diag)
         != 0)
     {
         return -1;
@@ -284,20 +285,20 @@ static int SLMirLowerRewriteSymbolInst(
     return 1;
 }
 
-static int SLMirLowerInternType(
-    SLMirProgramBuilder* _Nonnull builder,
+static int HOPMirLowerInternType(
+    HOPMirProgramBuilder* _Nonnull builder,
     uint32_t astNode,
     uint32_t sourceRef,
     uint32_t flags,
     uint32_t* _Nonnull outIndex,
-    SLDiag* _Nullable diag) {
-    uint32_t     i;
-    SLMirTypeRef typeRef;
+    HOPDiag* _Nullable diag) {
+    uint32_t      i;
+    HOPMirTypeRef typeRef;
     if (builder == NULL || outIndex == NULL) {
         return -1;
     }
     for (i = 0; i < builder->typeLen; i++) {
-        const SLMirTypeRef* existing = &builder->types[i];
+        const HOPMirTypeRef* existing = &builder->types[i];
         if (existing->astNode == astNode && existing->sourceRef == sourceRef
             && existing->flags == flags)
         {
@@ -309,15 +310,15 @@ static int SLMirLowerInternType(
     typeRef.sourceRef = sourceRef;
     typeRef.flags = flags;
     typeRef.aux = 0u;
-    if (SLMirProgramBuilderAddType(builder, &typeRef, outIndex) != 0) {
-        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, 0, 0);
+    if (HOPMirProgramBuilderAddType(builder, &typeRef, outIndex) != 0) {
+        HOPMirLowerSetDiag(diag, HOPDiag_ARENA_OOM, 0, 0);
         return -1;
     }
     return 0;
 }
 
-static uint32_t SLMirLowerFindSourceRef(
-    const SLMirProgramBuilder* _Nonnull builder, SLStrView src) {
+static uint32_t HOPMirLowerFindSourceRef(
+    const HOPMirProgramBuilder* _Nonnull builder, HOPStrView src) {
     uint32_t i;
     if (builder == NULL || src.ptr == NULL) {
         return 0u;
@@ -330,42 +331,42 @@ static uint32_t SLMirLowerFindSourceRef(
     return 0u;
 }
 
-static int SLMirLowerRewriteTypeInst(
-    SLMirProgramBuilder* _Nonnull builder,
-    SLStrView src,
-    const SLMirInst* _Nonnull in,
-    SLMirInst* _Nonnull out,
-    SLDiag* _Nullable diag) {
+static int HOPMirLowerRewriteTypeInst(
+    HOPMirProgramBuilder* _Nonnull builder,
+    HOPStrView src,
+    const HOPMirInst* _Nonnull in,
+    HOPMirInst* _Nonnull out,
+    HOPDiag* _Nullable diag) {
     uint32_t typeIndex = 0;
     uint32_t sourceRef = 0u;
     memcpy(out, in, sizeof(*out));
-    if (in->op != SLMirOp_CAST) {
+    if (in->op != HOPMirOp_CAST) {
         return 0;
     }
-    sourceRef = SLMirLowerFindSourceRef(builder, src);
-    if (SLMirLowerInternType(builder, in->aux, sourceRef, 0u, &typeIndex, diag) != 0) {
+    sourceRef = HOPMirLowerFindSourceRef(builder, src);
+    if (HOPMirLowerInternType(builder, in->aux, sourceRef, 0u, &typeIndex, diag) != 0) {
         return -1;
     }
     out->aux = typeIndex;
     return 1;
 }
 
-static int SLMirLowerInternHost(
-    SLMirProgramBuilder* _Nonnull builder,
-    uint32_t      nameStart,
-    uint32_t      nameEnd,
-    SLMirHostKind kind,
-    uint32_t      flags,
-    uint32_t      target,
+static int HOPMirLowerInternHost(
+    HOPMirProgramBuilder* _Nonnull builder,
+    uint32_t       nameStart,
+    uint32_t       nameEnd,
+    HOPMirHostKind kind,
+    uint32_t       flags,
+    uint32_t       target,
     uint32_t* _Nonnull outIndex,
-    SLDiag* _Nullable diag) {
-    uint32_t     i;
-    SLMirHostRef host;
+    HOPDiag* _Nullable diag) {
+    uint32_t      i;
+    HOPMirHostRef host;
     if (builder == NULL || outIndex == NULL) {
         return -1;
     }
     for (i = 0; i < builder->hostLen; i++) {
-        const SLMirHostRef* existing = &builder->hosts[i];
+        const HOPMirHostRef* existing = &builder->hosts[i];
         if (existing->nameStart == nameStart && existing->nameEnd == nameEnd
             && existing->kind == kind && existing->flags == flags && existing->target == target)
         {
@@ -378,64 +379,65 @@ static int SLMirLowerInternHost(
     host.kind = kind;
     host.flags = flags;
     host.target = target;
-    if (SLMirProgramBuilderAddHost(builder, &host, outIndex) != 0) {
-        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, nameStart, nameEnd);
+    if (HOPMirProgramBuilderAddHost(builder, &host, outIndex) != 0) {
+        HOPMirLowerSetDiag(diag, HOPDiag_ARENA_OOM, nameStart, nameEnd);
         return -1;
     }
     return 0;
 }
 
-static int SLMirLowerRewriteHostInst(
-    SLMirProgramBuilder* _Nonnull builder,
-    SLStrView src,
-    const SLMirInst* _Nonnull in,
-    SLMirInst* _Nonnull out,
-    SLDiag* _Nullable diag) {
+static int HOPMirLowerRewriteHostInst(
+    HOPMirProgramBuilder* _Nonnull builder,
+    HOPStrView src,
+    const HOPMirInst* _Nonnull in,
+    HOPMirInst* _Nonnull out,
+    HOPDiag* _Nullable diag) {
     uint32_t hostIndex = 0;
-    uint32_t hostTarget = SLMirHostTarget_INVALID;
+    uint32_t hostTarget = HOPMirHostTarget_INVALID;
     memcpy(out, in, sizeof(*out));
-    if (in->op != SLMirOp_CALL || in->aux >= builder->symbolLen) {
+    if (in->op != HOPMirOp_CALL || in->aux >= builder->symbolLen) {
         return 0;
     }
     if (in->end == in->start + 5u && memcmp(src.ptr + in->start, "print", 5) == 0) {
-        hostTarget = SLMirHostTarget_PRINT;
+        hostTarget = HOPMirHostTarget_PRINT;
     } else if (in->end == in->start + 4u && memcmp(src.ptr + in->start, "copy", 4) == 0) {
-        hostTarget = SLMirHostTarget_COPY;
+        hostTarget = HOPMirHostTarget_COPY;
     } else if (in->end == in->start + 6u && memcmp(src.ptr + in->start, "concat", 6) == 0) {
-        hostTarget = SLMirHostTarget_CONCAT;
+        hostTarget = HOPMirHostTarget_CONCAT;
     } else if (in->end == in->start + 4u && memcmp(src.ptr + in->start, "free", 4) == 0) {
-        hostTarget = SLMirHostTarget_FREE;
+        hostTarget = HOPMirHostTarget_FREE;
     } else {
         return 0;
     }
-    if (builder->symbols[in->aux].kind != SLMirSymbol_CALL || builder->symbols[in->aux].flags != 0u)
+    if (builder->symbols[in->aux].kind != HOPMirSymbol_CALL
+        || builder->symbols[in->aux].flags != 0u)
     {
         return 0;
     }
-    if (SLMirLowerInternHost(
-            builder, in->start, in->end, SLMirHost_GENERIC, 0u, hostTarget, &hostIndex, diag)
+    if (HOPMirLowerInternHost(
+            builder, in->start, in->end, HOPMirHost_GENERIC, 0u, hostTarget, &hostIndex, diag)
         != 0)
     {
         return -1;
     }
-    out->op = SLMirOp_CALL_HOST;
+    out->op = HOPMirOp_CALL_HOST;
     out->aux = hostIndex;
     return 1;
 }
 
-static int SLMirLowerInternField(
-    SLMirProgramBuilder* _Nonnull builder,
+static int HOPMirLowerInternField(
+    HOPMirProgramBuilder* _Nonnull builder,
     uint32_t nameStart,
     uint32_t nameEnd,
     uint32_t* _Nonnull outIndex,
-    SLDiag* _Nullable diag) {
-    uint32_t   i;
-    SLMirField fieldRef;
+    HOPDiag* _Nullable diag) {
+    uint32_t    i;
+    HOPMirField fieldRef;
     if (builder == NULL || outIndex == NULL) {
         return -1;
     }
     for (i = 0; i < builder->fieldLen; i++) {
-        const SLMirField* existing = &builder->fields[i];
+        const HOPMirField* existing = &builder->fields[i];
         if (existing->nameStart == nameStart && existing->nameEnd == nameEnd
             && existing->sourceRef == 0u && existing->ownerTypeRef == UINT32_MAX
             && existing->typeRef == UINT32_MAX)
@@ -449,89 +451,89 @@ static int SLMirLowerInternField(
     fieldRef.sourceRef = 0u;
     fieldRef.ownerTypeRef = UINT32_MAX;
     fieldRef.typeRef = UINT32_MAX;
-    if (SLMirProgramBuilderAddField(builder, &fieldRef, outIndex) != 0) {
-        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, nameStart, nameEnd);
+    if (HOPMirProgramBuilderAddField(builder, &fieldRef, outIndex) != 0) {
+        HOPMirLowerSetDiag(diag, HOPDiag_ARENA_OOM, nameStart, nameEnd);
         return -1;
     }
     return 0;
 }
 
-static int SLMirLowerRewriteFieldInst(
-    SLMirProgramBuilder* _Nonnull builder,
-    const SLMirInst* _Nonnull in,
-    SLMirInst* _Nonnull out,
-    SLDiag* _Nullable diag) {
+static int HOPMirLowerRewriteFieldInst(
+    HOPMirProgramBuilder* _Nonnull builder,
+    const HOPMirInst* _Nonnull in,
+    HOPMirInst* _Nonnull out,
+    HOPDiag* _Nullable diag) {
     uint32_t fieldIndex = 0;
     memcpy(out, in, sizeof(*out));
-    if (in->op != SLMirOp_AGG_GET && in->op != SLMirOp_AGG_ADDR) {
+    if (in->op != HOPMirOp_AGG_GET && in->op != HOPMirOp_AGG_ADDR) {
         return 0;
     }
-    if (SLMirLowerInternField(builder, in->start, in->end, &fieldIndex, diag) != 0) {
+    if (HOPMirLowerInternField(builder, in->start, in->end, &fieldIndex, diag) != 0) {
         return -1;
     }
     out->aux = fieldIndex;
     return 1;
 }
 
-int SLMirLowerAppendInst(
-    SLMirProgramBuilder* _Nonnull builder,
-    SLArena* _Nonnull arena,
-    SLStrView src,
-    const SLMirInst* _Nonnull in,
-    SLDiag* _Nullable diag) {
-    SLMirInst loweredInst;
-    int       rewriteStatus;
+int HOPMirLowerAppendInst(
+    HOPMirProgramBuilder* _Nonnull builder,
+    HOPArena* _Nonnull arena,
+    HOPStrView src,
+    const HOPMirInst* _Nonnull in,
+    HOPDiag* _Nullable diag) {
+    HOPMirInst loweredInst;
+    int        rewriteStatus;
     if (builder == NULL || arena == NULL || in == NULL) {
-        SLMirLowerSetDiag(diag, SLDiag_UNEXPECTED_TOKEN, 0, 0);
+        HOPMirLowerSetDiag(diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
         return -1;
     }
-    rewriteStatus = SLMirLowerRewriteConstInst(builder, arena, src, in, &loweredInst, diag);
+    rewriteStatus = HOPMirLowerRewriteConstInst(builder, arena, src, in, &loweredInst, diag);
     if (rewriteStatus < 0) {
         return -1;
     }
     if (rewriteStatus == 0) {
         memcpy(&loweredInst, in, sizeof(loweredInst));
     }
-    rewriteStatus = SLMirLowerRewriteSymbolInst(builder, &loweredInst, &loweredInst, diag);
+    rewriteStatus = HOPMirLowerRewriteSymbolInst(builder, &loweredInst, &loweredInst, diag);
     if (rewriteStatus < 0) {
         return -1;
     }
-    rewriteStatus = SLMirLowerRewriteTypeInst(builder, src, &loweredInst, &loweredInst, diag);
+    rewriteStatus = HOPMirLowerRewriteTypeInst(builder, src, &loweredInst, &loweredInst, diag);
     if (rewriteStatus < 0) {
         return -1;
     }
-    rewriteStatus = SLMirLowerRewriteHostInst(builder, src, &loweredInst, &loweredInst, diag);
+    rewriteStatus = HOPMirLowerRewriteHostInst(builder, src, &loweredInst, &loweredInst, diag);
     if (rewriteStatus < 0) {
         return -1;
     }
-    rewriteStatus = SLMirLowerRewriteFieldInst(builder, &loweredInst, &loweredInst, diag);
+    rewriteStatus = HOPMirLowerRewriteFieldInst(builder, &loweredInst, &loweredInst, diag);
     if (rewriteStatus < 0) {
         return -1;
     }
-    if (SLMirProgramBuilderAppendInst(builder, &loweredInst) != 0) {
-        SLMirLowerSetDiag(diag, SLDiag_ARENA_OOM, loweredInst.start, loweredInst.end);
+    if (HOPMirProgramBuilderAppendInst(builder, &loweredInst) != 0) {
+        HOPMirLowerSetDiag(diag, HOPDiag_ARENA_OOM, loweredInst.start, loweredInst.end);
         return -1;
     }
     return 0;
 }
 
-int SLMirLowerAppendExprAsFunction(
-    SLMirProgramBuilder* _Nonnull builder,
-    SLArena* _Nonnull arena,
-    const SLAst* _Nonnull ast,
-    SLStrView src,
-    int32_t   nodeId,
-    int32_t   resultTypeNode,
+int HOPMirLowerAppendExprAsFunction(
+    HOPMirProgramBuilder* _Nonnull builder,
+    HOPArena* _Nonnull arena,
+    const HOPAst* _Nonnull ast,
+    HOPStrView src,
+    int32_t    nodeId,
+    int32_t    resultTypeNode,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
-    SLDiag* _Nullable diag) {
-    SLMirChunk     chunk;
-    SLMirFunction  function = { 0 };
-    SLMirSourceRef sourceRef = { 0 };
-    SLMirTypeRef   typeRef = { 0 };
-    uint32_t       functionIndex = 0;
-    uint32_t       sourceIndex = 0;
-    uint32_t       i;
+    HOPDiag* _Nullable diag) {
+    HOPMirChunk     chunk;
+    HOPMirFunction  function = { 0 };
+    HOPMirSourceRef sourceRef = { 0 };
+    HOPMirTypeRef   typeRef = { 0 };
+    uint32_t        functionIndex = 0;
+    uint32_t        sourceIndex = 0;
+    uint32_t        i;
 
     if (outFunctionIndex != NULL) {
         *outFunctionIndex = UINT32_MAX;
@@ -540,8 +542,8 @@ int SLMirLowerAppendExprAsFunction(
         || outSupported == NULL)
     {
         if (diag != NULL) {
-            diag->code = SLDiag_UNEXPECTED_TOKEN;
-            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->code = HOPDiag_UNEXPECTED_TOKEN;
+            diag->type = HOPDiagTypeOfCode(diag->code);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -551,7 +553,7 @@ int SLMirLowerAppendExprAsFunction(
     }
 
     *outSupported = 0;
-    if (SLMirBuildExpr(arena, ast, src, nodeId, &chunk, outSupported, diag) != 0) {
+    if (HOPMirBuildExpr(arena, ast, src, nodeId, &chunk, outSupported, diag) != 0) {
         return -1;
     }
     if (!*outSupported) {
@@ -559,10 +561,10 @@ int SLMirLowerAppendExprAsFunction(
     }
 
     sourceRef.src = src;
-    if (SLMirProgramBuilderAddSource(builder, &sourceRef, &sourceIndex) != 0) {
+    if (HOPMirProgramBuilderAddSource(builder, &sourceRef, &sourceIndex) != 0) {
         if (diag != NULL) {
-            diag->code = SLDiag_ARENA_OOM;
-            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->code = HOPDiag_ARENA_OOM;
+            diag->type = HOPDiagTypeOfCode(diag->code);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -580,15 +582,15 @@ int SLMirLowerAppendExprAsFunction(
     function.nameStart = 0;
     function.nameEnd = 0;
     if (resultTypeNode >= 0) {
-        const SLAstNode* typeNode = &ast->nodes[resultTypeNode];
+        const HOPAstNode* typeNode = &ast->nodes[resultTypeNode];
         typeRef.astNode = (uint32_t)resultTypeNode;
         typeRef.sourceRef = sourceIndex;
         typeRef.flags = 0;
         typeRef.aux = 0;
-        if (SLMirProgramBuilderAddType(builder, &typeRef, &function.typeRef) != 0) {
+        if (HOPMirProgramBuilderAddType(builder, &typeRef, &function.typeRef) != 0) {
             if (diag != NULL) {
-                diag->code = SLDiag_ARENA_OOM;
-                diag->type = SLDiagTypeOfCode(diag->code);
+                diag->code = HOPDiag_ARENA_OOM;
+                diag->type = HOPDiagTypeOfCode(diag->code);
                 diag->start = typeNode->start;
                 diag->end = typeNode->end;
                 diag->argStart = 0;
@@ -597,10 +599,10 @@ int SLMirLowerAppendExprAsFunction(
             return -1;
         }
     }
-    if (SLMirProgramBuilderBeginFunction(builder, &function, &functionIndex) != 0) {
+    if (HOPMirProgramBuilderBeginFunction(builder, &function, &functionIndex) != 0) {
         if (diag != NULL) {
-            diag->code = SLDiag_ARENA_OOM;
-            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->code = HOPDiag_ARENA_OOM;
+            diag->type = HOPDiagTypeOfCode(diag->code);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -609,14 +611,14 @@ int SLMirLowerAppendExprAsFunction(
         return -1;
     }
     for (i = 0; i < chunk.len; i++) {
-        if (SLMirLowerAppendInst(builder, arena, src, &chunk.v[i], diag) != 0) {
+        if (HOPMirLowerAppendInst(builder, arena, src, &chunk.v[i], diag) != 0) {
             return -1;
         }
     }
-    if (SLMirProgramBuilderEndFunction(builder) != 0) {
+    if (HOPMirProgramBuilderEndFunction(builder) != 0) {
         if (diag != NULL) {
-            diag->code = SLDiag_UNEXPECTED_TOKEN;
-            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->code = HOPDiag_UNEXPECTED_TOKEN;
+            diag->type = HOPDiagTypeOfCode(diag->code);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -628,23 +630,23 @@ int SLMirLowerAppendExprAsFunction(
     return 0;
 }
 
-int SLMirLowerExprAsFunction(
-    SLArena* _Nonnull arena,
-    const SLAst* _Nonnull ast,
-    SLStrView src,
-    int32_t   nodeId,
-    SLMirProgram* _Nonnull outProgram,
+int HOPMirLowerExprAsFunction(
+    HOPArena* _Nonnull arena,
+    const HOPAst* _Nonnull ast,
+    HOPStrView src,
+    int32_t    nodeId,
+    HOPMirProgram* _Nonnull outProgram,
     int* _Nonnull outSupported,
-    SLDiag* _Nullable diag) {
-    SLMirProgramBuilder builder;
-    uint32_t            functionIndex = UINT32_MAX;
+    HOPDiag* _Nullable diag) {
+    HOPMirProgramBuilder builder;
+    uint32_t             functionIndex = UINT32_MAX;
     if (outProgram != NULL) {
-        *outProgram = (SLMirProgram){ 0 };
+        *outProgram = (HOPMirProgram){ 0 };
     }
     if (arena == NULL || ast == NULL || outProgram == NULL || outSupported == NULL) {
         if (diag != NULL) {
-            diag->code = SLDiag_UNEXPECTED_TOKEN;
-            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->code = HOPDiag_UNEXPECTED_TOKEN;
+            diag->type = HOPDiagTypeOfCode(diag->code);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -652,8 +654,8 @@ int SLMirLowerExprAsFunction(
         }
         return -1;
     }
-    SLMirProgramBuilderInit(&builder, arena);
-    if (SLMirLowerAppendExprAsFunction(
+    HOPMirProgramBuilderInit(&builder, arena);
+    if (HOPMirLowerAppendExprAsFunction(
             &builder, arena, ast, src, nodeId, -1, &functionIndex, outSupported, diag)
         != 0)
     {
@@ -662,8 +664,8 @@ int SLMirLowerExprAsFunction(
     if (!*outSupported || functionIndex == UINT32_MAX) {
         return 0;
     }
-    SLMirProgramBuilderFinish(&builder, outProgram);
+    HOPMirProgramBuilderFinish(&builder, outProgram);
     return 0;
 }
 
-SL_API_END
+HOP_API_END

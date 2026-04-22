@@ -1,0 +1,1 @@
+tests/hep29_for_in_source_bad.hop:4:11: error: HOP2086: for-in source must support sequence iteration or iterator protocol

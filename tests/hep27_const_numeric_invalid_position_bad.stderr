@@ -1,0 +1,1 @@
+tests/hep27_const_numeric_invalid_position_bad.hop:3:8: error: HOP2085: const_int and const_float are only allowed in const declarations, const parameters, function returns, and cast targets

@@ -1,1 +1,1 @@
-tests/types_mut_bad_readonly_to_mutref_assign.sl:7:2: error: SL2004: type mismatch
+tests/types_mut_bad_readonly_to_mutref_assign.hop:7:2: error: HOP2004: type mismatch

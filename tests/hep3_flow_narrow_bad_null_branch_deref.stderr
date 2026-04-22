@@ -1,0 +1,1 @@
+tests/hep3_flow_narrow_bad_null_branch_deref.hop:7:10: error: HOP2004: type mismatch

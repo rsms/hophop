@@ -1,1 +1,1 @@
-tests/struct_field_defaults_embedded_bad.sl:7:9: error: SL2046: default expression type mismatch for field 'Base'
+tests/struct_field_defaults_embedded_bad.hop:7:9: error: HOP2046: default expression type mismatch for field 'Base'

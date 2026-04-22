@@ -1,0 +1,2 @@
+// Verifies bad reserved name function.
+fn __hop_bad() {}

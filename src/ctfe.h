@@ -1,27 +1,27 @@
 #pragma once
-#include "libsl.h"
+#include "libhop.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
 typedef enum {
-    SLCTFEValue_INVALID = 0,
-    SLCTFEValue_INT,
-    SLCTFEValue_FLOAT,
-    SLCTFEValue_BOOL,
-    SLCTFEValue_STRING,
-    SLCTFEValue_TYPE,
-    SLCTFEValue_SPAN,
-    SLCTFEValue_NULL,
-    SLCTFEValue_OPTIONAL,
-    SLCTFEValue_AGGREGATE,
-    SLCTFEValue_ARRAY,
-    SLCTFEValue_REFERENCE,
-} SLCTFEValueKind;
+    HOPCTFEValue_INVALID = 0,
+    HOPCTFEValue_INT,
+    HOPCTFEValue_FLOAT,
+    HOPCTFEValue_BOOL,
+    HOPCTFEValue_STRING,
+    HOPCTFEValue_TYPE,
+    HOPCTFEValue_SPAN,
+    HOPCTFEValue_NULL,
+    HOPCTFEValue_OPTIONAL,
+    HOPCTFEValue_AGGREGATE,
+    HOPCTFEValue_ARRAY,
+    HOPCTFEValue_REFERENCE,
+} HOPCTFEValueKind;
 
 typedef struct {
     const uint8_t* _Nullable bytes;
     uint32_t len;
-} SLCTFEString;
+} HOPCTFEString;
 
 typedef struct {
     const uint8_t* _Nullable fileBytes;
@@ -30,101 +30,101 @@ typedef struct {
     uint32_t startColumn;
     uint32_t endLine;
     uint32_t endColumn;
-} SLCTFESpan;
+} HOPCTFESpan;
 
 typedef struct {
-    SLCTFEValueKind kind;
-    int64_t         i64;
-    double          f64;
-    uint8_t         b;
-    uint64_t        typeTag;
-    SLCTFEString    s;
-    SLCTFESpan      span;
-} SLCTFEValue;
+    HOPCTFEValueKind kind;
+    int64_t          i64;
+    double           f64;
+    uint8_t          b;
+    uint64_t         typeTag;
+    HOPCTFEString    s;
+    HOPCTFESpan      span;
+} HOPCTFEValue;
 
-static const uint64_t SLCTFEValueTag_AGG_PARTIAL = UINT64_C(1) << 57;
+static const uint64_t HOPCTFEValueTag_AGG_PARTIAL = UINT64_C(1) << 57;
 
-typedef int (*SLCTFEResolveIdentFn)(
+typedef int (*HOPCTFEResolveIdentFn)(
     void* _Nullable ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
+    HOPDiag* _Nullable diag);
 
-typedef int (*SLCTFEResolveCallFn)(
+typedef int (*HOPCTFEResolveCallFn)(
     void* _Nullable ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const SLCTFEValue* _Nonnull args,
+    const HOPCTFEValue* _Nonnull args,
     uint32_t argCount,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLCTFEMakeTupleFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPCTFEMakeTupleFn)(
     void* _Nullable ctx,
-    const SLCTFEValue* _Nonnull elems,
+    const HOPCTFEValue* _Nonnull elems,
     uint32_t elemCount,
     uint32_t typeNodeHint,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLCTFEIndexValueFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPCTFEIndexValueFn)(
     void* _Nullable ctx,
-    const SLCTFEValue* _Nonnull base,
-    const SLCTFEValue* _Nonnull index,
-    SLCTFEValue* _Nonnull outValue,
+    const HOPCTFEValue* _Nonnull base,
+    const HOPCTFEValue* _Nonnull index,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLCTFEAggGetFieldFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPCTFEAggGetFieldFn)(
     void* _Nullable ctx,
-    const SLCTFEValue* _Nonnull base,
+    const HOPCTFEValue* _Nonnull base,
     uint32_t nameStart,
     uint32_t nameEnd,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-typedef int (*SLCTFEAggAddrFieldFn)(
+    HOPDiag* _Nullable diag);
+typedef int (*HOPCTFEAggAddrFieldFn)(
     void* _Nullable ctx,
-    const SLCTFEValue* _Nonnull base,
+    const HOPCTFEValue* _Nonnull base,
     uint32_t nameStart,
     uint32_t nameEnd,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
+    HOPDiag* _Nullable diag);
 
-int SLCTFEEvalExprEx(
-    SLArena* _Nonnull arena,
-    const SLAst* _Nonnull ast,
-    SLStrView src,
-    int32_t   nodeId,
-    SLCTFEResolveIdentFn _Nullable resolveIdent,
-    SLCTFEResolveCallFn _Nullable resolveCall,
+int HOPCTFEEvalExprEx(
+    HOPArena* _Nonnull arena,
+    const HOPAst* _Nonnull ast,
+    HOPStrView src,
+    int32_t    nodeId,
+    HOPCTFEResolveIdentFn _Nullable resolveIdent,
+    HOPCTFEResolveCallFn _Nullable resolveCall,
     void* _Nullable resolveCtx,
-    SLCTFEMakeTupleFn _Nullable makeTuple,
+    HOPCTFEMakeTupleFn _Nullable makeTuple,
     void* _Nullable makeTupleCtx,
-    SLCTFEIndexValueFn _Nullable indexValue,
+    HOPCTFEIndexValueFn _Nullable indexValue,
     void* _Nullable indexValueCtx,
-    SLCTFEAggGetFieldFn _Nullable aggGetField,
+    HOPCTFEAggGetFieldFn _Nullable aggGetField,
     void* _Nullable aggGetFieldCtx,
-    SLCTFEAggAddrFieldFn _Nullable aggAddrField,
+    HOPCTFEAggAddrFieldFn _Nullable aggAddrField,
     void* _Nullable aggAddrFieldCtx,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
+    HOPDiag* _Nullable diag);
 
-int SLCTFEEvalExpr(
-    SLArena* _Nonnull arena,
-    const SLAst* _Nonnull ast,
-    SLStrView src,
-    int32_t   nodeId,
-    SLCTFEResolveIdentFn _Nullable resolveIdent,
-    SLCTFEResolveCallFn _Nullable resolveCall,
+int HOPCTFEEvalExpr(
+    HOPArena* _Nonnull arena,
+    const HOPAst* _Nonnull ast,
+    HOPStrView src,
+    int32_t    nodeId,
+    HOPCTFEResolveIdentFn _Nullable resolveIdent,
+    HOPCTFEResolveCallFn _Nullable resolveCall,
     void* _Nullable resolveCtx,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
+    HOPDiag* _Nullable diag);
 
-int SLCTFEValueToInt64(const SLCTFEValue* _Nonnull value, int64_t* _Nonnull out);
+int HOPCTFEValueToInt64(const HOPCTFEValue* _Nonnull value, int64_t* _Nonnull out);
 
-SL_API_END
+HOP_API_END

@@ -1,11 +1,11 @@
-# SL Formatter Maintenance Notes
+# HopHop Formatter Maintenance Notes
 
 This document describes the formatting contract that maintainers should preserve (or change deliberately).
 It is not an implementation walkthrough.
 
 ## Scope and goals
 
-`slc fmt` is intended to be:
+`hop fmt` is intended to be:
 
 - deterministic
 - idempotent (`fmt(fmt(x)) == fmt(x)`)
@@ -18,10 +18,10 @@ The formatter is intentionally opinionated and currently does not attempt line-w
 
 When behavior is unclear, these test fixtures are the contract:
 
-- `tests/fmt_canonical.sl` (broad coverage)
-- `tests/fmt_import_groups.expected.sl` (import sorting/alignment details)
-- `tests/fmt_messy.expected.sl` (normalization from irregular input)
-- `tests/fmt_dir_top.expected.sl` (directory mode expectations)
+- `tests/fmt_canonical.hop` (broad coverage)
+- `tests/fmt_import_groups.expected.hop` (import sorting/alignment details)
+- `tests/fmt_messy.expected.hop` (normalization from irregular input)
+- `tests/fmt_dir_top.expected.hop` (directory mode expectations)
 
 `fmt_canonical` should be treated as the language designer's style decision file.
 
@@ -184,7 +184,7 @@ If parser behavior changes here, formatter output validity may regress.
 
 When changing formatting behavior:
 
-1. Update `tests/fmt_canonical.sl` first to express intended style.
+1. Update `tests/fmt_canonical.hop` first to express intended style.
 2. Update focused formatter fixtures for edge cases (`fmt_import_groups`, `fmt_messy`, etc.).
 3. Run formatter suite and full test suite.
 4. Document non-obvious rule changes in this file.

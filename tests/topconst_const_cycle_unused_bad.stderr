@@ -1,1 +1,1 @@
-tests/topconst_const_cycle_unused_bad.sl:4:1: error: SL2055: const initializer must be a const expression: cyclic top-level initializer dependency
+tests/topconst_const_cycle_unused_bad.hop:4:1: error: HOP2055: const initializer must be a const expression: cyclic top-level initializer dependency

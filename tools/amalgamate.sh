@@ -10,22 +10,22 @@ fi
 
 outfile=$1; shift
 source_hash=$(git rev-parse --short=20 HEAD 2>/dev/null || echo src)
-version=$(grep -F '#define SL_VERSION ' src/libsl.h | awk '{print $3}')
+version=$(grep -F '#define HOP_VERSION ' src/libhop.h | awk '{print $3}')
 
 index_file=$(mktemp)
 trap "rm -f $index_file $outfile.tmp" EXIT
 
 cat <<__END__ > $index_file
-/* libsl version $version <https://github.com/rsms/slang>
+/* libhop version $version <https://github.com/rsms/hophop>
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 $(cat LICENSE.txt)
 //////////////////////////////////////////////////////////////////////////////////////////////////*/
-#define SL_SOURCE_HASH "${source_hash}"
-#include "src/libsl.h"
+#define HOP_SOURCE_HASH "${source_hash}"
+#include "src/libhop.h"
 __END__
 for f in "$@"; do
     case "$f" in
-        */libsl.h|libsl.h|*/libsl-impl.h|libsl-impl.h) ;;
+        */libhop.h|libhop.h|*/libhop-impl.h|libhop-impl.h) ;;
         *.h) echo "#include \"$f\"" >> $index_file ;;
     esac
 done
@@ -33,10 +33,10 @@ done
 
 cat <<__END__ >> $index_file
 /*//////////////////////////////////////////////////////////////////////////////////////////////////
-// SL_IMPLEMENTATION
+// HOP_IMPLEMENTATION
 //////////////////////////////////////////////////////////////////////////////////////////////////*/
-#ifdef SL_IMPLEMENTATION
-#include "src/libsl-impl.h"
+#ifdef HOP_IMPLEMENTATION
+#include "src/libhop-impl.h"
 __END__
 for f in "$@"; do
     case "$f" in
@@ -44,7 +44,7 @@ for f in "$@"; do
         *) echo "#include \"$f\"" >> $index_file ;;
     esac
 done
-echo "#endif /* SL_IMPLEMENTATION */" >> $index_file
+echo "#endif /* HOP_IMPLEMENTATION */" >> $index_file
 
 # cp $index_file "$(dirname "$outfile")/amalgamate.h"
 

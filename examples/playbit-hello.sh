@@ -6,10 +6,10 @@ PLAYBIT_APP=${PLAYBIT_APP:-$HOME/playbit/engine/_build/macos-aarch64-debug/Playb
 
 set -x
 
-_build/macos-aarch64-debug/slc \
+_build/macos-aarch64-debug/hop \
     --platform playbit \
     genpkg:wasm \
-    examples/console_log.sl \
-    /tmp/sl-console_log.wasm
+    examples/console_log.hop \
+    /tmp/hop-console_log.wasm
 
-exec "$PLAYBIT_APP/Contents/MacOS/Playbit" /tmp/sl-console_log.wasm
+exec "$PLAYBIT_APP/Contents/MacOS/Playbit" /tmp/hop-console_log.wasm

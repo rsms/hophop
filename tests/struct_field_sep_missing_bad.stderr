@@ -1,1 +1,1 @@
-tests/struct_field_sep_missing_bad.sl:3:11: error: SL1004: unexpected token
+tests/struct_field_sep_missing_bad.hop:3:11: error: HOP1004: unexpected token

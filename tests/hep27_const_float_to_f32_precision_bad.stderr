@@ -1,0 +1,1 @@
+tests/hep27_const_float_to_f32_precision_bad.hop:3:14: error: HOP2004: type mismatch: constant value is not representable for f32

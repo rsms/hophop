@@ -1,1 +1,1 @@
-tests/var_infer_void_bad.sl:5:10: error: SL2027: cannot infer type from expression with no value
+tests/var_infer_void_bad.hop:5:10: error: HOP2027: cannot infer type from expression with no value

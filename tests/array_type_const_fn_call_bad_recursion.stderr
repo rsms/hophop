@@ -1,1 +1,1 @@
-tests/array_type_const_fn_call_bad_recursion.sl:7:13: error: SL2054: array length must be a const integer expression: recursive const function calls are not supported
+tests/array_type_const_fn_call_bad_recursion.hop:7:13: error: HOP2054: array length must be a const integer expression: recursive const function calls are not supported

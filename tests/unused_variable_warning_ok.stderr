@@ -1,2 +1,2 @@
-tests/unused_variable_warning_ok.sl:3:6: warning: SL2093: variable 'x' is unused
-tests/unused_variable_warning_ok.sl:3:6: hint: SL2093: rename variable to '_' to silence this warning
+tests/unused_variable_warning_ok.hop:3:6: warning: HOP2093: variable 'x' is unused
+tests/unused_variable_warning_ok.hop:3:6: hint: HOP2093: rename variable to '_' to silence this warning

@@ -1,1 +1,1 @@
-tests/bad_pub_block.sl:2:5: error: SL1005: expected declaration
+tests/bad_pub_block.hop:2:5: error: HOP1005: expected declaration

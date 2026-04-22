@@ -1,1 +1,1 @@
-tests/builtin_collision_import_alias_bad.sl:2:16: error: SL0000: import binding conflict
+tests/builtin_collision_import_alias_bad.hop:2:16: error: HOP0000: import binding conflict

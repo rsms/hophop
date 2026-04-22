@@ -1,2 +1,2 @@
-tests/checkpkg_unused_anypack_param_warning_ok.sl:2:9: warning: SL2095: parameter 'args' is unused
-tests/checkpkg_unused_anypack_param_warning_ok.sl:2:9: hint: SL2095: rename parameter to '_' to silence this warning
+tests/checkpkg_unused_anypack_param_warning_ok.hop:2:9: warning: HOP2095: parameter 'args' is unused
+tests/checkpkg_unused_anypack_param_warning_ok.hop:2:9: hint: HOP2095: rename parameter to '_' to silence this warning

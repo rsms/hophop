@@ -1,1 +1,1 @@
-tests/struct_composition_bad_multiple_embedded.sl:12:2: error: SL2012: only one embedded field is allowed
+tests/struct_composition_bad_multiple_embedded.hop:12:2: error: HOP2012: only one embedded field is allowed

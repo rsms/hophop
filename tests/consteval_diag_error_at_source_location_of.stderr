@@ -1,1 +1,1 @@
-tests/consteval_diag_error_at_source_location_of.sl:8:47: error: SL2075: consteval error: anchored
+tests/consteval_diag_error_at_source_location_of.hop:8:47: error: HOP2075: consteval error: anchored

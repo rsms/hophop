@@ -2,7 +2,7 @@
 <plist version="1.0">
 <dict>
     <key>scope</key>
-    <string><![CDATA[(source.slang) & (entity.name.namespace | entity.name.type | entity.name.constant | entity.name.function)]]></string>
+    <string><![CDATA[(source.hophop) & (entity.name.namespace | entity.name.type | entity.name.constant | entity.name.function)]]></string>
     <key>settings</key>
     <dict>
         <key>showInSymbolList</key>

@@ -1,132 +1,132 @@
-// SL diagnostics (JSON Lines)
+// HopHop diagnostics (JSON Lines)
 // One JSON object per line. Required fields: id, name, category, message
 // Optional fields: type ("error"|"warning"), hint
 // Category -> id range:
-//   syntactic: SL1000-SL1999
-//   semantic:  SL2000-SL2999
-//   codegen:   SL3000-SL3999
-//   compiler:  SL4000-SL4999
+//   syntactic: HOP1000-HOP1999
+//   semantic:  HOP2000-HOP2999
+//   codegen:   HOP3000-HOP3999
+//   compiler:  HOP4000-HOP4999
 
-{"id": "SL1001", "name": "UNEXPECTED_CHAR", "category": "syntactic", "message": "unexpected character"}
-{"id": "SL1002", "name": "UNTERMINATED_STRING", "category": "syntactic", "message": "unterminated string literal"}
-{"id": "SL1003", "name": "INVALID_NUMBER", "category": "syntactic", "message": "invalid number literal"}
-{"id": "SL1004", "name": "UNEXPECTED_TOKEN", "category": "syntactic", "message": "unexpected token"}
-{"id": "SL1005", "name": "EXPECTED_DECL", "category": "syntactic", "message": "expected declaration"}
-{"id": "SL1006", "name": "EXPECTED_EXPR", "category": "syntactic", "message": "expected expression"}
-{"id": "SL1007", "name": "EXPECTED_TYPE", "category": "syntactic", "message": "expected type"}
-{"id": "SL1008", "name": "PARAM_MISSING_TYPE", "category": "syntactic", "message": "parameter '{s}' is missing type"}
-{"id": "SL1009", "name": "INVALID_STRING_ESCAPE", "category": "syntactic", "message": "invalid string escape sequence"}
-{"id": "SL1010", "name": "INVALID_STRING_CODEPOINT", "category": "syntactic", "message": "invalid Unicode code point in string literal"}
-{"id": "SL1011", "name": "INVALID_UTF8_STRING", "category": "syntactic", "message": "string literal must decode to valid UTF-8"}
-{"id": "SL1012", "name": "UNTERMINATED_BLOCK_COMMENT", "category": "syntactic", "message": "unterminated block comment"}
-{"id": "SL1013", "name": "UNTERMINATED_RUNE", "category": "syntactic", "message": "unterminated rune literal"}
-{"id": "SL1014", "name": "EMPTY_RUNE", "category": "syntactic", "message": "empty rune literal"}
-{"id": "SL1015", "name": "RUNE_CODEPOINT_COUNT", "category": "syntactic", "message": "rune literal must contain exactly one Unicode code point"}
-{"id": "SL1016", "name": "INVALID_RUNE_ESCAPE", "category": "syntactic", "message": "invalid rune escape sequence"}
-{"id": "SL1017", "name": "INVALID_RUNE_CODEPOINT", "category": "syntactic", "message": "invalid Unicode code point in rune literal"}
-{"id": "SL1018", "name": "INVALID_UTF8_RUNE", "category": "syntactic", "message": "rune literal must decode to valid UTF-8"}
-{"id": "SL1019", "name": "CONST_PARAM_GROUPED_NAME_INVALID", "category": "syntactic", "message": "grouped-name form is invalid for const parameter; rewrite as separate const parameters"}
-{"id": "SL2001", "name": "DUPLICATE_SYMBOL", "category": "semantic", "message": "duplicate definition '{s}'"}
-{"id": "SL2002", "name": "UNKNOWN_SYMBOL", "category": "semantic", "message": "unknown symbol"}
-{"id": "SL2003", "name": "UNKNOWN_TYPE", "category": "semantic", "message": "unknown type"}
-{"id": "SL2004", "name": "TYPE_MISMATCH", "category": "semantic", "message": "type mismatch"}
-{"id": "SL2005", "name": "ARITY_MISMATCH", "category": "semantic", "message": "call arity mismatch"}
-{"id": "SL2006", "name": "NOT_CALLABLE", "category": "semantic", "message": "expression is not callable"}
-{"id": "SL2007", "name": "RESERVED_NAME", "category": "semantic", "message": "identifier '{s}' is reserved"}
-{"id": "SL2008", "name": "RESERVED_SL_PREFIX", "category": "semantic", "message": "identifier prefix '__sl_' is reserved", "hint": "rename symbol to avoid '__sl_' prefix"}
-{"id": "SL2009", "name": "EXPECTED_BOOL", "category": "semantic", "message": "expected bool expression"}
-{"id": "SL2011", "name": "EMBEDDED_FIELD_NOT_FIRST", "category": "semantic", "message": "embedded field must be first in struct"}
-{"id": "SL2012", "name": "MULTIPLE_EMBEDDED_FIELDS", "category": "semantic", "message": "only one embedded field is allowed"}
-{"id": "SL2013", "name": "EMBEDDED_TYPE_NOT_STRUCT", "category": "semantic", "message": "embedded field type must be a struct"}
-{"id": "SL2014", "name": "EMBEDDED_CYCLE", "category": "semantic", "message": "embedded struct cycle detected"}
-{"id": "SL2015", "name": "NO_MATCHING_OVERLOAD", "category": "semantic", "message": "no matching overload"}
-{"id": "SL2016", "name": "AMBIGUOUS_CALL", "category": "semantic", "message": "ambiguous call"}
-{"id": "SL2020", "name": "IMPORT_INVALID_PATH", "category": "semantic", "message": "invalid import path ({s})"}
-{"id": "SL2021", "name": "IMPORT_ALIAS_INFERENCE_FAILED", "category": "semantic", "message": "cannot infer package identifier; use 'import \"{s}\" as <name>'"}
-{"id": "SL2022", "name": "IMPORT_WILDCARD_NOT_SUPPORTED", "category": "semantic", "message": "wildcard import is not supported"}
-{"id": "SL2023", "name": "IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS", "category": "semantic", "message": "import with symbol list cannot use as _"}
-{"id": "SL2024", "name": "IMPORT_SYMBOL_ALIAS_INVALID", "category": "semantic", "message": "import symbol alias '_' is not allowed"}
-{"id": "SL2025", "name": "IMPORT_FEATURE_IMPORT_EXTRAS", "category": "semantic", "message": "feature imports must be path-only (no alias or symbol list)"}
-{"id": "SL2026", "name": "INFER_NULL_TYPE_UNKNOWN", "category": "semantic", "message": "cannot infer type from null; add explicit type"}
-{"id": "SL2027", "name": "INFER_VOID_TYPE_UNKNOWN", "category": "semantic", "message": "cannot infer type from expression with no value"}
-{"id": "SL2028", "name": "CONST_MISSING_INITIALIZER", "category": "semantic", "message": "const declaration requires initializer"}
-{"id": "SL2029", "name": "CONTEXT_REQUIRED", "category": "semantic", "message": "context is required here"}
-{"id": "SL2030", "name": "CONTEXT_MISSING_FIELD", "category": "semantic", "message": "required context field is missing"}
-{"id": "SL2031", "name": "CONTEXT_TYPE_MISMATCH", "category": "semantic", "message": "context field type mismatch"}
-{"id": "SL2032", "name": "CONTEXT_UNKNOWN_FIELD", "category": "semantic", "message": "unknown context field in context clause"}
-{"id": "SL2033", "name": "CONTEXT_DUPLICATE_FIELD", "category": "semantic", "message": "duplicate context field in context clause"}
-{"id": "SL2034", "name": "CONTEXT_CLAUSE_MISMATCH", "category": "semantic", "message": "function context clause mismatch"}
-{"id": "SL2035", "name": "WITH_CONTEXT_ON_NON_CALL", "category": "semantic", "message": "'context' clause can only be applied to a call"}
-{"id": "SL2036", "name": "COMPOUND_TYPE_REQUIRED", "category": "semantic", "message": "compound literal requires an explicit aggregate type"}
-{"id": "SL2037", "name": "COMPOUND_INFER_NO_CONTEXT", "category": "semantic", "message": "cannot infer compound literal type from context"}
-{"id": "SL2038", "name": "COMPOUND_INFER_AMBIGUOUS", "category": "semantic", "message": "compound literal type inference is ambiguous"}
-{"id": "SL2039", "name": "COMPOUND_INFER_NON_AGGREGATE", "category": "semantic", "message": "inferred compound literal type is not an aggregate"}
-{"id": "SL2040", "name": "COMPOUND_FIELD_UNKNOWN", "category": "semantic", "message": "unknown compound literal field '{s}'"}
-{"id": "SL2041", "name": "COMPOUND_FIELD_DUPLICATE", "category": "semantic", "message": "duplicate compound literal field '{s}'"}
-{"id": "SL2042", "name": "COMPOUND_FIELD_TYPE_MISMATCH", "category": "semantic", "message": "compound literal field '{s}' type mismatch"}
-{"id": "SL2043", "name": "COMPOUND_MUT_REF_TEMPORARY", "category": "semantic", "message": "cannot bind compound literal temporary to mutable reference"}
-{"id": "SL2044", "name": "COMPOUND_UNION_MULTI_FIELD", "category": "semantic", "message": "union compound literal can initialize at most one field"}
-{"id": "SL2045", "name": "FIELD_DEFAULT_FORWARD_REF", "category": "semantic", "message": "field default references later field '{s}'"}
-{"id": "SL2046", "name": "FIELD_DEFAULT_TYPE_MISMATCH", "category": "semantic", "message": "default expression type mismatch for field '{s}'"}
-{"id": "SL2047", "name": "FIELD_DEFAULT_ON_EMBEDDED", "category": "semantic", "message": "embedded field cannot have default initializer"}
-{"id": "SL2048", "name": "NEW_VARSIZE_INIT_REQUIRED", "category": "semantic", "message": "new on variable-size type requires initializer (use new T{...})"}
-{"id": "SL2049", "name": "INVALID_COMPARISON_HOOK_SIGNATURE", "category": "semantic", "message": "invalid comparison hook signature"}
-{"id": "SL2050", "name": "TYPE_NOT_COMPARABLE", "category": "semantic", "message": "type is not comparable"}
-{"id": "SL2051", "name": "TYPE_NOT_ORDERED", "category": "semantic", "message": "type is not ordered"}
-{"id": "SL2052", "name": "COMPARISON_HOOK_IMPURE", "category": "semantic", "message": "comparison hook must be pure"}
-{"id": "SL2053", "name": "STRING_CONCAT_LITERAL_ONLY", "category": "semantic", "message": "string '+' currently only supports non-parenthesized literal chains"}
-{"id": "SL2054", "name": "ARRAY_LEN_CONST_REQUIRED", "category": "semantic", "message": "array length must be a const integer expression"}
-{"id": "SL2055", "name": "CONST_INIT_CONST_REQUIRED", "category": "semantic", "message": "const initializer must be a const expression"}
-{"id": "SL2056", "name": "CALL_ARG_NAME_REQUIRED", "category": "semantic", "message": "call argument must be named (or be an identifier) after the first argument"}
-{"id": "SL2057", "name": "CALL_ARG_UNKNOWN_NAME", "category": "semantic", "message": "no parameter named '{s}'"}
-{"id": "SL2058", "name": "CALL_ARG_DUPLICATE", "category": "semantic", "message": "duplicate argument for parameter '{s}'"}
-{"id": "SL2059", "name": "CALL_ARG_MISSING", "category": "semantic", "message": "missing argument for parameter '{s}'"}
-{"id": "SL2060", "name": "CALL_FIRST_ARG_NAME_MISMATCH", "category": "semantic", "message": "first argument name must match parameter '{s}'"}
-{"id": "SL2061", "name": "SWITCH_MISSING_CASES", "category": "semantic", "message": "missing cases in switch"}
-{"id": "SL2062", "name": "FORMAT_INVALID", "category": "semantic", "message": "invalid format string"}
-{"id": "SL2063", "name": "FORMAT_ARG_COUNT_MISMATCH", "category": "semantic", "message": "format placeholder count does not match argument count"}
-{"id": "SL2064", "name": "FORMAT_ARG_TYPE_MISMATCH", "category": "semantic", "message": "format argument type mismatch"}
-{"id": "SL2065", "name": "FORMAT_UNSUPPORTED_TYPE", "category": "semantic", "message": "format does not support this type"}
-{"id": "SL2066", "name": "VARIADIC_PARAM_NOT_LAST", "category": "semantic", "message": "variadic parameter must be last"}
-{"id": "SL2067", "name": "VARIADIC_PARAM_DUPLICATE", "category": "semantic", "message": "only one variadic parameter is allowed"}
-{"id": "SL2068", "name": "VARIADIC_ARG_TYPE_MISMATCH", "category": "semantic", "message": "variadic argument type mismatch"}
-{"id": "SL2069", "name": "VARIADIC_SPREAD_NON_SLICE", "category": "semantic", "message": "spread argument must be assignable to the variadic slice type"}
-{"id": "SL2070", "name": "VARIADIC_SPREAD_NOT_LAST", "category": "semantic", "message": "spread argument must be the final argument"}
-{"id": "SL2071", "name": "VARIADIC_CALL_SHAPE_MISMATCH", "category": "semantic", "message": "invalid variadic argument shape"}
-{"id": "SL2072", "name": "CONSTEVAL_DIAG_NON_CONST_CONTEXT", "category": "semantic", "message": "compiler diagnostic API call is not in a const-evaluated context"}
-{"id": "SL2073", "name": "CONSTEVAL_DIAG_MESSAGE_NOT_CONST_STRING", "category": "semantic", "message": "diagnostic message must be a const-evaluable string"}
-{"id": "SL2074", "name": "CONSTEVAL_DIAG_INVALID_SPAN", "category": "semantic", "message": "diagnostic span is invalid"}
-{"id": "SL2075", "name": "CONSTEVAL_DIAG_ERROR", "category": "semantic", "message": "consteval error"}
-{"id": "SL2076", "name": "CONSTEVAL_DIAG_WARNING", "category": "semantic", "message": "consteval warning", "type": "warning"}
-{"id": "SL2077", "name": "CONST_PARAM_ARG_NOT_CONST", "category": "semantic", "message": "const parameter '{s}' requires a const-evaluable argument"}
-{"id": "SL2078", "name": "CONST_PARAM_SPREAD_NOT_CONST", "category": "semantic", "message": "spread argument for const variadic parameter '{s}' must be const-evaluable"}
-{"id": "SL2079", "name": "ANYTYPE_INVALID_POSITION", "category": "semantic", "message": "anytype is only allowed in function parameter positions"}
-{"id": "SL2080", "name": "ANYTYPE_PACK_INDEX_NOT_CONST", "category": "semantic", "message": "anytype pack index must be a const-evaluable integer"}
-{"id": "SL2081", "name": "ANYTYPE_PACK_INDEX_OOB", "category": "semantic", "message": "anytype pack index is out of bounds"}
-{"id": "SL2082", "name": "ANYTYPE_SPREAD_REQUIRES_PACK", "category": "semantic", "message": "spread into ...anytype requires an anytype pack value"}
-{"id": "SL2083", "name": "CONST_BLOCK_EVAL_FAILED", "category": "semantic", "message": "const block failed compile-time evaluation"}
-{"id": "SL2084", "name": "CONST_NUMERIC_PARAM_REQUIRES_CONST", "category": "semantic", "message": "parameter type const_int/const_float requires the 'const' modifier"}
-{"id": "SL2085", "name": "CONST_NUMERIC_INVALID_POSITION", "category": "semantic", "message": "const_int and const_float are only allowed in const declarations, const parameters, function returns, and cast targets"}
-{"id": "SL2086", "name": "FOR_IN_INVALID_SOURCE", "category": "semantic", "message": "for-in source must support sequence iteration or iterator protocol"}
-{"id": "SL2087", "name": "FOR_IN_KEY_REF_INVALID", "category": "semantic", "message": "for-in key cannot be captured by reference for synthetic sequence keys"}
-{"id": "SL2088", "name": "FOR_IN_VALUE_BINDING_INVALID", "category": "semantic", "message": "invalid for-in value binding for source mutability/capture mode"}
-{"id": "SL2089", "name": "FOR_IN_ITERATOR_AMBIGUOUS", "category": "semantic", "message": "ambiguous __iterator overload for for-in source"}
-{"id": "SL2090", "name": "FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD", "category": "semantic", "message": "no compatible next_value overload for this for-in loop form"}
-{"id": "SL2091", "name": "FOR_IN_ADVANCE_NON_BOOL", "category": "semantic", "message": "for-in next_value overload must return ?T"}
-{"id": "SL2092", "name": "UNUSED_FUNCTION", "category": "semantic", "message": "function '{s}' is unused", "type": "warning"}
-{"id": "SL2093", "name": "UNUSED_VARIABLE", "category": "semantic", "message": "variable '{s}' is unused", "type": "warning", "hint": "rename variable to '_' to silence this warning"}
-{"id": "SL2094", "name": "UNUSED_VARIABLE_NEVER_READ", "category": "semantic", "message": "variable '{s}' is never read", "type": "warning", "hint": "rename variable to '_' to silence this warning"}
-{"id": "SL2095", "name": "UNUSED_PARAMETER", "category": "semantic", "message": "parameter '{s}' is unused", "type": "warning", "hint": "rename parameter to '_' to silence this warning"}
-{"id": "SL2096", "name": "UNUSED_PARAMETER_NEVER_READ", "category": "semantic", "message": "parameter '{s}' is never read", "type": "warning"}
-{"id": "SL2097", "name": "LOCAL_PTR_REF_UNINIT", "category": "semantic", "message": "pointer/reference variable '{s}' is not initialized"}
-{"id": "SL2098", "name": "LOCAL_PTR_REF_MAYBE_UNINIT", "category": "semantic", "message": "pointer/reference variable '{s}' may be uninitialized"}
-{"id": "SL2099", "name": "TOPLEVEL_PTR_REF_INIT_REQUIRED", "category": "semantic", "message": "top-level pointer/reference variable '{s}' requires initializer"}
-{"id": "SL2100", "name": "CALL_ARG_NAME_REQUIRED_AFTER_PARAM", "category": "semantic", "message": "call argument must be named after parameter '{s}' is reached"}
-{"id": "SL3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
-{"id": "SL3002", "name": "WASM_BACKEND_UNSUPPORTED_MIR", "category": "codegen", "message": "Wasm backend does not support this MIR"}
-{"id": "SL3003", "name": "WASM_BACKEND_UNSUPPORTED_HOSTCALL", "category": "codegen", "message": "Wasm backend does not support this hostcall"}
-{"id": "SL3004", "name": "WASM_BACKEND_PLATFORM_REQUIRED", "category": "codegen", "message": "Wasm backend requires a platform target for this package"}
-{"id": "SL3005", "name": "WASM_BACKEND_INTERNAL", "category": "codegen", "message": "internal Wasm backend error"}
-{"id": "SL4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
-{"id": "SL4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}
-{"id": "SL4003", "name": "EVAL_BACKEND_UNSUPPORTED", "category": "compiler", "message": "evaluator backend: {s}"}
+{"id": "HOP1001", "name": "UNEXPECTED_CHAR", "category": "syntactic", "message": "unexpected character"}
+{"id": "HOP1002", "name": "UNTERMINATED_STRING", "category": "syntactic", "message": "unterminated string literal"}
+{"id": "HOP1003", "name": "INVALID_NUMBER", "category": "syntactic", "message": "invalid number literal"}
+{"id": "HOP1004", "name": "UNEXPECTED_TOKEN", "category": "syntactic", "message": "unexpected token"}
+{"id": "HOP1005", "name": "EXPECTED_DECL", "category": "syntactic", "message": "expected declaration"}
+{"id": "HOP1006", "name": "EXPECTED_EXPR", "category": "syntactic", "message": "expected expression"}
+{"id": "HOP1007", "name": "EXPECTED_TYPE", "category": "syntactic", "message": "expected type"}
+{"id": "HOP1008", "name": "PARAM_MISSING_TYPE", "category": "syntactic", "message": "parameter '{s}' is missing type"}
+{"id": "HOP1009", "name": "INVALID_STRING_ESCAPE", "category": "syntactic", "message": "invalid string escape sequence"}
+{"id": "HOP1010", "name": "INVALID_STRING_CODEPOINT", "category": "syntactic", "message": "invalid Unicode code point in string literal"}
+{"id": "HOP1011", "name": "INVALID_UTF8_STRING", "category": "syntactic", "message": "string literal must decode to valid UTF-8"}
+{"id": "HOP1012", "name": "UNTERMINATED_BLOCK_COMMENT", "category": "syntactic", "message": "unterminated block comment"}
+{"id": "HOP1013", "name": "UNTERMINATED_RUNE", "category": "syntactic", "message": "unterminated rune literal"}
+{"id": "HOP1014", "name": "EMPTY_RUNE", "category": "syntactic", "message": "empty rune literal"}
+{"id": "HOP1015", "name": "RUNE_CODEPOINT_COUNT", "category": "syntactic", "message": "rune literal must contain exactly one Unicode code point"}
+{"id": "HOP1016", "name": "INVALID_RUNE_ESCAPE", "category": "syntactic", "message": "invalid rune escape sequence"}
+{"id": "HOP1017", "name": "INVALID_RUNE_CODEPOINT", "category": "syntactic", "message": "invalid Unicode code point in rune literal"}
+{"id": "HOP1018", "name": "INVALID_UTF8_RUNE", "category": "syntactic", "message": "rune literal must decode to valid UTF-8"}
+{"id": "HOP1019", "name": "CONST_PARAM_GROUPED_NAME_INVALID", "category": "syntactic", "message": "grouped-name form is invalid for const parameter; rewrite as separate const parameters"}
+{"id": "HOP2001", "name": "DUPLICATE_SYMBOL", "category": "semantic", "message": "duplicate definition '{s}'"}
+{"id": "HOP2002", "name": "UNKNOWN_SYMBOL", "category": "semantic", "message": "unknown symbol"}
+{"id": "HOP2003", "name": "UNKNOWN_TYPE", "category": "semantic", "message": "unknown type"}
+{"id": "HOP2004", "name": "TYPE_MISMATCH", "category": "semantic", "message": "type mismatch"}
+{"id": "HOP2005", "name": "ARITY_MISMATCH", "category": "semantic", "message": "call arity mismatch"}
+{"id": "HOP2006", "name": "NOT_CALLABLE", "category": "semantic", "message": "expression is not callable"}
+{"id": "HOP2007", "name": "RESERVED_NAME", "category": "semantic", "message": "identifier '{s}' is reserved"}
+{"id": "HOP2008", "name": "RESERVED_HOP_PREFIX", "category": "semantic", "message": "identifier prefix '__hop_' is reserved", "hint": "rename symbol to avoid '__hop_' prefix"}
+{"id": "HOP2009", "name": "EXPECTED_BOOL", "category": "semantic", "message": "expected bool expression"}
+{"id": "HOP2011", "name": "EMBEDDED_FIELD_NOT_FIRST", "category": "semantic", "message": "embedded field must be first in struct"}
+{"id": "HOP2012", "name": "MULTIPLE_EMBEDDED_FIELDS", "category": "semantic", "message": "only one embedded field is allowed"}
+{"id": "HOP2013", "name": "EMBEDDED_TYPE_NOT_STRUCT", "category": "semantic", "message": "embedded field type must be a struct"}
+{"id": "HOP2014", "name": "EMBEDDED_CYCLE", "category": "semantic", "message": "embedded struct cycle detected"}
+{"id": "HOP2015", "name": "NO_MATCHING_OVERLOAD", "category": "semantic", "message": "no matching overload"}
+{"id": "HOP2016", "name": "AMBIGUOUS_CALL", "category": "semantic", "message": "ambiguous call"}
+{"id": "HOP2020", "name": "IMPORT_INVALID_PATH", "category": "semantic", "message": "invalid import path ({s})"}
+{"id": "HOP2021", "name": "IMPORT_ALIAS_INFERENCE_FAILED", "category": "semantic", "message": "cannot infer package identifier; use 'import \"{s}\" as <name>'"}
+{"id": "HOP2022", "name": "IMPORT_WILDCARD_NOT_SUPPORTED", "category": "semantic", "message": "wildcard import is not supported"}
+{"id": "HOP2023", "name": "IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS", "category": "semantic", "message": "import with symbol list cannot use as _"}
+{"id": "HOP2024", "name": "IMPORT_SYMBOL_ALIAS_INVALID", "category": "semantic", "message": "import symbol alias '_' is not allowed"}
+{"id": "HOP2025", "name": "IMPORT_FEATURE_IMPORT_EXTRAS", "category": "semantic", "message": "feature imports must be path-only (no alias or symbol list)"}
+{"id": "HOP2026", "name": "INFER_NULL_TYPE_UNKNOWN", "category": "semantic", "message": "cannot infer type from null; add explicit type"}
+{"id": "HOP2027", "name": "INFER_VOID_TYPE_UNKNOWN", "category": "semantic", "message": "cannot infer type from expression with no value"}
+{"id": "HOP2028", "name": "CONST_MISSING_INITIALIZER", "category": "semantic", "message": "const declaration requires initializer"}
+{"id": "HOP2029", "name": "CONTEXT_REQUIRED", "category": "semantic", "message": "context is required here"}
+{"id": "HOP2030", "name": "CONTEXT_MISSING_FIELD", "category": "semantic", "message": "required context field is missing"}
+{"id": "HOP2031", "name": "CONTEXT_TYPE_MISMATCH", "category": "semantic", "message": "context field type mismatch"}
+{"id": "HOP2032", "name": "CONTEXT_UNKNOWN_FIELD", "category": "semantic", "message": "unknown context field in context clause"}
+{"id": "HOP2033", "name": "CONTEXT_DUPLICATE_FIELD", "category": "semantic", "message": "duplicate context field in context clause"}
+{"id": "HOP2034", "name": "CONTEXT_CLAUSE_MISMATCH", "category": "semantic", "message": "function context clause mismatch"}
+{"id": "HOP2035", "name": "WITH_CONTEXT_ON_NON_CALL", "category": "semantic", "message": "'context' clause can only be applied to a call"}
+{"id": "HOP2036", "name": "COMPOUND_TYPE_REQUIRED", "category": "semantic", "message": "compound literal requires an explicit aggregate type"}
+{"id": "HOP2037", "name": "COMPOUND_INFER_NO_CONTEXT", "category": "semantic", "message": "cannot infer compound literal type from context"}
+{"id": "HOP2038", "name": "COMPOUND_INFER_AMBIGUOUS", "category": "semantic", "message": "compound literal type inference is ambiguous"}
+{"id": "HOP2039", "name": "COMPOUND_INFER_NON_AGGREGATE", "category": "semantic", "message": "inferred compound literal type is not an aggregate"}
+{"id": "HOP2040", "name": "COMPOUND_FIELD_UNKNOWN", "category": "semantic", "message": "unknown compound literal field '{s}'"}
+{"id": "HOP2041", "name": "COMPOUND_FIELD_DUPLICATE", "category": "semantic", "message": "duplicate compound literal field '{s}'"}
+{"id": "HOP2042", "name": "COMPOUND_FIELD_TYPE_MISMATCH", "category": "semantic", "message": "compound literal field '{s}' type mismatch"}
+{"id": "HOP2043", "name": "COMPOUND_MUT_REF_TEMPORARY", "category": "semantic", "message": "cannot bind compound literal temporary to mutable reference"}
+{"id": "HOP2044", "name": "COMPOUND_UNION_MULTI_FIELD", "category": "semantic", "message": "union compound literal can initialize at most one field"}
+{"id": "HOP2045", "name": "FIELD_DEFAULT_FORWARD_REF", "category": "semantic", "message": "field default references later field '{s}'"}
+{"id": "HOP2046", "name": "FIELD_DEFAULT_TYPE_MISMATCH", "category": "semantic", "message": "default expression type mismatch for field '{s}'"}
+{"id": "HOP2047", "name": "FIELD_DEFAULT_ON_EMBEDDED", "category": "semantic", "message": "embedded field cannot have default initializer"}
+{"id": "HOP2048", "name": "NEW_VARSIZE_INIT_REQUIRED", "category": "semantic", "message": "new on variable-size type requires initializer (use new T{...})"}
+{"id": "HOP2049", "name": "INVALID_COMPARISON_HOOK_SIGNATURE", "category": "semantic", "message": "invalid comparison hook signature"}
+{"id": "HOP2050", "name": "TYPE_NOT_COMPARABLE", "category": "semantic", "message": "type is not comparable"}
+{"id": "HOP2051", "name": "TYPE_NOT_ORDERED", "category": "semantic", "message": "type is not ordered"}
+{"id": "HOP2052", "name": "COMPARISON_HOOK_IMPURE", "category": "semantic", "message": "comparison hook must be pure"}
+{"id": "HOP2053", "name": "STRING_CONCAT_LITERAL_ONLY", "category": "semantic", "message": "string '+' currently only supports non-parenthesized literal chains"}
+{"id": "HOP2054", "name": "ARRAY_LEN_CONST_REQUIRED", "category": "semantic", "message": "array length must be a const integer expression"}
+{"id": "HOP2055", "name": "CONST_INIT_CONST_REQUIRED", "category": "semantic", "message": "const initializer must be a const expression"}
+{"id": "HOP2056", "name": "CALL_ARG_NAME_REQUIRED", "category": "semantic", "message": "call argument must be named (or be an identifier) after the first argument"}
+{"id": "HOP2057", "name": "CALL_ARG_UNKNOWN_NAME", "category": "semantic", "message": "no parameter named '{s}'"}
+{"id": "HOP2058", "name": "CALL_ARG_DUPLICATE", "category": "semantic", "message": "duplicate argument for parameter '{s}'"}
+{"id": "HOP2059", "name": "CALL_ARG_MISSING", "category": "semantic", "message": "missing argument for parameter '{s}'"}
+{"id": "HOP2060", "name": "CALL_FIRST_ARG_NAME_MISMATCH", "category": "semantic", "message": "first argument name must match parameter '{s}'"}
+{"id": "HOP2061", "name": "SWITCH_MISSING_CASES", "category": "semantic", "message": "missing cases in switch"}
+{"id": "HOP2062", "name": "FORMAT_INVALID", "category": "semantic", "message": "invalid format string"}
+{"id": "HOP2063", "name": "FORMAT_ARG_COUNT_MISMATCH", "category": "semantic", "message": "format placeholder count does not match argument count"}
+{"id": "HOP2064", "name": "FORMAT_ARG_TYPE_MISMATCH", "category": "semantic", "message": "format argument type mismatch"}
+{"id": "HOP2065", "name": "FORMAT_UNSUPPORTED_TYPE", "category": "semantic", "message": "format does not support this type"}
+{"id": "HOP2066", "name": "VARIADIC_PARAM_NOT_LAST", "category": "semantic", "message": "variadic parameter must be last"}
+{"id": "HOP2067", "name": "VARIADIC_PARAM_DUPLICATE", "category": "semantic", "message": "only one variadic parameter is allowed"}
+{"id": "HOP2068", "name": "VARIADIC_ARG_TYPE_MISMATCH", "category": "semantic", "message": "variadic argument type mismatch"}
+{"id": "HOP2069", "name": "VARIADIC_SPREAD_NON_SLICE", "category": "semantic", "message": "spread argument must be assignable to the variadic slice type"}
+{"id": "HOP2070", "name": "VARIADIC_SPREAD_NOT_LAST", "category": "semantic", "message": "spread argument must be the final argument"}
+{"id": "HOP2071", "name": "VARIADIC_CALL_SHAPE_MISMATCH", "category": "semantic", "message": "invalid variadic argument shape"}
+{"id": "HOP2072", "name": "CONSTEVAL_DIAG_NON_CONST_CONTEXT", "category": "semantic", "message": "compiler diagnostic API call is not in a const-evaluated context"}
+{"id": "HOP2073", "name": "CONSTEVAL_DIAG_MESSAGE_NOT_CONST_STRING", "category": "semantic", "message": "diagnostic message must be a const-evaluable string"}
+{"id": "HOP2074", "name": "CONSTEVAL_DIAG_INVALID_SPAN", "category": "semantic", "message": "diagnostic span is invalid"}
+{"id": "HOP2075", "name": "CONSTEVAL_DIAG_ERROR", "category": "semantic", "message": "consteval error"}
+{"id": "HOP2076", "name": "CONSTEVAL_DIAG_WARNING", "category": "semantic", "message": "consteval warning", "type": "warning"}
+{"id": "HOP2077", "name": "CONST_PARAM_ARG_NOT_CONST", "category": "semantic", "message": "const parameter '{s}' requires a const-evaluable argument"}
+{"id": "HOP2078", "name": "CONST_PARAM_SPREAD_NOT_CONST", "category": "semantic", "message": "spread argument for const variadic parameter '{s}' must be const-evaluable"}
+{"id": "HOP2079", "name": "ANYTYPE_INVALID_POSITION", "category": "semantic", "message": "anytype is only allowed in function parameter positions"}
+{"id": "HOP2080", "name": "ANYTYPE_PACK_INDEX_NOT_CONST", "category": "semantic", "message": "anytype pack index must be a const-evaluable integer"}
+{"id": "HOP2081", "name": "ANYTYPE_PACK_INDEX_OOB", "category": "semantic", "message": "anytype pack index is out of bounds"}
+{"id": "HOP2082", "name": "ANYTYPE_SPREAD_REQUIRES_PACK", "category": "semantic", "message": "spread into ...anytype requires an anytype pack value"}
+{"id": "HOP2083", "name": "CONST_BLOCK_EVAL_FAILED", "category": "semantic", "message": "const block failed compile-time evaluation"}
+{"id": "HOP2084", "name": "CONST_NUMERIC_PARAM_REQUIRES_CONST", "category": "semantic", "message": "parameter type const_int/const_float requires the 'const' modifier"}
+{"id": "HOP2085", "name": "CONST_NUMERIC_INVALID_POSITION", "category": "semantic", "message": "const_int and const_float are only allowed in const declarations, const parameters, function returns, and cast targets"}
+{"id": "HOP2086", "name": "FOR_IN_INVALID_SOURCE", "category": "semantic", "message": "for-in source must support sequence iteration or iterator protocol"}
+{"id": "HOP2087", "name": "FOR_IN_KEY_REF_INVALID", "category": "semantic", "message": "for-in key cannot be captured by reference for synthetic sequence keys"}
+{"id": "HOP2088", "name": "FOR_IN_VALUE_BINDING_INVALID", "category": "semantic", "message": "invalid for-in value binding for source mutability/capture mode"}
+{"id": "HOP2089", "name": "FOR_IN_ITERATOR_AMBIGUOUS", "category": "semantic", "message": "ambiguous __iterator overload for for-in source"}
+{"id": "HOP2090", "name": "FOR_IN_ADVANCE_NO_MATCHING_OVERLOAD", "category": "semantic", "message": "no compatible next_value overload for this for-in loop form"}
+{"id": "HOP2091", "name": "FOR_IN_ADVANCE_NON_BOOL", "category": "semantic", "message": "for-in next_value overload must return ?T"}
+{"id": "HOP2092", "name": "UNUSED_FUNCTION", "category": "semantic", "message": "function '{s}' is unused", "type": "warning"}
+{"id": "HOP2093", "name": "UNUSED_VARIABLE", "category": "semantic", "message": "variable '{s}' is unused", "type": "warning", "hint": "rename variable to '_' to silence this warning"}
+{"id": "HOP2094", "name": "UNUSED_VARIABLE_NEVER_READ", "category": "semantic", "message": "variable '{s}' is never read", "type": "warning", "hint": "rename variable to '_' to silence this warning"}
+{"id": "HOP2095", "name": "UNUSED_PARAMETER", "category": "semantic", "message": "parameter '{s}' is unused", "type": "warning", "hint": "rename parameter to '_' to silence this warning"}
+{"id": "HOP2096", "name": "UNUSED_PARAMETER_NEVER_READ", "category": "semantic", "message": "parameter '{s}' is never read", "type": "warning"}
+{"id": "HOP2097", "name": "LOCAL_PTR_REF_UNINIT", "category": "semantic", "message": "pointer/reference variable '{s}' is not initialized"}
+{"id": "HOP2098", "name": "LOCAL_PTR_REF_MAYBE_UNINIT", "category": "semantic", "message": "pointer/reference variable '{s}' may be uninitialized"}
+{"id": "HOP2099", "name": "TOPLEVEL_PTR_REF_INIT_REQUIRED", "category": "semantic", "message": "top-level pointer/reference variable '{s}' requires initializer"}
+{"id": "HOP2100", "name": "CALL_ARG_NAME_REQUIRED_AFTER_PARAM", "category": "semantic", "message": "call argument must be named after parameter '{s}' is reached"}
+{"id": "HOP3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
+{"id": "HOP3002", "name": "WASM_BACKEND_UNSUPPORTED_MIR", "category": "codegen", "message": "Wasm backend does not support this MIR"}
+{"id": "HOP3003", "name": "WASM_BACKEND_UNSUPPORTED_HOSTCALL", "category": "codegen", "message": "Wasm backend does not support this hostcall"}
+{"id": "HOP3004", "name": "WASM_BACKEND_PLATFORM_REQUIRED", "category": "codegen", "message": "Wasm backend requires a platform target for this package"}
+{"id": "HOP3005", "name": "WASM_BACKEND_INTERNAL", "category": "codegen", "message": "internal Wasm backend error"}
+{"id": "HOP4001", "name": "ARENA_OOM", "category": "compiler", "message": "arena out of memory"}
+{"id": "HOP4002", "name": "UNKNOWN_FEATURE", "category": "compiler", "message": "unknown feature '{s}'", "type": "warning"}
+{"id": "HOP4003", "name": "EVAL_BACKEND_UNSUPPORTED", "category": "compiler", "message": "evaluator backend: {s}"}

@@ -1,1 +1,1 @@
-tests/ast_block_stmt_list_missing_separator.sl:3:17: error: SL1004: unexpected token
+tests/ast_block_stmt_list_missing_separator.hop:3:17: error: HOP1004: unexpected token

@@ -1,10 +1,10 @@
-# SL Compiler Project
+# HopHop Compiler Project
 
 ## 1. Overview
 
 ### 1.1 What we’re building
 
-A language compiler with a **C11 backend** for a custom minimal programming language (**SL**) designed for:
+A language compiler with a **C11 backend** for a custom minimal programming language (**HopHop**) designed for:
 
 * highly portable **single-header libraries** and small programs,
 * output that can compile **freestanding** (e.g. `-ffreestanding`, wasm),
@@ -24,7 +24,7 @@ The compiler is split into:
 
 ### 1.3 Feature proposals
 
-* SLP-1 variable-size structs: `docs/SLP-1-variable-size-structs.md`
+* HEP-1 variable-size structs: `docs/HEP-1-variable-size-structs.md`
 
 ---
 
@@ -52,7 +52,7 @@ For an output header `foo.h` from package `foo`:
 
 ### 2.2 Namespacing / mangling
 
-SL has Go-like packages. C has none, so we mangle symbols.
+HopHop has Go-like packages. C has none, so we mangle symbols.
 
 **Rule:**
 
@@ -63,19 +63,19 @@ SL has Go-like packages. C has none, so we mangle symbols.
 
 Example:
 
-* SL `heap.PQueue` → C `heap__PQueue`
-* SL `heap.Push` → C `heap__Push`
+* HopHop `heap.PQueue` → C `heap__PQueue`
+* HopHop `heap.Push` → C `heap__Push`
 
 ### 2.3 Field access lowering
 
-SL uses only `x.y`. Codegen chooses `.` vs `->` based on the **typed** receiver:
+HopHop uses only `x.y`. Codegen chooses `.` vs `->` based on the **typed** receiver:
 
 * If `x: T` (struct/union value): `x.y`
 * If `x: *T` (pointer): `x->y`
 
 ### 2.4 Strings
 
-SL `str` is a fat pointer value:
+HopHop `str` is a fat pointer value:
 
 * `ptr *u8`
 * `len uint`
@@ -89,20 +89,20 @@ Prelude provides:
 
 ### 2.5 Assert
 
-SL has `assert` as a keyword statement with optional formatted args. Lowering calls prelude hooks:
+HopHop has `assert` as a keyword statement with optional formatted args. Lowering calls prelude hooks:
 
 * `assert cond` →
 
-  * if `!(cond)`: `SL_ASSERT_FAIL(__FILE__, __LINE__, "assertion failed")`
+  * if `!(cond)`: `HOP_ASSERT_FAIL(__FILE__, __LINE__, "assertion failed")`
 * `assert cond, "fmt", a, b` →
 
-  * if `!(cond)`: `SL_ASSERTF_FAIL(__FILE__, __LINE__, "fmt", a, b)`
+  * if `!(cond)`: `HOP_ASSERTF_FAIL(__FILE__, __LINE__, "fmt", a, b)`
 
 Defaults in prelude trap; projects may override macros.
 
 ---
 
-## 3. SL Language Specification (v0)
+## 3. HopHop Language Specification (v0)
 
 ### 3.1 Lexical rules
 
@@ -141,16 +141,16 @@ There is no `package` keyword.
 
 A package is inferred from filesystem layout:
 
-* A package may span multiple `.sl` files in a directory.
+* A package may span multiple `.hop` files in a directory.
 * The package name is inferred from the directory name.
 * For single-file package mode, the package name is inferred from the containing directory
-  (fallback: filename without `.sl`).
+  (fallback: filename without `.hop`).
 
 #### Imports
 
 v0 import model:
 
-```sl
+```hop
 import "ds/heap"
 import "ds/heap" as h     // alias
 ```
@@ -181,7 +181,7 @@ Everything not marked `pub` is **package-private** by default.
 
 Example:
 
-```sl
+```hop
 pub struct T { x i32 }
 pub fn A(t T) i32;
 
@@ -226,7 +226,7 @@ fn b(x i32) i32 { return x + 1 } // private
 
 In `struct/union` bodies:
 
-```sl
+```hop
 fieldName Type
 ```
 
@@ -238,13 +238,13 @@ fieldName Type
 
 Prototype:
 
-```sl
+```hop
 fn Name(a i32, b i32) i32
 ```
 
 Definition:
 
-```sl
+```hop
 fn Name(a i32, b i32) i32 { ... }
 ```
 
@@ -264,7 +264,7 @@ This implies the frontend/typechecker must collect declarations before validatin
 
 Local variables (no inference):
 
-```sl
+```hop
 var x i32 = 0
 var buf [64]u8
 ```
@@ -277,7 +277,7 @@ v0 recommendation:
 
 * `const` must have explicit type and compile-time initializer:
 
-```sl
+```hop
 const N i32 = 16
 ```
 
@@ -293,7 +293,7 @@ const N i32 = 16
 
 #### If
 
-```sl
+```hop
 if cond { ... } else { ... }
 ```
 
@@ -303,7 +303,7 @@ No parentheses required.
 
 Three forms:
 
-```sl
+```hop
 for { ... }                     // infinite
 for cond { ... }                // condition
 for init; cond; post { ... }    // C-ish
@@ -311,7 +311,7 @@ for init; cond; post { ... }    // C-ish
 
 `init` may declare variables:
 
-```sl
+```hop
 for var i i32 = 0; i < n; i += 1 { ... }
 ```
 
@@ -319,7 +319,7 @@ for var i i32 = 0; i < n; i += 1 { ... }
 
 Expression switch:
 
-```sl
+```hop
 switch x {
     case 1 { ... }
     case 2, 3 { ... }
@@ -329,7 +329,7 @@ switch x {
 
 Condition switch:
 
-```sl
+```hop
 switch {
     case x < 0 { ... }
     case x < 10 { ... }
@@ -366,7 +366,7 @@ Defer executes when exiting the **current lexical block**.
 
 Forms:
 
-```sl
+```hop
 defer { stmt* }
 defer stmt
 ```
@@ -408,14 +408,14 @@ Assignments: `=`, and `+= -= *= /= %= &= |= ^= <<= >>=`
 
 Postfix cast with high precedence:
 
-```sl
+```hop
 x as i64
 x * (y as i64)
 ```
 
 #### Compound literals (named fields only)
 
-```sl
+```hop
 T { field: expr, other: expr }
 ```
 
@@ -457,18 +457,18 @@ Coercion must be representable; otherwise compile-time error.
 Suggested layout:
 
 ```
-sl/
+hop/
   include/
-    sl_compiler.h          // single-header core library (freestanding-friendly)
+    hop_compiler.h          // single-header core library (freestanding-friendly)
   src/
-    slc.c                  // CLI tool
+    hop.c                  // CLI tool
   tests/
     cases/
-      heap.sl
-      strings.sl
-      defer.sl
-      switch_const.sl
-      switch_cond.sl
+      heap.hop
+      strings.hop
+      defer.hop
+      switch_const.hop
+      switch_cond.hop
     expected/
       heap.h
       ...
@@ -489,18 +489,18 @@ sl/
 The library should expose “parse → typecheck → emit”:
 
 ```c
-typedef struct sl_arena sl_arena;
-typedef struct sl_diag  sl_diag;
+typedef struct hop_arena hop_arena;
+typedef struct hop_diag  hop_diag;
 
 typedef struct {
     const char* ptr;
     unsigned    len;
-} sl_strview;
+} hop_strview;
 
 typedef struct {
     void* ctx;
     void (*write)(void* ctx, const char* data, unsigned len);
-} sl_writer;
+} hop_writer;
 
 typedef struct {
     // output controls
@@ -508,16 +508,16 @@ typedef struct {
     const char* header_guard;    // e.g. "FOO_H"
     int emit_prelude;            // 1
     int emit_internal;           // 1 under impl macro
-} sl_emit_opts;
+} hop_emit_opts;
 
 // Parses a single file (package loader is done in CLI for v0)
-int sl_parse_file(sl_arena*, sl_strview src, /*out*/ void** ast, sl_diag*);
+int hop_parse_file(hop_arena*, hop_strview src, /*out*/ void** ast, hop_diag*);
 
 // Resolves package-level symbols, types, imports (if you push into lib later)
-int sl_typecheck(sl_arena*, void* ast, sl_diag*);
+int hop_typecheck(hop_arena*, void* ast, hop_diag*);
 
 // Emits C11 for a package or compilation unit
-int sl_emit_c11(sl_arena*, void* ast, sl_writer*, const sl_emit_opts*, sl_diag*);
+int hop_emit_c11(hop_arena*, void* ast, hop_writer*, const hop_emit_opts*, hop_diag*);
 ```
 
 For v0, you can keep “package loading / filesystem imports” in the CLI and pass the library a fully concatenated unit (or a list of ASTs). If you expect wasm embedding later, consider moving import resolution into the library, but it’s not required.
@@ -671,8 +671,8 @@ Prelude should define:
 
 * scalar types (`u8`, `i32`, etc.). Prefer compiler builtins where available, otherwise fallback.
 * `bool` + `true/false`
-* `sl_str` representation + helpers `len/cstr`
-* `SL_TRAP()` / assert hooks
+* `hop_str` representation + helpers `len/cstr`
+* `HOP_TRAP()` / assert hooks
 
 Example prelude skeleton (conceptual):
 
@@ -680,29 +680,29 @@ Example prelude skeleton (conceptual):
 typedef unsigned char u8;
 typedef signed int    i32;
 typedef unsigned int  u32;
-typedef /*...*/       __sl_uint;
+typedef /*...*/       __hop_uint;
 typedef _Bool         bool;
 
 typedef struct {
     u8*      ptr;
-    __sl_uint len;
+    __hop_uint len;
 } str;
-static inline __sl_uint len(const str* s) { return s != 0 ? s->len : 0; }
+static inline __hop_uint len(const str* s) { return s != 0 ? s->len : 0; }
 static inline const u8* cstr(const str* s) { return s != 0 ? s->ptr : (const u8*)0; }
 
-#ifndef SL_TRAP
+#ifndef HOP_TRAP
     #if defined(__clang__) || defined(__GNUC__)
-        #define SL_TRAP() __builtin_trap()
+        #define HOP_TRAP() __builtin_trap()
     #else
-        #define SL_TRAP() do { *(volatile int*)0 = 0; } while(0)
+        #define HOP_TRAP() do { *(volatile int*)0 = 0; } while(0)
     #endif
 #endif
 
-#ifndef SL_ASSERT_FAIL
-    #define SL_ASSERT_FAIL(file,line,msg) SL_TRAP()
+#ifndef HOP_ASSERT_FAIL
+    #define HOP_ASSERT_FAIL(file,line,msg) HOP_TRAP()
 #endif
-#ifndef SL_ASSERTF_FAIL
-    #define SL_ASSERTF_FAIL(file,line,fmt,...) SL_ASSERT_FAIL(file,line,fmt)
+#ifndef HOP_ASSERTF_FAIL
+    #define HOP_ASSERTF_FAIL(file,line,fmt,...) HOP_ASSERT_FAIL(file,line,fmt)
 #endif
 ```
 
@@ -711,11 +711,11 @@ static inline const u8* cstr(const str* s) { return s != 0 ? s->ptr : (const u8*
 Maintain a string-literal pool and emit bytes + descriptor per distinct literal:
 
 ```c
-static const u8  sl_lit_42_bytes[N+1] = { ... , 0 };
-static const str sl_lit_42 = { (u8*)(const void*)sl_lit_42_bytes, N };
+static const u8  hop_lit_42_bytes[N+1] = { ... , 0 };
+static const str hop_lit_42 = { (u8*)(const void*)hop_lit_42_bytes, N };
 ```
 
-Then SL `"foo"` expression emits as `&sl_lit_42`.
+Then HopHop `"foo"` expression emits as `&hop_lit_42`.
 
 ### 4.4.4 Switch emission strategy
 
@@ -763,7 +763,7 @@ This avoids creating many labels and keeps the generated C readable.
 Responsibilities:
 
 * Accept entry package path (directory) or single file.
-* Load all `.sl` files belonging to the package.
+* Load all `.hop` files belonging to the package.
 * Resolve imports by locating packages by path.
 * Build an import graph (DAG), detect cycles.
 * For “package build” mode:
@@ -789,7 +789,7 @@ The CLI can allocate large buffers and pass them to the core library arena.
 
 ### 5.1 Golden tests
 
-For each `tests/cases/*.sl`, produce `tests/expected/*.h`.
+For each `tests/cases/*.hop`, produce `tests/expected/*.h`.
 Test:
 
 * compiler output matches expected (exact text).
@@ -815,11 +815,11 @@ For each expected header:
 
 ---
 
-## 6. Example: Priority Queue Package (SL)
+## 6. Example: Priority Queue Package (HopHop)
 
-### `ds/heap/heap.sl`
+### `ds/heap/heap.hop`
 
-```sl
+```hop
 pub struct PQueue {
     data *i32
     len  i32
@@ -893,9 +893,9 @@ fn Pop(q *PQueue, out *i32) bool {
 }
 ```
 
-### `app/main.sl`
+### `app/main.hop`
 
-```sl
+```hop
 import "ds/heap" as heap
 
 fn main() {
@@ -942,7 +942,7 @@ fn main() {
 
 ### Phase 4: Packages + imports + `pub`
 
-* package loader in CLI: load all `.sl` in dir
+* package loader in CLI: load all `.hop` in dir
 * parse multiple units
 * merge `pub` exports
 * resolve imports and `pkg.Name`

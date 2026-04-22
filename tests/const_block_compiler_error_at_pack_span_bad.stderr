@@ -1,1 +1,1 @@
-tests/const_block_compiler_error_at_pack_span_bad.sl:12:10: error: SL2075: consteval error: pack boom
+tests/const_block_compiler_error_at_pack_span_bad.hop:12:10: error: HOP2075: consteval error: pack boom

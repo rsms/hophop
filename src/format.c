@@ -1,47 +1,47 @@
-#include "libsl-impl.h"
+#include "libhop-impl.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
 typedef struct {
-    SLArena* arena;
+    HOPArena* arena;
     char* _Nullable v;
     uint32_t len;
     uint32_t cap;
-} SLFmtBuf;
+} HOPFmtBuf;
 
 typedef struct {
-    const SLAst* ast;
-    SLStrView    src;
-    const SLComment* _Nullable comments;
+    const HOPAst* ast;
+    HOPStrView    src;
+    const HOPComment* _Nullable comments;
     uint32_t commentLen;
     uint8_t* _Nullable commentUsed;
-    uint32_t indent;
-    uint32_t indentWidth;
-    int      lineStart;
-    SLFmtBuf out;
-} SLFmtCtx;
+    uint32_t  indent;
+    uint32_t  indentWidth;
+    int       lineStart;
+    HOPFmtBuf out;
+} HOPFmtCtx;
 
 enum {
-    SLFmtFlag_DROP_REDUNDANT_LITERAL_CAST = 0x4000u,
+    HOPFmtFlag_DROP_REDUNDANT_LITERAL_CAST = 0x4000u,
 };
 
 typedef enum {
-    SLFmtNumericType_INVALID = 0,
-    SLFmtNumericType_I8,
-    SLFmtNumericType_I16,
-    SLFmtNumericType_I32,
-    SLFmtNumericType_I64,
-    SLFmtNumericType_INT,
-    SLFmtNumericType_U8,
-    SLFmtNumericType_U16,
-    SLFmtNumericType_U32,
-    SLFmtNumericType_U64,
-    SLFmtNumericType_UINT,
-    SLFmtNumericType_F32,
-    SLFmtNumericType_F64,
-} SLFmtNumericType;
+    HOPFmtNumericType_INVALID = 0,
+    HOPFmtNumericType_I8,
+    HOPFmtNumericType_I16,
+    HOPFmtNumericType_I32,
+    HOPFmtNumericType_I64,
+    HOPFmtNumericType_INT,
+    HOPFmtNumericType_U8,
+    HOPFmtNumericType_U16,
+    HOPFmtNumericType_U32,
+    HOPFmtNumericType_U64,
+    HOPFmtNumericType_UINT,
+    HOPFmtNumericType_F32,
+    HOPFmtNumericType_F64,
+} HOPFmtNumericType;
 
-static int SLFmtBufReserve(SLFmtBuf* b, uint32_t extra) {
+static int HOPFmtBufReserve(HOPFmtBuf* b, uint32_t extra) {
     char*    p;
     uint32_t need;
     uint32_t cap;
@@ -63,7 +63,7 @@ static int SLFmtBufReserve(SLFmtBuf* b, uint32_t extra) {
         }
         cap *= 2u;
     }
-    p = (char*)SLArenaAlloc(b->arena, cap, (uint32_t)_Alignof(char));
+    p = (char*)HOPArenaAlloc(b->arena, cap, (uint32_t)_Alignof(char));
     if (p == NULL) {
         return -1;
     }
@@ -75,20 +75,20 @@ static int SLFmtBufReserve(SLFmtBuf* b, uint32_t extra) {
     return 0;
 }
 
-static int SLFmtBufAppendChar(SLFmtBuf* b, char c) {
-    if (SLFmtBufReserve(b, 1u) != 0) {
+static int HOPFmtBufAppendChar(HOPFmtBuf* b, char c) {
+    if (HOPFmtBufReserve(b, 1u) != 0) {
         return -1;
     }
     b->v[b->len++] = c;
     return 0;
 }
 
-static int     SLFmtWriteChar(SLFmtCtx* c, char ch);
-static int32_t SLFmtFindEnclosingFnNode(const SLAst* ast, int32_t nodeId);
-static int32_t SLFmtFindParentNode(const SLAst* ast, int32_t childNodeId);
-static int     SLFmtEmitType(SLFmtCtx* c, int32_t nodeId);
+static int     HOPFmtWriteChar(HOPFmtCtx* c, char ch);
+static int32_t HOPFmtFindEnclosingFnNode(const HOPAst* ast, int32_t nodeId);
+static int32_t HOPFmtFindParentNode(const HOPAst* ast, int32_t childNodeId);
+static int     HOPFmtEmitType(HOPFmtCtx* c, int32_t nodeId);
 
-static uint32_t SLFmtCStrLen(const char* s) {
+static uint32_t HOPFmtCStrLen(const char* s) {
     const char* p = s;
     while (*p != '\0') {
         p++;
@@ -96,13 +96,13 @@ static uint32_t SLFmtCStrLen(const char* s) {
     return (uint32_t)(p - s);
 }
 
-static int SLFmtWriteIndent(SLFmtCtx* c) {
+static int HOPFmtWriteIndent(HOPFmtCtx* c) {
     uint32_t i;
     if (!c->lineStart) {
         return 0;
     }
     for (i = 0; i < c->indent; i++) {
-        if (SLFmtBufAppendChar(&c->out, '\t') != 0) {
+        if (HOPFmtBufAppendChar(&c->out, '\t') != 0) {
             return -1;
         }
     }
@@ -110,66 +110,66 @@ static int SLFmtWriteIndent(SLFmtCtx* c) {
     return 0;
 }
 
-static int SLFmtWriteSpaces(SLFmtCtx* c, uint32_t n) {
+static int HOPFmtWriteSpaces(HOPFmtCtx* c, uint32_t n) {
     uint32_t i;
     for (i = 0; i < n; i++) {
-        if (SLFmtWriteChar(c, ' ') != 0) {
+        if (HOPFmtWriteChar(c, ' ') != 0) {
             return -1;
         }
     }
     return 0;
 }
 
-static int SLFmtWriteChar(SLFmtCtx* c, char ch) {
+static int HOPFmtWriteChar(HOPFmtCtx* c, char ch) {
     if (ch != '\n' && c->lineStart) {
-        if (SLFmtWriteIndent(c) != 0) {
+        if (HOPFmtWriteIndent(c) != 0) {
             return -1;
         }
     }
-    if (SLFmtBufAppendChar(&c->out, ch) != 0) {
+    if (HOPFmtBufAppendChar(&c->out, ch) != 0) {
         return -1;
     }
     c->lineStart = (ch == '\n');
     return 0;
 }
 
-static int SLFmtWrite(SLFmtCtx* c, const char* s, uint32_t len) {
+static int HOPFmtWrite(HOPFmtCtx* c, const char* s, uint32_t len) {
     uint32_t i;
     for (i = 0; i < len; i++) {
-        if (SLFmtWriteChar(c, s[i]) != 0) {
+        if (HOPFmtWriteChar(c, s[i]) != 0) {
             return -1;
         }
     }
     return 0;
 }
 
-static int SLFmtWriteCStr(SLFmtCtx* c, const char* s) {
+static int HOPFmtWriteCStr(HOPFmtCtx* c, const char* s) {
     while (*s != '\0') {
-        if (SLFmtWriteChar(c, *s++) != 0) {
+        if (HOPFmtWriteChar(c, *s++) != 0) {
             return -1;
         }
     }
     return 0;
 }
 
-static int SLFmtWriteSlice(SLFmtCtx* c, uint32_t start, uint32_t end) {
+static int HOPFmtWriteSlice(HOPFmtCtx* c, uint32_t start, uint32_t end) {
     if (end < start || end > c->src.len) {
         return -1;
     }
-    return SLFmtWrite(c, c->src.ptr + start, end - start);
+    return HOPFmtWrite(c, c->src.ptr + start, end - start);
 }
 
-static int SLFmtWriteSliceLiteral(SLFmtCtx* c, uint32_t start, uint32_t end) {
+static int HOPFmtWriteSliceLiteral(HOPFmtCtx* c, uint32_t start, uint32_t end) {
     uint32_t i;
     if (end < start || end > c->src.len) {
         return -1;
     }
-    if (c->lineStart && SLFmtWriteIndent(c) != 0) {
+    if (c->lineStart && HOPFmtWriteIndent(c) != 0) {
         return -1;
     }
     for (i = start; i < end; i++) {
         char ch = c->src.ptr[i];
-        if (SLFmtBufAppendChar(&c->out, ch) != 0) {
+        if (HOPFmtBufAppendChar(&c->out, ch) != 0) {
             return -1;
         }
         c->lineStart = (ch == '\n');
@@ -177,25 +177,25 @@ static int SLFmtWriteSliceLiteral(SLFmtCtx* c, uint32_t start, uint32_t end) {
     return 0;
 }
 
-static int SLFmtNewline(SLFmtCtx* c) {
-    return SLFmtWriteChar(c, '\n');
+static int HOPFmtNewline(HOPFmtCtx* c) {
+    return HOPFmtWriteChar(c, '\n');
 }
 
-static int32_t SLFmtFirstChild(const SLAst* ast, int32_t nodeId) {
+static int32_t HOPFmtFirstChild(const HOPAst* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     return ast->nodes[nodeId].firstChild;
 }
 
-static int32_t SLFmtNextSibling(const SLAst* ast, int32_t nodeId) {
+static int32_t HOPFmtNextSibling(const HOPAst* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     return ast->nodes[nodeId].nextSibling;
 }
 
-static uint32_t SLFmtListCount(const SLAst* ast, int32_t listNodeId) {
+static uint32_t HOPFmtListCount(const HOPAst* ast, int32_t listNodeId) {
     uint32_t count = 0;
     int32_t  cur;
     if (listNodeId < 0 || (uint32_t)listNodeId >= ast->len) {
@@ -209,7 +209,7 @@ static uint32_t SLFmtListCount(const SLAst* ast, int32_t listNodeId) {
     return count;
 }
 
-static int32_t SLFmtListItemAt(const SLAst* ast, int32_t listNodeId, uint32_t index) {
+static int32_t HOPFmtListItemAt(const HOPAst* ast, int32_t listNodeId, uint32_t index) {
     uint32_t i = 0;
     int32_t  cur;
     if (listNodeId < 0 || (uint32_t)listNodeId >= ast->len) {
@@ -226,8 +226,8 @@ static int32_t SLFmtListItemAt(const SLAst* ast, int32_t listNodeId, uint32_t in
     return -1;
 }
 
-static int SLFmtSlicesEqual(
-    SLStrView src, uint32_t aStart, uint32_t aEnd, uint32_t bStart, uint32_t bEnd) {
+static int HOPFmtSlicesEqual(
+    HOPStrView src, uint32_t aStart, uint32_t aEnd, uint32_t bStart, uint32_t bEnd) {
     uint32_t len;
     if (aEnd < aStart || bEnd < bStart || aEnd > src.len || bEnd > src.len) {
         return 0;
@@ -242,15 +242,15 @@ static int SLFmtSlicesEqual(
     return memcmp(src.ptr + aStart, src.ptr + bStart, len) == 0;
 }
 
-static int SLFmtSliceEqLiteral(SLStrView src, uint32_t start, uint32_t end, const char* lit) {
-    uint32_t len = SLFmtCStrLen(lit);
+static int HOPFmtSliceEqLiteral(HOPStrView src, uint32_t start, uint32_t end, const char* lit) {
+    uint32_t len = HOPFmtCStrLen(lit);
     if (end < start || end > src.len || (end - start) != len) {
         return 0;
     }
     return len == 0 || memcmp(src.ptr + start, lit, len) == 0;
 }
 
-static int SLFmtSliceHasChar(SLStrView src, uint32_t start, uint32_t end, char ch) {
+static int HOPFmtSliceHasChar(HOPStrView src, uint32_t start, uint32_t end, char ch) {
     uint32_t i;
     if (end < start || end > src.len) {
         return 0;
@@ -263,14 +263,15 @@ static int SLFmtSliceHasChar(SLStrView src, uint32_t start, uint32_t end, char c
     return 0;
 }
 
-static int SLFmtExprIsPlainIdent(
-    const SLAst* ast, int32_t exprNodeId, uint32_t* outStart, uint32_t* outEnd) {
-    const SLAstNode* n;
+static int HOPFmtExprIsPlainIdent(
+    const HOPAst* ast, int32_t exprNodeId, uint32_t* outStart, uint32_t* outEnd) {
+    const HOPAstNode* n;
     if (exprNodeId < 0 || (uint32_t)exprNodeId >= ast->len || outStart == NULL || outEnd == NULL) {
         return 0;
     }
     n = &ast->nodes[exprNodeId];
-    if (n->kind != SLAst_IDENT || (n->flags & SLAstFlag_PAREN) != 0 || n->dataEnd <= n->dataStart) {
+    if (n->kind != HOPAst_IDENT || (n->flags & HOPAstFlag_PAREN) != 0 || n->dataEnd <= n->dataStart)
+    {
         return 0;
     }
     *outStart = n->dataStart;
@@ -278,125 +279,125 @@ static int SLFmtExprIsPlainIdent(
     return 1;
 }
 
-static int SLFmtIsTypeNodeKindRaw(SLAstKind kind) {
-    return kind == SLAst_TYPE_NAME || kind == SLAst_TYPE_PTR || kind == SLAst_TYPE_REF
-        || kind == SLAst_TYPE_MUTREF || kind == SLAst_TYPE_ARRAY || kind == SLAst_TYPE_VARRAY
-        || kind == SLAst_TYPE_SLICE || kind == SLAst_TYPE_MUTSLICE || kind == SLAst_TYPE_OPTIONAL
-        || kind == SLAst_TYPE_FN || kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION
-        || kind == SLAst_TYPE_TUPLE || kind == SLAst_TYPE_PARAM;
+static int HOPFmtIsTypeNodeKindRaw(HOPAstKind kind) {
+    return kind == HOPAst_TYPE_NAME || kind == HOPAst_TYPE_PTR || kind == HOPAst_TYPE_REF
+        || kind == HOPAst_TYPE_MUTREF || kind == HOPAst_TYPE_ARRAY || kind == HOPAst_TYPE_VARRAY
+        || kind == HOPAst_TYPE_SLICE || kind == HOPAst_TYPE_MUTSLICE || kind == HOPAst_TYPE_OPTIONAL
+        || kind == HOPAst_TYPE_FN || kind == HOPAst_TYPE_ANON_STRUCT
+        || kind == HOPAst_TYPE_ANON_UNION || kind == HOPAst_TYPE_TUPLE || kind == HOPAst_TYPE_PARAM;
 }
 
-static SLFmtNumericType SLFmtNumericTypeFromName(SLStrView src, uint32_t start, uint32_t end) {
-    if (SLFmtSliceEqLiteral(src, start, end, "i8")) {
-        return SLFmtNumericType_I8;
+static HOPFmtNumericType HOPFmtNumericTypeFromName(HOPStrView src, uint32_t start, uint32_t end) {
+    if (HOPFmtSliceEqLiteral(src, start, end, "i8")) {
+        return HOPFmtNumericType_I8;
     }
-    if (SLFmtSliceEqLiteral(src, start, end, "i16")) {
-        return SLFmtNumericType_I16;
+    if (HOPFmtSliceEqLiteral(src, start, end, "i16")) {
+        return HOPFmtNumericType_I16;
     }
-    if (SLFmtSliceEqLiteral(src, start, end, "i32")) {
-        return SLFmtNumericType_I32;
+    if (HOPFmtSliceEqLiteral(src, start, end, "i32")) {
+        return HOPFmtNumericType_I32;
     }
-    if (SLFmtSliceEqLiteral(src, start, end, "i64")) {
-        return SLFmtNumericType_I64;
+    if (HOPFmtSliceEqLiteral(src, start, end, "i64")) {
+        return HOPFmtNumericType_I64;
     }
-    if (SLFmtSliceEqLiteral(src, start, end, "int")) {
-        return SLFmtNumericType_INT;
+    if (HOPFmtSliceEqLiteral(src, start, end, "int")) {
+        return HOPFmtNumericType_INT;
     }
-    if (SLFmtSliceEqLiteral(src, start, end, "u8")) {
-        return SLFmtNumericType_U8;
+    if (HOPFmtSliceEqLiteral(src, start, end, "u8")) {
+        return HOPFmtNumericType_U8;
     }
-    if (SLFmtSliceEqLiteral(src, start, end, "u16")) {
-        return SLFmtNumericType_U16;
+    if (HOPFmtSliceEqLiteral(src, start, end, "u16")) {
+        return HOPFmtNumericType_U16;
     }
-    if (SLFmtSliceEqLiteral(src, start, end, "u32")) {
-        return SLFmtNumericType_U32;
+    if (HOPFmtSliceEqLiteral(src, start, end, "u32")) {
+        return HOPFmtNumericType_U32;
     }
-    if (SLFmtSliceEqLiteral(src, start, end, "u64")) {
-        return SLFmtNumericType_U64;
+    if (HOPFmtSliceEqLiteral(src, start, end, "u64")) {
+        return HOPFmtNumericType_U64;
     }
-    if (SLFmtSliceEqLiteral(src, start, end, "uint")) {
-        return SLFmtNumericType_UINT;
+    if (HOPFmtSliceEqLiteral(src, start, end, "uint")) {
+        return HOPFmtNumericType_UINT;
     }
-    if (SLFmtSliceEqLiteral(src, start, end, "f32")) {
-        return SLFmtNumericType_F32;
+    if (HOPFmtSliceEqLiteral(src, start, end, "f32")) {
+        return HOPFmtNumericType_F32;
     }
-    if (SLFmtSliceEqLiteral(src, start, end, "f64")) {
-        return SLFmtNumericType_F64;
+    if (HOPFmtSliceEqLiteral(src, start, end, "f64")) {
+        return HOPFmtNumericType_F64;
     }
-    return SLFmtNumericType_INVALID;
+    return HOPFmtNumericType_INVALID;
 }
 
-static SLFmtNumericType SLFmtNumericTypeFromTypeNode(
-    const SLAst* ast, SLStrView src, int32_t nodeId) {
-    const SLAstNode* n;
+static HOPFmtNumericType HOPFmtNumericTypeFromTypeNode(
+    const HOPAst* ast, HOPStrView src, int32_t nodeId) {
+    const HOPAstNode* n;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
-        return SLFmtNumericType_INVALID;
+        return HOPFmtNumericType_INVALID;
     }
     n = &ast->nodes[nodeId];
-    if (n->kind != SLAst_TYPE_NAME) {
-        return SLFmtNumericType_INVALID;
+    if (n->kind != HOPAst_TYPE_NAME) {
+        return HOPFmtNumericType_INVALID;
     }
-    return SLFmtNumericTypeFromName(src, n->dataStart, n->dataEnd);
+    return HOPFmtNumericTypeFromName(src, n->dataStart, n->dataEnd);
 }
 
-static SLFmtNumericType SLFmtCastLiteralNumericType(
-    const SLAst* ast, SLStrView src, int32_t exprNodeId, int32_t typeNodeId) {
+static HOPFmtNumericType HOPFmtCastLiteralNumericType(
+    const HOPAst* ast, HOPStrView src, int32_t exprNodeId, int32_t typeNodeId) {
     if (exprNodeId < 0 || typeNodeId < 0 || (uint32_t)exprNodeId >= ast->len
         || (uint32_t)typeNodeId >= ast->len)
     {
-        return SLFmtNumericType_INVALID;
+        return HOPFmtNumericType_INVALID;
     }
-    if (ast->nodes[exprNodeId].kind == SLAst_INT) {
-        SLFmtNumericType t = SLFmtNumericTypeFromTypeNode(ast, src, typeNodeId);
+    if (ast->nodes[exprNodeId].kind == HOPAst_INT) {
+        HOPFmtNumericType t = HOPFmtNumericTypeFromTypeNode(ast, src, typeNodeId);
         switch (t) {
-            case SLFmtNumericType_I8:
-            case SLFmtNumericType_I16:
-            case SLFmtNumericType_I32:
-            case SLFmtNumericType_I64:
-            case SLFmtNumericType_INT:
-            case SLFmtNumericType_U8:
-            case SLFmtNumericType_U16:
-            case SLFmtNumericType_U32:
-            case SLFmtNumericType_U64:
-            case SLFmtNumericType_UINT: return t;
-            default:                    return SLFmtNumericType_INVALID;
+            case HOPFmtNumericType_I8:
+            case HOPFmtNumericType_I16:
+            case HOPFmtNumericType_I32:
+            case HOPFmtNumericType_I64:
+            case HOPFmtNumericType_INT:
+            case HOPFmtNumericType_U8:
+            case HOPFmtNumericType_U16:
+            case HOPFmtNumericType_U32:
+            case HOPFmtNumericType_U64:
+            case HOPFmtNumericType_UINT: return t;
+            default:                     return HOPFmtNumericType_INVALID;
         }
     }
-    if (ast->nodes[exprNodeId].kind == SLAst_FLOAT) {
-        SLFmtNumericType t = SLFmtNumericTypeFromTypeNode(ast, src, typeNodeId);
-        return (t == SLFmtNumericType_F32 || t == SLFmtNumericType_F64)
+    if (ast->nodes[exprNodeId].kind == HOPAst_FLOAT) {
+        HOPFmtNumericType t = HOPFmtNumericTypeFromTypeNode(ast, src, typeNodeId);
+        return (t == HOPFmtNumericType_F32 || t == HOPFmtNumericType_F64)
                  ? t
-                 : SLFmtNumericType_INVALID;
+                 : HOPFmtNumericType_INVALID;
     }
-    return SLFmtNumericType_INVALID;
+    return HOPFmtNumericType_INVALID;
 }
 
-static int SLFmtBinaryOpSharesOperandType(uint16_t op) {
-    switch ((SLTokenKind)op) {
-        case SLTok_ADD:
-        case SLTok_SUB:
-        case SLTok_MUL:
-        case SLTok_DIV:
-        case SLTok_MOD:
-        case SLTok_AND:
-        case SLTok_OR:
-        case SLTok_XOR:
-        case SLTok_EQ:
-        case SLTok_NEQ:
-        case SLTok_LT:
-        case SLTok_GT:
-        case SLTok_LTE:
-        case SLTok_GTE: return 1;
-        default:        return 0;
+static int HOPFmtBinaryOpSharesOperandType(uint16_t op) {
+    switch ((HOPTokenKind)op) {
+        case HOPTok_ADD:
+        case HOPTok_SUB:
+        case HOPTok_MUL:
+        case HOPTok_DIV:
+        case HOPTok_MOD:
+        case HOPTok_AND:
+        case HOPTok_OR:
+        case HOPTok_XOR:
+        case HOPTok_EQ:
+        case HOPTok_NEQ:
+        case HOPTok_LT:
+        case HOPTok_GT:
+        case HOPTok_LTE:
+        case HOPTok_GTE: return 1;
+        default:         return 0;
     }
 }
 
-static int SLFmtIsAssignmentOp(SLTokenKind kind);
+static int HOPFmtIsAssignmentOp(HOPTokenKind kind);
 
-static int SLFmtTypeNodesEqualBySource(
-    const SLAst* ast, SLStrView src, int32_t aTypeNodeId, int32_t bTypeNodeId) {
-    const SLAstNode* a;
-    const SLAstNode* b;
+static int HOPFmtTypeNodesEqualBySource(
+    const HOPAst* ast, HOPStrView src, int32_t aTypeNodeId, int32_t bTypeNodeId) {
+    const HOPAstNode* a;
+    const HOPAstNode* b;
     if (aTypeNodeId < 0 || bTypeNodeId < 0 || (uint32_t)aTypeNodeId >= ast->len
         || (uint32_t)bTypeNodeId >= ast->len)
     {
@@ -404,25 +405,25 @@ static int SLFmtTypeNodesEqualBySource(
     }
     a = &ast->nodes[aTypeNodeId];
     b = &ast->nodes[bTypeNodeId];
-    return SLFmtSlicesEqual(src, a->start, a->end, b->start, b->end);
+    return HOPFmtSlicesEqual(src, a->start, a->end, b->start, b->end);
 }
 
 typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
     int32_t  concreteTypeNodeId;
-} SLFmtTypeBinding;
+} HOPFmtTypeBinding;
 
 typedef struct {
-    SLFmtTypeBinding items[16];
-    uint32_t         len;
-} SLFmtTypeEnv;
+    HOPFmtTypeBinding items[16];
+    uint32_t          len;
+} HOPFmtTypeEnv;
 
 typedef struct {
     int32_t  paramNodeId;
     int32_t  typeNodeId;
     uint16_t flags;
-} SLFmtCallParam;
+} HOPFmtCallParam;
 
 typedef struct {
     int32_t  argNodeId;
@@ -431,39 +432,39 @@ typedef struct {
     uint32_t labelEnd;
     uint8_t  hasLabel;
     uint8_t  isSynthetic;
-} SLFmtCallActual;
+} HOPFmtCallActual;
 
 typedef struct {
-    int32_t      typeNodeId;
-    SLFmtTypeEnv env;
-} SLFmtInferredType;
+    int32_t       typeNodeId;
+    HOPFmtTypeEnv env;
+} HOPFmtInferredType;
 
-static void SLFmtTypeEnvInit(SLFmtTypeEnv* env) {
+static void HOPFmtTypeEnvInit(HOPFmtTypeEnv* env) {
     if (env != NULL) {
         env->len = 0;
     }
 }
 
-static void SLFmtInferredTypeInit(SLFmtInferredType* inferred) {
+static void HOPFmtInferredTypeInit(HOPFmtInferredType* inferred) {
     if (inferred != NULL) {
         inferred->typeNodeId = -1;
-        SLFmtTypeEnvInit(&inferred->env);
+        HOPFmtTypeEnvInit(&inferred->env);
     }
 }
 
-static int SLFmtInferredTypeSet(
-    SLFmtInferredType* inferred, int32_t typeNodeId, const SLFmtTypeEnv* _Nullable env);
-static int SLFmtInferredTypeMatchesNode(
-    const SLAst* ast, SLStrView src, const SLFmtInferredType* inferred, int32_t typeNodeId);
+static int HOPFmtInferredTypeSet(
+    HOPFmtInferredType* inferred, int32_t typeNodeId, const HOPFmtTypeEnv* _Nullable env);
+static int HOPFmtInferredTypeMatchesNode(
+    const HOPAst* ast, HOPStrView src, const HOPFmtInferredType* inferred, int32_t typeNodeId);
 
-static int32_t SLFmtTypeEnvFind(
-    const SLFmtTypeEnv* env, SLStrView src, uint32_t nameStart, uint32_t nameEnd) {
+static int32_t HOPFmtTypeEnvFind(
+    const HOPFmtTypeEnv* env, HOPStrView src, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
     if (env == NULL || nameEnd <= nameStart) {
         return -1;
     }
     for (i = 0; i < env->len; i++) {
-        if (SLFmtSlicesEqual(
+        if (HOPFmtSlicesEqual(
                 src, env->items[i].nameStart, env->items[i].nameEnd, nameStart, nameEnd))
         {
             return (int32_t)i;
@@ -472,8 +473,8 @@ static int32_t SLFmtTypeEnvFind(
     return -1;
 }
 
-static int SLFmtTypeEnvAdd(
-    SLFmtTypeEnv* env, uint32_t nameStart, uint32_t nameEnd, int32_t concreteTypeNodeId) {
+static int HOPFmtTypeEnvAdd(
+    HOPFmtTypeEnv* env, uint32_t nameStart, uint32_t nameEnd, int32_t concreteTypeNodeId) {
     if (env == NULL || nameEnd <= nameStart || env->len >= 16u) {
         return 0;
     }
@@ -484,39 +485,39 @@ static int SLFmtTypeEnvAdd(
     return 1;
 }
 
-static int SLFmtTypeEnvInitFromDeclTypeParams(
-    const SLAst* ast, int32_t declNodeId, SLFmtTypeEnv* env) {
+static int HOPFmtTypeEnvInitFromDeclTypeParams(
+    const HOPAst* ast, int32_t declNodeId, HOPFmtTypeEnv* env) {
     int32_t child;
-    SLFmtTypeEnvInit(env);
+    HOPFmtTypeEnvInit(env);
     if (declNodeId < 0 || (uint32_t)declNodeId >= ast->len || env == NULL) {
         return 0;
     }
-    child = SLFmtFirstChild(ast, declNodeId);
-    while (child >= 0 && ast->nodes[child].kind == SLAst_TYPE_PARAM) {
-        if (!SLFmtTypeEnvAdd(env, ast->nodes[child].dataStart, ast->nodes[child].dataEnd, -1)) {
+    child = HOPFmtFirstChild(ast, declNodeId);
+    while (child >= 0 && ast->nodes[child].kind == HOPAst_TYPE_PARAM) {
+        if (!HOPFmtTypeEnvAdd(env, ast->nodes[child].dataStart, ast->nodes[child].dataEnd, -1)) {
             return 0;
         }
-        child = SLFmtNextSibling(ast, child);
+        child = HOPFmtNextSibling(ast, child);
     }
     return 1;
 }
 
-static int SLFmtTypeNameIsBoundParam(
-    const SLAst* ast,
-    SLStrView    src,
-    int32_t      typeNodeId,
-    const SLFmtTypeEnv* _Nullable env,
+static int HOPFmtTypeNameIsBoundParam(
+    const HOPAst* ast,
+    HOPStrView    src,
+    int32_t       typeNodeId,
+    const HOPFmtTypeEnv* _Nullable env,
     int32_t* outBindingIndex) {
-    const SLAstNode* n;
-    int32_t          bindingIndex;
+    const HOPAstNode* n;
+    int32_t           bindingIndex;
     if (typeNodeId < 0 || (uint32_t)typeNodeId >= ast->len) {
         return 0;
     }
     n = &ast->nodes[typeNodeId];
-    if (n->kind != SLAst_TYPE_NAME || SLFmtFirstChild(ast, typeNodeId) >= 0) {
+    if (n->kind != HOPAst_TYPE_NAME || HOPFmtFirstChild(ast, typeNodeId) >= 0) {
         return 0;
     }
-    bindingIndex = SLFmtTypeEnvFind(env, src, n->dataStart, n->dataEnd);
+    bindingIndex = HOPFmtTypeEnvFind(env, src, n->dataStart, n->dataEnd);
     if (bindingIndex < 0) {
         return 0;
     }
@@ -526,69 +527,70 @@ static int SLFmtTypeNameIsBoundParam(
     return 1;
 }
 
-static int SLFmtTypeCompatibleWithEnvs(
-    const SLAst* ast,
-    SLStrView    src,
-    int32_t      wantNodeId,
-    SLFmtTypeEnv* _Nullable wantEnv,
+static int HOPFmtTypeCompatibleWithEnvs(
+    const HOPAst* ast,
+    HOPStrView    src,
+    int32_t       wantNodeId,
+    HOPFmtTypeEnv* _Nullable wantEnv,
     int32_t gotNodeId,
-    const SLFmtTypeEnv* _Nullable gotEnv);
+    const HOPFmtTypeEnv* _Nullable gotEnv);
 
-static int SLFmtTypeCompatibleChildren(
-    const SLAst* ast,
-    SLStrView    src,
-    int32_t      wantNodeId,
-    SLFmtTypeEnv* _Nullable wantEnv,
+static int HOPFmtTypeCompatibleChildren(
+    const HOPAst* ast,
+    HOPStrView    src,
+    int32_t       wantNodeId,
+    HOPFmtTypeEnv* _Nullable wantEnv,
     int32_t gotNodeId,
-    const SLFmtTypeEnv* _Nullable gotEnv) {
-    int32_t wantChild = SLFmtFirstChild(ast, wantNodeId);
-    int32_t gotChild = SLFmtFirstChild(ast, gotNodeId);
+    const HOPFmtTypeEnv* _Nullable gotEnv) {
+    int32_t wantChild = HOPFmtFirstChild(ast, wantNodeId);
+    int32_t gotChild = HOPFmtFirstChild(ast, gotNodeId);
     while (wantChild >= 0 && gotChild >= 0) {
-        if (!SLFmtTypeCompatibleWithEnvs(ast, src, wantChild, wantEnv, gotChild, gotEnv)) {
+        if (!HOPFmtTypeCompatibleWithEnvs(ast, src, wantChild, wantEnv, gotChild, gotEnv)) {
             return 0;
         }
-        wantChild = SLFmtNextSibling(ast, wantChild);
-        gotChild = SLFmtNextSibling(ast, gotChild);
+        wantChild = HOPFmtNextSibling(ast, wantChild);
+        gotChild = HOPFmtNextSibling(ast, gotChild);
     }
     return wantChild < 0 && gotChild < 0;
 }
 
-static int SLFmtTypeCompatibleWithEnvs(
-    const SLAst* ast,
-    SLStrView    src,
-    int32_t      wantNodeId,
-    SLFmtTypeEnv* _Nullable wantEnv,
+static int HOPFmtTypeCompatibleWithEnvs(
+    const HOPAst* ast,
+    HOPStrView    src,
+    int32_t       wantNodeId,
+    HOPFmtTypeEnv* _Nullable wantEnv,
     int32_t gotNodeId,
-    const SLFmtTypeEnv* _Nullable gotEnv) {
-    const SLAstNode* want;
-    const SLAstNode* got;
-    int32_t          bindingIndex;
+    const HOPFmtTypeEnv* _Nullable gotEnv) {
+    const HOPAstNode* want;
+    const HOPAstNode* got;
+    int32_t           bindingIndex;
     if (wantNodeId < 0 || gotNodeId < 0 || (uint32_t)wantNodeId >= ast->len
         || (uint32_t)gotNodeId >= ast->len)
     {
         return 0;
     }
-    if (SLFmtTypeNameIsBoundParam(ast, src, wantNodeId, wantEnv, &bindingIndex)) {
+    if (HOPFmtTypeNameIsBoundParam(ast, src, wantNodeId, wantEnv, &bindingIndex)) {
         int32_t boundNodeId = wantEnv->items[bindingIndex].concreteTypeNodeId;
         if (boundNodeId >= 0) {
-            return SLFmtTypeCompatibleWithEnvs(ast, src, boundNodeId, NULL, gotNodeId, gotEnv);
+            return HOPFmtTypeCompatibleWithEnvs(ast, src, boundNodeId, NULL, gotNodeId, gotEnv);
         }
-        if (gotEnv == NULL || !SLFmtTypeNameIsBoundParam(ast, src, gotNodeId, gotEnv, &bindingIndex)
+        if (gotEnv == NULL
+            || !HOPFmtTypeNameIsBoundParam(ast, src, gotNodeId, gotEnv, &bindingIndex)
             || gotEnv->items[bindingIndex].concreteTypeNodeId < 0)
         {
             wantEnv
-                ->items[SLFmtTypeEnvFind(
+                ->items[HOPFmtTypeEnvFind(
                     wantEnv, src, ast->nodes[wantNodeId].dataStart, ast->nodes[wantNodeId].dataEnd)]
                 .concreteTypeNodeId = gotNodeId;
             return 1;
         }
     }
-    if (gotEnv != NULL && SLFmtTypeNameIsBoundParam(ast, src, gotNodeId, gotEnv, &bindingIndex)) {
+    if (gotEnv != NULL && HOPFmtTypeNameIsBoundParam(ast, src, gotNodeId, gotEnv, &bindingIndex)) {
         int32_t boundNodeId = gotEnv->items[bindingIndex].concreteTypeNodeId;
         if (boundNodeId < 0) {
             return 0;
         }
-        return SLFmtTypeCompatibleWithEnvs(ast, src, wantNodeId, wantEnv, boundNodeId, NULL);
+        return HOPFmtTypeCompatibleWithEnvs(ast, src, wantNodeId, wantEnv, boundNodeId, NULL);
     }
     want = &ast->nodes[wantNodeId];
     got = &ast->nodes[gotNodeId];
@@ -596,40 +598,40 @@ static int SLFmtTypeCompatibleWithEnvs(
         return 0;
     }
     switch (want->kind) {
-        case SLAst_TYPE_NAME:
-            if (!SLFmtSlicesEqual(
+        case HOPAst_TYPE_NAME:
+            if (!HOPFmtSlicesEqual(
                     src, want->dataStart, want->dataEnd, got->dataStart, got->dataEnd))
             {
                 return 0;
             }
-            return SLFmtTypeCompatibleChildren(ast, src, wantNodeId, wantEnv, gotNodeId, gotEnv);
-        case SLAst_TYPE_PTR:
-        case SLAst_TYPE_REF:
-        case SLAst_TYPE_MUTREF:
-        case SLAst_TYPE_SLICE:
-        case SLAst_TYPE_MUTSLICE:
-        case SLAst_TYPE_OPTIONAL:
-        case SLAst_TYPE_ARRAY:
-        case SLAst_TYPE_VARRAY:
-        case SLAst_TYPE_TUPLE:
-        case SLAst_TYPE_FN:
-            return SLFmtTypeCompatibleChildren(ast, src, wantNodeId, wantEnv, gotNodeId, gotEnv);
-        default: return SLFmtSlicesEqual(src, want->start, want->end, got->start, got->end);
+            return HOPFmtTypeCompatibleChildren(ast, src, wantNodeId, wantEnv, gotNodeId, gotEnv);
+        case HOPAst_TYPE_PTR:
+        case HOPAst_TYPE_REF:
+        case HOPAst_TYPE_MUTREF:
+        case HOPAst_TYPE_SLICE:
+        case HOPAst_TYPE_MUTSLICE:
+        case HOPAst_TYPE_OPTIONAL:
+        case HOPAst_TYPE_ARRAY:
+        case HOPAst_TYPE_VARRAY:
+        case HOPAst_TYPE_TUPLE:
+        case HOPAst_TYPE_FN:
+            return HOPFmtTypeCompatibleChildren(ast, src, wantNodeId, wantEnv, gotNodeId, gotEnv);
+        default: return HOPFmtSlicesEqual(src, want->start, want->end, got->start, got->end);
     }
 }
 
-static int SLFmtInferLocalCallAgainstFn(
-    const SLAst* ast,
-    SLStrView    src,
-    int32_t      callNodeId,
-    int32_t      fnNodeId,
-    uint32_t     beforePos,
-    int32_t      targetArgNodeId,
-    SLFmtInferredType* _Nullable outReturnType,
-    SLFmtInferredType* _Nullable outTargetParamType);
+static int HOPFmtInferLocalCallAgainstFn(
+    const HOPAst* ast,
+    HOPStrView    src,
+    int32_t       callNodeId,
+    int32_t       fnNodeId,
+    uint32_t      beforePos,
+    int32_t       targetArgNodeId,
+    HOPFmtInferredType* _Nullable outReturnType,
+    HOPFmtInferredType* _Nullable outTargetParamType);
 
-static int SLFmtCanDropLiteralCastFromLocalCall(
-    const SLAst* ast, SLStrView src, int32_t castNodeId, int32_t castTypeNodeId) {
+static int HOPFmtCanDropLiteralCastFromLocalCall(
+    const HOPAst* ast, HOPStrView src, int32_t castNodeId, int32_t castTypeNodeId) {
     int32_t  parentNodeId;
     int32_t  argNodeId;
     int32_t  callNodeId;
@@ -641,48 +643,48 @@ static int SLFmtCanDropLiteralCastFromLocalCall(
     if (ast == NULL || castNodeId < 0 || castTypeNodeId < 0 || (uint32_t)castNodeId >= ast->len) {
         return 0;
     }
-    parentNodeId = SLFmtFindParentNode(ast, castNodeId);
+    parentNodeId = HOPFmtFindParentNode(ast, castNodeId);
     if (parentNodeId < 0) {
         return 0;
     }
-    if (ast->nodes[parentNodeId].kind == SLAst_CALL_ARG) {
+    if (ast->nodes[parentNodeId].kind == HOPAst_CALL_ARG) {
         argNodeId = parentNodeId;
-        callNodeId = SLFmtFindParentNode(ast, parentNodeId);
-    } else if (ast->nodes[parentNodeId].kind == SLAst_CALL) {
+        callNodeId = HOPFmtFindParentNode(ast, parentNodeId);
+    } else if (ast->nodes[parentNodeId].kind == HOPAst_CALL) {
         argNodeId = castNodeId;
         callNodeId = parentNodeId;
     } else {
         return 0;
     }
-    if (callNodeId < 0 || ast->nodes[callNodeId].kind != SLAst_CALL) {
+    if (callNodeId < 0 || ast->nodes[callNodeId].kind != HOPAst_CALL) {
         return 0;
     }
-    calleeNodeId = SLFmtFirstChild(ast, callNodeId);
+    calleeNodeId = HOPFmtFirstChild(ast, callNodeId);
     if (calleeNodeId < 0 || (uint32_t)calleeNodeId >= ast->len) {
         return 0;
     }
-    if (ast->nodes[calleeNodeId].kind == SLAst_IDENT) {
+    if (ast->nodes[calleeNodeId].kind == HOPAst_IDENT) {
         calleeNameStart = ast->nodes[calleeNodeId].dataStart;
         calleeNameEnd = ast->nodes[calleeNodeId].dataEnd;
-    } else if (ast->nodes[calleeNodeId].kind == SLAst_FIELD_EXPR) {
+    } else if (ast->nodes[calleeNodeId].kind == HOPAst_FIELD_EXPR) {
         calleeNameStart = ast->nodes[calleeNodeId].dataStart;
         calleeNameEnd = ast->nodes[calleeNodeId].dataEnd;
     } else {
         return 0;
     }
-    cur = SLFmtFirstChild(ast, ast->root);
+    cur = HOPFmtFirstChild(ast, ast->root);
     while (cur >= 0) {
-        if (ast->nodes[cur].kind == SLAst_FN
-            && SLFmtSlicesEqual(
+        if (ast->nodes[cur].kind == HOPAst_FN
+            && HOPFmtSlicesEqual(
                 src,
                 ast->nodes[cur].dataStart,
                 ast->nodes[cur].dataEnd,
                 calleeNameStart,
                 calleeNameEnd))
         {
-            SLFmtInferredType targetType;
-            SLFmtInferredTypeInit(&targetType);
-            if (!SLFmtInferLocalCallAgainstFn(
+            HOPFmtInferredType targetType;
+            HOPFmtInferredTypeInit(&targetType);
+            if (!HOPFmtInferLocalCallAgainstFn(
                     ast,
                     src,
                     callNodeId,
@@ -692,28 +694,28 @@ static int SLFmtCanDropLiteralCastFromLocalCall(
                     NULL,
                     &targetType))
             {
-                cur = SLFmtNextSibling(ast, cur);
+                cur = HOPFmtNextSibling(ast, cur);
                 continue;
             }
             sawMappedCandidate = 1;
-            if (!SLFmtInferredTypeMatchesNode(ast, src, &targetType, castTypeNodeId)) {
+            if (!HOPFmtInferredTypeMatchesNode(ast, src, &targetType, castTypeNodeId)) {
                 return 0;
             }
         }
-        cur = SLFmtNextSibling(ast, cur);
+        cur = HOPFmtNextSibling(ast, cur);
     }
     return sawMappedCandidate;
 }
 
-static void SLFmtGetCastParts(
-    const SLAst* ast, int32_t castNodeId, int32_t* outExprNodeId, int32_t* outTypeNodeId) {
+static void HOPFmtGetCastParts(
+    const HOPAst* ast, int32_t castNodeId, int32_t* outExprNodeId, int32_t* outTypeNodeId) {
     int32_t exprNodeId = -1;
     int32_t typeNodeId = -1;
     if (castNodeId >= 0 && (uint32_t)castNodeId < ast->len
-        && ast->nodes[castNodeId].kind == SLAst_CAST)
+        && ast->nodes[castNodeId].kind == HOPAst_CAST)
     {
-        exprNodeId = SLFmtFirstChild(ast, castNodeId);
-        typeNodeId = exprNodeId >= 0 ? SLFmtNextSibling(ast, exprNodeId) : -1;
+        exprNodeId = HOPFmtFirstChild(ast, castNodeId);
+        typeNodeId = exprNodeId >= 0 ? HOPFmtNextSibling(ast, exprNodeId) : -1;
     }
     if (outExprNodeId != NULL) {
         *outExprNodeId = exprNodeId;
@@ -723,22 +725,22 @@ static void SLFmtGetCastParts(
     }
 }
 
-static void SLFmtGetVarLikeTypeAndInit(
-    const SLAst* ast, int32_t nodeId, int32_t* outTypeNodeId, int32_t* outInitNodeId) {
-    int32_t firstChild = SLFmtFirstChild(ast, nodeId);
+static void HOPFmtGetVarLikeTypeAndInit(
+    const HOPAst* ast, int32_t nodeId, int32_t* outTypeNodeId, int32_t* outInitNodeId) {
+    int32_t firstChild = HOPFmtFirstChild(ast, nodeId);
     int32_t typeNodeId = -1;
     int32_t initNodeId = -1;
-    if (firstChild >= 0 && ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
-        int32_t afterNames = SLFmtNextSibling(ast, firstChild);
-        if (afterNames >= 0 && SLFmtIsTypeNodeKindRaw(ast->nodes[afterNames].kind)) {
+    if (firstChild >= 0 && ast->nodes[firstChild].kind == HOPAst_NAME_LIST) {
+        int32_t afterNames = HOPFmtNextSibling(ast, firstChild);
+        if (afterNames >= 0 && HOPFmtIsTypeNodeKindRaw(ast->nodes[afterNames].kind)) {
             typeNodeId = afterNames;
-            initNodeId = SLFmtNextSibling(ast, afterNames);
+            initNodeId = HOPFmtNextSibling(ast, afterNames);
         } else {
             initNodeId = afterNames;
         }
-    } else if (firstChild >= 0 && SLFmtIsTypeNodeKindRaw(ast->nodes[firstChild].kind)) {
+    } else if (firstChild >= 0 && HOPFmtIsTypeNodeKindRaw(ast->nodes[firstChild].kind)) {
         typeNodeId = firstChild;
-        initNodeId = SLFmtNextSibling(ast, firstChild);
+        initNodeId = HOPFmtNextSibling(ast, firstChild);
     } else {
         initNodeId = firstChild;
     }
@@ -750,33 +752,33 @@ static void SLFmtGetVarLikeTypeAndInit(
     }
 }
 
-static int32_t SLFmtFindFnReturnTypeNode(const SLAst* ast, int32_t fnNodeId) {
+static int32_t HOPFmtFindFnReturnTypeNode(const HOPAst* ast, int32_t fnNodeId) {
     int32_t child;
-    if (fnNodeId < 0 || (uint32_t)fnNodeId >= ast->len || ast->nodes[fnNodeId].kind != SLAst_FN) {
+    if (fnNodeId < 0 || (uint32_t)fnNodeId >= ast->len || ast->nodes[fnNodeId].kind != HOPAst_FN) {
         return -1;
     }
-    child = SLFmtFirstChild(ast, fnNodeId);
+    child = HOPFmtFirstChild(ast, fnNodeId);
     while (child >= 0) {
-        const SLAstNode* n = &ast->nodes[child];
-        if (SLFmtIsTypeNodeKindRaw(n->kind) && n->flags == 1) {
+        const HOPAstNode* n = &ast->nodes[child];
+        if (HOPFmtIsTypeNodeKindRaw(n->kind) && n->flags == 1) {
             return child;
         }
-        child = SLFmtNextSibling(ast, child);
+        child = HOPFmtNextSibling(ast, child);
     }
     return -1;
 }
 
-static int SLFmtFnReturnTypeIsGenericParam(const SLAst* ast, SLStrView src, int32_t fnNodeId) {
-    SLFmtTypeEnv env;
-    int32_t      retTypeNodeId = SLFmtFindFnReturnTypeNode(ast, fnNodeId);
-    int32_t      bindingIndex = -1;
-    if (retTypeNodeId < 0 || !SLFmtTypeEnvInitFromDeclTypeParams(ast, fnNodeId, &env)) {
+static int HOPFmtFnReturnTypeIsGenericParam(const HOPAst* ast, HOPStrView src, int32_t fnNodeId) {
+    HOPFmtTypeEnv env;
+    int32_t       retTypeNodeId = HOPFmtFindFnReturnTypeNode(ast, fnNodeId);
+    int32_t       bindingIndex = -1;
+    if (retTypeNodeId < 0 || !HOPFmtTypeEnvInitFromDeclTypeParams(ast, fnNodeId, &env)) {
         return 0;
     }
-    return SLFmtTypeNameIsBoundParam(ast, src, retTypeNodeId, &env, &bindingIndex);
+    return HOPFmtTypeNameIsBoundParam(ast, src, retTypeNodeId, &env, &bindingIndex);
 }
 
-static int32_t SLFmtFindParentNode(const SLAst* ast, int32_t childNodeId) {
+static int32_t HOPFmtFindParentNode(const HOPAst* ast, int32_t childNodeId) {
     uint32_t i;
     if (childNodeId < 0 || (uint32_t)childNodeId >= ast->len) {
         return -1;
@@ -793,103 +795,105 @@ static int32_t SLFmtFindParentNode(const SLAst* ast, int32_t childNodeId) {
     return -1;
 }
 
-static int SLFmtNodeDeclaresNameRange(
-    const SLAst* ast, SLStrView src, int32_t nodeId, uint32_t nameStart, uint32_t nameEnd) {
-    const SLAstNode* n;
+static int HOPFmtNodeDeclaresNameRange(
+    const HOPAst* ast, HOPStrView src, int32_t nodeId, uint32_t nameStart, uint32_t nameEnd) {
+    const HOPAstNode* n;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len || nameEnd <= nameStart) {
         return 0;
     }
     n = &ast->nodes[nodeId];
-    if ((n->kind == SLAst_PARAM || n->kind == SLAst_VAR || n->kind == SLAst_CONST)
-        && SLFmtSlicesEqual(src, n->dataStart, n->dataEnd, nameStart, nameEnd))
+    if ((n->kind == HOPAst_PARAM || n->kind == HOPAst_VAR || n->kind == HOPAst_CONST)
+        && HOPFmtSlicesEqual(src, n->dataStart, n->dataEnd, nameStart, nameEnd))
     {
         return 1;
     }
-    if (n->kind == SLAst_VAR || n->kind == SLAst_CONST) {
-        int32_t child = SLFmtFirstChild(ast, nodeId);
-        if (child >= 0 && (uint32_t)child < ast->len && ast->nodes[child].kind == SLAst_NAME_LIST) {
-            int32_t nameNode = SLFmtFirstChild(ast, child);
+    if (n->kind == HOPAst_VAR || n->kind == HOPAst_CONST) {
+        int32_t child = HOPFmtFirstChild(ast, nodeId);
+        if (child >= 0 && (uint32_t)child < ast->len && ast->nodes[child].kind == HOPAst_NAME_LIST)
+        {
+            int32_t nameNode = HOPFmtFirstChild(ast, child);
             while (nameNode >= 0) {
-                const SLAstNode* nn = &ast->nodes[nameNode];
-                if (nn->kind == SLAst_IDENT
-                    && SLFmtSlicesEqual(src, nn->dataStart, nn->dataEnd, nameStart, nameEnd))
+                const HOPAstNode* nn = &ast->nodes[nameNode];
+                if (nn->kind == HOPAst_IDENT
+                    && HOPFmtSlicesEqual(src, nn->dataStart, nn->dataEnd, nameStart, nameEnd))
                 {
                     return 1;
                 }
-                nameNode = SLFmtNextSibling(ast, nameNode);
+                nameNode = HOPFmtNextSibling(ast, nameNode);
             }
         }
     }
     return 0;
 }
 
-static int SLFmtNodeDeclaresNameLiteral(
-    const SLAst* ast, SLStrView src, int32_t nodeId, const char* nameLit) {
-    const SLAstNode* n;
+static int HOPFmtNodeDeclaresNameLiteral(
+    const HOPAst* ast, HOPStrView src, int32_t nodeId, const char* nameLit) {
+    const HOPAstNode* n;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return 0;
     }
     n = &ast->nodes[nodeId];
-    if ((n->kind == SLAst_PARAM || n->kind == SLAst_VAR || n->kind == SLAst_CONST)
-        && SLFmtSliceEqLiteral(src, n->dataStart, n->dataEnd, nameLit))
+    if ((n->kind == HOPAst_PARAM || n->kind == HOPAst_VAR || n->kind == HOPAst_CONST)
+        && HOPFmtSliceEqLiteral(src, n->dataStart, n->dataEnd, nameLit))
     {
         return 1;
     }
-    if (n->kind == SLAst_VAR || n->kind == SLAst_CONST) {
-        int32_t child = SLFmtFirstChild(ast, nodeId);
-        if (child >= 0 && (uint32_t)child < ast->len && ast->nodes[child].kind == SLAst_NAME_LIST) {
-            int32_t nameNode = SLFmtFirstChild(ast, child);
+    if (n->kind == HOPAst_VAR || n->kind == HOPAst_CONST) {
+        int32_t child = HOPFmtFirstChild(ast, nodeId);
+        if (child >= 0 && (uint32_t)child < ast->len && ast->nodes[child].kind == HOPAst_NAME_LIST)
+        {
+            int32_t nameNode = HOPFmtFirstChild(ast, child);
             while (nameNode >= 0) {
-                const SLAstNode* nn = &ast->nodes[nameNode];
-                if (nn->kind == SLAst_IDENT
-                    && SLFmtSliceEqLiteral(src, nn->dataStart, nn->dataEnd, nameLit))
+                const HOPAstNode* nn = &ast->nodes[nameNode];
+                if (nn->kind == HOPAst_IDENT
+                    && HOPFmtSliceEqLiteral(src, nn->dataStart, nn->dataEnd, nameLit))
                 {
                     return 1;
                 }
-                nameNode = SLFmtNextSibling(ast, nameNode);
+                nameNode = HOPFmtNextSibling(ast, nameNode);
             }
         }
     }
     return 0;
 }
 
-static int SLFmtFindLocalBindingBefore(
-    const SLAst* ast,
-    SLStrView    src,
-    int32_t      identNodeId,
-    uint32_t     beforePos,
+static int HOPFmtFindLocalBindingBefore(
+    const HOPAst* ast,
+    HOPStrView    src,
+    int32_t       identNodeId,
+    uint32_t      beforePos,
     int32_t* _Nullable outDeclNodeId,
     int32_t* _Nullable outTypeNodeId,
     int32_t* _Nullable outInitNodeId);
 
-static int SLFmtFindFieldTypeOnLocalNamedType(
-    const SLAst*             ast,
-    SLStrView                src,
-    const SLFmtInferredType* baseType,
-    uint32_t                 fieldStart,
-    uint32_t                 fieldEnd,
-    SLFmtInferredType*       outType);
+static int HOPFmtFindFieldTypeOnLocalNamedType(
+    const HOPAst*             ast,
+    HOPStrView                src,
+    const HOPFmtInferredType* baseType,
+    uint32_t                  fieldStart,
+    uint32_t                  fieldEnd,
+    HOPFmtInferredType*       outType);
 
-static int SLFmtInferLocalCallAgainstFn(
-    const SLAst* ast,
-    SLStrView    src,
-    int32_t      callNodeId,
-    int32_t      fnNodeId,
-    uint32_t     beforePos,
-    int32_t      targetArgNodeId,
-    SLFmtInferredType* _Nullable outReturnType,
-    SLFmtInferredType* _Nullable outTargetParamType);
+static int HOPFmtInferLocalCallAgainstFn(
+    const HOPAst* ast,
+    HOPStrView    src,
+    int32_t       callNodeId,
+    int32_t       fnNodeId,
+    uint32_t      beforePos,
+    int32_t       targetArgNodeId,
+    HOPFmtInferredType* _Nullable outReturnType,
+    HOPFmtInferredType* _Nullable outTargetParamType);
 
-static int SLFmtInferExprTypeEx(
-    const SLAst*       ast,
-    SLStrView          src,
-    int32_t            exprNodeId,
-    uint32_t           beforePos,
-    uint32_t           depth,
-    SLFmtInferredType* outType) {
-    const SLAstNode* n;
+static int HOPFmtInferExprTypeEx(
+    const HOPAst*       ast,
+    HOPStrView          src,
+    int32_t             exprNodeId,
+    uint32_t            beforePos,
+    uint32_t            depth,
+    HOPFmtInferredType* outType) {
+    const HOPAstNode* n;
     if (outType != NULL) {
-        SLFmtInferredTypeInit(outType);
+        HOPFmtInferredTypeInit(outType);
     }
     if (exprNodeId < 0 || (uint32_t)exprNodeId >= ast->len) {
         return 0;
@@ -898,48 +902,48 @@ static int SLFmtInferExprTypeEx(
         return 0;
     }
     n = &ast->nodes[exprNodeId];
-    if (n->kind == SLAst_CAST) {
+    if (n->kind == HOPAst_CAST) {
         int32_t castExprNodeId = -1;
         int32_t castTypeNodeId = -1;
-        SLFmtGetCastParts(ast, exprNodeId, &castExprNodeId, &castTypeNodeId);
+        HOPFmtGetCastParts(ast, exprNodeId, &castExprNodeId, &castTypeNodeId);
         (void)castExprNodeId;
-        return SLFmtInferredTypeSet(outType, castTypeNodeId, NULL);
+        return HOPFmtInferredTypeSet(outType, castTypeNodeId, NULL);
     }
-    if (n->kind == SLAst_IDENT) {
+    if (n->kind == HOPAst_IDENT) {
         int32_t declNodeId = -1;
         int32_t typeNodeId = -1;
         int32_t initNodeId = -1;
-        if (!SLFmtFindLocalBindingBefore(
+        if (!HOPFmtFindLocalBindingBefore(
                 ast, src, exprNodeId, beforePos, &declNodeId, &typeNodeId, &initNodeId))
         {
             return 0;
         }
         if (typeNodeId >= 0) {
-            return SLFmtInferredTypeSet(outType, typeNodeId, NULL);
+            return HOPFmtInferredTypeSet(outType, typeNodeId, NULL);
         }
         if (initNodeId >= 0) {
-            return SLFmtInferExprTypeEx(
+            return HOPFmtInferExprTypeEx(
                 ast, src, initNodeId, ast->nodes[declNodeId].start, depth + 1u, outType);
         }
         return 0;
     }
-    if (n->kind == SLAst_FIELD_EXPR) {
-        SLFmtInferredType baseType;
-        int32_t           baseNodeId = SLFmtFirstChild(ast, exprNodeId);
-        SLFmtInferredTypeInit(&baseType);
+    if (n->kind == HOPAst_FIELD_EXPR) {
+        HOPFmtInferredType baseType;
+        int32_t            baseNodeId = HOPFmtFirstChild(ast, exprNodeId);
+        HOPFmtInferredTypeInit(&baseType);
         return baseNodeId >= 0
-            && SLFmtInferExprTypeEx(ast, src, baseNodeId, beforePos, depth + 1u, &baseType)
-            && SLFmtFindFieldTypeOnLocalNamedType(
+            && HOPFmtInferExprTypeEx(ast, src, baseNodeId, beforePos, depth + 1u, &baseType)
+            && HOPFmtFindFieldTypeOnLocalNamedType(
                    ast, src, &baseType, n->dataStart, n->dataEnd, outType);
     }
-    if (n->kind == SLAst_UNARY && n->op == SLTok_MUL) {
-        SLFmtInferredType targetType;
-        int32_t           targetNodeId = SLFmtFirstChild(ast, exprNodeId);
-        int32_t           targetTypeNodeId;
-        const SLAstNode*  targetTypeNode;
-        SLFmtInferredTypeInit(&targetType);
+    if (n->kind == HOPAst_UNARY && n->op == HOPTok_MUL) {
+        HOPFmtInferredType targetType;
+        int32_t            targetNodeId = HOPFmtFirstChild(ast, exprNodeId);
+        int32_t            targetTypeNodeId;
+        const HOPAstNode*  targetTypeNode;
+        HOPFmtInferredTypeInit(&targetType);
         if (targetNodeId < 0
-            || !SLFmtInferExprTypeEx(ast, src, targetNodeId, beforePos, depth + 1u, &targetType))
+            || !HOPFmtInferExprTypeEx(ast, src, targetNodeId, beforePos, depth + 1u, &targetType))
         {
             return 0;
         }
@@ -948,95 +952,99 @@ static int SLFmtInferExprTypeEx(
             return 0;
         }
         targetTypeNode = &ast->nodes[targetTypeNodeId];
-        if (targetTypeNode->kind != SLAst_TYPE_PTR && targetTypeNode->kind != SLAst_TYPE_REF
-            && targetTypeNode->kind != SLAst_TYPE_MUTREF)
+        if (targetTypeNode->kind != HOPAst_TYPE_PTR && targetTypeNode->kind != HOPAst_TYPE_REF
+            && targetTypeNode->kind != HOPAst_TYPE_MUTREF)
         {
             return 0;
         }
-        return SLFmtInferredTypeSet(
-            outType, SLFmtFirstChild(ast, targetTypeNodeId), &targetType.env);
+        return HOPFmtInferredTypeSet(
+            outType, HOPFmtFirstChild(ast, targetTypeNodeId), &targetType.env);
     }
-    if (n->kind == SLAst_CALL) {
-        int32_t  calleeNodeId = SLFmtFirstChild(ast, exprNodeId);
+    if (n->kind == HOPAst_CALL) {
+        int32_t  calleeNodeId = HOPFmtFirstChild(ast, exprNodeId);
         uint32_t calleeNameStart;
         uint32_t calleeNameEnd;
         int32_t  cur;
         if (calleeNodeId < 0 || (uint32_t)calleeNodeId >= ast->len) {
             return 0;
         }
-        if (ast->nodes[calleeNodeId].kind == SLAst_IDENT) {
+        if (ast->nodes[calleeNodeId].kind == HOPAst_IDENT) {
             calleeNameStart = ast->nodes[calleeNodeId].dataStart;
             calleeNameEnd = ast->nodes[calleeNodeId].dataEnd;
-        } else if (ast->nodes[calleeNodeId].kind == SLAst_FIELD_EXPR) {
+        } else if (ast->nodes[calleeNodeId].kind == HOPAst_FIELD_EXPR) {
             calleeNameStart = ast->nodes[calleeNodeId].dataStart;
             calleeNameEnd = ast->nodes[calleeNodeId].dataEnd;
         } else {
             return 0;
         }
-        cur = SLFmtFirstChild(ast, ast->root);
+        cur = HOPFmtFirstChild(ast, ast->root);
         while (cur >= 0) {
-            if (ast->nodes[cur].kind == SLAst_FN
-                && SLFmtSlicesEqual(
+            if (ast->nodes[cur].kind == HOPAst_FN
+                && HOPFmtSlicesEqual(
                     src,
                     ast->nodes[cur].dataStart,
                     ast->nodes[cur].dataEnd,
                     calleeNameStart,
                     calleeNameEnd)
-                && SLFmtInferLocalCallAgainstFn(
+                && HOPFmtInferLocalCallAgainstFn(
                     ast, src, exprNodeId, cur, beforePos, -1, outType, NULL))
             {
                 return 1;
             }
-            cur = SLFmtNextSibling(ast, cur);
+            cur = HOPFmtNextSibling(ast, cur);
         }
         return 0;
     }
-    if (n->kind == SLAst_COMPOUND_LIT) {
-        int32_t typeNodeId = SLFmtFirstChild(ast, exprNodeId);
-        if (typeNodeId >= 0 && SLFmtIsTypeNodeKindRaw(ast->nodes[typeNodeId].kind)) {
-            return SLFmtInferredTypeSet(outType, typeNodeId, NULL);
+    if (n->kind == HOPAst_COMPOUND_LIT) {
+        int32_t typeNodeId = HOPFmtFirstChild(ast, exprNodeId);
+        if (typeNodeId >= 0 && HOPFmtIsTypeNodeKindRaw(ast->nodes[typeNodeId].kind)) {
+            return HOPFmtInferredTypeSet(outType, typeNodeId, NULL);
         }
     }
     return 0;
 }
 
-static int SLFmtCanDropRedundantLiteralCast(
-    const SLAst* ast, SLStrView src, const SLFormatOptions* _Nullable options, int32_t castNodeId) {
-    const SLAstNode* castNode;
-    int32_t          castExprNodeId = -1;
-    int32_t          castTypeNodeId = -1;
-    int32_t          parentNodeId;
+static int HOPFmtCanDropRedundantLiteralCast(
+    const HOPAst* ast,
+    HOPStrView    src,
+    const HOPFormatOptions* _Nullable options,
+    int32_t castNodeId) {
+    const HOPAstNode* castNode;
+    int32_t           castExprNodeId = -1;
+    int32_t           castTypeNodeId = -1;
+    int32_t           parentNodeId;
     if (castNodeId < 0 || (uint32_t)castNodeId >= ast->len) {
         return 0;
     }
     castNode = &ast->nodes[castNodeId];
-    if (castNode->kind != SLAst_CAST) {
+    if (castNode->kind != HOPAst_CAST) {
         return 0;
     }
-    SLFmtGetCastParts(ast, castNodeId, &castExprNodeId, &castTypeNodeId);
-    if (SLFmtCastLiteralNumericType(ast, src, castExprNodeId, castTypeNodeId)
-        == SLFmtNumericType_INVALID)
+    HOPFmtGetCastParts(ast, castNodeId, &castExprNodeId, &castTypeNodeId);
+    if (HOPFmtCastLiteralNumericType(ast, src, castExprNodeId, castTypeNodeId)
+        == HOPFmtNumericType_INVALID)
     {
         return 0;
     }
-    parentNodeId = SLFmtFindParentNode(ast, castNodeId);
+    parentNodeId = HOPFmtFindParentNode(ast, castNodeId);
     if (parentNodeId < 0) {
         return 0;
     }
-    if (ast->nodes[parentNodeId].kind == SLAst_UNARY && ast->nodes[parentNodeId].op == SLTok_SUB) {
-        int32_t           binaryNodeId = SLFmtFindParentNode(ast, parentNodeId);
-        int32_t           lhsNodeId;
-        int32_t           rhsNodeId;
-        int32_t           otherNodeId = -1;
-        SLFmtInferredType otherType;
-        if (SLFmtFirstChild(ast, parentNodeId) != castNodeId || binaryNodeId < 0
-            || ast->nodes[binaryNodeId].kind != SLAst_BINARY
-            || !SLFmtBinaryOpSharesOperandType(ast->nodes[binaryNodeId].op))
+    if (ast->nodes[parentNodeId].kind == HOPAst_UNARY && ast->nodes[parentNodeId].op == HOPTok_SUB)
+    {
+        int32_t            binaryNodeId = HOPFmtFindParentNode(ast, parentNodeId);
+        int32_t            lhsNodeId;
+        int32_t            rhsNodeId;
+        int32_t            otherNodeId = -1;
+        HOPFmtInferredType otherType;
+        if (HOPFmtFirstChild(ast, parentNodeId) != castNodeId || binaryNodeId < 0
+            || ast->nodes[binaryNodeId].kind != HOPAst_BINARY
+            || !HOPFmtBinaryOpSharesOperandType(ast->nodes[binaryNodeId].op))
         {
             return 0;
         }
-        lhsNodeId = SLFmtFirstChild(ast, binaryNodeId);
-        rhsNodeId = lhsNodeId >= 0 ? SLFmtNextSibling(ast, lhsNodeId) : -1;
+        lhsNodeId = HOPFmtFirstChild(ast, binaryNodeId);
+        rhsNodeId = lhsNodeId >= 0 ? HOPFmtNextSibling(ast, lhsNodeId) : -1;
         if (lhsNodeId == parentNodeId) {
             otherNodeId = rhsNodeId;
         } else if (rhsNodeId == parentNodeId) {
@@ -1045,48 +1053,48 @@ static int SLFmtCanDropRedundantLiteralCast(
         if (otherNodeId < 0) {
             return 0;
         }
-        SLFmtInferredTypeInit(&otherType);
-        return SLFmtInferExprTypeEx(ast, src, otherNodeId, castNode->start, 0u, &otherType)
-            && SLFmtInferredTypeMatchesNode(ast, src, &otherType, castTypeNodeId);
+        HOPFmtInferredTypeInit(&otherType);
+        return HOPFmtInferExprTypeEx(ast, src, otherNodeId, castNode->start, 0u, &otherType)
+            && HOPFmtInferredTypeMatchesNode(ast, src, &otherType, castTypeNodeId);
     }
     switch (ast->nodes[parentNodeId].kind) {
-        case SLAst_VAR:
-        case SLAst_CONST: {
+        case HOPAst_VAR:
+        case HOPAst_CONST: {
             int32_t declTypeNodeId = -1;
             int32_t initNodeId = -1;
-            SLFmtGetVarLikeTypeAndInit(ast, parentNodeId, &declTypeNodeId, &initNodeId);
+            HOPFmtGetVarLikeTypeAndInit(ast, parentNodeId, &declTypeNodeId, &initNodeId);
             if (initNodeId == castNodeId
-                && SLFmtTypeNodesEqualBySource(ast, src, castTypeNodeId, declTypeNodeId))
+                && HOPFmtTypeNodesEqualBySource(ast, src, castTypeNodeId, declTypeNodeId))
             {
                 return 1;
             }
             return 0;
         }
-        case SLAst_RETURN: {
+        case HOPAst_RETURN: {
             int32_t fnNodeId;
             int32_t retTypeNodeId;
-            int32_t retExprNodeId = SLFmtFirstChild(ast, parentNodeId);
+            int32_t retExprNodeId = HOPFmtFirstChild(ast, parentNodeId);
             if (retExprNodeId != castNodeId) {
                 return 0;
             }
-            fnNodeId = SLFmtFindEnclosingFnNode(ast, parentNodeId);
-            retTypeNodeId = SLFmtFindFnReturnTypeNode(ast, fnNodeId);
-            return SLFmtTypeNodesEqualBySource(ast, src, castTypeNodeId, retTypeNodeId)
-                || SLFmtFnReturnTypeIsGenericParam(ast, src, fnNodeId);
+            fnNodeId = HOPFmtFindEnclosingFnNode(ast, parentNodeId);
+            retTypeNodeId = HOPFmtFindFnReturnTypeNode(ast, fnNodeId);
+            return HOPFmtTypeNodesEqualBySource(ast, src, castTypeNodeId, retTypeNodeId)
+                || HOPFmtFnReturnTypeIsGenericParam(ast, src, fnNodeId);
         }
-        case SLAst_BINARY: {
-            int32_t           lhsNodeId = SLFmtFirstChild(ast, parentNodeId);
-            int32_t           rhsNodeId = lhsNodeId >= 0 ? SLFmtNextSibling(ast, lhsNodeId) : -1;
-            int32_t           otherNodeId = -1;
-            SLFmtInferredType otherType;
+        case HOPAst_BINARY: {
+            int32_t            lhsNodeId = HOPFmtFirstChild(ast, parentNodeId);
+            int32_t            rhsNodeId = lhsNodeId >= 0 ? HOPFmtNextSibling(ast, lhsNodeId) : -1;
+            int32_t            otherNodeId = -1;
+            HOPFmtInferredType otherType;
             if (rhsNodeId == castNodeId
-                && SLFmtIsAssignmentOp((SLTokenKind)ast->nodes[parentNodeId].op))
+                && HOPFmtIsAssignmentOp((HOPTokenKind)ast->nodes[parentNodeId].op))
             {
-                SLFmtInferredTypeInit(&otherType);
-                return SLFmtInferExprTypeEx(ast, src, lhsNodeId, castNode->start, 0u, &otherType)
-                    && SLFmtInferredTypeMatchesNode(ast, src, &otherType, castTypeNodeId);
+                HOPFmtInferredTypeInit(&otherType);
+                return HOPFmtInferExprTypeEx(ast, src, lhsNodeId, castNode->start, 0u, &otherType)
+                    && HOPFmtInferredTypeMatchesNode(ast, src, &otherType, castTypeNodeId);
             }
-            if (!SLFmtBinaryOpSharesOperandType(ast->nodes[parentNodeId].op)) {
+            if (!HOPFmtBinaryOpSharesOperandType(ast->nodes[parentNodeId].op)) {
                 return 0;
             }
             if (lhsNodeId == castNodeId) {
@@ -1097,12 +1105,12 @@ static int SLFmtCanDropRedundantLiteralCast(
             if (otherNodeId < 0) {
                 return 0;
             }
-            SLFmtInferredTypeInit(&otherType);
-            return SLFmtInferExprTypeEx(ast, src, otherNodeId, castNode->start, 0u, &otherType)
-                && SLFmtInferredTypeMatchesNode(ast, src, &otherType, castTypeNodeId);
+            HOPFmtInferredTypeInit(&otherType);
+            return HOPFmtInferExprTypeEx(ast, src, otherNodeId, castNode->start, 0u, &otherType)
+                && HOPFmtInferredTypeMatchesNode(ast, src, &otherType, castTypeNodeId);
         }
         default:
-            if (SLFmtCanDropLiteralCastFromLocalCall(ast, src, castNodeId, castTypeNodeId)) {
+            if (HOPFmtCanDropLiteralCastFromLocalCall(ast, src, castNodeId, castTypeNodeId)) {
                 return 1;
             }
             if (options != NULL && options->canDropLiteralCast != NULL) {
@@ -1112,33 +1120,34 @@ static int SLFmtCanDropRedundantLiteralCast(
     }
 }
 
-static int SLFmtKeywordIsVar(const char* kw) {
+static int HOPFmtKeywordIsVar(const char* kw) {
     return kw[0] == 'v' && kw[1] == 'a' && kw[2] == 'r' && kw[3] == '\0';
 }
 
-static void SLFmtRewriteVarTypeFromLiteralCast(
-    const SLAst* ast,
-    SLStrView    src,
-    const char*  kw,
-    uint32_t     nameCount,
-    int32_t*     ioTypeNodeId,
-    int32_t*     ioInitNodeId) {
+static void HOPFmtRewriteVarTypeFromLiteralCast(
+    const HOPAst* ast,
+    HOPStrView    src,
+    const char*   kw,
+    uint32_t      nameCount,
+    int32_t*      ioTypeNodeId,
+    int32_t*      ioInitNodeId) {
     int32_t initNodeId;
     int32_t castExprNodeId = -1;
     int32_t castTypeNodeId = -1;
-    if (ioTypeNodeId == NULL || ioInitNodeId == NULL || !SLFmtKeywordIsVar(kw) || nameCount != 1u) {
+    if (ioTypeNodeId == NULL || ioInitNodeId == NULL || !HOPFmtKeywordIsVar(kw) || nameCount != 1u)
+    {
         return;
     }
     if (*ioTypeNodeId >= 0 || *ioInitNodeId < 0 || (uint32_t)*ioInitNodeId >= ast->len) {
         return;
     }
     initNodeId = *ioInitNodeId;
-    if (ast->nodes[initNodeId].kind != SLAst_CAST) {
+    if (ast->nodes[initNodeId].kind != HOPAst_CAST) {
         return;
     }
-    SLFmtGetCastParts(ast, initNodeId, &castExprNodeId, &castTypeNodeId);
-    if (SLFmtCastLiteralNumericType(ast, src, castExprNodeId, castTypeNodeId)
-        == SLFmtNumericType_INVALID)
+    HOPFmtGetCastParts(ast, initNodeId, &castExprNodeId, &castTypeNodeId);
+    if (HOPFmtCastLiteralNumericType(ast, src, castExprNodeId, castTypeNodeId)
+        == HOPFmtNumericType_INVALID)
     {
         return;
     }
@@ -1146,18 +1155,19 @@ static void SLFmtRewriteVarTypeFromLiteralCast(
     *ioInitNodeId = castExprNodeId;
 }
 
-static void SLFmtRewriteRedundantVarType(
-    const SLAst* ast,
-    SLStrView    src,
-    const char*  kw,
-    uint32_t     nameCount,
-    uint32_t     declStart,
-    int32_t*     ioTypeNodeId,
-    int32_t*     ioInitNodeId) {
-    SLFmtInferredType initType;
-    int32_t           typeNodeId;
-    int32_t           initNodeId;
-    if (ioTypeNodeId == NULL || ioInitNodeId == NULL || !SLFmtKeywordIsVar(kw) || nameCount != 1u) {
+static void HOPFmtRewriteRedundantVarType(
+    const HOPAst* ast,
+    HOPStrView    src,
+    const char*   kw,
+    uint32_t      nameCount,
+    uint32_t      declStart,
+    int32_t*      ioTypeNodeId,
+    int32_t*      ioInitNodeId) {
+    HOPFmtInferredType initType;
+    int32_t            typeNodeId;
+    int32_t            initNodeId;
+    if (ioTypeNodeId == NULL || ioInitNodeId == NULL || !HOPFmtKeywordIsVar(kw) || nameCount != 1u)
+    {
         return;
     }
     typeNodeId = *ioTypeNodeId;
@@ -1167,30 +1177,30 @@ static void SLFmtRewriteRedundantVarType(
     {
         return;
     }
-    if (ast->nodes[initNodeId].kind == SLAst_CAST || ast->nodes[initNodeId].kind == SLAst_CALL) {
+    if (ast->nodes[initNodeId].kind == HOPAst_CAST || ast->nodes[initNodeId].kind == HOPAst_CALL) {
         return;
     }
-    SLFmtInferredTypeInit(&initType);
-    if (!SLFmtInferExprTypeEx(ast, src, initNodeId, declStart, 0u, &initType)) {
+    HOPFmtInferredTypeInit(&initType);
+    if (!HOPFmtInferExprTypeEx(ast, src, initNodeId, declStart, 0u, &initType)) {
         return;
     }
-    if (SLFmtInferredTypeMatchesNode(ast, src, &initType, typeNodeId)) {
+    if (HOPFmtInferredTypeMatchesNode(ast, src, &initType, typeNodeId)) {
         *ioTypeNodeId = -1;
     }
 }
 
-static int32_t SLFmtFindEnclosingFnNode(const SLAst* ast, int32_t nodeId) {
-    const SLAstNode* target;
-    int32_t          best = -1;
-    uint32_t         bestSpan = UINT32_MAX;
-    uint32_t         i;
+static int32_t HOPFmtFindEnclosingFnNode(const HOPAst* ast, int32_t nodeId) {
+    const HOPAstNode* target;
+    int32_t           best = -1;
+    uint32_t          bestSpan = UINT32_MAX;
+    uint32_t          i;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     target = &ast->nodes[nodeId];
     for (i = 0; i < ast->len; i++) {
-        const SLAstNode* n = &ast->nodes[i];
-        if (n->kind != SLAst_FN) {
+        const HOPAstNode* n = &ast->nodes[i];
+        if (n->kind != HOPAst_FN) {
             continue;
         }
         if (n->start <= target->start && target->end <= n->end) {
@@ -1204,89 +1214,89 @@ static int32_t SLFmtFindEnclosingFnNode(const SLAst* ast, int32_t nodeId) {
     return best;
 }
 
-static int SLFmtFnHasImplicitContextLocal(const SLAst* ast, SLStrView src, int32_t fnNodeId) {
-    const SLAstNode* fn;
-    int32_t          child;
+static int HOPFmtFnHasImplicitContextLocal(const HOPAst* ast, HOPStrView src, int32_t fnNodeId) {
+    const HOPAstNode* fn;
+    int32_t           child;
     if (fnNodeId < 0 || (uint32_t)fnNodeId >= ast->len) {
         return 0;
     }
     fn = &ast->nodes[fnNodeId];
-    if (fn->kind != SLAst_FN) {
+    if (fn->kind != HOPAst_FN) {
         return 0;
     }
-    if (SLFmtSliceEqLiteral(src, fn->dataStart, fn->dataEnd, "main")) {
+    if (HOPFmtSliceEqLiteral(src, fn->dataStart, fn->dataEnd, "main")) {
         return 1;
     }
-    child = SLFmtFirstChild(ast, fnNodeId);
+    child = HOPFmtFirstChild(ast, fnNodeId);
     while (child >= 0) {
-        if (ast->nodes[child].kind == SLAst_CONTEXT_CLAUSE) {
+        if (ast->nodes[child].kind == HOPAst_CONTEXT_CLAUSE) {
             return 1;
         }
-        child = SLFmtNextSibling(ast, child);
+        child = HOPFmtNextSibling(ast, child);
     }
     return 0;
 }
 
-static int SLFmtFnHasShadowingContextLocalBefore(
-    const SLAst* ast, SLStrView src, int32_t fnNodeId, uint32_t beforePos) {
-    const SLAstNode* fn;
-    uint32_t         i;
+static int HOPFmtFnHasShadowingContextLocalBefore(
+    const HOPAst* ast, HOPStrView src, int32_t fnNodeId, uint32_t beforePos) {
+    const HOPAstNode* fn;
+    uint32_t          i;
     if (fnNodeId < 0 || (uint32_t)fnNodeId >= ast->len) {
         return 0;
     }
     fn = &ast->nodes[fnNodeId];
-    if (fn->kind != SLAst_FN) {
+    if (fn->kind != HOPAst_FN) {
         return 0;
     }
     for (i = 0; i < ast->len; i++) {
-        const SLAstNode* n = &ast->nodes[i];
+        const HOPAstNode* n = &ast->nodes[i];
         if (n->start < fn->start || n->end > fn->end || n->start >= beforePos) {
             continue;
         }
-        if (SLFmtNodeDeclaresNameLiteral(ast, src, (int32_t)i, "context")) {
+        if (HOPFmtNodeDeclaresNameLiteral(ast, src, (int32_t)i, "context")) {
             return 1;
         }
     }
     return 0;
 }
 
-static int SLFmtExprIsImplicitContextFieldForBind(
-    const SLAst* ast, SLStrView src, const SLAstNode* bindNode, int32_t exprNodeId) {
-    const SLAstNode* exprNode;
-    int32_t          baseNodeId;
-    uint32_t         baseStart;
-    uint32_t         baseEnd;
+static int HOPFmtExprIsImplicitContextFieldForBind(
+    const HOPAst* ast, HOPStrView src, const HOPAstNode* bindNode, int32_t exprNodeId) {
+    const HOPAstNode* exprNode;
+    int32_t           baseNodeId;
+    uint32_t          baseStart;
+    uint32_t          baseEnd;
     if (exprNodeId < 0 || (uint32_t)exprNodeId >= ast->len) {
         return 0;
     }
     exprNode = &ast->nodes[exprNodeId];
-    if (exprNode->kind != SLAst_FIELD_EXPR) {
+    if (exprNode->kind != HOPAst_FIELD_EXPR) {
         return 0;
     }
-    if (!SLFmtSlicesEqual(
+    if (!HOPFmtSlicesEqual(
             src, bindNode->dataStart, bindNode->dataEnd, exprNode->dataStart, exprNode->dataEnd))
     {
         return 0;
     }
-    baseNodeId = SLFmtFirstChild(ast, exprNodeId);
-    if (!SLFmtExprIsPlainIdent(ast, baseNodeId, &baseStart, &baseEnd)) {
+    baseNodeId = HOPFmtFirstChild(ast, exprNodeId);
+    if (!HOPFmtExprIsPlainIdent(ast, baseNodeId, &baseStart, &baseEnd)) {
         return 0;
     }
-    return SLFmtSliceEqLiteral(src, baseStart, baseEnd, "context");
+    return HOPFmtSliceEqLiteral(src, baseStart, baseEnd, "context");
 }
 
-typedef int (*SLFmtExprRewriteRule)(const SLAst* ast, SLStrView src, int32_t* exprNodeId);
+typedef int (*HOPFmtExprRewriteRule)(const HOPAst* ast, HOPStrView src, int32_t* exprNodeId);
 
-static int SLFmtRewriteExprIdentity(const SLAst* ast, SLStrView src, int32_t* exprNodeId) {
+static int HOPFmtRewriteExprIdentity(const HOPAst* ast, HOPStrView src, int32_t* exprNodeId) {
     (void)ast;
     (void)src;
     (void)exprNodeId;
     return 0;
 }
 
-static int SLFmtRewriteExpr(const SLAst* ast, SLStrView src, int32_t* exprNodeId) {
-    static const SLFmtExprRewriteRule rules[] = {
-        SLFmtRewriteExprIdentity,
+static int HOPFmtRewriteExpr(const HOPAst* ast, HOPStrView src, int32_t* exprNodeId) {
+    static const HOPFmtExprRewriteRule rules[] = {
+        HOPFmtRewriteExprIdentity,
     };
     uint32_t i;
     if (exprNodeId == NULL) {
@@ -1300,204 +1310,204 @@ static int SLFmtRewriteExpr(const SLAst* ast, SLStrView src, int32_t* exprNodeId
     return 0;
 }
 
-static int SLFmtRewriteCallArgShorthand(const SLAst* ast, SLStrView src, int32_t nodeId) {
-    const SLAstNode* node;
-    SLAstNode*       mutNode;
-    int32_t          exprNode;
-    uint32_t         identStart;
-    uint32_t         identEnd;
+static int HOPFmtRewriteCallArgShorthand(const HOPAst* ast, HOPStrView src, int32_t nodeId) {
+    const HOPAstNode* node;
+    HOPAstNode*       mutNode;
+    int32_t           exprNode;
+    uint32_t          identStart;
+    uint32_t          identEnd;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     node = &ast->nodes[nodeId];
-    if (node->kind != SLAst_CALL_ARG || node->dataEnd <= node->dataStart) {
+    if (node->kind != HOPAst_CALL_ARG || node->dataEnd <= node->dataStart) {
         return 0;
     }
-    exprNode = SLFmtFirstChild(ast, nodeId);
+    exprNode = HOPFmtFirstChild(ast, nodeId);
     if (exprNode < 0) {
         return 0;
     }
-    if (SLFmtRewriteExpr(ast, src, &exprNode) != 0) {
+    if (HOPFmtRewriteExpr(ast, src, &exprNode) != 0) {
         return -1;
     }
-    if (!SLFmtExprIsPlainIdent(ast, exprNode, &identStart, &identEnd)) {
+    if (!HOPFmtExprIsPlainIdent(ast, exprNode, &identStart, &identEnd)) {
         return 0;
     }
-    if (!SLFmtSlicesEqual(src, node->dataStart, node->dataEnd, identStart, identEnd)) {
+    if (!HOPFmtSlicesEqual(src, node->dataStart, node->dataEnd, identStart, identEnd)) {
         return 0;
     }
-    mutNode = (SLAstNode*)&ast->nodes[nodeId];
+    mutNode = (HOPAstNode*)&ast->nodes[nodeId];
     mutNode->dataStart = 0;
     mutNode->dataEnd = 0;
     return 0;
 }
 
-static int SLFmtRewriteCompoundFieldShorthand(const SLAst* ast, SLStrView src, int32_t nodeId) {
-    const SLAstNode* node;
-    SLAstNode*       mutNode;
-    int32_t          exprNode;
-    uint32_t         identStart;
-    uint32_t         identEnd;
+static int HOPFmtRewriteCompoundFieldShorthand(const HOPAst* ast, HOPStrView src, int32_t nodeId) {
+    const HOPAstNode* node;
+    HOPAstNode*       mutNode;
+    int32_t           exprNode;
+    uint32_t          identStart;
+    uint32_t          identEnd;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     node = &ast->nodes[nodeId];
-    if (node->kind != SLAst_COMPOUND_FIELD
-        || (node->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) != 0
+    if (node->kind != HOPAst_COMPOUND_FIELD
+        || (node->flags & HOPAstFlag_COMPOUND_FIELD_SHORTHAND) != 0
         || node->dataEnd <= node->dataStart || node->dataEnd > src.len)
     {
         return 0;
     }
-    if (SLFmtSliceHasChar(src, node->dataStart, node->dataEnd, '.')) {
+    if (HOPFmtSliceHasChar(src, node->dataStart, node->dataEnd, '.')) {
         return 0;
     }
-    exprNode = SLFmtFirstChild(ast, nodeId);
+    exprNode = HOPFmtFirstChild(ast, nodeId);
     if (exprNode < 0) {
         return 0;
     }
-    if (SLFmtRewriteExpr(ast, src, &exprNode) != 0) {
+    if (HOPFmtRewriteExpr(ast, src, &exprNode) != 0) {
         return -1;
     }
-    if (!SLFmtExprIsPlainIdent(ast, exprNode, &identStart, &identEnd)) {
+    if (!HOPFmtExprIsPlainIdent(ast, exprNode, &identStart, &identEnd)) {
         return 0;
     }
-    if (!SLFmtSlicesEqual(src, node->dataStart, node->dataEnd, identStart, identEnd)) {
+    if (!HOPFmtSlicesEqual(src, node->dataStart, node->dataEnd, identStart, identEnd)) {
         return 0;
     }
-    mutNode = (SLAstNode*)&ast->nodes[nodeId];
-    mutNode->flags |= SLAstFlag_COMPOUND_FIELD_SHORTHAND;
+    mutNode = (HOPAstNode*)&ast->nodes[nodeId];
+    mutNode->flags |= HOPAstFlag_COMPOUND_FIELD_SHORTHAND;
     return 0;
 }
 
-static int SLFmtRewriteContextBindShorthand(const SLAst* ast, SLStrView src, int32_t nodeId) {
-    const SLAstNode* node;
-    SLAstNode*       mutNode;
-    int32_t          exprNode;
-    int32_t          enclosingFn;
+static int HOPFmtRewriteContextBindShorthand(const HOPAst* ast, HOPStrView src, int32_t nodeId) {
+    const HOPAstNode* node;
+    HOPAstNode*       mutNode;
+    int32_t           exprNode;
+    int32_t           enclosingFn;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     node = &ast->nodes[nodeId];
-    if (node->kind != SLAst_CONTEXT_BIND || node->dataEnd <= node->dataStart
-        || (node->flags & SLAstFlag_CONTEXT_BIND_SHORTHAND) != 0)
+    if (node->kind != HOPAst_CONTEXT_BIND || node->dataEnd <= node->dataStart
+        || (node->flags & HOPAstFlag_CONTEXT_BIND_SHORTHAND) != 0)
     {
         return 0;
     }
-    exprNode = SLFmtFirstChild(ast, nodeId);
+    exprNode = HOPFmtFirstChild(ast, nodeId);
     if (exprNode < 0) {
         return 0;
     }
-    if (SLFmtRewriteExpr(ast, src, &exprNode) != 0) {
+    if (HOPFmtRewriteExpr(ast, src, &exprNode) != 0) {
         return -1;
     }
-    if (!SLFmtExprIsImplicitContextFieldForBind(ast, src, node, exprNode)) {
+    if (!HOPFmtExprIsImplicitContextFieldForBind(ast, src, node, exprNode)) {
         return 0;
     }
-    enclosingFn = SLFmtFindEnclosingFnNode(ast, nodeId);
-    if (enclosingFn < 0 || !SLFmtFnHasImplicitContextLocal(ast, src, enclosingFn)
-        || SLFmtFnHasShadowingContextLocalBefore(ast, src, enclosingFn, node->start))
+    enclosingFn = HOPFmtFindEnclosingFnNode(ast, nodeId);
+    if (enclosingFn < 0 || !HOPFmtFnHasImplicitContextLocal(ast, src, enclosingFn)
+        || HOPFmtFnHasShadowingContextLocalBefore(ast, src, enclosingFn, node->start))
     {
         return 0;
     }
-    mutNode = (SLAstNode*)&ast->nodes[nodeId];
-    mutNode->flags |= SLAstFlag_CONTEXT_BIND_SHORTHAND;
+    mutNode = (HOPAstNode*)&ast->nodes[nodeId];
+    mutNode->flags |= HOPAstFlag_CONTEXT_BIND_SHORTHAND;
     return 0;
 }
 
-static int SLFmtRewriteDropRedundantCastParenFlag(const SLAst* ast, int32_t nodeId) {
-    const SLAstNode* n;
-    SLAstNode*       mutNode;
+static int HOPFmtRewriteDropRedundantCastParenFlag(const HOPAst* ast, int32_t nodeId) {
+    const HOPAstNode* n;
+    HOPAstNode*       mutNode;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     n = &ast->nodes[nodeId];
-    if (n->kind != SLAst_CAST || (n->flags & SLAstFlag_PAREN) == 0) {
+    if (n->kind != HOPAst_CAST || (n->flags & HOPAstFlag_PAREN) == 0) {
         return 0;
     }
-    mutNode = (SLAstNode*)&ast->nodes[nodeId];
-    mutNode->flags &= ~SLAstFlag_PAREN;
+    mutNode = (HOPAstNode*)&ast->nodes[nodeId];
+    mutNode->flags &= ~HOPAstFlag_PAREN;
     return 0;
 }
 
-static int SLFmtRewriteBinaryCastParens(const SLAst* ast, int32_t nodeId) {
+static int HOPFmtRewriteBinaryCastParens(const HOPAst* ast, int32_t nodeId) {
     int32_t lhs;
     int32_t rhs;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
-    if (ast->nodes[nodeId].kind != SLAst_BINARY) {
+    if (ast->nodes[nodeId].kind != HOPAst_BINARY) {
         return 0;
     }
-    lhs = SLFmtFirstChild(ast, nodeId);
-    rhs = lhs >= 0 ? SLFmtNextSibling(ast, lhs) : -1;
+    lhs = HOPFmtFirstChild(ast, nodeId);
+    rhs = lhs >= 0 ? HOPFmtNextSibling(ast, lhs) : -1;
     /* Cast is postfix and binds tighter than all infix binary operators. */
-    if (SLFmtRewriteDropRedundantCastParenFlag(ast, lhs) != 0
-        || SLFmtRewriteDropRedundantCastParenFlag(ast, rhs) != 0)
+    if (HOPFmtRewriteDropRedundantCastParenFlag(ast, lhs) != 0
+        || HOPFmtRewriteDropRedundantCastParenFlag(ast, rhs) != 0)
     {
         return -1;
     }
     return 0;
 }
 
-static int SLFmtRewriteRedundantLiteralCast(
-    const SLAst* ast, SLStrView src, const SLFormatOptions* _Nullable options, int32_t nodeId) {
-    const SLAstNode* node;
-    SLAstNode*       mutNode;
+static int HOPFmtRewriteRedundantLiteralCast(
+    const HOPAst* ast, HOPStrView src, const HOPFormatOptions* _Nullable options, int32_t nodeId) {
+    const HOPAstNode* node;
+    HOPAstNode*       mutNode;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     node = &ast->nodes[nodeId];
-    if (node->kind != SLAst_CAST) {
+    if (node->kind != HOPAst_CAST) {
         return 0;
     }
-    if (!SLFmtCanDropRedundantLiteralCast(ast, src, options, nodeId)) {
+    if (!HOPFmtCanDropRedundantLiteralCast(ast, src, options, nodeId)) {
         return 0;
     }
-    mutNode = (SLAstNode*)&ast->nodes[nodeId];
-    mutNode->flags |= SLFmtFlag_DROP_REDUNDANT_LITERAL_CAST;
+    mutNode = (HOPAstNode*)&ast->nodes[nodeId];
+    mutNode->flags |= HOPFmtFlag_DROP_REDUNDANT_LITERAL_CAST;
     return 0;
 }
 
-static int SLFmtRewriteReturnParens(const SLAst* ast, int32_t nodeId) {
-    int32_t          exprNodeId;
-    const SLAstNode* exprNode;
-    SLAstNode*       mutExprNode;
+static int HOPFmtRewriteReturnParens(const HOPAst* ast, int32_t nodeId) {
+    int32_t           exprNodeId;
+    const HOPAstNode* exprNode;
+    HOPAstNode*       mutExprNode;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
-    if (ast->nodes[nodeId].kind != SLAst_RETURN) {
+    if (ast->nodes[nodeId].kind != HOPAst_RETURN) {
         return 0;
     }
-    exprNodeId = SLFmtFirstChild(ast, nodeId);
+    exprNodeId = HOPFmtFirstChild(ast, nodeId);
     if (exprNodeId < 0 || (uint32_t)exprNodeId >= ast->len) {
         return 0;
     }
     exprNode = &ast->nodes[exprNodeId];
-    mutExprNode = (SLAstNode*)exprNode;
-    if ((exprNode->flags & SLAstFlag_PAREN) != 0) {
-        mutExprNode->flags &= ~SLAstFlag_PAREN;
+    mutExprNode = (HOPAstNode*)exprNode;
+    if ((exprNode->flags & HOPAstFlag_PAREN) != 0) {
+        mutExprNode->flags &= ~HOPAstFlag_PAREN;
         exprNode = mutExprNode;
     }
-    if (exprNode->kind == SLAst_TUPLE_EXPR && (exprNode->flags & SLAstFlag_PAREN) == 0) {
-        mutExprNode->kind = SLAst_EXPR_LIST;
+    if (exprNode->kind == HOPAst_TUPLE_EXPR && (exprNode->flags & HOPAstFlag_PAREN) == 0) {
+        mutExprNode->kind = HOPAst_EXPR_LIST;
     }
     return 0;
 }
 
-static int SLFmtRewriteAst(
-    const SLAst* ast, SLStrView src, const SLFormatOptions* _Nullable options) {
+static int HOPFmtRewriteAst(
+    const HOPAst* ast, HOPStrView src, const HOPFormatOptions* _Nullable options) {
     uint32_t i;
     if (ast == NULL || ast->nodes == NULL) {
         return -1;
     }
     for (i = 0; i < ast->len; i++) {
         int32_t nodeId = (int32_t)i;
-        if (SLFmtRewriteCallArgShorthand(ast, src, nodeId) != 0
-            || SLFmtRewriteCompoundFieldShorthand(ast, src, nodeId) != 0
-            || SLFmtRewriteContextBindShorthand(ast, src, nodeId) != 0
-            || SLFmtRewriteRedundantLiteralCast(ast, src, options, nodeId) != 0
-            || SLFmtRewriteBinaryCastParens(ast, nodeId) != 0
-            || SLFmtRewriteReturnParens(ast, nodeId) != 0)
+        if (HOPFmtRewriteCallArgShorthand(ast, src, nodeId) != 0
+            || HOPFmtRewriteCompoundFieldShorthand(ast, src, nodeId) != 0
+            || HOPFmtRewriteContextBindShorthand(ast, src, nodeId) != 0
+            || HOPFmtRewriteRedundantLiteralCast(ast, src, options, nodeId) != 0
+            || HOPFmtRewriteBinaryCastParens(ast, nodeId) != 0
+            || HOPFmtRewriteReturnParens(ast, nodeId) != 0)
         {
             return -1;
         }
@@ -1505,124 +1515,124 @@ static int SLFmtRewriteAst(
     return 0;
 }
 
-static int SLFmtIsTypeNodeKind(SLAstKind kind) {
-    return SLFmtIsTypeNodeKindRaw(kind);
+static int HOPFmtIsTypeNodeKind(HOPAstKind kind) {
+    return HOPFmtIsTypeNodeKindRaw(kind);
 }
 
-static int SLFmtIsStmtNodeKind(SLAstKind kind) {
+static int HOPFmtIsStmtNodeKind(HOPAstKind kind) {
     switch (kind) {
-        case SLAst_BLOCK:
-        case SLAst_VAR:
-        case SLAst_CONST:
-        case SLAst_CONST_BLOCK:
-        case SLAst_IF:
-        case SLAst_FOR:
-        case SLAst_SWITCH:
-        case SLAst_RETURN:
-        case SLAst_BREAK:
-        case SLAst_CONTINUE:
-        case SLAst_DEFER:
-        case SLAst_ASSERT:
-        case SLAst_DEL:
-        case SLAst_MULTI_ASSIGN:
-        case SLAst_SHORT_ASSIGN:
-        case SLAst_EXPR_STMT:    return 1;
-        default:                 return 0;
-    }
-}
-
-static int SLFmtIsGroupedVarLike(const SLFmtCtx* c, int32_t nodeId) {
-    int32_t firstChild;
-    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
-        return 0;
-    }
-    firstChild = SLFmtFirstChild(c->ast, nodeId);
-    return firstChild >= 0 && c->ast->nodes[firstChild].kind == SLAst_NAME_LIST;
-}
-
-static int SLFmtIsAssignmentOp(SLTokenKind kind) {
-    switch (kind) {
-        case SLTok_ASSIGN:
-        case SLTok_ADD_ASSIGN:
-        case SLTok_SUB_ASSIGN:
-        case SLTok_MUL_ASSIGN:
-        case SLTok_DIV_ASSIGN:
-        case SLTok_MOD_ASSIGN:
-        case SLTok_AND_ASSIGN:
-        case SLTok_OR_ASSIGN:
-        case SLTok_XOR_ASSIGN:
-        case SLTok_LSHIFT_ASSIGN:
-        case SLTok_RSHIFT_ASSIGN: return 1;
+        case HOPAst_BLOCK:
+        case HOPAst_VAR:
+        case HOPAst_CONST:
+        case HOPAst_CONST_BLOCK:
+        case HOPAst_IF:
+        case HOPAst_FOR:
+        case HOPAst_SWITCH:
+        case HOPAst_RETURN:
+        case HOPAst_BREAK:
+        case HOPAst_CONTINUE:
+        case HOPAst_DEFER:
+        case HOPAst_ASSERT:
+        case HOPAst_DEL:
+        case HOPAst_MULTI_ASSIGN:
+        case HOPAst_SHORT_ASSIGN:
+        case HOPAst_EXPR_STMT:    return 1;
         default:                  return 0;
     }
 }
 
-static int SLFmtBinPrec(SLTokenKind kind) {
-    if (SLFmtIsAssignmentOp(kind)) {
+static int HOPFmtIsGroupedVarLike(const HOPFmtCtx* c, int32_t nodeId) {
+    int32_t firstChild;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    firstChild = HOPFmtFirstChild(c->ast, nodeId);
+    return firstChild >= 0 && c->ast->nodes[firstChild].kind == HOPAst_NAME_LIST;
+}
+
+static int HOPFmtIsAssignmentOp(HOPTokenKind kind) {
+    switch (kind) {
+        case HOPTok_ASSIGN:
+        case HOPTok_ADD_ASSIGN:
+        case HOPTok_SUB_ASSIGN:
+        case HOPTok_MUL_ASSIGN:
+        case HOPTok_DIV_ASSIGN:
+        case HOPTok_MOD_ASSIGN:
+        case HOPTok_AND_ASSIGN:
+        case HOPTok_OR_ASSIGN:
+        case HOPTok_XOR_ASSIGN:
+        case HOPTok_LSHIFT_ASSIGN:
+        case HOPTok_RSHIFT_ASSIGN: return 1;
+        default:                   return 0;
+    }
+}
+
+static int HOPFmtBinPrec(HOPTokenKind kind) {
+    if (HOPFmtIsAssignmentOp(kind)) {
         return 1;
     }
     switch (kind) {
-        case SLTok_LOGICAL_OR:  return 2;
-        case SLTok_LOGICAL_AND: return 3;
-        case SLTok_EQ:
-        case SLTok_NEQ:
-        case SLTok_LT:
-        case SLTok_GT:
-        case SLTok_LTE:
-        case SLTok_GTE:         return 4;
-        case SLTok_OR:
-        case SLTok_XOR:
-        case SLTok_ADD:
-        case SLTok_SUB:         return 5;
-        case SLTok_AND:
-        case SLTok_LSHIFT:
-        case SLTok_RSHIFT:
-        case SLTok_MUL:
-        case SLTok_DIV:
-        case SLTok_MOD:         return 6;
-        default:                return 0;
+        case HOPTok_LOGICAL_OR:  return 2;
+        case HOPTok_LOGICAL_AND: return 3;
+        case HOPTok_EQ:
+        case HOPTok_NEQ:
+        case HOPTok_LT:
+        case HOPTok_GT:
+        case HOPTok_LTE:
+        case HOPTok_GTE:         return 4;
+        case HOPTok_OR:
+        case HOPTok_XOR:
+        case HOPTok_ADD:
+        case HOPTok_SUB:         return 5;
+        case HOPTok_AND:
+        case HOPTok_LSHIFT:
+        case HOPTok_RSHIFT:
+        case HOPTok_MUL:
+        case HOPTok_DIV:
+        case HOPTok_MOD:         return 6;
+        default:                 return 0;
     }
 }
 
-static const char* SLFmtTokenOpText(SLTokenKind kind) {
+static const char* HOPFmtTokenOpText(HOPTokenKind kind) {
     switch (kind) {
-        case SLTok_ASSIGN:        return "=";
-        case SLTok_ADD:           return "+";
-        case SLTok_SUB:           return "-";
-        case SLTok_MUL:           return "*";
-        case SLTok_DIV:           return "/";
-        case SLTok_MOD:           return "%";
-        case SLTok_AND:           return "&";
-        case SLTok_OR:            return "|";
-        case SLTok_XOR:           return "^";
-        case SLTok_NOT:           return "!";
-        case SLTok_LSHIFT:        return "<<";
-        case SLTok_RSHIFT:        return ">>";
-        case SLTok_EQ:            return "==";
-        case SLTok_NEQ:           return "!=";
-        case SLTok_LT:            return "<";
-        case SLTok_GT:            return ">";
-        case SLTok_LTE:           return "<=";
-        case SLTok_GTE:           return ">=";
-        case SLTok_LOGICAL_AND:   return "&&";
-        case SLTok_LOGICAL_OR:    return "||";
-        case SLTok_SHORT_ASSIGN:  return ":=";
-        case SLTok_ADD_ASSIGN:    return "+=";
-        case SLTok_SUB_ASSIGN:    return "-=";
-        case SLTok_MUL_ASSIGN:    return "*=";
-        case SLTok_DIV_ASSIGN:    return "/=";
-        case SLTok_MOD_ASSIGN:    return "%=";
-        case SLTok_AND_ASSIGN:    return "&=";
-        case SLTok_OR_ASSIGN:     return "|=";
-        case SLTok_XOR_ASSIGN:    return "^=";
-        case SLTok_LSHIFT_ASSIGN: return "<<=";
-        case SLTok_RSHIFT_ASSIGN: return ">>=";
-        case SLTok_AS:            return "as";
-        default:                  return "?";
+        case HOPTok_ASSIGN:        return "=";
+        case HOPTok_ADD:           return "+";
+        case HOPTok_SUB:           return "-";
+        case HOPTok_MUL:           return "*";
+        case HOPTok_DIV:           return "/";
+        case HOPTok_MOD:           return "%";
+        case HOPTok_AND:           return "&";
+        case HOPTok_OR:            return "|";
+        case HOPTok_XOR:           return "^";
+        case HOPTok_NOT:           return "!";
+        case HOPTok_LSHIFT:        return "<<";
+        case HOPTok_RSHIFT:        return ">>";
+        case HOPTok_EQ:            return "==";
+        case HOPTok_NEQ:           return "!=";
+        case HOPTok_LT:            return "<";
+        case HOPTok_GT:            return ">";
+        case HOPTok_LTE:           return "<=";
+        case HOPTok_GTE:           return ">=";
+        case HOPTok_LOGICAL_AND:   return "&&";
+        case HOPTok_LOGICAL_OR:    return "||";
+        case HOPTok_SHORT_ASSIGN:  return ":=";
+        case HOPTok_ADD_ASSIGN:    return "+=";
+        case HOPTok_SUB_ASSIGN:    return "-=";
+        case HOPTok_MUL_ASSIGN:    return "*=";
+        case HOPTok_DIV_ASSIGN:    return "/=";
+        case HOPTok_MOD_ASSIGN:    return "%=";
+        case HOPTok_AND_ASSIGN:    return "&=";
+        case HOPTok_OR_ASSIGN:     return "|=";
+        case HOPTok_XOR_ASSIGN:    return "^=";
+        case HOPTok_LSHIFT_ASSIGN: return "<<=";
+        case HOPTok_RSHIFT_ASSIGN: return ">>=";
+        case HOPTok_AS:            return "as";
+        default:                   return "?";
     }
 }
 
-static int SLFmtContainsSemicolonInRange(SLStrView src, uint32_t start, uint32_t end) {
+static int HOPFmtContainsSemicolonInRange(HOPStrView src, uint32_t start, uint32_t end) {
     uint32_t i;
     if (end < start || end > src.len) {
         return 0;
@@ -1635,7 +1645,7 @@ static int SLFmtContainsSemicolonInRange(SLStrView src, uint32_t start, uint32_t
     return 0;
 }
 
-static int SLFmtRangeHasChar(SLStrView src, uint32_t start, uint32_t end, char ch) {
+static int HOPFmtRangeHasChar(HOPStrView src, uint32_t start, uint32_t end, char ch) {
     uint32_t i;
     if (end < start || end > src.len) {
         return 0;
@@ -1648,8 +1658,8 @@ static int SLFmtRangeHasChar(SLStrView src, uint32_t start, uint32_t end, char c
     return 0;
 }
 
-static int SLFmtFindCharForwardInRange(
-    SLStrView src, uint32_t start, uint32_t end, char ch, uint32_t* outPos) {
+static int HOPFmtFindCharForwardInRange(
+    HOPStrView src, uint32_t start, uint32_t end, char ch, uint32_t* outPos) {
     uint32_t i;
     if (end < start || end > src.len) {
         return 0;
@@ -1663,8 +1673,8 @@ static int SLFmtFindCharForwardInRange(
     return 0;
 }
 
-static int SLFmtFindCharBackwardInRange(
-    SLStrView src, uint32_t start, uint32_t end, char ch, uint32_t* outPos) {
+static int HOPFmtFindCharBackwardInRange(
+    HOPStrView src, uint32_t start, uint32_t end, char ch, uint32_t* outPos) {
     uint32_t i;
     if (end < start || end > src.len) {
         return 0;
@@ -1678,7 +1688,7 @@ static int SLFmtFindCharBackwardInRange(
     return 0;
 }
 
-static uint32_t SLFmtTrimSliceEnd(const char* s, uint32_t start, uint32_t end) {
+static uint32_t HOPFmtTrimSliceEnd(const char* s, uint32_t start, uint32_t end) {
     while (end > start) {
         char c = s[end - 1u];
         if (c == ' ' || c == '\t' || c == '\r') {
@@ -1690,22 +1700,22 @@ static uint32_t SLFmtTrimSliceEnd(const char* s, uint32_t start, uint32_t end) {
     return end;
 }
 
-static int SLFmtEmitCommentText(SLFmtCtx* c, const SLComment* cm) {
-    uint32_t end = SLFmtTrimSliceEnd(c->src.ptr, cm->start, cm->end);
+static int HOPFmtEmitCommentText(HOPFmtCtx* c, const HOPComment* cm) {
+    uint32_t end = HOPFmtTrimSliceEnd(c->src.ptr, cm->start, cm->end);
     if (end < cm->start) {
         end = cm->start;
     }
-    return SLFmtWriteSlice(c, cm->start, end);
+    return HOPFmtWriteSlice(c, cm->start, end);
 }
 
-static int SLFmtIsLeadingCommentForNode(const SLFmtCtx* c, const SLComment* cm, int32_t nodeId) {
-    const SLAstNode* node;
-    const SLAstNode* anchor;
+static int HOPFmtIsLeadingCommentForNode(const HOPFmtCtx* c, const HOPComment* cm, int32_t nodeId) {
+    const HOPAstNode* node;
+    const HOPAstNode* anchor;
     if (c == NULL || cm == NULL || nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return 0;
     }
-    if (cm->attachment != SLCommentAttachment_LEADING
-        && cm->attachment != SLCommentAttachment_FLOATING)
+    if (cm->attachment != HOPCommentAttachment_LEADING
+        && cm->attachment != HOPCommentAttachment_FLOATING)
     {
         return 0;
     }
@@ -1723,22 +1733,22 @@ static int SLFmtIsLeadingCommentForNode(const SLFmtCtx* c, const SLComment* cm, 
     return cm->end <= node->start;
 }
 
-static int SLFmtEmitLeadingCommentsForNode(SLFmtCtx* c, int32_t nodeId) {
+static int HOPFmtEmitLeadingCommentsForNode(HOPFmtCtx* c, int32_t nodeId) {
     uint32_t i;
     for (i = 0; i < c->commentLen; i++) {
-        const SLComment* cm = &c->comments[i];
+        const HOPComment* cm = &c->comments[i];
         if (c->commentUsed[i]) {
             continue;
         }
-        if (!SLFmtIsLeadingCommentForNode(c, cm, nodeId)) {
+        if (!HOPFmtIsLeadingCommentForNode(c, cm, nodeId)) {
             continue;
         }
         if (!c->lineStart) {
-            if (SLFmtNewline(c) != 0) {
+            if (HOPFmtNewline(c) != 0) {
                 return -1;
             }
         }
-        if (SLFmtEmitCommentText(c, cm) != 0 || SLFmtNewline(c) != 0) {
+        if (HOPFmtEmitCommentText(c, cm) != 0 || HOPFmtNewline(c) != 0) {
             return -1;
         }
         c->commentUsed[i] = 1;
@@ -1746,24 +1756,24 @@ static int SLFmtEmitLeadingCommentsForNode(SLFmtCtx* c, int32_t nodeId) {
     return 0;
 }
 
-static int SLFmtEmitTrailingCommentsForNode(SLFmtCtx* c, int32_t nodeId) {
+static int HOPFmtEmitTrailingCommentsForNode(HOPFmtCtx* c, int32_t nodeId) {
     uint32_t i;
     int      first = 1;
     for (i = 0; i < c->commentLen; i++) {
-        const SLComment* cm = &c->comments[i];
+        const HOPComment* cm = &c->comments[i];
         if (c->commentUsed[i]) {
             continue;
         }
-        if (cm->anchorNode != nodeId || cm->attachment != SLCommentAttachment_TRAILING) {
+        if (cm->anchorNode != nodeId || cm->attachment != HOPCommentAttachment_TRAILING) {
             continue;
         }
         if (first) {
-            if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitCommentText(c, cm) != 0) {
+            if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitCommentText(c, cm) != 0) {
                 return -1;
             }
             first = 0;
         } else {
-            if (SLFmtNewline(c) != 0 || SLFmtEmitCommentText(c, cm) != 0) {
+            if (HOPFmtNewline(c) != 0 || HOPFmtEmitCommentText(c, cm) != 0) {
                 return -1;
             }
         }
@@ -1772,16 +1782,16 @@ static int SLFmtEmitTrailingCommentsForNode(SLFmtCtx* c, int32_t nodeId) {
     return 0;
 }
 
-static int SLFmtEmitRemainingComments(SLFmtCtx* c) {
+static int HOPFmtEmitRemainingComments(HOPFmtCtx* c) {
     uint32_t i;
     for (i = 0; i < c->commentLen; i++) {
         if (c->commentUsed[i]) {
             continue;
         }
-        if (!c->lineStart && SLFmtNewline(c) != 0) {
+        if (!c->lineStart && HOPFmtNewline(c) != 0) {
             return -1;
         }
-        if (SLFmtEmitCommentText(c, &c->comments[i]) != 0 || SLFmtNewline(c) != 0) {
+        if (HOPFmtEmitCommentText(c, &c->comments[i]) != 0 || HOPFmtNewline(c) != 0) {
             return -1;
         }
         c->commentUsed[i] = 1;
@@ -1789,7 +1799,7 @@ static int SLFmtEmitRemainingComments(SLFmtCtx* c) {
     return 0;
 }
 
-static uint32_t SLFmtCountNewlinesInRange(SLStrView src, uint32_t start, uint32_t end) {
+static uint32_t HOPFmtCountNewlinesInRange(HOPStrView src, uint32_t start, uint32_t end) {
     uint32_t i;
     uint32_t n = 0;
     if (end < start || end > src.len) {
@@ -1803,7 +1813,7 @@ static uint32_t SLFmtCountNewlinesInRange(SLStrView src, uint32_t start, uint32_
     return n;
 }
 
-static int SLFmtGapHasIntentionalBlankLine(SLStrView src, uint32_t start, uint32_t end) {
+static int HOPFmtGapHasIntentionalBlankLine(HOPStrView src, uint32_t start, uint32_t end) {
     uint32_t i;
     int      lineHasContent = 1;
     if (end < start || end > src.len) {
@@ -1825,9 +1835,9 @@ static int SLFmtGapHasIntentionalBlankLine(SLStrView src, uint32_t start, uint32
     return 0;
 }
 
-static int SLFmtNodeContainsAnchor(const SLAst* ast, int32_t nodeId, int32_t anchorNodeId) {
-    const SLAstNode* n;
-    const SLAstNode* a;
+static int HOPFmtNodeContainsAnchor(const HOPAst* ast, int32_t nodeId, int32_t anchorNodeId) {
+    const HOPAstNode* n;
+    const HOPAstNode* a;
     if (nodeId < 0 || anchorNodeId < 0 || (uint32_t)nodeId >= ast->len
         || (uint32_t)anchorNodeId >= ast->len)
     {
@@ -1838,48 +1848,48 @@ static int SLFmtNodeContainsAnchor(const SLAst* ast, int32_t nodeId, int32_t anc
     return a->start >= n->start && a->end <= n->end;
 }
 
-static int SLFmtCommentAnchoredToAnyNode(
-    const SLAst* ast, const SLComment* cm, const int32_t* nodeIds, uint32_t nodeLen) {
+static int HOPFmtCommentAnchoredToAnyNode(
+    const HOPAst* ast, const HOPComment* cm, const int32_t* nodeIds, uint32_t nodeLen) {
     uint32_t i;
     for (i = 0; i < nodeLen; i++) {
-        if (SLFmtNodeContainsAnchor(ast, nodeIds[i], cm->anchorNode)) {
+        if (HOPFmtNodeContainsAnchor(ast, nodeIds[i], cm->anchorNode)) {
             return 1;
         }
     }
     return 0;
 }
 
-static int SLFmtHasUnusedLeadingCommentsForNode(const SLFmtCtx* c, int32_t nodeId) {
+static int HOPFmtHasUnusedLeadingCommentsForNode(const HOPFmtCtx* c, int32_t nodeId) {
     uint32_t i;
     for (i = 0; i < c->commentLen; i++) {
-        const SLComment* cm = &c->comments[i];
+        const HOPComment* cm = &c->comments[i];
         if (c->commentUsed[i]) {
             continue;
         }
-        if (SLFmtIsLeadingCommentForNode(c, cm, nodeId)) {
+        if (HOPFmtIsLeadingCommentForNode(c, cm, nodeId)) {
             return 1;
         }
     }
     return 0;
 }
 
-static int SLFmtHasUnusedTrailingCommentsForNodes(
-    const SLFmtCtx* c, const int32_t* nodeIds, uint32_t nodeLen) {
+static int HOPFmtHasUnusedTrailingCommentsForNodes(
+    const HOPFmtCtx* c, const int32_t* nodeIds, uint32_t nodeLen) {
     uint32_t i;
     for (i = 0; i < c->commentLen; i++) {
-        const SLComment* cm = &c->comments[i];
-        if (c->commentUsed[i] || cm->attachment != SLCommentAttachment_TRAILING) {
+        const HOPComment* cm = &c->comments[i];
+        if (c->commentUsed[i] || cm->attachment != HOPCommentAttachment_TRAILING) {
             continue;
         }
-        if (SLFmtCommentAnchoredToAnyNode(c->ast, cm, nodeIds, nodeLen)) {
+        if (HOPFmtCommentAnchoredToAnyNode(c->ast, cm, nodeIds, nodeLen)) {
             return 1;
         }
     }
     return 0;
 }
 
-static int SLFmtCommentWithinNodeRange(const SLAst* ast, const SLComment* cm, int32_t nodeId) {
-    const SLAstNode* n;
+static int HOPFmtCommentWithinNodeRange(const HOPAst* ast, const HOPComment* cm, int32_t nodeId) {
+    const HOPAstNode* n;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return 0;
     }
@@ -1887,39 +1897,39 @@ static int SLFmtCommentWithinNodeRange(const SLAst* ast, const SLComment* cm, in
     return cm->start >= n->start && cm->start < n->end;
 }
 
-static int SLFmtHasUnusedTrailingCommentsInNodeRange(const SLFmtCtx* c, int32_t nodeId) {
+static int HOPFmtHasUnusedTrailingCommentsInNodeRange(const HOPFmtCtx* c, int32_t nodeId) {
     uint32_t i;
     for (i = 0; i < c->commentLen; i++) {
-        const SLComment* cm = &c->comments[i];
-        if (c->commentUsed[i] || cm->attachment != SLCommentAttachment_TRAILING) {
+        const HOPComment* cm = &c->comments[i];
+        if (c->commentUsed[i] || cm->attachment != HOPCommentAttachment_TRAILING) {
             continue;
         }
-        if (SLFmtCommentWithinNodeRange(c->ast, cm, nodeId)) {
+        if (HOPFmtCommentWithinNodeRange(c->ast, cm, nodeId)) {
             return 1;
         }
     }
     return 0;
 }
 
-static int SLFmtEmitTrailingCommentsInNodeRange(SLFmtCtx* c, int32_t nodeId, uint32_t padBefore) {
+static int HOPFmtEmitTrailingCommentsInNodeRange(HOPFmtCtx* c, int32_t nodeId, uint32_t padBefore) {
     uint32_t i;
     int      first = 1;
     for (i = 0; i < c->commentLen; i++) {
-        const SLComment* cm = &c->comments[i];
-        if (c->commentUsed[i] || cm->attachment != SLCommentAttachment_TRAILING) {
+        const HOPComment* cm = &c->comments[i];
+        if (c->commentUsed[i] || cm->attachment != HOPCommentAttachment_TRAILING) {
             continue;
         }
-        if (!SLFmtCommentWithinNodeRange(c->ast, cm, nodeId)) {
+        if (!HOPFmtCommentWithinNodeRange(c->ast, cm, nodeId)) {
             continue;
         }
         if (first) {
             uint32_t pad = padBefore > 0 ? padBefore : 1u;
-            if (SLFmtWriteSpaces(c, pad) != 0 || SLFmtEmitCommentText(c, cm) != 0) {
+            if (HOPFmtWriteSpaces(c, pad) != 0 || HOPFmtEmitCommentText(c, cm) != 0) {
                 return -1;
             }
             first = 0;
         } else {
-            if (SLFmtNewline(c) != 0 || SLFmtEmitCommentText(c, cm) != 0) {
+            if (HOPFmtNewline(c) != 0 || HOPFmtEmitCommentText(c, cm) != 0) {
                 return -1;
             }
         }
@@ -1928,26 +1938,26 @@ static int SLFmtEmitTrailingCommentsInNodeRange(SLFmtCtx* c, int32_t nodeId, uin
     return 0;
 }
 
-static int SLFmtEmitTrailingCommentsForNodes(
-    SLFmtCtx* c, const int32_t* nodeIds, uint32_t nodeLen, uint32_t padBefore) {
+static int HOPFmtEmitTrailingCommentsForNodes(
+    HOPFmtCtx* c, const int32_t* nodeIds, uint32_t nodeLen, uint32_t padBefore) {
     uint32_t i;
     int      first = 1;
     for (i = 0; i < c->commentLen; i++) {
-        const SLComment* cm = &c->comments[i];
-        if (c->commentUsed[i] || cm->attachment != SLCommentAttachment_TRAILING) {
+        const HOPComment* cm = &c->comments[i];
+        if (c->commentUsed[i] || cm->attachment != HOPCommentAttachment_TRAILING) {
             continue;
         }
-        if (!SLFmtCommentAnchoredToAnyNode(c->ast, cm, nodeIds, nodeLen)) {
+        if (!HOPFmtCommentAnchoredToAnyNode(c->ast, cm, nodeIds, nodeLen)) {
             continue;
         }
         if (first) {
             uint32_t pad = padBefore > 0 ? padBefore : 1u;
-            if (SLFmtWriteSpaces(c, pad) != 0 || SLFmtEmitCommentText(c, cm) != 0) {
+            if (HOPFmtWriteSpaces(c, pad) != 0 || HOPFmtEmitCommentText(c, cm) != 0) {
                 return -1;
             }
             first = 0;
         } else {
-            if (SLFmtNewline(c) != 0 || SLFmtEmitCommentText(c, cm) != 0) {
+            if (HOPFmtNewline(c) != 0 || HOPFmtEmitCommentText(c, cm) != 0) {
                 return -1;
             }
         }
@@ -1956,8 +1966,8 @@ static int SLFmtEmitTrailingCommentsForNodes(
     return 0;
 }
 
-static int SLFmtFindSourceTrailingLineComment(
-    const SLFmtCtx* c, int32_t nodeId, uint32_t* outStart, uint32_t* outEnd) {
+static int HOPFmtFindSourceTrailingLineComment(
+    const HOPFmtCtx* c, int32_t nodeId, uint32_t* outStart, uint32_t* outEnd) {
     uint32_t i;
     uint32_t lineEnd;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len || outStart == NULL || outEnd == NULL) {
@@ -1971,7 +1981,7 @@ static int SLFmtFindSourceTrailingLineComment(
                 lineEnd++;
             }
             *outStart = i;
-            *outEnd = SLFmtTrimSliceEnd(c->src.ptr, i, lineEnd);
+            *outEnd = HOPFmtTrimSliceEnd(c->src.ptr, i, lineEnd);
             return 1;
         }
         if (c->src.ptr[i] != ' ' && c->src.ptr[i] != '\t' && c->src.ptr[i] != '\r') {
@@ -1982,7 +1992,7 @@ static int SLFmtFindSourceTrailingLineComment(
     return 0;
 }
 
-static void SLFmtMarkCommentUsedAtStart(SLFmtCtx* c, uint32_t start) {
+static void HOPFmtMarkCommentUsedAtStart(HOPFmtCtx* c, uint32_t start) {
     uint32_t i;
     for (i = 0; i < c->commentLen; i++) {
         if (c->comments[i].start == start) {
@@ -1992,279 +2002,282 @@ static void SLFmtMarkCommentUsedAtStart(SLFmtCtx* c, uint32_t start) {
     }
 }
 
-static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId);
-static int SLFmtEmitExpr(SLFmtCtx* c, int32_t nodeId, int forceParen);
-static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId);
-static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId);
-static int SLFmtEmitDecl(SLFmtCtx* c, int32_t nodeId);
-static int SLFmtEmitDirectiveGroup(SLFmtCtx* c, int32_t firstDirective, int32_t* outNext);
-static int SLFmtEmitDirective(SLFmtCtx* c, int32_t nodeId);
-static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId);
-static int SLFmtEmitExprList(SLFmtCtx* c, int32_t listNodeId);
+static int HOPFmtEmitType(HOPFmtCtx* c, int32_t nodeId);
+static int HOPFmtEmitExpr(HOPFmtCtx* c, int32_t nodeId, int forceParen);
+static int HOPFmtEmitBlock(HOPFmtCtx* c, int32_t nodeId);
+static int HOPFmtEmitStmtInline(HOPFmtCtx* c, int32_t nodeId);
+static int HOPFmtEmitDecl(HOPFmtCtx* c, int32_t nodeId);
+static int HOPFmtEmitDirectiveGroup(HOPFmtCtx* c, int32_t firstDirective, int32_t* outNext);
+static int HOPFmtEmitDirective(HOPFmtCtx* c, int32_t nodeId);
+static int HOPFmtEmitAggregateFieldBody(HOPFmtCtx* c, int32_t firstFieldNodeId);
+static int HOPFmtEmitExprList(HOPFmtCtx* c, int32_t listNodeId);
 
-static int SLFmtEmitCompoundFieldWithAlign(SLFmtCtx* c, int32_t nodeId, uint32_t maxKeyLen) {
-    const SLAstNode* n;
-    int32_t          exprNode;
-    uint32_t         keyLen;
-    uint32_t         pad;
+static int HOPFmtEmitCompoundFieldWithAlign(HOPFmtCtx* c, int32_t nodeId, uint32_t maxKeyLen) {
+    const HOPAstNode* n;
+    int32_t           exprNode;
+    uint32_t          keyLen;
+    uint32_t          pad;
 
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return -1;
     }
     n = &c->ast->nodes[nodeId];
-    if (n->kind != SLAst_COMPOUND_FIELD) {
+    if (n->kind != HOPAst_COMPOUND_FIELD) {
         return -1;
     }
-    exprNode = SLFmtFirstChild(c->ast, nodeId);
-    if ((n->flags & SLAstFlag_COMPOUND_FIELD_SHORTHAND) != 0) {
-        return SLFmtWriteSlice(c, n->dataStart, n->dataEnd);
+    exprNode = HOPFmtFirstChild(c->ast, nodeId);
+    if ((n->flags & HOPAstFlag_COMPOUND_FIELD_SHORTHAND) != 0) {
+        return HOPFmtWriteSlice(c, n->dataStart, n->dataEnd);
     }
     keyLen = n->dataEnd - n->dataStart;
-    if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0 || SLFmtWriteChar(c, ':') != 0) {
+    if (HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0 || HOPFmtWriteChar(c, ':') != 0) {
         return -1;
     }
     if (maxKeyLen > keyLen) {
         pad = (maxKeyLen - keyLen) + 1u;
-        if (SLFmtWriteSpaces(c, pad) != 0) {
+        if (HOPFmtWriteSpaces(c, pad) != 0) {
             return -1;
         }
-    } else if (SLFmtWriteChar(c, ' ') != 0) {
+    } else if (HOPFmtWriteChar(c, ' ') != 0) {
         return -1;
     }
-    return exprNode >= 0 ? SLFmtEmitExpr(c, exprNode, 0) : 0;
+    return exprNode >= 0 ? HOPFmtEmitExpr(c, exprNode, 0) : 0;
 }
 
-static int SLFmtEmitTypeParamList(SLFmtCtx* c, int32_t* ioChild) {
+static int HOPFmtEmitTypeParamList(HOPFmtCtx* c, int32_t* ioChild) {
     int32_t cur;
     int     first = 1;
     if (ioChild == NULL) {
         return -1;
     }
     cur = *ioChild;
-    if (cur < 0 || c->ast->nodes[cur].kind != SLAst_TYPE_PARAM) {
+    if (cur < 0 || c->ast->nodes[cur].kind != HOPAst_TYPE_PARAM) {
         return 0;
     }
-    if (SLFmtWriteChar(c, '[') != 0) {
+    if (HOPFmtWriteChar(c, '[') != 0) {
         return -1;
     }
-    while (cur >= 0 && c->ast->nodes[cur].kind == SLAst_TYPE_PARAM) {
-        if (!first && SLFmtWriteCStr(c, ", ") != 0) {
+    while (cur >= 0 && c->ast->nodes[cur].kind == HOPAst_TYPE_PARAM) {
+        if (!first && HOPFmtWriteCStr(c, ", ") != 0) {
             return -1;
         }
-        if (SLFmtWriteSlice(c, c->ast->nodes[cur].dataStart, c->ast->nodes[cur].dataEnd) != 0) {
+        if (HOPFmtWriteSlice(c, c->ast->nodes[cur].dataStart, c->ast->nodes[cur].dataEnd) != 0) {
             return -1;
         }
         first = 0;
-        cur = SLFmtNextSibling(c->ast, cur);
+        cur = HOPFmtNextSibling(c->ast, cur);
     }
-    if (SLFmtWriteChar(c, ']') != 0) {
+    if (HOPFmtWriteChar(c, ']') != 0) {
         return -1;
     }
     *ioChild = cur;
     return 0;
 }
 
-static int SLFmtEmitType(SLFmtCtx* c, int32_t nodeId) {
-    const SLAstNode* n;
-    int32_t          ch;
+static int HOPFmtEmitType(HOPFmtCtx* c, int32_t nodeId) {
+    const HOPAstNode* n;
+    int32_t           ch;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return -1;
     }
     n = &c->ast->nodes[nodeId];
     switch (n->kind) {
-        case SLAst_TYPE_NAME:
-            if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
+        case HOPAst_TYPE_NAME:
+            if (HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
                 return -1;
             }
-            ch = SLFmtFirstChild(c->ast, nodeId);
+            ch = HOPFmtFirstChild(c->ast, nodeId);
             if (ch >= 0) {
                 int first = 1;
-                if (SLFmtWriteChar(c, '[') != 0) {
+                if (HOPFmtWriteChar(c, '[') != 0) {
                     return -1;
                 }
                 while (ch >= 0) {
-                    if (!first && SLFmtWriteCStr(c, ", ") != 0) {
+                    if (!first && HOPFmtWriteCStr(c, ", ") != 0) {
                         return -1;
                     }
-                    if (SLFmtEmitType(c, ch) != 0) {
+                    if (HOPFmtEmitType(c, ch) != 0) {
                         return -1;
                     }
                     first = 0;
-                    ch = SLFmtNextSibling(c->ast, ch);
+                    ch = HOPFmtNextSibling(c->ast, ch);
                 }
-                if (SLFmtWriteChar(c, ']') != 0) {
+                if (HOPFmtWriteChar(c, ']') != 0) {
                     return -1;
                 }
             }
             return 0;
-        case SLAst_TYPE_PARAM: return SLFmtWriteSlice(c, n->dataStart, n->dataEnd);
-        case SLAst_TYPE_OPTIONAL:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteChar(c, '?') != 0) {
+        case HOPAst_TYPE_PARAM: return HOPFmtWriteSlice(c, n->dataStart, n->dataEnd);
+        case HOPAst_TYPE_OPTIONAL:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteChar(c, '?') != 0) {
                 return -1;
             }
-            return ch >= 0 ? SLFmtEmitType(c, ch) : 0;
-        case SLAst_TYPE_PTR:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteChar(c, '*') != 0) {
+            return ch >= 0 ? HOPFmtEmitType(c, ch) : 0;
+        case HOPAst_TYPE_PTR:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteChar(c, '*') != 0) {
                 return -1;
             }
-            return ch >= 0 ? SLFmtEmitType(c, ch) : 0;
-        case SLAst_TYPE_REF:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteChar(c, '&') != 0) {
+            return ch >= 0 ? HOPFmtEmitType(c, ch) : 0;
+        case HOPAst_TYPE_REF:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteChar(c, '&') != 0) {
                 return -1;
             }
-            return ch >= 0 ? SLFmtEmitType(c, ch) : 0;
-        case SLAst_TYPE_MUTREF:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteCStr(c, "&mut ") != 0) {
+            return ch >= 0 ? HOPFmtEmitType(c, ch) : 0;
+        case HOPAst_TYPE_MUTREF:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteCStr(c, "&mut ") != 0) {
                 return -1;
             }
-            return ch >= 0 ? SLFmtEmitType(c, ch) : 0;
-        case SLAst_TYPE_SLICE:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteChar(c, '[') != 0 || (ch >= 0 && SLFmtEmitType(c, ch) != 0)
-                || SLFmtWriteChar(c, ']') != 0)
+            return ch >= 0 ? HOPFmtEmitType(c, ch) : 0;
+        case HOPAst_TYPE_SLICE:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteChar(c, '[') != 0 || (ch >= 0 && HOPFmtEmitType(c, ch) != 0)
+                || HOPFmtWriteChar(c, ']') != 0)
             {
                 return -1;
             }
             return 0;
-        case SLAst_TYPE_MUTSLICE:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteCStr(c, "[mut ") != 0 || (ch >= 0 && SLFmtEmitType(c, ch) != 0)
-                || SLFmtWriteChar(c, ']') != 0)
+        case HOPAst_TYPE_MUTSLICE:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteCStr(c, "[mut ") != 0 || (ch >= 0 && HOPFmtEmitType(c, ch) != 0)
+                || HOPFmtWriteChar(c, ']') != 0)
             {
                 return -1;
             }
             return 0;
-        case SLAst_TYPE_ARRAY:
-        case SLAst_TYPE_VARRAY:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteChar(c, '[') != 0 || (ch >= 0 && SLFmtEmitType(c, ch) != 0)
-                || SLFmtWriteChar(c, ' ') != 0)
+        case HOPAst_TYPE_ARRAY:
+        case HOPAst_TYPE_VARRAY:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteChar(c, '[') != 0 || (ch >= 0 && HOPFmtEmitType(c, ch) != 0)
+                || HOPFmtWriteChar(c, ' ') != 0)
             {
                 return -1;
             }
-            if (n->kind == SLAst_TYPE_VARRAY && SLFmtWriteChar(c, '.') != 0) {
+            if (n->kind == HOPAst_TYPE_VARRAY && HOPFmtWriteChar(c, '.') != 0) {
                 return -1;
             }
-            if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0 || SLFmtWriteChar(c, ']') != 0) {
+            if (HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0 || HOPFmtWriteChar(c, ']') != 0)
+            {
                 return -1;
             }
             return 0;
-        case SLAst_TYPE_FN: {
+        case HOPAst_TYPE_FN: {
             int32_t retType = -1;
-            int32_t cur = SLFmtFirstChild(c->ast, nodeId);
+            int32_t cur = HOPFmtFirstChild(c->ast, nodeId);
             int     first = 1;
-            if (SLFmtWriteCStr(c, "fn(") != 0) {
+            if (HOPFmtWriteCStr(c, "fn(") != 0) {
                 return -1;
             }
             while (cur >= 0) {
-                const SLAstNode* chn = &c->ast->nodes[cur];
-                if (chn->flags == 1 && SLFmtIsTypeNodeKind(chn->kind)) {
+                const HOPAstNode* chn = &c->ast->nodes[cur];
+                if (chn->flags == 1 && HOPFmtIsTypeNodeKind(chn->kind)) {
                     retType = cur;
                     break;
                 }
-                if (!first && SLFmtWriteCStr(c, ", ") != 0) {
+                if (!first && HOPFmtWriteCStr(c, ", ") != 0) {
                     return -1;
                 }
-                if ((chn->flags & SLAstFlag_PARAM_CONST) != 0 && SLFmtWriteCStr(c, "const ") != 0) {
+                if ((chn->flags & HOPAstFlag_PARAM_CONST) != 0 && HOPFmtWriteCStr(c, "const ") != 0)
+                {
                     return -1;
                 }
-                if ((chn->flags & SLAstFlag_PARAM_VARIADIC) != 0 && SLFmtWriteCStr(c, "...") != 0) {
+                if ((chn->flags & HOPAstFlag_PARAM_VARIADIC) != 0 && HOPFmtWriteCStr(c, "...") != 0)
+                {
                     return -1;
                 }
-                if (SLFmtEmitType(c, cur) != 0) {
+                if (HOPFmtEmitType(c, cur) != 0) {
                     return -1;
                 }
                 first = 0;
-                cur = SLFmtNextSibling(c->ast, cur);
+                cur = HOPFmtNextSibling(c->ast, cur);
             }
-            if (SLFmtWriteChar(c, ')') != 0) {
+            if (HOPFmtWriteChar(c, ')') != 0) {
                 return -1;
             }
             if (retType >= 0) {
-                if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitType(c, retType) != 0) {
+                if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitType(c, retType) != 0) {
                     return -1;
                 }
             }
             return 0;
         }
-        case SLAst_TYPE_ANON_STRUCT:
-        case SLAst_TYPE_ANON_UNION:  {
-            int32_t field = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtCountNewlinesInRange(c->src, n->start, n->end) == 0u) {
-                return SLFmtWriteSlice(c, n->start, n->end);
+        case HOPAst_TYPE_ANON_STRUCT:
+        case HOPAst_TYPE_ANON_UNION:  {
+            int32_t field = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtCountNewlinesInRange(c->src, n->start, n->end) == 0u) {
+                return HOPFmtWriteSlice(c, n->start, n->end);
             }
-            if (n->kind == SLAst_TYPE_ANON_UNION) {
-                if (SLFmtWriteCStr(c, "union ") != 0) {
+            if (n->kind == HOPAst_TYPE_ANON_UNION) {
+                if (HOPFmtWriteCStr(c, "union ") != 0) {
                     return -1;
                 }
-            } else if (SLFmtWriteCStr(c, "struct ") != 0) {
+            } else if (HOPFmtWriteCStr(c, "struct ") != 0) {
                 return -1;
             }
-            if (SLFmtWriteChar(c, '{') != 0) {
+            if (HOPFmtWriteChar(c, '{') != 0) {
                 return -1;
             }
-            if (field >= 0 && SLFmtEmitAggregateFieldBody(c, field) != 0) {
+            if (field >= 0 && HOPFmtEmitAggregateFieldBody(c, field) != 0) {
                 return -1;
             }
-            return SLFmtWriteChar(c, '}');
+            return HOPFmtWriteChar(c, '}');
         }
-        case SLAst_TYPE_TUPLE: {
-            int32_t cur = SLFmtFirstChild(c->ast, nodeId);
+        case HOPAst_TYPE_TUPLE: {
+            int32_t cur = HOPFmtFirstChild(c->ast, nodeId);
             int     first = 1;
-            if (SLFmtWriteChar(c, '(') != 0) {
+            if (HOPFmtWriteChar(c, '(') != 0) {
                 return -1;
             }
             while (cur >= 0) {
-                if (!first && SLFmtWriteCStr(c, ", ") != 0) {
+                if (!first && HOPFmtWriteCStr(c, ", ") != 0) {
                     return -1;
                 }
-                if (SLFmtEmitType(c, cur) != 0) {
+                if (HOPFmtEmitType(c, cur) != 0) {
                     return -1;
                 }
                 first = 0;
-                cur = SLFmtNextSibling(c->ast, cur);
+                cur = HOPFmtNextSibling(c->ast, cur);
             }
-            return SLFmtWriteChar(c, ')');
+            return HOPFmtWriteChar(c, ')');
         }
-        default: return SLFmtWriteSlice(c, n->start, n->end);
+        default: return HOPFmtWriteSlice(c, n->start, n->end);
     }
 }
 
-static int SLFmtEmitExprList(SLFmtCtx* c, int32_t listNodeId) {
+static int HOPFmtEmitExprList(HOPFmtCtx* c, int32_t listNodeId) {
     uint32_t i;
     uint32_t exprCount;
     if (listNodeId < 0 || (uint32_t)listNodeId >= c->ast->len
-        || c->ast->nodes[listNodeId].kind != SLAst_EXPR_LIST)
+        || c->ast->nodes[listNodeId].kind != HOPAst_EXPR_LIST)
     {
         return -1;
     }
-    exprCount = SLFmtListCount(c->ast, listNodeId);
+    exprCount = HOPFmtListCount(c->ast, listNodeId);
     for (i = 0; i < exprCount; i++) {
-        int32_t exprNode = SLFmtListItemAt(c->ast, listNodeId, i);
+        int32_t exprNode = HOPFmtListItemAt(c->ast, listNodeId, i);
         if (exprNode < 0) {
             return -1;
         }
-        if (i > 0 && SLFmtWriteCStr(c, ", ") != 0) {
+        if (i > 0 && HOPFmtWriteCStr(c, ", ") != 0) {
             return -1;
         }
-        if (SLFmtEmitExpr(c, exprNode, 0) != 0) {
+        if (HOPFmtEmitExpr(c, exprNode, 0) != 0) {
             return -1;
         }
     }
     return 0;
 }
 
-static int SLFmtExprNeedsParensForBinaryChild(
-    const SLAst* ast, int32_t parentId, int32_t childId, int rightChild) {
-    const SLAstNode* p;
-    const SLAstNode* ch;
-    int              pp;
-    int              cp;
-    int              rightAssoc;
+static int HOPFmtExprNeedsParensForBinaryChild(
+    const HOPAst* ast, int32_t parentId, int32_t childId, int rightChild) {
+    const HOPAstNode* p;
+    const HOPAstNode* ch;
+    int               pp;
+    int               cp;
+    int               rightAssoc;
     if (childId < 0 || (uint32_t)childId >= ast->len || parentId < 0
         || (uint32_t)parentId >= ast->len)
     {
@@ -2272,12 +2285,12 @@ static int SLFmtExprNeedsParensForBinaryChild(
     }
     p = &ast->nodes[parentId];
     ch = &ast->nodes[childId];
-    if (ch->kind != SLAst_BINARY) {
+    if (ch->kind != HOPAst_BINARY) {
         return 0;
     }
-    pp = SLFmtBinPrec((SLTokenKind)p->op);
-    cp = SLFmtBinPrec((SLTokenKind)ch->op);
-    rightAssoc = SLFmtIsAssignmentOp((SLTokenKind)p->op);
+    pp = HOPFmtBinPrec((HOPTokenKind)p->op);
+    cp = HOPFmtBinPrec((HOPTokenKind)ch->op);
+    rightAssoc = HOPFmtIsAssignmentOp((HOPTokenKind)p->op);
     if (cp < pp) {
         return 1;
     }
@@ -2292,59 +2305,59 @@ static int SLFmtExprNeedsParensForBinaryChild(
     return 0;
 }
 
-static int SLFmtUseTightMulDivModSpacing(
-    SLFmtCtx* c, int32_t nodeId, int32_t lhsNodeId, int32_t rhsNodeId) {
-    const SLAstNode* n;
-    int32_t          curNodeId;
-    int              curPrec;
+static int HOPFmtUseTightMulDivModSpacing(
+    HOPFmtCtx* c, int32_t nodeId, int32_t lhsNodeId, int32_t rhsNodeId) {
+    const HOPAstNode* n;
+    int32_t           curNodeId;
+    int               curPrec;
     if (nodeId < 0 || lhsNodeId < 0 || rhsNodeId < 0 || (uint32_t)nodeId >= c->ast->len
         || (uint32_t)lhsNodeId >= c->ast->len || (uint32_t)rhsNodeId >= c->ast->len)
     {
         return 0;
     }
     n = &c->ast->nodes[nodeId];
-    if (n->op != SLTok_MUL && n->op != SLTok_DIV && n->op != SLTok_MOD) {
+    if (n->op != HOPTok_MUL && n->op != HOPTok_DIV && n->op != HOPTok_MOD) {
         return 0;
     }
-    if ((n->flags & SLAstFlag_PAREN) != 0) {
+    if ((n->flags & HOPAstFlag_PAREN) != 0) {
         return 0;
     }
 
     curNodeId = nodeId;
-    curPrec = SLFmtBinPrec((SLTokenKind)n->op);
+    curPrec = HOPFmtBinPrec((HOPTokenKind)n->op);
     while (curNodeId >= 0) {
-        int32_t          parentNodeId = SLFmtFindParentNode(c->ast, curNodeId);
-        const SLAstNode* parentNode;
-        int              parentPrec;
+        int32_t           parentNodeId = HOPFmtFindParentNode(c->ast, curNodeId);
+        const HOPAstNode* parentNode;
+        int               parentPrec;
         if (parentNodeId < 0) {
             break;
         }
         parentNode = &c->ast->nodes[parentNodeId];
-        if (parentNode->kind != SLAst_BINARY) {
+        if (parentNode->kind != HOPAst_BINARY) {
             break;
         }
-        if (SLFmtIsAssignmentOp((SLTokenKind)parentNode->op)) {
+        if (HOPFmtIsAssignmentOp((HOPTokenKind)parentNode->op)) {
             break;
         }
-        switch ((SLTokenKind)parentNode->op) {
-            case SLTok_LOGICAL_OR:
-            case SLTok_LOGICAL_AND:
-            case SLTok_EQ:
-            case SLTok_NEQ:
-            case SLTok_LT:
-            case SLTok_GT:
-            case SLTok_LTE:
-            case SLTok_GTE:         return 0;
-            default:                break;
+        switch ((HOPTokenKind)parentNode->op) {
+            case HOPTok_LOGICAL_OR:
+            case HOPTok_LOGICAL_AND:
+            case HOPTok_EQ:
+            case HOPTok_NEQ:
+            case HOPTok_LT:
+            case HOPTok_GT:
+            case HOPTok_LTE:
+            case HOPTok_GTE:         return 0;
+            default:                 break;
         }
-        parentPrec = SLFmtBinPrec((SLTokenKind)parentNode->op);
+        parentPrec = HOPFmtBinPrec((HOPTokenKind)parentNode->op);
         if (parentPrec > 0 && parentPrec < curPrec) {
             return 1;
         }
         if (parentPrec == 0 || parentPrec > curPrec) {
             break;
         }
-        if ((parentNode->flags & SLAstFlag_PAREN) != 0) {
+        if ((parentNode->flags & HOPAstFlag_PAREN) != 0) {
             break;
         }
         curNodeId = parentNodeId;
@@ -2352,470 +2365,472 @@ static int SLFmtUseTightMulDivModSpacing(
     return 0;
 }
 
-static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
-    const SLAstNode* n;
-    int32_t          ch;
+static int HOPFmtEmitExprCore(HOPFmtCtx* c, int32_t nodeId) {
+    const HOPAstNode* n;
+    int32_t           ch;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return -1;
     }
     n = &c->ast->nodes[nodeId];
     switch (n->kind) {
-        case SLAst_IDENT:
-        case SLAst_INT:
-        case SLAst_FLOAT:
-        case SLAst_BOOL:   return SLFmtWriteSlice(c, n->dataStart, n->dataEnd);
-        case SLAst_STRING: return SLFmtWriteSliceLiteral(c, n->dataStart, n->dataEnd);
-        case SLAst_RUNE:   return SLFmtWriteSliceLiteral(c, n->dataStart, n->dataEnd);
-        case SLAst_NULL:   return SLFmtWriteCStr(c, "null");
-        case SLAst_UNARY:  {
-            const char* op = SLFmtTokenOpText((SLTokenKind)n->op);
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteCStr(c, op) != 0) {
+        case HOPAst_IDENT:
+        case HOPAst_INT:
+        case HOPAst_FLOAT:
+        case HOPAst_BOOL:   return HOPFmtWriteSlice(c, n->dataStart, n->dataEnd);
+        case HOPAst_STRING: return HOPFmtWriteSliceLiteral(c, n->dataStart, n->dataEnd);
+        case HOPAst_RUNE:   return HOPFmtWriteSliceLiteral(c, n->dataStart, n->dataEnd);
+        case HOPAst_NULL:   return HOPFmtWriteCStr(c, "null");
+        case HOPAst_UNARY:  {
+            const char* op = HOPFmtTokenOpText((HOPTokenKind)n->op);
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteCStr(c, op) != 0) {
                 return -1;
             }
             if (ch >= 0) {
-                const SLAstNode* cn = &c->ast->nodes[ch];
-                int              need = cn->kind == SLAst_BINARY;
-                if (SLFmtEmitExpr(c, ch, need) != 0) {
+                const HOPAstNode* cn = &c->ast->nodes[ch];
+                int               need = cn->kind == HOPAst_BINARY;
+                if (HOPFmtEmitExpr(c, ch, need) != 0) {
                     return -1;
                 }
             }
             return 0;
         }
-        case SLAst_BINARY: {
-            const char* op = SLFmtTokenOpText((SLTokenKind)n->op);
-            int32_t     lhs = SLFmtFirstChild(c->ast, nodeId);
-            int32_t     rhs = lhs >= 0 ? SLFmtNextSibling(c->ast, lhs) : -1;
-            int         tightOp = SLFmtUseTightMulDivModSpacing(c, nodeId, lhs, rhs);
+        case HOPAst_BINARY: {
+            const char* op = HOPFmtTokenOpText((HOPTokenKind)n->op);
+            int32_t     lhs = HOPFmtFirstChild(c->ast, nodeId);
+            int32_t     rhs = lhs >= 0 ? HOPFmtNextSibling(c->ast, lhs) : -1;
+            int         tightOp = HOPFmtUseTightMulDivModSpacing(c, nodeId, lhs, rhs);
             if (lhs >= 0
-                && SLFmtEmitExpr(c, lhs, SLFmtExprNeedsParensForBinaryChild(c->ast, nodeId, lhs, 0))
+                && HOPFmtEmitExpr(
+                       c, lhs, HOPFmtExprNeedsParensForBinaryChild(c->ast, nodeId, lhs, 0))
                        != 0)
             {
                 return -1;
             }
             if (tightOp) {
-                if (SLFmtWriteCStr(c, op) != 0) {
+                if (HOPFmtWriteCStr(c, op) != 0) {
                     return -1;
                 }
             } else if (
-                SLFmtWriteChar(c, ' ') != 0 || SLFmtWriteCStr(c, op) != 0
-                || SLFmtWriteChar(c, ' ') != 0)
+                HOPFmtWriteChar(c, ' ') != 0 || HOPFmtWriteCStr(c, op) != 0
+                || HOPFmtWriteChar(c, ' ') != 0)
             {
                 return -1;
             }
             if (rhs >= 0
-                && SLFmtEmitExpr(c, rhs, SLFmtExprNeedsParensForBinaryChild(c->ast, nodeId, rhs, 1))
+                && HOPFmtEmitExpr(
+                       c, rhs, HOPFmtExprNeedsParensForBinaryChild(c->ast, nodeId, rhs, 1))
                        != 0)
             {
                 return -1;
             }
             return 0;
         }
-        case SLAst_CALL: {
+        case HOPAst_CALL: {
             int32_t arg;
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (ch >= 0 && SLFmtEmitExpr(c, ch, 0) != 0) {
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (ch >= 0 && HOPFmtEmitExpr(c, ch, 0) != 0) {
                 return -1;
             }
-            if (SLFmtWriteChar(c, '(') != 0) {
+            if (HOPFmtWriteChar(c, '(') != 0) {
                 return -1;
             }
-            arg = ch >= 0 ? SLFmtNextSibling(c->ast, ch) : -1;
+            arg = ch >= 0 ? HOPFmtNextSibling(c->ast, ch) : -1;
             while (arg >= 0) {
-                int32_t next = SLFmtNextSibling(c->ast, arg);
-                if (SLFmtEmitExpr(c, arg, 0) != 0) {
+                int32_t next = HOPFmtNextSibling(c->ast, arg);
+                if (HOPFmtEmitExpr(c, arg, 0) != 0) {
                     return -1;
                 }
-                if (next >= 0 && SLFmtWriteCStr(c, ", ") != 0) {
+                if (next >= 0 && HOPFmtWriteCStr(c, ", ") != 0) {
                     return -1;
                 }
                 arg = next;
             }
-            return SLFmtWriteChar(c, ')');
+            return HOPFmtWriteChar(c, ')');
         }
-        case SLAst_CALL_ARG: {
-            int32_t exprNode = SLFmtFirstChild(c->ast, nodeId);
+        case HOPAst_CALL_ARG: {
+            int32_t exprNode = HOPFmtFirstChild(c->ast, nodeId);
             if (n->dataEnd > n->dataStart) {
-                if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0
-                    || SLFmtWriteCStr(c, ": ") != 0)
+                if (HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0
+                    || HOPFmtWriteCStr(c, ": ") != 0)
                 {
                     return -1;
                 }
             }
-            if (exprNode >= 0 && SLFmtEmitExpr(c, exprNode, 0) != 0) {
+            if (exprNode >= 0 && HOPFmtEmitExpr(c, exprNode, 0) != 0) {
                 return -1;
             }
-            if ((n->flags & SLAstFlag_CALL_ARG_SPREAD) != 0) {
-                return SLFmtWriteCStr(c, "...");
+            if ((n->flags & HOPAstFlag_CALL_ARG_SPREAD) != 0) {
+                return HOPFmtWriteCStr(c, "...");
             }
             return 0;
         }
-        case SLAst_TUPLE_EXPR: {
-            int32_t cur = SLFmtFirstChild(c->ast, nodeId);
+        case HOPAst_TUPLE_EXPR: {
+            int32_t cur = HOPFmtFirstChild(c->ast, nodeId);
             int     first = 1;
-            if (SLFmtWriteChar(c, '(') != 0) {
+            if (HOPFmtWriteChar(c, '(') != 0) {
                 return -1;
             }
             while (cur >= 0) {
-                if (!first && SLFmtWriteCStr(c, ", ") != 0) {
+                if (!first && HOPFmtWriteCStr(c, ", ") != 0) {
                     return -1;
                 }
-                if (SLFmtEmitExpr(c, cur, 0) != 0) {
+                if (HOPFmtEmitExpr(c, cur, 0) != 0) {
                     return -1;
                 }
                 first = 0;
-                cur = SLFmtNextSibling(c->ast, cur);
+                cur = HOPFmtNextSibling(c->ast, cur);
             }
-            return SLFmtWriteChar(c, ')');
+            return HOPFmtWriteChar(c, ')');
         }
-        case SLAst_CALL_WITH_CONTEXT: {
-            int32_t callNode = SLFmtFirstChild(c->ast, nodeId);
-            int32_t ctxNode = callNode >= 0 ? SLFmtNextSibling(c->ast, callNode) : -1;
-            if (callNode >= 0 && SLFmtEmitExpr(c, callNode, 0) != 0) {
+        case HOPAst_CALL_WITH_CONTEXT: {
+            int32_t callNode = HOPFmtFirstChild(c->ast, nodeId);
+            int32_t ctxNode = callNode >= 0 ? HOPFmtNextSibling(c->ast, callNode) : -1;
+            if (callNode >= 0 && HOPFmtEmitExpr(c, callNode, 0) != 0) {
                 return -1;
             }
-            if (SLFmtWriteCStr(c, " context ") != 0) {
+            if (HOPFmtWriteCStr(c, " context ") != 0) {
                 return -1;
             }
-            if ((n->flags & SLAstFlag_CALL_WITH_CONTEXT_PASSTHROUGH) != 0) {
-                return SLFmtWriteCStr(c, "context");
+            if ((n->flags & HOPAstFlag_CALL_WITH_CONTEXT_PASSTHROUGH) != 0) {
+                return HOPFmtWriteCStr(c, "context");
             }
-            return ctxNode >= 0 ? SLFmtEmitExpr(c, ctxNode, 0) : 0;
+            return ctxNode >= 0 ? HOPFmtEmitExpr(c, ctxNode, 0) : 0;
         }
-        case SLAst_CONTEXT_OVERLAY: {
-            int32_t bind = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteChar(c, '{') != 0) {
+        case HOPAst_CONTEXT_OVERLAY: {
+            int32_t bind = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteChar(c, '{') != 0) {
                 return -1;
             }
             if (bind < 0) {
-                return SLFmtWriteChar(c, '}');
+                return HOPFmtWriteChar(c, '}');
             }
-            if (SLFmtWriteChar(c, ' ') != 0) {
+            if (HOPFmtWriteChar(c, ' ') != 0) {
                 return -1;
             }
             while (bind >= 0) {
-                int32_t next = SLFmtNextSibling(c->ast, bind);
-                if (SLFmtEmitExpr(c, bind, 0) != 0) {
+                int32_t next = HOPFmtNextSibling(c->ast, bind);
+                if (HOPFmtEmitExpr(c, bind, 0) != 0) {
                     return -1;
                 }
-                if (next >= 0 && SLFmtWriteCStr(c, ", ") != 0) {
+                if (next >= 0 && HOPFmtWriteCStr(c, ", ") != 0) {
                     return -1;
                 }
                 bind = next;
             }
-            return SLFmtWriteCStr(c, " }");
+            return HOPFmtWriteCStr(c, " }");
         }
-        case SLAst_CONTEXT_BIND: {
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
+        case HOPAst_CONTEXT_BIND: {
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
                 return -1;
             }
-            if ((n->flags & SLAstFlag_CONTEXT_BIND_SHORTHAND) == 0 && ch >= 0) {
-                if (SLFmtWriteCStr(c, ": ") != 0 || SLFmtEmitExpr(c, ch, 0) != 0) {
+            if ((n->flags & HOPAstFlag_CONTEXT_BIND_SHORTHAND) == 0 && ch >= 0) {
+                if (HOPFmtWriteCStr(c, ": ") != 0 || HOPFmtEmitExpr(c, ch, 0) != 0) {
                     return -1;
                 }
             }
             return 0;
         }
-        case SLAst_INDEX: {
-            int32_t base = SLFmtFirstChild(c->ast, nodeId);
-            int32_t a = base >= 0 ? SLFmtNextSibling(c->ast, base) : -1;
-            int32_t b = a >= 0 ? SLFmtNextSibling(c->ast, a) : -1;
-            if (base >= 0 && SLFmtEmitExpr(c, base, 0) != 0) {
+        case HOPAst_INDEX: {
+            int32_t base = HOPFmtFirstChild(c->ast, nodeId);
+            int32_t a = base >= 0 ? HOPFmtNextSibling(c->ast, base) : -1;
+            int32_t b = a >= 0 ? HOPFmtNextSibling(c->ast, a) : -1;
+            if (base >= 0 && HOPFmtEmitExpr(c, base, 0) != 0) {
                 return -1;
             }
-            if (SLFmtWriteChar(c, '[') != 0) {
+            if (HOPFmtWriteChar(c, '[') != 0) {
                 return -1;
             }
-            if ((n->flags & SLAstFlag_INDEX_SLICE) != 0) {
-                if ((n->flags & SLAstFlag_INDEX_HAS_START) != 0 && a >= 0
-                    && SLFmtEmitExpr(c, a, 0) != 0)
+            if ((n->flags & HOPAstFlag_INDEX_SLICE) != 0) {
+                if ((n->flags & HOPAstFlag_INDEX_HAS_START) != 0 && a >= 0
+                    && HOPFmtEmitExpr(c, a, 0) != 0)
                 {
                     return -1;
                 }
-                if (SLFmtWriteChar(c, ':') != 0) {
+                if (HOPFmtWriteChar(c, ':') != 0) {
                     return -1;
                 }
-                if ((n->flags & SLAstFlag_INDEX_HAS_END) != 0) {
-                    int32_t endNode = (n->flags & SLAstFlag_INDEX_HAS_START) != 0 ? b : a;
-                    if (endNode >= 0 && SLFmtEmitExpr(c, endNode, 0) != 0) {
+                if ((n->flags & HOPAstFlag_INDEX_HAS_END) != 0) {
+                    int32_t endNode = (n->flags & HOPAstFlag_INDEX_HAS_START) != 0 ? b : a;
+                    if (endNode >= 0 && HOPFmtEmitExpr(c, endNode, 0) != 0) {
                         return -1;
                     }
                 }
-            } else if (a >= 0 && SLFmtEmitExpr(c, a, 0) != 0) {
+            } else if (a >= 0 && HOPFmtEmitExpr(c, a, 0) != 0) {
                 return -1;
             }
-            return SLFmtWriteChar(c, ']');
+            return HOPFmtWriteChar(c, ']');
         }
-        case SLAst_FIELD_EXPR:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (ch >= 0 && SLFmtEmitExpr(c, ch, 0) != 0) {
+        case HOPAst_FIELD_EXPR:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (ch >= 0 && HOPFmtEmitExpr(c, ch, 0) != 0) {
                 return -1;
             }
-            if (SLFmtWriteChar(c, '.') != 0) {
+            if (HOPFmtWriteChar(c, '.') != 0) {
                 return -1;
             }
-            return SLFmtWriteSlice(c, n->dataStart, n->dataEnd);
-        case SLAst_CAST: {
-            int32_t expr = SLFmtFirstChild(c->ast, nodeId);
-            int32_t type = expr >= 0 ? SLFmtNextSibling(c->ast, expr) : -1;
-            if ((n->flags & SLFmtFlag_DROP_REDUNDANT_LITERAL_CAST) != 0) {
-                return expr >= 0 ? SLFmtEmitExpr(c, expr, 0) : 0;
+            return HOPFmtWriteSlice(c, n->dataStart, n->dataEnd);
+        case HOPAst_CAST: {
+            int32_t expr = HOPFmtFirstChild(c->ast, nodeId);
+            int32_t type = expr >= 0 ? HOPFmtNextSibling(c->ast, expr) : -1;
+            if ((n->flags & HOPFmtFlag_DROP_REDUNDANT_LITERAL_CAST) != 0) {
+                return expr >= 0 ? HOPFmtEmitExpr(c, expr, 0) : 0;
             }
-            if (expr >= 0 && SLFmtEmitExpr(c, expr, 0) != 0) {
+            if (expr >= 0 && HOPFmtEmitExpr(c, expr, 0) != 0) {
                 return -1;
             }
-            if (SLFmtWriteCStr(c, " as ") != 0) {
+            if (HOPFmtWriteCStr(c, " as ") != 0) {
                 return -1;
             }
-            return type >= 0 ? SLFmtEmitType(c, type) : 0;
+            return type >= 0 ? HOPFmtEmitType(c, type) : 0;
         }
-        case SLAst_SIZEOF:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteCStr(c, "sizeof(") != 0) {
+        case HOPAst_SIZEOF:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteCStr(c, "sizeof(") != 0) {
                 return -1;
             }
             if (ch >= 0) {
                 if (n->flags == 1) {
-                    if (SLFmtEmitType(c, ch) != 0) {
+                    if (HOPFmtEmitType(c, ch) != 0) {
                         return -1;
                     }
-                } else if (SLFmtEmitExpr(c, ch, 0) != 0) {
+                } else if (HOPFmtEmitExpr(c, ch, 0) != 0) {
                     return -1;
                 }
             }
-            return SLFmtWriteChar(c, ')');
-        case SLAst_NEW: {
-            int32_t type = SLFmtFirstChild(c->ast, nodeId);
-            int32_t next = type >= 0 ? SLFmtNextSibling(c->ast, type) : -1;
+            return HOPFmtWriteChar(c, ')');
+        case HOPAst_NEW: {
+            int32_t type = HOPFmtFirstChild(c->ast, nodeId);
+            int32_t next = type >= 0 ? HOPFmtNextSibling(c->ast, type) : -1;
             int32_t count = -1;
             int32_t init = -1;
             int32_t alloc = -1;
-            if ((n->flags & SLAstFlag_NEW_HAS_COUNT) != 0) {
+            if ((n->flags & HOPAstFlag_NEW_HAS_COUNT) != 0) {
                 count = next;
-                next = count >= 0 ? SLFmtNextSibling(c->ast, count) : -1;
+                next = count >= 0 ? HOPFmtNextSibling(c->ast, count) : -1;
             }
-            if ((n->flags & SLAstFlag_NEW_HAS_INIT) != 0) {
+            if ((n->flags & HOPAstFlag_NEW_HAS_INIT) != 0) {
                 init = next;
-                next = init >= 0 ? SLFmtNextSibling(c->ast, init) : -1;
+                next = init >= 0 ? HOPFmtNextSibling(c->ast, init) : -1;
             }
-            if ((n->flags & SLAstFlag_NEW_HAS_ALLOC) != 0) {
+            if ((n->flags & HOPAstFlag_NEW_HAS_ALLOC) != 0) {
                 alloc = next;
             }
-            if (SLFmtWriteCStr(c, "new ") != 0) {
+            if (HOPFmtWriteCStr(c, "new ") != 0) {
                 return -1;
             }
             if (count >= 0) {
-                if (SLFmtWriteChar(c, '[') != 0 || (type >= 0 && SLFmtEmitType(c, type) != 0)
-                    || SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitExpr(c, count, 0) != 0
-                    || SLFmtWriteChar(c, ']') != 0)
+                if (HOPFmtWriteChar(c, '[') != 0 || (type >= 0 && HOPFmtEmitType(c, type) != 0)
+                    || HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitExpr(c, count, 0) != 0
+                    || HOPFmtWriteChar(c, ']') != 0)
                 {
                     return -1;
                 }
             } else {
-                if (type >= 0 && SLFmtEmitType(c, type) != 0) {
+                if (type >= 0 && HOPFmtEmitType(c, type) != 0) {
                     return -1;
                 }
                 if (init >= 0) {
-                    int32_t initFirst = SLFmtFirstChild(c->ast, init);
+                    int32_t initFirst = HOPFmtFirstChild(c->ast, init);
                     int     initTight =
-                        c->ast->nodes[init].kind == SLAst_COMPOUND_LIT
-                        && (initFirst < 0 || !SLFmtIsTypeNodeKind(c->ast->nodes[initFirst].kind));
-                    if (!initTight && SLFmtWriteChar(c, ' ') != 0) {
+                        c->ast->nodes[init].kind == HOPAst_COMPOUND_LIT
+                        && (initFirst < 0 || !HOPFmtIsTypeNodeKind(c->ast->nodes[initFirst].kind));
+                    if (!initTight && HOPFmtWriteChar(c, ' ') != 0) {
                         return -1;
                     }
-                    if (SLFmtEmitExpr(c, init, 0) != 0) {
+                    if (HOPFmtEmitExpr(c, init, 0) != 0) {
                         return -1;
                     }
                 }
             }
             if (alloc >= 0) {
-                if (SLFmtWriteCStr(c, " in ") != 0 || SLFmtEmitExpr(c, alloc, 0) != 0) {
+                if (HOPFmtWriteCStr(c, " in ") != 0 || HOPFmtEmitExpr(c, alloc, 0) != 0) {
                     return -1;
                 }
             }
             return 0;
         }
-        case SLAst_COMPOUND_LIT: {
-            int32_t  cur = SLFmtFirstChild(c->ast, nodeId);
+        case HOPAst_COMPOUND_LIT: {
+            int32_t  cur = HOPFmtFirstChild(c->ast, nodeId);
             int32_t  type = -1;
             int32_t  field;
             uint32_t maxKeyLen = 0;
             uint32_t lbPos;
             uint32_t rbPos;
-            if (cur >= 0 && SLFmtIsTypeNodeKind(c->ast->nodes[cur].kind)) {
+            if (cur >= 0 && HOPFmtIsTypeNodeKind(c->ast->nodes[cur].kind)) {
                 type = cur;
-                cur = SLFmtNextSibling(c->ast, cur);
+                cur = HOPFmtNextSibling(c->ast, cur);
             }
-            if (type >= 0 && SLFmtEmitType(c, type) != 0) {
+            if (type >= 0 && HOPFmtEmitType(c, type) != 0) {
                 return -1;
             }
-            if (!SLFmtFindCharForwardInRange(c->src, n->start, n->end, '{', &lbPos)
-                || !SLFmtFindCharBackwardInRange(c->src, n->start, n->end, '}', &rbPos))
+            if (!HOPFmtFindCharForwardInRange(c->src, n->start, n->end, '{', &lbPos)
+                || !HOPFmtFindCharBackwardInRange(c->src, n->start, n->end, '}', &rbPos))
             {
                 return -1;
             }
-            if (SLFmtWriteChar(c, '{') != 0) {
+            if (HOPFmtWriteChar(c, '{') != 0) {
                 return -1;
             }
             if (cur < 0) {
-                return SLFmtWriteChar(c, '}');
+                return HOPFmtWriteChar(c, '}');
             }
-            if (!SLFmtRangeHasChar(c->src, lbPos + 1u, rbPos, '\n')) {
-                if (SLFmtWriteChar(c, ' ') != 0) {
+            if (!HOPFmtRangeHasChar(c->src, lbPos + 1u, rbPos, '\n')) {
+                if (HOPFmtWriteChar(c, ' ') != 0) {
                     return -1;
                 }
                 field = cur;
                 while (field >= 0) {
-                    int32_t next = SLFmtNextSibling(c->ast, field);
-                    if (SLFmtEmitExpr(c, field, 0) != 0) {
+                    int32_t next = HOPFmtNextSibling(c->ast, field);
+                    if (HOPFmtEmitExpr(c, field, 0) != 0) {
                         return -1;
                     }
-                    if (next >= 0 && SLFmtWriteCStr(c, ", ") != 0) {
+                    if (next >= 0 && HOPFmtWriteCStr(c, ", ") != 0) {
                         return -1;
                     }
                     field = next;
                 }
-                return SLFmtWriteCStr(c, " }");
+                return HOPFmtWriteCStr(c, " }");
             }
             c->indent++;
-            for (field = cur; field >= 0; field = SLFmtNextSibling(c->ast, field)) {
-                const SLAstNode* fn = &c->ast->nodes[field];
-                uint32_t         keyLen = fn->dataEnd - fn->dataStart;
-                if (fn->kind == SLAst_COMPOUND_FIELD && keyLen > maxKeyLen) {
+            for (field = cur; field >= 0; field = HOPFmtNextSibling(c->ast, field)) {
+                const HOPAstNode* fn = &c->ast->nodes[field];
+                uint32_t          keyLen = fn->dataEnd - fn->dataStart;
+                if (fn->kind == HOPAst_COMPOUND_FIELD && keyLen > maxKeyLen) {
                     maxKeyLen = keyLen;
                 }
             }
             field = cur;
             while (field >= 0) {
-                int32_t  next = SLFmtNextSibling(c->ast, field);
+                int32_t  next = HOPFmtNextSibling(c->ast, field);
                 uint32_t gapStart = c->ast->nodes[field].end;
                 uint32_t gapEnd = next >= 0 ? c->ast->nodes[next].start : rbPos;
-                int      hasComma = SLFmtRangeHasChar(c->src, gapStart, gapEnd, ',');
-                int      hasNewline = SLFmtRangeHasChar(c->src, gapStart, gapEnd, '\n');
+                int      hasComma = HOPFmtRangeHasChar(c->src, gapStart, gapEnd, ',');
+                int      hasNewline = HOPFmtRangeHasChar(c->src, gapStart, gapEnd, '\n');
                 if (field == cur) {
-                    int firstHasNewline = SLFmtRangeHasChar(
+                    int firstHasNewline = HOPFmtRangeHasChar(
                         c->src, lbPos + 1u, c->ast->nodes[field].start, '\n');
                     if (firstHasNewline) {
-                        if (SLFmtNewline(c) != 0) {
+                        if (HOPFmtNewline(c) != 0) {
                             return -1;
                         }
-                    } else if (SLFmtWriteChar(c, ' ') != 0) {
+                    } else if (HOPFmtWriteChar(c, ' ') != 0) {
                         return -1;
                     }
                 }
-                if (SLFmtEmitCompoundFieldWithAlign(c, field, maxKeyLen) != 0) {
+                if (HOPFmtEmitCompoundFieldWithAlign(c, field, maxKeyLen) != 0) {
                     return -1;
                 }
-                if (hasComma && SLFmtWriteChar(c, ',') != 0) {
+                if (hasComma && HOPFmtWriteChar(c, ',') != 0) {
                     return -1;
                 }
                 if (next >= 0) {
                     if (hasNewline) {
-                        if (SLFmtNewline(c) != 0) {
+                        if (HOPFmtNewline(c) != 0) {
                             return -1;
                         }
-                    } else if (SLFmtWriteChar(c, ' ') != 0) {
+                    } else if (HOPFmtWriteChar(c, ' ') != 0) {
                         return -1;
                     }
                 } else {
                     c->indent--;
                     if (hasNewline) {
-                        if (SLFmtNewline(c) != 0) {
+                        if (HOPFmtNewline(c) != 0) {
                             return -1;
                         }
-                    } else if (SLFmtWriteChar(c, ' ') != 0) {
+                    } else if (HOPFmtWriteChar(c, ' ') != 0) {
                         return -1;
                     }
-                    return SLFmtWriteChar(c, '}');
+                    return HOPFmtWriteChar(c, '}');
                 }
                 field = next;
             }
             c->indent--;
-            return SLFmtWriteChar(c, '}');
+            return HOPFmtWriteChar(c, '}');
         }
-        case SLAst_COMPOUND_FIELD: return SLFmtEmitCompoundFieldWithAlign(c, nodeId, 0u);
-        case SLAst_TYPE_VALUE:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteCStr(c, "type ") != 0) {
+        case HOPAst_COMPOUND_FIELD: return HOPFmtEmitCompoundFieldWithAlign(c, nodeId, 0u);
+        case HOPAst_TYPE_VALUE:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteCStr(c, "type ") != 0) {
                 return -1;
             }
-            return ch >= 0 ? SLFmtEmitType(c, ch) : 0;
-        case SLAst_UNWRAP:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (ch >= 0 && SLFmtEmitExpr(c, ch, 0) != 0) {
+            return ch >= 0 ? HOPFmtEmitType(c, ch) : 0;
+        case HOPAst_UNWRAP:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (ch >= 0 && HOPFmtEmitExpr(c, ch, 0) != 0) {
                 return -1;
             }
-            return SLFmtWriteChar(c, '!');
-        default: return SLFmtWriteSlice(c, n->start, n->end);
+            return HOPFmtWriteChar(c, '!');
+        default: return HOPFmtWriteSlice(c, n->start, n->end);
     }
 }
 
-static int SLFmtEmitExpr(SLFmtCtx* c, int32_t nodeId, int forceParen) {
-    const SLAstNode* n;
-    int              needParen;
+static int HOPFmtEmitExpr(HOPFmtCtx* c, int32_t nodeId, int forceParen) {
+    const HOPAstNode* n;
+    int               needParen;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return -1;
     }
     n = &c->ast->nodes[nodeId];
-    needParen = forceParen || ((n->flags & SLAstFlag_PAREN) != 0);
-    if (needParen && SLFmtWriteChar(c, '(') != 0) {
+    needParen = forceParen || ((n->flags & HOPAstFlag_PAREN) != 0);
+    if (needParen && HOPFmtWriteChar(c, '(') != 0) {
         return -1;
     }
-    if (SLFmtEmitExprCore(c, nodeId) != 0) {
+    if (HOPFmtEmitExprCore(c, nodeId) != 0) {
         return -1;
     }
-    if (needParen && SLFmtWriteChar(c, ')') != 0) {
+    if (needParen && HOPFmtWriteChar(c, ')') != 0) {
         return -1;
     }
     return 0;
 }
 
-static int SLFmtMeasureTypeLen(SLFmtCtx* c, int32_t nodeId, uint32_t* outLen) {
-    SLFmtCtx m = *c;
+static int HOPFmtMeasureTypeLen(HOPFmtCtx* c, int32_t nodeId, uint32_t* outLen) {
+    HOPFmtCtx m = *c;
     m.lineStart = 0;
     m.indent = 0;
     m.out.v = NULL;
     m.out.len = 0;
     m.out.cap = 0;
-    if (SLFmtEmitType(&m, nodeId) != 0) {
+    if (HOPFmtEmitType(&m, nodeId) != 0) {
         return -1;
     }
     *outLen = m.out.len;
     return 0;
 }
 
-static int SLFmtMeasureExprLen(SLFmtCtx* c, int32_t nodeId, int forceParen, uint32_t* outLen) {
-    SLFmtCtx m = *c;
+static int HOPFmtMeasureExprLen(HOPFmtCtx* c, int32_t nodeId, int forceParen, uint32_t* outLen) {
+    HOPFmtCtx m = *c;
     m.lineStart = 0;
     m.indent = 0;
     m.out.v = NULL;
     m.out.len = 0;
     m.out.cap = 0;
-    if (SLFmtEmitExpr(&m, nodeId, forceParen) != 0) {
+    if (HOPFmtEmitExpr(&m, nodeId, forceParen) != 0) {
         return -1;
     }
     *outLen = m.out.len;
     return 0;
 }
 
-static int SLFmtNeedsBlankLineBeforeNode(SLFmtCtx* c, int32_t prevNodeId, int32_t nextNodeId) {
-    SLAstKind nextKind;
-    uint32_t  gapNl;
+static int HOPFmtNeedsBlankLineBeforeNode(HOPFmtCtx* c, int32_t prevNodeId, int32_t nextNodeId) {
+    HOPAstKind nextKind;
+    uint32_t   gapNl;
     if (prevNodeId < 0 || nextNodeId < 0) {
         return 0;
     }
     nextKind = c->ast->nodes[nextNodeId].kind;
-    gapNl = SLFmtCountNewlinesInRange(
+    gapNl = HOPFmtCountNewlinesInRange(
         c->src, c->ast->nodes[prevNodeId].end, c->ast->nodes[nextNodeId].start);
     if (gapNl <= 1u) {
         return 0;
     }
-    if (SLFmtHasUnusedLeadingCommentsForNode(c, nextNodeId)) {
-        if (!SLFmtIsStmtNodeKind(nextKind)) {
+    if (HOPFmtHasUnusedLeadingCommentsForNode(c, nextNodeId)) {
+        if (!HOPFmtIsStmtNodeKind(nextKind)) {
             return 0;
         }
-        if (!SLFmtGapHasIntentionalBlankLine(
+        if (!HOPFmtGapHasIntentionalBlankLine(
                 c->src, c->ast->nodes[prevNodeId].end, c->ast->nodes[nextNodeId].start))
         {
             return 0;
@@ -2824,7 +2839,7 @@ static int SLFmtNeedsBlankLineBeforeNode(SLFmtCtx* c, int32_t prevNodeId, int32_
     return 1;
 }
 
-static int SLFmtTypeEnvCopy(SLFmtTypeEnv* dst, const SLFmtTypeEnv* src) {
+static int HOPFmtTypeEnvCopy(HOPFmtTypeEnv* dst, const HOPFmtTypeEnv* src) {
     uint32_t i;
     if (dst == NULL) {
         return 0;
@@ -2843,13 +2858,13 @@ static int SLFmtTypeEnvCopy(SLFmtTypeEnv* dst, const SLFmtTypeEnv* src) {
     return 1;
 }
 
-static int32_t SLFmtResolveTypeNodeThroughEnv(
-    const SLAst* ast, SLStrView src, int32_t typeNodeId, const SLFmtTypeEnv* _Nullable env) {
+static int32_t HOPFmtResolveTypeNodeThroughEnv(
+    const HOPAst* ast, HOPStrView src, int32_t typeNodeId, const HOPFmtTypeEnv* _Nullable env) {
     int32_t bindingIndex;
     if (env == NULL || typeNodeId < 0 || (uint32_t)typeNodeId >= ast->len) {
         return typeNodeId;
     }
-    if (!SLFmtTypeNameIsBoundParam(ast, src, typeNodeId, env, &bindingIndex)) {
+    if (!HOPFmtTypeNameIsBoundParam(ast, src, typeNodeId, env, &bindingIndex)) {
         return typeNodeId;
     }
     if (env->items[bindingIndex].concreteTypeNodeId < 0) {
@@ -2858,156 +2873,158 @@ static int32_t SLFmtResolveTypeNodeThroughEnv(
     return env->items[bindingIndex].concreteTypeNodeId;
 }
 
-static int SLFmtInferredTypeSet(
-    SLFmtInferredType* inferred, int32_t typeNodeId, const SLFmtTypeEnv* _Nullable env) {
+static int HOPFmtInferredTypeSet(
+    HOPFmtInferredType* inferred, int32_t typeNodeId, const HOPFmtTypeEnv* _Nullable env) {
     if (inferred == NULL || typeNodeId < 0) {
         return 0;
     }
     inferred->typeNodeId = typeNodeId;
-    return SLFmtTypeEnvCopy(&inferred->env, env);
+    return HOPFmtTypeEnvCopy(&inferred->env, env);
 }
 
-static int SLFmtInferredTypeMatchesNode(
-    const SLAst* ast, SLStrView src, const SLFmtInferredType* inferred, int32_t typeNodeId) {
-    SLFmtTypeEnv        envCopy;
-    const SLFmtTypeEnv* env;
+static int HOPFmtInferredTypeMatchesNode(
+    const HOPAst* ast, HOPStrView src, const HOPFmtInferredType* inferred, int32_t typeNodeId) {
+    HOPFmtTypeEnv        envCopy;
+    const HOPFmtTypeEnv* env;
     if (inferred == NULL || inferred->typeNodeId < 0 || typeNodeId < 0) {
         return 0;
     }
     env = inferred->env.len > 0 ? &inferred->env : NULL;
-    if (env != NULL && !SLFmtTypeEnvCopy(&envCopy, env)) {
+    if (env != NULL && !HOPFmtTypeEnvCopy(&envCopy, env)) {
         return 0;
     }
-    return SLFmtTypeCompatibleWithEnvs(
+    return HOPFmtTypeCompatibleWithEnvs(
                ast, src, inferred->typeNodeId, env != NULL ? &envCopy : NULL, typeNodeId, NULL)
-        && SLFmtTypeCompatibleWithEnvs(ast, src, typeNodeId, NULL, inferred->typeNodeId, env);
+        && HOPFmtTypeCompatibleWithEnvs(ast, src, typeNodeId, NULL, inferred->typeNodeId, env);
 }
 
-static int32_t SLFmtFindLocalNamedTypeDeclByRange(
-    const SLAst* ast, SLStrView src, uint32_t nameStart, uint32_t nameEnd) {
+static int32_t HOPFmtFindLocalNamedTypeDeclByRange(
+    const HOPAst* ast, HOPStrView src, uint32_t nameStart, uint32_t nameEnd) {
     int32_t cur;
     if (nameEnd <= nameStart) {
         return -1;
     }
-    cur = SLFmtFirstChild(ast, ast->root);
+    cur = HOPFmtFirstChild(ast, ast->root);
     while (cur >= 0) {
-        const SLAstNode* n = &ast->nodes[cur];
-        if ((n->kind == SLAst_STRUCT || n->kind == SLAst_UNION || n->kind == SLAst_ENUM)
-            && SLFmtSlicesEqual(src, n->dataStart, n->dataEnd, nameStart, nameEnd))
+        const HOPAstNode* n = &ast->nodes[cur];
+        if ((n->kind == HOPAst_STRUCT || n->kind == HOPAst_UNION || n->kind == HOPAst_ENUM)
+            && HOPFmtSlicesEqual(src, n->dataStart, n->dataEnd, nameStart, nameEnd))
         {
             return cur;
         }
-        cur = SLFmtNextSibling(ast, cur);
+        cur = HOPFmtNextSibling(ast, cur);
     }
     return -1;
 }
 
-static int32_t SLFmtFindLocalNamedTypeDeclForTypeNode(
-    const SLAst* ast, SLStrView src, int32_t typeNodeId, const SLFmtTypeEnv* _Nullable env) {
-    int32_t resolvedTypeNodeId = SLFmtResolveTypeNodeThroughEnv(ast, src, typeNodeId, env);
+static int32_t HOPFmtFindLocalNamedTypeDeclForTypeNode(
+    const HOPAst* ast, HOPStrView src, int32_t typeNodeId, const HOPFmtTypeEnv* _Nullable env) {
+    int32_t resolvedTypeNodeId = HOPFmtResolveTypeNodeThroughEnv(ast, src, typeNodeId, env);
     if (resolvedTypeNodeId < 0 || (uint32_t)resolvedTypeNodeId >= ast->len) {
         return -1;
     }
-    if (ast->nodes[resolvedTypeNodeId].kind != SLAst_TYPE_NAME) {
+    if (ast->nodes[resolvedTypeNodeId].kind != HOPAst_TYPE_NAME) {
         return -1;
     }
-    return SLFmtFindLocalNamedTypeDeclByRange(
+    return HOPFmtFindLocalNamedTypeDeclByRange(
         ast, src, ast->nodes[resolvedTypeNodeId].dataStart, ast->nodes[resolvedTypeNodeId].dataEnd);
 }
 
-static int SLFmtBindStructTypeArgsFromInstance(
-    const SLAst*        ast,
-    SLStrView           src,
-    int32_t             declNodeId,
-    int32_t             instTypeNodeId,
-    const SLFmtTypeEnv* instEnv,
-    SLFmtTypeEnv*       outEnv) {
+static int HOPFmtBindStructTypeArgsFromInstance(
+    const HOPAst*        ast,
+    HOPStrView           src,
+    int32_t              declNodeId,
+    int32_t              instTypeNodeId,
+    const HOPFmtTypeEnv* instEnv,
+    HOPFmtTypeEnv*       outEnv) {
     int32_t  declParamNodeId;
     int32_t  argNodeId;
     uint32_t i;
-    if (!SLFmtTypeEnvInitFromDeclTypeParams(ast, declNodeId, outEnv)) {
+    if (!HOPFmtTypeEnvInitFromDeclTypeParams(ast, declNodeId, outEnv)) {
         return 0;
     }
-    declParamNodeId = SLFmtFirstChild(ast, declNodeId);
-    argNodeId = SLFmtFirstChild(ast, instTypeNodeId);
+    declParamNodeId = HOPFmtFirstChild(ast, declNodeId);
+    argNodeId = HOPFmtFirstChild(ast, instTypeNodeId);
     for (i = 0; i < outEnv->len; i++) {
         int32_t resolvedArgNodeId;
-        if (declParamNodeId < 0 || ast->nodes[declParamNodeId].kind != SLAst_TYPE_PARAM
+        if (declParamNodeId < 0 || ast->nodes[declParamNodeId].kind != HOPAst_TYPE_PARAM
             || argNodeId < 0)
         {
             return 0;
         }
-        resolvedArgNodeId = SLFmtResolveTypeNodeThroughEnv(ast, src, argNodeId, instEnv);
+        resolvedArgNodeId = HOPFmtResolveTypeNodeThroughEnv(ast, src, argNodeId, instEnv);
         outEnv->items[i].concreteTypeNodeId = resolvedArgNodeId;
-        declParamNodeId = SLFmtNextSibling(ast, declParamNodeId);
-        argNodeId = SLFmtNextSibling(ast, argNodeId);
+        declParamNodeId = HOPFmtNextSibling(ast, declParamNodeId);
+        argNodeId = HOPFmtNextSibling(ast, argNodeId);
     }
     return argNodeId < 0;
 }
 
-static int SLFmtFindFieldTypeOnLocalNamedType(
-    const SLAst*             ast,
-    SLStrView                src,
-    const SLFmtInferredType* baseType,
-    uint32_t                 fieldStart,
-    uint32_t                 fieldEnd,
-    SLFmtInferredType*       outType) {
-    int32_t      declNodeId;
-    int32_t      instTypeNodeId;
-    int32_t      child;
-    SLFmtTypeEnv declEnv;
+static int HOPFmtFindFieldTypeOnLocalNamedType(
+    const HOPAst*             ast,
+    HOPStrView                src,
+    const HOPFmtInferredType* baseType,
+    uint32_t                  fieldStart,
+    uint32_t                  fieldEnd,
+    HOPFmtInferredType*       outType) {
+    int32_t       declNodeId;
+    int32_t       instTypeNodeId;
+    int32_t       child;
+    HOPFmtTypeEnv declEnv;
     if (outType != NULL) {
-        SLFmtInferredTypeInit(outType);
+        HOPFmtInferredTypeInit(outType);
     }
     if (baseType == NULL || outType == NULL || baseType->typeNodeId < 0 || fieldEnd <= fieldStart) {
         return 0;
     }
-    instTypeNodeId = SLFmtResolveTypeNodeThroughEnv(ast, src, baseType->typeNodeId, &baseType->env);
+    instTypeNodeId = HOPFmtResolveTypeNodeThroughEnv(
+        ast, src, baseType->typeNodeId, &baseType->env);
     if (instTypeNodeId < 0 || (uint32_t)instTypeNodeId >= ast->len
-        || ast->nodes[instTypeNodeId].kind != SLAst_TYPE_NAME)
+        || ast->nodes[instTypeNodeId].kind != HOPAst_TYPE_NAME)
     {
         return 0;
     }
-    declNodeId = SLFmtFindLocalNamedTypeDeclForTypeNode(ast, src, instTypeNodeId, NULL);
-    if (declNodeId < 0 || ast->nodes[declNodeId].kind != SLAst_STRUCT) {
+    declNodeId = HOPFmtFindLocalNamedTypeDeclForTypeNode(ast, src, instTypeNodeId, NULL);
+    if (declNodeId < 0 || ast->nodes[declNodeId].kind != HOPAst_STRUCT) {
         return 0;
     }
-    if (!SLFmtBindStructTypeArgsFromInstance(
+    if (!HOPFmtBindStructTypeArgsFromInstance(
             ast, src, declNodeId, instTypeNodeId, &baseType->env, &declEnv))
     {
         return 0;
     }
-    child = SLFmtFirstChild(ast, declNodeId);
-    while (child >= 0 && ast->nodes[child].kind == SLAst_TYPE_PARAM) {
-        child = SLFmtNextSibling(ast, child);
+    child = HOPFmtFirstChild(ast, declNodeId);
+    while (child >= 0 && ast->nodes[child].kind == HOPAst_TYPE_PARAM) {
+        child = HOPFmtNextSibling(ast, child);
     }
     while (child >= 0) {
-        if (ast->nodes[child].kind == SLAst_FIELD
-            && SLFmtSlicesEqual(
+        if (ast->nodes[child].kind == HOPAst_FIELD
+            && HOPFmtSlicesEqual(
                 src, ast->nodes[child].dataStart, ast->nodes[child].dataEnd, fieldStart, fieldEnd))
         {
-            int32_t fieldTypeNodeId = SLFmtFirstChild(ast, child);
-            return fieldTypeNodeId >= 0 && SLFmtInferredTypeSet(outType, fieldTypeNodeId, &declEnv);
+            int32_t fieldTypeNodeId = HOPFmtFirstChild(ast, child);
+            return fieldTypeNodeId >= 0
+                && HOPFmtInferredTypeSet(outType, fieldTypeNodeId, &declEnv);
         }
-        child = SLFmtNextSibling(ast, child);
+        child = HOPFmtNextSibling(ast, child);
     }
     return 0;
 }
 
-static int SLFmtFindLocalBindingBefore(
-    const SLAst* ast,
-    SLStrView    src,
-    int32_t      identNodeId,
-    uint32_t     beforePos,
+static int HOPFmtFindLocalBindingBefore(
+    const HOPAst* ast,
+    HOPStrView    src,
+    int32_t       identNodeId,
+    uint32_t      beforePos,
     int32_t* _Nullable outDeclNodeId,
     int32_t* _Nullable outTypeNodeId,
     int32_t* _Nullable outInitNodeId) {
-    const SLAstNode* identNode;
-    int32_t          fnNodeId;
-    uint32_t         bestStart = 0;
-    int32_t          bestDeclNodeId = -1;
-    int32_t          bestTypeNodeId = -1;
-    int32_t          bestInitNodeId = -1;
+    const HOPAstNode* identNode;
+    int32_t           fnNodeId;
+    uint32_t          bestStart = 0;
+    int32_t           bestDeclNodeId = -1;
+    int32_t           bestTypeNodeId = -1;
+    int32_t           bestInitNodeId = -1;
     if (outDeclNodeId != NULL) {
         *outDeclNodeId = -1;
     }
@@ -3021,23 +3038,23 @@ static int SLFmtFindLocalBindingBefore(
         return 0;
     }
     identNode = &ast->nodes[identNodeId];
-    if (identNode->kind != SLAst_IDENT || identNode->dataEnd <= identNode->dataStart) {
+    if (identNode->kind != HOPAst_IDENT || identNode->dataEnd <= identNode->dataStart) {
         return 0;
     }
-    fnNodeId = SLFmtFindEnclosingFnNode(ast, identNodeId);
+    fnNodeId = HOPFmtFindEnclosingFnNode(ast, identNodeId);
     if (fnNodeId < 0) {
         return 0;
     }
 
     {
-        int32_t child = SLFmtFirstChild(ast, fnNodeId);
-        while (child >= 0 && ast->nodes[child].kind == SLAst_TYPE_PARAM) {
-            child = SLFmtNextSibling(ast, child);
+        int32_t child = HOPFmtFirstChild(ast, fnNodeId);
+        while (child >= 0 && ast->nodes[child].kind == HOPAst_TYPE_PARAM) {
+            child = HOPFmtNextSibling(ast, child);
         }
-        while (child >= 0 && ast->nodes[child].kind == SLAst_PARAM) {
-            int32_t paramTypeNodeId = SLFmtFirstChild(ast, child);
-            if (paramTypeNodeId >= 0 && SLFmtIsTypeNodeKindRaw(ast->nodes[paramTypeNodeId].kind)
-                && SLFmtNodeDeclaresNameRange(
+        while (child >= 0 && ast->nodes[child].kind == HOPAst_PARAM) {
+            int32_t paramTypeNodeId = HOPFmtFirstChild(ast, child);
+            if (paramTypeNodeId >= 0 && HOPFmtIsTypeNodeKindRaw(ast->nodes[paramTypeNodeId].kind)
+                && HOPFmtNodeDeclaresNameRange(
                     ast, src, child, identNode->dataStart, identNode->dataEnd)
                 && ast->nodes[child].start < beforePos)
             {
@@ -3046,25 +3063,25 @@ static int SLFmtFindLocalBindingBefore(
                 bestTypeNodeId = paramTypeNodeId;
                 bestInitNodeId = -1;
             }
-            child = SLFmtNextSibling(ast, child);
+            child = HOPFmtNextSibling(ast, child);
         }
     }
 
     {
-        const SLAstNode* fn = &ast->nodes[fnNodeId];
-        uint32_t         i;
+        const HOPAstNode* fn = &ast->nodes[fnNodeId];
+        uint32_t          i;
         for (i = 0; i < ast->len; i++) {
-            const SLAstNode* n = &ast->nodes[i];
-            int32_t          typeNodeId = -1;
-            int32_t          initNodeId = -1;
-            if (n->kind != SLAst_VAR && n->kind != SLAst_CONST) {
+            const HOPAstNode* n = &ast->nodes[i];
+            int32_t           typeNodeId = -1;
+            int32_t           initNodeId = -1;
+            if (n->kind != HOPAst_VAR && n->kind != HOPAst_CONST) {
                 continue;
             }
             if (n->start < fn->start || n->end > fn->end || n->end > beforePos) {
                 continue;
             }
-            SLFmtGetVarLikeTypeAndInit(ast, (int32_t)i, &typeNodeId, &initNodeId);
-            if (!SLFmtNodeDeclaresNameRange(
+            HOPFmtGetVarLikeTypeAndInit(ast, (int32_t)i, &typeNodeId, &initNodeId);
+            if (!HOPFmtNodeDeclaresNameRange(
                     ast, src, (int32_t)i, identNode->dataStart, identNode->dataEnd))
             {
                 continue;
@@ -3093,34 +3110,34 @@ static int SLFmtFindLocalBindingBefore(
     return 1;
 }
 
-static int SLFmtInferExprTypeEx(
-    const SLAst*       ast,
-    SLStrView          src,
-    int32_t            exprNodeId,
-    uint32_t           beforePos,
-    uint32_t           depth,
-    SLFmtInferredType* outType);
+static int HOPFmtInferExprTypeEx(
+    const HOPAst*       ast,
+    HOPStrView          src,
+    int32_t             exprNodeId,
+    uint32_t            beforePos,
+    uint32_t            depth,
+    HOPFmtInferredType* outType);
 
-static int SLFmtLiteralExprMatchesConcreteType(
-    const SLAst* ast, SLStrView src, int32_t exprNodeId, int32_t typeNodeId) {
+static int HOPFmtLiteralExprMatchesConcreteType(
+    const HOPAst* ast, HOPStrView src, int32_t exprNodeId, int32_t typeNodeId) {
     int32_t innerExprNodeId = exprNodeId;
     if (exprNodeId < 0 || typeNodeId < 0 || (uint32_t)exprNodeId >= ast->len) {
         return 0;
     }
-    if (ast->nodes[exprNodeId].kind == SLAst_UNARY && ast->nodes[exprNodeId].op == SLTok_SUB) {
-        innerExprNodeId = SLFmtFirstChild(ast, exprNodeId);
+    if (ast->nodes[exprNodeId].kind == HOPAst_UNARY && ast->nodes[exprNodeId].op == HOPTok_SUB) {
+        innerExprNodeId = HOPFmtFirstChild(ast, exprNodeId);
     }
     return innerExprNodeId >= 0
-        && SLFmtCastLiteralNumericType(ast, src, innerExprNodeId, typeNodeId)
-               != SLFmtNumericType_INVALID;
+        && HOPFmtCastLiteralNumericType(ast, src, innerExprNodeId, typeNodeId)
+               != HOPFmtNumericType_INVALID;
 }
 
-static int SLFmtMapCallActuals(
-    const SLAst*     ast,
-    int32_t          callNodeId,
-    SLFmtCallActual* actuals,
-    uint32_t*        outActualCount,
-    uint32_t         actualCap) {
+static int HOPFmtMapCallActuals(
+    const HOPAst*     ast,
+    int32_t           callNodeId,
+    HOPFmtCallActual* actuals,
+    uint32_t*         outActualCount,
+    uint32_t          actualCap) {
     int32_t  calleeNodeId;
     int32_t  cur;
     uint32_t actualCount = 0;
@@ -3130,12 +3147,12 @@ static int SLFmtMapCallActuals(
     if (callNodeId < 0 || (uint32_t)callNodeId >= ast->len || actuals == NULL || actualCap == 0u) {
         return 0;
     }
-    calleeNodeId = SLFmtFirstChild(ast, callNodeId);
+    calleeNodeId = HOPFmtFirstChild(ast, callNodeId);
     if (calleeNodeId < 0) {
         return 0;
     }
-    if (ast->nodes[calleeNodeId].kind == SLAst_FIELD_EXPR) {
-        int32_t recvNodeId = SLFmtFirstChild(ast, calleeNodeId);
+    if (ast->nodes[calleeNodeId].kind == HOPAst_FIELD_EXPR) {
+        int32_t recvNodeId = HOPFmtFirstChild(ast, calleeNodeId);
         if (recvNodeId < 0 || actualCount >= actualCap) {
             return 0;
         }
@@ -3147,14 +3164,14 @@ static int SLFmtMapCallActuals(
         actuals[actualCount].isSynthetic = 1;
         actualCount++;
     }
-    cur = SLFmtNextSibling(ast, calleeNodeId);
+    cur = HOPFmtNextSibling(ast, calleeNodeId);
     while (cur >= 0) {
-        const SLAstNode* argNode = &ast->nodes[cur];
-        int32_t          exprNodeId;
-        if (actualCount >= actualCap || (argNode->flags & SLAstFlag_CALL_ARG_SPREAD) != 0) {
+        const HOPAstNode* argNode = &ast->nodes[cur];
+        int32_t           exprNodeId;
+        if (actualCount >= actualCap || (argNode->flags & HOPAstFlag_CALL_ARG_SPREAD) != 0) {
             return 0;
         }
-        exprNodeId = argNode->kind == SLAst_CALL_ARG ? SLFmtFirstChild(ast, cur) : cur;
+        exprNodeId = argNode->kind == HOPAst_CALL_ARG ? HOPFmtFirstChild(ast, cur) : cur;
         if (exprNodeId < 0) {
             return 0;
         }
@@ -3163,10 +3180,10 @@ static int SLFmtMapCallActuals(
         actuals[actualCount].labelStart = argNode->dataStart;
         actuals[actualCount].labelEnd = argNode->dataEnd;
         actuals[actualCount].hasLabel =
-            (uint8_t)(argNode->kind == SLAst_CALL_ARG && argNode->dataEnd > argNode->dataStart);
+            (uint8_t)(argNode->kind == HOPAst_CALL_ARG && argNode->dataEnd > argNode->dataStart);
         actuals[actualCount].isSynthetic = 0;
         actualCount++;
-        cur = SLFmtNextSibling(ast, cur);
+        cur = HOPFmtNextSibling(ast, cur);
     }
     if (outActualCount != NULL) {
         *outActualCount = actualCount;
@@ -3174,22 +3191,22 @@ static int SLFmtMapCallActuals(
     return 1;
 }
 
-static int SLFmtGetFnParamForActual(
-    const SLAst*           ast,
-    SLStrView              src,
-    int32_t                fnNodeId,
-    const SLFmtCallActual* actuals,
-    uint32_t               actualCount,
-    uint32_t               actualIndex,
+static int HOPFmtGetFnParamForActual(
+    const HOPAst*           ast,
+    HOPStrView              src,
+    int32_t                 fnNodeId,
+    const HOPFmtCallActual* actuals,
+    uint32_t                actualCount,
+    uint32_t                actualIndex,
     int32_t* _Nullable outParamNodeId,
     int32_t* _Nullable outParamTypeNodeId) {
-    SLFmtCallParam params[128];
-    uint8_t        assigned[128] = { 0 };
-    uint32_t       paramCount = 0;
-    uint32_t       fixedCount;
-    uint32_t       i;
-    int            hasVariadic = 0;
-    int32_t        cur;
+    HOPFmtCallParam params[128];
+    uint8_t         assigned[128] = { 0 };
+    uint32_t        paramCount = 0;
+    uint32_t        fixedCount;
+    uint32_t        i;
+    int             hasVariadic = 0;
+    int32_t         cur;
     if (outParamNodeId != NULL) {
         *outParamNodeId = -1;
     }
@@ -3199,23 +3216,23 @@ static int SLFmtGetFnParamForActual(
     if (fnNodeId < 0 || (uint32_t)fnNodeId >= ast->len || actualIndex >= actualCount) {
         return 0;
     }
-    cur = SLFmtFirstChild(ast, fnNodeId);
-    while (cur >= 0 && ast->nodes[cur].kind == SLAst_TYPE_PARAM) {
-        cur = SLFmtNextSibling(ast, cur);
+    cur = HOPFmtFirstChild(ast, fnNodeId);
+    while (cur >= 0 && ast->nodes[cur].kind == HOPAst_TYPE_PARAM) {
+        cur = HOPFmtNextSibling(ast, cur);
     }
-    while (cur >= 0 && ast->nodes[cur].kind == SLAst_PARAM) {
-        int32_t typeNodeId = SLFmtFirstChild(ast, cur);
+    while (cur >= 0 && ast->nodes[cur].kind == HOPAst_PARAM) {
+        int32_t typeNodeId = HOPFmtFirstChild(ast, cur);
         if (paramCount >= 128u || typeNodeId < 0) {
             return 0;
         }
         params[paramCount].paramNodeId = cur;
         params[paramCount].typeNodeId = typeNodeId;
         params[paramCount].flags = ast->nodes[cur].flags;
-        if ((ast->nodes[cur].flags & SLAstFlag_PARAM_VARIADIC) != 0) {
+        if ((ast->nodes[cur].flags & HOPAstFlag_PARAM_VARIADIC) != 0) {
             hasVariadic = 1;
         }
         paramCount++;
-        cur = SLFmtNextSibling(ast, cur);
+        cur = HOPFmtNextSibling(ast, cur);
     }
     fixedCount = hasVariadic ? (paramCount > 0 ? paramCount - 1u : 0u) : paramCount;
     if ((!hasVariadic && actualCount != paramCount) || (hasVariadic && actualCount < fixedCount)) {
@@ -3223,13 +3240,13 @@ static int SLFmtGetFnParamForActual(
     }
 
     for (i = 0; i < actualCount; i++) {
-        const SLFmtCallActual* actual = &actuals[i];
-        uint32_t               paramIndex = UINT32_MAX;
-        uint32_t               p;
+        const HOPFmtCallActual* actual = &actuals[i];
+        uint32_t                paramIndex = UINT32_MAX;
+        uint32_t                p;
         if (actual->hasLabel) {
             for (p = 0; p < fixedCount; p++) {
                 if (!assigned[p]
-                    && SLFmtSlicesEqual(
+                    && HOPFmtSlicesEqual(
                         src,
                         actual->labelStart,
                         actual->labelEnd,
@@ -3267,38 +3284,38 @@ static int SLFmtGetFnParamForActual(
     return 0;
 }
 
-static int SLFmtInferLocalCallAgainstFn(
-    const SLAst* ast,
-    SLStrView    src,
-    int32_t      callNodeId,
-    int32_t      fnNodeId,
-    uint32_t     beforePos,
-    int32_t      targetArgNodeId,
-    SLFmtInferredType* _Nullable outReturnType,
-    SLFmtInferredType* _Nullable outTargetParamType) {
-    SLFmtCallActual actuals[128];
-    uint32_t        actualCount = 0;
-    uint32_t        i;
-    SLFmtTypeEnv    fnEnv;
-    int32_t         retTypeNodeId;
-    int32_t         targetActualIndex = -1;
+static int HOPFmtInferLocalCallAgainstFn(
+    const HOPAst* ast,
+    HOPStrView    src,
+    int32_t       callNodeId,
+    int32_t       fnNodeId,
+    uint32_t      beforePos,
+    int32_t       targetArgNodeId,
+    HOPFmtInferredType* _Nullable outReturnType,
+    HOPFmtInferredType* _Nullable outTargetParamType) {
+    HOPFmtCallActual actuals[128];
+    uint32_t         actualCount = 0;
+    uint32_t         i;
+    HOPFmtTypeEnv    fnEnv;
+    int32_t          retTypeNodeId;
+    int32_t          targetActualIndex = -1;
     if (outReturnType != NULL) {
-        SLFmtInferredTypeInit(outReturnType);
+        HOPFmtInferredTypeInit(outReturnType);
     }
     if (outTargetParamType != NULL) {
-        SLFmtInferredTypeInit(outTargetParamType);
+        HOPFmtInferredTypeInit(outTargetParamType);
     }
-    if (!SLFmtMapCallActuals(ast, callNodeId, actuals, &actualCount, 128u)
-        || !SLFmtTypeEnvInitFromDeclTypeParams(ast, fnNodeId, &fnEnv))
+    if (!HOPFmtMapCallActuals(ast, callNodeId, actuals, &actualCount, 128u)
+        || !HOPFmtTypeEnvInitFromDeclTypeParams(ast, fnNodeId, &fnEnv))
     {
         return 0;
     }
     for (i = 0; i < actualCount; i++) {
-        SLFmtInferredType actualType;
-        int32_t           paramTypeNodeId = -1;
-        int32_t           concreteParamTypeNodeId;
-        int               isTargetActual = 0;
-        if (!SLFmtGetFnParamForActual(
+        HOPFmtInferredType actualType;
+        int32_t            paramTypeNodeId = -1;
+        int32_t            concreteParamTypeNodeId;
+        int                isTargetActual = 0;
+        if (!HOPFmtGetFnParamForActual(
                 ast, src, fnNodeId, actuals, actualCount, i, NULL, &paramTypeNodeId))
         {
             return 0;
@@ -3310,16 +3327,16 @@ static int SLFmtInferLocalCallAgainstFn(
         if (isTargetActual) {
             continue;
         }
-        SLFmtInferredTypeInit(&actualType);
-        if (!SLFmtInferExprTypeEx(ast, src, actuals[i].exprNodeId, beforePos, 0u, &actualType)) {
-            concreteParamTypeNodeId = SLFmtResolveTypeNodeThroughEnv(
+        HOPFmtInferredTypeInit(&actualType);
+        if (!HOPFmtInferExprTypeEx(ast, src, actuals[i].exprNodeId, beforePos, 0u, &actualType)) {
+            concreteParamTypeNodeId = HOPFmtResolveTypeNodeThroughEnv(
                 ast, src, paramTypeNodeId, &fnEnv);
-            if (!SLFmtLiteralExprMatchesConcreteType(
+            if (!HOPFmtLiteralExprMatchesConcreteType(
                     ast, src, actuals[i].exprNodeId, concreteParamTypeNodeId))
             {
                 return 0;
             }
-        } else if (!SLFmtTypeCompatibleWithEnvs(
+        } else if (!HOPFmtTypeCompatibleWithEnvs(
                        ast,
                        src,
                        paramTypeNodeId,
@@ -3332,7 +3349,7 @@ static int SLFmtInferLocalCallAgainstFn(
     }
     if (targetActualIndex >= 0 && outTargetParamType != NULL) {
         int32_t targetParamTypeNodeId = -1;
-        if (!SLFmtGetFnParamForActual(
+        if (!HOPFmtGetFnParamForActual(
                 ast,
                 src,
                 fnNodeId,
@@ -3341,35 +3358,35 @@ static int SLFmtInferLocalCallAgainstFn(
                 (uint32_t)targetActualIndex,
                 NULL,
                 &targetParamTypeNodeId)
-            || !SLFmtInferredTypeSet(outTargetParamType, targetParamTypeNodeId, &fnEnv))
+            || !HOPFmtInferredTypeSet(outTargetParamType, targetParamTypeNodeId, &fnEnv))
         {
             return 0;
         }
     }
-    retTypeNodeId = SLFmtFindFnReturnTypeNode(ast, fnNodeId);
+    retTypeNodeId = HOPFmtFindFnReturnTypeNode(ast, fnNodeId);
     if (outReturnType == NULL) {
         return 1;
     }
-    return retTypeNodeId >= 0 && SLFmtInferredTypeSet(outReturnType, retTypeNodeId, &fnEnv);
+    return retTypeNodeId >= 0 && HOPFmtInferredTypeSet(outReturnType, retTypeNodeId, &fnEnv);
 }
 
-static int SLFmtCanContinueAlignedGroup(SLFmtCtx* c, int32_t prevNodeId, int32_t nextNodeId) {
+static int HOPFmtCanContinueAlignedGroup(HOPFmtCtx* c, int32_t prevNodeId, int32_t nextNodeId) {
     uint32_t gapNl;
     if (prevNodeId < 0 || nextNodeId < 0) {
         return 0;
     }
-    gapNl = SLFmtCountNewlinesInRange(
+    gapNl = HOPFmtCountNewlinesInRange(
         c->src, c->ast->nodes[prevNodeId].end, c->ast->nodes[nextNodeId].start);
     if (gapNl != 1u) {
         return 0;
     }
-    if (SLFmtHasUnusedLeadingCommentsForNode(c, nextNodeId)) {
+    if (HOPFmtHasUnusedLeadingCommentsForNode(c, nextNodeId)) {
         return 0;
     }
     return 1;
 }
 
-static int SLFmtEmitStmt(SLFmtCtx* c, int32_t nodeId);
+static int HOPFmtEmitStmt(HOPFmtCtx* c, int32_t nodeId);
 
 typedef struct {
     int32_t  nodeId;
@@ -3383,7 +3400,7 @@ typedef struct {
     uint8_t  hasInit;
     uint8_t  hasTrailingComment;
     uint8_t  _pad;
-} SLFmtAlignedVarRow;
+} HOPFmtAlignedVarRow;
 
 typedef struct {
     int32_t  nodeId;
@@ -3397,7 +3414,7 @@ typedef struct {
     uint32_t codeLen;
     uint8_t  hasTrailingComment;
     uint8_t  _pad1[3];
-} SLFmtAlignedAssignRow;
+} HOPFmtAlignedAssignRow;
 
 typedef struct {
     uint32_t minLhsLen;
@@ -3405,7 +3422,7 @@ typedef struct {
     uint32_t baseNameEnd;
     uint8_t  valid;
     uint8_t  _pad[3];
-} SLFmtAssignCarryHint;
+} HOPFmtAssignCarryHint;
 
 typedef struct {
     int32_t  nodeId;
@@ -3417,30 +3434,30 @@ typedef struct {
     uint8_t  inlineBody;
     uint8_t  hasTrailingComment;
     uint8_t  _pad[1];
-} SLFmtSwitchClauseRow;
+} HOPFmtSwitchClauseRow;
 
-static int SLFmtGetAssignStmtParts(
-    SLFmtCtx* c, int32_t stmtNodeId, int32_t* outLhs, int32_t* outRhs, uint16_t* outOp) {
-    int32_t          exprNodeId;
-    const SLAstNode* exprNode;
-    int32_t          lhsNodeId;
-    int32_t          rhsNodeId;
+static int HOPFmtGetAssignStmtParts(
+    HOPFmtCtx* c, int32_t stmtNodeId, int32_t* outLhs, int32_t* outRhs, uint16_t* outOp) {
+    int32_t           exprNodeId;
+    const HOPAstNode* exprNode;
+    int32_t           lhsNodeId;
+    int32_t           rhsNodeId;
     if (stmtNodeId < 0 || (uint32_t)stmtNodeId >= c->ast->len) {
         return 0;
     }
-    if (c->ast->nodes[stmtNodeId].kind != SLAst_EXPR_STMT) {
+    if (c->ast->nodes[stmtNodeId].kind != HOPAst_EXPR_STMT) {
         return 0;
     }
-    exprNodeId = SLFmtFirstChild(c->ast, stmtNodeId);
+    exprNodeId = HOPFmtFirstChild(c->ast, stmtNodeId);
     if (exprNodeId < 0 || (uint32_t)exprNodeId >= c->ast->len) {
         return 0;
     }
     exprNode = &c->ast->nodes[exprNodeId];
-    if (exprNode->kind != SLAst_BINARY || !SLFmtIsAssignmentOp((SLTokenKind)exprNode->op)) {
+    if (exprNode->kind != HOPAst_BINARY || !HOPFmtIsAssignmentOp((HOPTokenKind)exprNode->op)) {
         return 0;
     }
-    lhsNodeId = SLFmtFirstChild(c->ast, exprNodeId);
-    rhsNodeId = lhsNodeId >= 0 ? SLFmtNextSibling(c->ast, lhsNodeId) : -1;
+    lhsNodeId = HOPFmtFirstChild(c->ast, exprNodeId);
+    rhsNodeId = lhsNodeId >= 0 ? HOPFmtNextSibling(c->ast, lhsNodeId) : -1;
     if (lhsNodeId < 0 || rhsNodeId < 0) {
         return 0;
     }
@@ -3450,71 +3467,72 @@ static int SLFmtGetAssignStmtParts(
     return 1;
 }
 
-static int SLFmtHasUnusedCommentsInNodeRange(const SLFmtCtx* c, int32_t nodeId) {
+static int HOPFmtHasUnusedCommentsInNodeRange(const HOPFmtCtx* c, int32_t nodeId) {
     uint32_t i;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return 0;
     }
     for (i = 0; i < c->commentLen; i++) {
-        const SLComment* cm = &c->comments[i];
+        const HOPComment* cm = &c->comments[i];
         if (c->commentUsed[i]) {
             continue;
         }
-        if (SLFmtCommentWithinNodeRange(c->ast, cm, nodeId)) {
+        if (HOPFmtCommentWithinNodeRange(c->ast, cm, nodeId)) {
             return 1;
         }
     }
     return 0;
 }
 
-static int SLFmtCanInlineSingleStmtBlock(SLFmtCtx* c, int32_t blockNodeId, int32_t* outStmtNodeId) {
+static int HOPFmtCanInlineSingleStmtBlock(
+    HOPFmtCtx* c, int32_t blockNodeId, int32_t* outStmtNodeId) {
     int32_t stmtNodeId;
     if (blockNodeId < 0 || (uint32_t)blockNodeId >= c->ast->len
-        || c->ast->nodes[blockNodeId].kind != SLAst_BLOCK)
+        || c->ast->nodes[blockNodeId].kind != HOPAst_BLOCK)
     {
         return 0;
     }
-    if (SLFmtHasUnusedCommentsInNodeRange(c, blockNodeId)) {
+    if (HOPFmtHasUnusedCommentsInNodeRange(c, blockNodeId)) {
         return 0;
     }
-    stmtNodeId = SLFmtFirstChild(c->ast, blockNodeId);
-    if (stmtNodeId < 0 || SLFmtNextSibling(c->ast, stmtNodeId) >= 0) {
+    stmtNodeId = HOPFmtFirstChild(c->ast, blockNodeId);
+    if (stmtNodeId < 0 || HOPFmtNextSibling(c->ast, stmtNodeId) >= 0) {
         return 0;
     }
     *outStmtNodeId = stmtNodeId;
     return 1;
 }
 
-static int SLFmtEmitInlineSingleStmtBlock(SLFmtCtx* c, int32_t blockNodeId) {
+static int HOPFmtEmitInlineSingleStmtBlock(HOPFmtCtx* c, int32_t blockNodeId) {
     int32_t stmtNodeId;
-    if (!SLFmtCanInlineSingleStmtBlock(c, blockNodeId, &stmtNodeId)) {
+    if (!HOPFmtCanInlineSingleStmtBlock(c, blockNodeId, &stmtNodeId)) {
         return -1;
     }
-    if (SLFmtWriteCStr(c, "{ ") != 0 || SLFmtEmitStmtInline(c, stmtNodeId) != 0) {
+    if (HOPFmtWriteCStr(c, "{ ") != 0 || HOPFmtEmitStmtInline(c, stmtNodeId) != 0) {
         return -1;
     }
-    return SLFmtWriteCStr(c, " }");
+    return HOPFmtWriteCStr(c, " }");
 }
 
-static int SLFmtMeasureInlineSingleStmtBlockLen(
-    SLFmtCtx* c, int32_t blockNodeId, uint32_t* outLen) {
-    SLFmtCtx m = *c;
+static int HOPFmtMeasureInlineSingleStmtBlockLen(
+    HOPFmtCtx* c, int32_t blockNodeId, uint32_t* outLen) {
+    HOPFmtCtx m = *c;
     m.lineStart = 0;
     m.indent = 0;
     m.out.v = NULL;
     m.out.len = 0;
     m.out.cap = 0;
-    if (SLFmtEmitInlineSingleStmtBlock(&m, blockNodeId) != 0) {
+    if (HOPFmtEmitInlineSingleStmtBlock(&m, blockNodeId) != 0) {
         return -1;
     }
     *outLen = m.out.len;
     return 0;
 }
 
-static int SLFmtNodeSourceTextEqual(SLFmtCtx* c, int32_t aNodeId, int32_t bNodeId) {
-    const SLAstNode* a;
-    const SLAstNode* b;
-    uint32_t         aLen;
+static int HOPFmtNodeSourceTextEqual(HOPFmtCtx* c, int32_t aNodeId, int32_t bNodeId) {
+    const HOPAstNode* a;
+    const HOPAstNode* b;
+    uint32_t          aLen;
     if (aNodeId < 0 || bNodeId < 0 || (uint32_t)aNodeId >= c->ast->len
         || (uint32_t)bNodeId >= c->ast->len)
     {
@@ -3532,48 +3550,48 @@ static int SLFmtNodeSourceTextEqual(SLFmtCtx* c, int32_t aNodeId, int32_t bNodeI
     return memcmp(c->src.ptr + a->start, c->src.ptr + b->start, aLen) == 0;
 }
 
-static int SLFmtIsInlineAnonAggregateType(SLFmtCtx* c, int32_t typeNodeId) {
-    SLAstKind kind;
+static int HOPFmtIsInlineAnonAggregateType(HOPFmtCtx* c, int32_t typeNodeId) {
+    HOPAstKind kind;
     if (typeNodeId < 0 || (uint32_t)typeNodeId >= c->ast->len) {
         return 0;
     }
     kind = c->ast->nodes[typeNodeId].kind;
-    if (kind != SLAst_TYPE_ANON_STRUCT && kind != SLAst_TYPE_ANON_UNION) {
+    if (kind != HOPAst_TYPE_ANON_STRUCT && kind != HOPAst_TYPE_ANON_UNION) {
         return 0;
     }
-    return SLFmtCountNewlinesInRange(
+    return HOPFmtCountNewlinesInRange(
                c->src, c->ast->nodes[typeNodeId].start, c->ast->nodes[typeNodeId].end)
         == 0u;
 }
 
-static int SLFmtEmitAlignedVarOrConstGroup(
-    SLFmtCtx*             c,
-    int32_t               firstNodeId,
-    const char*           kw,
-    int32_t*              outLast,
-    int32_t*              outNext,
-    SLFmtAssignCarryHint* outCarryHint) {
-    const SLAstKind     kind = c->ast->nodes[firstNodeId].kind;
-    int32_t             cur = firstNodeId;
-    int32_t             prev = -1;
-    uint32_t            count = 0;
-    uint32_t            i;
-    uint32_t            kwLen = SLFmtCStrLen(kw);
-    uint32_t            maxNameLenWithType = 0;
-    uint32_t            maxNameLenNoType = 0;
-    uint32_t            maxBeforeOpLen = 0;
-    SLFmtAlignedVarRow* rows;
-    uint32_t*           commentRunMaxLens;
+static int HOPFmtEmitAlignedVarOrConstGroup(
+    HOPFmtCtx*             c,
+    int32_t                firstNodeId,
+    const char*            kw,
+    int32_t*               outLast,
+    int32_t*               outNext,
+    HOPFmtAssignCarryHint* outCarryHint) {
+    const HOPAstKind     kind = c->ast->nodes[firstNodeId].kind;
+    int32_t              cur = firstNodeId;
+    int32_t              prev = -1;
+    uint32_t             count = 0;
+    uint32_t             i;
+    uint32_t             kwLen = HOPFmtCStrLen(kw);
+    uint32_t             maxNameLenWithType = 0;
+    uint32_t             maxNameLenNoType = 0;
+    uint32_t             maxBeforeOpLen = 0;
+    HOPFmtAlignedVarRow* rows;
+    uint32_t*            commentRunMaxLens;
 
     while (cur >= 0) {
-        int32_t next = SLFmtNextSibling(c->ast, cur);
+        int32_t next = HOPFmtNextSibling(c->ast, cur);
         if (c->ast->nodes[cur].kind != kind) {
             break;
         }
-        if (SLFmtIsGroupedVarLike(c, cur)) {
+        if (HOPFmtIsGroupedVarLike(c, cur)) {
             break;
         }
-        if (prev >= 0 && !SLFmtCanContinueAlignedGroup(c, prev, cur)) {
+        if (prev >= 0 && !HOPFmtCanContinueAlignedGroup(c, prev, cur)) {
             break;
         }
         count++;
@@ -3581,30 +3599,30 @@ static int SLFmtEmitAlignedVarOrConstGroup(
         cur = next;
     }
 
-    rows = (SLFmtAlignedVarRow*)SLArenaAlloc(
+    rows = (HOPFmtAlignedVarRow*)HOPArenaAlloc(
         c->out.arena,
-        count * (uint32_t)sizeof(SLFmtAlignedVarRow),
-        (uint32_t)_Alignof(SLFmtAlignedVarRow));
+        count * (uint32_t)sizeof(HOPFmtAlignedVarRow),
+        (uint32_t)_Alignof(HOPFmtAlignedVarRow));
     if (rows == NULL) {
         return -1;
     }
-    memset(rows, 0, count * (uint32_t)sizeof(SLFmtAlignedVarRow));
+    memset(rows, 0, count * (uint32_t)sizeof(HOPFmtAlignedVarRow));
 
     cur = firstNodeId;
     for (i = 0; i < count; i++) {
-        const SLAstNode* n = &c->ast->nodes[cur];
-        int32_t          typeNode = SLFmtFirstChild(c->ast, cur);
-        int32_t          initNode = -1;
+        const HOPAstNode* n = &c->ast->nodes[cur];
+        int32_t           typeNode = HOPFmtFirstChild(c->ast, cur);
+        int32_t           initNode = -1;
         rows[i].nodeId = cur;
         rows[i].nameLen = n->dataEnd - n->dataStart;
-        if (typeNode >= 0 && !SLFmtIsTypeNodeKind(c->ast->nodes[typeNode].kind)) {
+        if (typeNode >= 0 && !HOPFmtIsTypeNodeKind(c->ast->nodes[typeNode].kind)) {
             initNode = typeNode;
             typeNode = -1;
         } else if (typeNode >= 0) {
-            initNode = SLFmtNextSibling(c->ast, typeNode);
+            initNode = HOPFmtNextSibling(c->ast, typeNode);
         }
-        SLFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, 1u, &typeNode, &initNode);
-        SLFmtRewriteRedundantVarType(c->ast, c->src, kw, 1u, n->start, &typeNode, &initNode);
+        HOPFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, 1u, &typeNode, &initNode);
+        HOPFmtRewriteRedundantVarType(c->ast, c->src, kw, 1u, n->start, &typeNode, &initNode);
         rows[i].typeNode = typeNode;
         rows[i].initNode = initNode;
         rows[i].hasType = (uint8_t)(typeNode >= 0);
@@ -3616,14 +3634,14 @@ static int SLFmtEmitAlignedVarOrConstGroup(
         } else if (rows[i].nameLen > maxNameLenNoType) {
             maxNameLenNoType = rows[i].nameLen;
         }
-        if (typeNode >= 0 && SLFmtMeasureTypeLen(c, typeNode, &rows[i].typeLen) != 0) {
+        if (typeNode >= 0 && HOPFmtMeasureTypeLen(c, typeNode, &rows[i].typeLen) != 0) {
             return -1;
         }
-        if (initNode >= 0 && SLFmtMeasureExprLen(c, initNode, 0, &rows[i].initLen) != 0) {
+        if (initNode >= 0 && HOPFmtMeasureExprLen(c, initNode, 0, &rows[i].initLen) != 0) {
             return -1;
         }
-        rows[i].hasTrailingComment = (uint8_t)SLFmtHasUnusedTrailingCommentsForNodes(c, &cur, 1u);
-        cur = SLFmtNextSibling(c->ast, cur);
+        rows[i].hasTrailingComment = (uint8_t)HOPFmtHasUnusedTrailingCommentsForNodes(c, &cur, 1u);
+        cur = HOPFmtNextSibling(c->ast, cur);
     }
 
     for (i = 0; i < count; i++) {
@@ -3638,7 +3656,7 @@ static int SLFmtEmitAlignedVarOrConstGroup(
         }
     }
 
-    commentRunMaxLens = (uint32_t*)SLArenaAlloc(
+    commentRunMaxLens = (uint32_t*)HOPArenaAlloc(
         c->out.arena, count * (uint32_t)sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
     if (commentRunMaxLens == NULL) {
         return -1;
@@ -3678,31 +3696,31 @@ static int SLFmtEmitAlignedVarOrConstGroup(
     }
 
     for (i = 0; i < count; i++) {
-        const SLAstNode* n = &c->ast->nodes[rows[i].nodeId];
-        uint32_t         nameColLen = rows[i].hasType ? maxNameLenWithType : maxNameLenNoType;
-        uint32_t         lineLen;
-        if (SLFmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
+        const HOPAstNode* n = &c->ast->nodes[rows[i].nodeId];
+        uint32_t          nameColLen = rows[i].hasType ? maxNameLenWithType : maxNameLenNoType;
+        uint32_t          lineLen;
+        if (HOPFmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
             return -1;
         }
-        if (SLFmtWriteCStr(c, kw) != 0 || SLFmtWriteChar(c, ' ') != 0
-            || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
+        if (HOPFmtWriteCStr(c, kw) != 0 || HOPFmtWriteChar(c, ' ') != 0
+            || HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
         {
             return -1;
         }
-        if (SLFmtWriteSpaces(c, nameColLen - rows[i].nameLen + (rows[i].hasType ? 1u : 0u)) != 0) {
+        if (HOPFmtWriteSpaces(c, nameColLen - rows[i].nameLen + (rows[i].hasType ? 1u : 0u)) != 0) {
             return -1;
         }
         lineLen = kwLen + 1u + nameColLen + (rows[i].hasType ? 1u : 0u);
         if (rows[i].hasType) {
-            if (SLFmtEmitType(c, rows[i].typeNode) != 0) {
+            if (HOPFmtEmitType(c, rows[i].typeNode) != 0) {
                 return -1;
             }
             lineLen += rows[i].typeLen;
         }
         if (rows[i].hasInit) {
             uint32_t padBeforeOp = (maxBeforeOpLen + 1u) - lineLen;
-            if (SLFmtWriteSpaces(c, padBeforeOp) != 0 || SLFmtWriteChar(c, '=') != 0
-                || SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitExpr(c, rows[i].initNode, 0) != 0)
+            if (HOPFmtWriteSpaces(c, padBeforeOp) != 0 || HOPFmtWriteChar(c, '=') != 0
+                || HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitExpr(c, rows[i].initNode, 0) != 0)
             {
                 return -1;
             }
@@ -3711,18 +3729,18 @@ static int SLFmtEmitAlignedVarOrConstGroup(
         if (rows[i].hasTrailingComment) {
             uint32_t padComment = (commentRunMaxLens[i] - lineLen) + 1u;
             int32_t  nodeId = rows[i].nodeId;
-            if (SLFmtEmitTrailingCommentsForNodes(c, &nodeId, 1u, padComment) != 0) {
+            if (HOPFmtEmitTrailingCommentsForNodes(c, &nodeId, 1u, padComment) != 0) {
                 return -1;
             }
         }
-        if (i + 1u < count && SLFmtNewline(c) != 0) {
+        if (i + 1u < count && HOPFmtNewline(c) != 0) {
             return -1;
         }
     }
 
     outCarryHint->valid = 0;
     if (count == 1u && !rows[0].hasType && rows[0].hasInit) {
-        const SLAstNode* n = &c->ast->nodes[rows[0].nodeId];
+        const HOPAstNode* n = &c->ast->nodes[rows[0].nodeId];
         outCarryHint->minLhsLen = maxBeforeOpLen;
         outCarryHint->baseNameStart = n->dataStart;
         outCarryHint->baseNameEnd = n->dataEnd;
@@ -3734,29 +3752,29 @@ static int SLFmtEmitAlignedVarOrConstGroup(
     return 0;
 }
 
-static int SLFmtEmitAlignedAssignGroup(
-    SLFmtCtx* c, int32_t firstNodeId, int32_t* outLast, int32_t* outNext, uint32_t minLhsLen) {
-    int32_t                cur = firstNodeId;
-    int32_t                prev = -1;
-    int32_t                prevLhs = -1;
-    uint32_t               count = 0;
-    uint32_t               i;
-    uint32_t               maxLhsLen = 0;
-    uint32_t               maxOpLen = 0;
-    SLFmtAlignedAssignRow* rows;
+static int HOPFmtEmitAlignedAssignGroup(
+    HOPFmtCtx* c, int32_t firstNodeId, int32_t* outLast, int32_t* outNext, uint32_t minLhsLen) {
+    int32_t                 cur = firstNodeId;
+    int32_t                 prev = -1;
+    int32_t                 prevLhs = -1;
+    uint32_t                count = 0;
+    uint32_t                i;
+    uint32_t                maxLhsLen = 0;
+    uint32_t                maxOpLen = 0;
+    HOPFmtAlignedAssignRow* rows;
 
     while (cur >= 0) {
         int32_t  lhsNode;
         int32_t  rhsNode;
         uint16_t op;
-        int32_t  next = SLFmtNextSibling(c->ast, cur);
-        if (!SLFmtGetAssignStmtParts(c, cur, &lhsNode, &rhsNode, &op)) {
+        int32_t  next = HOPFmtNextSibling(c->ast, cur);
+        if (!HOPFmtGetAssignStmtParts(c, cur, &lhsNode, &rhsNode, &op)) {
             break;
         }
-        if (prev >= 0 && !SLFmtCanContinueAlignedGroup(c, prev, cur)) {
+        if (prev >= 0 && !HOPFmtCanContinueAlignedGroup(c, prev, cur)) {
             break;
         }
-        if (prevLhs >= 0 && !SLFmtNodeSourceTextEqual(c, prevLhs, lhsNode)) {
+        if (prevLhs >= 0 && !HOPFmtNodeSourceTextEqual(c, prevLhs, lhsNode)) {
             break;
         }
         count++;
@@ -3765,14 +3783,14 @@ static int SLFmtEmitAlignedAssignGroup(
         cur = next;
     }
 
-    rows = (SLFmtAlignedAssignRow*)SLArenaAlloc(
+    rows = (HOPFmtAlignedAssignRow*)HOPArenaAlloc(
         c->out.arena,
-        count * (uint32_t)sizeof(SLFmtAlignedAssignRow),
-        (uint32_t)_Alignof(SLFmtAlignedAssignRow));
+        count * (uint32_t)sizeof(HOPFmtAlignedAssignRow),
+        (uint32_t)_Alignof(HOPFmtAlignedAssignRow));
     if (rows == NULL) {
         return -1;
     }
-    memset(rows, 0, count * (uint32_t)sizeof(SLFmtAlignedAssignRow));
+    memset(rows, 0, count * (uint32_t)sizeof(HOPFmtAlignedAssignRow));
 
     cur = firstNodeId;
     for (i = 0; i < count; i++) {
@@ -3780,28 +3798,28 @@ static int SLFmtEmitAlignedAssignGroup(
         int32_t     rhsNode;
         uint16_t    op;
         const char* opText;
-        if (!SLFmtGetAssignStmtParts(c, cur, &lhsNode, &rhsNode, &op)) {
+        if (!HOPFmtGetAssignStmtParts(c, cur, &lhsNode, &rhsNode, &op)) {
             return -1;
         }
         rows[i].nodeId = cur;
         rows[i].lhsNode = lhsNode;
         rows[i].rhsNode = rhsNode;
         rows[i].op = op;
-        if (SLFmtMeasureExprLen(c, lhsNode, 0, &rows[i].lhsLen) != 0
-            || SLFmtMeasureExprLen(c, rhsNode, 0, &rows[i].rhsLen) != 0)
+        if (HOPFmtMeasureExprLen(c, lhsNode, 0, &rows[i].lhsLen) != 0
+            || HOPFmtMeasureExprLen(c, rhsNode, 0, &rows[i].rhsLen) != 0)
         {
             return -1;
         }
-        opText = SLFmtTokenOpText((SLTokenKind)op);
-        rows[i].opLen = SLFmtCStrLen(opText);
+        opText = HOPFmtTokenOpText((HOPTokenKind)op);
+        rows[i].opLen = HOPFmtCStrLen(opText);
         if (rows[i].lhsLen > maxLhsLen) {
             maxLhsLen = rows[i].lhsLen;
         }
         if (rows[i].opLen > maxOpLen) {
             maxOpLen = rows[i].opLen;
         }
-        rows[i].hasTrailingComment = (uint8_t)SLFmtHasUnusedTrailingCommentsForNodes(c, &cur, 1u);
-        cur = SLFmtNextSibling(c->ast, cur);
+        rows[i].hasTrailingComment = (uint8_t)HOPFmtHasUnusedTrailingCommentsForNodes(c, &cur, 1u);
+        cur = HOPFmtNextSibling(c->ast, cur);
     }
 
     if (minLhsLen > maxLhsLen) {
@@ -3818,24 +3836,24 @@ static int SLFmtEmitAlignedAssignGroup(
     for (i = 0; i < count; i++) {
         uint32_t    padBeforeOp = (maxLhsLen + 1u) - rows[i].lhsLen;
         uint32_t    padAfterOp = (maxOpLen + 1u) - rows[i].opLen;
-        const char* opText = SLFmtTokenOpText((SLTokenKind)rows[i].op);
-        if (SLFmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
+        const char* opText = HOPFmtTokenOpText((HOPTokenKind)rows[i].op);
+        if (HOPFmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
             return -1;
         }
-        if (SLFmtEmitExpr(c, rows[i].lhsNode, 0) != 0 || SLFmtWriteSpaces(c, padBeforeOp) != 0
-            || SLFmtWriteCStr(c, opText) != 0 || SLFmtWriteSpaces(c, padAfterOp) != 0
-            || SLFmtEmitExpr(c, rows[i].rhsNode, 0) != 0)
+        if (HOPFmtEmitExpr(c, rows[i].lhsNode, 0) != 0 || HOPFmtWriteSpaces(c, padBeforeOp) != 0
+            || HOPFmtWriteCStr(c, opText) != 0 || HOPFmtWriteSpaces(c, padAfterOp) != 0
+            || HOPFmtEmitExpr(c, rows[i].rhsNode, 0) != 0)
         {
             return -1;
         }
         if (rows[i].hasTrailingComment) {
             uint32_t padComment = 1u;
             int32_t  nodeId = rows[i].nodeId;
-            if (SLFmtEmitTrailingCommentsForNodes(c, &nodeId, 1u, padComment) != 0) {
+            if (HOPFmtEmitTrailingCommentsForNodes(c, &nodeId, 1u, padComment) != 0) {
                 return -1;
             }
         }
-        if (i + 1u < count && SLFmtNewline(c) != 0) {
+        if (i + 1u < count && HOPFmtNewline(c) != 0) {
             return -1;
         }
     }
@@ -3845,44 +3863,44 @@ static int SLFmtEmitAlignedAssignGroup(
     return 0;
 }
 
-static int SLFmtIsIndexedAssignOnNamedBase(
-    SLFmtCtx* c, int32_t lhsNodeId, uint32_t nameStart, uint32_t nameEnd) {
-    const SLAstNode* lhsNode;
-    int32_t          baseNodeId;
-    uint32_t         identStart = 0;
-    uint32_t         identEnd = 0;
+static int HOPFmtIsIndexedAssignOnNamedBase(
+    HOPFmtCtx* c, int32_t lhsNodeId, uint32_t nameStart, uint32_t nameEnd) {
+    const HOPAstNode* lhsNode;
+    int32_t           baseNodeId;
+    uint32_t          identStart = 0;
+    uint32_t          identEnd = 0;
     if (lhsNodeId < 0 || (uint32_t)lhsNodeId >= c->ast->len || nameEnd <= nameStart) {
         return 0;
     }
     lhsNode = &c->ast->nodes[lhsNodeId];
-    if (lhsNode->kind != SLAst_INDEX || (lhsNode->flags & SLAstFlag_INDEX_SLICE) != 0) {
+    if (lhsNode->kind != HOPAst_INDEX || (lhsNode->flags & HOPAstFlag_INDEX_SLICE) != 0) {
         return 0;
     }
-    baseNodeId = SLFmtFirstChild(c->ast, lhsNodeId);
-    if (!SLFmtExprIsPlainIdent(c->ast, baseNodeId, &identStart, &identEnd)) {
+    baseNodeId = HOPFmtFirstChild(c->ast, lhsNodeId);
+    if (!HOPFmtExprIsPlainIdent(c->ast, baseNodeId, &identStart, &identEnd)) {
         return 0;
     }
-    return SLFmtSlicesEqual(c->src, identStart, identEnd, nameStart, nameEnd);
+    return HOPFmtSlicesEqual(c->src, identStart, identEnd, nameStart, nameEnd);
 }
 
-static int SLFmtMeasureCaseHeadLen(
-    SLFmtCtx* c, int32_t caseNodeId, uint32_t* outLen, int32_t* outBodyNodeId) {
-    int32_t  k = SLFmtFirstChild(c->ast, caseNodeId);
+static int HOPFmtMeasureCaseHeadLen(
+    HOPFmtCtx* c, int32_t caseNodeId, uint32_t* outLen, int32_t* outBodyNodeId) {
+    int32_t  k = HOPFmtFirstChild(c->ast, caseNodeId);
     uint32_t len = 5u;
     int      first = 1;
     int32_t  bodyNodeId = -1;
     while (k >= 0) {
-        int32_t next = SLFmtNextSibling(c->ast, k);
+        int32_t next = HOPFmtNextSibling(c->ast, k);
         if (next < 0) {
             bodyNodeId = k;
             break;
         }
-        int32_t          exprNode = k;
-        int32_t          aliasNode = -1;
-        const SLAstNode* kn = &c->ast->nodes[k];
-        if (kn->kind == SLAst_CASE_PATTERN) {
-            exprNode = SLFmtFirstChild(c->ast, k);
-            aliasNode = exprNode >= 0 ? SLFmtNextSibling(c->ast, exprNode) : -1;
+        int32_t           exprNode = k;
+        int32_t           aliasNode = -1;
+        const HOPAstNode* kn = &c->ast->nodes[k];
+        if (kn->kind == HOPAst_CASE_PATTERN) {
+            exprNode = HOPFmtFirstChild(c->ast, k);
+            aliasNode = exprNode >= 0 ? HOPFmtNextSibling(c->ast, exprNode) : -1;
             if (exprNode < 0) {
                 return -1;
             }
@@ -3892,19 +3910,19 @@ static int SLFmtMeasureCaseHeadLen(
         }
         {
             uint32_t exprLen;
-            if (SLFmtMeasureExprLen(c, exprNode, 0, &exprLen) != 0) {
+            if (HOPFmtMeasureExprLen(c, exprNode, 0, &exprLen) != 0) {
                 return -1;
             }
             len += exprLen;
         }
         if (aliasNode >= 0) {
-            const SLAstNode* alias = &c->ast->nodes[aliasNode];
+            const HOPAstNode* alias = &c->ast->nodes[aliasNode];
             len += 4u + (alias->dataEnd - alias->dataStart); /* " as " + alias */
         }
         first = 0;
         k = next;
     }
-    if (bodyNodeId < 0 || c->ast->nodes[bodyNodeId].kind != SLAst_BLOCK) {
+    if (bodyNodeId < 0 || c->ast->nodes[bodyNodeId].kind != HOPAst_BLOCK) {
         return -1;
     }
     *outLen = len;
@@ -3912,36 +3930,36 @@ static int SLFmtMeasureCaseHeadLen(
     return 0;
 }
 
-static int SLFmtEmitCaseHead(SLFmtCtx* c, int32_t caseNodeId) {
-    int32_t k = SLFmtFirstChild(c->ast, caseNodeId);
+static int HOPFmtEmitCaseHead(HOPFmtCtx* c, int32_t caseNodeId) {
+    int32_t k = HOPFmtFirstChild(c->ast, caseNodeId);
     int     first = 1;
-    if (SLFmtWriteCStr(c, "case ") != 0) {
+    if (HOPFmtWriteCStr(c, "case ") != 0) {
         return -1;
     }
     while (k >= 0) {
-        int32_t next = SLFmtNextSibling(c->ast, k);
+        int32_t next = HOPFmtNextSibling(c->ast, k);
         int32_t exprNode = k;
         int32_t aliasNode = -1;
         if (next < 0) {
             break;
         }
-        if (c->ast->nodes[k].kind == SLAst_CASE_PATTERN) {
-            exprNode = SLFmtFirstChild(c->ast, k);
-            aliasNode = exprNode >= 0 ? SLFmtNextSibling(c->ast, exprNode) : -1;
+        if (c->ast->nodes[k].kind == HOPAst_CASE_PATTERN) {
+            exprNode = HOPFmtFirstChild(c->ast, k);
+            aliasNode = exprNode >= 0 ? HOPFmtNextSibling(c->ast, exprNode) : -1;
             if (exprNode < 0) {
                 return -1;
             }
         }
-        if (!first && SLFmtWriteCStr(c, ", ") != 0) {
+        if (!first && HOPFmtWriteCStr(c, ", ") != 0) {
             return -1;
         }
-        if (SLFmtEmitExpr(c, exprNode, 0) != 0) {
+        if (HOPFmtEmitExpr(c, exprNode, 0) != 0) {
             return -1;
         }
         if (aliasNode >= 0) {
-            const SLAstNode* alias = &c->ast->nodes[aliasNode];
-            if (SLFmtWriteCStr(c, " as ") != 0
-                || SLFmtWriteSlice(c, alias->dataStart, alias->dataEnd) != 0)
+            const HOPAstNode* alias = &c->ast->nodes[aliasNode];
+            if (HOPFmtWriteCStr(c, " as ") != 0
+                || HOPFmtWriteSlice(c, alias->dataStart, alias->dataEnd) != 0)
             {
                 return -1;
             }
@@ -3952,25 +3970,25 @@ static int SLFmtEmitCaseHead(SLFmtCtx* c, int32_t caseNodeId) {
     return 0;
 }
 
-static int SLFmtEmitSwitchClauseGroup(
-    SLFmtCtx* c,
-    int32_t   firstClauseNodeId,
-    int32_t*  outLastClauseNodeId,
-    int32_t*  outNextClauseNodeId) {
-    int32_t               cur = firstClauseNodeId;
-    int32_t               prev = -1;
-    uint32_t              count = 0;
-    uint32_t              i;
-    SLFmtSwitchClauseRow* rows;
-    uint32_t*             commentRunMaxLens;
-    uint32_t*             inlineRunMaxHeadLens;
+static int HOPFmtEmitSwitchClauseGroup(
+    HOPFmtCtx* c,
+    int32_t    firstClauseNodeId,
+    int32_t*   outLastClauseNodeId,
+    int32_t*   outNextClauseNodeId) {
+    int32_t                cur = firstClauseNodeId;
+    int32_t                prev = -1;
+    uint32_t               count = 0;
+    uint32_t               i;
+    HOPFmtSwitchClauseRow* rows;
+    uint32_t*              commentRunMaxLens;
+    uint32_t*              inlineRunMaxHeadLens;
 
     while (cur >= 0) {
-        int32_t next = SLFmtNextSibling(c->ast, cur);
-        if (c->ast->nodes[cur].kind != SLAst_CASE && c->ast->nodes[cur].kind != SLAst_DEFAULT) {
+        int32_t next = HOPFmtNextSibling(c->ast, cur);
+        if (c->ast->nodes[cur].kind != HOPAst_CASE && c->ast->nodes[cur].kind != HOPAst_DEFAULT) {
             break;
         }
-        if (prev >= 0 && !SLFmtCanContinueAlignedGroup(c, prev, cur)) {
+        if (prev >= 0 && !HOPFmtCanContinueAlignedGroup(c, prev, cur)) {
             break;
         }
         count++;
@@ -3978,23 +3996,23 @@ static int SLFmtEmitSwitchClauseGroup(
         cur = next;
     }
 
-    rows = (SLFmtSwitchClauseRow*)SLArenaAlloc(
+    rows = (HOPFmtSwitchClauseRow*)HOPArenaAlloc(
         c->out.arena,
-        count * (uint32_t)sizeof(SLFmtSwitchClauseRow),
-        (uint32_t)_Alignof(SLFmtSwitchClauseRow));
+        count * (uint32_t)sizeof(HOPFmtSwitchClauseRow),
+        (uint32_t)_Alignof(HOPFmtSwitchClauseRow));
     if (rows == NULL) {
         return -1;
     }
-    memset(rows, 0, count * (uint32_t)sizeof(SLFmtSwitchClauseRow));
+    memset(rows, 0, count * (uint32_t)sizeof(HOPFmtSwitchClauseRow));
 
-    inlineRunMaxHeadLens = (uint32_t*)SLArenaAlloc(
+    inlineRunMaxHeadLens = (uint32_t*)HOPArenaAlloc(
         c->out.arena, count * (uint32_t)sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
     if (inlineRunMaxHeadLens == NULL) {
         return -1;
     }
     memset(inlineRunMaxHeadLens, 0, count * (uint32_t)sizeof(uint32_t));
 
-    commentRunMaxLens = (uint32_t*)SLArenaAlloc(
+    commentRunMaxLens = (uint32_t*)HOPArenaAlloc(
         c->out.arena, count * (uint32_t)sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
     if (commentRunMaxLens == NULL) {
         return -1;
@@ -4003,30 +4021,30 @@ static int SLFmtEmitSwitchClauseGroup(
 
     cur = firstClauseNodeId;
     for (i = 0; i < count; i++) {
-        SLFmtSwitchClauseRow* r = &rows[i];
-        int32_t               next = SLFmtNextSibling(c->ast, cur);
+        HOPFmtSwitchClauseRow* r = &rows[i];
+        int32_t                next = HOPFmtNextSibling(c->ast, cur);
         r->nodeId = cur;
-        r->isDefault = (uint8_t)(c->ast->nodes[cur].kind == SLAst_DEFAULT);
+        r->isDefault = (uint8_t)(c->ast->nodes[cur].kind == HOPAst_DEFAULT);
         if (r->isDefault) {
             r->headLen = 7u;
-            r->bodyNodeId = SLFmtFirstChild(c->ast, cur);
-            if (r->bodyNodeId < 0 || c->ast->nodes[r->bodyNodeId].kind != SLAst_BLOCK) {
+            r->bodyNodeId = HOPFmtFirstChild(c->ast, cur);
+            if (r->bodyNodeId < 0 || c->ast->nodes[r->bodyNodeId].kind != HOPAst_BLOCK) {
                 return -1;
             }
-        } else if (SLFmtMeasureCaseHeadLen(c, cur, &r->headLen, &r->bodyNodeId) != 0) {
+        } else if (HOPFmtMeasureCaseHeadLen(c, cur, &r->headLen, &r->bodyNodeId) != 0) {
             return -1;
         }
         {
             int32_t stmtNodeId = -1;
-            if (SLFmtCanInlineSingleStmtBlock(c, r->bodyNodeId, &stmtNodeId)) {
+            if (HOPFmtCanInlineSingleStmtBlock(c, r->bodyNodeId, &stmtNodeId)) {
                 r->inlineBody = 1;
-                if (SLFmtMeasureInlineSingleStmtBlockLen(c, r->bodyNodeId, &r->inlineBodyLen) != 0)
+                if (HOPFmtMeasureInlineSingleStmtBlockLen(c, r->bodyNodeId, &r->inlineBodyLen) != 0)
                 {
                     return -1;
                 }
             }
         }
-        r->hasTrailingComment = (uint8_t)SLFmtHasUnusedTrailingCommentsForNodes(c, &cur, 1u);
+        r->hasTrailingComment = (uint8_t)HOPFmtHasUnusedTrailingCommentsForNodes(c, &cur, 1u);
         cur = next;
     }
 
@@ -4051,7 +4069,7 @@ static int SLFmtEmitSwitchClauseGroup(
     }
 
     for (i = 0; i < count; i++) {
-        SLFmtSwitchClauseRow* r = &rows[i];
+        HOPFmtSwitchClauseRow* r = &rows[i];
         if (r->inlineBody) {
             uint32_t padBeforeBody = (inlineRunMaxHeadLens[i] - r->headLen) + 1u;
             r->codeLen = r->headLen + padBeforeBody + r->inlineBodyLen;
@@ -4081,9 +4099,9 @@ static int SLFmtEmitSwitchClauseGroup(
     }
 
     for (i = 0; i < count; i++) {
-        SLFmtSwitchClauseRow* r = &rows[i];
-        uint32_t              lineLen = 0;
-        uint32_t              padBeforeBody = 1u;
+        HOPFmtSwitchClauseRow* r = &rows[i];
+        uint32_t               lineLen = 0;
+        uint32_t               padBeforeBody = 1u;
         if (r->inlineBody) {
             padBeforeBody = (inlineRunMaxHeadLens[i] - r->headLen) + 1u;
         } else if (i > 0u && rows[i - 1u].inlineBody) {
@@ -4092,27 +4110,27 @@ static int SLFmtEmitSwitchClauseGroup(
                 padBeforeBody = (prevRunMaxHeadLen - r->headLen) + 1u;
             }
         }
-        if (SLFmtEmitLeadingCommentsForNode(c, r->nodeId) != 0) {
+        if (HOPFmtEmitLeadingCommentsForNode(c, r->nodeId) != 0) {
             return -1;
         }
         if (r->isDefault) {
-            if (SLFmtWriteCStr(c, "default") != 0) {
+            if (HOPFmtWriteCStr(c, "default") != 0) {
                 return -1;
             }
-        } else if (SLFmtEmitCaseHead(c, r->nodeId) != 0) {
+        } else if (HOPFmtEmitCaseHead(c, r->nodeId) != 0) {
             return -1;
         }
         lineLen = r->headLen;
-        if (SLFmtWriteSpaces(c, padBeforeBody) != 0) {
+        if (HOPFmtWriteSpaces(c, padBeforeBody) != 0) {
             return -1;
         }
         lineLen += padBeforeBody;
         if (r->inlineBody) {
-            if (SLFmtEmitInlineSingleStmtBlock(c, r->bodyNodeId) != 0) {
+            if (HOPFmtEmitInlineSingleStmtBlock(c, r->bodyNodeId) != 0) {
                 return -1;
             }
             lineLen += r->inlineBodyLen;
-        } else if (SLFmtEmitBlock(c, r->bodyNodeId) != 0) {
+        } else if (HOPFmtEmitBlock(c, r->bodyNodeId) != 0) {
             return -1;
         }
         if (r->hasTrailingComment) {
@@ -4121,11 +4139,11 @@ static int SLFmtEmitSwitchClauseGroup(
             if (r->inlineBody && commentRunMaxLens[i] > 0u) {
                 padComment = (commentRunMaxLens[i] - lineLen) + 1u;
             }
-            if (SLFmtEmitTrailingCommentsForNodes(c, &nodeId, 1u, padComment) != 0) {
+            if (HOPFmtEmitTrailingCommentsForNodes(c, &nodeId, 1u, padComment) != 0) {
                 return -1;
             }
         }
-        if (i + 1u < count && SLFmtNewline(c) != 0) {
+        if (i + 1u < count && HOPFmtNewline(c) != 0) {
             return -1;
         }
     }
@@ -4135,62 +4153,63 @@ static int SLFmtEmitSwitchClauseGroup(
     return 0;
 }
 
-static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId) {
-    int32_t              stmt;
-    int32_t              prevEmitted = -1;
-    SLFmtAssignCarryHint carryHint;
+static int HOPFmtEmitBlock(HOPFmtCtx* c, int32_t nodeId) {
+    int32_t               stmt;
+    int32_t               prevEmitted = -1;
+    HOPFmtAssignCarryHint carryHint;
     memset(&carryHint, 0, sizeof(carryHint));
-    if (SLFmtWriteChar(c, '{') != 0) {
+    if (HOPFmtWriteChar(c, '{') != 0) {
         return -1;
     }
-    stmt = SLFmtFirstChild(c->ast, nodeId);
+    stmt = HOPFmtFirstChild(c->ast, nodeId);
     if (stmt >= 0) {
-        if (SLFmtNewline(c) != 0) {
+        if (HOPFmtNewline(c) != 0) {
             return -1;
         }
         c->indent++;
         while (stmt >= 0) {
             int32_t  last = stmt;
-            int32_t  next = SLFmtNextSibling(c->ast, stmt);
+            int32_t  next = HOPFmtNextSibling(c->ast, stmt);
             int32_t  lhsNode = -1;
             int32_t  rhsNode = -1;
             uint16_t op = 0;
             if (prevEmitted >= 0) {
-                if (!SLFmtCanContinueAlignedGroup(c, prevEmitted, stmt)) {
+                if (!HOPFmtCanContinueAlignedGroup(c, prevEmitted, stmt)) {
                     carryHint.valid = 0;
                 }
-                if (SLFmtNewline(c) != 0) {
+                if (HOPFmtNewline(c) != 0) {
                     return -1;
                 }
-                if (SLFmtNeedsBlankLineBeforeNode(c, prevEmitted, stmt) && SLFmtNewline(c) != 0) {
+                if (HOPFmtNeedsBlankLineBeforeNode(c, prevEmitted, stmt) && HOPFmtNewline(c) != 0) {
                     return -1;
                 }
             }
-            if (c->ast->nodes[stmt].kind == SLAst_VAR && !SLFmtIsGroupedVarLike(c, stmt)) {
-                if (SLFmtEmitAlignedVarOrConstGroup(c, stmt, "var", &last, &next, &carryHint) != 0)
+            if (c->ast->nodes[stmt].kind == HOPAst_VAR && !HOPFmtIsGroupedVarLike(c, stmt)) {
+                if (HOPFmtEmitAlignedVarOrConstGroup(c, stmt, "var", &last, &next, &carryHint) != 0)
                 {
                     return -1;
                 }
-            } else if (c->ast->nodes[stmt].kind == SLAst_CONST && !SLFmtIsGroupedVarLike(c, stmt)) {
-                if (SLFmtEmitAlignedVarOrConstGroup(c, stmt, "const", &last, &next, &carryHint)
+            } else if (c->ast->nodes[stmt].kind == HOPAst_CONST && !HOPFmtIsGroupedVarLike(c, stmt))
+            {
+                if (HOPFmtEmitAlignedVarOrConstGroup(c, stmt, "const", &last, &next, &carryHint)
                     != 0)
                 {
                     return -1;
                 }
-            } else if (SLFmtGetAssignStmtParts(c, stmt, &lhsNode, &rhsNode, &op)) {
+            } else if (HOPFmtGetAssignStmtParts(c, stmt, &lhsNode, &rhsNode, &op)) {
                 uint32_t minLhsLen = 0;
                 if (carryHint.valid
-                    && SLFmtIsIndexedAssignOnNamedBase(
+                    && HOPFmtIsIndexedAssignOnNamedBase(
                         c, lhsNode, carryHint.baseNameStart, carryHint.baseNameEnd))
                 {
                     minLhsLen = carryHint.minLhsLen;
                 }
-                if (SLFmtEmitAlignedAssignGroup(c, stmt, &last, &next, minLhsLen) != 0) {
+                if (HOPFmtEmitAlignedAssignGroup(c, stmt, &last, &next, minLhsLen) != 0) {
                     return -1;
                 }
                 carryHint.valid = 0;
             } else {
-                if (SLFmtEmitStmt(c, stmt) != 0) {
+                if (HOPFmtEmitStmt(c, stmt) != 0) {
                     return -1;
                 }
                 carryHint.valid = 0;
@@ -4200,42 +4219,42 @@ static int SLFmtEmitBlock(SLFmtCtx* c, int32_t nodeId) {
             stmt = next;
         }
         c->indent--;
-        if (SLFmtNewline(c) != 0) {
+        if (HOPFmtNewline(c) != 0) {
             return -1;
         }
     }
-    return SLFmtWriteChar(c, '}');
+    return HOPFmtWriteChar(c, '}');
 }
 
-static int SLFmtEmitVarLike(SLFmtCtx* c, int32_t nodeId, const char* kw) {
-    int32_t firstChild = SLFmtFirstChild(c->ast, nodeId);
+static int HOPFmtEmitVarLike(HOPFmtCtx* c, int32_t nodeId, const char* kw) {
+    int32_t firstChild = HOPFmtFirstChild(c->ast, nodeId);
     int32_t type = -1;
     int32_t init = -1;
-    if (firstChild >= 0 && c->ast->nodes[firstChild].kind == SLAst_NAME_LIST) {
+    if (firstChild >= 0 && c->ast->nodes[firstChild].kind == HOPAst_NAME_LIST) {
         uint32_t i;
-        uint32_t nameCount = SLFmtListCount(c->ast, firstChild);
-        int32_t  afterNames = SLFmtNextSibling(c->ast, firstChild);
-        if (afterNames >= 0 && SLFmtIsTypeNodeKind(c->ast->nodes[afterNames].kind)) {
+        uint32_t nameCount = HOPFmtListCount(c->ast, firstChild);
+        int32_t  afterNames = HOPFmtNextSibling(c->ast, firstChild);
+        if (afterNames >= 0 && HOPFmtIsTypeNodeKind(c->ast->nodes[afterNames].kind)) {
             type = afterNames;
-            init = SLFmtNextSibling(c->ast, afterNames);
+            init = HOPFmtNextSibling(c->ast, afterNames);
         } else {
             init = afterNames;
         }
-        SLFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, nameCount, &type, &init);
-        SLFmtRewriteRedundantVarType(
+        HOPFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, nameCount, &type, &init);
+        HOPFmtRewriteRedundantVarType(
             c->ast, c->src, kw, nameCount, c->ast->nodes[nodeId].start, &type, &init);
-        if (SLFmtWriteCStr(c, kw) != 0 || SLFmtWriteChar(c, ' ') != 0) {
+        if (HOPFmtWriteCStr(c, kw) != 0 || HOPFmtWriteChar(c, ' ') != 0) {
             return -1;
         }
         for (i = 0; i < nameCount; i++) {
-            int32_t nameNode = SLFmtListItemAt(c->ast, firstChild, i);
+            int32_t nameNode = HOPFmtListItemAt(c->ast, firstChild, i);
             if (nameNode < 0) {
                 return -1;
             }
-            if (i > 0 && SLFmtWriteCStr(c, ", ") != 0) {
+            if (i > 0 && HOPFmtWriteCStr(c, ", ") != 0) {
                 return -1;
             }
-            if (SLFmtWriteSlice(
+            if (HOPFmtWriteSlice(
                     c, c->ast->nodes[nameNode].dataStart, c->ast->nodes[nameNode].dataEnd)
                 != 0)
             {
@@ -4243,19 +4262,19 @@ static int SLFmtEmitVarLike(SLFmtCtx* c, int32_t nodeId, const char* kw) {
             }
         }
         if (type >= 0) {
-            if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitType(c, type) != 0) {
+            if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitType(c, type) != 0) {
                 return -1;
             }
         }
         if (init >= 0) {
-            if (SLFmtWriteCStr(c, " = ") != 0) {
+            if (HOPFmtWriteCStr(c, " = ") != 0) {
                 return -1;
             }
-            if (c->ast->nodes[init].kind == SLAst_EXPR_LIST) {
-                if (SLFmtEmitExprList(c, init) != 0) {
+            if (c->ast->nodes[init].kind == HOPAst_EXPR_LIST) {
+                if (HOPFmtEmitExprList(c, init) != 0) {
                     return -1;
                 }
-            } else if (SLFmtEmitExpr(c, init, 0) != 0) {
+            } else if (HOPFmtEmitExpr(c, init, 0) != 0) {
                 return -1;
             }
         }
@@ -4263,28 +4282,28 @@ static int SLFmtEmitVarLike(SLFmtCtx* c, int32_t nodeId, const char* kw) {
     }
 
     {
-        const SLAstNode* n = &c->ast->nodes[nodeId];
+        const HOPAstNode* n = &c->ast->nodes[nodeId];
         type = firstChild;
-        if (type >= 0 && !SLFmtIsTypeNodeKind(c->ast->nodes[type].kind)) {
+        if (type >= 0 && !HOPFmtIsTypeNodeKind(c->ast->nodes[type].kind)) {
             init = type;
             type = -1;
         } else if (type >= 0) {
-            init = SLFmtNextSibling(c->ast, type);
+            init = HOPFmtNextSibling(c->ast, type);
         }
-        SLFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, 1u, &type, &init);
-        SLFmtRewriteRedundantVarType(c->ast, c->src, kw, 1u, n->start, &type, &init);
-        if (SLFmtWriteCStr(c, kw) != 0 || SLFmtWriteChar(c, ' ') != 0
-            || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
+        HOPFmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, 1u, &type, &init);
+        HOPFmtRewriteRedundantVarType(c->ast, c->src, kw, 1u, n->start, &type, &init);
+        if (HOPFmtWriteCStr(c, kw) != 0 || HOPFmtWriteChar(c, ' ') != 0
+            || HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
         {
             return -1;
         }
         if (type >= 0) {
-            if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitType(c, type) != 0) {
+            if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitType(c, type) != 0) {
                 return -1;
             }
         }
         if (init >= 0) {
-            if (SLFmtWriteCStr(c, " = ") != 0 || SLFmtEmitExpr(c, init, 0) != 0) {
+            if (HOPFmtWriteCStr(c, " = ") != 0 || HOPFmtEmitExpr(c, init, 0) != 0) {
                 return -1;
             }
         }
@@ -4292,77 +4311,77 @@ static int SLFmtEmitVarLike(SLFmtCtx* c, int32_t nodeId, const char* kw) {
     }
 }
 
-static int SLFmtEmitMultiAssign(SLFmtCtx* c, int32_t nodeId) {
-    int32_t  lhsList = SLFmtFirstChild(c->ast, nodeId);
-    int32_t  rhsList = lhsList >= 0 ? SLFmtNextSibling(c->ast, lhsList) : -1;
+static int HOPFmtEmitMultiAssign(HOPFmtCtx* c, int32_t nodeId) {
+    int32_t  lhsList = HOPFmtFirstChild(c->ast, nodeId);
+    int32_t  rhsList = lhsList >= 0 ? HOPFmtNextSibling(c->ast, lhsList) : -1;
     uint32_t i;
     uint32_t lhsCount;
-    if (lhsList < 0 || rhsList < 0 || c->ast->nodes[lhsList].kind != SLAst_EXPR_LIST
-        || c->ast->nodes[rhsList].kind != SLAst_EXPR_LIST)
+    if (lhsList < 0 || rhsList < 0 || c->ast->nodes[lhsList].kind != HOPAst_EXPR_LIST
+        || c->ast->nodes[rhsList].kind != HOPAst_EXPR_LIST)
     {
         return -1;
     }
-    lhsCount = SLFmtListCount(c->ast, lhsList);
+    lhsCount = HOPFmtListCount(c->ast, lhsList);
     for (i = 0; i < lhsCount; i++) {
-        int32_t lhsNode = SLFmtListItemAt(c->ast, lhsList, i);
+        int32_t lhsNode = HOPFmtListItemAt(c->ast, lhsList, i);
         if (lhsNode < 0) {
             return -1;
         }
-        if (i > 0 && SLFmtWriteCStr(c, ", ") != 0) {
+        if (i > 0 && HOPFmtWriteCStr(c, ", ") != 0) {
             return -1;
         }
-        if (SLFmtEmitExpr(c, lhsNode, 0) != 0) {
+        if (HOPFmtEmitExpr(c, lhsNode, 0) != 0) {
             return -1;
         }
     }
-    if (SLFmtWriteCStr(c, " = ") != 0) {
+    if (HOPFmtWriteCStr(c, " = ") != 0) {
         return -1;
     }
-    if (SLFmtEmitExprList(c, rhsList) != 0) {
+    if (HOPFmtEmitExprList(c, rhsList) != 0) {
         return -1;
     }
     return 0;
 }
 
-static int SLFmtEmitShortAssign(SLFmtCtx* c, int32_t nodeId) {
-    int32_t  nameList = SLFmtFirstChild(c->ast, nodeId);
-    int32_t  rhsList = nameList >= 0 ? SLFmtNextSibling(c->ast, nameList) : -1;
+static int HOPFmtEmitShortAssign(HOPFmtCtx* c, int32_t nodeId) {
+    int32_t  nameList = HOPFmtFirstChild(c->ast, nodeId);
+    int32_t  rhsList = nameList >= 0 ? HOPFmtNextSibling(c->ast, nameList) : -1;
     uint32_t i;
     uint32_t nameCount;
-    if (nameList < 0 || rhsList < 0 || c->ast->nodes[nameList].kind != SLAst_NAME_LIST
-        || c->ast->nodes[rhsList].kind != SLAst_EXPR_LIST)
+    if (nameList < 0 || rhsList < 0 || c->ast->nodes[nameList].kind != HOPAst_NAME_LIST
+        || c->ast->nodes[rhsList].kind != HOPAst_EXPR_LIST)
     {
         return -1;
     }
-    nameCount = SLFmtListCount(c->ast, nameList);
+    nameCount = HOPFmtListCount(c->ast, nameList);
     for (i = 0; i < nameCount; i++) {
-        int32_t nameNode = SLFmtListItemAt(c->ast, nameList, i);
+        int32_t nameNode = HOPFmtListItemAt(c->ast, nameList, i);
         if (nameNode < 0) {
             return -1;
         }
-        if (i > 0 && SLFmtWriteCStr(c, ", ") != 0) {
+        if (i > 0 && HOPFmtWriteCStr(c, ", ") != 0) {
             return -1;
         }
-        if (SLFmtEmitExpr(c, nameNode, 0) != 0) {
+        if (HOPFmtEmitExpr(c, nameNode, 0) != 0) {
             return -1;
         }
     }
-    if (SLFmtWriteCStr(c, " := ") != 0) {
+    if (HOPFmtWriteCStr(c, " := ") != 0) {
         return -1;
     }
-    return SLFmtEmitExprList(c, rhsList);
+    return HOPFmtEmitExprList(c, rhsList);
 }
 
-static int SLFmtEmitForHeaderFromSource(
-    SLFmtCtx* c, int32_t nodeId, int32_t bodyNode, int32_t* parts, uint32_t partLen) {
-    const SLAstNode* n = &c->ast->nodes[nodeId];
-    uint32_t         hdrStart = n->start;
-    uint32_t         hdrEnd = c->ast->nodes[bodyNode].start;
-    uint32_t         i;
-    uint32_t         s1 = UINT32_MAX;
-    uint32_t         s2 = UINT32_MAX;
-    uint32_t         idx = 0;
-    uint32_t         aStart;
+static int HOPFmtEmitForHeaderFromSource(
+    HOPFmtCtx* c, int32_t nodeId, int32_t bodyNode, int32_t* parts, uint32_t partLen) {
+    const HOPAstNode* n = &c->ast->nodes[nodeId];
+    uint32_t          hdrStart = n->start;
+    uint32_t          hdrEnd = c->ast->nodes[bodyNode].start;
+    uint32_t          i;
+    uint32_t          s1 = UINT32_MAX;
+    uint32_t          s2 = UINT32_MAX;
+    uint32_t          idx = 0;
+    uint32_t          aStart;
     while (hdrStart < hdrEnd && c->src.ptr[hdrStart] != 'f') {
         hdrStart++;
     }
@@ -4382,26 +4401,26 @@ static int SLFmtEmitForHeaderFromSource(
     }
     if (s1 == UINT32_MAX || s2 == UINT32_MAX) {
         for (i = 0; i < partLen; i++) {
-            if (i > 0 && SLFmtWriteCStr(c, "; ") != 0) {
+            if (i > 0 && HOPFmtWriteCStr(c, "; ") != 0) {
                 return -1;
             }
-            if (c->ast->nodes[parts[i]].kind == SLAst_VAR) {
-                if (SLFmtEmitVarLike(c, parts[i], "var") != 0) {
+            if (c->ast->nodes[parts[i]].kind == HOPAst_VAR) {
+                if (HOPFmtEmitVarLike(c, parts[i], "var") != 0) {
                     return -1;
                 }
-            } else if (c->ast->nodes[parts[i]].kind == SLAst_SHORT_ASSIGN) {
-                if (SLFmtEmitShortAssign(c, parts[i]) != 0) {
+            } else if (c->ast->nodes[parts[i]].kind == HOPAst_SHORT_ASSIGN) {
+                if (HOPFmtEmitShortAssign(c, parts[i]) != 0) {
                     return -1;
                 }
-            } else if (SLFmtEmitExpr(c, parts[i], 0) != 0) {
+            } else if (HOPFmtEmitExpr(c, parts[i], 0) != 0) {
                 return -1;
             }
         }
         while (i < 3u) {
-            if (SLFmtWriteCStr(c, ";") != 0) {
+            if (HOPFmtWriteCStr(c, ";") != 0) {
                 return -1;
             }
-            if (i < 2u && SLFmtWriteChar(c, ' ') != 0) {
+            if (i < 2u && HOPFmtWriteChar(c, ' ') != 0) {
                 return -1;
             }
             i++;
@@ -4437,33 +4456,33 @@ static int SLFmtEmitForHeaderFromSource(
         }
 
         if (seg0Has && idx < partLen) {
-            if (c->ast->nodes[parts[idx]].kind == SLAst_VAR) {
-                if (SLFmtEmitVarLike(c, parts[idx], "var") != 0) {
+            if (c->ast->nodes[parts[idx]].kind == HOPAst_VAR) {
+                if (HOPFmtEmitVarLike(c, parts[idx], "var") != 0) {
                     return -1;
                 }
-            } else if (c->ast->nodes[parts[idx]].kind == SLAst_SHORT_ASSIGN) {
-                if (SLFmtEmitShortAssign(c, parts[idx]) != 0) {
+            } else if (c->ast->nodes[parts[idx]].kind == HOPAst_SHORT_ASSIGN) {
+                if (HOPFmtEmitShortAssign(c, parts[idx]) != 0) {
                     return -1;
                 }
-            } else if (SLFmtEmitExpr(c, parts[idx], 0) != 0) {
+            } else if (HOPFmtEmitExpr(c, parts[idx], 0) != 0) {
                 return -1;
             }
             idx++;
         }
-        if (SLFmtWriteCStr(c, "; ") != 0) {
+        if (HOPFmtWriteCStr(c, "; ") != 0) {
             return -1;
         }
         if (seg1Has && idx < partLen) {
-            if (SLFmtEmitExpr(c, parts[idx], 0) != 0) {
+            if (HOPFmtEmitExpr(c, parts[idx], 0) != 0) {
                 return -1;
             }
             idx++;
         }
-        if (SLFmtWriteCStr(c, "; ") != 0) {
+        if (HOPFmtWriteCStr(c, "; ") != 0) {
             return -1;
         }
         if (seg2Has && idx < partLen) {
-            if (SLFmtEmitExpr(c, parts[idx], 0) != 0) {
+            if (HOPFmtEmitExpr(c, parts[idx], 0) != 0) {
                 return -1;
             }
             idx++;
@@ -4472,67 +4491,67 @@ static int SLFmtEmitForHeaderFromSource(
     return 0;
 }
 
-static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId) {
-    const SLAstNode* n;
-    int32_t          ch;
+static int HOPFmtEmitStmtInline(HOPFmtCtx* c, int32_t nodeId) {
+    const HOPAstNode* n;
+    int32_t           ch;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return -1;
     }
     n = &c->ast->nodes[nodeId];
     switch (n->kind) {
-        case SLAst_BLOCK: return SLFmtEmitBlock(c, nodeId);
-        case SLAst_VAR:   return SLFmtEmitVarLike(c, nodeId, "var");
-        case SLAst_CONST: return SLFmtEmitVarLike(c, nodeId, "const");
-        case SLAst_CONST_BLOCK:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteCStr(c, "const ") != 0) {
+        case HOPAst_BLOCK: return HOPFmtEmitBlock(c, nodeId);
+        case HOPAst_VAR:   return HOPFmtEmitVarLike(c, nodeId, "var");
+        case HOPAst_CONST: return HOPFmtEmitVarLike(c, nodeId, "const");
+        case HOPAst_CONST_BLOCK:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteCStr(c, "const ") != 0) {
                 return -1;
             }
-            return ch >= 0 ? SLFmtEmitBlock(c, ch) : 0;
-        case SLAst_MULTI_ASSIGN: return SLFmtEmitMultiAssign(c, nodeId);
-        case SLAst_SHORT_ASSIGN: return SLFmtEmitShortAssign(c, nodeId);
-        case SLAst_IF:           {
-            int32_t cond = SLFmtFirstChild(c->ast, nodeId);
-            int32_t thenNode = cond >= 0 ? SLFmtNextSibling(c->ast, cond) : -1;
-            int32_t elseNode = thenNode >= 0 ? SLFmtNextSibling(c->ast, thenNode) : -1;
-            if (SLFmtWriteCStr(c, "if ") != 0 || (cond >= 0 && SLFmtEmitExpr(c, cond, 0) != 0)
-                || SLFmtWriteChar(c, ' ') != 0
-                || (thenNode >= 0 && SLFmtEmitBlock(c, thenNode) != 0))
+            return ch >= 0 ? HOPFmtEmitBlock(c, ch) : 0;
+        case HOPAst_MULTI_ASSIGN: return HOPFmtEmitMultiAssign(c, nodeId);
+        case HOPAst_SHORT_ASSIGN: return HOPFmtEmitShortAssign(c, nodeId);
+        case HOPAst_IF:           {
+            int32_t cond = HOPFmtFirstChild(c->ast, nodeId);
+            int32_t thenNode = cond >= 0 ? HOPFmtNextSibling(c->ast, cond) : -1;
+            int32_t elseNode = thenNode >= 0 ? HOPFmtNextSibling(c->ast, thenNode) : -1;
+            if (HOPFmtWriteCStr(c, "if ") != 0 || (cond >= 0 && HOPFmtEmitExpr(c, cond, 0) != 0)
+                || HOPFmtWriteChar(c, ' ') != 0
+                || (thenNode >= 0 && HOPFmtEmitBlock(c, thenNode) != 0))
             {
                 return -1;
             }
             if (elseNode >= 0) {
-                if (SLFmtWriteCStr(c, " else ") != 0) {
+                if (HOPFmtWriteCStr(c, " else ") != 0) {
                     return -1;
                 }
-                if (c->ast->nodes[elseNode].kind == SLAst_IF) {
-                    if (SLFmtEmitStmtInline(c, elseNode) != 0) {
+                if (c->ast->nodes[elseNode].kind == HOPAst_IF) {
+                    if (HOPFmtEmitStmtInline(c, elseNode) != 0) {
                         return -1;
                     }
-                } else if (SLFmtEmitBlock(c, elseNode) != 0) {
+                } else if (HOPFmtEmitBlock(c, elseNode) != 0) {
                     return -1;
                 }
             }
             return 0;
         }
-        case SLAst_FOR: {
+        case HOPAst_FOR: {
             int32_t  parts[4];
             uint32_t partLen = 0;
-            int32_t  cur = SLFmtFirstChild(c->ast, nodeId);
+            int32_t  cur = HOPFmtFirstChild(c->ast, nodeId);
             int32_t  bodyNode;
             while (cur >= 0 && partLen < 4u) {
                 parts[partLen++] = cur;
-                cur = SLFmtNextSibling(c->ast, cur);
+                cur = HOPFmtNextSibling(c->ast, cur);
             }
             if (partLen == 0) {
-                return SLFmtWriteCStr(c, "for {}");
+                return HOPFmtWriteCStr(c, "for {}");
             }
             bodyNode = parts[partLen - 1u];
-            if (SLFmtWriteCStr(c, "for") != 0) {
+            if (HOPFmtWriteCStr(c, "for") != 0) {
                 return -1;
             }
-            if ((n->flags & SLAstFlag_FOR_IN) != 0) {
-                int     hasKey = (n->flags & SLAstFlag_FOR_IN_HAS_KEY) != 0;
+            if ((n->flags & HOPAstFlag_FOR_IN) != 0) {
+                int     hasKey = (n->flags & HOPAstFlag_FOR_IN_HAS_KEY) != 0;
                 int32_t keyNode = -1;
                 int32_t valueNode = -1;
                 int32_t sourceNode = -1;
@@ -4543,208 +4562,211 @@ static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId) {
                     keyNode = parts[0];
                     valueNode = parts[1];
                     sourceNode = parts[2];
-                    if (SLFmtWriteChar(c, ' ') != 0) {
+                    if (HOPFmtWriteChar(c, ' ') != 0) {
                         return -1;
                     }
-                    if ((n->flags & SLAstFlag_FOR_IN_KEY_REF) != 0 && SLFmtWriteChar(c, '&') != 0) {
+                    if ((n->flags & HOPAstFlag_FOR_IN_KEY_REF) != 0 && HOPFmtWriteChar(c, '&') != 0)
+                    {
                         return -1;
                     }
-                    if (SLFmtEmitExpr(c, keyNode, 0) != 0 || SLFmtWriteCStr(c, ", ") != 0) {
+                    if (HOPFmtEmitExpr(c, keyNode, 0) != 0 || HOPFmtWriteCStr(c, ", ") != 0) {
                         return -1;
                     }
                 } else {
                     valueNode = parts[0];
                     sourceNode = parts[1];
-                    if (SLFmtWriteChar(c, ' ') != 0) {
+                    if (HOPFmtWriteChar(c, ' ') != 0) {
                         return -1;
                     }
                 }
-                if ((n->flags & SLAstFlag_FOR_IN_VALUE_DISCARD) == 0) {
-                    if ((n->flags & SLAstFlag_FOR_IN_VALUE_REF) != 0 && SLFmtWriteChar(c, '&') != 0)
+                if ((n->flags & HOPAstFlag_FOR_IN_VALUE_DISCARD) == 0) {
+                    if ((n->flags & HOPAstFlag_FOR_IN_VALUE_REF) != 0
+                        && HOPFmtWriteChar(c, '&') != 0)
                     {
                         return -1;
                     }
                 }
-                if (SLFmtEmitExpr(c, valueNode, 0) != 0 || SLFmtWriteCStr(c, " in ") != 0
-                    || SLFmtEmitExpr(c, sourceNode, 0) != 0 || SLFmtWriteChar(c, ' ') != 0
-                    || SLFmtEmitBlock(c, bodyNode) != 0)
+                if (HOPFmtEmitExpr(c, valueNode, 0) != 0 || HOPFmtWriteCStr(c, " in ") != 0
+                    || HOPFmtEmitExpr(c, sourceNode, 0) != 0 || HOPFmtWriteChar(c, ' ') != 0
+                    || HOPFmtEmitBlock(c, bodyNode) != 0)
                 {
                     return -1;
                 }
                 return 0;
             }
-            if (partLen == 1u && c->ast->nodes[bodyNode].kind == SLAst_BLOCK) {
-                if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitBlock(c, bodyNode) != 0) {
+            if (partLen == 1u && c->ast->nodes[bodyNode].kind == HOPAst_BLOCK) {
+                if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitBlock(c, bodyNode) != 0) {
                     return -1;
                 }
                 return 0;
             }
-            if (SLFmtContainsSemicolonInRange(c->src, n->start, c->ast->nodes[bodyNode].start)) {
-                if (SLFmtWriteChar(c, ' ') != 0
-                    || SLFmtEmitForHeaderFromSource(c, nodeId, bodyNode, parts, partLen - 1u) != 0
-                    || SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitBlock(c, bodyNode) != 0)
+            if (HOPFmtContainsSemicolonInRange(c->src, n->start, c->ast->nodes[bodyNode].start)) {
+                if (HOPFmtWriteChar(c, ' ') != 0
+                    || HOPFmtEmitForHeaderFromSource(c, nodeId, bodyNode, parts, partLen - 1u) != 0
+                    || HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitBlock(c, bodyNode) != 0)
                 {
                     return -1;
                 }
                 return 0;
             }
-            if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitExpr(c, parts[0], 0) != 0
-                || SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitBlock(c, bodyNode) != 0)
+            if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitExpr(c, parts[0], 0) != 0
+                || HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitBlock(c, bodyNode) != 0)
             {
                 return -1;
             }
             return 0;
         }
-        case SLAst_SWITCH: {
-            int32_t cur = SLFmtFirstChild(c->ast, nodeId);
+        case HOPAst_SWITCH: {
+            int32_t cur = HOPFmtFirstChild(c->ast, nodeId);
             int32_t prevClause = -1;
-            if (SLFmtWriteCStr(c, "switch") != 0) {
+            if (HOPFmtWriteCStr(c, "switch") != 0) {
                 return -1;
             }
             if (n->flags == 1 && cur >= 0) {
-                if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitExpr(c, cur, 0) != 0) {
+                if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitExpr(c, cur, 0) != 0) {
                     return -1;
                 }
-                cur = SLFmtNextSibling(c->ast, cur);
+                cur = HOPFmtNextSibling(c->ast, cur);
             }
-            if (SLFmtWriteCStr(c, " {") != 0) {
+            if (HOPFmtWriteCStr(c, " {") != 0) {
                 return -1;
             }
             if (cur >= 0) {
-                if (SLFmtNewline(c) != 0) {
+                if (HOPFmtNewline(c) != 0) {
                     return -1;
                 }
                 c->indent++;
                 while (cur >= 0) {
                     int32_t lastClause = cur;
-                    int32_t nextClause = SLFmtNextSibling(c->ast, cur);
+                    int32_t nextClause = HOPFmtNextSibling(c->ast, cur);
                     if (prevClause >= 0) {
-                        if (SLFmtNewline(c) != 0) {
+                        if (HOPFmtNewline(c) != 0) {
                             return -1;
                         }
-                        if (SLFmtNeedsBlankLineBeforeNode(c, prevClause, cur)
-                            && SLFmtNewline(c) != 0)
+                        if (HOPFmtNeedsBlankLineBeforeNode(c, prevClause, cur)
+                            && HOPFmtNewline(c) != 0)
                         {
                             return -1;
                         }
                     }
-                    if (SLFmtEmitSwitchClauseGroup(c, cur, &lastClause, &nextClause) != 0) {
+                    if (HOPFmtEmitSwitchClauseGroup(c, cur, &lastClause, &nextClause) != 0) {
                         return -1;
                     }
                     prevClause = lastClause;
                     cur = nextClause;
                 }
                 c->indent--;
-                if (SLFmtNewline(c) != 0) {
+                if (HOPFmtNewline(c) != 0) {
                     return -1;
                 }
             }
-            return SLFmtWriteChar(c, '}');
+            return HOPFmtWriteChar(c, '}');
         }
-        case SLAst_RETURN:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteCStr(c, "return") != 0) {
+        case HOPAst_RETURN:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteCStr(c, "return") != 0) {
                 return -1;
             }
             if (ch >= 0) {
-                if (SLFmtWriteChar(c, ' ') != 0) {
+                if (HOPFmtWriteChar(c, ' ') != 0) {
                     return -1;
                 }
-                if (c->ast->nodes[ch].kind == SLAst_EXPR_LIST) {
-                    if (SLFmtEmitExprList(c, ch) != 0) {
+                if (c->ast->nodes[ch].kind == HOPAst_EXPR_LIST) {
+                    if (HOPFmtEmitExprList(c, ch) != 0) {
                         return -1;
                     }
-                } else if (SLFmtEmitExpr(c, ch, 0) != 0) {
+                } else if (HOPFmtEmitExpr(c, ch, 0) != 0) {
                     return -1;
                 }
             }
             return 0;
-        case SLAst_BREAK:    return SLFmtWriteCStr(c, "break");
-        case SLAst_CONTINUE: return SLFmtWriteCStr(c, "continue");
-        case SLAst_DEFER:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteCStr(c, "defer ") != 0) {
+        case HOPAst_BREAK:    return HOPFmtWriteCStr(c, "break");
+        case HOPAst_CONTINUE: return HOPFmtWriteCStr(c, "continue");
+        case HOPAst_DEFER:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteCStr(c, "defer ") != 0) {
                 return -1;
             }
-            if (ch >= 0 && c->ast->nodes[ch].kind == SLAst_BLOCK) {
+            if (ch >= 0 && c->ast->nodes[ch].kind == HOPAst_BLOCK) {
                 int32_t stmtNodeId;
-                if (SLFmtCanInlineSingleStmtBlock(c, ch, &stmtNodeId)) {
-                    return SLFmtEmitStmtInline(c, stmtNodeId);
+                if (HOPFmtCanInlineSingleStmtBlock(c, ch, &stmtNodeId)) {
+                    return HOPFmtEmitStmtInline(c, stmtNodeId);
                 }
             }
-            return ch >= 0 ? SLFmtEmitStmtInline(c, ch) : 0;
-        case SLAst_ASSERT:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteCStr(c, "assert ") != 0) {
+            return ch >= 0 ? HOPFmtEmitStmtInline(c, ch) : 0;
+        case HOPAst_ASSERT:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteCStr(c, "assert ") != 0) {
                 return -1;
             }
             while (ch >= 0) {
-                int32_t next = SLFmtNextSibling(c->ast, ch);
-                if (SLFmtEmitExpr(c, ch, 0) != 0) {
+                int32_t next = HOPFmtNextSibling(c->ast, ch);
+                if (HOPFmtEmitExpr(c, ch, 0) != 0) {
                     return -1;
                 }
-                if (next >= 0 && SLFmtWriteCStr(c, ", ") != 0) {
+                if (next >= 0 && HOPFmtWriteCStr(c, ", ") != 0) {
                     return -1;
                 }
                 ch = next;
             }
             return 0;
-        case SLAst_DEL:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            if (SLFmtWriteCStr(c, "del ") != 0) {
+        case HOPAst_DEL:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            if (HOPFmtWriteCStr(c, "del ") != 0) {
                 return -1;
             }
-            if ((n->flags & SLAstFlag_DEL_HAS_ALLOC) != 0) {
+            if ((n->flags & HOPAstFlag_DEL_HAS_ALLOC) != 0) {
                 int32_t scan = ch;
                 while (scan >= 0) {
-                    int32_t next = SLFmtNextSibling(c->ast, scan);
+                    int32_t next = HOPFmtNextSibling(c->ast, scan);
                     if (next < 0) {
                         break;
                     }
                     scan = next;
                 }
                 while (ch >= 0 && ch != scan) {
-                    int32_t next = SLFmtNextSibling(c->ast, ch);
-                    if (SLFmtEmitExpr(c, ch, 0) != 0) {
+                    int32_t next = HOPFmtNextSibling(c->ast, ch);
+                    if (HOPFmtEmitExpr(c, ch, 0) != 0) {
                         return -1;
                     }
-                    if (next >= 0 && next != scan && SLFmtWriteCStr(c, ", ") != 0) {
+                    if (next >= 0 && next != scan && HOPFmtWriteCStr(c, ", ") != 0) {
                         return -1;
                     }
                     ch = next;
                 }
-                if (scan >= 0 && (SLFmtWriteCStr(c, " in ") != 0 || SLFmtEmitExpr(c, scan, 0) != 0))
+                if (scan >= 0
+                    && (HOPFmtWriteCStr(c, " in ") != 0 || HOPFmtEmitExpr(c, scan, 0) != 0))
                 {
                     return -1;
                 }
                 return 0;
             }
             while (ch >= 0) {
-                int32_t next = SLFmtNextSibling(c->ast, ch);
-                if (SLFmtEmitExpr(c, ch, 0) != 0) {
+                int32_t next = HOPFmtNextSibling(c->ast, ch);
+                if (HOPFmtEmitExpr(c, ch, 0) != 0) {
                     return -1;
                 }
-                if (next >= 0 && SLFmtWriteCStr(c, ", ") != 0) {
+                if (next >= 0 && HOPFmtWriteCStr(c, ", ") != 0) {
                     return -1;
                 }
                 ch = next;
             }
             return 0;
-        case SLAst_EXPR_STMT:
-            ch = SLFmtFirstChild(c->ast, nodeId);
-            return ch >= 0 ? SLFmtEmitExpr(c, ch, 0) : 0;
-        default: return SLFmtWriteSlice(c, n->start, n->end);
+        case HOPAst_EXPR_STMT:
+            ch = HOPFmtFirstChild(c->ast, nodeId);
+            return ch >= 0 ? HOPFmtEmitExpr(c, ch, 0) : 0;
+        default: return HOPFmtWriteSlice(c, n->start, n->end);
     }
 }
 
-static int SLFmtEmitStmt(SLFmtCtx* c, int32_t nodeId) {
-    if (SLFmtEmitLeadingCommentsForNode(c, nodeId) != 0) {
+static int HOPFmtEmitStmt(HOPFmtCtx* c, int32_t nodeId) {
+    if (HOPFmtEmitLeadingCommentsForNode(c, nodeId) != 0) {
         return -1;
     }
-    if (SLFmtEmitStmtInline(c, nodeId) != 0) {
+    if (HOPFmtEmitStmtInline(c, nodeId) != 0) {
         return -1;
     }
-    return SLFmtEmitTrailingCommentsForNode(c, nodeId);
+    return HOPFmtEmitTrailingCommentsForNode(c, nodeId);
 }
 
 typedef struct {
@@ -4759,23 +4781,24 @@ typedef struct {
     uint8_t  hasSymbols;
     uint8_t  hasTrailingComment;
     uint8_t  _pad[2];
-} SLFmtImportRow;
+} HOPFmtImportRow;
 
-static int SLFmtImportParseRow(SLFmtCtx* c, int32_t nodeId, SLFmtImportRow* outRow) {
-    const SLAstNode* n;
-    int32_t          child;
-    int32_t          aliasNodeId = -1;
-    int32_t          symStartNodeId = -1;
-    uint32_t         symbolsLen = 0;
-    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len || c->ast->nodes[nodeId].kind != SLAst_IMPORT)
+static int HOPFmtImportParseRow(HOPFmtCtx* c, int32_t nodeId, HOPFmtImportRow* outRow) {
+    const HOPAstNode* n;
+    int32_t           child;
+    int32_t           aliasNodeId = -1;
+    int32_t           symStartNodeId = -1;
+    uint32_t          symbolsLen = 0;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len
+        || c->ast->nodes[nodeId].kind != HOPAst_IMPORT)
     {
         return -1;
     }
     n = &c->ast->nodes[nodeId];
-    child = SLFmtFirstChild(c->ast, nodeId);
-    if (child >= 0 && c->ast->nodes[child].kind == SLAst_IDENT) {
+    child = HOPFmtFirstChild(c->ast, nodeId);
+    if (child >= 0 && c->ast->nodes[child].kind == HOPAst_IDENT) {
         aliasNodeId = child;
-        child = SLFmtNextSibling(c->ast, child);
+        child = HOPFmtNextSibling(c->ast, child);
     }
     symStartNodeId = child;
 
@@ -4783,12 +4806,12 @@ static int SLFmtImportParseRow(SLFmtCtx* c, int32_t nodeId, SLFmtImportRow* outR
         int32_t sym = symStartNodeId;
         symbolsLen = 4u;
         while (sym >= 0) {
-            const SLAstNode* sn = &c->ast->nodes[sym];
-            int32_t          salias = SLFmtFirstChild(c->ast, sym);
-            int32_t          next = SLFmtNextSibling(c->ast, sym);
+            const HOPAstNode* sn = &c->ast->nodes[sym];
+            int32_t           salias = HOPFmtFirstChild(c->ast, sym);
+            int32_t           next = HOPFmtNextSibling(c->ast, sym);
             symbolsLen += sn->dataEnd - sn->dataStart;
             if (salias >= 0) {
-                const SLAstNode* an = &c->ast->nodes[salias];
+                const HOPAstNode* an = &c->ast->nodes[salias];
                 symbolsLen += 4u + (an->dataEnd - an->dataStart);
             }
             if (next >= 0) {
@@ -4805,23 +4828,23 @@ static int SLFmtImportParseRow(SLFmtCtx* c, int32_t nodeId, SLFmtImportRow* outR
     outRow->pathLen = n->dataEnd - n->dataStart;
     outRow->aliasLen = 0;
     if (aliasNodeId >= 0) {
-        const SLAstNode* an = &c->ast->nodes[aliasNodeId];
+        const HOPAstNode* an = &c->ast->nodes[aliasNodeId];
         outRow->aliasLen = 4u + (an->dataEnd - an->dataStart);
     }
     outRow->symbolsLen = symbolsLen;
     outRow->hasSymbols = (uint8_t)(symStartNodeId >= 0);
     outRow->headLen = 7u + outRow->pathLen + outRow->aliasLen;
-    outRow->hasTrailingComment = (uint8_t)SLFmtHasUnusedTrailingCommentsInNodeRange(c, nodeId);
+    outRow->hasTrailingComment = (uint8_t)HOPFmtHasUnusedTrailingCommentsInNodeRange(c, nodeId);
     return 0;
 }
 
-static int SLFmtCompareNodePathText(SLFmtCtx* c, int32_t aNodeId, int32_t bNodeId) {
-    const SLAstNode* a = &c->ast->nodes[aNodeId];
-    const SLAstNode* b = &c->ast->nodes[bNodeId];
-    uint32_t         ai = a->dataStart;
-    uint32_t         bi = b->dataStart;
-    uint32_t         aEnd = a->dataEnd;
-    uint32_t         bEnd = b->dataEnd;
+static int HOPFmtCompareNodePathText(HOPFmtCtx* c, int32_t aNodeId, int32_t bNodeId) {
+    const HOPAstNode* a = &c->ast->nodes[aNodeId];
+    const HOPAstNode* b = &c->ast->nodes[bNodeId];
+    uint32_t          ai = a->dataStart;
+    uint32_t          bi = b->dataStart;
+    uint32_t          aEnd = a->dataEnd;
+    uint32_t          bEnd = b->dataEnd;
     while (ai < aEnd && bi < bEnd) {
         char ac = c->src.ptr[ai];
         char bc = c->src.ptr[bi];
@@ -4840,8 +4863,9 @@ static int SLFmtCompareNodePathText(SLFmtCtx* c, int32_t aNodeId, int32_t bNodeI
     return ai == aEnd ? -1 : 1;
 }
 
-static int SLFmtCompareImportRows(SLFmtCtx* c, const SLFmtImportRow* a, const SLFmtImportRow* b) {
-    int cmp = SLFmtCompareNodePathText(c, a->nodeId, b->nodeId);
+static int HOPFmtCompareImportRows(
+    HOPFmtCtx* c, const HOPFmtImportRow* a, const HOPFmtImportRow* b) {
+    int cmp = HOPFmtCompareNodePathText(c, a->nodeId, b->nodeId);
     if (cmp != 0) {
         return cmp;
     }
@@ -4852,7 +4876,7 @@ static int SLFmtCompareImportRows(SLFmtCtx* c, const SLFmtImportRow* a, const SL
         return 1;
     }
     if (a->aliasNodeId >= 0 && b->aliasNodeId >= 0) {
-        cmp = SLFmtCompareNodePathText(c, a->aliasNodeId, b->aliasNodeId);
+        cmp = HOPFmtCompareNodePathText(c, a->aliasNodeId, b->aliasNodeId);
         if (cmp != 0) {
             return cmp;
         }
@@ -4866,12 +4890,12 @@ static int SLFmtCompareImportRows(SLFmtCtx* c, const SLFmtImportRow* a, const SL
     return 0;
 }
 
-static void SLFmtSortImportRows(SLFmtCtx* c, SLFmtImportRow* rows, uint32_t len) {
+static void HOPFmtSortImportRows(HOPFmtCtx* c, HOPFmtImportRow* rows, uint32_t len) {
     uint32_t i;
     for (i = 1; i < len; i++) {
-        SLFmtImportRow key = rows[i];
-        uint32_t       j = i;
-        while (j > 0 && SLFmtCompareImportRows(c, &key, &rows[j - 1u]) < 0) {
+        HOPFmtImportRow key = rows[i];
+        uint32_t        j = i;
+        while (j > 0 && HOPFmtCompareImportRows(c, &key, &rows[j - 1u]) < 0) {
             rows[j] = rows[j - 1u];
             j--;
         }
@@ -4879,63 +4903,63 @@ static void SLFmtSortImportRows(SLFmtCtx* c, SLFmtImportRow* rows, uint32_t len)
     }
 }
 
-static int SLFmtEmitImportSymbolsInline(SLFmtCtx* c, int32_t symStartNodeId) {
+static int HOPFmtEmitImportSymbolsInline(HOPFmtCtx* c, int32_t symStartNodeId) {
     int32_t sym = symStartNodeId;
-    if (SLFmtWriteCStr(c, "{ ") != 0) {
+    if (HOPFmtWriteCStr(c, "{ ") != 0) {
         return -1;
     }
     while (sym >= 0) {
-        const SLAstNode* sn = &c->ast->nodes[sym];
-        int32_t          salias = SLFmtFirstChild(c->ast, sym);
-        int32_t          next = SLFmtNextSibling(c->ast, sym);
-        if (SLFmtWriteSlice(c, sn->dataStart, sn->dataEnd) != 0) {
+        const HOPAstNode* sn = &c->ast->nodes[sym];
+        int32_t           salias = HOPFmtFirstChild(c->ast, sym);
+        int32_t           next = HOPFmtNextSibling(c->ast, sym);
+        if (HOPFmtWriteSlice(c, sn->dataStart, sn->dataEnd) != 0) {
             return -1;
         }
         if (salias >= 0) {
-            const SLAstNode* an = &c->ast->nodes[salias];
-            if (SLFmtWriteCStr(c, " as ") != 0
-                || SLFmtWriteSlice(c, an->dataStart, an->dataEnd) != 0)
+            const HOPAstNode* an = &c->ast->nodes[salias];
+            if (HOPFmtWriteCStr(c, " as ") != 0
+                || HOPFmtWriteSlice(c, an->dataStart, an->dataEnd) != 0)
             {
                 return -1;
             }
         }
-        if (next >= 0 && SLFmtWriteCStr(c, ", ") != 0) {
+        if (next >= 0 && HOPFmtWriteCStr(c, ", ") != 0) {
             return -1;
         }
         sym = next;
     }
-    return SLFmtWriteCStr(c, " }");
+    return HOPFmtWriteCStr(c, " }");
 }
 
-static int SLFmtCanContinueImportGroup(SLFmtCtx* c, int32_t prevNodeId, int32_t nextNodeId) {
+static int HOPFmtCanContinueImportGroup(HOPFmtCtx* c, int32_t prevNodeId, int32_t nextNodeId) {
     uint32_t gapNl;
-    if (prevNodeId < 0 || nextNodeId < 0 || c->ast->nodes[nextNodeId].kind != SLAst_IMPORT) {
+    if (prevNodeId < 0 || nextNodeId < 0 || c->ast->nodes[nextNodeId].kind != HOPAst_IMPORT) {
         return 0;
     }
-    gapNl = SLFmtCountNewlinesInRange(
+    gapNl = HOPFmtCountNewlinesInRange(
         c->src, c->ast->nodes[prevNodeId].end, c->ast->nodes[nextNodeId].start);
     if (gapNl > 1u) {
         return 0;
     }
-    if (SLFmtHasUnusedLeadingCommentsForNode(c, nextNodeId)) {
+    if (HOPFmtHasUnusedLeadingCommentsForNode(c, nextNodeId)) {
         return 0;
     }
     return 1;
 }
 
-static int SLFmtEmitImportGroup(
-    SLFmtCtx* c, int32_t firstNodeId, int32_t* outLastSourceNodeId, int32_t* outNextNodeId) {
-    int32_t         cur = firstNodeId;
-    int32_t         prev = -1;
-    uint32_t        count = 0;
-    uint32_t        i;
-    SLFmtImportRow* rows;
-    uint32_t*       commentRunMaxLens;
-    uint32_t*       braceRunMaxHeadLens;
+static int HOPFmtEmitImportGroup(
+    HOPFmtCtx* c, int32_t firstNodeId, int32_t* outLastSourceNodeId, int32_t* outNextNodeId) {
+    int32_t          cur = firstNodeId;
+    int32_t          prev = -1;
+    uint32_t         count = 0;
+    uint32_t         i;
+    HOPFmtImportRow* rows;
+    uint32_t*        commentRunMaxLens;
+    uint32_t*        braceRunMaxHeadLens;
 
-    while (cur >= 0 && c->ast->nodes[cur].kind == SLAst_IMPORT) {
-        int32_t next = SLFmtNextSibling(c->ast, cur);
-        if (prev >= 0 && !SLFmtCanContinueImportGroup(c, prev, cur)) {
+    while (cur >= 0 && c->ast->nodes[cur].kind == HOPAst_IMPORT) {
+        int32_t next = HOPFmtNextSibling(c->ast, cur);
+        if (prev >= 0 && !HOPFmtCanContinueImportGroup(c, prev, cur)) {
             break;
         }
         count++;
@@ -4943,30 +4967,32 @@ static int SLFmtEmitImportGroup(
         cur = next;
     }
 
-    rows = (SLFmtImportRow*)SLArenaAlloc(
-        c->out.arena, count * (uint32_t)sizeof(SLFmtImportRow), (uint32_t)_Alignof(SLFmtImportRow));
+    rows = (HOPFmtImportRow*)HOPArenaAlloc(
+        c->out.arena,
+        count * (uint32_t)sizeof(HOPFmtImportRow),
+        (uint32_t)_Alignof(HOPFmtImportRow));
     if (rows == NULL) {
         return -1;
     }
     cur = firstNodeId;
     for (i = 0; i < count; i++) {
-        int32_t next = SLFmtNextSibling(c->ast, cur);
-        if (SLFmtImportParseRow(c, cur, &rows[i]) != 0) {
+        int32_t next = HOPFmtNextSibling(c->ast, cur);
+        if (HOPFmtImportParseRow(c, cur, &rows[i]) != 0) {
             return -1;
         }
         cur = next;
     }
 
-    SLFmtSortImportRows(c, rows, count);
+    HOPFmtSortImportRows(c, rows, count);
 
-    braceRunMaxHeadLens = (uint32_t*)SLArenaAlloc(
+    braceRunMaxHeadLens = (uint32_t*)HOPArenaAlloc(
         c->out.arena, count * (uint32_t)sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
     if (braceRunMaxHeadLens == NULL) {
         return -1;
     }
     memset(braceRunMaxHeadLens, 0, count * (uint32_t)sizeof(uint32_t));
 
-    commentRunMaxLens = (uint32_t*)SLArenaAlloc(
+    commentRunMaxLens = (uint32_t*)HOPArenaAlloc(
         c->out.arena, count * (uint32_t)sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
     if (commentRunMaxLens == NULL) {
         return -1;
@@ -5022,28 +5048,29 @@ static int SLFmtEmitImportGroup(
     }
 
     for (i = 0; i < count; i++) {
-        const SLAstNode* n = &c->ast->nodes[rows[i].nodeId];
-        uint32_t         lineLen = rows[i].headLen;
-        int32_t          nodeId = rows[i].nodeId;
-        if (SLFmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
+        const HOPAstNode* n = &c->ast->nodes[rows[i].nodeId];
+        uint32_t          lineLen = rows[i].headLen;
+        int32_t           nodeId = rows[i].nodeId;
+        if (HOPFmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
             return -1;
         }
-        if (SLFmtWriteCStr(c, "import ") != 0 || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
+        if (HOPFmtWriteCStr(c, "import ") != 0
+            || HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
         {
             return -1;
         }
         if (rows[i].aliasNodeId >= 0) {
-            const SLAstNode* an = &c->ast->nodes[rows[i].aliasNodeId];
-            if (SLFmtWriteCStr(c, " as ") != 0
-                || SLFmtWriteSlice(c, an->dataStart, an->dataEnd) != 0)
+            const HOPAstNode* an = &c->ast->nodes[rows[i].aliasNodeId];
+            if (HOPFmtWriteCStr(c, " as ") != 0
+                || HOPFmtWriteSlice(c, an->dataStart, an->dataEnd) != 0)
             {
                 return -1;
             }
         }
         if (rows[i].hasSymbols) {
             uint32_t padBeforeBrace = (braceRunMaxHeadLens[i] - rows[i].headLen) + 1u;
-            if (SLFmtWriteSpaces(c, padBeforeBrace) != 0
-                || SLFmtEmitImportSymbolsInline(c, rows[i].symStartNodeId) != 0)
+            if (HOPFmtWriteSpaces(c, padBeforeBrace) != 0
+                || HOPFmtEmitImportSymbolsInline(c, rows[i].symStartNodeId) != 0)
             {
                 return -1;
             }
@@ -5051,11 +5078,11 @@ static int SLFmtEmitImportGroup(
         }
         if (rows[i].hasTrailingComment) {
             uint32_t padComment = (commentRunMaxLens[i] - lineLen) + 1u;
-            if (SLFmtEmitTrailingCommentsInNodeRange(c, nodeId, padComment) != 0) {
+            if (HOPFmtEmitTrailingCommentsInNodeRange(c, nodeId, padComment) != 0) {
                 return -1;
             }
         }
-        if (i + 1u < count && SLFmtNewline(c) != 0) {
+        if (i + 1u < count && HOPFmtNewline(c) != 0) {
             return -1;
         }
     }
@@ -5065,34 +5092,36 @@ static int SLFmtEmitImportGroup(
     return 0;
 }
 
-static int SLFmtEmitImport(SLFmtCtx* c, int32_t nodeId) {
-    SLFmtImportRow   row;
-    const SLAstNode* n;
-    uint32_t         lineLen;
-    int32_t          id = nodeId;
-    if (SLFmtImportParseRow(c, nodeId, &row) != 0) {
+static int HOPFmtEmitImport(HOPFmtCtx* c, int32_t nodeId) {
+    HOPFmtImportRow   row;
+    const HOPAstNode* n;
+    uint32_t          lineLen;
+    int32_t           id = nodeId;
+    if (HOPFmtImportParseRow(c, nodeId, &row) != 0) {
         return -1;
     }
     n = &c->ast->nodes[nodeId];
     lineLen = row.headLen;
-    if (SLFmtWriteCStr(c, "import ") != 0 || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
+    if (HOPFmtWriteCStr(c, "import ") != 0 || HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
         return -1;
     }
     if (row.aliasNodeId >= 0) {
-        const SLAstNode* an = &c->ast->nodes[row.aliasNodeId];
-        if (SLFmtWriteCStr(c, " as ") != 0 || SLFmtWriteSlice(c, an->dataStart, an->dataEnd) != 0) {
+        const HOPAstNode* an = &c->ast->nodes[row.aliasNodeId];
+        if (HOPFmtWriteCStr(c, " as ") != 0 || HOPFmtWriteSlice(c, an->dataStart, an->dataEnd) != 0)
+        {
             return -1;
         }
     }
     if (row.hasSymbols) {
-        if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitImportSymbolsInline(c, row.symStartNodeId) != 0)
+        if (HOPFmtWriteChar(c, ' ') != 0
+            || HOPFmtEmitImportSymbolsInline(c, row.symStartNodeId) != 0)
         {
             return -1;
         }
         lineLen += 1u + row.symbolsLen;
     }
     if (row.hasTrailingComment) {
-        if (SLFmtEmitTrailingCommentsInNodeRange(c, id, 1u) != 0) {
+        if (HOPFmtEmitTrailingCommentsInNodeRange(c, id, 1u) != 0) {
             return -1;
         }
     }
@@ -5113,7 +5142,7 @@ typedef struct {
     uint8_t  hasTrailingComment;
     uint8_t  noTypeAlign;
     uint8_t  _pad;
-} SLFmtAlignedFieldRow;
+} HOPFmtAlignedFieldRow;
 
 typedef struct {
     int32_t  nodeId;
@@ -5124,12 +5153,12 @@ typedef struct {
     uint8_t  hasValue;
     uint8_t  hasTrailingComment;
     uint8_t  _pad[2];
-} SLFmtAlignedEnumRow;
+} HOPFmtAlignedEnumRow;
 
-static int SLFmtFieldTypesMatch(SLFmtCtx* c, int32_t aTypeNodeId, int32_t bTypeNodeId) {
-    const SLAstNode* a;
-    const SLAstNode* b;
-    uint32_t         aLen;
+static int HOPFmtFieldTypesMatch(HOPFmtCtx* c, int32_t aTypeNodeId, int32_t bTypeNodeId) {
+    const HOPAstNode* a;
+    const HOPAstNode* b;
+    uint32_t          aLen;
     if (aTypeNodeId < 0 || bTypeNodeId < 0 || (uint32_t)aTypeNodeId >= c->ast->len
         || (uint32_t)bTypeNodeId >= c->ast->len)
     {
@@ -5147,20 +5176,21 @@ static int SLFmtFieldTypesMatch(SLFmtCtx* c, int32_t aTypeNodeId, int32_t bTypeN
     return memcmp(c->src.ptr + a->start, c->src.ptr + b->start, aLen) == 0;
 }
 
-static int SLFmtIsAnonAggregateTypeNode(SLFmtCtx* c, int32_t typeNodeId) {
-    SLAstKind kind;
+static int HOPFmtIsAnonAggregateTypeNode(HOPFmtCtx* c, int32_t typeNodeId) {
+    HOPAstKind kind;
     if (typeNodeId < 0 || (uint32_t)typeNodeId >= c->ast->len) {
         return 0;
     }
     kind = c->ast->nodes[typeNodeId].kind;
-    return kind == SLAst_TYPE_ANON_STRUCT || kind == SLAst_TYPE_ANON_UNION;
+    return kind == HOPAst_TYPE_ANON_STRUCT || kind == HOPAst_TYPE_ANON_UNION;
 }
 
-static int SLFmtCanMergeFieldNames(SLFmtCtx* c, int32_t leftFieldNodeId, int32_t rightFieldNodeId) {
-    const SLAstNode* left = &c->ast->nodes[leftFieldNodeId];
-    const SLAstNode* right = &c->ast->nodes[rightFieldNodeId];
-    uint32_t         i;
-    int              sawComma = 0;
+static int HOPFmtCanMergeFieldNames(
+    HOPFmtCtx* c, int32_t leftFieldNodeId, int32_t rightFieldNodeId) {
+    const HOPAstNode* left = &c->ast->nodes[leftFieldNodeId];
+    const HOPAstNode* right = &c->ast->nodes[rightFieldNodeId];
+    uint32_t          i;
+    int               sawComma = 0;
     if (right->dataStart < left->dataEnd || right->dataStart > c->src.len) {
         return 0;
     }
@@ -5181,13 +5211,13 @@ static int SLFmtCanMergeFieldNames(SLFmtCtx* c, int32_t leftFieldNodeId, int32_t
     return sawComma;
 }
 
-static uint32_t SLFmtMergedFieldNameLen(
-    SLFmtCtx* c, int32_t firstFieldNodeId, int32_t lastFieldNodeId) {
+static uint32_t HOPFmtMergedFieldNameLen(
+    HOPFmtCtx* c, int32_t firstFieldNodeId, int32_t lastFieldNodeId) {
     uint32_t len = 0;
     int32_t  cur = firstFieldNodeId;
     while (cur >= 0) {
-        const SLAstNode* n = &c->ast->nodes[cur];
-        int32_t          next = SLFmtNextSibling(c->ast, cur);
+        const HOPAstNode* n = &c->ast->nodes[cur];
+        int32_t           next = HOPFmtNextSibling(c->ast, cur);
         len += n->dataEnd - n->dataStart;
         if (cur != lastFieldNodeId) {
             len += 2u;
@@ -5199,19 +5229,19 @@ static uint32_t SLFmtMergedFieldNameLen(
     return len;
 }
 
-static int SLFmtEmitMergedFieldNames(
-    SLFmtCtx* c, int32_t firstFieldNodeId, int32_t lastFieldNodeId) {
+static int HOPFmtEmitMergedFieldNames(
+    HOPFmtCtx* c, int32_t firstFieldNodeId, int32_t lastFieldNodeId) {
     int32_t cur = firstFieldNodeId;
     while (cur >= 0) {
-        const SLAstNode* n = &c->ast->nodes[cur];
-        int32_t          next = SLFmtNextSibling(c->ast, cur);
-        if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
+        const HOPAstNode* n = &c->ast->nodes[cur];
+        int32_t           next = HOPFmtNextSibling(c->ast, cur);
+        if (HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
             return -1;
         }
         if (cur == lastFieldNodeId) {
             break;
         }
-        if (SLFmtWriteCStr(c, ", ") != 0) {
+        if (HOPFmtWriteCStr(c, ", ") != 0) {
             return -1;
         }
         cur = next;
@@ -5219,42 +5249,42 @@ static int SLFmtEmitMergedFieldNames(
     return 0;
 }
 
-static int SLFmtBuildFieldRow(
-    SLFmtCtx* c, int32_t startFieldNodeId, SLFmtAlignedFieldRow* outRow, int32_t* outNextNodeId) {
-    int32_t          typeNodeId;
-    int32_t          defaultNodeId;
-    const SLAstNode* startNode;
-    int32_t          lastNodeId;
+static int HOPFmtBuildFieldRow(
+    HOPFmtCtx* c, int32_t startFieldNodeId, HOPFmtAlignedFieldRow* outRow, int32_t* outNextNodeId) {
+    int32_t           typeNodeId;
+    int32_t           defaultNodeId;
+    const HOPAstNode* startNode;
+    int32_t           lastNodeId;
 
     if (startFieldNodeId < 0 || (uint32_t)startFieldNodeId >= c->ast->len) {
         return -1;
     }
     startNode = &c->ast->nodes[startFieldNodeId];
-    if (startNode->kind != SLAst_FIELD) {
+    if (startNode->kind != HOPAst_FIELD) {
         return -1;
     }
 
-    typeNodeId = SLFmtFirstChild(c->ast, startFieldNodeId);
-    defaultNodeId = typeNodeId >= 0 ? SLFmtNextSibling(c->ast, typeNodeId) : -1;
+    typeNodeId = HOPFmtFirstChild(c->ast, startFieldNodeId);
+    defaultNodeId = typeNodeId >= 0 ? HOPFmtNextSibling(c->ast, typeNodeId) : -1;
     lastNodeId = startFieldNodeId;
 
-    if ((startNode->flags & SLAstFlag_FIELD_EMBEDDED) == 0 && defaultNodeId < 0) {
-        int32_t next = SLFmtNextSibling(c->ast, lastNodeId);
-        while (next >= 0 && c->ast->nodes[next].kind == SLAst_FIELD) {
-            const SLAstNode* nn = &c->ast->nodes[next];
-            int32_t          nextType = SLFmtFirstChild(c->ast, next);
-            int32_t          nextDefault = nextType >= 0 ? SLFmtNextSibling(c->ast, nextType) : -1;
-            if ((nn->flags & SLAstFlag_FIELD_EMBEDDED) != 0 || nextDefault >= 0) {
+    if ((startNode->flags & HOPAstFlag_FIELD_EMBEDDED) == 0 && defaultNodeId < 0) {
+        int32_t next = HOPFmtNextSibling(c->ast, lastNodeId);
+        while (next >= 0 && c->ast->nodes[next].kind == HOPAst_FIELD) {
+            const HOPAstNode* nn = &c->ast->nodes[next];
+            int32_t           nextType = HOPFmtFirstChild(c->ast, next);
+            int32_t nextDefault = nextType >= 0 ? HOPFmtNextSibling(c->ast, nextType) : -1;
+            if ((nn->flags & HOPAstFlag_FIELD_EMBEDDED) != 0 || nextDefault >= 0) {
                 break;
             }
-            if (!SLFmtFieldTypesMatch(c, typeNodeId, nextType)) {
+            if (!HOPFmtFieldTypesMatch(c, typeNodeId, nextType)) {
                 break;
             }
-            if (!SLFmtCanMergeFieldNames(c, lastNodeId, next)) {
+            if (!HOPFmtCanMergeFieldNames(c, lastNodeId, next)) {
                 break;
             }
             lastNodeId = next;
-            next = SLFmtNextSibling(c->ast, next);
+            next = HOPFmtNextSibling(c->ast, next);
         }
     }
 
@@ -5264,86 +5294,86 @@ static int SLFmtBuildFieldRow(
     outRow->typeNodeId = typeNodeId;
     outRow->defaultNodeId = defaultNodeId;
     outRow->hasDefault = (uint8_t)(defaultNodeId >= 0);
-    outRow->nameLen = SLFmtMergedFieldNameLen(c, startFieldNodeId, lastNodeId);
-    if (typeNodeId >= 0 && SLFmtMeasureTypeLen(c, typeNodeId, &outRow->typeLen) != 0) {
+    outRow->nameLen = HOPFmtMergedFieldNameLen(c, startFieldNodeId, lastNodeId);
+    if (typeNodeId >= 0 && HOPFmtMeasureTypeLen(c, typeNodeId, &outRow->typeLen) != 0) {
         return -1;
     }
-    if (defaultNodeId >= 0 && SLFmtMeasureExprLen(c, defaultNodeId, 0, &outRow->defaultLen) != 0) {
+    if (defaultNodeId >= 0 && HOPFmtMeasureExprLen(c, defaultNodeId, 0, &outRow->defaultLen) != 0) {
         return -1;
     }
-    outRow->hasTrailingComment = (uint8_t)SLFmtHasUnusedTrailingCommentsForNodes(
+    outRow->hasTrailingComment = (uint8_t)HOPFmtHasUnusedTrailingCommentsForNodes(
         c, &startFieldNodeId, 1u);
-    *outNextNodeId = SLFmtNextSibling(c->ast, lastNodeId);
+    *outNextNodeId = HOPFmtNextSibling(c->ast, lastNodeId);
     return 0;
 }
 
-static int SLFmtEmitSimpleFieldDecl(SLFmtCtx* c, int32_t fieldNodeId) {
-    const SLAstNode* fn = &c->ast->nodes[fieldNodeId];
-    int32_t          typeNode = SLFmtFirstChild(c->ast, fieldNodeId);
-    int32_t          defaultNode = typeNode >= 0 ? SLFmtNextSibling(c->ast, typeNode) : -1;
-    int32_t          nodeIds[1];
-    int              hasTrailing;
-    if ((fn->flags & SLAstFlag_FIELD_EMBEDDED) != 0) {
-        if (typeNode >= 0 && SLFmtEmitType(c, typeNode) != 0) {
+static int HOPFmtEmitSimpleFieldDecl(HOPFmtCtx* c, int32_t fieldNodeId) {
+    const HOPAstNode* fn = &c->ast->nodes[fieldNodeId];
+    int32_t           typeNode = HOPFmtFirstChild(c->ast, fieldNodeId);
+    int32_t           defaultNode = typeNode >= 0 ? HOPFmtNextSibling(c->ast, typeNode) : -1;
+    int32_t           nodeIds[1];
+    int               hasTrailing;
+    if ((fn->flags & HOPAstFlag_FIELD_EMBEDDED) != 0) {
+        if (typeNode >= 0 && HOPFmtEmitType(c, typeNode) != 0) {
             return -1;
         }
     } else if (
-        SLFmtWriteSlice(c, fn->dataStart, fn->dataEnd) != 0 || SLFmtWriteChar(c, ' ') != 0
-        || (typeNode >= 0 && SLFmtEmitType(c, typeNode) != 0))
+        HOPFmtWriteSlice(c, fn->dataStart, fn->dataEnd) != 0 || HOPFmtWriteChar(c, ' ') != 0
+        || (typeNode >= 0 && HOPFmtEmitType(c, typeNode) != 0))
     {
         return -1;
     }
     if (defaultNode >= 0) {
-        if (SLFmtWriteCStr(c, " = ") != 0 || SLFmtEmitExpr(c, defaultNode, 0) != 0) {
+        if (HOPFmtWriteCStr(c, " = ") != 0 || HOPFmtEmitExpr(c, defaultNode, 0) != 0) {
             return -1;
         }
     }
     nodeIds[0] = fieldNodeId;
-    hasTrailing = SLFmtHasUnusedTrailingCommentsForNodes(c, nodeIds, 1u);
+    hasTrailing = HOPFmtHasUnusedTrailingCommentsForNodes(c, nodeIds, 1u);
     if (hasTrailing) {
-        return SLFmtEmitTrailingCommentsForNodes(c, nodeIds, 1u, 1u);
+        return HOPFmtEmitTrailingCommentsForNodes(c, nodeIds, 1u, 1u);
     }
     {
         uint32_t cmStart;
         uint32_t cmEnd;
-        if (SLFmtFindSourceTrailingLineComment(c, fieldNodeId, &cmStart, &cmEnd)) {
-            if (SLFmtWriteChar(c, ' ') != 0 || SLFmtWriteSlice(c, cmStart, cmEnd) != 0) {
+        if (HOPFmtFindSourceTrailingLineComment(c, fieldNodeId, &cmStart, &cmEnd)) {
+            if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtWriteSlice(c, cmStart, cmEnd) != 0) {
                 return -1;
             }
-            SLFmtMarkCommentUsedAtStart(c, cmStart);
+            HOPFmtMarkCommentUsedAtStart(c, cmStart);
         }
     }
     return 0;
 }
 
-static int SLFmtEmitAlignedFieldGroup(
-    SLFmtCtx* c, int32_t firstFieldNodeId, int32_t* outLastNodeId, int32_t* outNextNodeId) {
-    int32_t               cur = firstFieldNodeId;
-    int32_t               prev = -1;
-    int                   prevInlineAnon = 0;
-    uint32_t              count = 0;
-    uint32_t              i;
-    uint32_t              maxNameLen = 0;
-    uint32_t              maxBeforeOpLen = 0;
-    SLFmtAlignedFieldRow* rows;
-    uint32_t*             commentRunMaxLens;
+static int HOPFmtEmitAlignedFieldGroup(
+    HOPFmtCtx* c, int32_t firstFieldNodeId, int32_t* outLastNodeId, int32_t* outNextNodeId) {
+    int32_t                cur = firstFieldNodeId;
+    int32_t                prev = -1;
+    int                    prevInlineAnon = 0;
+    uint32_t               count = 0;
+    uint32_t               i;
+    uint32_t               maxNameLen = 0;
+    uint32_t               maxBeforeOpLen = 0;
+    HOPFmtAlignedFieldRow* rows;
+    uint32_t*              commentRunMaxLens;
 
     while (cur >= 0) {
-        SLFmtAlignedFieldRow row;
-        int32_t              next;
-        int                  curInlineAnon;
-        if (c->ast->nodes[cur].kind != SLAst_FIELD) {
+        HOPFmtAlignedFieldRow row;
+        int32_t               next;
+        int                   curInlineAnon;
+        if (c->ast->nodes[cur].kind != HOPAst_FIELD) {
             break;
         }
-        if ((c->ast->nodes[cur].flags & SLAstFlag_FIELD_EMBEDDED) != 0) {
+        if ((c->ast->nodes[cur].flags & HOPAstFlag_FIELD_EMBEDDED) != 0) {
             break;
         }
-        if (SLFmtBuildFieldRow(c, cur, &row, &next) != 0) {
+        if (HOPFmtBuildFieldRow(c, cur, &row, &next) != 0) {
             return -1;
         }
-        curInlineAnon = SLFmtIsInlineAnonAggregateType(c, row.typeNodeId);
+        curInlineAnon = HOPFmtIsInlineAnonAggregateType(c, row.typeNodeId);
         if (prev >= 0) {
-            if (!SLFmtCanContinueAlignedGroup(c, prev, row.firstNodeId)) {
+            if (!HOPFmtCanContinueAlignedGroup(c, prev, row.firstNodeId)) {
                 break;
             }
             if (prevInlineAnon != curInlineAnon) {
@@ -5358,21 +5388,21 @@ static int SLFmtEmitAlignedFieldGroup(
 
     if (count == 0) {
         *outLastNodeId = firstFieldNodeId;
-        *outNextNodeId = SLFmtNextSibling(c->ast, firstFieldNodeId);
+        *outNextNodeId = HOPFmtNextSibling(c->ast, firstFieldNodeId);
         return 0;
     }
 
-    rows = (SLFmtAlignedFieldRow*)SLArenaAlloc(
+    rows = (HOPFmtAlignedFieldRow*)HOPArenaAlloc(
         c->out.arena,
-        count * (uint32_t)sizeof(SLFmtAlignedFieldRow),
-        (uint32_t)_Alignof(SLFmtAlignedFieldRow));
+        count * (uint32_t)sizeof(HOPFmtAlignedFieldRow),
+        (uint32_t)_Alignof(HOPFmtAlignedFieldRow));
     if (rows == NULL) {
         return -1;
     }
 
     cur = firstFieldNodeId;
     for (i = 0; i < count; i++) {
-        if (SLFmtBuildFieldRow(c, cur, &rows[i], &cur) != 0) {
+        if (HOPFmtBuildFieldRow(c, cur, &rows[i], &cur) != 0) {
             return -1;
         }
         if (rows[i].nameLen > maxNameLen) {
@@ -5381,9 +5411,9 @@ static int SLFmtEmitAlignedFieldGroup(
     }
 
     for (i = 0; i < count; i++) {
-        int isAnon = SLFmtIsAnonAggregateTypeNode(c, rows[i].typeNodeId);
-        int prevAnon = i > 0u && SLFmtIsAnonAggregateTypeNode(c, rows[i - 1u].typeNodeId);
-        int nextAnon = i + 1u < count && SLFmtIsAnonAggregateTypeNode(c, rows[i + 1u].typeNodeId);
+        int isAnon = HOPFmtIsAnonAggregateTypeNode(c, rows[i].typeNodeId);
+        int prevAnon = i > 0u && HOPFmtIsAnonAggregateTypeNode(c, rows[i - 1u].typeNodeId);
+        int nextAnon = i + 1u < count && HOPFmtIsAnonAggregateTypeNode(c, rows[i + 1u].typeNodeId);
         rows[i].noTypeAlign = (uint8_t)(isAnon && (prevAnon || nextAnon));
     }
 
@@ -5416,7 +5446,7 @@ static int SLFmtEmitAlignedFieldGroup(
         rows[i].codeLen = codeLen;
     }
 
-    commentRunMaxLens = (uint32_t*)SLArenaAlloc(
+    commentRunMaxLens = (uint32_t*)HOPArenaAlloc(
         c->out.arena, count * (uint32_t)sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
     if (commentRunMaxLens == NULL) {
         return -1;
@@ -5446,40 +5476,40 @@ static int SLFmtEmitAlignedFieldGroup(
     for (i = 0; i < count; i++) {
         uint32_t lineLen;
         int32_t  nodeIds[1];
-        if (SLFmtEmitLeadingCommentsForNode(c, rows[i].firstNodeId) != 0) {
+        if (HOPFmtEmitLeadingCommentsForNode(c, rows[i].firstNodeId) != 0) {
             return -1;
         }
-        if (SLFmtEmitMergedFieldNames(c, rows[i].firstNodeId, rows[i].lastNodeId) != 0) {
+        if (HOPFmtEmitMergedFieldNames(c, rows[i].firstNodeId, rows[i].lastNodeId) != 0) {
             return -1;
         }
         lineLen = rows[i].nameLen;
         if (rows[i].noTypeAlign) {
-            if (SLFmtWriteChar(c, ' ') != 0) {
+            if (HOPFmtWriteChar(c, ' ') != 0) {
                 return -1;
             }
         } else {
-            if (SLFmtWriteSpaces(c, maxNameLen - rows[i].nameLen + 1u) != 0) {
+            if (HOPFmtWriteSpaces(c, maxNameLen - rows[i].nameLen + 1u) != 0) {
                 return -1;
             }
             lineLen = maxNameLen + 1u;
         }
-        if (rows[i].typeNodeId >= 0 && SLFmtEmitType(c, rows[i].typeNodeId) != 0) {
+        if (rows[i].typeNodeId >= 0 && HOPFmtEmitType(c, rows[i].typeNodeId) != 0) {
             return -1;
         }
         lineLen += rows[i].typeLen;
         if (rows[i].hasDefault) {
             if (rows[i].noTypeAlign) {
-                if (SLFmtWriteCStr(c, " = ") != 0
-                    || SLFmtEmitExpr(c, rows[i].defaultNodeId, 0) != 0)
+                if (HOPFmtWriteCStr(c, " = ") != 0
+                    || HOPFmtEmitExpr(c, rows[i].defaultNodeId, 0) != 0)
                 {
                     return -1;
                 }
                 lineLen += 3u + rows[i].defaultLen;
             } else {
                 uint32_t padBeforeOp = (maxBeforeOpLen + 1u) - lineLen;
-                if (SLFmtWriteSpaces(c, padBeforeOp) != 0 || SLFmtWriteChar(c, '=') != 0
-                    || SLFmtWriteChar(c, ' ') != 0
-                    || SLFmtEmitExpr(c, rows[i].defaultNodeId, 0) != 0)
+                if (HOPFmtWriteSpaces(c, padBeforeOp) != 0 || HOPFmtWriteChar(c, '=') != 0
+                    || HOPFmtWriteChar(c, ' ') != 0
+                    || HOPFmtEmitExpr(c, rows[i].defaultNodeId, 0) != 0)
                 {
                     return -1;
                 }
@@ -5489,20 +5519,20 @@ static int SLFmtEmitAlignedFieldGroup(
         if (rows[i].hasTrailingComment) {
             uint32_t padComment = (commentRunMaxLens[i] - lineLen) + 1u;
             nodeIds[0] = rows[i].firstNodeId;
-            if (SLFmtEmitTrailingCommentsForNodes(c, nodeIds, 1u, padComment) != 0) {
+            if (HOPFmtEmitTrailingCommentsForNodes(c, nodeIds, 1u, padComment) != 0) {
                 return -1;
             }
         } else {
             uint32_t cmStart;
             uint32_t cmEnd;
-            if (SLFmtFindSourceTrailingLineComment(c, rows[i].lastNodeId, &cmStart, &cmEnd)) {
-                if (SLFmtWriteChar(c, ' ') != 0 || SLFmtWriteSlice(c, cmStart, cmEnd) != 0) {
+            if (HOPFmtFindSourceTrailingLineComment(c, rows[i].lastNodeId, &cmStart, &cmEnd)) {
+                if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtWriteSlice(c, cmStart, cmEnd) != 0) {
                     return -1;
                 }
-                SLFmtMarkCommentUsedAtStart(c, cmStart);
+                HOPFmtMarkCommentUsedAtStart(c, cmStart);
             }
         }
-        if (i + 1u < count && SLFmtNewline(c) != 0) {
+        if (i + 1u < count && HOPFmtNewline(c) != 0) {
             return -1;
         }
     }
@@ -5512,22 +5542,22 @@ static int SLFmtEmitAlignedFieldGroup(
     return 0;
 }
 
-static int SLFmtEmitAlignedEnumGroup(
-    SLFmtCtx* c, int32_t firstFieldNodeId, int32_t* outLastNodeId, int32_t* outNextNodeId) {
-    int32_t              cur = firstFieldNodeId;
-    int32_t              prev = -1;
-    uint32_t             count = 0;
-    uint32_t             i;
-    uint32_t             maxNameLenForValues = 0;
-    SLFmtAlignedEnumRow* rows;
-    uint32_t*            commentRunMaxLens;
+static int HOPFmtEmitAlignedEnumGroup(
+    HOPFmtCtx* c, int32_t firstFieldNodeId, int32_t* outLastNodeId, int32_t* outNextNodeId) {
+    int32_t               cur = firstFieldNodeId;
+    int32_t               prev = -1;
+    uint32_t              count = 0;
+    uint32_t              i;
+    uint32_t              maxNameLenForValues = 0;
+    HOPFmtAlignedEnumRow* rows;
+    uint32_t*             commentRunMaxLens;
 
     while (cur >= 0) {
-        int32_t next = SLFmtNextSibling(c->ast, cur);
-        if (c->ast->nodes[cur].kind != SLAst_FIELD) {
+        int32_t next = HOPFmtNextSibling(c->ast, cur);
+        if (c->ast->nodes[cur].kind != HOPAst_FIELD) {
             break;
         }
-        if (prev >= 0 && !SLFmtCanContinueAlignedGroup(c, prev, cur)) {
+        if (prev >= 0 && !HOPFmtCanContinueAlignedGroup(c, prev, cur)) {
             break;
         }
         count++;
@@ -5535,39 +5565,39 @@ static int SLFmtEmitAlignedEnumGroup(
         cur = next;
     }
 
-    rows = (SLFmtAlignedEnumRow*)SLArenaAlloc(
+    rows = (HOPFmtAlignedEnumRow*)HOPArenaAlloc(
         c->out.arena,
-        count * (uint32_t)sizeof(SLFmtAlignedEnumRow),
-        (uint32_t)_Alignof(SLFmtAlignedEnumRow));
+        count * (uint32_t)sizeof(HOPFmtAlignedEnumRow),
+        (uint32_t)_Alignof(HOPFmtAlignedEnumRow));
     if (rows == NULL) {
         return -1;
     }
-    memset(rows, 0, count * (uint32_t)sizeof(SLFmtAlignedEnumRow));
+    memset(rows, 0, count * (uint32_t)sizeof(HOPFmtAlignedEnumRow));
 
     cur = firstFieldNodeId;
     for (i = 0; i < count; i++) {
-        const SLAstNode* n = &c->ast->nodes[cur];
-        int32_t          valueNode = SLFmtFirstChild(c->ast, cur);
+        const HOPAstNode* n = &c->ast->nodes[cur];
+        int32_t           valueNode = HOPFmtFirstChild(c->ast, cur);
         rows[i].nodeId = cur;
         rows[i].nameLen = n->dataEnd - n->dataStart;
-        while (valueNode >= 0 && c->ast->nodes[valueNode].kind == SLAst_FIELD) {
-            valueNode = SLFmtNextSibling(c->ast, valueNode);
+        while (valueNode >= 0 && c->ast->nodes[valueNode].kind == HOPAst_FIELD) {
+            valueNode = HOPFmtNextSibling(c->ast, valueNode);
         }
         rows[i].valueNodeId = valueNode;
         rows[i].hasValue = (uint8_t)(rows[i].valueNodeId >= 0);
         if (rows[i].hasValue
-            && SLFmtMeasureExprLen(c, rows[i].valueNodeId, 0, &rows[i].valueLen) != 0)
+            && HOPFmtMeasureExprLen(c, rows[i].valueNodeId, 0, &rows[i].valueLen) != 0)
         {
             return -1;
         }
-        rows[i].hasTrailingComment = (uint8_t)SLFmtHasUnusedTrailingCommentsForNodes(c, &cur, 1u);
+        rows[i].hasTrailingComment = (uint8_t)HOPFmtHasUnusedTrailingCommentsForNodes(c, &cur, 1u);
         if (rows[i].hasValue && rows[i].nameLen > maxNameLenForValues) {
             maxNameLenForValues = rows[i].nameLen;
         }
-        cur = SLFmtNextSibling(c->ast, cur);
+        cur = HOPFmtNextSibling(c->ast, cur);
     }
 
-    commentRunMaxLens = (uint32_t*)SLArenaAlloc(
+    commentRunMaxLens = (uint32_t*)HOPArenaAlloc(
         c->out.arena, count * (uint32_t)sizeof(uint32_t), (uint32_t)_Alignof(uint32_t));
     if (commentRunMaxLens == NULL) {
         return -1;
@@ -5604,19 +5634,19 @@ static int SLFmtEmitAlignedEnumGroup(
     }
 
     for (i = 0; i < count; i++) {
-        uint32_t         lineLen = rows[i].nameLen;
-        int32_t          nodeIds[1];
-        const SLAstNode* n = &c->ast->nodes[rows[i].nodeId];
-        if (SLFmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
+        uint32_t          lineLen = rows[i].nameLen;
+        int32_t           nodeIds[1];
+        const HOPAstNode* n = &c->ast->nodes[rows[i].nodeId];
+        if (HOPFmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
             return -1;
         }
-        if (SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
+        if (HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
             return -1;
         }
         if (rows[i].hasValue) {
             uint32_t padBeforeOp = (maxNameLenForValues + 1u) - rows[i].nameLen;
-            if (SLFmtWriteSpaces(c, padBeforeOp) != 0 || SLFmtWriteChar(c, '=') != 0
-                || SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitExpr(c, rows[i].valueNodeId, 0) != 0)
+            if (HOPFmtWriteSpaces(c, padBeforeOp) != 0 || HOPFmtWriteChar(c, '=') != 0
+                || HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitExpr(c, rows[i].valueNodeId, 0) != 0)
             {
                 return -1;
             }
@@ -5625,11 +5655,11 @@ static int SLFmtEmitAlignedEnumGroup(
         if (rows[i].hasTrailingComment) {
             uint32_t padComment = (commentRunMaxLens[i] - lineLen) + 1u;
             nodeIds[0] = rows[i].nodeId;
-            if (SLFmtEmitTrailingCommentsForNodes(c, nodeIds, 1u, padComment) != 0) {
+            if (HOPFmtEmitTrailingCommentsForNodes(c, nodeIds, 1u, padComment) != 0) {
                 return -1;
             }
         }
-        if (i + 1u < count && SLFmtNewline(c) != 0) {
+        if (i + 1u < count && HOPFmtNewline(c) != 0) {
             return -1;
         }
     }
@@ -5639,136 +5669,136 @@ static int SLFmtEmitAlignedEnumGroup(
     return 0;
 }
 
-static int SLFmtIsNestedTypeDeclNodeKind(SLAstKind kind) {
-    return kind == SLAst_STRUCT || kind == SLAst_UNION || kind == SLAst_ENUM
-        || kind == SLAst_TYPE_ALIAS;
+static int HOPFmtIsNestedTypeDeclNodeKind(HOPAstKind kind) {
+    return kind == HOPAst_STRUCT || kind == HOPAst_UNION || kind == HOPAst_ENUM
+        || kind == HOPAst_TYPE_ALIAS;
 }
 
-static int SLFmtEmitAggregateFieldBody(SLFmtCtx* c, int32_t firstFieldNodeId) {
+static int HOPFmtEmitAggregateFieldBody(HOPFmtCtx* c, int32_t firstFieldNodeId) {
     int32_t child = firstFieldNodeId;
     int32_t prevEmitted = -1;
 
     if (child < 0) {
         return 0;
     }
-    if (SLFmtNewline(c) != 0) {
+    if (HOPFmtNewline(c) != 0) {
         return -1;
     }
     c->indent++;
     while (child >= 0) {
-        SLAstKind kind = c->ast->nodes[child].kind;
-        if (kind != SLAst_FIELD && !SLFmtIsNestedTypeDeclNodeKind(kind)) {
+        HOPAstKind kind = c->ast->nodes[child].kind;
+        if (kind != HOPAst_FIELD && !HOPFmtIsNestedTypeDeclNodeKind(kind)) {
             break;
         }
         if (prevEmitted >= 0) {
-            if (SLFmtNewline(c) != 0) {
+            if (HOPFmtNewline(c) != 0) {
                 return -1;
             }
-            if (SLFmtNeedsBlankLineBeforeNode(c, prevEmitted, child) && SLFmtNewline(c) != 0) {
+            if (HOPFmtNeedsBlankLineBeforeNode(c, prevEmitted, child) && HOPFmtNewline(c) != 0) {
                 return -1;
             }
         }
-        if (kind == SLAst_FIELD) {
-            int32_t next = SLFmtNextSibling(c->ast, child);
+        if (kind == HOPAst_FIELD) {
+            int32_t next = HOPFmtNextSibling(c->ast, child);
             int32_t last = child;
-            if ((c->ast->nodes[child].flags & SLAstFlag_FIELD_EMBEDDED) != 0) {
-                if (SLFmtEmitLeadingCommentsForNode(c, child) != 0
-                    || SLFmtEmitSimpleFieldDecl(c, child) != 0)
+            if ((c->ast->nodes[child].flags & HOPAstFlag_FIELD_EMBEDDED) != 0) {
+                if (HOPFmtEmitLeadingCommentsForNode(c, child) != 0
+                    || HOPFmtEmitSimpleFieldDecl(c, child) != 0)
                 {
                     return -1;
                 }
-            } else if (SLFmtEmitAlignedFieldGroup(c, child, &last, &next) != 0) {
+            } else if (HOPFmtEmitAlignedFieldGroup(c, child, &last, &next) != 0) {
                 return -1;
             }
             prevEmitted = last;
             child = next;
             continue;
         }
-        if (SLFmtEmitDecl(c, child) != 0) {
+        if (HOPFmtEmitDecl(c, child) != 0) {
             return -1;
         }
         prevEmitted = child;
-        child = SLFmtNextSibling(c->ast, child);
+        child = HOPFmtNextSibling(c->ast, child);
     }
     c->indent--;
-    if (SLFmtNewline(c) != 0) {
+    if (HOPFmtNewline(c) != 0) {
         return -1;
     }
     return 0;
 }
 
-static int SLFmtEmitAggregateDecl(SLFmtCtx* c, int32_t nodeId, const char* kw) {
-    const SLAstNode* n = &c->ast->nodes[nodeId];
-    int32_t          child = SLFmtFirstChild(c->ast, nodeId);
-    int32_t          underType = -1;
-    int32_t          prevEmitted = -1;
-    while (child >= 0 && c->ast->nodes[child].kind == SLAst_TYPE_PARAM) {
-        child = SLFmtNextSibling(c->ast, child);
+static int HOPFmtEmitAggregateDecl(HOPFmtCtx* c, int32_t nodeId, const char* kw) {
+    const HOPAstNode* n = &c->ast->nodes[nodeId];
+    int32_t           child = HOPFmtFirstChild(c->ast, nodeId);
+    int32_t           underType = -1;
+    int32_t           prevEmitted = -1;
+    while (child >= 0 && c->ast->nodes[child].kind == HOPAst_TYPE_PARAM) {
+        child = HOPFmtNextSibling(c->ast, child);
     }
-    if (n->kind == SLAst_ENUM && child >= 0 && SLFmtIsTypeNodeKind(c->ast->nodes[child].kind)) {
+    if (n->kind == HOPAst_ENUM && child >= 0 && HOPFmtIsTypeNodeKind(c->ast->nodes[child].kind)) {
         underType = child;
-        child = SLFmtNextSibling(c->ast, child);
+        child = HOPFmtNextSibling(c->ast, child);
     }
 
-    if ((n->flags & SLAstFlag_PUB) != 0 && SLFmtWriteCStr(c, "pub ") != 0) {
+    if ((n->flags & HOPAstFlag_PUB) != 0 && HOPFmtWriteCStr(c, "pub ") != 0) {
         return -1;
     }
-    if (SLFmtWriteCStr(c, kw) != 0 || SLFmtWriteChar(c, ' ') != 0
-        || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
+    if (HOPFmtWriteCStr(c, kw) != 0 || HOPFmtWriteChar(c, ' ') != 0
+        || HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
     {
         return -1;
     }
-    child = SLFmtFirstChild(c->ast, nodeId);
-    if (SLFmtEmitTypeParamList(c, &child) != 0) {
+    child = HOPFmtFirstChild(c->ast, nodeId);
+    if (HOPFmtEmitTypeParamList(c, &child) != 0) {
         return -1;
     }
     if (underType >= 0) {
-        if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitType(c, underType) != 0) {
+        if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitType(c, underType) != 0) {
             return -1;
         }
-        child = SLFmtNextSibling(c->ast, underType);
+        child = HOPFmtNextSibling(c->ast, underType);
     }
-    if (SLFmtWriteChar(c, ' ') != 0 || SLFmtWriteChar(c, '{') != 0) {
+    if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtWriteChar(c, '{') != 0) {
         return -1;
     }
 
     if (child >= 0) {
-        if (n->kind == SLAst_ENUM) {
+        if (n->kind == HOPAst_ENUM) {
             int     enumHasPayload = 0;
             int32_t scanItem = child;
             while (scanItem >= 0) {
-                int32_t vch = SLFmtFirstChild(c->ast, scanItem);
+                int32_t vch = HOPFmtFirstChild(c->ast, scanItem);
                 while (vch >= 0) {
-                    if (c->ast->nodes[vch].kind == SLAst_FIELD) {
+                    if (c->ast->nodes[vch].kind == HOPAst_FIELD) {
                         enumHasPayload = 1;
                         break;
                     }
-                    vch = SLFmtNextSibling(c->ast, vch);
+                    vch = HOPFmtNextSibling(c->ast, vch);
                 }
                 if (enumHasPayload) {
                     break;
                 }
-                scanItem = SLFmtNextSibling(c->ast, scanItem);
+                scanItem = HOPFmtNextSibling(c->ast, scanItem);
             }
-            if (SLFmtNewline(c) != 0) {
+            if (HOPFmtNewline(c) != 0) {
                 return -1;
             }
             c->indent++;
             if (!enumHasPayload) {
                 while (child >= 0) {
-                    int32_t next = SLFmtNextSibling(c->ast, child);
+                    int32_t next = HOPFmtNextSibling(c->ast, child);
                     int32_t last = child;
                     if (prevEmitted >= 0) {
-                        if (SLFmtNewline(c) != 0) {
+                        if (HOPFmtNewline(c) != 0) {
                             return -1;
                         }
-                        if (SLFmtNeedsBlankLineBeforeNode(c, prevEmitted, child)
-                            && SLFmtNewline(c) != 0)
+                        if (HOPFmtNeedsBlankLineBeforeNode(c, prevEmitted, child)
+                            && HOPFmtNewline(c) != 0)
                         {
                             return -1;
                         }
                     }
-                    if (SLFmtEmitAlignedEnumGroup(c, child, &last, &next) != 0) {
+                    if (HOPFmtEmitAlignedEnumGroup(c, child, &last, &next) != 0) {
                         return -1;
                     }
                     prevEmitted = last;
@@ -5776,50 +5806,50 @@ static int SLFmtEmitAggregateDecl(SLFmtCtx* c, int32_t nodeId, const char* kw) {
                 }
             } else {
                 while (child >= 0) {
-                    int32_t          next = SLFmtNextSibling(c->ast, child);
-                    const SLAstNode* item = &c->ast->nodes[child];
-                    int32_t          payloadFirst = -1;
-                    int32_t          tagExpr = -1;
-                    int32_t          ch = SLFmtFirstChild(c->ast, child);
+                    int32_t           next = HOPFmtNextSibling(c->ast, child);
+                    const HOPAstNode* item = &c->ast->nodes[child];
+                    int32_t           payloadFirst = -1;
+                    int32_t           tagExpr = -1;
+                    int32_t           ch = HOPFmtFirstChild(c->ast, child);
                     if (prevEmitted >= 0) {
-                        if (SLFmtNewline(c) != 0) {
+                        if (HOPFmtNewline(c) != 0) {
                             return -1;
                         }
-                        if (SLFmtNeedsBlankLineBeforeNode(c, prevEmitted, child)
-                            && SLFmtNewline(c) != 0)
+                        if (HOPFmtNeedsBlankLineBeforeNode(c, prevEmitted, child)
+                            && HOPFmtNewline(c) != 0)
                         {
                             return -1;
                         }
                     }
-                    if (SLFmtEmitLeadingCommentsForNode(c, child) != 0
-                        || SLFmtWriteSlice(c, item->dataStart, item->dataEnd) != 0)
+                    if (HOPFmtEmitLeadingCommentsForNode(c, child) != 0
+                        || HOPFmtWriteSlice(c, item->dataStart, item->dataEnd) != 0)
                     {
                         return -1;
                     }
                     while (ch >= 0) {
-                        if (c->ast->nodes[ch].kind == SLAst_FIELD) {
+                        if (c->ast->nodes[ch].kind == HOPAst_FIELD) {
                             if (payloadFirst < 0) {
                                 payloadFirst = ch;
                             }
                         } else if (tagExpr < 0) {
                             tagExpr = ch;
                         }
-                        ch = SLFmtNextSibling(c->ast, ch);
+                        ch = HOPFmtNextSibling(c->ast, ch);
                     }
                     if (payloadFirst >= 0) {
-                        if (SLFmtWriteChar(c, '{') != 0
-                            || SLFmtEmitAggregateFieldBody(c, payloadFirst) != 0
-                            || SLFmtWriteChar(c, '}') != 0)
+                        if (HOPFmtWriteChar(c, '{') != 0
+                            || HOPFmtEmitAggregateFieldBody(c, payloadFirst) != 0
+                            || HOPFmtWriteChar(c, '}') != 0)
                         {
                             return -1;
                         }
                     }
                     if (tagExpr >= 0) {
-                        if (SLFmtWriteCStr(c, " = ") != 0 || SLFmtEmitExpr(c, tagExpr, 0) != 0) {
+                        if (HOPFmtWriteCStr(c, " = ") != 0 || HOPFmtEmitExpr(c, tagExpr, 0) != 0) {
                             return -1;
                         }
                     }
-                    if (SLFmtEmitTrailingCommentsForNode(c, child) != 0) {
+                    if (HOPFmtEmitTrailingCommentsForNode(c, child) != 0) {
                         return -1;
                     }
                     prevEmitted = child;
@@ -5827,290 +5857,290 @@ static int SLFmtEmitAggregateDecl(SLFmtCtx* c, int32_t nodeId, const char* kw) {
                 }
             }
             c->indent--;
-            if (SLFmtNewline(c) != 0) {
+            if (HOPFmtNewline(c) != 0) {
                 return -1;
             }
-        } else if (SLFmtEmitAggregateFieldBody(c, child) != 0) {
+        } else if (HOPFmtEmitAggregateFieldBody(c, child) != 0) {
             return -1;
         }
     }
 
-    if (SLFmtWriteChar(c, '}') != 0) {
+    if (HOPFmtWriteChar(c, '}') != 0) {
         return -1;
     }
-    return SLFmtEmitTrailingCommentsForNode(c, nodeId);
+    return HOPFmtEmitTrailingCommentsForNode(c, nodeId);
 }
 
-static int SLFmtEmitFnDecl(SLFmtCtx* c, int32_t nodeId) {
-    const SLAstNode* n = &c->ast->nodes[nodeId];
-    int32_t          child;
-    int              firstParam = 1;
-    int32_t          retType = -1;
-    int32_t          ctxClause = -1;
-    int32_t          body = -1;
+static int HOPFmtEmitFnDecl(HOPFmtCtx* c, int32_t nodeId) {
+    const HOPAstNode* n = &c->ast->nodes[nodeId];
+    int32_t           child;
+    int               firstParam = 1;
+    int32_t           retType = -1;
+    int32_t           ctxClause = -1;
+    int32_t           body = -1;
 
-    if ((n->flags & SLAstFlag_PUB) != 0 && SLFmtWriteCStr(c, "pub ") != 0) {
+    if ((n->flags & HOPAstFlag_PUB) != 0 && HOPFmtWriteCStr(c, "pub ") != 0) {
         return -1;
     }
-    if (SLFmtWriteCStr(c, "fn ") != 0 || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
+    if (HOPFmtWriteCStr(c, "fn ") != 0 || HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
         return -1;
     }
 
-    child = SLFmtFirstChild(c->ast, nodeId);
-    if (SLFmtEmitTypeParamList(c, &child) != 0) {
+    child = HOPFmtFirstChild(c->ast, nodeId);
+    if (HOPFmtEmitTypeParamList(c, &child) != 0) {
         return -1;
     }
-    if (SLFmtWriteChar(c, '(') != 0) {
+    if (HOPFmtWriteChar(c, '(') != 0) {
         return -1;
     }
     while (child >= 0) {
-        const SLAstNode* ch = &c->ast->nodes[child];
-        int32_t          runFirst = child;
-        int32_t          runLast = child;
-        int32_t          runType = -1;
-        uint16_t         runFlags;
-        int32_t          nextAfterRun;
-        int              firstNameInRun = 1;
-        if (ch->kind != SLAst_PARAM) {
+        const HOPAstNode* ch = &c->ast->nodes[child];
+        int32_t           runFirst = child;
+        int32_t           runLast = child;
+        int32_t           runType = -1;
+        uint16_t          runFlags;
+        int32_t           nextAfterRun;
+        int               firstNameInRun = 1;
+        if (ch->kind != HOPAst_PARAM) {
             break;
         }
-        runType = SLFmtFirstChild(c->ast, child);
-        runFlags = (uint16_t)(ch->flags & (SLAstFlag_PARAM_CONST | SLAstFlag_PARAM_VARIADIC));
-        nextAfterRun = SLFmtNextSibling(c->ast, child);
+        runType = HOPFmtFirstChild(c->ast, child);
+        runFlags = (uint16_t)(ch->flags & (HOPAstFlag_PARAM_CONST | HOPAstFlag_PARAM_VARIADIC));
+        nextAfterRun = HOPFmtNextSibling(c->ast, child);
         while (nextAfterRun >= 0) {
-            const SLAstNode* nextParam = &c->ast->nodes[nextAfterRun];
-            int32_t          nextType;
-            uint16_t         nextFlags;
-            if (nextParam->kind != SLAst_PARAM) {
+            const HOPAstNode* nextParam = &c->ast->nodes[nextAfterRun];
+            int32_t           nextType;
+            uint16_t          nextFlags;
+            if (nextParam->kind != HOPAst_PARAM) {
                 break;
             }
-            nextType = SLFmtFirstChild(c->ast, nextAfterRun);
+            nextType = HOPFmtFirstChild(c->ast, nextAfterRun);
             nextFlags =
-                (uint16_t)(nextParam->flags & (SLAstFlag_PARAM_CONST | SLAstFlag_PARAM_VARIADIC));
+                (uint16_t)(nextParam->flags & (HOPAstFlag_PARAM_CONST | HOPAstFlag_PARAM_VARIADIC));
             if (nextFlags != runFlags
-                || !SLFmtTypeNodesEqualBySource(c->ast, c->src, runType, nextType))
+                || !HOPFmtTypeNodesEqualBySource(c->ast, c->src, runType, nextType))
             {
                 break;
             }
             runLast = nextAfterRun;
-            nextAfterRun = SLFmtNextSibling(c->ast, nextAfterRun);
+            nextAfterRun = HOPFmtNextSibling(c->ast, nextAfterRun);
         }
-        if (!firstParam && SLFmtWriteCStr(c, ", ") != 0) {
+        if (!firstParam && HOPFmtWriteCStr(c, ", ") != 0) {
             return -1;
         }
-        if ((runFlags & SLAstFlag_PARAM_CONST) != 0 && SLFmtWriteCStr(c, "const ") != 0) {
+        if ((runFlags & HOPAstFlag_PARAM_CONST) != 0 && HOPFmtWriteCStr(c, "const ") != 0) {
             return -1;
         }
         while (runFirst >= 0) {
-            const SLAstNode* p = &c->ast->nodes[runFirst];
-            if (!firstNameInRun && SLFmtWriteCStr(c, ", ") != 0) {
+            const HOPAstNode* p = &c->ast->nodes[runFirst];
+            if (!firstNameInRun && HOPFmtWriteCStr(c, ", ") != 0) {
                 return -1;
             }
-            if (SLFmtWriteSlice(c, p->dataStart, p->dataEnd) != 0) {
+            if (HOPFmtWriteSlice(c, p->dataStart, p->dataEnd) != 0) {
                 return -1;
             }
             firstNameInRun = 0;
             if (runFirst == runLast) {
                 break;
             }
-            runFirst = SLFmtNextSibling(c->ast, runFirst);
+            runFirst = HOPFmtNextSibling(c->ast, runFirst);
         }
-        if (SLFmtWriteChar(c, ' ') != 0) {
+        if (HOPFmtWriteChar(c, ' ') != 0) {
             return -1;
         }
-        if ((runFlags & SLAstFlag_PARAM_VARIADIC) != 0 && SLFmtWriteCStr(c, "...") != 0) {
+        if ((runFlags & HOPAstFlag_PARAM_VARIADIC) != 0 && HOPFmtWriteCStr(c, "...") != 0) {
             return -1;
         }
-        if (runType >= 0 && SLFmtEmitType(c, runType) != 0) {
+        if (runType >= 0 && HOPFmtEmitType(c, runType) != 0) {
             return -1;
         }
         firstParam = 0;
         child = nextAfterRun;
     }
 
-    if (SLFmtWriteChar(c, ')') != 0) {
+    if (HOPFmtWriteChar(c, ')') != 0) {
         return -1;
     }
 
     while (child >= 0) {
-        const SLAstNode* ch = &c->ast->nodes[child];
-        if (ch->kind == SLAst_CONTEXT_CLAUSE) {
+        const HOPAstNode* ch = &c->ast->nodes[child];
+        if (ch->kind == HOPAst_CONTEXT_CLAUSE) {
             ctxClause = child;
-        } else if (ch->kind == SLAst_BLOCK) {
+        } else if (ch->kind == HOPAst_BLOCK) {
             body = child;
-        } else if (SLFmtIsTypeNodeKind(ch->kind) && ch->flags == 1) {
+        } else if (HOPFmtIsTypeNodeKind(ch->kind) && ch->flags == 1) {
             retType = child;
         }
-        child = SLFmtNextSibling(c->ast, child);
+        child = HOPFmtNextSibling(c->ast, child);
     }
 
     if (retType >= 0) {
-        if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitType(c, retType) != 0) {
+        if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitType(c, retType) != 0) {
             return -1;
         }
     }
     if (ctxClause >= 0) {
-        int32_t ctype = SLFmtFirstChild(c->ast, ctxClause);
-        if (SLFmtWriteCStr(c, " context ") != 0) {
+        int32_t ctype = HOPFmtFirstChild(c->ast, ctxClause);
+        if (HOPFmtWriteCStr(c, " context ") != 0) {
             return -1;
         }
-        if (ctype >= 0 && SLFmtEmitType(c, ctype) != 0) {
+        if (ctype >= 0 && HOPFmtEmitType(c, ctype) != 0) {
             return -1;
         }
     }
     if (body >= 0) {
-        if (SLFmtWriteChar(c, ' ') != 0 || SLFmtEmitBlock(c, body) != 0) {
+        if (HOPFmtWriteChar(c, ' ') != 0 || HOPFmtEmitBlock(c, body) != 0) {
             return -1;
         }
     }
-    return SLFmtEmitTrailingCommentsForNode(c, nodeId);
+    return HOPFmtEmitTrailingCommentsForNode(c, nodeId);
 }
 
-static int SLFmtEmitDirective(SLFmtCtx* c, int32_t nodeId) {
-    const SLAstNode* n = &c->ast->nodes[nodeId];
-    int32_t          child = SLFmtFirstChild(c->ast, nodeId);
-    int              first = 1;
-    if (SLFmtWriteChar(c, '@') != 0 || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
+static int HOPFmtEmitDirective(HOPFmtCtx* c, int32_t nodeId) {
+    const HOPAstNode* n = &c->ast->nodes[nodeId];
+    int32_t           child = HOPFmtFirstChild(c->ast, nodeId);
+    int               first = 1;
+    if (HOPFmtWriteChar(c, '@') != 0 || HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
         return -1;
     }
-    if (child >= 0 || SLFmtSliceHasChar(c->src, n->dataEnd, n->end, '(')) {
-        if (SLFmtWriteChar(c, '(') != 0) {
+    if (child >= 0 || HOPFmtSliceHasChar(c->src, n->dataEnd, n->end, '(')) {
+        if (HOPFmtWriteChar(c, '(') != 0) {
             return -1;
         }
         while (child >= 0) {
-            int32_t next = SLFmtNextSibling(c->ast, child);
-            if (!first && SLFmtWriteCStr(c, ", ") != 0) {
+            int32_t next = HOPFmtNextSibling(c->ast, child);
+            if (!first && HOPFmtWriteCStr(c, ", ") != 0) {
                 return -1;
             }
-            if (SLFmtEmitExpr(c, child, 0) != 0) {
+            if (HOPFmtEmitExpr(c, child, 0) != 0) {
                 return -1;
             }
             first = 0;
             child = next;
         }
-        if (SLFmtWriteChar(c, ')') != 0) {
+        if (HOPFmtWriteChar(c, ')') != 0) {
             return -1;
         }
     }
-    return SLFmtEmitTrailingCommentsForNode(c, nodeId);
+    return HOPFmtEmitTrailingCommentsForNode(c, nodeId);
 }
 
-static int SLFmtEmitDecl(SLFmtCtx* c, int32_t nodeId) {
-    const SLAstNode* n = &c->ast->nodes[nodeId];
-    if (SLFmtEmitLeadingCommentsForNode(c, nodeId) != 0) {
+static int HOPFmtEmitDecl(HOPFmtCtx* c, int32_t nodeId) {
+    const HOPAstNode* n = &c->ast->nodes[nodeId];
+    if (HOPFmtEmitLeadingCommentsForNode(c, nodeId) != 0) {
         return -1;
     }
     switch (n->kind) {
-        case SLAst_IMPORT:     return SLFmtEmitImport(c, nodeId);
-        case SLAst_DIRECTIVE:  return SLFmtEmitDirective(c, nodeId);
-        case SLAst_STRUCT:     return SLFmtEmitAggregateDecl(c, nodeId, "struct");
-        case SLAst_UNION:      return SLFmtEmitAggregateDecl(c, nodeId, "union");
-        case SLAst_ENUM:       return SLFmtEmitAggregateDecl(c, nodeId, "enum");
-        case SLAst_TYPE_ALIAS: {
-            int32_t type = SLFmtFirstChild(c->ast, nodeId);
-            if ((n->flags & SLAstFlag_PUB) != 0 && SLFmtWriteCStr(c, "pub ") != 0) {
+        case HOPAst_IMPORT:     return HOPFmtEmitImport(c, nodeId);
+        case HOPAst_DIRECTIVE:  return HOPFmtEmitDirective(c, nodeId);
+        case HOPAst_STRUCT:     return HOPFmtEmitAggregateDecl(c, nodeId, "struct");
+        case HOPAst_UNION:      return HOPFmtEmitAggregateDecl(c, nodeId, "union");
+        case HOPAst_ENUM:       return HOPFmtEmitAggregateDecl(c, nodeId, "enum");
+        case HOPAst_TYPE_ALIAS: {
+            int32_t type = HOPFmtFirstChild(c->ast, nodeId);
+            if ((n->flags & HOPAstFlag_PUB) != 0 && HOPFmtWriteCStr(c, "pub ") != 0) {
                 return -1;
             }
-            if (SLFmtWriteCStr(c, "type ") != 0
-                || SLFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
+            if (HOPFmtWriteCStr(c, "type ") != 0
+                || HOPFmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
             {
                 return -1;
             }
-            if (SLFmtEmitTypeParamList(c, &type) != 0) {
+            if (HOPFmtEmitTypeParamList(c, &type) != 0) {
                 return -1;
             }
-            if (SLFmtWriteChar(c, ' ') != 0 || (type >= 0 && SLFmtEmitType(c, type) != 0)) {
+            if (HOPFmtWriteChar(c, ' ') != 0 || (type >= 0 && HOPFmtEmitType(c, type) != 0)) {
                 return -1;
             }
-            return SLFmtEmitTrailingCommentsForNode(c, nodeId);
+            return HOPFmtEmitTrailingCommentsForNode(c, nodeId);
         }
-        case SLAst_FN: return SLFmtEmitFnDecl(c, nodeId);
-        case SLAst_VAR:
-            if ((n->flags & SLAstFlag_PUB) != 0 && SLFmtWriteCStr(c, "pub ") != 0) {
+        case HOPAst_FN: return HOPFmtEmitFnDecl(c, nodeId);
+        case HOPAst_VAR:
+            if ((n->flags & HOPAstFlag_PUB) != 0 && HOPFmtWriteCStr(c, "pub ") != 0) {
                 return -1;
             }
-            if (SLFmtEmitVarLike(c, nodeId, "var") != 0) {
+            if (HOPFmtEmitVarLike(c, nodeId, "var") != 0) {
                 return -1;
             }
-            return SLFmtEmitTrailingCommentsForNode(c, nodeId);
-        case SLAst_CONST:
-            if ((n->flags & SLAstFlag_PUB) != 0 && SLFmtWriteCStr(c, "pub ") != 0) {
+            return HOPFmtEmitTrailingCommentsForNode(c, nodeId);
+        case HOPAst_CONST:
+            if ((n->flags & HOPAstFlag_PUB) != 0 && HOPFmtWriteCStr(c, "pub ") != 0) {
                 return -1;
             }
-            if (SLFmtEmitVarLike(c, nodeId, "const") != 0) {
+            if (HOPFmtEmitVarLike(c, nodeId, "const") != 0) {
                 return -1;
             }
-            return SLFmtEmitTrailingCommentsForNode(c, nodeId);
+            return HOPFmtEmitTrailingCommentsForNode(c, nodeId);
         default:
-            if (SLFmtWriteSlice(c, n->start, n->end) != 0) {
+            if (HOPFmtWriteSlice(c, n->start, n->end) != 0) {
                 return -1;
             }
-            return SLFmtEmitTrailingCommentsForNode(c, nodeId);
+            return HOPFmtEmitTrailingCommentsForNode(c, nodeId);
     }
 }
 
-static int SLFmtEmitDirectiveGroup(SLFmtCtx* c, int32_t firstDirective, int32_t* outNext) {
+static int HOPFmtEmitDirectiveGroup(HOPFmtCtx* c, int32_t firstDirective, int32_t* outNext) {
     int32_t child = firstDirective;
     int32_t next = -1;
     int     first = 1;
-    while (child >= 0 && c->ast->nodes[child].kind == SLAst_DIRECTIVE) {
-        next = SLFmtNextSibling(c->ast, child);
-        if (!first && SLFmtNewline(c) != 0) {
+    while (child >= 0 && c->ast->nodes[child].kind == HOPAst_DIRECTIVE) {
+        next = HOPFmtNextSibling(c->ast, child);
+        if (!first && HOPFmtNewline(c) != 0) {
             return -1;
         }
-        if (SLFmtEmitDecl(c, child) != 0) {
+        if (HOPFmtEmitDecl(c, child) != 0) {
             return -1;
         }
         first = 0;
         child = next;
     }
     if (child >= 0) {
-        if (!first && SLFmtNewline(c) != 0) {
+        if (!first && HOPFmtNewline(c) != 0) {
             return -1;
         }
-        if (SLFmtEmitDecl(c, child) != 0) {
+        if (HOPFmtEmitDecl(c, child) != 0) {
             return -1;
         }
-        next = SLFmtNextSibling(c->ast, child);
+        next = HOPFmtNextSibling(c->ast, child);
     }
     *outNext = next;
     return 0;
 }
 
-static int SLFmtEmitFile(SLFmtCtx* c) {
-    int32_t child = SLFmtFirstChild(c->ast, c->ast->root);
+static int HOPFmtEmitFile(HOPFmtCtx* c) {
+    int32_t child = HOPFmtFirstChild(c->ast, c->ast->root);
     int     first = 1;
     while (child >= 0) {
         int32_t next;
         if (!first) {
-            if (SLFmtNewline(c) != 0 || SLFmtNewline(c) != 0) {
+            if (HOPFmtNewline(c) != 0 || HOPFmtNewline(c) != 0) {
                 return -1;
             }
         }
-        next = SLFmtNextSibling(c->ast, child);
-        if (c->ast->nodes[child].kind == SLAst_IMPORT) {
+        next = HOPFmtNextSibling(c->ast, child);
+        if (c->ast->nodes[child].kind == HOPAst_IMPORT) {
             int32_t lastSourceNode = child;
-            if (SLFmtEmitImportGroup(c, child, &lastSourceNode, &next) != 0) {
+            if (HOPFmtEmitImportGroup(c, child, &lastSourceNode, &next) != 0) {
                 return -1;
             }
-        } else if (c->ast->nodes[child].kind == SLAst_DIRECTIVE) {
-            if (SLFmtEmitDirectiveGroup(c, child, &next) != 0) {
+        } else if (c->ast->nodes[child].kind == HOPAst_DIRECTIVE) {
+            if (HOPFmtEmitDirectiveGroup(c, child, &next) != 0) {
                 return -1;
             }
-        } else if (SLFmtEmitDecl(c, child) != 0) {
+        } else if (HOPFmtEmitDecl(c, child) != 0) {
             return -1;
         }
         first = 0;
         child = next;
     }
-    if (!first && SLFmtNewline(c) != 0) {
+    if (!first && HOPFmtNewline(c) != 0) {
         return -1;
     }
-    if (SLFmtEmitRemainingComments(c) != 0) {
+    if (HOPFmtEmitRemainingComments(c) != 0) {
         return -1;
     }
     if (c->out.len == 0 || c->out.v[c->out.len - 1u] != '\n') {
-        if (SLFmtNewline(c) != 0) {
+        if (HOPFmtNewline(c) != 0) {
             return -1;
         }
     }
@@ -6122,20 +6152,20 @@ static int SLFmtEmitFile(SLFmtCtx* c) {
     return 0;
 }
 
-int SLFormat(
-    SLArena*  arena,
-    SLStrView src,
-    const SLFormatOptions* _Nullable options,
-    SLStrView* out,
-    SLDiag* _Nullable diag) {
-    SLAst          ast;
-    SLParseExtras  extras;
-    SLParseOptions parseOptions;
-    SLFmtCtx       c;
-    uint32_t       indentWidth = 4u;
+int HOPFormat(
+    HOPArena*  arena,
+    HOPStrView src,
+    const HOPFormatOptions* _Nullable options,
+    HOPStrView* out,
+    HOPDiag* _Nullable diag) {
+    HOPAst          ast;
+    HOPParseExtras  extras;
+    HOPParseOptions parseOptions;
+    HOPFmtCtx       c;
+    uint32_t        indentWidth = 4u;
 
     if (diag != NULL) {
-        *diag = (SLDiag){ 0 };
+        *diag = (HOPDiag){ 0 };
     }
     if (out == NULL) {
         return -1;
@@ -6147,14 +6177,14 @@ int SLFormat(
         indentWidth = options->indentWidth;
     }
 
-    parseOptions.flags = SLParseFlag_COLLECT_FORMATTING;
-    if (SLParse(arena, src, &parseOptions, &ast, &extras, diag) != 0) {
+    parseOptions.flags = HOPParseFlag_COLLECT_FORMATTING;
+    if (HOPParse(arena, src, &parseOptions, &ast, &extras, diag) != 0) {
         return -1;
     }
-    if (SLFmtRewriteAst(&ast, src, options) != 0) {
+    if (HOPFmtRewriteAst(&ast, src, options) != 0) {
         if (diag != NULL) {
-            diag->code = SLDiag_ARENA_OOM;
-            diag->type = SLDiagTypeOfCode(SLDiag_ARENA_OOM);
+            diag->code = HOPDiag_ARENA_OOM;
+            diag->type = HOPDiagTypeOfCode(HOPDiag_ARENA_OOM);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -6181,12 +6211,12 @@ int SLFormat(
     c.out.cap = 0;
 
     if (c.commentLen > 0) {
-        c.commentUsed = (uint8_t*)SLArenaAlloc(
+        c.commentUsed = (uint8_t*)HOPArenaAlloc(
             arena, c.commentLen * (uint32_t)sizeof(uint8_t), (uint32_t)_Alignof(uint8_t));
         if (c.commentUsed == NULL) {
             if (diag != NULL) {
-                diag->code = SLDiag_ARENA_OOM;
-                diag->type = SLDiagTypeOfCode(SLDiag_ARENA_OOM);
+                diag->code = HOPDiag_ARENA_OOM;
+                diag->type = HOPDiagTypeOfCode(HOPDiag_ARENA_OOM);
                 diag->start = 0;
                 diag->end = 0;
                 diag->argStart = 0;
@@ -6201,10 +6231,10 @@ int SLFormat(
         memset(c.commentUsed, 0, c.commentLen);
     }
 
-    if (SLFmtEmitFile(&c) != 0) {
-        if (diag != NULL && diag->code == SLDiag_NONE) {
-            diag->code = SLDiag_ARENA_OOM;
-            diag->type = SLDiagTypeOfCode(SLDiag_ARENA_OOM);
+    if (HOPFmtEmitFile(&c) != 0) {
+        if (diag != NULL && diag->code == HOPDiag_NONE) {
+            diag->code = HOPDiag_ARENA_OOM;
+            diag->type = HOPDiagTypeOfCode(HOPDiag_ARENA_OOM);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -6217,10 +6247,10 @@ int SLFormat(
         return -1;
     }
 
-    if (SLFmtBufAppendChar(&c.out, '\0') != 0) {
+    if (HOPFmtBufAppendChar(&c.out, '\0') != 0) {
         if (diag != NULL) {
-            diag->code = SLDiag_ARENA_OOM;
-            diag->type = SLDiagTypeOfCode(SLDiag_ARENA_OOM);
+            diag->code = HOPDiag_ARENA_OOM;
+            diag->type = HOPDiagTypeOfCode(HOPDiag_ARENA_OOM);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -6238,4 +6268,4 @@ int SLFormat(
     return 0;
 }
 
-SL_API_END
+HOP_API_END

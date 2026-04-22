@@ -1,2 +1,2 @@
-tests/feature_unknown.sl:2:1: warning: SL4002: unknown feature 'bogus'
-tests/feature_unknown.sl:4:4: warning: SL2092: function 'nothing' is unused
+tests/feature_unknown.hop:2:1: warning: HOP4002: unknown feature 'bogus'
+tests/feature_unknown.hop:4:4: warning: HOP2092: function 'nothing' is unused

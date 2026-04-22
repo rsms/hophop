@@ -1,0 +1,4 @@
+// Verifies bad reserved name variable.
+fn main() {
+	var __hop_bad i32
+}

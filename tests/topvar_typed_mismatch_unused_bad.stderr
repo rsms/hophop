@@ -1,1 +1,1 @@
-tests/topvar_typed_mismatch_unused_bad.sl:2:13: error: SL2004: type mismatch: cannot use expression of type bool as i32
+tests/topvar_typed_mismatch_unused_bad.hop:2:13: error: HOP2004: type mismatch: cannot use expression of type bool as i32

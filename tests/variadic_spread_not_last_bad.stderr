@@ -1,1 +1,1 @@
-tests/variadic_spread_not_last_bad.sl:8:6: error: SL2070: spread argument must be the final argument
+tests/variadic_spread_not_last_bad.hop:8:6: error: HOP2070: spread argument must be the final argument

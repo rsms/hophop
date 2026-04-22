@@ -1,3 +1,3 @@
 error: import cycle detected
-tests/pkg_cycle/b/b.sl:2:1: error: SL0000: failed to resolve import a
-tests/pkg_cycle/a/a.sl:2:1: error: SL0000: failed to resolve import b
+tests/pkg_cycle/b/b.hop:2:1: error: HOP0000: failed to resolve import a
+tests/pkg_cycle/a/a.hop:2:1: error: HOP0000: failed to resolve import b

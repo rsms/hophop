@@ -1,1 +1,1 @@
-tests/import_invalid_path_absolute.sl:2:1: error: SL2020: invalid import path (absolute path)
+tests/import_invalid_path_absolute.hop:2:1: error: HOP2020: invalid import path (absolute path)

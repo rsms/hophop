@@ -1,1 +1,1 @@
-tests/const_param_variadic_spread_nonconst_bad.sl:7:13: error: SL2078: spread argument for const variadic parameter 'xs' must be const-evaluable
+tests/const_param_variadic_spread_nonconst_bad.hop:7:13: error: HOP2078: spread argument for const variadic parameter 'xs' must be const-evaluable

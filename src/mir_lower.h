@@ -1,31 +1,31 @@
 #pragma once
 #include "mir.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
-int SLMirLowerExprAsFunction(
-    SLArena* _Nonnull arena,
-    const SLAst* _Nonnull ast,
-    SLStrView src,
-    int32_t   nodeId,
-    SLMirProgram* _Nonnull outProgram,
+int HOPMirLowerExprAsFunction(
+    HOPArena* _Nonnull arena,
+    const HOPAst* _Nonnull ast,
+    HOPStrView src,
+    int32_t    nodeId,
+    HOPMirProgram* _Nonnull outProgram,
     int* _Nonnull outSupported,
-    SLDiag* _Nullable diag);
-int SLMirLowerAppendExprAsFunction(
-    SLMirProgramBuilder* _Nonnull builder,
-    SLArena* _Nonnull arena,
-    const SLAst* _Nonnull ast,
-    SLStrView src,
-    int32_t   nodeId,
-    int32_t   resultTypeNode,
+    HOPDiag* _Nullable diag);
+int HOPMirLowerAppendExprAsFunction(
+    HOPMirProgramBuilder* _Nonnull builder,
+    HOPArena* _Nonnull arena,
+    const HOPAst* _Nonnull ast,
+    HOPStrView src,
+    int32_t    nodeId,
+    int32_t    resultTypeNode,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
-    SLDiag* _Nullable diag);
-int SLMirLowerAppendInst(
-    SLMirProgramBuilder* _Nonnull builder,
-    SLArena* _Nonnull arena,
-    SLStrView src,
-    const SLMirInst* _Nonnull in,
-    SLDiag* _Nullable diag);
+    HOPDiag* _Nullable diag);
+int HOPMirLowerAppendInst(
+    HOPMirProgramBuilder* _Nonnull builder,
+    HOPArena* _Nonnull arena,
+    HOPStrView src,
+    const HOPMirInst* _Nonnull in,
+    HOPDiag* _Nullable diag);
 
-SL_API_END
+HOP_API_END

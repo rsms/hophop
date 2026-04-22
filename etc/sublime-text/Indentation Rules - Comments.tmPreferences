@@ -2,7 +2,7 @@
 <plist version="1.0">
 <dict>
     <key>scope</key>
-    <string><![CDATA[(source.slang) & comment]]></string>
+    <string><![CDATA[(source.hophop) & comment]]></string>
     <key>settings</key>
     <dict>
         <key>unIndentedLinePattern</key>

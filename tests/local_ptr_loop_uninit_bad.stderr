@@ -1,1 +1,1 @@
-tests/local_ptr_loop_uninit_bad.sl:7:10: error: SL2097: pointer/reference variable 'x' is not initialized
+tests/local_ptr_loop_uninit_bad.hop:7:10: error: HOP2097: pointer/reference variable 'x' is not initialized

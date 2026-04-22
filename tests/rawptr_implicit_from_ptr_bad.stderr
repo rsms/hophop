@@ -1,1 +1,1 @@
-tests/rawptr_implicit_from_ptr_bad.sl:4:17: error: SL2004: type mismatch: cannot use 'p' of type *int as rawptr
+tests/rawptr_implicit_from_ptr_bad.hop:4:17: error: HOP2004: type mismatch: cannot use 'p' of type *int as rawptr

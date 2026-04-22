@@ -1,1 +1,1 @@
-tests/import_as_with_symbols_bad.sl:2:1: error: SL2023: import with symbol list cannot use as _
+tests/import_as_with_symbols_bad.hop:2:1: error: HOP2023: import with symbol list cannot use as _

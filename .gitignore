@@ -7,5 +7,5 @@
 /.agent-worklog.jsonl.lock
 /.agent-worklog-state.json
 
-.sl-cache
+.hop-cache
 .env

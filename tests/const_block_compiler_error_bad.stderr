@@ -1,1 +1,1 @@
-tests/const_block_compiler_error_bad.sl:6:3: error: SL2075: consteval error: boom
+tests/const_block_compiler_error_bad.hop:6:3: error: HOP2075: consteval error: boom

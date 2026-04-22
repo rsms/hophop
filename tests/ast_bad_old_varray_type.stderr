@@ -1,1 +1,1 @@
-tests/ast_bad_old_varray_type.sl:3:12: error: SL1007: expected type
+tests/ast_bad_old_varray_type.hop:3:12: error: HOP1007: expected type

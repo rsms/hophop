@@ -1,1 +1,1 @@
-tests/variadic_arg_type_bad.sl:7:9: error: SL2068: variadic argument type mismatch
+tests/variadic_arg_type_bad.hop:7:9: error: HOP2068: variadic argument type mismatch

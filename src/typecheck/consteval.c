@@ -3,77 +3,80 @@
 #include "../mir_lower_pkg.h"
 #include "../mir_lower_stmt.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
-static const uint64_t SL_TC_MIR_TUPLE_TAG = 0x54434d4952545550ULL;
-static const uint64_t SL_TC_MIR_ITER_TAG = 0x54434d4952495445ULL;
-static const uint64_t SL_TC_MIR_IMPORT_ALIAS_TAG = 0x54434d49524d504bULL;
+static const uint64_t HOP_TC_MIR_TUPLE_TAG = 0x54434d4952545550ULL;
+static const uint64_t HOP_TC_MIR_ITER_TAG = 0x54434d4952495445ULL;
+static const uint64_t HOP_TC_MIR_IMPORT_ALIAS_TAG = 0x54434d49524d504bULL;
 
-static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outCallArgIndex);
-static int SLTCConstEvalGetConcreteCallArgType(
-    SLTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outType);
-static int SLTCConstEvalGetConcreteCallArgPackType(
-    SLTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outPackType);
-static int SLTCConstEvalDirectCall(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst);
-int SLTCResolveConstCallMir(
+static int HOPTCConstEvalResolveTrackedAnyPackArgIndex(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outCallArgIndex);
+static int HOPTCConstEvalGetConcreteCallArgType(
+    HOPTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outType);
+static int HOPTCConstEvalGetConcreteCallArgPackType(
+    HOPTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outPackType);
+static int HOPTCConstEvalDirectCall(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst);
+int HOPTCResolveConstCallMir(
     void* _Nullable ctx,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
-    const SLMirInst* _Nullable inst,
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
+    const HOPMirInst* _Nullable inst,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const SLCTFEValue* _Nonnull args,
+    const HOPCTFEValue* _Nonnull args,
     uint32_t argCount,
-    SLCTFEValue* _Nonnull outValue,
+    HOPCTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    SLDiag* _Nullable diag);
-int SLTCResolveConstCallMirPre(
+    HOPDiag* _Nullable diag);
+int HOPTCResolveConstCallMirPre(
     void* _Nullable ctx,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
-    const SLMirInst* _Nullable inst,
-    uint32_t     nameStart,
-    uint32_t     nameEnd,
-    SLCTFEValue* outValue,
-    int*         outIsConst,
-    SLDiag* _Nullable diag);
-static int SLTCConstEvalSetOptionalNoneValue(
-    SLTypeCheckCtx* c, int32_t optionalTypeId, SLCTFEValue* outValue);
-static int SLTCConstEvalSetOptionalSomeValue(
-    SLTypeCheckCtx* c, int32_t optionalTypeId, const SLCTFEValue* payload, SLCTFEValue* outValue);
-static int SLTCInvokeConstFunctionByIndex(
-    SLTCConstEvalCtx* evalCtx,
-    uint32_t          nameStart,
-    uint32_t          nameEnd,
-    int32_t           fnIndex,
-    const SLCTFEValue* _Nullable args,
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
+    const HOPMirInst* _Nullable inst,
+    uint32_t      nameStart,
+    uint32_t      nameEnd,
+    HOPCTFEValue* outValue,
+    int*          outIsConst,
+    HOPDiag* _Nullable diag);
+static int HOPTCConstEvalSetOptionalNoneValue(
+    HOPTypeCheckCtx* c, int32_t optionalTypeId, HOPCTFEValue* outValue);
+static int HOPTCConstEvalSetOptionalSomeValue(
+    HOPTypeCheckCtx*    c,
+    int32_t             optionalTypeId,
+    const HOPCTFEValue* payload,
+    HOPCTFEValue*       outValue);
+static int HOPTCInvokeConstFunctionByIndex(
+    HOPTCConstEvalCtx* evalCtx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    int32_t            fnIndex,
+    const HOPCTFEValue* _Nullable args,
     uint32_t argCount,
-    const SLTCCallArgInfo* _Nullable callArgs,
+    const HOPTCCallArgInfo* _Nullable callArgs,
     uint32_t callArgCount,
-    const SLTCCallBinding* _Nullable callBinding,
-    uint32_t     callPackParamNameStart,
-    uint32_t     callPackParamNameEnd,
-    SLCTFEValue* outValue,
-    int*         outIsConst);
-void SLTCConstSetReason(
-    SLTCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason);
-static int SLTCConstLookupMirLocalValue(
-    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, SLCTFEValue* outValue);
-int SLTCMirConstBindFrame(
+    const HOPTCCallBinding* _Nullable callBinding,
+    uint32_t      callPackParamNameStart,
+    uint32_t      callPackParamNameEnd,
+    HOPCTFEValue* outValue,
+    int*          outIsConst);
+void HOPTCConstSetReason(
+    HOPTCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason);
+static int HOPTCConstLookupMirLocalValue(
+    HOPTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, HOPCTFEValue* outValue);
+int HOPTCMirConstBindFrame(
     void* _Nullable ctx,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
-    const SLCTFEValue* _Nullable locals,
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
+    const HOPCTFEValue* _Nullable locals,
     uint32_t localCount,
-    SLDiag* _Nullable diag);
-void SLTCMirConstUnbindFrame(void* _Nullable ctx);
+    HOPDiag* _Nullable diag);
+void HOPTCMirConstUnbindFrame(void* _Nullable ctx);
 
-static int SLTCConstEvalIsTrackedAnyPackName(
-    const SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd) {
-    SLTypeCheckCtx* c;
-    int32_t         localIdx;
+static int HOPTCConstEvalIsTrackedAnyPackName(
+    const HOPTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd) {
+    HOPTypeCheckCtx* c;
+    int32_t          localIdx;
     if (evalCtx == NULL) {
         return 0;
     }
@@ -82,7 +85,7 @@ static int SLTCConstEvalIsTrackedAnyPackName(
         return 0;
     }
     if (evalCtx->callPackParamNameStart < evalCtx->callPackParamNameEnd
-        && SLNameEqSlice(
+        && HOPNameEqSlice(
             c->src,
             nameStart,
             nameEnd,
@@ -91,17 +94,17 @@ static int SLTCConstEvalIsTrackedAnyPackName(
     {
         return 1;
     }
-    localIdx = SLTCLocalFind(c, nameStart, nameEnd);
-    return localIdx >= 0 && (c->locals[localIdx].flags & SLTCLocalFlag_ANYPACK) != 0;
+    localIdx = HOPTCLocalFind(c, nameStart, nameEnd);
+    return localIdx >= 0 && (c->locals[localIdx].flags & HOPTCLocalFlag_ANYPACK) != 0;
 }
 
-static void SLTCMirConstSetReasonCb(
+static void HOPTCMirConstSetReasonCb(
     void* _Nullable ctx, uint32_t start, uint32_t end, const char* reason) {
-    SLTCConstSetReason((SLTCConstEvalCtx*)ctx, start, end, reason);
+    HOPTCConstSetReason((HOPTCConstEvalCtx*)ctx, start, end, reason);
 }
 
-void SLTCConstSetReason(
-    SLTCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason) {
+void HOPTCConstSetReason(
+    HOPTCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason) {
     if (evalCtx == NULL || reason == NULL || reason[0] == '\0' || evalCtx->nonConstReason != NULL) {
         return;
     }
@@ -109,14 +112,14 @@ void SLTCConstSetReason(
     evalCtx->nonConstStart = start;
     evalCtx->nonConstEnd = end;
     if (evalCtx->execCtx != NULL) {
-        SLCTFEExecSetReason(evalCtx->execCtx, start, end, reason);
+        HOPCTFEExecSetReason(evalCtx->execCtx, start, end, reason);
     }
 }
 
-static int SLTCConstLookupMirLocalValue(
-    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, SLCTFEValue* outValue) {
-    SLTypeCheckCtx* c;
-    uint32_t        i;
+static int HOPTCConstLookupMirLocalValue(
+    HOPTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, HOPCTFEValue* outValue) {
+    HOPTypeCheckCtx* c;
+    uint32_t         i;
     if (evalCtx == NULL || outValue == NULL || evalCtx->mirProgram == NULL
         || evalCtx->mirFunction == NULL || evalCtx->mirLocals == NULL)
     {
@@ -131,15 +134,15 @@ static int SLTCConstLookupMirLocalValue(
         return 0;
     }
     for (i = evalCtx->mirFunction->localCount; i > 0; i--) {
-        const SLMirLocal* local =
+        const HOPMirLocal* local =
             &evalCtx->mirProgram->locals[evalCtx->mirFunction->localStart + i - 1u];
-        const SLCTFEValue* value = &evalCtx->mirLocals[i - 1u];
+        const HOPCTFEValue* value = &evalCtx->mirLocals[i - 1u];
         if (local->nameEnd <= local->nameStart
-            || !SLNameEqSlice(c->src, local->nameStart, local->nameEnd, nameStart, nameEnd))
+            || !HOPNameEqSlice(c->src, local->nameStart, local->nameEnd, nameStart, nameEnd))
         {
             continue;
         }
-        if (value->kind == SLCTFEValue_INVALID) {
+        if (value->kind == HOPCTFEValue_INVALID) {
             continue;
         }
         *outValue = *value;
@@ -148,18 +151,18 @@ static int SLTCConstLookupMirLocalValue(
     return 0;
 }
 
-int SLTCMirConstBindFrame(
+int HOPTCMirConstBindFrame(
     void* _Nullable ctx,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
-    const SLCTFEValue* _Nullable locals,
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
+    const HOPCTFEValue* _Nullable locals,
     uint32_t localCount,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
-    if (evalCtx == NULL || evalCtx->mirFrameDepth >= SLTC_CONST_CALL_MAX_DEPTH) {
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
+    if (evalCtx == NULL || evalCtx->mirFrameDepth >= HOPTC_CONST_CALL_MAX_DEPTH) {
         if (diag != NULL) {
-            diag->code = SLDiag_UNEXPECTED_TOKEN;
-            diag->type = SLDiagTypeOfCode(diag->code);
+            diag->code = HOPDiag_UNEXPECTED_TOKEN;
+            diag->type = HOPDiagTypeOfCode(diag->code);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -179,8 +182,8 @@ int SLTCMirConstBindFrame(
     return 0;
 }
 
-void SLTCMirConstUnbindFrame(void* _Nullable ctx) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+void HOPTCMirConstUnbindFrame(void* _Nullable ctx) {
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
     if (evalCtx == NULL || evalCtx->mirFrameDepth == 0) {
         return;
     }
@@ -191,21 +194,24 @@ void SLTCMirConstUnbindFrame(void* _Nullable ctx) {
     evalCtx->mirLocalCount = evalCtx->mirSavedLocalCounts[evalCtx->mirFrameDepth];
 }
 
-void SLTCMirConstAdoptLowerDiagReason(SLTCConstEvalCtx* evalCtx, const SLDiag* _Nullable diag) {
+void HOPTCMirConstAdoptLowerDiagReason(HOPTCConstEvalCtx* evalCtx, const HOPDiag* _Nullable diag) {
     if (evalCtx == NULL || diag == NULL || diag->detail == NULL || diag->detail[0] == '\0') {
         return;
     }
-    SLTCConstSetReason(evalCtx, diag->start, diag->end, diag->detail);
+    HOPTCConstSetReason(evalCtx, diag->start, diag->end, diag->detail);
 }
 
-int SLTCMirConstLowerConstExpr(
-    void* _Nullable ctx, int32_t exprNode, SLMirConst* _Nonnull outValue, SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
-    SLTCConstEvalCtx  localEvalCtx;
-    SLTypeCheckCtx*   c;
-    SLCTFEValue       value;
-    int32_t           reflectedTypeId = -1;
-    int               isConst = 0;
+int HOPTCMirConstLowerConstExpr(
+    void* _Nullable ctx,
+    int32_t exprNode,
+    HOPMirConst* _Nonnull outValue,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
+    HOPTCConstEvalCtx  localEvalCtx;
+    HOPTypeCheckCtx*   c;
+    HOPCTFEValue       value;
+    int32_t            reflectedTypeId = -1;
+    int                isConst = 0;
     if (outValue == NULL || evalCtx == NULL || evalCtx->tc == NULL || exprNode < 0) {
         return 0;
     }
@@ -217,11 +223,11 @@ int SLTCMirConstLowerConstExpr(
     localEvalCtx.nonConstReason = NULL;
     localEvalCtx.nonConstStart = 0;
     localEvalCtx.nonConstEnd = 0;
-    if (c->ast->nodes[exprNode].kind == SLAst_SIZEOF) {
-        if (SLTCConstEvalSizeOf(&localEvalCtx, exprNode, &value, &isConst) != 0) {
+    if (c->ast->nodes[exprNode].kind == HOPAst_SIZEOF) {
+        if (HOPTCConstEvalSizeOf(&localEvalCtx, exprNode, &value, &isConst) != 0) {
             return -1;
         }
-        if (!isConst || value.kind != SLCTFEValue_INT) {
+        if (!isConst || value.kind != HOPCTFEValue_INT) {
             if (diag != NULL && diag->detail == NULL && localEvalCtx.nonConstReason != NULL) {
                 diag->start = localEvalCtx.nonConstStart;
                 diag->end = localEvalCtx.nonConstEnd;
@@ -229,23 +235,23 @@ int SLTCMirConstLowerConstExpr(
             }
             return 0;
         }
-        outValue->kind = SLMirConst_INT;
+        outValue->kind = HOPMirConst_INT;
         outValue->bits = (uint64_t)value.i64;
         return 1;
     }
-    if (SLTCResolveReflectedTypeValueExpr(c, exprNode, &reflectedTypeId) < 0) {
+    if (HOPTCResolveReflectedTypeValueExpr(c, exprNode, &reflectedTypeId) < 0) {
         return -1;
     }
     if (reflectedTypeId >= 0) {
-        outValue->kind = SLMirConst_TYPE;
-        outValue->bits = SLTCEncodeTypeTag(c, reflectedTypeId);
+        outValue->kind = HOPMirConst_TYPE;
+        outValue->bits = HOPTCEncodeTypeTag(c, reflectedTypeId);
         return 1;
     }
-    if (c->ast->nodes[exprNode].kind == SLAst_CALL) {
-        int32_t calleeNode = SLAstFirstChild(c->ast, exprNode);
+    if (c->ast->nodes[exprNode].kind == HOPAst_CALL) {
+        int32_t calleeNode = HOPAstFirstChild(c->ast, exprNode);
         if (calleeNode < 0 || (uint32_t)calleeNode >= c->ast->len
-            || c->ast->nodes[calleeNode].kind != SLAst_IDENT
-            || !SLNameEqLiteral(
+            || c->ast->nodes[calleeNode].kind != HOPAst_IDENT
+            || !HOPNameEqLiteral(
                 c->src,
                 c->ast->nodes[calleeNode].dataStart,
                 c->ast->nodes[calleeNode].dataEnd,
@@ -253,10 +259,10 @@ int SLTCMirConstLowerConstExpr(
         {
             return 0;
         }
-        if (SLTCConstEvalTypeOf(&localEvalCtx, exprNode, &value, &isConst) != 0) {
+        if (HOPTCConstEvalTypeOf(&localEvalCtx, exprNode, &value, &isConst) != 0) {
             return -1;
         }
-        if (!isConst || value.kind != SLCTFEValue_TYPE) {
+        if (!isConst || value.kind != HOPCTFEValue_TYPE) {
             if (diag != NULL && diag->detail == NULL && localEvalCtx.nonConstReason != NULL) {
                 diag->start = localEvalCtx.nonConstStart;
                 diag->end = localEvalCtx.nonConstEnd;
@@ -264,37 +270,38 @@ int SLTCMirConstLowerConstExpr(
             }
             return 0;
         }
-        outValue->kind = SLMirConst_TYPE;
+        outValue->kind = HOPMirConst_TYPE;
         outValue->bits = value.typeTag;
         return 1;
     }
     return 0;
 }
 
-void SLTCConstSetReasonNode(SLTCConstEvalCtx* evalCtx, int32_t nodeId, const char* reason) {
-    SLTypeCheckCtx* c;
+void HOPTCConstSetReasonNode(HOPTCConstEvalCtx* evalCtx, int32_t nodeId, const char* reason) {
+    HOPTypeCheckCtx* c;
     if (evalCtx == NULL) {
         return;
     }
     c = evalCtx->tc;
     if (c != NULL && nodeId >= 0 && (uint32_t)nodeId < c->ast->len) {
-        SLTCConstSetReason(evalCtx, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end, reason);
+        HOPTCConstSetReason(
+            evalCtx, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end, reason);
         return;
     }
-    SLTCConstSetReason(evalCtx, 0, 0, reason);
+    HOPTCConstSetReason(evalCtx, 0, 0, reason);
 }
 
-void SLTCAttachConstEvalReason(SLTypeCheckCtx* c) {
+void HOPTCAttachConstEvalReason(HOPTypeCheckCtx* c) {
     if (c == NULL || c->diag == NULL || c->lastConstEvalReason == NULL
         || c->lastConstEvalReason[0] == '\0')
     {
         return;
     }
-    c->diag->detail = SLTCAllocDiagText(c, c->lastConstEvalReason);
+    c->diag->detail = HOPTCAllocDiagText(c, c->lastConstEvalReason);
 }
 
-static int32_t SLTCFindPkgQualifiedFunctionValueIndexBySlice(
-    SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd) {
+static int32_t HOPTCFindPkgQualifiedFunctionValueIndexBySlice(
+    HOPTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
     uint32_t pkgStart = 0;
     uint32_t pkgEnd = 0;
@@ -303,24 +310,24 @@ static int32_t SLTCFindPkgQualifiedFunctionValueIndexBySlice(
     }
     for (i = nameStart + 1u; i + 1u < nameEnd; i++) {
         if (c->src.ptr[i] == '.') {
-            return SLTCFindPkgQualifiedFunctionValueIndex(c, nameStart, i, i + 1u, nameEnd);
+            return HOPTCFindPkgQualifiedFunctionValueIndex(c, nameStart, i, i + 1u, nameEnd);
         }
     }
-    if (SLTCExtractPkgPrefixFromTypeName(c, nameStart, nameEnd, &pkgStart, &pkgEnd)) {
+    if (HOPTCExtractPkgPrefixFromTypeName(c, nameStart, nameEnd, &pkgStart, &pkgEnd)) {
         uint32_t methodStart = pkgEnd + 2u;
         if (methodStart < nameEnd) {
-            return SLTCFindPkgQualifiedFunctionValueIndex(
+            return HOPTCFindPkgQualifiedFunctionValueIndex(
                 c, pkgStart, pkgEnd, methodStart, nameEnd);
         }
     }
     return -1;
 }
 
-static void SLTCConstEvalValueInvalid(SLCTFEValue* v) {
+static void HOPTCConstEvalValueInvalid(HOPCTFEValue* v) {
     if (v == NULL) {
         return;
     }
-    v->kind = SLCTFEValue_INVALID;
+    v->kind = HOPCTFEValue_INVALID;
     v->i64 = 0;
     v->f64 = 0.0;
     v->b = 0;
@@ -335,22 +342,22 @@ static void SLTCConstEvalValueInvalid(SLCTFEValue* v) {
     v->span.endColumn = 0;
 }
 
-static int SLTCConstEvalValueToF64(const SLCTFEValue* value, double* out) {
+static int HOPTCConstEvalValueToF64(const HOPCTFEValue* value, double* out) {
     if (value == NULL || out == NULL) {
         return 0;
     }
-    if (value->kind == SLCTFEValue_INT) {
+    if (value->kind == HOPCTFEValue_INT) {
         *out = (double)value->i64;
         return 1;
     }
-    if (value->kind == SLCTFEValue_FLOAT) {
+    if (value->kind == HOPCTFEValue_FLOAT) {
         *out = value->f64;
         return 1;
     }
     return 0;
 }
 
-static int SLTCConstEvalStringEq(const SLCTFEString* a, const SLCTFEString* b) {
+static int HOPTCConstEvalStringEq(const HOPCTFEString* a, const HOPCTFEString* b) {
     if (a == NULL || b == NULL) {
         return 0;
     }
@@ -363,8 +370,8 @@ static int SLTCConstEvalStringEq(const SLCTFEString* a, const SLCTFEString* b) {
     return memcmp(a->bytes, b->bytes, a->len) == 0;
 }
 
-static int SLTCConstEvalStringConcat(
-    SLTypeCheckCtx* c, const SLCTFEString* a, const SLCTFEString* b, SLCTFEString* out) {
+static int HOPTCConstEvalStringConcat(
+    HOPTypeCheckCtx* c, const HOPCTFEString* a, const HOPCTFEString* b, HOPCTFEString* out) {
     uint64_t totalLen64;
     uint32_t totalLen;
     uint8_t* bytes;
@@ -381,7 +388,7 @@ static int SLTCConstEvalStringConcat(
         out->len = 0;
         return 1;
     }
-    bytes = (uint8_t*)SLArenaAlloc(c->arena, totalLen, (uint32_t)_Alignof(uint8_t));
+    bytes = (uint8_t*)HOPArenaAlloc(c->arena, totalLen, (uint32_t)_Alignof(uint8_t));
     if (bytes == NULL) {
         return -1;
     }
@@ -396,7 +403,7 @@ static int SLTCConstEvalStringConcat(
     return 1;
 }
 
-static int SLTCConstEvalAddI64(int64_t a, int64_t b, int64_t* out) {
+static int HOPTCConstEvalAddI64(int64_t a, int64_t b, int64_t* out) {
 #if __has_builtin(__builtin_add_overflow)
     return __builtin_add_overflow(a, b, out) ? -1 : 0;
 #else
@@ -408,7 +415,7 @@ static int SLTCConstEvalAddI64(int64_t a, int64_t b, int64_t* out) {
 #endif
 }
 
-static int SLTCConstEvalSubI64(int64_t a, int64_t b, int64_t* out) {
+static int HOPTCConstEvalSubI64(int64_t a, int64_t b, int64_t* out) {
 #if __has_builtin(__builtin_sub_overflow)
     return __builtin_sub_overflow(a, b, out) ? -1 : 0;
 #else
@@ -420,7 +427,7 @@ static int SLTCConstEvalSubI64(int64_t a, int64_t b, int64_t* out) {
 #endif
 }
 
-static int SLTCConstEvalMulI64(int64_t a, int64_t b, int64_t* out) {
+static int HOPTCConstEvalMulI64(int64_t a, int64_t b, int64_t* out) {
 #if __has_builtin(__builtin_mul_overflow)
     return __builtin_mul_overflow(a, b, out) ? -1 : 0;
 #else
@@ -451,253 +458,253 @@ static int SLTCConstEvalMulI64(int64_t a, int64_t b, int64_t* out) {
 #endif
 }
 
-static int SLTCConstEvalApplyUnary(
-    SLTokenKind op, const SLCTFEValue* inValue, SLCTFEValue* outValue) {
-    SLTCConstEvalValueInvalid(outValue);
+static int HOPTCConstEvalApplyUnary(
+    HOPTokenKind op, const HOPCTFEValue* inValue, HOPCTFEValue* outValue) {
+    HOPTCConstEvalValueInvalid(outValue);
     if (inValue == NULL) {
         return 0;
     }
-    if (op == SLTok_ADD && inValue->kind == SLCTFEValue_INT) {
+    if (op == HOPTok_ADD && inValue->kind == HOPCTFEValue_INT) {
         *outValue = *inValue;
         return 1;
     }
-    if (op == SLTok_ADD && inValue->kind == SLCTFEValue_FLOAT) {
+    if (op == HOPTok_ADD && inValue->kind == HOPCTFEValue_FLOAT) {
         *outValue = *inValue;
         return 1;
     }
-    if (op == SLTok_SUB && inValue->kind == SLCTFEValue_INT) {
+    if (op == HOPTok_SUB && inValue->kind == HOPCTFEValue_INT) {
         if (inValue->i64 == INT64_MIN) {
             return 0;
         }
-        outValue->kind = SLCTFEValue_INT;
+        outValue->kind = HOPCTFEValue_INT;
         outValue->i64 = -inValue->i64;
         return 1;
     }
-    if (op == SLTok_SUB && inValue->kind == SLCTFEValue_FLOAT) {
-        outValue->kind = SLCTFEValue_FLOAT;
+    if (op == HOPTok_SUB && inValue->kind == HOPCTFEValue_FLOAT) {
+        outValue->kind = HOPCTFEValue_FLOAT;
         outValue->f64 = -inValue->f64;
         return 1;
     }
-    if (op == SLTok_NOT && inValue->kind == SLCTFEValue_BOOL) {
-        outValue->kind = SLCTFEValue_BOOL;
+    if (op == HOPTok_NOT && inValue->kind == HOPCTFEValue_BOOL) {
+        outValue->kind = HOPCTFEValue_BOOL;
         outValue->b = inValue->b ? 0u : 1u;
         return 1;
     }
     return 0;
 }
 
-static int SLTCConstEvalApplyBinary(
-    SLTypeCheckCtx*    c,
-    SLTokenKind        op,
-    const SLCTFEValue* lhs,
-    const SLCTFEValue* rhs,
-    SLCTFEValue*       outValue) {
+static int HOPTCConstEvalApplyBinary(
+    HOPTypeCheckCtx*    c,
+    HOPTokenKind        op,
+    const HOPCTFEValue* lhs,
+    const HOPCTFEValue* rhs,
+    HOPCTFEValue*       outValue) {
     int64_t i;
     double  lhsF64;
     double  rhsF64;
-    SLTCConstEvalValueInvalid(outValue);
+    HOPTCConstEvalValueInvalid(outValue);
     if (c == NULL || lhs == NULL || rhs == NULL) {
         return 0;
     }
 
-    if (lhs->kind == SLCTFEValue_INT && rhs->kind == SLCTFEValue_INT) {
+    if (lhs->kind == HOPCTFEValue_INT && rhs->kind == HOPCTFEValue_INT) {
         switch (op) {
-            case SLTok_ADD:
-                if (SLTCConstEvalAddI64(lhs->i64, rhs->i64, &i) != 0) {
+            case HOPTok_ADD:
+                if (HOPTCConstEvalAddI64(lhs->i64, rhs->i64, &i) != 0) {
                     return 0;
                 }
-                outValue->kind = SLCTFEValue_INT;
+                outValue->kind = HOPCTFEValue_INT;
                 outValue->i64 = i;
                 return 1;
-            case SLTok_SUB:
-                if (SLTCConstEvalSubI64(lhs->i64, rhs->i64, &i) != 0) {
+            case HOPTok_SUB:
+                if (HOPTCConstEvalSubI64(lhs->i64, rhs->i64, &i) != 0) {
                     return 0;
                 }
-                outValue->kind = SLCTFEValue_INT;
+                outValue->kind = HOPCTFEValue_INT;
                 outValue->i64 = i;
                 return 1;
-            case SLTok_MUL:
-                if (SLTCConstEvalMulI64(lhs->i64, rhs->i64, &i) != 0) {
+            case HOPTok_MUL:
+                if (HOPTCConstEvalMulI64(lhs->i64, rhs->i64, &i) != 0) {
                     return 0;
                 }
-                outValue->kind = SLCTFEValue_INT;
+                outValue->kind = HOPCTFEValue_INT;
                 outValue->i64 = i;
                 return 1;
-            case SLTok_DIV:
+            case HOPTok_DIV:
                 if (rhs->i64 == 0 || (lhs->i64 == INT64_MIN && rhs->i64 == -1)) {
                     return 0;
                 }
-                outValue->kind = SLCTFEValue_INT;
+                outValue->kind = HOPCTFEValue_INT;
                 outValue->i64 = lhs->i64 / rhs->i64;
                 return 1;
-            case SLTok_MOD:
+            case HOPTok_MOD:
                 if (rhs->i64 == 0 || (lhs->i64 == INT64_MIN && rhs->i64 == -1)) {
                     return 0;
                 }
-                outValue->kind = SLCTFEValue_INT;
+                outValue->kind = HOPCTFEValue_INT;
                 outValue->i64 = lhs->i64 % rhs->i64;
                 return 1;
-            case SLTok_AND:
-                outValue->kind = SLCTFEValue_INT;
+            case HOPTok_AND:
+                outValue->kind = HOPCTFEValue_INT;
                 outValue->i64 = lhs->i64 & rhs->i64;
                 return 1;
-            case SLTok_OR:
-                outValue->kind = SLCTFEValue_INT;
+            case HOPTok_OR:
+                outValue->kind = HOPCTFEValue_INT;
                 outValue->i64 = lhs->i64 | rhs->i64;
                 return 1;
-            case SLTok_XOR:
-                outValue->kind = SLCTFEValue_INT;
+            case HOPTok_XOR:
+                outValue->kind = HOPCTFEValue_INT;
                 outValue->i64 = lhs->i64 ^ rhs->i64;
                 return 1;
-            case SLTok_LSHIFT:
+            case HOPTok_LSHIFT:
                 if (rhs->i64 < 0 || rhs->i64 > 63 || lhs->i64 < 0) {
                     return 0;
                 }
-                outValue->kind = SLCTFEValue_INT;
+                outValue->kind = HOPCTFEValue_INT;
                 outValue->i64 = (int64_t)((uint64_t)lhs->i64 << (uint32_t)rhs->i64);
                 return 1;
-            case SLTok_RSHIFT:
+            case HOPTok_RSHIFT:
                 if (rhs->i64 < 0 || rhs->i64 > 63 || lhs->i64 < 0) {
                     return 0;
                 }
-                outValue->kind = SLCTFEValue_INT;
+                outValue->kind = HOPCTFEValue_INT;
                 outValue->i64 = (int64_t)((uint64_t)lhs->i64 >> (uint32_t)rhs->i64);
                 return 1;
-            case SLTok_EQ:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_EQ:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->i64 == rhs->i64;
                 return 1;
-            case SLTok_NEQ:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_NEQ:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->i64 != rhs->i64;
                 return 1;
-            case SLTok_LT:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_LT:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->i64 < rhs->i64;
                 return 1;
-            case SLTok_GT:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_GT:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->i64 > rhs->i64;
                 return 1;
-            case SLTok_LTE:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_LTE:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->i64 <= rhs->i64;
                 return 1;
-            case SLTok_GTE:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_GTE:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->i64 >= rhs->i64;
                 return 1;
             default: return 0;
         }
     }
 
-    if (lhs->kind == SLCTFEValue_BOOL && rhs->kind == SLCTFEValue_BOOL) {
+    if (lhs->kind == HOPCTFEValue_BOOL && rhs->kind == HOPCTFEValue_BOOL) {
         switch (op) {
-            case SLTok_LOGICAL_AND:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_LOGICAL_AND:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->b && rhs->b;
                 return 1;
-            case SLTok_LOGICAL_OR:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_LOGICAL_OR:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->b || rhs->b;
                 return 1;
-            case SLTok_EQ:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_EQ:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->b == rhs->b;
                 return 1;
-            case SLTok_NEQ:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_NEQ:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->b != rhs->b;
                 return 1;
             default: return 0;
         }
     }
 
-    if (lhs->kind == SLCTFEValue_STRING && rhs->kind == SLCTFEValue_STRING) {
+    if (lhs->kind == HOPCTFEValue_STRING && rhs->kind == HOPCTFEValue_STRING) {
         switch (op) {
-            case SLTok_ADD:
-                outValue->kind = SLCTFEValue_STRING;
-                return SLTCConstEvalStringConcat(c, &lhs->s, &rhs->s, &outValue->s);
-            case SLTok_EQ:
-                outValue->kind = SLCTFEValue_BOOL;
-                outValue->b = SLTCConstEvalStringEq(&lhs->s, &rhs->s);
+            case HOPTok_ADD:
+                outValue->kind = HOPCTFEValue_STRING;
+                return HOPTCConstEvalStringConcat(c, &lhs->s, &rhs->s, &outValue->s);
+            case HOPTok_EQ:
+                outValue->kind = HOPCTFEValue_BOOL;
+                outValue->b = HOPTCConstEvalStringEq(&lhs->s, &rhs->s);
                 return 1;
-            case SLTok_NEQ:
-                outValue->kind = SLCTFEValue_BOOL;
-                outValue->b = !SLTCConstEvalStringEq(&lhs->s, &rhs->s);
+            case HOPTok_NEQ:
+                outValue->kind = HOPCTFEValue_BOOL;
+                outValue->b = !HOPTCConstEvalStringEq(&lhs->s, &rhs->s);
                 return 1;
             default: return 0;
         }
     }
 
-    if (lhs->kind == SLCTFEValue_TYPE && rhs->kind == SLCTFEValue_TYPE) {
+    if (lhs->kind == HOPCTFEValue_TYPE && rhs->kind == HOPCTFEValue_TYPE) {
         switch (op) {
-            case SLTok_EQ:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_EQ:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->typeTag == rhs->typeTag;
                 return 1;
-            case SLTok_NEQ:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_NEQ:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhs->typeTag != rhs->typeTag;
                 return 1;
             default: return 0;
         }
     }
 
-    if (SLTCConstEvalValueToF64(lhs, &lhsF64) && SLTCConstEvalValueToF64(rhs, &rhsF64)) {
+    if (HOPTCConstEvalValueToF64(lhs, &lhsF64) && HOPTCConstEvalValueToF64(rhs, &rhsF64)) {
         switch (op) {
-            case SLTok_ADD:
-                outValue->kind = SLCTFEValue_FLOAT;
+            case HOPTok_ADD:
+                outValue->kind = HOPCTFEValue_FLOAT;
                 outValue->f64 = lhsF64 + rhsF64;
                 return 1;
-            case SLTok_SUB:
-                outValue->kind = SLCTFEValue_FLOAT;
+            case HOPTok_SUB:
+                outValue->kind = HOPCTFEValue_FLOAT;
                 outValue->f64 = lhsF64 - rhsF64;
                 return 1;
-            case SLTok_MUL:
-                outValue->kind = SLCTFEValue_FLOAT;
+            case HOPTok_MUL:
+                outValue->kind = HOPCTFEValue_FLOAT;
                 outValue->f64 = lhsF64 * rhsF64;
                 return 1;
-            case SLTok_DIV:
-                outValue->kind = SLCTFEValue_FLOAT;
+            case HOPTok_DIV:
+                outValue->kind = HOPCTFEValue_FLOAT;
                 outValue->f64 = lhsF64 / rhsF64;
                 return 1;
-            case SLTok_EQ:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_EQ:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhsF64 == rhsF64;
                 return 1;
-            case SLTok_NEQ:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_NEQ:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhsF64 != rhsF64;
                 return 1;
-            case SLTok_LT:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_LT:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhsF64 < rhsF64;
                 return 1;
-            case SLTok_GT:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_GT:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhsF64 > rhsF64;
                 return 1;
-            case SLTok_LTE:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_LTE:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhsF64 <= rhsF64;
                 return 1;
-            case SLTok_GTE:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_GTE:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = lhsF64 >= rhsF64;
                 return 1;
             default: return 0;
         }
     }
 
-    if (lhs->kind == SLCTFEValue_NULL && rhs->kind == SLCTFEValue_NULL) {
+    if (lhs->kind == HOPCTFEValue_NULL && rhs->kind == HOPCTFEValue_NULL) {
         switch (op) {
-            case SLTok_EQ:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_EQ:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = 1;
                 return 1;
-            case SLTok_NEQ:
-                outValue->kind = SLCTFEValue_BOOL;
+            case HOPTok_NEQ:
+                outValue->kind = HOPCTFEValue_BOOL;
                 outValue->b = 0;
                 return 1;
             default: return 0;
@@ -707,17 +714,17 @@ static int SLTCConstEvalApplyBinary(
     return 0;
 }
 
-int SLTCResolveConstIdent(
-    void*        ctx,
-    uint32_t     nameStart,
-    uint32_t     nameEnd,
-    SLCTFEValue* outValue,
-    int*         outIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
-    SLTypeCheckCtx*   c;
-    int32_t           nodeId;
-    int32_t           nameIndex = -1;
+int HOPTCResolveConstIdent(
+    void*         ctx,
+    uint32_t      nameStart,
+    uint32_t      nameEnd,
+    HOPCTFEValue* outValue,
+    int*          outIsConst,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
+    HOPTypeCheckCtx*   c;
+    int32_t            nodeId;
+    int32_t            nameIndex = -1;
     (void)diag;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
@@ -727,40 +734,40 @@ int SLTCResolveConstIdent(
         return -1;
     }
     if (evalCtx->execCtx != NULL
-        && SLCTFEExecEnvLookup(evalCtx->execCtx, nameStart, nameEnd, outValue))
+        && HOPCTFEExecEnvLookup(evalCtx->execCtx, nameStart, nameEnd, outValue))
     {
         *outIsConst = 1;
         return 0;
     }
-    if (SLTCConstLookupMirLocalValue(evalCtx, nameStart, nameEnd, outValue)) {
+    if (HOPTCConstLookupMirLocalValue(evalCtx, nameStart, nameEnd, outValue)) {
         *outIsConst = 1;
         return 0;
     }
     {
-        int32_t localIdx = SLTCLocalFind(c, nameStart, nameEnd);
+        int32_t localIdx = HOPTCLocalFind(c, nameStart, nameEnd);
         if (localIdx >= 0) {
-            SLTCLocal* local = &c->locals[localIdx];
-            int32_t    localType = local->typeId;
-            int32_t    resolvedLocalType = SLTCResolveAliasBaseType(c, localType);
-            if ((local->flags & SLTCLocalFlag_ANYPACK) != 0 && evalCtx->callBinding != NULL
-                && SLTCConstEvalIsTrackedAnyPackName(evalCtx, nameStart, nameEnd))
+            HOPTCLocal* local = &c->locals[localIdx];
+            int32_t     localType = local->typeId;
+            int32_t     resolvedLocalType = HOPTCResolveAliasBaseType(c, localType);
+            if ((local->flags & HOPTCLocalFlag_ANYPACK) != 0 && evalCtx->callBinding != NULL
+                && HOPTCConstEvalIsTrackedAnyPackName(evalCtx, nameStart, nameEnd))
             {
-                const SLTCCallBinding* binding = (const SLTCCallBinding*)evalCtx->callBinding;
-                int32_t                elemTypes[SLTC_MAX_CALL_ARGS];
-                uint32_t               elemCount = 0;
-                uint32_t               i;
-                int                    haveAllTypes = 1;
+                const HOPTCCallBinding* binding = (const HOPTCCallBinding*)evalCtx->callBinding;
+                int32_t                 elemTypes[HOPTC_MAX_CALL_ARGS];
+                uint32_t                elemCount = 0;
+                uint32_t                i;
+                int                     haveAllTypes = 1;
                 if (binding->isVariadic && binding->spreadArgIndex != UINT32_MAX) {
                     uint32_t spreadArgIndex = binding->spreadArgIndex;
                     int32_t  spreadArgType = -1;
                     if (spreadArgIndex < evalCtx->callArgCount
-                        && SLTCConstEvalGetConcreteCallArgType(
+                        && HOPTCConstEvalGetConcreteCallArgType(
                                evalCtx, spreadArgIndex, &spreadArgType)
                                == 0)
                     {
-                        int32_t spreadType = SLTCResolveAliasBaseType(c, spreadArgType);
+                        int32_t spreadType = HOPTCResolveAliasBaseType(c, spreadArgType);
                         if (spreadType >= 0 && (uint32_t)spreadType < c->typeLen
-                            && c->types[spreadType].kind == SLTCType_PACK)
+                            && c->types[spreadType].kind == HOPTCType_PACK)
                         {
                             localType = spreadArgType;
                             resolvedLocalType = spreadType;
@@ -772,8 +779,8 @@ int SLTCResolveConstIdent(
                         if (binding->argParamIndices[i] != (int32_t)binding->fixedCount) {
                             continue;
                         }
-                        if (elemCount >= SLTC_MAX_CALL_ARGS
-                            || SLTCConstEvalGetConcreteCallArgType(evalCtx, i, &elemType) != 0)
+                        if (elemCount >= HOPTC_MAX_CALL_ARGS
+                            || HOPTCConstEvalGetConcreteCallArgType(evalCtx, i, &elemType) != 0)
                         {
                             haveAllTypes = 0;
                             break;
@@ -781,24 +788,24 @@ int SLTCResolveConstIdent(
                         elemTypes[elemCount++] = elemType;
                     }
                     if (haveAllTypes) {
-                        int32_t packTypeId = SLTCInternPackType(
+                        int32_t packTypeId = HOPTCInternPackType(
                             c, elemTypes, elemCount, nameStart, nameEnd);
                         if (packTypeId < 0) {
                             return -1;
                         }
                         localType = packTypeId;
-                        resolvedLocalType = SLTCResolveAliasBaseType(c, localType);
+                        resolvedLocalType = HOPTCResolveAliasBaseType(c, localType);
                     }
                 }
             }
             if (resolvedLocalType >= 0 && (uint32_t)resolvedLocalType < c->typeLen
-                && c->types[resolvedLocalType].kind == SLTCType_PACK)
+                && c->types[resolvedLocalType].kind == HOPTCType_PACK)
             {
-                outValue->kind = SLCTFEValue_TYPE;
+                outValue->kind = HOPCTFEValue_TYPE;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
                 outValue->b = 0;
-                outValue->typeTag = SLTCEncodeTypeTag(c, localType);
+                outValue->typeTag = HOPTCEncodeTypeTag(c, localType);
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
                 outValue->span.fileBytes = NULL;
@@ -810,18 +817,18 @@ int SLTCResolveConstIdent(
                 *outIsConst = 1;
                 return 0;
             }
-            if ((local->flags & SLTCLocalFlag_CONST) != 0 && local->initExprNode != -1) {
+            if ((local->flags & HOPTCLocalFlag_CONST) != 0 && local->initExprNode != -1) {
                 int32_t initExprNode = local->initExprNode;
                 int     evalIsConst = 0;
                 int     rc;
                 if (initExprNode == -2) {
-                    SLTCConstSetReason(
+                    HOPTCConstSetReason(
                         evalCtx, nameStart, nameEnd, "const local initializer is recursive");
                     *outIsConst = 0;
                     return 0;
                 }
                 local->initExprNode = -2;
-                rc = SLTCEvalConstExprNode(evalCtx, initExprNode, outValue, &evalIsConst);
+                rc = HOPTCEvalConstExprNode(evalCtx, initExprNode, outValue, &evalIsConst);
                 local->initExprNode = initExprNode;
                 if (rc != 0) {
                     return -1;
@@ -832,25 +839,25 @@ int SLTCResolveConstIdent(
         }
     }
     {
-        int32_t fnIdx = SLTCFindPlainFunctionValueIndex(c, nameStart, nameEnd);
+        int32_t fnIdx = HOPTCFindPlainFunctionValueIndex(c, nameStart, nameEnd);
         if (fnIdx >= 0) {
-            SLMirValueSetFunctionRef(outValue, (uint32_t)fnIdx);
+            HOPMirValueSetFunctionRef(outValue, (uint32_t)fnIdx);
             *outIsConst = 1;
             return 0;
         }
     }
     {
-        int32_t fnIdx = SLTCFindPkgQualifiedFunctionValueIndexBySlice(c, nameStart, nameEnd);
+        int32_t fnIdx = HOPTCFindPkgQualifiedFunctionValueIndexBySlice(c, nameStart, nameEnd);
         if (fnIdx >= 0) {
-            SLMirValueSetFunctionRef(outValue, (uint32_t)fnIdx);
+            HOPMirValueSetFunctionRef(outValue, (uint32_t)fnIdx);
             *outIsConst = 1;
             return 0;
         }
     }
-    if (SLTCHasImportAlias(c, nameStart, nameEnd)) {
-        SLTCConstEvalValueInvalid(outValue);
-        outValue->kind = SLCTFEValue_SPAN;
-        outValue->typeTag = SL_TC_MIR_IMPORT_ALIAS_TAG;
+    if (HOPTCHasImportAlias(c, nameStart, nameEnd)) {
+        HOPTCConstEvalValueInvalid(outValue);
+        outValue->kind = HOPCTFEValue_SPAN;
+        outValue->typeTag = HOP_TC_MIR_IMPORT_ALIAS_TAG;
         outValue->span.fileBytes = (const uint8_t*)c->src.ptr + nameStart;
         outValue->span.fileLen = nameEnd - nameStart;
         outValue->span.startLine = 0;
@@ -861,13 +868,13 @@ int SLTCResolveConstIdent(
         return 0;
     }
     {
-        int32_t typeId = SLTCResolveTypeValueName(c, nameStart, nameEnd);
+        int32_t typeId = HOPTCResolveTypeValueName(c, nameStart, nameEnd);
         if (typeId >= 0) {
-            outValue->kind = SLCTFEValue_TYPE;
+            outValue->kind = HOPCTFEValue_TYPE;
             outValue->i64 = 0;
             outValue->f64 = 0.0;
             outValue->b = 0;
-            outValue->typeTag = SLTCEncodeTypeTag(c, typeId);
+            outValue->typeTag = HOPTCEncodeTypeTag(c, typeId);
             outValue->s.bytes = NULL;
             outValue->s.len = 0;
             outValue->span.fileBytes = NULL;
@@ -880,19 +887,19 @@ int SLTCResolveConstIdent(
             return 0;
         }
     }
-    nodeId = SLTCFindTopLevelVarLikeNode(c, nameStart, nameEnd, &nameIndex);
-    if (nodeId < 0 || c->ast->nodes[nodeId].kind != SLAst_CONST) {
-        SLTCConstSetReason(
+    nodeId = HOPTCFindTopLevelVarLikeNode(c, nameStart, nameEnd, &nameIndex);
+    if (nodeId < 0 || c->ast->nodes[nodeId].kind != HOPAst_CONST) {
+        HOPTCConstSetReason(
             evalCtx, nameStart, nameEnd, "identifier is not a const value in this context");
         *outIsConst = 0;
         return 0;
     }
-    return SLTCEvalTopLevelConstNodeAt(c, evalCtx, nodeId, nameIndex, outValue, outIsConst);
+    return HOPTCEvalTopLevelConstNodeAt(c, evalCtx, nodeId, nameIndex, outValue, outIsConst);
 }
 
-int SLTCConstLookupExecBindingType(
-    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, int32_t* outType) {
-    const SLCTFEExecEnv* frame;
+int HOPTCConstLookupExecBindingType(
+    HOPTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, int32_t* outType) {
+    const HOPCTFEExecEnv* frame;
     if (evalCtx == NULL || evalCtx->execCtx == NULL || outType == NULL) {
         return 0;
     }
@@ -900,15 +907,15 @@ int SLTCConstLookupExecBindingType(
     while (frame != NULL) {
         uint32_t i = frame->bindingLen;
         while (i > 0) {
-            const SLCTFEExecBinding* b;
+            const HOPCTFEExecBinding* b;
             i--;
             b = &frame->bindings[i];
-            if (SLNameEqSlice(evalCtx->tc->src, b->nameStart, b->nameEnd, nameStart, nameEnd)) {
+            if (HOPNameEqSlice(evalCtx->tc->src, b->nameStart, b->nameEnd, nameStart, nameEnd)) {
                 if (b->typeId >= 0) {
                     *outType = b->typeId;
                     return 1;
                 }
-                if (SLTCEvalConstExecInferValueTypeCb(evalCtx, &b->value, outType) == 0) {
+                if (HOPTCEvalConstExecInferValueTypeCb(evalCtx, &b->value, outType) == 0) {
                     return 1;
                 }
             }
@@ -918,12 +925,12 @@ int SLTCConstLookupExecBindingType(
     return 0;
 }
 
-int SLTCConstLookupMirLocalType(
-    SLTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, int32_t* outType) {
-    SLTypeCheckCtx* c;
-    uint32_t        i;
-    uint8_t         savedAllowConstNumericTypeName;
-    uint8_t         savedAllowAnytypeParamType;
+int HOPTCConstLookupMirLocalType(
+    HOPTCConstEvalCtx* evalCtx, uint32_t nameStart, uint32_t nameEnd, int32_t* outType) {
+    HOPTypeCheckCtx* c;
+    uint32_t         i;
+    uint8_t          savedAllowConstNumericTypeName;
+    uint8_t          savedAllowAnytypeParamType;
     if (outType != NULL) {
         *outType = -1;
     }
@@ -944,19 +951,19 @@ int SLTCConstLookupMirLocalType(
     c->allowConstNumericTypeName = 1;
     c->allowAnytypeParamType = 1;
     for (i = evalCtx->mirFunction->localCount; i > 0; i--) {
-        const SLMirLocal* local =
+        const HOPMirLocal* local =
             &evalCtx->mirProgram->locals[evalCtx->mirFunction->localStart + i - 1u];
-        const SLCTFEValue* value =
+        const HOPCTFEValue* value =
             i - 1u < evalCtx->mirLocalCount ? &evalCtx->mirLocals[i - 1u] : NULL;
         if (local->nameEnd <= local->nameStart
-            || !SLNameEqSlice(c->src, local->nameStart, local->nameEnd, nameStart, nameEnd))
+            || !HOPNameEqSlice(c->src, local->nameStart, local->nameEnd, nameStart, nameEnd))
         {
             continue;
         }
         if (local->typeRef < evalCtx->mirProgram->typeLen) {
-            const SLMirTypeRef* typeRef = &evalCtx->mirProgram->types[local->typeRef];
+            const HOPMirTypeRef* typeRef = &evalCtx->mirProgram->types[local->typeRef];
             if (typeRef->astNode > INT32_MAX || typeRef->astNode >= c->ast->len
-                || SLTCResolveTypeNode(c, (int32_t)typeRef->astNode, outType) != 0)
+                || HOPTCResolveTypeNode(c, (int32_t)typeRef->astNode, outType) != 0)
             {
                 c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
                 c->allowAnytypeParamType = savedAllowAnytypeParamType;
@@ -966,8 +973,8 @@ int SLTCConstLookupMirLocalType(
             c->allowAnytypeParamType = savedAllowAnytypeParamType;
             return 1;
         }
-        if (value != NULL && value->kind != SLCTFEValue_INVALID
-            && SLTCEvalConstExecInferValueTypeCb(evalCtx, value, outType) == 0)
+        if (value != NULL && value->kind != HOPCTFEValue_INVALID
+            && HOPTCEvalConstExecInferValueTypeCb(evalCtx, value, outType) == 0)
         {
             c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
             c->allowAnytypeParamType = savedAllowAnytypeParamType;
@@ -979,33 +986,33 @@ int SLTCConstLookupMirLocalType(
     return 0;
 }
 
-int SLTCConstBuiltinSizeBytes(SLBuiltinKind b, uint64_t* outBytes) {
+int HOPTCConstBuiltinSizeBytes(HOPBuiltinKind b, uint64_t* outBytes) {
     if (outBytes == NULL) {
         return 0;
     }
     switch (b) {
-        case SLBuiltin_BOOL:
-        case SLBuiltin_U8:
-        case SLBuiltin_I8:     *outBytes = 1u; return 1;
-        case SLBuiltin_TYPE:   *outBytes = 8u; return 1;
-        case SLBuiltin_U16:
-        case SLBuiltin_I16:    *outBytes = 2u; return 1;
-        case SLBuiltin_U32:
-        case SLBuiltin_I32:
-        case SLBuiltin_F32:    *outBytes = 4u; return 1;
-        case SLBuiltin_U64:
-        case SLBuiltin_I64:
-        case SLBuiltin_F64:    *outBytes = 8u; return 1;
-        case SLBuiltin_USIZE:
-        case SLBuiltin_ISIZE:
-        case SLBuiltin_RAWPTR: *outBytes = (uint64_t)sizeof(void*); return 1;
-        default:               return 0;
+        case HOPBuiltin_BOOL:
+        case HOPBuiltin_U8:
+        case HOPBuiltin_I8:     *outBytes = 1u; return 1;
+        case HOPBuiltin_TYPE:   *outBytes = 8u; return 1;
+        case HOPBuiltin_U16:
+        case HOPBuiltin_I16:    *outBytes = 2u; return 1;
+        case HOPBuiltin_U32:
+        case HOPBuiltin_I32:
+        case HOPBuiltin_F32:    *outBytes = 4u; return 1;
+        case HOPBuiltin_U64:
+        case HOPBuiltin_I64:
+        case HOPBuiltin_F64:    *outBytes = 8u; return 1;
+        case HOPBuiltin_USIZE:
+        case HOPBuiltin_ISIZE:
+        case HOPBuiltin_RAWPTR: *outBytes = (uint64_t)sizeof(void*); return 1;
+        default:                return 0;
     }
 }
 
-int SLTCConstBuiltinAlignBytes(SLBuiltinKind b, uint64_t* outAlign) {
+int HOPTCConstBuiltinAlignBytes(HOPBuiltinKind b, uint64_t* outAlign) {
     uint64_t size = 0;
-    if (outAlign == NULL || !SLTCConstBuiltinSizeBytes(b, &size)) {
+    if (outAlign == NULL || !HOPTCConstBuiltinSizeBytes(b, &size)) {
         return 0;
     }
     *outAlign = size > (uint64_t)sizeof(void*) ? (uint64_t)sizeof(void*) : size;
@@ -1015,19 +1022,19 @@ int SLTCConstBuiltinAlignBytes(SLBuiltinKind b, uint64_t* outAlign) {
     return 1;
 }
 
-uint64_t SLTCConstAlignUpU64(uint64_t v, uint64_t align) {
+uint64_t HOPTCConstAlignUpU64(uint64_t v, uint64_t align) {
     if (align == 0) {
         return v;
     }
     return (v + align - 1u) & ~(align - 1u);
 }
 
-int SLTCConstTypeLayout(
-    SLTypeCheckCtx* c, int32_t typeId, uint64_t* outSize, uint64_t* outAlign, uint32_t depth) {
-    const SLTCType* t;
-    uint64_t        ptrSize = (uint64_t)sizeof(void*);
-    uint64_t        usizeSize = (uint64_t)sizeof(uintptr_t);
-    typeId = SLTCResolveAliasBaseType(c, typeId);
+int HOPTCConstTypeLayout(
+    HOPTypeCheckCtx* c, int32_t typeId, uint64_t* outSize, uint64_t* outAlign, uint32_t depth) {
+    const HOPTCType* t;
+    uint64_t         ptrSize = (uint64_t)sizeof(void*);
+    uint64_t         usizeSize = (uint64_t)sizeof(uintptr_t);
+    typeId = HOPTCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen || outSize == NULL || outAlign == NULL
         || depth > c->typeLen)
     {
@@ -1035,36 +1042,36 @@ int SLTCConstTypeLayout(
     }
     t = &c->types[typeId];
     switch (t->kind) {
-        case SLTCType_BUILTIN:
-            if (!SLTCConstBuiltinSizeBytes(t->builtin, outSize)
-                || !SLTCConstBuiltinAlignBytes(t->builtin, outAlign))
+        case HOPTCType_BUILTIN:
+            if (!HOPTCConstBuiltinSizeBytes(t->builtin, outSize)
+                || !HOPTCConstBuiltinAlignBytes(t->builtin, outAlign))
             {
                 if (typeId == c->typeStr) {
-                    *outSize = SLTCConstAlignUpU64(usizeSize, ptrSize) + ptrSize;
+                    *outSize = HOPTCConstAlignUpU64(usizeSize, ptrSize) + ptrSize;
                     *outAlign = ptrSize;
                     return 1;
                 }
                 return 0;
             }
             return 1;
-        case SLTCType_UNTYPED_INT:
+        case HOPTCType_UNTYPED_INT:
             *outSize = (uint64_t)sizeof(ptrdiff_t);
             *outAlign = *outSize;
             return 1;
-        case SLTCType_UNTYPED_FLOAT:
+        case HOPTCType_UNTYPED_FLOAT:
             *outSize = 8u;
             *outAlign = 8u;
             return 1;
-        case SLTCType_PTR:
-        case SLTCType_REF:
-        case SLTCType_FUNCTION:
+        case HOPTCType_PTR:
+        case HOPTCType_REF:
+        case HOPTCType_FUNCTION:
             *outSize = ptrSize;
             *outAlign = ptrSize;
             return 1;
-        case SLTCType_ARRAY: {
+        case HOPTCType_ARRAY: {
             uint64_t elemSize = 0;
             uint64_t elemAlign = 0;
-            if (!SLTCConstTypeLayout(c, t->baseType, &elemSize, &elemAlign, depth + 1u)) {
+            if (!HOPTCConstTypeLayout(c, t->baseType, &elemSize, &elemAlign, depth + 1u)) {
                 return 0;
             }
             if (t->arrayLen > 0 && elemSize > UINT64_MAX / (uint64_t)t->arrayLen) {
@@ -1074,14 +1081,14 @@ int SLTCConstTypeLayout(
             *outAlign = elemAlign;
             return 1;
         }
-        case SLTCType_SLICE:
-            *outSize = SLTCConstAlignUpU64(usizeSize, ptrSize) + ptrSize;
+        case HOPTCType_SLICE:
+            *outSize = HOPTCConstAlignUpU64(usizeSize, ptrSize) + ptrSize;
             *outAlign = ptrSize;
             return 1;
-        case SLTCType_OPTIONAL:
-            return SLTCConstTypeLayout(c, t->baseType, outSize, outAlign, depth + 1u);
-        case SLTCType_NAMED:
-        case SLTCType_ANON_STRUCT: {
+        case HOPTCType_OPTIONAL:
+            return HOPTCConstTypeLayout(c, t->baseType, outSize, outAlign, depth + 1u);
+        case HOPTCType_NAMED:
+        case HOPTCType_ANON_STRUCT: {
             uint64_t offset = 0;
             uint64_t maxAlign = 1;
             uint32_t i;
@@ -1090,7 +1097,7 @@ int SLTCConstTypeLayout(
                 uint64_t fieldAlign = 0;
                 uint32_t fieldIdx = t->fieldStart + i;
                 if (fieldIdx >= c->fieldLen
-                    || !SLTCConstTypeLayout(
+                    || !HOPTCConstTypeLayout(
                         c, c->fields[fieldIdx].typeId, &fieldSize, &fieldAlign, depth + 1u))
                 {
                     return 0;
@@ -1098,17 +1105,17 @@ int SLTCConstTypeLayout(
                 if (fieldAlign > maxAlign) {
                     maxAlign = fieldAlign;
                 }
-                offset = SLTCConstAlignUpU64(offset, fieldAlign);
+                offset = HOPTCConstAlignUpU64(offset, fieldAlign);
                 if (fieldSize > UINT64_MAX - offset) {
                     return 0;
                 }
                 offset += fieldSize;
             }
-            *outSize = SLTCConstAlignUpU64(offset, maxAlign);
+            *outSize = HOPTCConstAlignUpU64(offset, maxAlign);
             *outAlign = maxAlign;
             return 1;
         }
-        case SLTCType_ANON_UNION: {
+        case HOPTCType_ANON_UNION: {
             uint64_t maxSize = 0;
             uint64_t maxAlign = 1;
             uint32_t i;
@@ -1117,7 +1124,7 @@ int SLTCConstTypeLayout(
                 uint64_t fieldAlign = 0;
                 uint32_t fieldIdx = t->fieldStart + i;
                 if (fieldIdx >= c->fieldLen
-                    || !SLTCConstTypeLayout(
+                    || !HOPTCConstTypeLayout(
                         c, c->fields[fieldIdx].typeId, &fieldSize, &fieldAlign, depth + 1u))
                 {
                     return 0;
@@ -1129,11 +1136,11 @@ int SLTCConstTypeLayout(
                     maxAlign = fieldAlign;
                 }
             }
-            *outSize = SLTCConstAlignUpU64(maxSize, maxAlign);
+            *outSize = HOPTCConstAlignUpU64(maxSize, maxAlign);
             *outAlign = maxAlign;
             return 1;
         }
-        case SLTCType_NULL:
+        case HOPTCType_NULL:
             *outSize = ptrSize;
             *outAlign = ptrSize;
             return 1;
@@ -1141,14 +1148,14 @@ int SLTCConstTypeLayout(
     }
 }
 
-int SLTCConstEvalSizeOf(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx*  c;
-    const SLAstNode* n;
-    int32_t          innerNode;
-    int32_t          innerType = -1;
-    uint64_t         sizeBytes = 0;
-    uint64_t         alignBytes = 0;
+int HOPTCConstEvalSizeOf(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx*  c;
+    const HOPAstNode* n;
+    int32_t           innerNode;
+    int32_t           innerType = -1;
+    uint64_t          sizeBytes = 0;
+    uint64_t          alignBytes = 0;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -1157,37 +1164,37 @@ int SLTCConstEvalSizeOf(
         return -1;
     }
     n = &c->ast->nodes[exprNode];
-    innerNode = SLAstFirstChild(c->ast, exprNode);
+    innerNode = HOPAstFirstChild(c->ast, exprNode);
     if (innerNode < 0) {
-        SLTCConstSetReasonNode(evalCtx, exprNode, "sizeof expression is malformed");
+        HOPTCConstSetReasonNode(evalCtx, exprNode, "sizeof expression is malformed");
         *outIsConst = 0;
         return 0;
     }
 
     if (n->flags == 1) {
-        if (SLTCResolveTypeNode(c, innerNode, &innerType) != 0) {
+        if (HOPTCResolveTypeNode(c, innerNode, &innerType) != 0) {
             if (c->diag != NULL) {
-                *c->diag = (SLDiag){ 0 };
+                *c->diag = (HOPDiag){ 0 };
             }
-            if (c->ast->nodes[innerNode].kind == SLAst_TYPE_NAME) {
-                int32_t localIdx = SLTCLocalFind(
+            if (c->ast->nodes[innerNode].kind == HOPAst_TYPE_NAME) {
+                int32_t localIdx = HOPTCLocalFind(
                     c, c->ast->nodes[innerNode].dataStart, c->ast->nodes[innerNode].dataEnd);
                 if (localIdx >= 0) {
                     innerType = c->locals[localIdx].typeId;
                 } else {
-                    int32_t fnIdx = SLTCFindFunctionIndex(
+                    int32_t fnIdx = HOPTCFindFunctionIndex(
                         c, c->ast->nodes[innerNode].dataStart, c->ast->nodes[innerNode].dataEnd);
                     if (fnIdx >= 0) {
                         innerType = c->funcs[fnIdx].funcTypeId;
                     } else {
                         int32_t topNameIndex = -1;
-                        int32_t topNode = SLTCFindTopLevelVarLikeNode(
+                        int32_t topNode = HOPTCFindTopLevelVarLikeNode(
                             c,
                             c->ast->nodes[innerNode].dataStart,
                             c->ast->nodes[innerNode].dataEnd,
                             &topNameIndex);
                         if (topNode >= 0) {
-                            if (SLTCTypeTopLevelVarLikeNode(c, topNode, topNameIndex, &innerType)
+                            if (HOPTCTypeTopLevelVarLikeNode(c, topNode, topNameIndex, &innerType)
                                 != 0)
                             {
                                 return -1;
@@ -1196,7 +1203,7 @@ int SLTCConstEvalSizeOf(
                     }
                 }
                 if (innerType < 0
-                    && SLTCConstLookupExecBindingType(
+                    && HOPTCConstLookupExecBindingType(
                         evalCtx,
                         c->ast->nodes[innerNode].dataStart,
                         c->ast->nodes[innerNode].dataEnd,
@@ -1207,30 +1214,30 @@ int SLTCConstEvalSizeOf(
             }
         }
     } else {
-        if (SLTCTypeExpr(c, innerNode, &innerType) != 0) {
+        if (HOPTCTypeExpr(c, innerNode, &innerType) != 0) {
             return -1;
         }
-        if (SLTCTypeContainsVarSizeByValue(c, innerType)) {
-            SLTCConstSetReasonNode(
+        if (HOPTCTypeContainsVarSizeByValue(c, innerType)) {
+            HOPTCConstSetReasonNode(
                 evalCtx, innerNode, "sizeof operand type is not const-evaluable");
             *outIsConst = 0;
             return 0;
         }
     }
     if (innerType < 0) {
-        SLTCConstSetReasonNode(evalCtx, innerNode, "sizeof operand type is not const-evaluable");
+        HOPTCConstSetReasonNode(evalCtx, innerNode, "sizeof operand type is not const-evaluable");
         *outIsConst = 0;
         return 0;
     }
-    if (!SLTCConstTypeLayout(c, innerType, &sizeBytes, &alignBytes, 0)
+    if (!HOPTCConstTypeLayout(c, innerType, &sizeBytes, &alignBytes, 0)
         || sizeBytes > (uint64_t)INT64_MAX || alignBytes == 0)
     {
-        SLTCConstSetReasonNode(evalCtx, innerNode, "sizeof operand type is not const-evaluable");
+        HOPTCConstSetReasonNode(evalCtx, innerNode, "sizeof operand type is not const-evaluable");
         *outIsConst = 0;
         return 0;
     }
 
-    outValue->kind = SLCTFEValue_INT;
+    outValue->kind = HOPCTFEValue_INT;
     outValue->i64 = (int64_t)sizeBytes;
     outValue->f64 = 0.0;
     outValue->b = 0;
@@ -1247,15 +1254,15 @@ int SLTCConstEvalSizeOf(
     return 0;
 }
 
-int SLTCConstEvalCast(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx* c;
-    int32_t         valueNode;
-    int32_t         typeNode;
-    int32_t         targetType;
-    int32_t         baseTarget;
-    SLCTFEValue     inValue;
-    int             inIsConst = 0;
+int HOPTCConstEvalCast(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx* c;
+    int32_t          valueNode;
+    int32_t          typeNode;
+    int32_t          targetType;
+    int32_t          baseTarget;
+    HOPCTFEValue     inValue;
+    int              inIsConst = 0;
 
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
@@ -1265,18 +1272,18 @@ int SLTCConstEvalCast(
         return -1;
     }
 
-    valueNode = SLAstFirstChild(c->ast, exprNode);
-    typeNode = valueNode >= 0 ? SLAstNextSibling(c->ast, valueNode) : -1;
+    valueNode = HOPAstFirstChild(c->ast, exprNode);
+    typeNode = valueNode >= 0 ? HOPAstNextSibling(c->ast, valueNode) : -1;
     if (valueNode < 0 || typeNode < 0) {
-        SLTCConstSetReasonNode(evalCtx, exprNode, "cast expression is malformed");
+        HOPTCConstSetReasonNode(evalCtx, exprNode, "cast expression is malformed");
         *outIsConst = 0;
         return 0;
     }
 
-    if (SLTCResolveTypeNode(c, typeNode, &targetType) != 0) {
+    if (HOPTCResolveTypeNode(c, typeNode, &targetType) != 0) {
         return -1;
     }
-    if (SLTCEvalConstExprNode(evalCtx, valueNode, &inValue, &inIsConst) != 0) {
+    if (HOPTCEvalConstExprNode(evalCtx, valueNode, &inValue, &inIsConst) != 0) {
         return -1;
     }
     if (!inIsConst) {
@@ -1284,35 +1291,35 @@ int SLTCConstEvalCast(
         return 0;
     }
 
-    baseTarget = SLTCResolveAliasBaseType(c, targetType);
+    baseTarget = HOPTCResolveAliasBaseType(c, targetType);
     if (baseTarget < 0 || (uint32_t)baseTarget >= c->typeLen) {
         *outIsConst = 0;
         return 0;
     }
 
-    if (SLTCIsIntegerType(c, baseTarget)) {
+    if (HOPTCIsIntegerType(c, baseTarget)) {
         int64_t asInt = 0;
-        if (inValue.kind == SLCTFEValue_INT) {
+        if (inValue.kind == HOPCTFEValue_INT) {
             asInt = inValue.i64;
-        } else if (inValue.kind == SLCTFEValue_BOOL) {
+        } else if (inValue.kind == HOPCTFEValue_BOOL) {
             asInt = inValue.b ? 1 : 0;
-        } else if (inValue.kind == SLCTFEValue_FLOAT) {
+        } else if (inValue.kind == HOPCTFEValue_FLOAT) {
             if (inValue.f64 != inValue.f64 || inValue.f64 > (double)INT64_MAX
                 || inValue.f64 < (double)INT64_MIN)
             {
-                SLTCConstSetReasonNode(
+                HOPTCConstSetReasonNode(
                     evalCtx, valueNode, "cast result is out of range for const integer");
                 *outIsConst = 0;
                 return 0;
             }
             asInt = (int64_t)inValue.f64;
-        } else if (inValue.kind == SLCTFEValue_NULL) {
+        } else if (inValue.kind == HOPCTFEValue_NULL) {
             asInt = 0;
         } else {
             *outIsConst = 0;
             return 0;
         }
-        outValue->kind = SLCTFEValue_INT;
+        outValue->kind = HOPCTFEValue_INT;
         outValue->i64 = asInt;
         outValue->f64 = 0.0;
         outValue->b = 0;
@@ -1329,21 +1336,21 @@ int SLTCConstEvalCast(
         return 0;
     }
 
-    if (SLTCIsFloatType(c, baseTarget)) {
+    if (HOPTCIsFloatType(c, baseTarget)) {
         double asFloat = 0.0;
-        if (inValue.kind == SLCTFEValue_FLOAT) {
+        if (inValue.kind == HOPCTFEValue_FLOAT) {
             asFloat = inValue.f64;
-        } else if (inValue.kind == SLCTFEValue_INT) {
+        } else if (inValue.kind == HOPCTFEValue_INT) {
             asFloat = (double)inValue.i64;
-        } else if (inValue.kind == SLCTFEValue_BOOL) {
+        } else if (inValue.kind == HOPCTFEValue_BOOL) {
             asFloat = inValue.b ? 1.0 : 0.0;
-        } else if (inValue.kind == SLCTFEValue_NULL) {
+        } else if (inValue.kind == HOPCTFEValue_NULL) {
             asFloat = 0.0;
         } else {
             *outIsConst = 0;
             return 0;
         }
-        outValue->kind = SLCTFEValue_FLOAT;
+        outValue->kind = HOPCTFEValue_FLOAT;
         outValue->i64 = 0;
         outValue->f64 = asFloat;
         outValue->b = 0;
@@ -1360,23 +1367,23 @@ int SLTCConstEvalCast(
         return 0;
     }
 
-    if (SLTCIsBoolType(c, baseTarget)) {
+    if (HOPTCIsBoolType(c, baseTarget)) {
         uint8_t asBool = 0;
-        if (inValue.kind == SLCTFEValue_BOOL) {
+        if (inValue.kind == HOPCTFEValue_BOOL) {
             asBool = inValue.b ? 1u : 0u;
-        } else if (inValue.kind == SLCTFEValue_INT) {
+        } else if (inValue.kind == HOPCTFEValue_INT) {
             asBool = inValue.i64 != 0 ? 1u : 0u;
-        } else if (inValue.kind == SLCTFEValue_FLOAT) {
+        } else if (inValue.kind == HOPCTFEValue_FLOAT) {
             asBool = inValue.f64 != 0.0 ? 1u : 0u;
-        } else if (inValue.kind == SLCTFEValue_STRING) {
+        } else if (inValue.kind == HOPCTFEValue_STRING) {
             asBool = 1u;
-        } else if (inValue.kind == SLCTFEValue_NULL) {
+        } else if (inValue.kind == HOPCTFEValue_NULL) {
             asBool = 0;
         } else {
             *outIsConst = 0;
             return 0;
         }
-        outValue->kind = SLCTFEValue_BOOL;
+        outValue->kind = HOPCTFEValue_BOOL;
         outValue->i64 = 0;
         outValue->f64 = 0.0;
         outValue->b = asBool;
@@ -1393,9 +1400,9 @@ int SLTCConstEvalCast(
         return 0;
     }
 
-    if (SLTCIsRawptrType(c, baseTarget)) {
-        if (inValue.kind == SLCTFEValue_NULL || inValue.kind == SLCTFEValue_REFERENCE
-            || inValue.kind == SLCTFEValue_STRING)
+    if (HOPTCIsRawptrType(c, baseTarget)) {
+        if (inValue.kind == HOPCTFEValue_NULL || inValue.kind == HOPCTFEValue_REFERENCE
+            || inValue.kind == HOPCTFEValue_STRING)
         {
             *outValue = inValue;
             outValue->typeTag = (uint64_t)(uint32_t)baseTarget;
@@ -1406,8 +1413,8 @@ int SLTCConstEvalCast(
         return 0;
     }
 
-    if (c->types[baseTarget].kind == SLTCType_OPTIONAL) {
-        if (inValue.kind == SLCTFEValue_OPTIONAL) {
+    if (c->types[baseTarget].kind == HOPTCType_OPTIONAL) {
+        if (inValue.kind == HOPCTFEValue_OPTIONAL) {
             if (inValue.typeTag > 0 && inValue.typeTag <= (uint64_t)INT32_MAX
                 && (uint32_t)inValue.typeTag < c->typeLen && (int32_t)inValue.typeTag == baseTarget)
             {
@@ -1416,7 +1423,7 @@ int SLTCConstEvalCast(
                 return 0;
             }
             if (inValue.b == 0u) {
-                if (SLTCConstEvalSetOptionalNoneValue(c, baseTarget, outValue) != 0) {
+                if (HOPTCConstEvalSetOptionalNoneValue(c, baseTarget, outValue) != 0) {
                     return -1;
                 }
                 *outIsConst = 1;
@@ -1426,8 +1433,8 @@ int SLTCConstEvalCast(
                 *outIsConst = 0;
                 return 0;
             }
-            if (SLTCConstEvalSetOptionalSomeValue(
-                    c, baseTarget, (const SLCTFEValue*)inValue.s.bytes, outValue)
+            if (HOPTCConstEvalSetOptionalSomeValue(
+                    c, baseTarget, (const HOPCTFEValue*)inValue.s.bytes, outValue)
                 != 0)
             {
                 return -1;
@@ -1435,23 +1442,23 @@ int SLTCConstEvalCast(
             *outIsConst = 1;
             return 0;
         }
-        if (inValue.kind == SLCTFEValue_NULL) {
-            if (SLTCConstEvalSetOptionalNoneValue(c, baseTarget, outValue) != 0) {
+        if (inValue.kind == HOPCTFEValue_NULL) {
+            if (HOPTCConstEvalSetOptionalNoneValue(c, baseTarget, outValue) != 0) {
                 return -1;
             }
             *outIsConst = 1;
             return 0;
         }
-        if (SLTCConstEvalSetOptionalSomeValue(c, baseTarget, &inValue, outValue) != 0) {
+        if (HOPTCConstEvalSetOptionalSomeValue(c, baseTarget, &inValue, outValue) != 0) {
             return -1;
         }
         *outIsConst = 1;
         return 0;
     }
 
-    if ((c->types[baseTarget].kind == SLTCType_PTR || c->types[baseTarget].kind == SLTCType_REF
-         || c->types[baseTarget].kind == SLTCType_FUNCTION)
-        && inValue.kind == SLCTFEValue_NULL)
+    if ((c->types[baseTarget].kind == HOPTCType_PTR || c->types[baseTarget].kind == HOPTCType_REF
+         || c->types[baseTarget].kind == HOPTCType_FUNCTION)
+        && inValue.kind == HOPCTFEValue_NULL)
     {
         *outValue = inValue;
         *outIsConst = 1;
@@ -1463,18 +1470,18 @@ int SLTCConstEvalCast(
     return 0;
 }
 
-int SLTCConstEvalTypeOf(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx*   c;
-    const SLAstNode*  callee;
-    int32_t           calleeNode;
-    int32_t           argNode;
-    int32_t           argExprNode;
-    int32_t           extraNode;
-    int32_t           argType;
-    uint32_t          callArgIndex = 0;
-    int               packStatus;
-    SLTCConstEvalCtx* savedActiveEvalCtx;
+int HOPTCConstEvalTypeOf(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx*   c;
+    const HOPAstNode*  callee;
+    int32_t            calleeNode;
+    int32_t            argNode;
+    int32_t            argExprNode;
+    int32_t            extraNode;
+    int32_t            argType;
+    uint32_t           callArgIndex = 0;
+    int                packStatus;
+    HOPTCConstEvalCtx* savedActiveEvalCtx;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -1482,37 +1489,37 @@ int SLTCConstEvalTypeOf(
     if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return -1;
     }
-    calleeNode = SLAstFirstChild(c->ast, exprNode);
-    argNode = calleeNode >= 0 ? SLAstNextSibling(c->ast, calleeNode) : -1;
-    extraNode = argNode >= 0 ? SLAstNextSibling(c->ast, argNode) : -1;
+    calleeNode = HOPAstFirstChild(c->ast, exprNode);
+    argNode = calleeNode >= 0 ? HOPAstNextSibling(c->ast, calleeNode) : -1;
+    extraNode = argNode >= 0 ? HOPAstNextSibling(c->ast, argNode) : -1;
     if (calleeNode < 0 || argNode < 0 || extraNode >= 0) {
-        SLTCConstSetReasonNode(evalCtx, exprNode, "typeof call has invalid arity");
+        HOPTCConstSetReasonNode(evalCtx, exprNode, "typeof call has invalid arity");
         *outIsConst = 0;
         return 0;
     }
     callee = &c->ast->nodes[calleeNode];
-    if (callee->kind != SLAst_IDENT
-        || !SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "typeof"))
+    if (callee->kind != HOPAst_IDENT
+        || !HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "typeof"))
     {
         return -1;
     }
     argExprNode = argNode;
-    if (c->ast->nodes[argExprNode].kind == SLAst_CALL_ARG) {
-        int32_t inner = SLAstFirstChild(c->ast, argExprNode);
+    if (c->ast->nodes[argExprNode].kind == HOPAst_CALL_ARG) {
+        int32_t inner = HOPAstFirstChild(c->ast, argExprNode);
         if (inner >= 0) {
             argExprNode = inner;
         }
     }
-    packStatus = SLTCConstEvalResolveTrackedAnyPackArgIndex(evalCtx, argExprNode, &callArgIndex);
+    packStatus = HOPTCConstEvalResolveTrackedAnyPackArgIndex(evalCtx, argExprNode, &callArgIndex);
     if (packStatus < 0) {
         return -1;
     }
     if (packStatus == 0) {
-        if (SLTCConstEvalGetConcreteCallArgType(evalCtx, callArgIndex, &argType) == 0) {
+        if (HOPTCConstEvalGetConcreteCallArgType(evalCtx, callArgIndex, &argType) == 0) {
             goto done;
         }
         {
-            const SLTCCallBinding* binding = (const SLTCCallBinding*)evalCtx->callBinding;
+            const HOPTCCallBinding* binding = (const HOPTCCallBinding*)evalCtx->callBinding;
             if (binding != NULL && callArgIndex < evalCtx->callArgCount
                 && binding->argExpectedTypes[callArgIndex] >= 0)
             {
@@ -1526,28 +1533,28 @@ int SLTCConstEvalTypeOf(
         return 0;
     }
     {
-        SLCTFEValue argValue;
-        int         argIsConst = 0;
-        if (SLTCEvalConstExprNode(evalCtx, argExprNode, &argValue, &argIsConst) != 0) {
+        HOPCTFEValue argValue;
+        int          argIsConst = 0;
+        if (HOPTCEvalConstExprNode(evalCtx, argExprNode, &argValue, &argIsConst) != 0) {
             return -1;
         }
-        if (argIsConst && SLTCEvalConstExecInferValueTypeCb(evalCtx, &argValue, &argType) == 0) {
+        if (argIsConst && HOPTCEvalConstExecInferValueTypeCb(evalCtx, &argValue, &argType) == 0) {
             goto done;
         }
     }
     savedActiveEvalCtx = c->activeConstEvalCtx;
     c->activeConstEvalCtx = evalCtx;
-    if (SLTCTypeExpr(c, argExprNode, &argType) != 0) {
+    if (HOPTCTypeExpr(c, argExprNode, &argType) != 0) {
         c->activeConstEvalCtx = savedActiveEvalCtx;
         return -1;
     }
     c->activeConstEvalCtx = savedActiveEvalCtx;
 done:
-    outValue->kind = SLCTFEValue_TYPE;
+    outValue->kind = HOPCTFEValue_TYPE;
     outValue->i64 = 0;
     outValue->f64 = 0.0;
     outValue->b = 0;
-    outValue->typeTag = SLTCEncodeTypeTag(c, argType);
+    outValue->typeTag = HOPTCEncodeTypeTag(c, argType);
     outValue->s.bytes = NULL;
     outValue->s.len = 0;
     outValue->span.fileBytes = NULL;
@@ -1560,19 +1567,19 @@ done:
     return 0;
 }
 
-int SLTCConstEvalLenCall(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx*   c;
-    const SLAstNode*  callee;
-    int32_t           calleeNode;
-    int32_t           argNode;
-    int32_t           argExprNode;
-    int32_t           extraNode;
-    int32_t           argType = -1;
-    int32_t           resolvedArgType = -1;
-    SLCTFEValue       argValue;
-    int               argIsConst = 0;
-    SLTCConstEvalCtx* savedActiveEvalCtx;
+int HOPTCConstEvalLenCall(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx*   c;
+    const HOPAstNode*  callee;
+    int32_t            calleeNode;
+    int32_t            argNode;
+    int32_t            argExprNode;
+    int32_t            extraNode;
+    int32_t            argType = -1;
+    int32_t            resolvedArgType = -1;
+    HOPCTFEValue       argValue;
+    int                argIsConst = 0;
+    HOPTCConstEvalCtx* savedActiveEvalCtx;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -1580,31 +1587,31 @@ int SLTCConstEvalLenCall(
     if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return -1;
     }
-    calleeNode = SLAstFirstChild(c->ast, exprNode);
-    argNode = calleeNode >= 0 ? SLAstNextSibling(c->ast, calleeNode) : -1;
-    extraNode = argNode >= 0 ? SLAstNextSibling(c->ast, argNode) : -1;
+    calleeNode = HOPAstFirstChild(c->ast, exprNode);
+    argNode = calleeNode >= 0 ? HOPAstNextSibling(c->ast, calleeNode) : -1;
+    extraNode = argNode >= 0 ? HOPAstNextSibling(c->ast, argNode) : -1;
     if (calleeNode < 0 || argNode < 0 || extraNode >= 0) {
         return 1;
     }
     callee = &c->ast->nodes[calleeNode];
-    if (callee->kind != SLAst_IDENT
-        || !SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "len"))
+    if (callee->kind != HOPAst_IDENT
+        || !HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "len"))
     {
         return 1;
     }
     argExprNode = argNode;
-    if (c->ast->nodes[argExprNode].kind == SLAst_CALL_ARG) {
-        argExprNode = SLAstFirstChild(c->ast, argExprNode);
+    if (c->ast->nodes[argExprNode].kind == HOPAst_CALL_ARG) {
+        argExprNode = HOPAstFirstChild(c->ast, argExprNode);
         if (argExprNode < 0) {
             return 1;
         }
     }
 
-    if (SLTCEvalConstExprNode(evalCtx, argExprNode, &argValue, &argIsConst) != 0) {
+    if (HOPTCEvalConstExprNode(evalCtx, argExprNode, &argValue, &argIsConst) != 0) {
         return -1;
     }
-    if (argIsConst && argValue.kind == SLCTFEValue_STRING) {
-        outValue->kind = SLCTFEValue_INT;
+    if (argIsConst && argValue.kind == HOPCTFEValue_STRING) {
+        outValue->kind = HOPCTFEValue_INT;
         outValue->i64 = (int64_t)argValue.s.len;
         outValue->f64 = 0.0;
         outValue->b = 0;
@@ -1623,17 +1630,17 @@ int SLTCConstEvalLenCall(
 
     savedActiveEvalCtx = c->activeConstEvalCtx;
     c->activeConstEvalCtx = evalCtx;
-    if (SLTCTypeExpr(c, argExprNode, &argType) != 0) {
+    if (HOPTCTypeExpr(c, argExprNode, &argType) != 0) {
         c->activeConstEvalCtx = savedActiveEvalCtx;
         return -1;
     }
     c->activeConstEvalCtx = savedActiveEvalCtx;
 
-    resolvedArgType = SLTCResolveAliasBaseType(c, argType);
+    resolvedArgType = HOPTCResolveAliasBaseType(c, argType);
     if (resolvedArgType >= 0 && (uint32_t)resolvedArgType < c->typeLen) {
-        const SLTCType* t = &c->types[resolvedArgType];
-        if (t->kind == SLTCType_PACK) {
-            outValue->kind = SLCTFEValue_INT;
+        const HOPTCType* t = &c->types[resolvedArgType];
+        if (t->kind == HOPTCType_PACK) {
+            outValue->kind = HOPCTFEValue_INT;
             outValue->i64 = (int64_t)t->fieldCount;
             outValue->f64 = 0.0;
             outValue->b = 0;
@@ -1649,8 +1656,8 @@ int SLTCConstEvalLenCall(
             *outIsConst = 1;
             return 0;
         }
-        if (t->kind == SLTCType_ARRAY) {
-            outValue->kind = SLCTFEValue_INT;
+        if (t->kind == HOPTCType_ARRAY) {
+            outValue->kind = HOPCTFEValue_INT;
             outValue->i64 = (int64_t)t->arrayLen;
             outValue->f64 = 0.0;
             outValue->b = 0;
@@ -1668,23 +1675,23 @@ int SLTCConstEvalLenCall(
         }
     }
 
-    SLTCConstSetReasonNode(evalCtx, argExprNode, "len() operand is not const-evaluable");
+    HOPTCConstSetReasonNode(evalCtx, argExprNode, "len() operand is not const-evaluable");
     *outIsConst = 0;
     return 0;
 }
 
-static int SLTCConstEvalIndexExpr(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx*  c;
-    const SLAstNode* n;
-    int32_t          baseNode;
-    int32_t          idxNode;
-    int32_t          extraNode;
-    SLCTFEValue      baseValue;
-    SLCTFEValue      idxValue;
-    int              baseIsConst = 0;
-    int              idxIsConst = 0;
-    int64_t          idxInt = 0;
+static int HOPTCConstEvalIndexExpr(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx*  c;
+    const HOPAstNode* n;
+    int32_t           baseNode;
+    int32_t           idxNode;
+    int32_t           extraNode;
+    HOPCTFEValue      baseValue;
+    HOPCTFEValue      idxValue;
+    int               baseIsConst = 0;
+    int               idxIsConst = 0;
+    int64_t           idxInt = 0;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -1693,58 +1700,58 @@ static int SLTCConstEvalIndexExpr(
         return -1;
     }
     n = &c->ast->nodes[exprNode];
-    if (n->kind != SLAst_INDEX) {
+    if (n->kind != HOPAst_INDEX) {
         return 1;
     }
-    if ((n->flags & SLAstFlag_INDEX_SLICE) != 0) {
+    if ((n->flags & HOPAstFlag_INDEX_SLICE) != 0) {
         return 1;
     }
-    baseNode = SLAstFirstChild(c->ast, exprNode);
-    idxNode = baseNode >= 0 ? SLAstNextSibling(c->ast, baseNode) : -1;
-    extraNode = idxNode >= 0 ? SLAstNextSibling(c->ast, idxNode) : -1;
+    baseNode = HOPAstFirstChild(c->ast, exprNode);
+    idxNode = baseNode >= 0 ? HOPAstNextSibling(c->ast, baseNode) : -1;
+    extraNode = idxNode >= 0 ? HOPAstNextSibling(c->ast, idxNode) : -1;
     if (baseNode < 0 || idxNode < 0 || extraNode >= 0) {
         return 1;
     }
 
-    if (SLTCEvalConstExprNode(evalCtx, baseNode, &baseValue, &baseIsConst) != 0) {
+    if (HOPTCEvalConstExprNode(evalCtx, baseNode, &baseValue, &baseIsConst) != 0) {
         return -1;
     }
     if (!baseIsConst) {
-        SLTCConstSetReasonNode(evalCtx, baseNode, "index base is not const-evaluable");
+        HOPTCConstSetReasonNode(evalCtx, baseNode, "index base is not const-evaluable");
         *outIsConst = 0;
         return 0;
     }
-    if (baseValue.kind != SLCTFEValue_STRING) {
-        SLTCConstSetReasonNode(evalCtx, baseNode, "index base is not const-evaluable string data");
+    if (baseValue.kind != HOPCTFEValue_STRING) {
+        HOPTCConstSetReasonNode(evalCtx, baseNode, "index base is not const-evaluable string data");
         *outIsConst = 0;
         return 0;
     }
 
-    if (SLTCEvalConstExprNode(evalCtx, idxNode, &idxValue, &idxIsConst) != 0) {
+    if (HOPTCEvalConstExprNode(evalCtx, idxNode, &idxValue, &idxIsConst) != 0) {
         return -1;
     }
     if (!idxIsConst) {
-        SLTCConstSetReasonNode(evalCtx, idxNode, "index is not const-evaluable");
+        HOPTCConstSetReasonNode(evalCtx, idxNode, "index is not const-evaluable");
         *outIsConst = 0;
         return 0;
     }
-    if (SLCTFEValueToInt64(&idxValue, &idxInt) != 0) {
-        SLTCConstSetReasonNode(evalCtx, idxNode, "index expression did not evaluate to integer");
+    if (HOPCTFEValueToInt64(&idxValue, &idxInt) != 0) {
+        HOPTCConstSetReasonNode(evalCtx, idxNode, "index expression did not evaluate to integer");
         *outIsConst = 0;
         return 0;
     }
     if (idxInt < 0) {
-        SLTCConstSetReasonNode(evalCtx, idxNode, "index is negative in const evaluation");
+        HOPTCConstSetReasonNode(evalCtx, idxNode, "index is negative in const evaluation");
         *outIsConst = 0;
         return 0;
     }
     if ((uint64_t)idxInt >= (uint64_t)baseValue.s.len) {
-        SLTCConstSetReasonNode(evalCtx, idxNode, "index is out of bounds in const evaluation");
+        HOPTCConstSetReasonNode(evalCtx, idxNode, "index is out of bounds in const evaluation");
         *outIsConst = 0;
         return 0;
     }
 
-    outValue->kind = SLCTFEValue_INT;
+    outValue->kind = HOPCTFEValue_INT;
     outValue->i64 = (int64_t)baseValue.s.bytes[(uint32_t)idxInt];
     outValue->f64 = 0.0;
     outValue->b = 0;
@@ -1761,134 +1768,134 @@ static int SLTCConstEvalIndexExpr(
     return 0;
 }
 
-int SLTCResolveReflectedTypeValueExpr(SLTypeCheckCtx* c, int32_t exprNode, int32_t* outTypeId) {
-    const SLAstNode* n;
+int HOPTCResolveReflectedTypeValueExpr(HOPTypeCheckCtx* c, int32_t exprNode, int32_t* outTypeId) {
+    const HOPAstNode* n;
     if (c == NULL || outTypeId == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return -1;
     }
     n = &c->ast->nodes[exprNode];
-    if (n->kind == SLAst_CALL_ARG) {
-        int32_t inner = SLAstFirstChild(c->ast, exprNode);
+    if (n->kind == HOPAst_CALL_ARG) {
+        int32_t inner = HOPAstFirstChild(c->ast, exprNode);
         if (inner < 0) {
             return 1;
         }
-        return SLTCResolveReflectedTypeValueExpr(c, inner, outTypeId);
+        return HOPTCResolveReflectedTypeValueExpr(c, inner, outTypeId);
     }
-    if (n->kind == SLAst_IDENT) {
-        int32_t typeId = SLTCResolveTypeValueName(c, n->dataStart, n->dataEnd);
+    if (n->kind == HOPAst_IDENT) {
+        int32_t typeId = HOPTCResolveTypeValueName(c, n->dataStart, n->dataEnd);
         if (typeId < 0) {
             return 1;
         }
         *outTypeId = typeId;
         return 0;
     }
-    if (n->kind == SLAst_TYPE_VALUE) {
-        int32_t typeNode = SLAstFirstChild(c->ast, exprNode);
+    if (n->kind == HOPAst_TYPE_VALUE) {
+        int32_t typeNode = HOPAstFirstChild(c->ast, exprNode);
         if (typeNode < 0) {
             return 1;
         }
-        if (SLTCResolveTypeNode(c, typeNode, outTypeId) != 0) {
+        if (HOPTCResolveTypeNode(c, typeNode, outTypeId) != 0) {
             return -1;
         }
         return 0;
     }
-    if (SLTCIsTypeNodeKind(n->kind)) {
-        if (SLTCResolveTypeNode(c, exprNode, outTypeId) != 0) {
+    if (HOPTCIsTypeNodeKind(n->kind)) {
+        if (HOPTCResolveTypeNode(c, exprNode, outTypeId) != 0) {
             return -1;
         }
         return 0;
     }
-    if (n->kind == SLAst_CALL) {
-        int32_t          calleeNode = SLAstFirstChild(c->ast, exprNode);
-        const SLAstNode* callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
-        int32_t          argNode;
-        int32_t          extraNode;
-        int32_t          elemTypeId;
-        if (callee == NULL || callee->kind != SLAst_IDENT) {
+    if (n->kind == HOPAst_CALL) {
+        int32_t           calleeNode = HOPAstFirstChild(c->ast, exprNode);
+        const HOPAstNode* callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
+        int32_t           argNode;
+        int32_t           extraNode;
+        int32_t           elemTypeId;
+        if (callee == NULL || callee->kind != HOPAst_IDENT) {
             return 1;
         }
 
-        if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "typeof")) {
-            argNode = SLAstNextSibling(c->ast, calleeNode);
-            extraNode = argNode >= 0 ? SLAstNextSibling(c->ast, argNode) : -1;
+        if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "typeof")) {
+            argNode = HOPAstNextSibling(c->ast, calleeNode);
+            extraNode = argNode >= 0 ? HOPAstNextSibling(c->ast, argNode) : -1;
             if (argNode < 0 || extraNode >= 0) {
                 return 1;
             }
-            if (SLTCTypeExpr(c, argNode, outTypeId) != 0) {
+            if (HOPTCTypeExpr(c, argNode, outTypeId) != 0) {
                 return -1;
             }
             return 0;
         }
 
-        if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "ptr")) {
-            argNode = SLAstNextSibling(c->ast, calleeNode);
-            extraNode = argNode >= 0 ? SLAstNextSibling(c->ast, argNode) : -1;
+        if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "ptr")) {
+            argNode = HOPAstNextSibling(c->ast, calleeNode);
+            extraNode = argNode >= 0 ? HOPAstNextSibling(c->ast, argNode) : -1;
             if (argNode < 0 || extraNode >= 0) {
                 return 1;
             }
-            if (SLTCResolveReflectedTypeValueExpr(c, argNode, &elemTypeId) != 0) {
+            if (HOPTCResolveReflectedTypeValueExpr(c, argNode, &elemTypeId) != 0) {
                 return 1;
             }
-            *outTypeId = SLTCInternPtrType(c, elemTypeId, n->start, n->end);
+            *outTypeId = HOPTCInternPtrType(c, elemTypeId, n->start, n->end);
             return *outTypeId >= 0 ? 0 : -1;
         }
 
-        if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "slice")) {
-            argNode = SLAstNextSibling(c->ast, calleeNode);
-            extraNode = argNode >= 0 ? SLAstNextSibling(c->ast, argNode) : -1;
+        if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "slice")) {
+            argNode = HOPAstNextSibling(c->ast, calleeNode);
+            extraNode = argNode >= 0 ? HOPAstNextSibling(c->ast, argNode) : -1;
             if (argNode < 0 || extraNode >= 0) {
                 return 1;
             }
-            if (SLTCResolveReflectedTypeValueExpr(c, argNode, &elemTypeId) != 0) {
+            if (HOPTCResolveReflectedTypeValueExpr(c, argNode, &elemTypeId) != 0) {
                 return 1;
             }
-            *outTypeId = SLTCInternSliceType(c, elemTypeId, 0, n->start, n->end);
+            *outTypeId = HOPTCInternSliceType(c, elemTypeId, 0, n->start, n->end);
             return *outTypeId >= 0 ? 0 : -1;
         }
 
-        if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "array")) {
+        if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "array")) {
             int32_t lenNode;
             int32_t lenType;
             int64_t lenValue = 0;
             int     lenIsConst = 0;
-            argNode = SLAstNextSibling(c->ast, calleeNode);
-            lenNode = argNode >= 0 ? SLAstNextSibling(c->ast, argNode) : -1;
-            extraNode = lenNode >= 0 ? SLAstNextSibling(c->ast, lenNode) : -1;
+            argNode = HOPAstNextSibling(c->ast, calleeNode);
+            lenNode = argNode >= 0 ? HOPAstNextSibling(c->ast, argNode) : -1;
+            extraNode = lenNode >= 0 ? HOPAstNextSibling(c->ast, lenNode) : -1;
             if (argNode < 0 || lenNode < 0 || extraNode >= 0) {
                 return 1;
             }
-            if (SLTCResolveReflectedTypeValueExpr(c, argNode, &elemTypeId) != 0) {
+            if (HOPTCResolveReflectedTypeValueExpr(c, argNode, &elemTypeId) != 0) {
                 return 1;
             }
-            if (SLTCTypeExpr(c, lenNode, &lenType) != 0) {
+            if (HOPTCTypeExpr(c, lenNode, &lenType) != 0) {
                 return -1;
             }
-            if (!SLTCIsIntegerType(c, lenType)) {
+            if (!HOPTCIsIntegerType(c, lenType)) {
                 return 1;
             }
-            if (SLTCConstIntExpr(c, lenNode, &lenValue, &lenIsConst) != 0 || !lenIsConst
+            if (HOPTCConstIntExpr(c, lenNode, &lenValue, &lenIsConst) != 0 || !lenIsConst
                 || lenValue < 0 || lenValue > (int64_t)UINT32_MAX)
             {
                 return 1;
             }
-            *outTypeId = SLTCInternArrayType(c, elemTypeId, (uint32_t)lenValue, n->start, n->end);
+            *outTypeId = HOPTCInternArrayType(c, elemTypeId, (uint32_t)lenValue, n->start, n->end);
             return *outTypeId >= 0 ? 0 : -1;
         }
     }
     return 1;
 }
 
-int SLTCConstEvalTypeNameValue(
-    SLTypeCheckCtx* c, int32_t typeId, SLCTFEValue* outValue, int* outIsConst) {
-    char        tmp[256];
-    SLTCTextBuf b;
-    char*       storage;
+int HOPTCConstEvalTypeNameValue(
+    HOPTypeCheckCtx* c, int32_t typeId, HOPCTFEValue* outValue, int* outIsConst) {
+    char         tmp[256];
+    HOPTCTextBuf b;
+    char*        storage;
     if (c == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    SLTCTextBufInit(&b, tmp, (uint32_t)sizeof(tmp));
-    SLTCFormatTypeRec(c, typeId, &b, 0);
-    storage = (char*)SLArenaAlloc(c->arena, b.len + 1u, 1u);
+    HOPTCTextBufInit(&b, tmp, (uint32_t)sizeof(tmp));
+    HOPTCFormatTypeRec(c, typeId, &b, 0);
+    storage = (char*)HOPArenaAlloc(c->arena, b.len + 1u, 1u);
     if (storage == NULL) {
         return -1;
     }
@@ -1896,7 +1903,7 @@ int SLTCConstEvalTypeNameValue(
         memcpy(storage, b.ptr, (size_t)b.len);
     }
     storage[b.len] = '\0';
-    outValue->kind = SLCTFEValue_STRING;
+    outValue->kind = HOPCTFEValue_STRING;
     outValue->i64 = 0;
     outValue->f64 = 0.0;
     outValue->b = 0;
@@ -1913,15 +1920,15 @@ int SLTCConstEvalTypeNameValue(
     return 0;
 }
 
-static void SLTCConstEvalSetTypeValue(SLTypeCheckCtx* c, int32_t typeId, SLCTFEValue* outValue) {
+static void HOPTCConstEvalSetTypeValue(HOPTypeCheckCtx* c, int32_t typeId, HOPCTFEValue* outValue) {
     if (c == NULL || outValue == NULL) {
         return;
     }
-    outValue->kind = SLCTFEValue_TYPE;
+    outValue->kind = HOPCTFEValue_TYPE;
     outValue->i64 = 0;
     outValue->f64 = 0.0;
     outValue->b = 0;
-    outValue->typeTag = SLTCEncodeTypeTag(c, typeId);
+    outValue->typeTag = HOPTCEncodeTypeTag(c, typeId);
     outValue->s.bytes = NULL;
     outValue->s.len = 0;
     outValue->span.fileBytes = NULL;
@@ -1932,11 +1939,11 @@ static void SLTCConstEvalSetTypeValue(SLTypeCheckCtx* c, int32_t typeId, SLCTFEV
     outValue->span.endColumn = 0;
 }
 
-void SLTCConstEvalSetNullValue(SLCTFEValue* outValue) {
+void HOPTCConstEvalSetNullValue(HOPCTFEValue* outValue) {
     if (outValue == NULL) {
         return;
     }
-    outValue->kind = SLCTFEValue_NULL;
+    outValue->kind = HOPCTFEValue_NULL;
     outValue->i64 = 0;
     outValue->f64 = 0.0;
     outValue->b = 0;
@@ -1951,46 +1958,49 @@ void SLTCConstEvalSetNullValue(SLCTFEValue* outValue) {
     outValue->span.endColumn = 0;
 }
 
-static int SLTCConstEvalSetOptionalNoneValue(
-    SLTypeCheckCtx* c, int32_t optionalTypeId, SLCTFEValue* outValue) {
+static int HOPTCConstEvalSetOptionalNoneValue(
+    HOPTypeCheckCtx* c, int32_t optionalTypeId, HOPCTFEValue* outValue) {
     int32_t baseTypeId;
     if (c == NULL || outValue == NULL) {
         return -1;
     }
-    baseTypeId = SLTCResolveAliasBaseType(c, optionalTypeId);
+    baseTypeId = HOPTCResolveAliasBaseType(c, optionalTypeId);
     if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen
-        || c->types[baseTypeId].kind != SLTCType_OPTIONAL)
+        || c->types[baseTypeId].kind != HOPTCType_OPTIONAL)
     {
         return -1;
     }
-    SLTCConstEvalSetNullValue(outValue);
-    outValue->kind = SLCTFEValue_OPTIONAL;
+    HOPTCConstEvalSetNullValue(outValue);
+    outValue->kind = HOPCTFEValue_OPTIONAL;
     outValue->b = 0;
     outValue->typeTag = (uint64_t)(uint32_t)baseTypeId;
     return 0;
 }
 
-static int SLTCConstEvalSetOptionalSomeValue(
-    SLTypeCheckCtx* c, int32_t optionalTypeId, const SLCTFEValue* payload, SLCTFEValue* outValue) {
-    SLCTFEValue* payloadCopy;
-    int32_t      baseTypeId;
+static int HOPTCConstEvalSetOptionalSomeValue(
+    HOPTypeCheckCtx*    c,
+    int32_t             optionalTypeId,
+    const HOPCTFEValue* payload,
+    HOPCTFEValue*       outValue) {
+    HOPCTFEValue* payloadCopy;
+    int32_t       baseTypeId;
     if (c == NULL || payload == NULL || outValue == NULL) {
         return -1;
     }
-    baseTypeId = SLTCResolveAliasBaseType(c, optionalTypeId);
+    baseTypeId = HOPTCResolveAliasBaseType(c, optionalTypeId);
     if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen
-        || c->types[baseTypeId].kind != SLTCType_OPTIONAL)
+        || c->types[baseTypeId].kind != HOPTCType_OPTIONAL)
     {
         return -1;
     }
-    payloadCopy = (SLCTFEValue*)SLArenaAlloc(
-        c->arena, sizeof(SLCTFEValue), (uint32_t)_Alignof(SLCTFEValue));
+    payloadCopy = (HOPCTFEValue*)HOPArenaAlloc(
+        c->arena, sizeof(HOPCTFEValue), (uint32_t)_Alignof(HOPCTFEValue));
     if (payloadCopy == NULL) {
         return -1;
     }
     *payloadCopy = *payload;
-    SLTCConstEvalSetNullValue(outValue);
-    outValue->kind = SLCTFEValue_OPTIONAL;
+    HOPTCConstEvalSetNullValue(outValue);
+    outValue->kind = HOPCTFEValue_OPTIONAL;
     outValue->b = 1u;
     outValue->typeTag = (uint64_t)(uint32_t)baseTypeId;
     outValue->s.bytes = (const uint8_t*)payloadCopy;
@@ -1998,99 +2008,100 @@ static int SLTCConstEvalSetOptionalSomeValue(
     return 0;
 }
 
-void SLTCConstEvalSetSourceLocationFromOffsets(
-    SLTypeCheckCtx* c, uint32_t startOffset, uint32_t endOffset, SLCTFEValue* outValue) {
-    SLTCConstEvalSetNullValue(outValue);
-    outValue->kind = SLCTFEValue_SPAN;
+void HOPTCConstEvalSetSourceLocationFromOffsets(
+    HOPTypeCheckCtx* c, uint32_t startOffset, uint32_t endOffset, HOPCTFEValue* outValue) {
+    HOPTCConstEvalSetNullValue(outValue);
+    outValue->kind = HOPCTFEValue_SPAN;
     outValue->span.fileBytes = (const uint8_t*)"";
     outValue->span.fileLen = 0;
-    SLTCOffsetToLineCol(
+    HOPTCOffsetToLineCol(
         c->src.ptr,
         c->src.len,
         startOffset,
         &outValue->span.startLine,
         &outValue->span.startColumn);
-    SLTCOffsetToLineCol(
+    HOPTCOffsetToLineCol(
         c->src.ptr, c->src.len, endOffset, &outValue->span.endLine, &outValue->span.endColumn);
 }
 
 /* Returns 0 when resolved, 1 when not a tracked anypack index expression, 2 on non-const index,
  * 3 on out-of-bounds index, and -1 on hard error. */
-static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outCallArgIndex) {
-    SLTypeCheckCtx*        c;
-    const SLTCCallBinding* binding;
-    const SLTCCallArgInfo* callArgs;
-    int32_t                baseNode;
-    int32_t                idxNode;
-    int32_t                extraNode;
-    int64_t                idxValue = 0;
-    uint32_t               paramIndex;
-    uint32_t               ordinal = 0;
-    uint32_t               i;
-    SLCTFEValue            idxConstValue;
-    int                    idxIsConst = 0;
+static int HOPTCConstEvalResolveTrackedAnyPackArgIndex(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outCallArgIndex) {
+    HOPTypeCheckCtx*        c;
+    const HOPTCCallBinding* binding;
+    const HOPTCCallArgInfo* callArgs;
+    int32_t                 baseNode;
+    int32_t                 idxNode;
+    int32_t                 extraNode;
+    int64_t                 idxValue = 0;
+    uint32_t                paramIndex;
+    uint32_t                ordinal = 0;
+    uint32_t                i;
+    HOPCTFEValue            idxConstValue;
+    int                     idxIsConst = 0;
     if (evalCtx == NULL || outCallArgIndex == NULL) {
         return -1;
     }
     c = evalCtx->tc;
-    binding = (const SLTCCallBinding*)evalCtx->callBinding;
-    callArgs = (const SLTCCallArgInfo*)evalCtx->callArgs;
+    binding = (const HOPTCCallBinding*)evalCtx->callBinding;
+    callArgs = (const HOPTCCallArgInfo*)evalCtx->callArgs;
     if (c == NULL || binding == NULL || callArgs == NULL || evalCtx->callArgCount == 0) {
         return 1;
     }
     if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len
-        || c->ast->nodes[exprNode].kind != SLAst_INDEX
-        || (c->ast->nodes[exprNode].flags & SLAstFlag_INDEX_SLICE) != 0)
+        || c->ast->nodes[exprNode].kind != HOPAst_INDEX
+        || (c->ast->nodes[exprNode].flags & HOPAstFlag_INDEX_SLICE) != 0)
     {
         return 1;
     }
-    baseNode = SLAstFirstChild(c->ast, exprNode);
-    idxNode = baseNode >= 0 ? SLAstNextSibling(c->ast, baseNode) : -1;
-    extraNode = idxNode >= 0 ? SLAstNextSibling(c->ast, idxNode) : -1;
+    baseNode = HOPAstFirstChild(c->ast, exprNode);
+    idxNode = baseNode >= 0 ? HOPAstNextSibling(c->ast, baseNode) : -1;
+    extraNode = idxNode >= 0 ? HOPAstNextSibling(c->ast, idxNode) : -1;
     if (baseNode < 0 || idxNode < 0 || extraNode >= 0) {
         return 1;
     }
-    if (c->ast->nodes[baseNode].kind != SLAst_IDENT
-        || !SLTCConstEvalIsTrackedAnyPackName(
+    if (c->ast->nodes[baseNode].kind != HOPAst_IDENT
+        || !HOPTCConstEvalIsTrackedAnyPackName(
             evalCtx, c->ast->nodes[baseNode].dataStart, c->ast->nodes[baseNode].dataEnd))
     {
         return 1;
     }
-    if (SLTCEvalConstExprNode(evalCtx, idxNode, &idxConstValue, &idxIsConst) != 0) {
+    if (HOPTCEvalConstExprNode(evalCtx, idxNode, &idxConstValue, &idxIsConst) != 0) {
         return -1;
     }
-    if (!idxIsConst || SLCTFEValueToInt64(&idxConstValue, &idxValue) != 0) {
-        SLTCConstSetReasonNode(
+    if (!idxIsConst || HOPCTFEValueToInt64(&idxConstValue, &idxValue) != 0) {
+        HOPTCConstSetReasonNode(
             evalCtx, idxNode, "anytype pack index must be const-evaluable integer");
         return 2;
     }
     if (idxValue < 0) {
-        SLTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
+        HOPTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
         return 3;
     }
     if (!binding->isVariadic) {
-        SLTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
+        HOPTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
         return 3;
     }
     if (binding->spreadArgIndex != UINT32_MAX) {
         uint32_t spreadArgIndex = binding->spreadArgIndex;
         int32_t  spreadArgType = -1;
         if (spreadArgIndex < evalCtx->callArgCount
-            && SLTCConstEvalGetConcreteCallArgType(evalCtx, spreadArgIndex, &spreadArgType) == 0)
+            && HOPTCConstEvalGetConcreteCallArgType(evalCtx, spreadArgIndex, &spreadArgType) == 0)
         {
-            int32_t spreadType = SLTCResolveAliasBaseType(c, spreadArgType);
+            int32_t spreadType = HOPTCResolveAliasBaseType(c, spreadArgType);
             if (spreadType >= 0 && (uint32_t)spreadType < c->typeLen
-                && c->types[spreadType].kind == SLTCType_PACK)
+                && c->types[spreadType].kind == HOPTCType_PACK)
             {
                 if ((uint64_t)idxValue >= (uint64_t)c->types[spreadType].fieldCount) {
-                    SLTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
+                    HOPTCConstSetReasonNode(
+                        evalCtx, idxNode, "anytype pack index is out of bounds");
                     return 3;
                 }
                 return 1;
             }
         }
-        SLTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
+        HOPTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
         return 3;
     }
     paramIndex = binding->fixedCount;
@@ -2104,16 +2115,16 @@ static int SLTCConstEvalResolveTrackedAnyPackArgIndex(
         }
         ordinal++;
     }
-    SLTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
+    HOPTCConstSetReasonNode(evalCtx, idxNode, "anytype pack index is out of bounds");
     return 3;
 }
 
-static int SLTCConstEvalGetConcreteCallArgType(
-    SLTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outType) {
-    SLTypeCheckCtx*        c;
-    const SLTCCallBinding* binding;
-    const SLTCCallArgInfo* callArgs;
-    SLTCConstEvalCtx* _Nullable savedActiveEvalCtx;
+static int HOPTCConstEvalGetConcreteCallArgType(
+    HOPTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outType) {
+    HOPTypeCheckCtx*        c;
+    const HOPTCCallBinding* binding;
+    const HOPTCCallArgInfo* callArgs;
+    HOPTCConstEvalCtx* _Nullable savedActiveEvalCtx;
     int32_t argType = -1;
     if (outType != NULL) {
         *outType = -1;
@@ -2122,8 +2133,8 @@ static int SLTCConstEvalGetConcreteCallArgType(
         return -1;
     }
     c = evalCtx->tc;
-    binding = (const SLTCCallBinding*)evalCtx->callBinding;
-    callArgs = (const SLTCCallArgInfo*)evalCtx->callArgs;
+    binding = (const HOPTCCallBinding*)evalCtx->callBinding;
+    callArgs = (const HOPTCCallArgInfo*)evalCtx->callArgs;
     if (c == NULL || binding == NULL || callArgs == NULL || callArgIndex >= evalCtx->callArgCount) {
         return 1;
     }
@@ -2132,13 +2143,13 @@ static int SLTCConstEvalGetConcreteCallArgType(
     {
         savedActiveEvalCtx = c->activeConstEvalCtx;
         c->activeConstEvalCtx = evalCtx;
-        if (SLTCTypeExpr(c, callArgs[callArgIndex].exprNode, &argType) != 0) {
+        if (HOPTCTypeExpr(c, callArgs[callArgIndex].exprNode, &argType) != 0) {
             c->activeConstEvalCtx = savedActiveEvalCtx;
             return -1;
         }
         c->activeConstEvalCtx = savedActiveEvalCtx;
         if ((argType == c->typeUntypedInt || argType == c->typeUntypedFloat)
-            && SLTCConcretizeInferredType(c, argType, &argType) != 0)
+            && HOPTCConcretizeInferredType(c, argType, &argType) != 0)
         {
             return -1;
         }
@@ -2147,7 +2158,7 @@ static int SLTCConstEvalGetConcreteCallArgType(
             return 0;
         }
     }
-    if (SLTCConstEvalGetConcreteCallArgPackType(evalCtx, callArgIndex, &argType) == 0) {
+    if (HOPTCConstEvalGetConcreteCallArgPackType(evalCtx, callArgIndex, &argType) == 0) {
         *outType = argType;
         return 0;
     }
@@ -2162,13 +2173,13 @@ static int SLTCConstEvalGetConcreteCallArgType(
     return 1;
 }
 
-int SLTCConstEvalSourceLocationOfCall(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx*  c;
-    int32_t          calleeNode;
-    const SLAstNode* callee;
-    int32_t          operandNode = -1;
-    int32_t          nextNode = -1;
+int HOPTCConstEvalSourceLocationOfCall(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx*  c;
+    int32_t           calleeNode;
+    const HOPAstNode* callee;
+    int32_t           operandNode = -1;
+    int32_t           nextNode = -1;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -2176,42 +2187,42 @@ int SLTCConstEvalSourceLocationOfCall(
     if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return -1;
     }
-    calleeNode = SLAstFirstChild(c->ast, exprNode);
+    calleeNode = HOPAstFirstChild(c->ast, exprNode);
     callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
     if (callee == NULL) {
         return 1;
     }
-    if (callee->kind == SLAst_IDENT) {
-        if (!SLTCIsSourceLocationOfName(c, callee->dataStart, callee->dataEnd)) {
+    if (callee->kind == HOPAst_IDENT) {
+        if (!HOPTCIsSourceLocationOfName(c, callee->dataStart, callee->dataEnd)) {
             return 1;
         }
-        operandNode = SLAstNextSibling(c->ast, calleeNode);
-        nextNode = operandNode >= 0 ? SLAstNextSibling(c->ast, operandNode) : -1;
+        operandNode = HOPAstNextSibling(c->ast, calleeNode);
+        nextNode = operandNode >= 0 ? HOPAstNextSibling(c->ast, operandNode) : -1;
         if (operandNode < 0 || nextNode >= 0) {
             return 1;
         }
-    } else if (callee->kind == SLAst_FIELD_EXPR) {
-        int32_t recvNode = SLAstFirstChild(c->ast, calleeNode);
-        if (recvNode < 0 || c->ast->nodes[recvNode].kind != SLAst_IDENT
-            || !SLNameEqLiteral(
+    } else if (callee->kind == HOPAst_FIELD_EXPR) {
+        int32_t recvNode = HOPAstFirstChild(c->ast, calleeNode);
+        if (recvNode < 0 || c->ast->nodes[recvNode].kind != HOPAst_IDENT
+            || !HOPNameEqLiteral(
                 c->src,
                 c->ast->nodes[recvNode].dataStart,
                 c->ast->nodes[recvNode].dataEnd,
                 "builtin")
-            || !SLTCIsSourceLocationOfName(c, callee->dataStart, callee->dataEnd))
+            || !HOPTCIsSourceLocationOfName(c, callee->dataStart, callee->dataEnd))
         {
             return 1;
         }
-        operandNode = SLAstNextSibling(c->ast, calleeNode);
-        nextNode = operandNode >= 0 ? SLAstNextSibling(c->ast, operandNode) : -1;
+        operandNode = HOPAstNextSibling(c->ast, calleeNode);
+        nextNode = operandNode >= 0 ? HOPAstNextSibling(c->ast, operandNode) : -1;
         if (operandNode < 0 || nextNode >= 0) {
             return 1;
         }
     } else {
         return 1;
     }
-    if (c->ast->nodes[operandNode].kind == SLAst_CALL_ARG) {
-        int32_t inner = SLAstFirstChild(c->ast, operandNode);
+    if (c->ast->nodes[operandNode].kind == HOPAst_CALL_ARG) {
+        int32_t inner = HOPAstFirstChild(c->ast, operandNode);
         if (inner < 0) {
             return 1;
         }
@@ -2219,14 +2230,14 @@ int SLTCConstEvalSourceLocationOfCall(
     }
     {
         uint32_t callArgIndex = 0;
-        int      packStatus = SLTCConstEvalResolveTrackedAnyPackArgIndex(
+        int      packStatus = HOPTCConstEvalResolveTrackedAnyPackArgIndex(
             evalCtx, operandNode, &callArgIndex);
         if (packStatus < 0) {
             return -1;
         }
         if (packStatus == 0) {
-            const SLTCCallArgInfo* callArgs = (const SLTCCallArgInfo*)evalCtx->callArgs;
-            SLTCConstEvalSetSourceLocationFromOffsets(
+            const HOPTCCallArgInfo* callArgs = (const HOPTCCallArgInfo*)evalCtx->callArgs;
+            HOPTCConstEvalSetSourceLocationFromOffsets(
                 c, callArgs[callArgIndex].start, callArgs[callArgIndex].end, outValue);
             *outIsConst = 1;
             return 0;
@@ -2236,36 +2247,36 @@ int SLTCConstEvalSourceLocationOfCall(
             return 0;
         }
     }
-    if ((c->ast->nodes[operandNode].kind == SLAst_IDENT
-         || c->ast->nodes[operandNode].kind == SLAst_TYPE_NAME)
-        && SLNameHasPrefix(
+    if ((c->ast->nodes[operandNode].kind == HOPAst_IDENT
+         || c->ast->nodes[operandNode].kind == HOPAst_TYPE_NAME)
+        && HOPNameHasPrefix(
             c->src,
             c->ast->nodes[operandNode].dataStart,
             c->ast->nodes[operandNode].dataEnd,
-            "__sl_"))
+            "__hop_"))
     {
-        SLTCConstSetReasonNode(
-            evalCtx, operandNode, "source_location_of operand cannot reference __sl_ names");
+        HOPTCConstSetReasonNode(
+            evalCtx, operandNode, "source_location_of operand cannot reference __hop_ names");
         *outIsConst = 0;
         return 0;
     }
-    SLTCConstEvalSetSourceLocationFromOffsets(
+    HOPTCConstEvalSetSourceLocationFromOffsets(
         c, c->ast->nodes[operandNode].start, c->ast->nodes[operandNode].end, outValue);
     *outIsConst = 1;
     return 0;
 }
 
-int SLTCConstEvalU32Arg(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outValue, int* outIsConst) {
-    SLCTFEValue v;
-    int         isConst = 0;
+int HOPTCConstEvalU32Arg(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outValue, int* outIsConst) {
+    HOPCTFEValue v;
+    int          isConst = 0;
     if (outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (SLTCEvalConstExprNode(evalCtx, exprNode, &v, &isConst) != 0) {
+    if (HOPTCEvalConstExprNode(evalCtx, exprNode, &v, &isConst) != 0) {
         return -1;
     }
-    if (!isConst || v.kind != SLCTFEValue_INT || v.i64 < 0 || v.i64 > (int64_t)UINT32_MAX) {
+    if (!isConst || v.kind != HOPCTFEValue_INT || v.i64 < 0 || v.i64 > (int64_t)UINT32_MAX) {
         *outIsConst = 0;
         return 0;
     }
@@ -2274,93 +2285,93 @@ int SLTCConstEvalU32Arg(
     return 0;
 }
 
-int SLTCConstEvalSourceLocationCompound(
-    SLTCConstEvalCtx* evalCtx,
-    int32_t           exprNode,
-    int               forceSourceLocation,
-    SLCTFEValue*      outValue,
-    int*              outIsConst) {
-    SLTypeCheckCtx* c;
-    int32_t         child;
-    int32_t         fieldNode;
-    int32_t         resolvedType = -1;
-    uint32_t        startLine = 0;
-    uint32_t        startColumn = 0;
-    uint32_t        endLine = 0;
-    uint32_t        endColumn = 0;
-    const uint8_t*  fileBytes = (const uint8_t*)"";
-    uint32_t        fileLen = 0;
+int HOPTCConstEvalSourceLocationCompound(
+    HOPTCConstEvalCtx* evalCtx,
+    int32_t            exprNode,
+    int                forceSourceLocation,
+    HOPCTFEValue*      outValue,
+    int*               outIsConst) {
+    HOPTypeCheckCtx* c;
+    int32_t          child;
+    int32_t          fieldNode;
+    int32_t          resolvedType = -1;
+    uint32_t         startLine = 0;
+    uint32_t         startColumn = 0;
+    uint32_t         endLine = 0;
+    uint32_t         endColumn = 0;
+    const uint8_t*   fileBytes = (const uint8_t*)"";
+    uint32_t         fileLen = 0;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
     c = evalCtx->tc;
     if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len
-        || c->ast->nodes[exprNode].kind != SLAst_COMPOUND_LIT)
+        || c->ast->nodes[exprNode].kind != HOPAst_COMPOUND_LIT)
     {
         return 0;
     }
-    child = SLAstFirstChild(c->ast, exprNode);
+    child = HOPAstFirstChild(c->ast, exprNode);
     fieldNode = child;
-    if (child >= 0 && SLTCIsTypeNodeKind(c->ast->nodes[child].kind)) {
-        if (SLTCResolveTypeNode(c, child, &resolvedType) != 0) {
+    if (child >= 0 && HOPTCIsTypeNodeKind(c->ast->nodes[child].kind)) {
+        if (HOPTCResolveTypeNode(c, child, &resolvedType) != 0) {
             return -1;
         }
-        if (!SLTCTypeIsSourceLocation(c, resolvedType)) {
+        if (!HOPTCTypeIsSourceLocation(c, resolvedType)) {
             return 0;
         }
-        fieldNode = SLAstNextSibling(c->ast, child);
+        fieldNode = HOPAstNextSibling(c->ast, child);
     } else if (!forceSourceLocation) {
         return 0;
     }
 
-    SLTCOffsetToLineCol(
+    HOPTCOffsetToLineCol(
         c->src.ptr, c->src.len, c->ast->nodes[exprNode].start, &startLine, &startColumn);
-    SLTCOffsetToLineCol(c->src.ptr, c->src.len, c->ast->nodes[exprNode].end, &endLine, &endColumn);
+    HOPTCOffsetToLineCol(c->src.ptr, c->src.len, c->ast->nodes[exprNode].end, &endLine, &endColumn);
 
     while (fieldNode >= 0) {
-        const SLAstNode* field = &c->ast->nodes[fieldNode];
-        int32_t          valueNode = SLAstFirstChild(c->ast, fieldNode);
-        if (field->kind != SLAst_COMPOUND_FIELD || valueNode < 0) {
+        const HOPAstNode* field = &c->ast->nodes[fieldNode];
+        int32_t           valueNode = HOPAstFirstChild(c->ast, fieldNode);
+        if (field->kind != HOPAst_COMPOUND_FIELD || valueNode < 0) {
             goto non_const;
         }
-        if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "file")) {
-            SLCTFEValue fileValue;
-            int         fileIsConst = 0;
-            if (SLTCEvalConstExprNode(evalCtx, valueNode, &fileValue, &fileIsConst) != 0) {
+        if (HOPNameEqLiteral(c->src, field->dataStart, field->dataEnd, "file")) {
+            HOPCTFEValue fileValue;
+            int          fileIsConst = 0;
+            if (HOPTCEvalConstExprNode(evalCtx, valueNode, &fileValue, &fileIsConst) != 0) {
                 return -1;
             }
-            if (!fileIsConst || fileValue.kind != SLCTFEValue_STRING) {
+            if (!fileIsConst || fileValue.kind != HOPCTFEValue_STRING) {
                 goto non_const;
             }
             fileBytes = fileValue.s.bytes;
             fileLen = fileValue.s.len;
-        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "start_line")) {
+        } else if (HOPNameEqLiteral(c->src, field->dataStart, field->dataEnd, "start_line")) {
             int isConst = 0;
-            if (SLTCConstEvalU32Arg(evalCtx, valueNode, &startLine, &isConst) != 0) {
+            if (HOPTCConstEvalU32Arg(evalCtx, valueNode, &startLine, &isConst) != 0) {
                 return -1;
             }
             if (!isConst) {
                 goto non_const;
             }
-        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "start_column")) {
+        } else if (HOPNameEqLiteral(c->src, field->dataStart, field->dataEnd, "start_column")) {
             int isConst = 0;
-            if (SLTCConstEvalU32Arg(evalCtx, valueNode, &startColumn, &isConst) != 0) {
+            if (HOPTCConstEvalU32Arg(evalCtx, valueNode, &startColumn, &isConst) != 0) {
                 return -1;
             }
             if (!isConst) {
                 goto non_const;
             }
-        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "end_line")) {
+        } else if (HOPNameEqLiteral(c->src, field->dataStart, field->dataEnd, "end_line")) {
             int isConst = 0;
-            if (SLTCConstEvalU32Arg(evalCtx, valueNode, &endLine, &isConst) != 0) {
+            if (HOPTCConstEvalU32Arg(evalCtx, valueNode, &endLine, &isConst) != 0) {
                 return -1;
             }
             if (!isConst) {
                 goto non_const;
             }
-        } else if (SLNameEqLiteral(c->src, field->dataStart, field->dataEnd, "end_column")) {
+        } else if (HOPNameEqLiteral(c->src, field->dataStart, field->dataEnd, "end_column")) {
             int isConst = 0;
-            if (SLTCConstEvalU32Arg(evalCtx, valueNode, &endColumn, &isConst) != 0) {
+            if (HOPTCConstEvalU32Arg(evalCtx, valueNode, &endColumn, &isConst) != 0) {
                 return -1;
             }
             if (!isConst) {
@@ -2369,11 +2380,11 @@ int SLTCConstEvalSourceLocationCompound(
         } else {
             goto non_const;
         }
-        fieldNode = SLAstNextSibling(c->ast, fieldNode);
+        fieldNode = HOPAstNextSibling(c->ast, fieldNode);
     }
 
-    SLTCConstEvalSetNullValue(outValue);
-    outValue->kind = SLCTFEValue_SPAN;
+    HOPTCConstEvalSetNullValue(outValue);
+    outValue->kind = HOPCTFEValue_SPAN;
     outValue->span.fileBytes = fileBytes;
     outValue->span.fileLen = fileLen;
     outValue->span.startLine = startLine;
@@ -2384,19 +2395,19 @@ int SLTCConstEvalSourceLocationCompound(
     return 1;
 
 non_const:
-    SLTCConstSetReasonNode(
+    HOPTCConstSetReasonNode(
         evalCtx, exprNode, "builtin.SourceLocation literal is not const-evaluable");
-    SLTCConstEvalSetNullValue(outValue);
+    HOPTCConstEvalSetNullValue(outValue);
     *outIsConst = 0;
     return 1;
 }
 
-int SLTCConstEvalSourceLocationExpr(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFESpan* outSpan, int* outIsConst) {
-    SLTypeCheckCtx* c;
-    SLCTFEValue     v;
-    int             isConst = 0;
-    int             handled;
+int HOPTCConstEvalSourceLocationExpr(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFESpan* outSpan, int* outIsConst) {
+    HOPTypeCheckCtx* c;
+    HOPCTFEValue     v;
+    int              isConst = 0;
+    int              handled;
     if (evalCtx == NULL || outSpan == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -2408,21 +2419,21 @@ int SLTCConstEvalSourceLocationExpr(
         *outIsConst = 0;
         return 0;
     }
-    if (c->ast->nodes[exprNode].kind == SLAst_CALL_ARG) {
-        int32_t inner = SLAstFirstChild(c->ast, exprNode);
+    if (c->ast->nodes[exprNode].kind == HOPAst_CALL_ARG) {
+        int32_t inner = HOPAstFirstChild(c->ast, exprNode);
         if (inner < 0) {
             *outIsConst = 0;
             return 0;
         }
         exprNode = inner;
     }
-    if (c->ast->nodes[exprNode].kind == SLAst_COMPOUND_LIT) {
-        handled = SLTCConstEvalSourceLocationCompound(evalCtx, exprNode, 1, &v, &isConst);
+    if (c->ast->nodes[exprNode].kind == HOPAst_COMPOUND_LIT) {
+        handled = HOPTCConstEvalSourceLocationCompound(evalCtx, exprNode, 1, &v, &isConst);
         if (handled < 0) {
             return -1;
         }
         if (handled > 0) {
-            if (!isConst || v.kind != SLCTFEValue_SPAN) {
+            if (!isConst || v.kind != HOPCTFEValue_SPAN) {
                 *outIsConst = 0;
                 return 0;
             }
@@ -2431,10 +2442,10 @@ int SLTCConstEvalSourceLocationExpr(
             return 0;
         }
     }
-    if (SLTCEvalConstExprNode(evalCtx, exprNode, &v, &isConst) != 0) {
+    if (HOPTCEvalConstExprNode(evalCtx, exprNode, &v, &isConst) != 0) {
         return -1;
     }
-    if (!isConst || v.kind != SLCTFEValue_SPAN) {
+    if (!isConst || v.kind != HOPCTFEValue_SPAN) {
         *outIsConst = 0;
         return 0;
     }
@@ -2443,20 +2454,20 @@ int SLTCConstEvalSourceLocationExpr(
     return 0;
 }
 
-static SLTCCompilerDiagOp SLTCConstEvalCompilerDiagOpFromFieldExpr(
-    SLTypeCheckCtx* c, const SLAstNode* fieldExpr) {
-    SLTCCompilerDiagOp op;
-    uint32_t           segStart;
-    uint32_t           i;
+static HOPTCCompilerDiagOp HOPTCConstEvalCompilerDiagOpFromFieldExpr(
+    HOPTypeCheckCtx* c, const HOPAstNode* fieldExpr) {
+    HOPTCCompilerDiagOp op;
+    uint32_t            segStart;
+    uint32_t            i;
     if (c == NULL || fieldExpr == NULL) {
-        return SLTCCompilerDiagOp_NONE;
+        return HOPTCCompilerDiagOp_NONE;
     }
-    op = SLTCCompilerDiagOpFromName(c, fieldExpr->dataStart, fieldExpr->dataEnd);
-    if (op != SLTCCompilerDiagOp_NONE) {
+    op = HOPTCCompilerDiagOpFromName(c, fieldExpr->dataStart, fieldExpr->dataEnd);
+    if (op != HOPTCCompilerDiagOp_NONE) {
         return op;
     }
     if (fieldExpr->dataEnd <= fieldExpr->dataStart || fieldExpr->dataEnd > c->src.len) {
-        return SLTCCompilerDiagOp_NONE;
+        return HOPTCCompilerDiagOp_NONE;
     }
     segStart = fieldExpr->dataStart;
     for (i = fieldExpr->dataStart; i < fieldExpr->dataEnd; i++) {
@@ -2464,36 +2475,36 @@ static SLTCCompilerDiagOp SLTCConstEvalCompilerDiagOpFromFieldExpr(
             segStart = i + 1u;
         }
     }
-    if (SLNameEqLiteral(c->src, segStart, fieldExpr->dataEnd, "error")) {
-        return SLTCCompilerDiagOp_ERROR;
+    if (HOPNameEqLiteral(c->src, segStart, fieldExpr->dataEnd, "error")) {
+        return HOPTCCompilerDiagOp_ERROR;
     }
-    if (SLNameEqLiteral(c->src, segStart, fieldExpr->dataEnd, "error_at")) {
-        return SLTCCompilerDiagOp_ERROR_AT;
+    if (HOPNameEqLiteral(c->src, segStart, fieldExpr->dataEnd, "error_at")) {
+        return HOPTCCompilerDiagOp_ERROR_AT;
     }
-    if (SLNameEqLiteral(c->src, segStart, fieldExpr->dataEnd, "warn")) {
-        return SLTCCompilerDiagOp_WARN;
+    if (HOPNameEqLiteral(c->src, segStart, fieldExpr->dataEnd, "warn")) {
+        return HOPTCCompilerDiagOp_WARN;
     }
-    if (SLNameEqLiteral(c->src, segStart, fieldExpr->dataEnd, "warn_at")) {
-        return SLTCCompilerDiagOp_WARN_AT;
+    if (HOPNameEqLiteral(c->src, segStart, fieldExpr->dataEnd, "warn_at")) {
+        return HOPTCCompilerDiagOp_WARN_AT;
     }
-    return SLTCCompilerDiagOp_NONE;
+    return HOPTCCompilerDiagOp_NONE;
 }
 
-int SLTCConstEvalCompilerDiagCall(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx*    c;
-    int32_t            calleeNode;
-    const SLAstNode*   callee;
-    SLTCCompilerDiagOp op = SLTCCompilerDiagOp_NONE;
-    int32_t            msgNode = -1;
-    int32_t            spanNode = -1;
-    int32_t            nextNode;
-    SLCTFEValue        msgValue;
-    int                msgIsConst = 0;
-    uint32_t           diagStart = 0;
-    uint32_t           diagEnd = 0;
-    const char*        detail;
-    SLDiag             emitted;
+int HOPTCConstEvalCompilerDiagCall(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx*    c;
+    int32_t             calleeNode;
+    const HOPAstNode*   callee;
+    HOPTCCompilerDiagOp op = HOPTCCompilerDiagOp_NONE;
+    int32_t             msgNode = -1;
+    int32_t             spanNode = -1;
+    int32_t             nextNode;
+    HOPCTFEValue        msgValue;
+    int                 msgIsConst = 0;
+    uint32_t            diagStart = 0;
+    uint32_t            diagEnd = 0;
+    const char*         detail;
+    HOPDiag             emitted;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -2501,93 +2512,93 @@ int SLTCConstEvalCompilerDiagCall(
     if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return -1;
     }
-    calleeNode = SLAstFirstChild(c->ast, exprNode);
+    calleeNode = HOPAstFirstChild(c->ast, exprNode);
     callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
     if (callee == NULL) {
         return 1;
     }
-    if (callee->kind == SLAst_IDENT) {
-        op = SLTCCompilerDiagOpFromName(c, callee->dataStart, callee->dataEnd);
-    } else if (callee->kind == SLAst_FIELD_EXPR) {
-        int32_t recvNode = SLAstFirstChild(c->ast, calleeNode);
-        if (recvNode >= 0 && c->ast->nodes[recvNode].kind == SLAst_IDENT
-            && SLNameEqLiteral(
+    if (callee->kind == HOPAst_IDENT) {
+        op = HOPTCCompilerDiagOpFromName(c, callee->dataStart, callee->dataEnd);
+    } else if (callee->kind == HOPAst_FIELD_EXPR) {
+        int32_t recvNode = HOPAstFirstChild(c->ast, calleeNode);
+        if (recvNode >= 0 && c->ast->nodes[recvNode].kind == HOPAst_IDENT
+            && HOPNameEqLiteral(
                 c->src,
                 c->ast->nodes[recvNode].dataStart,
                 c->ast->nodes[recvNode].dataEnd,
                 "compiler"))
         {
-            op = SLTCConstEvalCompilerDiagOpFromFieldExpr(c, callee);
+            op = HOPTCConstEvalCompilerDiagOpFromFieldExpr(c, callee);
         }
     }
-    if (op == SLTCCompilerDiagOp_NONE) {
+    if (op == HOPTCCompilerDiagOp_NONE) {
         return 1;
     }
 
-    if (op == SLTCCompilerDiagOp_ERROR || op == SLTCCompilerDiagOp_WARN) {
-        msgNode = SLAstNextSibling(c->ast, calleeNode);
-        nextNode = msgNode >= 0 ? SLAstNextSibling(c->ast, msgNode) : -1;
+    if (op == HOPTCCompilerDiagOp_ERROR || op == HOPTCCompilerDiagOp_WARN) {
+        msgNode = HOPAstNextSibling(c->ast, calleeNode);
+        nextNode = msgNode >= 0 ? HOPAstNextSibling(c->ast, msgNode) : -1;
         if (msgNode < 0 || nextNode >= 0) {
             return 1;
         }
         diagStart = c->ast->nodes[exprNode].start;
         diagEnd = c->ast->nodes[exprNode].end;
     } else {
-        int        spanIsConst = 0;
-        SLCTFESpan span;
-        uint32_t   spanStartOffset = 0;
-        uint32_t   spanEndOffset = 0;
-        spanNode = SLAstNextSibling(c->ast, calleeNode);
-        msgNode = spanNode >= 0 ? SLAstNextSibling(c->ast, spanNode) : -1;
-        nextNode = msgNode >= 0 ? SLAstNextSibling(c->ast, msgNode) : -1;
+        int         spanIsConst = 0;
+        HOPCTFESpan span;
+        uint32_t    spanStartOffset = 0;
+        uint32_t    spanEndOffset = 0;
+        spanNode = HOPAstNextSibling(c->ast, calleeNode);
+        msgNode = spanNode >= 0 ? HOPAstNextSibling(c->ast, spanNode) : -1;
+        nextNode = msgNode >= 0 ? HOPAstNextSibling(c->ast, msgNode) : -1;
         if (spanNode < 0 || msgNode < 0 || nextNode >= 0) {
             return 1;
         }
-        if (SLTCConstEvalSourceLocationExpr(evalCtx, spanNode, &span, &spanIsConst) != 0) {
+        if (HOPTCConstEvalSourceLocationExpr(evalCtx, spanNode, &span, &spanIsConst) != 0) {
             return -1;
         }
         if (!spanIsConst || span.startLine == 0 || span.startColumn == 0 || span.endLine == 0
             || span.endColumn == 0
-            || SLTCLineColToOffset(
+            || HOPTCLineColToOffset(
                    c->src.ptr, c->src.len, span.startLine, span.startColumn, &spanStartOffset)
                    != 0
-            || SLTCLineColToOffset(
+            || HOPTCLineColToOffset(
                    c->src.ptr, c->src.len, span.endLine, span.endColumn, &spanEndOffset)
                    != 0
             || spanEndOffset < spanStartOffset)
         {
-            return SLTCFailNode(c, spanNode, SLDiag_CONSTEVAL_DIAG_INVALID_SPAN);
+            return HOPTCFailNode(c, spanNode, HOPDiag_CONSTEVAL_DIAG_INVALID_SPAN);
         }
         diagStart = spanStartOffset;
         diagEnd = spanEndOffset;
     }
     if (msgNode >= 0 && (uint32_t)msgNode < c->ast->len
-        && c->ast->nodes[msgNode].kind == SLAst_CALL_ARG)
+        && c->ast->nodes[msgNode].kind == HOPAst_CALL_ARG)
     {
-        int32_t inner = SLAstFirstChild(c->ast, msgNode);
+        int32_t inner = HOPAstFirstChild(c->ast, msgNode);
         if (inner >= 0) {
             msgNode = inner;
         }
     }
 
-    if (SLTCEvalConstExprNode(evalCtx, msgNode, &msgValue, &msgIsConst) != 0) {
+    if (HOPTCEvalConstExprNode(evalCtx, msgNode, &msgValue, &msgIsConst) != 0) {
         return -1;
     }
-    if (!msgIsConst || msgValue.kind != SLCTFEValue_STRING) {
-        return SLTCFailNode(c, msgNode, SLDiag_CONSTEVAL_DIAG_MESSAGE_NOT_CONST_STRING);
+    if (!msgIsConst || msgValue.kind != HOPCTFEValue_STRING) {
+        return HOPTCFailNode(c, msgNode, HOPDiag_CONSTEVAL_DIAG_MESSAGE_NOT_CONST_STRING);
     }
-    detail = SLTCAllocCStringBytes(c, msgValue.s.bytes, msgValue.s.len);
+    detail = HOPTCAllocCStringBytes(c, msgValue.s.bytes, msgValue.s.len);
     if (detail == NULL) {
-        return SLTCFailNode(c, msgNode, SLDiag_ARENA_OOM);
+        return HOPTCFailNode(c, msgNode, HOPDiag_ARENA_OOM);
     }
 
-    emitted = (SLDiag){
-        .code = (op == SLTCCompilerDiagOp_WARN || op == SLTCCompilerDiagOp_WARN_AT)
-                  ? SLDiag_CONSTEVAL_DIAG_WARNING
-                  : SLDiag_CONSTEVAL_DIAG_ERROR,
-        .type = (op == SLTCCompilerDiagOp_WARN || op == SLTCCompilerDiagOp_WARN_AT)
-                  ? SLDiagType_WARNING
-                  : SLDiagType_ERROR,
+    emitted = (HOPDiag){
+        .code = (op == HOPTCCompilerDiagOp_WARN || op == HOPTCCompilerDiagOp_WARN_AT)
+                  ? HOPDiag_CONSTEVAL_DIAG_WARNING
+                  : HOPDiag_CONSTEVAL_DIAG_ERROR,
+        .type = (op == HOPTCCompilerDiagOp_WARN || op == HOPTCCompilerDiagOp_WARN_AT)
+                  ? HOPDiagType_WARNING
+                  : HOPDiagType_ERROR,
         .start = diagStart,
         .end = diagEnd,
         .argStart = 0,
@@ -2595,12 +2606,12 @@ int SLTCConstEvalCompilerDiagCall(
         .detail = detail,
         .hintOverride = NULL,
     };
-    SLTCMarkConstDiagUseExecuted(c, exprNode);
-    if (emitted.type == SLDiagType_WARNING) {
-        if (SLTCEmitWarningDiag(c, &emitted) != 0) {
+    HOPTCMarkConstDiagUseExecuted(c, exprNode);
+    if (emitted.type == HOPDiagType_WARNING) {
+        if (HOPTCEmitWarningDiag(c, &emitted) != 0) {
             return -1;
         }
-        SLTCConstEvalSetNullValue(outValue);
+        HOPTCConstEvalSetNullValue(outValue);
         *outIsConst = 1;
         return 0;
     }
@@ -2611,27 +2622,27 @@ int SLTCConstEvalCompilerDiagCall(
     return -1;
 }
 
-int SLTCConstEvalTypeReflectionCall(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx*  c;
-    int32_t          calleeNode;
-    const SLAstNode* callee;
-    int32_t          op = 0;
-    int32_t          operandNode = -1;
-    int32_t          operandNode2 = -1;
-    SLCTFEValue      operandValue;
-    SLCTFEValue      operandValue2;
-    int              operandIsConst = 0;
-    int              operandIsConst2 = 0;
-    int32_t          reflectedTypeId;
+int HOPTCConstEvalTypeReflectionCall(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx*  c;
+    int32_t           calleeNode;
+    const HOPAstNode* callee;
+    int32_t           op = 0;
+    int32_t           operandNode = -1;
+    int32_t           operandNode2 = -1;
+    HOPCTFEValue      operandValue;
+    HOPCTFEValue      operandValue2;
+    int               operandIsConst = 0;
+    int               operandIsConst2 = 0;
+    int32_t           reflectedTypeId;
     enum {
-        SLTCReflectKind_KIND = 1,
-        SLTCReflectKind_BASE = 2,
-        SLTCReflectKind_IS_ALIAS = 3,
-        SLTCReflectKind_TYPE_NAME = 4,
-        SLTCReflectKind_PTR = 5,
-        SLTCReflectKind_SLICE = 6,
-        SLTCReflectKind_ARRAY = 7,
+        HOPTCReflectKind_KIND = 1,
+        HOPTCReflectKind_BASE = 2,
+        HOPTCReflectKind_IS_ALIAS = 3,
+        HOPTCReflectKind_TYPE_NAME = 4,
+        HOPTCReflectKind_PTR = 5,
+        HOPTCReflectKind_SLICE = 6,
+        HOPTCReflectKind_ARRAY = 7,
     };
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
@@ -2640,33 +2651,33 @@ int SLTCConstEvalTypeReflectionCall(
     if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return -1;
     }
-    calleeNode = SLAstFirstChild(c->ast, exprNode);
+    calleeNode = HOPAstFirstChild(c->ast, exprNode);
     callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
     if (callee == NULL) {
         return 1;
     }
-    if (callee->kind == SLAst_IDENT) {
-        int32_t argNode = SLAstNextSibling(c->ast, calleeNode);
-        int32_t nextNode = argNode >= 0 ? SLAstNextSibling(c->ast, argNode) : -1;
-        if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "kind")) {
-            op = SLTCReflectKind_KIND;
-        } else if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "base")) {
-            op = SLTCReflectKind_BASE;
-        } else if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "is_alias")) {
-            op = SLTCReflectKind_IS_ALIAS;
-        } else if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "type_name")) {
-            op = SLTCReflectKind_TYPE_NAME;
-        } else if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "ptr")) {
-            op = SLTCReflectKind_PTR;
-        } else if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "slice")) {
-            op = SLTCReflectKind_SLICE;
-        } else if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "array")) {
-            op = SLTCReflectKind_ARRAY;
+    if (callee->kind == HOPAst_IDENT) {
+        int32_t argNode = HOPAstNextSibling(c->ast, calleeNode);
+        int32_t nextNode = argNode >= 0 ? HOPAstNextSibling(c->ast, argNode) : -1;
+        if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "kind")) {
+            op = HOPTCReflectKind_KIND;
+        } else if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "base")) {
+            op = HOPTCReflectKind_BASE;
+        } else if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "is_alias")) {
+            op = HOPTCReflectKind_IS_ALIAS;
+        } else if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "type_name")) {
+            op = HOPTCReflectKind_TYPE_NAME;
+        } else if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "ptr")) {
+            op = HOPTCReflectKind_PTR;
+        } else if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "slice")) {
+            op = HOPTCReflectKind_SLICE;
+        } else if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "array")) {
+            op = HOPTCReflectKind_ARRAY;
         } else {
             return 1;
         }
-        if (op == SLTCReflectKind_ARRAY) {
-            int32_t extraNode = nextNode >= 0 ? SLAstNextSibling(c->ast, nextNode) : -1;
+        if (op == HOPTCReflectKind_ARRAY) {
+            int32_t extraNode = nextNode >= 0 ? HOPAstNextSibling(c->ast, nextNode) : -1;
             if (argNode < 0 || nextNode < 0 || extraNode >= 0) {
                 return 1;
             }
@@ -2678,17 +2689,17 @@ int SLTCConstEvalTypeReflectionCall(
             }
             operandNode = argNode;
         }
-    } else if (callee->kind == SLAst_FIELD_EXPR) {
-        int32_t recvNode = SLAstFirstChild(c->ast, calleeNode);
-        int32_t nextArgNode = SLAstNextSibling(c->ast, calleeNode);
-        if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "kind")) {
-            op = SLTCReflectKind_KIND;
-        } else if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "base")) {
-            op = SLTCReflectKind_BASE;
-        } else if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "is_alias")) {
-            op = SLTCReflectKind_IS_ALIAS;
-        } else if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "type_name")) {
-            op = SLTCReflectKind_TYPE_NAME;
+    } else if (callee->kind == HOPAst_FIELD_EXPR) {
+        int32_t recvNode = HOPAstFirstChild(c->ast, calleeNode);
+        int32_t nextArgNode = HOPAstNextSibling(c->ast, calleeNode);
+        if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "kind")) {
+            op = HOPTCReflectKind_KIND;
+        } else if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "base")) {
+            op = HOPTCReflectKind_BASE;
+        } else if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "is_alias")) {
+            op = HOPTCReflectKind_IS_ALIAS;
+        } else if (HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "type_name")) {
+            op = HOPTCReflectKind_TYPE_NAME;
         } else {
             return 1;
         }
@@ -2700,30 +2711,30 @@ int SLTCConstEvalTypeReflectionCall(
         return 1;
     }
 
-    if (c->ast->nodes[operandNode].kind == SLAst_CALL_ARG) {
-        int32_t innerNode = SLAstFirstChild(c->ast, operandNode);
+    if (c->ast->nodes[operandNode].kind == HOPAst_CALL_ARG) {
+        int32_t innerNode = HOPAstFirstChild(c->ast, operandNode);
         if (innerNode < 0) {
             return 1;
         }
         operandNode = innerNode;
     }
-    if (operandNode2 >= 0 && c->ast->nodes[operandNode2].kind == SLAst_CALL_ARG) {
-        int32_t innerNode = SLAstFirstChild(c->ast, operandNode2);
+    if (operandNode2 >= 0 && c->ast->nodes[operandNode2].kind == HOPAst_CALL_ARG) {
+        int32_t innerNode = HOPAstFirstChild(c->ast, operandNode2);
         if (innerNode < 0) {
             return 1;
         }
         operandNode2 = innerNode;
     }
 
-    if (SLTCEvalConstExprNode(evalCtx, operandNode, &operandValue, &operandIsConst) != 0) {
+    if (HOPTCEvalConstExprNode(evalCtx, operandNode, &operandValue, &operandIsConst) != 0) {
         return -1;
     }
-    if (!operandIsConst || operandValue.kind != SLCTFEValue_TYPE) {
+    if (!operandIsConst || operandValue.kind != HOPCTFEValue_TYPE) {
         return 1;
     }
 
-    if (op == SLTCReflectKind_KIND) {
-        outValue->kind = SLCTFEValue_INT;
+    if (op == HOPTCReflectKind_KIND) {
+        outValue->kind = HOPCTFEValue_INT;
         outValue->i64 = (int64_t)((operandValue.typeTag >> 56u) & 0xffu);
         outValue->f64 = 0.0;
         outValue->b = 0;
@@ -2739,9 +2750,9 @@ int SLTCConstEvalTypeReflectionCall(
         *outIsConst = 1;
         return 0;
     }
-    if (op == SLTCReflectKind_IS_ALIAS) {
-        outValue->kind = SLCTFEValue_BOOL;
-        outValue->b = ((operandValue.typeTag >> 56u) & 0xffu) == (uint64_t)SLTCTypeTagKind_ALIAS;
+    if (op == HOPTCReflectKind_IS_ALIAS) {
+        outValue->kind = HOPCTFEValue_BOOL;
+        outValue->b = ((operandValue.typeTag >> 56u) & 0xffu) == (uint64_t)HOPTCTypeTagKind_ALIAS;
         outValue->i64 = 0;
         outValue->f64 = 0.0;
         outValue->typeTag = 0;
@@ -2757,78 +2768,80 @@ int SLTCConstEvalTypeReflectionCall(
         return 0;
     }
 
-    if (SLTCDecodeTypeTag(c, operandValue.typeTag, &reflectedTypeId) != 0) {
+    if (HOPTCDecodeTypeTag(c, operandValue.typeTag, &reflectedTypeId) != 0) {
         return 1;
     }
-    if (op == SLTCReflectKind_PTR || op == SLTCReflectKind_SLICE || op == SLTCReflectKind_ARRAY) {
+    if (op == HOPTCReflectKind_PTR || op == HOPTCReflectKind_SLICE || op == HOPTCReflectKind_ARRAY)
+    {
         int32_t constructedTypeId = -1;
-        if (op == SLTCReflectKind_PTR) {
-            constructedTypeId = SLTCInternPtrType(c, reflectedTypeId, callee->start, callee->end);
-        } else if (op == SLTCReflectKind_SLICE) {
-            constructedTypeId = SLTCInternSliceType(
+        if (op == HOPTCReflectKind_PTR) {
+            constructedTypeId = HOPTCInternPtrType(c, reflectedTypeId, callee->start, callee->end);
+        } else if (op == HOPTCReflectKind_SLICE) {
+            constructedTypeId = HOPTCInternSliceType(
                 c, reflectedTypeId, 0, callee->start, callee->end);
         } else {
             int64_t arrayLen = 0;
             if (operandNode2 < 0) {
                 return 1;
             }
-            if (SLTCEvalConstExprNode(evalCtx, operandNode2, &operandValue2, &operandIsConst2) != 0)
+            if (HOPTCEvalConstExprNode(evalCtx, operandNode2, &operandValue2, &operandIsConst2)
+                != 0)
             {
                 return -1;
             }
-            if (!operandIsConst2 || SLCTFEValueToInt64(&operandValue2, &arrayLen) != 0
+            if (!operandIsConst2 || HOPCTFEValueToInt64(&operandValue2, &arrayLen) != 0
                 || arrayLen < 0 || arrayLen > (int64_t)UINT32_MAX)
             {
                 return 1;
             }
-            constructedTypeId = SLTCInternArrayType(
+            constructedTypeId = HOPTCInternArrayType(
                 c, reflectedTypeId, (uint32_t)arrayLen, callee->start, callee->end);
         }
         if (constructedTypeId < 0) {
             return -1;
         }
-        SLTCConstEvalSetTypeValue(c, constructedTypeId, outValue);
+        HOPTCConstEvalSetTypeValue(c, constructedTypeId, outValue);
         *outIsConst = 1;
         return 0;
     }
-    if (op == SLTCReflectKind_TYPE_NAME) {
-        return SLTCConstEvalTypeNameValue(c, reflectedTypeId, outValue, outIsConst);
+    if (op == HOPTCReflectKind_TYPE_NAME) {
+        return HOPTCConstEvalTypeNameValue(c, reflectedTypeId, outValue, outIsConst);
     }
     if (reflectedTypeId < 0 || (uint32_t)reflectedTypeId >= c->typeLen
-        || c->types[reflectedTypeId].kind != SLTCType_ALIAS)
+        || c->types[reflectedTypeId].kind != HOPTCType_ALIAS)
     {
-        SLTCConstSetReasonNode(evalCtx, operandNode, "base() requires an alias type");
+        HOPTCConstSetReasonNode(evalCtx, operandNode, "base() requires an alias type");
         *outIsConst = 0;
         return 0;
     }
-    if (SLTCResolveAliasTypeId(c, reflectedTypeId) != 0) {
+    if (HOPTCResolveAliasTypeId(c, reflectedTypeId) != 0) {
         return -1;
     }
     reflectedTypeId = c->types[reflectedTypeId].baseType;
-    SLTCConstEvalSetTypeValue(c, reflectedTypeId, outValue);
+    HOPTCConstEvalSetTypeValue(c, reflectedTypeId, outValue);
     *outIsConst = 1;
     return 0;
 }
 
-static int SLTCConstEvalTypeReflectionByArgs(
-    SLTCConstEvalCtx*  evalCtx,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
-    const SLCTFEValue* args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst) {
-    SLTypeCheckCtx* c;
-    int32_t         op = 0;
-    int32_t         reflectedTypeId = -1;
+static int HOPTCConstEvalTypeReflectionByArgs(
+    HOPTCConstEvalCtx*  evalCtx,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    const HOPCTFEValue* args,
+    uint32_t            argCount,
+    HOPCTFEValue*       outValue,
+    int*                outIsConst) {
+    HOPTypeCheckCtx* c;
+    int32_t          op = 0;
+    int32_t          reflectedTypeId = -1;
     enum {
-        SLTCReflectArg_KIND = 1,
-        SLTCReflectArg_BASE = 2,
-        SLTCReflectArg_IS_ALIAS = 3,
-        SLTCReflectArg_TYPE_NAME = 4,
-        SLTCReflectArg_PTR = 5,
-        SLTCReflectArg_SLICE = 6,
-        SLTCReflectArg_ARRAY = 7,
+        HOPTCReflectArg_KIND = 1,
+        HOPTCReflectArg_BASE = 2,
+        HOPTCReflectArg_IS_ALIAS = 3,
+        HOPTCReflectArg_TYPE_NAME = 4,
+        HOPTCReflectArg_PTR = 5,
+        HOPTCReflectArg_SLICE = 6,
+        HOPTCReflectArg_ARRAY = 7,
     };
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
@@ -2837,48 +2850,48 @@ static int SLTCConstEvalTypeReflectionByArgs(
     if (c == NULL) {
         return -1;
     }
-    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "kind")) {
-        op = SLTCReflectArg_KIND;
-    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "base")) {
-        op = SLTCReflectArg_BASE;
-    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "is_alias")) {
-        op = SLTCReflectArg_IS_ALIAS;
-    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "type_name")) {
-        op = SLTCReflectArg_TYPE_NAME;
-    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "ptr")) {
-        op = SLTCReflectArg_PTR;
-    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "slice")) {
-        op = SLTCReflectArg_SLICE;
-    } else if (SLNameEqLiteral(c->src, nameStart, nameEnd, "array")) {
-        op = SLTCReflectArg_ARRAY;
+    if (HOPNameEqLiteral(c->src, nameStart, nameEnd, "kind")) {
+        op = HOPTCReflectArg_KIND;
+    } else if (HOPNameEqLiteral(c->src, nameStart, nameEnd, "base")) {
+        op = HOPTCReflectArg_BASE;
+    } else if (HOPNameEqLiteral(c->src, nameStart, nameEnd, "is_alias")) {
+        op = HOPTCReflectArg_IS_ALIAS;
+    } else if (HOPNameEqLiteral(c->src, nameStart, nameEnd, "type_name")) {
+        op = HOPTCReflectArg_TYPE_NAME;
+    } else if (HOPNameEqLiteral(c->src, nameStart, nameEnd, "ptr")) {
+        op = HOPTCReflectArg_PTR;
+    } else if (HOPNameEqLiteral(c->src, nameStart, nameEnd, "slice")) {
+        op = HOPTCReflectArg_SLICE;
+    } else if (HOPNameEqLiteral(c->src, nameStart, nameEnd, "array")) {
+        op = HOPTCReflectArg_ARRAY;
     } else {
         return 1;
     }
-    if (op == SLTCReflectArg_ARRAY) {
+    if (op == HOPTCReflectArg_ARRAY) {
         int64_t arrayLen = 0;
         int32_t arrayTypeId;
-        if (argCount != 2u || args == NULL || args[0].kind != SLCTFEValue_TYPE
-            || SLCTFEValueToInt64(&args[1], &arrayLen) != 0 || arrayLen < 0
+        if (argCount != 2u || args == NULL || args[0].kind != HOPCTFEValue_TYPE
+            || HOPCTFEValueToInt64(&args[1], &arrayLen) != 0 || arrayLen < 0
             || arrayLen > (int64_t)UINT32_MAX)
         {
             return 1;
         }
-        if (SLTCDecodeTypeTag(c, args[0].typeTag, &reflectedTypeId) != 0) {
+        if (HOPTCDecodeTypeTag(c, args[0].typeTag, &reflectedTypeId) != 0) {
             return -1;
         }
-        arrayTypeId = SLTCInternArrayType(c, reflectedTypeId, (uint32_t)arrayLen, 0, 0);
+        arrayTypeId = HOPTCInternArrayType(c, reflectedTypeId, (uint32_t)arrayLen, 0, 0);
         if (arrayTypeId < 0) {
             return -1;
         }
-        SLTCConstEvalSetTypeValue(c, arrayTypeId, outValue);
+        HOPTCConstEvalSetTypeValue(c, arrayTypeId, outValue);
         *outIsConst = 1;
         return 0;
     }
-    if (argCount != 1u || args == NULL || args[0].kind != SLCTFEValue_TYPE) {
+    if (argCount != 1u || args == NULL || args[0].kind != HOPCTFEValue_TYPE) {
         return 1;
     }
-    if (op == SLTCReflectArg_KIND) {
-        outValue->kind = SLCTFEValue_INT;
+    if (op == HOPTCReflectArg_KIND) {
+        outValue->kind = HOPCTFEValue_INT;
         outValue->i64 = (int64_t)((args[0].typeTag >> 56u) & 0xffu);
         outValue->f64 = 0.0;
         outValue->b = 0;
@@ -2894,9 +2907,9 @@ static int SLTCConstEvalTypeReflectionByArgs(
         *outIsConst = 1;
         return 0;
     }
-    if (op == SLTCReflectArg_IS_ALIAS) {
-        outValue->kind = SLCTFEValue_BOOL;
-        outValue->b = ((args[0].typeTag >> 56u) & 0xffu) == (uint64_t)SLTCTypeTagKind_ALIAS;
+    if (op == HOPTCReflectArg_IS_ALIAS) {
+        outValue->kind = HOPCTFEValue_BOOL;
+        outValue->b = ((args[0].typeTag >> 56u) & 0xffu) == (uint64_t)HOPTCTypeTagKind_ALIAS;
         outValue->i64 = 0;
         outValue->f64 = 0.0;
         outValue->typeTag = 0;
@@ -2911,52 +2924,52 @@ static int SLTCConstEvalTypeReflectionByArgs(
         *outIsConst = 1;
         return 0;
     }
-    if (SLTCDecodeTypeTag(c, args[0].typeTag, &reflectedTypeId) != 0) {
+    if (HOPTCDecodeTypeTag(c, args[0].typeTag, &reflectedTypeId) != 0) {
         return -1;
     }
-    if (op == SLTCReflectArg_PTR) {
-        int32_t ptrTypeId = SLTCInternPtrType(c, reflectedTypeId, 0, 0);
+    if (op == HOPTCReflectArg_PTR) {
+        int32_t ptrTypeId = HOPTCInternPtrType(c, reflectedTypeId, 0, 0);
         if (ptrTypeId < 0) {
             return -1;
         }
-        SLTCConstEvalSetTypeValue(c, ptrTypeId, outValue);
+        HOPTCConstEvalSetTypeValue(c, ptrTypeId, outValue);
         *outIsConst = 1;
         return 0;
     }
-    if (op == SLTCReflectArg_SLICE) {
-        int32_t sliceTypeId = SLTCInternSliceType(c, reflectedTypeId, 0, 0, 0);
+    if (op == HOPTCReflectArg_SLICE) {
+        int32_t sliceTypeId = HOPTCInternSliceType(c, reflectedTypeId, 0, 0, 0);
         if (sliceTypeId < 0) {
             return -1;
         }
-        SLTCConstEvalSetTypeValue(c, sliceTypeId, outValue);
+        HOPTCConstEvalSetTypeValue(c, sliceTypeId, outValue);
         *outIsConst = 1;
         return 0;
     }
-    if (op == SLTCReflectArg_TYPE_NAME) {
-        return SLTCConstEvalTypeNameValue(c, reflectedTypeId, outValue, outIsConst);
+    if (op == HOPTCReflectArg_TYPE_NAME) {
+        return HOPTCConstEvalTypeNameValue(c, reflectedTypeId, outValue, outIsConst);
     }
     if (reflectedTypeId < 0 || (uint32_t)reflectedTypeId >= c->typeLen
-        || c->types[reflectedTypeId].kind != SLTCType_ALIAS)
+        || c->types[reflectedTypeId].kind != HOPTCType_ALIAS)
     {
-        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "base() requires an alias type");
+        HOPTCConstSetReason(evalCtx, nameStart, nameEnd, "base() requires an alias type");
         *outIsConst = 0;
         return 0;
     }
-    if (SLTCResolveAliasTypeId(c, reflectedTypeId) != 0) {
+    if (HOPTCResolveAliasTypeId(c, reflectedTypeId) != 0) {
         return -1;
     }
-    SLTCConstEvalSetTypeValue(c, c->types[reflectedTypeId].baseType, outValue);
+    HOPTCConstEvalSetTypeValue(c, c->types[reflectedTypeId].baseType, outValue);
     *outIsConst = 1;
     return 0;
 }
 
-static int SLTCConstEvalPkgFunctionValueExpr(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx*  c;
-    const SLAstNode* n;
-    int32_t          recvNode;
-    const SLAstNode* recv;
-    int32_t          fnIndex;
+static int HOPTCConstEvalPkgFunctionValueExpr(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx*  c;
+    const HOPAstNode* n;
+    int32_t           recvNode;
+    const HOPAstNode* recv;
+    int32_t           fnIndex;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -2965,43 +2978,43 @@ static int SLTCConstEvalPkgFunctionValueExpr(
         return -1;
     }
     n = &c->ast->nodes[exprNode];
-    if (n->kind != SLAst_FIELD_EXPR) {
+    if (n->kind != HOPAst_FIELD_EXPR) {
         return 1;
     }
-    recvNode = SLAstFirstChild(c->ast, exprNode);
+    recvNode = HOPAstFirstChild(c->ast, exprNode);
     if (recvNode < 0 || (uint32_t)recvNode >= c->ast->len) {
         return 1;
     }
     recv = &c->ast->nodes[recvNode];
-    if (recv->kind != SLAst_IDENT) {
+    if (recv->kind != HOPAst_IDENT) {
         return 1;
     }
     if (evalCtx->execCtx != NULL) {
         int32_t execType = -1;
-        if (SLTCConstLookupExecBindingType(evalCtx, recv->dataStart, recv->dataEnd, &execType)) {
+        if (HOPTCConstLookupExecBindingType(evalCtx, recv->dataStart, recv->dataEnd, &execType)) {
             return 1;
         }
     }
-    if (SLTCLocalFind(c, recv->dataStart, recv->dataEnd) >= 0
-        || SLTCFindFunctionIndex(c, recv->dataStart, recv->dataEnd) >= 0)
+    if (HOPTCLocalFind(c, recv->dataStart, recv->dataEnd) >= 0
+        || HOPTCFindFunctionIndex(c, recv->dataStart, recv->dataEnd) >= 0)
     {
         return 1;
     }
-    fnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+    fnIndex = HOPTCFindPkgQualifiedFunctionValueIndex(
         c, recv->dataStart, recv->dataEnd, n->dataStart, n->dataEnd);
     if (fnIndex < 0) {
         return 1;
     }
-    SLMirValueSetFunctionRef(outValue, (uint32_t)fnIndex);
+    HOPMirValueSetFunctionRef(outValue, (uint32_t)fnIndex);
     *outIsConst = 1;
     return 0;
 }
 
-int SLTCEvalConstExprNode(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx* c;
-    SLAstKind       kind;
-    int             rc;
+int HOPTCEvalConstExprNode(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx* c;
+    HOPAstKind       kind;
+    int              rc;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -3013,31 +3026,31 @@ int SLTCEvalConstExprNode(
         return -1;
     }
     kind = c->ast->nodes[exprNode].kind;
-    if (kind == SLAst_BINARY) {
-        const SLAstNode* n = &c->ast->nodes[exprNode];
-        if ((SLTokenKind)n->op == SLTok_EQ || (SLTokenKind)n->op == SLTok_NEQ) {
-            int32_t lhsNode = SLAstFirstChild(c->ast, exprNode);
-            int32_t rhsNode = lhsNode >= 0 ? SLAstNextSibling(c->ast, lhsNode) : -1;
-            int32_t extraNode = rhsNode >= 0 ? SLAstNextSibling(c->ast, rhsNode) : -1;
+    if (kind == HOPAst_BINARY) {
+        const HOPAstNode* n = &c->ast->nodes[exprNode];
+        if ((HOPTokenKind)n->op == HOPTok_EQ || (HOPTokenKind)n->op == HOPTok_NEQ) {
+            int32_t lhsNode = HOPAstFirstChild(c->ast, exprNode);
+            int32_t rhsNode = lhsNode >= 0 ? HOPAstNextSibling(c->ast, lhsNode) : -1;
+            int32_t extraNode = rhsNode >= 0 ? HOPAstNextSibling(c->ast, rhsNode) : -1;
             int32_t lhsTypeId = -1;
             int32_t rhsTypeId = -1;
             int     lhsStatus;
             int     rhsStatus;
             if (lhsNode >= 0 && rhsNode >= 0 && extraNode < 0) {
-                lhsStatus = SLTCResolveReflectedTypeValueExpr(c, lhsNode, &lhsTypeId);
+                lhsStatus = HOPTCResolveReflectedTypeValueExpr(c, lhsNode, &lhsTypeId);
                 if (lhsStatus < 0) {
                     return -1;
                 }
-                rhsStatus = SLTCResolveReflectedTypeValueExpr(c, rhsNode, &rhsTypeId);
+                rhsStatus = HOPTCResolveReflectedTypeValueExpr(c, rhsNode, &rhsTypeId);
                 if (rhsStatus < 0) {
                     return -1;
                 }
                 if (lhsStatus == 0 && rhsStatus == 0) {
-                    outValue->kind = SLCTFEValue_BOOL;
+                    outValue->kind = HOPCTFEValue_BOOL;
                     outValue->i64 = 0;
                     outValue->f64 = 0.0;
                     outValue->b =
-                        (((SLTokenKind)n->op == SLTok_EQ)
+                        (((HOPTokenKind)n->op == HOPTok_EQ)
                              ? (lhsTypeId == rhsTypeId)
                              : (lhsTypeId != rhsTypeId))
                             ? 1
@@ -3057,32 +3070,33 @@ int SLTCEvalConstExprNode(
             }
         }
         {
-            int32_t     lhsNode = SLAstFirstChild(c->ast, exprNode);
-            int32_t     rhsNode = lhsNode >= 0 ? SLAstNextSibling(c->ast, lhsNode) : -1;
-            int32_t     extraNode = rhsNode >= 0 ? SLAstNextSibling(c->ast, rhsNode) : -1;
-            SLCTFEValue lhsValue;
-            SLCTFEValue rhsValue;
-            int         lhsIsConst = 0;
-            int         rhsIsConst = 0;
+            int32_t      lhsNode = HOPAstFirstChild(c->ast, exprNode);
+            int32_t      rhsNode = lhsNode >= 0 ? HOPAstNextSibling(c->ast, lhsNode) : -1;
+            int32_t      extraNode = rhsNode >= 0 ? HOPAstNextSibling(c->ast, rhsNode) : -1;
+            HOPCTFEValue lhsValue;
+            HOPCTFEValue rhsValue;
+            int          lhsIsConst = 0;
+            int          rhsIsConst = 0;
             if (lhsNode < 0 || rhsNode < 0 || extraNode >= 0) {
                 return -1;
             }
-            if (SLTCEvalConstExprNode(evalCtx, lhsNode, &lhsValue, &lhsIsConst) != 0) {
+            if (HOPTCEvalConstExprNode(evalCtx, lhsNode, &lhsValue, &lhsIsConst) != 0) {
                 return -1;
             }
             if (!lhsIsConst) {
                 *outIsConst = 0;
                 return 0;
             }
-            if (SLTCEvalConstExprNode(evalCtx, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+            if (HOPTCEvalConstExprNode(evalCtx, rhsNode, &rhsValue, &rhsIsConst) != 0) {
                 return -1;
             }
             if (!rhsIsConst) {
                 *outIsConst = 0;
                 return 0;
             }
-            if (!SLTCConstEvalApplyBinary(c, (SLTokenKind)n->op, &lhsValue, &rhsValue, outValue)) {
-                SLTCConstSetReasonNode(evalCtx, exprNode, "expression is not const-evaluable");
+            if (!HOPTCConstEvalApplyBinary(c, (HOPTokenKind)n->op, &lhsValue, &rhsValue, outValue))
+            {
+                HOPTCConstSetReasonNode(evalCtx, exprNode, "expression is not const-evaluable");
                 *outIsConst = 0;
                 return 0;
             }
@@ -3090,35 +3104,35 @@ int SLTCEvalConstExprNode(
             return 0;
         }
     }
-    if (kind == SLAst_UNARY) {
-        const SLAstNode* n = &c->ast->nodes[exprNode];
-        int32_t          operandNode = SLAstFirstChild(c->ast, exprNode);
-        int32_t          extraNode = operandNode >= 0 ? SLAstNextSibling(c->ast, operandNode) : -1;
-        SLCTFEValue      operandValue;
-        int              operandIsConst = 0;
+    if (kind == HOPAst_UNARY) {
+        const HOPAstNode* n = &c->ast->nodes[exprNode];
+        int32_t           operandNode = HOPAstFirstChild(c->ast, exprNode);
+        int32_t      extraNode = operandNode >= 0 ? HOPAstNextSibling(c->ast, operandNode) : -1;
+        HOPCTFEValue operandValue;
+        int          operandIsConst = 0;
         if (operandNode < 0 || extraNode >= 0) {
             return -1;
         }
-        if (SLTCEvalConstExprNode(evalCtx, operandNode, &operandValue, &operandIsConst) != 0) {
+        if (HOPTCEvalConstExprNode(evalCtx, operandNode, &operandValue, &operandIsConst) != 0) {
             return -1;
         }
         if (!operandIsConst) {
             *outIsConst = 0;
             return 0;
         }
-        if (!SLTCConstEvalApplyUnary((SLTokenKind)n->op, &operandValue, outValue)) {
-            SLTCConstSetReasonNode(evalCtx, exprNode, "expression is not const-evaluable");
+        if (!HOPTCConstEvalApplyUnary((HOPTokenKind)n->op, &operandValue, outValue)) {
+            HOPTCConstSetReasonNode(evalCtx, exprNode, "expression is not const-evaluable");
             *outIsConst = 0;
             return 0;
         }
         *outIsConst = 1;
         return 0;
     }
-    if (kind == SLAst_SIZEOF) {
-        return SLTCConstEvalSizeOf(evalCtx, exprNode, outValue, outIsConst);
+    if (kind == HOPAst_SIZEOF) {
+        return HOPTCConstEvalSizeOf(evalCtx, exprNode, outValue, outIsConst);
     }
-    if (kind == SLAst_COMPOUND_LIT) {
-        int locationStatus = SLTCConstEvalSourceLocationCompound(
+    if (kind == HOPAst_COMPOUND_LIT) {
+        int locationStatus = HOPTCConstEvalSourceLocationCompound(
             evalCtx, exprNode, 0, outValue, outIsConst);
         if (locationStatus < 0) {
             return -1;
@@ -3127,8 +3141,8 @@ int SLTCEvalConstExprNode(
             return 0;
         }
     }
-    if (kind == SLAst_INDEX) {
-        int indexStatus = SLTCConstEvalIndexExpr(evalCtx, exprNode, outValue, outIsConst);
+    if (kind == HOPAst_INDEX) {
+        int indexStatus = HOPTCConstEvalIndexExpr(evalCtx, exprNode, outValue, outIsConst);
         if (indexStatus == 0) {
             return 0;
         }
@@ -3136,8 +3150,8 @@ int SLTCEvalConstExprNode(
             return -1;
         }
     }
-    if (kind == SLAst_FIELD_EXPR) {
-        int pkgFnStatus = SLTCConstEvalPkgFunctionValueExpr(
+    if (kind == HOPAst_FIELD_EXPR) {
+        int pkgFnStatus = HOPTCConstEvalPkgFunctionValueExpr(
             evalCtx, exprNode, outValue, outIsConst);
         if (pkgFnStatus == 0) {
             return 0;
@@ -3146,29 +3160,30 @@ int SLTCEvalConstExprNode(
             return -1;
         }
     }
-    if (kind == SLAst_CALL) {
-        int32_t          calleeNode = SLAstFirstChild(c->ast, exprNode);
-        const SLAstNode* callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
-        int              compilerDiagStatus;
-        int              directCallStatus;
-        int              lenStatus;
-        int              sourceLocationStatus;
-        int              reflectStatus;
-        lenStatus = SLTCConstEvalLenCall(evalCtx, exprNode, outValue, outIsConst);
+    if (kind == HOPAst_CALL) {
+        int32_t           calleeNode = HOPAstFirstChild(c->ast, exprNode);
+        const HOPAstNode* callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
+        int               compilerDiagStatus;
+        int               directCallStatus;
+        int               lenStatus;
+        int               sourceLocationStatus;
+        int               reflectStatus;
+        lenStatus = HOPTCConstEvalLenCall(evalCtx, exprNode, outValue, outIsConst);
         if (lenStatus == 0) {
             return 0;
         }
         if (lenStatus < 0) {
             return -1;
         }
-        compilerDiagStatus = SLTCConstEvalCompilerDiagCall(evalCtx, exprNode, outValue, outIsConst);
+        compilerDiagStatus = HOPTCConstEvalCompilerDiagCall(
+            evalCtx, exprNode, outValue, outIsConst);
         if (compilerDiagStatus == 0) {
             return 0;
         }
         if (compilerDiagStatus < 0) {
             return -1;
         }
-        sourceLocationStatus = SLTCConstEvalSourceLocationOfCall(
+        sourceLocationStatus = HOPTCConstEvalSourceLocationOfCall(
             evalCtx, exprNode, outValue, outIsConst);
         if (sourceLocationStatus == 0) {
             return 0;
@@ -3176,19 +3191,19 @@ int SLTCEvalConstExprNode(
         if (sourceLocationStatus < 0) {
             return -1;
         }
-        if (callee != NULL && callee->kind == SLAst_IDENT
-            && SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "typeof"))
+        if (callee != NULL && callee->kind == HOPAst_IDENT
+            && HOPNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "typeof"))
         {
-            return SLTCConstEvalTypeOf(evalCtx, exprNode, outValue, outIsConst);
+            return HOPTCConstEvalTypeOf(evalCtx, exprNode, outValue, outIsConst);
         }
-        reflectStatus = SLTCConstEvalTypeReflectionCall(evalCtx, exprNode, outValue, outIsConst);
+        reflectStatus = HOPTCConstEvalTypeReflectionCall(evalCtx, exprNode, outValue, outIsConst);
         if (reflectStatus == 0) {
             return 0;
         }
         if (reflectStatus < 0) {
             return -1;
         }
-        directCallStatus = SLTCConstEvalDirectCall(evalCtx, exprNode, outValue, outIsConst);
+        directCallStatus = HOPTCConstEvalDirectCall(evalCtx, exprNode, outValue, outIsConst);
         if (directCallStatus == 0) {
             return 0;
         }
@@ -3196,47 +3211,47 @@ int SLTCEvalConstExprNode(
             return -1;
         }
     }
-    if (kind == SLAst_CAST) {
-        return SLTCConstEvalCast(evalCtx, exprNode, outValue, outIsConst);
+    if (kind == HOPAst_CAST) {
+        return HOPTCConstEvalCast(evalCtx, exprNode, outValue, outIsConst);
     }
-    rc = SLCTFEEvalExprEx(
+    rc = HOPCTFEEvalExprEx(
         c->arena,
         c->ast,
         c->src,
         exprNode,
-        SLTCResolveConstIdent,
-        SLTCResolveConstCall,
+        HOPTCResolveConstIdent,
+        HOPTCResolveConstCall,
         evalCtx,
-        SLTCMirConstMakeTuple,
+        HOPTCMirConstMakeTuple,
         evalCtx,
-        SLTCMirConstIndexValue,
+        HOPTCMirConstIndexValue,
         evalCtx,
-        SLTCMirConstAggGetField,
+        HOPTCMirConstAggGetField,
         evalCtx,
-        SLTCMirConstAggAddrField,
+        HOPTCMirConstAggAddrField,
         evalCtx,
         outValue,
         outIsConst,
         c->diag);
     if (rc == 0 && !*outIsConst) {
-        SLTCConstSetReasonNode(evalCtx, exprNode, "expression is not const-evaluable");
+        HOPTCConstSetReasonNode(evalCtx, exprNode, "expression is not const-evaluable");
     }
     return rc;
 }
 
-int SLTCEvalConstExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    return SLTCEvalConstExprNode((SLTCConstEvalCtx*)ctx, exprNode, outValue, outIsConst);
+int HOPTCEvalConstExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    return HOPTCEvalConstExprNode((HOPTCConstEvalCtx*)ctx, exprNode, outValue, outIsConst);
 }
 
-int SLTCEvalConstExecResolveTypeCb(void* ctx, int32_t typeNode, int32_t* outTypeId) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
-    uint8_t           savedAllowConstNumericTypeName;
+int HOPTCEvalConstExecResolveTypeCb(void* ctx, int32_t typeNode, int32_t* outTypeId) {
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
+    uint8_t            savedAllowConstNumericTypeName;
     if (evalCtx == NULL || evalCtx->tc == NULL || outTypeId == NULL) {
         return -1;
     }
     savedAllowConstNumericTypeName = evalCtx->tc->allowConstNumericTypeName;
     evalCtx->tc->allowConstNumericTypeName = 1;
-    if (SLTCResolveTypeNode(evalCtx->tc, typeNode, outTypeId) != 0) {
+    if (HOPTCResolveTypeNode(evalCtx->tc, typeNode, outTypeId) != 0) {
         evalCtx->tc->allowConstNumericTypeName = savedAllowConstNumericTypeName;
         return -1;
     }
@@ -3244,9 +3259,9 @@ int SLTCEvalConstExecResolveTypeCb(void* ctx, int32_t typeNode, int32_t* outType
     return 0;
 }
 
-int SLTCEvalConstExecInferValueTypeCb(void* ctx, const SLCTFEValue* value, int32_t* outTypeId) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
-    SLTypeCheckCtx*   c;
+int HOPTCEvalConstExecInferValueTypeCb(void* ctx, const HOPCTFEValue* value, int32_t* outTypeId) {
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
+    HOPTypeCheckCtx*   c;
     if (evalCtx == NULL || value == NULL || outTypeId == NULL) {
         return -1;
     }
@@ -3254,28 +3269,28 @@ int SLTCEvalConstExecInferValueTypeCb(void* ctx, const SLCTFEValue* value, int32
     if (c == NULL) {
         return -1;
     }
-    if (value->kind != SLCTFEValue_TYPE && value->typeTag > 0
+    if (value->kind != HOPCTFEValue_TYPE && value->typeTag > 0
         && value->typeTag <= (uint64_t)INT32_MAX && (uint32_t)value->typeTag < c->typeLen)
     {
         *outTypeId = (int32_t)value->typeTag;
         return 0;
     }
     switch (value->kind) {
-        case SLCTFEValue_INT:   *outTypeId = c->typeUntypedInt; return *outTypeId >= 0 ? 0 : -1;
-        case SLCTFEValue_FLOAT: *outTypeId = c->typeUntypedFloat; return *outTypeId >= 0 ? 0 : -1;
-        case SLCTFEValue_BOOL:  *outTypeId = c->typeBool; return *outTypeId >= 0 ? 0 : -1;
-        case SLCTFEValue_STRING:
-            *outTypeId = SLTCGetStrRefType(c, 0, 0);
+        case HOPCTFEValue_INT:   *outTypeId = c->typeUntypedInt; return *outTypeId >= 0 ? 0 : -1;
+        case HOPCTFEValue_FLOAT: *outTypeId = c->typeUntypedFloat; return *outTypeId >= 0 ? 0 : -1;
+        case HOPCTFEValue_BOOL:  *outTypeId = c->typeBool; return *outTypeId >= 0 ? 0 : -1;
+        case HOPCTFEValue_STRING:
+            *outTypeId = HOPTCGetStrRefType(c, 0, 0);
             return *outTypeId >= 0 ? 0 : -1;
-        case SLCTFEValue_TYPE: *outTypeId = c->typeType; return *outTypeId >= 0 ? 0 : -1;
-        case SLCTFEValue_SPAN:
+        case HOPCTFEValue_TYPE: *outTypeId = c->typeType; return *outTypeId >= 0 ? 0 : -1;
+        case HOPCTFEValue_SPAN:
             if (c->typeSourceLocation < 0) {
-                c->typeSourceLocation = SLTCFindSourceLocationType(c);
+                c->typeSourceLocation = HOPTCFindSourceLocationType(c);
             }
             *outTypeId = c->typeSourceLocation;
             return *outTypeId >= 0 ? 0 : -1;
-        case SLCTFEValue_NULL: *outTypeId = c->typeNull; return *outTypeId >= 0 ? 0 : -1;
-        case SLCTFEValue_OPTIONAL:
+        case HOPCTFEValue_NULL: *outTypeId = c->typeNull; return *outTypeId >= 0 ? 0 : -1;
+        case HOPCTFEValue_OPTIONAL:
             if (value->typeTag > 0 && value->typeTag <= (uint64_t)INT32_MAX
                 && (uint32_t)value->typeTag < c->typeLen)
             {
@@ -3287,39 +3302,39 @@ int SLTCEvalConstExecInferValueTypeCb(void* ctx, const SLCTFEValue* value, int32
     }
 }
 
-int SLTCEvalConstExecInferExprTypeCb(void* ctx, int32_t exprNode, int32_t* outTypeId) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
+int HOPTCEvalConstExecInferExprTypeCb(void* ctx, int32_t exprNode, int32_t* outTypeId) {
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
     if (evalCtx == NULL || evalCtx->tc == NULL || outTypeId == NULL) {
         return -1;
     }
-    return SLTCTypeExpr(evalCtx->tc, exprNode, outTypeId);
+    return HOPTCTypeExpr(evalCtx->tc, exprNode, outTypeId);
 }
 
-int SLTCEvalConstExecIsOptionalTypeCb(
+int HOPTCEvalConstExecIsOptionalTypeCb(
     void* ctx, int32_t typeId, int32_t* outPayloadTypeId, int* outIsOptional) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
-    SLTypeCheckCtx*   c;
-    int32_t           baseTypeId;
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
+    HOPTypeCheckCtx*   c;
+    int32_t            baseTypeId;
     if (evalCtx == NULL || evalCtx->tc == NULL || outIsOptional == NULL) {
         return -1;
     }
     c = evalCtx->tc;
-    baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+    baseTypeId = HOPTCResolveAliasBaseType(c, typeId);
     if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen) {
         return -1;
     }
-    *outIsOptional = c->types[baseTypeId].kind == SLTCType_OPTIONAL;
+    *outIsOptional = c->types[baseTypeId].kind == HOPTCType_OPTIONAL;
     if (outPayloadTypeId != NULL) {
         *outPayloadTypeId = *outIsOptional ? c->types[baseTypeId].baseType : -1;
     }
     return 0;
 }
 
-static int SLTCMirConstResolveTypeRefTypeId(
-    SLTCConstEvalCtx* evalCtx, const SLMirTypeRef* typeRef, int32_t* outTypeId) {
-    SLTypeCheckCtx* c;
-    uint8_t         savedAllowConstNumericTypeName;
-    uint8_t         savedAllowAnytypeParamType;
+static int HOPTCMirConstResolveTypeRefTypeId(
+    HOPTCConstEvalCtx* evalCtx, const HOPMirTypeRef* typeRef, int32_t* outTypeId) {
+    HOPTypeCheckCtx* c;
+    uint8_t          savedAllowConstNumericTypeName;
+    uint8_t          savedAllowAnytypeParamType;
     if (outTypeId != NULL) {
         *outTypeId = -1;
     }
@@ -3334,7 +3349,7 @@ static int SLTCMirConstResolveTypeRefTypeId(
     savedAllowAnytypeParamType = c->allowAnytypeParamType;
     c->allowConstNumericTypeName = 1;
     c->allowAnytypeParamType = 1;
-    if (SLTCResolveTypeNode(c, (int32_t)typeRef->astNode, outTypeId) != 0) {
+    if (HOPTCResolveTypeNode(c, (int32_t)typeRef->astNode, outTypeId) != 0) {
         c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
         c->allowAnytypeParamType = savedAllowAnytypeParamType;
         return -1;
@@ -3345,55 +3360,55 @@ static int SLTCMirConstResolveTypeRefTypeId(
 }
 
 typedef struct {
-    uint32_t    len;
-    uint32_t    _reserved;
-    SLCTFEValue elems[];
-} SLTCMirConstTuple;
+    uint32_t     len;
+    uint32_t     _reserved;
+    HOPCTFEValue elems[];
+} HOPTCMirConstTuple;
 
 typedef struct {
-    int32_t     typeId;
-    uint32_t    fieldCount;
-    SLCTFEValue fields[];
-} SLTCMirConstAggregate;
+    int32_t      typeId;
+    uint32_t     fieldCount;
+    HOPCTFEValue fields[];
+} HOPTCMirConstAggregate;
 
 enum {
-    SL_TC_MIR_CONST_ITER_KIND_SEQUENCE = 1u,
-    SL_TC_MIR_CONST_ITER_KIND_PROTOCOL = 2u,
+    HOP_TC_MIR_CONST_ITER_KIND_SEQUENCE = 1u,
+    HOP_TC_MIR_CONST_ITER_KIND_PROTOCOL = 2u,
 };
 
 typedef struct {
-    uint32_t    index;
-    uint16_t    flags;
-    uint8_t     kind;
-    uint8_t     _reserved;
-    int32_t     iterFnIndex;
-    int32_t     nextFnIndex;
-    uint8_t     usePair;
-    uint8_t     _reserved2[3];
-    SLCTFEValue sourceValue;
-    SLCTFEValue iteratorValue;
-    SLCTFEValue currentValue;
-} SLTCMirConstIter;
+    uint32_t     index;
+    uint16_t     flags;
+    uint8_t      kind;
+    uint8_t      _reserved;
+    int32_t      iterFnIndex;
+    int32_t      nextFnIndex;
+    uint8_t      usePair;
+    uint8_t      _reserved2[3];
+    HOPCTFEValue sourceValue;
+    HOPCTFEValue iteratorValue;
+    HOPCTFEValue currentValue;
+} HOPTCMirConstIter;
 
-static const SLTCMirConstTuple* _Nullable SLTCMirConstTupleFromValue(const SLCTFEValue* value) {
-    if (value == NULL || value->kind != SLCTFEValue_ARRAY || value->typeTag != SL_TC_MIR_TUPLE_TAG
+static const HOPTCMirConstTuple* _Nullable HOPTCMirConstTupleFromValue(const HOPCTFEValue* value) {
+    if (value == NULL || value->kind != HOPCTFEValue_ARRAY || value->typeTag != HOP_TC_MIR_TUPLE_TAG
         || value->s.bytes == NULL)
     {
         return NULL;
     }
-    return (const SLTCMirConstTuple*)value->s.bytes;
+    return (const HOPTCMirConstTuple*)value->s.bytes;
 }
 
-static int SLTCConstEvalGetConcreteCallArgPackType(
-    SLTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outPackType) {
-    SLTypeCheckCtx*          c;
-    const SLTCCallArgInfo*   callArgs;
-    SLCTFEValue              argValue;
-    const SLCTFEValue*       sourceValue;
-    const SLTCMirConstTuple* tuple;
-    int32_t                  elemTypes[SLTC_MAX_CALL_ARGS];
-    uint32_t                 i;
-    int                      argIsConst = 0;
+static int HOPTCConstEvalGetConcreteCallArgPackType(
+    HOPTCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outPackType) {
+    HOPTypeCheckCtx*          c;
+    const HOPTCCallArgInfo*   callArgs;
+    HOPCTFEValue              argValue;
+    const HOPCTFEValue*       sourceValue;
+    const HOPTCMirConstTuple* tuple;
+    int32_t                   elemTypes[HOPTC_MAX_CALL_ARGS];
+    uint32_t                  i;
+    int                       argIsConst = 0;
     if (outPackType != NULL) {
         *outPackType = -1;
     }
@@ -3401,14 +3416,14 @@ static int SLTCConstEvalGetConcreteCallArgPackType(
         return -1;
     }
     c = evalCtx->tc;
-    callArgs = (const SLTCCallArgInfo*)evalCtx->callArgs;
+    callArgs = (const HOPTCCallArgInfo*)evalCtx->callArgs;
     if (c == NULL || callArgs == NULL || callArgIndex >= evalCtx->callArgCount
         || callArgs[callArgIndex].exprNode < 0
         || (uint32_t)callArgs[callArgIndex].exprNode >= c->ast->len)
     {
         return 1;
     }
-    if (SLTCEvalConstExprNode(evalCtx, callArgs[callArgIndex].exprNode, &argValue, &argIsConst)
+    if (HOPTCEvalConstExprNode(evalCtx, callArgs[callArgIndex].exprNode, &argValue, &argIsConst)
         != 0)
     {
         return -1;
@@ -3417,109 +3432,110 @@ static int SLTCConstEvalGetConcreteCallArgPackType(
         return 1;
     }
     sourceValue = &argValue;
-    if (sourceValue->kind == SLCTFEValue_REFERENCE && sourceValue->s.bytes != NULL) {
-        sourceValue = (const SLCTFEValue*)sourceValue->s.bytes;
+    if (sourceValue->kind == HOPCTFEValue_REFERENCE && sourceValue->s.bytes != NULL) {
+        sourceValue = (const HOPCTFEValue*)sourceValue->s.bytes;
     }
-    tuple = SLTCMirConstTupleFromValue(sourceValue);
-    if (tuple == NULL || tuple->len > SLTC_MAX_CALL_ARGS) {
+    tuple = HOPTCMirConstTupleFromValue(sourceValue);
+    if (tuple == NULL || tuple->len > HOPTC_MAX_CALL_ARGS) {
         return 1;
     }
     for (i = 0; i < tuple->len; i++) {
-        if (SLTCEvalConstExecInferValueTypeCb(evalCtx, &tuple->elems[i], &elemTypes[i]) != 0) {
+        if (HOPTCEvalConstExecInferValueTypeCb(evalCtx, &tuple->elems[i], &elemTypes[i]) != 0) {
             return 1;
         }
         if ((elemTypes[i] == c->typeUntypedInt || elemTypes[i] == c->typeUntypedFloat)
-            && SLTCConcretizeInferredType(c, elemTypes[i], &elemTypes[i]) != 0)
+            && HOPTCConcretizeInferredType(c, elemTypes[i], &elemTypes[i]) != 0)
         {
             return -1;
         }
     }
-    *outPackType = SLTCInternPackType(c, elemTypes, tuple->len, 0, 0);
+    *outPackType = HOPTCInternPackType(c, elemTypes, tuple->len, 0, 0);
     return *outPackType >= 0 ? 0 : -1;
 }
 
-static SLTCMirConstIter* _Nullable SLTCMirConstIterFromValue(const SLCTFEValue* value) {
-    const SLCTFEValue* target = value;
+static HOPTCMirConstIter* _Nullable HOPTCMirConstIterFromValue(const HOPCTFEValue* value) {
+    const HOPCTFEValue* target = value;
     if (value == NULL) {
         return NULL;
     }
-    if (value->kind == SLCTFEValue_REFERENCE && value->s.bytes != NULL) {
-        target = (const SLCTFEValue*)value->s.bytes;
+    if (value->kind == HOPCTFEValue_REFERENCE && value->s.bytes != NULL) {
+        target = (const HOPCTFEValue*)value->s.bytes;
     }
-    if (target == NULL || target->kind != SLCTFEValue_SPAN || target->typeTag != SL_TC_MIR_ITER_TAG
-        || target->s.bytes == NULL)
+    if (target == NULL || target->kind != HOPCTFEValue_SPAN
+        || target->typeTag != HOP_TC_MIR_ITER_TAG || target->s.bytes == NULL)
     {
         return NULL;
     }
-    return (SLTCMirConstIter*)target->s.bytes;
+    return (HOPTCMirConstIter*)target->s.bytes;
 }
 
-static const SLTCMirConstAggregate* _Nullable SLTCMirConstAggregateFromValue(
-    const SLCTFEValue* value) {
-    const SLCTFEValue* target = value;
+static const HOPTCMirConstAggregate* _Nullable HOPTCMirConstAggregateFromValue(
+    const HOPCTFEValue* value) {
+    const HOPCTFEValue* target = value;
     if (value == NULL) {
         return NULL;
     }
-    if (value->kind == SLCTFEValue_REFERENCE && value->s.bytes != NULL) {
-        target = (const SLCTFEValue*)value->s.bytes;
+    if (value->kind == HOPCTFEValue_REFERENCE && value->s.bytes != NULL) {
+        target = (const HOPCTFEValue*)value->s.bytes;
     }
-    if (target == NULL || target->kind != SLCTFEValue_AGGREGATE || target->s.bytes == NULL) {
+    if (target == NULL || target->kind != HOPCTFEValue_AGGREGATE || target->s.bytes == NULL) {
         return NULL;
     }
-    return (const SLTCMirConstAggregate*)target->s.bytes;
+    return (const HOPTCMirConstAggregate*)target->s.bytes;
 }
 
-static SLCTFEValue* _Nullable SLTCMirConstAggregateFieldValuePtr(
-    const SLTCMirConstAggregate* agg, uint32_t fieldIndex) {
+static HOPCTFEValue* _Nullable HOPTCMirConstAggregateFieldValuePtr(
+    const HOPTCMirConstAggregate* agg, uint32_t fieldIndex) {
     if (agg == NULL || fieldIndex >= agg->fieldCount) {
         return NULL;
     }
-    return (SLCTFEValue*)&agg->fields[fieldIndex];
+    return (HOPCTFEValue*)&agg->fields[fieldIndex];
 }
 
-static const SLCTFEValue* SLTCMirConstValueTargetOrSelf(const SLCTFEValue* value) {
-    if (value != NULL && value->kind == SLCTFEValue_REFERENCE && value->s.bytes != NULL) {
-        return (const SLCTFEValue*)value->s.bytes;
+static const HOPCTFEValue* HOPTCMirConstValueTargetOrSelf(const HOPCTFEValue* value) {
+    if (value != NULL && value->kind == HOPCTFEValue_REFERENCE && value->s.bytes != NULL) {
+        return (const HOPCTFEValue*)value->s.bytes;
     }
     return value;
 }
 
-static void SLTCMirConstSetReference(SLCTFEValue* outValue, SLCTFEValue* target) {
+static void HOPTCMirConstSetReference(HOPCTFEValue* outValue, HOPCTFEValue* target) {
     if (outValue == NULL) {
         return;
     }
-    SLTCConstEvalValueInvalid(outValue);
+    HOPTCConstEvalValueInvalid(outValue);
     if (target == NULL) {
         return;
     }
-    outValue->kind = SLCTFEValue_REFERENCE;
+    outValue->kind = HOPCTFEValue_REFERENCE;
     outValue->s.bytes = (const uint8_t*)target;
     outValue->s.len = 0;
 }
 
-static int SLTCMirConstOptionalPayload(const SLCTFEValue* value, const SLCTFEValue** outPayload) {
+static int HOPTCMirConstOptionalPayload(
+    const HOPCTFEValue* value, const HOPCTFEValue** outPayload) {
     if (outPayload != NULL) {
         *outPayload = NULL;
     }
-    if (value == NULL || value->kind != SLCTFEValue_OPTIONAL) {
+    if (value == NULL || value->kind != HOPCTFEValue_OPTIONAL) {
         return 0;
     }
     if (value->b == 0u || value->s.bytes == NULL) {
         return 1;
     }
     if (outPayload != NULL) {
-        *outPayload = (const SLCTFEValue*)value->s.bytes;
+        *outPayload = (const HOPCTFEValue*)value->s.bytes;
     }
     return 1;
 }
 
-static void SLTCMirConstAdaptForInValueBinding(
-    const SLCTFEValue* inValue, int valueRef, SLCTFEValue* outValue) {
-    const SLCTFEValue* target;
+static void HOPTCMirConstAdaptForInValueBinding(
+    const HOPCTFEValue* inValue, int valueRef, HOPCTFEValue* outValue) {
+    const HOPCTFEValue* target;
     if (outValue == NULL) {
         return;
     }
-    SLTCConstEvalValueInvalid(outValue);
+    HOPTCConstEvalValueInvalid(outValue);
     if (inValue == NULL) {
         return;
     }
@@ -3527,17 +3543,17 @@ static void SLTCMirConstAdaptForInValueBinding(
         *outValue = *inValue;
         return;
     }
-    target = SLTCMirConstValueTargetOrSelf(inValue);
+    target = HOPTCMirConstValueTargetOrSelf(inValue);
     *outValue = target != NULL ? *target : *inValue;
 }
 
-static int SLTCMirConstFindExecBindingTypeId(
-    SLTCConstEvalCtx* evalCtx, int32_t sourceNode, int32_t* outTypeId) {
-    SLTypeCheckCtx*  c;
-    const SLAstNode* node;
-    SLCTFEExecCtx*   execCtx;
-    SLCTFEExecEnv*   env;
-    uint8_t          savedAllowConstNumericTypeName;
+static int HOPTCMirConstFindExecBindingTypeId(
+    HOPTCConstEvalCtx* evalCtx, int32_t sourceNode, int32_t* outTypeId) {
+    HOPTypeCheckCtx*  c;
+    const HOPAstNode* node;
+    HOPCTFEExecCtx*   execCtx;
+    HOPCTFEExecEnv*   env;
+    uint8_t           savedAllowConstNumericTypeName;
     if (outTypeId != NULL) {
         *outTypeId = -1;
     }
@@ -3550,13 +3566,13 @@ static int SLTCMirConstFindExecBindingTypeId(
         return 0;
     }
     node = &c->ast->nodes[sourceNode];
-    if (node->kind != SLAst_IDENT) {
+    if (node->kind != HOPAst_IDENT) {
         return 0;
     }
     for (env = execCtx->env; env != NULL; env = env->parent) {
         uint32_t i;
         for (i = 0; i < env->bindingLen; i++) {
-            SLCTFEExecBinding* binding = &env->bindings[i];
+            HOPCTFEExecBinding* binding = &env->bindings[i];
             if (binding->nameStart != node->dataStart || binding->nameEnd != node->dataEnd) {
                 continue;
             }
@@ -3569,7 +3585,7 @@ static int SLTCMirConstFindExecBindingTypeId(
             }
             savedAllowConstNumericTypeName = c->allowConstNumericTypeName;
             c->allowConstNumericTypeName = 1;
-            if (SLTCResolveTypeNode(c, binding->typeNode, outTypeId) != 0) {
+            if (HOPTCResolveTypeNode(c, binding->typeNode, outTypeId) != 0) {
                 c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
                 return -1;
             }
@@ -3580,25 +3596,25 @@ static int SLTCMirConstFindExecBindingTypeId(
     return 0;
 }
 
-int SLTCMirConstMakeTuple(
+int HOPTCMirConstMakeTuple(
     void* _Nullable ctx,
-    const SLCTFEValue* elems,
-    uint32_t           elemCount,
-    uint32_t           typeNodeHint,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx*  evalCtx = (SLTCConstEvalCtx*)ctx;
-    SLTypeCheckCtx*    c;
-    SLTCMirConstTuple* tuple;
-    size_t             bytes;
+    const HOPCTFEValue* elems,
+    uint32_t            elemCount,
+    uint32_t            typeNodeHint,
+    HOPCTFEValue*       outValue,
+    int*                outIsConst,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx*  evalCtx = (HOPTCConstEvalCtx*)ctx;
+    HOPTypeCheckCtx*    c;
+    HOPTCMirConstTuple* tuple;
+    size_t              bytes;
     (void)typeNodeHint;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
     if (outValue != NULL) {
-        SLTCConstEvalValueInvalid(outValue);
+        HOPTCConstEvalValueInvalid(outValue);
     }
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
@@ -3607,38 +3623,38 @@ int SLTCMirConstMakeTuple(
     if (c == NULL) {
         return -1;
     }
-    bytes = sizeof(*tuple) + sizeof(SLCTFEValue) * (size_t)elemCount;
-    tuple = (SLTCMirConstTuple*)SLArenaAlloc(
-        c->arena, (uint32_t)bytes, (uint32_t)_Alignof(SLTCMirConstTuple));
+    bytes = sizeof(*tuple) + sizeof(HOPCTFEValue) * (size_t)elemCount;
+    tuple = (HOPTCMirConstTuple*)HOPArenaAlloc(
+        c->arena, (uint32_t)bytes, (uint32_t)_Alignof(HOPTCMirConstTuple));
     if (tuple == NULL) {
         return -1;
     }
     tuple->len = elemCount;
     tuple->_reserved = 0u;
     if (elemCount != 0u && elems != NULL) {
-        memcpy(tuple->elems, elems, sizeof(SLCTFEValue) * elemCount);
+        memcpy(tuple->elems, elems, sizeof(HOPCTFEValue) * elemCount);
     }
-    outValue->kind = SLCTFEValue_ARRAY;
+    outValue->kind = HOPCTFEValue_ARRAY;
     outValue->i64 = 0;
     outValue->f64 = 0.0;
     outValue->b = 0u;
-    outValue->typeTag = SL_TC_MIR_TUPLE_TAG;
+    outValue->typeTag = HOP_TC_MIR_TUPLE_TAG;
     outValue->s.bytes = (const uint8_t*)tuple;
     outValue->s.len = elemCount;
-    outValue->span = (SLCTFESpan){ 0 };
+    outValue->span = (HOPCTFESpan){ 0 };
     *outIsConst = 1;
     return 0;
 }
 
-int SLTCMirConstIndexValue(
+int HOPTCMirConstIndexValue(
     void* _Nullable ctx,
-    const SLCTFEValue* base,
-    const SLCTFEValue* index,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
-    SLDiag* _Nullable diag) {
-    const SLTCMirConstTuple* tuple;
-    int64_t                  indexValue = 0;
+    const HOPCTFEValue* base,
+    const HOPCTFEValue* index,
+    HOPCTFEValue*       outValue,
+    int*                outIsConst,
+    HOPDiag* _Nullable diag) {
+    const HOPTCMirConstTuple* tuple;
+    int64_t                   indexValue = 0;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -3646,36 +3662,36 @@ int SLTCMirConstIndexValue(
     if (base == NULL || index == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    tuple = SLTCMirConstTupleFromValue(base);
-    if (tuple == NULL || SLCTFEValueToInt64(index, &indexValue) != 0 || indexValue < 0
+    tuple = HOPTCMirConstTupleFromValue(base);
+    if (tuple == NULL || HOPCTFEValueToInt64(index, &indexValue) != 0 || indexValue < 0
         || (uint64_t)indexValue >= (uint64_t)tuple->len)
     {
-        SLTCConstEvalCtx*      evalCtx = (SLTCConstEvalCtx*)ctx;
-        SLTypeCheckCtx*        c;
-        const SLTCCallBinding* binding;
-        const SLTCCallArgInfo* callArgs;
-        int32_t                typeId = -1;
-        int32_t                baseTypeId;
-        uint32_t               paramIndex;
-        uint32_t               ordinal = 0;
-        uint32_t               callArgIndex = UINT32_MAX;
-        uint32_t               i;
-        if (evalCtx == NULL || base->kind != SLCTFEValue_TYPE) {
+        HOPTCConstEvalCtx*      evalCtx = (HOPTCConstEvalCtx*)ctx;
+        HOPTypeCheckCtx*        c;
+        const HOPTCCallBinding* binding;
+        const HOPTCCallArgInfo* callArgs;
+        int32_t                 typeId = -1;
+        int32_t                 baseTypeId;
+        uint32_t                paramIndex;
+        uint32_t                ordinal = 0;
+        uint32_t                callArgIndex = UINT32_MAX;
+        uint32_t                i;
+        if (evalCtx == NULL || base->kind != HOPCTFEValue_TYPE) {
             return 0;
         }
         c = evalCtx->tc;
-        binding = (const SLTCCallBinding*)evalCtx->callBinding;
-        callArgs = (const SLTCCallArgInfo*)evalCtx->callArgs;
+        binding = (const HOPTCCallBinding*)evalCtx->callBinding;
+        callArgs = (const HOPTCCallArgInfo*)evalCtx->callArgs;
         if (c == NULL || binding == NULL || callArgs == NULL || evalCtx->callArgCount == 0
             || evalCtx->callPackParamNameStart >= evalCtx->callPackParamNameEnd
             || !binding->isVariadic || binding->spreadArgIndex != UINT32_MAX
-            || SLTCDecodeTypeTag(c, base->typeTag, &typeId) != 0)
+            || HOPTCDecodeTypeTag(c, base->typeTag, &typeId) != 0)
         {
             return 0;
         }
-        baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+        baseTypeId = HOPTCResolveAliasBaseType(c, typeId);
         if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen
-            || c->types[baseTypeId].kind != SLTCType_PACK)
+            || c->types[baseTypeId].kind != HOPTCType_PACK)
         {
             return 0;
         }
@@ -3693,19 +3709,19 @@ int SLTCMirConstIndexValue(
         if (callArgIndex == UINT32_MAX) {
             return 0;
         }
-        if (SLTCEvalConstExprNode(evalCtx, callArgs[callArgIndex].exprNode, outValue, outIsConst)
+        if (HOPTCEvalConstExprNode(evalCtx, callArgs[callArgIndex].exprNode, outValue, outIsConst)
             != 0)
         {
             return -1;
         }
         if (*outIsConst) {
             int32_t elemType = -1;
-            if (SLTCConstEvalGetConcreteCallArgType(evalCtx, callArgIndex, &elemType) == 0) {
+            if (HOPTCConstEvalGetConcreteCallArgType(evalCtx, callArgIndex, &elemType) == 0) {
                 switch (outValue->kind) {
-                    case SLCTFEValue_INT:
-                    case SLCTFEValue_FLOAT:
-                    case SLCTFEValue_BOOL:
-                    case SLCTFEValue_STRING:
+                    case HOPCTFEValue_INT:
+                    case HOPCTFEValue_FLOAT:
+                    case HOPCTFEValue_BOOL:
+                    case HOPCTFEValue_STRING:
                         outValue->typeTag = (uint64_t)(uint32_t)elemType;
                         break;
                     default: break;
@@ -3719,16 +3735,16 @@ int SLTCMirConstIndexValue(
     return 0;
 }
 
-int SLTCMirConstSequenceLen(
+int HOPTCMirConstSequenceLen(
     void* _Nullable ctx,
-    const SLCTFEValue* base,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx*        evalCtx = (SLTCConstEvalCtx*)ctx;
-    SLTypeCheckCtx*          c;
-    const SLCTFEValue*       value = base;
-    const SLTCMirConstTuple* tuple;
+    const HOPCTFEValue* base,
+    HOPCTFEValue*       outValue,
+    int*                outIsConst,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx*        evalCtx = (HOPTCConstEvalCtx*)ctx;
+    HOPTypeCheckCtx*          c;
+    const HOPCTFEValue*       value = base;
+    const HOPTCMirConstTuple* tuple;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -3737,37 +3753,37 @@ int SLTCMirConstSequenceLen(
         return -1;
     }
     c = evalCtx != NULL ? evalCtx->tc : NULL;
-    if (base->kind == SLCTFEValue_REFERENCE && base->s.bytes != NULL) {
-        value = (const SLCTFEValue*)base->s.bytes;
+    if (base->kind == HOPCTFEValue_REFERENCE && base->s.bytes != NULL) {
+        value = (const HOPCTFEValue*)base->s.bytes;
     }
-    if (value->kind == SLCTFEValue_STRING) {
-        outValue->kind = SLCTFEValue_INT;
+    if (value->kind == HOPCTFEValue_STRING) {
+        outValue->kind = HOPCTFEValue_INT;
         outValue->i64 = (int64_t)value->s.len;
         *outIsConst = 1;
         return 0;
     }
-    tuple = SLTCMirConstTupleFromValue(value);
+    tuple = HOPTCMirConstTupleFromValue(value);
     if (tuple != NULL) {
-        outValue->kind = SLCTFEValue_INT;
+        outValue->kind = HOPCTFEValue_INT;
         outValue->i64 = (int64_t)tuple->len;
         *outIsConst = 1;
         return 0;
     }
-    if (c != NULL && value->kind == SLCTFEValue_TYPE) {
+    if (c != NULL && value->kind == HOPCTFEValue_TYPE) {
         int32_t typeId = -1;
         int32_t baseTypeId;
-        if (SLTCDecodeTypeTag(c, value->typeTag, &typeId) == 0) {
-            baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+        if (HOPTCDecodeTypeTag(c, value->typeTag, &typeId) == 0) {
+            baseTypeId = HOPTCResolveAliasBaseType(c, typeId);
             if (baseTypeId >= 0 && (uint32_t)baseTypeId < c->typeLen) {
-                const SLTCType* t = &c->types[baseTypeId];
-                if (t->kind == SLTCType_PACK) {
-                    outValue->kind = SLCTFEValue_INT;
+                const HOPTCType* t = &c->types[baseTypeId];
+                if (t->kind == HOPTCType_PACK) {
+                    outValue->kind = HOPCTFEValue_INT;
                     outValue->i64 = (int64_t)t->fieldCount;
                     *outIsConst = 1;
                     return 0;
                 }
-                if (t->kind == SLTCType_ARRAY) {
-                    outValue->kind = SLCTFEValue_INT;
+                if (t->kind == HOPTCType_ARRAY) {
+                    outValue->kind = HOPCTFEValue_INT;
                     outValue->i64 = (int64_t)t->arrayLen;
                     *outIsConst = 1;
                     return 0;
@@ -3778,36 +3794,36 @@ int SLTCMirConstSequenceLen(
     return 0;
 }
 
-int SLTCMirConstIterInit(
+int HOPTCMirConstIterInit(
     void* _Nullable ctx,
-    uint32_t           sourceNode,
-    const SLCTFEValue* source,
-    uint16_t           flags,
-    SLCTFEValue*       outIter,
-    int*               outIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx*        evalCtx = (SLTCConstEvalCtx*)ctx;
-    SLTypeCheckCtx*          c;
-    const SLCTFEValue*       sourceValue = source;
-    const SLTCMirConstTuple* tuple;
-    SLTCMirConstIter*        iter;
-    SLCTFEValue*             target;
-    int32_t                  sourceType = -1;
-    int32_t                  iterType = -1;
-    int32_t                  iterPtrType = -1;
-    int32_t                  iterFn = -1;
-    int32_t                  nextValueFn = -1;
-    int32_t                  nextKeyFn = -1;
-    int32_t                  nextPairFn = -1;
-    int32_t                  valueType = -1;
-    int32_t                  keyType = -1;
-    const SLAstNode*         sourceAstNode = NULL;
-    int                      hasKey;
-    int                      valueDiscard;
-    int                      valueRef;
-    int                      rc;
-    int                      iterIsConst = 0;
-    SLCTFEValue              iterValue;
+    uint32_t            sourceNode,
+    const HOPCTFEValue* source,
+    uint16_t            flags,
+    HOPCTFEValue*       outIter,
+    int*                outIsConst,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx*        evalCtx = (HOPTCConstEvalCtx*)ctx;
+    HOPTypeCheckCtx*          c;
+    const HOPCTFEValue*       sourceValue = source;
+    const HOPTCMirConstTuple* tuple;
+    HOPTCMirConstIter*        iter;
+    HOPCTFEValue*             target;
+    int32_t                   sourceType = -1;
+    int32_t                   iterType = -1;
+    int32_t                   iterPtrType = -1;
+    int32_t                   iterFn = -1;
+    int32_t                   nextValueFn = -1;
+    int32_t                   nextKeyFn = -1;
+    int32_t                   nextPairFn = -1;
+    int32_t                   valueType = -1;
+    int32_t                   keyType = -1;
+    const HOPAstNode*         sourceAstNode = NULL;
+    int                       hasKey;
+    int                       valueDiscard;
+    int                       valueRef;
+    int                       rc;
+    int                       iterIsConst = 0;
+    HOPCTFEValue              iterValue;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -3818,18 +3834,19 @@ int SLTCMirConstIterInit(
         return -1;
     }
     c = evalCtx->tc;
-    if ((flags & SLMirIterFlag_KEY_REF) != 0u || (flags & SLMirIterFlag_VALUE_REF) != 0u) {
-        if ((flags & SLMirIterFlag_VALUE_REF) == 0u) {
+    if ((flags & HOPMirIterFlag_KEY_REF) != 0u || (flags & HOPMirIterFlag_VALUE_REF) != 0u) {
+        if ((flags & HOPMirIterFlag_VALUE_REF) == 0u) {
             return 0;
         }
     }
-    if (source->kind == SLCTFEValue_REFERENCE && source->s.bytes != NULL) {
-        sourceValue = (const SLCTFEValue*)source->s.bytes;
+    if (source->kind == HOPCTFEValue_REFERENCE && source->s.bytes != NULL) {
+        sourceValue = (const HOPCTFEValue*)source->s.bytes;
     }
-    tuple = SLTCMirConstTupleFromValue(sourceValue);
-    iter = (SLTCMirConstIter*)SLArenaAlloc(
-        c->arena, sizeof(*iter), (uint32_t)_Alignof(SLTCMirConstIter));
-    target = (SLCTFEValue*)SLArenaAlloc(c->arena, sizeof(*target), (uint32_t)_Alignof(SLCTFEValue));
+    tuple = HOPTCMirConstTupleFromValue(sourceValue);
+    iter = (HOPTCMirConstIter*)HOPArenaAlloc(
+        c->arena, sizeof(*iter), (uint32_t)_Alignof(HOPTCMirConstIter));
+    target = (HOPCTFEValue*)HOPArenaAlloc(
+        c->arena, sizeof(*target), (uint32_t)_Alignof(HOPCTFEValue));
     if (iter == NULL || target == NULL) {
         return -1;
     }
@@ -3838,27 +3855,27 @@ int SLTCMirConstIterInit(
     iter->sourceValue = *source;
     iter->iterFnIndex = -1;
     iter->nextFnIndex = -1;
-    hasKey = (flags & SLMirIterFlag_HAS_KEY) != 0u;
-    valueDiscard = (flags & SLMirIterFlag_VALUE_DISCARD) != 0u;
-    valueRef = (flags & SLMirIterFlag_VALUE_REF) != 0u;
-    if (sourceValue->kind == SLCTFEValue_STRING || tuple != NULL) {
-        iter->kind = SL_TC_MIR_CONST_ITER_KIND_SEQUENCE;
+    hasKey = (flags & HOPMirIterFlag_HAS_KEY) != 0u;
+    valueDiscard = (flags & HOPMirIterFlag_VALUE_DISCARD) != 0u;
+    valueRef = (flags & HOPMirIterFlag_VALUE_REF) != 0u;
+    if (sourceValue->kind == HOPCTFEValue_STRING || tuple != NULL) {
+        iter->kind = HOP_TC_MIR_CONST_ITER_KIND_SEQUENCE;
     } else {
         if (sourceNode < c->ast->len) {
             sourceAstNode = &c->ast->nodes[sourceNode];
         }
-        rc = SLTCMirConstFindExecBindingTypeId(evalCtx, (int32_t)sourceNode, &sourceType);
+        rc = HOPTCMirConstFindExecBindingTypeId(evalCtx, (int32_t)sourceNode, &sourceType);
         if (rc < 0) {
             return -1;
         }
-        if (rc == 0 && SLTCTypeExpr(c, (int32_t)sourceNode, &sourceType) != 0) {
+        if (rc == 0 && HOPTCTypeExpr(c, (int32_t)sourceNode, &sourceType) != 0) {
             return -1;
         }
-        rc = SLTCResolveForInIterator(c, (int32_t)sourceNode, sourceType, &iterFn, &iterType);
+        rc = HOPTCResolveForInIterator(c, (int32_t)sourceNode, sourceType, &iterFn, &iterType);
         if (rc != 0) {
             return 0;
         }
-        iterPtrType = SLTCInternPtrType(
+        iterPtrType = HOPTCInternPtrType(
             c,
             iterType,
             sourceAstNode != NULL ? sourceAstNode->start : 0u,
@@ -3867,10 +3884,10 @@ int SLTCMirConstIterInit(
             return -1;
         }
         if (hasKey && valueDiscard) {
-            rc = SLTCResolveForInNextKey(c, iterPtrType, &keyType, &nextKeyFn);
+            rc = HOPTCResolveForInNextKey(c, iterPtrType, &keyType, &nextKeyFn);
             if (rc == 1 || rc == 2) {
-                rc = SLTCResolveForInNextKeyAndValue(
-                    c, iterPtrType, SLTCForInValueMode_ANY, &keyType, &valueType, &nextPairFn);
+                rc = HOPTCResolveForInNextKeyAndValue(
+                    c, iterPtrType, HOPTCForInValueMode_ANY, &keyType, &valueType, &nextPairFn);
             }
             if (rc != 0) {
                 return 0;
@@ -3878,11 +3895,11 @@ int SLTCMirConstIterInit(
             iter->usePair = nextPairFn >= 0 ? 1u : 0u;
             iter->nextFnIndex = nextPairFn >= 0 ? nextPairFn : nextKeyFn;
         } else if (hasKey) {
-            rc = SLTCResolveForInNextKeyAndValue(
+            rc = HOPTCResolveForInNextKeyAndValue(
                 c,
                 iterPtrType,
-                valueDiscard ? SLTCForInValueMode_ANY
-                             : (valueRef ? SLTCForInValueMode_REF : SLTCForInValueMode_VALUE),
+                valueDiscard ? HOPTCForInValueMode_ANY
+                             : (valueRef ? HOPTCForInValueMode_REF : HOPTCForInValueMode_VALUE),
                 &keyType,
                 &valueType,
                 &nextPairFn);
@@ -3892,19 +3909,19 @@ int SLTCMirConstIterInit(
             iter->usePair = 1u;
             iter->nextFnIndex = nextPairFn;
         } else {
-            rc = SLTCResolveForInNextValue(
+            rc = HOPTCResolveForInNextValue(
                 c,
                 iterPtrType,
-                valueDiscard ? SLTCForInValueMode_ANY
-                             : (valueRef ? SLTCForInValueMode_REF : SLTCForInValueMode_VALUE),
+                valueDiscard ? HOPTCForInValueMode_ANY
+                             : (valueRef ? HOPTCForInValueMode_REF : HOPTCForInValueMode_VALUE),
                 &valueType,
                 &nextValueFn);
             if (rc == 1 || rc == 2) {
-                rc = SLTCResolveForInNextKeyAndValue(
+                rc = HOPTCResolveForInNextKeyAndValue(
                     c,
                     iterPtrType,
-                    valueDiscard ? SLTCForInValueMode_ANY
-                                 : (valueRef ? SLTCForInValueMode_REF : SLTCForInValueMode_VALUE),
+                    valueDiscard ? HOPTCForInValueMode_ANY
+                                 : (valueRef ? HOPTCForInValueMode_REF : HOPTCForInValueMode_VALUE),
                     &keyType,
                     &valueType,
                     &nextPairFn);
@@ -3918,8 +3935,8 @@ int SLTCMirConstIterInit(
         if (iter->nextFnIndex < 0) {
             return 0;
         }
-        SLTCConstEvalValueInvalid(&iterValue);
-        if (SLTCInvokeConstFunctionByIndex(
+        HOPTCConstEvalValueInvalid(&iterValue);
+        if (HOPTCInvokeConstFunctionByIndex(
                 evalCtx,
                 c->funcs[iterFn].nameStart,
                 c->funcs[iterFn].nameEnd,
@@ -3940,45 +3957,45 @@ int SLTCMirConstIterInit(
         if (!iterIsConst) {
             return 0;
         }
-        iter->kind = SL_TC_MIR_CONST_ITER_KIND_PROTOCOL;
+        iter->kind = HOP_TC_MIR_CONST_ITER_KIND_PROTOCOL;
         iter->iterFnIndex = iterFn;
         iter->iteratorValue = iterValue;
     }
-    target->kind = SLCTFEValue_SPAN;
-    target->typeTag = SL_TC_MIR_ITER_TAG;
+    target->kind = HOPCTFEValue_SPAN;
+    target->typeTag = HOP_TC_MIR_ITER_TAG;
     target->s.bytes = (const uint8_t*)iter;
     target->s.len = 0;
-    target->span = (SLCTFESpan){ 0 };
-    outIter->kind = SLCTFEValue_REFERENCE;
+    target->span = (HOPCTFESpan){ 0 };
+    outIter->kind = HOPCTFEValue_REFERENCE;
     outIter->s.bytes = (const uint8_t*)target;
     outIter->s.len = 0;
     outIter->typeTag = 0;
-    outIter->span = (SLCTFESpan){ 0 };
+    outIter->span = (HOPCTFESpan){ 0 };
     *outIsConst = 1;
     return 0;
 }
 
-int SLTCMirConstIterNext(
+int HOPTCMirConstIterNext(
     void* _Nullable ctx,
-    const SLCTFEValue* iterValue,
-    uint16_t           flags,
-    int*               outHasItem,
-    SLCTFEValue*       outKey,
-    int*               outKeyIsConst,
-    SLCTFEValue*       outValue,
-    int*               outValueIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx*        evalCtx = (SLTCConstEvalCtx*)ctx;
-    SLTypeCheckCtx*          c;
-    SLTCMirConstIter*        iter;
-    const SLCTFEValue*       sourceValue;
-    const SLTCMirConstTuple* tuple;
-    const SLCTFEValue*       payload = NULL;
-    SLCTFEValue              callResult;
-    SLCTFEValue              iterRef;
-    const SLCTFEValue*       pairValue;
-    const SLTCMirConstTuple* pairTuple;
-    int                      isConst = 0;
+    const HOPCTFEValue* iterValue,
+    uint16_t            flags,
+    int*                outHasItem,
+    HOPCTFEValue*       outKey,
+    int*                outKeyIsConst,
+    HOPCTFEValue*       outValue,
+    int*                outValueIsConst,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx*        evalCtx = (HOPTCConstEvalCtx*)ctx;
+    HOPTypeCheckCtx*          c;
+    HOPTCMirConstIter*        iter;
+    const HOPCTFEValue*       sourceValue;
+    const HOPTCMirConstTuple* tuple;
+    const HOPCTFEValue*       payload = NULL;
+    HOPCTFEValue              callResult;
+    HOPCTFEValue              iterRef;
+    const HOPCTFEValue*       pairValue;
+    const HOPTCMirConstTuple* pairTuple;
+    int                       isConst = 0;
     (void)diag;
     if (outHasItem != NULL) {
         *outHasItem = 0;
@@ -3995,20 +4012,20 @@ int SLTCMirConstIterNext(
         return -1;
     }
     c = evalCtx->tc;
-    if ((flags & SLMirIterFlag_KEY_REF) != 0u) {
+    if ((flags & HOPMirIterFlag_KEY_REF) != 0u) {
         return 0;
     }
-    iter = SLTCMirConstIterFromValue(iterValue);
+    iter = HOPTCMirConstIterFromValue(iterValue);
     if (iter == NULL) {
         return 0;
     }
-    if (iter->kind == SL_TC_MIR_CONST_ITER_KIND_PROTOCOL) {
+    if (iter->kind == HOP_TC_MIR_CONST_ITER_KIND_PROTOCOL) {
         if (c == NULL || iter->nextFnIndex < 0 || (uint32_t)iter->nextFnIndex >= c->funcLen) {
             return 0;
         }
-        SLTCConstEvalValueInvalid(&callResult);
-        SLTCMirConstSetReference(&iterRef, &iter->iteratorValue);
-        if (SLTCInvokeConstFunctionByIndex(
+        HOPTCConstEvalValueInvalid(&callResult);
+        HOPTCMirConstSetReference(&iterRef, &iter->iteratorValue);
+        if (HOPTCInvokeConstFunctionByIndex(
                 evalCtx,
                 c->funcs[iter->nextFnIndex].nameStart,
                 c->funcs[iter->nextFnIndex].nameEnd,
@@ -4029,13 +4046,13 @@ int SLTCMirConstIterNext(
         if (!isConst) {
             return 0;
         }
-        if (callResult.kind == SLCTFEValue_NULL) {
+        if (callResult.kind == HOPCTFEValue_NULL) {
             *outKeyIsConst = 1;
             *outValueIsConst = 1;
             return 0;
         }
-        if (callResult.kind == SLCTFEValue_OPTIONAL) {
-            if (!SLTCMirConstOptionalPayload(&callResult, &payload)) {
+        if (callResult.kind == HOPCTFEValue_OPTIONAL) {
+            if (!HOPTCMirConstOptionalPayload(&callResult, &payload)) {
                 return 0;
             }
             if (callResult.b == 0u || payload == NULL) {
@@ -4047,31 +4064,31 @@ int SLTCMirConstIterNext(
             payload = &callResult;
         }
         if (iter->usePair) {
-            pairValue = SLTCMirConstValueTargetOrSelf(payload);
-            pairTuple = SLTCMirConstTupleFromValue(pairValue);
+            pairValue = HOPTCMirConstValueTargetOrSelf(payload);
+            pairTuple = HOPTCMirConstTupleFromValue(pairValue);
             if (pairTuple == NULL || pairTuple->len != 2u) {
                 return 0;
             }
-            if ((flags & SLMirIterFlag_HAS_KEY) != 0u) {
+            if ((flags & HOPMirIterFlag_HAS_KEY) != 0u) {
                 *outKey = pairTuple->elems[0];
                 *outKeyIsConst = 1;
             } else {
                 *outKeyIsConst = 1;
             }
-            if ((flags & SLMirIterFlag_VALUE_DISCARD) == 0u) {
-                SLTCMirConstAdaptForInValueBinding(
-                    &pairTuple->elems[1], (flags & SLMirIterFlag_VALUE_REF) != 0u, outValue);
+            if ((flags & HOPMirIterFlag_VALUE_DISCARD) == 0u) {
+                HOPTCMirConstAdaptForInValueBinding(
+                    &pairTuple->elems[1], (flags & HOPMirIterFlag_VALUE_REF) != 0u, outValue);
                 *outValueIsConst = 1;
             } else {
                 *outValueIsConst = 1;
             }
-        } else if ((flags & SLMirIterFlag_HAS_KEY) != 0u) {
+        } else if ((flags & HOPMirIterFlag_HAS_KEY) != 0u) {
             *outKey = *payload;
             *outKeyIsConst = 1;
             *outValueIsConst = 1;
         } else {
-            SLTCMirConstAdaptForInValueBinding(
-                payload, (flags & SLMirIterFlag_VALUE_REF) != 0u, outValue);
+            HOPTCMirConstAdaptForInValueBinding(
+                payload, (flags & HOPMirIterFlag_VALUE_REF) != 0u, outValue);
             *outKeyIsConst = 1;
             *outValueIsConst = 1;
         }
@@ -4079,28 +4096,28 @@ int SLTCMirConstIterNext(
         return 0;
     }
     sourceValue = &iter->sourceValue;
-    if (sourceValue->kind == SLCTFEValue_REFERENCE && sourceValue->s.bytes != NULL) {
-        sourceValue = (const SLCTFEValue*)sourceValue->s.bytes;
+    if (sourceValue->kind == HOPCTFEValue_REFERENCE && sourceValue->s.bytes != NULL) {
+        sourceValue = (const HOPCTFEValue*)sourceValue->s.bytes;
     }
-    tuple = SLTCMirConstTupleFromValue(sourceValue);
-    if (sourceValue->kind == SLCTFEValue_STRING) {
+    tuple = HOPTCMirConstTupleFromValue(sourceValue);
+    if (sourceValue->kind == HOPCTFEValue_STRING) {
         if (iter->index >= sourceValue->s.len) {
             *outKeyIsConst = 1;
             *outValueIsConst = 1;
             return 0;
         }
-        if ((flags & SLMirIterFlag_HAS_KEY) != 0u) {
-            outKey->kind = SLCTFEValue_INT;
+        if ((flags & HOPMirIterFlag_HAS_KEY) != 0u) {
+            outKey->kind = HOPCTFEValue_INT;
             outKey->i64 = (int64_t)iter->index;
             *outKeyIsConst = 1;
         } else {
             *outKeyIsConst = 1;
         }
-        if ((flags & SLMirIterFlag_VALUE_DISCARD) == 0u) {
-            iter->currentValue.kind = SLCTFEValue_INT;
+        if ((flags & HOPMirIterFlag_VALUE_DISCARD) == 0u) {
+            iter->currentValue.kind = HOPCTFEValue_INT;
             iter->currentValue.i64 = (int64_t)sourceValue->s.bytes[iter->index];
-            if ((flags & SLMirIterFlag_VALUE_REF) != 0u) {
-                SLTCMirConstSetReference(outValue, &iter->currentValue);
+            if ((flags & HOPMirIterFlag_VALUE_REF) != 0u) {
+                HOPTCMirConstSetReference(outValue, &iter->currentValue);
             } else {
                 *outValue = iter->currentValue;
             }
@@ -4118,16 +4135,16 @@ int SLTCMirConstIterNext(
             *outValueIsConst = 1;
             return 0;
         }
-        if ((flags & SLMirIterFlag_HAS_KEY) != 0u) {
-            outKey->kind = SLCTFEValue_INT;
+        if ((flags & HOPMirIterFlag_HAS_KEY) != 0u) {
+            outKey->kind = HOPCTFEValue_INT;
             outKey->i64 = (int64_t)iter->index;
             *outKeyIsConst = 1;
         } else {
             *outKeyIsConst = 1;
         }
-        if ((flags & SLMirIterFlag_VALUE_DISCARD) == 0u) {
-            if ((flags & SLMirIterFlag_VALUE_REF) != 0u) {
-                SLTCMirConstSetReference(outValue, (SLCTFEValue*)&tuple->elems[iter->index]);
+        if ((flags & HOPMirIterFlag_VALUE_DISCARD) == 0u) {
+            if ((flags & HOPMirIterFlag_VALUE_REF) != 0u) {
+                HOPTCMirConstSetReference(outValue, (HOPCTFEValue*)&tuple->elems[iter->index]);
             } else {
                 *outValue = tuple->elems[iter->index];
             }
@@ -4142,16 +4159,16 @@ int SLTCMirConstIterNext(
     return 0;
 }
 
-int SLTCEvalConstForInIndexCb(
+int HOPTCEvalConstForInIndexCb(
     void* _Nullable ctx,
-    SLCTFEExecCtx*     execCtx,
-    const SLCTFEValue* sourceValue,
-    uint32_t           index,
-    int                byRef,
-    SLCTFEValue*       outValue,
-    int*               outIsConst) {
-    const SLCTFEValue*       value = sourceValue;
-    const SLTCMirConstTuple* tuple;
+    HOPCTFEExecCtx*     execCtx,
+    const HOPCTFEValue* sourceValue,
+    uint32_t            index,
+    int                 byRef,
+    HOPCTFEValue*       outValue,
+    int*                outIsConst) {
+    const HOPCTFEValue*       value = sourceValue;
+    const HOPTCMirConstTuple* tuple;
     (void)ctx;
     (void)execCtx;
     if (outIsConst != NULL) {
@@ -4160,10 +4177,10 @@ int SLTCEvalConstForInIndexCb(
     if (sourceValue == NULL || outValue == NULL || outIsConst == NULL || byRef) {
         return 0;
     }
-    if (sourceValue->kind == SLCTFEValue_REFERENCE && sourceValue->s.bytes != NULL) {
-        value = (const SLCTFEValue*)sourceValue->s.bytes;
+    if (sourceValue->kind == HOPCTFEValue_REFERENCE && sourceValue->s.bytes != NULL) {
+        value = (const HOPCTFEValue*)sourceValue->s.bytes;
     }
-    tuple = SLTCMirConstTupleFromValue(value);
+    tuple = HOPTCMirConstTupleFromValue(value);
     if (tuple == NULL || index >= tuple->len) {
         return 0;
     }
@@ -4172,22 +4189,22 @@ int SLTCEvalConstForInIndexCb(
     return 0;
 }
 
-static int SLTCMirConstResolveAggregateType(
-    SLTypeCheckCtx* c, int32_t typeId, int32_t* outBaseTypeId) {
-    int32_t         baseTypeId = -1;
-    const SLTCType* t;
+static int HOPTCMirConstResolveAggregateType(
+    HOPTypeCheckCtx* c, int32_t typeId, int32_t* outBaseTypeId) {
+    int32_t          baseTypeId = -1;
+    const HOPTCType* t;
     if (outBaseTypeId != NULL) {
         *outBaseTypeId = -1;
     }
     if (c == NULL) {
         return 0;
     }
-    baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+    baseTypeId = HOPTCResolveAliasBaseType(c, typeId);
     if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen) {
         return 0;
     }
     t = &c->types[baseTypeId];
-    if (t->kind == SLTCType_NAMED && t->fieldCount == 0u) {
+    if (t->kind == HOPTCType_NAMED && t->fieldCount == 0u) {
         int32_t  namedIndex = -1;
         uint32_t i;
         for (i = 0; i < c->namedTypeLen; i++) {
@@ -4196,12 +4213,12 @@ static int SLTCMirConstResolveAggregateType(
                 break;
             }
         }
-        if (namedIndex >= 0 && SLTCResolveNamedTypeFields(c, (uint32_t)namedIndex) != 0) {
+        if (namedIndex >= 0 && HOPTCResolveNamedTypeFields(c, (uint32_t)namedIndex) != 0) {
             return 0;
         }
         t = &c->types[baseTypeId];
     }
-    if (t->kind != SLTCType_NAMED && t->kind != SLTCType_ANON_STRUCT) {
+    if (t->kind != HOPTCType_NAMED && t->kind != HOPTCType_ANON_STRUCT) {
         return 0;
     }
     if (outBaseTypeId != NULL) {
@@ -4210,22 +4227,22 @@ static int SLTCMirConstResolveAggregateType(
     return 1;
 }
 
-static int SLTCMirConstAggregateLookupFieldIndex(
-    SLTypeCheckCtx* c,
-    int32_t         typeId,
-    uint32_t        nameStart,
-    uint32_t        nameEnd,
-    uint32_t*       outFieldIndex) {
+static int HOPTCMirConstAggregateLookupFieldIndex(
+    HOPTypeCheckCtx* c,
+    int32_t          typeId,
+    uint32_t         nameStart,
+    uint32_t         nameEnd,
+    uint32_t*        outFieldIndex) {
     int32_t  baseTypeId = -1;
     int32_t  fieldType = -1;
     uint32_t absFieldIndex = UINT32_MAX;
     if (outFieldIndex != NULL) {
         *outFieldIndex = UINT32_MAX;
     }
-    if (!SLTCMirConstResolveAggregateType(c, typeId, &baseTypeId)) {
+    if (!HOPTCMirConstResolveAggregateType(c, typeId, &baseTypeId)) {
         return 0;
     }
-    if (SLTCFieldLookup(c, baseTypeId, nameStart, nameEnd, &fieldType, &absFieldIndex) != 0) {
+    if (HOPTCFieldLookup(c, baseTypeId, nameStart, nameEnd, &fieldType, &absFieldIndex) != 0) {
         return 0;
     }
     if (absFieldIndex < c->types[baseTypeId].fieldStart) {
@@ -4241,44 +4258,44 @@ static int SLTCMirConstAggregateLookupFieldIndex(
     return 1;
 }
 
-static int SLTCMirConstZeroInitTypeId(
-    SLTCConstEvalCtx* evalCtx, int32_t typeId, SLCTFEValue* outValue, int* outIsConst);
+static int HOPTCMirConstZeroInitTypeId(
+    HOPTCConstEvalCtx* evalCtx, int32_t typeId, HOPCTFEValue* outValue, int* outIsConst);
 
-static int SLTCMirConstMakeAggregateValue(
-    SLTCConstEvalCtx* evalCtx, int32_t typeId, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx*        c;
-    int32_t                baseTypeId = -1;
-    uint32_t               fieldCount = 0;
-    uint32_t               i;
-    size_t                 bytes;
-    SLTCMirConstAggregate* agg;
+static int HOPTCMirConstMakeAggregateValue(
+    HOPTCConstEvalCtx* evalCtx, int32_t typeId, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx*        c;
+    int32_t                 baseTypeId = -1;
+    uint32_t                fieldCount = 0;
+    uint32_t                i;
+    size_t                  bytes;
+    HOPTCMirConstAggregate* agg;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
     if (outValue != NULL) {
-        SLTCConstEvalValueInvalid(outValue);
+        HOPTCConstEvalValueInvalid(outValue);
     }
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
     c = evalCtx->tc;
-    if (!SLTCMirConstResolveAggregateType(c, typeId, &baseTypeId)) {
+    if (!HOPTCMirConstResolveAggregateType(c, typeId, &baseTypeId)) {
         return 0;
     }
     fieldCount = c->types[baseTypeId].fieldCount;
-    bytes = sizeof(*agg) + sizeof(SLCTFEValue) * (size_t)fieldCount;
-    agg = (SLTCMirConstAggregate*)SLArenaAlloc(
-        c->arena, (uint32_t)bytes, (uint32_t)_Alignof(SLTCMirConstAggregate));
+    bytes = sizeof(*agg) + sizeof(HOPCTFEValue) * (size_t)fieldCount;
+    agg = (HOPTCMirConstAggregate*)HOPArenaAlloc(
+        c->arena, (uint32_t)bytes, (uint32_t)_Alignof(HOPTCMirConstAggregate));
     if (agg == NULL) {
         return -1;
     }
     agg->typeId = baseTypeId;
     agg->fieldCount = fieldCount;
-    memset(agg->fields, 0, sizeof(SLCTFEValue) * fieldCount);
+    memset(agg->fields, 0, sizeof(HOPCTFEValue) * fieldCount);
     for (i = 0; i < fieldCount; i++) {
         uint32_t fieldIndex = c->types[baseTypeId].fieldStart + i;
         if (fieldIndex >= c->fieldLen
-            || SLTCMirConstZeroInitTypeId(
+            || HOPTCMirConstZeroInitTypeId(
                    evalCtx, c->fields[fieldIndex].typeId, &agg->fields[i], outIsConst)
                    != 0)
         {
@@ -4288,7 +4305,7 @@ static int SLTCMirConstMakeAggregateValue(
             return 0;
         }
     }
-    outValue->kind = SLCTFEValue_AGGREGATE;
+    outValue->kind = HOPCTFEValue_AGGREGATE;
     outValue->typeTag = (uint64_t)(uint32_t)baseTypeId;
     outValue->s.bytes = (const uint8_t*)agg;
     outValue->s.len = fieldCount;
@@ -4296,37 +4313,37 @@ static int SLTCMirConstMakeAggregateValue(
     return 0;
 }
 
-int SLTCMirConstAggGetField(
+int HOPTCMirConstAggGetField(
     void* _Nullable ctx,
-    const SLCTFEValue* base,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx*            evalCtx = (SLTCConstEvalCtx*)ctx;
-    const SLTCMirConstAggregate* agg;
-    uint32_t                     fieldIndex = UINT32_MAX;
+    const HOPCTFEValue* base,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    HOPCTFEValue*       outValue,
+    int*                outIsConst,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx*            evalCtx = (HOPTCConstEvalCtx*)ctx;
+    const HOPTCMirConstAggregate* agg;
+    uint32_t                      fieldIndex = UINT32_MAX;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
     if (outValue != NULL) {
-        SLTCConstEvalValueInvalid(outValue);
+        HOPTCConstEvalValueInvalid(outValue);
     }
     if (evalCtx == NULL || evalCtx->tc == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (base != NULL && base->kind == SLCTFEValue_SPAN
-        && base->typeTag == SL_TC_MIR_IMPORT_ALIAS_TAG)
+    if (base != NULL && base->kind == HOPCTFEValue_SPAN
+        && base->typeTag == HOP_TC_MIR_IMPORT_ALIAS_TAG)
     {
-        SLTypeCheckCtx* c = evalCtx->tc;
-        const uint8_t*  srcBytes = c != NULL ? (const uint8_t*)c->src.ptr : NULL;
-        const uint8_t*  aliasBytes = base->span.fileBytes;
-        uint32_t        aliasLen = base->span.fileLen;
-        uint32_t        aliasStart;
-        uint32_t        aliasEnd;
-        int32_t         fnIndex;
+        HOPTypeCheckCtx* c = evalCtx->tc;
+        const uint8_t*   srcBytes = c != NULL ? (const uint8_t*)c->src.ptr : NULL;
+        const uint8_t*   aliasBytes = base->span.fileBytes;
+        uint32_t         aliasLen = base->span.fileLen;
+        uint32_t         aliasStart;
+        uint32_t         aliasEnd;
+        int32_t          fnIndex;
         if (c == NULL || srcBytes == NULL || aliasBytes == NULL || aliasLen == 0u
             || aliasBytes < srcBytes || (uint64_t)(aliasBytes - srcBytes) > UINT32_MAX
             || (uint64_t)(aliasBytes - srcBytes) + aliasLen > c->src.len)
@@ -4335,24 +4352,24 @@ int SLTCMirConstAggGetField(
         }
         aliasStart = (uint32_t)(aliasBytes - srcBytes);
         aliasEnd = aliasStart + aliasLen;
-        fnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+        fnIndex = HOPTCFindPkgQualifiedFunctionValueIndex(
             c, aliasStart, aliasEnd, nameStart, nameEnd);
         if (fnIndex < 0) {
             return 0;
         }
-        SLMirValueSetFunctionRef(outValue, (uint32_t)fnIndex);
+        HOPMirValueSetFunctionRef(outValue, (uint32_t)fnIndex);
         *outIsConst = 1;
         return 0;
     }
-    agg = SLTCMirConstAggregateFromValue(base);
+    agg = HOPTCMirConstAggregateFromValue(base);
     if (agg == NULL
-        || !SLTCMirConstAggregateLookupFieldIndex(
+        || !HOPTCMirConstAggregateLookupFieldIndex(
             evalCtx->tc, agg->typeId, nameStart, nameEnd, &fieldIndex))
     {
         return 0;
     }
     {
-        SLCTFEValue* fieldValue = SLTCMirConstAggregateFieldValuePtr(agg, fieldIndex);
+        HOPCTFEValue* fieldValue = HOPTCMirConstAggregateFieldValuePtr(agg, fieldIndex);
         if (fieldValue == NULL) {
             return 0;
         }
@@ -4362,53 +4379,53 @@ int SLTCMirConstAggGetField(
     return 0;
 }
 
-int SLTCMirConstAggAddrField(
+int HOPTCMirConstAggAddrField(
     void* _Nullable ctx,
-    const SLCTFEValue* base,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx*            evalCtx = (SLTCConstEvalCtx*)ctx;
-    const SLTCMirConstAggregate* agg;
-    uint32_t                     fieldIndex = UINT32_MAX;
-    SLCTFEValue*                 fieldValue;
+    const HOPCTFEValue* base,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    HOPCTFEValue*       outValue,
+    int*                outIsConst,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx*            evalCtx = (HOPTCConstEvalCtx*)ctx;
+    const HOPTCMirConstAggregate* agg;
+    uint32_t                      fieldIndex = UINT32_MAX;
+    HOPCTFEValue*                 fieldValue;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
     if (outValue != NULL) {
-        SLTCConstEvalValueInvalid(outValue);
+        HOPTCConstEvalValueInvalid(outValue);
     }
     if (evalCtx == NULL || evalCtx->tc == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    agg = SLTCMirConstAggregateFromValue(base);
+    agg = HOPTCMirConstAggregateFromValue(base);
     if (agg == NULL
-        || !SLTCMirConstAggregateLookupFieldIndex(
+        || !HOPTCMirConstAggregateLookupFieldIndex(
             evalCtx->tc, agg->typeId, nameStart, nameEnd, &fieldIndex))
     {
         return 0;
     }
-    fieldValue = SLTCMirConstAggregateFieldValuePtr(agg, fieldIndex);
+    fieldValue = HOPTCMirConstAggregateFieldValuePtr(agg, fieldIndex);
     if (fieldValue == NULL) {
         return 0;
     }
-    SLTCMirConstSetReference(outValue, fieldValue);
+    HOPTCMirConstSetReference(outValue, fieldValue);
     *outIsConst = 1;
     return 0;
 }
 
-static int SLTCMirConstZeroInitTypeId(
-    SLTCConstEvalCtx* evalCtx, int32_t typeId, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx* c;
-    int32_t         baseTypeId;
+static int HOPTCMirConstZeroInitTypeId(
+    HOPTCConstEvalCtx* evalCtx, int32_t typeId, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx* c;
+    int32_t          baseTypeId;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
     if (outValue != NULL) {
-        SLTCConstEvalValueInvalid(outValue);
+        HOPTCConstEvalValueInvalid(outValue);
     }
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
@@ -4417,117 +4434,117 @@ static int SLTCMirConstZeroInitTypeId(
     if (c == NULL) {
         return -1;
     }
-    baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+    baseTypeId = HOPTCResolveAliasBaseType(c, typeId);
     if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen) {
         return 0;
     }
-    if (SLTCIsIntegerType(c, baseTypeId)) {
-        outValue->kind = SLCTFEValue_INT;
+    if (HOPTCIsIntegerType(c, baseTypeId)) {
+        outValue->kind = HOPCTFEValue_INT;
         outValue->i64 = 0;
         *outIsConst = 1;
         return 0;
     }
-    if (SLTCIsFloatType(c, baseTypeId)) {
-        outValue->kind = SLCTFEValue_FLOAT;
+    if (HOPTCIsFloatType(c, baseTypeId)) {
+        outValue->kind = HOPCTFEValue_FLOAT;
         outValue->f64 = 0.0;
         *outIsConst = 1;
         return 0;
     }
-    if (SLTCIsBoolType(c, baseTypeId)) {
-        outValue->kind = SLCTFEValue_BOOL;
+    if (HOPTCIsBoolType(c, baseTypeId)) {
+        outValue->kind = HOPCTFEValue_BOOL;
         outValue->b = 0u;
         *outIsConst = 1;
         return 0;
     }
-    if (SLTCIsRawptrType(c, baseTypeId)) {
-        SLTCConstEvalSetNullValue(outValue);
+    if (HOPTCIsRawptrType(c, baseTypeId)) {
+        HOPTCConstEvalSetNullValue(outValue);
         outValue->typeTag = (uint64_t)(uint32_t)typeId;
         *outIsConst = 1;
         return 0;
     }
-    if (SLTCIsStringLikeType(c, baseTypeId)) {
-        outValue->kind = SLCTFEValue_STRING;
+    if (HOPTCIsStringLikeType(c, baseTypeId)) {
+        outValue->kind = HOPCTFEValue_STRING;
         outValue->s.bytes = NULL;
         outValue->s.len = 0;
         outValue->typeTag = (uint64_t)(uint32_t)typeId;
         *outIsConst = 1;
         return 0;
     }
-    if (c->types[baseTypeId].kind == SLTCType_OPTIONAL) {
-        if (SLTCConstEvalSetOptionalNoneValue(c, baseTypeId, outValue) != 0) {
+    if (c->types[baseTypeId].kind == HOPTCType_OPTIONAL) {
+        if (HOPTCConstEvalSetOptionalNoneValue(c, baseTypeId, outValue) != 0) {
             return -1;
         }
         *outIsConst = 1;
         return 0;
     }
-    if (c->types[baseTypeId].kind == SLTCType_PTR || c->types[baseTypeId].kind == SLTCType_REF
-        || c->types[baseTypeId].kind == SLTCType_FUNCTION
-        || c->types[baseTypeId].kind == SLTCType_NULL)
+    if (c->types[baseTypeId].kind == HOPTCType_PTR || c->types[baseTypeId].kind == HOPTCType_REF
+        || c->types[baseTypeId].kind == HOPTCType_FUNCTION
+        || c->types[baseTypeId].kind == HOPTCType_NULL)
     {
-        SLTCConstEvalSetNullValue(outValue);
+        HOPTCConstEvalSetNullValue(outValue);
         *outIsConst = 1;
         return 0;
     }
-    return SLTCMirConstMakeAggregateValue(evalCtx, baseTypeId, outValue, outIsConst);
+    return HOPTCMirConstMakeAggregateValue(evalCtx, baseTypeId, outValue, outIsConst);
 }
 
-int SLTCMirConstZeroInitLocal(
+int HOPTCMirConstZeroInitLocal(
     void* _Nullable ctx,
-    const SLMirTypeRef* typeRef,
-    SLCTFEValue*        outValue,
-    int*                outIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
-    int32_t           typeId = -1;
+    const HOPMirTypeRef* typeRef,
+    HOPCTFEValue*        outValue,
+    int*                 outIsConst,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
+    int32_t            typeId = -1;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
     if (outValue != NULL) {
-        SLTCConstEvalValueInvalid(outValue);
+        HOPTCConstEvalValueInvalid(outValue);
     }
     if (evalCtx == NULL || typeRef == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (evalCtx->tc == NULL || SLTCMirConstResolveTypeRefTypeId(evalCtx, typeRef, &typeId) != 0) {
+    if (evalCtx->tc == NULL || HOPTCMirConstResolveTypeRefTypeId(evalCtx, typeRef, &typeId) != 0) {
         return -1;
     }
-    return SLTCMirConstZeroInitTypeId(evalCtx, typeId, outValue, outIsConst);
+    return HOPTCMirConstZeroInitTypeId(evalCtx, typeId, outValue, outIsConst);
 }
 
-int SLTCMirConstCoerceValueForType(
+int HOPTCMirConstCoerceValueForType(
     void* _Nullable ctx,
-    const SLMirTypeRef* typeRef,
-    SLCTFEValue*        inOutValue,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
-    SLTypeCheckCtx*   c;
-    int32_t           typeId = -1;
-    int32_t           baseTypeId;
+    const HOPMirTypeRef* typeRef,
+    HOPCTFEValue*        inOutValue,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
+    HOPTypeCheckCtx*   c;
+    int32_t            typeId = -1;
+    int32_t            baseTypeId;
     (void)diag;
     if (evalCtx == NULL || typeRef == NULL || inOutValue == NULL) {
         return -1;
     }
     c = evalCtx->tc;
-    if (c == NULL || SLTCMirConstResolveTypeRefTypeId(evalCtx, typeRef, &typeId) != 0) {
+    if (c == NULL || HOPTCMirConstResolveTypeRefTypeId(evalCtx, typeRef, &typeId) != 0) {
         return -1;
     }
-    baseTypeId = SLTCResolveAliasBaseType(c, typeId);
+    baseTypeId = HOPTCResolveAliasBaseType(c, typeId);
     if (baseTypeId < 0 || (uint32_t)baseTypeId >= c->typeLen) {
         return 0;
     }
-    if ((c->types[baseTypeId].kind == SLTCType_NAMED
-         || c->types[baseTypeId].kind == SLTCType_ANON_STRUCT)
-        && inOutValue->kind == SLCTFEValue_AGGREGATE)
+    if ((c->types[baseTypeId].kind == HOPTCType_NAMED
+         || c->types[baseTypeId].kind == HOPTCType_ANON_STRUCT)
+        && inOutValue->kind == HOPCTFEValue_AGGREGATE)
     {
         if (inOutValue->typeTag == (uint64_t)(uint32_t)baseTypeId) {
             return 0;
         }
         return 0;
     }
-    if (c->types[baseTypeId].kind == SLTCType_OPTIONAL) {
-        SLCTFEValue wrapped;
-        if (inOutValue->kind == SLCTFEValue_OPTIONAL) {
+    if (c->types[baseTypeId].kind == HOPTCType_OPTIONAL) {
+        HOPCTFEValue wrapped;
+        if (inOutValue->kind == HOPCTFEValue_OPTIONAL) {
             if (inOutValue->typeTag > 0 && inOutValue->typeTag <= (uint64_t)INT32_MAX
                 && (uint32_t)inOutValue->typeTag < c->typeLen
                 && (int32_t)inOutValue->typeTag == baseTypeId)
@@ -4535,14 +4552,14 @@ int SLTCMirConstCoerceValueForType(
                 return 0;
             }
             if (inOutValue->b == 0u) {
-                if (SLTCConstEvalSetOptionalNoneValue(c, baseTypeId, &wrapped) != 0) {
+                if (HOPTCConstEvalSetOptionalNoneValue(c, baseTypeId, &wrapped) != 0) {
                     return -1;
                 }
             } else if (inOutValue->s.bytes == NULL) {
                 return 0;
             } else if (
-                SLTCConstEvalSetOptionalSomeValue(
-                    c, baseTypeId, (const SLCTFEValue*)inOutValue->s.bytes, &wrapped)
+                HOPTCConstEvalSetOptionalSomeValue(
+                    c, baseTypeId, (const HOPCTFEValue*)inOutValue->s.bytes, &wrapped)
                 != 0)
             {
                 return -1;
@@ -4550,65 +4567,65 @@ int SLTCMirConstCoerceValueForType(
             *inOutValue = wrapped;
             return 0;
         }
-        if (inOutValue->kind == SLCTFEValue_NULL) {
-            if (SLTCConstEvalSetOptionalNoneValue(c, baseTypeId, &wrapped) != 0) {
+        if (inOutValue->kind == HOPCTFEValue_NULL) {
+            if (HOPTCConstEvalSetOptionalNoneValue(c, baseTypeId, &wrapped) != 0) {
                 return -1;
             }
             *inOutValue = wrapped;
             return 0;
         }
-        if (SLTCConstEvalSetOptionalSomeValue(c, baseTypeId, inOutValue, &wrapped) != 0) {
+        if (HOPTCConstEvalSetOptionalSomeValue(c, baseTypeId, inOutValue, &wrapped) != 0) {
             return -1;
         }
         *inOutValue = wrapped;
         return 0;
     }
-    if (SLTCIsIntegerType(c, baseTypeId)) {
-        if (inOutValue->kind == SLCTFEValue_BOOL) {
-            inOutValue->kind = SLCTFEValue_INT;
+    if (HOPTCIsIntegerType(c, baseTypeId)) {
+        if (inOutValue->kind == HOPCTFEValue_BOOL) {
+            inOutValue->kind = HOPCTFEValue_INT;
             inOutValue->i64 = inOutValue->b ? 1 : 0;
-        } else if (inOutValue->kind == SLCTFEValue_FLOAT) {
-            inOutValue->kind = SLCTFEValue_INT;
+        } else if (inOutValue->kind == HOPCTFEValue_FLOAT) {
+            inOutValue->kind = HOPCTFEValue_INT;
             inOutValue->i64 = (int64_t)inOutValue->f64;
             inOutValue->f64 = 0.0;
-        } else if (inOutValue->kind == SLCTFEValue_NULL) {
-            inOutValue->kind = SLCTFEValue_INT;
+        } else if (inOutValue->kind == HOPCTFEValue_NULL) {
+            inOutValue->kind = HOPCTFEValue_INT;
             inOutValue->i64 = 0;
         }
         return 0;
     }
-    if (SLTCIsFloatType(c, baseTypeId)) {
-        if (inOutValue->kind == SLCTFEValue_INT) {
-            inOutValue->kind = SLCTFEValue_FLOAT;
+    if (HOPTCIsFloatType(c, baseTypeId)) {
+        if (inOutValue->kind == HOPCTFEValue_INT) {
+            inOutValue->kind = HOPCTFEValue_FLOAT;
             inOutValue->f64 = (double)inOutValue->i64;
             inOutValue->i64 = 0;
-        } else if (inOutValue->kind == SLCTFEValue_BOOL) {
-            inOutValue->kind = SLCTFEValue_FLOAT;
+        } else if (inOutValue->kind == HOPCTFEValue_BOOL) {
+            inOutValue->kind = HOPCTFEValue_FLOAT;
             inOutValue->f64 = inOutValue->b ? 1.0 : 0.0;
             inOutValue->i64 = 0;
-        } else if (inOutValue->kind == SLCTFEValue_NULL) {
-            inOutValue->kind = SLCTFEValue_FLOAT;
+        } else if (inOutValue->kind == HOPCTFEValue_NULL) {
+            inOutValue->kind = HOPCTFEValue_FLOAT;
             inOutValue->f64 = 0.0;
         }
         return 0;
     }
-    if (SLTCIsBoolType(c, baseTypeId)) {
-        if (inOutValue->kind == SLCTFEValue_INT) {
-            inOutValue->kind = SLCTFEValue_BOOL;
+    if (HOPTCIsBoolType(c, baseTypeId)) {
+        if (inOutValue->kind == HOPCTFEValue_INT) {
+            inOutValue->kind = HOPCTFEValue_BOOL;
             inOutValue->b = inOutValue->i64 != 0 ? 1u : 0u;
             inOutValue->i64 = 0;
-        } else if (inOutValue->kind == SLCTFEValue_FLOAT) {
-            inOutValue->kind = SLCTFEValue_BOOL;
+        } else if (inOutValue->kind == HOPCTFEValue_FLOAT) {
+            inOutValue->kind = HOPCTFEValue_BOOL;
             inOutValue->b = inOutValue->f64 != 0.0 ? 1u : 0u;
             inOutValue->f64 = 0.0;
-        } else if (inOutValue->kind == SLCTFEValue_NULL) {
-            inOutValue->kind = SLCTFEValue_BOOL;
+        } else if (inOutValue->kind == HOPCTFEValue_NULL) {
+            inOutValue->kind = HOPCTFEValue_BOOL;
             inOutValue->b = 0u;
         }
         return 0;
     }
-    if (SLTCIsStringLikeType(c, typeId)) {
-        if (inOutValue->kind == SLCTFEValue_STRING || inOutValue->kind == SLCTFEValue_NULL) {
+    if (HOPTCIsStringLikeType(c, typeId)) {
+        if (inOutValue->kind == HOPCTFEValue_STRING || inOutValue->kind == HOPCTFEValue_NULL) {
             inOutValue->typeTag = (uint64_t)(uint32_t)typeId;
         }
         return 0;
@@ -4616,18 +4633,18 @@ int SLTCMirConstCoerceValueForType(
     return 0;
 }
 
-static const uint32_t SL_TC_MIR_CONST_FN_NONE = UINT32_MAX;
+static const uint32_t HOP_TC_MIR_CONST_FN_NONE = UINT32_MAX;
 
-int SLTCMirConstLowerFunction(
-    SLTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex);
+int HOPTCMirConstLowerFunction(
+    HOPTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex);
 
-int SLTCMirConstInitLowerCtx(SLTCConstEvalCtx* evalCtx, SLTCMirConstLowerCtx* _Nonnull outCtx) {
-    SLTypeCheckCtx* c;
-    uint32_t*       tcToMir;
-    uint8_t*        loweringFns;
-    uint32_t*       topConstToMir;
-    uint8_t*        loweringTopConsts;
-    uint32_t        i;
+int HOPTCMirConstInitLowerCtx(HOPTCConstEvalCtx* evalCtx, HOPTCMirConstLowerCtx* _Nonnull outCtx) {
+    HOPTypeCheckCtx* c;
+    uint32_t*        tcToMir;
+    uint8_t*         loweringFns;
+    uint32_t*        topConstToMir;
+    uint8_t*         loweringTopConsts;
+    uint32_t         i;
     if (outCtx == NULL) {
         return -1;
     }
@@ -4636,13 +4653,13 @@ int SLTCMirConstInitLowerCtx(SLTCConstEvalCtx* evalCtx, SLTCMirConstLowerCtx* _N
         return -1;
     }
     c = evalCtx->tc;
-    tcToMir = (uint32_t*)SLArenaAlloc(
+    tcToMir = (uint32_t*)HOPArenaAlloc(
         c->arena, sizeof(uint32_t) * c->funcLen, (uint32_t)_Alignof(uint32_t));
-    loweringFns = (uint8_t*)SLArenaAlloc(
+    loweringFns = (uint8_t*)HOPArenaAlloc(
         c->arena, sizeof(uint8_t) * c->funcLen, (uint32_t)_Alignof(uint8_t));
-    topConstToMir = (uint32_t*)SLArenaAlloc(
+    topConstToMir = (uint32_t*)HOPArenaAlloc(
         c->arena, sizeof(uint32_t) * c->ast->len, (uint32_t)_Alignof(uint32_t));
-    loweringTopConsts = (uint8_t*)SLArenaAlloc(
+    loweringTopConsts = (uint8_t*)HOPArenaAlloc(
         c->arena, sizeof(uint8_t) * c->ast->len, (uint32_t)_Alignof(uint8_t));
     if (tcToMir == NULL || loweringFns == NULL || topConstToMir == NULL
         || loweringTopConsts == NULL)
@@ -4650,14 +4667,14 @@ int SLTCMirConstInitLowerCtx(SLTCConstEvalCtx* evalCtx, SLTCMirConstLowerCtx* _N
         return -1;
     }
     for (i = 0; i < c->funcLen; i++) {
-        tcToMir[i] = SL_TC_MIR_CONST_FN_NONE;
+        tcToMir[i] = HOP_TC_MIR_CONST_FN_NONE;
         loweringFns[i] = 0u;
     }
     for (i = 0; i < c->ast->len; i++) {
-        topConstToMir[i] = SL_TC_MIR_CONST_FN_NONE;
+        topConstToMir[i] = HOP_TC_MIR_CONST_FN_NONE;
         loweringTopConsts[i] = 0u;
     }
-    SLMirProgramBuilderInit(&outCtx->builder, c->arena);
+    HOPMirProgramBuilderInit(&outCtx->builder, c->arena);
     outCtx->evalCtx = evalCtx;
     outCtx->tcToMir = tcToMir;
     outCtx->loweringFns = loweringFns;
@@ -4667,8 +4684,8 @@ int SLTCMirConstInitLowerCtx(SLTCConstEvalCtx* evalCtx, SLTCMirConstLowerCtx* _N
     return 0;
 }
 
-static int SLTCMirConstGetFunctionBody(
-    SLTypeCheckCtx* c, int32_t fnIndex, int32_t* outFnNode, int32_t* outBodyNode) {
+static int HOPTCMirConstGetFunctionBody(
+    HOPTypeCheckCtx* c, int32_t fnIndex, int32_t* outFnNode, int32_t* outBodyNode) {
     int32_t child;
     int32_t fnNode;
     int32_t bodyNode = -1;
@@ -4684,18 +4701,18 @@ static int SLTCMirConstGetFunctionBody(
         return 0;
     }
     fnNode = c->funcs[(uint32_t)fnIndex].defNode;
-    if (fnNode < 0 || (uint32_t)fnNode >= c->ast->len || c->ast->nodes[fnNode].kind != SLAst_FN) {
+    if (fnNode < 0 || (uint32_t)fnNode >= c->ast->len || c->ast->nodes[fnNode].kind != HOPAst_FN) {
         return 0;
     }
-    child = SLAstFirstChild(c->ast, fnNode);
+    child = HOPAstFirstChild(c->ast, fnNode);
     while (child >= 0) {
-        if (c->ast->nodes[child].kind == SLAst_BLOCK) {
+        if (c->ast->nodes[child].kind == HOPAst_BLOCK) {
             if (bodyNode >= 0) {
                 return 0;
             }
             bodyNode = child;
         }
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
     if (bodyNode < 0) {
         return 0;
@@ -4705,11 +4722,11 @@ static int SLTCMirConstGetFunctionBody(
     return 1;
 }
 
-static int SLTCMirConstMatchPlainCallNode(
-    const SLTypeCheckCtx* tc,
-    const SLMirSymbolRef* symbol,
-    int32_t               rootNode,
-    uint32_t              encodedArgCount,
+static int HOPTCMirConstMatchPlainCallNode(
+    const HOPTypeCheckCtx* tc,
+    const HOPMirSymbolRef* symbol,
+    int32_t                rootNode,
+    uint32_t               encodedArgCount,
     int32_t* _Nonnull outCallNode,
     int32_t* _Nonnull outCalleeNode) {
     int32_t  stack[256];
@@ -4728,16 +4745,16 @@ static int SLTCMirConstMatchPlainCallNode(
     }
     stack[stackLen++] = rootNode;
     while (stackLen > 0) {
-        int32_t          nodeId = stack[--stackLen];
-        const SLAstNode* node = &tc->ast->nodes[nodeId];
-        int32_t          child;
-        if (node->kind == SLAst_CALL) {
-            int32_t          calleeNode = node->firstChild;
-            const SLAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
-            if (callee != NULL && callee->kind == SLAst_IDENT
+        int32_t           nodeId = stack[--stackLen];
+        const HOPAstNode* node = &tc->ast->nodes[nodeId];
+        int32_t           child;
+        if (node->kind == HOPAst_CALL) {
+            int32_t           calleeNode = node->firstChild;
+            const HOPAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
+            if (callee != NULL && callee->kind == HOPAst_IDENT
                 && callee->dataStart == symbol->nameStart && callee->dataEnd == symbol->nameEnd
-                && SLTCListCount(tc->ast, nodeId)
-                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount))
+                && HOPTCListCount(tc->ast, nodeId)
+                       == HOPMirCallArgCountFromTok((uint16_t)encodedArgCount))
             {
                 if (found) {
                     return 0;
@@ -4759,11 +4776,11 @@ static int SLTCMirConstMatchPlainCallNode(
     return found;
 }
 
-static int SLTCMirConstMatchAliasCallNode(
-    const SLTypeCheckCtx* tc,
-    const SLMirSymbolRef* symbol,
-    int32_t               rootNode,
-    uint32_t              encodedArgCount,
+static int HOPTCMirConstMatchAliasCallNode(
+    const HOPTypeCheckCtx* tc,
+    const HOPMirSymbolRef* symbol,
+    int32_t                rootNode,
+    uint32_t               encodedArgCount,
     int32_t* _Nonnull outCallNode,
     int32_t* _Nonnull outCalleeNode) {
     int32_t  stack[256];
@@ -4782,16 +4799,16 @@ static int SLTCMirConstMatchAliasCallNode(
     }
     stack[stackLen++] = rootNode;
     while (stackLen > 0) {
-        int32_t          nodeId = stack[--stackLen];
-        const SLAstNode* node = &tc->ast->nodes[nodeId];
-        int32_t          child;
-        if (node->kind == SLAst_CALL) {
-            int32_t          calleeNode = node->firstChild;
-            const SLAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
-            if (callee != NULL && callee->kind == SLAst_IDENT
+        int32_t           nodeId = stack[--stackLen];
+        const HOPAstNode* node = &tc->ast->nodes[nodeId];
+        int32_t           child;
+        if (node->kind == HOPAst_CALL) {
+            int32_t           calleeNode = node->firstChild;
+            const HOPAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
+            if (callee != NULL && callee->kind == HOPAst_IDENT
                 && callee->dataStart == symbol->nameStart && callee->dataEnd == symbol->nameEnd
-                && SLTCListCount(tc->ast, nodeId)
-                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount) + 1u)
+                && HOPTCListCount(tc->ast, nodeId)
+                       == HOPMirCallArgCountFromTok((uint16_t)encodedArgCount) + 1u)
             {
                 if (found) {
                     return 0;
@@ -4813,41 +4830,41 @@ static int SLTCMirConstMatchAliasCallNode(
     return found;
 }
 
-static int SLTCMirConstResolveDirectCallTarget(
-    const SLTCMirConstLowerCtx* c, int32_t rootNode, const SLMirInst* ins, int32_t* outFnIndex) {
-    const SLMirSymbolRef* symbol;
-    SLTypeCheckCtx*       tc;
-    SLTCCallArgInfo       callArgs[SLTC_MAX_CALL_ARGS];
-    int32_t               callNode = -1;
-    int32_t               calleeNode = -1;
-    int32_t               fnIndex = -1;
-    int32_t               mutRefTempArgNode = -1;
-    uint32_t              argCount = 0;
-    int                   status;
+static int HOPTCMirConstResolveDirectCallTarget(
+    const HOPTCMirConstLowerCtx* c, int32_t rootNode, const HOPMirInst* ins, int32_t* outFnIndex) {
+    const HOPMirSymbolRef* symbol;
+    HOPTypeCheckCtx*       tc;
+    HOPTCCallArgInfo       callArgs[HOPTC_MAX_CALL_ARGS];
+    int32_t                callNode = -1;
+    int32_t                calleeNode = -1;
+    int32_t                fnIndex = -1;
+    int32_t                mutRefTempArgNode = -1;
+    uint32_t               argCount = 0;
+    int                    status;
     if (outFnIndex != NULL) {
         *outFnIndex = -1;
     }
     if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
-        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->op != HOPMirOp_CALL || c->builder.symbols == NULL
         || ins->aux >= c->builder.symbolLen)
     {
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+    if (symbol->kind != HOPMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
     tc = c->evalCtx->tc;
     if (tc == NULL
-        || !SLTCMirConstMatchPlainCallNode(
+        || !HOPTCMirConstMatchPlainCallNode(
             tc, symbol, rootNode, (uint32_t)ins->tok, &callNode, &calleeNode))
     {
         return 0;
     }
-    if (SLTCCollectCallArgInfo(tc, callNode, calleeNode, 0, -1, callArgs, NULL, &argCount) != 0) {
+    if (HOPTCCollectCallArgInfo(tc, callNode, calleeNode, 0, -1, callArgs, NULL, &argCount) != 0) {
         return -1;
     }
-    status = SLTCResolveCallByName(
+    status = HOPTCResolveCallByName(
         tc,
         symbol->nameStart,
         symbol->nameEnd,
@@ -4864,21 +4881,21 @@ static int SLTCMirConstResolveDirectCallTarget(
     return 1;
 }
 
-static int SLTCMirConstHasImportAlias(
-    const SLTCMirConstLowerCtx* c, uint32_t aliasStart, uint32_t aliasEnd) {
-    SLTypeCheckCtx* tc;
+static int HOPTCMirConstHasImportAlias(
+    const HOPTCMirConstLowerCtx* c, uint32_t aliasStart, uint32_t aliasEnd) {
+    HOPTypeCheckCtx* tc;
     if (c == NULL || c->evalCtx == NULL) {
         return 0;
     }
     tc = c->evalCtx->tc;
-    return tc != NULL && SLTCHasImportAlias(tc, aliasStart, aliasEnd);
+    return tc != NULL && HOPTCHasImportAlias(tc, aliasStart, aliasEnd);
 }
 
-static int SLTCMirConstMatchQualifiedCallNode(
-    const SLTypeCheckCtx* tc,
-    const SLMirSymbolRef* symbol,
-    int32_t               rootNode,
-    uint32_t              encodedArgCount,
+static int HOPTCMirConstMatchQualifiedCallNode(
+    const HOPTypeCheckCtx* tc,
+    const HOPMirSymbolRef* symbol,
+    int32_t                rootNode,
+    uint32_t               encodedArgCount,
     int32_t* _Nonnull outCallNode,
     int32_t* _Nonnull outCalleeNode,
     int32_t* _Nonnull outRecvNode,
@@ -4910,18 +4927,19 @@ static int SLTCMirConstMatchQualifiedCallNode(
     }
     stack[stackLen++] = rootNode;
     while (stackLen > 0) {
-        int32_t          nodeId = stack[--stackLen];
-        const SLAstNode* node = &tc->ast->nodes[nodeId];
-        int32_t          child;
-        if (node->kind == SLAst_CALL) {
-            int32_t          calleeNode = node->firstChild;
-            const SLAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
+        int32_t           nodeId = stack[--stackLen];
+        const HOPAstNode* node = &tc->ast->nodes[nodeId];
+        int32_t           child;
+        if (node->kind == HOPAst_CALL) {
+            int32_t           calleeNode = node->firstChild;
+            const HOPAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
             int32_t recvNode = calleeNode >= 0 ? tc->ast->nodes[calleeNode].firstChild : -1;
-            if (callee != NULL && callee->kind == SLAst_FIELD_EXPR && recvNode >= 0
-                && (uint32_t)recvNode < tc->ast->len && tc->ast->nodes[recvNode].kind == SLAst_IDENT
+            if (callee != NULL && callee->kind == HOPAst_FIELD_EXPR && recvNode >= 0
+                && (uint32_t)recvNode < tc->ast->len
+                && tc->ast->nodes[recvNode].kind == HOPAst_IDENT
                 && callee->dataStart == symbol->nameStart && callee->dataEnd == symbol->nameEnd
-                && SLTCListCount(tc->ast, nodeId)
-                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount))
+                && HOPTCListCount(tc->ast, nodeId)
+                       == HOPMirCallArgCountFromTok((uint16_t)encodedArgCount))
             {
                 uint32_t baseStart = tc->ast->nodes[recvNode].dataStart;
                 uint32_t baseEnd = tc->ast->nodes[recvNode].dataEnd;
@@ -4949,14 +4967,14 @@ static int SLTCMirConstMatchQualifiedCallNode(
     return found;
 }
 
-static int SLTCMirConstMatchPkgPrefixedQualifiedCallNode(
-    const SLTypeCheckCtx* tc,
-    int32_t               rootNode,
-    uint32_t              encodedArgCount,
-    uint32_t              pkgStart,
-    uint32_t              pkgEnd,
-    uint32_t              methodStart,
-    uint32_t              methodEnd,
+static int HOPTCMirConstMatchPkgPrefixedQualifiedCallNode(
+    const HOPTypeCheckCtx* tc,
+    int32_t                rootNode,
+    uint32_t               encodedArgCount,
+    uint32_t               pkgStart,
+    uint32_t               pkgEnd,
+    uint32_t               methodStart,
+    uint32_t               methodEnd,
     int32_t* _Nonnull outCallNode,
     int32_t* _Nonnull outCalleeNode,
     int32_t* _Nonnull outRecvNode) {
@@ -4979,25 +4997,26 @@ static int SLTCMirConstMatchPkgPrefixedQualifiedCallNode(
     }
     stack[stackLen++] = rootNode;
     while (stackLen > 0) {
-        int32_t          nodeId = stack[--stackLen];
-        const SLAstNode* node = &tc->ast->nodes[nodeId];
-        int32_t          child;
-        if (node->kind == SLAst_CALL) {
-            int32_t          calleeNode = node->firstChild;
-            const SLAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
+        int32_t           nodeId = stack[--stackLen];
+        const HOPAstNode* node = &tc->ast->nodes[nodeId];
+        int32_t           child;
+        if (node->kind == HOPAst_CALL) {
+            int32_t           calleeNode = node->firstChild;
+            const HOPAstNode* callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
             int32_t recvNode = calleeNode >= 0 ? tc->ast->nodes[calleeNode].firstChild : -1;
-            if (callee != NULL && callee->kind == SLAst_FIELD_EXPR && recvNode >= 0
-                && (uint32_t)recvNode < tc->ast->len && tc->ast->nodes[recvNode].kind == SLAst_IDENT
-                && SLNameEqSlice(
+            if (callee != NULL && callee->kind == HOPAst_FIELD_EXPR && recvNode >= 0
+                && (uint32_t)recvNode < tc->ast->len
+                && tc->ast->nodes[recvNode].kind == HOPAst_IDENT
+                && HOPNameEqSlice(
                     tc->src, callee->dataStart, callee->dataEnd, methodStart, methodEnd)
-                && SLNameEqSlice(
+                && HOPNameEqSlice(
                     tc->src,
                     tc->ast->nodes[recvNode].dataStart,
                     tc->ast->nodes[recvNode].dataEnd,
                     pkgStart,
                     pkgEnd)
-                && SLTCListCount(tc->ast, nodeId)
-                       == SLMirCallArgCountFromTok((uint16_t)encodedArgCount) + 1u)
+                && HOPTCListCount(tc->ast, nodeId)
+                       == HOPMirCallArgCountFromTok((uint16_t)encodedArgCount) + 1u)
             {
                 if (!found) {
                     *outCallNode = nodeId;
@@ -5019,25 +5038,25 @@ static int SLTCMirConstMatchPkgPrefixedQualifiedCallNode(
     return found;
 }
 
-static int SLTCMirConstResolveQualifiedCallTarget(
-    const SLTCMirConstLowerCtx* c, int32_t rootNode, const SLMirInst* ins, int32_t* outFnIndex) {
-    SLTypeCheckCtx*       tc;
-    const SLMirSymbolRef* symbol;
-    SLTCCallArgInfo       callArgs[SLTC_MAX_CALL_ARGS];
-    int32_t               callNode = -1;
-    int32_t               calleeNode = -1;
-    int32_t               recvNode = -1;
-    int32_t               fnIndex = -1;
-    int32_t               mutRefTempArgNode = -1;
-    uint32_t              argCount = 0;
-    uint32_t              baseStart = 0;
-    uint32_t              baseEnd = 0;
-    int                   status;
+static int HOPTCMirConstResolveQualifiedCallTarget(
+    const HOPTCMirConstLowerCtx* c, int32_t rootNode, const HOPMirInst* ins, int32_t* outFnIndex) {
+    HOPTypeCheckCtx*       tc;
+    const HOPMirSymbolRef* symbol;
+    HOPTCCallArgInfo       callArgs[HOPTC_MAX_CALL_ARGS];
+    int32_t                callNode = -1;
+    int32_t                calleeNode = -1;
+    int32_t                recvNode = -1;
+    int32_t                fnIndex = -1;
+    int32_t                mutRefTempArgNode = -1;
+    uint32_t               argCount = 0;
+    uint32_t               baseStart = 0;
+    uint32_t               baseEnd = 0;
+    int                    status;
     if (outFnIndex != NULL) {
         *outFnIndex = -1;
     }
     if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
-        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->op != HOPMirOp_CALL || c->builder.symbols == NULL
         || ins->aux >= c->builder.symbolLen)
     {
         return 0;
@@ -5047,8 +5066,8 @@ static int SLTCMirConstResolveQualifiedCallTarget(
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL
-        || !SLTCMirConstMatchQualifiedCallNode(
+    if (symbol->kind != HOPMirSymbol_CALL
+        || !HOPTCMirConstMatchQualifiedCallNode(
             tc,
             symbol,
             rootNode,
@@ -5061,15 +5080,15 @@ static int SLTCMirConstResolveQualifiedCallTarget(
     {
         return 0;
     }
-    if (!SLTCMirConstHasImportAlias(c, baseStart, baseEnd)) {
+    if (!HOPTCMirConstHasImportAlias(c, baseStart, baseEnd)) {
         return 0;
     }
-    if (SLTCCollectCallArgInfo(tc, callNode, calleeNode, 1, recvNode, callArgs, NULL, &argCount)
+    if (HOPTCCollectCallArgInfo(tc, callNode, calleeNode, 1, recvNode, callArgs, NULL, &argCount)
         != 0)
     {
         return -1;
     }
-    status = SLTCResolveCallByPkgMethod(
+    status = HOPTCResolveCallByPkgMethod(
         tc,
         baseStart,
         baseEnd,
@@ -5088,14 +5107,14 @@ static int SLTCMirConstResolveQualifiedCallTarget(
     return 1;
 }
 
-static int SLTCMirConstResolveFunctionIdentTarget(
-    const SLTCMirConstLowerCtx* c, const SLMirInst* ins, int32_t* outFnIndex) {
-    SLTypeCheckCtx* tc;
+static int HOPTCMirConstResolveFunctionIdentTarget(
+    const HOPTCMirConstLowerCtx* c, const HOPMirInst* ins, int32_t* outFnIndex) {
+    HOPTypeCheckCtx* tc;
     if (outFnIndex != NULL) {
         *outFnIndex = -1;
     }
     if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
-        || ins->op != SLMirOp_LOAD_IDENT)
+        || ins->op != HOPMirOp_LOAD_IDENT)
     {
         return 0;
     }
@@ -5103,31 +5122,31 @@ static int SLTCMirConstResolveFunctionIdentTarget(
     if (tc == NULL) {
         return 0;
     }
-    *outFnIndex = SLTCFindPlainFunctionValueIndex(tc, ins->start, ins->end);
+    *outFnIndex = HOPTCFindPlainFunctionValueIndex(tc, ins->start, ins->end);
     if (*outFnIndex < 0) {
         return 0;
     }
     return 1;
 }
 
-static int SLTCMirConstResolveQualifiedFunctionValueTarget(
-    const SLTCMirConstLowerCtx* c,
-    const SLMirInst*            loadIns,
-    const SLMirInst* _Nullable fieldIns,
+static int HOPTCMirConstResolveQualifiedFunctionValueTarget(
+    const HOPTCMirConstLowerCtx* c,
+    const HOPMirInst*            loadIns,
+    const HOPMirInst* _Nullable fieldIns,
     int32_t* outFnIndex) {
-    SLTypeCheckCtx* tc;
-    uint32_t        fieldStart;
-    uint32_t        fieldEnd;
+    HOPTypeCheckCtx* tc;
+    uint32_t         fieldStart;
+    uint32_t         fieldEnd;
     if (outFnIndex != NULL) {
         *outFnIndex = -1;
     }
     if (c == NULL || c->evalCtx == NULL || loadIns == NULL || fieldIns == NULL || outFnIndex == NULL
-        || loadIns->op != SLMirOp_LOAD_IDENT || fieldIns->op != SLMirOp_AGG_GET)
+        || loadIns->op != HOPMirOp_LOAD_IDENT || fieldIns->op != HOPMirOp_AGG_GET)
     {
         return 0;
     }
     tc = c->evalCtx->tc;
-    if (tc == NULL || !SLTCHasImportAlias(tc, loadIns->start, loadIns->end)) {
+    if (tc == NULL || !HOPTCHasImportAlias(tc, loadIns->start, loadIns->end)) {
         return 0;
     }
     if (c->builder.fields != NULL && fieldIns->aux < c->builder.fieldLen) {
@@ -5137,37 +5156,37 @@ static int SLTCMirConstResolveQualifiedFunctionValueTarget(
         fieldStart = fieldIns->start;
         fieldEnd = fieldIns->end;
     }
-    *outFnIndex = SLTCFindPkgQualifiedFunctionValueIndex(
+    *outFnIndex = HOPTCFindPkgQualifiedFunctionValueIndex(
         tc, loadIns->start, loadIns->end, fieldStart, fieldEnd);
     return *outFnIndex >= 0;
 }
 
-static int SLTCMirConstRewriteQualifiedFunctionValueLoad(
-    SLTCMirConstLowerCtx* c,
-    uint32_t              ownerMirFnIndex,
-    uint32_t              loadInstIndex,
-    uint32_t              targetMirFnIndex) {
-    SLMirInst* loadIns;
-    SLMirInst* fieldIns;
-    SLMirInst  inserted = { 0 };
-    SLMirConst value = { 0 };
-    uint32_t   constIndex = UINT32_MAX;
+static int HOPTCMirConstRewriteQualifiedFunctionValueLoad(
+    HOPTCMirConstLowerCtx* c,
+    uint32_t               ownerMirFnIndex,
+    uint32_t               loadInstIndex,
+    uint32_t               targetMirFnIndex) {
+    HOPMirInst* loadIns;
+    HOPMirInst* fieldIns;
+    HOPMirInst  inserted = { 0 };
+    HOPMirConst value = { 0 };
+    uint32_t    constIndex = UINT32_MAX;
     if (c == NULL || ownerMirFnIndex >= c->builder.funcLen || loadInstIndex >= c->builder.instLen
         || loadInstIndex + 1u >= c->builder.instLen)
     {
         return -1;
     }
     fieldIns = &c->builder.insts[loadInstIndex + 1u];
-    value.kind = SLMirConst_FUNCTION;
+    value.kind = HOPMirConst_FUNCTION;
     value.bits = targetMirFnIndex;
-    if (SLMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
+    if (HOPMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
         return -1;
     }
-    inserted.op = SLMirOp_PUSH_CONST;
+    inserted.op = HOPMirOp_PUSH_CONST;
     inserted.aux = constIndex;
     inserted.start = fieldIns->start;
     inserted.end = fieldIns->end;
-    if (SLMirProgramBuilderInsertInst(
+    if (HOPMirProgramBuilderInsertInst(
             &c->builder,
             ownerMirFnIndex,
             loadInstIndex + 2u - c->builder.funcs[ownerMirFnIndex].instStart,
@@ -5178,27 +5197,27 @@ static int SLTCMirConstRewriteQualifiedFunctionValueLoad(
     }
     loadIns = &c->builder.insts[loadInstIndex];
     fieldIns = &c->builder.insts[loadInstIndex + 1u];
-    loadIns->op = SLMirOp_PUSH_NULL;
+    loadIns->op = HOPMirOp_PUSH_NULL;
     loadIns->tok = 0u;
     loadIns->aux = 0u;
-    fieldIns->op = SLMirOp_DROP;
+    fieldIns->op = HOPMirOp_DROP;
     fieldIns->tok = 0u;
     fieldIns->aux = 0u;
     return 0;
 }
 
-static int SLTCMirConstResolveTopConstIdentTarget(
-    const SLTCMirConstLowerCtx* c, int32_t rootNode, const SLMirInst* ins, int32_t* outNodeId) {
-    SLTypeCheckCtx*  tc;
-    int32_t          nodeId = -1;
-    int32_t          nameIndex = -1;
-    SLTCVarLikeParts parts;
-    const SLAstNode* n;
+static int HOPTCMirConstResolveTopConstIdentTarget(
+    const HOPTCMirConstLowerCtx* c, int32_t rootNode, const HOPMirInst* ins, int32_t* outNodeId) {
+    HOPTypeCheckCtx*  tc;
+    int32_t           nodeId = -1;
+    int32_t           nameIndex = -1;
+    HOPTCVarLikeParts parts;
+    const HOPAstNode* n;
     if (outNodeId != NULL) {
         *outNodeId = -1;
     }
     if (c == NULL || c->evalCtx == NULL || ins == NULL || outNodeId == NULL
-        || ins->op != SLMirOp_LOAD_IDENT)
+        || ins->op != HOPMirOp_LOAD_IDENT)
     {
         return 0;
     }
@@ -5206,45 +5225,45 @@ static int SLTCMirConstResolveTopConstIdentTarget(
     if (tc == NULL) {
         return 0;
     }
-    nodeId = SLTCFindTopLevelVarLikeNode(tc, ins->start, ins->end, &nameIndex);
+    nodeId = HOPTCFindTopLevelVarLikeNode(tc, ins->start, ins->end, &nameIndex);
     if (nodeId < 0 || (uint32_t)nodeId >= tc->ast->len || nameIndex != 0) {
         return 0;
     }
     n = &tc->ast->nodes[nodeId];
-    if (n->kind != SLAst_CONST || SLTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped
+    if (n->kind != HOPAst_CONST || HOPTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped
         || parts.nameCount != 1u)
     {
         return 0;
     }
-    if (rootNode >= 0 && SLTCVarLikeInitExprNodeAt(tc, nodeId, 0) == rootNode) {
+    if (rootNode >= 0 && HOPTCVarLikeInitExprNodeAt(tc, nodeId, 0) == rootNode) {
         return 0;
     }
     *outNodeId = nodeId;
     return 1;
 }
 
-static int SLTCMirConstResolvePkgPrefixedDirectCallTarget(
-    const SLTCMirConstLowerCtx* c, int32_t rootNode, const SLMirInst* ins, int32_t* outFnIndex) {
-    SLTypeCheckCtx*       tc;
-    const SLMirSymbolRef* symbol;
-    SLTCCallArgInfo       callArgs[SLTC_MAX_CALL_ARGS];
-    int32_t               callNode = -1;
-    int32_t               calleeNode = -1;
-    int32_t               recvNode = -1;
-    int32_t               fnIndex = -1;
-    int32_t               mutRefTempArgNode = -1;
-    uint32_t              argCount = 0;
-    uint32_t              pkgStart = 0;
-    uint32_t              pkgEnd = 0;
-    uint32_t              methodStart;
-    uint32_t              firstPositionalArgIndex = 0;
-    int                   collectReceiver = 0;
-    int                   status;
+static int HOPTCMirConstResolvePkgPrefixedDirectCallTarget(
+    const HOPTCMirConstLowerCtx* c, int32_t rootNode, const HOPMirInst* ins, int32_t* outFnIndex) {
+    HOPTypeCheckCtx*       tc;
+    const HOPMirSymbolRef* symbol;
+    HOPTCCallArgInfo       callArgs[HOPTC_MAX_CALL_ARGS];
+    int32_t                callNode = -1;
+    int32_t                calleeNode = -1;
+    int32_t                recvNode = -1;
+    int32_t                fnIndex = -1;
+    int32_t                mutRefTempArgNode = -1;
+    uint32_t               argCount = 0;
+    uint32_t               pkgStart = 0;
+    uint32_t               pkgEnd = 0;
+    uint32_t               methodStart;
+    uint32_t               firstPositionalArgIndex = 0;
+    int                    collectReceiver = 0;
+    int                    status;
     if (outFnIndex != NULL) {
         *outFnIndex = -1;
     }
     if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
-        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->op != HOPMirOp_CALL || c->builder.symbols == NULL
         || ins->aux >= c->builder.symbolLen)
     {
         return 0;
@@ -5254,8 +5273,8 @@ static int SLTCMirConstResolvePkgPrefixedDirectCallTarget(
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u
-        || !SLTCExtractPkgPrefixFromTypeName(
+    if (symbol->kind != HOPMirSymbol_CALL || symbol->flags != 0u
+        || !HOPTCExtractPkgPrefixFromTypeName(
             tc, symbol->nameStart, symbol->nameEnd, &pkgStart, &pkgEnd))
     {
         return 0;
@@ -5264,7 +5283,7 @@ static int SLTCMirConstResolvePkgPrefixedDirectCallTarget(
     if (methodStart >= symbol->nameEnd) {
         return 0;
     }
-    if (SLTCMirConstMatchPkgPrefixedQualifiedCallNode(
+    if (HOPTCMirConstMatchPkgPrefixedQualifiedCallNode(
             tc,
             rootNode,
             (uint32_t)ins->tok,
@@ -5278,18 +5297,18 @@ static int SLTCMirConstResolvePkgPrefixedDirectCallTarget(
     {
         collectReceiver = 1;
         firstPositionalArgIndex = 1u;
-    } else if (!SLTCMirConstMatchPlainCallNode(
+    } else if (!HOPTCMirConstMatchPlainCallNode(
                    tc, symbol, rootNode, (uint32_t)ins->tok, &callNode, &calleeNode))
     {
         return 0;
     }
-    if (SLTCCollectCallArgInfo(
+    if (HOPTCCollectCallArgInfo(
             tc, callNode, calleeNode, collectReceiver, recvNode, callArgs, NULL, &argCount)
         != 0)
     {
         return -1;
     }
-    status = SLTCResolveCallByPkgMethod(
+    status = HOPTCResolveCallByPkgMethod(
         tc,
         pkgStart,
         pkgEnd,
@@ -5308,26 +5327,26 @@ static int SLTCMirConstResolvePkgPrefixedDirectCallTarget(
     return 1;
 }
 
-static int SLTCMirConstResolveSimpleTopConstAliasCallTarget(
-    const SLTCMirConstLowerCtx* c, int32_t rootNode, const SLMirInst* ins, int32_t* outFnIndex) {
-    SLTypeCheckCtx*       tc;
-    const SLMirSymbolRef* symbol;
-    SLTCVarLikeParts      parts;
-    SLTCCallArgInfo       callArgs[SLTC_MAX_CALL_ARGS];
-    int32_t               nodeId = -1;
-    int32_t               nameIndex = -1;
-    int32_t               initNode;
-    int32_t               callNode = -1;
-    int32_t               calleeNode = -1;
-    int32_t               fnIndex = -1;
-    int32_t               mutRefTempArgNode = -1;
-    uint32_t              argCount = 0;
-    int                   status;
+static int HOPTCMirConstResolveSimpleTopConstAliasCallTarget(
+    const HOPTCMirConstLowerCtx* c, int32_t rootNode, const HOPMirInst* ins, int32_t* outFnIndex) {
+    HOPTypeCheckCtx*       tc;
+    const HOPMirSymbolRef* symbol;
+    HOPTCVarLikeParts      parts;
+    HOPTCCallArgInfo       callArgs[HOPTC_MAX_CALL_ARGS];
+    int32_t                nodeId = -1;
+    int32_t                nameIndex = -1;
+    int32_t                initNode;
+    int32_t                callNode = -1;
+    int32_t                calleeNode = -1;
+    int32_t                fnIndex = -1;
+    int32_t                mutRefTempArgNode = -1;
+    uint32_t               argCount = 0;
+    int                    status;
     if (outFnIndex != NULL) {
         *outFnIndex = -1;
     }
     if (c == NULL || c->evalCtx == NULL || ins == NULL || outFnIndex == NULL
-        || ins->op != SLMirOp_CALL || c->builder.symbols == NULL
+        || ins->op != HOPMirOp_CALL || c->builder.symbols == NULL
         || ins->aux >= c->builder.symbolLen)
     {
         return 0;
@@ -5337,44 +5356,44 @@ static int SLTCMirConstResolveSimpleTopConstAliasCallTarget(
         return 0;
     }
     symbol = &c->builder.symbols[ins->aux];
-    if (symbol->kind != SLMirSymbol_CALL || symbol->flags != 0u) {
+    if (symbol->kind != HOPMirSymbol_CALL || symbol->flags != 0u) {
         return 0;
     }
-    nodeId = SLTCFindTopLevelVarLikeNode(tc, symbol->nameStart, symbol->nameEnd, &nameIndex);
+    nodeId = HOPTCFindTopLevelVarLikeNode(tc, symbol->nameStart, symbol->nameEnd, &nameIndex);
     if (nodeId < 0 || nameIndex != 0) {
         return 0;
     }
-    if (!SLTCMirConstMatchPlainCallNode(
+    if (!HOPTCMirConstMatchPlainCallNode(
             tc, symbol, rootNode, (uint32_t)ins->tok, &callNode, &calleeNode)
-        && !SLTCMirConstMatchAliasCallNode(
+        && !HOPTCMirConstMatchAliasCallNode(
             tc, symbol, rootNode, (uint32_t)ins->tok, &callNode, &calleeNode))
     {
         return 0;
     }
-    if (SLTCCollectCallArgInfo(tc, callNode, calleeNode, 0, -1, callArgs, NULL, &argCount) != 0) {
+    if (HOPTCCollectCallArgInfo(tc, callNode, calleeNode, 0, -1, callArgs, NULL, &argCount) != 0) {
         return -1;
     }
-    if (SLTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped || parts.nameCount != 1u
-        || tc->ast->nodes[nodeId].kind != SLAst_CONST)
+    if (HOPTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped || parts.nameCount != 1u
+        || tc->ast->nodes[nodeId].kind != HOPAst_CONST)
     {
         return 0;
     }
-    initNode = SLTCVarLikeInitExprNodeAt(tc, nodeId, 0);
+    initNode = HOPTCVarLikeInitExprNodeAt(tc, nodeId, 0);
     if (initNode < 0 || (uint32_t)initNode >= tc->ast->len) {
         return 0;
     }
-    if (tc->ast->nodes[initNode].kind == SLAst_IDENT) {
-        const SLAstNode* initExpr = &tc->ast->nodes[initNode];
-        uint32_t         pkgStart = 0;
-        uint32_t         pkgEnd = 0;
-        if (SLTCExtractPkgPrefixFromTypeName(
+    if (tc->ast->nodes[initNode].kind == HOPAst_IDENT) {
+        const HOPAstNode* initExpr = &tc->ast->nodes[initNode];
+        uint32_t          pkgStart = 0;
+        uint32_t          pkgEnd = 0;
+        if (HOPTCExtractPkgPrefixFromTypeName(
                 tc, initExpr->dataStart, initExpr->dataEnd, &pkgStart, &pkgEnd))
         {
             uint32_t methodStart = pkgEnd + 2u;
             if (methodStart >= initExpr->dataEnd) {
                 return 0;
             }
-            status = SLTCResolveCallByPkgMethod(
+            status = HOPTCResolveCallByPkgMethod(
                 tc,
                 pkgStart,
                 pkgEnd,
@@ -5387,7 +5406,7 @@ static int SLTCMirConstResolveSimpleTopConstAliasCallTarget(
                 &fnIndex,
                 &mutRefTempArgNode);
         } else {
-            status = SLTCResolveCallByName(
+            status = HOPTCResolveCallByName(
                 tc,
                 initExpr->dataStart,
                 initExpr->dataEnd,
@@ -5398,20 +5417,20 @@ static int SLTCMirConstResolveSimpleTopConstAliasCallTarget(
                 &fnIndex,
                 &mutRefTempArgNode);
         }
-    } else if (tc->ast->nodes[initNode].kind == SLAst_FIELD_EXPR) {
-        const SLAstNode* initExpr = &tc->ast->nodes[initNode];
-        int32_t          baseNode = initExpr->firstChild;
-        const SLAstNode* baseExpr;
+    } else if (tc->ast->nodes[initNode].kind == HOPAst_FIELD_EXPR) {
+        const HOPAstNode* initExpr = &tc->ast->nodes[initNode];
+        int32_t           baseNode = initExpr->firstChild;
+        const HOPAstNode* baseExpr;
         if (baseNode < 0 || (uint32_t)baseNode >= tc->ast->len) {
             return 0;
         }
         baseExpr = &tc->ast->nodes[baseNode];
-        if (baseExpr->kind != SLAst_IDENT
-            || !SLTCHasImportAlias(tc, baseExpr->dataStart, baseExpr->dataEnd))
+        if (baseExpr->kind != HOPAst_IDENT
+            || !HOPTCHasImportAlias(tc, baseExpr->dataStart, baseExpr->dataEnd))
         {
             return 0;
         }
-        status = SLTCResolveCallByPkgMethod(
+        status = HOPTCResolveCallByPkgMethod(
             tc,
             baseExpr->dataStart,
             baseExpr->dataEnd,
@@ -5433,27 +5452,27 @@ static int SLTCMirConstResolveSimpleTopConstAliasCallTarget(
     return 1;
 }
 
-static int SLTCMirConstFinalizeLoweredFunction(
-    SLTCMirConstLowerCtx* c, uint32_t* mirMapSlot, uint32_t mirFnIndex, int32_t rootNode);
-static int SLTCMirConstRunFunction(
-    SLTCConstEvalCtx*     evalCtx,
-    SLTCMirConstLowerCtx* lowerCtx,
-    const SLMirProgram*   program,
-    uint32_t              mirFnIndex,
-    const SLCTFEValue* _Nullable args,
-    uint32_t     argCount,
-    SLCTFEValue* outValue,
+static int HOPTCMirConstFinalizeLoweredFunction(
+    HOPTCMirConstLowerCtx* c, uint32_t* mirMapSlot, uint32_t mirFnIndex, int32_t rootNode);
+static int HOPTCMirConstRunFunction(
+    HOPTCConstEvalCtx*     evalCtx,
+    HOPTCMirConstLowerCtx* lowerCtx,
+    const HOPMirProgram*   program,
+    uint32_t               mirFnIndex,
+    const HOPCTFEValue* _Nullable args,
+    uint32_t      argCount,
+    HOPCTFEValue* outValue,
     int* _Nullable outDidReturn,
     int* outIsConst);
 
-static int SLTCMirConstLowerTopConstNode(
-    SLTCMirConstLowerCtx* c, int32_t nodeId, uint32_t* _Nullable outMirFnIndex) {
-    SLTypeCheckCtx*  tc;
-    SLTCVarLikeParts parts;
-    uint32_t         mirFnIndex = UINT32_MAX;
-    int32_t          initNode;
-    int              supported = 0;
-    int              rewriteRc;
+static int HOPTCMirConstLowerTopConstNode(
+    HOPTCMirConstLowerCtx* c, int32_t nodeId, uint32_t* _Nullable outMirFnIndex) {
+    HOPTypeCheckCtx*  tc;
+    HOPTCVarLikeParts parts;
+    uint32_t          mirFnIndex = UINT32_MAX;
+    int32_t           initNode;
+    int               supported = 0;
+    int               rewriteRc;
     if (outMirFnIndex != NULL) {
         *outMirFnIndex = UINT32_MAX;
     }
@@ -5465,7 +5484,7 @@ static int SLTCMirConstLowerTopConstNode(
     if (tc == NULL || nodeId < 0 || (uint32_t)nodeId >= tc->ast->len) {
         return 0;
     }
-    if (c->topConstToMir[(uint32_t)nodeId] != SL_TC_MIR_CONST_FN_NONE) {
+    if (c->topConstToMir[(uint32_t)nodeId] != HOP_TC_MIR_CONST_FN_NONE) {
         if (outMirFnIndex != NULL) {
             *outMirFnIndex = c->topConstToMir[(uint32_t)nodeId];
         }
@@ -5474,17 +5493,17 @@ static int SLTCMirConstLowerTopConstNode(
     if (c->loweringTopConsts[(uint32_t)nodeId] != 0u) {
         return 0;
     }
-    if (SLTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped || parts.nameCount != 1u
-        || tc->ast->nodes[nodeId].kind != SLAst_CONST)
+    if (HOPTCVarLikeGetParts(tc, nodeId, &parts) != 0 || parts.grouped || parts.nameCount != 1u
+        || tc->ast->nodes[nodeId].kind != HOPAst_CONST)
     {
         return 0;
     }
-    initNode = SLTCVarLikeInitExprNodeAt(tc, nodeId, 0);
+    initNode = HOPTCVarLikeInitExprNodeAt(tc, nodeId, 0);
     if (initNode < 0) {
         return 0;
     }
     c->loweringTopConsts[(uint32_t)nodeId] = 1u;
-    if (SLMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+    if (HOPMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
             &c->builder,
             tc->arena,
             tc->ast,
@@ -5504,7 +5523,7 @@ static int SLTCMirConstLowerTopConstNode(
         c->loweringTopConsts[(uint32_t)nodeId] = 0u;
         return 0;
     }
-    rewriteRc = SLTCMirConstFinalizeLoweredFunction(
+    rewriteRc = HOPTCMirConstFinalizeLoweredFunction(
         c, &c->topConstToMir[(uint32_t)nodeId], mirFnIndex, initNode);
     c->loweringTopConsts[(uint32_t)nodeId] = 0u;
     if (rewriteRc <= 0) {
@@ -5516,44 +5535,44 @@ static int SLTCMirConstLowerTopConstNode(
     return 1;
 }
 
-static int SLTCMirConstRewriteLoadIdentToFunctionConst(
-    SLTCMirConstLowerCtx* c, SLMirInst* ins, uint32_t targetMirFnIndex) {
-    SLMirConst value = { 0 };
-    uint32_t   constIndex = UINT32_MAX;
+static int HOPTCMirConstRewriteLoadIdentToFunctionConst(
+    HOPTCMirConstLowerCtx* c, HOPMirInst* ins, uint32_t targetMirFnIndex) {
+    HOPMirConst value = { 0 };
+    uint32_t    constIndex = UINT32_MAX;
     if (c == NULL || ins == NULL) {
         return -1;
     }
-    value.kind = SLMirConst_FUNCTION;
+    value.kind = HOPMirConst_FUNCTION;
     value.bits = targetMirFnIndex;
-    if (SLMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
+    if (HOPMirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
         return -1;
     }
-    ins->op = SLMirOp_PUSH_CONST;
+    ins->op = HOPMirOp_PUSH_CONST;
     ins->tok = 0u;
     ins->aux = constIndex;
     return 0;
 }
 
-static int SLTCMirConstFinalizeLoweredFunction(
-    SLTCMirConstLowerCtx* c, uint32_t* mirMapSlot, uint32_t mirFnIndex, int32_t rootNode) {
+static int HOPTCMirConstFinalizeLoweredFunction(
+    HOPTCMirConstLowerCtx* c, uint32_t* mirMapSlot, uint32_t mirFnIndex, int32_t rootNode) {
     int rewriteRc;
     if (c == NULL || mirMapSlot == NULL || mirFnIndex == UINT32_MAX) {
         return -1;
     }
     *mirMapSlot = mirFnIndex;
-    rewriteRc = SLTCMirConstRewriteDirectCalls(c, mirFnIndex, rootNode);
+    rewriteRc = HOPTCMirConstRewriteDirectCalls(c, mirFnIndex, rootNode);
     if (rewriteRc < 0) {
         return -1;
     }
     if (rewriteRc == 0) {
-        *mirMapSlot = SL_TC_MIR_CONST_FN_NONE;
+        *mirMapSlot = HOP_TC_MIR_CONST_FN_NONE;
         return 0;
     }
     return 1;
 }
 
-static int SLTCMirConstFindTcFunctionIndexForMir(
-    const SLTCMirConstLowerCtx* c, uint32_t mirFnIndex, int32_t* outFnIndex) {
+static int HOPTCMirConstFindTcFunctionIndexForMir(
+    const HOPTCMirConstLowerCtx* c, uint32_t mirFnIndex, int32_t* outFnIndex) {
     uint32_t i;
     if (outFnIndex != NULL) {
         *outFnIndex = -1;
@@ -5572,123 +5591,123 @@ static int SLTCMirConstFindTcFunctionIndexForMir(
     return 0;
 }
 
-static int SLTCMirConstExportValue(const SLTCMirConstLowerCtx* c, SLCTFEValue* _Nonnull value) {
+static int HOPTCMirConstExportValue(const HOPTCMirConstLowerCtx* c, HOPCTFEValue* _Nonnull value) {
     uint32_t mirFnIndex = UINT32_MAX;
     int32_t  tcFnIndex = -1;
-    if (c == NULL || value == NULL || !SLMirValueAsFunctionRef(value, &mirFnIndex)) {
+    if (c == NULL || value == NULL || !HOPMirValueAsFunctionRef(value, &mirFnIndex)) {
         return 1;
     }
-    if (!SLTCMirConstFindTcFunctionIndexForMir(c, mirFnIndex, &tcFnIndex) || tcFnIndex < 0) {
+    if (!HOPTCMirConstFindTcFunctionIndexForMir(c, mirFnIndex, &tcFnIndex) || tcFnIndex < 0) {
         return 0;
     }
-    SLMirValueSetFunctionRef(value, (uint32_t)tcFnIndex);
+    HOPMirValueSetFunctionRef(value, (uint32_t)tcFnIndex);
     return 1;
 }
 
-static int SLTCMirConstCallNodeIsSpecialBuiltin(SLTypeCheckCtx* tc, int32_t callNode) {
-    const SLAstNode* call;
-    const SLAstNode* callee;
-    int32_t          calleeNode;
-    int32_t          recvNode;
+static int HOPTCMirConstCallNodeIsSpecialBuiltin(HOPTypeCheckCtx* tc, int32_t callNode) {
+    const HOPAstNode* call;
+    const HOPAstNode* callee;
+    int32_t           calleeNode;
+    int32_t           recvNode;
     if (tc == NULL || callNode < 0 || (uint32_t)callNode >= tc->ast->len) {
         return 0;
     }
     call = &tc->ast->nodes[callNode];
     calleeNode = call->firstChild;
     callee = calleeNode >= 0 ? &tc->ast->nodes[calleeNode] : NULL;
-    if (call->kind != SLAst_CALL || callee == NULL) {
+    if (call->kind != HOPAst_CALL || callee == NULL) {
         return 0;
     }
-    if (callee->kind == SLAst_IDENT) {
-        return SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "typeof")
-            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "kind")
-            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "base")
-            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "is_alias")
-            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "type_name")
-            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "ptr")
-            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "slice")
-            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "array")
-            || SLTCIsSourceLocationOfName(tc, callee->dataStart, callee->dataEnd)
-            || SLTCCompilerDiagOpFromName(tc, callee->dataStart, callee->dataEnd)
-                   != SLTCCompilerDiagOp_NONE;
+    if (callee->kind == HOPAst_IDENT) {
+        return HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "typeof")
+            || HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "kind")
+            || HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "base")
+            || HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "is_alias")
+            || HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "type_name")
+            || HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "ptr")
+            || HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "slice")
+            || HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "array")
+            || HOPTCIsSourceLocationOfName(tc, callee->dataStart, callee->dataEnd)
+            || HOPTCCompilerDiagOpFromName(tc, callee->dataStart, callee->dataEnd)
+                   != HOPTCCompilerDiagOp_NONE;
     }
-    if (callee->kind != SLAst_FIELD_EXPR) {
+    if (callee->kind != HOPAst_FIELD_EXPR) {
         return 0;
     }
     recvNode = callee->firstChild;
     if (recvNode < 0 || (uint32_t)recvNode >= tc->ast->len
-        || tc->ast->nodes[recvNode].kind != SLAst_IDENT)
+        || tc->ast->nodes[recvNode].kind != HOPAst_IDENT)
     {
         return 0;
     }
-    if (SLNameEqLiteral(
+    if (HOPNameEqLiteral(
             tc->src,
             tc->ast->nodes[recvNode].dataStart,
             tc->ast->nodes[recvNode].dataEnd,
             "builtin")
-        && SLTCIsSourceLocationOfName(tc, callee->dataStart, callee->dataEnd))
+        && HOPTCIsSourceLocationOfName(tc, callee->dataStart, callee->dataEnd))
     {
         return 1;
     }
-    if (SLNameEqLiteral(
+    if (HOPNameEqLiteral(
             tc->src,
             tc->ast->nodes[recvNode].dataStart,
             tc->ast->nodes[recvNode].dataEnd,
             "reflect")
-        && (SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "kind")
-            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "base")
-            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "is_alias")
-            || SLNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "type_name")))
+        && (HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "kind")
+            || HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "base")
+            || HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "is_alias")
+            || HOPNameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "type_name")))
     {
         return 1;
     }
-    if (SLNameEqLiteral(
+    if (HOPNameEqLiteral(
             tc->src,
             tc->ast->nodes[recvNode].dataStart,
             tc->ast->nodes[recvNode].dataEnd,
             "compiler")
-        && SLTCConstEvalCompilerDiagOpFromFieldExpr(tc, callee) != SLTCCompilerDiagOp_NONE)
+        && HOPTCConstEvalCompilerDiagOpFromFieldExpr(tc, callee) != HOPTCCompilerDiagOp_NONE)
     {
         return 1;
     }
     return 0;
 }
 
-static int SLTCMirConstResolveCallNode(
-    SLTCConstEvalCtx* evalCtx,
-    const SLMirProgram* _Nullable program,
-    const SLMirInst* _Nullable inst,
+static int HOPTCMirConstResolveCallNode(
+    HOPTCConstEvalCtx* evalCtx,
+    const HOPMirProgram* _Nullable program,
+    const HOPMirInst* _Nullable inst,
     int32_t* outCallNode) {
-    const SLMirSymbolRef* symbol;
+    const HOPMirSymbolRef* symbol;
     if (outCallNode != NULL) {
         *outCallNode = -1;
     }
     if (evalCtx == NULL || evalCtx->tc == NULL || program == NULL || inst == NULL
-        || outCallNode == NULL || inst->op != SLMirOp_CALL || inst->aux >= program->symbolLen)
+        || outCallNode == NULL || inst->op != HOPMirOp_CALL || inst->aux >= program->symbolLen)
     {
         return 0;
     }
     symbol = &program->symbols[inst->aux];
-    if (symbol->kind != SLMirSymbol_CALL || symbol->target >= evalCtx->tc->ast->len) {
+    if (symbol->kind != HOPMirSymbol_CALL || symbol->target >= evalCtx->tc->ast->len) {
         return 0;
     }
     *outCallNode = (int32_t)symbol->target;
     return 1;
 }
 
-static int SLTCMirConstRunFunction(
-    SLTCConstEvalCtx*     evalCtx,
-    SLTCMirConstLowerCtx* lowerCtx,
-    const SLMirProgram*   program,
-    uint32_t              mirFnIndex,
-    const SLCTFEValue* _Nullable args,
-    uint32_t     argCount,
-    SLCTFEValue* outValue,
+static int HOPTCMirConstRunFunction(
+    HOPTCConstEvalCtx*     evalCtx,
+    HOPTCMirConstLowerCtx* lowerCtx,
+    const HOPMirProgram*   program,
+    uint32_t               mirFnIndex,
+    const HOPCTFEValue* _Nullable args,
+    uint32_t      argCount,
+    HOPCTFEValue* outValue,
     int* _Nullable outDidReturn,
     int* outIsConst) {
-    SLTypeCheckCtx* c;
-    SLMirExecEnv    env = { 0 };
-    int             mirIsConst = 0;
+    HOPTypeCheckCtx* c;
+    HOPMirExecEnv    env = { 0 };
+    int              mirIsConst = 0;
     if (outDidReturn != NULL) {
         *outDidReturn = 0;
     }
@@ -5703,67 +5722,67 @@ static int SLTCMirConstRunFunction(
         return -1;
     }
     env.src = c->src;
-    env.resolveIdent = SLTCResolveConstIdent;
-    env.resolveCallPre = SLTCResolveConstCallMirPre;
-    env.resolveCall = SLTCResolveConstCallMir;
+    env.resolveIdent = HOPTCResolveConstIdent;
+    env.resolveCallPre = HOPTCResolveConstCallMirPre;
+    env.resolveCall = HOPTCResolveConstCallMir;
     env.resolveCtx = evalCtx;
-    env.zeroInitLocal = SLTCMirConstZeroInitLocal;
+    env.zeroInitLocal = HOPTCMirConstZeroInitLocal;
     env.zeroInitCtx = evalCtx;
-    env.coerceValueForType = SLTCMirConstCoerceValueForType;
+    env.coerceValueForType = HOPTCMirConstCoerceValueForType;
     env.coerceValueCtx = evalCtx;
-    env.indexValue = SLTCMirConstIndexValue;
+    env.indexValue = HOPTCMirConstIndexValue;
     env.indexValueCtx = evalCtx;
-    env.sequenceLen = SLTCMirConstSequenceLen;
+    env.sequenceLen = HOPTCMirConstSequenceLen;
     env.sequenceLenCtx = evalCtx;
-    env.iterInit = SLTCMirConstIterInit;
+    env.iterInit = HOPTCMirConstIterInit;
     env.iterInitCtx = evalCtx;
-    env.iterNext = SLTCMirConstIterNext;
+    env.iterNext = HOPTCMirConstIterNext;
     env.iterNextCtx = evalCtx;
-    env.aggGetField = SLTCMirConstAggGetField;
+    env.aggGetField = HOPTCMirConstAggGetField;
     env.aggGetFieldCtx = evalCtx;
-    env.aggAddrField = SLTCMirConstAggAddrField;
+    env.aggAddrField = HOPTCMirConstAggAddrField;
     env.aggAddrFieldCtx = evalCtx;
-    env.makeTuple = SLTCMirConstMakeTuple;
+    env.makeTuple = HOPTCMirConstMakeTuple;
     env.makeTupleCtx = evalCtx;
-    env.bindFrame = SLTCMirConstBindFrame;
-    env.unbindFrame = SLTCMirConstUnbindFrame;
+    env.bindFrame = HOPTCMirConstBindFrame;
+    env.unbindFrame = HOPTCMirConstUnbindFrame;
     env.frameCtx = evalCtx;
-    env.setReason = SLTCMirConstSetReasonCb;
+    env.setReason = HOPTCMirConstSetReasonCb;
     env.setReasonCtx = evalCtx;
-    env.backwardJumpLimit = SLTC_CONST_FOR_MAX_ITERS;
+    env.backwardJumpLimit = HOPTC_CONST_FOR_MAX_ITERS;
     env.diag = c->diag;
-    if (!SLMirProgramNeedsDynamicResolution(program)) {
-        SLMirExecEnvDisableDynamicResolution(&env);
+    if (!HOPMirProgramNeedsDynamicResolution(program)) {
+        HOPMirExecEnvDisableDynamicResolution(&env);
     }
-    if (SLMirEvalFunction(
+    if (HOPMirEvalFunction(
             c->arena, program, mirFnIndex, args, argCount, &env, outValue, &mirIsConst)
         != 0)
     {
         return -1;
     }
-    if (mirIsConst && !SLTCMirConstExportValue(lowerCtx, outValue)) {
+    if (mirIsConst && !HOPTCMirConstExportValue(lowerCtx, outValue)) {
         return 0;
     }
     *outIsConst = mirIsConst;
     if (outDidReturn != NULL && mirIsConst) {
-        *outDidReturn = outValue->kind != SLCTFEValue_INVALID;
+        *outDidReturn = outValue->kind != HOPCTFEValue_INVALID;
     }
     return 0;
 }
 
-int SLTCResolveConstCallMirPre(
+int HOPTCResolveConstCallMirPre(
     void* _Nullable ctx,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
-    const SLMirInst* _Nullable inst,
-    uint32_t     nameStart,
-    uint32_t     nameEnd,
-    SLCTFEValue* outValue,
-    int*         outIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
-    int32_t           callNode = -1;
-    int               status;
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
+    const HOPMirInst* _Nullable inst,
+    uint32_t      nameStart,
+    uint32_t      nameEnd,
+    HOPCTFEValue* outValue,
+    int*          outIsConst,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
+    int32_t            callNode = -1;
+    int                status;
 
     (void)function;
     (void)nameStart;
@@ -5772,11 +5791,11 @@ int SLTCResolveConstCallMirPre(
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (!SLTCMirConstResolveCallNode(evalCtx, program, inst, &callNode) || callNode < 0) {
+    if (!HOPTCMirConstResolveCallNode(evalCtx, program, inst, &callNode) || callNode < 0) {
         return 0;
     }
 
-    status = SLTCConstEvalCompilerDiagCall(evalCtx, callNode, outValue, outIsConst);
+    status = HOPTCConstEvalCompilerDiagCall(evalCtx, callNode, outValue, outIsConst);
     if (status < 0) {
         return -1;
     }
@@ -5784,7 +5803,7 @@ int SLTCResolveConstCallMirPre(
         return 1;
     }
 
-    status = SLTCConstEvalSourceLocationOfCall(evalCtx, callNode, outValue, outIsConst);
+    status = HOPTCConstEvalSourceLocationOfCall(evalCtx, callNode, outValue, outIsConst);
     if (status < 0) {
         return -1;
     }
@@ -5795,9 +5814,10 @@ int SLTCResolveConstCallMirPre(
     return 0;
 }
 
-int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex, int32_t rootNode) {
-    SLTypeCheckCtx* tc;
-    uint32_t        instIndex;
+int HOPTCMirConstRewriteDirectCalls(
+    HOPTCMirConstLowerCtx* c, uint32_t mirFnIndex, int32_t rootNode) {
+    HOPTypeCheckCtx* tc;
+    uint32_t         instIndex;
     if (c == NULL || c->evalCtx == NULL || c->tcToMir == NULL || c->loweringFns == NULL) {
         return -1;
     }
@@ -5809,36 +5829,36 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex,
          instIndex < c->builder.funcs[mirFnIndex].instStart + c->builder.funcs[mirFnIndex].instLen;
          instIndex++)
     {
-        SLMirInst* ins = &c->builder.insts[instIndex];
-        SLMirInst* nextIns =
+        HOPMirInst* ins = &c->builder.insts[instIndex];
+        HOPMirInst* nextIns =
             instIndex + 1u < c->builder.instLen ? &c->builder.insts[instIndex + 1u] : NULL;
         int32_t  targetFnIndex = -1;
         int32_t  targetTopConstNode = -1;
         uint32_t targetMirFnIndex = UINT32_MAX;
         int      lowerRc;
-        if (ins->op == SLMirOp_CALL && ins->aux < c->builder.symbolLen) {
-            const SLMirSymbolRef* symbol = &c->builder.symbols[ins->aux];
-            int32_t               callNode = (int32_t)symbol->target;
-            if (symbol->kind == SLMirSymbol_CALL && callNode >= 0
+        if (ins->op == HOPMirOp_CALL && ins->aux < c->builder.symbolLen) {
+            const HOPMirSymbolRef* symbol = &c->builder.symbols[ins->aux];
+            int32_t                callNode = (int32_t)symbol->target;
+            if (symbol->kind == HOPMirSymbol_CALL && callNode >= 0
                 && (uint32_t)callNode < tc->ast->len
-                && SLTCMirConstCallNodeIsSpecialBuiltin(tc, callNode))
+                && HOPTCMirConstCallNodeIsSpecialBuiltin(tc, callNode))
             {
                 continue;
             }
         }
-        lowerRc = SLTCMirConstResolveQualifiedFunctionValueTarget(c, ins, nextIns, &targetFnIndex);
+        lowerRc = HOPTCMirConstResolveQualifiedFunctionValueTarget(c, ins, nextIns, &targetFnIndex);
         if (lowerRc < 0) {
             return -1;
         }
         if (lowerRc > 0) {
-            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            lowerRc = HOPTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 return -1;
             }
             if (lowerRc == 0) {
                 return 0;
             }
-            if (SLTCMirConstRewriteQualifiedFunctionValueLoad(
+            if (HOPTCMirConstRewriteQualifiedFunctionValueLoad(
                     c, mirFnIndex, instIndex, targetMirFnIndex)
                 != 0)
             {
@@ -5846,8 +5866,8 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex,
             }
             continue;
         }
-        if (SLTCMirConstResolveTopConstIdentTarget(c, rootNode, ins, &targetTopConstNode)) {
-            lowerRc = SLTCMirConstLowerTopConstNode(c, targetTopConstNode, &targetMirFnIndex);
+        if (HOPTCMirConstResolveTopConstIdentTarget(c, rootNode, ins, &targetTopConstNode)) {
+            lowerRc = HOPTCMirConstLowerTopConstNode(c, targetTopConstNode, &targetMirFnIndex);
             if (lowerRc < 0) {
                 return -1;
             }
@@ -5855,13 +5875,13 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex,
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            ins->op = SLMirOp_CALL_FN;
+            ins->op = HOPMirOp_CALL_FN;
             ins->tok = 0u;
             ins->aux = targetMirFnIndex;
             continue;
         }
-        if (SLTCMirConstResolveFunctionIdentTarget(c, ins, &targetFnIndex)) {
-            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+        if (HOPTCMirConstResolveFunctionIdentTarget(c, ins, &targetFnIndex)) {
+            lowerRc = HOPTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 return -1;
             }
@@ -5869,18 +5889,18 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex,
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            if (SLTCMirConstRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
+            if (HOPTCMirConstRewriteLoadIdentToFunctionConst(c, ins, targetMirFnIndex) != 0) {
                 return -1;
             }
             continue;
         }
-        lowerRc = SLTCMirConstResolveSimpleTopConstAliasCallTarget(
+        lowerRc = HOPTCMirConstResolveSimpleTopConstAliasCallTarget(
             c, rootNode, ins, &targetFnIndex);
         if (lowerRc < 0) {
             return -1;
         }
         if (lowerRc > 0) {
-            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            lowerRc = HOPTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 return -1;
             }
@@ -5888,16 +5908,16 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex,
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            ins->op = SLMirOp_CALL_FN;
+            ins->op = HOPMirOp_CALL_FN;
             ins->aux = targetMirFnIndex;
             continue;
         }
-        lowerRc = SLTCMirConstResolveQualifiedCallTarget(c, rootNode, ins, &targetFnIndex);
+        lowerRc = HOPTCMirConstResolveQualifiedCallTarget(c, rootNode, ins, &targetFnIndex);
         if (lowerRc < 0) {
             return -1;
         }
         if (lowerRc > 0) {
-            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            lowerRc = HOPTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 return -1;
             }
@@ -5905,16 +5925,16 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex,
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            ins->op = SLMirOp_CALL_FN;
+            ins->op = HOPMirOp_CALL_FN;
             ins->aux = targetMirFnIndex;
             continue;
         }
-        lowerRc = SLTCMirConstResolvePkgPrefixedDirectCallTarget(c, rootNode, ins, &targetFnIndex);
+        lowerRc = HOPTCMirConstResolvePkgPrefixedDirectCallTarget(c, rootNode, ins, &targetFnIndex);
         if (lowerRc < 0) {
             return -1;
         }
         if (lowerRc > 0) {
-            lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+            lowerRc = HOPTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
                 return -1;
             }
@@ -5922,18 +5942,18 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex,
                 return 0;
             }
             ins = &c->builder.insts[instIndex];
-            ins->op = SLMirOp_CALL_FN;
+            ins->op = HOPMirOp_CALL_FN;
             ins->aux = targetMirFnIndex;
             continue;
         }
-        lowerRc = SLTCMirConstResolveDirectCallTarget(c, rootNode, ins, &targetFnIndex);
+        lowerRc = HOPTCMirConstResolveDirectCallTarget(c, rootNode, ins, &targetFnIndex);
         if (lowerRc < 0) {
             return -1;
         }
         if (lowerRc == 0) {
             continue;
         }
-        lowerRc = SLTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
+        lowerRc = HOPTCMirConstLowerFunction(c, targetFnIndex, &targetMirFnIndex);
         if (lowerRc < 0) {
             return -1;
         }
@@ -5941,20 +5961,20 @@ int SLTCMirConstRewriteDirectCalls(SLTCMirConstLowerCtx* c, uint32_t mirFnIndex,
             return 0;
         }
         ins = &c->builder.insts[instIndex];
-        ins->op = SLMirOp_CALL_FN;
+        ins->op = HOPMirOp_CALL_FN;
         ins->aux = targetMirFnIndex;
     }
     return 1;
 }
 
-int SLTCMirConstLowerFunction(
-    SLTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex) {
-    SLTypeCheckCtx*   tc;
-    SLMirLowerOptions options = { 0 };
-    uint32_t          mirFnIndex = UINT32_MAX;
-    int32_t           fnNode = -1;
-    int32_t           bodyNode = -1;
-    int               supported = 0;
+int HOPTCMirConstLowerFunction(
+    HOPTCMirConstLowerCtx* c, int32_t fnIndex, uint32_t* _Nullable outMirFnIndex) {
+    HOPTypeCheckCtx*   tc;
+    HOPMirLowerOptions options = { 0 };
+    uint32_t           mirFnIndex = UINT32_MAX;
+    int32_t            fnNode = -1;
+    int32_t            bodyNode = -1;
+    int                supported = 0;
     if (outMirFnIndex != NULL) {
         *outMirFnIndex = UINT32_MAX;
     }
@@ -5968,13 +5988,13 @@ int SLTCMirConstLowerFunction(
     if (c->loweringFns[(uint32_t)fnIndex] != 0u) {
         return 0;
     }
-    if (c->tcToMir[(uint32_t)fnIndex] != SL_TC_MIR_CONST_FN_NONE) {
+    if (c->tcToMir[(uint32_t)fnIndex] != HOP_TC_MIR_CONST_FN_NONE) {
         if (outMirFnIndex != NULL) {
             *outMirFnIndex = c->tcToMir[(uint32_t)fnIndex];
         }
         return 1;
     }
-    if (!SLTCMirConstGetFunctionBody(tc, fnIndex, &fnNode, &bodyNode)) {
+    if (!HOPTCMirConstGetFunctionBody(tc, fnIndex, &fnNode, &bodyNode)) {
         return 0;
     }
     {
@@ -5982,9 +6002,9 @@ int SLTCMirConstLowerFunction(
         uint32_t stackLen = 0;
         stack[stackLen++] = bodyNode;
         while (stackLen > 0) {
-            int32_t          nodeId = stack[--stackLen];
-            const SLAstNode* node = &tc->ast->nodes[nodeId];
-            int32_t          child;
+            int32_t           nodeId = stack[--stackLen];
+            const HOPAstNode* node = &tc->ast->nodes[nodeId];
+            int32_t           child;
             child = node->firstChild;
             while (child >= 0) {
                 if (stackLen >= (uint32_t)(sizeof(stack) / sizeof(stack[0]))) {
@@ -5996,9 +6016,9 @@ int SLTCMirConstLowerFunction(
         }
     }
     c->loweringFns[(uint32_t)fnIndex] = 1u;
-    options.lowerConstExpr = SLTCMirConstLowerConstExpr;
+    options.lowerConstExpr = HOPTCMirConstLowerConstExpr;
     options.lowerConstExprCtx = c->evalCtx;
-    if (SLMirLowerAppendSimpleFunctionWithOptions(
+    if (HOPMirLowerAppendSimpleFunctionWithOptions(
             &c->builder,
             tc->arena,
             tc->ast,
@@ -6019,7 +6039,7 @@ int SLTCMirConstLowerFunction(
         return 0;
     }
     {
-        int rewriteRc = SLTCMirConstFinalizeLoweredFunction(
+        int rewriteRc = HOPTCMirConstFinalizeLoweredFunction(
             c, &c->tcToMir[(uint32_t)fnIndex], mirFnIndex, bodyNode);
         if (rewriteRc <= 0) {
             c->loweringFns[(uint32_t)fnIndex] = 0u;
@@ -6033,20 +6053,20 @@ int SLTCMirConstLowerFunction(
     return 1;
 }
 
-static int SLTCTryMirConstCall(
-    SLTCConstEvalCtx*  evalCtx,
-    int32_t            fnIndex,
-    const SLCTFEValue* args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outDidReturn,
-    int*               outIsConst,
-    int*               outSupported) {
-    SLTypeCheckCtx*      c;
-    SLMirProgram         program = { 0 };
-    SLTCMirConstLowerCtx lowerCtx;
-    uint32_t             mirFnIndex = UINT32_MAX;
-    int                  lowerRc;
+static int HOPTCTryMirConstCall(
+    HOPTCConstEvalCtx*  evalCtx,
+    int32_t             fnIndex,
+    const HOPCTFEValue* args,
+    uint32_t            argCount,
+    HOPCTFEValue*       outValue,
+    int*                outDidReturn,
+    int*                outIsConst,
+    int*                outSupported) {
+    HOPTypeCheckCtx*      c;
+    HOPMirProgram         program = { 0 };
+    HOPTCMirConstLowerCtx lowerCtx;
+    uint32_t              mirFnIndex = UINT32_MAX;
+    int                   lowerRc;
     if (outDidReturn != NULL) {
         *outDidReturn = 0;
     }
@@ -6065,19 +6085,19 @@ static int SLTCTryMirConstCall(
     if (c == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
         return -1;
     }
-    if (SLTCMirConstInitLowerCtx(evalCtx, &lowerCtx) != 0) {
+    if (HOPTCMirConstInitLowerCtx(evalCtx, &lowerCtx) != 0) {
         return -1;
     }
-    lowerRc = SLTCMirConstLowerFunction(&lowerCtx, fnIndex, &mirFnIndex);
+    lowerRc = HOPTCMirConstLowerFunction(&lowerCtx, fnIndex, &mirFnIndex);
     if (lowerRc < 0) {
         return -1;
     }
     if (lowerRc == 0 || mirFnIndex == UINT32_MAX) {
-        SLTCMirConstAdoptLowerDiagReason(evalCtx, lowerCtx.diag);
+        HOPTCMirConstAdoptLowerDiagReason(evalCtx, lowerCtx.diag);
         return 0;
     }
-    SLMirProgramBuilderFinish(&lowerCtx.builder, &program);
-    if (SLTCMirConstRunFunction(
+    HOPMirProgramBuilderFinish(&lowerCtx.builder, &program);
+    if (HOPTCMirConstRunFunction(
             evalCtx,
             &lowerCtx,
             &program,
@@ -6095,44 +6115,44 @@ static int SLTCTryMirConstCall(
     return 0;
 }
 
-static int SLTCConstEvalTryDirectReturnFunction(
-    SLTCConstEvalCtx* evalCtx, int32_t bodyNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx* c;
-    int32_t         stmtNode;
-    int32_t         exprNode;
+static int HOPTCConstEvalTryDirectReturnFunction(
+    HOPTCConstEvalCtx* evalCtx, int32_t bodyNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx* c;
+    int32_t          stmtNode;
+    int32_t          exprNode;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
     c = evalCtx->tc;
     if (c == NULL || bodyNode < 0 || (uint32_t)bodyNode >= c->ast->len
-        || c->ast->nodes[bodyNode].kind != SLAst_BLOCK)
+        || c->ast->nodes[bodyNode].kind != HOPAst_BLOCK)
     {
         return 1;
     }
-    stmtNode = SLAstFirstChild(c->ast, bodyNode);
-    if (stmtNode < 0 || SLAstNextSibling(c->ast, stmtNode) >= 0
-        || c->ast->nodes[stmtNode].kind != SLAst_RETURN)
+    stmtNode = HOPAstFirstChild(c->ast, bodyNode);
+    if (stmtNode < 0 || HOPAstNextSibling(c->ast, stmtNode) >= 0
+        || c->ast->nodes[stmtNode].kind != HOPAst_RETURN)
     {
         return 1;
     }
-    exprNode = SLAstFirstChild(c->ast, stmtNode);
-    if (exprNode < 0 || SLAstNextSibling(c->ast, exprNode) >= 0) {
+    exprNode = HOPAstFirstChild(c->ast, stmtNode);
+    if (exprNode < 0 || HOPAstNextSibling(c->ast, exprNode) >= 0) {
         return 1;
     }
-    return SLTCEvalConstExprNode(evalCtx, exprNode, outValue, outIsConst);
+    return HOPTCEvalConstExprNode(evalCtx, exprNode, outValue, outIsConst);
 }
 
-static int SLTCTryMirTopLevelConst(
-    SLTCConstEvalCtx* evalCtx,
-    int32_t           nodeId,
-    int32_t           nameIndex,
-    SLCTFEValue*      outValue,
-    int*              outIsConst,
-    int*              outSupported) {
-    SLMirProgram         program = { 0 };
-    SLTCMirConstLowerCtx lowerCtx;
-    uint32_t             mirFnIndex = UINT32_MAX;
-    int                  lowerRc;
+static int HOPTCTryMirTopLevelConst(
+    HOPTCConstEvalCtx* evalCtx,
+    int32_t            nodeId,
+    int32_t            nameIndex,
+    HOPCTFEValue*      outValue,
+    int*               outIsConst,
+    int*               outSupported) {
+    HOPMirProgram         program = { 0 };
+    HOPTCMirConstLowerCtx lowerCtx;
+    uint32_t              mirFnIndex = UINT32_MAX;
+    int                   lowerRc;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
@@ -6143,20 +6163,20 @@ static int SLTCTryMirTopLevelConst(
         return -1;
     }
     if (evalCtx->tc != NULL) {
-        SLTypeCheckCtx*  c = evalCtx->tc;
-        SLTCVarLikeParts parts;
-        int32_t          initNode = -1;
-        int32_t          initType = -1;
-        SLDiag           savedDiag = { 0 };
-        int              haveSavedDiag = c->diag != NULL;
+        HOPTypeCheckCtx*  c = evalCtx->tc;
+        HOPTCVarLikeParts parts;
+        int32_t           initNode = -1;
+        int32_t           initType = -1;
+        HOPDiag           savedDiag = { 0 };
+        int               haveSavedDiag = c->diag != NULL;
         if (haveSavedDiag) {
             savedDiag = *c->diag;
         }
-        if (SLTCVarLikeGetParts(c, nodeId, &parts) == 0 && !parts.grouped && nameIndex >= 0
+        if (HOPTCVarLikeGetParts(c, nodeId, &parts) == 0 && !parts.grouped && nameIndex >= 0
             && (uint32_t)nameIndex < parts.nameCount)
         {
-            initNode = SLTCVarLikeInitExprNodeAt(c, nodeId, nameIndex);
-            if (initNode >= 0 && SLTCTypeExpr(c, initNode, &initType) == 0
+            initNode = HOPTCVarLikeInitExprNodeAt(c, nodeId, nameIndex);
+            if (initNode >= 0 && HOPTCTypeExpr(c, initNode, &initType) == 0
                 && initType == c->typeType)
             {
                 if (haveSavedDiag) {
@@ -6169,19 +6189,19 @@ static int SLTCTryMirTopLevelConst(
             *c->diag = savedDiag;
         }
     }
-    if (SLTCMirConstInitLowerCtx(evalCtx, &lowerCtx) != 0) {
+    if (HOPTCMirConstInitLowerCtx(evalCtx, &lowerCtx) != 0) {
         return -1;
     }
-    lowerRc = SLTCMirConstLowerTopConstNode(&lowerCtx, nodeId, &mirFnIndex);
+    lowerRc = HOPTCMirConstLowerTopConstNode(&lowerCtx, nodeId, &mirFnIndex);
     if (lowerRc < 0) {
         return -1;
     }
     if (lowerRc == 0 || mirFnIndex == UINT32_MAX) {
-        SLTCMirConstAdoptLowerDiagReason(evalCtx, lowerCtx.diag);
+        HOPTCMirConstAdoptLowerDiagReason(evalCtx, lowerCtx.diag);
         return 0;
     }
-    SLMirProgramBuilderFinish(&lowerCtx.builder, &program);
-    if (SLTCMirConstRunFunction(
+    HOPMirProgramBuilderFinish(&lowerCtx.builder, &program);
+    if (HOPTCMirConstRunFunction(
             evalCtx, &lowerCtx, &program, mirFnIndex, NULL, 0, outValue, NULL, outIsConst)
         != 0)
     {
@@ -6191,16 +6211,16 @@ static int SLTCTryMirTopLevelConst(
     return 0;
 }
 
-int32_t SLTCFindConstCallableFunction(
-    SLTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, uint32_t argCount) {
+int32_t HOPTCFindConstCallableFunction(
+    HOPTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, uint32_t argCount) {
     uint32_t i;
     int32_t  found = -1;
     for (i = 0; i < c->funcLen; i++) {
-        const SLTCFunction* f = &c->funcs[i];
-        if (!SLNameEqSlice(c->src, f->nameStart, f->nameEnd, nameStart, nameEnd)) {
+        const HOPTCFunction* f = &c->funcs[i];
+        if (!HOPNameEqSlice(c->src, f->nameStart, f->nameEnd, nameStart, nameEnd)) {
             continue;
         }
-        if (f->contextType >= 0 || (f->flags & SLTCFunctionFlag_VARIADIC) != 0
+        if (f->contextType >= 0 || (f->flags & HOPTCFunctionFlag_VARIADIC) != 0
             || f->paramCount != argCount || f->defNode < 0)
         {
             continue;
@@ -6213,31 +6233,31 @@ int32_t SLTCFindConstCallableFunction(
     return found;
 }
 
-static int32_t SLTCFindPkgConstCallableFunction(
-    SLTypeCheckCtx* c,
-    uint32_t        pkgStart,
-    uint32_t        pkgEnd,
-    uint32_t        nameStart,
-    uint32_t        nameEnd,
-    uint32_t        argCount) {
-    int32_t  candidates[SLTC_MAX_CALL_CANDIDATES];
+static int32_t HOPTCFindPkgConstCallableFunction(
+    HOPTypeCheckCtx* c,
+    uint32_t         pkgStart,
+    uint32_t         pkgEnd,
+    uint32_t         nameStart,
+    uint32_t         nameEnd,
+    uint32_t         argCount) {
+    int32_t  candidates[HOPTC_MAX_CALL_CANDIDATES];
     uint32_t candidateCount = 0;
     int      nameFound = 0;
     uint32_t i;
     int32_t  found = -1;
-    SLTCGatherCallCandidatesByPkgMethod(
+    HOPTCGatherCallCandidatesByPkgMethod(
         c, pkgStart, pkgEnd, nameStart, nameEnd, candidates, &candidateCount, &nameFound);
     if (!nameFound) {
         return -1;
     }
     for (i = 0; i < candidateCount; i++) {
-        const SLTCFunction* f;
-        int32_t             fnIndex = candidates[i];
+        const HOPTCFunction* f;
+        int32_t              fnIndex = candidates[i];
         if (fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
             continue;
         }
         f = &c->funcs[(uint32_t)fnIndex];
-        if (f->contextType >= 0 || (f->flags & SLTCFunctionFlag_VARIADIC) != 0
+        if (f->contextType >= 0 || (f->flags & HOPTCFunctionFlag_VARIADIC) != 0
             || f->paramCount != argCount || f->defNode < 0)
         {
             continue;
@@ -6250,21 +6270,21 @@ static int32_t SLTCFindPkgConstCallableFunction(
     return found;
 }
 
-static int SLTCConstEvalPrepareInvokeCallContext(
-    SLTCConstEvalCtx* evalCtx,
-    int32_t           callNode,
-    int32_t           calleeNode,
-    int32_t           fnIndex,
-    SLTCCallArgInfo*  outCallArgs,
-    uint32_t*         outCallArgCount,
-    SLTCCallBinding*  outBinding,
-    uint32_t*         outPackParamNameStart,
-    uint32_t*         outPackParamNameEnd) {
-    SLTypeCheckCtx*     c;
-    const SLTCFunction* fn;
-    SLTCCallMapError    mapError;
-    uint32_t            paramStart;
-    uint32_t            argCount = 0;
+static int HOPTCConstEvalPrepareInvokeCallContext(
+    HOPTCConstEvalCtx* evalCtx,
+    int32_t            callNode,
+    int32_t            calleeNode,
+    int32_t            fnIndex,
+    HOPTCCallArgInfo*  outCallArgs,
+    uint32_t*          outCallArgCount,
+    HOPTCCallBinding*  outBinding,
+    uint32_t*          outPackParamNameStart,
+    uint32_t*          outPackParamNameEnd) {
+    HOPTypeCheckCtx*     c;
+    const HOPTCFunction* fn;
+    HOPTCCallMapError    mapError;
+    uint32_t             paramStart;
+    uint32_t             argCount = 0;
     if (outCallArgCount != NULL) {
         *outCallArgCount = 0;
     }
@@ -6286,11 +6306,12 @@ static int SLTCConstEvalPrepareInvokeCallContext(
     }
     fn = &c->funcs[(uint32_t)fnIndex];
     paramStart = fn->paramTypeStart;
-    if (SLTCCollectCallArgInfo(c, callNode, calleeNode, 0, -1, outCallArgs, NULL, &argCount) != 0) {
+    if (HOPTCCollectCallArgInfo(c, callNode, calleeNode, 0, -1, outCallArgs, NULL, &argCount) != 0)
+    {
         return -1;
     }
-    SLTCCallMapErrorClear(&mapError);
-    if (SLTCPrepareCallBinding(
+    HOPTCCallMapErrorClear(&mapError);
+    if (HOPTCPrepareCallBinding(
             c,
             outCallArgs,
             argCount,
@@ -6298,7 +6319,7 @@ static int SLTCConstEvalPrepareInvokeCallContext(
             &c->funcParamNameEnds[paramStart],
             &c->funcParamTypes[paramStart],
             fn->paramCount,
-            (fn->flags & SLTCFunctionFlag_VARIADIC) != 0,
+            (fn->flags & HOPTCFunctionFlag_VARIADIC) != 0,
             1,
             0,
             outBinding,
@@ -6308,7 +6329,7 @@ static int SLTCConstEvalPrepareInvokeCallContext(
         return 1;
     }
     *outCallArgCount = argCount;
-    if ((fn->flags & SLTCFunctionFlag_VARIADIC) != 0 && fn->paramCount > 0u) {
+    if ((fn->flags & HOPTCFunctionFlag_VARIADIC) != 0 && fn->paramCount > 0u) {
         if (outPackParamNameStart != NULL) {
             *outPackParamNameStart = c->funcParamNameStarts[paramStart + fn->paramCount - 1u];
         }
@@ -6319,43 +6340,43 @@ static int SLTCConstEvalPrepareInvokeCallContext(
     return 0;
 }
 
-static int SLTCInvokeConstFunctionByIndex(
-    SLTCConstEvalCtx* evalCtx,
-    uint32_t          nameStart,
-    uint32_t          nameEnd,
-    int32_t           fnIndex,
-    const SLCTFEValue* _Nullable args,
+static int HOPTCInvokeConstFunctionByIndex(
+    HOPTCConstEvalCtx* evalCtx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    int32_t            fnIndex,
+    const HOPCTFEValue* _Nullable args,
     uint32_t argCount,
-    const SLTCCallArgInfo* _Nullable callArgs,
+    const HOPTCCallArgInfo* _Nullable callArgs,
     uint32_t callArgCount,
-    const SLTCCallBinding* _Nullable callBinding,
-    uint32_t     callPackParamNameStart,
-    uint32_t     callPackParamNameEnd,
-    SLCTFEValue* outValue,
-    int*         outIsConst) {
-    SLTypeCheckCtx*    c;
-    int32_t            fnNode;
-    int32_t            bodyNode = -1;
-    int32_t            child;
-    uint32_t           paramCount = 0;
-    SLCTFEExecBinding* paramBindings = NULL;
-    SLCTFEExecEnv      paramFrame;
-    SLCTFEExecCtx      execCtx;
-    SLCTFEExecCtx*     savedExecCtx;
-    SLTCConstEvalCtx*  savedActiveConstEvalCtx;
-    const void*        savedCallArgs;
-    uint32_t           savedCallArgCount;
-    const void*        savedCallBinding;
-    uint32_t           savedCallPackParamNameStart;
-    uint32_t           savedCallPackParamNameEnd;
-    const SLCTFEValue* invokeArgs = args;
-    SLCTFEValue        reorderedArgs[SLTC_MAX_CALL_ARGS];
-    uint32_t           savedDepth;
-    SLCTFEValue        retValue;
-    int                didReturn = 0;
-    int                isConst = 0;
-    int                mirSupported = 0;
-    int                rc;
+    const HOPTCCallBinding* _Nullable callBinding,
+    uint32_t      callPackParamNameStart,
+    uint32_t      callPackParamNameEnd,
+    HOPCTFEValue* outValue,
+    int*          outIsConst) {
+    HOPTypeCheckCtx*    c;
+    int32_t             fnNode;
+    int32_t             bodyNode = -1;
+    int32_t             child;
+    uint32_t            paramCount = 0;
+    HOPCTFEExecBinding* paramBindings = NULL;
+    HOPCTFEExecEnv      paramFrame;
+    HOPCTFEExecCtx      execCtx;
+    HOPCTFEExecCtx*     savedExecCtx;
+    HOPTCConstEvalCtx*  savedActiveConstEvalCtx;
+    const void*         savedCallArgs;
+    uint32_t            savedCallArgCount;
+    const void*         savedCallBinding;
+    uint32_t            savedCallPackParamNameStart;
+    uint32_t            savedCallPackParamNameEnd;
+    const HOPCTFEValue* invokeArgs = args;
+    HOPCTFEValue        reorderedArgs[HOPTC_MAX_CALL_ARGS];
+    uint32_t            savedDepth;
+    HOPCTFEValue        retValue;
+    int                 didReturn = 0;
+    int                 isConst = 0;
+    int                 mirSupported = 0;
+    int                 rc;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -6364,53 +6385,53 @@ static int SLTCInvokeConstFunctionByIndex(
         return -1;
     }
 
-    SLTCMarkConstDiagFnInvoked(c, fnIndex);
+    HOPTCMarkConstDiagFnInvoked(c, fnIndex);
 
     for (savedDepth = 0; savedDepth < evalCtx->fnDepth; savedDepth++) {
         if (evalCtx->fnStack[savedDepth] == fnIndex) {
-            SLTCConstSetReason(
+            HOPTCConstSetReason(
                 evalCtx, nameStart, nameEnd, "recursive const function calls are not supported");
             *outIsConst = 0;
             return 0;
         }
     }
-    if (evalCtx->fnDepth >= SLTC_CONST_CALL_MAX_DEPTH) {
-        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "const-eval call depth limit exceeded");
+    if (evalCtx->fnDepth >= HOPTC_CONST_CALL_MAX_DEPTH) {
+        HOPTCConstSetReason(evalCtx, nameStart, nameEnd, "const-eval call depth limit exceeded");
         *outIsConst = 0;
         return 0;
     }
 
     fnNode = c->funcs[fnIndex].defNode;
-    if (fnNode < 0 || (uint32_t)fnNode >= c->ast->len || c->ast->nodes[fnNode].kind != SLAst_FN) {
-        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "call target has no const-evaluable body");
+    if (fnNode < 0 || (uint32_t)fnNode >= c->ast->len || c->ast->nodes[fnNode].kind != HOPAst_FN) {
+        HOPTCConstSetReason(evalCtx, nameStart, nameEnd, "call target has no const-evaluable body");
         *outIsConst = 0;
         return 0;
     }
 
-    child = SLAstFirstChild(c->ast, fnNode);
+    child = HOPAstFirstChild(c->ast, fnNode);
     while (child >= 0) {
-        const SLAstNode* n = &c->ast->nodes[child];
-        if (n->kind == SLAst_PARAM) {
+        const HOPAstNode* n = &c->ast->nodes[child];
+        if (n->kind == HOPAst_PARAM) {
             if (paramCount >= argCount) {
-                SLTCConstSetReasonNode(
+                HOPTCConstSetReasonNode(
                     evalCtx, fnNode, "function signature does not match const-eval call arguments");
                 *outIsConst = 0;
                 return 0;
             }
             paramCount++;
-        } else if (n->kind == SLAst_BLOCK) {
+        } else if (n->kind == HOPAst_BLOCK) {
             if (bodyNode >= 0) {
-                SLTCConstSetReasonNode(
+                HOPTCConstSetReasonNode(
                     evalCtx, fnNode, "function body shape is not const-evaluable");
                 *outIsConst = 0;
                 return 0;
             }
             bodyNode = child;
         }
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
     if (paramCount != argCount || bodyNode < 0) {
-        SLTCConstSetReasonNode(evalCtx, fnNode, "function body shape is not const-evaluable");
+        HOPTCConstSetReasonNode(evalCtx, fnNode, "function body shape is not const-evaluable");
         *outIsConst = 0;
         return 0;
     }
@@ -6418,9 +6439,9 @@ static int SLTCInvokeConstFunctionByIndex(
         return -1;
     }
     if (callBinding != NULL && argCount > 0) {
-        uint8_t  assigned[SLTC_MAX_CALL_ARGS];
+        uint8_t  assigned[HOPTC_MAX_CALL_ARGS];
         uint32_t i;
-        if (argCount > SLTC_MAX_CALL_ARGS || callBinding->fixedCount != argCount
+        if (argCount > HOPTC_MAX_CALL_ARGS || callBinding->fixedCount != argCount
             || callBinding->fixedInputCount != argCount
             || callBinding->spreadArgIndex != UINT32_MAX)
         {
@@ -6441,25 +6462,27 @@ static int SLTCInvokeConstFunctionByIndex(
     }
 
     if (argCount > 0) {
-        paramBindings = (SLCTFEExecBinding*)SLArenaAlloc(
-            c->arena, sizeof(SLCTFEExecBinding) * argCount, (uint32_t)_Alignof(SLCTFEExecBinding));
+        paramBindings = (HOPCTFEExecBinding*)HOPArenaAlloc(
+            c->arena,
+            sizeof(HOPCTFEExecBinding) * argCount,
+            (uint32_t)_Alignof(HOPCTFEExecBinding));
         if (paramBindings == NULL) {
-            return SLTCFailNode(c, fnNode, SLDiag_ARENA_OOM);
+            return HOPTCFailNode(c, fnNode, HOPDiag_ARENA_OOM);
         }
     }
     paramCount = 0;
-    child = SLAstFirstChild(c->ast, fnNode);
+    child = HOPAstFirstChild(c->ast, fnNode);
     while (child >= 0) {
-        const SLAstNode* n = &c->ast->nodes[child];
-        if (n->kind == SLAst_PARAM) {
+        const HOPAstNode* n = &c->ast->nodes[child];
+        if (n->kind == HOPAst_PARAM) {
             if (paramBindings == NULL) {
                 return -1;
             }
-            int32_t paramTypeNode = SLAstFirstChild(c->ast, child);
+            int32_t paramTypeNode = HOPAstFirstChild(c->ast, child);
             int32_t paramTypeId = -1;
             uint8_t savedAllowConstNumericTypeName = c->allowConstNumericTypeName;
             c->allowConstNumericTypeName = 1;
-            if (paramTypeNode < 0 || SLTCResolveTypeNode(c, paramTypeNode, &paramTypeId) != 0) {
+            if (paramTypeNode < 0 || HOPTCResolveTypeNode(c, paramTypeNode, &paramTypeId) != 0) {
                 c->allowConstNumericTypeName = savedAllowConstNumericTypeName;
                 return -1;
             }
@@ -6471,9 +6494,9 @@ static int SLTCInvokeConstFunctionByIndex(
             paramBindings[paramCount]._reserved[0] = 0;
             paramBindings[paramCount]._reserved[1] = 0;
             paramBindings[paramCount]._reserved[2] = 0;
-            if (c->types[paramTypeId].kind == SLTCType_OPTIONAL) {
-                SLCTFEValue wrapped;
-                if (invokeArgs[paramCount].kind == SLCTFEValue_OPTIONAL) {
+            if (c->types[paramTypeId].kind == HOPTCType_OPTIONAL) {
+                HOPCTFEValue wrapped;
+                if (invokeArgs[paramCount].kind == HOPCTFEValue_OPTIONAL) {
                     if (invokeArgs[paramCount].typeTag > 0
                         && invokeArgs[paramCount].typeTag <= (uint64_t)INT32_MAX
                         && (uint32_t)invokeArgs[paramCount].typeTag < c->typeLen
@@ -6481,27 +6504,27 @@ static int SLTCInvokeConstFunctionByIndex(
                     {
                         wrapped = invokeArgs[paramCount];
                     } else if (invokeArgs[paramCount].b == 0u) {
-                        if (SLTCConstEvalSetOptionalNoneValue(c, paramTypeId, &wrapped) != 0) {
+                        if (HOPTCConstEvalSetOptionalNoneValue(c, paramTypeId, &wrapped) != 0) {
                             return -1;
                         }
                     } else if (invokeArgs[paramCount].s.bytes == NULL) {
                         return -1;
                     } else if (
-                        SLTCConstEvalSetOptionalSomeValue(
+                        HOPTCConstEvalSetOptionalSomeValue(
                             c,
                             paramTypeId,
-                            (const SLCTFEValue*)invokeArgs[paramCount].s.bytes,
+                            (const HOPCTFEValue*)invokeArgs[paramCount].s.bytes,
                             &wrapped)
                         != 0)
                     {
                         return -1;
                     }
-                } else if (invokeArgs[paramCount].kind == SLCTFEValue_NULL) {
-                    if (SLTCConstEvalSetOptionalNoneValue(c, paramTypeId, &wrapped) != 0) {
+                } else if (invokeArgs[paramCount].kind == HOPCTFEValue_NULL) {
+                    if (HOPTCConstEvalSetOptionalNoneValue(c, paramTypeId, &wrapped) != 0) {
                         return -1;
                     }
                 } else if (
-                    SLTCConstEvalSetOptionalSomeValue(
+                    HOPTCConstEvalSetOptionalSomeValue(
                         c, paramTypeId, &invokeArgs[paramCount], &wrapped)
                     != 0)
                 {
@@ -6513,7 +6536,7 @@ static int SLTCInvokeConstFunctionByIndex(
             }
             paramCount++;
         }
-        child = SLAstNextSibling(c->ast, child);
+        child = HOPAstNextSibling(c->ast, child);
     }
 
     savedExecCtx = evalCtx->execCtx;
@@ -6534,21 +6557,21 @@ static int SLTCInvokeConstFunctionByIndex(
     execCtx.src = c->src;
     execCtx.diag = c->diag;
     execCtx.env = &paramFrame;
-    execCtx.evalExpr = SLTCEvalConstExecExprCb;
+    execCtx.evalExpr = HOPTCEvalConstExecExprCb;
     execCtx.evalExprCtx = evalCtx;
-    execCtx.resolveType = SLTCEvalConstExecResolveTypeCb;
+    execCtx.resolveType = HOPTCEvalConstExecResolveTypeCb;
     execCtx.resolveTypeCtx = evalCtx;
-    execCtx.inferValueType = SLTCEvalConstExecInferValueTypeCb;
+    execCtx.inferValueType = HOPTCEvalConstExecInferValueTypeCb;
     execCtx.inferValueTypeCtx = evalCtx;
-    execCtx.inferExprType = SLTCEvalConstExecInferExprTypeCb;
+    execCtx.inferExprType = HOPTCEvalConstExecInferExprTypeCb;
     execCtx.inferExprTypeCtx = evalCtx;
-    execCtx.isOptionalType = SLTCEvalConstExecIsOptionalTypeCb;
+    execCtx.isOptionalType = HOPTCEvalConstExecIsOptionalTypeCb;
     execCtx.isOptionalTypeCtx = evalCtx;
-    execCtx.forInIndex = SLTCEvalConstForInIndexCb;
+    execCtx.forInIndex = HOPTCEvalConstForInIndexCb;
     execCtx.forInIndexCtx = evalCtx;
     execCtx.pendingReturnExprNode = -1;
-    execCtx.forIterLimit = SLTC_CONST_FOR_MAX_ITERS;
-    SLCTFEExecResetReason(&execCtx);
+    execCtx.forIterLimit = HOPTC_CONST_FOR_MAX_ITERS;
+    HOPCTFEExecResetReason(&execCtx);
     evalCtx->execCtx = &execCtx;
     evalCtx->fnStack[evalCtx->fnDepth++] = fnIndex;
     evalCtx->callArgs = callArgs;
@@ -6562,7 +6585,7 @@ static int SLTCInvokeConstFunctionByIndex(
     c->activeConstEvalCtx = evalCtx;
 
     if (c->funcs[fnIndex].returnType == c->typeType) {
-        rc = SLTCConstEvalTryDirectReturnFunction(evalCtx, bodyNode, &retValue, &isConst);
+        rc = HOPTCConstEvalTryDirectReturnFunction(evalCtx, bodyNode, &retValue, &isConst);
         if (rc <= 0) {
             evalCtx->fnDepth = savedDepth;
             evalCtx->execCtx = savedExecCtx;
@@ -6581,7 +6604,7 @@ static int SLTCInvokeConstFunctionByIndex(
         }
     }
 
-    rc = SLTCTryMirConstCall(
+    rc = HOPTCTryMirConstCall(
         evalCtx, fnIndex, invokeArgs, argCount, &retValue, &didReturn, &isConst, &mirSupported);
     evalCtx->fnDepth = savedDepth;
     evalCtx->execCtx = savedExecCtx;
@@ -6596,14 +6619,14 @@ static int SLTCInvokeConstFunctionByIndex(
     }
     if (!mirSupported || !isConst) {
         if (evalCtx->nonConstReason == NULL) {
-            SLTCConstSetReasonNode(evalCtx, bodyNode, "function body is not const-evaluable");
+            HOPTCConstSetReasonNode(evalCtx, bodyNode, "function body is not const-evaluable");
         }
         *outIsConst = 0;
         return 0;
     }
     if (!didReturn) {
         if (c->funcs[fnIndex].returnType == c->typeVoid) {
-            SLTCConstEvalSetNullValue(outValue);
+            HOPTCConstEvalSetNullValue(outValue);
             *outIsConst = 1;
             return 0;
         }
@@ -6612,43 +6635,43 @@ static int SLTCInvokeConstFunctionByIndex(
             evalCtx->nonConstStart = execCtx.nonConstStart;
             evalCtx->nonConstEnd = execCtx.nonConstEnd;
         }
-        SLTCConstSetReasonNode(
+        HOPTCConstSetReasonNode(
             evalCtx, bodyNode, "const-evaluable function must produce a const return value");
         *outIsConst = 0;
         return 0;
     }
     if (fnIndex >= 0 && (uint32_t)fnIndex < c->funcLen) {
         int32_t returnTypeId = c->funcs[fnIndex].returnType;
-        int32_t returnBaseTypeId = SLTCResolveAliasBaseType(c, returnTypeId);
+        int32_t returnBaseTypeId = HOPTCResolveAliasBaseType(c, returnTypeId);
         if (returnBaseTypeId >= 0 && (uint32_t)returnBaseTypeId < c->typeLen
-            && c->types[returnBaseTypeId].kind == SLTCType_OPTIONAL)
+            && c->types[returnBaseTypeId].kind == HOPTCType_OPTIONAL)
         {
-            SLCTFEValue wrapped;
-            if (retValue.kind == SLCTFEValue_OPTIONAL) {
+            HOPCTFEValue wrapped;
+            if (retValue.kind == HOPCTFEValue_OPTIONAL) {
                 if (retValue.typeTag > 0 && retValue.typeTag <= (uint64_t)INT32_MAX
                     && (uint32_t)retValue.typeTag < c->typeLen
                     && (int32_t)retValue.typeTag == returnBaseTypeId)
                 {
                     wrapped = retValue;
                 } else if (retValue.b == 0u) {
-                    if (SLTCConstEvalSetOptionalNoneValue(c, returnBaseTypeId, &wrapped) != 0) {
+                    if (HOPTCConstEvalSetOptionalNoneValue(c, returnBaseTypeId, &wrapped) != 0) {
                         return -1;
                     }
                 } else if (retValue.s.bytes == NULL) {
                     return -1;
                 } else if (
-                    SLTCConstEvalSetOptionalSomeValue(
-                        c, returnBaseTypeId, (const SLCTFEValue*)retValue.s.bytes, &wrapped)
+                    HOPTCConstEvalSetOptionalSomeValue(
+                        c, returnBaseTypeId, (const HOPCTFEValue*)retValue.s.bytes, &wrapped)
                     != 0)
                 {
                     return -1;
                 }
-            } else if (retValue.kind == SLCTFEValue_NULL) {
-                if (SLTCConstEvalSetOptionalNoneValue(c, returnBaseTypeId, &wrapped) != 0) {
+            } else if (retValue.kind == HOPCTFEValue_NULL) {
+                if (HOPTCConstEvalSetOptionalNoneValue(c, returnBaseTypeId, &wrapped) != 0) {
                     return -1;
                 }
             } else if (
-                SLTCConstEvalSetOptionalSomeValue(c, returnBaseTypeId, &retValue, &wrapped) != 0)
+                HOPTCConstEvalSetOptionalSomeValue(c, returnBaseTypeId, &retValue, &wrapped) != 0)
             {
                 return -1;
             }
@@ -6660,29 +6683,29 @@ static int SLTCInvokeConstFunctionByIndex(
     return 0;
 }
 
-int SLTCResolveConstCallMir(
+int HOPTCResolveConstCallMir(
     void* _Nullable ctx,
-    const SLMirProgram* _Nullable program,
-    const SLMirFunction* _Nullable function,
-    const SLMirInst* _Nullable inst,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
-    const SLCTFEValue* args,
-    uint32_t           argCount,
-    SLCTFEValue*       outValue,
-    int*               outIsConst,
-    SLDiag* _Nullable diag) {
-    SLTCConstEvalCtx* evalCtx = (SLTCConstEvalCtx*)ctx;
-    SLTypeCheckCtx*   c;
-    int32_t           callNode = -1;
-    int32_t           callCalleeNode = -1;
-    int32_t           fnIndex;
-    SLTCCallArgInfo   invokeCallArgs[SLTC_MAX_CALL_ARGS];
-    SLTCCallBinding   invokeBinding;
-    uint32_t          invokeCallArgCount = 0;
-    uint32_t          invokePackParamNameStart = 0;
-    uint32_t          invokePackParamNameEnd = 0;
-    int               invokeHasCallContext = 0;
+    const HOPMirProgram* _Nullable program,
+    const HOPMirFunction* _Nullable function,
+    const HOPMirInst* _Nullable inst,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    const HOPCTFEValue* args,
+    uint32_t            argCount,
+    HOPCTFEValue*       outValue,
+    int*                outIsConst,
+    HOPDiag* _Nullable diag) {
+    HOPTCConstEvalCtx* evalCtx = (HOPTCConstEvalCtx*)ctx;
+    HOPTypeCheckCtx*   c;
+    int32_t            callNode = -1;
+    int32_t            callCalleeNode = -1;
+    int32_t            fnIndex;
+    HOPTCCallArgInfo   invokeCallArgs[HOPTC_MAX_CALL_ARGS];
+    HOPTCCallBinding   invokeBinding;
+    uint32_t           invokeCallArgCount = 0;
+    uint32_t           invokePackParamNameStart = 0;
+    uint32_t           invokePackParamNameEnd = 0;
+    int                invokeHasCallContext = 0;
 
     (void)function;
     (void)diag;
@@ -6693,32 +6716,32 @@ int SLTCResolveConstCallMir(
     if (c == NULL) {
         return -1;
     }
-    if (SLTCMirConstResolveCallNode(evalCtx, program, inst, &callNode)) {
+    if (HOPTCMirConstResolveCallNode(evalCtx, program, inst, &callNode)) {
         if (callNode >= 0 && (uint32_t)callNode < c->ast->len) {
-            callCalleeNode = SLAstFirstChild(c->ast, callNode);
+            callCalleeNode = HOPAstFirstChild(c->ast, callNode);
         }
-        int status = SLTCConstEvalLenCall(evalCtx, callNode, outValue, outIsConst);
+        int status = HOPTCConstEvalLenCall(evalCtx, callNode, outValue, outIsConst);
         if (status == 0) {
             return 0;
         }
         if (status < 0) {
             return -1;
         }
-        status = SLTCConstEvalCompilerDiagCall(evalCtx, callNode, outValue, outIsConst);
+        status = HOPTCConstEvalCompilerDiagCall(evalCtx, callNode, outValue, outIsConst);
         if (status == 0) {
             return 0;
         }
         if (status < 0) {
             return -1;
         }
-        status = SLTCConstEvalSourceLocationOfCall(evalCtx, callNode, outValue, outIsConst);
+        status = HOPTCConstEvalSourceLocationOfCall(evalCtx, callNode, outValue, outIsConst);
         if (status == 0) {
             return 0;
         }
         if (status < 0) {
             return -1;
         }
-        status = SLTCConstEvalTypeReflectionCall(evalCtx, callNode, outValue, outIsConst);
+        status = HOPTCConstEvalTypeReflectionCall(evalCtx, callNode, outValue, outIsConst);
         if (status == 0) {
             return 0;
         }
@@ -6726,15 +6749,15 @@ int SLTCResolveConstCallMir(
             return -1;
         }
         if (callNode >= 0) {
-            int32_t calleeNode = SLAstFirstChild(c->ast, callNode);
-            if (calleeNode >= 0 && c->ast->nodes[calleeNode].kind == SLAst_IDENT
-                && SLNameEqLiteral(
+            int32_t calleeNode = HOPAstFirstChild(c->ast, callNode);
+            if (calleeNode >= 0 && c->ast->nodes[calleeNode].kind == HOPAst_IDENT
+                && HOPNameEqLiteral(
                     c->src,
                     c->ast->nodes[calleeNode].dataStart,
                     c->ast->nodes[calleeNode].dataEnd,
                     "typeof"))
             {
-                int32_t argNode = SLAstNextSibling(c->ast, calleeNode);
+                int32_t argNode = HOPAstNextSibling(c->ast, calleeNode);
                 int32_t argExprNode = argNode;
                 if (argCount == 1u) {
                     int      isCurrentPackIndexExpr = 0;
@@ -6742,21 +6765,21 @@ int SLTCResolveConstCallMir(
                     int32_t  argTypeId = -1;
                     int      packStatus = -1;
                     if (argExprNode >= 0 && (uint32_t)argExprNode < c->ast->len
-                        && c->ast->nodes[argExprNode].kind == SLAst_CALL_ARG)
+                        && c->ast->nodes[argExprNode].kind == HOPAst_CALL_ARG)
                     {
-                        int32_t innerArgExprNode = SLAstFirstChild(c->ast, argExprNode);
+                        int32_t innerArgExprNode = HOPAstFirstChild(c->ast, argExprNode);
                         if (innerArgExprNode >= 0) {
                             argExprNode = innerArgExprNode;
                         }
                     }
                     if (argExprNode >= 0 && (uint32_t)argExprNode < c->ast->len
-                        && c->ast->nodes[argExprNode].kind == SLAst_INDEX
-                        && (c->ast->nodes[argExprNode].flags & SLAstFlag_INDEX_SLICE) == 0u)
+                        && c->ast->nodes[argExprNode].kind == HOPAst_INDEX
+                        && (c->ast->nodes[argExprNode].flags & HOPAstFlag_INDEX_SLICE) == 0u)
                     {
-                        int32_t baseNode = SLAstFirstChild(c->ast, argExprNode);
+                        int32_t baseNode = HOPAstFirstChild(c->ast, argExprNode);
                         if (baseNode >= 0 && (uint32_t)baseNode < c->ast->len
-                            && c->ast->nodes[baseNode].kind == SLAst_IDENT
-                            && SLTCConstEvalIsTrackedAnyPackName(
+                            && c->ast->nodes[baseNode].kind == HOPAst_IDENT
+                            && HOPTCConstEvalIsTrackedAnyPackName(
                                 evalCtx,
                                 c->ast->nodes[baseNode].dataStart,
                                 c->ast->nodes[baseNode].dataEnd))
@@ -6765,22 +6788,22 @@ int SLTCResolveConstCallMir(
                         }
                     }
                     if (isCurrentPackIndexExpr) {
-                        return SLTCConstEvalTypeOf(evalCtx, callNode, outValue, outIsConst);
+                        return HOPTCConstEvalTypeOf(evalCtx, callNode, outValue, outIsConst);
                     }
-                    packStatus = SLTCConstEvalResolveTrackedAnyPackArgIndex(
+                    packStatus = HOPTCConstEvalResolveTrackedAnyPackArgIndex(
                         evalCtx, argExprNode, &trackedAnyPackArgIndex);
                     if (packStatus < 0) {
                         return -1;
                     }
                     if (packStatus == 0 || packStatus == 2 || packStatus == 3) {
-                        return SLTCConstEvalTypeOf(evalCtx, callNode, outValue, outIsConst);
+                        return HOPTCConstEvalTypeOf(evalCtx, callNode, outValue, outIsConst);
                     }
-                    if (SLTCEvalConstExecInferValueTypeCb(evalCtx, &args[0], &argTypeId) == 0) {
-                        outValue->kind = SLCTFEValue_TYPE;
+                    if (HOPTCEvalConstExecInferValueTypeCb(evalCtx, &args[0], &argTypeId) == 0) {
+                        outValue->kind = HOPCTFEValue_TYPE;
                         outValue->i64 = 0;
                         outValue->f64 = 0.0;
                         outValue->b = 0;
-                        outValue->typeTag = SLTCEncodeTypeTag(c, argTypeId);
+                        outValue->typeTag = HOPTCEncodeTypeTag(c, argTypeId);
                         outValue->s.bytes = NULL;
                         outValue->s.len = 0;
                         outValue->span.fileBytes = NULL;
@@ -6793,25 +6816,25 @@ int SLTCResolveConstCallMir(
                         return 0;
                     }
                 }
-                return SLTCConstEvalTypeOf(evalCtx, callNode, outValue, outIsConst);
+                return HOPTCConstEvalTypeOf(evalCtx, callNode, outValue, outIsConst);
             }
         }
     }
 
-    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "typeof")) {
+    if (HOPNameEqLiteral(c->src, nameStart, nameEnd, "typeof")) {
         if (argCount == 1u) {
             int32_t argTypeId = -1;
-            if (SLTCEvalConstExecInferValueTypeCb(evalCtx, &args[0], &argTypeId) == 0) {
+            if (HOPTCEvalConstExecInferValueTypeCb(evalCtx, &args[0], &argTypeId) == 0) {
                 if ((argTypeId == c->typeUntypedInt || argTypeId == c->typeUntypedFloat)
-                    && SLTCConcretizeInferredType(c, argTypeId, &argTypeId) != 0)
+                    && HOPTCConcretizeInferredType(c, argTypeId, &argTypeId) != 0)
                 {
                     return -1;
                 }
-                outValue->kind = SLCTFEValue_TYPE;
+                outValue->kind = HOPCTFEValue_TYPE;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
                 outValue->b = 0;
-                outValue->typeTag = SLTCEncodeTypeTag(c, argTypeId);
+                outValue->typeTag = HOPTCEncodeTypeTag(c, argTypeId);
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
                 outValue->span.fileBytes = NULL;
@@ -6824,13 +6847,13 @@ int SLTCResolveConstCallMir(
                 return 0;
             }
         }
-        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "typeof() operand is not const-evaluable");
+        HOPTCConstSetReason(evalCtx, nameStart, nameEnd, "typeof() operand is not const-evaluable");
         *outIsConst = 0;
         return 0;
     }
 
     {
-        int reflectArgStatus = SLTCConstEvalTypeReflectionByArgs(
+        int reflectArgStatus = HOPTCConstEvalTypeReflectionByArgs(
             evalCtx, nameStart, nameEnd, args, argCount, outValue, outIsConst);
         if (reflectArgStatus == 0) {
             return 0;
@@ -6840,8 +6863,8 @@ int SLTCResolveConstCallMir(
         }
     }
 
-    if (args != NULL && argCount > 0 && args[0].kind == SLCTFEValue_SPAN
-        && args[0].typeTag == SL_TC_MIR_IMPORT_ALIAS_TAG && args[0].span.fileBytes != NULL
+    if (args != NULL && argCount > 0 && args[0].kind == HOPCTFEValue_SPAN
+        && args[0].typeTag == HOP_TC_MIR_IMPORT_ALIAS_TAG && args[0].span.fileBytes != NULL
         && args[0].span.fileLen > 0)
     {
         const uint8_t* srcBytes = (const uint8_t*)c->src.ptr;
@@ -6852,10 +6875,10 @@ int SLTCResolveConstCallMir(
             aliasStart = (uint32_t)(aliasPtr - srcBytes);
             aliasEnd = aliasStart + args[0].span.fileLen;
             if (aliasEnd <= c->src.len) {
-                fnIndex = SLTCFindPkgConstCallableFunction(
+                fnIndex = HOPTCFindPkgConstCallableFunction(
                     c, aliasStart, aliasEnd, nameStart, nameEnd, argCount - 1u);
                 if (fnIndex >= 0) {
-                    return SLTCInvokeConstFunctionByIndex(
+                    return HOPTCInvokeConstFunctionByIndex(
                         evalCtx,
                         nameStart,
                         nameEnd,
@@ -6875,24 +6898,24 @@ int SLTCResolveConstCallMir(
     }
 
     {
-        SLCTFEValue calleeValue;
-        int         calleeIsConst = 0;
-        uint32_t    calleeFnIndex = UINT32_MAX;
-        const char* savedReason = evalCtx->nonConstReason;
-        uint32_t    savedStart = evalCtx->nonConstStart;
-        uint32_t    savedEnd = evalCtx->nonConstEnd;
-        if (SLTCResolveConstIdent(
+        HOPCTFEValue calleeValue;
+        int          calleeIsConst = 0;
+        uint32_t     calleeFnIndex = UINT32_MAX;
+        const char*  savedReason = evalCtx->nonConstReason;
+        uint32_t     savedStart = evalCtx->nonConstStart;
+        uint32_t     savedEnd = evalCtx->nonConstEnd;
+        if (HOPTCResolveConstIdent(
                 evalCtx, nameStart, nameEnd, &calleeValue, &calleeIsConst, c->diag)
             != 0)
         {
             return -1;
         }
-        if (calleeIsConst && SLMirValueAsFunctionRef(&calleeValue, &calleeFnIndex)
+        if (calleeIsConst && HOPMirValueAsFunctionRef(&calleeValue, &calleeFnIndex)
             && calleeFnIndex < c->funcLen)
         {
-            const SLTCFunction* fn = &c->funcs[calleeFnIndex];
+            const HOPTCFunction* fn = &c->funcs[calleeFnIndex];
             if (callNode >= 0 && callCalleeNode >= 0
-                && SLTCConstEvalPrepareInvokeCallContext(
+                && HOPTCConstEvalPrepareInvokeCallContext(
                        evalCtx,
                        callNode,
                        callCalleeNode,
@@ -6906,7 +6929,7 @@ int SLTCResolveConstCallMir(
             {
                 invokeHasCallContext = 1;
             }
-            return SLTCInvokeConstFunctionByIndex(
+            return HOPTCInvokeConstFunctionByIndex(
                 evalCtx,
                 fn->nameStart,
                 fn->nameEnd,
@@ -6926,10 +6949,10 @@ int SLTCResolveConstCallMir(
         evalCtx->nonConstEnd = savedEnd;
     }
 
-    if (SLNameEqLiteral(c->src, nameStart, nameEnd, "len")) {
+    if (HOPNameEqLiteral(c->src, nameStart, nameEnd, "len")) {
         if (argCount == 1u) {
-            if (args[0].kind == SLCTFEValue_STRING) {
-                outValue->kind = SLCTFEValue_INT;
+            if (args[0].kind == HOPCTFEValue_STRING) {
+                outValue->kind = HOPCTFEValue_INT;
                 outValue->i64 = (int64_t)args[0].s.len;
                 outValue->f64 = 0.0;
                 outValue->b = 0;
@@ -6945,15 +6968,15 @@ int SLTCResolveConstCallMir(
                 *outIsConst = 1;
                 return 0;
             }
-            if (args[0].kind == SLCTFEValue_TYPE) {
+            if (args[0].kind == HOPCTFEValue_TYPE) {
                 int32_t typeId = -1;
                 int32_t baseType;
-                if (SLTCDecodeTypeTag(c, args[0].typeTag, &typeId) == 0) {
-                    baseType = SLTCResolveAliasBaseType(c, typeId);
+                if (HOPTCDecodeTypeTag(c, args[0].typeTag, &typeId) == 0) {
+                    baseType = HOPTCResolveAliasBaseType(c, typeId);
                     if (baseType >= 0 && (uint32_t)baseType < c->typeLen) {
-                        const SLTCType* t = &c->types[baseType];
-                        if (t->kind == SLTCType_PACK) {
-                            outValue->kind = SLCTFEValue_INT;
+                        const HOPTCType* t = &c->types[baseType];
+                        if (t->kind == HOPTCType_PACK) {
+                            outValue->kind = HOPCTFEValue_INT;
                             outValue->i64 = (int64_t)t->fieldCount;
                             outValue->f64 = 0.0;
                             outValue->b = 0;
@@ -6969,8 +6992,8 @@ int SLTCResolveConstCallMir(
                             *outIsConst = 1;
                             return 0;
                         }
-                        if (t->kind == SLTCType_ARRAY) {
-                            outValue->kind = SLCTFEValue_INT;
+                        if (t->kind == HOPTCType_ARRAY) {
+                            outValue->kind = HOPCTFEValue_INT;
                             outValue->i64 = (int64_t)t->arrayLen;
                             outValue->f64 = 0.0;
                             outValue->b = 0;
@@ -6990,14 +7013,14 @@ int SLTCResolveConstCallMir(
                 }
             }
         }
-        SLTCConstSetReason(evalCtx, nameStart, nameEnd, "len() operand is not const-evaluable");
+        HOPTCConstSetReason(evalCtx, nameStart, nameEnd, "len() operand is not const-evaluable");
         *outIsConst = 0;
         return 0;
     }
 
-    fnIndex = SLTCFindConstCallableFunction(c, nameStart, nameEnd, argCount);
+    fnIndex = HOPTCFindConstCallableFunction(c, nameStart, nameEnd, argCount);
     if (fnIndex < 0) {
-        SLTCConstSetReason(
+        HOPTCConstSetReason(
             evalCtx,
             nameStart,
             nameEnd,
@@ -7006,7 +7029,7 @@ int SLTCResolveConstCallMir(
         return 0;
     }
     if (callNode >= 0 && callCalleeNode >= 0
-        && SLTCConstEvalPrepareInvokeCallContext(
+        && HOPTCConstEvalPrepareInvokeCallContext(
                evalCtx,
                callNode,
                callCalleeNode,
@@ -7020,7 +7043,7 @@ int SLTCResolveConstCallMir(
     {
         invokeHasCallContext = 1;
     }
-    return SLTCInvokeConstFunctionByIndex(
+    return HOPTCInvokeConstFunctionByIndex(
         evalCtx,
         nameStart,
         nameEnd,
@@ -7036,37 +7059,37 @@ int SLTCResolveConstCallMir(
         outIsConst);
 }
 
-int SLTCResolveConstCall(
+int HOPTCResolveConstCall(
     void*    ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const SLCTFEValue* _Nullable args,
-    uint32_t     argCount,
-    SLCTFEValue* outValue,
-    int*         outIsConst,
-    SLDiag* _Nullable diag) {
-    return SLTCResolveConstCallMir(
+    const HOPCTFEValue* _Nullable args,
+    uint32_t      argCount,
+    HOPCTFEValue* outValue,
+    int*          outIsConst,
+    HOPDiag* _Nullable diag) {
+    return HOPTCResolveConstCallMir(
         ctx, NULL, NULL, NULL, nameStart, nameEnd, args, argCount, outValue, outIsConst, diag);
 }
 
-static int SLTCConstEvalDirectCall(
-    SLTCConstEvalCtx* evalCtx, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
-    SLTypeCheckCtx*  c;
-    int32_t          calleeNode;
-    const SLAstNode* callee;
-    SLCTFEValue      calleeValue;
-    int              calleeIsConst = 0;
-    uint32_t         calleeFnIndex = UINT32_MAX;
-    int32_t          argNode;
-    uint32_t         argCount = 0;
-    uint32_t         argIndex = 0;
-    SLCTFEValue*     argValues = NULL;
-    SLTCCallArgInfo  invokeCallArgs[SLTC_MAX_CALL_ARGS];
-    SLTCCallBinding  invokeBinding;
-    uint32_t         invokeCallArgCount = 0;
-    uint32_t         invokePackParamNameStart = 0;
-    uint32_t         invokePackParamNameEnd = 0;
-    int              invokeHasCallContext = 0;
+static int HOPTCConstEvalDirectCall(
+    HOPTCConstEvalCtx* evalCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
+    HOPTypeCheckCtx*  c;
+    int32_t           calleeNode;
+    const HOPAstNode* callee;
+    HOPCTFEValue      calleeValue;
+    int               calleeIsConst = 0;
+    uint32_t          calleeFnIndex = UINT32_MAX;
+    int32_t           argNode;
+    uint32_t          argCount = 0;
+    uint32_t          argIndex = 0;
+    HOPCTFEValue*     argValues = NULL;
+    HOPTCCallArgInfo  invokeCallArgs[HOPTC_MAX_CALL_ARGS];
+    HOPTCCallBinding  invokeBinding;
+    uint32_t          invokeCallArgCount = 0;
+    uint32_t          invokePackParamNameStart = 0;
+    uint32_t          invokePackParamNameEnd = 0;
+    int               invokeHasCallContext = 0;
     if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -7074,39 +7097,39 @@ static int SLTCConstEvalDirectCall(
     if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return -1;
     }
-    calleeNode = SLAstFirstChild(c->ast, exprNode);
+    calleeNode = HOPAstFirstChild(c->ast, exprNode);
     callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
-    if (callee == NULL || callee->kind != SLAst_IDENT) {
+    if (callee == NULL || callee->kind != HOPAst_IDENT) {
         return 1;
     }
 
-    argNode = SLAstNextSibling(c->ast, calleeNode);
+    argNode = HOPAstNextSibling(c->ast, calleeNode);
     while (argNode >= 0) {
         argCount++;
-        argNode = SLAstNextSibling(c->ast, argNode);
+        argNode = HOPAstNextSibling(c->ast, argNode);
     }
     if (argCount > 0) {
-        argValues = (SLCTFEValue*)SLArenaAlloc(
-            c->arena, sizeof(SLCTFEValue) * argCount, (uint32_t)_Alignof(SLCTFEValue));
+        argValues = (HOPCTFEValue*)HOPArenaAlloc(
+            c->arena, sizeof(HOPCTFEValue) * argCount, (uint32_t)_Alignof(HOPCTFEValue));
         if (argValues == NULL) {
-            return SLTCFailNode(c, exprNode, SLDiag_ARENA_OOM);
+            return HOPTCFailNode(c, exprNode, HOPDiag_ARENA_OOM);
         }
     }
 
-    argNode = SLAstNextSibling(c->ast, calleeNode);
+    argNode = HOPAstNextSibling(c->ast, calleeNode);
     while (argNode >= 0) {
         int32_t exprArgNode = argNode;
         int     argIsConst = 0;
         if (argIndex >= argCount) {
             return -1;
         }
-        if (c->ast->nodes[argNode].kind == SLAst_CALL_ARG) {
-            exprArgNode = SLAstFirstChild(c->ast, argNode);
+        if (c->ast->nodes[argNode].kind == HOPAst_CALL_ARG) {
+            exprArgNode = HOPAstFirstChild(c->ast, argNode);
             if (exprArgNode < 0) {
                 return -1;
             }
         }
-        if (SLTCEvalConstExprNode(evalCtx, exprArgNode, &argValues[argIndex], &argIsConst) != 0) {
+        if (HOPTCEvalConstExprNode(evalCtx, exprArgNode, &argValues[argIndex], &argIsConst) != 0) {
             return -1;
         }
         if (!argIsConst) {
@@ -7114,20 +7137,20 @@ static int SLTCConstEvalDirectCall(
             return 0;
         }
         argIndex++;
-        argNode = SLAstNextSibling(c->ast, argNode);
+        argNode = HOPAstNextSibling(c->ast, argNode);
     }
 
-    if (SLTCResolveConstIdent(
+    if (HOPTCResolveConstIdent(
             evalCtx, callee->dataStart, callee->dataEnd, &calleeValue, &calleeIsConst, c->diag)
         != 0)
     {
         return -1;
     }
-    if (calleeIsConst && SLMirValueAsFunctionRef(&calleeValue, &calleeFnIndex)
+    if (calleeIsConst && HOPMirValueAsFunctionRef(&calleeValue, &calleeFnIndex)
         && calleeFnIndex < c->funcLen)
     {
-        const SLTCFunction* fn = &c->funcs[calleeFnIndex];
-        if (SLTCConstEvalPrepareInvokeCallContext(
+        const HOPTCFunction* fn = &c->funcs[calleeFnIndex];
+        if (HOPTCConstEvalPrepareInvokeCallContext(
                 evalCtx,
                 exprNode,
                 calleeNode,
@@ -7141,7 +7164,7 @@ static int SLTCConstEvalDirectCall(
         {
             invokeHasCallContext = 1;
         }
-        return SLTCInvokeConstFunctionByIndex(
+        return HOPTCInvokeConstFunctionByIndex(
             evalCtx,
             fn->nameStart,
             fn->nameEnd,
@@ -7157,7 +7180,7 @@ static int SLTCConstEvalDirectCall(
             outIsConst);
     }
 
-    return SLTCResolveConstCall(
+    return HOPTCResolveConstCall(
         evalCtx,
         callee->dataStart,
         callee->dataEnd,
@@ -7168,18 +7191,18 @@ static int SLTCConstEvalDirectCall(
         c->diag);
 }
 
-int SLTCEvalTopLevelConstNodeAt(
-    SLTypeCheckCtx*   c,
-    SLTCConstEvalCtx* evalCtx,
-    int32_t           nodeId,
-    int32_t           nameIndex,
-    SLCTFEValue*      outValue,
-    int*              outIsConst) {
-    uint8_t          state;
-    int32_t          initNode;
-    int              isConst = 0;
-    int              mirSupported = 0;
-    SLTCVarLikeParts parts;
+int HOPTCEvalTopLevelConstNodeAt(
+    HOPTypeCheckCtx*   c,
+    HOPTCConstEvalCtx* evalCtx,
+    int32_t            nodeId,
+    int32_t            nameIndex,
+    HOPCTFEValue*      outValue,
+    int*               outIsConst) {
+    uint8_t           state;
+    int32_t           initNode;
+    int               isConst = 0;
+    int               mirSupported = 0;
+    HOPTCVarLikeParts parts;
     if (c == NULL || evalCtx == NULL || outValue == NULL || outIsConst == NULL || nodeId < 0
         || (uint32_t)nodeId >= c->ast->len)
     {
@@ -7189,7 +7212,7 @@ int SLTCEvalTopLevelConstNodeAt(
         *outIsConst = 0;
         return 0;
     }
-    if (SLTCVarLikeGetParts(c, nodeId, &parts) != 0 || parts.nameCount == 0 || nameIndex < 0
+    if (HOPTCVarLikeGetParts(c, nodeId, &parts) != 0 || parts.nameCount == 0 || nameIndex < 0
         || (uint32_t)nameIndex >= parts.nameCount)
     {
         *outIsConst = 0;
@@ -7197,95 +7220,96 @@ int SLTCEvalTopLevelConstNodeAt(
     }
 
     state = c->constEvalState[nodeId];
-    if (state == SLTCConstEval_READY) {
+    if (state == HOPTCConstEval_READY) {
         *outValue = c->constEvalValues[nodeId];
         *outIsConst = 1;
         return 0;
     }
-    if (state == SLTCConstEval_NONCONST || state == SLTCConstEval_VISITING) {
-        if (state == SLTCConstEval_VISITING) {
-            SLTCConstSetReasonNode(
+    if (state == HOPTCConstEval_NONCONST || state == HOPTCConstEval_VISITING) {
+        if (state == HOPTCConstEval_VISITING) {
+            HOPTCConstSetReasonNode(
                 evalCtx, nodeId, "cyclic const dependency is not supported in const evaluation");
         }
         *outIsConst = 0;
         return 0;
     }
 
-    c->constEvalState[nodeId] = SLTCConstEval_VISITING;
-    initNode = SLTCVarLikeInitExprNodeAt(c, nodeId, nameIndex);
+    c->constEvalState[nodeId] = HOPTCConstEval_VISITING;
+    initNode = HOPTCVarLikeInitExprNodeAt(c, nodeId, nameIndex);
     if (initNode < 0) {
-        if (SLTCHasForeignImportDirective(c->ast, c->src, nodeId)) {
-            c->constEvalState[nodeId] = SLTCConstEval_NONCONST;
+        if (HOPTCHasForeignImportDirective(c->ast, c->src, nodeId)) {
+            c->constEvalState[nodeId] = HOPTCConstEval_NONCONST;
             *outIsConst = 0;
             return 0;
         }
-        SLTCConstSetReasonNode(evalCtx, nodeId, "const declaration is missing an initializer");
-        c->constEvalState[nodeId] = SLTCConstEval_NONCONST;
+        HOPTCConstSetReasonNode(evalCtx, nodeId, "const declaration is missing an initializer");
+        c->constEvalState[nodeId] = HOPTCConstEval_NONCONST;
         *outIsConst = 0;
         return 0;
     }
     evalCtx->nonConstReason = NULL;
     evalCtx->nonConstStart = 0;
     evalCtx->nonConstEnd = 0;
-    if (SLTCTryMirTopLevelConst(evalCtx, nodeId, nameIndex, outValue, &isConst, &mirSupported) != 0)
+    if (HOPTCTryMirTopLevelConst(evalCtx, nodeId, nameIndex, outValue, &isConst, &mirSupported)
+        != 0)
     {
-        c->constEvalState[nodeId] = SLTCConstEval_UNSEEN;
+        c->constEvalState[nodeId] = HOPTCConstEval_UNSEEN;
         return -1;
     }
     if (mirSupported) {
         if (!isConst) {
             if (evalCtx->nonConstReason == NULL) {
-                SLTCConstSetReasonNode(
+                HOPTCConstSetReasonNode(
                     evalCtx, initNode, "const initializer is not const-evaluable");
             }
-            c->constEvalState[nodeId] = SLTCConstEval_NONCONST;
+            c->constEvalState[nodeId] = HOPTCConstEval_NONCONST;
             *outIsConst = 0;
             return 0;
         }
         if (!parts.grouped) {
             c->constEvalValues[nodeId] = *outValue;
-            c->constEvalState[nodeId] = SLTCConstEval_READY;
+            c->constEvalState[nodeId] = HOPTCConstEval_READY;
         } else {
-            c->constEvalState[nodeId] = SLTCConstEval_UNSEEN;
+            c->constEvalState[nodeId] = HOPTCConstEval_UNSEEN;
         }
         *outIsConst = 1;
         return 0;
     }
-    if (SLTCEvalConstExprNode(evalCtx, initNode, outValue, &isConst) != 0) {
-        c->constEvalState[nodeId] = SLTCConstEval_UNSEEN;
+    if (HOPTCEvalConstExprNode(evalCtx, initNode, outValue, &isConst) != 0) {
+        c->constEvalState[nodeId] = HOPTCConstEval_UNSEEN;
         return -1;
     }
     if (!isConst) {
-        SLTCConstSetReasonNode(evalCtx, initNode, "const initializer is not const-evaluable");
-        c->constEvalState[nodeId] = SLTCConstEval_NONCONST;
+        HOPTCConstSetReasonNode(evalCtx, initNode, "const initializer is not const-evaluable");
+        c->constEvalState[nodeId] = HOPTCConstEval_NONCONST;
         *outIsConst = 0;
         return 0;
     }
     if (!parts.grouped) {
         c->constEvalValues[nodeId] = *outValue;
-        c->constEvalState[nodeId] = SLTCConstEval_READY;
+        c->constEvalState[nodeId] = HOPTCConstEval_READY;
     } else {
-        c->constEvalState[nodeId] = SLTCConstEval_UNSEEN;
+        c->constEvalState[nodeId] = HOPTCConstEval_UNSEEN;
     }
     *outIsConst = 1;
     return 0;
 }
 
-int SLTCEvalTopLevelConstNode(
-    SLTypeCheckCtx*   c,
-    SLTCConstEvalCtx* evalCtx,
-    int32_t           nodeId,
-    SLCTFEValue*      outValue,
-    int*              outIsConst) {
-    return SLTCEvalTopLevelConstNodeAt(c, evalCtx, nodeId, 0, outValue, outIsConst);
+int HOPTCEvalTopLevelConstNode(
+    HOPTypeCheckCtx*   c,
+    HOPTCConstEvalCtx* evalCtx,
+    int32_t            nodeId,
+    HOPCTFEValue*      outValue,
+    int*               outIsConst) {
+    return HOPTCEvalTopLevelConstNodeAt(c, evalCtx, nodeId, 0, outValue, outIsConst);
 }
 
-int SLTCConstBoolExpr(SLTypeCheckCtx* c, int32_t nodeId, int* out, int* isConst) {
-    SLTCConstEvalCtx  evalCtxStorage;
-    SLTCConstEvalCtx* evalCtx = c->activeConstEvalCtx;
-    SLCTFEValue       value;
-    int               valueIsConst = 0;
-    const SLAstNode*  n;
+int HOPTCConstBoolExpr(HOPTypeCheckCtx* c, int32_t nodeId, int* out, int* isConst) {
+    HOPTCConstEvalCtx  evalCtxStorage;
+    HOPTCConstEvalCtx* evalCtx = c->activeConstEvalCtx;
+    HOPCTFEValue       value;
+    int                valueIsConst = 0;
+    const HOPAstNode*  n;
     *isConst = 0;
     *out = 0;
     c->lastConstEvalReason = NULL;
@@ -7295,14 +7319,14 @@ int SLTCConstBoolExpr(SLTypeCheckCtx* c, int32_t nodeId, int* out, int* isConst)
         return -1;
     }
     n = &c->ast->nodes[nodeId];
-    if (n->kind == SLAst_UNARY && (SLTokenKind)n->op == SLTok_NOT) {
-        int32_t rhsNode = SLAstFirstChild(c->ast, nodeId);
+    if (n->kind == HOPAst_UNARY && (HOPTokenKind)n->op == HOPTok_NOT) {
+        int32_t rhsNode = HOPAstFirstChild(c->ast, nodeId);
         int     rhsValue = 0;
         int     rhsIsConst = 0;
         if (rhsNode < 0) {
             return -1;
         }
-        if (SLTCConstBoolExpr(c, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+        if (HOPTCConstBoolExpr(c, rhsNode, &rhsValue, &rhsIsConst) != 0) {
             return -1;
         }
         if (rhsIsConst) {
@@ -7311,12 +7335,12 @@ int SLTCConstBoolExpr(SLTypeCheckCtx* c, int32_t nodeId, int* out, int* isConst)
         }
         return 0;
     }
-    if (n->kind == SLAst_BINARY
-        && ((SLTokenKind)n->op == SLTok_EQ || (SLTokenKind)n->op == SLTok_NEQ))
+    if (n->kind == HOPAst_BINARY
+        && ((HOPTokenKind)n->op == HOPTok_EQ || (HOPTokenKind)n->op == HOPTok_NEQ))
     {
-        int32_t lhsNode = SLAstFirstChild(c->ast, nodeId);
-        int32_t rhsNode = lhsNode >= 0 ? SLAstNextSibling(c->ast, lhsNode) : -1;
-        int32_t extraNode = rhsNode >= 0 ? SLAstNextSibling(c->ast, rhsNode) : -1;
+        int32_t lhsNode = HOPAstFirstChild(c->ast, nodeId);
+        int32_t rhsNode = lhsNode >= 0 ? HOPAstNextSibling(c->ast, lhsNode) : -1;
+        int32_t extraNode = rhsNode >= 0 ? HOPAstNextSibling(c->ast, rhsNode) : -1;
         int32_t lhsTypeId = -1;
         int32_t rhsTypeId = -1;
         int     lhsStatus;
@@ -7324,16 +7348,16 @@ int SLTCConstBoolExpr(SLTypeCheckCtx* c, int32_t nodeId, int* out, int* isConst)
         if (lhsNode < 0 || rhsNode < 0 || extraNode >= 0) {
             return -1;
         }
-        lhsStatus = SLTCResolveReflectedTypeValueExpr(c, lhsNode, &lhsTypeId);
+        lhsStatus = HOPTCResolveReflectedTypeValueExpr(c, lhsNode, &lhsTypeId);
         if (lhsStatus < 0) {
             return -1;
         }
-        rhsStatus = SLTCResolveReflectedTypeValueExpr(c, rhsNode, &rhsTypeId);
+        rhsStatus = HOPTCResolveReflectedTypeValueExpr(c, rhsNode, &rhsTypeId);
         if (rhsStatus < 0) {
             return -1;
         }
         if (lhsStatus == 0 && rhsStatus == 0) {
-            *out = (((SLTokenKind)n->op == SLTok_EQ)
+            *out = (((HOPTokenKind)n->op == HOPTok_EQ)
                         ? (lhsTypeId == rhsTypeId)
                         : (lhsTypeId != rhsTypeId))
                      ? 1
@@ -7354,7 +7378,7 @@ int SLTCConstBoolExpr(SLTypeCheckCtx* c, int32_t nodeId, int* out, int* isConst)
         evalCtxStorage.tc = c;
         evalCtx = &evalCtxStorage;
     }
-    if (SLTCEvalConstExprNode(evalCtx, nodeId, &value, &valueIsConst) != 0) {
+    if (HOPTCEvalConstExprNode(evalCtx, nodeId, &value, &valueIsConst) != 0) {
         return -1;
     }
     c->lastConstEvalReason = evalCtx->nonConstReason;
@@ -7363,12 +7387,12 @@ int SLTCConstBoolExpr(SLTypeCheckCtx* c, int32_t nodeId, int* out, int* isConst)
     if (!valueIsConst) {
         return 0;
     }
-    if (value.kind == SLCTFEValue_OPTIONAL) {
+    if (value.kind == HOPCTFEValue_OPTIONAL) {
         *out = value.b != 0u ? 1 : 0;
         *isConst = 1;
         return 0;
     }
-    if (value.kind != SLCTFEValue_BOOL) {
+    if (value.kind != HOPCTFEValue_BOOL) {
         c->lastConstEvalReason = "expression evaluated to a non-boolean value";
         c->lastConstEvalReasonStart = c->ast->nodes[nodeId].start;
         c->lastConstEvalReasonEnd = c->ast->nodes[nodeId].end;
@@ -7379,11 +7403,11 @@ int SLTCConstBoolExpr(SLTypeCheckCtx* c, int32_t nodeId, int* out, int* isConst)
     return 0;
 }
 
-int SLTCConstIntExpr(SLTypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isConst) {
-    SLTCConstEvalCtx  evalCtxStorage;
-    SLTCConstEvalCtx* evalCtx = c->activeConstEvalCtx;
-    SLCTFEValue       value;
-    int               valueIsConst = 0;
+int HOPTCConstIntExpr(HOPTypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isConst) {
+    HOPTCConstEvalCtx  evalCtxStorage;
+    HOPTCConstEvalCtx* evalCtx = c->activeConstEvalCtx;
+    HOPCTFEValue       value;
+    int                valueIsConst = 0;
     *isConst = 0;
     c->lastConstEvalReason = NULL;
     c->lastConstEvalReasonStart = 0;
@@ -7403,7 +7427,7 @@ int SLTCConstIntExpr(SLTypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isCon
         evalCtxStorage.tc = c;
         evalCtx = &evalCtxStorage;
     }
-    if (SLTCEvalConstExprNode(evalCtx, nodeId, &value, &valueIsConst) != 0) {
+    if (HOPTCEvalConstExprNode(evalCtx, nodeId, &value, &valueIsConst) != 0) {
         return -1;
     }
     c->lastConstEvalReason = evalCtx->nonConstReason;
@@ -7412,7 +7436,7 @@ int SLTCConstIntExpr(SLTypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isCon
     if (!valueIsConst) {
         return 0;
     }
-    if (SLCTFEValueToInt64(&value, out) != 0) {
+    if (HOPCTFEValueToInt64(&value, out) != 0) {
         c->lastConstEvalReason = "expression evaluated to a non-integer value";
         c->lastConstEvalReasonStart = c->ast->nodes[nodeId].start;
         c->lastConstEvalReasonEnd = c->ast->nodes[nodeId].end;
@@ -7422,10 +7446,10 @@ int SLTCConstIntExpr(SLTypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isCon
     return 0;
 }
 
-int SLTCConstFloatExpr(SLTypeCheckCtx* c, int32_t nodeId, double* out, int* isConst) {
-    SLTCConstEvalCtx evalCtx;
-    SLCTFEValue      value;
-    int              valueIsConst = 0;
+int HOPTCConstFloatExpr(HOPTypeCheckCtx* c, int32_t nodeId, double* out, int* isConst) {
+    HOPTCConstEvalCtx evalCtx;
+    HOPCTFEValue      value;
+    int               valueIsConst = 0;
     *isConst = 0;
     c->lastConstEvalReason = NULL;
     c->lastConstEvalReasonStart = 0;
@@ -7435,7 +7459,7 @@ int SLTCConstFloatExpr(SLTypeCheckCtx* c, int32_t nodeId, double* out, int* isCo
     }
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
-    if (SLTCEvalConstExprNode(&evalCtx, nodeId, &value, &valueIsConst) != 0) {
+    if (HOPTCEvalConstExprNode(&evalCtx, nodeId, &value, &valueIsConst) != 0) {
         return -1;
     }
     c->lastConstEvalReason = evalCtx.nonConstReason;
@@ -7444,12 +7468,12 @@ int SLTCConstFloatExpr(SLTypeCheckCtx* c, int32_t nodeId, double* out, int* isCo
     if (!valueIsConst) {
         return 0;
     }
-    if (value.kind == SLCTFEValue_FLOAT) {
+    if (value.kind == HOPCTFEValue_FLOAT) {
         *out = value.f64;
         *isConst = 1;
         return 0;
     }
-    if (value.kind == SLCTFEValue_INT) {
+    if (value.kind == HOPCTFEValue_INT) {
         *out = (double)value.i64;
         *isConst = 1;
         return 0;
@@ -7460,16 +7484,16 @@ int SLTCConstFloatExpr(SLTypeCheckCtx* c, int32_t nodeId, double* out, int* isCo
     return 0;
 }
 
-int SLTCConstStringExpr(
-    SLTypeCheckCtx* c,
-    int32_t         nodeId,
-    const uint8_t** outBytes,
-    uint32_t*       outLen,
-    int*            outIsConst) {
-    const SLAstNode* node;
-    SLTCConstEvalCtx evalCtx;
-    SLCTFEValue      value;
-    int              valueIsConst = 0;
+int HOPTCConstStringExpr(
+    HOPTypeCheckCtx* c,
+    int32_t          nodeId,
+    const uint8_t**  outBytes,
+    uint32_t*        outLen,
+    int*             outIsConst) {
+    const HOPAstNode* node;
+    HOPTCConstEvalCtx evalCtx;
+    HOPCTFEValue      value;
+    int               valueIsConst = 0;
     if (outBytes == NULL || outLen == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -7483,8 +7507,8 @@ int SLTCConstStringExpr(
         return -1;
     }
     node = &c->ast->nodes[nodeId];
-    while (node->kind == SLAst_CALL_ARG) {
-        nodeId = SLAstFirstChild(c->ast, nodeId);
+    while (node->kind == HOPAst_CALL_ARG) {
+        nodeId = HOPAstFirstChild(c->ast, nodeId);
         if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
             return -1;
         }
@@ -7492,13 +7516,13 @@ int SLTCConstStringExpr(
     }
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
-    if (SLTCEvalConstExprNode(&evalCtx, nodeId, &value, &valueIsConst) != 0) {
+    if (HOPTCEvalConstExprNode(&evalCtx, nodeId, &value, &valueIsConst) != 0) {
         return -1;
     }
     c->lastConstEvalReason = evalCtx.nonConstReason;
     c->lastConstEvalReasonStart = evalCtx.nonConstStart;
     c->lastConstEvalReasonEnd = evalCtx.nonConstEnd;
-    if (!valueIsConst || value.kind != SLCTFEValue_STRING) {
+    if (!valueIsConst || value.kind != HOPCTFEValue_STRING) {
         return 0;
     }
     *outBytes = value.s.bytes;
@@ -7507,11 +7531,11 @@ int SLTCConstStringExpr(
     return 0;
 }
 
-void SLTCMarkRuntimeBoundsCheck(SLTypeCheckCtx* c, int32_t nodeId) {
+void HOPTCMarkRuntimeBoundsCheck(HOPTypeCheckCtx* c, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return;
     }
-    ((SLAstNode*)&c->ast->nodes[nodeId])->flags |= SLAstFlag_INDEX_RUNTIME_BOUNDS;
+    ((HOPAstNode*)&c->ast->nodes[nodeId])->flags |= HOPAstFlag_INDEX_RUNTIME_BOUNDS;
 }
 
-SL_API_END
+HOP_API_END

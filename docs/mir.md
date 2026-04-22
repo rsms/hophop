@@ -1,46 +1,46 @@
-# MIR in SL
+# MIR in HopHop
 
 This document describes the MIR (Mid-level Intermediate Representation) implementation in this repository (`src/mir.c`, `src/mir.h`, `src/mir_lower.c`, `src/mir_lower_pkg.c`, `src/mir_lower_stmt.c`, `src/mir_exec.c`), how it is used today, and where it is being extended.
 
 For inspection from the CLI, use:
 
 ```sh
-_build/macos-aarch64-debug/slc mir <package-dir|file.sl>
+_build/macos-aarch64-debug/hop mir <package-dir|file.hop>
 ```
 
 ## What MIR is
 
 MIR is a small, internal, expression-level IR used by compile-time evaluation.
 
-- Builder: `src/mir.c` builds MIR from AST expression nodes (`SLMirBuildExpr`).
-- Lowering wrapper: `src/mir_lower.c` currently lowers one expression into a one-function `SLMirProgram`.
+- Builder: `src/mir.c` builds MIR from AST expression nodes (`HOPMirBuildExpr`).
+- Lowering wrapper: `src/mir_lower.c` currently lowers one expression into a one-function `HOPMirProgram`.
 - Package/top-init lowering: `src/mir_lower_pkg.c` owns the current top-level initializer and zero-init lowering path.
 - `mir_lower_pkg` now also exposes append-style and root-program top-init helpers, so package initializers can be assembled into one MIR program instead of only one-function wrappers or evaluator-side one-off setup.
 - `mir_lower_pkg` now also owns AST var/const top-init shape extraction by declarator name slice, so evaluator-side top-const and top-var MIR lowering no longer has to pre-decode init/type nodes before calling into the package-lowering boundary.
 - The consteval-side top-level const MIR path now uses that same var/const top-init helper, so evaluator and consteval no longer assemble named top-init functions through separate declarator-decoding logic.
 - Those top-init helpers can now also preserve explicit declarator name spans when the caller knows them, which makes top-level initializer MIR closer to a backend-facing function table instead of anonymous expression wrappers.
 - That explicit naming now also covers zero-initialized top vars, not just initialized top vars and top consts.
-- Statement lowering: `src/mir_lower_stmt.c` now lowers a narrow simple-function subset into a one-function `SLMirProgram` for evaluator-first runtime migration.
-- Program builder: `src/mir.c` now also exposes `SLMirProgramBuilder` helpers for assembling backend-facing MIR programs incrementally.
-- Program validation: `src/mir.c` also exposes `SLMirValidateProgram(...)` for backend-facing sanity checks on function ranges and table references.
+- Statement lowering: `src/mir_lower_stmt.c` now lowers a narrow simple-function subset into a one-function `HOPMirProgram` for evaluator-first runtime migration.
+- Program builder: `src/mir.c` now also exposes `HOPMirProgramBuilder` helpers for assembling backend-facing MIR programs incrementally.
+- Program validation: `src/mir.c` also exposes `HOPMirValidateProgram(...)` for backend-facing sanity checks on function ranges and table references.
 - IR shape: `src/mir.h` defines a compact stack-machine instruction format.
 - Interpreter core: `src/mir_exec.c` executes MIR chunks.
-- Function executor: `src/mir_exec.c` now also exposes `SLMirEvalFunction(...)` over `SLMirProgram`.
+- Function executor: `src/mir_exec.c` now also exposes `HOPMirEvalFunction(...)` over `HOPMirProgram`.
 - `mir_exec` now also has a real `CALL_FN` execution path for same-program MIR calls, with the current local-slot and parameter-binding semantics.
 - `mir_exec` now also has local-slot frame storage for MIR functions, with parameter binding into the first `paramCount` local slots and execution support for `LOCAL_LOAD` / `LOCAL_STORE`.
 - `mir_exec` now also supports local address-taking and simple reference dereference through `LOCAL_ADDR`, `DEREF_LOAD`, and `DEREF_STORE`.
-- `mir_exec` now also has a backend-neutral index hook in `SLMirExecEnv`, which the evaluator uses for array/slice-style indexing without baking evaluator-private storage types into MIR execution.
-- `mir_exec` now also has a backend-neutral indexed-address hook in `SLMirExecEnv`, which the evaluator uses for element references (`ARRAY_ADDR`) and simple `arr[i] = rhs` lowering on the MIR path.
-- `mir_exec` now also has backend-neutral iterator hooks in `SLMirExecEnv`, which the evaluator uses for MIR `for in` lowering across both synthetic sequence iteration and iterator-protocol sources.
-- `mir_exec` now also has backend-neutral aggregate field hooks in `SLMirExecEnv`, which the evaluator uses for `AGG_GET` / `AGG_ADDR` without exposing evaluator-private aggregate layout to MIR execution.
+- `mir_exec` now also has a backend-neutral index hook in `HOPMirExecEnv`, which the evaluator uses for array/slice-style indexing without baking evaluator-private storage types into MIR execution.
+- `mir_exec` now also has a backend-neutral indexed-address hook in `HOPMirExecEnv`, which the evaluator uses for element references (`ARRAY_ADDR`) and simple `arr[i] = rhs` lowering on the MIR path.
+- `mir_exec` now also has backend-neutral iterator hooks in `HOPMirExecEnv`, which the evaluator uses for MIR `for in` lowering across both synthetic sequence iteration and iterator-protocol sources.
+- `mir_exec` now also has backend-neutral aggregate field hooks in `HOPMirExecEnv`, which the evaluator uses for `AGG_GET` / `AGG_ADDR` without exposing evaluator-private aggregate layout to MIR execution.
 - When lowered field metadata exists, `mir_exec` resolves aggregate field names through `program.fields[]` before falling back to instruction spans.
 - `mir_exec` now also executes basic control-flow ops: `JUMP`, `JUMP_IF_FALSE`, and `RETURN_VOID`.
-- `mir_exec` now also executes `CALL_HOST` through the explicit `SLMirExecEnv.hostCall` bridge.
-- `mir_exec` now also materializes `SLMirConst_FUNCTION` and executes `CALL_INDIRECT` for same-program function references.
+- `mir_exec` now also executes `CALL_HOST` through the explicit `HOPMirExecEnv.hostCall` bridge.
+- `mir_exec` now also materializes `HOPMirConst_FUNCTION` and executes `CALL_INDIRECT` for same-program function references.
 - The MIR runtime path now also has focused evaluator integration coverage for statement-lowered indirect function-value calls.
-- `mir_exec` now also executes `LOCAL_ZERO` through an explicit `SLMirExecEnv.zeroInitLocal` hook.
-- Expression MIR now also lowers plain builtin `len(x)` calls to `SLMirOp_SEQ_LEN` instead of leaving them on generic name-resolved `CALL`.
-- Expression MIR now also lowers builtin `cstr(x)` and receiver sugar `x.cstr()` to `SLMirOp_STR_CSTR`, so that pure builtin no longer depends on generic evaluator call resolution.
+- `mir_exec` now also executes `LOCAL_ZERO` through an explicit `HOPMirExecEnv.zeroInitLocal` hook.
+- Expression MIR now also lowers plain builtin `len(x)` calls to `HOPMirOp_SEQ_LEN` instead of leaving them on generic name-resolved `CALL`.
+- Expression MIR now also lowers builtin `cstr(x)` and receiver sugar `x.cstr()` to `HOPMirOp_STR_CSTR`, so that pure builtin no longer depends on generic evaluator call resolution.
 - Lowered MIR programs now also rewrite plain builtin `copy(dst, src)` calls to `CALL_HOST`, so the current runtime byte-copy behavior can be explicit on MIR even before slice/view lowering is fully migrated.
 - Lowered MIR programs now also rewrite plain builtin `print(...)` calls to `CALL_HOST` through `program.hosts[]`, instead of leaving that builtin on generic call-name resolution.
 - Lowered MIR programs now also rewrite plain builtin `concat(...)` calls to `CALL_HOST`, so string concatenation crosses the MIR host boundary explicitly instead of staying on generic call-name resolution.
@@ -62,13 +62,13 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - The current consteval MIR subset also covers simple non-`for in` `for` loops and successful `assert` statements with trailing message/format arguments, and both const functions and `const { ... }` blocks now have focused regression coverage for those shapes.
 - That loop coverage now also pins `break` and `continue` behavior in simple consteval MIR `for` loops, for both top-level const calls and `const { ... }` blocks.
 - The simple const-call path now also rewrites safe plain direct calls into same-program `CALL_FN` edges, so small const call chains can stay inside one MIR program.
-- That direct-call rewrite now resolves conservative plain calls through the shared checked call resolver (`SLTCResolveCallByName(...)`) instead of only arity/name scanning, so supported MIR const calls can stay aligned with normal call resolution as package and overload handling expand.
+- That direct-call rewrite now resolves conservative plain calls through the shared checked call resolver (`HOPTCResolveCallByName(...)`) instead of only arity/name scanning, so supported MIR const calls can stay aligned with normal call resolution as package and overload handling expand.
 - The simple const-call path now also rewrites simple ungrouped top-level const identifier loads into zero-arg `CALL_FN` edges, so those supported const dependencies no longer have to stay on generic `resolveIdent` when the surrounding const function is already on MIR.
 - The simple const-call path now also rewrites direct calls through simple top-level const function-value aliases to `CALL_FN`, so those supported const calls no longer have to stay on generic `resolveCall`.
 - The simple const-block MIR path now also rewrites safe plain direct helper calls into same-program `CALL_FN` edges, so `const { ... }` blocks no longer have to fall back to per-call `resolveCall` when they stay within that conservative subset.
 - The const-block MIR path now also rewrites conservative imported package selector calls inside MIR-lowered helper functions through the shared typechecker package-method resolver, so supported `pkg.F(...)` helper calls in `const { ... }` no longer have to stay on generic consteval call lookup.
 - Ordinary function-body local `const` bindings now also accept bare identifiers and qualified selector expressions that already type as function values, so conservative helper aliases like `const f = pkg.Fn` no longer fail before const-function bodies or `const { ... }` callers reach the MIR/consteval boundary.
-- The const-block MIR executor path now also uses the shared `SLMirExecEnvDisableDynamicResolution(...)` helper to drop `resolveIdent`, `resolveCall`, and `resolveCtx` entirely when a lowered MIR program has no remaining generic `LOAD_IDENT` / `CALL` instructions, so fully lowered const blocks no longer keep that dynamic-resolution callback dependency alive.
+- The const-block MIR executor path now also uses the shared `HOPMirExecEnvDisableDynamicResolution(...)` helper to drop `resolveIdent`, `resolveCall`, and `resolveCtx` entirely when a lowered MIR program has no remaining generic `LOAD_IDENT` / `CALL` instructions, so fully lowered const blocks no longer keep that dynamic-resolution callback dependency alive.
 - The evaluator top-init path now also rewrites safe plain direct calls from the root initializer MIR function into same-program `CALL_FN` edges, so simple top-level initializer call chains can stay inside one MIR program.
 - The evaluator top-init path now also rewrites conservative imported package selector calls in the root initializer expression to `CALL_FN`, so direct top-level initializer package calls no longer have to stay as generic evaluator-resolved `CALL`.
 - The evaluator top-init path now also rewrites simple top-level identifier dependencies to zero-arg `CALL_FN` edges, so same-package top const/top var init chains can stay inside one MIR program instead of falling back to `resolveIdent`.
@@ -86,8 +86,8 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - The evaluator runtime MIR path now also rewrites conservative calls through top-level function-value aliases directly to `CALL_FN` when the alias target is statically known, so nonzero-arg alias calls no longer depend on generic evaluator call resolution.
 - The evaluator runtime MIR path now also rewrites conservative zero-arg calls through top-level function-value aliases by inserting `PUSH_CONST FUNCTION` plus `CALL_INDIRECT`, so that case no longer has to rely on generic evaluator call resolution.
 - MIR statement lowering now also accepts successful `assert` statements with trailing message or format args, since those extra operands do not affect the success path and no longer need to force fallback.
-- Lowered function programs can now rewrite literal pushes into `SLMirConst` entries plus `SLMirOp_PUSH_CONST`, so function execution is less dependent on source-slice decoding.
-- Lowered function programs can also rewrite `LOAD_IDENT` and direct `CALL` sites to `SLMirSymbolRef` table entries, so name metadata lives in the MIR program instead of only in instruction spans.
+- Lowered function programs can now rewrite literal pushes into `HOPMirConst` entries plus `HOPMirOp_PUSH_CONST`, so function execution is less dependent on source-slice decoding.
+- Lowered function programs can also rewrite `LOAD_IDENT` and direct `CALL` sites to `HOPMirSymbolRef` table entries, so name metadata lives in the MIR program instead of only in instruction spans.
 - Lowered call symbols now also preserve simple call-shape flags, such as selector-style calls where the receiver has already been lowered as argument `0`.
 - Lowered `CAST` instructions now also intern their target types into `program.types[]`, so type-directed backends do not need to recover cast metadata from parser ASTs later.
 - Lowered expression MIR now also interns `AGG_GET` / `AGG_ADDR` field names into `program.fields[]`, so aggregate field ops no longer need to depend only on source spans once an expression has been lowered to a MIR program.
@@ -111,9 +111,9 @@ MIR is not yet the full lowering IR for runtime execution, but the repo now carr
 
 Today, MIR is used for const-evaluating expressions.
 
-- Typechecker const-eval path (`src/typecheck.c`) calls `SLCTFEEvalExpr`, which first builds MIR and then interprets it.
-- C backend const folding (`src/codegen_c.c`) uses `SLConstEvalSession*` APIs; those APIs route through the same const-eval path and therefore use MIR for expression evaluation.
-- The CLI evaluator path (`src/evaluator.c`) also calls `SLCTFEEvalExpr` for expression evaluation inside its execution engine.
+- Typechecker const-eval path (`src/typecheck.c`) calls `HOPCTFEEvalExpr`, which first builds MIR and then interprets it.
+- C backend const folding (`src/codegen_c.c`) uses `HOPConstEvalSession*` APIs; those APIs route through the same const-eval path and therefore use MIR for expression evaluation.
+- The CLI evaluator path (`src/evaluator.c`) also calls `HOPCTFEEvalExpr` for expression evaluation inside its execution engine.
 
 MIR is no longer expression-only. It now also executes supported const function bodies, `const { ... }` blocks, evaluator function bodies, and top-level initializer programs.
 
@@ -121,62 +121,62 @@ MIR is no longer expression-only. It now also executes supported const function 
 
 MIR is a postfix (stack-based) instruction stream.
 
-- Each instruction is `SLMirInst { op, tok, start, end }`.
+- Each instruction is `HOPMirInst { op, tok, start, end }`.
 - `start`/`end` are source byte offsets for diagnostics and literal decoding.
 - `tok` is a small operand slot:
-  - unary/binary ops: token kind (`SLTokenKind`)
+  - unary/binary ops: token kind (`HOPTokenKind`)
   - `CALL`: argument count (`uint16_t`)
   - literal push ops: token discriminator when needed (for example, int vs rune)
-- A compiled expression is `SLMirChunk { v, len }`, arena-allocated.
+- A compiled expression is `HOPMirChunk { v, len }`, arena-allocated.
 
 The builder emits children before parent operators, so the stream is directly executable by a stack machine.
 
-For backend-facing `SLMirProgram` lowering, instructions also have a 32-bit `aux` operand slot. It is currently used by `SLMirOp_PUSH_CONST` to reference entries in the program constant pool.
+For backend-facing `HOPMirProgram` lowering, instructions also have a 32-bit `aux` operand slot. It is currently used by `HOPMirOp_PUSH_CONST` to reference entries in the program constant pool.
 The same `aux` slot is also used by lowered identifier/call instructions to reference `program.symbols[]`.
 For lowered `CAST` instructions, `aux` references `program.types[]`.
 For lowered `CALL_HOST` instructions, `aux` references `program.hosts[]`.
 For lowered `AGG_GET` and `AGG_ADDR`, `aux` references `program.fields[]`, so field metadata travels with the MIR program instead of being recovered only from parser spans.
-For `JUMP` and `JUMP_IF_FALSE`, `aux` is a function-local instruction index within the current `SLMirFunction`.
-Each `SLMirFunction` now also points at `program.sources[function.sourceRef]`, which is how runtime execution keeps the active source/file context aligned with the current MIR frame.
-Each `SLMirFunction` also points at its local metadata slice in `program.locals[]`, and each `SLMirLocal` currently carries a `typeRef` plus flags such as `PARAM`, `MUTABLE`, and `ZERO_INIT`.
-For lowered `CALL_FN` and `CALL_HOST` instructions that came from selector syntax with a synthetic receiver in argument slot `0`, the high bit of `tok` is now used as `SLMirCallArgFlag_RECEIVER_ARG0`, so execution can drop that receiver before invoking the resolved target.
+For `JUMP` and `JUMP_IF_FALSE`, `aux` is a function-local instruction index within the current `HOPMirFunction`.
+Each `HOPMirFunction` now also points at `program.sources[function.sourceRef]`, which is how runtime execution keeps the active source/file context aligned with the current MIR frame.
+Each `HOPMirFunction` also points at its local metadata slice in `program.locals[]`, and each `HOPMirLocal` currently carries a `typeRef` plus flags such as `PARAM`, `MUTABLE`, and `ZERO_INIT`.
+For lowered `CALL_FN` and `CALL_HOST` instructions that came from selector syntax with a synthetic receiver in argument slot `0`, the high bit of `tok` is now used as `HOPMirCallArgFlag_RECEIVER_ARG0`, so execution can drop that receiver before invoking the resolved target.
 
 ## Opcode set (current)
 
-From `SLMirOp` in `src/mir.h`:
+From `HOPMirOp` in `src/mir.h`:
 
-- `SLMirOp_PUSH_INT`
-- `SLMirOp_PUSH_FLOAT`
-- `SLMirOp_PUSH_BOOL`
-- `SLMirOp_PUSH_STRING`
-- `SLMirOp_PUSH_NULL`
-- `SLMirOp_PUSH_CONST`
-- `SLMirOp_LOAD_IDENT`
-- `SLMirOp_CALL`
-- `SLMirOp_CALL_FN`
-- `SLMirOp_CALL_HOST`
-- `SLMirOp_CALL_INDIRECT`
-- `SLMirOp_LOCAL_ZERO`
-- `SLMirOp_LOCAL_LOAD`
-- `SLMirOp_LOCAL_STORE`
-- `SLMirOp_LOCAL_ADDR`
-- `SLMirOp_DROP`
-- `SLMirOp_JUMP`
-- `SLMirOp_JUMP_IF_FALSE`
-- `SLMirOp_ASSERT`
-- `SLMirOp_DEREF_LOAD`
-- `SLMirOp_DEREF_STORE`
-- `SLMirOp_UNARY`
-- `SLMirOp_BINARY`
-- `SLMirOp_INDEX` (element index; non-slice form; strings handled directly, backend-specific containers can go through the index hook)
-- `SLMirOp_ITER_INIT`
-- `SLMirOp_ITER_NEXT`
-- `SLMirOp_RETURN`
-- `SLMirOp_RETURN_VOID`
+- `HOPMirOp_PUSH_INT`
+- `HOPMirOp_PUSH_FLOAT`
+- `HOPMirOp_PUSH_BOOL`
+- `HOPMirOp_PUSH_STRING`
+- `HOPMirOp_PUSH_NULL`
+- `HOPMirOp_PUSH_CONST`
+- `HOPMirOp_LOAD_IDENT`
+- `HOPMirOp_CALL`
+- `HOPMirOp_CALL_FN`
+- `HOPMirOp_CALL_HOST`
+- `HOPMirOp_CALL_INDIRECT`
+- `HOPMirOp_LOCAL_ZERO`
+- `HOPMirOp_LOCAL_LOAD`
+- `HOPMirOp_LOCAL_STORE`
+- `HOPMirOp_LOCAL_ADDR`
+- `HOPMirOp_DROP`
+- `HOPMirOp_JUMP`
+- `HOPMirOp_JUMP_IF_FALSE`
+- `HOPMirOp_ASSERT`
+- `HOPMirOp_DEREF_LOAD`
+- `HOPMirOp_DEREF_STORE`
+- `HOPMirOp_UNARY`
+- `HOPMirOp_BINARY`
+- `HOPMirOp_INDEX` (element index; non-slice form; strings handled directly, backend-specific containers can go through the index hook)
+- `HOPMirOp_ITER_INIT`
+- `HOPMirOp_ITER_NEXT`
+- `HOPMirOp_RETURN`
+- `HOPMirOp_RETURN_VOID`
 
 ## AST coverage and limits
 
-`SLMirBuildExprNode` currently supports:
+`HOPMirBuildExprNode` currently supports:
 
 - literals: `INT`, `RUNE`, `FLOAT`, `BOOL`, `STRING`, `NULL`
 - identifiers: `IDENT`
@@ -197,9 +197,9 @@ Notable unsupported cases include:
 
 Unsupported is a normal outcome, not always an error.
 
-## Build contract (`SLMirBuildExpr`)
+## Build contract (`HOPMirBuildExpr`)
 
-`SLMirBuildExpr(...)` has two success modes:
+`HOPMirBuildExpr(...)` has two success modes:
 
 - returns `0` and `*outSupported = 1`: MIR chunk built, with trailing `RETURN`
 - returns `0` and `*outSupported = 0`: expression not representable in current MIR subset
@@ -211,47 +211,47 @@ Important behavior:
 - Memory is arena-owned. `outChunk->v` is valid while the arena is alive.
 - Unsupported paths intentionally avoid hard failure so callers can fall back.
 
-## Execution contract (`SLCTFEEvalExpr`)
+## Execution contract (`HOPCTFEEvalExpr`)
 
-`SLCTFEEvalExpr(...)`:
+`HOPCTFEEvalExpr(...)`:
 
-1. Lowers the expression through `SLMirLowerExprAsFunction(...)`.
+1. Lowers the expression through `HOPMirLowerExprAsFunction(...)`.
 2. If unsupported, returns `0` with `*outIsConst = 0`.
-3. Otherwise delegates to `SLMirEvalFunction(...)` in `src/mir_exec.c`.
+3. Otherwise delegates to `HOPMirEvalFunction(...)` in `src/mir_exec.c`.
 
 Interpreter details:
 
 - Raw expression chunks still decode literal values from source slices (`start`/`end`) at execution time.
-- Lowered function programs may instead materialize those literals in `program.consts[]` and execute them via `SLMirOp_PUSH_CONST`.
-- `SLCTFEEvalExpr` now adapts its CTFE callbacks into `SLMirExecEnv`.
-- `SLMirEvalFunction(...)` validates the MIR program shape before execution.
-- `SLMirProgramNeedsDynamicResolution(...)` reports whether a MIR program still contains generic `LOAD_IDENT` / `CALL` instructions.
-- `LOAD_IDENT` is resolved by `SLMirResolveIdentFn`.
-- `CALL` is resolved by `SLMirResolveCallFn` with popped arguments in source order.
-- `INDEX` handles strings directly in `mir_exec` and can delegate other container indexing to `SLMirExecEnv.indexValue(...)`.
-- `ITER_INIT` and `ITER_NEXT` execute through backend-neutral iterator hooks in `SLMirExecEnv`.
+- Lowered function programs may instead materialize those literals in `program.consts[]` and execute them via `HOPMirOp_PUSH_CONST`.
+- `HOPCTFEEvalExpr` now adapts its CTFE callbacks into `HOPMirExecEnv`.
+- `HOPMirEvalFunction(...)` validates the MIR program shape before execution.
+- `HOPMirProgramNeedsDynamicResolution(...)` reports whether a MIR program still contains generic `LOAD_IDENT` / `CALL` instructions.
+- `LOAD_IDENT` is resolved by `HOPMirResolveIdentFn`.
+- `CALL` is resolved by `HOPMirResolveCallFn` with popped arguments in source order.
+- `INDEX` handles strings directly in `mir_exec` and can delegate other container indexing to `HOPMirExecEnv.indexValue(...)`.
+- `ITER_INIT` and `ITER_NEXT` execute through backend-neutral iterator hooks in `HOPMirExecEnv`.
 - `CALL_FN` now executes same-program MIR functions through the function executor. Today that path is intentionally narrow and only supports the current arg-less/simple case until local slots and parameter binding move into MIR.
 - `CALL_FN` now supports passing arguments into same-program MIR functions, with those arguments bound to the first `paramCount` local slots.
-- When `SLMirCallArgFlag_RECEIVER_ARG0` is set on lowered `CALL_FN` or `CALL_HOST`, execution drops argument `0` before invoking the resolved target.
-- `CALL_HOST` invokes `SLMirExecEnv.hostCall(hostCtx, hostId, args, argCount, ...)`, where `hostId` comes from `program.hosts[aux].target`.
-- `SLMirConst_FUNCTION` currently materializes as a same-program function reference value.
+- When `HOPMirCallArgFlag_RECEIVER_ARG0` is set on lowered `CALL_FN` or `CALL_HOST`, execution drops argument `0` before invoking the resolved target.
+- `CALL_HOST` invokes `HOPMirExecEnv.hostCall(hostCtx, hostId, args, argCount, ...)`, where `hostId` comes from `program.hosts[aux].target`.
+- `HOPMirConst_FUNCTION` currently materializes as a same-program function reference value.
 - `CALL_INDIRECT` currently expects the callee value to have been pushed before its arguments, then invokes the referenced same-program MIR function.
 - Statement MIR rewrite now also turns local-identifier calls like `f(...)` into `CALL_INDIRECT` when `f` resolves to a local slot, so local function values do not need to fall back to evaluator name resolution.
-- `TUPLE_MAKE` delegates tuple materialization through `SLMirExecEnv.makeTuple(...)`, so tuple storage stays owned by the embedding runtime instead of `mir_exec`.
+- `TUPLE_MAKE` delegates tuple materialization through `HOPMirExecEnv.makeTuple(...)`, so tuple storage stays owned by the embedding runtime instead of `mir_exec`.
 - `LOCAL_LOAD` and `LOCAL_STORE` execute against per-frame local storage.
 - `LOCAL_ADDR` currently materializes a reference to a MIR local slot.
 - `DEREF_LOAD` and `DEREF_STORE` currently operate on those reference values.
-- `LOCAL_ZERO` now resolves the target local's `typeRef` through `program.locals[]` and delegates zero-value materialization through `SLMirExecEnv.zeroInitLocal(...)`.
+- `LOCAL_ZERO` now resolves the target local's `typeRef` through `program.locals[]` and delegates zero-value materialization through `HOPMirExecEnv.zeroInitLocal(...)`.
 - `DROP` pops and discards one stack value.
 - `JUMP` and `JUMP_IF_FALSE` execute using function-local instruction indices stored in `aux`.
 - `JUMP_IF_FALSE` currently coerces its popped condition through the existing MIR boolean-cast rules.
-- `SLMirExecEnv.backwardJumpLimit` can cap taken backward jumps per MIR frame. The typechecker now uses that to keep MIR consteval from spinning forever on non-progressing loops, then falls back to the older CTFE path for the final user-facing diagnostic.
+- `HOPMirExecEnv.backwardJumpLimit` can cap taken backward jumps per MIR frame. The typechecker now uses that to keep MIR consteval from spinning forever on non-progressing loops, then falls back to the older CTFE path for the final user-facing diagnostic.
 - When lowered symbol metadata exists, `mir_exec` resolves identifier/call names through `program.symbols[]` before falling back to instruction spans.
-- The evaluator and consteval now also use the shared `SLMirExecEnvDisableDynamicResolution(...)` helper when a MIR program has no remaining generic `LOAD_IDENT` / `CALL` instructions, so fully lowered MIR paths do not silently keep that callback dependency alive.
+- The evaluator and consteval now also use the shared `HOPMirExecEnvDisableDynamicResolution(...)` helper when a MIR program has no remaining generic `LOAD_IDENT` / `CALL` instructions, so fully lowered MIR paths do not silently keep that callback dependency alive.
 - The expression-level CTFE wrapper in `src/ctfe.c` now does the same callback drop for fully lowered MIR expressions, so direct expression evaluation no longer keeps generic identifier/call callbacks alive when the MIR program does not need them.
 - For direct call symbols, `program.symbols[]` now also carries lightweight call-shape flags that future backends can use when deciding between plain calls, method-style lowering, or host shims.
 - `CAST` retains both its current scalar cast opcode token and an explicit type-table reference for backend consumers.
-- `mir_exec` now also switches function source context per MIR frame through `function.sourceRef`, and can notify embedders through `SLMirExecEnv.enterFunction` / `leaveFunction`.
+- `mir_exec` now also switches function source context per MIR frame through `function.sourceRef`, and can notify embedders through `HOPMirExecEnv.enterFunction` / `leaveFunction`.
 - The evaluator now uses those frame hooks to keep MIR-owned calls visible in its normal call stack, so recursion/depth-sensitive fallback paths continue to observe the right dynamic call context while runtime execution migrates onto MIR.
 - `RETURN` expects exactly one stack value; then sets `*outIsConst = 1`.
 - `RETURN_VOID` completes a MIR function without requiring a stack value.
@@ -266,9 +266,9 @@ Return behavior:
 
 Const-eval in the typechecker is layered:
 
-- `SLTCEvalConstExprNode` handles special expression forms directly (`sizeof`, `cast`).
-- For the remaining expression subset, it calls `SLCTFEEvalExpr` (MIR path).
-- `SLTCResolveConstCall` lowers supported const function bodies into MIR programs and executes them through `src/mir_exec.c`.
+- `HOPTCEvalConstExprNode` handles special expression forms directly (`sizeof`, `cast`).
+- For the remaining expression subset, it calls `HOPCTFEEvalExpr` (MIR path).
+- `HOPTCResolveConstCall` lowers supported const function bodies into MIR programs and executes them through `src/mir_exec.c`.
 - `src/typecheck/resolve.c` lowers supported `const { ... }` blocks into MIR programs and executes them through the same MIR runtime hooks.
 
 So today:
@@ -312,8 +312,8 @@ So today:
 - That evaluator-side MIR path now also lowers unambiguous plain direct calls into same-program `CALL_FN` edges. The remaining fallback cases are still variadic, ambiguous, and true receiver-style calls. Supported builtin/package calls that already have explicit MIR rewrites include `print(...)`, `copy(dst, src)`, `concat(...)`, `free(...)`, and `platform.exit(...)`.
 - The checked package MIR pipeline now also rewrites plain builtin `print(...)` to `CALL_HOST` for Wasm-targeted package builds, so simple package programs no longer keep generic dynamic call resolution alive just for `print`.
 - The new per-function source identity is what makes that broader direct-call lowering possible without depending on one evaluator-global `currentFile`/source view for the whole MIR program.
-- The `SLMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
-- The new function-level executor boundary means future backends can target `SLMirProgram` functions directly instead of raw expression chunks.
+- The `HOPMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
+- The new function-level executor boundary means future backends can target `HOPMirProgram` functions directly instead of raw expression chunks.
 - The initial `CALL_FN` support means that boundary is no longer just an entry point; MIR function-to-function execution has started to exist, even though full frame/locals/param semantics are still ahead.
 - Local-slot execution is the next step in that direction: MIR functions can now carry state in frame slots, typed zero-init now uses MIR local metadata, and local address-taking works, but richer lvalue semantics beyond plain local refs are still ahead.
 - Basic control flow is now part of the MIR executor contract too, which is necessary for checked function bodies to stay on the MIR path.
@@ -325,7 +325,7 @@ So today:
 - That symbol metadata now also preserves one small but useful execution detail: whether a lowered direct call came from selector syntax and already includes the receiver as argument `0`.
 - The type-table rewrite does the same for cast targets: a backend can inspect cast target metadata from MIR tables instead of reconstructing it from AST shape at codegen time.
 - The host-table rewrite is the same kind of cleanup for host-backed operations: future backends can inspect hostcall metadata from MIR tables instead of treating `CALL_HOST` operands as evaluator-private numbers.
-- `SLMirValidateProgram(...)` makes those table contracts explicit, which is useful before adding more backends that will consume MIR directly.
+- `HOPMirValidateProgram(...)` makes those table contracts explicit, which is useful before adding more backends that will consume MIR directly.
 
 ## Notes from `consteval` branch
 
@@ -346,7 +346,7 @@ MIR could evolve from a const-expression helper IR into a backend-facing IR laye
 Current architectural direction:
 
 - keep MIR stack-based
-- add a full `SLMirProgram` model with functions, const pool, field/type metadata, and symbol tables
+- add a full `HOPMirProgram` model with functions, const pool, field/type metadata, and symbol tables
 - move runtime evaluator execution onto MIR instead of AST/callback execution
 - use the same MIR executor substrate for consteval and runtime modes
 - keep host-backed operations explicit instead of burying them in evaluator AST special cases

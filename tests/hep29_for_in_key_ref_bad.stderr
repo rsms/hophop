@@ -1,0 +1,1 @@
+tests/hep29_for_in_key_ref_bad.hop:4:7: error: HOP2087: for-in key cannot be captured by reference for synthetic sequence keys

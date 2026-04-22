@@ -1,1 +1,1 @@
-tests/new_bad_type_arg_value.sl:5:20: error: SL2003: unknown type
+tests/new_bad_type_arg_value.hop:5:20: error: HOP2003: unknown type

@@ -1,1 +1,1 @@
-tests/struct_composition_bad_non_struct.sl:3:2: error: SL2013: embedded field type must be a struct
+tests/struct_composition_bad_non_struct.hop:3:2: error: HOP2013: embedded field type must be a struct

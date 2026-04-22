@@ -1,1 +1,1 @@
-tests/slice_bad_unsliceable_base.sl:4:17: error: SL2004: type mismatch: cannot slice expression of type *i32
+tests/slice_bad_unsliceable_base.hop:4:17: error: HOP2004: type mismatch: cannot slice expression of type *i32

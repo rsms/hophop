@@ -1,6 +1,6 @@
-# SL Language Specification
+# HopHop Language Specification
 
-This document defines the SL language contract for independent compiler implementations.
+This document defines the HopHop language contract for independent compiler implementations.
 It is written to be implementation-oriented and evolution-friendly.
 
 Primary goals:
@@ -22,15 +22,15 @@ See also:
 ### 1.2 Stability tags
 - [META-STATUS-001][Stable] Every rule is labeled `Stable`, `Provisional`, or `Draft`.
 - [META-STATUS-002][Stable] `Stable` rules are required for Core conformance.
-- [META-STATUS-003][Stable] `Provisional` rules are expected for `Reference-slc` compatibility and may evolve.
+- [META-STATUS-003][Stable] `Provisional` rules are expected for `Reference-hop` compatibility and may evolve.
 - [META-STATUS-004][Stable] `Draft` rules are non-implemented proposals and are non-normative.
 
 ### 1.3 Conformance profiles
 - [META-PROFILE-001][Stable] `Core` profile = all `Stable` rules in this document.
-- [META-PROFILE-002][Stable] `Reference-slc` profile = `Core` + `Provisional` + section 14 behavior.
+- [META-PROFILE-002][Stable] `Reference-hop` profile = `Core` + `Provisional` + section 14 behavior.
 - [META-PROFILE-003][Stable] If behavior is specified only by `Provisional` rules, it is implementation-defined for `Core` conformance.
 - [META-PROFILE-004][Stable] When `Stable` and `Provisional` text differ, `Stable` text is authoritative for `Core`.
-- [META-PROFILE-005][Stable] For `Reference-slc`, section 14 entries are compatibility notes: unless a rule explicitly says behavior is required, reproducing a listed divergence is optional.
+- [META-PROFILE-005][Stable] For `Reference-hop`, section 14 entries are compatibility notes: unless a rule explicitly says behavior is required, reproducing a listed divergence is optional.
 
 ## 2. Lexical Grammar
 
@@ -43,7 +43,7 @@ See also:
 
 ### 2.2 Identifiers and reserved names
 - [LEX-ID-001][Stable] Identifier pattern: `[A-Za-z_][A-Za-z0-9_]*`.
-- [LEX-ID-002][Stable] Names beginning with `__sl_` are reserved.
+- [LEX-ID-002][Stable] Names beginning with `__hop_` are reserved.
 - [LEX-ID-003][Stable] `_` is a hole name, not a normal binding name.
 - [LEX-ID-004][Stable] `_` is allowed only in positions that explicitly permit holes:
   - function parameter names
@@ -70,7 +70,7 @@ See also:
 - [LEX-LIT-012][Stable] Rune literals MUST decode to exactly one Unicode scalar value.
 
 ### 2.5 Semicolon insertion
-- [LEX-SEMI-001][Stable] The formal syntax uses semicolons `";"` as terminators in a number of productions. SL programs may omit most of these semicolons using the following two rules:
+- [LEX-SEMI-001][Stable] The formal syntax uses semicolons `";"` as terminators in a number of productions. HopHop programs may omit most of these semicolons using the following two rules:
   1. A semicolon is inserted at newline when the preceding token can end a statement.
   2. A semicolon is inserted at EOF when the final token can end a statement.
 - [LEX-SEMI-002][Stable] Statement-ending tokens are exactly:
@@ -84,7 +84,7 @@ See also:
 - [LEX-DIR-001][Provisional] `@` introduces a directive token sequence at top-level declaration scope.
 - [LEX-DIR-002][Provisional] A directive name is an identifier.
 - [LEX-DIR-003][Provisional] A directive may be written as `@name` or `@name(...)`.
-- [LEX-DIR-004][Provisional] Directive arguments, when present, MUST be zero or more comma-separated SL literals.
+- [LEX-DIR-004][Provisional] Directive arguments, when present, MUST be zero or more comma-separated HopHop literals.
 
 ## 3. Concrete Syntax
 
@@ -247,19 +247,19 @@ FieldInit       = Ident { "." Ident } ":" Expr .
 
 Canonical examples:
 
-```sl
+```hop
 fn f() {
     { x = 1 }      // block with one statement: assignment to x
 }
 ```
 
-```sl
+```hop
 fn f() {
     ({ x: 1 })    // expression statement: compound literal value discarded
 }
 ```
 
-```sl
+```hop
 fn f() {
     defer { x = 1 }    // deferred block
 }
@@ -387,7 +387,7 @@ fn f() {
   - `if x == null { ... } else { ... }` narrows `x` to `null` in `then`, `T` in `else`
   - `if x != null { ... } else { ... }` narrows `x` to `T` in `then`, `null` in `else`
   - continuation narrowing after `if` without `else` applies only when the `then` branch terminates (`return`, `break`, or `continue`)
-- [TYPE-OPT-006][Provisional] Feature imports `slang/feature/optional` and `feature/optional` are recognized but not required to enable `?` in `Reference-slc`.
+- [TYPE-OPT-006][Provisional] Feature imports `hophop/feature/optional` and `feature/optional` are recognized but not required to enable `?` in `Reference-hop`.
 
 ### 5.4 Assignability and coercion
 - [TYPE-ASSIGN-001][Stable] Assignment requires exact type match except explicit implicit-conversion rules.
@@ -419,7 +419,7 @@ fn f() {
 
 ## 6. Expressions and Operators
 
-- [EXPR-OP-001][Stable] Operator precedence is: postfix, unary, multiplicative/shift/bit-and, additive/bit-or/bit-xor, relational/equality, logical-and, logical-or, assignment. This follows Go's operator precedence for shared binary operators; assignment remains SL-specific and lowest.
+- [EXPR-OP-001][Stable] Operator precedence is: postfix, unary, multiplicative/shift/bit-and, additive/bit-or/bit-xor, relational/equality, logical-and, logical-or, assignment. This follows Go's operator precedence for shared binary operators; assignment remains HopHop-specific and lowest.
 - [EXPR-UNARY-001][Stable] Unary `+`/`-` require numeric operands; unary `!` requires bool.
 - [EXPR-UNARY-002][Stable] Unary `*` dereferences pointer/reference; unary `&` forms read-only references.
 - [EXPR-ASSIGN-001][Stable] Assignment LHS MUST be assignable (identifier/index/non-dependent field/dereference of writable location).
@@ -434,7 +434,7 @@ fn f() {
 - [EXPR-CAST-004][Stable] Direct casts from `null` are permitted only to optional types and `rawptr`; typed null pointers/references require an explicit raw pointer bridge such as `(null as rawptr) as *T`.
 - [EXPR-UNWRAP-001][Stable] `x!` requires `x : ?T` and yields `T`.
 - [EXPR-UNWRAP-002][Stable] Unwrapping `null` is a runtime trap (panic), never undefined behavior.
-- [EXPR-ADD-001][Provisional] String `+` currently supports compile-time concatenation only for non-parenthesized literal chains (e.g. `"a" + "b" + "c"`). Other string `+` forms are invalid in `Reference-slc`.
+- [EXPR-ADD-001][Provisional] String `+` currently supports compile-time concatenation only for non-parenthesized literal chains (e.g. `"a" + "b" + "c"`). Other string `+` forms are invalid in `Reference-hop`.
 
 ### 6.1 Comparable and ordered types
 - [EXPR-COMMON-001][Stable] Binary-operation common-type selection is:
@@ -521,7 +521,7 @@ fn f() {
 
 ### 6.3 Indexing and slicing
 - [EXPR-INDEX-001][Provisional] In const-evaluated execution paths, element indexing `x[i]` over const-evaluable string/slice-like values produces a const byte value when `i` is const-evaluable and in bounds.
-- [EXPR-SLICE-001][Provisional] Slice-range expressions over sequence-like values preserve the source sequence family and mutability/view shape rather than converting through a different container kind.
+- [EXPR-HOPICE-001][Provisional] Slice-range expressions over sequence-like values preserve the source sequence family and mutability/view shape rather than converting through a different container kind.
   - examples: `*[T][a:b] -> *[T]`, `&[T][a:b] -> &[T]`, `(*str)[a:b] -> *str`, `(&str)[a:b] -> &str`
 
 ### 6.3.1 Type values in expression context
@@ -553,8 +553,8 @@ fn f() {
 - [STMT-FOR-002][Stable] `for` condition (if present) MUST be bool.
 - [STMT-FOR-003][Stable] Variables declared in `for` initializer are scoped to the entire loop (condition, post, and body) and are not visible after the loop.
 - [STMT-FOR-004][Provisional] `for ... in` source expression MUST be iterable by either:
-  - sequence path: supports `len(x)` and indexing `x[i]` (SLP-29), or
-  - iterator protocol path: provides `__iterator(x)` and matching `next_*` overloads for the loop form (SLP-30).
+  - sequence path: supports `len(x)` and indexing `x[i]` (HEP-29), or
+  - iterator protocol path: provides `__iterator(x)` and matching `next_*` overloads for the loop form (HEP-30).
 - [STMT-FOR-005][Provisional] `for ... in` source expression is evaluated once before loop iteration.
 - [STMT-FOR-006][Provisional] In `for key, value in x`, the key for sequence sources is synthetic `int` index; `&key` is invalid for synthetic keys.
 - [STMT-FOR-007][Provisional] Value binding modes in `for ... in`:
@@ -645,7 +645,7 @@ fn f() {
   - `new T` -> `*T`
   - `new [T n]` -> `*[T N]` when `n` is constant positive `N`, else `*[T]`
 - [BI-NEW-005A][Stable] `new [T 0]` has type `*[T]` (runtime-length slice pointer form).
-- [BI-NEW-006][Provisional] In `Reference-slc`, codegen may insert implicit null-trap unwrap when coercing `new` into non-optional pointer destinations.
+- [BI-NEW-006][Provisional] In `Reference-hop`, codegen may insert implicit null-trap unwrap when coercing `new` into non-optional pointer destinations.
 
 ### 9.5 `concat(a, b)` and `del`
 - [BI-CONCAT-001][Stable] `concat(a, b)` requires both args `str`-assignable and context `allocator`; returns `*str`.
@@ -665,7 +665,7 @@ fn f() {
 - [BI-PRINT-001][Stable] Argument MUST be `str`-assignable.
 - [BI-PRINT-002][Stable] Effective context MUST provide field `logger`.
 - [BI-PRINT-003][Stable] Core type checking imposes no additional static shape/type requirement on `logger` beyond field presence.
-- [BI-PRINT-004][Provisional] `Reference-slc` currently validates `logger` field presence at typecheck time and may rely on backend coercion at codegen time for concrete logger compatibility.
+- [BI-PRINT-004][Provisional] `Reference-hop` currently validates `logger` field presence at typecheck time and may rely on backend coercion at codegen time for concrete logger compatibility.
 
 ### 9.9 `fmt(format, args...)`
 - [BI-FMT-001][Provisional] `fmt` requires at least one argument; the first argument MUST be `str`-assignable.
@@ -731,10 +731,10 @@ fn f() {
 - [PKG-IMPORT-006][Stable] Import cycles are invalid.
 - [PKG-IMPORT-007][Stable] `import "platform"` is built-in package import.
 - [PKG-IMPORT-008][Stable] Built-in `platform` currently exports `exit(status i32)`.
-- [PKG-IMPORT-009][Provisional] Feature imports `slang/feature/<name>` / `feature/<name>` are pseudo-imports; unknown names warn in `Reference-slc`.
+- [PKG-IMPORT-009][Provisional] Feature imports `hophop/feature/<name>` / `feature/<name>` are pseudo-imports; unknown names warn in `Reference-hop`.
 - [PKG-IMPORT-010][Stable] Primary resolution base is loader root:
   - directory package mode: parent directory of entry package directory
-  - single-file package mode: directory containing the entry `.sl` file
+  - single-file package mode: directory containing the entry `.hop` file
 - [PKG-IMPORT-011][Stable] For recognized library import paths (`builtin`, `reflect`, `compiler`, `mem`, `platform`, `testing`, `std/*`, `platform/*`), resolver order is:
   1. try `<loader_root>/<importPath>` first
   2. if that path is not an existing directory, search `<ancestor>/lib/<importPath>` from importing package directory upward to filesystem root and select the nearest match
@@ -752,7 +752,7 @@ fn f() {
 
 - [MAIN-SIG-001][Stable] Source-language main declaration is `fn main()` (no params, no return type, no explicit `context` clause).
 - [MAIN-SIG-002][Stable] Inside `main`, contextual operations use an implicit root context value.
-- [MAIN-SIG-003][Provisional] `Reference-slc` executable entry enforces `fn main()` at compile/run boundary.
+- [MAIN-SIG-003][Provisional] `Reference-hop` executable entry enforces `fn main()` at compile/run boundary.
 
 ## 13. Diagnostics Contract
 
@@ -765,7 +765,7 @@ fn f() {
   - `ImportResolutionError`
   - `EntrypointError`
 
-## 14. Reference-slc Profile (Implementation-Defined)
+## 14. Reference-hop Profile (Implementation-Defined)
 
 This section is non-core and documents current reference behavior.
 
@@ -786,7 +786,7 @@ This section is non-core and documents current reference behavior.
   - const-evaluable function calls with local declarations, `if`, `for`, `switch`, `assert`, `defer`, `break`, `continue`
   - `sizeof(Type)` and `sizeof(expr)` (including identifiers resolved from const-eval local/param bindings)
   - casts among numeric/bool forms, `string -> bool`, and `null -> rawptr` / `null -> ?T`
-- [REF-IMPL-011][Provisional] Cast forms outside [REF-IMPL-010] may typecheck by [EXPR-CAST-002] but still be non-const-evaluable in `Reference-slc`.
+- [REF-IMPL-011][Provisional] Cast forms outside [REF-IMPL-010] may typecheck by [EXPR-CAST-002] but still be non-const-evaluable in `Reference-hop`.
 
 ## 15. Evolution Policy
 
@@ -796,5 +796,5 @@ This section is non-core and documents current reference behavior.
 
 ## 16. Draft (Non-Normative)
 
-- [DRAFT-SLP17][Draft] Platform-context composition (`platform/<target>.Context`) and capability expansion.
-- [DRAFT-SLP18][Draft] Reflection and `typeof` metatype APIs.
+- [DRAFT-HOPP17][Draft] Platform-context composition (`platform/<target>.Context`) and capability expansion.
+- [DRAFT-HOPP18][Draft] Reflection and `typeof` metatype APIs.

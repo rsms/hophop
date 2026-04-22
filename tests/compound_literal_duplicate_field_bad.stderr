@@ -1,1 +1,1 @@
-tests/compound_literal_duplicate_field_bad.sl:8:23: error: SL2041: duplicate compound literal field 'x'
+tests/compound_literal_duplicate_field_bad.hop:8:23: error: HOP2041: duplicate compound literal field 'x'

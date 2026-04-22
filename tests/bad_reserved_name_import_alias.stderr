@@ -1,2 +1,2 @@
-tests/bad_reserved_name_import_alias.sl:2:36: error: SL2008: identifier prefix '__sl_' is reserved
-tests/bad_reserved_name_import_alias.sl:2:36: hint: SL2008: rename symbol to avoid '__sl_' prefix
+tests/bad_reserved_name_import_alias.hop:2:37: error: HOP2008: identifier prefix '__hop_' is reserved
+tests/bad_reserved_name_import_alias.hop:2:37: hint: HOP2008: rename symbol to avoid '__hop_' prefix

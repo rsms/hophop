@@ -1,0 +1,1 @@
+tests/hep3_bad_null_assign.hop:5:9: error: HOP2004: type mismatch

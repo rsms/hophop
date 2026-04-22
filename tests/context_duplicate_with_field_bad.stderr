@@ -1,1 +1,1 @@
-tests/context_duplicate_with_field_bad.sl:10:16: error: SL1004: unexpected token
+tests/context_duplicate_with_field_bad.hop:10:16: error: HOP1004: unexpected token

@@ -1,1 +1,1 @@
-tests/generics_zero_arg_return_bad.sl:1:1: error: SL2004: type mismatch
+tests/generics_zero_arg_return_bad.hop:1:1: error: HOP2004: type mismatch

@@ -1,1 +1,1 @@
-tests/anytype_spread_requires_pack_bad.sl:7:7: error: SL2082: spread into ...anytype requires an anytype pack value
+tests/anytype_spread_requires_pack_bad.hop:7:7: error: HOP2082: spread into ...anytype requires an anytype pack value

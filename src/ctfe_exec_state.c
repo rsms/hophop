@@ -1,10 +1,10 @@
-#include "libsl-impl.h"
+#include "libhop-impl.h"
 #include "ctfe_exec.h"
 
-SL_API_BEGIN
+HOP_API_BEGIN
 
-static int SLCTFEExecNameEqSlice(
-    SLStrView src, uint32_t aStart, uint32_t aEnd, uint32_t bStart, uint32_t bEnd) {
+static int HOPCTFEExecNameEqSlice(
+    HOPStrView src, uint32_t aStart, uint32_t aEnd, uint32_t bStart, uint32_t bEnd) {
     uint32_t len;
     if (aEnd < aStart || bEnd < bStart || aEnd > src.len || bEnd > src.len) {
         return 0;
@@ -16,7 +16,7 @@ static int SLCTFEExecNameEqSlice(
     return len == 0 || memcmp(src.ptr + aStart, src.ptr + bStart, len) == 0;
 }
 
-void SLCTFEExecResetReason(SLCTFEExecCtx* c) {
+void HOPCTFEExecResetReason(HOPCTFEExecCtx* c) {
     if (c == NULL) {
         return;
     }
@@ -25,7 +25,7 @@ void SLCTFEExecResetReason(SLCTFEExecCtx* c) {
     c->nonConstEnd = 0;
 }
 
-void SLCTFEExecSetReason(SLCTFEExecCtx* c, uint32_t start, uint32_t end, const char* reason) {
+void HOPCTFEExecSetReason(HOPCTFEExecCtx* c, uint32_t start, uint32_t end, const char* reason) {
     if (c == NULL || reason == NULL || reason[0] == '\0' || c->nonConstReason != NULL) {
         return;
     }
@@ -34,17 +34,17 @@ void SLCTFEExecSetReason(SLCTFEExecCtx* c, uint32_t start, uint32_t end, const c
     c->nonConstEnd = end;
 }
 
-void SLCTFEExecSetReasonNode(SLCTFEExecCtx* c, int32_t nodeId, const char* reason) {
+void HOPCTFEExecSetReasonNode(HOPCTFEExecCtx* c, int32_t nodeId, const char* reason) {
     if (c == NULL || c->ast == NULL || nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
-        SLCTFEExecSetReason(c, 0, 0, reason);
+        HOPCTFEExecSetReason(c, 0, 0, reason);
         return;
     }
-    SLCTFEExecSetReason(c, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end, reason);
+    HOPCTFEExecSetReason(c, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end, reason);
 }
 
-int SLCTFEExecEnvLookup(
-    const SLCTFEExecCtx* c, uint32_t nameStart, uint32_t nameEnd, SLCTFEValue* outValue) {
-    const SLCTFEExecEnv* frame;
+int HOPCTFEExecEnvLookup(
+    const HOPCTFEExecCtx* c, uint32_t nameStart, uint32_t nameEnd, HOPCTFEValue* outValue) {
+    const HOPCTFEExecEnv* frame;
     if (c == NULL || outValue == NULL) {
         return 0;
     }
@@ -52,10 +52,10 @@ int SLCTFEExecEnvLookup(
     while (frame != NULL) {
         uint32_t i = frame->bindingLen;
         while (i > 0) {
-            const SLCTFEExecBinding* b;
+            const HOPCTFEExecBinding* b;
             i--;
             b = &frame->bindings[i];
-            if (SLCTFEExecNameEqSlice(c->src, b->nameStart, b->nameEnd, nameStart, nameEnd)) {
+            if (HOPCTFEExecNameEqSlice(c->src, b->nameStart, b->nameEnd, nameStart, nameEnd)) {
                 *outValue = b->value;
                 return 1;
             }
@@ -65,4 +65,4 @@ int SLCTFEExecEnvLookup(
     return 0;
 }
 
-SL_API_END
+HOP_API_END

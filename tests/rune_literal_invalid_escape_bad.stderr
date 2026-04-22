@@ -1,1 +1,1 @@
-tests/rune_literal_invalid_escape_bad.sl:2:12: error: SL1016: invalid rune escape sequence
+tests/rune_literal_invalid_escape_bad.hop:2:12: error: HOP1016: invalid rune escape sequence

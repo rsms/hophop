@@ -22,7 +22,7 @@ CompileFlags:
         - -Werror=return-type
         - -Werror=switch
         - -DCLANGD=1
-        - -DSL_IMPLEMENTATION=1
+        - -DHOP_IMPLEMENTATION=1
         - -I${dir}/src
         - -I${dir}/lib
 ---

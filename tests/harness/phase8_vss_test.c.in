@@ -1,8 +1,8 @@
 #define TESTS_IMPL
 #include "@HEADER@"
 int test_codegen_phase8_vss(tests__Packet* p) {
-    __sl_u8* payload = tests__Packet__payload(p);
-    __sl_i32* samples = tests__Packet__samples(p);
-    __sl_int n = tests__Packet__sizeof(p);
-    return payload != (__sl_u8*)0 || samples != (__sl_i32*)0 || n > 0 ? 0 : 0;
+    __hop_u8* payload = tests__Packet__payload(p);
+    __hop_i32* samples = tests__Packet__samples(p);
+    __hop_int n = tests__Packet__sizeof(p);
+    return payload != (__hop_u8*)0 || samples != (__hop_i32*)0 || n > 0 ? 0 : 0;
 }

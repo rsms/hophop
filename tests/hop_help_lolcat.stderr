@@ -1,0 +1,16 @@
+usage:
+    lolcat --version
+    lolcat run [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
+    lolcat fmt [--check] [<file-or-dir> ...]
+    lolcat compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile> [-o <output>]
+    lolcat genpkg[:backend] [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile> [out]
+    lolcat check <srcfile>
+    lolcat checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
+    lolcat lex <srcfile>
+    lolcat ast <srcfile>
+    lolcat mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
+    lolcat --version
+    lolcat --help
+
+<target> is one of: cli-libc (default), cli-eval, wasm-min, playbit
+`hop run` defaults to cli-eval when --platform is omitted

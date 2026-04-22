@@ -1,71 +1,71 @@
-input.sl
-input.sl:2:1: line content differs
+input.hop
+input.hop:2:1: line content differs
   current : "import \"feature/optional\"   ; import \"math/basic\" as math { Add as Sum ,Sub }"
   expected: "import \"feature/optional\""
-input.sl:3:1: line should be inserted
+input.hop:3:1: line should be inserted
   current : ""
   expected: "import \"math/basic\" as math { Add as Sum, Sub }"
-input.sl:4:1: line content differs
+input.hop:4:1: line content differs
   current : "struct Foo { x int // trailing comment about field x"
   expected: "struct Foo {"
-input.sl:5:1: line content differs
+input.hop:5:1: line content differs
   current : "// leading comment about field y"
   expected: "\tx int // trailing comment about field x"
-input.sl:6:1: line content differs
+input.hop:6:1: line content differs
   current : "y int = 2"
   expected: "\t// leading comment about field y"
-input.sl:7:1: line should be inserted
+input.hop:7:1: line should be inserted
   current : ""
   expected: "\ty int = 2"
-input.sl:9:1: internal whitespace differs
+input.hop:9:1: internal whitespace differs
   current : "fn add(a,b int) int {"
   expected: "fn add(a, b int) int {"
-input.sl:10:1: internal whitespace differs
+input.hop:10:1: internal whitespace differs
   current : "for var i int =0; i < 10; i += 1 {"
   expected: "\tfor var i int = 0; i < 10; i += 1 {"
-input.sl:11:1: leading or trailing whitespace differs
+input.hop:11:1: leading or trailing whitespace differs
   current : "if i % 2 == 0 {"
   expected: "\t\tif i % 2 == 0 {"
-input.sl:12:1: leading or trailing whitespace differs
+input.hop:12:1: leading or trailing whitespace differs
   current : "continue"
   expected: "\t\t\tcontinue"
-input.sl:13:1: leading or trailing whitespace differs
+input.hop:13:1: leading or trailing whitespace differs
   current : "} else {"
   expected: "\t\t} else {"
-input.sl:14:1: leading or trailing whitespace differs
+input.hop:14:1: leading or trailing whitespace differs
   current : "break"
   expected: "\t\t\tbreak"
-input.sl:15:1: leading or trailing whitespace differs
+input.hop:15:1: leading or trailing whitespace differs
   current : "}"
   expected: "\t\t}"
-input.sl:16:1: leading or trailing whitespace differs
+input.hop:16:1: leading or trailing whitespace differs
   current : "}"
   expected: "\t}"
-input.sl:17:1: internal whitespace differs
+input.hop:17:1: internal whitespace differs
   current : "return a+b"
   expected: "\treturn a + b"
-input.sl:20:1: internal whitespace differs
+input.hop:20:1: internal whitespace differs
   current : "fn shorthand_rewrite(y int){"
   expected: "fn shorthand_rewrite(y int) {"
-input.sl:21:1: line content differs
+input.hop:21:1: line content differs
   current : "_=add(1,y:y)"
   expected: "\t_ = add(1, y)"
-input.sl:22:1: internal whitespace differs
+input.hop:22:1: internal whitespace differs
   current : "_=add(1,y:(y))"
   expected: "\t_ = add(1, y: (y))"
-input.sl:23:1: line content differs
+input.hop:23:1: line content differs
   current : "_=Foo{x:1,y:y}"
   expected: "\t_ = Foo{ x: 1, y }"
-input.sl:24:1: internal whitespace differs
+input.hop:24:1: internal whitespace differs
   current : "_=Foo{x:1,y:(y)}"
   expected: "\t_ = Foo{ x: 1, y: (y) }"
-input.sl:25:1: internal whitespace differs
+input.hop:25:1: internal whitespace differs
   current : "_=context.allocator"
   expected: "\t_ = context.allocator"
-input.sl:26:1: internal whitespace differs
+input.hop:26:1: internal whitespace differs
   current : "_=context.logger"
   expected: "\t_ = context.logger"
-input.sl:27:1: line content differs
+input.hop:27:1: line content differs
   current : "_=y<(16 as i64)"
   expected: "\t_ = y < 16 as i64"
   issues: 23

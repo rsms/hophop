@@ -1,13 +1,13 @@
 # Playbit Library
 
-This directory contains small SL wrappers for the Playbit platform.
+This directory contains small HopHop wrappers for the Playbit platform.
 
 There are two layers:
 
 - `platform/playbit`
   Low-level platform package. This is the ABI boundary used by the compiler-selected Playbit platform. It exposes imported syscalls, constants, structs, and startup helpers.
 - `playbit/...`
-  Higher-level library packages built in plain SL on top of `platform/playbit`.
+  Higher-level library packages built in plain HopHop on top of `platform/playbit`.
 
 Current packages:
 
@@ -30,7 +30,7 @@ Current packages:
 
 Example:
 
-```sl
+```hop
 import "playbit/console" { write }
 import "playbit/time"    { now, since }
 
@@ -45,5 +45,5 @@ pub fn main() {
 Notes:
 
 - These packages are intended for programs built for the `playbit` platform target.
-- Keep wrappers simple and idiomatic SL. Put ABI-specific details in `platform/playbit` unless a higher-level package clearly needs them.
-- The current startup path is `_start -> pb_syscall(ThreadEnterMain) -> sl_main`.
+- Keep wrappers simple and idiomatic HopHop. Put ABI-specific details in `platform/playbit` unless a higher-level package clearly needs them.
+- The current startup path is `_start -> pb_syscall(ThreadEnterMain) -> hop_main`.

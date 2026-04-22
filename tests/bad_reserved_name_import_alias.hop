@@ -1,0 +1,2 @@
+// Verifies bad reserved name import alias.
+import "hophop/feature/optional" as __hop_bad

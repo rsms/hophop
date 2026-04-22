@@ -1,2 +1,2 @@
 error: failed to resolve package path {{ROOT}}/std/testing
-tests/import_std_testing_bad.sl:2:1: error: SL0000: failed to resolve import std/testing
+tests/import_std_testing_bad.hop:2:1: error: HOP0000: failed to resolve import std/testing

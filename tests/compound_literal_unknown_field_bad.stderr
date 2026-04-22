@@ -1,1 +1,1 @@
-tests/compound_literal_unknown_field_bad.sl:8:17: error: SL2040: unknown compound literal field 'z'
+tests/compound_literal_unknown_field_bad.hop:8:17: error: HOP2040: unknown compound literal field 'z'

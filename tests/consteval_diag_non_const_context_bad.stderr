@@ -1,1 +1,1 @@
-tests/consteval_diag_non_const_context_bad.sl:5:1: error: SL2075: consteval error: runtime call
+tests/consteval_diag_non_const_context_bad.hop:5:1: error: HOP2075: consteval error: runtime call

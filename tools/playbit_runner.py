@@ -21,7 +21,7 @@ def fail(message: str) -> int:
 
 
 def resolve_playbit_bin() -> Path:
-    for env_name in ("SL_PLAYBIT_BIN", "PLAYBIT_BIN"):
+    for env_name in ("HOP_PLAYBIT_BIN", "PLAYBIT_BIN"):
         value = os.environ.get(env_name)
         if value:
             return Path(value)
@@ -57,7 +57,7 @@ def main() -> int:
     playbit_bin = resolve_playbit_bin()
     if not playbit_bin.is_file():
         return fail(
-            "playbit: missing Playbit app; set SL_PLAYBIT_BIN or build "
+            "playbit: missing Playbit app; set HOP_PLAYBIT_BIN or build "
             f"{DEFAULT_PLAYBIT_BIN}"
         )
 

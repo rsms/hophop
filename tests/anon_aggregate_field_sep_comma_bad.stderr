@@ -1,1 +1,1 @@
-tests/anon_aggregate_field_sep_comma_bad.sl:3:25: error: SL1004: unexpected token
+tests/anon_aggregate_field_sep_comma_bad.hop:3:25: error: HOP1004: unexpected token

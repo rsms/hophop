@@ -1,0 +1,1 @@
+tests/hep27_const_int_range_u8_bad.hop:3:13: error: HOP2004: type mismatch: constant value 0x12c is out of range for u8

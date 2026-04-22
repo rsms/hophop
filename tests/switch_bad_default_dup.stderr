@@ -1,1 +1,1 @@
-tests/switch_bad_default_dup.sl:7:13: error: SL1004: unexpected token
+tests/switch_bad_default_dup.hop:7:13: error: HOP1004: unexpected token

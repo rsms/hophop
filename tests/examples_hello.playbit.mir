@@ -3,7 +3,7 @@ mir
   insts=473 consts=153 sources=2 funcs=37 locals=90 fields=44 types=245 hosts=1 symbols=29
 sources
   #0 len=36
-  #1 len=12022
+  #1 len=12024
 types
   #0 astNode=18 source=#1 flags=1
   #1 astNode=21 source=#1 flags=1
@@ -254,79 +254,79 @@ hosts
   #0 GENERIC target=PRINT name="print" [13,18]
 symbols
   #0 CALL target=4 name="print" [13,18]
-  #1 CALL target=844 name=<slice [7161,7171]> [7161,7171]
-  #2 CALL target=871 name=<slice [7286,7296]> [7286,7296]
-  #3 CALL target=901 name=<slice [7428,7442]> [7428,7442]
-  #4 CALL target=919 name=<slice [7521,7535]> [7521,7535]
-  #5 CALL target=929 name=<slice [7567,7571]> [7567,7571]
-  #6 CALL target=939 name=<slice [7621,7631]> [7621,7631]
-  #7 CALL target=967 name=<slice [7764,7774]> [7764,7774]
-  #8 CALL target=997 name=<slice [7935,7945]> [7935,7945]
-  #9 CALL target=1025 name=<slice [8093,8103]> [8093,8103]
-  #10 CALL target=1110 name=<slice [8479,8489]> [8479,8489]
-  #11 CALL target=1146 name=<slice [8655,8665]> [8655,8665]
-  #12 CALL target=1176 name=<slice [8834,8844]> [8834,8844]
-  #13 CALL target=1218 name=<slice [9073,9083]> [9073,9083]
-  #14 CALL target=1250 name=<slice [9264,9274]> [9264,9274]
-  #15 CALL target=1286 name=<slice [9473,9483]> [9473,9483]
-  #16 CALL target=1316 name=<slice [9652,9662]> [9652,9662]
-  #17 CALL target=1342 name=<slice [9786,9796]> [9786,9796]
-  #18 CALL target=1376 name=<slice [9973,9983]> [9973,9983]
-  #19 CALL target=1447 name=<slice [10274,10290]> [10274,10290]
-  #20 CALL target=1488 name=<slice [10513,10523]> [10513,10523]
-  #21 CALL target=1530 name=<slice [10741,10751]> [10741,10751]
-  #22 CALL target=1603 name=<slice [11069,11079]> [11069,11079]
-  #23 CALL target=1652 name=<slice [11305,11315]> [11305,11315]
-  #24 CALL target=1688 name=<slice [11525,11535]> [11525,11535]
-  #25 CALL target=1722 name=<slice [11732,11742]> [11732,11742]
-  #26 IDENT target=1760 name=<slice [11918,11924]> [11918,11924]
-  #27 CALL target=1757 name=<slice [11900,11910]> [11900,11910]
-  #28 CALL target=1780 name=<slice [12004,12017]> [12004,12017]
+  #1 CALL target=844 name=<slice [7162,7172]> [7162,7172]
+  #2 CALL target=871 name=<slice [7287,7297]> [7287,7297]
+  #3 CALL target=901 name=<slice [7429,7443]> [7429,7443]
+  #4 CALL target=919 name=<slice [7522,7536]> [7522,7536]
+  #5 CALL target=929 name=<slice [7568,7572]> [7568,7572]
+  #6 CALL target=939 name=<slice [7622,7632]> [7622,7632]
+  #7 CALL target=967 name=<slice [7765,7775]> [7765,7775]
+  #8 CALL target=997 name=<slice [7936,7946]> [7936,7946]
+  #9 CALL target=1025 name=<slice [8094,8104]> [8094,8104]
+  #10 CALL target=1110 name=<slice [8480,8490]> [8480,8490]
+  #11 CALL target=1146 name=<slice [8656,8666]> [8656,8666]
+  #12 CALL target=1176 name=<slice [8835,8845]> [8835,8845]
+  #13 CALL target=1218 name=<slice [9074,9084]> [9074,9084]
+  #14 CALL target=1250 name=<slice [9265,9275]> [9265,9275]
+  #15 CALL target=1286 name=<slice [9474,9484]> [9474,9484]
+  #16 CALL target=1316 name=<slice [9653,9663]> [9653,9663]
+  #17 CALL target=1342 name=<slice [9787,9797]> [9787,9797]
+  #18 CALL target=1376 name=<slice [9974,9984]> [9974,9984]
+  #19 CALL target=1447 name=<slice [10275,10291]> [10275,10291]
+  #20 CALL target=1488 name=<slice [10514,10524]> [10514,10524]
+  #21 CALL target=1530 name=<slice [10742,10752]> [10742,10752]
+  #22 CALL target=1603 name=<slice [11070,11080]> [11070,11080]
+  #23 CALL target=1652 name=<slice [11306,11316]> [11306,11316]
+  #24 CALL target=1688 name=<slice [11526,11536]> [11526,11536]
+  #25 CALL target=1722 name=<slice [11733,11743]> [11733,11743]
+  #26 IDENT target=1760 name=<slice [11919,11925]> [11919,11925]
+  #27 CALL target=1757 name=<slice [11901,11911]> [11901,11911]
+  #28 CALL target=1780 name=<slice [12005,12019]> [12005,12019]
 fields
-  #0 ownerType=#4294967295 type=#4294967295 name=<slice [7067,7072]> [7067,7072]
-  #1 ownerType=#4294967295 type=#4294967295 name=<slice [7085,7088]> [7085,7088]
-  #2 ownerType=#4294967295 type=#4294967295 name=<slice [8385,8390]> [8385,8390]
-  #3 ownerType=#4294967295 type=#4294967295 name=<slice [8403,8406]> [8403,8406]
-  #4 ownerType=#4294967295 type=#4294967295 name=<slice [11925,11940]> [11925,11940]
-  #5 ownerType=#4294967295 type=#4294967295 name=<slice [11925,11940]> [11925,11940]
-  #6 ownerType=#206 type=#207 name=<slice [4293,4298]> [4293,4298]
-  #7 ownerType=#206 type=#208 name=<slice [4304,4307]> [4304,4307]
-  #8 ownerType=#209 type=#207 name=<slice [4293,4298]> [4293,4298]
-  #9 ownerType=#209 type=#208 name=<slice [4304,4307]> [4304,4307]
-  #10 ownerType=#210 type=#211 name=<slice [4342,4348]> [4342,4348]
-  #11 ownerType=#210 type=#212 name=<slice [4361,4367]> [4361,4367]
-  #12 ownerType=#210 type=#213 name=<slice [4380,4384]> [4380,4384]
-  #13 ownerType=#210 type=#214 name=<slice [4403,4413]> [4403,4413]
-  #14 ownerType=#210 type=#215 name=<slice [4426,4434]> [4426,4434]
-  #15 ownerType=#216 type=#217 name=<slice [6199,6211]> [6199,6211]
-  #16 ownerType=#216 type=#218 name=<slice [6224,6239]> [6224,6239]
-  #17 ownerType=#219 type=#220 name=<slice [6273,6278]> [6273,6278]
-  #18 ownerType=#219 type=#221 name=<slice [6299,6303]> [6299,6303]
-  #19 ownerType=#219 type=#222 name=<slice [6325,6329]> [6325,6329]
-  #20 ownerType=#219 type=#223 name=<slice [6351,6356]> [6351,6356]
-  #21 ownerType=#219 type=#224 name=<slice [6380,6389]> [6380,6389]
-  #22 ownerType=#219 type=#225 name=<slice [6406,6412]> [6406,6412]
-  #23 ownerType=#219 type=#226 name=<slice [6435,6450]> [6435,6450]
-  #24 ownerType=#219 type=#227 name=<slice [6465,6485]> [6465,6485]
-  #25 ownerType=#228 type=#229 name=<slice [6040,6041]> [6040,6041]
-  #26 ownerType=#228 type=#230 name=<slice [6056,6057]> [6056,6057]
-  #27 ownerType=#228 type=#231 name=<slice [6072,6077]> [6072,6077]
-  #28 ownerType=#228 type=#232 name=<slice [6088,6094]> [6088,6094]
-  #29 ownerType=#228 type=#233 name=<slice [6104,6111]> [6104,6111]
-  #30 ownerType=#228 type=#234 name=<slice [6120,6130]> [6120,6130]
-  #31 ownerType=#228 type=#235 name=<slice [6136,6145]> [6136,6145]
-  #32 ownerType=#228 type=#236 name=<slice [6153,6163]> [6153,6163]
-  #33 ownerType=#237 type=#238 name=<slice [5904,5905]> [5904,5905]
-  #34 ownerType=#237 type=#239 name=<slice [5919,5920]> [5919,5920]
-  #35 ownerType=#237 type=#240 name=<slice [5934,5939]> [5934,5939]
-  #36 ownerType=#237 type=#241 name=<slice [5949,5955]> [5949,5955]
-  #37 ownerType=#237 type=#242 name=<slice [5964,5969]> [5964,5969]
-  #38 ownerType=#237 type=#243 name=<slice [5979,5987]> [5979,5987]
-  #39 ownerType=#237 type=#244 name=<slice [5994,6003]> [5994,6003]
-  #40 ownerType=#33 type=#207 name=<slice [4293,4298]> [4293,4298]
-  #41 ownerType=#33 type=#208 name=<slice [4304,4307]> [4304,4307]
-  #42 ownerType=#69 type=#207 name=<slice [4293,4298]> [4293,4298]
-  #43 ownerType=#69 type=#208 name=<slice [4304,4307]> [4304,4307]
+  #0 ownerType=#4294967295 type=#4294967295 name=<slice [7068,7073]> [7068,7073]
+  #1 ownerType=#4294967295 type=#4294967295 name=<slice [7086,7089]> [7086,7089]
+  #2 ownerType=#4294967295 type=#4294967295 name=<slice [8386,8391]> [8386,8391]
+  #3 ownerType=#4294967295 type=#4294967295 name=<slice [8404,8407]> [8404,8407]
+  #4 ownerType=#4294967295 type=#4294967295 name=<slice [11926,11941]> [11926,11941]
+  #5 ownerType=#4294967295 type=#4294967295 name=<slice [11926,11941]> [11926,11941]
+  #6 ownerType=#206 type=#207 name=<slice [4294,4299]> [4294,4299]
+  #7 ownerType=#206 type=#208 name=<slice [4305,4308]> [4305,4308]
+  #8 ownerType=#209 type=#207 name=<slice [4294,4299]> [4294,4299]
+  #9 ownerType=#209 type=#208 name=<slice [4305,4308]> [4305,4308]
+  #10 ownerType=#210 type=#211 name=<slice [4343,4349]> [4343,4349]
+  #11 ownerType=#210 type=#212 name=<slice [4362,4368]> [4362,4368]
+  #12 ownerType=#210 type=#213 name=<slice [4381,4385]> [4381,4385]
+  #13 ownerType=#210 type=#214 name=<slice [4404,4414]> [4404,4414]
+  #14 ownerType=#210 type=#215 name=<slice [4427,4435]> [4427,4435]
+  #15 ownerType=#216 type=#217 name=<slice [6200,6212]> [6200,6212]
+  #16 ownerType=#216 type=#218 name=<slice [6225,6240]> [6225,6240]
+  #17 ownerType=#219 type=#220 name=<slice [6274,6279]> [6274,6279]
+  #18 ownerType=#219 type=#221 name=<slice [6300,6304]> [6300,6304]
+  #19 ownerType=#219 type=#222 name=<slice [6326,6330]> [6326,6330]
+  #20 ownerType=#219 type=#223 name=<slice [6352,6357]> [6352,6357]
+  #21 ownerType=#219 type=#224 name=<slice [6381,6390]> [6381,6390]
+  #22 ownerType=#219 type=#225 name=<slice [6407,6413]> [6407,6413]
+  #23 ownerType=#219 type=#226 name=<slice [6436,6451]> [6436,6451]
+  #24 ownerType=#219 type=#227 name=<slice [6466,6486]> [6466,6486]
+  #25 ownerType=#228 type=#229 name=<slice [6041,6042]> [6041,6042]
+  #26 ownerType=#228 type=#230 name=<slice [6057,6058]> [6057,6058]
+  #27 ownerType=#228 type=#231 name=<slice [6073,6078]> [6073,6078]
+  #28 ownerType=#228 type=#232 name=<slice [6089,6095]> [6089,6095]
+  #29 ownerType=#228 type=#233 name=<slice [6105,6112]> [6105,6112]
+  #30 ownerType=#228 type=#234 name=<slice [6121,6131]> [6121,6131]
+  #31 ownerType=#228 type=#235 name=<slice [6137,6146]> [6137,6146]
+  #32 ownerType=#228 type=#236 name=<slice [6154,6164]> [6154,6164]
+  #33 ownerType=#237 type=#238 name=<slice [5905,5906]> [5905,5906]
+  #34 ownerType=#237 type=#239 name=<slice [5920,5921]> [5920,5921]
+  #35 ownerType=#237 type=#240 name=<slice [5935,5940]> [5935,5940]
+  #36 ownerType=#237 type=#241 name=<slice [5950,5956]> [5950,5956]
+  #37 ownerType=#237 type=#242 name=<slice [5965,5970]> [5965,5970]
+  #38 ownerType=#237 type=#243 name=<slice [5980,5988]> [5980,5988]
+  #39 ownerType=#237 type=#244 name=<slice [5995,6004]> [5995,6004]
+  #40 ownerType=#33 type=#207 name=<slice [4294,4299]> [4294,4299]
+  #41 ownerType=#33 type=#208 name=<slice [4305,4308]> [4305,4308]
+  #42 ownerType=#69 type=#207 name=<slice [4294,4299]> [4294,4299]
+  #43 ownerType=#69 type=#208 name=<slice [4305,4308]> [4305,4308]
 consts
   #0 STRING bytes="hello world"
   #1 INT value=0
@@ -491,668 +491,668 @@ functions
       3: CALL_FN fn=#14 argc=2 span=[13,18]
       4: DROP span=[13,33]
       5: RETURN_VOID span=[10,35]
-  #1 name="sl_entry_main" [3,16] source=#1 type=#4294967295 params=0 temps=0 locals=#0+0 insts=#6+3
+  #1 name="hop_entry_main" [3,17] source=#1 type=#4294967295 params=0 temps=0 locals=#0+0 insts=#6+3
     locals
     insts
-      0: CALL_FN fn=#0 argc=0 span=[0,18]
-      1: DROP span=[0,18]
-      2: RETURN_VOID span=[0,18]
-  #2 name="HandleInvalid" [203,216] source=#1 type=#0 params=0 temps=0 locals=#0+0 insts=#9+2
+      0: CALL_FN fn=#0 argc=0 span=[0,19]
+      1: DROP span=[0,19]
+      2: RETURN_VOID span=[0,19]
+  #2 name="HandleInvalid" [204,217] source=#1 type=#0 params=0 temps=0 locals=#0+0 insts=#9+2
     locals
     insts
-      0: PUSH_CONST const=#1 span=[226,227]
-      1: RETURN tok=1 span=[226,227]
-  #3 name="HandleSelfThread" [239,255] source=#1 type=#1 params=0 temps=0 locals=#0+0 insts=#11+2
+      0: PUSH_CONST const=#1 span=[227,228]
+      1: RETURN tok=1 span=[227,228]
+  #3 name="HandleSelfThread" [240,256] source=#1 type=#1 params=0 temps=0 locals=#0+0 insts=#11+2
     locals
     insts
-      0: PUSH_CONST const=#2 span=[265,266]
-      1: RETURN tok=1 span=[265,266]
-  #4 name="EventSizeMax" [278,290] source=#1 type=#2 params=0 temps=0 locals=#0+0 insts=#13+2
+      0: PUSH_CONST const=#2 span=[266,267]
+      1: RETURN tok=1 span=[266,267]
+  #4 name="EventSizeMax" [279,291] source=#1 type=#2 params=0 temps=0 locals=#0+0 insts=#13+2
     locals
     insts
-      0: PUSH_CONST const=#3 span=[298,303]
-      1: RETURN tok=1 span=[298,303]
-  #5 name="HandleInfoSize" [6499,6513] source=#1 type=#3 params=0 temps=0 locals=#0+0 insts=#15+2
+      0: PUSH_CONST const=#3 span=[299,304]
+      1: RETURN tok=1 span=[299,304]
+  #5 name="HandleInfoSize" [6500,6514] source=#1 type=#3 params=0 temps=0 locals=#0+0 insts=#15+2
     locals
     insts
-      0: PUSH_CONST const=#4 span=[6520,6522]
-      1: RETURN tok=1 span=[6520,6522]
-  #6 name="ClockInfoSize" [6530,6543] source=#1 type=#4 params=0 temps=0 locals=#0+0 insts=#17+2
+      0: PUSH_CONST const=#4 span=[6521,6523]
+      1: RETURN tok=1 span=[6521,6523]
+  #6 name="ClockInfoSize" [6531,6544] source=#1 type=#4 params=0 temps=0 locals=#0+0 insts=#17+2
     locals
     insts
-      0: PUSH_CONST const=#5 span=[6550,6552]
-      1: RETURN tok=1 span=[6550,6552]
-  #7 name="WindowConfigSize" [6560,6576] source=#1 type=#5 params=0 temps=0 locals=#0+0 insts=#19+2
+      0: PUSH_CONST const=#5 span=[6551,6553]
+      1: RETURN tok=1 span=[6551,6553]
+  #7 name="WindowConfigSize" [6561,6577] source=#1 type=#5 params=0 temps=0 locals=#0+0 insts=#19+2
     locals
     insts
-      0: PUSH_CONST const=#6 span=[6583,6585]
-      1: RETURN tok=1 span=[6583,6585]
-  #8 name="WindowInfoSize" [6593,6607] source=#1 type=#6 params=0 temps=0 locals=#0+0 insts=#21+2
+      0: PUSH_CONST const=#6 span=[6584,6586]
+      1: RETURN tok=1 span=[6584,6586]
+  #8 name="WindowInfoSize" [6594,6608] source=#1 type=#6 params=0 temps=0 locals=#0+0 insts=#21+2
     locals
     insts
-      0: PUSH_CONST const=#7 span=[6614,6616]
-      1: RETURN tok=1 span=[6614,6616]
-  #9 name="ThreadConfigSize" [6624,6640] source=#1 type=#7 params=0 temps=0 locals=#0+0 insts=#23+2
+      0: PUSH_CONST const=#7 span=[6615,6617]
+      1: RETURN tok=1 span=[6615,6617]
+  #9 name="ThreadConfigSize" [6625,6641] source=#1 type=#7 params=0 temps=0 locals=#0+0 insts=#23+2
     locals
     insts
-      0: PUSH_CONST const=#8 span=[6647,6649]
-      1: RETURN tok=1 span=[6647,6649]
-  #10 name="pb_syscall" [6687,6697] source=#1 type=#8 params=8 temps=0 locals=#0+8 insts=#25+0
+      0: PUSH_CONST const=#8 span=[6648,6650]
+      1: RETURN tok=1 span=[6648,6650]
+  #10 name="pb_syscall" [6688,6698] source=#1 type=#8 params=8 temps=0 locals=#0+8 insts=#25+0
     locals
-      #0 name="handle" [6698,6704] type=#9 flags=3
-      #1 name="op" [6710,6712] type=#10 flags=3
-      #2 name="arg1" [6718,6722] type=#11 flags=3
-      #3 name="arg2" [6724,6728] type=#12 flags=3
-      #4 name="arg3" [6730,6734] type=#13 flags=3
-      #5 name="arg4" [6736,6740] type=#14 flags=3
-      #6 name="arg5" [6742,6746] type=#15 flags=3
-      #7 name="arg6" [6748,6752] type=#16 flags=3
+      #0 name="handle" [6699,6705] type=#9 flags=3
+      #1 name="op" [6711,6713] type=#10 flags=3
+      #2 name="arg1" [6719,6723] type=#11 flags=3
+      #3 name="arg2" [6725,6729] type=#12 flags=3
+      #4 name="arg3" [6731,6735] type=#13 flags=3
+      #5 name="arg4" [6737,6741] type=#14 flags=3
+      #6 name="arg5" [6743,6747] type=#15 flags=3
+      #7 name="arg6" [6749,6753] type=#16 flags=3
     insts
-  #11 name="pb_syscall_async" [6805,6821] source=#1 type=#17 params=8 temps=0 locals=#8+8 insts=#25+0
+  #11 name="pb_syscall_async" [6806,6822] source=#1 type=#17 params=8 temps=0 locals=#8+8 insts=#25+0
     locals
-      #0 name="handle" [6822,6828] type=#18 flags=3
-      #1 name="op" [6834,6836] type=#19 flags=3
-      #2 name="arg1" [6842,6846] type=#20 flags=3
-      #3 name="arg2" [6848,6852] type=#21 flags=3
-      #4 name="arg3" [6854,6858] type=#22 flags=3
-      #5 name="arg4" [6860,6864] type=#23 flags=3
-      #6 name="arg5" [6866,6870] type=#24 flags=3
-      #7 name="arg6" [6872,6876] type=#25 flags=3
+      #0 name="handle" [6823,6829] type=#18 flags=3
+      #1 name="op" [6835,6837] type=#19 flags=3
+      #2 name="arg1" [6843,6847] type=#20 flags=3
+      #3 name="arg2" [6849,6853] type=#21 flags=3
+      #4 name="arg3" [6855,6859] type=#22 flags=3
+      #5 name="arg4" [6861,6865] type=#23 flags=3
+      #6 name="arg5" [6867,6871] type=#24 flags=3
+      #7 name="arg6" [6873,6877] type=#25 flags=3
     insts
-  #12 name="log_write_impl" [6890,6904] source=#1 type=#26 params=2 temps=0 locals=#16+7 insts=#25+43
+  #12 name="log_write_impl" [6891,6905] source=#1 type=#26 params=2 temps=0 locals=#16+7 insts=#25+43
     locals
-      #0 name="message" [6905,6912] type=#27 flags=3
-      #1 name="flags" [6919,6924] type=#28 flags=3
-      #2 name="bytes" [6941,6946] type=#29 flags=2
-      #3 name="data" [6968,6972] type=#30 flags=2
-      #4 name="buf" [7054,7057] type=#33 flags=6
-      #5 name="bufv" [7107,7111] type=#34 flags=2
-      #6 name="arg1" [7129,7133] type=#35 flags=2
+      #0 name="message" [6906,6913] type=#27 flags=3
+      #1 name="flags" [6920,6925] type=#28 flags=3
+      #2 name="bytes" [6942,6947] type=#29 flags=2
+      #3 name="data" [6969,6973] type=#30 flags=2
+      #4 name="buf" [7055,7058] type=#33 flags=6
+      #5 name="bufv" [7108,7112] type=#34 flags=2
+      #6 name="arg1" [7130,7134] type=#35 flags=2
     insts
-      0: LOCAL_LOAD local=#0 "message" [6905,6912] span=[6955,6962]
-      1: LOCAL_STORE local=#2 "bytes" [6941,6946] span=[6937,6962]
-      2: PUSH_CONST const=#9 span=[6983,6987]
-      3: COERCE type=#31 span=[6983,6997]
-      4: COERCE type=#32 span=[6983,7005]
-      5: LOCAL_STORE local=#3 "data" [6968,6972] span=[6964,7005]
-      6: LOCAL_LOAD local=#2 "bytes" [6941,6946] span=[7014,7019]
-      7: SEQ_LEN span=[7010,7013]
-      8: PUSH_CONST const=#10 span=[7023,7024]
-      9: BINARY op=GT span=[7010,7024]
-      10: JUMP_IF_FALSE target=15 span=[7007,7048]
-      11: LOCAL_LOAD local=#2 "bytes" [6941,6946] span=[7037,7042]
-      12: PUSH_CONST const=#11 span=[7043,7044]
-      13: ARRAY_ADDR span=[7036,7045]
-      14: LOCAL_STORE local=#3 "data" [6968,6972] span=[7029,7045]
-      15: LOCAL_ZERO local=#4 "buf" [7054,7057] span=[7050,7061]
-      16: LOCAL_LOAD local=#3 "data" [6968,6972] span=[7075,7079]
-      17: LOCAL_LOAD local=#4 "buf" [7054,7057] span=[7063,7066]
-      18: AGG_ADDR field=#0 "bytes" [7067,7072] span=[7067,7072]
-      19: DEREF_STORE span=[7063,7079]
-      20: LOCAL_LOAD local=#2 "bytes" [6941,6946] span=[7095,7100]
-      21: SEQ_LEN span=[7091,7094]
-      22: LOCAL_LOAD local=#4 "buf" [7054,7057] span=[7081,7084]
-      23: AGG_ADDR field=#1 "len" [7085,7088] span=[7085,7088]
-      24: DEREF_STORE span=[7081,7101]
-      25: LOCAL_ADDR local=#4 "buf" [7054,7057] span=[7119,7123]
-      26: LOCAL_STORE local=#5 "bufv" [7107,7111] span=[7103,7123]
-      27: LOCAL_LOAD local=#5 "bufv" [7107,7111] span=[7141,7145]
-      28: CAST cast=INT type=#36 span=[7141,7152]
-      29: LOCAL_STORE local=#6 "arg1" [7129,7133] span=[7125,7152]
-      30: PUSH_CONST const=#12 span=[7172,7173]
-      31: PUSH_CONST const=#13 span=[7179,7181]
-      32: LOCAL_LOAD local=#6 "arg1" [7129,7133] span=[7183,7187]
-      33: PUSH_CONST const=#14 span=[7195,7196]
-      34: LOCAL_LOAD local=#1 "flags" [6919,6924] span=[7204,7209]
-      35: CAST cast=INT type=#37 span=[7204,7216]
-      36: PUSH_CONST const=#15 span=[7224,7225]
-      37: PUSH_CONST const=#16 span=[7233,7234]
-      38: PUSH_CONST const=#17 span=[7242,7243]
-      39: CALL_FN fn=#10 argc=8 span=[7161,7171]
-      40: COERCE type=#38 span=[7161,7251]
-      41: RETURN span=[7154,7251]
-      42: RETURN_VOID span=[6934,7253]
-  #13 name="exit" [7262,7266] source=#1 type=#4294967295 params=1 temps=0 locals=#23+1 insts=#68+12
+      0: LOCAL_LOAD local=#0 "message" [6906,6913] span=[6956,6963]
+      1: LOCAL_STORE local=#2 "bytes" [6942,6947] span=[6938,6963]
+      2: PUSH_CONST const=#9 span=[6984,6988]
+      3: COERCE type=#31 span=[6984,6998]
+      4: COERCE type=#32 span=[6984,7006]
+      5: LOCAL_STORE local=#3 "data" [6969,6973] span=[6965,7006]
+      6: LOCAL_LOAD local=#2 "bytes" [6942,6947] span=[7015,7020]
+      7: SEQ_LEN span=[7011,7014]
+      8: PUSH_CONST const=#10 span=[7024,7025]
+      9: BINARY op=GT span=[7011,7025]
+      10: JUMP_IF_FALSE target=15 span=[7008,7049]
+      11: LOCAL_LOAD local=#2 "bytes" [6942,6947] span=[7038,7043]
+      12: PUSH_CONST const=#11 span=[7044,7045]
+      13: ARRAY_ADDR span=[7037,7046]
+      14: LOCAL_STORE local=#3 "data" [6969,6973] span=[7030,7046]
+      15: LOCAL_ZERO local=#4 "buf" [7055,7058] span=[7051,7062]
+      16: LOCAL_LOAD local=#3 "data" [6969,6973] span=[7076,7080]
+      17: LOCAL_LOAD local=#4 "buf" [7055,7058] span=[7064,7067]
+      18: AGG_ADDR field=#0 "bytes" [7068,7073] span=[7068,7073]
+      19: DEREF_STORE span=[7064,7080]
+      20: LOCAL_LOAD local=#2 "bytes" [6942,6947] span=[7096,7101]
+      21: SEQ_LEN span=[7092,7095]
+      22: LOCAL_LOAD local=#4 "buf" [7055,7058] span=[7082,7085]
+      23: AGG_ADDR field=#1 "len" [7086,7089] span=[7086,7089]
+      24: DEREF_STORE span=[7082,7102]
+      25: LOCAL_ADDR local=#4 "buf" [7055,7058] span=[7120,7124]
+      26: LOCAL_STORE local=#5 "bufv" [7108,7112] span=[7104,7124]
+      27: LOCAL_LOAD local=#5 "bufv" [7108,7112] span=[7142,7146]
+      28: CAST cast=INT type=#36 span=[7142,7153]
+      29: LOCAL_STORE local=#6 "arg1" [7130,7134] span=[7126,7153]
+      30: PUSH_CONST const=#12 span=[7173,7174]
+      31: PUSH_CONST const=#13 span=[7180,7182]
+      32: LOCAL_LOAD local=#6 "arg1" [7130,7134] span=[7184,7188]
+      33: PUSH_CONST const=#14 span=[7196,7197]
+      34: LOCAL_LOAD local=#1 "flags" [6920,6925] span=[7205,7210]
+      35: CAST cast=INT type=#37 span=[7205,7217]
+      36: PUSH_CONST const=#15 span=[7225,7226]
+      37: PUSH_CONST const=#16 span=[7234,7235]
+      38: PUSH_CONST const=#17 span=[7243,7244]
+      39: CALL_FN fn=#10 argc=8 span=[7162,7172]
+      40: COERCE type=#38 span=[7162,7252]
+      41: RETURN span=[7155,7252]
+      42: RETURN_VOID span=[6935,7254]
+  #13 name="exit" [7263,7267] source=#1 type=#4294967295 params=1 temps=0 locals=#23+1 insts=#68+12
     locals
-      #0 name="status" [7267,7273] type=#39 flags=3
+      #0 name="status" [7268,7274] type=#39 flags=3
     insts
-      0: PUSH_CONST const=#18 span=[7297,7298]
-      1: PUSH_CONST const=#19 span=[7304,7306]
-      2: LOCAL_LOAD local=#0 "status" [7267,7273] span=[7314,7320]
-      3: CAST cast=INT type=#40 span=[7314,7327]
-      4: PUSH_CONST const=#20 span=[7335,7336]
-      5: PUSH_CONST const=#21 span=[7344,7345]
-      6: PUSH_CONST const=#22 span=[7353,7354]
-      7: PUSH_CONST const=#23 span=[7362,7363]
-      8: PUSH_CONST const=#24 span=[7371,7372]
-      9: CALL_FN fn=#10 argc=8 span=[7286,7296]
-      10: DROP span=[7282,7373]
-      11: RETURN_VOID span=[7279,7375]
-  #14 name="console_log" [7384,7395] source=#1 type=#4294967295 params=2 temps=0 locals=#24+2 insts=#80+6
+      0: PUSH_CONST const=#18 span=[7298,7299]
+      1: PUSH_CONST const=#19 span=[7305,7307]
+      2: LOCAL_LOAD local=#0 "status" [7268,7274] span=[7315,7321]
+      3: CAST cast=INT type=#40 span=[7315,7328]
+      4: PUSH_CONST const=#20 span=[7336,7337]
+      5: PUSH_CONST const=#21 span=[7345,7346]
+      6: PUSH_CONST const=#22 span=[7354,7355]
+      7: PUSH_CONST const=#23 span=[7363,7364]
+      8: PUSH_CONST const=#24 span=[7372,7373]
+      9: CALL_FN fn=#10 argc=8 span=[7287,7297]
+      10: DROP span=[7283,7374]
+      11: RETURN_VOID span=[7280,7376]
+  #14 name="console_log" [7385,7396] source=#1 type=#4294967295 params=2 temps=0 locals=#24+2 insts=#80+6
     locals
-      #0 name="message" [7396,7403] type=#41 flags=3
-      #1 name="flags" [7410,7415] type=#42 flags=3
+      #0 name="message" [7397,7404] type=#41 flags=3
+      #1 name="flags" [7411,7416] type=#42 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "message" [7396,7403] span=[7443,7450]
-      1: LOCAL_LOAD local=#1 "flags" [7410,7415] span=[7459,7464]
-      2: CAST cast=INT type=#43 span=[7459,7471]
-      3: CALL_FN fn=#12 argc=2 span=[7428,7442]
-      4: DROP span=[7424,7472]
-      5: RETURN_VOID span=[7421,7474]
-  #15 name="panic" [7483,7488] source=#1 type=#4294967295 params=2 temps=0 locals=#26+2 insts=#86+9
+      0: LOCAL_LOAD local=#0 "message" [7397,7404] span=[7444,7451]
+      1: LOCAL_LOAD local=#1 "flags" [7411,7416] span=[7460,7465]
+      2: CAST cast=INT type=#43 span=[7460,7472]
+      3: CALL_FN fn=#12 argc=2 span=[7429,7443]
+      4: DROP span=[7425,7473]
+      5: RETURN_VOID span=[7422,7475]
+  #15 name="panic" [7484,7489] source=#1 type=#4294967295 params=2 temps=0 locals=#26+2 insts=#86+9
     locals
-      #0 name="message" [7489,7496] type=#44 flags=3
-      #1 name="flags" [7503,7508] type=#45 flags=3
+      #0 name="message" [7490,7497] type=#44 flags=3
+      #1 name="flags" [7504,7509] type=#45 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "message" [7489,7496] span=[7536,7543]
-      1: LOCAL_LOAD local=#1 "flags" [7503,7508] span=[7552,7557]
-      2: CAST cast=INT type=#46 span=[7552,7564]
-      3: CALL_FN fn=#12 argc=2 span=[7521,7535]
-      4: DROP span=[7517,7565]
-      5: PUSH_CONST const=#25 span=[7572,7573]
-      6: CALL_FN fn=#13 argc=1 span=[7567,7571]
-      7: DROP span=[7567,7574]
-      8: RETURN_VOID span=[7514,7576]
-  #16 name="thread_enter_main" [7585,7602] source=#1 type=#4294967295 params=1 temps=0 locals=#28+1 insts=#95+11
+      0: LOCAL_LOAD local=#0 "message" [7490,7497] span=[7537,7544]
+      1: LOCAL_LOAD local=#1 "flags" [7504,7509] span=[7553,7558]
+      2: CAST cast=INT type=#46 span=[7553,7565]
+      3: CALL_FN fn=#12 argc=2 span=[7522,7536]
+      4: DROP span=[7518,7566]
+      5: PUSH_CONST const=#25 span=[7573,7574]
+      6: CALL_FN fn=#13 argc=1 span=[7568,7572]
+      7: DROP span=[7568,7575]
+      8: RETURN_VOID span=[7515,7577]
+  #16 name="thread_enter_main" [7586,7603] source=#1 type=#4294967295 params=1 temps=0 locals=#28+1 insts=#95+11
     locals
-      #0 name="flags" [7603,7608] type=#47 flags=3
+      #0 name="flags" [7604,7609] type=#47 flags=3
     insts
-      0: PUSH_CONST const=#26 span=[7632,7633]
-      1: PUSH_CONST const=#27 span=[7639,7641]
-      2: LOCAL_LOAD local=#0 "flags" [7603,7608] span=[7649,7654]
-      3: PUSH_CONST const=#28 span=[7662,7663]
-      4: PUSH_CONST const=#29 span=[7671,7672]
-      5: PUSH_CONST const=#30 span=[7680,7681]
-      6: PUSH_CONST const=#31 span=[7689,7690]
-      7: PUSH_CONST const=#32 span=[7698,7699]
-      8: CALL_FN fn=#10 argc=8 span=[7621,7631]
-      9: DROP span=[7617,7700]
-      10: RETURN_VOID span=[7614,7702]
-  #17 name="thread_exit" [7711,7722] source=#1 type=#48 params=2 temps=0 locals=#29+2 insts=#106+13
+      0: PUSH_CONST const=#26 span=[7633,7634]
+      1: PUSH_CONST const=#27 span=[7640,7642]
+      2: LOCAL_LOAD local=#0 "flags" [7604,7609] span=[7650,7655]
+      3: PUSH_CONST const=#28 span=[7663,7664]
+      4: PUSH_CONST const=#29 span=[7672,7673]
+      5: PUSH_CONST const=#30 span=[7681,7682]
+      6: PUSH_CONST const=#31 span=[7690,7691]
+      7: PUSH_CONST const=#32 span=[7699,7700]
+      8: CALL_FN fn=#10 argc=8 span=[7622,7632]
+      9: DROP span=[7618,7701]
+      10: RETURN_VOID span=[7615,7703]
+  #17 name="thread_exit" [7712,7723] source=#1 type=#48 params=2 temps=0 locals=#29+2 insts=#106+13
     locals
-      #0 name="thread" [7723,7729] type=#49 flags=3
-      #1 name="status" [7738,7744] type=#50 flags=3
+      #0 name="thread" [7724,7730] type=#49 flags=3
+      #1 name="status" [7739,7745] type=#50 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "thread" [7723,7729] span=[7775,7781]
-      1: PUSH_CONST const=#33 span=[7787,7789]
-      2: LOCAL_LOAD local=#1 "status" [7738,7744] span=[7797,7803]
-      3: CAST cast=INT type=#51 span=[7797,7810]
-      4: PUSH_CONST const=#34 span=[7818,7819]
-      5: PUSH_CONST const=#35 span=[7827,7828]
-      6: PUSH_CONST const=#36 span=[7836,7837]
-      7: PUSH_CONST const=#37 span=[7845,7846]
-      8: PUSH_CONST const=#38 span=[7854,7855]
-      9: CALL_FN fn=#10 argc=8 span=[7764,7774]
-      10: COERCE type=#52 span=[7764,7863]
-      11: RETURN span=[7757,7863]
-      12: RETURN_VOID span=[7754,7865]
-  #18 name="thread_exit_process" [7874,7893] source=#1 type=#53 params=2 temps=0 locals=#31+2 insts=#119+13
+      0: LOCAL_LOAD local=#0 "thread" [7724,7730] span=[7776,7782]
+      1: PUSH_CONST const=#33 span=[7788,7790]
+      2: LOCAL_LOAD local=#1 "status" [7739,7745] span=[7798,7804]
+      3: CAST cast=INT type=#51 span=[7798,7811]
+      4: PUSH_CONST const=#34 span=[7819,7820]
+      5: PUSH_CONST const=#35 span=[7828,7829]
+      6: PUSH_CONST const=#36 span=[7837,7838]
+      7: PUSH_CONST const=#37 span=[7846,7847]
+      8: PUSH_CONST const=#38 span=[7855,7856]
+      9: CALL_FN fn=#10 argc=8 span=[7765,7775]
+      10: COERCE type=#52 span=[7765,7864]
+      11: RETURN span=[7758,7864]
+      12: RETURN_VOID span=[7755,7866]
+  #18 name="thread_exit_process" [7875,7894] source=#1 type=#53 params=2 temps=0 locals=#31+2 insts=#119+13
     locals
-      #0 name="thread" [7894,7900] type=#54 flags=3
-      #1 name="status" [7909,7915] type=#55 flags=3
+      #0 name="thread" [7895,7901] type=#54 flags=3
+      #1 name="status" [7910,7916] type=#55 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "thread" [7894,7900] span=[7946,7952]
-      1: PUSH_CONST const=#39 span=[7958,7960]
-      2: LOCAL_LOAD local=#1 "status" [7909,7915] span=[7968,7974]
-      3: CAST cast=INT type=#56 span=[7968,7981]
-      4: PUSH_CONST const=#40 span=[7989,7990]
-      5: PUSH_CONST const=#41 span=[7998,7999]
-      6: PUSH_CONST const=#42 span=[8007,8008]
-      7: PUSH_CONST const=#43 span=[8016,8017]
-      8: PUSH_CONST const=#44 span=[8025,8026]
-      9: CALL_FN fn=#10 argc=8 span=[7935,7945]
-      10: COERCE type=#57 span=[7935,8034]
-      11: RETURN span=[7928,8034]
-      12: RETURN_VOID span=[7925,8036]
-  #19 name="thread_exit_status" [8045,8063] source=#1 type=#58 params=1 temps=0 locals=#33+1 insts=#132+12
+      0: LOCAL_LOAD local=#0 "thread" [7895,7901] span=[7947,7953]
+      1: PUSH_CONST const=#39 span=[7959,7961]
+      2: LOCAL_LOAD local=#1 "status" [7910,7916] span=[7969,7975]
+      3: CAST cast=INT type=#56 span=[7969,7982]
+      4: PUSH_CONST const=#40 span=[7990,7991]
+      5: PUSH_CONST const=#41 span=[7999,8000]
+      6: PUSH_CONST const=#42 span=[8008,8009]
+      7: PUSH_CONST const=#43 span=[8017,8018]
+      8: PUSH_CONST const=#44 span=[8026,8027]
+      9: CALL_FN fn=#10 argc=8 span=[7936,7946]
+      10: COERCE type=#57 span=[7936,8035]
+      11: RETURN span=[7929,8035]
+      12: RETURN_VOID span=[7926,8037]
+  #19 name="thread_exit_status" [8046,8064] source=#1 type=#58 params=1 temps=0 locals=#33+1 insts=#132+12
     locals
-      #0 name="thread" [8064,8070] type=#59 flags=3
+      #0 name="thread" [8065,8071] type=#59 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "thread" [8064,8070] span=[8104,8110]
-      1: PUSH_CONST const=#45 span=[8116,8118]
-      2: PUSH_CONST const=#46 span=[8126,8127]
-      3: PUSH_CONST const=#47 span=[8135,8136]
-      4: PUSH_CONST const=#48 span=[8144,8145]
-      5: PUSH_CONST const=#49 span=[8153,8154]
-      6: PUSH_CONST const=#50 span=[8162,8163]
-      7: PUSH_CONST const=#51 span=[8171,8172]
-      8: CALL_FN fn=#10 argc=8 span=[8093,8103]
-      9: CAST cast=INT type=#60 span=[8093,8180]
-      10: RETURN span=[8086,8180]
-      11: RETURN_VOID span=[8083,8182]
-  #20 name="thread_log_write" [8191,8207] source=#1 type=#61 params=3 temps=0 locals=#34+8 insts=#144+47
+      0: LOCAL_LOAD local=#0 "thread" [8065,8071] span=[8105,8111]
+      1: PUSH_CONST const=#45 span=[8117,8119]
+      2: PUSH_CONST const=#46 span=[8127,8128]
+      3: PUSH_CONST const=#47 span=[8136,8137]
+      4: PUSH_CONST const=#48 span=[8145,8146]
+      5: PUSH_CONST const=#49 span=[8154,8155]
+      6: PUSH_CONST const=#50 span=[8163,8164]
+      7: PUSH_CONST const=#51 span=[8172,8173]
+      8: CALL_FN fn=#10 argc=8 span=[8094,8104]
+      9: CAST cast=INT type=#60 span=[8094,8181]
+      10: RETURN span=[8087,8181]
+      11: RETURN_VOID span=[8084,8183]
+  #20 name="thread_log_write" [8192,8208] source=#1 type=#61 params=3 temps=0 locals=#34+8 insts=#144+47
     locals
-      #0 name="thread" [8208,8214] type=#62 flags=3
-      #1 name="message" [8223,8230] type=#63 flags=3
-      #2 name="flags" [8237,8242] type=#64 flags=3
-      #3 name="bytes" [8259,8264] type=#65 flags=2
-      #4 name="data" [8286,8290] type=#66 flags=2
-      #5 name="buf" [8372,8375] type=#69 flags=6
-      #6 name="bufv" [8425,8429] type=#70 flags=2
-      #7 name="arg1" [8447,8451] type=#71 flags=2
+      #0 name="thread" [8209,8215] type=#62 flags=3
+      #1 name="message" [8224,8231] type=#63 flags=3
+      #2 name="flags" [8238,8243] type=#64 flags=3
+      #3 name="bytes" [8260,8265] type=#65 flags=2
+      #4 name="data" [8287,8291] type=#66 flags=2
+      #5 name="buf" [8373,8376] type=#69 flags=6
+      #6 name="bufv" [8426,8430] type=#70 flags=2
+      #7 name="arg1" [8448,8452] type=#71 flags=2
     insts
-      0: LOCAL_LOAD local=#1 "message" [8223,8230] span=[8273,8280]
-      1: LOCAL_STORE local=#3 "bytes" [8259,8264] span=[8255,8280]
-      2: PUSH_CONST const=#52 span=[8301,8305]
-      3: COERCE type=#67 span=[8301,8315]
-      4: COERCE type=#68 span=[8301,8323]
-      5: LOCAL_STORE local=#4 "data" [8286,8290] span=[8282,8323]
-      6: LOCAL_LOAD local=#3 "bytes" [8259,8264] span=[8332,8337]
-      7: SEQ_LEN span=[8328,8331]
-      8: PUSH_CONST const=#53 span=[8341,8342]
-      9: BINARY op=GT span=[8328,8342]
-      10: JUMP_IF_FALSE target=15 span=[8325,8366]
-      11: LOCAL_LOAD local=#3 "bytes" [8259,8264] span=[8355,8360]
-      12: PUSH_CONST const=#54 span=[8361,8362]
-      13: ARRAY_ADDR span=[8354,8363]
-      14: LOCAL_STORE local=#4 "data" [8286,8290] span=[8347,8363]
-      15: LOCAL_ZERO local=#5 "buf" [8372,8375] span=[8368,8379]
-      16: LOCAL_LOAD local=#4 "data" [8286,8290] span=[8393,8397]
-      17: LOCAL_LOAD local=#5 "buf" [8372,8375] span=[8381,8384]
-      18: AGG_ADDR field=#2 "bytes" [8385,8390] span=[8385,8390]
-      19: DEREF_STORE span=[8381,8397]
-      20: LOCAL_LOAD local=#3 "bytes" [8259,8264] span=[8413,8418]
-      21: SEQ_LEN span=[8409,8412]
-      22: LOCAL_LOAD local=#5 "buf" [8372,8375] span=[8399,8402]
-      23: AGG_ADDR field=#3 "len" [8403,8406] span=[8403,8406]
-      24: DEREF_STORE span=[8399,8419]
-      25: LOCAL_ADDR local=#5 "buf" [8372,8375] span=[8437,8441]
-      26: LOCAL_STORE local=#6 "bufv" [8425,8429] span=[8421,8441]
-      27: LOCAL_LOAD local=#6 "bufv" [8425,8429] span=[8459,8463]
-      28: CAST cast=INT type=#72 span=[8459,8470]
-      29: LOCAL_STORE local=#7 "arg1" [8447,8451] span=[8443,8470]
-      30: LOCAL_LOAD local=#0 "thread" [8208,8214] span=[8490,8496]
-      31: PUSH_CONST const=#55 span=[8502,8504]
-      32: LOCAL_LOAD local=#7 "arg1" [8447,8451] span=[8506,8510]
-      33: PUSH_CONST const=#56 span=[8518,8519]
-      34: CAST cast=INT type=#73 span=[8518,8526]
-      35: LOCAL_LOAD local=#2 "flags" [8237,8242] span=[8534,8539]
-      36: CAST cast=INT type=#74 span=[8534,8546]
-      37: PUSH_CONST const=#57 span=[8554,8555]
-      38: CAST cast=INT type=#75 span=[8554,8562]
-      39: PUSH_CONST const=#58 span=[8570,8571]
-      40: CAST cast=INT type=#76 span=[8570,8578]
-      41: PUSH_CONST const=#59 span=[8586,8587]
-      42: CAST cast=INT type=#77 span=[8586,8594]
-      43: CALL_FN fn=#10 argc=8 span=[8479,8489]
-      44: COERCE type=#78 span=[8479,8602]
-      45: RETURN span=[8472,8602]
-      46: RETURN_VOID span=[8252,8604]
-  #21 name="handle_close" [8613,8625] source=#1 type=#79 params=1 temps=0 locals=#42+1 insts=#191+12
+      0: LOCAL_LOAD local=#1 "message" [8224,8231] span=[8274,8281]
+      1: LOCAL_STORE local=#3 "bytes" [8260,8265] span=[8256,8281]
+      2: PUSH_CONST const=#52 span=[8302,8306]
+      3: COERCE type=#67 span=[8302,8316]
+      4: COERCE type=#68 span=[8302,8324]
+      5: LOCAL_STORE local=#4 "data" [8287,8291] span=[8283,8324]
+      6: LOCAL_LOAD local=#3 "bytes" [8260,8265] span=[8333,8338]
+      7: SEQ_LEN span=[8329,8332]
+      8: PUSH_CONST const=#53 span=[8342,8343]
+      9: BINARY op=GT span=[8329,8343]
+      10: JUMP_IF_FALSE target=15 span=[8326,8367]
+      11: LOCAL_LOAD local=#3 "bytes" [8260,8265] span=[8356,8361]
+      12: PUSH_CONST const=#54 span=[8362,8363]
+      13: ARRAY_ADDR span=[8355,8364]
+      14: LOCAL_STORE local=#4 "data" [8287,8291] span=[8348,8364]
+      15: LOCAL_ZERO local=#5 "buf" [8373,8376] span=[8369,8380]
+      16: LOCAL_LOAD local=#4 "data" [8287,8291] span=[8394,8398]
+      17: LOCAL_LOAD local=#5 "buf" [8373,8376] span=[8382,8385]
+      18: AGG_ADDR field=#2 "bytes" [8386,8391] span=[8386,8391]
+      19: DEREF_STORE span=[8382,8398]
+      20: LOCAL_LOAD local=#3 "bytes" [8260,8265] span=[8414,8419]
+      21: SEQ_LEN span=[8410,8413]
+      22: LOCAL_LOAD local=#5 "buf" [8373,8376] span=[8400,8403]
+      23: AGG_ADDR field=#3 "len" [8404,8407] span=[8404,8407]
+      24: DEREF_STORE span=[8400,8420]
+      25: LOCAL_ADDR local=#5 "buf" [8373,8376] span=[8438,8442]
+      26: LOCAL_STORE local=#6 "bufv" [8426,8430] span=[8422,8442]
+      27: LOCAL_LOAD local=#6 "bufv" [8426,8430] span=[8460,8464]
+      28: CAST cast=INT type=#72 span=[8460,8471]
+      29: LOCAL_STORE local=#7 "arg1" [8448,8452] span=[8444,8471]
+      30: LOCAL_LOAD local=#0 "thread" [8209,8215] span=[8491,8497]
+      31: PUSH_CONST const=#55 span=[8503,8505]
+      32: LOCAL_LOAD local=#7 "arg1" [8448,8452] span=[8507,8511]
+      33: PUSH_CONST const=#56 span=[8519,8520]
+      34: CAST cast=INT type=#73 span=[8519,8527]
+      35: LOCAL_LOAD local=#2 "flags" [8238,8243] span=[8535,8540]
+      36: CAST cast=INT type=#74 span=[8535,8547]
+      37: PUSH_CONST const=#57 span=[8555,8556]
+      38: CAST cast=INT type=#75 span=[8555,8563]
+      39: PUSH_CONST const=#58 span=[8571,8572]
+      40: CAST cast=INT type=#76 span=[8571,8579]
+      41: PUSH_CONST const=#59 span=[8587,8588]
+      42: CAST cast=INT type=#77 span=[8587,8595]
+      43: CALL_FN fn=#10 argc=8 span=[8480,8490]
+      44: COERCE type=#78 span=[8480,8603]
+      45: RETURN span=[8473,8603]
+      46: RETURN_VOID span=[8253,8605]
+  #21 name="handle_close" [8614,8626] source=#1 type=#79 params=1 temps=0 locals=#42+1 insts=#191+12
     locals
-      #0 name="handle" [8626,8632] type=#80 flags=3
+      #0 name="handle" [8627,8633] type=#80 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "handle" [8626,8632] span=[8666,8672]
-      1: PUSH_CONST const=#60 span=[8678,8680]
-      2: PUSH_CONST const=#61 span=[8688,8689]
-      3: PUSH_CONST const=#62 span=[8697,8698]
-      4: PUSH_CONST const=#63 span=[8706,8707]
-      5: PUSH_CONST const=#64 span=[8715,8716]
-      6: PUSH_CONST const=#65 span=[8724,8725]
-      7: PUSH_CONST const=#66 span=[8733,8734]
-      8: CALL_FN fn=#10 argc=8 span=[8655,8665]
-      9: COERCE type=#81 span=[8655,8742]
-      10: RETURN span=[8648,8742]
-      11: RETURN_VOID span=[8645,8744]
-  #22 name="handle_duplicate" [8753,8769] source=#1 type=#82 params=3 temps=0 locals=#43+3 insts=#203+14
+      0: LOCAL_LOAD local=#0 "handle" [8627,8633] span=[8667,8673]
+      1: PUSH_CONST const=#60 span=[8679,8681]
+      2: PUSH_CONST const=#61 span=[8689,8690]
+      3: PUSH_CONST const=#62 span=[8698,8699]
+      4: PUSH_CONST const=#63 span=[8707,8708]
+      5: PUSH_CONST const=#64 span=[8716,8717]
+      6: PUSH_CONST const=#65 span=[8725,8726]
+      7: PUSH_CONST const=#66 span=[8734,8735]
+      8: CALL_FN fn=#10 argc=8 span=[8656,8666]
+      9: COERCE type=#81 span=[8656,8743]
+      10: RETURN span=[8649,8743]
+      11: RETURN_VOID span=[8646,8745]
+  #22 name="handle_duplicate" [8754,8770] source=#1 type=#82 params=3 temps=0 locals=#43+3 insts=#203+14
     locals
-      #0 name="handle" [8770,8776] type=#83 flags=3
-      #1 name="rights" [8785,8791] type=#84 flags=3
-      #2 name="name" [8800,8804] type=#85 flags=3
+      #0 name="handle" [8771,8777] type=#83 flags=3
+      #1 name="rights" [8786,8792] type=#84 flags=3
+      #2 name="name" [8801,8805] type=#85 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "handle" [8770,8776] span=[8845,8851]
-      1: PUSH_CONST const=#67 span=[8857,8859]
-      2: LOCAL_LOAD local=#1 "rights" [8785,8791] span=[8867,8873]
-      3: CAST cast=INT type=#86 span=[8867,8880]
-      4: LOCAL_LOAD local=#2 "name" [8800,8804] span=[8888,8892]
-      5: CAST cast=INT type=#87 span=[8888,8899]
-      6: PUSH_CONST const=#68 span=[8907,8908]
-      7: PUSH_CONST const=#69 span=[8916,8917]
-      8: PUSH_CONST const=#70 span=[8925,8926]
-      9: PUSH_CONST const=#71 span=[8934,8935]
-      10: CALL_FN fn=#10 argc=8 span=[8834,8844]
-      11: COERCE type=#88 span=[8834,8946]
-      12: RETURN span=[8827,8946]
-      13: RETURN_VOID span=[8824,8948]
-  #23 name="handle_list" [8957,8968] source=#1 type=#89 params=4 temps=0 locals=#46+5 insts=#217+16
+      0: LOCAL_LOAD local=#0 "handle" [8771,8777] span=[8846,8852]
+      1: PUSH_CONST const=#67 span=[8858,8860]
+      2: LOCAL_LOAD local=#1 "rights" [8786,8792] span=[8868,8874]
+      3: CAST cast=INT type=#86 span=[8868,8881]
+      4: LOCAL_LOAD local=#2 "name" [8801,8805] span=[8889,8893]
+      5: CAST cast=INT type=#87 span=[8889,8900]
+      6: PUSH_CONST const=#68 span=[8908,8909]
+      7: PUSH_CONST const=#69 span=[8917,8918]
+      8: PUSH_CONST const=#70 span=[8926,8927]
+      9: PUSH_CONST const=#71 span=[8935,8936]
+      10: CALL_FN fn=#10 argc=8 span=[8835,8845]
+      11: COERCE type=#88 span=[8835,8947]
+      12: RETURN span=[8828,8947]
+      13: RETURN_VOID span=[8825,8949]
+  #23 name="handle_list" [8958,8969] source=#1 type=#89 params=4 temps=0 locals=#46+5 insts=#217+16
     locals
-      #0 name="handles" [8969,8976] type=#90 flags=3
-      #1 name="handlesCap" [8990,9000] type=#91 flags=3
-      #2 name="flags" [9006,9011] type=#92 flags=3
-      #3 name="predicate" [9013,9022] type=#93 flags=3
-      #4 name="arg1" [9039,9043] type=#94 flags=2
+      #0 name="handles" [8970,8977] type=#90 flags=3
+      #1 name="handlesCap" [8991,9001] type=#91 flags=3
+      #2 name="flags" [9007,9012] type=#92 flags=3
+      #3 name="predicate" [9014,9023] type=#93 flags=3
+      #4 name="arg1" [9040,9044] type=#94 flags=2
     insts
-      0: LOCAL_LOAD local=#0 "handles" [8969,8976] span=[9050,9057]
-      1: CAST cast=INT type=#95 span=[9050,9064]
-      2: LOCAL_STORE local=#4 "arg1" [9039,9043] span=[9035,9064]
-      3: PUSH_CONST const=#72 span=[9084,9085]
-      4: PUSH_CONST const=#73 span=[9091,9093]
-      5: LOCAL_LOAD local=#4 "arg1" [9039,9043] span=[9095,9099]
-      6: LOCAL_LOAD local=#1 "handlesCap" [8990,9000] span=[9107,9117]
-      7: CAST cast=INT type=#96 span=[9107,9124]
-      8: PUSH_CONST const=#74 span=[9132,9134]
-      9: LOCAL_LOAD local=#2 "flags" [9006,9011] span=[9142,9147]
-      10: LOCAL_LOAD local=#3 "predicate" [9013,9022] span=[9155,9164]
-      11: PUSH_CONST const=#75 span=[9172,9173]
-      12: CALL_FN fn=#10 argc=8 span=[9073,9083]
-      13: CAST cast=INT type=#97 span=[9073,9181]
-      14: RETURN span=[9066,9181]
-      15: RETURN_VOID span=[9032,9183]
-  #24 name="object_observe" [9192,9206] source=#1 type=#98 params=3 temps=0 locals=#51+3 insts=#233+14
+      0: LOCAL_LOAD local=#0 "handles" [8970,8977] span=[9051,9058]
+      1: CAST cast=INT type=#95 span=[9051,9065]
+      2: LOCAL_STORE local=#4 "arg1" [9040,9044] span=[9036,9065]
+      3: PUSH_CONST const=#72 span=[9085,9086]
+      4: PUSH_CONST const=#73 span=[9092,9094]
+      5: LOCAL_LOAD local=#4 "arg1" [9040,9044] span=[9096,9100]
+      6: LOCAL_LOAD local=#1 "handlesCap" [8991,9001] span=[9108,9118]
+      7: CAST cast=INT type=#96 span=[9108,9125]
+      8: PUSH_CONST const=#74 span=[9133,9135]
+      9: LOCAL_LOAD local=#2 "flags" [9007,9012] span=[9143,9148]
+      10: LOCAL_LOAD local=#3 "predicate" [9014,9023] span=[9156,9165]
+      11: PUSH_CONST const=#75 span=[9173,9174]
+      12: CALL_FN fn=#10 argc=8 span=[9074,9084]
+      13: CAST cast=INT type=#97 span=[9074,9182]
+      14: RETURN span=[9067,9182]
+      15: RETURN_VOID span=[9033,9184]
+  #24 name="object_observe" [9193,9207] source=#1 type=#98 params=3 temps=0 locals=#51+3 insts=#233+14
     locals
-      #0 name="handle" [9207,9213] type=#99 flags=3
-      #1 name="signals" [9222,9229] type=#100 flags=3
-      #2 name="flags" [9239,9244] type=#101 flags=3
+      #0 name="handle" [9208,9214] type=#99 flags=3
+      #1 name="signals" [9223,9230] type=#100 flags=3
+      #2 name="flags" [9240,9245] type=#101 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "handle" [9207,9213] span=[9275,9281]
-      1: PUSH_CONST const=#76 span=[9287,9289]
-      2: LOCAL_LOAD local=#1 "signals" [9222,9229] span=[9297,9304]
-      3: CAST cast=INT type=#102 span=[9297,9311]
-      4: LOCAL_LOAD local=#2 "flags" [9239,9244] span=[9319,9324]
-      5: CAST cast=INT type=#103 span=[9319,9331]
-      6: PUSH_CONST const=#77 span=[9339,9340]
-      7: PUSH_CONST const=#78 span=[9348,9349]
-      8: PUSH_CONST const=#79 span=[9357,9358]
-      9: PUSH_CONST const=#80 span=[9366,9367]
-      10: CALL_FN fn=#10 argc=8 span=[9264,9274]
-      11: COERCE type=#104 span=[9264,9375]
-      12: RETURN span=[9257,9375]
-      13: RETURN_VOID span=[9254,9377]
-  #25 name="object_signal" [9386,9399] source=#1 type=#105 params=4 temps=0 locals=#54+4 insts=#247+15
+      0: LOCAL_LOAD local=#0 "handle" [9208,9214] span=[9276,9282]
+      1: PUSH_CONST const=#76 span=[9288,9290]
+      2: LOCAL_LOAD local=#1 "signals" [9223,9230] span=[9298,9305]
+      3: CAST cast=INT type=#102 span=[9298,9312]
+      4: LOCAL_LOAD local=#2 "flags" [9240,9245] span=[9320,9325]
+      5: CAST cast=INT type=#103 span=[9320,9332]
+      6: PUSH_CONST const=#77 span=[9340,9341]
+      7: PUSH_CONST const=#78 span=[9349,9350]
+      8: PUSH_CONST const=#79 span=[9358,9359]
+      9: PUSH_CONST const=#80 span=[9367,9368]
+      10: CALL_FN fn=#10 argc=8 span=[9265,9275]
+      11: COERCE type=#104 span=[9265,9376]
+      12: RETURN span=[9258,9376]
+      13: RETURN_VOID span=[9255,9378]
+  #25 name="object_signal" [9387,9400] source=#1 type=#105 params=4 temps=0 locals=#54+4 insts=#247+15
     locals
-      #0 name="handle" [9400,9406] type=#106 flags=3
-      #1 name="disableUser" [9415,9426] type=#107 flags=3
-      #2 name="enableUser" [9428,9438] type=#108 flags=3
-      #3 name="pulseUser" [9440,9449] type=#109 flags=3
+      #0 name="handle" [9401,9407] type=#106 flags=3
+      #1 name="disableUser" [9416,9427] type=#107 flags=3
+      #2 name="enableUser" [9429,9439] type=#108 flags=3
+      #3 name="pulseUser" [9441,9450] type=#109 flags=3
     insts
-      0: LOCAL_LOAD local=#0 "handle" [9400,9406] span=[9484,9490]
-      1: PUSH_CONST const=#81 span=[9496,9498]
-      2: LOCAL_LOAD local=#1 "disableUser" [9415,9426] span=[9506,9517]
-      3: CAST cast=INT type=#110 span=[9506,9524]
-      4: LOCAL_LOAD local=#2 "enableUser" [9428,9438] span=[9532,9542]
-      5: CAST cast=INT type=#111 span=[9532,9549]
-      6: LOCAL_LOAD local=#3 "pulseUser" [9440,9449] span=[9557,9566]
-      7: CAST cast=INT type=#112 span=[9557,9573]
-      8: PUSH_CONST const=#82 span=[9581,9582]
-      9: PUSH_CONST const=#83 span=[9590,9591]
-      10: PUSH_CONST const=#84 span=[9599,9600]
-      11: CALL_FN fn=#10 argc=8 span=[9473,9483]
-      12: COERCE type=#113 span=[9473,9608]
-      13: RETURN span=[9466,9608]
-      14: RETURN_VOID span=[9463,9610]
-  #26 name="clock_monotonic" [9619,9634] source=#1 type=#114 params=0 temps=0 locals=#58+0 insts=#262+12
-    locals
-    insts
-      0: PUSH_CONST const=#85 span=[9663,9664]
-      1: PUSH_CONST const=#86 span=[9670,9672]
-      2: PUSH_CONST const=#87 span=[9680,9681]
-      3: PUSH_CONST const=#88 span=[9689,9690]
-      4: PUSH_CONST const=#89 span=[9698,9699]
-      5: PUSH_CONST const=#90 span=[9707,9708]
-      6: PUSH_CONST const=#91 span=[9716,9717]
-      7: PUSH_CONST const=#92 span=[9725,9726]
-      8: CALL_FN fn=#10 argc=8 span=[9652,9662]
-      9: COERCE type=#115 span=[9652,9735]
-      10: RETURN span=[9645,9735]
-      11: RETURN_VOID span=[9642,9737]
-  #27 name="clock_read" [9746,9756] source=#1 type=#116 params=1 temps=0 locals=#58+1 insts=#274+12
-    locals
-      #0 name="clock" [9757,9762] type=#117 flags=3
-    insts
-      0: LOCAL_LOAD local=#0 "clock" [9757,9762] span=[9797,9802]
-      1: PUSH_CONST const=#93 span=[9808,9810]
-      2: PUSH_CONST const=#94 span=[9818,9819]
-      3: PUSH_CONST const=#95 span=[9827,9828]
-      4: PUSH_CONST const=#96 span=[9836,9837]
-      5: PUSH_CONST const=#97 span=[9845,9846]
-      6: PUSH_CONST const=#98 span=[9854,9855]
-      7: PUSH_CONST const=#99 span=[9863,9864]
-      8: CALL_FN fn=#10 argc=8 span=[9786,9796]
-      9: COERCE type=#118 span=[9786,9873]
-      10: RETURN span=[9779,9873]
-      11: RETURN_VOID span=[9776,9875]
-  #28 name="clock_read_info" [9884,9899] source=#1 type=#119 params=2 temps=0 locals=#59+3 insts=#286+20
-    locals
-      #0 name="clock" [9900,9905] type=#120 flags=3
-      #1 name="info" [9914,9918] type=#121 flags=3
-      #2 name="arg1" [9942,9946] type=#122 flags=2
-    insts
-      0: LOCAL_LOAD local=#1 "info" [9914,9918] span=[9953,9957]
-      1: CAST cast=INT type=#123 span=[9953,9964]
-      2: LOCAL_STORE local=#2 "arg1" [9942,9946] span=[9938,9964]
-      3: LOCAL_LOAD local=#0 "clock" [9900,9905] span=[9984,9989]
-      4: PUSH_CONST const=#100 span=[9995,9997]
-      5: LOCAL_LOAD local=#2 "arg1" [9942,9946] span=[9999,10003]
-      6: PUSH_CONST const=#101 span=[10011,10013]
-      7: CAST cast=INT type=#124 span=[10011,10020]
-      8: PUSH_CONST const=#102 span=[10028,10029]
-      9: CAST cast=INT type=#125 span=[10028,10036]
-      10: PUSH_CONST const=#103 span=[10044,10045]
-      11: CAST cast=INT type=#126 span=[10044,10052]
-      12: PUSH_CONST const=#104 span=[10060,10061]
-      13: CAST cast=INT type=#127 span=[10060,10068]
-      14: PUSH_CONST const=#105 span=[10076,10077]
-      15: CAST cast=INT type=#128 span=[10076,10084]
-      16: CALL_FN fn=#10 argc=8 span=[9973,9983]
-      17: COERCE type=#129 span=[9973,10092]
-      18: RETURN span=[9966,10092]
-      19: RETURN_VOID span=[9935,10094]
-  #29 name="event_poll" [10103,10113] source=#1 type=#130 params=3 temps=0 locals=#62+5 insts=#306+30
-    locals
-      #0 name="buffer" [10114,10120] type=#131 flags=3
-      #1 name="deadline" [10128,10136] type=#132 flags=3
-      #2 name="leeway" [10138,10144] type=#133 flags=3
-      #3 name="ptr" [10161,10164] type=#134 flags=2
-      #4 name="arg1" [10244,10248] type=#137 flags=2
-    insts
-      0: PUSH_CONST const=#106 span=[10172,10176]
-      1: COERCE type=#135 span=[10172,10186]
-      2: COERCE type=#136 span=[10172,10194]
-      3: LOCAL_STORE local=#3 "ptr" [10161,10164] span=[10157,10194]
-      4: LOCAL_LOAD local=#0 "buffer" [10114,10120] span=[10203,10209]
-      5: SEQ_LEN span=[10199,10202]
-      6: PUSH_CONST const=#107 span=[10213,10214]
-      7: BINARY op=GT span=[10199,10214]
-      8: JUMP_IF_FALSE target=13 span=[10196,10238]
-      9: LOCAL_LOAD local=#0 "buffer" [10114,10120] span=[10226,10232]
-      10: PUSH_CONST const=#108 span=[10233,10234]
-      11: ARRAY_ADDR span=[10225,10235]
-      12: LOCAL_STORE local=#3 "ptr" [10161,10164] span=[10219,10235]
-      13: LOCAL_LOAD local=#3 "ptr" [10161,10164] span=[10255,10258]
-      14: CAST cast=INT type=#138 span=[10255,10265]
-      15: LOCAL_STORE local=#4 "arg1" [10244,10248] span=[10240,10265]
-      16: PUSH_CONST const=#109 span=[10291,10292]
-      17: PUSH_CONST const=#110 span=[10298,10300]
-      18: LOCAL_LOAD local=#4 "arg1" [10244,10248] span=[10302,10306]
-      19: LOCAL_LOAD local=#0 "buffer" [10114,10120] span=[10318,10324]
-      20: SEQ_LEN span=[10314,10317]
-      21: CAST cast=INT type=#139 span=[10314,10332]
-      22: LOCAL_LOAD local=#1 "deadline" [10128,10136] span=[10340,10348]
-      23: LOCAL_LOAD local=#2 "leeway" [10138,10144] span=[10356,10362]
-      24: PUSH_CONST const=#111 span=[10370,10371]
-      25: PUSH_CONST const=#112 span=[10379,10380]
-      26: CALL_FN fn=#11 argc=8 span=[10274,10290]
-      27: CAST cast=INT type=#140 span=[10274,10388]
-      28: RETURN span=[10267,10388]
-      29: RETURN_VOID span=[10154,10390]
-  #30 name="thread_start" [10399,10411] source=#1 type=#141 params=3 temps=0 locals=#67+4 insts=#336+19
-    locals
-      #0 name="parentThread" [10412,10424] type=#142 flags=3
-      #1 name="flags" [10433,10438] type=#143 flags=3
-      #2 name="config" [10444,10450] type=#144 flags=3
-      #3 name="arg2" [10480,10484] type=#145 flags=2
-    insts
-      0: LOCAL_LOAD local=#2 "config" [10444,10450] span=[10491,10497]
-      1: CAST cast=INT type=#146 span=[10491,10504]
-      2: LOCAL_STORE local=#3 "arg2" [10480,10484] span=[10476,10504]
-      3: LOCAL_LOAD local=#0 "parentThread" [10412,10424] span=[10524,10536]
-      4: PUSH_CONST const=#113 span=[10542,10544]
-      5: LOCAL_LOAD local=#1 "flags" [10433,10438] span=[10552,10557]
-      6: LOCAL_LOAD local=#3 "arg2" [10480,10484] span=[10559,10563]
-      7: PUSH_CONST const=#114 span=[10571,10573]
-      8: CAST cast=INT type=#147 span=[10571,10580]
-      9: PUSH_CONST const=#115 span=[10588,10589]
-      10: CAST cast=INT type=#148 span=[10588,10596]
-      11: PUSH_CONST const=#116 span=[10604,10605]
-      12: CAST cast=INT type=#149 span=[10604,10612]
-      13: PUSH_CONST const=#117 span=[10620,10621]
-      14: CAST cast=INT type=#150 span=[10620,10628]
-      15: CALL_FN fn=#10 argc=8 span=[10513,10523]
-      16: COERCE type=#151 span=[10513,10639]
-      17: RETURN span=[10506,10639]
-      18: RETURN_VOID span=[10473,10641]
-  #31 name="window_info_get" [10650,10665] source=#1 type=#152 params=2 temps=0 locals=#71+3 insts=#355+20
-    locals
-      #0 name="window" [10666,10672] type=#153 flags=3
-      #1 name="info" [10681,10685] type=#154 flags=3
-      #2 name="arg1" [10710,10714] type=#155 flags=2
-    insts
-      0: LOCAL_LOAD local=#1 "info" [10681,10685] span=[10721,10725]
-      1: CAST cast=INT type=#156 span=[10721,10732]
-      2: LOCAL_STORE local=#2 "arg1" [10710,10714] span=[10706,10732]
-      3: LOCAL_LOAD local=#0 "window" [10666,10672] span=[10752,10758]
-      4: PUSH_CONST const=#118 span=[10764,10766]
-      5: LOCAL_LOAD local=#2 "arg1" [10710,10714] span=[10768,10772]
-      6: PUSH_CONST const=#119 span=[10780,10782]
-      7: CAST cast=INT type=#157 span=[10780,10789]
-      8: PUSH_CONST const=#120 span=[10797,10798]
-      9: CAST cast=INT type=#158 span=[10797,10805]
-      10: PUSH_CONST const=#121 span=[10813,10814]
-      11: CAST cast=INT type=#159 span=[10813,10821]
-      12: PUSH_CONST const=#122 span=[10829,10830]
-      13: CAST cast=INT type=#160 span=[10829,10837]
-      14: PUSH_CONST const=#123 span=[10845,10846]
-      15: CAST cast=INT type=#161 span=[10845,10853]
-      16: CALL_FN fn=#10 argc=8 span=[10741,10751]
-      17: COERCE type=#162 span=[10741,10861]
-      18: RETURN span=[10734,10861]
-      19: RETURN_VOID span=[10703,10863]
-  #32 name="window_set_title" [10872,10888] source=#1 type=#163 params=2 temps=0 locals=#74+5 insts=#375+36
-    locals
-      #0 name="window" [10889,10895] type=#164 flags=3
-      #1 name="title" [10904,10909] type=#165 flags=3
-      #2 name="bytes" [10927,10932] type=#166 flags=2
-      #3 name="data" [10952,10956] type=#167 flags=2
-      #4 name="arg1" [11038,11042] type=#170 flags=2
-    insts
-      0: LOCAL_LOAD local=#1 "title" [10904,10909] span=[10941,10946]
-      1: LOCAL_STORE local=#2 "bytes" [10927,10932] span=[10923,10946]
-      2: PUSH_CONST const=#124 span=[10967,10971]
-      3: COERCE type=#168 span=[10967,10981]
-      4: COERCE type=#169 span=[10967,10989]
-      5: LOCAL_STORE local=#3 "data" [10952,10956] span=[10948,10989]
-      6: LOCAL_LOAD local=#2 "bytes" [10927,10932] span=[10998,11003]
-      7: SEQ_LEN span=[10994,10997]
-      8: PUSH_CONST const=#125 span=[11007,11008]
-      9: BINARY op=GT span=[10994,11008]
-      10: JUMP_IF_FALSE target=15 span=[10991,11032]
-      11: LOCAL_LOAD local=#2 "bytes" [10927,10932] span=[11021,11026]
-      12: PUSH_CONST const=#126 span=[11027,11028]
-      13: ARRAY_ADDR span=[11020,11029]
-      14: LOCAL_STORE local=#3 "data" [10952,10956] span=[11013,11029]
-      15: LOCAL_LOAD local=#3 "data" [10952,10956] span=[11049,11053]
-      16: CAST cast=INT type=#171 span=[11049,11060]
-      17: LOCAL_STORE local=#4 "arg1" [11038,11042] span=[11034,11060]
-      18: LOCAL_LOAD local=#0 "window" [10889,10895] span=[11080,11086]
-      19: PUSH_CONST const=#127 span=[11092,11094]
-      20: LOCAL_LOAD local=#4 "arg1" [11038,11042] span=[11096,11100]
-      21: LOCAL_LOAD local=#2 "bytes" [10927,10932] span=[11112,11117]
-      22: SEQ_LEN span=[11108,11111]
-      23: CAST cast=INT type=#172 span=[11108,11125]
-      24: PUSH_CONST const=#128 span=[11133,11134]
-      25: CAST cast=INT type=#173 span=[11133,11141]
-      26: PUSH_CONST const=#129 span=[11149,11150]
-      27: CAST cast=INT type=#174 span=[11149,11157]
-      28: PUSH_CONST const=#130 span=[11165,11166]
-      29: CAST cast=INT type=#175 span=[11165,11173]
-      30: PUSH_CONST const=#131 span=[11181,11182]
-      31: CAST cast=INT type=#176 span=[11181,11189]
-      32: CALL_FN fn=#10 argc=8 span=[11069,11079]
-      33: COERCE type=#177 span=[11069,11197]
-      34: RETURN span=[11062,11197]
-      35: RETURN_VOID span=[10920,11199]
-  #33 name="window_set_rect" [11208,11223] source=#1 type=#178 params=6 temps=0 locals=#79+6 insts=#411+16
-    locals
-      #0 name="window" [11224,11230] type=#179 flags=3
-      #1 name="xBits" [11239,11244] type=#180 flags=3
-      #2 name="yBits" [11246,11251] type=#181 flags=3
-      #3 name="widthBits" [11253,11262] type=#182 flags=3
-      #4 name="heightBits" [11264,11274] type=#183 flags=3
-      #5 name="flags" [11280,11285] type=#184 flags=3
-    insts
-      0: LOCAL_LOAD local=#0 "window" [11224,11230] span=[11316,11322]
-      1: PUSH_CONST const=#132 span=[11328,11330]
-      2: LOCAL_LOAD local=#1 "xBits" [11239,11244] span=[11338,11343]
-      3: CAST cast=INT type=#185 span=[11338,11350]
-      4: LOCAL_LOAD local=#2 "yBits" [11246,11251] span=[11358,11363]
-      5: CAST cast=INT type=#186 span=[11358,11370]
-      6: LOCAL_LOAD local=#3 "widthBits" [11253,11262] span=[11378,11387]
-      7: CAST cast=INT type=#187 span=[11378,11394]
-      8: LOCAL_LOAD local=#4 "heightBits" [11264,11274] span=[11402,11412]
-      9: CAST cast=INT type=#188 span=[11402,11419]
-      10: LOCAL_LOAD local=#5 "flags" [11280,11285] span=[11427,11432]
-      11: PUSH_CONST const=#133 span=[11440,11441]
-      12: CALL_FN fn=#10 argc=8 span=[11305,11315]
-      13: COERCE type=#189 span=[11305,11449]
-      14: RETURN span=[11298,11449]
-      15: RETURN_VOID span=[11295,11451]
-  #34 name="window_frame_sync_enable" [11460,11484] source=#1 type=#190 params=2 temps=0 locals=#85+2 insts=#427+12
-    locals
-      #0 name="window" [11485,11491] type=#191 flags=3
-      #1 name="flags" [11500,11505] type=#192 flags=3
-    insts
-      0: LOCAL_LOAD local=#0 "window" [11485,11491] span=[11536,11542]
-      1: PUSH_CONST const=#134 span=[11548,11550]
-      2: LOCAL_LOAD local=#1 "flags" [11500,11505] span=[11558,11563]
-      3: PUSH_CONST const=#135 span=[11571,11572]
-      4: PUSH_CONST const=#136 span=[11580,11581]
-      5: PUSH_CONST const=#137 span=[11589,11590]
-      6: PUSH_CONST const=#138 span=[11598,11599]
-      7: PUSH_CONST const=#139 span=[11607,11608]
-      8: CALL_FN fn=#10 argc=8 span=[11525,11535]
-      9: COERCE type=#193 span=[11525,11616]
-      10: RETURN span=[11518,11616]
-      11: RETURN_VOID span=[11515,11618]
-  #35 name="thread_window_create" [11627,11647] source=#1 type=#194 params=2 temps=0 locals=#87+3 insts=#439+20
-    locals
-      #0 name="thread" [11648,11654] type=#195 flags=3
-      #1 name="config" [11663,11669] type=#196 flags=3
-      #2 name="arg1" [11699,11703] type=#197 flags=2
-    insts
-      0: LOCAL_LOAD local=#1 "config" [11663,11669] span=[11710,11716]
-      1: CAST cast=INT type=#198 span=[11710,11723]
-      2: LOCAL_STORE local=#2 "arg1" [11699,11703] span=[11695,11723]
-      3: LOCAL_LOAD local=#0 "thread" [11648,11654] span=[11743,11749]
-      4: PUSH_CONST const=#140 span=[11755,11757]
-      5: LOCAL_LOAD local=#2 "arg1" [11699,11703] span=[11759,11763]
-      6: PUSH_CONST const=#141 span=[11771,11773]
-      7: CAST cast=INT type=#199 span=[11771,11780]
-      8: PUSH_CONST const=#142 span=[11788,11789]
-      9: CAST cast=INT type=#200 span=[11788,11796]
-      10: PUSH_CONST const=#143 span=[11804,11805]
-      11: CAST cast=INT type=#201 span=[11804,11812]
-      12: PUSH_CONST const=#144 span=[11820,11821]
-      13: CAST cast=INT type=#202 span=[11820,11828]
-      14: PUSH_CONST const=#145 span=[11836,11837]
-      15: CAST cast=INT type=#203 span=[11836,11844]
-      16: CALL_FN fn=#10 argc=8 span=[11732,11742]
-      17: COERCE type=#204 span=[11732,11855]
-      18: RETURN span=[11725,11855]
-      19: RETURN_VOID span=[11692,11857]
-  #36 name="_start" [11884,11890] source=#1 type=#4294967295 params=0 temps=0 locals=#90+0 insts=#459+14
+      0: LOCAL_LOAD local=#0 "handle" [9401,9407] span=[9485,9491]
+      1: PUSH_CONST const=#81 span=[9497,9499]
+      2: LOCAL_LOAD local=#1 "disableUser" [9416,9427] span=[9507,9518]
+      3: CAST cast=INT type=#110 span=[9507,9525]
+      4: LOCAL_LOAD local=#2 "enableUser" [9429,9439] span=[9533,9543]
+      5: CAST cast=INT type=#111 span=[9533,9550]
+      6: LOCAL_LOAD local=#3 "pulseUser" [9441,9450] span=[9558,9567]
+      7: CAST cast=INT type=#112 span=[9558,9574]
+      8: PUSH_CONST const=#82 span=[9582,9583]
+      9: PUSH_CONST const=#83 span=[9591,9592]
+      10: PUSH_CONST const=#84 span=[9600,9601]
+      11: CALL_FN fn=#10 argc=8 span=[9474,9484]
+      12: COERCE type=#113 span=[9474,9609]
+      13: RETURN span=[9467,9609]
+      14: RETURN_VOID span=[9464,9611]
+  #26 name="clock_monotonic" [9620,9635] source=#1 type=#114 params=0 temps=0 locals=#58+0 insts=#262+12
     locals
     insts
-      0: PUSH_CONST const=#146 span=[11911,11912]
-      1: PUSH_CONST const=#27 span=[11925,11940]
-      2: CAST cast=INT type=#205 span=[11918,11947]
-      3: PUSH_CONST const=#147 span=[11955,11956]
-      4: PUSH_CONST const=#148 span=[11964,11965]
-      5: PUSH_CONST const=#149 span=[11973,11974]
-      6: PUSH_CONST const=#150 span=[11982,11983]
-      7: PUSH_CONST const=#151 span=[11991,11992]
-      8: PUSH_CONST const=#152 span=[12000,12001]
-      9: CALL_FN fn=#10 argc=8 span=[11900,11910]
-      10: DROP span=[11896,12002]
-      11: CALL_FN fn=#1 argc=0 span=[12004,12017]
-      12: DROP span=[12004,12019]
-      13: RETURN_VOID span=[11893,12021]
+      0: PUSH_CONST const=#85 span=[9664,9665]
+      1: PUSH_CONST const=#86 span=[9671,9673]
+      2: PUSH_CONST const=#87 span=[9681,9682]
+      3: PUSH_CONST const=#88 span=[9690,9691]
+      4: PUSH_CONST const=#89 span=[9699,9700]
+      5: PUSH_CONST const=#90 span=[9708,9709]
+      6: PUSH_CONST const=#91 span=[9717,9718]
+      7: PUSH_CONST const=#92 span=[9726,9727]
+      8: CALL_FN fn=#10 argc=8 span=[9653,9663]
+      9: COERCE type=#115 span=[9653,9736]
+      10: RETURN span=[9646,9736]
+      11: RETURN_VOID span=[9643,9738]
+  #27 name="clock_read" [9747,9757] source=#1 type=#116 params=1 temps=0 locals=#58+1 insts=#274+12
+    locals
+      #0 name="clock" [9758,9763] type=#117 flags=3
+    insts
+      0: LOCAL_LOAD local=#0 "clock" [9758,9763] span=[9798,9803]
+      1: PUSH_CONST const=#93 span=[9809,9811]
+      2: PUSH_CONST const=#94 span=[9819,9820]
+      3: PUSH_CONST const=#95 span=[9828,9829]
+      4: PUSH_CONST const=#96 span=[9837,9838]
+      5: PUSH_CONST const=#97 span=[9846,9847]
+      6: PUSH_CONST const=#98 span=[9855,9856]
+      7: PUSH_CONST const=#99 span=[9864,9865]
+      8: CALL_FN fn=#10 argc=8 span=[9787,9797]
+      9: COERCE type=#118 span=[9787,9874]
+      10: RETURN span=[9780,9874]
+      11: RETURN_VOID span=[9777,9876]
+  #28 name="clock_read_info" [9885,9900] source=#1 type=#119 params=2 temps=0 locals=#59+3 insts=#286+20
+    locals
+      #0 name="clock" [9901,9906] type=#120 flags=3
+      #1 name="info" [9915,9919] type=#121 flags=3
+      #2 name="arg1" [9943,9947] type=#122 flags=2
+    insts
+      0: LOCAL_LOAD local=#1 "info" [9915,9919] span=[9954,9958]
+      1: CAST cast=INT type=#123 span=[9954,9965]
+      2: LOCAL_STORE local=#2 "arg1" [9943,9947] span=[9939,9965]
+      3: LOCAL_LOAD local=#0 "clock" [9901,9906] span=[9985,9990]
+      4: PUSH_CONST const=#100 span=[9996,9998]
+      5: LOCAL_LOAD local=#2 "arg1" [9943,9947] span=[10000,10004]
+      6: PUSH_CONST const=#101 span=[10012,10014]
+      7: CAST cast=INT type=#124 span=[10012,10021]
+      8: PUSH_CONST const=#102 span=[10029,10030]
+      9: CAST cast=INT type=#125 span=[10029,10037]
+      10: PUSH_CONST const=#103 span=[10045,10046]
+      11: CAST cast=INT type=#126 span=[10045,10053]
+      12: PUSH_CONST const=#104 span=[10061,10062]
+      13: CAST cast=INT type=#127 span=[10061,10069]
+      14: PUSH_CONST const=#105 span=[10077,10078]
+      15: CAST cast=INT type=#128 span=[10077,10085]
+      16: CALL_FN fn=#10 argc=8 span=[9974,9984]
+      17: COERCE type=#129 span=[9974,10093]
+      18: RETURN span=[9967,10093]
+      19: RETURN_VOID span=[9936,10095]
+  #29 name="event_poll" [10104,10114] source=#1 type=#130 params=3 temps=0 locals=#62+5 insts=#306+30
+    locals
+      #0 name="buffer" [10115,10121] type=#131 flags=3
+      #1 name="deadline" [10129,10137] type=#132 flags=3
+      #2 name="leeway" [10139,10145] type=#133 flags=3
+      #3 name="ptr" [10162,10165] type=#134 flags=2
+      #4 name="arg1" [10245,10249] type=#137 flags=2
+    insts
+      0: PUSH_CONST const=#106 span=[10173,10177]
+      1: COERCE type=#135 span=[10173,10187]
+      2: COERCE type=#136 span=[10173,10195]
+      3: LOCAL_STORE local=#3 "ptr" [10162,10165] span=[10158,10195]
+      4: LOCAL_LOAD local=#0 "buffer" [10115,10121] span=[10204,10210]
+      5: SEQ_LEN span=[10200,10203]
+      6: PUSH_CONST const=#107 span=[10214,10215]
+      7: BINARY op=GT span=[10200,10215]
+      8: JUMP_IF_FALSE target=13 span=[10197,10239]
+      9: LOCAL_LOAD local=#0 "buffer" [10115,10121] span=[10227,10233]
+      10: PUSH_CONST const=#108 span=[10234,10235]
+      11: ARRAY_ADDR span=[10226,10236]
+      12: LOCAL_STORE local=#3 "ptr" [10162,10165] span=[10220,10236]
+      13: LOCAL_LOAD local=#3 "ptr" [10162,10165] span=[10256,10259]
+      14: CAST cast=INT type=#138 span=[10256,10266]
+      15: LOCAL_STORE local=#4 "arg1" [10245,10249] span=[10241,10266]
+      16: PUSH_CONST const=#109 span=[10292,10293]
+      17: PUSH_CONST const=#110 span=[10299,10301]
+      18: LOCAL_LOAD local=#4 "arg1" [10245,10249] span=[10303,10307]
+      19: LOCAL_LOAD local=#0 "buffer" [10115,10121] span=[10319,10325]
+      20: SEQ_LEN span=[10315,10318]
+      21: CAST cast=INT type=#139 span=[10315,10333]
+      22: LOCAL_LOAD local=#1 "deadline" [10129,10137] span=[10341,10349]
+      23: LOCAL_LOAD local=#2 "leeway" [10139,10145] span=[10357,10363]
+      24: PUSH_CONST const=#111 span=[10371,10372]
+      25: PUSH_CONST const=#112 span=[10380,10381]
+      26: CALL_FN fn=#11 argc=8 span=[10275,10291]
+      27: CAST cast=INT type=#140 span=[10275,10389]
+      28: RETURN span=[10268,10389]
+      29: RETURN_VOID span=[10155,10391]
+  #30 name="thread_start" [10400,10412] source=#1 type=#141 params=3 temps=0 locals=#67+4 insts=#336+19
+    locals
+      #0 name="parentThread" [10413,10425] type=#142 flags=3
+      #1 name="flags" [10434,10439] type=#143 flags=3
+      #2 name="config" [10445,10451] type=#144 flags=3
+      #3 name="arg2" [10481,10485] type=#145 flags=2
+    insts
+      0: LOCAL_LOAD local=#2 "config" [10445,10451] span=[10492,10498]
+      1: CAST cast=INT type=#146 span=[10492,10505]
+      2: LOCAL_STORE local=#3 "arg2" [10481,10485] span=[10477,10505]
+      3: LOCAL_LOAD local=#0 "parentThread" [10413,10425] span=[10525,10537]
+      4: PUSH_CONST const=#113 span=[10543,10545]
+      5: LOCAL_LOAD local=#1 "flags" [10434,10439] span=[10553,10558]
+      6: LOCAL_LOAD local=#3 "arg2" [10481,10485] span=[10560,10564]
+      7: PUSH_CONST const=#114 span=[10572,10574]
+      8: CAST cast=INT type=#147 span=[10572,10581]
+      9: PUSH_CONST const=#115 span=[10589,10590]
+      10: CAST cast=INT type=#148 span=[10589,10597]
+      11: PUSH_CONST const=#116 span=[10605,10606]
+      12: CAST cast=INT type=#149 span=[10605,10613]
+      13: PUSH_CONST const=#117 span=[10621,10622]
+      14: CAST cast=INT type=#150 span=[10621,10629]
+      15: CALL_FN fn=#10 argc=8 span=[10514,10524]
+      16: COERCE type=#151 span=[10514,10640]
+      17: RETURN span=[10507,10640]
+      18: RETURN_VOID span=[10474,10642]
+  #31 name="window_info_get" [10651,10666] source=#1 type=#152 params=2 temps=0 locals=#71+3 insts=#355+20
+    locals
+      #0 name="window" [10667,10673] type=#153 flags=3
+      #1 name="info" [10682,10686] type=#154 flags=3
+      #2 name="arg1" [10711,10715] type=#155 flags=2
+    insts
+      0: LOCAL_LOAD local=#1 "info" [10682,10686] span=[10722,10726]
+      1: CAST cast=INT type=#156 span=[10722,10733]
+      2: LOCAL_STORE local=#2 "arg1" [10711,10715] span=[10707,10733]
+      3: LOCAL_LOAD local=#0 "window" [10667,10673] span=[10753,10759]
+      4: PUSH_CONST const=#118 span=[10765,10767]
+      5: LOCAL_LOAD local=#2 "arg1" [10711,10715] span=[10769,10773]
+      6: PUSH_CONST const=#119 span=[10781,10783]
+      7: CAST cast=INT type=#157 span=[10781,10790]
+      8: PUSH_CONST const=#120 span=[10798,10799]
+      9: CAST cast=INT type=#158 span=[10798,10806]
+      10: PUSH_CONST const=#121 span=[10814,10815]
+      11: CAST cast=INT type=#159 span=[10814,10822]
+      12: PUSH_CONST const=#122 span=[10830,10831]
+      13: CAST cast=INT type=#160 span=[10830,10838]
+      14: PUSH_CONST const=#123 span=[10846,10847]
+      15: CAST cast=INT type=#161 span=[10846,10854]
+      16: CALL_FN fn=#10 argc=8 span=[10742,10752]
+      17: COERCE type=#162 span=[10742,10862]
+      18: RETURN span=[10735,10862]
+      19: RETURN_VOID span=[10704,10864]
+  #32 name="window_set_title" [10873,10889] source=#1 type=#163 params=2 temps=0 locals=#74+5 insts=#375+36
+    locals
+      #0 name="window" [10890,10896] type=#164 flags=3
+      #1 name="title" [10905,10910] type=#165 flags=3
+      #2 name="bytes" [10928,10933] type=#166 flags=2
+      #3 name="data" [10953,10957] type=#167 flags=2
+      #4 name="arg1" [11039,11043] type=#170 flags=2
+    insts
+      0: LOCAL_LOAD local=#1 "title" [10905,10910] span=[10942,10947]
+      1: LOCAL_STORE local=#2 "bytes" [10928,10933] span=[10924,10947]
+      2: PUSH_CONST const=#124 span=[10968,10972]
+      3: COERCE type=#168 span=[10968,10982]
+      4: COERCE type=#169 span=[10968,10990]
+      5: LOCAL_STORE local=#3 "data" [10953,10957] span=[10949,10990]
+      6: LOCAL_LOAD local=#2 "bytes" [10928,10933] span=[10999,11004]
+      7: SEQ_LEN span=[10995,10998]
+      8: PUSH_CONST const=#125 span=[11008,11009]
+      9: BINARY op=GT span=[10995,11009]
+      10: JUMP_IF_FALSE target=15 span=[10992,11033]
+      11: LOCAL_LOAD local=#2 "bytes" [10928,10933] span=[11022,11027]
+      12: PUSH_CONST const=#126 span=[11028,11029]
+      13: ARRAY_ADDR span=[11021,11030]
+      14: LOCAL_STORE local=#3 "data" [10953,10957] span=[11014,11030]
+      15: LOCAL_LOAD local=#3 "data" [10953,10957] span=[11050,11054]
+      16: CAST cast=INT type=#171 span=[11050,11061]
+      17: LOCAL_STORE local=#4 "arg1" [11039,11043] span=[11035,11061]
+      18: LOCAL_LOAD local=#0 "window" [10890,10896] span=[11081,11087]
+      19: PUSH_CONST const=#127 span=[11093,11095]
+      20: LOCAL_LOAD local=#4 "arg1" [11039,11043] span=[11097,11101]
+      21: LOCAL_LOAD local=#2 "bytes" [10928,10933] span=[11113,11118]
+      22: SEQ_LEN span=[11109,11112]
+      23: CAST cast=INT type=#172 span=[11109,11126]
+      24: PUSH_CONST const=#128 span=[11134,11135]
+      25: CAST cast=INT type=#173 span=[11134,11142]
+      26: PUSH_CONST const=#129 span=[11150,11151]
+      27: CAST cast=INT type=#174 span=[11150,11158]
+      28: PUSH_CONST const=#130 span=[11166,11167]
+      29: CAST cast=INT type=#175 span=[11166,11174]
+      30: PUSH_CONST const=#131 span=[11182,11183]
+      31: CAST cast=INT type=#176 span=[11182,11190]
+      32: CALL_FN fn=#10 argc=8 span=[11070,11080]
+      33: COERCE type=#177 span=[11070,11198]
+      34: RETURN span=[11063,11198]
+      35: RETURN_VOID span=[10921,11200]
+  #33 name="window_set_rect" [11209,11224] source=#1 type=#178 params=6 temps=0 locals=#79+6 insts=#411+16
+    locals
+      #0 name="window" [11225,11231] type=#179 flags=3
+      #1 name="xBits" [11240,11245] type=#180 flags=3
+      #2 name="yBits" [11247,11252] type=#181 flags=3
+      #3 name="widthBits" [11254,11263] type=#182 flags=3
+      #4 name="heightBits" [11265,11275] type=#183 flags=3
+      #5 name="flags" [11281,11286] type=#184 flags=3
+    insts
+      0: LOCAL_LOAD local=#0 "window" [11225,11231] span=[11317,11323]
+      1: PUSH_CONST const=#132 span=[11329,11331]
+      2: LOCAL_LOAD local=#1 "xBits" [11240,11245] span=[11339,11344]
+      3: CAST cast=INT type=#185 span=[11339,11351]
+      4: LOCAL_LOAD local=#2 "yBits" [11247,11252] span=[11359,11364]
+      5: CAST cast=INT type=#186 span=[11359,11371]
+      6: LOCAL_LOAD local=#3 "widthBits" [11254,11263] span=[11379,11388]
+      7: CAST cast=INT type=#187 span=[11379,11395]
+      8: LOCAL_LOAD local=#4 "heightBits" [11265,11275] span=[11403,11413]
+      9: CAST cast=INT type=#188 span=[11403,11420]
+      10: LOCAL_LOAD local=#5 "flags" [11281,11286] span=[11428,11433]
+      11: PUSH_CONST const=#133 span=[11441,11442]
+      12: CALL_FN fn=#10 argc=8 span=[11306,11316]
+      13: COERCE type=#189 span=[11306,11450]
+      14: RETURN span=[11299,11450]
+      15: RETURN_VOID span=[11296,11452]
+  #34 name="window_frame_sync_enable" [11461,11485] source=#1 type=#190 params=2 temps=0 locals=#85+2 insts=#427+12
+    locals
+      #0 name="window" [11486,11492] type=#191 flags=3
+      #1 name="flags" [11501,11506] type=#192 flags=3
+    insts
+      0: LOCAL_LOAD local=#0 "window" [11486,11492] span=[11537,11543]
+      1: PUSH_CONST const=#134 span=[11549,11551]
+      2: LOCAL_LOAD local=#1 "flags" [11501,11506] span=[11559,11564]
+      3: PUSH_CONST const=#135 span=[11572,11573]
+      4: PUSH_CONST const=#136 span=[11581,11582]
+      5: PUSH_CONST const=#137 span=[11590,11591]
+      6: PUSH_CONST const=#138 span=[11599,11600]
+      7: PUSH_CONST const=#139 span=[11608,11609]
+      8: CALL_FN fn=#10 argc=8 span=[11526,11536]
+      9: COERCE type=#193 span=[11526,11617]
+      10: RETURN span=[11519,11617]
+      11: RETURN_VOID span=[11516,11619]
+  #35 name="thread_window_create" [11628,11648] source=#1 type=#194 params=2 temps=0 locals=#87+3 insts=#439+20
+    locals
+      #0 name="thread" [11649,11655] type=#195 flags=3
+      #1 name="config" [11664,11670] type=#196 flags=3
+      #2 name="arg1" [11700,11704] type=#197 flags=2
+    insts
+      0: LOCAL_LOAD local=#1 "config" [11664,11670] span=[11711,11717]
+      1: CAST cast=INT type=#198 span=[11711,11724]
+      2: LOCAL_STORE local=#2 "arg1" [11700,11704] span=[11696,11724]
+      3: LOCAL_LOAD local=#0 "thread" [11649,11655] span=[11744,11750]
+      4: PUSH_CONST const=#140 span=[11756,11758]
+      5: LOCAL_LOAD local=#2 "arg1" [11700,11704] span=[11760,11764]
+      6: PUSH_CONST const=#141 span=[11772,11774]
+      7: CAST cast=INT type=#199 span=[11772,11781]
+      8: PUSH_CONST const=#142 span=[11789,11790]
+      9: CAST cast=INT type=#200 span=[11789,11797]
+      10: PUSH_CONST const=#143 span=[11805,11806]
+      11: CAST cast=INT type=#201 span=[11805,11813]
+      12: PUSH_CONST const=#144 span=[11821,11822]
+      13: CAST cast=INT type=#202 span=[11821,11829]
+      14: PUSH_CONST const=#145 span=[11837,11838]
+      15: CAST cast=INT type=#203 span=[11837,11845]
+      16: CALL_FN fn=#10 argc=8 span=[11733,11743]
+      17: COERCE type=#204 span=[11733,11856]
+      18: RETURN span=[11726,11856]
+      19: RETURN_VOID span=[11693,11858]
+  #36 name="_start" [11885,11891] source=#1 type=#4294967295 params=0 temps=0 locals=#90+0 insts=#459+14
+    locals
+    insts
+      0: PUSH_CONST const=#146 span=[11912,11913]
+      1: PUSH_CONST const=#27 span=[11926,11941]
+      2: CAST cast=INT type=#205 span=[11919,11948]
+      3: PUSH_CONST const=#147 span=[11956,11957]
+      4: PUSH_CONST const=#148 span=[11965,11966]
+      5: PUSH_CONST const=#149 span=[11974,11975]
+      6: PUSH_CONST const=#150 span=[11983,11984]
+      7: PUSH_CONST const=#151 span=[11992,11993]
+      8: PUSH_CONST const=#152 span=[12001,12002]
+      9: CALL_FN fn=#10 argc=8 span=[11901,11911]
+      10: DROP span=[11897,12003]
+      11: CALL_FN fn=#1 argc=0 span=[12005,12019]
+      12: DROP span=[12005,12021]
+      13: RETURN_VOID span=[11894,12023]

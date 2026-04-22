@@ -1,0 +1,4 @@
+// Verifies bad reserved name enum item.
+enum E i32 {
+	__hop_bad = 1
+}

@@ -1,4 +1,4 @@
-# SL Spec Glossary
+# HopHop Spec Glossary
 
 This glossary defines terms used normatively in [`docs/language.md`](./language.md).
 
@@ -26,5 +26,5 @@ This glossary defines terms used normatively in [`docs/language.md`](./language.
 - `Function overload set`: All visible functions sharing the same call name.
 - `Selector-call sugar`: Call-only rewrite candidate from `recv.f(args...)` to `f(recv, args...)` when field lookup does not resolve `f`.
 - `Core conformance`: Implements all `Stable` rules in `docs/language.md`.
-- `Reference-slc conformance`: Core conformance plus `Provisional` and section 14 reference-profile behaviors.
+- `Reference-hop conformance`: Core conformance plus `Provisional` and section 14 reference-profile behaviors.
 - `Error class`: Coarse diagnostic category (`ParseError`, `TypeError`, etc.) required for conformance; exact text is not.

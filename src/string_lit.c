@@ -1,10 +1,10 @@
-#include "libsl-impl.h"
+#include "libhop-impl.h"
 
-#if SL_LIBC
+#if HOP_LIBC
     #include <stdlib.h>
 #endif
 
-typedef int (*SLStringLitEmitByteFn)(void* _Nullable ctx, uint8_t b);
+typedef int (*HOPStringLitEmitByteFn)(void* _Nullable ctx, uint8_t b);
 
 typedef struct {
     uint8_t  firstByte;
@@ -12,25 +12,25 @@ typedef struct {
     uint8_t  have;
     uint32_t firstStart;
     uint32_t firstEnd;
-} SLUTF8State;
+} HOPUTF8State;
 
 typedef struct {
-    SLArena* _Nonnull arena;
+    HOPArena* _Nonnull arena;
     uint8_t* _Nullable v;
     uint32_t len;
     uint32_t cap;
-} SLArenaByteBuf;
+} HOPArenaByteBuf;
 
-#if SL_LIBC
+#if HOP_LIBC
 typedef struct {
     uint8_t* _Nullable v;
     uint32_t len;
     uint32_t cap;
-} SLMallocByteBuf;
+} HOPMallocByteBuf;
 #endif
 
-static void SLSetStringLitErr(
-    SLStringLitErr* _Nullable err, SLStringLitErrKind kind, uint32_t start, uint32_t end) {
+static void HOPSetStringLitErr(
+    HOPStringLitErr* _Nullable err, HOPStringLitErrKind kind, uint32_t start, uint32_t end) {
     if (err == NULL) {
         return;
     }
@@ -39,7 +39,7 @@ static void SLSetStringLitErr(
     err->end = end;
 }
 
-static int SLArenaByteBufEnsure(SLArenaByteBuf* _Nonnull b, uint32_t need) {
+static int HOPArenaByteBufEnsure(HOPArenaByteBuf* _Nonnull b, uint32_t need) {
     uint32_t newCap;
     uint8_t* p;
     if (need <= b->cap) {
@@ -53,7 +53,7 @@ static int SLArenaByteBufEnsure(SLArenaByteBuf* _Nonnull b, uint32_t need) {
         }
         newCap *= 2u;
     }
-    p = (uint8_t*)SLArenaAlloc(b->arena, newCap, (uint32_t)_Alignof(uint8_t));
+    p = (uint8_t*)HOPArenaAlloc(b->arena, newCap, (uint32_t)_Alignof(uint8_t));
     if (p == NULL) {
         return -1;
     }
@@ -65,20 +65,20 @@ static int SLArenaByteBufEnsure(SLArenaByteBuf* _Nonnull b, uint32_t need) {
     return 0;
 }
 
-static int SLArenaByteEmit(void* _Nullable ctx, uint8_t b) {
-    SLArenaByteBuf* buf = (SLArenaByteBuf*)ctx;
+static int HOPArenaByteEmit(void* _Nullable ctx, uint8_t b) {
+    HOPArenaByteBuf* buf = (HOPArenaByteBuf*)ctx;
     if (buf == NULL) {
         return -1;
     }
-    if (SLArenaByteBufEnsure(buf, buf->len + 1u) != 0) {
+    if (HOPArenaByteBufEnsure(buf, buf->len + 1u) != 0) {
         return -1;
     }
     buf->v[buf->len++] = b;
     return 0;
 }
 
-#if SL_LIBC
-static int SLMallocByteBufEnsure(SLMallocByteBuf* _Nonnull b, uint32_t need) {
+#if HOP_LIBC
+static int HOPMallocByteBufEnsure(HOPMallocByteBuf* _Nonnull b, uint32_t need) {
     uint32_t newCap;
     void*    p;
     if (need <= b->cap) {
@@ -101,12 +101,12 @@ static int SLMallocByteBufEnsure(SLMallocByteBuf* _Nonnull b, uint32_t need) {
     return 0;
 }
 
-static int SLMallocByteEmit(void* _Nullable ctx, uint8_t b) {
-    SLMallocByteBuf* buf = (SLMallocByteBuf*)ctx;
+static int HOPMallocByteEmit(void* _Nullable ctx, uint8_t b) {
+    HOPMallocByteBuf* buf = (HOPMallocByteBuf*)ctx;
     if (buf == NULL) {
         return -1;
     }
-    if (SLMallocByteBufEnsure(buf, buf->len + 1u) != 0) {
+    if (HOPMallocByteBufEnsure(buf, buf->len + 1u) != 0) {
         return -1;
     }
     buf->v[buf->len++] = b;
@@ -114,7 +114,7 @@ static int SLMallocByteEmit(void* _Nullable ctx, uint8_t b) {
 }
 #endif
 
-static int SLHexDigit(unsigned char c) {
+static int HOPHexDigit(unsigned char c) {
     if (c >= (unsigned char)'0' && c <= (unsigned char)'9') {
         return (int)(c - (unsigned char)'0');
     }
@@ -127,11 +127,11 @@ static int SLHexDigit(unsigned char c) {
     return -1;
 }
 
-static int SLOctalDigit(unsigned char c) {
+static int HOPOctalDigit(unsigned char c) {
     return c >= (unsigned char)'0' && c <= (unsigned char)'7';
 }
 
-static int SLUTF8SecondByteValid(uint8_t first, uint8_t second) {
+static int HOPUTF8SecondByteValid(uint8_t first, uint8_t second) {
     if (first >= 0xC2u && first <= 0xDFu) {
         return second >= 0x80u && second <= 0xBFu;
     }
@@ -156,12 +156,12 @@ static int SLUTF8SecondByteValid(uint8_t first, uint8_t second) {
     return 0;
 }
 
-static int SLUTF8Feed(
-    SLUTF8State* _Nonnull st,
+static int HOPUTF8Feed(
+    HOPUTF8State* _Nonnull st,
     uint8_t  b,
     uint32_t start,
     uint32_t end,
-    SLStringLitErr* _Nullable err) {
+    HOPStringLitErr* _Nullable err) {
     if (st->need == 0u) {
         if (b <= 0x7Fu) {
             return 0;
@@ -190,17 +190,17 @@ static int SLUTF8Feed(
             st->firstEnd = end;
             return 0;
         }
-        SLSetStringLitErr(err, SLStringLitErr_INVALID_UTF8, start, end);
+        HOPSetStringLitErr(err, HOPStringLitErr_INVALID_UTF8, start, end);
         return -1;
     }
 
     if (st->have == 1u) {
-        if (!SLUTF8SecondByteValid(st->firstByte, b)) {
-            SLSetStringLitErr(err, SLStringLitErr_INVALID_UTF8, start, end);
+        if (!HOPUTF8SecondByteValid(st->firstByte, b)) {
+            HOPSetStringLitErr(err, HOPStringLitErr_INVALID_UTF8, start, end);
             return -1;
         }
     } else if (b < 0x80u || b > 0xBFu) {
-        SLSetStringLitErr(err, SLStringLitErr_INVALID_UTF8, start, end);
+        HOPSetStringLitErr(err, HOPStringLitErr_INVALID_UTF8, start, end);
         return -1;
     }
 
@@ -212,15 +212,15 @@ static int SLUTF8Feed(
     return 0;
 }
 
-static int SLUTF8Finish(const SLUTF8State* _Nonnull st, SLStringLitErr* _Nullable err) {
+static int HOPUTF8Finish(const HOPUTF8State* _Nonnull st, HOPStringLitErr* _Nullable err) {
     if (st->need == 0u) {
         return 0;
     }
-    SLSetStringLitErr(err, SLStringLitErr_INVALID_UTF8, st->firstStart, st->firstEnd);
+    HOPSetStringLitErr(err, HOPStringLitErr_INVALID_UTF8, st->firstStart, st->firstEnd);
     return -1;
 }
 
-static int SLRuneToUTF8(uint32_t rune, uint8_t* _Nonnull out, uint32_t* _Nonnull outLen) {
+static int HOPRuneToUTF8(uint32_t rune, uint8_t* _Nonnull out, uint32_t* _Nonnull outLen) {
     if (rune <= 0x7Fu) {
         out[0] = (uint8_t)rune;
         *outLen = 1u;
@@ -250,59 +250,59 @@ static int SLRuneToUTF8(uint32_t rune, uint8_t* _Nonnull out, uint32_t* _Nonnull
     return -1;
 }
 
-static int SLEmitAndValidateByte(
-    SLStringLitEmitByteFn _Nullable emit,
+static int HOPEmitAndValidateByte(
+    HOPStringLitEmitByteFn _Nullable emit,
     void* _Nullable emitCtx,
-    SLUTF8State* _Nonnull utf8,
+    HOPUTF8State* _Nonnull utf8,
     uint8_t  b,
     uint32_t start,
     uint32_t end,
-    SLStringLitErr* _Nullable err) {
-    if (SLUTF8Feed(utf8, b, start, end, err) != 0) {
+    HOPStringLitErr* _Nullable err) {
+    if (HOPUTF8Feed(utf8, b, start, end, err) != 0) {
         return -1;
     }
     if (emit != NULL && emit(emitCtx, b) != 0) {
-        SLSetStringLitErr(err, SLStringLitErr_ARENA_OOM, start, end);
+        HOPSetStringLitErr(err, HOPStringLitErr_ARENA_OOM, start, end);
         return -1;
     }
     return 0;
 }
 
-static int SLEmitRuneUTF8(
-    SLStringLitEmitByteFn _Nullable emit,
+static int HOPEmitRuneUTF8(
+    HOPStringLitEmitByteFn _Nullable emit,
     void* _Nullable emitCtx,
-    SLUTF8State* _Nonnull utf8,
+    HOPUTF8State* _Nonnull utf8,
     uint32_t rune,
     uint32_t start,
     uint32_t end,
-    SLStringLitErr* _Nullable err) {
+    HOPStringLitErr* _Nullable err) {
     uint8_t  bytes[4];
     uint32_t n = 0;
     uint32_t i;
-    if (SLRuneToUTF8(rune, bytes, &n) != 0) {
-        SLSetStringLitErr(err, SLStringLitErr_INVALID_CODEPOINT, start, end);
+    if (HOPRuneToUTF8(rune, bytes, &n) != 0) {
+        HOPSetStringLitErr(err, HOPStringLitErr_INVALID_CODEPOINT, start, end);
         return -1;
     }
     for (i = 0; i < n; i++) {
-        if (SLEmitAndValidateByte(emit, emitCtx, utf8, bytes[i], start, end, err) != 0) {
+        if (HOPEmitAndValidateByte(emit, emitCtx, utf8, bytes[i], start, end, err) != 0) {
             return -1;
         }
     }
     return 0;
 }
 
-static int SLDecodeHex(
+static int HOPDecodeHex(
     const char* _Nonnull src,
     uint32_t start,
     uint32_t digits,
     uint32_t* _Nonnull outValue,
-    SLStringLitErr* _Nonnull err) {
+    HOPStringLitErr* _Nonnull err) {
     uint32_t i;
     uint32_t v = 0u;
     for (i = 0; i < digits; i++) {
-        int d = SLHexDigit((unsigned char)src[start + i]);
+        int d = HOPHexDigit((unsigned char)src[start + i]);
         if (d < 0) {
-            SLSetStringLitErr(err, SLStringLitErr_INVALID_ESCAPE, start, start + digits);
+            HOPSetStringLitErr(err, HOPStringLitErr_INVALID_ESCAPE, start, start + digits);
             return -1;
         }
         v = (v << 4u) | (uint32_t)d;
@@ -311,31 +311,31 @@ static int SLDecodeHex(
     return 0;
 }
 
-static int SLDecodeStringLiteralImpl(
+static int HOPDecodeStringLiteralImpl(
     const char* _Nonnull src,
     uint32_t start,
     uint32_t end,
-    SLStringLitEmitByteFn _Nullable emit,
+    HOPStringLitEmitByteFn _Nullable emit,
     void* _Nullable emitCtx,
-    SLStringLitErr* _Nullable outErr) {
-    uint32_t       i;
-    SLUTF8State    utf8 = { 0 };
-    unsigned char  delim;
-    SLStringLitErr err = {
-        .kind = SLStringLitErr_NONE,
+    HOPStringLitErr* _Nullable outErr) {
+    uint32_t        i;
+    HOPUTF8State    utf8 = { 0 };
+    unsigned char   delim;
+    HOPStringLitErr err = {
+        .kind = HOPStringLitErr_NONE,
         .start = start,
         .end = end,
     };
 
     if (src == NULL || end <= start + 1u) {
-        SLSetStringLitErr(&err, SLStringLitErr_UNTERMINATED, start, end);
+        HOPSetStringLitErr(&err, HOPStringLitErr_UNTERMINATED, start, end);
         goto fail;
     }
     delim = (unsigned char)src[start];
     if ((delim != (unsigned char)'"' && delim != (unsigned char)'`' && delim != (unsigned char)'\'')
         || (unsigned char)src[end - 1u] != delim)
     {
-        SLSetStringLitErr(&err, SLStringLitErr_UNTERMINATED, start, end);
+        HOPSetStringLitErr(&err, HOPStringLitErr_UNTERMINATED, start, end);
         goto fail;
     }
 
@@ -362,7 +362,7 @@ static int SLDecodeStringLiteralImpl(
             } else {
                 i++;
             }
-            if (SLEmitAndValidateByte(emit, emitCtx, &utf8, (uint8_t)c, spanStart, spanEnd, &err)
+            if (HOPEmitAndValidateByte(emit, emitCtx, &utf8, (uint8_t)c, spanStart, spanEnd, &err)
                 != 0)
             {
                 goto fail;
@@ -374,7 +374,7 @@ static int SLDecodeStringLiteralImpl(
             uint32_t escapeStart = i;
             i++;
             if (i >= end - 1u) {
-                SLSetStringLitErr(&err, SLStringLitErr_INVALID_ESCAPE, escapeStart, i);
+                HOPSetStringLitErr(&err, HOPStringLitErr_INVALID_ESCAPE, escapeStart, i);
                 goto fail;
             }
             c = (unsigned char)src[i];
@@ -425,20 +425,21 @@ static int SLDecodeStringLiteralImpl(
                     int hi;
                     int lo;
                     if (i + 2u >= end - 1u) {
-                        SLSetStringLitErr(&err, SLStringLitErr_INVALID_ESCAPE, escapeStart, end);
+                        HOPSetStringLitErr(&err, HOPStringLitErr_INVALID_ESCAPE, escapeStart, end);
                         goto fail;
                     }
-                    hi = SLHexDigit((unsigned char)src[i + 1u]);
-                    lo = SLHexDigit((unsigned char)src[i + 2u]);
+                    hi = HOPHexDigit((unsigned char)src[i + 1u]);
+                    lo = HOPHexDigit((unsigned char)src[i + 2u]);
                     if (hi < 0 || lo < 0) {
-                        SLSetStringLitErr(&err, SLStringLitErr_INVALID_ESCAPE, escapeStart, i + 3u);
+                        HOPSetStringLitErr(
+                            &err, HOPStringLitErr_INVALID_ESCAPE, escapeStart, i + 3u);
                         goto fail;
                     }
                     c = (unsigned char)(((uint32_t)hi << 4u) | (uint32_t)lo);
                     spanStart = escapeStart;
                     i += 3u;
                     spanEnd = i;
-                    if (SLEmitAndValidateByte(
+                    if (HOPEmitAndValidateByte(
                             emit, emitCtx, &utf8, (uint8_t)c, spanStart, spanEnd, &err)
                         != 0)
                     {
@@ -451,36 +452,39 @@ static int SLDecodeStringLiteralImpl(
                     uint32_t rune;
                     uint32_t digits = (c == (unsigned char)'u') ? 4u : 8u;
                     if (i + digits >= end - 1u) {
-                        SLSetStringLitErr(&err, SLStringLitErr_INVALID_ESCAPE, escapeStart, end);
+                        HOPSetStringLitErr(&err, HOPStringLitErr_INVALID_ESCAPE, escapeStart, end);
                         goto fail;
                     }
-                    if (SLDecodeHex(src, i + 1u, digits, &rune, &err) != 0) {
+                    if (HOPDecodeHex(src, i + 1u, digits, &rune, &err) != 0) {
                         err.start = escapeStart;
                         err.end = i + 1u + digits;
                         goto fail;
                     }
                     if (rune > 0x10FFFFu || (rune >= 0xD800u && rune <= 0xDFFFu)) {
-                        SLSetStringLitErr(
-                            &err, SLStringLitErr_INVALID_CODEPOINT, escapeStart, i + 1u + digits);
+                        HOPSetStringLitErr(
+                            &err, HOPStringLitErr_INVALID_CODEPOINT, escapeStart, i + 1u + digits);
                         goto fail;
                     }
                     spanStart = escapeStart;
                     i += 1u + digits;
                     spanEnd = i;
-                    if (SLEmitRuneUTF8(emit, emitCtx, &utf8, rune, spanStart, spanEnd, &err) != 0) {
+                    if (HOPEmitRuneUTF8(emit, emitCtx, &utf8, rune, spanStart, spanEnd, &err) != 0)
+                    {
                         goto fail;
                     }
                     continue;
                 }
                 default:
-                    if (!SLOctalDigit(c)) {
-                        SLSetStringLitErr(&err, SLStringLitErr_INVALID_ESCAPE, escapeStart, i + 1u);
+                    if (!HOPOctalDigit(c)) {
+                        HOPSetStringLitErr(
+                            &err, HOPStringLitErr_INVALID_ESCAPE, escapeStart, i + 1u);
                         goto fail;
                     }
-                    if (i + 2u >= end - 1u || !SLOctalDigit((unsigned char)src[i + 1u])
-                        || !SLOctalDigit((unsigned char)src[i + 2u]))
+                    if (i + 2u >= end - 1u || !HOPOctalDigit((unsigned char)src[i + 1u])
+                        || !HOPOctalDigit((unsigned char)src[i + 2u]))
                     {
-                        SLSetStringLitErr(&err, SLStringLitErr_INVALID_ESCAPE, escapeStart, i + 3u);
+                        HOPSetStringLitErr(
+                            &err, HOPStringLitErr_INVALID_ESCAPE, escapeStart, i + 3u);
                         goto fail;
                     }
                     c = (unsigned char)((((unsigned char)src[i] - (unsigned char)'0') << 6u)
@@ -489,7 +493,7 @@ static int SLDecodeStringLiteralImpl(
                     spanStart = escapeStart;
                     i += 3u;
                     spanEnd = i;
-                    if (SLEmitAndValidateByte(
+                    if (HOPEmitAndValidateByte(
                             emit, emitCtx, &utf8, (uint8_t)c, spanStart, spanEnd, &err)
                         != 0)
                     {
@@ -499,7 +503,7 @@ static int SLDecodeStringLiteralImpl(
             }
             spanStart = escapeStart;
             spanEnd = i;
-            if (SLEmitAndValidateByte(emit, emitCtx, &utf8, (uint8_t)c, spanStart, spanEnd, &err)
+            if (HOPEmitAndValidateByte(emit, emitCtx, &utf8, (uint8_t)c, spanStart, spanEnd, &err)
                 != 0)
             {
                 goto fail;
@@ -517,13 +521,13 @@ static int SLDecodeStringLiteralImpl(
         } else {
             i++;
         }
-        if (SLEmitAndValidateByte(emit, emitCtx, &utf8, (uint8_t)c, spanStart, spanEnd, &err) != 0)
+        if (HOPEmitAndValidateByte(emit, emitCtx, &utf8, (uint8_t)c, spanStart, spanEnd, &err) != 0)
         {
             goto fail;
         }
     }
 
-    if (SLUTF8Finish(&utf8, &err) != 0) {
+    if (HOPUTF8Finish(&utf8, &err) != 0) {
         goto fail;
     }
     if (outErr != NULL) {
@@ -544,10 +548,10 @@ typedef struct {
     uint32_t currentRune;
     uint8_t  seqNeed;
     uint8_t  seqHave;
-} SLRuneCollector;
+} HOPRuneCollector;
 
-static int SLRuneCollectorEmit(void* _Nullable ctx, uint8_t b) {
-    SLRuneCollector* c = (SLRuneCollector*)ctx;
+static int HOPRuneCollectorEmit(void* _Nullable ctx, uint8_t b) {
+    HOPRuneCollector* c = (HOPRuneCollector*)ctx;
     if (c == NULL) {
         return -1;
     }
@@ -594,80 +598,80 @@ static int SLRuneCollectorEmit(void* _Nullable ctx, uint8_t b) {
     return 0;
 }
 
-SLDiagCode SLStringLitErrDiagCode(SLStringLitErrKind kind) {
+HOPDiagCode HOPStringLitErrDiagCode(HOPStringLitErrKind kind) {
     switch (kind) {
-        case SLStringLitErr_NONE:              return SLDiag_NONE;
-        case SLStringLitErr_UNTERMINATED:      return SLDiag_UNTERMINATED_STRING;
-        case SLStringLitErr_INVALID_ESCAPE:    return SLDiag_INVALID_STRING_ESCAPE;
-        case SLStringLitErr_INVALID_CODEPOINT: return SLDiag_INVALID_STRING_CODEPOINT;
-        case SLStringLitErr_INVALID_UTF8:      return SLDiag_INVALID_UTF8_STRING;
-        case SLStringLitErr_ARENA_OOM:         return SLDiag_ARENA_OOM;
+        case HOPStringLitErr_NONE:              return HOPDiag_NONE;
+        case HOPStringLitErr_UNTERMINATED:      return HOPDiag_UNTERMINATED_STRING;
+        case HOPStringLitErr_INVALID_ESCAPE:    return HOPDiag_INVALID_STRING_ESCAPE;
+        case HOPStringLitErr_INVALID_CODEPOINT: return HOPDiag_INVALID_STRING_CODEPOINT;
+        case HOPStringLitErr_INVALID_UTF8:      return HOPDiag_INVALID_UTF8_STRING;
+        case HOPStringLitErr_ARENA_OOM:         return HOPDiag_ARENA_OOM;
     }
-    return SLDiag_UNTERMINATED_STRING;
+    return HOPDiag_UNTERMINATED_STRING;
 }
 
-SLDiagCode SLRuneLitErrDiagCode(SLRuneLitErrKind kind) {
+HOPDiagCode HOPRuneLitErrDiagCode(HOPRuneLitErrKind kind) {
     switch (kind) {
-        case SLRuneLitErr_NONE:                return SLDiag_NONE;
-        case SLRuneLitErr_UNTERMINATED:        return SLDiag_UNTERMINATED_RUNE;
-        case SLRuneLitErr_EMPTY:               return SLDiag_EMPTY_RUNE;
-        case SLRuneLitErr_MULTIPLE_CODEPOINTS: return SLDiag_RUNE_CODEPOINT_COUNT;
-        case SLRuneLitErr_INVALID_ESCAPE:      return SLDiag_INVALID_RUNE_ESCAPE;
-        case SLRuneLitErr_INVALID_CODEPOINT:   return SLDiag_INVALID_RUNE_CODEPOINT;
-        case SLRuneLitErr_INVALID_UTF8:        return SLDiag_INVALID_UTF8_RUNE;
+        case HOPRuneLitErr_NONE:                return HOPDiag_NONE;
+        case HOPRuneLitErr_UNTERMINATED:        return HOPDiag_UNTERMINATED_RUNE;
+        case HOPRuneLitErr_EMPTY:               return HOPDiag_EMPTY_RUNE;
+        case HOPRuneLitErr_MULTIPLE_CODEPOINTS: return HOPDiag_RUNE_CODEPOINT_COUNT;
+        case HOPRuneLitErr_INVALID_ESCAPE:      return HOPDiag_INVALID_RUNE_ESCAPE;
+        case HOPRuneLitErr_INVALID_CODEPOINT:   return HOPDiag_INVALID_RUNE_CODEPOINT;
+        case HOPRuneLitErr_INVALID_UTF8:        return HOPDiag_INVALID_UTF8_RUNE;
     }
-    return SLDiag_UNTERMINATED_RUNE;
+    return HOPDiag_UNTERMINATED_RUNE;
 }
 
-int SLDecodeStringLiteralValidate(
-    const char* _Nonnull src, uint32_t start, uint32_t end, SLStringLitErr* _Nullable outErr) {
-    return SLDecodeStringLiteralImpl(src, start, end, NULL, NULL, outErr);
+int HOPDecodeStringLiteralValidate(
+    const char* _Nonnull src, uint32_t start, uint32_t end, HOPStringLitErr* _Nullable outErr) {
+    return HOPDecodeStringLiteralImpl(src, start, end, NULL, NULL, outErr);
 }
 
-int SLDecodeRuneLiteralValidate(
+int HOPDecodeRuneLiteralValidate(
     const char* _Nonnull src,
     uint32_t start,
     uint32_t end,
     uint32_t* _Nonnull outRune,
-    SLRuneLitErr* _Nullable outErr) {
-    SLStringLitErr  stringErr = { 0 };
-    SLRuneCollector collector = { 0 };
+    HOPRuneLitErr* _Nullable outErr) {
+    HOPStringLitErr  stringErr = { 0 };
+    HOPRuneCollector collector = { 0 };
     if (outErr != NULL) {
-        outErr->kind = SLRuneLitErr_NONE;
+        outErr->kind = HOPRuneLitErr_NONE;
         outErr->start = start;
         outErr->end = end;
     }
     if (src == NULL || outRune == NULL) {
         if (outErr != NULL) {
-            outErr->kind = SLRuneLitErr_UNTERMINATED;
+            outErr->kind = HOPRuneLitErr_UNTERMINATED;
         }
         return -1;
     }
     *outRune = 0u;
-    if (SLDecodeStringLiteralImpl(src, start, end, SLRuneCollectorEmit, &collector, &stringErr)
+    if (HOPDecodeStringLiteralImpl(src, start, end, HOPRuneCollectorEmit, &collector, &stringErr)
         != 0)
     {
         if (outErr != NULL) {
             outErr->start = stringErr.start;
             outErr->end = stringErr.end;
             switch (stringErr.kind) {
-                case SLStringLitErr_UNTERMINATED: outErr->kind = SLRuneLitErr_UNTERMINATED; break;
-                case SLStringLitErr_INVALID_ESCAPE:
-                    outErr->kind = SLRuneLitErr_INVALID_ESCAPE;
+                case HOPStringLitErr_UNTERMINATED: outErr->kind = HOPRuneLitErr_UNTERMINATED; break;
+                case HOPStringLitErr_INVALID_ESCAPE:
+                    outErr->kind = HOPRuneLitErr_INVALID_ESCAPE;
                     break;
-                case SLStringLitErr_INVALID_CODEPOINT:
-                    outErr->kind = SLRuneLitErr_INVALID_CODEPOINT;
+                case HOPStringLitErr_INVALID_CODEPOINT:
+                    outErr->kind = HOPRuneLitErr_INVALID_CODEPOINT;
                     break;
-                case SLStringLitErr_INVALID_UTF8: outErr->kind = SLRuneLitErr_INVALID_UTF8; break;
-                case SLStringLitErr_NONE:
-                case SLStringLitErr_ARENA_OOM:    outErr->kind = SLRuneLitErr_INVALID_UTF8; break;
+                case HOPStringLitErr_INVALID_UTF8: outErr->kind = HOPRuneLitErr_INVALID_UTF8; break;
+                case HOPStringLitErr_NONE:
+                case HOPStringLitErr_ARENA_OOM:    outErr->kind = HOPRuneLitErr_INVALID_UTF8; break;
             }
         }
         return -1;
     }
     if (collector.codepointCount == 0u) {
         if (outErr != NULL) {
-            outErr->kind = SLRuneLitErr_EMPTY;
+            outErr->kind = HOPRuneLitErr_EMPTY;
             outErr->start = start;
             outErr->end = end;
         }
@@ -675,7 +679,7 @@ int SLDecodeRuneLiteralValidate(
     }
     if (collector.codepointCount != 1u) {
         if (outErr != NULL) {
-            outErr->kind = SLRuneLitErr_MULTIPLE_CODEPOINTS;
+            outErr->kind = HOPRuneLitErr_MULTIPLE_CODEPOINTS;
             outErr->start = start;
             outErr->end = end;
         }
@@ -685,15 +689,15 @@ int SLDecodeRuneLiteralValidate(
     return 0;
 }
 
-int SLDecodeStringLiteralArena(
-    SLArena* _Nonnull arena,
+int HOPDecodeStringLiteralArena(
+    HOPArena* _Nonnull arena,
     const char* _Nonnull src,
     uint32_t start,
     uint32_t end,
     uint8_t* _Nullable* _Nonnull outBytes,
     uint32_t* _Nonnull outLen,
-    SLStringLitErr* _Nullable outErr) {
-    SLArenaByteBuf buf = {
+    HOPStringLitErr* _Nullable outErr) {
+    HOPArenaByteBuf buf = {
         .arena = arena,
         .v = NULL,
         .len = 0,
@@ -706,10 +710,10 @@ int SLDecodeStringLiteralArena(
         *outLen = 0;
     }
     if (arena == NULL || outBytes == NULL || outLen == NULL) {
-        SLSetStringLitErr(outErr, SLStringLitErr_ARENA_OOM, start, end);
+        HOPSetStringLitErr(outErr, HOPStringLitErr_ARENA_OOM, start, end);
         return -1;
     }
-    if (SLDecodeStringLiteralImpl(src, start, end, SLArenaByteEmit, &buf, outErr) != 0) {
+    if (HOPDecodeStringLiteralImpl(src, start, end, HOPArenaByteEmit, &buf, outErr) != 0) {
         return -1;
     }
     *outBytes = buf.v;
@@ -717,13 +721,13 @@ int SLDecodeStringLiteralArena(
     return 0;
 }
 
-int SLDecodeStringLiteralMalloc(
+int HOPDecodeStringLiteralMalloc(
     const char* _Nonnull src,
     uint32_t start,
     uint32_t end,
     uint8_t* _Nullable* _Nonnull outBytes,
     uint32_t* _Nonnull outLen,
-    SLStringLitErr* _Nullable outErr) {
+    HOPStringLitErr* _Nullable outErr) {
     if (outBytes != NULL) {
         *outBytes = NULL;
     }
@@ -731,22 +735,22 @@ int SLDecodeStringLiteralMalloc(
         *outLen = 0;
     }
     if (outBytes == NULL || outLen == NULL) {
-        SLSetStringLitErr(outErr, SLStringLitErr_ARENA_OOM, start, end);
+        HOPSetStringLitErr(outErr, HOPStringLitErr_ARENA_OOM, start, end);
         return -1;
     }
-#if !SL_LIBC
+#if !HOP_LIBC
     (void)src;
     (void)start;
     (void)end;
-    SLSetStringLitErr(outErr, SLStringLitErr_ARENA_OOM, start, end);
+    HOPSetStringLitErr(outErr, HOPStringLitErr_ARENA_OOM, start, end);
     return -1;
 #else
-    SLMallocByteBuf buf = {
+    HOPMallocByteBuf buf = {
         .v = NULL,
         .len = 0,
         .cap = 0,
     };
-    if (SLDecodeStringLiteralImpl(src, start, end, SLMallocByteEmit, &buf, outErr) != 0) {
+    if (HOPDecodeStringLiteralImpl(src, start, end, HOPMallocByteEmit, &buf, outErr) != 0) {
         free(buf.v);
         return -1;
     }
@@ -756,21 +760,21 @@ int SLDecodeStringLiteralMalloc(
 #endif
 }
 
-static int SLIsStringLiteralConcatChainRec(const SLAst* _Nonnull ast, int32_t nodeId) {
-    const SLAstNode* n;
-    int32_t          lhs;
-    int32_t          rhs;
+static int HOPIsStringLiteralConcatChainRec(const HOPAst* _Nonnull ast, int32_t nodeId) {
+    const HOPAstNode* n;
+    int32_t           lhs;
+    int32_t           rhs;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return 0;
     }
     n = &ast->nodes[nodeId];
-    if ((n->flags & SLAstFlag_PAREN) != 0) {
+    if ((n->flags & HOPAstFlag_PAREN) != 0) {
         return 0;
     }
-    if (n->kind == SLAst_STRING) {
+    if (n->kind == HOPAst_STRING) {
         return 1;
     }
-    if (n->kind != SLAst_BINARY || (SLTokenKind)n->op != SLTok_ADD) {
+    if (n->kind != HOPAst_BINARY || (HOPTokenKind)n->op != HOPTok_ADD) {
         return 0;
     }
     lhs = n->firstChild;
@@ -781,9 +785,9 @@ static int SLIsStringLiteralConcatChainRec(const SLAst* _Nonnull ast, int32_t no
     if (rhs < 0 || ast->nodes[rhs].nextSibling >= 0) {
         return 0;
     }
-    return SLIsStringLiteralConcatChainRec(ast, lhs) && SLIsStringLiteralConcatChainRec(ast, rhs);
+    return HOPIsStringLiteralConcatChainRec(ast, lhs) && HOPIsStringLiteralConcatChainRec(ast, rhs);
 }
 
-int SLIsStringLiteralConcatChain(const SLAst* _Nonnull ast, int32_t nodeId) {
-    return SLIsStringLiteralConcatChainRec(ast, nodeId);
+int HOPIsStringLiteralConcatChain(const HOPAst* _Nonnull ast, int32_t nodeId) {
+    return HOPIsStringLiteralConcatChainRec(ast, nodeId);
 }

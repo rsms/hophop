@@ -1,1 +1,1 @@
-tests/foreign_directives_context_bad.sl:4:26: error: SL1004: unexpected token
+tests/foreign_directives_context_bad.hop:4:26: error: HOP1004: unexpected token

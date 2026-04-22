@@ -1,1 +1,1 @@
-tests/comparison_hook_impure_global_bad.sl:5:9: error: SL2052: comparison hook must be pure
+tests/comparison_hook_impure_global_bad.hop:5:9: error: HOP2052: comparison hook must be pure

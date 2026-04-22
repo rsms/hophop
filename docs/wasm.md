@@ -1,6 +1,6 @@
 # Wasm target
 
-This document is a developer-facing overview of the SL Wasm target.
+This document is a developer-facing overview of the HopHop Wasm target.
 
 It explains how the target is structured, how backend-facing MIR is lowered to
 WebAssembly, and how the final module is assembled. It intentionally avoids
@@ -10,7 +10,7 @@ describing unstable implementation details that are likely to move over time.
 
 The Wasm target is a direct compiler backend.
 
-Its job is to take a checked SL package that has already been lowered to
+Its job is to take a checked HopHop package that has already been lowered to
 backend-facing MIR and produce a deterministic `.wasm` module without going
 through C or an external code generator.
 
@@ -30,7 +30,7 @@ The Wasm backend sits after parsing, type checking, and MIR formation.
 The high-level flow is:
 
 ```text
-SL source
+HopHop source
   -> parse
   -> typecheck
   -> package-level MIR lowering and rewrites
@@ -78,7 +78,7 @@ Conceptually, the backend has to classify each MIR value into one of these
 styles:
 
 - plain Wasm value
-- multiple Wasm values that together represent one SL value
+- multiple Wasm values that together represent one HopHop value
 - memory-backed value addressed through linear memory
 
 That classification then drives local handling, call lowering, return lowering,
@@ -104,7 +104,7 @@ irreducible shapes fail explicitly instead of producing incorrect Wasm.
 Direct same-program calls are lowered from MIR call edges to Wasm calls using an
 internal calling convention derived from the MIR-visible value shapes.
 
-Where SL values do not fit naturally into a plain Wasm return, the backend uses
+Where HopHop values do not fit naturally into a plain Wasm return, the backend uses
 internal memory-based conventions, such as caller-owned result storage. This is
 an internal backend ABI decision, not a stable public interface.
 
@@ -206,5 +206,5 @@ It is not:
 - a full catalog of supported language features
 - a line-by-line explanation of the current implementation
 
-For feature scope and bring-up history, see `docs/SLP-32-wasm-backend.md`.
+For feature scope and bring-up history, see `docs/HEP-32-wasm-backend.md`.
 For MIR structure and semantics, see `docs/mir.md`.

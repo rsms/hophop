@@ -1,2 +1,2 @@
-tests/nested_type_member_name_conflict_bad.sl:4:9: error: SL2001: duplicate definition 'value'
-tests/nested_type_member_name_conflict_bad.sl:3:2: hint: SL2001: other declaration of 'value'
+tests/nested_type_member_name_conflict_bad.hop:4:9: error: HOP2001: duplicate definition 'value'
+tests/nested_type_member_name_conflict_bad.hop:3:2: hint: HOP2001: other declaration of 'value'

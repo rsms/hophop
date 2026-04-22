@@ -1,0 +1,1 @@
+tests/hep17_platform_target_field_requires_import_bad.hop:5:22: error: HOP2002: unknown identifier 'stdin'

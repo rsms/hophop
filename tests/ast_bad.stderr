@@ -1,1 +1,1 @@
-tests/ast_bad.sl:3:23: error: SL1006: expected expression
+tests/ast_bad.hop:3:23: error: HOP1006: expected expression
