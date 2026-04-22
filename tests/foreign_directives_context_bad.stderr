@@ -1,1 +1,1 @@
-tests/foreign_directives_context_bad.sl:4:1: error: SL0000: context is not supported on foreign-linkage functions
+tests/foreign_directives_context_bad.sl:4:26: error: SL1004: unexpected token

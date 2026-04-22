@@ -8,8 +8,8 @@ struct Packet {
 }
 
 fn main() {
-	var ma             = context.mem
-	var packet *Packet = new Packet context ma
+	var ma             = context.allocator
+	var packet *Packet = new Packet
 	_ = packet
 	_ = ma
 }

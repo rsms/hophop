@@ -1,9 +1,5 @@
 // Verifies new contextual count is accepted.
-struct Ctx {
-	mem *Allocator
-}
-
-fn allocs(n uint) context Ctx {
+fn allocs(n uint) {
 	var a *[i32 4] = new [i32 4]
 	var b *[i32]   = new [i32 n]
 
@@ -15,5 +11,5 @@ fn allocs(n uint) context Ctx {
 }
 
 fn main() {
-	allocs(4) context { mem }
+	allocs(4)
 }

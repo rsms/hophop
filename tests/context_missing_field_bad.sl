@@ -1,14 +1,14 @@
 // Verifies context missing field is rejected.
-struct Allocator {
-	impl fn(*Allocator, rawptr, int, int, *int, u32) rawptr
+struct MemAllocator {
+	impl fn(*MemAllocator, rawptr, int, int, *int, u32) rawptr
 }
 
 struct TmpCtx {
-	tmpmem *Allocator
+	tmpmem *MemAllocator
 }
 
 struct MemCtx {
-	mem *Allocator
+	mem *MemAllocator
 }
 
 fn log_event(msg &str) context TmpCtx {}

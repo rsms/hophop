@@ -1,28 +1,24 @@
-// Verifies context is accepted.
-struct Ctx {
-	mem      *Allocator
-	temp_mem *Allocator
-	log      Logger
-}
-
-fn alloc() *i32 context Ctx {
+// Verifies ambient context is accepted.
+fn alloc() *i32 {
 	return new i32
 }
 
-fn log(msg &str) context Ctx {
+fn log_msg(msg &str) {
 	print(msg)
 }
 
-fn caller() context Ctx {
+fn caller() {
 	var p *i32 = alloc()
+	del p
 
-	var p2 *i32 = alloc() context { mem, temp_mem, log }
+	{
+		context.logger.prefix = "inner"
+		log_msg("ok")
+	}
 
-	var p3 ?*i32 = new i32 context context.mem
-
-	log("ok") context context
+	log_msg("done")
 }
 
-fn caller_direct(ctx *Ctx) context Ctx {
-	log("direct") context ctx
+fn main() {
+	caller()
 }

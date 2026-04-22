@@ -1,5 +1,5 @@
 // Verifies unqualified builtin types lower through the C backend.
-fn keep_allocator(a *Allocator, l *Logger, c *Context) *Allocator {
+fn keep_allocator(a *MemAllocator, l *Logger, c *Context) *MemAllocator {
 	if l == (null as rawptr) as *Logger {
 		return a
 	}
@@ -10,9 +10,9 @@ fn keep_allocator(a *Allocator, l *Logger, c *Context) *Allocator {
 }
 
 fn main() {
-	var a   *Allocator = (null as rawptr) as *Allocator
-	var l   *Logger    = (null as rawptr) as *Logger
-	var c   *Context   = (null as rawptr) as *Context
-	var out *Allocator = keep_allocator(a, l, c)
+	var a   *MemAllocator = (null as rawptr) as *MemAllocator
+	var l   *Logger       = (null as rawptr) as *Logger
+	var c   *Context      = (null as rawptr) as *Context
+	var out *MemAllocator = keep_allocator(a, l, c)
 	assert out == a
 }

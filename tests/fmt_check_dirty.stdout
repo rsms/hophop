@@ -45,8 +45,8 @@ input.sl:17:1: internal whitespace differs
   current : "return a+b"
   expected: "\treturn a + b"
 input.sl:20:1: internal whitespace differs
-  current : "fn shorthand_rewrite(y int) context Ctx{"
-  expected: "fn shorthand_rewrite(y int) context Ctx {"
+  current : "fn shorthand_rewrite(y int){"
+  expected: "fn shorthand_rewrite(y int) {"
 input.sl:21:1: line content differs
   current : "_=add(1,y:y)"
   expected: "\t_ = add(1, y)"
@@ -59,12 +59,12 @@ input.sl:23:1: line content differs
 input.sl:24:1: internal whitespace differs
   current : "_=Foo{x:1,y:(y)}"
   expected: "\t_ = Foo{ x: 1, y: (y) }"
-input.sl:25:1: line content differs
-  current : "_=add(1,2) context {mem:context.mem}"
-  expected: "\t_ = add(1, 2) context { mem }"
+input.sl:25:1: internal whitespace differs
+  current : "_=context.allocator"
+  expected: "\t_ = context.allocator"
 input.sl:26:1: internal whitespace differs
-  current : "_=add(1,2) context {mem:(context).mem}"
-  expected: "\t_ = add(1, 2) context { mem: (context).mem }"
+  current : "_=context.logger"
+  expected: "\t_ = context.logger"
 input.sl:27:1: line content differs
   current : "_=y<(16 as i64)"
   expected: "\t_ = y < 16 as i64"

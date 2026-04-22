@@ -1,5 +1,5 @@
 // Verifies new array type mismatch.
-fn foo(ma *Allocator) {
-	var many *i32 = new [i32 8] context ma
+fn foo(ma *MemAllocator) {
+	var many *i32 = new [i32 8]
 	_ = many
 }

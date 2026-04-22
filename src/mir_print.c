@@ -165,6 +165,7 @@ static const char* SLMirOpName(SLMirOp op) {
         case SLMirOp_TAGGED_PAYLOAD:  return "TAGGED_PAYLOAD";
         case SLMirOp_ALLOC_NEW:       return "ALLOC_NEW";
         case SLMirOp_CTX_GET:         return "CTX_GET";
+        case SLMirOp_CTX_ADDR:        return "CTX_ADDR";
         case SLMirOp_CTX_SET:         return "CTX_SET";
         case SLMirOp_RETURN:          return "RETURN";
         case SLMirOp_RETURN_VOID:     return "RETURN_VOID";
@@ -232,10 +233,10 @@ static const char* SLMirCastTargetName(SLMirCastTarget target) {
 
 static const char* SLMirContextFieldName(SLMirContextField field) {
     switch (field) {
-        case SLMirContextField_INVALID:  return "INVALID";
-        case SLMirContextField_MEM:      return "MEM";
-        case SLMirContextField_TEMP_MEM: return "TEMP_MEM";
-        case SLMirContextField_LOG:      return "LOG";
+        case SLMirContextField_INVALID:        return "INVALID";
+        case SLMirContextField_ALLOCATOR:      return "ALLOCATOR";
+        case SLMirContextField_TEMP_ALLOCATOR: return "TEMP_ALLOCATOR";
+        case SLMirContextField_LOGGER:         return "LOGGER";
     }
     return "UNKNOWN";
 }
@@ -474,6 +475,7 @@ static void SLMirDumpInst(
             }
             break;
         case SLMirOp_CTX_GET:
+        case SLMirOp_CTX_ADDR:
         case SLMirOp_CTX_SET:
             MirWCStr(w, " field=");
             MirWCStr(w, SLMirContextFieldName((SLMirContextField)ins->aux));

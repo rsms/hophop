@@ -108,7 +108,7 @@ fn shorthand_examples(y int) {
 	_ = typeof(GenericPair[i32, i32]{ left: 1, right: 2 }) == type GenericPair[i32, i32]
 }
 
-fn use_context(x int) int context AppContext {
+fn use_context(x int) int {
 	var arr    [int 3]
 	var maybe  ?int  = null            // comment
 	var view   [int] = arr[0:len(arr)] // comment
@@ -177,10 +177,9 @@ fn use_context(x int) int context AppContext {
 	sum = sum * 2 << (x - 1) / 3 // mixed precedence levels
 
 	sum = sizeof(int) + sizeof(sum)
-	sum = sum + (new [int len(arr)] context context.alloc) as int
-	_ = add(sum, 1) context context
-	_ = add(sum, 1) context { alloc }
-	_ = add(sum, 1) context { alloc: (context).alloc }
+	sum = sum + (new [int len(arr)]) as int
+	_ = context.allocator
+	_ = context.logger
 	_ = Foo{ x: 1, y: 2 }.x
 	_ = (&arr[0])!
 	return sum

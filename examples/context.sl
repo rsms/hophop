@@ -1,54 +1,23 @@
-// SLP-12 typed contexts and call-site overlays.
-// Demonstrates:
-// - function context clauses
-// - implicit context forwarding
-// - explicit pass-through (`context context`)
-// - call-local overlays (`context { ... }`)
-// - contextual built-ins (`new T` and `print(...)`)
-// Context types can be named as they are simply struct types
-struct AppContext {
-	mem *Allocator
-	log Logger
-}
-
-fn alloc_value() *i32 context struct {
-	mem *Allocator
-} {
+// Ambient context is available in every function body.
+fn alloc_value() *i32 {
 	var p *i32 = new i32
 	*p = 42
 	return p
 }
 
-fn announce(msg &str) context struct {
-	mem *Allocator
-	log Logger
-} {
+fn with_prefix(msg &str) {
+	context.logger.prefix = "[sl] "
 	print(msg)
 }
 
-fn run_once() i32 context AppContext {
-	// Implicit forwarding from caller context -> callee context (field subset by name)
-	var p *i32 = alloc_value()
-
-	announce("implicit")
-
-	announce("explicit") context context
-
-	// Call-local overlay, with explicit and shorthand binds.
-	var p2 *i32 = alloc_value() context { mem }
-	announce("overlay") context { log, mem }
-
-	assert *p == 42
-	assert *p2 == 42
-	return *p + *p2
-}
-
 fn main() {
-	// `main` can supply call-local capabilities explicitly.
-	var a = run_once() context { mem, log }
-	var b = run_once() context { mem, log }
+	var p *i32 = alloc_value()
+	assert *p == 42
 
-	assert a == 84
-	assert b == 84
-} // Ordinary calls auto-forward current context.
-// Explicit pass-through (equivalent to omitting `context context`).
+	{
+		with_prefix("inner")
+	}
+
+	print("outer")
+	del p
+}

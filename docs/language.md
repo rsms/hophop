@@ -52,7 +52,7 @@ See also:
 
 ### 2.3 Keywords
 - [LEX-KW-001][Stable] Keywords:
-  `import pub struct union enum fn var const type if else for switch case default break continue return defer assert sizeof true false in as null new context`.
+  `import pub struct union enum fn var const type if else for switch case default break continue return defer assert sizeof true false in as null new del`.
 - [LEX-KW-002][Stable] `mut` is reserved legacy syntax and MUST be rejected in type positions.
 
 ### 2.4 Literals
@@ -78,7 +78,6 @@ See also:
   - `BREAK`, `CONTINUE`, `RETURN`
   - `RPAREN`, `RBRACK`, `RBRACE`
   - `NOT` (postfix unwrap `!` at line end)
-  - `CONTEXT` (when tokenized as identifier-like expression operand)
 - [LEX-SEMI-003][Stable] In section 3 productions, semicolons are modeled as separators between adjacent declarations/statements in lists.
 
 ### 2.6 Directives
@@ -137,7 +136,7 @@ EnumItem        = Ident [ EnumPayload ] [ "=" Expr ] .
 EnumPayload     = "{" [ FieldDeclList ] "}" .
 
 FnDeclOrDef     = "fn" FnName [ TypeParamList ] "(" [ ParamList ] ")" [ FnResultClause ]
-                [ ContextClause ] [ Block ] .
+                [ Block ] .
 FnName          = Ident | "sizeof" .
 ParamList       = ParamGroup { "," ParamGroup } .
 ParamGroup      = "const" ( ( Ident | "_" ) Type | ( Ident | "_" ) "..." Type )
@@ -145,7 +144,6 @@ ParamGroup      = "const" ( ( Ident | "_" ) Type | ( Ident | "_" ) "..." Type )
                 | ( Ident | "_" ) "..." Type .
 FnResultClause  = Type | "(" FnResultGroup { "," FnResultGroup } ")" .
 FnResultGroup   = Type | ( Ident { "," Ident } Type ) .
-ContextClause   = "context" Type .
 
 TopConstDecl    = "const" TopDeclNameList ( [ Type ] "=" ExprList ) .
 LocalConstDecl  = "const" DeclNameList ( [ Type ] "=" ExprList ) .
@@ -172,7 +170,7 @@ Block           = "{" [ StmtList ] "}" .
 StmtList        = Stmt { ";" Stmt } [ ";" ] .
 Stmt            = Block | VarDeclStmt | LocalConstDecl | IfStmt | ForStmt | SwitchStmt
                 | ReturnStmt | BreakStmt | ContinueStmt | DeferStmt | AssertStmt
-                | ConstBlockStmt | MultiAssignStmt | ExprStmt .
+                | ConstBlockStmt | DelStmt | MultiAssignStmt | ExprStmt .
 
 VarDeclStmt     = "var" DeclNameList ( Type [ "=" ExprList ] | "=" ExprList ) .
 MultiAssignStmt = ExprList "=" ExprList .
@@ -194,6 +192,7 @@ ContinueStmt    = "continue" .
 DeferStmt       = "defer" ( Block | Stmt ) .
 AssertStmt      = "assert" Expr [ "," Expr { "," Expr } ] .
 ConstBlockStmt  = "const" Block .
+DelStmt         = "del" Expr { "," Expr } [ "in" Expr ] .
 ExprStmt        = Expr .
 
 Expr            = AssignExpr .
@@ -211,28 +210,23 @@ AddExpr         = MulExpr { ( "+" | "-" ) MulExpr } .
 MulExpr         = UnaryExpr { ( "*" | "/" | "%" ) UnaryExpr } .
 UnaryExpr       = ( ( "+" | "-" | "!" | "*" | "&" ) UnaryExpr ) | PostfixExpr .
 PostfixExpr     = PrimaryExpr { PostfixSuffix } .
-PostfixSuffix   = CallContextSuffix | IndexSuffix | SelectorSuffix | CastSuffix | UnwrapSuffix .
-CallContextSuffix = CallSuffix [ ContextClause ] .
+PostfixSuffix   = CallSuffix | IndexSuffix | SelectorSuffix | CastSuffix | UnwrapSuffix .
 CallSuffix      = "(" [ CallArgList ] ")" .
 CallArgList     = CallArg { "," CallArg } .
 CallArg         = [ Ident ":" ] Expr [ "..." ] .
 ExprList        = Expr { "," Expr } .
-ContextClause   = "context" ( "context" | ContextOverlay | Expr ) .
-ContextOverlay  = "{" [ ContextBindList ] "}" .
-ContextBindList = ContextBind { "," ContextBind } [ "," ] .
-ContextBind     = Ident [ ":" Expr ] .
 IndexSuffix     = "[" Expr "]" | "[" [ Expr ] ":" [ Expr ] "]" .
 SelectorSuffix  = "." Ident .
 CastSuffix      = "as" Type .
 UnwrapSuffix    = "!" .
 
-PrimaryExpr     = Ident | "context" | IntLit | FloatLit | StringLit | RuneLit | BoolLit | "null"
+PrimaryExpr     = Ident | IntLit | FloatLit | StringLit | RuneLit | BoolLit | "null"
                 | TypeValueExpr
                 | CompoundLit | NewExpr | "sizeof" "(" ( Type | Expr ) ")" | "(" Expr ")"
                 | TupleExpr .
 TypeValueExpr   = "type" Type .
 TupleExpr       = "(" Expr "," Expr { "," Expr } ")" .
-NewExpr         = "new" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "context" Expr ] .
+NewExpr         = "new" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "in" Expr ] .
 CompoundLit     = [ TypeName ] "{" [ FieldInitList ] "}" .
 FieldInitList   = FieldInit { "," FieldInit } [ "," ] .
 FieldInit       = Ident { "." Ident } ":" Expr .
@@ -243,7 +237,7 @@ FieldInit       = Ident { "." Ident } ":" Expr .
   1. try `Ident {"," Ident} Type` as a named-parameter group
   2. if that parse fails, backtrack and parse the segment as `Type`
 - [SYN-DISAMBIG-002][Stable] Function-type parameter segments are parsed left-to-right with the above backtracking rule.
-- [SYN-DISAMBIG-003][Stable] `context` is always lexed as keyword token `CONTEXT`; when accepted as a primary expression it is represented as identifier-like operand, never as a bindable identifier declaration name.
+- [SYN-DISAMBIG-003][Stable] `context` lexes and parses as an identifier expression; semantically it resolves to the ambient context binding in function bodies and is not a bindable declaration name.
 - [SYN-DISAMBIG-004][Provisional] After a declaration name in `struct`, `union`, `enum`, `type`, or `fn`, a following `[` starts a type-parameter list only when the bracket contents parse as identifiers separated by commas. Otherwise the declaration continues without type parameters.
 - [SYN-DISAMBIG-005][Stable] In statement context (`Stmt`), leading `{` is parsed unconditionally as `Block`.
 - [SYN-DISAMBIG-006][Stable] `ExprStmt` in statement context MUST NOT consume unparenthesized brace-leading compound-literal forms (`{ ... }`). If a compound-literal expression statement is intended, it MUST be parenthesized (`({ ... })`).
@@ -283,7 +277,7 @@ fn f() {
 - [DECL-DIR-002][Provisional] `@c_import` and `@wasm_import` declare externally provided symbols and therefore require declarations, not definitions.
 - [DECL-DIR-003][Provisional] `@export` publishes the annotated function under the requested external name.
 - [DECL-DIR-004][Provisional] Foreign-linkage directives are invalid on overloaded functions.
-- [DECL-DIR-005][Provisional] Context parameters are invalid on `@c_import` and `@wasm_import` functions.
+- [DECL-DIR-005][Provisional] Legacy function context clauses are invalid on all functions, including `@c_import` and `@wasm_import` declarations.
 - [DECL-TOP-004][Stable] `pub` applies to a single following top-level declaration.
 - [DECL-HOLE-001][Stable] `_` MUST NOT name top-level symbols, struct/union fields, enum items, or type aliases.
 - [DECL-HOLE-002][Stable] Local discard declarations `var _ = expr` and `const _ = expr` are valid statement forms.
@@ -341,7 +335,7 @@ fn f() {
   - floating point: `f32`, `f64`
   - constant numeric: `const_int`, `const_float`
 - [TYPE-BUILTIN-003][Stable] `int` and `uint` are pointer-sized signed/unsigned integers for the target.
-- [TYPE-BUILTIN-004][Stable] `Allocator` is a source-level type provided by builtin library declarations (for example `builtin.Allocator` and unqualified builtin lookup), not a language builtin type.
+- [TYPE-BUILTIN-004][Stable] `MemAllocator` is a source-level type provided by builtin library declarations (for example `builtin.MemAllocator` and unqualified builtin lookup), not a language builtin type.
 - [TYPE-BUILTIN-005][Stable] `rune` is a source-level alias type provided by builtin declarations and modeled as `type rune u32`.
 - [TYPE-CONSTR-001][Stable] Constructed types: pointers `*T`, references `&T`, arrays `[T N]`, slices `[T]`, dependent arrays `[T .n]`, optionals `?T`, function types, tuple types `(T1, T2, ...)`, anonymous aggregates.
 - [TYPE-CONSTR-002][Stable] `[T]` is unsized and MUST NOT be used by value.
@@ -600,21 +594,15 @@ fn f() {
 
 ## 8. Contexts and Capabilities
 
-- [CTX-DECL-001][Stable] Function context clause syntax is `context Type` where `Type` is full type grammar (named or anonymous struct-compatible type).
-- [CTX-DECL-002][Stable] A function with context clause has an implicit local identifier `context` of type `*ContextType`.
-- [CTX-DECL-003][Stable] Context requirement types are struct-compatible: after alias resolution they must be named structs or anonymous structs.
-- [CTX-DECL-004][Stable] `context` is a reserved contextual identifier expression:
-  - valid as primary expression operand where a current function context or implicit main root context exists
+- [CTX-AMBIENT-001][Stable] `context` is an ambient builtin expression available in function bodies.
+- [CTX-AMBIENT-002][Stable] The ambient context type is builtin `Context`.
+- [CTX-AMBIENT-003][Stable] Builtin `Context` provides at least fields `allocator`, `temp_allocator`, and `logger`.
+- [CTX-AMBIENT-004][Stable] `context` is a reserved contextual identifier expression:
+  - valid as primary expression operand where an ambient context exists
   - invalid as a declaration/binding name
   - unresolved (unknown symbol) outside a context-bearing scope
-- [CTX-CALL-001][Stable] Calls without `context` clause forward effective current context automatically.
-- [CTX-CALL-002][Stable] `context context` is explicit pass-through and equivalent to omission.
-- [CTX-CALL-003][Stable] `context { ... }` creates call-local context overlay.
-- [CTX-CALL-003A][Stable] `context expr` passes an explicit context expression.
-- [CTX-CALL-004][Stable] Overlay bind shorthand `name` means `name = context.name`.
-- [CTX-CALL-005][Stable] Overlay duplicate field names are invalid.
-- [CTX-CALL-006][Stable] Callee context requirements are structural-by-field: each required field name/type must be provided by effective context.
-- [CTX-CALL-007][Stable] Overlay bindings take precedence over forwarded ambient fields with the same name.
+- [CTX-AMBIENT-005][Stable] `context.allocator`, `context.temp_allocator`, and `context.logger` are mutable fields of the current ambient context.
+- [CTX-LEGACY-001][Stable] Function `context Type` clauses and call `context ...` suffixes are not part of the current grammar.
 
 ## 9. Built-in Forms and Functions
 
@@ -645,9 +633,9 @@ fn f() {
   - `new T`
   - `new T{...}`
   - `new [T n]`
-  - each with optional `context allocExpr`
-- [BI-NEW-002][Stable] Without explicit allocator, effective context MUST provide `mem` compatible with `*Allocator`.
-- [BI-NEW-002A][Stable] The explicit allocator, or effective context `mem`, MUST be non-null and have a valid allocator implementation.
+  - each with optional `in allocExpr`
+- [BI-NEW-002][Stable] Without explicit allocator, effective context MUST provide `allocator` compatible with `MemAllocator`.
+- [BI-NEW-002A][Stable] The explicit allocator, or effective context `allocator`, MUST be non-null and have a valid allocator implementation.
 - [BI-NEW-003][Stable] `n` in `new [T n]` MUST be integer-typed; constant negative values are invalid.
 - [BI-NEW-004][Stable] Variable-size element types require initializer in non-count form.
 - [BI-NEW-005][Stable] Static result typing:
@@ -656,10 +644,10 @@ fn f() {
 - [BI-NEW-005A][Stable] `new [T 0]` has type `*[T]` (runtime-length slice pointer form).
 - [BI-NEW-006][Provisional] In `Reference-slc`, codegen may insert implicit null-trap unwrap when coercing `new` into non-optional pointer destinations.
 
-### 9.5 `concat(a, b)` and `free(...)`
-- [BI-CONCAT-001][Stable] `concat(a, b)` requires both args `str`-assignable and context `mem`; returns `*str`.
-- [BI-FREE-001][Stable] `free(value)` uses context allocator; `free(alloc, value)` uses explicit allocator.
-- [BI-FREE-002][Stable] Method sugar `alloc.free(value)` is supported.
+### 9.5 `concat(a, b)` and `del`
+- [BI-CONCAT-001][Stable] `concat(a, b)` requires both args `str`-assignable and context `allocator`; returns `*str`.
+- [BI-DEL-001][Stable] `del value` uses `context.allocator`; `del value in allocExpr` uses an explicit allocator.
+- [BI-DEL-002][Stable] `del a, b, c in allocExpr` frees each listed pointer through the same allocator.
 
 ### 9.6 `panic(msg)`
 - [BI-PANIC-001][Stable] Argument MUST be `str`-assignable.
@@ -672,13 +660,13 @@ fn f() {
 
 ### 9.8 `print(msg)`
 - [BI-PRINT-001][Stable] Argument MUST be `str`-assignable.
-- [BI-PRINT-002][Stable] Effective context MUST provide field `log`.
-- [BI-PRINT-003][Stable] Core type checking imposes no additional static shape/type requirement on `log` beyond field presence.
-- [BI-PRINT-004][Provisional] `Reference-slc` currently validates `log` field presence at typecheck time and may rely on backend coercion at codegen time for concrete logger compatibility.
+- [BI-PRINT-002][Stable] Effective context MUST provide field `logger`.
+- [BI-PRINT-003][Stable] Core type checking imposes no additional static shape/type requirement on `logger` beyond field presence.
+- [BI-PRINT-004][Provisional] `Reference-slc` currently validates `logger` field presence at typecheck time and may rely on backend coercion at codegen time for concrete logger compatibility.
 
 ### 9.9 `fmt(format, args...)`
 - [BI-FMT-001][Provisional] `fmt` requires at least one argument; the first argument MUST be `str`-assignable.
-- [BI-FMT-002][Provisional] `fmt` requires effective context field `mem` compatible with `*Allocator`.
+- [BI-FMT-002][Provisional] `fmt` requires effective context field `allocator` compatible with `MemAllocator`.
 - [BI-FMT-003][Provisional] `fmt` returns `*str`.
 - [BI-FMT-004][Provisional] In v1, supported placeholders are `{i}` (integer) and `{r}` (reflective).
 - [BI-FMT-005][Provisional] `{{` and `}}` represent literal braces.
@@ -786,7 +774,7 @@ This section is non-core and documents current reference behavior.
   1. named `builtin__Context`
   2. named type matching `builtin*__Context`
   3. named `Context`
-  4. fallback synthesized fields `mem` and `log`
+  4. fallback synthesized fields `allocator`, `temp_allocator`, and `logger`
 - [REF-IMPL-006][Provisional] Optional feature imports are recognized but optional syntax is not hard-gated on those imports.
 - [REF-IMPL-007][Provisional] Expression-switch lowering evaluates subject once and compares against case labels using a cached temporary, consistent with [STMT-SWITCH-007].
 - [REF-IMPL-008][Provisional] `assert(cond, fmt, args...)` currently ignores formatting arguments in panic payload construction.

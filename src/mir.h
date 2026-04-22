@@ -57,6 +57,7 @@ typedef enum {
     SLMirOp_TAGGED_PAYLOAD,
     SLMirOp_ALLOC_NEW,
     SLMirOp_CTX_GET,
+    SLMirOp_CTX_ADDR,
     SLMirOp_CTX_SET,
     SLMirOp_RETURN,
     SLMirOp_RETURN_VOID,
@@ -381,9 +382,9 @@ typedef enum {
 
 typedef enum {
     SLMirContextField_INVALID = 0,
-    SLMirContextField_MEM = 1,
-    SLMirContextField_TEMP_MEM = 2,
-    SLMirContextField_LOG = 3,
+    SLMirContextField_ALLOCATOR = 1,
+    SLMirContextField_TEMP_ALLOCATOR = 2,
+    SLMirContextField_LOGGER = 3,
 } SLMirContextField;
 
 typedef struct {

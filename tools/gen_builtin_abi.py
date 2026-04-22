@@ -346,8 +346,8 @@ def load_builtin_decls(builtin_dir: Path) -> tuple[list[BuiltinDecl], set[str]]:
 
 def emit_builtin_abi(decls: list[BuiltinDecl], known_types: set[str]) -> str:
     struct_order: list[str] = [d.name for d in decls if isinstance(d, StructDecl)]
-    if "Allocator" not in struct_order:
-        die("missing struct 'Allocator' in builtin package")
+    if "MemAllocator" not in struct_order:
+        die("missing struct 'MemAllocator' in builtin package")
     if "Context" not in struct_order:
         die("missing struct 'Context' in builtin package")
 

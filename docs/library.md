@@ -72,16 +72,16 @@ Rune literals (`'a'`, `'\n'`, `'本'`) produce `rune` values.
 The allocator callback uses signed size and alignment values:
 
 ```sl
-struct Allocator {
-    impl fn(*Allocator, rawptr, int, int, *int, u32) rawptr
+struct MemAllocator {
+    impl fn(*MemAllocator, rawptr, int, int, *int, u32) rawptr
 }
 ```
 
-Allocator implementations must zero newly allocated bytes:
+MemAllocator implementations must zero newly allocated bytes:
 - fresh allocations are fully zeroed
 - resized allocations must zero bytes in `[oldSize, newSize)`
 
-For normal code, use `Allocator` (a nominal alias of `__sl_MemAllocator`).
+For normal code, use `MemAllocator` (a nominal alias of `__sl_MemAllocator`).
 
 ## Built-In Functions
 
@@ -135,9 +135,9 @@ new [T N] context alloc
 
 `new` allocates memory from a memory allocator.
 
-- `alloc` must be convertible to `*Allocator` and must be non-null with a valid `impl`.
+- `alloc` must be convertible to `*MemAllocator` and must be non-null with a valid `impl`.
 - Contextual forms (`new T`, `new [T N]`) use allocator capability `mem` from effective context.
-- Effective context `mem` must be assignable to `*Allocator` and must be non-null with a valid `impl`.
+- Effective context `mem` must be assignable to `*MemAllocator` and must be non-null with a valid `impl`.
 - `T` is the allocated element type.
 - If `N` is provided, storage for a sequence of `T` is allocated.
 - If `N` is a positive compile-time constant, result type is a fixed-size array pointer (`*[T N]`).
@@ -247,7 +247,7 @@ Operation semantics:
 - `console_log`: write a platform log message.
 - `panic`: stop execution after reporting a fatal error message.
 
-Allocation is provided by `Allocator` via `new`, with the platform setting
+Allocation is provided by `MemAllocator` via `new`, with the platform setting
 `context.mem` before `sl_main`.
 
 Concrete default platform implementation used by `slc compile`:
@@ -280,7 +280,7 @@ Planned additions to platform library surface:
 
 ```sl
 pub struct Context {
-    mem     *Allocator
+    mem     *MemAllocator
     console i32
     stdin   ?i32
     fs      ?__sl_FileSystem

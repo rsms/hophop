@@ -5,9 +5,8 @@ struct S {
 }
 
 fn main() {
-	var ma         = context.mem
-	var p *S       = new S context ma
-	var q *[i32 4] = new [i32 4] context ma
+	var p *S       = new S
+	var q *[i32 4] = new [i32 4]
 
 	assert p.x == 0
 	assert p.y[0] == 0

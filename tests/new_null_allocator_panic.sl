@@ -1,6 +1,9 @@
-// Verifies new panics when its allocator argument is null.
+// Verifies optional new returns null when the ambient allocator fails.
+import "testing" { FailingAllocator }
+
 fn main() {
-	var ma *Allocator = (null as rawptr) as *Allocator
-	var p  ?*i32      = new i32 context ma
+	var ma = FailingAllocator{}
+	context.allocator = ma
+	var p ?*i32 = new i32
 	assert p == null
 }

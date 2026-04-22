@@ -12,7 +12,7 @@ fn read_ptr(p I64Ptr) i64 {
 fn main() {
 	var x i64    = 7
 	var p I64Ptr = &x
-	assert read_ptr(p) == 7 as i64
+	assert read_ptr(p) == 7
 
 	var data [i64 2]
 	data[0] = 1 as i64

@@ -190,6 +190,7 @@ typedef int (*SLMirContextGetFn)(
     SLMirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
     SLDiag* _Nullable diag);
+typedef SLMirContextGetFn SLMirContextAddrFn;
 typedef int (*SLMirEvalWithContextFn)(
     void* _Nullable ctx,
     uint32_t sourceNode,
@@ -258,6 +259,8 @@ typedef struct {
     void* _Nullable allocNewCtx;
     SLMirContextGetFn _Nullable contextGet;
     void* _Nullable contextGetCtx;
+    SLMirContextAddrFn _Nullable contextAddr;
+    void* _Nullable contextAddrCtx;
     SLMirEvalWithContextFn _Nullable evalWithContext;
     void* _Nullable evalWithContextCtx;
     SLMirEnterFunctionFn _Nullable enterFunction;

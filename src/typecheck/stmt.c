@@ -1881,6 +1881,56 @@ int SLTCTypeStmt(
             }
             return 0;
         }
+        case SLAst_DEL: {
+            int32_t expr = SLAstFirstChild(c->ast, nodeId);
+            int32_t allocArgNode = -1;
+            int32_t allocType = SLTCFindMemAllocatorType(c);
+            int32_t ctxAllocType = -1;
+            if (allocType < 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+            }
+            if ((n->flags & SLAstFlag_DEL_HAS_ALLOC) != 0) {
+                int32_t scan = expr;
+                while (scan >= 0) {
+                    int32_t next = SLAstNextSibling(c->ast, scan);
+                    if (next < 0) {
+                        allocArgNode = scan;
+                        break;
+                    }
+                    scan = next;
+                }
+                if (allocArgNode < 0
+                    || SLTCValidateMemAllocatorArg(c, allocArgNode, allocType) != 0)
+                {
+                    return -1;
+                }
+            } else {
+                if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "allocator", &ctxAllocType) != 0) {
+                    return -1;
+                }
+                if (!SLTCCanAssign(c, allocType, ctxAllocType)) {
+                    return SLTCFailNode(c, nodeId, SLDiag_CONTEXT_TYPE_MISMATCH);
+                }
+            }
+            if (expr < 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+            }
+            while (expr >= 0 && expr != allocArgNode) {
+                int32_t t;
+                int32_t resolved;
+                if (SLTCTypeExpr(c, expr, &t) != 0) {
+                    return -1;
+                }
+                resolved = SLTCResolveAliasBaseType(c, t);
+                if (resolved < 0 || (uint32_t)resolved >= c->typeLen
+                    || c->types[resolved].kind != SLTCType_PTR)
+                {
+                    return SLTCFailNode(c, expr, SLDiag_TYPE_MISMATCH);
+                }
+                expr = SLAstNextSibling(c->ast, expr);
+            }
+            return 0;
+        }
         default: return SLTCFailNode(c, nodeId, SLDiag_UNEXPECTED_TOKEN);
     }
 }
@@ -1973,57 +2023,9 @@ int SLTCTypeFunctionBody(SLTypeCheckCtx* c, int32_t funcIndex) {
         return 0;
     }
 
-    c->currentContextType = -1;
-    c->hasImplicitMainRootContext = 0;
-    c->implicitMainContextType = -1;
-    if (fn->contextType >= 0) {
-        int32_t contextLocalType = SLTCInternRefType(
-            c, fn->contextType, 1, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end);
-        int32_t  fnChild = SLAstFirstChild(c->ast, nodeId);
-        uint32_t contextNameStart = 0;
-        uint32_t contextNameEnd = 0;
-        if (contextLocalType < 0) {
-            c->currentFunctionIndex = savedFunctionIndex;
-            c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;
-            c->activeTypeParamFnNode = savedActiveTypeParamFnNode;
-            c->activeGenericArgStart = savedActiveGenericArgStart;
-            c->activeGenericArgCount = savedActiveGenericArgCount;
-            c->activeGenericDeclNode = savedActiveGenericDeclNode;
-            c->currentContextType = savedContextType;
-            c->hasImplicitMainRootContext = savedImplicitRoot;
-            c->implicitMainContextType = savedImplicitMainContextType;
-            return -1;
-        }
-        while (fnChild >= 0) {
-            const SLAstNode* ch = &c->ast->nodes[fnChild];
-            if (ch->kind == SLAst_CONTEXT_CLAUSE) {
-                contextNameStart = ch->start;
-                contextNameEnd = ch->start + 7u; /* "context" */
-                break;
-            }
-            fnChild = SLAstNextSibling(c->ast, fnChild);
-        }
-        if (contextNameEnd <= contextNameStart
-            || SLTCLocalAdd(c, contextNameStart, contextNameEnd, contextLocalType, 0, -1) != 0)
-        {
-            c->currentFunctionIndex = savedFunctionIndex;
-            c->currentFunctionIsCompareHook = savedFunctionIsCompareHook;
-            c->activeTypeParamFnNode = savedActiveTypeParamFnNode;
-            c->activeGenericArgStart = savedActiveGenericArgStart;
-            c->activeGenericArgCount = savedActiveGenericArgCount;
-            c->activeGenericDeclNode = savedActiveGenericDeclNode;
-            c->currentContextType = savedContextType;
-            c->hasImplicitMainRootContext = savedImplicitRoot;
-            c->implicitMainContextType = savedImplicitMainContextType;
-            return -1;
-        }
-        SLTCSetLocalUsageSuppress(c, (int32_t)c->localLen - 1, 1);
-        SLTCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
-        c->currentContextType = fn->contextType;
-    } else if (SLTCIsMainFunction(c, fn)) {
-        c->implicitMainContextType = SLTCResolveImplicitMainContextType(c);
-        c->hasImplicitMainRootContext = 1;
-    }
+    c->currentContextType = SLTCResolveImplicitMainContextType(c);
+    c->hasImplicitMainRootContext = c->currentContextType < 0;
+    c->implicitMainContextType = c->currentContextType;
 
     {
         int rc = SLTCTypeBlock(c, bodyNode, fn->returnType, 0, 0);
@@ -2261,15 +2263,15 @@ int SLTCBuildCheckedContext(
             c.typeRune = namedRuneType;
         }
     }
-    c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "builtin__Allocator");
+    c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "builtin__MemAllocator");
     if (c.typeMemAllocator < 0) {
-        c.typeMemAllocator = SLTCFindBuiltinNamedTypeBySuffix(&c, "__Allocator");
+        c.typeMemAllocator = SLTCFindBuiltinNamedTypeBySuffix(&c, "__MemAllocator");
     }
     if (c.typeMemAllocator < 0) {
-        c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "Allocator");
+        c.typeMemAllocator = SLTCFindNamedTypeByLiteral(&c, "MemAllocator");
     }
     if (c.typeMemAllocator < 0) {
-        c.typeMemAllocator = SLTCFindNamedTypeBySuffix(&c, "__Allocator");
+        c.typeMemAllocator = SLTCFindNamedTypeBySuffix(&c, "__MemAllocator");
     }
     if (SLTCResolveAllTypeAliases(&c) != 0) {
         return -1;

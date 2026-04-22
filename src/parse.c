@@ -1135,6 +1135,14 @@ static int SLPParseNewExpr(SLParser* p, int32_t* out) {
         }
     }
 
+    if (SLPMatch(p, SLTok_IN)) {
+        if (SLPParseExpr(p, 1, &allocNode) != 0) {
+            return -1;
+        }
+        p->nodes[n].flags |= SLAstFlag_NEW_HAS_ALLOC;
+        p->nodes[n].end = p->nodes[allocNode].end;
+    }
+
     if (SLPAddChild(p, n, typeNode) != 0) {
         return -1;
     }
@@ -1148,16 +1156,10 @@ static int SLPParseNewExpr(SLParser* p, int32_t* out) {
             return -1;
         }
     }
-
-    if (SLPMatch(p, SLTok_CONTEXT)) {
-        if (SLPParseExpr(p, 1, &allocNode) != 0) {
-            return -1;
-        }
+    if (allocNode >= 0) {
         if (SLPAddChild(p, n, allocNode) != 0) {
             return -1;
         }
-        p->nodes[n].flags |= SLAstFlag_NEW_HAS_ALLOC;
-        p->nodes[n].end = p->nodes[allocNode].end;
     }
 
     *out = n;
@@ -1213,7 +1215,7 @@ static int SLPParsePrimary(SLParser* p, int32_t* out) {
         return 0;
     }
 
-    if (SLPMatch(p, SLTok_IDENT) || SLPMatch(p, SLTok_CONTEXT) || SLPMatch(p, SLTok_TYPE)) {
+    if (SLPMatch(p, SLTok_IDENT) || SLPMatch(p, SLTok_TYPE)) {
         t = SLPPrev(p);
         n = SLPNewNode(p, SLAst_IDENT, t->start, t->end);
         if (n < 0) {
@@ -1458,95 +1460,6 @@ static int SLPParsePostfix(SLParser* p, int32_t* expr) {
             p->nodes[n].end = t->end;
             *expr = n;
             continue;
-        }
-
-        if (SLPMatch(p, SLTok_CONTEXT)) {
-            int32_t        withNode;
-            const SLToken* withTok = SLPPrev(p);
-            if (p->nodes[*expr].kind != SLAst_CALL) {
-                return SLPFail(p, SLDiag_UNEXPECTED_TOKEN);
-            }
-            withNode = SLPNewNode(p, SLAst_CALL_WITH_CONTEXT, p->nodes[*expr].start, withTok->end);
-            if (withNode < 0) {
-                return -1;
-            }
-            if (SLPAddChild(p, withNode, *expr) != 0) {
-                return -1;
-            }
-            if (SLPMatch(p, SLTok_CONTEXT)) {
-                const SLToken* kw = SLPPrev(p);
-                p->nodes[withNode].flags |= SLAstFlag_CALL_WITH_CONTEXT_PASSTHROUGH;
-                p->nodes[withNode].end = kw->end;
-                *expr = withNode;
-                continue;
-            } else if (SLPAt(p, SLTok_LBRACE)) {
-                const SLToken* lb;
-                const SLToken* rb;
-                int32_t        overlayNode;
-                if (SLPExpect(p, SLTok_LBRACE, SLDiag_UNEXPECTED_TOKEN, &lb) != 0) {
-                    return -1;
-                }
-                overlayNode = SLPNewNode(p, SLAst_CONTEXT_OVERLAY, lb->start, lb->end);
-                if (overlayNode < 0) {
-                    return -1;
-                }
-                if (!SLPAt(p, SLTok_RBRACE)) {
-                    for (;;) {
-                        const SLToken* bindTok;
-                        int32_t        bindNode;
-                        int32_t        bindExpr = -1;
-                        if (SLPExpect(p, SLTok_IDENT, SLDiag_UNEXPECTED_TOKEN, &bindTok) != 0) {
-                            return -1;
-                        }
-                        bindNode = SLPNewNode(p, SLAst_CONTEXT_BIND, bindTok->start, bindTok->end);
-                        if (bindNode < 0) {
-                            return -1;
-                        }
-                        p->nodes[bindNode].dataStart = bindTok->start;
-                        p->nodes[bindNode].dataEnd = bindTok->end;
-                        if (SLPMatch(p, SLTok_COLON)) {
-                            if (SLPParseExpr(p, 1, &bindExpr) != 0) {
-                                return -1;
-                            }
-                            if (SLPAddChild(p, bindNode, bindExpr) != 0) {
-                                return -1;
-                            }
-                            p->nodes[bindNode].end = p->nodes[bindExpr].end;
-                        }
-                        if (SLPAddChild(p, overlayNode, bindNode) != 0) {
-                            return -1;
-                        }
-                        if (SLPMatch(p, SLTok_COMMA)) {
-                            if (SLPAt(p, SLTok_RBRACE)) {
-                                break;
-                            }
-                            continue;
-                        }
-                        break;
-                    }
-                }
-                if (SLPExpect(p, SLTok_RBRACE, SLDiag_UNEXPECTED_TOKEN, &rb) != 0) {
-                    return -1;
-                }
-                p->nodes[overlayNode].end = rb->end;
-                if (SLPAddChild(p, withNode, overlayNode) != 0) {
-                    return -1;
-                }
-                p->nodes[withNode].end = rb->end;
-                *expr = withNode;
-                continue;
-            } else {
-                int32_t contextExpr;
-                if (SLPParseExpr(p, 1, &contextExpr) != 0) {
-                    return -1;
-                }
-                if (SLPAddChild(p, withNode, contextExpr) != 0) {
-                    return -1;
-                }
-                p->nodes[withNode].end = p->nodes[contextExpr].end;
-                *expr = withNode;
-                continue;
-            }
         }
 
         if (SLPMatch(p, SLTok_LBRACK)) {
@@ -2871,6 +2784,46 @@ static int SLPParseStmt(SLParser* p, int32_t* out) {
             }
             *out = n;
             return 0;
+        case SLTok_DEL:
+            kw = SLPPeek(p);
+            p->pos++;
+            n = SLPNewNode(p, SLAst_DEL, kw->start, kw->end);
+            if (n < 0) {
+                return -1;
+            }
+            for (;;) {
+                if (SLPParseExpr(p, 1, &expr) != 0) {
+                    return -1;
+                }
+                if (SLPAddChild(p, n, expr) != 0) {
+                    return -1;
+                }
+                p->nodes[n].end = p->nodes[expr].end;
+                if (!SLPMatch(p, SLTok_COMMA)) {
+                    break;
+                }
+            }
+            if (SLPMatch(p, SLTok_IN)) {
+                if (SLPParseExpr(p, 1, &expr) != 0) {
+                    return -1;
+                }
+                if (SLPAddChild(p, n, expr) != 0) {
+                    return -1;
+                }
+                p->nodes[n].flags |= SLAstFlag_DEL_HAS_ALLOC;
+                p->nodes[n].end = p->nodes[expr].end;
+            }
+            {
+                int hasSemi = SLPConsumeStmtTerminator(p, &kw);
+                if (hasSemi < 0) {
+                    return -1;
+                }
+                if (hasSemi) {
+                    p->nodes[n].end = kw->end;
+                }
+            }
+            *out = n;
+            return 0;
         case SLTok_LBRACE: return SLPParseBlock(p, out);
         default:           {
             int hasSemi;
@@ -3343,7 +3296,7 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
     }
     p->nodes[fn].end = t->end;
 
-    if (!SLPAt(p, SLTok_LBRACE) && !SLPAt(p, SLTok_SEMICOLON) && !SLPAt(p, SLTok_CONTEXT)) {
+    if (!SLPAt(p, SLTok_LBRACE) && !SLPAt(p, SLTok_SEMICOLON)) {
         if (SLPAt(p, SLTok_LPAREN)) {
             if (SLPParseFnResultClause(p, fn) != 0) {
                 return -1;
@@ -3359,27 +3312,6 @@ static int SLPParseFunDecl(SLParser* p, int allowBody, int32_t* out) {
             }
             p->nodes[fn].end = p->nodes[retType].end;
         }
-    }
-
-    if (SLPMatch(p, SLTok_CONTEXT)) {
-        const SLToken* contextTok = SLPPrev(p);
-        int32_t        contextClause;
-        int32_t        contextType;
-        contextClause = SLPNewNode(p, SLAst_CONTEXT_CLAUSE, contextTok->start, contextTok->end);
-        if (contextClause < 0) {
-            return -1;
-        }
-        if (SLPParseType(p, &contextType) != 0) {
-            return -1;
-        }
-        if (SLPAddChild(p, contextClause, contextType) != 0) {
-            return -1;
-        }
-        p->nodes[contextClause].end = p->nodes[contextType].end;
-        if (SLPAddChild(p, fn, contextClause) != 0) {
-            return -1;
-        }
-        p->nodes[fn].end = p->nodes[contextClause].end;
     }
 
     if (SLPAt(p, SLTok_LBRACE)) {
@@ -3668,6 +3600,7 @@ const char* SLAstKindName(SLAstKind kind) {
         case SLAst_CONTINUE:          return "CONTINUE";
         case SLAst_DEFER:             return "DEFER";
         case SLAst_ASSERT:            return "ASSERT";
+        case SLAst_DEL:               return "DEL";
         case SLAst_EXPR_STMT:         return "EXPR_STMT";
         case SLAst_MULTI_ASSIGN:      return "MULTI_ASSIGN";
         case SLAst_NAME_LIST:         return "NAME_LIST";

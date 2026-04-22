@@ -1,1 +1,1 @@
-tests/context_clause_mismatch_bad.sl:16:1: error: SL2034: function context clause mismatch
+tests/context_clause_mismatch_bad.sl:14:16: error: SL1004: unexpected token

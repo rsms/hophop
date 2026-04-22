@@ -1,7 +1,11 @@
-// Verifies context temporary mem is accepted.
-fn example(message &str) context Context {
-	var prefix = "message: "
-	print(concat(prefix, message) context { mem: context.temp_mem })
+// Verifies context temporary allocator field is accepted.
+fn example(message &str) {
+	var saved = context.allocator
+	context.allocator = context.temp_allocator
+	var p *i32 = new i32
+	del p
+	context.allocator = saved
+	print(message)
 }
 
 fn main() {

@@ -2387,20 +2387,15 @@ int SLTCCurrentContextFieldType(
             }
             return -1;
         }
-        if (SLNameEqLiteral(c->src, fieldStart, fieldEnd, "mem")) {
+        if (SLNameEqLiteral(c->src, fieldStart, fieldEnd, "allocator")) {
             int32_t t = SLTCFindMemAllocatorType(c);
-            int32_t ptrType;
             if (t < 0) {
                 return -1;
             }
-            ptrType = SLTCInternPtrType(c, t, fieldStart, fieldEnd);
-            if (ptrType < 0) {
-                return -1;
-            }
-            *outType = ptrType;
+            *outType = t;
             return 0;
         }
-        if (SLNameEqLiteral(c->src, fieldStart, fieldEnd, "log")) {
+        if (SLNameEqLiteral(c->src, fieldStart, fieldEnd, "logger")) {
             int32_t t = SLTCFindNamedTypeByLiteral(c, "builtin__Logger");
             if (t < 0) {
                 t = SLTCFindNamedTypeByLiteral(c, "Logger");
@@ -2488,24 +2483,15 @@ int SLTCCurrentContextFieldTypeByLiteral(
             }
             return -1;
         }
-        if (fieldName[0] == 'm' && fieldName[1] == 'e' && fieldName[2] == 'm'
-            && fieldName[3] == '\0')
-        {
+        if (SLTCStrEqNullable(fieldName, "allocator")) {
             int32_t t = SLTCFindMemAllocatorType(c);
-            int32_t ptrType;
             if (t < 0) {
                 return -1;
             }
-            ptrType = SLTCInternPtrType(c, t, 0, 0);
-            if (ptrType < 0) {
-                return -1;
-            }
-            *outType = ptrType;
+            *outType = t;
             return 0;
         }
-        if (fieldName[0] == 'l' && fieldName[1] == 'o' && fieldName[2] == 'g'
-            && fieldName[3] == '\0')
-        {
+        if (SLTCStrEqNullable(fieldName, "logger")) {
             int32_t t = SLTCFindNamedTypeByLiteral(c, "builtin__Logger");
             if (t < 0) {
                 t = SLTCFindNamedTypeByLiteral(c, "Logger");

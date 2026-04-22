@@ -18,16 +18,18 @@ static __sl_Context gMainContext;
 #define MALLOC_ALIGN ((size_t)_Alignof(max_align_t))
 
 static void* platform_mem_allocator_impl(
-    __sl_Allocator* self,
-    void*           addr,
-    __sl_int        align,
-    __sl_int        curSize,
-    __sl_int*       newSizeInOut,
-    __sl_u32        flags) {
+    __sl_MemAllocator* self,
+    void*              addr,
+    __sl_int           align,
+    __sl_int           curSize,
+    __sl_int*          newSizeInOut,
+    __sl_u32           flags,
+    __sl_SourceLocation srcLoc) {
 
     void* newPtr = NULL;
     (void)self;  // unused
     (void)flags; // unused
+    (void)srcLoc;
 
     debugassert(newSizeInOut != NULL);
 
@@ -127,25 +129,30 @@ __sl_noreturn void platform__panic(__sl_str message, __sl_i32 flags) {
     __sl_panic(&message, "", 0);
 }
 
-__sl_noreturn void platform__exit(__sl_i32 status) {
+__sl_noreturn void platform__exit(__sl_Context* context, __sl_i32 status) {
+    (void)context;
     exit(status);
 }
 
-void platform__console_log(__sl_str message, __sl_i32 flags) {
-    platform_log_handler(&gMainContext.log, message, __sl_LogLevel_Info, (__sl_LogFlags)flags);
+void platform__console_log(__sl_Context* context, __sl_str message, __sl_i32 flags) {
+    __sl_Logger* logger = context != NULL ? &context->logger : &gMainContext.logger;
+    platform_log_handler(logger, message, __sl_LogLevel_Info, (__sl_LogFlags)flags);
 }
 
-static __sl_Allocator gAllocator = { .impl = platform_mem_allocator_impl };
 static __sl_Context   gMainContext = {
-    .mem = &gAllocator,
-    .temp_mem = &gAllocator,
-    .log =
+    .allocator = { .handler = platform_mem_allocator_impl },
+    .temp_allocator = { .handler = platform_mem_allocator_impl },
+    .logger =
         {
             .handler = platform_log_handler,
             .min_level = __sl_LogLevel_Info,
             .flags = __sl_LogFlag_Level,
             .prefix = (__sl_str){ (__sl_u8*)(uintptr_t)0, 0 },
         },
+    .user1 = NULL,
+    .user2 = NULL,
+    ._reserved = NULL,
+    .deadline = 0,
 };
 
 #ifndef SL_PLATFORM_NO_MAIN

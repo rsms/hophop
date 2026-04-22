@@ -1,11 +1,11 @@
-// Verifies SLP 17 platform context main is accepted.
+// Verifies ambient platform context main is accepted.
 import "platform"
 
-fn alloc() *u8 context Context {
+fn alloc() *u8 {
 	return new u8
 }
 
 fn main() {
 	var p *u8 = alloc()
-	alloc()
+	del p
 }

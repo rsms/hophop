@@ -424,6 +424,9 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
         if (SLStrEq(s, len, "new")) {
             return SLTok_NEW;
         }
+        if (SLStrEq(s, len, "del")) {
+            return SLTok_DEL;
+        }
         if (SLStrEq(s, len, "var")) {
             return SLTok_VAR;
         }
@@ -491,9 +494,6 @@ static SLTokenKind SLKeywordKind(const char* s, uint32_t len) {
         if (SLStrEq(s, len, "anytype")) {
             return SLTok_ANYTYPE;
         }
-        if (SLStrEq(s, len, "context")) {
-            return SLTok_CONTEXT;
-        }
         if (SLStrEq(s, len, "default")) {
             return SLTok_DEFAULT;
         }
@@ -522,7 +522,6 @@ static int SLTokenCanEndStmt(SLTokenKind kind) {
         case SLTok_RBRACE:
         case SLTok_NOT:
         case SLTok_NULL:
-        case SLTok_CONTEXT:
         case SLTok_TYPE:     return 1;
         default:             return 0;
     }
@@ -608,6 +607,7 @@ const char* SLTokenKindName(SLTokenKind kind) {
         case SLTok_ASSERT:        return "ASSERT";
         case SLTok_SIZEOF:        return "SIZEOF";
         case SLTok_NEW:           return "NEW";
+        case SLTok_DEL:           return "DEL";
         case SLTok_TRUE:          return "TRUE";
         case SLTok_FALSE:         return "FALSE";
         case SLTok_IN:            return "IN";

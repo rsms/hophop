@@ -191,6 +191,7 @@ typedef enum {
     SLTok_ASSERT,
     SLTok_SIZEOF,
     SLTok_NEW,
+    SLTok_DEL,
     SLTok_TRUE,
     SLTok_FALSE,
     SLTok_IN,
@@ -302,6 +303,7 @@ typedef enum {
     SLAst_CONTINUE,
     SLAst_DEFER,
     SLAst_ASSERT,
+    SLAst_DEL,
     SLAst_EXPR_STMT,
     SLAst_MULTI_ASSIGN,
     SLAst_NAME_LIST,
@@ -366,6 +368,7 @@ enum {
     SLAstFlag_FOR_IN_KEY_REF = 0x00040000u,
     SLAstFlag_FOR_IN_VALUE_REF = 0x00080000u,
     SLAstFlag_FOR_IN_VALUE_DISCARD = 0x00200000u,
+    SLAstFlag_DEL_HAS_ALLOC = 0x00400000u,
 };
 
 typedef uint32_t SLFeatures;

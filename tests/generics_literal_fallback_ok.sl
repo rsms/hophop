@@ -13,5 +13,5 @@ fn main() {
 	assert typeof(a) == int
 	assert typeof(c) == i8
 	assert b == 1
-	assert c == 1 as i8
+	assert c == 1
 }

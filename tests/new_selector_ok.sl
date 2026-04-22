@@ -1,8 +1,7 @@
 // Verifies new selector is accepted.
 fn main() {
-	var ma         = context.mem
-	var p *i32     = new i32 context ma
-	var q *[i32 4] = new [i32 4] context ma
+	var p *i32     = new i32
+	var q *[i32 4] = new [i32 4]
 
 	*p = 7
 	q[0] = *p

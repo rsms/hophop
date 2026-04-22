@@ -192,6 +192,11 @@ typedef struct {
     uint32_t  localScopeLen;
     uint32_t  localScopeCap;
 
+    uint8_t*  contextCowScopeActive;
+    uint32_t* contextCowScopeTempIds;
+    uint32_t  contextCowScopeActiveCap;
+    uint32_t  contextCowScopeTempCap;
+
     char**   localAnonTypedefs;
     uint32_t localAnonTypedefLen;
     uint32_t localAnonTypedefCap;

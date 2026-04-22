@@ -1,14 +1,14 @@
-// Verifies string concatenation free is accepted.
-struct Ctx {
-	mem *Allocator
-}
-
-fn caller() context Ctx {
+// Verifies string concatenation del is accepted.
+fn caller() {
 	var r &str = "abc"
 	var s *str = concat(r, r)
 	assert len(s) == 6
-	free(s)
+	del s
 
 	var arr *[u8 4] = new [u8 4]
-	free(arr)
+	del arr
+}
+
+fn main() {
+	caller()
 }

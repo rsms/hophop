@@ -1,12 +1,9 @@
-// Verifies context convertible allocator is accepted.
-struct NeedCtx {
-	mem *Allocator
-}
-
-fn a() context NeedCtx {
+// Verifies ambient allocator field is accepted.
+fn a() {
 	var p *i32 = new i32
+	del p
 }
 
 fn main() {
-	a() context { mem }
+	a()
 }

@@ -1159,6 +1159,9 @@ int SLTCLocalAdd(
     int32_t         initExprNode) {
     uint32_t localIdx;
     uint32_t useIdx;
+    if (c->currentFunctionIndex >= 0 && SLNameEqLiteral(c->src, nameStart, nameEnd, "context")) {
+        return SLTCFailSpan(c, SLDiag_RESERVED_NAME, nameStart, nameEnd);
+    }
     if (c->localLen >= c->localCap || c->localUseLen >= c->localUseCap || c->localUses == NULL) {
         return SLTCFailSpan(c, SLDiag_ARENA_OOM, nameStart, nameEnd);
     }

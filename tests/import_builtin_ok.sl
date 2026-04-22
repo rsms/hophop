@@ -2,6 +2,6 @@
 import "builtin"
 
 fn main() {
-	var mem *builtin.Allocator = (null as rawptr) as *builtin.Allocator
+	var mem *builtin.MemAllocator = (null as rawptr) as *builtin.MemAllocator
 	_ = mem
 }

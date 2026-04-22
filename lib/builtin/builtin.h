@@ -57,7 +57,7 @@ typedef struct {
 typedef struct __sl_str            __sl_str;
 typedef struct __sl_SourceLocation __sl_SourceLocation;
 typedef struct __sl_Logger         __sl_Logger;
-typedef struct __sl_Allocator      __sl_Allocator;
+typedef struct __sl_MemAllocator   __sl_MemAllocator;
 typedef struct __sl_Context        __sl_Context;
 typedef struct __sl_PrintContext   __sl_PrintContext;
 
@@ -107,24 +107,29 @@ struct __sl_Logger {
     __sl_str      prefix;
 };
 
-struct __sl_Allocator {
-    void* (*impl)(
-        __sl_Allocator* arg0,
-        void*           arg1,
-        __sl_int        arg2,
-        __sl_int        arg3,
-        __sl_int*       arg4,
-        __sl_u32        arg5);
+struct __sl_MemAllocator {
+    void* (*handler)(
+        __sl_MemAllocator*  arg0,
+        void*               arg1,
+        __sl_int            arg2,
+        __sl_int            arg3,
+        __sl_int*           arg4,
+        __sl_u32            arg5,
+        __sl_SourceLocation arg6);
 };
 
 struct __sl_Context {
-    __sl_Allocator* mem;
-    __sl_Allocator* temp_mem;
-    __sl_Logger     log;
+    __sl_MemAllocator allocator;
+    __sl_MemAllocator temp_allocator;
+    __sl_Logger       logger;
+    void*             user1;
+    void*             user2;
+    void*             _reserved;
+    __sl_u64          deadline;
 };
 
 struct __sl_PrintContext {
-    __sl_Logger log;
+    __sl_Logger logger;
 };
 // END generated code
 
@@ -251,30 +256,36 @@ static inline void* __sl_unwrap1(const char* file, __sl_u32 line, const void* p)
 
 #define __sl_unwrap(p) __sl_unwrap1(__FILE__, __LINE__, (p))
 
-static inline void* __sl_new(__sl_Allocator* ma, __sl_int size, __sl_int align) {
+static inline __sl_SourceLocation __sl_source_location(const char* file, __sl_u32 line) {
+    (void)file;
+    (void)line;
+    return (__sl_SourceLocation){ 0 };
+}
+
+static inline void* __sl_new(__sl_MemAllocator* ma, __sl_int size, __sl_int align) {
     __sl_int newSize = size;
 
     if __sl_unlikely (size < 0 || align <= 0 || (align & (align - 1)) != 0) {
         __sl_panic(__sl_strlitp("invalid alignment"), "", 0);
     }
 
-    if __sl_unlikely (ma == NULL || ma->impl == NULL) {
+    if __sl_unlikely (ma == NULL || ma->handler == NULL) {
         __sl_panic(__sl_strlitp("invalid allocator"), "", 0);
     }
 
-    return ma->impl(ma, NULL, align, 0, &newSize, 0);
+    return ma->handler(ma, NULL, align, 0, &newSize, 0, __sl_source_location(__FILE__, __LINE__));
 }
 
-static inline void __sl_free(__sl_Allocator* ma, void* p, __sl_int curSize, __sl_int align) {
+static inline void __sl_free(__sl_MemAllocator* ma, void* p, __sl_int curSize, __sl_int align) {
     __sl_int newSize = 0;
-    if (p == NULL || ma == NULL || ma->impl == NULL) {
+    if (p == NULL || ma == NULL || ma->handler == NULL) {
         return;
     }
-    (void)ma->impl(ma, p, align, curSize, &newSize, 0);
+    (void)ma->handler(ma, p, align, curSize, &newSize, 0, __sl_source_location(__FILE__, __LINE__));
 }
 
 static inline void* __sl_new_array(
-    __sl_Allocator* ma, __sl_int elemSize, __sl_int elemAlign, __sl_int count) {
+    __sl_MemAllocator* ma, __sl_int elemSize, __sl_int elemAlign, __sl_int count) {
     if __sl_unlikely (elemSize < 0 || count < 0) {
         __sl_panic(__sl_strlitp("negative size"), "", 0);
     }
@@ -282,13 +293,13 @@ static inline void* __sl_new_array(
 }
 
 static inline __sl_slice_ro __sl_new_array_slice_ro(
-    __sl_Allocator* ma, __sl_int elemSize, __sl_int elemAlign, __sl_int count) {
+    __sl_MemAllocator* ma, __sl_int elemSize, __sl_int elemAlign, __sl_int count) {
     void* p = __sl_new_array(ma, elemSize, elemAlign, count);
     return (__sl_slice_ro){ .ptr = p, .len = p != NULL ? count : 0 };
 }
 
 static inline __sl_slice_mut __sl_new_array_slice_mut(
-    __sl_Allocator* ma, __sl_int elemSize, __sl_int elemAlign, __sl_int count) {
+    __sl_MemAllocator* ma, __sl_int elemSize, __sl_int elemAlign, __sl_int count) {
     void* p = __sl_new_array(ma, elemSize, elemAlign, count);
     return (__sl_slice_mut){ .ptr = p, .len = p != NULL ? count : 0 };
 }

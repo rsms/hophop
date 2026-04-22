@@ -584,6 +584,54 @@ static int SLMirStmtLowerNameEqLiteral(
     return (size_t)(end - start) == litLen && memcmp(c->src.ptr + start, lit, litLen) == 0;
 }
 
+static int SLMirStmtLowerContextFieldFromSlice(
+    const SLMirStmtLower* c, uint32_t start, uint32_t end, uint32_t* outField) {
+    if (outField != NULL) {
+        *outField = SLMirContextField_INVALID;
+    }
+    if (c == NULL || outField == NULL) {
+        return 0;
+    }
+    if (SLMirStmtLowerNameEqLiteral(c, start, end, "allocator")) {
+        *outField = SLMirContextField_ALLOCATOR;
+        return 1;
+    }
+    if (SLMirStmtLowerNameEqLiteral(c, start, end, "temp_allocator")) {
+        *outField = SLMirContextField_TEMP_ALLOCATOR;
+        return 1;
+    }
+    if (SLMirStmtLowerNameEqLiteral(c, start, end, "logger")) {
+        *outField = SLMirContextField_LOGGER;
+        return 1;
+    }
+    return 0;
+}
+
+static int SLMirStmtLowerIsContextFieldExpr(
+    const SLMirStmtLower* c, int32_t exprNode, uint32_t* outField) {
+    const SLAstNode* expr;
+    int32_t          baseNode;
+    if (outField != NULL) {
+        *outField = SLMirContextField_INVALID;
+    }
+    if (c == NULL || outField == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    expr = &c->ast->nodes[exprNode];
+    if (expr->kind != SLAst_FIELD_EXPR) {
+        return 0;
+    }
+    baseNode = expr->firstChild;
+    if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len
+        || c->ast->nodes[baseNode].kind != SLAst_IDENT
+        || !SLMirStmtLowerNameEqLiteral(
+            c, c->ast->nodes[baseNode].dataStart, c->ast->nodes[baseNode].dataEnd, "context"))
+    {
+        return 0;
+    }
+    return SLMirStmtLowerContextFieldFromSlice(c, expr->dataStart, expr->dataEnd, outField);
+}
+
 static int SLMirStmtLowerNameEqLiteralOrPkgBuiltin(
     const SLMirStmtLower* c, uint32_t start, uint32_t end, const char* lit, const char* pkgPrefix) {
     size_t litLen = 0;
@@ -1382,6 +1430,11 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
         {
             int32_t  baseNode = c->ast->nodes[child].firstChild;
             uint32_t fieldRef = UINT32_MAX;
+            uint32_t contextField = SLMirContextField_INVALID;
+            if (SLMirStmtLowerIsContextFieldExpr(c, child, &contextField)) {
+                return SLMirStmtLowerAppendInst(
+                    c, SLMirOp_CTX_ADDR, 0, contextField, expr->start, expr->end, NULL);
+            }
             if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
                 c->supported = 0;
                 return 0;
@@ -1458,23 +1511,9 @@ static int SLMirStmtLowerExpr(SLMirStmtLower* c, int32_t exprNode) {
             c->supported = 0;
             return 0;
         }
-        if (c->ast->nodes[baseNode].kind == SLAst_IDENT
-            && c->ast->nodes[baseNode].dataEnd - c->ast->nodes[baseNode].dataStart == 7u
-            && memcmp(c->src.ptr + c->ast->nodes[baseNode].dataStart, "context", 7u) == 0)
-        {
-            uint32_t fieldLen = expr->dataEnd - expr->dataStart;
-            if (fieldLen == 3u && memcmp(c->src.ptr + expr->dataStart, "mem", 3u) == 0) {
-                contextField = SLMirContextField_MEM;
-            } else if (fieldLen == 8u && memcmp(c->src.ptr + expr->dataStart, "temp_mem", 8u) == 0)
-            {
-                contextField = SLMirContextField_TEMP_MEM;
-            } else if (fieldLen == 3u && memcmp(c->src.ptr + expr->dataStart, "log", 3u) == 0) {
-                contextField = SLMirContextField_LOG;
-            }
-            if (contextField != SLMirContextField_INVALID) {
-                return SLMirStmtLowerAppendInst(
-                    c, SLMirOp_CTX_GET, 0, contextField, expr->start, expr->end, NULL);
-            }
+        if (SLMirStmtLowerIsContextFieldExpr(c, exprNode, &contextField)) {
+            return SLMirStmtLowerAppendInst(
+                c, SLMirOp_CTX_GET, 0, contextField, expr->start, expr->end, NULL);
         }
         if (SLMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
@@ -2003,6 +2042,22 @@ static int SLMirStmtLowerStoreToLValueFromStack(
     if (c->ast->nodes[lhsNode].kind == SLAst_FIELD_EXPR) {
         int32_t  baseNode = c->ast->nodes[lhsNode].firstChild;
         uint32_t fieldRef = UINT32_MAX;
+        uint32_t contextField = SLMirContextField_INVALID;
+        if (SLMirStmtLowerIsContextFieldExpr(c, lhsNode, &contextField)) {
+            if (SLMirStmtLowerAppendInst(
+                    c,
+                    SLMirOp_CTX_ADDR,
+                    0,
+                    contextField,
+                    c->ast->nodes[lhsNode].start,
+                    c->ast->nodes[lhsNode].end,
+                    NULL)
+                != 0)
+            {
+                return -1;
+            }
+            return SLMirStmtLowerAppendInst(c, SLMirOp_DEREF_STORE, 0, 0, start, end, NULL);
+        }
         if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
             c->supported = 0;
             return 0;
@@ -2225,9 +2280,55 @@ static int SLMirStmtLowerExprNodeAsStmt(
         {
             int32_t  baseNode = c->ast->nodes[lhsNode].firstChild;
             uint32_t fieldRef = UINT32_MAX;
+            uint32_t contextField = SLMirContextField_INVALID;
             if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
                 c->supported = 0;
                 return 0;
+            }
+            if (SLMirStmtLowerIsContextFieldExpr(c, lhsNode, &contextField)) {
+                if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+                    if (!SLMirStmtLowerBinaryOpForAssign((SLTokenKind)expr->op, &binaryTok)) {
+                        c->supported = 0;
+                        return 0;
+                    }
+                    if (SLMirStmtLowerAppendInst(
+                            c,
+                            SLMirOp_CTX_GET,
+                            0,
+                            contextField,
+                            c->ast->nodes[lhsNode].start,
+                            c->ast->nodes[lhsNode].end,
+                            NULL)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                }
+                if (SLMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+                    return c->supported ? -1 : 0;
+                }
+                if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
+                    if (SLMirStmtLowerAppendInst(
+                            c, SLMirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
+                        != 0)
+                    {
+                        return -1;
+                    }
+                }
+                if (SLMirStmtLowerAppendInst(
+                        c,
+                        SLMirOp_CTX_ADDR,
+                        0,
+                        contextField,
+                        c->ast->nodes[lhsNode].start,
+                        c->ast->nodes[lhsNode].end,
+                        NULL)
+                    != 0)
+                {
+                    return -1;
+                }
+                return SLMirStmtLowerAppendInst(
+                    c, SLMirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
             }
             if ((SLTokenKind)expr->op != SLTok_ASSIGN) {
                 if (!SLMirStmtLowerBinaryOpForAssign((SLTokenKind)expr->op, &binaryTok)
@@ -2290,6 +2391,64 @@ static int SLMirStmtLowerExprStmt(SLMirStmtLower* c, int32_t stmtNode) {
     }
     return SLMirStmtLowerExprNodeAsStmt(
         c, exprNode, c->ast->nodes[stmtNode].start, c->ast->nodes[stmtNode].end);
+}
+
+static int SLMirStmtLowerDel(SLMirStmtLower* c, int32_t stmtNode) {
+    const SLAstNode* s;
+    int32_t          exprNode;
+    int32_t          allocNode = -1;
+    if (c == NULL || stmtNode < 0 || (uint32_t)stmtNode >= c->ast->len) {
+        return -1;
+    }
+    s = &c->ast->nodes[stmtNode];
+    exprNode = s->firstChild;
+    if ((s->flags & SLAstFlag_DEL_HAS_ALLOC) != 0u) {
+        int32_t scan = exprNode;
+        while (scan >= 0) {
+            int32_t next = c->ast->nodes[scan].nextSibling;
+            if (next < 0) {
+                allocNode = scan;
+                break;
+            }
+            scan = next;
+        }
+    }
+    while (exprNode >= 0 && exprNode != allocNode) {
+        if (SLMirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        if (SLMirStmtLowerAppendInst(
+                c,
+                SLMirOp_DROP,
+                0,
+                0,
+                c->ast->nodes[exprNode].start,
+                c->ast->nodes[exprNode].end,
+                NULL)
+            != 0)
+        {
+            return -1;
+        }
+        exprNode = c->ast->nodes[exprNode].nextSibling;
+    }
+    if (allocNode >= 0) {
+        if (SLMirStmtLowerExpr(c, allocNode) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        if (SLMirStmtLowerAppendInst(
+                c,
+                SLMirOp_DROP,
+                0,
+                0,
+                c->ast->nodes[allocNode].start,
+                c->ast->nodes[allocNode].end,
+                NULL)
+            != 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 static int SLMirStmtLowerSwitchTest(
@@ -3169,6 +3328,7 @@ static int SLMirStmtLowerStmt(SLMirStmtLower* c, int32_t stmtNode) {
             return 0;
         }
         case SLAst_EXPR_STMT: return SLMirStmtLowerExprStmt(c, stmtNode);
+        case SLAst_DEL:       return SLMirStmtLowerDel(c, stmtNode);
         case SLAst_CONST_BLOCK:
             /* Consteval blocks are compile-time-only and do not execute at runtime. */
             return 0;

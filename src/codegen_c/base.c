@@ -2202,10 +2202,14 @@ const char* _Nullable ResolveTypeName(SLCBackendC* c, uint32_t start, uint32_t e
 void NormalizeCoreRuntimeTypeName(SLTypeRef* outType) {
     if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__str")) {
         outType->baseName = "__sl_str";
-    } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Allocator")) {
-        outType->baseName = "__sl_Allocator";
+    } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__MemAllocator")) {
+        outType->baseName = "__sl_MemAllocator";
     } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Logger")) {
         outType->baseName = "__sl_Logger";
+    } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Context")) {
+        outType->baseName = "__sl_Context";
+    } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__PrintContext")) {
+        outType->baseName = "__sl_PrintContext";
     }
 }
 
@@ -3663,11 +3667,17 @@ const char* _Nullable CanonicalFieldOwnerType(
     if (canonical == NULL) {
         return NULL;
     }
-    if (StrEq(canonical, "__sl_Allocator")) {
-        return "builtin__Allocator";
+    if (StrEq(canonical, "__sl_MemAllocator")) {
+        return "builtin__MemAllocator";
     }
     if (StrEq(canonical, "__sl_Logger")) {
         return "builtin__Logger";
+    }
+    if (StrEq(canonical, "__sl_Context")) {
+        return "builtin__Context";
+    }
+    if (StrEq(canonical, "__sl_PrintContext")) {
+        return "builtin__PrintContext";
     }
     return canonical;
 }
@@ -3934,6 +3944,66 @@ int ResolveEmbeddedPathByNames(
     return -1;
 }
 
+static int TypeRefIsNamedPtr(const SLTypeRef* t, const char* name) {
+    return t != NULL && t->valid && t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth == 1
+        && t->baseName != NULL && StrEq(t->baseName, name);
+}
+
+static int TypeRefIsNamedValue(const SLTypeRef* t, const char* name) {
+    return t != NULL && t->valid && t->containerKind == SLTypeContainer_SCALAR && t->ptrDepth == 0
+        && t->baseName != NULL && StrEq(t->baseName, name);
+}
+
+static int FnSigIsNoContextAbiCallback(
+    const SLTypeRef* returnType, const SLTypeRef* paramTypes, uint32_t paramLen) {
+    if (returnType == NULL || paramTypes == NULL) {
+        return 0;
+    }
+    if (paramLen == 7
+        && (TypeRefIsNamedPtr(&paramTypes[0], "builtin__MemAllocator")
+            || TypeRefIsNamedPtr(&paramTypes[0], "__sl_MemAllocator")
+            || TypeRefIsNamedPtr(&paramTypes[0], "MemAllocator")))
+    {
+        return 1;
+    }
+    if (paramLen == 4 && TypeRefIsNamedValue(returnType, "void")
+        && (TypeRefIsNamedPtr(&paramTypes[0], "builtin__Logger")
+            || TypeRefIsNamedPtr(&paramTypes[0], "__sl_Logger")
+            || TypeRefIsNamedPtr(&paramTypes[0], "Logger")))
+    {
+        return 1;
+    }
+    return 0;
+}
+
+static int NodeSubtreeNeedsAmbientContext(SLCBackendC* c, int32_t nodeId) {
+    int32_t          child;
+    const SLAstNode* n = NodeAt(c, nodeId);
+    if (n == NULL) {
+        return 0;
+    }
+    if (n->kind == SLAst_NEW || n->kind == SLAst_DEL || n->kind == SLAst_CALL
+        || n->kind == SLAst_CALL_WITH_CONTEXT)
+    {
+        return 1;
+    }
+    if (n->kind == SLAst_FOR && (n->flags & SLAstFlag_FOR_IN) != 0) {
+        /* For-in lowering may synthesize iterator hook calls that need ambient context. */
+        return 1;
+    }
+    if (n->kind == SLAst_IDENT && SliceEq(c->unit->source, n->dataStart, n->dataEnd, "context")) {
+        return 1;
+    }
+    child = AstFirstChild(&c->ast, nodeId);
+    while (child >= 0) {
+        if (NodeSubtreeNeedsAmbientContext(c, child)) {
+            return 1;
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    return 0;
+}
+
 int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
     const SLAstNode* n = NodeAt(c, nodeId);
     uint32_t         nameStart;
@@ -3968,10 +4038,14 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
         uint32_t   paramFlagCap = 0;
         SLTypeRef  contextType;
         int        isVariadic = 0;
-        int        hasContext = 0;
         int        hasAnytypeParam = 0;
+        int32_t    bodyNode = -1;
+        int        hasContext = 0;
         TypeRefSetScalar(&returnType, "void");
         TypeRefSetInvalid(&contextType);
+        if (ResolveMainSemanticContextType(c, &contextType) != 0) {
+            return -1;
+        }
         while (child >= 0) {
             const SLAstNode* ch = NodeAt(c, child);
             if (ch != NULL && ch->kind == SLAst_PARAM) {
@@ -4072,14 +4146,20 @@ int CollectFnAndFieldInfoFromNode(SLCBackendC* c, int32_t nodeId) {
                 if (ParseTypeRef(c, child, &returnType) != 0) {
                     return -1;
                 }
+            } else if (ch != NULL && ch->kind == SLAst_BLOCK) {
+                bodyNode = child;
             } else if (ch != NULL && ch->kind == SLAst_CONTEXT_CLAUSE) {
                 int32_t typeNode = AstFirstChild(&c->ast, child);
                 if (typeNode < 0 || ParseTypeRef(c, typeNode, &contextType) != 0) {
                     return -1;
                 }
-                hasContext = 1;
             }
             child = AstNextSibling(&c->ast, child);
+        }
+        hasContext = (bodyNode >= 0 && NodeSubtreeNeedsAmbientContext(c, bodyNode))
+                  || StrHasPrefix(mapName->cName, "platform__");
+        if (FnSigIsNoContextAbiCallback(&returnType, paramTypes, paramLen)) {
+            hasContext = 0;
         }
         return AddFnSig(
             c,
@@ -4239,7 +4319,7 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
         uint32_t            packArgCount = 0;
         char*               packParamName = NULL;
         int                 isVariadic = (fn->flags & SLTCFunctionFlag_VARIADIC) != 0;
-        int                 hasContext = fn->contextType >= 0;
+        int                 hasContext = 1;
         uint32_t            p;
 
         if ((fn->flags & SLTCFunctionFlag_TEMPLATE_INSTANCE) == 0) {
@@ -4262,12 +4342,8 @@ int CollectTemplateInstanceFnSigs(SLCBackendC* c) {
         if (ParseTypeRefFromConstEvalTypeId(c, fn->returnType, &returnType) != 0) {
             continue;
         }
-        if (hasContext) {
-            if (ParseTypeRefFromConstEvalTypeId(c, fn->contextType, &contextType) != 0) {
-                continue;
-            }
-        } else {
-            TypeRefSetInvalid(&contextType);
+        if (ResolveMainSemanticContextType(c, &contextType) != 0) {
+            continue;
         }
         cName = BuildTemplateInstanceCName(c, map->cName, i);
         if (cName == NULL) {
@@ -4782,7 +4858,28 @@ int PushScope(SLCBackendC* c) {
     {
         return -1;
     }
+    if (EnsureCapArena(
+            &c->arena,
+            (void**)&c->contextCowScopeActive,
+            &c->contextCowScopeActiveCap,
+            c->localScopeLen + 1u,
+            sizeof(uint8_t),
+            (uint32_t)_Alignof(uint8_t))
+            != 0
+        || EnsureCapArena(
+               &c->arena,
+               (void**)&c->contextCowScopeTempIds,
+               &c->contextCowScopeTempCap,
+               c->localScopeLen + 1u,
+               sizeof(uint32_t),
+               (uint32_t)_Alignof(uint32_t))
+               != 0)
+    {
+        return -1;
+    }
     c->localScopeMarks[c->localScopeLen++] = c->localLen;
+    c->contextCowScopeActive[c->localScopeLen - 1u] = 0;
+    c->contextCowScopeTempIds[c->localScopeLen - 1u] = 0;
     c->localAnonTypedefScopeMarks[c->localAnonTypedefScopeLen++] = c->localAnonTypedefLen;
     return 0;
 }
@@ -5755,7 +5852,7 @@ int TypeRefAssignableCost(
     SLCBackendC* c, const SLTypeRef* dst, const SLTypeRef* src, uint8_t* outCost);
 
 void SetPreferredAllocatorPtrType(SLTypeRef* outType) {
-    TypeRefSetScalar(outType, "builtin__Allocator");
+    TypeRefSetScalar(outType, "builtin__MemAllocator");
     outType->ptrDepth = 1;
 }
 

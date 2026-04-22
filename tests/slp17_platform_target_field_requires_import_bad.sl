@@ -1,6 +1,6 @@
-// Verifies SLP 17 platform target field requires import is rejected.
+// Verifies unknown ambient context fields are rejected.
 import "platform"
 
-fn write_err() context Context {
+fn write_err() {
 	var e i32 = context.stdin
 }

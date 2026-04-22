@@ -4020,6 +4020,7 @@ static int CollectStmtImportRewritesNode(
         }
         case SLAst_RETURN:
         case SLAst_ASSERT:
+        case SLAst_DEL:
         case SLAst_EXPR_STMT: {
             child = ASTFirstChild(&file->ast, nodeId);
             while (child >= 0) {

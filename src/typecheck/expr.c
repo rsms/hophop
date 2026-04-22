@@ -2,6 +2,36 @@
 
 SL_API_BEGIN
 
+int SLTCValidateMemAllocatorArg(SLTypeCheckCtx* c, int32_t nodeId, int32_t allocBaseType) {
+    const SLAstNode* n;
+    int32_t          allocType;
+    int32_t          allocRefType;
+
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return SLTCFailNode(c, nodeId, SLDiag_EXPECTED_EXPR);
+    }
+    n = &c->ast->nodes[nodeId];
+
+    if (SLTCTypeExpr(c, nodeId, &allocType) != 0) {
+        return -1;
+    }
+    if (SLTCCanAssign(c, allocBaseType, allocType)) {
+        if (!SLTCExprIsAssignable(c, nodeId)) {
+            return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+        }
+        return 0;
+    }
+
+    allocRefType = SLTCInternRefType(c, allocBaseType, 1, n->start, n->end);
+    if (allocRefType < 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+    }
+    if (!SLTCCanAssign(c, allocRefType, allocType)) {
+        return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
+    }
+    return 0;
+}
+
 int SLTCTypeNewExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     const SLAstNode* n;
     int32_t          typeNode;
@@ -9,9 +39,7 @@ int SLTCTypeNewExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     int32_t          countArgNode = -1;
     int32_t          initArgNode = -1;
     int32_t          allocArgNode = -1;
-    int32_t          allocArgType = -1;
     int32_t          allocBaseType;
-    int32_t          allocParamType;
     int32_t          elemType;
     int32_t          resultType;
     int32_t          countType;
@@ -62,24 +90,19 @@ int SLTCTypeNewExpr(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     }
 
     allocBaseType = SLTCFindMemAllocatorType(c);
-    allocParamType =
-        allocBaseType < 0 ? -1 : SLTCInternRefType(c, allocBaseType, 1, n->start, n->end);
-    if (allocBaseType < 0 || allocParamType < 0) {
+    if (allocBaseType < 0) {
         return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
     }
 
     if (allocArgNode >= 0) {
-        if (SLTCTypeExpr(c, allocArgNode, &allocArgType) != 0) {
+        if (SLTCValidateMemAllocatorArg(c, allocArgNode, allocBaseType) != 0) {
             return -1;
-        }
-        if (!SLTCCanAssign(c, allocParamType, allocArgType)) {
-            return SLTCFailNode(c, allocArgNode, SLDiag_TYPE_MISMATCH);
         }
     } else {
-        if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "mem", &ctxMemType) != 0) {
+        if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "allocator", &ctxMemType) != 0) {
             return -1;
         }
-        if (!SLTCCanAssign(c, allocParamType, ctxMemType)) {
+        if (!SLTCCanAssign(c, allocBaseType, ctxMemType)) {
             return SLTCFailNode(c, nodeId, SLDiag_CONTEXT_TYPE_MISMATCH);
         }
     }
@@ -1821,20 +1844,16 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             int32_t strPtrType;
             int32_t ctxMemType;
             int32_t allocBaseType = SLTCFindMemAllocatorType(c);
-            int32_t allocParamType =
-                allocBaseType < 0
-                    ? -1
-                    : SLTCInternRefType(c, allocBaseType, 1, callee->start, callee->end);
             if (aNode < 0 || bNode < 0 || nextNode >= 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
             }
-            if (allocParamType < 0) {
+            if (allocBaseType < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_TYPE_MISMATCH);
             }
-            if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "mem", &ctxMemType) != 0) {
+            if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "allocator", &ctxMemType) != 0) {
                 return -1;
             }
-            if (!SLTCCanAssign(c, allocParamType, ctxMemType)) {
+            if (!SLTCCanAssign(c, allocBaseType, ctxMemType)) {
                 return SLTCFailNode(c, nodeId, SLDiag_CONTEXT_TYPE_MISMATCH);
             }
             if (SLTCTypeExpr(c, aNode, &aType) != 0 || SLTCTypeExpr(c, bNode, &bType) != 0) {
@@ -1995,7 +2014,7 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             *outType = intType;
             return 0;
         }
-        if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "free")) {
+        if (0 && SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "free")) {
             int32_t arg1Node = SLAstNextSibling(c->ast, calleeNode);
             int32_t arg2Node = arg1Node >= 0 ? SLAstNextSibling(c->ast, arg1Node) : -1;
             int32_t arg3Node = arg2Node >= 0 ? SLAstNextSibling(c->ast, arg2Node) : -1;
@@ -2029,7 +2048,7 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
                     return SLTCFailNode(c, allocArgNode, SLDiag_TYPE_MISMATCH);
                 }
             } else {
-                if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "mem", &ctxMemType) != 0) {
+                if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "allocator", &ctxMemType) != 0) {
                     return -1;
                 }
                 if (!SLTCCanAssign(c, allocParamType, ctxMemType)) {
@@ -2093,7 +2112,7 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             if (nextArgNode >= 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
             }
-            if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "log", &logType) != 0) {
+            if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "logger", &logType) != 0) {
                 return -1;
             }
             *outType = c->typeVoid;
@@ -2295,7 +2314,7 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             *outType = u8RefType;
             return 0;
         }
-        if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "free")) {
+        if (0 && SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "free")) {
             int32_t valueArgNode = SLAstNextSibling(c->ast, calleeNode);
             int32_t nextArgNode = valueArgNode >= 0 ? SLAstNextSibling(c->ast, valueArgNode) : -1;
             int32_t allocBaseType;
@@ -2352,7 +2371,7 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             if (nextArgNode >= 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
             }
-            if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "log", &logType) != 0) {
+            if (SLTCGetEffectiveContextFieldTypeByLiteral(c, "logger", &logType) != 0) {
                 return -1;
             }
             *outType = c->typeVoid;

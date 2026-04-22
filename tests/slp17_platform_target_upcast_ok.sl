@@ -1,8 +1,8 @@
-// Verifies SLP 17 platform target upcast is accepted.
+// Verifies platform import is accepted with ambient context.
 import "platform"
 
-fn takes_base() context Context {}
+fn takes_base() {}
 
-fn takes_core() context Context {
+fn takes_core() {
 	takes_base()
 }

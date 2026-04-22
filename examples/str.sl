@@ -3,13 +3,8 @@
 // - explicit `*str` writable literals
 // - implicit conversion to `&[u8]` and `*[u8]`
 // - len/cstr builtins and receiver sugar
-// - concat allocation and free with allocator/context
-struct AppContext {
-	mem *Allocator
-	log Logger
-}
-
-fn run() context AppContext {
+// - concat allocation and del with ambient context allocator
+fn run() {
 	var lit_ro &str = "hello"
 	var lit_rw *str = "world"
 
@@ -37,13 +32,13 @@ fn run() context AppContext {
 	var joined *str = concat(lit_ro, lit_rw)
 	assert len(joined) == 10
 	print(joined)
-	free(joined)
+	del joined
 
 	var shout *str = concat(lit_ro, "!")
 	assert len(shout) == 6
-	context.mem.free(shout)
+	del shout
 }
 
 fn main() {
-	run() context { mem, log }
+	run()
 }

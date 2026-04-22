@@ -314,7 +314,29 @@ static bool WasmFunctionIsNamedMain(const SLMirProgram* program, const SLMirFunc
                program->sources[fn->sourceRef].src.ptr, fn->nameStart, fn->nameEnd, "main");
 }
 
+static bool WasmLocalNameEq(
+    const SLMirProgram*  program,
+    const SLMirFunction* fn,
+    const SLMirLocal*    local,
+    const char*          name) {
+    if (program == NULL || fn == NULL || local == NULL || name == NULL
+        || fn->sourceRef >= program->sourceLen)
+    {
+        return false;
+    }
+    return WasmSliceEqLiteral(
+        program->sources[fn->sourceRef].src.ptr, local->nameStart, local->nameEnd, name);
+}
+
+static bool WasmLocalIsSourceLocation(
+    const SLMirProgram* program, const SLMirFunction* fn, const SLMirLocal* local) {
+    return WasmLocalNameEq(program, fn, local, "_srcLoc")
+        || WasmLocalNameEq(program, fn, local, "srcLoc");
+}
+
 static bool WasmProgramNeedsFunctionTable(const SLMirProgram* program);
+static bool WasmProgramNeedsRootAllocator(
+    const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions);
 static bool WasmProgramHasAssert(
     const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions);
 static bool WasmProgramHasAllocNullPanic(
@@ -359,7 +381,7 @@ static int WasmBuildReachableFunctionSet(
         return -1;
     }
     memset(imports->reachableFunctions, 0, program->funcLen);
-    if (WasmProgramNeedsFunctionTable(program)) {
+    if (WasmProgramNeedsFunctionTable(program) || WasmProgramNeedsRootAllocator(program, NULL)) {
         memset(imports->reachableFunctions, 1, program->funcLen);
         return 0;
     }
@@ -643,6 +665,8 @@ static const char* WasmMirOpName(SLMirOp op) {
         case SLMirOp_CALL:          return "CALL";
         case SLMirOp_CALL_HOST:     return "CALL_HOST";
         case SLMirOp_CALL_INDIRECT: return "CALL_INDIRECT";
+        case SLMirOp_CTX_GET:       return "CTX_GET";
+        case SLMirOp_CTX_ADDR:      return "CTX_ADDR";
         case SLMirOp_JUMP:          return "JUMP";
         case SLMirOp_JUMP_IF_FALSE: return "JUMP_IF_FALSE";
         case SLMirOp_ASSERT:        return "ASSERT";
@@ -713,8 +737,9 @@ static bool WasmProgramNeedsRootAllocator(
         fn = &program->funcs[funcIndex];
         for (pc = 0; pc < fn->instLen; pc++) {
             const SLMirInst* inst = &program->insts[fn->instStart + pc];
-            if (inst->op == SLMirOp_CTX_GET
-                && (inst->aux == SLMirContextField_MEM || inst->aux == SLMirContextField_TEMP_MEM))
+            if ((inst->op == SLMirOp_CTX_GET || inst->op == SLMirOp_CTX_ADDR)
+                && (inst->aux == SLMirContextField_ALLOCATOR
+                    || inst->aux == SLMirContextField_TEMP_ALLOCATOR))
             {
                 return true;
             }
@@ -726,9 +751,11 @@ static bool WasmProgramNeedsRootAllocator(
 static bool WasmProgramHasAllocNullPanic(
     const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions) {
     uint32_t funcIndex;
+    bool     usesRootAllocator;
     if (program == NULL) {
         return false;
     }
+    usesRootAllocator = WasmProgramNeedsRootAllocator(program, reachableFunctions);
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
         const SLMirFunction* fn = &program->funcs[funcIndex];
         uint32_t             pc;
@@ -739,10 +766,12 @@ static bool WasmProgramHasAllocNullPanic(
             const SLMirInst* allocInst = &program->insts[fn->instStart + pc];
             const SLMirInst* nextInst = &program->insts[fn->instStart + pc + 1u];
             uint32_t         typeRef;
-            if (allocInst->op != SLMirOp_ALLOC_NEW
-                || (allocInst->tok & SLAstFlag_NEW_HAS_ALLOC) == 0u
-                || nextInst->op != SLMirOp_LOCAL_STORE || nextInst->aux >= fn->localCount)
+            if (allocInst->op != SLMirOp_ALLOC_NEW || nextInst->op != SLMirOp_LOCAL_STORE
+                || nextInst->aux >= fn->localCount)
             {
+                continue;
+            }
+            if ((allocInst->tok & SLAstFlag_NEW_HAS_ALLOC) == 0u && !usesRootAllocator) {
                 continue;
             }
             typeRef = program->locals[fn->localStart + nextInst->aux].typeRef;
@@ -757,9 +786,11 @@ static bool WasmProgramHasAllocNullPanic(
 static bool WasmProgramHasInvalidAllocatorPanic(
     const SLMirProgram* program, const uint8_t* _Nullable reachableFunctions) {
     uint32_t funcIndex;
+    bool     usesRootAllocator;
     if (program == NULL) {
         return false;
     }
+    usesRootAllocator = WasmProgramNeedsRootAllocator(program, reachableFunctions);
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
         const SLMirFunction* fn = &program->funcs[funcIndex];
         uint32_t             pc;
@@ -768,7 +799,9 @@ static bool WasmProgramHasInvalidAllocatorPanic(
         }
         for (pc = 0; pc < fn->instLen; pc++) {
             const SLMirInst* inst = &program->insts[fn->instStart + pc];
-            if (inst->op == SLMirOp_ALLOC_NEW && (inst->tok & SLAstFlag_NEW_HAS_ALLOC) != 0u) {
+            if (inst->op == SLMirOp_ALLOC_NEW
+                && ((inst->tok & SLAstFlag_NEW_HAS_ALLOC) != 0u || usesRootAllocator))
+            {
                 return true;
             }
         }
@@ -1686,6 +1719,8 @@ static bool WasmFunctionNeedsFrameMemory(const SLMirProgram* program, const SLMi
             case SLMirOp_AGG_GET:
             case SLMirOp_AGG_ADDR:
             case SLMirOp_ALLOC_NEW:
+            case SLMirOp_CTX_GET:
+            case SLMirOp_CTX_ADDR:
             case SLMirOp_SLICE_MAKE:  return true;
             default:                  break;
         }
@@ -1746,14 +1781,15 @@ static bool WasmFunctionNeedsIndirectScratch(const SLMirProgram* program, const 
 }
 
 static bool WasmSigMatchesAllocatorIndirect(const SLWasmFnSig* sig) {
-    if (sig == NULL || sig->wasmParamCount != 6u || sig->wasmResultCount != 1u
+    if (sig == NULL || sig->wasmParamCount != 7u || sig->wasmResultCount != 1u
         || sig->wasmResultTypes[0] != 0x7fu)
     {
         return false;
     }
     return sig->wasmParamTypes[0] == 0x7fu && sig->wasmParamTypes[1] == 0x7fu
         && sig->wasmParamTypes[2] == 0x7fu && sig->wasmParamTypes[3] == 0x7fu
-        && sig->wasmParamTypes[4] == 0x7fu && sig->wasmParamTypes[5] == 0x7fu;
+        && sig->wasmParamTypes[4] == 0x7fu && sig->wasmParamTypes[5] == 0x7fu
+        && sig->wasmParamTypes[6] == 0x7fu;
 }
 
 static bool WasmSigSameShape(const SLWasmFnSig* a, const SLWasmFnSig* b) {
@@ -1829,9 +1865,13 @@ static int WasmBuildFunctionSignatures(
                 return -1;
             }
             local = &program->locals[fn->localStart + j];
-            if (!WasmTypeKindFromMirType(program, local->typeRef, &paramType)
-                || !WasmTypeKindIsSupported(paramType))
+            if ((!WasmTypeKindFromMirType(program, local->typeRef, &paramType)
+                 || !WasmTypeKindIsSupported(paramType))
+                && WasmLocalIsSourceLocation(program, fn, local))
             {
+                paramType = SLWasmType_I32;
+            }
+            if (!WasmTypeKindIsSupported(paramType)) {
                 WasmSetDiag(
                     diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, local->nameStart, local->nameEnd);
                 if (diag != NULL) {
@@ -1970,9 +2010,13 @@ static int WasmPrepareFunctionState(
     for (i = 0; i < fn->localCount; i++) {
         const SLMirLocal* local = &program->locals[fn->localStart + i];
         uint8_t           typeKind = 0;
-        if (!WasmTypeKindFromMirType(program, local->typeRef, &typeKind)
-            || !WasmTypeKindIsSupported(typeKind))
+        if ((!WasmTypeKindFromMirType(program, local->typeRef, &typeKind)
+             || !WasmTypeKindIsSupported(typeKind))
+            && WasmLocalIsSourceLocation(program, fn, local))
         {
+            typeKind = SLWasmType_I32;
+        }
+        if (!WasmTypeKindIsSupported(typeKind)) {
             WasmSetDiag(
                 diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, local->nameStart, local->nameEnd);
             if (diag != NULL) {
@@ -2076,7 +2120,10 @@ static int WasmPrepareFunctionState(
         }
         for (tempPc = 0; tempPc < fn->instLen; tempPc++) {
             const SLMirInst* inst = &program->insts[fn->instStart + tempPc];
-            if (inst->op == SLMirOp_ALLOC_NEW && (inst->tok & SLAstFlag_NEW_HAS_ALLOC) != 0u) {
+            if (inst->op == SLMirOp_ALLOC_NEW
+                && ((inst->tok & SLAstFlag_NEW_HAS_ALLOC) != 0u
+                    || WasmProgramNeedsRootAllocator(program, NULL)))
+            {
                 state->frameSize = WasmAlign4(state->frameSize);
                 state->allocCallTempOffset = state->frameSize;
                 state->frameSize += 4u;
@@ -2537,7 +2584,7 @@ static bool WasmFieldNameEq(
 }
 
 static bool WasmFieldIsEmbeddedAllocator(const SLMirProgram* program, const SLMirField* fieldRef) {
-    return WasmFieldNameEq(program, fieldRef, "Allocator");
+    return WasmFieldNameEq(program, fieldRef, "MemAllocator");
 }
 
 static int WasmTypeByteAlign(const SLMirProgram* program, uint32_t typeRefIndex);
@@ -4695,7 +4742,9 @@ static int WasmEmitFunctionRange(
                     return -1;
                 }
                 fieldRef = &program->fields[inst->aux];
-                if (WasmFieldNameEq(program, fieldRef, "impl")) {
+                if (WasmFieldNameEq(program, fieldRef, "impl")
+                    || WasmFieldNameEq(program, fieldRef, "handler"))
+                {
                     if (baseType != SLWasmType_I32 && !WasmTypeKindIsPointer(baseType)
                         && baseType != SLWasmType_AGG_REF)
                     {
@@ -4770,7 +4819,9 @@ static int WasmEmitFunctionRange(
                     return -1;
                 }
                 fieldRef = &program->fields[inst->aux];
-                if (WasmFieldNameEq(program, fieldRef, "impl")) {
+                if (WasmFieldNameEq(program, fieldRef, "impl")
+                    || WasmFieldNameEq(program, fieldRef, "handler"))
+                {
                     if (WasmAppendByte(body, 0x21u) != 0
                         || WasmAppendULEB(body, state->scratch0Local) != 0
                         || WasmAppendByte(body, 0x20u) != 0
@@ -5039,6 +5090,19 @@ static int WasmEmitFunctionRange(
                         || WasmAppendByte(body, 0x20u) != 0
                         || WasmAppendULEB(body, state->scratch0Local) != 0
                         || WasmEmitI32Store(body) != 0)
+                    {
+                        return -1;
+                    }
+                } else if (refType == SLWasmType_OPAQUE_PTR && valueType == SLWasmType_AGG_REF) {
+                    if (WasmAppendByte(body, 0x21u) != 0
+                        || WasmAppendULEB(body, state->scratch1Local) != 0
+                        || WasmAppendByte(body, 0x21u) != 0
+                        || WasmAppendULEB(body, state->scratch0Local) != 0
+                        || WasmAppendByte(body, 0x20u) != 0
+                        || WasmAppendULEB(body, state->scratch1Local) != 0
+                        || WasmAppendByte(body, 0x20u) != 0
+                        || WasmAppendULEB(body, state->scratch0Local) != 0
+                        || WasmEmitI32Load(body) != 0 || WasmEmitI32Store(body) != 0)
                     {
                         return -1;
                     }
@@ -5447,7 +5511,9 @@ static int WasmEmitFunctionRange(
                 return -1;
             }
             case SLMirOp_CTX_GET:
-                if ((inst->aux == SLMirContextField_MEM || inst->aux == SLMirContextField_TEMP_MEM)
+            case SLMirOp_CTX_ADDR:
+                if ((inst->aux == SLMirContextField_ALLOCATOR
+                     || inst->aux == SLMirContextField_TEMP_ALLOCATOR)
                     && strings != NULL && strings->rootAllocatorOffset != UINT32_MAX)
                 {
                     if (WasmAppendByte(body, 0x41u) != 0
@@ -5471,8 +5537,11 @@ static int WasmEmitFunctionRange(
                 uint32_t         allocSize = 0u;
                 uint8_t          allocArgType = SLWasmType_VOID;
                 bool             hasAllocArg = (inst->tok & SLAstFlag_NEW_HAS_ALLOC) != 0u;
-                bool             useFixedCountAlloc = false;
-                bool             isOptional = false;
+                bool             useContextAllocator =
+                    !hasAllocArg && strings != NULL && strings->rootAllocatorOffset != UINT32_MAX;
+                bool useAllocator = hasAllocArg || useContextAllocator;
+                bool useFixedCountAlloc = false;
+                bool isOptional = false;
                 if (imports == NULL || !imports->needsHeapGlobal
                     || (inst->tok & SLAstFlag_NEW_HAS_INIT) != 0 || pc + 1u >= fn->instLen)
                 {
@@ -5513,6 +5582,14 @@ static int WasmEmitFunctionRange(
                     {
                         return -1;
                     }
+                } else if (useContextAllocator) {
+                    if (WasmAppendByte(body, 0x41u) != 0
+                        || WasmAppendSLEB32(body, (int32_t)strings->rootAllocatorOffset) != 0
+                        || WasmAppendByte(body, 0x21u) != 0
+                        || WasmAppendULEB(body, state->scratch2Local) != 0)
+                    {
+                        return -1;
+                    }
                 }
                 if (WasmTypeKindIsSlice(allocType)) {
                     uint32_t elemSize = WasmTypeElementSize(program, allocType, allocTypeRef);
@@ -5539,7 +5616,7 @@ static int WasmEmitFunctionRange(
                     {
                         return -1;
                     }
-                    if (hasAllocArg) {
+                    if (useAllocator) {
                         if (state->allocCallTempOffset == UINT32_MAX
                             || WasmAppendByte(body, 0x20u) != 0
                             || WasmAppendULEB(body, state->scratch2Local) != 0
@@ -5587,6 +5664,7 @@ static int WasmEmitFunctionRange(
                             || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                             || WasmAppendByte(body, 0x20u) != 0
                             || WasmAppendULEB(body, state->scratch4Local) != 0
+                            || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                             || WasmAppendByte(body, 0x11u) != 0
                             || WasmAppendULEB(body, imports->allocatorIndirectTypeIndex) != 0
                             || WasmAppendByte(body, 0x00u) != 0 || WasmAppendByte(body, 0x21u) != 0
@@ -5694,7 +5772,7 @@ static int WasmEmitFunctionRange(
                     {
                         return -1;
                     }
-                    if (hasAllocArg) {
+                    if (useAllocator) {
                         if (state->allocCallTempOffset == UINT32_MAX
                             || WasmAppendByte(body, 0x20u) != 0
                             || WasmAppendULEB(body, state->scratch2Local) != 0
@@ -5725,6 +5803,7 @@ static int WasmEmitFunctionRange(
                             || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                             || WasmAppendByte(body, 0x20u) != 0
                             || WasmAppendULEB(body, state->scratch4Local) != 0
+                            || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                             || WasmAppendByte(body, 0x11u) != 0
                             || WasmAppendULEB(body, imports->allocatorIndirectTypeIndex) != 0
                             || WasmAppendByte(body, 0x00u) != 0 || WasmAppendByte(body, 0x21u) != 0
@@ -5812,7 +5891,7 @@ static int WasmEmitFunctionRange(
                     }
                     return -1;
                 }
-                if (hasAllocArg) {
+                if (useAllocator) {
                     if (state->allocCallTempOffset == UINT32_MAX || WasmAppendByte(body, 0x20u) != 0
                         || WasmAppendULEB(body, state->scratch2Local) != 0
                         || WasmAppendByte(body, 0x45u) != 0 || WasmAppendByte(body, 0x04u) != 0
@@ -5845,6 +5924,7 @@ static int WasmEmitFunctionRange(
                         || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                         || WasmAppendByte(body, 0x20u) != 0
                         || WasmAppendULEB(body, state->scratch3Local) != 0
+                        || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                         || WasmAppendByte(body, 0x11u) != 0
                         || WasmAppendULEB(body, imports->allocatorIndirectTypeIndex) != 0
                         || WasmAppendByte(body, 0x00u) != 0 || WasmAppendByte(body, 0x21u) != 0
@@ -6119,7 +6199,7 @@ static int WasmEmitFunctionRange(
                     }
                     break;
                 }
-                if (!state->usesFrame || argc != 6u) {
+                if (!state->usesFrame || argc != 7u) {
                     WasmSetDiag(diag, SLDiag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
                     if (diag != NULL) {
                         diag->detail = "unsupported indirect call shape";
@@ -6129,6 +6209,14 @@ static int WasmEmitFunctionRange(
                 {
                     uint8_t valueType = 0;
                     if (WasmStackPop(state, &valueType) != 0
+                        || WasmRequireI32Value(
+                               valueType,
+                               diag,
+                               inst->start,
+                               inst->end,
+                               "allocator source location must be i32")
+                               != 0
+                        || WasmStackPop(state, &valueType) != 0
                         || WasmRequireI32Value(
                                valueType,
                                diag,
@@ -6211,6 +6299,7 @@ static int WasmEmitFunctionRange(
                         || WasmAppendULEB(body, state->scratch5Local) != 0
                         || WasmAppendByte(body, 0x20u) != 0
                         || WasmAppendULEB(body, state->scratch6Local) != 0
+                        || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                         || WasmAppendByte(body, 0x20u) != 0
                         || WasmAppendULEB(body, state->scratch0Local) != 0
                         || WasmAppendByte(body, 0x11u) != 0
@@ -6726,11 +6815,13 @@ static int WasmEmitRootAllocThunkBody(
         kParamCurSize = 3,
         kParamNewSizePtr = 4,
         kParamFlags = 5,
-        kLocalBase = 6,
-        kLocalSize = 7,
-        kLocalCursor = 8,
-        kLocalAlign = 9,
+        kParamSrcLoc = 6,
+        kLocalBase = 7,
+        kLocalSize = 8,
+        kLocalCursor = 9,
+        kLocalAlign = 10,
     };
+    (void)kParamSrcLoc;
     if (imports == NULL || options == NULL || body == NULL || !imports->needsHeapGlobal) {
         return -1;
     }
@@ -7110,11 +7201,12 @@ static int EmitWasmBackend(
         }
     }
     if (imports.hasFunctionTable) {
-        if (WasmAppendByte(&typeSec, 0x60u) != 0 || WasmAppendULEB(&typeSec, 6u) != 0
+        if (WasmAppendByte(&typeSec, 0x60u) != 0 || WasmAppendULEB(&typeSec, 7u) != 0
             || WasmAppendByte(&typeSec, 0x7fu) != 0 || WasmAppendByte(&typeSec, 0x7fu) != 0
             || WasmAppendByte(&typeSec, 0x7fu) != 0 || WasmAppendByte(&typeSec, 0x7fu) != 0
             || WasmAppendByte(&typeSec, 0x7fu) != 0 || WasmAppendByte(&typeSec, 0x7fu) != 0
-            || WasmAppendULEB(&typeSec, 1u) != 0 || WasmAppendByte(&typeSec, 0x7fu) != 0)
+            || WasmAppendByte(&typeSec, 0x7fu) != 0 || WasmAppendULEB(&typeSec, 1u) != 0
+            || WasmAppendByte(&typeSec, 0x7fu) != 0)
         {
             goto oom;
         }

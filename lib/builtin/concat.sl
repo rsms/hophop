@@ -1,4 +1,4 @@
-fn concat(a, b &str) *str context { mem *Allocator } {
+fn concat(a, b &str) *str {
 	var lenA int  = len(a)
 	var lenB int  = len(b)
 	var out  *str = new str{ len: lenA + lenB }

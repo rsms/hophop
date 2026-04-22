@@ -3215,7 +3215,7 @@ int InferExprType_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n, SLTyp
                 && recvType.ptrDepth == 0 && recvType.containerPtrDepth == 0
                 && recvType.baseName != NULL
                 && SliceEq(c->unit->source, cn->dataStart, cn->dataEnd, "impl")
-                && StrEq(recvType.baseName, "__sl_Allocator"))
+                && StrEq(recvType.baseName, "__sl_MemAllocator"))
             {
                 TypeRefSetScalar(outType, "__sl_uint");
                 return 0;
@@ -5451,13 +5451,20 @@ int EmitPointerIdentityExpr(SLCBackendC* c, int32_t exprNode, const SLTypeRef* e
 
 int EmitNewAllocArgExpr(SLCBackendC* c, int32_t allocArg) {
     if (allocArg >= 0) {
+        SLTypeRef allocType;
+        if (InferExprType(c, allocArg, &allocType) == 0 && allocType.valid
+            && allocType.ptrDepth == 0 && allocType.containerPtrDepth == 0)
+        {
+            if (BufAppendCStr(&c->out, "(&(") != 0 || EmitExpr(c, allocArg) != 0
+                || BufAppendCStr(&c->out, "))") != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
         return EmitExpr(c, allocArg);
     }
-    {
-        SLTypeRef want;
-        SetPreferredAllocatorPtrType(&want);
-        return EmitEffectiveContextFieldValue(c, "mem", &want);
-    }
+    return BufAppendCStr(&c->out, "(&(context->allocator))");
 }
 
 const char* _Nullable ResolveVarSizeValueBaseName(SLCBackendC* c, const SLTypeRef* valueType) {
@@ -5689,7 +5696,7 @@ int EmitConcatCallExpr(SLCBackendC* c, int32_t calleeNode) {
         || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " + sl_concat_lenB_") != 0
         || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, "; sl_concat_out_") != 0
         || BufAppendU32(&c->out, tempId) != 0
-        || BufAppendCStr(&c->out, " = (__sl_str*)__sl_new((__sl_Allocator*)(") != 0
+        || BufAppendCStr(&c->out, " = (__sl_str*)__sl_new((__sl_MemAllocator*)(") != 0
         || EmitNewAllocArgExpr(c, -1) != 0
         || BufAppendCStr(&c->out, "), (__sl_int)sizeof(__sl_str) + sl_concat_outLen_") != 0
         || BufAppendU32(&c->out, tempId) != 0
@@ -5951,7 +5958,7 @@ int EmitFmtBuilderInitStmt(SLCBackendC* c, const char* builderName, int32_t allo
         || BufAppendCStr(&c->out, builderName) != 0
         || BufAppendCStr(&c->out, ";\n    __sl_fmt_builder_init(&") != 0
         || BufAppendCStr(&c->out, builderName) != 0
-        || BufAppendCStr(&c->out, ", (__sl_Allocator*)(") != 0
+        || BufAppendCStr(&c->out, ", (__sl_MemAllocator*)(") != 0
         || EmitNewAllocArgExpr(c, allocArgNode) != 0 || BufAppendCStr(&c->out, "));\n") != 0)
     {
         return -1;
@@ -6418,7 +6425,7 @@ int EmitFreeCallExpr(SLCBackendC* c, int32_t allocArgNode, int32_t valueNode) {
     if (InferExprType(c, valueNode, &valueType) != 0 || !valueType.valid) {
         return -1;
     }
-    if (BufAppendCStr(&c->out, "__sl_free((__sl_Allocator*)(") != 0
+    if (BufAppendCStr(&c->out, "__sl_free((__sl_MemAllocator*)(") != 0
         || EmitNewAllocArgExpr(c, allocArgNode) != 0 || BufAppendCStr(&c->out, "), ") != 0)
     {
         return -1;
@@ -6548,7 +6555,7 @@ int EmitNewExpr(
             {
                 return -1;
             }
-            if (BufAppendCStr(&c->out, "__sl_new_array((__sl_Allocator*)(") != 0
+            if (BufAppendCStr(&c->out, "__sl_new_array((__sl_MemAllocator*)(") != 0
                 || EmitNewAllocArgExpr(c, allocArg) != 0
                 || BufAppendCStr(&c->out, "), sizeof(") != 0
                 || EmitTypeNameWithDepth(c, &elemType) != 0
@@ -6568,8 +6575,8 @@ int EmitNewExpr(
 
         if (BufAppendCStr(
                 &c->out,
-                dstIsRuntimeArrayMut ? "__sl_new_array_slice_mut((__sl_Allocator*)("
-                                     : "__sl_new_array_slice_ro((__sl_Allocator*)(")
+                dstIsRuntimeArrayMut ? "__sl_new_array_slice_mut((__sl_MemAllocator*)("
+                                     : "__sl_new_array_slice_ro((__sl_MemAllocator*)(")
                 != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
@@ -6592,7 +6599,7 @@ int EmitNewExpr(
         if (requireNonNull && BufAppendCStr(&c->out, "__sl_unwrap((const void*)(") != 0) {
             return -1;
         }
-        if (BufAppendCStr(&c->out, "__sl_new_array((__sl_Allocator*)(") != 0
+        if (BufAppendCStr(&c->out, "__sl_new_array((__sl_MemAllocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
             || BufAppendCStr(&c->out, "), _Alignof(") != 0
@@ -6619,7 +6626,7 @@ int EmitNewExpr(
                 return -1;
             }
         }
-        if (BufAppendCStr(&c->out, "__sl_new((__sl_Allocator*)(") != 0
+        if (BufAppendCStr(&c->out, "__sl_new((__sl_MemAllocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
             || BufAppendCStr(&c->out, "), _Alignof(") != 0
@@ -6758,7 +6765,7 @@ int EmitNewExpr(
         if (BufAppendCStr(&c->out, "    __sl_p = (") != 0
             || (isVarSizeStr ? BufAppendCStr(&c->out, varSizeBaseName)
                              : EmitTypeNameWithDepth(c, &elemType))
-            || BufAppendCStr(&c->out, "*)__sl_new((__sl_Allocator*)(") != 0
+            || BufAppendCStr(&c->out, "*)__sl_new((__sl_MemAllocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0
             || BufAppendCStr(&c->out, "), __sl_size, _Alignof(") != 0
             || (isVarSizeStr ? BufAppendCStr(&c->out, varSizeBaseName)
@@ -6893,7 +6900,7 @@ int EmitNewExpr(
     } else {
         if (BufAppendCStr(&c->out, "    __sl_p = (") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
-            || BufAppendCStr(&c->out, "*)__sl_new((__sl_Allocator*)(") != 0
+            || BufAppendCStr(&c->out, "*)__sl_new((__sl_MemAllocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
             || BufAppendCStr(&c->out, "), _Alignof(") != 0
@@ -7438,7 +7445,7 @@ int EmitCurrentContextFieldValue(
                 return 0;
             }
 
-            if (StrEq(fieldName, "log") && srcField->type.containerKind == SLTypeContainer_SCALAR
+            if (StrEq(fieldName, "logger") && srcField->type.containerKind == SLTypeContainer_SCALAR
                 && requiredType->containerKind == SLTypeContainer_SCALAR
                 && srcField->type.baseName != NULL && requiredType->baseName != NULL
                 && srcField->type.ptrDepth == 0 && requiredType->ptrDepth == 0
@@ -7554,8 +7561,12 @@ int EmitResolvedCall(
     if (BufAppendCStr(&c->out, calleeName) != 0 || BufAppendChar(&c->out, '(') != 0) {
         return -1;
     }
-    if (sig != NULL && sig->hasContext) {
-        if (EmitContextArgForSig(c, sig) != 0) {
+    if (sig != NULL && (sig->hasContext || StrEq(calleeName, "builtin__print"))) {
+        if (sig->hasContext) {
+            if (EmitContextArgForSig(c, sig) != 0) {
+                return -1;
+            }
+        } else if (BufAppendCStr(&c->out, "context") != 0) {
             return -1;
         }
         if (sig->paramLen > 0 && BufAppendCStr(&c->out, ", ") != 0) {
@@ -9100,8 +9111,8 @@ int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
         if (statusArg < 0 || extra >= 0) {
             return -1;
         }
-        if (BufAppendCStr(&c->out, "platform__exit((__sl_i32)(") != 0 || EmitExpr(c, statusArg) != 0
-            || BufAppendCStr(&c->out, "))") != 0)
+        if (BufAppendCStr(&c->out, "platform__exit(context, (__sl_i32)(") != 0
+            || EmitExpr(c, statusArg) != 0 || BufAppendCStr(&c->out, "))") != 0)
         {
             return -1;
         }
@@ -9525,13 +9536,15 @@ int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                 }
             }
         }
-        if (callee != NULL && callee->kind == SLAst_IDENT
-            && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "print"))
+        if ((callee != NULL && callee->kind == SLAst_IDENT
+             && (SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "print")
+                 || (FindNameBySlice(c, callee->dataStart, callee->dataEnd) != NULL
+                     && StrEq(
+                         FindNameBySlice(c, callee->dataStart, callee->dataEnd)->cName,
+                         "builtin__print"))))
+            || (sig != NULL && StrEq(sig->cName, "builtin__print")))
         {
-            if (BufAppendCStr(
-                    &c->out, "builtin__print((&((builtin__PrintContext){.log = (context->log)}))")
-                != 0)
-            {
+            if (BufAppendCStr(&c->out, "builtin__print(context") != 0) {
                 return -1;
             }
             first = 0;
@@ -9546,8 +9559,14 @@ int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
         } else if (EmitExpr(c, child) != 0 || BufAppendChar(&c->out, '(') != 0) {
             return -1;
         }
-        if (!emittedBuiltinPrintFallback && sig != NULL && sig->hasContext) {
-            if (EmitContextArgForSig(c, sig) != 0) {
+        if (!emittedBuiltinPrintFallback && sig != NULL
+            && (sig->hasContext || StrEq(sig->cName, "builtin__print")))
+        {
+            if (sig->hasContext) {
+                if (EmitContextArgForSig(c, sig) != 0) {
+                    return -1;
+                }
+            } else if (BufAppendCStr(&c->out, "context") != 0) {
                 return -1;
             }
             first = 0;
@@ -10085,6 +10104,94 @@ int EmitDeferredRange(SLCBackendC* c, uint32_t start, uint32_t depth) {
     return 0;
 }
 
+static int ExprBaseIsContext(SLCBackendC* c, int32_t nodeId) {
+    const SLAstNode* n = NodeAt(c, nodeId);
+    if (n == NULL) {
+        return 0;
+    }
+    if (n->kind == SLAst_IDENT) {
+        return SliceEq(c->unit->source, n->dataStart, n->dataEnd, "context");
+    }
+    if (n->kind == SLAst_FIELD_EXPR || n->kind == SLAst_INDEX || n->kind == SLAst_CAST) {
+        return ExprBaseIsContext(c, AstFirstChild(&c->ast, nodeId));
+    }
+    if (n->kind == SLAst_UNARY && n->op == SLTok_MUL) {
+        return ExprBaseIsContext(c, AstFirstChild(&c->ast, nodeId));
+    }
+    return 0;
+}
+
+static int ExprStmtAssignsContext(SLCBackendC* c, int32_t exprNode) {
+    const SLAstNode* n = NodeAt(c, exprNode);
+    int32_t          lhs;
+    SLTokenKind      op;
+    if (n == NULL || n->kind != SLAst_BINARY) {
+        return 0;
+    }
+    op = (SLTokenKind)n->op;
+    if (op != SLTok_ASSIGN && op != SLTok_ADD_ASSIGN && op != SLTok_SUB_ASSIGN
+        && op != SLTok_MUL_ASSIGN && op != SLTok_DIV_ASSIGN && op != SLTok_MOD_ASSIGN
+        && op != SLTok_AND_ASSIGN && op != SLTok_OR_ASSIGN && op != SLTok_XOR_ASSIGN
+        && op != SLTok_LSHIFT_ASSIGN && op != SLTok_RSHIFT_ASSIGN)
+    {
+        return 0;
+    }
+    lhs = AstFirstChild(&c->ast, exprNode);
+    return ExprBaseIsContext(c, lhs);
+}
+
+static int EnsureContextCow(SLCBackendC* c, uint32_t depth) {
+    uint32_t scopeIdx;
+    uint32_t tempId;
+    if (!c->hasCurrentContext || c->localScopeLen == 0) {
+        return 0;
+    }
+    scopeIdx = c->localScopeLen - 1u;
+    if (c->contextCowScopeActive != NULL && c->contextCowScopeActive[scopeIdx]) {
+        return 0;
+    }
+    tempId = ++c->fmtTempCounter;
+    c->contextCowScopeActive[scopeIdx] = 1;
+    c->contextCowScopeTempIds[scopeIdx] = tempId;
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "__typeof__(context) __sl_context_parent") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " = context;\n") != 0)
+    {
+        return -1;
+    }
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "__typeof__(*context) __sl_context_copy") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " = *context;\n") != 0)
+    {
+        return -1;
+    }
+    EmitIndent(c, depth);
+    if (BufAppendCStr(&c->out, "context = &__sl_context_copy") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static int RestoreContextCow(SLCBackendC* c, uint32_t depth) {
+    uint32_t scopeIdx;
+    uint32_t tempId;
+    if (c->localScopeLen == 0 || c->contextCowScopeActive == NULL) {
+        return 0;
+    }
+    scopeIdx = c->localScopeLen - 1u;
+    if (!c->contextCowScopeActive[scopeIdx]) {
+        return 0;
+    }
+    tempId = c->contextCowScopeTempIds[scopeIdx];
+    EmitIndent(c, depth);
+    return BufAppendCStr(&c->out, "context = __sl_context_parent") != 0
+                || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, ";\n") != 0
+             ? -1
+             : 0;
+}
+
 int EmitBlockImpl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int inlineOpen) {
     int32_t  child = AstFirstChild(&c->ast, nodeId);
     uint32_t deferMark;
@@ -10116,6 +10223,11 @@ int EmitBlockImpl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int inlineOpen
         child = AstNextSibling(&c->ast, child);
     }
     if (EmitDeferredRange(c, deferMark, depth + 1u) != 0) {
+        PopDeferScope(c);
+        PopScope(c);
+        return -1;
+    }
+    if (RestoreContextCow(c, depth + 1u) != 0) {
         PopDeferScope(c);
         PopScope(c);
         return -1;
@@ -10399,6 +10511,13 @@ int EmitMultiAssignStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     }
     lhsCount = ListCount(&c->ast, lhsList);
     rhsCount = ListCount(&c->ast, rhsList);
+    for (i = 0; i < lhsCount; i++) {
+        if (ExprBaseIsContext(c, ListItemAt(&c->ast, lhsList, i))
+            && EnsureContextCow(c, depth) != 0)
+        {
+            return -1;
+        }
+    }
     EmitIndent(c, depth);
     if (BufAppendCStr(&c->out, "{\n") != 0) {
         return -1;
@@ -11835,6 +11954,9 @@ int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
         case SLAst_MULTI_ASSIGN: return EmitMultiAssignStmt(c, nodeId, depth);
         case SLAst_EXPR_STMT:    {
             int32_t expr = AstFirstChild(&c->ast, nodeId);
+            if (ExprStmtAssignsContext(c, expr) && EnsureContextCow(c, depth) != 0) {
+                return -1;
+            }
             EmitIndent(c, depth);
             if (EmitExpr(c, expr) != 0 || BufAppendCStr(&c->out, ";\n") != 0) {
                 if (c->diag != NULL && c->diag->code == SLDiag_NONE) {
@@ -11978,6 +12100,30 @@ int EmitStmt(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                 if (BufAppendCStr(&c->out, ");\n") != 0) {
                     return -1;
                 }
+            }
+            return 0;
+        }
+        case SLAst_DEL: {
+            int32_t expr = AstFirstChild(&c->ast, nodeId);
+            int32_t allocArg = -1;
+            if ((n->flags & SLAstFlag_DEL_HAS_ALLOC) != 0) {
+                int32_t scan = expr;
+                while (scan >= 0) {
+                    int32_t next = AstNextSibling(&c->ast, scan);
+                    if (next < 0) {
+                        allocArg = scan;
+                        break;
+                    }
+                    scan = next;
+                }
+            }
+            while (expr >= 0 && expr != allocArg) {
+                EmitIndent(c, depth);
+                if (EmitFreeCallExpr(c, allocArg, expr) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+                {
+                    return -1;
+                }
+                expr = AstNextSibling(&c->ast, expr);
             }
             return 0;
         }

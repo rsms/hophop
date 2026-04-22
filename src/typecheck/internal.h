@@ -1071,6 +1071,7 @@ int     SLTCEmbedDistanceToType(
     SLTypeCheckCtx* c, int32_t srcType, int32_t dstType, uint32_t* outDistance);
 int SLTCIsTypeDerivedFromEmbedded(SLTypeCheckCtx* c, int32_t srcType, int32_t dstType);
 int SLTCCanAssign(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType);
+int SLTCValidateMemAllocatorArg(SLTypeCheckCtx* c, int32_t nodeId, int32_t allocBaseType);
 int SLTCCoerceForBinary(SLTypeCheckCtx* c, int32_t leftType, int32_t rightType, int32_t* outType);
 int SLTCConversionCost(SLTypeCheckCtx* c, int32_t dstType, int32_t srcType, uint8_t* outCost);
 int SLTCCostVectorCompare(const uint8_t* a, const uint8_t* b, uint32_t len);

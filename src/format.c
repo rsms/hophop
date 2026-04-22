@@ -1523,6 +1523,7 @@ static int SLFmtIsStmtNodeKind(SLAstKind kind) {
         case SLAst_CONTINUE:
         case SLAst_DEFER:
         case SLAst_ASSERT:
+        case SLAst_DEL:
         case SLAst_MULTI_ASSIGN:
         case SLAst_EXPR_STMT:    return 1;
         default:                 return 0;
@@ -2627,7 +2628,7 @@ static int SLFmtEmitExprCore(SLFmtCtx* c, int32_t nodeId) {
                 }
             }
             if (alloc >= 0) {
-                if (SLFmtWriteCStr(c, " context ") != 0 || SLFmtEmitExpr(c, alloc, 0) != 0) {
+                if (SLFmtWriteCStr(c, " in ") != 0 || SLFmtEmitExpr(c, alloc, 0) != 0) {
                     return -1;
                 }
             }
@@ -4632,6 +4633,47 @@ static int SLFmtEmitStmtInline(SLFmtCtx* c, int32_t nodeId) {
             ch = SLFmtFirstChild(c->ast, nodeId);
             if (SLFmtWriteCStr(c, "assert ") != 0) {
                 return -1;
+            }
+            while (ch >= 0) {
+                int32_t next = SLFmtNextSibling(c->ast, ch);
+                if (SLFmtEmitExpr(c, ch, 0) != 0) {
+                    return -1;
+                }
+                if (next >= 0 && SLFmtWriteCStr(c, ", ") != 0) {
+                    return -1;
+                }
+                ch = next;
+            }
+            return 0;
+        case SLAst_DEL:
+            ch = SLFmtFirstChild(c->ast, nodeId);
+            if (SLFmtWriteCStr(c, "del ") != 0) {
+                return -1;
+            }
+            if ((n->flags & SLAstFlag_DEL_HAS_ALLOC) != 0) {
+                int32_t scan = ch;
+                while (scan >= 0) {
+                    int32_t next = SLFmtNextSibling(c->ast, scan);
+                    if (next < 0) {
+                        break;
+                    }
+                    scan = next;
+                }
+                while (ch >= 0 && ch != scan) {
+                    int32_t next = SLFmtNextSibling(c->ast, ch);
+                    if (SLFmtEmitExpr(c, ch, 0) != 0) {
+                        return -1;
+                    }
+                    if (next >= 0 && next != scan && SLFmtWriteCStr(c, ", ") != 0) {
+                        return -1;
+                    }
+                    ch = next;
+                }
+                if (scan >= 0 && (SLFmtWriteCStr(c, " in ") != 0 || SLFmtEmitExpr(c, scan, 0) != 0))
+                {
+                    return -1;
+                }
+                return 0;
             }
             while (ch >= 0) {
                 int32_t next = SLFmtNextSibling(c->ast, ch);

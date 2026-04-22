@@ -2333,8 +2333,8 @@ static int CountMirAllocNewAllocExprInsts(
                     file->ast.nodes[baseNode].dataStart,
                     file->ast.nodes[baseNode].dataEnd,
                     "context")
-                && (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "mem")
-                    || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "temp_mem")))
+                && (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "allocator")
+                    || SliceEqCStr(file->source, n->dataStart, n->dataEnd, "temp_allocator")))
             {
                 *outCount = 1u;
                 return 1;
@@ -3024,10 +3024,10 @@ static int LowerMirAllocNewAllocExpr(
             {
                 return 0;
             }
-            if (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "mem")) {
-                field = SLMirContextField_MEM;
-            } else if (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "temp_mem")) {
-                field = SLMirContextField_TEMP_MEM;
+            if (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "allocator")) {
+                field = SLMirContextField_ALLOCATOR;
+            } else if (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "temp_allocator")) {
+                field = SLMirContextField_TEMP_ALLOCATOR;
             } else {
                 return 0;
             }
@@ -5238,7 +5238,8 @@ static int MirExprInstStackDelta(const SLMirInst* inst, int32_t* outDelta) {
         case SLMirOp_ADDR_OF:
         case SLMirOp_AGG_ZERO:
         case SLMirOp_ARRAY_ZERO:
-        case SLMirOp_CTX_GET:         *outDelta = 1; return 1;
+        case SLMirOp_CTX_GET:
+        case SLMirOp_CTX_ADDR:        *outDelta = 1; return 1;
         case SLMirOp_UNARY:
         case SLMirOp_CAST:
         case SLMirOp_COERCE:
@@ -8029,13 +8030,14 @@ static void InferMirStraightLineLocalTypes(SLArena* arena, SLMirProgram* program
                     }
                     break;
                 case SLMirOp_CTX_GET:
+                case SLMirOp_CTX_ADDR:
                     if (stackLen >= 512u) {
                         supported = 0;
                         break;
                     }
                     stackTypes[stackLen] =
-                        (inst->aux == SLMirContextField_MEM
-                         || inst->aux == SLMirContextField_TEMP_MEM)
+                        (inst->aux == SLMirContextField_ALLOCATOR
+                         || inst->aux == SLMirContextField_TEMP_ALLOCATOR)
                             ? MirInferredType_OPAQUE_PTR
                             : MirInferredType_NONE;
                     stackTypeRefs[stackLen++] = UINT32_MAX;

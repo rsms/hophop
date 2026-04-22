@@ -671,9 +671,9 @@ typedef struct {
 } SLEvalArray;
 
 struct SLEvalContext {
-    SLCTFEValue mem;
-    SLCTFEValue tempMem;
-    SLCTFEValue log;
+    SLCTFEValue allocator;
+    SLCTFEValue tempAllocator;
+    SLCTFEValue logger;
 };
 
 typedef struct {
@@ -755,6 +755,7 @@ struct SLEvalProgram {
     uint32_t        callStack[SL_EVAL_CALL_MAX_DEPTH];
     SLEvalContext   rootContext;
     const SLEvalContext* _Nullable currentContext;
+    SLCTFEValue         loggerPrefix;
     const SLParsedFile* activeTemplateParamFile;
     uint32_t            activeTemplateParamNameStart;
     uint32_t            activeTemplateParamNameEnd;
@@ -2016,16 +2017,38 @@ static int SLEvalCurrentContextFieldByLiteral(
         return 0;
     }
     context = p->currentContext != NULL ? p->currentContext : &p->rootContext;
-    if (strcmp(fieldName, "mem") == 0) {
-        *outValue = context->mem;
+    if (strcmp(fieldName, "allocator") == 0) {
+        *outValue = context->allocator;
         return 1;
     }
-    if (strcmp(fieldName, "temp_mem") == 0) {
-        *outValue = context->tempMem;
+    if (strcmp(fieldName, "temp_allocator") == 0) {
+        *outValue = context->tempAllocator;
         return 1;
     }
-    if (strcmp(fieldName, "log") == 0) {
-        *outValue = context->log;
+    if (strcmp(fieldName, "logger") == 0) {
+        *outValue = context->logger;
+        return 1;
+    }
+    return 0;
+}
+
+static int SLEvalCurrentContextFieldAddressByLiteral(
+    SLEvalProgram* p, const char* fieldName, SLCTFEValue* outValue) {
+    SLEvalContext* context;
+    if (p == NULL || fieldName == NULL || outValue == NULL) {
+        return 0;
+    }
+    context = p->currentContext != NULL ? (SLEvalContext*)p->currentContext : &p->rootContext;
+    if (strcmp(fieldName, "allocator") == 0) {
+        SLEvalValueSetReference(outValue, &context->allocator);
+        return 1;
+    }
+    if (strcmp(fieldName, "temp_allocator") == 0) {
+        SLEvalValueSetReference(outValue, &context->tempAllocator);
+        return 1;
+    }
+    if (strcmp(fieldName, "logger") == 0) {
+        SLEvalValueSetReference(outValue, &context->logger);
         return 1;
     }
     return 0;
@@ -2040,14 +2063,14 @@ static int SLEvalCurrentContextField(
     if (source == NULL) {
         return 0;
     }
-    if (SliceEqCStr(source, nameStart, nameEnd, "mem")) {
-        return SLEvalCurrentContextFieldByLiteral(p, "mem", outValue);
+    if (SliceEqCStr(source, nameStart, nameEnd, "allocator")) {
+        return SLEvalCurrentContextFieldByLiteral(p, "allocator", outValue);
     }
-    if (SliceEqCStr(source, nameStart, nameEnd, "temp_mem")) {
-        return SLEvalCurrentContextFieldByLiteral(p, "temp_mem", outValue);
+    if (SliceEqCStr(source, nameStart, nameEnd, "temp_allocator")) {
+        return SLEvalCurrentContextFieldByLiteral(p, "temp_allocator", outValue);
     }
-    if (SliceEqCStr(source, nameStart, nameEnd, "log")) {
-        return SLEvalCurrentContextFieldByLiteral(p, "log", outValue);
+    if (SliceEqCStr(source, nameStart, nameEnd, "logger")) {
+        return SLEvalCurrentContextFieldByLiteral(p, "logger", outValue);
     }
     return 0;
 }
@@ -2068,12 +2091,40 @@ static int SLEvalMirContextGet(
         return -1;
     }
     switch ((SLMirContextField)fieldId) {
-        case SLMirContextField_MEM:      fieldName = "mem"; break;
-        case SLMirContextField_TEMP_MEM: fieldName = "temp_mem"; break;
-        case SLMirContextField_LOG:      fieldName = "log"; break;
-        default:                         return 0;
+        case SLMirContextField_ALLOCATOR:      fieldName = "allocator"; break;
+        case SLMirContextField_TEMP_ALLOCATOR: fieldName = "temp_allocator"; break;
+        case SLMirContextField_LOGGER:         fieldName = "logger"; break;
+        default:                               return 0;
     }
     if (!SLEvalCurrentContextFieldByLiteral(p, fieldName, outValue)) {
+        return 0;
+    }
+    *outIsConst = 1;
+    return 1;
+}
+
+static int SLEvalMirContextAddr(
+    void* _Nullable ctx,
+    uint32_t        fieldId,
+    SLMirExecValue* outValue,
+    int*            outIsConst,
+    SLDiag* _Nullable diag) {
+    SLEvalProgram* p = (SLEvalProgram*)ctx;
+    const char*    fieldName = NULL;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    switch ((SLMirContextField)fieldId) {
+        case SLMirContextField_ALLOCATOR:      fieldName = "allocator"; break;
+        case SLMirContextField_TEMP_ALLOCATOR: fieldName = "temp_allocator"; break;
+        case SLMirContextField_LOGGER:         fieldName = "logger"; break;
+        default:                               return 0;
+    }
+    if (!SLEvalCurrentContextFieldAddressByLiteral(p, fieldName, outValue)) {
         return 0;
     }
     *outIsConst = 1;
@@ -2173,12 +2224,12 @@ static int SLEvalBuildContextOverlay(
             }
             return 0;
         }
-        if (SliceEqCStr(file->source, bind->dataStart, bind->dataEnd, "mem")) {
-            outContext->mem = fieldValue;
-        } else if (SliceEqCStr(file->source, bind->dataStart, bind->dataEnd, "temp_mem")) {
-            outContext->tempMem = fieldValue;
-        } else if (SliceEqCStr(file->source, bind->dataStart, bind->dataEnd, "log")) {
-            outContext->log = fieldValue;
+        if (SliceEqCStr(file->source, bind->dataStart, bind->dataEnd, "allocator")) {
+            outContext->allocator = fieldValue;
+        } else if (SliceEqCStr(file->source, bind->dataStart, bind->dataEnd, "temp_allocator")) {
+            outContext->tempAllocator = fieldValue;
+        } else if (SliceEqCStr(file->source, bind->dataStart, bind->dataEnd, "logger")) {
+            outContext->logger = fieldValue;
         }
         bindNode = ASTNextSibling(ast, bindNode);
     }
@@ -4315,23 +4366,27 @@ static int SLEvalAllocReferencedValue(
 }
 
 static int SLEvalCheckAllocatorImplResult(
-    SLEvalProgram* p, int32_t exprNode, const SLCTFEValue* allocValue) {
+    SLEvalProgram* p, int32_t exprNode, const SLCTFEValue* allocValue, int* outReturnedNull) {
     const SLCTFEValue* allocTarget;
     SLEvalAggregate*   allocAgg;
-    SLCTFEValue        implValue;
-    static const char  implName[] = "impl";
+    SLCTFEValue        handlerValue;
+    static const char  handlerName[] = "handler";
+    if (outReturnedNull != NULL) {
+        *outReturnedNull = 0;
+    }
     if (p == NULL || allocValue == NULL) {
         return -1;
     }
     allocTarget = SLEvalValueTargetOrSelf(allocValue);
     allocAgg = SLEvalValueAsAggregate(allocTarget);
-    if (allocAgg == NULL || !SLEvalAggregateGetFieldValue(allocAgg, implName, 0u, 4u, &implValue)
-        || !SLEvalValueIsInvokableFunctionRef(&implValue))
+    if (allocAgg == NULL
+        || !SLEvalAggregateGetFieldValue(allocAgg, handlerName, 0u, 7u, &handlerValue)
+        || !SLEvalValueIsInvokableFunctionRef(&handlerValue))
     {
         return 1;
     }
     {
-        SLCTFEValue args[6];
+        SLCTFEValue args[7];
         SLCTFEValue newSize;
         SLCTFEValue result;
         int         resultIsConst = 0;
@@ -4343,24 +4398,39 @@ static int SLEvalCheckAllocatorImplResult(
         SLEvalValueSetInt(&newSize, 0);
         SLEvalValueSetReference(&args[4], &newSize);
         SLEvalValueSetInt(&args[5], 0);
-        invoked = SLEvalInvokeFunctionRef(p, &implValue, args, 6u, &result, &resultIsConst);
+        SLEvalValueSetNull(&args[6]);
+        invoked = SLEvalInvokeFunctionRef(p, &handlerValue, args, 7u, &result, &resultIsConst);
         if (invoked < 0) {
             return -1;
         }
         if (invoked > 0 && resultIsConst
             && SLEvalValueTargetOrSelf(&result)->kind == SLCTFEValue_NULL)
         {
-            if (p->currentExecCtx != NULL) {
-                SLCTFEExecSetReasonNode(p->currentExecCtx, exprNode, "allocator returned null");
+            if (outReturnedNull != NULL) {
+                *outReturnedNull = 1;
             }
+            (void)exprNode;
             return 0;
         }
     }
     return 1;
 }
 
+static int SLEvalExpectedNewResultIsOptional(
+    const SLParsedFile* _Nullable typeFile, int32_t typeNode) {
+    if (typeFile == NULL || typeNode < 0 || (uint32_t)typeNode >= typeFile->ast.len) {
+        return 0;
+    }
+    return typeFile->ast.nodes[typeNode].kind == SLAst_TYPE_OPTIONAL;
+}
+
 static int SLEvalEvalNewExpr(
-    SLEvalProgram* p, int32_t exprNode, SLCTFEValue* outValue, int* outIsConst) {
+    SLEvalProgram* p,
+    int32_t        exprNode,
+    const SLParsedFile* _Nullable expectedTypeFile,
+    int32_t      expectedTypeNode,
+    SLCTFEValue* outValue,
+    int*         outIsConst) {
     int32_t     typeNode = -1;
     int32_t     countNode = -1;
     int32_t     initNode = -1;
@@ -4385,7 +4455,7 @@ static int SLEvalEvalNewExpr(
         if (!allocIsConst) {
             return 0;
         }
-    } else if (!SLEvalCurrentContextFieldByLiteral(p, "mem", &allocValue)) {
+    } else if (!SLEvalCurrentContextFieldByLiteral(p, "allocator", &allocValue)) {
         if (p->currentExecCtx != NULL) {
             SLCTFEExecSetReasonNode(
                 p->currentExecCtx,
@@ -4403,8 +4473,19 @@ static int SLEvalEvalNewExpr(
         return 0;
     }
     {
-        int allocRc = SLEvalCheckAllocatorImplResult(p, exprNode, &allocValue);
+        int allocReturnedNull = 0;
+        int allocRc = SLEvalCheckAllocatorImplResult(p, exprNode, &allocValue, &allocReturnedNull);
         if (allocRc <= 0) {
+            if (allocRc == 0 && allocReturnedNull
+                && SLEvalExpectedNewResultIsOptional(expectedTypeFile, expectedTypeNode))
+            {
+                SLEvalValueSetNull(outValue);
+                *outIsConst = 1;
+                return 0;
+            }
+            if (allocRc == 0 && allocReturnedNull && p->currentExecCtx != NULL) {
+                SLCTFEExecSetReasonNode(p->currentExecCtx, exprNode, "allocator returned null");
+            }
             return allocRc;
         }
     }
@@ -5929,6 +6010,42 @@ static int SLEvalFindExpectedTypeForCallExpr(
         }
         initNode = ASTNextSibling(&file->ast, typeNode);
         if (initNode == callNode) {
+            *outTypeFile = file;
+            *outTypeNode = typeNode;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int SLEvalFindExpectedTypeForInitExpr(
+    const SLParsedFile* _Nullable file,
+    int32_t                        initExprNode,
+    const SLParsedFile* _Nullable* outTypeFile,
+    int32_t*                       outTypeNode) {
+    uint32_t i;
+    if (outTypeFile != NULL) {
+        *outTypeFile = NULL;
+    }
+    if (outTypeNode != NULL) {
+        *outTypeNode = -1;
+    }
+    if (file == NULL || initExprNode < 0 || outTypeFile == NULL || outTypeNode == NULL) {
+        return 0;
+    }
+    for (i = 0; i < file->ast.len; i++) {
+        const SLAstNode* n = &file->ast.nodes[i];
+        int32_t          typeNode;
+        int32_t          initNode;
+        if (n->kind != SLAst_VAR && n->kind != SLAst_CONST) {
+            continue;
+        }
+        typeNode = SLEvalVarLikeDeclTypeNode(file, (int32_t)i);
+        if (typeNode < 0) {
+            continue;
+        }
+        initNode = SLEvalVarLikeInitExprNodeAt(file, (int32_t)i, 0);
+        if (initNode == initExprNode) {
             *outTypeFile = file;
             *outTypeNode = typeNode;
             return 1;
@@ -7611,7 +7728,7 @@ static int SLEvalExecExprWithTypeNode(
             outIsConst);
     }
     if (ast->nodes[exprNode].kind == SLAst_NEW) {
-        return SLEvalEvalNewExpr(p, exprNode, outValue, outIsConst);
+        return SLEvalEvalNewExpr(p, exprNode, typeFile, typeNode, outValue, outIsConst);
     }
     if (ast->nodes[exprNode].kind == SLAst_CALL && typeFile != NULL && typeNode >= 0) {
         const SLParsedFile* savedExprFile = p->expectedCallExprFile;
@@ -9344,6 +9461,13 @@ static int SLEvalMirAggGetField(
     {
         baseValue = SLEvalValueTargetOrSelf(payload);
     }
+    if (baseValue->kind == SLCTFEValue_INT && baseValue->i64 == 3
+        && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "prefix"))
+    {
+        *outValue = p->loggerPrefix;
+        *outIsConst = 1;
+        return 0;
+    }
     if (SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "len")
         && (baseValue->kind == SLCTFEValue_STRING || baseValue->kind == SLCTFEValue_ARRAY
             || baseValue->kind == SLCTFEValue_NULL))
@@ -9464,6 +9588,13 @@ static int SLEvalMirAggAddrField(
         && baseValue->b != 0u && payload != NULL)
     {
         baseValue = SLEvalValueTargetOrSelf(payload);
+    }
+    if (baseValue->kind == SLCTFEValue_INT && baseValue->i64 == 3
+        && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "prefix"))
+    {
+        SLEvalValueSetReference(outValue, &p->loggerPrefix);
+        *outIsConst = 1;
+        return 0;
     }
     agg = SLEvalValueAsAggregate(baseValue);
     if (agg == NULL) {
@@ -10129,6 +10260,8 @@ static void SLEvalMirInitExecEnv(
     env->allocNewCtx = p;
     env->contextGet = SLEvalMirContextGet;
     env->contextGetCtx = p;
+    env->contextAddr = SLEvalMirContextAddr;
+    env->contextAddrCtx = p;
     env->evalWithContext = SLEvalMirEvalWithContext;
     env->evalWithContextCtx = p;
     env->setReason = SLEvalMirSetReason;
@@ -10375,7 +10508,7 @@ static int SLEvalMirAllocNew(
         if (!allocSupported || !allocIsConst) {
             return 0;
         }
-    } else if (!SLEvalCurrentContextFieldByLiteral(p, "mem", &allocValue)) {
+    } else if (!SLEvalCurrentContextFieldByLiteral(p, "allocator", &allocValue)) {
         if (p->currentExecCtx != NULL) {
             SLCTFEExecSetReasonNode(
                 p->currentExecCtx,
@@ -10391,8 +10524,23 @@ static int SLEvalMirAllocNew(
         return 0;
     }
     {
-        int allocRc = SLEvalCheckAllocatorImplResult(p, exprNode, &allocValue);
+        const SLParsedFile* expectedTypeFile = NULL;
+        int32_t             expectedTypeNode = -1;
+        int                 allocReturnedNull = 0;
+        int allocRc = SLEvalCheckAllocatorImplResult(p, exprNode, &allocValue, &allocReturnedNull);
         if (allocRc <= 0) {
+            if (allocRc == 0 && allocReturnedNull
+                && SLEvalFindExpectedTypeForInitExpr(
+                    newFile, exprNode, &expectedTypeFile, &expectedTypeNode)
+                && SLEvalExpectedNewResultIsOptional(expectedTypeFile, expectedTypeNode))
+            {
+                SLEvalValueSetNull(outValue);
+                *outIsConst = 1;
+                return 1;
+            }
+            if (allocRc == 0 && allocReturnedNull && p->currentExecCtx != NULL) {
+                SLCTFEExecSetReasonNode(p->currentExecCtx, exprNode, "allocator returned null");
+            }
             return allocRc;
         }
     }
@@ -12376,7 +12524,7 @@ static int SLEvalExecExprCb(void* ctx, int32_t exprNode, SLCTFEValue* outValue, 
     }
 
     if (n->kind == SLAst_NEW) {
-        return SLEvalEvalNewExpr(p, exprNode, outValue, outIsConst);
+        return SLEvalEvalNewExpr(p, exprNode, NULL, -1, outValue, outIsConst);
     }
 
     if (n->kind == SLAst_CALL_WITH_CONTEXT) {
@@ -14042,9 +14190,9 @@ int RunProgramEval(
     program.arena = &arena;
     program.loader = &loader;
     program.entryPkg = entryPkg;
-    SLEvalValueSetInt(&program.rootContext.mem, 1);
-    SLEvalValueSetInt(&program.rootContext.tempMem, 2);
-    SLEvalValueSetInt(&program.rootContext.log, 3);
+    SLEvalValueSetInt(&program.rootContext.allocator, 1);
+    SLEvalValueSetInt(&program.rootContext.tempAllocator, 2);
+    SLEvalValueSetInt(&program.rootContext.logger, 3);
     program.currentContext = NULL;
     if (SLEvalCollectFunctions(&program) != 0) {
         goto end;

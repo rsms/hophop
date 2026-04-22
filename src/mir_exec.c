@@ -1744,6 +1744,30 @@ static int SLMirRunLoop(
                 }
                 break;
             }
+            case SLMirOp_CTX_ADDR: {
+                SLCTFEValue out;
+                int         addrRc;
+                int         isConst = 0;
+                if (run->env.contextAddr == NULL) {
+                    SLMirSetReason(
+                        run, ins, "context address is not supported during const evaluation");
+                    return 0;
+                }
+                addrRc = run->env.contextAddr(
+                    run->env.contextAddrCtx, ins->aux, &out, &isConst, run->env.diag);
+                if (addrRc < 0) {
+                    return -1;
+                }
+                if (addrRc == 0 || !isConst) {
+                    SLMirSetReason(
+                        run, ins, "context address is not supported during const evaluation");
+                    return 0;
+                }
+                if (SLCTFEPush(run, &out) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case SLMirOp_CTX_SET: {
                 SLCTFEValue out;
                 int         evalRc;

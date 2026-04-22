@@ -1,10 +1,10 @@
 // Verifies duplicate context field is rejected.
-struct Allocator {
-	impl fn(*Allocator, rawptr, int, int, *int, u32) rawptr
+struct MemAllocator {
+	impl fn(*MemAllocator, rawptr, int, int, *int, u32) rawptr
 }
 
 struct Ctx {
-	mem *Allocator
+	mem *MemAllocator
 }
 
 fn f() context Ctx {}

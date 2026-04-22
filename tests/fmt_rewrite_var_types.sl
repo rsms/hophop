@@ -12,10 +12,10 @@ fn makeFoo() Foo {
 }
 
 fn main() {
-	var compound Foo = Foo{ x: 123 }
-	var generic Box[i64] = Box[i64]{ value: 4 }
-	var fromCall Foo = makeFoo()
-	var fromIdent Foo = compound
+	var compound        = Foo{ x: 123 }
+	var generic         = Box[i64]{ value: 4 }
+	var fromCall    Foo = makeFoo()
+	var fromIdent       = compound
 	var keepUntyped Foo = { x: 789 }
-	var keepCast i32 = 3 as i32
+	var keepCast    i32 = 3
 }

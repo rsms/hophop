@@ -1,14 +1,14 @@
 // Verifies context clause mismatch is rejected.
-struct Allocator {
-	impl fn(*Allocator, rawptr, int, int, *int, u32) rawptr
+struct MemAllocator {
+	impl fn(*MemAllocator, rawptr, int, int, *int, u32) rawptr
 }
 
 struct CtxA {
-	mem *Allocator
+	mem *MemAllocator
 }
 
 struct CtxB {
-	mem *Allocator
+	mem *MemAllocator
 }
 
 fn f() context CtxA

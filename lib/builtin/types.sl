@@ -44,16 +44,20 @@ pub struct Logger {
 	prefix    &str
 }
 
-pub struct Allocator {
-	impl fn(*Allocator, rawptr, int, int, *int, u32) rawptr
+pub struct MemAllocator {
+	handler fn(*MemAllocator, rawptr, int, int, *int, u32, SourceLocation) rawptr
 }
 
 pub struct Context {
-	mem      *Allocator
-	temp_mem *Allocator
-	log      Logger
+	allocator      MemAllocator
+	temp_allocator MemAllocator
+	logger         Logger
+	user1          rawptr
+	user2          rawptr
+	_reserved      rawptr
+	deadline       u64
 }
 
 pub struct PrintContext {
-	log Logger
+	logger Logger
 }

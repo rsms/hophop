@@ -955,6 +955,10 @@ int EmitStructOrUnionDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth, int is
     const SLNameMap* map = FindDeclMap(c, nodeId);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
 
+    if (map != NULL && StrEq(map->cName, "builtin__SourceLocation")) {
+        return 0;
+    }
+
     if (!isUnion && NodeHasDirectDependentFields(c, nodeId)) {
         return EmitVarSizeStructDecl(c, nodeId, depth);
     }
@@ -1162,6 +1166,15 @@ int EmitForwardTypeDecls(SLCBackendC* c) {
             continue;
         }
         EmitIndent(c, 0);
+        if (StrEq(map->cName, "builtin__SourceLocation")) {
+            if (BufAppendCStr(&c->out, "typedef __sl_SourceLocation builtin__SourceLocation;\n")
+                != 0)
+            {
+                return -1;
+            }
+            emittedAny = 1;
+            continue;
+        }
         if (n->kind == SLAst_ENUM) {
             if (EnumDeclHasPayload(c, nodeId)) {
                 if (BufAppendCStr(&c->out, "typedef struct ") != 0
@@ -1226,6 +1239,15 @@ int EmitForwardTypeDecls(SLCBackendC* c) {
             continue;
         }
         EmitIndent(c, 0);
+        if (StrEq(map->cName, "builtin__SourceLocation")) {
+            if (BufAppendCStr(&c->out, "typedef __sl_SourceLocation builtin__SourceLocation;\n")
+                != 0)
+            {
+                return -1;
+            }
+            emittedAny = 1;
+            continue;
+        }
         if (n->kind == SLAst_ENUM) {
             if (EnumDeclHasPayload(c, nodeId)) {
                 if (BufAppendCStr(&c->out, "typedef struct ") != 0
@@ -1571,6 +1593,9 @@ int EmitFnDeclOrDef(
             }
         } else {
             if (EmitTypeRefWithName(c, &fnContextParamType, "context") != 0) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, " __attribute__((unused))") != 0) {
                 return -1;
             }
         }
