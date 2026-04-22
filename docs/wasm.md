@@ -206,5 +206,5 @@ It is not:
 - a full catalog of supported language features
 - a line-by-line explanation of the current implementation
 
-For feature scope and bring-up history, see `docs/HEP-32-wasm-backend.md`.
+For feature scope and bring-up history, see `docs/HEP-032-wasm-backend.md`.
 For MIR structure and semantics, see `docs/mir.md`.

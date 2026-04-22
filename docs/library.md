@@ -338,7 +338,7 @@ fn main() {
 }
 ```
 
-Exact signatures and typing rules are draft and defined in `docs/HEP-18-reflection.md`.
+Exact signatures and typing rules are draft and defined in `docs/HEP-018-reflection.md`.
 
 ## Source Locations Package Surface (Provisional)
 

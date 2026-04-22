@@ -265,7 +265,7 @@ fn main() {
    - implicit `main` context fallback for `mem` is pointer-typed.
    - this removes legacy `mut&` assumptions during context compatibility checks.
 
-Detailed task tracking: `docs/HEP-19.1-implementation-checklist.md` (completed).
+Detailed task tracking: `docs/HEP-019.1-implementation-checklist.md` (completed).
 
 ## Resolved decisions
 
