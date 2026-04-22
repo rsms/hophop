@@ -1703,6 +1703,21 @@ static int PackageHasImportedTypeSymbolSlice(
     return 0;
 }
 
+static int PackageHasBuiltinExportedTypeSlice(
+    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+    uint32_t i;
+    if (pkg == NULL) {
+        return 0;
+    }
+    for (i = 0; i < pkg->importLen; i++) {
+        const HOPImportRef* imp = &pkg->imports[i];
+        if (StrEq(imp->path, "builtin") && imp->target != NULL) {
+            return PackageHasExportedTypeSlice(imp->target, src, start, end);
+        }
+    }
+    return 0;
+}
+
 static uint32_t FindSliceDot(const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = start; i < end; i++) {
@@ -1774,6 +1789,9 @@ static int ValidatePubTypeNode(
                 return 0;
             }
             if (PackageHasImportedTypeSymbolSlice(pkg, file->source, n->dataStart, n->dataEnd)) {
+                return 0;
+            }
+            if (PackageHasBuiltinExportedTypeSlice(pkg, file->source, n->dataStart, n->dataEnd)) {
                 return 0;
             }
             return Errorf(

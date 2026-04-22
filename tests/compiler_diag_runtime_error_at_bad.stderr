@@ -1,1 +1,1 @@
-tests/compiler_diag_runtime_error_at_bad.hop:6:47: error: HOP2075: consteval error: runtime anchored
+tests/compiler_diag_runtime_error_at_bad.hop:5:39: error: HOP2075: consteval error: runtime anchored
