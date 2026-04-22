@@ -1,5 +1,7 @@
 # HopHop
 
+<img src="etc/hophop.svg" width="116" height="100">
+
 HopHop is a small systems programming language and reference compiler.
 
 The language is in the C/Go family: plain functions, structs, unions, enums, packages, imports, explicit pointer/reference types, slices, optionals, and compile-time constants. The implementation is still changing, but the repository has enough compiler, library, and test coverage to run real examples through checking, evaluation, C11 code generation, native compilation, and a direct Wasm backend.
