@@ -183,7 +183,7 @@ contexts:
         scope: support.function.builtin.slang
       - match: '\b(context)\b'
         scope: support.variable.builtin.slang
-      - match: '\b(true|false)\b'
+      - match: '\b(true|false|null)\b'
         scope: constant.language.boolean.slang
 
     operators:
