@@ -1,61 +1,106 @@
-# hophop (HopHop)
+# HopHop
 
-A small language with a C11 backend via `hop`.
+HopHop is a small systems programming language and reference compiler.
 
-Build with `./build.sh` (you'll need `clang` in `PATH`).
-For an evaluator-only binary without the C backend, use `./build.sh c_backend=0`.
+The language is in the C/Go family: plain functions, structs, unions, enums, packages, imports, explicit pointer/reference types, slices, optionals, and compile-time constants. The implementation is still changing, but the repository has enough compiler, library, and test coverage to run real examples through checking, evaluation, C11 code generation, native compilation, and a direct Wasm backend.
 
-Documentation home: `docs/index.md`
+The compiler is written in strict C11.
 
-## `hop` at a glance
+`hop` is a command-line program which loads files, resolves packages, formats source, checks programs, emits code, compiles native executables, and runs programs.
 
-After `./build.sh`, use `_build/macos-aarch64-debug/hop`.
-Run `_build/macos-aarch64-debug/hop --help` (or `_build/macos-aarch64-debug/hop`) for the full command reference.
+See [`docs/language.md`](docs/language.md) for the language specification
 
-- Lexing, AST dump, and single-file checking.
-- Package-level checking (`checkpkg`) with import loading.
-- Package code generation (`genpkg[:backend]`), including C header generation.
-- Formatting (`fmt`) with optional check mode.
-- Native compilation (`compile`) through the C11 backend.
-- Compile-and-run (`run`) for quick iteration.
-- `--platform` and `--cache-dir` options for target/runtime selection and build cache control.
+## Building hop
 
-In `c_backend=0` builds, `hop` still supports parse/check/fmt plus `run --platform cli-eval`,
-but rejects C-backend commands such as `compile` and `genpkg`.
+You need `clang`, `ninja`, and `python3` in `PATH`.
+
+```sh
+./build.sh
+```
+
+- Products are written to `_build/<sys>-<arch>-<mode>/`, i.e. `_build/macos-aarch64-debug/hop --help`
+- Run the test suite with `./build.sh test`
+- Build without the C backend `./build.sh c_backend=0`
+
 
 ## Example
 
-`hello.hop`:
-
 ```hop
-import "platform"
-
 fn twice(x i32) i32 {
     return x * 2
 }
 
 fn main() {
-    var s = "hello"
-    assert len(s) > 0
-    assert twice(21) == 42
-    platform.exit(0)
+    x := twice(21)
+    assert x == 42
+    print("hello world")
 }
 ```
 
-Typecheck and generate C header:
+Run with the evaluator:
 
 ```sh
-_build/macos-aarch64-debug/hop checkpkg hello.hop
-_build/macos-aarch64-debug/hop genpkg:c hello.hop hello.h
+$ _build/macos-aarch64-debug/hop run examples/hello.hop
+hello world
 ```
 
-Compile and run:
+Compile and run through the C11 backend:
 
 ```sh
-_build/macos-aarch64-debug/hop compile hello.hop -o hello
+$ _build/macos-aarch64-debug/hop compile examples/hello.hop -o hello
 ./hello
-
-_build/macos-aarch64-debug/hop run hello.hop
 ```
 
-For more programs, see `examples/`.
+Check (parse, resolve & typecheck) a single file:
+
+```sh
+$ _build/macos-aarch64-debug/hop check examples/basic.hop
+```
+
+Check a package:
+
+```sh
+$ _build/macos-aarch64-debug/hop checkpkg examples/packages/app
+$ _build/macos-aarch64-debug/hop checkpkg examples/hello.hop
+```
+
+Transpile to C:
+
+```sh
+$ _build/macos-aarch64-debug/hop genpkg:c examples/hello.hop hello.h
+```
+
+Compile and run through the C11 backend: (will use a C compiler in PATH)
+
+```sh
+$ _build/macos-aarch64-debug/hop compile examples/hello.hop -o hello
+./hello
+```
+
+See [`examples/`](examples) for more
+
+
+## `hop` executable
+
+See `hop --help` for usage.
+
+Backends:
+
+- `genpkg:c` emits C11 text.
+- `genpkg:wasm` emits a Wasm binary module.
+- `genpkg` chooses a backend from the selected platform.
+
+Platform targets:
+
+- `cli-libc`: native CLI program using the C backend and a small libc platform.
+- `cli-eval`: evaluator runtime used by default for `hop run`.
+- `wasm-min`: small Wasm host ABI used by tests and smoke runs.
+- `playbit`: Wasm target for Playbit.
+
+Examples:
+
+```sh
+_build/macos-aarch64-debug/hop mir examples/hello.hop
+_build/macos-aarch64-debug/hop genpkg:wasm --platform wasm-min examples/hello.hop hello.wasm
+_build/macos-aarch64-debug/hop run --platform wasm-min examples/hello.hop
+```
