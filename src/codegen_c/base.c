@@ -1299,6 +1299,24 @@ static const char* _Nullable ResolveTypeNameInScope(
         }
         ownerNodeId = FindEnclosingTypeDeclNode(c, ownerNodeId);
     }
+    {
+        SLBuf b = { 0 };
+        char* candidate;
+        b.arena = &c->arena;
+        if (BufAppendCStr(&b, "builtin__") != 0
+            || BufAppendSlice(&b, c->unit->source, start, end) != 0)
+        {
+            return NULL;
+        }
+        candidate = BufFinish(&b);
+        if (candidate == NULL) {
+            return NULL;
+        }
+        map = FindNameByCString(c, candidate);
+        if (map != NULL && IsTypeDeclKind(map->kind)) {
+            return map->cName;
+        }
+    }
     return resolved;
 }
 

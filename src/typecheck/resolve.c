@@ -537,6 +537,23 @@ int SLTCResolveTypeNode(SLTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                 }
             }
             {
+                int32_t resolvedType = SLTCFindBuiltinQualifiedNamedType(
+                    c, n->dataStart, n->dataEnd);
+                if (resolvedType >= 0) {
+                    if (SLAstFirstChild(c->ast, nodeId) >= 0) {
+                        return SLTCFailSpan(c, SLDiag_TYPE_MISMATCH, n->start, n->end);
+                    }
+                    *outType = resolvedType;
+                    if (*outType >= 0 && (uint32_t)*outType < c->typeLen
+                        && c->types[*outType].kind == SLTCType_ALIAS
+                        && SLTCResolveAliasTypeId(c, *outType) != 0)
+                    {
+                        return -1;
+                    }
+                    return 0;
+                }
+            }
+            {
                 int32_t varLikeNameIndex = -1;
                 int32_t varLikeNode = SLTCFindTopLevelVarLikeNode(
                     c, n->dataStart, n->dataEnd, &varLikeNameIndex);
@@ -3549,6 +3566,26 @@ void SLTCGatherCallCandidates(
     *outNameFound = 0;
     for (i = 0; i < c->funcLen && count < SLTC_MAX_CALL_CANDIDATES; i++) {
         if (SLTCFunctionNameEq(c, i, nameStart, nameEnd)) {
+            outCandidates[count++] = (int32_t)i;
+            *outNameFound = 1;
+        }
+    }
+    for (i = 0; i < c->funcLen && count < SLTC_MAX_CALL_CANDIDATES; i++) {
+        const SLTCFunction* fn = &c->funcs[i];
+        uint32_t            nameLen;
+        uint32_t            candLen;
+        if (nameEnd <= nameStart || nameEnd > c->src.len || fn->nameEnd <= fn->nameStart) {
+            continue;
+        }
+        nameLen = nameEnd - nameStart;
+        candLen = fn->nameEnd - fn->nameStart;
+        if (candLen != 9u + nameLen) {
+            continue;
+        }
+        if (memcmp(c->src.ptr + fn->nameStart, "builtin__", 9u) != 0) {
+            continue;
+        }
+        if (memcmp(c->src.ptr + fn->nameStart + 9u, c->src.ptr + nameStart, nameLen) == 0) {
             outCandidates[count++] = (int32_t)i;
             *outNameFound = 1;
         }

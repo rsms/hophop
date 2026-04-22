@@ -719,6 +719,7 @@ int32_t  SLTCFindNamedTypeIndexOwned(
 int32_t SLTCResolveTypeNamePath(
     SLTypeCheckCtx* c, uint32_t start, uint32_t end, int32_t ownerTypeId);
 int32_t SLTCFindNamedTypeByLiteral(SLTypeCheckCtx* c, const char* name);
+int32_t SLTCFindBuiltinQualifiedNamedType(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t SLTCFindBuiltinNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix);
 int32_t SLTCFindNamedTypeBySuffix(SLTypeCheckCtx* c, const char* suffix);
 int32_t SLTCFindReflectKindType(SLTypeCheckCtx* c);
@@ -731,8 +732,9 @@ int32_t            SLTCFindFmtValueType(SLTypeCheckCtx* c);
 int                SLTCTypeIsSourceLocation(SLTypeCheckCtx* c, int32_t typeId);
 int                SLTCTypeIsFmtValue(SLTypeCheckCtx* c, int32_t typeId);
 int32_t            SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
-int32_t            SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
-int32_t            SLTCFindPkgQualifiedFunctionValueIndex(
+int32_t SLTCFindBuiltinQualifiedFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
+int32_t SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end);
+int32_t SLTCFindPkgQualifiedFunctionValueIndex(
     SLTypeCheckCtx* c, uint32_t pkgStart, uint32_t pkgEnd, uint32_t nameStart, uint32_t nameEnd);
 int SLTCFunctionNameEq(const SLTypeCheckCtx* c, uint32_t funcIndex, uint32_t start, uint32_t end);
 int SLTCNameEqPkgPrefixedMethod(

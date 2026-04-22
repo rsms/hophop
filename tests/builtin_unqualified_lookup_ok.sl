@@ -1,0 +1,24 @@
+// Verifies public builtin symbols are available through unqualified lookup.
+const HERE SourceLocation = source_location_of(HERE)
+
+fn use_builtin_types(a *Allocator, l *Logger, c *Context, s SourceLocation) {
+	_ = a
+	_ = l
+	_ = c
+	_ = s
+}
+
+fn local_shadow(Logger int) int {
+	var SourceLocation = Logger
+	return SourceLocation
+}
+
+fn main() {
+	var a    *Allocator     = (null as rawptr) as *Allocator
+	var l    *Logger        = (null as rawptr) as *Logger
+	var c    *Context       = (null as rawptr) as *Context
+	var here SourceLocation = source_location_of(a)
+	use_builtin_types(a, l, c, s: here)
+	_ = local_shadow(1)
+	print("builtin print")
+}

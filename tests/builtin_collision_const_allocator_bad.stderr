@@ -1,0 +1,2 @@
+tests/builtin_collision_const_allocator_bad.sl:2:7: error: SL2001: duplicate definition 'Allocator'
+lib/builtin/types.sl:47:12: hint: SL2001: other declaration of 'Allocator'

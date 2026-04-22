@@ -1713,6 +1713,8 @@ static uint32_t FindSliceDot(const char* src, uint32_t start, uint32_t end) {
 
 const SLImportRef* _Nullable FindImportByAliasSlice(
     const SLPackage* pkg, const char* src, uint32_t aliasStart, uint32_t aliasEnd);
+static int FindImportIndexByPath(const SLPackage* pkg, const char* importPath);
+static int IsBuiltinPackage(const SLPackage* pkg);
 
 static int ValidatePubTypeNode(
     const SLPackage* pkg, const SLParsedFile* file, int32_t typeNodeId, const char* contextMsg) {
@@ -2043,11 +2045,226 @@ static int PackageHasAnyDeclName(const SLPackage* pkg, const char* name) {
     return 0;
 }
 
-static int PackageHasImportSymbolLocalName(const SLPackage* pkg, const char* name) {
+static void PackageDiagOffsetToLineCol(
+    const char* source, uint32_t offset, uint32_t* outLine, uint32_t* outCol) {
+    uint32_t line = 1;
+    uint32_t col = 1;
     uint32_t i;
+    if (source == NULL) {
+        *outLine = offset;
+        *outCol = offset;
+        return;
+    }
+    for (i = 0; source[i] != '\0' && i < offset; i++) {
+        if (source[i] == '\n') {
+            line++;
+            col = 1;
+        } else {
+            col++;
+        }
+    }
+    *outLine = line;
+    *outCol = col;
+}
+
+static int FindSymbolDeclNameSpan(
+    const SLPackage* pkg, const SLSymbolDecl* decl, uint32_t* outStart, uint32_t* outEnd) {
+    const SLParsedFile* file;
+    const SLAstNode*    n;
+    if (outStart != NULL) {
+        *outStart = 0;
+    }
+    if (outEnd != NULL) {
+        *outEnd = 0;
+    }
+    if (pkg == NULL || decl == NULL || decl->fileIndex >= pkg->fileLen || decl->nodeId < 0) {
+        return 0;
+    }
+    file = &pkg->files[decl->fileIndex];
+    if ((uint32_t)decl->nodeId >= file->ast.len) {
+        return 0;
+    }
+    n = &file->ast.nodes[decl->nodeId];
+    if ((n->kind == SLAst_VAR || n->kind == SLAst_CONST) && n->firstChild >= 0
+        && (uint32_t)n->firstChild < file->ast.len
+        && file->ast.nodes[n->firstChild].kind == SLAst_NAME_LIST)
+    {
+        int32_t child = file->ast.nodes[n->firstChild].firstChild;
+        while (child >= 0) {
+            const SLAstNode* nameNode;
+            if ((uint32_t)child >= file->ast.len) {
+                break;
+            }
+            nameNode = &file->ast.nodes[child];
+            if (strlen(decl->name) == (size_t)(nameNode->dataEnd - nameNode->dataStart)
+                && memcmp(
+                       decl->name,
+                       file->source + nameNode->dataStart,
+                       (size_t)(nameNode->dataEnd - nameNode->dataStart))
+                       == 0)
+            {
+                if (outStart != NULL) {
+                    *outStart = nameNode->dataStart;
+                }
+                if (outEnd != NULL) {
+                    *outEnd = nameNode->dataEnd;
+                }
+                return 1;
+            }
+            child = nameNode->nextSibling;
+        }
+    }
+    if (n->dataEnd > n->dataStart) {
+        if (outStart != NULL) {
+            *outStart = n->dataStart;
+        }
+        if (outEnd != NULL) {
+            *outEnd = n->dataEnd;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static int ErrorDuplicateBuiltinDecl(
+    const SLPackage*    pkg,
+    const SLSymbolDecl* decl,
+    const SLPackage*    builtinPkg,
+    const SLSymbolDecl* builtinDecl) {
+    const SLParsedFile* file;
+    const SLParsedFile* builtinFile = NULL;
+    uint32_t            start = 0;
+    uint32_t            end = 0;
+    uint32_t            line = 0;
+    uint32_t            col = 0;
+    if (pkg == NULL || decl == NULL || decl->fileIndex >= pkg->fileLen) {
+        return ErrorSimple("internal error: invalid declaration");
+    }
+    file = &pkg->files[decl->fileIndex];
+    if (!FindSymbolDeclNameSpan(pkg, decl, &start, &end)) {
+        if (decl->nodeId >= 0 && (uint32_t)decl->nodeId < file->ast.len) {
+            start = file->ast.nodes[decl->nodeId].start;
+            end = file->ast.nodes[decl->nodeId].end;
+        }
+    }
+    PackageDiagOffsetToLineCol(file->source, start, &line, &col);
+    fprintf(
+        stderr,
+        "%s:%u:%u: error: SL2001: duplicate definition '%s'\n",
+        DisplayPath(file->path),
+        line,
+        col,
+        decl->name);
+    if (builtinPkg != NULL && builtinDecl != NULL && builtinDecl->fileIndex < builtinPkg->fileLen) {
+        uint32_t otherStart = 0;
+        uint32_t otherEnd = 0;
+        uint32_t otherLine = 0;
+        uint32_t otherCol = 0;
+        builtinFile = &builtinPkg->files[builtinDecl->fileIndex];
+        if (FindSymbolDeclNameSpan(builtinPkg, builtinDecl, &otherStart, &otherEnd)) {
+            PackageDiagOffsetToLineCol(builtinFile->source, otherStart, &otherLine, &otherCol);
+            fprintf(
+                stderr,
+                "%s:%u:%u: hint: SL2001: other declaration of '%s'\n",
+                DisplayPath(builtinFile->path),
+                otherLine,
+                otherCol,
+                decl->name);
+            (void)otherEnd;
+        }
+    }
+    (void)end;
+    return -1;
+}
+
+static const SLSymbolDecl* _Nullable FindBuiltinPubDeclByName(
+    const SLPackage* builtinPkg, const char* name) {
+    uint32_t i;
+    if (builtinPkg == NULL || name == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < builtinPkg->pubDeclLen; i++) {
+        if (StrEq(builtinPkg->pubDecls[i].name, name)) {
+            return &builtinPkg->pubDecls[i];
+        }
+    }
+    return NULL;
+}
+
+static const SLSymbolDecl* _Nullable FindBuiltinNonFunctionPubDeclByName(
+    const SLPackage* builtinPkg, const char* name) {
+    uint32_t i;
+    if (builtinPkg == NULL || name == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < builtinPkg->pubDeclLen; i++) {
+        if (builtinPkg->pubDecls[i].kind != SLAst_FN && StrEq(builtinPkg->pubDecls[i].name, name)) {
+            return &builtinPkg->pubDecls[i];
+        }
+    }
+    return NULL;
+}
+
+static int ValidateBuiltinNameConflictsForDecls(
+    const SLPackage*    pkg,
+    const SLPackage*    builtinPkg,
+    const SLSymbolDecl* decls,
+    uint32_t            declLen) {
+    uint32_t i;
+    for (i = 0; i < declLen; i++) {
+        const SLSymbolDecl* decl = &decls[i];
+        const SLSymbolDecl* builtinDecl;
+        if (decl->kind == SLAst_FN) {
+            builtinDecl = FindBuiltinNonFunctionPubDeclByName(builtinPkg, decl->name);
+        } else {
+            builtinDecl = FindBuiltinPubDeclByName(builtinPkg, decl->name);
+        }
+        if (builtinDecl != NULL) {
+            return ErrorDuplicateBuiltinDecl(pkg, decl, builtinPkg, builtinDecl);
+        }
+    }
+    return 0;
+}
+
+static int ValidateBuiltinNameConflicts(SLPackage* pkg) {
+    int              builtinImportIndex;
+    const SLPackage* builtinPkg;
+    uint32_t         i;
+    if (IsBuiltinPackage(pkg)) {
+        return 0;
+    }
+    builtinImportIndex = FindImportIndexByPath(pkg, "builtin");
+    if (builtinImportIndex < 0) {
+        return 0;
+    }
+    builtinPkg = pkg->imports[(uint32_t)builtinImportIndex].target;
+    if (builtinPkg == NULL) {
+        return ErrorSimple("internal error: unresolved builtin import");
+    }
+    if (ValidateBuiltinNameConflictsForDecls(pkg, builtinPkg, pkg->decls, pkg->declLen) != 0
+        || ValidateBuiltinNameConflictsForDecls(pkg, builtinPkg, pkg->pubDecls, pkg->pubDeclLen)
+               != 0)
+    {
+        return -1;
+    }
+    for (i = 0; i < pkg->importLen; i++) {
+        const SLImportRef* imp = &pkg->imports[i];
+        if (imp->bindName != NULL && FindBuiltinPubDeclByName(builtinPkg, imp->bindName) != NULL) {
+            const SLParsedFile* file = &pkg->files[imp->fileIndex];
+            return Errorf(
+                file->path, file->source, imp->start, imp->end, "import binding conflict");
+        }
+    }
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        if (StrEq(pkg->importSymbols[i].localName, name)) {
-            return 1;
+        const SLImportSymbolRef* sym = &pkg->importSymbols[i];
+        const SLSymbolDecl*      builtinDecl = FindBuiltinPubDeclByName(builtinPkg, sym->localName);
+        if (builtinDecl == NULL) {
+            continue;
+        }
+        if (!(sym->isFunction && builtinDecl->kind == SLAst_FN)) {
+            const SLParsedFile* file = &pkg->files[sym->fileIndex];
+            return Errorf(
+                file->path, file->source, sym->start, sym->end, "import binding conflict");
         }
     }
     return 0;
@@ -2650,57 +2867,6 @@ static int EnsureImplicitReflectImport(SLPackage* pkg) {
     return 0;
 }
 
-static int EnsureImplicitBuiltinImportSymbols(SLPackage* pkg) {
-    int builtinImportIndex = FindImportIndexByPath(pkg, "builtin");
-    if (builtinImportIndex < 0) {
-        return 0;
-    }
-    {
-        const SLPackage* dep = pkg->imports[(uint32_t)builtinImportIndex].target;
-        uint32_t         i;
-        if (dep == NULL) {
-            return ErrorSimple("internal error: unresolved builtin import");
-        }
-        for (i = 0; i < dep->pubDeclLen; i++) {
-            uint32_t j;
-            int      alreadyMapped = 0;
-            if (PackageHasAnyDeclName(pkg, dep->pubDecls[i].name)
-                || PackageHasImportSymbolLocalName(pkg, dep->pubDecls[i].name))
-            {
-                continue;
-            }
-            for (j = 0; j < pkg->importSymbolLen; j++) {
-                const SLImportSymbolRef* sym = &pkg->importSymbols[j];
-                if (sym->importIndex == (uint32_t)builtinImportIndex
-                    && StrEq(sym->sourceName, dep->pubDecls[i].name)
-                    && StrEq(sym->localName, dep->pubDecls[i].name))
-                {
-                    alreadyMapped = 1;
-                    break;
-                }
-            }
-            if (!alreadyMapped) {
-                char* sourceName = SLCDupCStr(dep->pubDecls[i].name);
-                char* localName = SLCDupCStr(dep->pubDecls[i].name);
-                if (sourceName == NULL || localName == NULL) {
-                    free(sourceName);
-                    free(localName);
-                    return ErrorSimple("out of memory");
-                }
-                if (AddImportSymbolRef(
-                        pkg, (uint32_t)builtinImportIndex, sourceName, localName, 0, 0, 0)
-                    != 0)
-                {
-                    free(sourceName);
-                    free(localName);
-                    return ErrorSimple("out of memory");
-                }
-            }
-        }
-    }
-    return 0;
-}
-
 static int LoadSelectedPlatformTargetPackage(
     SLPackageLoader* loader, const char* startDir, SLPackage** outPkg) {
     char* importPath = NULL;
@@ -2832,13 +2998,13 @@ static int ResolvePackageImportsAndSelectors(SLPackageLoader* loader, SLPackage*
         free(resolvedDir);
     }
 
-    if (EnsureImplicitBuiltinImportSymbols(pkg) != 0) {
-        return -1;
-    }
     if (ValidateAndFinalizeImportSymbols(pkg) != 0) {
         return -1;
     }
     if (ValidateImportBindingConflicts(pkg) != 0) {
+        return -1;
+    }
+    if (ValidateBuiltinNameConflicts(pkg) != 0) {
         return -1;
     }
     if (ValidatePackageSelectors(pkg) != 0) {

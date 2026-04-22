@@ -735,6 +735,51 @@ int SLTCReadFunctionSig(
     return 0;
 }
 
+static int SLTCFunctionIdentityMatchesScratch(
+    SLTypeCheckCtx*     c,
+    const SLTCFunction* f,
+    uint32_t            paramCount,
+    int32_t             returnType,
+    int32_t             contextType,
+    int                 isVariadic) {
+    uint32_t p;
+    if (f->paramCount != paramCount || f->returnType != returnType
+        || (((f->flags & SLTCFunctionFlag_VARIADIC) != 0) != (isVariadic != 0))
+        || f->contextType != contextType)
+    {
+        return 0;
+    }
+    for (p = 0; p < paramCount; p++) {
+        if (c->funcParamTypes[f->paramTypeStart + p] != c->scratchParamTypes[p]) {
+            return 0;
+        }
+        if ((c->funcParamFlags[f->paramTypeStart + p] & SLTCFuncParamFlag_CONST)
+            != (c->scratchParamFlags[p] & SLTCFuncParamFlag_CONST))
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int SLTCFunctionNameIsBuiltinQualifiedSlice(
+    SLTypeCheckCtx* c, const SLTCFunction* f, uint32_t start, uint32_t end) {
+    uint32_t nameLen;
+    uint32_t candLen;
+    if (end <= start || end > c->src.len || f->nameEnd <= f->nameStart) {
+        return 0;
+    }
+    nameLen = end - start;
+    candLen = f->nameEnd - f->nameStart;
+    if (candLen != 9u + nameLen) {
+        return 0;
+    }
+    if (memcmp(c->src.ptr + f->nameStart, "builtin__", 9u) != 0) {
+        return 0;
+    }
+    return memcmp(c->src.ptr + f->nameStart + 9u, c->src.ptr + start, nameLen) == 0;
+}
+
 int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
     const SLAstNode* n = &c->ast->nodes[nodeId];
     int32_t          returnType = -1;
@@ -830,7 +875,6 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
         uint32_t i;
         for (i = 0; i < c->funcLen; i++) {
             SLTCFunction* f = &c->funcs[i];
-            uint32_t      p;
             if (!SLTCFunctionNameEq(c, i, n->dataStart, n->dataEnd)) {
                 continue;
             }
@@ -842,17 +886,9 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
             if (f->contextType != contextType) {
                 return SLTCFailSpan(c, SLDiag_CONTEXT_CLAUSE_MISMATCH, n->start, n->end);
             }
-            for (p = 0; p < paramCount; p++) {
-                if (c->funcParamTypes[f->paramTypeStart + p] != c->scratchParamTypes[p]) {
-                    break;
-                }
-                if ((c->funcParamFlags[f->paramTypeStart + p] & SLTCFuncParamFlag_CONST)
-                    != (c->scratchParamFlags[p] & SLTCFuncParamFlag_CONST))
-                {
-                    break;
-                }
-            }
-            if (p != paramCount) {
+            if (!SLTCFunctionIdentityMatchesScratch(
+                    c, f, paramCount, returnType, contextType, isVariadic))
+            {
                 continue;
             }
             if (hasBody) {
@@ -864,6 +900,22 @@ int SLTCCollectFunctionFromNode(SLTypeCheckCtx* c, int32_t nodeId) {
                 f->defNode = nodeId;
             }
             return 0;
+        }
+    }
+
+    {
+        uint32_t i;
+        for (i = 0; i < c->funcLen; i++) {
+            SLTCFunction* f = &c->funcs[i];
+            if (!SLTCFunctionNameIsBuiltinQualifiedSlice(c, f, n->dataStart, n->dataEnd)) {
+                continue;
+            }
+            if (SLTCFunctionIdentityMatchesScratch(
+                    c, f, paramCount, returnType, contextType, isVariadic))
+            {
+                return SLTCFailDuplicateDefinition(
+                    c, n->dataStart, n->dataEnd, f->nameStart, f->nameEnd);
+            }
         }
     }
 

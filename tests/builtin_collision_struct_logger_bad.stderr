@@ -1,0 +1,2 @@
+tests/builtin_collision_struct_logger_bad.sl:2:8: error: SL2001: duplicate definition 'Logger'
+lib/builtin/types.sl:40:12: hint: SL2001: other declaration of 'Logger'

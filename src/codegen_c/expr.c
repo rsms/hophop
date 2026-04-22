@@ -922,6 +922,39 @@ void GatherCallCandidatesBySlice(
             candidates[candidateLen++] = byName[j];
         }
     }
+    for (i = 0; i < c->fnSigLen && candidateLen < SLCCG_MAX_CALL_CANDIDATES; i++) {
+        const SLFnSig* sig = &c->fnSigs[i];
+        uint32_t       nameLen;
+        uint32_t       candLen;
+        if (nameEnd <= nameStart || sig->slName == NULL) {
+            continue;
+        }
+        nameLen = nameEnd - nameStart;
+        candLen = (uint32_t)StrLen(sig->slName);
+        if (candLen != 9u + nameLen) {
+            continue;
+        }
+        if (memcmp(sig->slName, "builtin__", 9u) != 0) {
+            continue;
+        }
+        if (memcmp(sig->slName + 9u, c->unit->source + nameStart, nameLen) == 0) {
+            if ((sig->flags & SLFnSigFlag_TEMPLATE_INSTANCE) != 0) {
+                hasTemplateInstance = 1;
+            }
+            candidates[candidateLen++] = sig;
+            nameFound = 1;
+        }
+    }
+    if (hasTemplateInstance) {
+        uint32_t out = 0;
+        for (i = 0; i < candidateLen; i++) {
+            if ((candidates[i]->flags & SLFnSigFlag_TEMPLATE_BASE) != 0) {
+                continue;
+            }
+            candidates[out++] = candidates[i];
+        }
+        candidateLen = out;
+    }
     for (i = 0; i < candidateLen; i++) {
         outCandidates[i] = candidates[i];
     }
@@ -7513,6 +7546,11 @@ int EmitResolvedCall(
     if (sig == NULL || binding == NULL) {
         return -1;
     }
+    if (StrEq(calleeName, "print")) {
+        calleeName = "builtin__print";
+    } else if (StrEq(calleeName, "source_location_of")) {
+        calleeName = "builtin__source_location_of";
+    }
     if (BufAppendCStr(&c->out, calleeName) != 0 || BufAppendChar(&c->out, '(') != 0) {
         return -1;
     }
@@ -9451,6 +9489,7 @@ int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
         const SLFnTypeAlias* typeAlias = NULL;
         uint32_t             argIndex = 0;
         int                  first = 1;
+        int                  emittedBuiltinPrintFallback = 0;
         if (callee != NULL && callee->kind == SLAst_IDENT) {
             sig = FindFnSigBySlice(c, callee->dataStart, callee->dataEnd);
         }
@@ -9486,10 +9525,28 @@ int EmitExpr_CALL(SLCBackendC* c, int32_t nodeId, const SLAstNode* n) {
                 }
             }
         }
-        if (EmitExpr(c, child) != 0 || BufAppendChar(&c->out, '(') != 0) {
+        if (callee != NULL && callee->kind == SLAst_IDENT
+            && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "print"))
+        {
+            if (BufAppendCStr(
+                    &c->out, "builtin__print((&((builtin__PrintContext){.log = (context->log)}))")
+                != 0)
+            {
+                return -1;
+            }
+            first = 0;
+            emittedBuiltinPrintFallback = 1;
+        } else if (
+            callee != NULL && callee->kind == SLAst_IDENT
+            && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "source_location_of"))
+        {
+            if (BufAppendCStr(&c->out, "builtin__source_location_of(") != 0) {
+                return -1;
+            }
+        } else if (EmitExpr(c, child) != 0 || BufAppendChar(&c->out, '(') != 0) {
             return -1;
         }
-        if (sig != NULL && sig->hasContext) {
+        if (!emittedBuiltinPrintFallback && sig != NULL && sig->hasContext) {
             if (EmitContextArgForSig(c, sig) != 0) {
                 return -1;
             }

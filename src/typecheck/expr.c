@@ -285,6 +285,9 @@ int SLTCResolveIdentifierExprType(
     }
     {
         int32_t fnIdx = SLTCFindFunctionIndex(c, nameStart, nameEnd);
+        if (fnIdx < 0) {
+            fnIdx = SLTCFindBuiltinQualifiedFunctionIndex(c, nameStart, nameEnd);
+        }
         if (fnIdx >= 0) {
             SLTCMarkFunctionUsed(c, fnIdx);
             *outType = c->funcs[fnIdx].funcTypeId;

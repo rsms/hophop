@@ -1,1 +1,1 @@
-tests/new_array_type_mismatch.sl:3:21: error: SL2004: type mismatch: cannot use expression of type *[i32 8] as *i32
+tests/new_array_type_mismatch.sl:3:18: error: SL2004: type mismatch: cannot use expression of type *[i32 8] as *i32

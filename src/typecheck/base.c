@@ -1448,6 +1448,16 @@ int32_t SLTCResolveTypeValueName(SLTypeCheckCtx* c, uint32_t start, uint32_t end
         }
         return typeId;
     }
+    typeId = SLTCFindBuiltinQualifiedNamedType(c, start, end);
+    if (typeId >= 0) {
+        int32_t namedIndex = SLTCFindNamedTypeIndexByTypeId(c, typeId);
+        if (namedIndex >= 0 && c->namedTypes[(uint32_t)namedIndex].templateArgCount > 0
+            && c->namedTypes[(uint32_t)namedIndex].templateRootNamedIndex < 0)
+        {
+            return -1;
+        }
+        return typeId;
+    }
     return -1;
 }
 
@@ -1463,6 +1473,33 @@ int32_t SLTCFindNamedTypeByLiteral(SLTypeCheckCtx* c, const char* name) {
             continue;
         }
         if (SLNameEqLiteral(c->src, t->nameStart, t->nameEnd, name)) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+int32_t SLTCFindBuiltinQualifiedNamedType(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
+    uint32_t i;
+    size_t   nameLen;
+    if (c == NULL || end <= start || end > c->src.len) {
+        return -1;
+    }
+    nameLen = (size_t)(end - start);
+    for (i = 0; i < c->typeLen; i++) {
+        const SLTCType* t = &c->types[i];
+        uint32_t        candLen;
+        if (t->kind != SLTCType_NAMED || t->nameEnd <= t->nameStart) {
+            continue;
+        }
+        candLen = t->nameEnd - t->nameStart;
+        if (candLen != 9u + (uint32_t)nameLen) {
+            continue;
+        }
+        if (memcmp(c->src.ptr + t->nameStart, "builtin__", 9u) != 0) {
+            continue;
+        }
+        if (memcmp(c->src.ptr + t->nameStart + 9u, c->src.ptr + start, nameLen) == 0) {
             return (int32_t)i;
         }
     }
@@ -1674,6 +1711,33 @@ int32_t SLTCFindFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
     return -1;
 }
 
+int32_t SLTCFindBuiltinQualifiedFunctionIndex(SLTypeCheckCtx* c, uint32_t start, uint32_t end) {
+    uint32_t i;
+    size_t   nameLen;
+    if (c == NULL || end <= start || end > c->src.len) {
+        return -1;
+    }
+    nameLen = (size_t)(end - start);
+    for (i = 0; i < c->funcLen; i++) {
+        const SLTCFunction* fn = &c->funcs[i];
+        uint32_t            candLen;
+        if (fn->nameEnd <= fn->nameStart) {
+            continue;
+        }
+        candLen = fn->nameEnd - fn->nameStart;
+        if (candLen != 9u + (uint32_t)nameLen) {
+            continue;
+        }
+        if (memcmp(c->src.ptr + fn->nameStart, "builtin__", 9u) != 0) {
+            continue;
+        }
+        if (memcmp(c->src.ptr + fn->nameStart + 9u, c->src.ptr + start, nameLen) == 0) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
 static int SLTCFunctionSupportsFunctionValue(const SLTypeCheckCtx* c, const SLTCFunction* fn) {
     if (c == NULL || fn == NULL) {
         return 0;
@@ -1702,6 +1766,13 @@ int32_t SLTCFindPlainFunctionValueIndex(SLTypeCheckCtx* c, uint32_t start, uint3
             return -1;
         }
         found = (int32_t)i;
+    }
+    if (found < 0) {
+        int32_t builtinFn = SLTCFindBuiltinQualifiedFunctionIndex(c, start, end);
+        if (builtinFn >= 0 && SLTCFunctionSupportsFunctionValue(c, &c->funcs[(uint32_t)builtinFn]))
+        {
+            found = builtinFn;
+        }
     }
     return found;
 }

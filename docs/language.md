@@ -329,6 +329,7 @@ fn f() {
 - [DECL-NS-002][Stable] Function overload sets live in value-name space.
 - [DECL-NS-003][Stable] Import bindings (`as` aliases and named imports) MUST NOT collide with any top-level declaration name in the importing package.
 - [DECL-NS-004][Stable] Duplicate top-level names are invalid within a namespace, except function overloading and declaration/definition pairing allowed by [DECL-FN-001].
+- [DECL-NS-005][Stable] User package top-level declarations and import bindings MUST NOT collide with public `builtin` package names. Function declarations collide with public builtin functions by the same function identity rules as ordinary overloaded functions.
 
 ## 5. Type System
 
@@ -340,7 +341,7 @@ fn f() {
   - floating point: `f32`, `f64`
   - constant numeric: `const_int`, `const_float`
 - [TYPE-BUILTIN-003][Stable] `int` and `uint` are pointer-sized signed/unsigned integers for the target.
-- [TYPE-BUILTIN-004][Stable] `Allocator` is a source-level type provided by builtin library declarations (for example `builtin.Allocator` and implicit builtin imports), not a language builtin type.
+- [TYPE-BUILTIN-004][Stable] `Allocator` is a source-level type provided by builtin library declarations (for example `builtin.Allocator` and unqualified builtin lookup), not a language builtin type.
 - [TYPE-BUILTIN-005][Stable] `rune` is a source-level alias type provided by builtin declarations and modeled as `type rune u32`.
 - [TYPE-CONSTR-001][Stable] Constructed types: pointers `*T`, references `&T`, arrays `[T N]`, slices `[T]`, dependent arrays `[T .n]`, optionals `?T`, function types, tuple types `(T1, T2, ...)`, anonymous aggregates.
 - [TYPE-CONSTR-002][Stable] `[T]` is unsized and MUST NOT be used by value.
