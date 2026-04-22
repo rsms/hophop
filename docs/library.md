@@ -43,6 +43,13 @@ Notes:
 `str` is a specialized string type.
 Conceptually, it is a specialized form of `[u8]` where the content is UTF-8 data.
 
+```sl
+struct str {
+    ptr *u8
+    len int
+}
+```
+
 Properties:
 - `len(s)` is byte length.
 - `cstr(s)` exposes a read-only reference to UTF-8 bytes for C interop.
@@ -62,6 +69,14 @@ Rune literals (`'a'`, `'\n'`, `'本'`) produce `rune` values.
 ### `__sl_MemAllocator`
 
 `__sl_MemAllocator` is the low-level allocator capability used by `new`.
+The allocator callback uses signed size and alignment values:
+
+```sl
+struct Allocator {
+    impl fn(*Allocator, rawptr, int, int, *int, u32) rawptr
+}
+```
+
 Allocator implementations must zero newly allocated bytes:
 - fresh allocations are fully zeroed
 - resized allocations must zero bytes in `[oldSize, newSize)`
@@ -74,7 +89,7 @@ For normal code, use `Allocator` (a nominal alias of `__sl_MemAllocator`).
 ### `len`
 
 ```sl
-fn len(x Seq) uint
+fn len(x Seq) int
 ```
 
 `len` returns the logical length of a sequence.
@@ -92,7 +107,7 @@ fn cstr(s str) *u8
 ### `copy`
 
 ```sl
-fn copy(dst *[anytype], src &[anytype]) uint
+fn copy(dst *[anytype], src &[anytype]) int
 ```
 
 `copy` copies elements from `src` into `dst` and returns the number of copied elements.
@@ -174,7 +189,7 @@ import "str" { format }
 Signature:
 
 ```sl
-fn format(buf *[u8], const format &str, args ...anytype) uint
+fn format(buf *[u8], const format &str, args ...anytype) int
 ```
 
 Behavior:
@@ -202,8 +217,8 @@ It is implemented by calling `context.log.handler(&context.log, message, LogLeve
 ### `sizeof`
 
 ```sl
-fn sizeof(type T) uint
-fn sizeof(expr E) uint
+fn sizeof(type T) int
+fn sizeof(expr E) int
 ```
 
 `sizeof` returns the size in bytes needed to represent a type or expression.
@@ -348,6 +363,6 @@ Common SL <-> C type correspondences:
 - `&T` <-> `const T*`
 - `*T` <-> `T*`
 - `*[T N]` <-> `T*`
-- `*[T]` <-> `struct { T* ptr; size_t len; }`
+- `*[T]` <-> `struct { T* ptr; __sl_int len; }`
 - `&[T N]` <-> `const T*`
-- `&[T]` <-> `struct { const T* ptr; size_t len; }`
+- `&[T]` <-> `struct { const T* ptr; __sl_int len; }`

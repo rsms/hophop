@@ -21,7 +21,7 @@ fn main() {
 		weighted += item * i as i32
 	}
 
-	var n uint
+	var n int
 	for _ in ro {
 		n += 1
 	}

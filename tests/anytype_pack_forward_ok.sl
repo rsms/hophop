@@ -1,9 +1,9 @@
 // Verifies anytype pack forward is accepted.
-fn sink(args ...anytype) uint {
+fn sink(args ...anytype) int {
 	return len(args)
 }
 
-fn forward(args ...anytype) uint {
+fn forward(args ...anytype) int {
 	return sink(args...)
 }
 

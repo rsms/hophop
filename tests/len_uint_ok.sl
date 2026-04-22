@@ -1,6 +1,6 @@
-// Verifies len uint is accepted.
+// Verifies len int is accepted.
 fn main() {
 	var xs [i32 3]
-	var n  uint = len(xs)
+	var n  int = len(xs)
 	assert n == 3
 }

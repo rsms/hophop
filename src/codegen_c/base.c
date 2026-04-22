@@ -3664,7 +3664,7 @@ int ResolveCoreStrFieldBySlice(
         memset(&ptrField, 0, sizeof(ptrField));
         lenField.ownerType = "builtin__str";
         lenField.fieldName = "len";
-        TypeRefSetScalar(&lenField.type, "__sl_uint");
+        TypeRefSetScalar(&lenField.type, "__sl_int");
 
         ptrField.ownerType = "builtin__str";
         ptrField.fieldName = "ptr";

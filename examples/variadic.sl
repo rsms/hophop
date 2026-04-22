@@ -1,7 +1,7 @@
 // variadic functions: fixed + variadic parameters and forwarding with spread
 fn sum(nums ...i32) i32 {
 	var total i32 = 0
-	for var i uint = 0; i < len(nums); i += 1 {
+	for var i int = 0; i < len(nums); i += 1 {
 		total += nums[i]
 	}
 	return total

@@ -2,12 +2,12 @@ import "str" { format }
 
 const SHOWCASE_FORMAT &str = "user={s}, score={i}, ratio={f}, braces={{ok}}"
 
-fn out_eq(out *[u8], n uint, want &str) bool {
+fn out_eq(out *[u8], n int, want &str) bool {
 	if n != len(want) {
 		return false
 	}
 	var want_bytes &[u8] = want
-	for var i uint = 0; i < n; i += 1 {
+	for var i int = 0; i < n; i += 1 {
 		if out[i] != want_bytes[i] {
 			return false
 		}
@@ -18,7 +18,7 @@ fn out_eq(out *[u8], n uint, want &str) bool {
 fn main() {
 	// Placeholder support: {s}, {i}, {f}. Escape braces with {{ and }}.
 	var out [u8 128]
-	var n   uint = format(buf: out, SHOWCASE_FORMAT, "Ada", 42, 0.625)
+	var n   int = format(buf: out, SHOWCASE_FORMAT, "Ada", 42, 0.625)
 	assert out_eq(out, n, want: "user=Ada, score=42, ratio=0.625, braces={ok}")
 	assert out[n] == 0
 
@@ -26,7 +26,7 @@ fn main() {
 	// - return value is full logical payload length
 	// - if len(buf) > 0, write at most len(buf)-1 payload bytes and trailing NUL
 	var tiny [u8 8]
-	var tn   uint = format(buf: tiny, "abcdefghi")
+	var tn   int = format(buf: tiny, "abcdefghi")
 	assert tn == 9
 	assert tiny[0] == 'a'
 	assert tiny[1] == 'b'
@@ -39,6 +39,6 @@ fn main() {
 
 	// Zero-capacity buffer: writes nothing, still returns full logical length.
 	var zero [u8 0]
-	var zn   uint = format(buf: zero, "abcdef")
+	var zn   int = format(buf: zero, "abcdef")
 	assert zn == 6
 }

@@ -98,7 +98,7 @@ struct KVTable {
 
 struct KVIterator {
 	entries *[KVEntry]
-	index   uint
+	index   int
 }
 
 fn __iterator(table *KVTable) KVIterator {
@@ -132,8 +132,8 @@ fn next_key_and_value(it *KVIterator) ?(&str, *i32) {
 	return entry.key, &entry.value
 }
 
-fn sum_key_lengths(table *KVTable) uint {
-	var sum uint
+fn sum_key_lengths(table *KVTable) int {
+	var sum int
 	for key, _ in table {
 		sum += len(key)
 	}

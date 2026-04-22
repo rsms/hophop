@@ -1,6 +1,6 @@
 pub struct str {
 	ptr *u8
-	len uint
+	len int
 }
 
 pub type rune u32
@@ -37,7 +37,7 @@ pub struct Logger {
 }
 
 pub struct Allocator {
-	impl fn(*Allocator, rawptr, uint, uint, *uint, u32) rawptr
+	impl fn(*Allocator, rawptr, int, int, *int, u32) rawptr
 }
 
 pub struct Context {

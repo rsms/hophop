@@ -1703,7 +1703,7 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             int32_t strArgNode = SLAstNextSibling(c->ast, calleeNode);
             int32_t strArgType;
             int32_t nextArgNode;
-            int32_t uintType;
+            int32_t intType;
             if (strArgNode < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
             }
@@ -1717,11 +1717,11 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             if (nextArgNode >= 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
             }
-            uintType = SLTCFindBuiltinByKind(c, SLBuiltin_USIZE);
-            if (uintType < 0) {
+            intType = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+            if (intType < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
             }
-            *outType = uintType;
+            *outType = intType;
             return 0;
         }
         if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "copy")) {
@@ -1732,7 +1732,7 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             int32_t         srcType;
             int32_t         dstElemResolved;
             int32_t         u8Type;
-            int32_t         uintType;
+            int32_t         intType;
             SLTCCopySeqInfo dstInfo;
             SLTCCopySeqInfo srcInfo;
             if (dstNode < 0 || srcNode < 0 || extraNode >= 0) {
@@ -1766,11 +1766,11 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             } else if (!SLTCCanAssign(c, dstInfo.elemType, srcInfo.elemType)) {
                 return SLTCFailNode(c, srcNode, SLDiag_TYPE_MISMATCH);
             }
-            uintType = SLTCFindBuiltinByKind(c, SLBuiltin_USIZE);
-            if (uintType < 0) {
+            intType = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+            if (intType < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
             }
-            *outType = uintType;
+            *outType = intType;
             return 0;
         }
         if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "cstr")) {
@@ -1860,7 +1860,7 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             int32_t        fmtType;
             int32_t        wantStrType;
             int32_t        strPtrType;
-            int32_t        uintType;
+            int32_t        intType;
             int32_t        argNodes[SLTC_MAX_CALL_ARGS];
             int32_t        argTypes[SLTC_MAX_CALL_ARGS];
             uint32_t       argCount = 0;
@@ -1985,11 +1985,11 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
                     }
                 }
             }
-            uintType = SLTCFindBuiltinByKind(c, SLBuiltin_USIZE);
-            if (uintType < 0) {
+            intType = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+            if (intType < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
             }
-            *outType = uintType;
+            *outType = intType;
             return 0;
         }
         if (SLNameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "free")) {
@@ -2251,15 +2251,15 @@ int SLTCTypeExpr_CALL(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, int
             && SLTCTypeSupportsLen(c, recvType))
         {
             int32_t nextArgNode = SLAstNextSibling(c->ast, calleeNode);
-            int32_t uintType;
+            int32_t intType;
             if (nextArgNode >= 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_ARITY_MISMATCH);
             }
-            uintType = SLTCFindBuiltinByKind(c, SLBuiltin_USIZE);
-            if (uintType < 0) {
+            intType = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+            if (intType < 0) {
                 return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
             }
-            *outType = uintType;
+            *outType = intType;
             return 0;
         }
         if (SLTCFieldLookup(c, recvType, callee->dataStart, callee->dataEnd, &fieldType, NULL) == 0)
@@ -2715,7 +2715,10 @@ int SLTCTypeExpr_SIZEOF(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, i
             if (SLTCTypeContainsVarSizeByValue(c, innerType)) {
                 return SLTCFailNode(c, innerNode, SLDiag_TYPE_MISMATCH);
             }
-            *outType = c->typeUsize;
+            *outType = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+            if (*outType < 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+            }
             return 0;
         }
         if (c->ast->nodes[innerNode].kind == SLAst_TYPE_NAME) {
@@ -2725,7 +2728,10 @@ int SLTCTypeExpr_SIZEOF(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, i
                 if (c->diag != NULL) {
                     *c->diag = (SLDiag){ 0 };
                 }
-                *outType = c->typeUsize;
+                *outType = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+                if (*outType < 0) {
+                    return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+                }
                 return 0;
             }
             {
@@ -2735,7 +2741,10 @@ int SLTCTypeExpr_SIZEOF(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, i
                     if (c->diag != NULL) {
                         *c->diag = (SLDiag){ 0 };
                     }
-                    *outType = c->typeUsize;
+                    *outType = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+                    if (*outType < 0) {
+                        return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+                    }
                     return 0;
                 }
             }
@@ -2745,7 +2754,10 @@ int SLTCTypeExpr_SIZEOF(SLTypeCheckCtx* c, int32_t nodeId, const SLAstNode* n, i
             return -1;
         }
     }
-    *outType = c->typeUsize;
+    *outType = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+    if (*outType < 0) {
+        return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+    }
     return 0;
 }
 

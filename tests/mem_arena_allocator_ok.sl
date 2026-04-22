@@ -1,7 +1,7 @@
 // Verifies mem arena allocator is accepted.
 import "mem"
 
-fn init(self *mem.ArenaAllocator, source *Allocator, block_size uint) {
+fn init(self *mem.ArenaAllocator, source *Allocator, block_size int) {
 	mem.init(self, source, block_size)
 }
 

@@ -1,7 +1,7 @@
 // Verifies len inference from len is accepted.
-fn payload_cap(buf *[u8]) uint {
-	var cap    = len(buf)
-	var p uint = 0
+fn payload_cap(buf *[u8]) int {
+	var cap   = len(buf)
+	var p int = 0
 	if cap > 0 {
 		p = cap - 1
 	}

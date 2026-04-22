@@ -4,7 +4,7 @@ pub fn Main(x i32) i32
 fn Main(x i32) i32 {
 	var a &str = "hello"
 	var b &str = "hello"
-	var n uint = len(a)
+	var n int  = len(a)
 
 	cstr(b)
 	assert x >= 0

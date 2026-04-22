@@ -1,6 +1,6 @@
 // Verifies unknown context field is rejected.
 struct Allocator {
-	impl fn(*Allocator, rawptr, uint, uint, *uint, u32) rawptr
+	impl fn(*Allocator, rawptr, int, int, *int, u32) rawptr
 }
 
 struct Ctx {

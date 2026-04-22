@@ -818,7 +818,10 @@ static int SLTCTypeForInStmt(
         }
 
         if (hasKey) {
-            keyLocalType = c->typeUsize;
+            keyLocalType = SLTCFindBuiltinByKind(c, SLBuiltin_ISIZE);
+            if (keyLocalType < 0) {
+                return SLTCFailNode(c, nodeId, SLDiag_UNKNOWN_TYPE);
+            }
         }
         if (!valueDiscard) {
             const SLAstNode* valueName = &c->ast->nodes[valueNode];

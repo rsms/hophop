@@ -1,25 +1,25 @@
-fn fmt_write_byte(buf *[u8], payloadCap, oi uint, byte u8) uint {
+fn fmt_write_byte(buf *[u8], payloadCap, oi int, byte u8) int {
 	if oi < payloadCap {
 		buf[oi] = byte
 	}
 	return oi + 1
 }
 
-fn fmt_write_text(buf *[u8], payloadCap, oi uint, text &str) uint {
+fn fmt_write_text(buf *[u8], payloadCap, oi int, text &str) int {
 	for byte in text {
 		oi = fmt_write_byte(buf, payloadCap, oi, byte)
 	}
 	return oi
 }
 
-fn fmt_write_u64(buf *[u8], payloadCap, oi uint, x u64) uint {
+fn fmt_write_u64(buf *[u8], payloadCap, oi int, x u64) int {
 	var v = x
 	if v == 0 {
 		return fmt_write_byte(buf, payloadCap, oi, byte: '0')
 	}
 
 	var digits [u8 32]
-	var n      uint = 0
+	var n      int = 0
 	for v > 0 {
 		var d = v % 10
 		digits[n] = '0' + d as u8
@@ -33,7 +33,7 @@ fn fmt_write_u64(buf *[u8], payloadCap, oi uint, x u64) uint {
 	return oi
 }
 
-fn fmt_write_i64(buf *[u8], payloadCap, oi uint, x i64) uint {
+fn fmt_write_i64(buf *[u8], payloadCap, oi int, x i64) int {
 	if x < 0 {
 		oi = fmt_write_byte(buf, payloadCap, oi, byte: '-')
 		if x == -9223372036854775808 {
@@ -44,7 +44,7 @@ fn fmt_write_i64(buf *[u8], payloadCap, oi uint, x i64) uint {
 	return fmt_write_u64(buf, payloadCap, oi, x: x as u64)
 }
 
-fn fmt_write_f64(buf *[u8], payloadCap, oi uint, x f64) uint {
+fn fmt_write_f64(buf *[u8], payloadCap, oi int, x f64) int {
 	var v = x
 	if v < 0 {
 		oi = fmt_write_byte(buf, payloadCap, oi, byte: '-')
@@ -60,7 +60,7 @@ fn fmt_write_f64(buf *[u8], payloadCap, oi uint, x f64) uint {
 	}
 
 	var digits [u8 12]
-	var n      uint = 0
+	var n      int = 0
 	for n < 6 {
 		frac *= 10
 		var d = frac as i64
@@ -86,7 +86,7 @@ fn fmt_write_f64(buf *[u8], payloadCap, oi uint, x f64) uint {
 	return oi
 }
 
-fn fmt_write_i_any(buf *[u8], payloadCap, oi uint, v anytype) uint {
+fn fmt_write_i_any(buf *[u8], payloadCap, oi int, v anytype) int {
 	const t = typeof(v)
 	if t == i8 || t == i16 || t == i32 || t == i64 || t == int {
 		return fmt_write_i64(buf, payloadCap, oi, x: v as i64)
@@ -98,7 +98,7 @@ fn fmt_write_i_any(buf *[u8], payloadCap, oi uint, v anytype) uint {
 	return 0
 }
 
-fn fmt_write_f_any(buf *[u8], payloadCap, oi uint, v anytype) uint {
+fn fmt_write_f_any(buf *[u8], payloadCap, oi int, v anytype) int {
 	const t = typeof(v)
 	if t == f32 || t == f64 {
 		return fmt_write_f64(buf, payloadCap, oi, x: v as f64)
@@ -108,7 +108,7 @@ fn fmt_write_f_any(buf *[u8], payloadCap, oi uint, v anytype) uint {
 	return 0
 }
 
-fn fmt_write_s_any(buf *[u8], payloadCap, oi uint, v anytype) uint {
+fn fmt_write_s_any(buf *[u8], payloadCap, oi int, v anytype) int {
 	const t = typeof(v)
 	if t == typeof("" as &str) {
 		var text = v as &str
@@ -121,12 +121,12 @@ fn fmt_write_s_any(buf *[u8], payloadCap, oi uint, v anytype) uint {
 	return 0
 }
 
-pub fn format(buf *[u8], const fmt &str, args ...anytype) uint {
+pub fn format(buf *[u8], const fmt &str, args ...anytype) int {
 	const {
 		var bs &[u8] = fmt
-		var ai uint  = 0
+		var ai int   = 0
 
-		for var i uint = 0; i < len(bs); i += 1 {
+		for var i int = 0; i < len(bs); i += 1 {
 			var byte u8 = bs[i]
 			if byte == '{' {
 				if i + 1 < len(bs) && bs[i + 1] == '{' {
@@ -173,17 +173,17 @@ pub fn format(buf *[u8], const fmt &str, args ...anytype) uint {
 		assert ai == len(args)
 	}
 
-	var cap             = len(buf)
-	var payloadCap uint = 0
+	var cap            = len(buf)
+	var payloadCap int = 0
 	if cap > 0 {
 		payloadCap = cap - 1
 	}
 
 	var bs &[u8] = fmt
-	var ai uint  = 0
-	var oi uint  = 0
+	var ai int   = 0
+	var oi int   = 0
 
-	for var i uint = 0; i < len(bs); i += 1 {
+	for var i int = 0; i < len(bs); i += 1 {
 		var byte = bs[i]
 		if byte == '{' {
 			i += 1

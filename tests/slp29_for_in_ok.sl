@@ -15,8 +15,8 @@ fn weighted(items &[i32]) i32 {
 	return acc
 }
 
-fn count(items &[i32]) uint {
-	var n uint
+fn count(items &[i32]) int {
+	var n int
 	for i, _ in items {
 		n = i + 1
 	}

@@ -1,7 +1,7 @@
 // Verifies const block anytype pack typeof out-of-bounds is rejected.
 fn demo(const format &str, args ...anytype) {
 	const {
-		for var i uint = 0; i < len(format); i += 1 {
+		for var i int = 0; i < len(format); i += 1 {
 			if format[i] == 'x' {
 				const t type = typeof(args[i])
 				assert t == t

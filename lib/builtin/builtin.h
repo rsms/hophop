@@ -42,12 +42,12 @@ typedef __sl_u64  __sl_type;
 
 typedef struct {
     const void* ptr;
-    __sl_uint   len;
+    __sl_int    len;
 } __sl_slice_ro;
 
 typedef struct {
-    void*     ptr;
-    __sl_uint len;
+    void*    ptr;
+    __sl_int len;
 } __sl_slice_mut;
 
 // BEGIN generated code
@@ -61,8 +61,8 @@ typedef struct __sl_Context      __sl_Context;
 typedef struct __sl_PrintContext __sl_PrintContext;
 
 struct __sl_str {
-    __sl_u8*  ptr;
-    __sl_uint len;
+    __sl_u8* ptr;
+    __sl_int len;
 };
 
 typedef __sl_u32 __sl_rune;
@@ -102,9 +102,9 @@ struct __sl_Allocator {
     void* (*impl)(
         __sl_Allocator* arg0,
         void*           arg1,
-        __sl_uint       arg2,
-        __sl_uint       arg3,
-        __sl_uint*      arg4,
+        __sl_int        arg2,
+        __sl_int        arg3,
+        __sl_int*       arg4,
         __sl_u32        arg5);
 };
 
@@ -126,7 +126,7 @@ __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 li
 #define __sl_strlit(strlit)                                \
     (&(const __sl_str){                                    \
         .ptr = (__sl_u8*)(uintptr_t)(const void*)(strlit), \
-        .len = (__sl_uint)(sizeof(strlit) - 1u) })
+        .len = (__sl_int)(sizeof(strlit) - 1u) })
 #define __sl_strlitp(strlit) __sl_strlit(strlit)
 
 #define __sl_assert(expr)                                                     \
@@ -143,7 +143,7 @@ __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 li
         }                                                               \
     } while (0)
 
-static inline __sl_uint __sl_len(__sl_str s) {
+static inline __sl_int __sl_len(__sl_str s) {
     return s.len;
 }
 
@@ -151,12 +151,25 @@ static inline const __sl_u8* __sl_cstr(__sl_str s) {
     return s.ptr;
 }
 
-static inline __sl_uint __sl_align_up(__sl_uint x, __sl_uint a) {
-    return (x + (a - 1u)) & ~(a - 1u);
+static inline __sl_int __sl_align_up(__sl_int x, __sl_int a) {
+    if __sl_unlikely (x < 0 || a <= 0 || (a & (a - 1)) != 0) {
+        __sl_panic(__sl_strlitp("invalid size or alignment"), "", 0);
+    }
+    return (x + (a - 1)) & ~(a - 1);
 }
 
-static inline __sl_uint __sl_packed_str_size(const __sl_str* s) {
-    return (__sl_uint)(sizeof(__sl_str) + (__sl_uint)s->len + 1u);
+static inline __sl_uint __sl_checked_uint_size(__sl_int n) {
+    if __sl_unlikely (n < 0) {
+        __sl_panic(__sl_strlitp("negative size"), "", 0);
+    }
+    return (__sl_uint)n;
+}
+
+static inline __sl_int __sl_packed_str_size(const __sl_str* s) {
+    if __sl_unlikely (s == NULL || s->len < 0) {
+        __sl_panic(__sl_strlitp("invalid string length"), "", 0);
+    }
+    return (__sl_int)sizeof(__sl_str) + s->len + 1;
 }
 
 int  __sl_memcmp(const void* a, const void* b, __sl_uint n);
@@ -176,20 +189,21 @@ void __sl_memmove(void* dst, const void* src, __sl_uint n);
 // #define memset  __builtin_memset
 // #define memset  __builtin_memset_inline
 
-__sl_uint __sl_copy(
-    void* dst, __sl_uint dst_len, const void* src, __sl_uint src_len, __sl_uint elem_size);
+__sl_int __sl_copy(
+    void* dst, __sl_int dst_len, const void* src, __sl_int src_len, __sl_int elem_size);
 
 static inline __sl_bool __sl_mem_equal(const void* a, const void* b, __sl_uint n) {
     return n == 0u || __sl_memcmp(a, b, n) == 0;
 }
 
-__sl_int __sl_mem_order(const void* a, __sl_uint a_len, const void* b, __sl_uint b_len);
+__sl_int __sl_mem_order(const void* a, __sl_int a_len, const void* b, __sl_int b_len);
 
 static inline __sl_bool __sl_str_equal(__sl_str a, __sl_str b) {
-    __sl_uint a_len = __sl_len(a);
-    __sl_uint b_len = __sl_len(b);
+    __sl_int a_len = __sl_len(a);
+    __sl_int b_len = __sl_len(b);
     return a_len == b_len
-        && __sl_mem_equal((const void*)__sl_cstr(a), (const void*)__sl_cstr(b), a_len);
+        && __sl_mem_equal(
+               (const void*)__sl_cstr(a), (const void*)__sl_cstr(b), __sl_checked_uint_size(a_len));
 }
 
 static inline __sl_int __sl_str_order(__sl_str a, __sl_str b) {
@@ -197,13 +211,13 @@ static inline __sl_int __sl_str_order(__sl_str a, __sl_str b) {
         (const void*)__sl_cstr(a), __sl_len(a), (const void*)__sl_cstr(b), __sl_len(b));
 }
 
-static inline __sl_bool __sl_slice_equal_ro(__sl_slice_ro a, __sl_slice_ro b, __sl_uint elem_size) {
-    __sl_uint a_bytes = a.len * elem_size;
-    __sl_uint b_bytes = b.len * elem_size;
+static inline __sl_bool __sl_slice_equal_ro(__sl_slice_ro a, __sl_slice_ro b, __sl_int elem_size) {
+    __sl_uint a_bytes = __sl_checked_uint_size(a.len * elem_size);
+    __sl_uint b_bytes = __sl_checked_uint_size(b.len * elem_size);
     return a.len == b.len && __sl_mem_equal(a.ptr, b.ptr, a_bytes < b_bytes ? a_bytes : b_bytes);
 }
 
-static inline __sl_int __sl_slice_order_ro(__sl_slice_ro a, __sl_slice_ro b, __sl_uint elem_size) {
+static inline __sl_int __sl_slice_order_ro(__sl_slice_ro a, __sl_slice_ro b, __sl_int elem_size) {
     return __sl_mem_order(a.ptr, a.len * elem_size, b.ptr, b.len * elem_size);
 }
 
@@ -228,10 +242,10 @@ static inline void* __sl_unwrap1(const char* file, __sl_u32 line, const void* p)
 
 #define __sl_unwrap(p) __sl_unwrap1(__FILE__, __LINE__, (p))
 
-static inline void* __sl_new(__sl_Allocator* ma, __sl_uint size, __sl_uint align) {
-    __sl_uint newSize = size;
+static inline void* __sl_new(__sl_Allocator* ma, __sl_int size, __sl_int align) {
+    __sl_int newSize = size;
 
-    if __sl_unlikely (align == 0 || (align & (align - 1u)) != 0) {
+    if __sl_unlikely (size < 0 || align <= 0 || (align & (align - 1)) != 0) {
         __sl_panic(__sl_strlitp("invalid alignment"), "", 0);
     }
 
@@ -242,8 +256,8 @@ static inline void* __sl_new(__sl_Allocator* ma, __sl_uint size, __sl_uint align
     return ma->impl(ma, NULL, align, 0, &newSize, 0);
 }
 
-static inline void __sl_free(__sl_Allocator* ma, void* p, __sl_uint curSize, __sl_uint align) {
-    __sl_uint newSize = 0;
+static inline void __sl_free(__sl_Allocator* ma, void* p, __sl_int curSize, __sl_int align) {
+    __sl_int newSize = 0;
     if (p == NULL || ma == NULL || ma->impl == NULL) {
         return;
     }
@@ -251,18 +265,21 @@ static inline void __sl_free(__sl_Allocator* ma, void* p, __sl_uint curSize, __s
 }
 
 static inline void* __sl_new_array(
-    __sl_Allocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
+    __sl_Allocator* ma, __sl_int elemSize, __sl_int elemAlign, __sl_int count) {
+    if __sl_unlikely (elemSize < 0 || count < 0) {
+        __sl_panic(__sl_strlitp("negative size"), "", 0);
+    }
     return __sl_new(ma, elemSize * count, elemAlign);
 }
 
 static inline __sl_slice_ro __sl_new_array_slice_ro(
-    __sl_Allocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
+    __sl_Allocator* ma, __sl_int elemSize, __sl_int elemAlign, __sl_int count) {
     void* p = __sl_new_array(ma, elemSize, elemAlign, count);
-    return (__sl_slice_ro){ .ptr = p, .len = p != NULL ? count : 0u };
+    return (__sl_slice_ro){ .ptr = p, .len = p != NULL ? count : 0 };
 }
 
 static inline __sl_slice_mut __sl_new_array_slice_mut(
-    __sl_Allocator* ma, __sl_uint elemSize, __sl_uint elemAlign, __sl_uint count) {
+    __sl_Allocator* ma, __sl_int elemSize, __sl_int elemAlign, __sl_int count) {
     void* p = __sl_new_array(ma, elemSize, elemAlign, count);
-    return (__sl_slice_mut){ .ptr = p, .len = p != NULL ? count : 0u };
+    return (__sl_slice_mut){ .ptr = p, .len = p != NULL ? count : 0 };
 }

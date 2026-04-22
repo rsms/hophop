@@ -1,1 +1,1 @@
-tests/len_u32_mismatch_bad.sl:4:15: error: SL2004: type mismatch: cannot use expression of type uint as u32
+tests/len_u32_mismatch_bad.sl:4:15: error: SL2004: type mismatch: cannot use expression of type int as u32

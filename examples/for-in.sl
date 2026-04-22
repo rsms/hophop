@@ -33,13 +33,13 @@ fn main() {
 	}
 
 	// Key + discarded value.
-	var index_sum uint
+	var index_sum int
 	for i, _ in ro {
 		index_sum += i
 	}
 
 	// Value discard.
-	var count uint
+	var count int
 	for _ in ro {
 		count += 1
 	}

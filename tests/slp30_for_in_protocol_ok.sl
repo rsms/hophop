@@ -75,7 +75,7 @@ struct Table {
 
 struct TableIterator {
 	entries *[Entry]
-	index   uint
+	index   int
 	pair    PairKV
 }
 
@@ -110,7 +110,7 @@ fn main() {
 	entries[1] = Entry{ key: "bbb", value: 3 }
 	var table = Table{ entries: entries[:] }
 
-	var key_len_sum uint
+	var key_len_sum int
 	var value_sum   i32
 	for key, value in &table {
 		key_len_sum += len(key)
@@ -133,7 +133,7 @@ fn main() {
 	}
 	assert fallback_value_sum == 15
 
-	var key_count uint
+	var key_count int
 	for key, _ in &table {
 		key_count += len(key)
 	}

@@ -20,9 +20,9 @@ static __sl_Context gMainContext;
 static void* platform_mem_allocator_impl(
     __sl_Allocator* self,
     void*           addr,
-    __sl_uint       align,
-    __sl_uint       curSize,
-    __sl_uint*      newSizeInOut,
+    __sl_int        align,
+    __sl_int        curSize,
+    __sl_int*       newSizeInOut,
     __sl_u32        flags) {
 
     void* newPtr = NULL;
@@ -31,21 +31,25 @@ static void* platform_mem_allocator_impl(
 
     debugassert(newSizeInOut != NULL);
 
+    if (*newSizeInOut < 0 || curSize < 0) {
+        panic("negative allocation size");
+    }
+
     if (*newSizeInOut == 0) {
         free(addr);
         return NULL;
     }
 
-    if UNLIKELY (align == 0 || (align & (align - 1u)) != 0u) {
+    if UNLIKELY (align <= 0 || (align & (align - 1)) != 0) {
         panic("invalid alignment");
     }
 
-    if (align > MALLOC_ALIGN) {
-        __sl_uint alignedSize = __sl_align_up(*newSizeInOut, align);
+    if ((__sl_uint)align > MALLOC_ALIGN) {
+        __sl_int alignedSize = __sl_align_up(*newSizeInOut, align);
         newPtr = aligned_alloc((size_t)align, (size_t)alignedSize);
         if (addr != NULL && newPtr != NULL) {
             // resize case
-            __sl_uint copySize = curSize < *newSizeInOut ? curSize : *newSizeInOut;
+            __sl_int copySize = curSize < *newSizeInOut ? curSize : *newSizeInOut;
             if (copySize > 0) {
                 memcpy(newPtr, addr, (size_t)copySize);
             }
@@ -72,8 +76,8 @@ static void platform_log_handler(
     __sl_str      message,
     __sl_LogLevel level,
     __sl_LogFlags flags) {
-    size_t n = (size_t)message.len;
-    FILE*  out = (level >= __sl_LogLevel_Error) ? stderr : stdout;
+    __sl_int n = message.len;
+    FILE*    out = (level >= __sl_LogLevel_Error) ? stderr : stdout;
 
     if (self != NULL && level < self->min_level) {
         return;
@@ -82,7 +86,10 @@ static void platform_log_handler(
     if (self != NULL && (flags & __sl_LogFlag_Prefix) && self->prefix.len > 0) {
         fprintf(out, "%.*s", (int)self->prefix.len, (const char*)self->prefix.ptr);
     }
-    if (n > 0u) {
+    if (n < 0) {
+        n = 0;
+    }
+    if (n > 0) {
         fprintf(out, "%.*s", (int)n, (const char*)message.ptr);
     }
     fputc('\n', out);
@@ -90,7 +97,7 @@ static void platform_log_handler(
 }
 
 __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 line) {
-    __sl_uint     message_len;
+    __sl_int      message_len;
     const __sl_u8 empty[] = "";
     (void)file;
     (void)line;
@@ -100,8 +107,11 @@ __sl_noreturn void __sl_panic(const __sl_str* msg, const char* file, __sl_u32 li
     }
     message_len = msg->len;
 
-    if (message_len > 0x7FFFFFFFu) {
-        message_len = 0x7FFFFFFFu;
+    if (message_len < 0) {
+        message_len = 0;
+    }
+    if (message_len > 0x7FFFFFFF) {
+        message_len = 0x7FFFFFFF;
     }
     fprintf(
         stderr,

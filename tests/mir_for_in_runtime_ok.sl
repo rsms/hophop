@@ -16,7 +16,7 @@ fn main() {
 		weighted += item * i as i32
 	}
 
-	var count uint
+	var count int
 	for _ in a {
 		count += 1
 	}

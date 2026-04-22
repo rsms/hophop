@@ -558,7 +558,7 @@ fn f() {
   - sequence path: supports `len(x)` and indexing `x[i]` (SLP-29), or
   - iterator protocol path: provides `__iterator(x)` and matching `next_*` overloads for the loop form (SLP-30).
 - [STMT-FOR-005][Provisional] `for ... in` source expression is evaluated once before loop iteration.
-- [STMT-FOR-006][Provisional] In `for key, value in x`, the key for sequence sources is synthetic `uint` index; `&key` is invalid for synthetic keys.
+- [STMT-FOR-006][Provisional] In `for key, value in x`, the key for sequence sources is synthetic `int` index; `&key` is invalid for synthetic keys.
 - [STMT-FOR-007][Provisional] Value binding modes in `for ... in`:
   - `value`: by-value capture
   - `&value`: by-reference capture with `&x[i]` semantics (mutable source -> `*T`, immutable source -> `&T`)
@@ -619,7 +619,7 @@ fn f() {
 
 ### 9.1 `len(x)`
 - [BI-LEN-001][Stable] Valid argument families: `str`, arrays, slices, pointers/references to arrays/slices.
-- [BI-LEN-002][Stable] Return type is `uint`.
+- [BI-LEN-002][Stable] Return type is `int`.
 - [BI-LEN-003][Stable] Selector-call sugar `x.len()` is equivalent when no field `len` shadows it.
 
 ### 9.2 `cstr(s)`
@@ -632,7 +632,7 @@ fn f() {
 ### 9.3 `copy(dst, src)`
 - [BI-COPY-001][Stable] `copy(dst, src)` copies `min(len(dst), len(src))` elements from `src` into `dst`.
 - [BI-COPY-002][Stable] Source and destination ranges may overlap; semantics are equivalent to elementwise `memmove` over copied bytes.
-- [BI-COPY-003][Stable] Return type is `uint`, and equals the number of elements copied.
+- [BI-COPY-003][Stable] Return type is `int`, and equals the number of elements copied.
 - [BI-COPY-004][Stable] `dst` MUST be writable sequence-like and `src` MUST be readable sequence-like.
 - [BI-COPY-005][Stable] String interoperability:
   - `copy(*str, &str)` is valid.
@@ -666,7 +666,7 @@ fn f() {
 
 ### 9.7 `sizeof`
 - [BI-SIZEOF-001][Stable] `sizeof(Type)` and `sizeof(expr)` forms are supported.
-- [BI-SIZEOF-002][Stable] Result type is `uint`.
+- [BI-SIZEOF-002][Stable] Result type is `int`.
 - [BI-SIZEOF-003][Stable] Unsized and variable-size-by-value type operands are invalid in `sizeof(Type)`.
 
 ### 9.8 `print(msg)`

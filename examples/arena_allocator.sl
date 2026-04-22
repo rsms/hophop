@@ -1,6 +1,6 @@
 import "mem" { ArenaAllocator }
 
-fn arena_init(self *ArenaAllocator, source *Allocator, block_size uint) {
+fn arena_init(self *ArenaAllocator, source *Allocator, block_size int) {
 	self.mem = source
 	self.block_size = block_size
 	if self.block_size == 0 {

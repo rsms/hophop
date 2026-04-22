@@ -18,7 +18,7 @@ type CounterPair (&str, *i32)
 
 struct CounterKVIter {
 	keys  *[&str]
-	index uint
+	index int
 	pair  CounterPair
 	value *i32
 }
@@ -88,8 +88,8 @@ fn first_ref(counter &Counter) i32 {
 	return 0
 }
 
-fn key_from_preferred_next_key(counter *Counter) uint {
-	var sum uint
+fn key_from_preferred_next_key(counter *Counter) int {
+	var sum int
 	for key, _ in counter {
 		sum += len(key)
 	}

@@ -3,6 +3,6 @@
 int test_codegen_phase8_vss(tests__Packet* p) {
     __sl_u8* payload = tests__Packet__payload(p);
     __sl_i32* samples = tests__Packet__samples(p);
-    __sl_uint n = tests__Packet__sizeof(p);
+    __sl_int n = tests__Packet__sizeof(p);
     return payload != (__sl_u8*)0 || samples != (__sl_i32*)0 || n > 0 ? 0 : 0;
 }

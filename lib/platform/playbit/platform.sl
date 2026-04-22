@@ -254,7 +254,7 @@ pub enum CallOp u32 {
 
 pub struct Buf {
 	bytes *u8
-	len   uint
+	len   int
 }
 
 pub struct HandleInfo {

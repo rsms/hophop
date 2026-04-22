@@ -3,19 +3,19 @@ import "builtin"
 pub struct ArenaBlock {
 	next  *ArenaBlock
 	addr  rawptr
-	size  uint
-	used  uint
-	align uint
+	size  int
+	used  int
+	align int
 }
 
 pub struct ArenaAllocator {
 	builtin.Allocator
 	mem        *builtin.Allocator
 	head       *ArenaBlock
-	block_size uint
+	block_size int
 }
 
-fn alloc_block(arena *ArenaAllocator, minSize, align uint) *ArenaBlock {
+fn alloc_block(arena *ArenaAllocator, minSize, align int) *ArenaBlock {
 	var payload_size             = arena.block_size
 	var none  *ArenaBlock        = (null as rawptr) as *ArenaBlock
 	var noMem *builtin.Allocator = (null as rawptr) as *builtin.Allocator
@@ -42,9 +42,9 @@ fn alloc_block(arena *ArenaAllocator, minSize, align uint) *ArenaBlock {
 	return block
 }
 
-fn arena_alloc_impl(self *builtin.Allocator, addr rawptr, align, curSize uint, newSizeInOut *uint, flags u32) rawptr {
-	var arena        = self as *ArenaAllocator
-	var noSize *uint = (null as rawptr) as *uint
+fn arena_alloc_impl(self *builtin.Allocator, addr rawptr, align, curSize int, newSizeInOut *int, flags u32) rawptr {
+	var arena       = self as *ArenaAllocator
+	var noSize *int = (null as rawptr) as *int
 	if newSizeInOut == noSize {
 		return null
 	}
@@ -70,7 +70,7 @@ fn arena_alloc_impl(self *builtin.Allocator, addr rawptr, align, curSize uint, n
 	return block.addr
 }
 
-pub fn init(self *ArenaAllocator, source *builtin.Allocator, block_size uint) {
+pub fn init(self *ArenaAllocator, source *builtin.Allocator, block_size int) {
 	var none *ArenaBlock = (null as rawptr) as *ArenaBlock
 	self.mem = source
 	self.head = none
@@ -88,7 +88,7 @@ fn free_block_chain(source *builtin.Allocator, block *ArenaBlock) {
 	}
 
 	var next *ArenaBlock = block.next
-	var zero uint        = 0
+	var zero int         = 0
 	source.impl(source, addr: block.addr, align: block.align, curSize: block.size, newSizeInOut: &zero, flags: 0)
 	free(source, block)
 	free_block_chain(source, block: next)

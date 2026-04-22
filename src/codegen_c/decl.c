@@ -757,7 +757,7 @@ int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                     return -1;
                 }
                 EmitIndent(c, depth + 1u);
-                if (BufAppendCStr(&c->out, "__sl_uint off = sizeof(") != 0
+                if (BufAppendCStr(&c->out, "__sl_int off = (__sl_int)sizeof(") != 0
                     || BufAppendCStr(&c->out, map->cName) != 0
                     || BufAppendCStr(&c->out, "__hdr);\n") != 0)
                 {
@@ -790,7 +790,7 @@ int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                                 break;
                             }
                             EmitIndent(c, depth + 1u);
-                            if (BufAppendCStr(&c->out, "off += (__sl_uint)p->") != 0
+                            if (BufAppendCStr(&c->out, "off += p->") != 0
                                 || BufAppendSlice(
                                        &c->out, c->unit->source, wtn->dataStart, wtn->dataEnd)
                                        != 0
@@ -858,14 +858,14 @@ int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
     if (emittedHelper) {
         int32_t walk = AstFirstChild(&c->ast, nodeId);
         EmitIndent(c, depth);
-        if (BufAppendCStr(&c->out, "static inline __sl_uint ") != 0
+        if (BufAppendCStr(&c->out, "static inline __sl_int ") != 0
             || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__sizeof(") != 0
             || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "* p) {\n") != 0)
         {
             return -1;
         }
         EmitIndent(c, depth + 1u);
-        if (BufAppendCStr(&c->out, "__sl_uint off = sizeof(") != 0
+        if (BufAppendCStr(&c->out, "__sl_int off = (__sl_int)sizeof(") != 0
             || BufAppendCStr(&c->out, map->cName) != 0 || BufAppendCStr(&c->out, "__hdr);\n") != 0)
         {
             return -1;
@@ -884,7 +884,7 @@ int EmitVarSizeStructDecl(SLCBackendC* c, int32_t nodeId, uint32_t depth) {
                         return -1;
                     }
                     EmitIndent(c, depth + 1u);
-                    if (BufAppendCStr(&c->out, "off += (__sl_uint)p->") != 0
+                    if (BufAppendCStr(&c->out, "off += p->") != 0
                         || BufAppendSlice(&c->out, c->unit->source, wtn->dataStart, wtn->dataEnd)
                                != 0
                         || BufAppendCStr(&c->out, " * sizeof(") != 0
